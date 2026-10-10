@@ -95,8 +95,13 @@ pub(crate) fn start_new_match(
             .min(scenario.players.len() - 1)
             .fit::<u8>(),
     );
-    let lobby =
-        crate::netplay::HostLobby::new(bind, scenario, host, &crate::build_identity().revision)?;
+    let lobby = crate::netplay::HostLobby::new(
+        bind,
+        scenario,
+        host,
+        &crate::build_identity().revision,
+        draft.player_name.clone(),
+    )?;
     Ok(NewMatch::Hosted(Box::new(lobby)))
 }
 

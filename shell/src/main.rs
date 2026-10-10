@@ -43,6 +43,7 @@ mod saved_game;
 mod saves;
 mod screens;
 mod seat_style;
+mod seating;
 mod slide_motion;
 mod soundtrack;
 mod sprite_contact;

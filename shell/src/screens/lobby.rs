@@ -4,7 +4,7 @@
 //! it.
 
 use crate::game::{Game, SoundKind};
-use crate::menu::Menu;
+use crate::menu::{Label, Line, Menu};
 use crate::netplay::{Link, Lobby, address_char, parse_join_address};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use macroquad::prelude::Vec2;
@@ -36,9 +36,7 @@ enum Face {
 /// The lobby screen.
 pub struct LobbyScreen {
     face: Face,
-    /// The name a failed join brings back to the form.
-    name: String,
-    /// The form's fields or the Cancel row, for the UI report.
+    /// The form's fields, or the roster and Cancel, for the UI report.
     pub menu: Menu<usize>,
 }
 
@@ -65,13 +63,10 @@ impl LobbyScreen {
             .weight(2.0);
         let focus = usize::from(PlayerName::new(name).is_ok());
         let form = Form::new("JOIN MATCH", "JOIN", vec![name_field, address_field], focus);
-        Self::face(
-            Face::Join {
-                form,
-                failure: None,
-            },
-            name.to_owned(),
-        )
+        Self::face(Face::Join {
+            form,
+            failure: None,
+        })
     }
 
     /// The Join form showing why the last join failed.
@@ -85,20 +80,15 @@ impl LobbyScreen {
 
     /// Waits on `lobby`.
     pub fn waiting(lobby: Lobby) -> Self {
-        Self::face(Face::Waiting(lobby), String::new())
+        Self::face(Face::Waiting(lobby))
     }
 
-    /// Waits on a join as `name`, which a failure brings back to the form.
-    pub fn joining(lobby: Lobby, name: &str) -> Self {
-        Self::face(Face::Waiting(lobby), name.to_owned())
-    }
-
-    fn face(face: Face, name: String) -> Self {
+    fn face(face: Face) -> Self {
         let menu = match &face {
             Face::Join { form, .. } => form.menu(|index| index),
-            Face::Waiting(_) => Menu::list("LAN MATCH", vec!["Cancel".to_owned()]),
+            Face::Waiting(lobby) => Menu::new("LAN MATCH", waiting_lines(lobby)),
         };
-        Self { face, name, menu }
+        Self { face, menu }
     }
 
     /// Polls the lobby; returns the match once it starts. A join that
@@ -108,8 +98,10 @@ impl LobbyScreen {
             return None;
         };
         let started = lobby.poll(now, viewport);
-        if let Some((address, reason)) = lobby.failure() {
-            *self = Self::failed(&self.name, address, reason.to_owned());
+        if let Some((name, address, reason)) = lobby.failure() {
+            *self = Self::failed(name.as_str(), address, reason.to_owned());
+        } else {
+            self.menu.set_lines(waiting_lines(lobby));
         }
         started
     }
@@ -200,6 +192,17 @@ impl LobbyScreen {
             Face::Waiting(_) => self.menu.draw(&self.subtitle()),
         }
     }
+}
+
+/// The waiting face's lines: the roster, which the cursor skips, then
+/// Cancel.
+fn waiting_lines(lobby: &Lobby) -> Vec<Line<usize>> {
+    lobby
+        .roster()
+        .into_iter()
+        .map(Line::Header)
+        .chain([Line::Row(Label::from("Cancel"), 0)])
+        .collect()
 }
 
 #[cfg(test)]

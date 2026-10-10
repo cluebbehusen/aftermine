@@ -337,10 +337,9 @@ fn lobby_frame(
                 app.notify(format!("could not save settings: {err}"), true);
             }
             let commit = crate::build_identity().revision;
-            *lobby = crate::screens::lobby::LobbyScreen::joining(
-                crate::netplay::Lobby::Client(crate::netplay::ClientLobby::new(&address, &commit)),
-                name.as_str(),
-            );
+            *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
+                crate::netplay::ClientLobby::new(&address, &commit, name),
+            ));
         }
     }
     render::draw(
@@ -577,6 +576,11 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     let mut next: Option<Screen> = None;
     drop(input_scope);
     let bind = format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT);
+    app.draft.player_name = app
+        .config
+        .player_name
+        .as_deref()
+        .and_then(|name| oxide_net::PlayerName::new(name).ok());
     let launch_result = resolve_new_match(out, &app.draft, &mut app.personality_seeds, &bind);
     match out {
         WizardOut::Home => {

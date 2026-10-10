@@ -63,6 +63,25 @@ fn recorded(game: &Game) -> Vec<(u64, oxide_sim::PlayerCommand)> {
         .collect()
 }
 
+fn name(name: &str) -> PlayerName {
+    PlayerName::new(name).unwrap()
+}
+
+/// Twin Forges with seats 0 to 2 human and seat 3 a bot, so one joiner
+/// leaves a seat open and the lobby keeps waiting.
+fn three_humans() -> Scenario {
+    let mut scenario = with_bots();
+    scenario.players[2].bot = false;
+    scenario.players[2].bot_config = None;
+    scenario
+}
+
+fn host_lobby(scenario: Scenario) -> Lobby {
+    Lobby::Host(Box::new(
+        HostLobby::new("127.0.0.1:0", scenario, HOST, COMMIT, Some(name("Host"))).unwrap(),
+    ))
+}
+
 fn address(lobby: &Lobby) -> String {
     match lobby {
         Lobby::Host(host) => host.address.clone(),
@@ -97,9 +116,9 @@ impl Match {
 
     fn start_as(scenario: Scenario, seat: PlayerId) -> Self {
         let mut host = Lobby::Host(Box::new(
-            HostLobby::new("127.0.0.1:0", scenario, seat, COMMIT).unwrap(),
+            HostLobby::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap(),
         ));
-        let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT));
+        let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
         let (mut hosted, mut joined) = (None, None);
         wait(|| {
             if hosted.is_none() {
@@ -327,57 +346,119 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
 
 #[test]
 fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
-    let mut host = Lobby::Host(Box::new(
-        HostLobby::new("127.0.0.1:0", duel(), HOST, COMMIT).unwrap(),
-    ));
-    let mut client = Lobby::Client(ClientLobby::new(&address(&host), "other"));
+    let mut host = host_lobby(duel());
+    let mut client = Lobby::Client(ClientLobby::new(&address(&host), "other", name("Alex")));
     let reason = wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         assert!(client.poll(Duration::ZERO, viewport()).is_none());
-        client.failure().map(|(_, reason)| reason.to_owned())
+        client.failure().map(|(_, _, reason)| reason.to_owned())
     });
     assert!(reason.contains("host runs build lan-test"));
     assert_eq!(client.status(), reason);
+    let (joined_as, _, _) = client.failure().unwrap();
+    assert_eq!(joined_as, &name("Alex"), "the form gets the name back");
     assert!(host.status().ends_with("1 of 2 players here"));
     assert!(host.failure().is_none());
 }
 
 #[test]
+fn every_machine_sees_who_sits_where_and_a_leaver_frees_the_seat() {
+    let mut host = host_lobby(three_humans());
+    let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
+    wait(|| {
+        assert!(host.poll(Duration::ZERO, viewport()).is_none());
+        assert!(client.poll(Duration::ZERO, viewport()).is_none());
+        (!client.roster().is_empty()).then_some(())
+    });
+    let expected = [
+        "1. Host (host)",
+        "2. Alex (you)",
+        "3. Open",
+        "4. Standard / Balanced AI",
+    ];
+    assert_eq!(client.roster(), expected);
+    assert_eq!(client.status(), "Waiting for Host to start the match");
+    assert_eq!(host.roster()[1], "2. Alex");
+    assert!(host.status().ends_with("2 of 3 players here"));
+
+    drop(client);
+    wait(|| {
+        assert!(host.poll(Duration::ZERO, viewport()).is_none());
+        host.status().ends_with("1 of 3 players here").then_some(())
+    });
+    assert_eq!(host.roster()[1], "2. Open");
+}
+
+#[test]
+fn a_joiner_that_falls_silent_loses_its_seat() {
+    let mut host = host_lobby(three_humans());
+    let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
+    wait(|| {
+        assert!(host.poll(Duration::ZERO, viewport()).is_none());
+        assert!(client.poll(Duration::ZERO, viewport()).is_none());
+        host.status().ends_with("2 of 3 players here").then_some(())
+    });
+    // The client stops polling, so it stops heartbeating.
+    assert!(host.poll(oxide_net::SILENCE_TIMEOUT, viewport()).is_none());
+    assert!(host.status().ends_with("1 of 3 players here"));
+}
+
+#[test]
+fn names_replace_the_seats_names_on_every_machine() {
+    let lan = Match::start(with_bots());
+    for game in [&lan.host.0, &lan.client.0] {
+        let names: Vec<&str> = game
+            .scenario
+            .players
+            .iter()
+            .map(|player| player.name.as_str())
+            .collect();
+        assert_eq!(names[..2], ["Host", "Alex"]);
+    }
+    assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
+}
+
+#[test]
 fn a_silent_connection_is_closed_after_the_greeting_timeout() {
-    let mut host = HostLobby::new("127.0.0.1:0", duel(), HOST, COMMIT).unwrap();
+    let Lobby::Host(mut host) = host_lobby(duel()) else {
+        unreachable!("a host lobby");
+    };
     let silent = std::net::TcpStream::connect(&host.address).unwrap();
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
-        (!host.greeting.is_empty()).then_some(())
+        (!host.connections.is_empty()).then_some(())
     });
-    assert!(host.poll(GREETING_TIMEOUT, viewport()).is_none());
-    assert!(host.greeting.is_empty());
+    assert!(host.poll(oxide_net::GREETING_TIMEOUT, viewport()).is_none());
+    assert!(host.connections.is_empty());
     drop(silent);
 }
 
 #[test]
 fn connections_past_the_greeting_cap_wait_to_be_accepted() {
     use std::io::BufRead as _;
-    let mut host = HostLobby::new("127.0.0.1:0", duel(), HOST, COMMIT).unwrap();
+    let Lobby::Host(mut host) = host_lobby(duel()) else {
+        unreachable!("a host lobby");
+    };
     let silent: Vec<_> = (0..MAX_GREETING)
         .map(|_| std::net::TcpStream::connect(&host.address).unwrap())
         .collect();
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
-        (host.greeting.len() == MAX_GREETING).then_some(())
+        (host.connections.len() == MAX_GREETING).then_some(())
     });
     let waiting = std::net::TcpStream::connect(&host.address).unwrap();
     for _ in 0..10 {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
     }
-    assert_eq!(host.greeting.len(), MAX_GREETING);
+    assert_eq!(host.connections.len(), MAX_GREETING);
 
     // The full slots time out, and only then is the waiting peer accepted
     // and greeted.
-    assert!(host.poll(GREETING_TIMEOUT, viewport()).is_none());
+    let timeout = oxide_net::GREETING_TIMEOUT;
+    assert!(host.poll(timeout, viewport()).is_none());
     wait(|| {
-        assert!(host.poll(GREETING_TIMEOUT, viewport()).is_none());
-        (host.greeting.len() == 1).then_some(())
+        assert!(host.poll(timeout, viewport()).is_none());
+        (host.connections.len() == 1).then_some(())
     });
     waiting
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -386,14 +467,17 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
     std::io::BufReader::new(&waiting)
         .read_line(&mut hello)
         .unwrap();
-    assert_eq!(hello.trim_end(), LobbyMessage::hello(COMMIT).encode());
+    assert_eq!(
+        hello.trim_end(),
+        oxide_net::LobbyMessage::hello(COMMIT).encode()
+    );
     drop(silent);
 }
 
 #[test]
 fn a_host_needs_its_own_seat_and_another_human_seat() {
-    assert!(HostLobby::new("127.0.0.1:0", Scenario::skirmish(), HOST, COMMIT).is_err());
-    assert!(HostLobby::new("127.0.0.1:0", duel(), PlayerId(2), COMMIT).is_err());
+    assert!(HostLobby::new("127.0.0.1:0", Scenario::skirmish(), HOST, COMMIT, None).is_err());
+    assert!(HostLobby::new("127.0.0.1:0", duel(), PlayerId(2), COMMIT, None).is_err());
 }
 
 #[test]

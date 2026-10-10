@@ -2,13 +2,16 @@
 //! link that carries a running match between them. The frame loop polls
 //! both; sockets run on `oxide_net::tcp` threads.
 
+use crate::bot_label::{BotLabelStyle, bot_label};
 use crate::game::Game;
 use crate::game::network::{CLIENT_BUFFER, NetRole};
+use crate::seating::{Occupant, Seating};
 use anyhow::{Context, Result, ensure};
 use macroquad::prelude::Vec2;
 use oxide_net::{
-    ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, HostEvent, HostSession,
-    JoinMessage, Listener, LobbyMessage, StartBarrier, same_build,
+    ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Gathering, Guest, GuestEnd,
+    GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName, RoomSeat,
+    SeatHolder, StartFailed,
 };
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
@@ -22,9 +25,6 @@ const WAIT_NOTICE: Duration = Duration::from_millis(500);
 /// How long a host keeps finished connections open so every client hears
 /// the last lines: a desync halt, or the batches that decided the match.
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
-
-/// A lobby connection that has not said Hello by then is closed.
-const GREETING_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Connections awaiting Hello at once. Each holds two transport threads, so
 /// later ones wait unaccepted until a slot frees.
@@ -334,14 +334,24 @@ impl Lobby {
         }
     }
 
-    /// A client that gave up: the address it tried, and why it failed.
-    pub(crate) fn failure(&self) -> Option<(&str, &str)> {
+    /// One line per seat, once the lobby knows who sits where.
+    pub(crate) fn roster(&self) -> Vec<String> {
+        match self {
+            Lobby::Host(host) => host.roster(),
+            Lobby::Client(client) => client.roster(),
+        }
+    }
+
+    /// A client that gave up: the name it joined as, the address it tried,
+    /// and why it failed.
+    pub(crate) fn failure(&self) -> Option<(&PlayerName, &str, &str)> {
         match self {
             Lobby::Client(ClientLobby {
                 address,
+                name,
                 state: Joining::Failed(reason),
                 ..
-            }) => Some((address, reason)),
+            }) => Some((name, address, reason)),
             _ => None,
         }
     }
@@ -457,35 +467,41 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
         .filter(|ip| !ip.is_unspecified())
 }
 
-/// A host waiting for every human seat to fill.
+/// A host gathering machines for the scenario's human seats. Joiners take
+/// open seats (or a bot's, when none is open), leavers free theirs, every
+/// machine sees who sits where, and the match starts once every seat has
+/// someone to play it.
 pub(crate) struct HostLobby {
     listener: Listener,
     address: String,
-    commit: String,
     scenario: Scenario,
-    host: PlayerId,
-    seats: Vec<PlayerId>,
-    /// Connections yet to say Hello, with when each was accepted.
-    greeting: Vec<(Connection, Duration)>,
-    joined: Vec<Connection>,
-    starting: Option<Starting>,
+    host_name: Option<PlayerName>,
+    gathering: Gathering,
+    seating: Seating,
+    /// The seat order joiners fill: the setup screen's, grouped by team.
+    order: Vec<usize>,
+    connections: Vec<(MemberId, Connection)>,
+    /// Members refused or removed this frame, whose connections finish
+    /// once their last line is out.
+    farewells: Vec<MemberId>,
+    /// Finished connections flushing their last line.
+    leaving: Vec<(Connection, Duration)>,
+    /// The host's match while a start runs.
+    starting: Option<Box<Game>>,
+    /// A seating whose match could not be built, so it is not retried.
+    unbuildable: Option<Seating>,
     notice: Option<String>,
-}
-
-struct Starting {
-    barrier: StartBarrier,
-    game: Box<Game>,
-    seated: Vec<(PlayerId, Connection)>,
 }
 
 impl HostLobby {
     /// Listens on `address` for the scenario's human seats other than
-    /// `host`'s.
+    /// `host`'s. `host_name`, when given, names the host's seat.
     pub(crate) fn new(
         address: &str,
         scenario: Scenario,
         host: PlayerId,
         commit: &str,
+        host_name: Option<PlayerName>,
     ) -> Result<Self> {
         let humans: Vec<PlayerId> = scenario
             .players
@@ -506,13 +522,16 @@ impl HostLobby {
         Ok(Self {
             listener,
             address: reachable(bound),
-            commit: commit.to_owned(),
+            gathering: Gathering::new(commit, &scenario),
+            seating: Seating::from_scenario(&scenario, host),
+            order: crate::screens::wizard::seat_display_order(&scenario),
             scenario,
-            host,
-            seats: humans.into_iter().filter(|seat| *seat != host).collect(),
-            greeting: Vec::new(),
-            joined: Vec::new(),
+            host_name,
+            connections: Vec::new(),
+            farewells: Vec::new(),
+            leaving: Vec::new(),
             starting: None,
+            unbuildable: None,
             notice: None,
         })
     }
@@ -521,11 +540,17 @@ impl HostLobby {
         let place = if self.starting.is_some() {
             "Starting the match...".to_owned()
         } else {
+            let open = self
+                .seating
+                .seats()
+                .iter()
+                .filter(|occupant| **occupant == Occupant::Open)
+                .count();
+            let here = 1 + self.seating.members().len();
             format!(
-                "Hosting on {}: {} of {} players here",
+                "Hosting on {}: {here} of {} players here",
                 self.address,
-                self.joined.len() + 1,
-                self.seats.len() + 1
+                here + open
             )
         };
         match &self.notice {
@@ -534,134 +559,199 @@ impl HostLobby {
         }
     }
 
+    /// One line per seat: its number and who plays it.
+    fn roster(&self) -> Vec<String> {
+        let host = self.shown_host_name();
+        let seats = self.seating.room(
+            &host,
+            |member| self.gathering.name(member).cloned(),
+            |_| None,
+        );
+        roster_lines(&seats, None)
+    }
+
+    /// The host's name as the room shows it: the player's, or the seat's.
+    fn shown_host_name(&self) -> PlayerName {
+        self.host_name.clone().unwrap_or_else(|| {
+            let seat = &self.scenario.players[usize::from(self.seating.host_seat().0)];
+            PlayerName::new(&seat.name)
+                .unwrap_or_else(|_| PlayerName::new("Host").expect("a valid name"))
+        })
+    }
+
     fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
+        self.leaving.retain(|(connection, since)| {
+            drain(connection).is_ok() && now.saturating_sub(*since) < CLOSE_GRACE
+        });
+        if self.starting.is_none() {
+            self.accept(now);
+        }
+        self.read(now);
+        for event in self.gathering.poll(now) {
+            match event {
+                LobbyEvent::Joined { member, .. } => {
+                    if self.seating.place(member, &self.order).is_none() {
+                        self.gathering.refuse(member);
+                        self.farewells.push(member);
+                    }
+                }
+                LobbyEvent::Left { member, .. } => {
+                    self.seating.vacate(member);
+                    self.connections.retain(|(id, _)| *id != member);
+                }
+            }
+        }
         if self.starting.is_some() {
             return self.poll_start(now);
         }
-        while self.greeting.len() < MAX_GREETING {
-            let Ok(Some(connection)) = self.listener.try_accept() else {
-                break;
-            };
-            // The host speaks first, so a mismatched client can say why.
-            connection.send(&LobbyMessage::hello(&self.commit).encode());
-            self.greeting.push((connection, now));
-        }
-        for (connection, accepted) in std::mem::take(&mut self.greeting) {
-            match connection.try_recv() {
-                Ok(None) if now.saturating_sub(accepted) < GREETING_TIMEOUT => {
-                    self.greeting.push((connection, accepted));
-                }
-                Ok(None) => {}
-                Ok(Some(line)) => {
-                    let matching = matches!(
-                        JoinMessage::decode(&line),
-                        Ok(JoinMessage::Hello { protocol, sim, commit })
-                            if same_build(protocol, sim, &commit, &self.commit)
-                    );
-                    if matching {
-                        self.joined.push(connection);
-                    }
-                }
-                Err(Closed) => {}
-            }
-        }
-        self.admit(now, viewport)
-    }
-
-    fn admit(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
-        self.joined
-            .retain(|connection| matches!(connection.try_recv(), Ok(None)));
-        if self.joined.len() < self.seats.len() {
-            return None;
-        }
-        let game = match Game::networked(self.scenario.clone(), self.host, NetRole::Host, viewport)
-        {
-            Ok(game) => game,
-            Err(error) => {
-                self.notice = Some(format!("Cannot start: {error}"));
-                self.joined.clear();
-                return None;
-            }
-        };
-        // A failed start drops every seated connection, so no Ready from
-        // one attempt can reach the next and every start can be the first.
-        let mut barrier = StartBarrier::new(
-            &self.scenario,
-            self.host,
-            &self.seats,
-            game.state.hash(),
-            1,
-            now,
+        let host = self.shown_host_name();
+        let gathering = &self.gathering;
+        let scenario = &self.scenario;
+        let room = self.seating.room(
+            &host,
+            |member| gathering.name(member).cloned(),
+            |seat| scenario.players[seat].team,
         );
-        let seated: Vec<(PlayerId, Connection)> = self
-            .seats
-            .iter()
-            .copied()
-            .zip(self.joined.drain(..))
-            .collect();
-        send_to(&seated, barrier.take_outgoing());
-        self.starting = Some(Starting {
-            barrier,
-            game: Box::new(game),
-            seated,
-        });
-        self.notice = None;
+        let seating = &self.seating;
+        self.gathering
+            .publish(&room, |member| seating.seat_of(member));
+        self.flush(now);
+        if self.seating.ready() && self.unbuildable.as_ref() != Some(&self.seating) {
+            self.start(now, viewport);
+        }
         None
     }
 
-    fn poll_start(&mut self, now: Duration) -> Option<(Game, Link)> {
-        let starting = self.starting.as_mut()?;
-        let mut failed = false;
-        for (seat, connection) in &starting.seated {
+    /// Accepts waiting connections while fewer than [`MAX_GREETING`] have
+    /// yet to introduce themselves.
+    fn accept(&mut self, now: Duration) {
+        let mut unnamed = self
+            .connections
+            .iter()
+            .filter(|(member, _)| self.gathering.name(*member).is_none())
+            .count();
+        while unnamed < MAX_GREETING {
+            let Ok(Some(connection)) = self.listener.try_accept() else {
+                break;
+            };
+            let member = self.gathering.connected(now);
+            self.connections.push((member, connection));
+            unnamed += 1;
+        }
+    }
+
+    fn read(&mut self, now: Duration) {
+        for (member, connection) in &self.connections {
             loop {
                 match connection.try_recv() {
-                    Ok(Some(line)) => {
-                        if starting.barrier.receive(*seat, &line).is_err() {
-                            failed = true;
-                        }
-                    }
+                    Ok(Some(line)) => self.gathering.receive(*member, &line, now),
                     Ok(None) => break,
                     Err(Closed) => {
-                        failed = true;
+                        self.gathering.disconnected(*member);
                         break;
                     }
                 }
             }
         }
-        let started = if failed {
-            Err(())
-        } else {
-            starting.barrier.poll(now).map_err(|_| ())
-        };
+    }
+
+    /// Sends what the lobby queued, then finishes refused connections.
+    fn flush(&mut self, now: Duration) {
+        for (member, line) in self.gathering.take_outgoing() {
+            if let Some((_, connection)) = self.connections.iter().find(|(id, _)| *id == member) {
+                connection.send(&line);
+            }
+        }
+        for member in std::mem::take(&mut self.farewells) {
+            if let Some(index) = self.connections.iter().position(|(id, _)| *id == member) {
+                let (_, mut connection) = self.connections.remove(index);
+                connection.finish();
+                self.leaving.push((connection, now));
+            }
+        }
+    }
+
+    fn start(&mut self, now: Duration, viewport: Vec2) {
+        let mut scenario = self.scenario.clone();
+        let gathering = &self.gathering;
+        // Every bot seat here came from the scenario and keeps its seed.
+        self.seating.apply(
+            &mut scenario,
+            self.host_name.as_ref(),
+            |member| gathering.name(member).cloned(),
+            0,
+        );
+        let host = self.seating.host_seat();
+        match Game::networked(scenario.clone(), host, NetRole::Host, viewport) {
+            Ok(game) => {
+                let seated = self.seating.members();
+                self.gathering
+                    .start(&scenario, host, &seated, game.state.hash(), now);
+                self.flush(now);
+                self.starting = Some(Box::new(game));
+                self.notice = None;
+            }
+            Err(error) => {
+                self.unbuildable = Some(self.seating.clone());
+                self.notice = Some(format!("Cannot start: {error}"));
+            }
+        }
+    }
+
+    fn poll_start(&mut self, now: Duration) -> Option<(Game, Link)> {
+        let started = self.gathering.poll_start(now);
+        self.flush(now);
         match started {
             Ok(None) => None,
             Ok(Some(session)) => {
-                let Starting {
-                    mut barrier,
-                    game,
-                    seated,
-                } = self.starting.take()?;
-                // Go precedes everything the session sends.
-                send_to(&seated, barrier.take_outgoing());
+                let game = self.starting.take()?;
+                let mut seated = Vec::new();
+                for (member, seat) in self.seating.members() {
+                    if let Some(index) = self.connections.iter().position(|(id, _)| *id == member) {
+                        seated.push((seat, self.connections.remove(index).1));
+                    }
+                }
                 Some((*game, Link::host(session, seated, now)))
             }
-            Err(()) => {
-                // Dropping the seated connections sends every client back to
-                // rejoin, so nothing from this attempt reaches the next.
+            Err(failed) => {
                 self.starting = None;
-                self.notice = Some("The start failed; waiting for players to rejoin".to_owned());
+                self.notice = Some(
+                    match failed {
+                        StartFailed::TimedOut => "A player didn't get ready",
+                        StartFailed::Mismatch { .. } => "A player's game didn't match",
+                        StartFailed::Protocol { .. } => "A player left",
+                    }
+                    .to_owned(),
+                );
                 None
             }
         }
     }
 }
 
-fn send_to(seated: &[(PlayerId, Connection)], lines: Vec<(PlayerId, String)>) {
-    for (seat, line) in lines {
-        if let Some((_, connection)) = seated.iter().find(|(peer, _)| *peer == seat) {
-            connection.send(&line);
-        }
-    }
+/// One line per seat: its number, who plays it, and whether that is the
+/// host or the player at `you`.
+fn roster_lines(seats: &[RoomSeat], you: Option<PlayerId>) -> Vec<String> {
+    seats
+        .iter()
+        .enumerate()
+        .map(|(seat, room)| {
+            let mark = if you.is_some_and(|you| usize::from(you.0) == seat) {
+                " (you)"
+            } else {
+                ""
+            };
+            let who = match &room.holder {
+                SeatHolder::Host { name } => format!("{name} (host)"),
+                SeatHolder::Player { name } => format!("{name}{mark}"),
+                SeatHolder::Bot { difficulty, stance } => {
+                    bot_label(*difficulty, *stance, BotLabelStyle::Controller)
+                }
+                SeatHolder::Open => "Open".to_owned(),
+            };
+            format!("{}. {who}", seat + 1)
+        })
+        .collect()
 }
 
 /// Why a connect to `address` failed. Apple platforms report a connect
@@ -686,44 +776,67 @@ fn unreachable(address: &str, error: &io::Error, apple: bool) -> String {
 pub(crate) struct ClientLobby {
     address: String,
     commit: String,
+    name: PlayerName,
     state: Joining,
 }
 
 enum Joining {
     Connecting(JoinHandle<io::Result<Connection>>),
-    Greeting(Connection),
-    Waiting(Connection),
-    Ready(Connection, Box<Game>, PlayerId),
+    /// In the host's lobby; `game` is a start being readied.
+    Gathering {
+        connection: Connection,
+        guest: Box<Guest>,
+        game: Option<(Box<Game>, PlayerId)>,
+    },
     Failed(String),
     Started,
 }
 
-impl Joining {
-    fn connect(address: &str) -> Self {
-        let address = address.to_owned();
-        Joining::Connecting(thread::spawn(move || Connection::connect(address)))
-    }
-}
-
 impl ClientLobby {
-    /// Starts connecting to the host at `address`.
-    pub(crate) fn new(address: &str, commit: &str) -> Self {
+    /// Starts connecting to the host at `address`, to join as `name`.
+    pub(crate) fn new(address: &str, commit: &str, name: PlayerName) -> Self {
+        let target = address.to_owned();
         Self {
             address: address.to_owned(),
             commit: commit.to_owned(),
-            state: Joining::connect(address),
+            name,
+            state: Joining::Connecting(thread::spawn(move || Connection::connect(target))),
         }
     }
 
     fn status(&self) -> String {
         match &self.state {
             Joining::Connecting(_) => format!("Connecting to {}...", self.address),
-            Joining::Greeting(_) | Joining::Waiting(_) => {
-                "Waiting for the host to start the match".to_owned()
-            }
-            Joining::Ready(_, _, seat) => format!("Starting as seat {}...", seat.0 + 1),
+            Joining::Gathering {
+                game: Some((_, seat)),
+                ..
+            } => format!("Starting as seat {}...", seat.0 + 1),
+            Joining::Gathering { guest, .. } => match guest.room() {
+                Some((seats, _)) => {
+                    let host = seats.iter().find_map(|seat| match &seat.holder {
+                        SeatHolder::Host { name } => Some(name.as_str()),
+                        _ => None,
+                    });
+                    format!(
+                        "Waiting for {} to start the match",
+                        host.unwrap_or("the host")
+                    )
+                }
+                None => format!("Joining {}...", self.address),
+            },
             Joining::Failed(reason) => reason.clone(),
             Joining::Started => "Started".to_owned(),
+        }
+    }
+
+    /// One line per seat once the room arrived, marking this player.
+    fn roster(&self) -> Vec<String> {
+        match &self.state {
+            Joining::Gathering { guest, .. } => guest
+                .room()
+                .map(|(seats, you)| roster_lines(seats, Some(you)))
+                .unwrap_or_default(),
+            _ => Vec::new(),
         }
     }
 
@@ -740,73 +853,107 @@ impl ClientLobby {
         now: Duration,
         viewport: Vec2,
     ) -> (Joining, Option<(Game, Link)>) {
-        let refused = |reason: &str| (Joining::Failed(reason.to_owned()), None);
+        let failed = |reason: String| (Joining::Failed(reason), None);
         match state {
             Joining::Connecting(handle) if handle.is_finished() => match handle.join() {
                 Ok(Ok(connection)) => {
-                    connection.send(&JoinMessage::hello(&self.commit).encode());
-                    (Joining::Greeting(connection), None)
+                    let mut guest = Box::new(Guest::new(&self.commit, self.name.clone(), now));
+                    for line in guest.take_outgoing() {
+                        connection.send(&line);
+                    }
+                    (
+                        Joining::Gathering {
+                            connection,
+                            guest,
+                            game: None,
+                        },
+                        None,
+                    )
                 }
-                Ok(Err(error)) => refused(&unreachable(
+                Ok(Err(error)) => failed(unreachable(
                     &self.address,
                     &error,
                     cfg!(any(target_os = "macos", target_os = "ios")),
                 )),
-                Err(_) => refused("Connecting failed"),
+                Err(_) => failed("Connecting failed".to_owned()),
             },
-            Joining::Greeting(connection) => match connection.try_recv() {
-                Ok(None) => (Joining::Greeting(connection), None),
-                Ok(Some(line)) => match LobbyMessage::decode(&line) {
-                    Ok(LobbyMessage::Hello {
-                        protocol,
-                        sim,
-                        commit,
-                    }) if same_build(protocol, sim, &commit, &self.commit) => {
-                        (Joining::Waiting(connection), None)
-                    }
-                    Ok(LobbyMessage::Hello { commit, .. }) => refused(&format!(
-                        "The host runs build {commit}; this is build {}",
-                        self.commit
-                    )),
-                    _ => refused("The host sent something unexpected"),
-                },
-                Err(Closed) => refused("The host closed the connection"),
-            },
-            Joining::Waiting(connection) => match connection.try_recv() {
-                Ok(None) => (Joining::Waiting(connection), None),
-                Ok(Some(line)) => match LobbyMessage::decode(&line) {
-                    Ok(LobbyMessage::Start {
-                        seat,
-                        scenario,
-                        attempt,
-                    }) => match Game::networked(*scenario, seat, NetRole::Client, viewport) {
-                        Ok(game) => {
-                            let ready = JoinMessage::Ready {
-                                hash: game.state.hash(),
-                                attempt,
-                            };
-                            connection.send(&ready.encode());
-                            (Joining::Ready(connection, Box::new(game), seat), None)
+            Joining::Gathering {
+                connection,
+                mut guest,
+                mut game,
+            } => {
+                loop {
+                    let line = match connection.try_recv() {
+                        Ok(Some(line)) => line,
+                        Ok(None) => break,
+                        Err(Closed) => {
+                            return failed(if game.is_some() {
+                                "The start failed; try joining again".to_owned()
+                            } else {
+                                "The host closed the lobby".to_owned()
+                            });
                         }
-                        Err(error) => refused(&format!("Cannot start: {error}")),
-                    },
-                    _ => refused("The host sent something unexpected"),
-                },
-                Err(Closed) => refused("The host closed the lobby"),
-            },
-            Joining::Ready(connection, game, seat) => match connection.try_recv() {
-                Ok(None) => (Joining::Ready(connection, game, seat), None),
-                // Stop reading at Go: the batches behind it belong to the link.
-                Ok(Some(line)) => match LobbyMessage::decode(&line) {
-                    Ok(LobbyMessage::Go) => {
-                        let link = Link::client(ClientSession::new(now), connection, now);
-                        (Joining::Started, Some((*game, link)))
+                    };
+                    match guest.receive(&line, now) {
+                        Ok(Some(GuestEvent::Start { seat, scenario })) => {
+                            match Game::networked(*scenario, seat, NetRole::Client, viewport) {
+                                Ok(built) => {
+                                    guest.ready(built.state.hash());
+                                    game = Some((Box::new(built), seat));
+                                }
+                                Err(error) => return failed(format!("Cannot start: {error}")),
+                            }
+                        }
+                        // A room during a start means the start is off.
+                        Ok(Some(GuestEvent::Room)) => game = None,
+                        // Stop reading at Go: the batches behind it belong to
+                        // the link.
+                        Ok(Some(GuestEvent::Go)) => {
+                            for line in guest.take_outgoing() {
+                                connection.send(&line);
+                            }
+                            let Some((built, _)) = game else {
+                                return failed("The host sent something unexpected".to_owned());
+                            };
+                            let link = Link::client(ClientSession::new(now), connection, now);
+                            return (Joining::Started, Some((*built, link)));
+                        }
+                        Ok(Some(GuestEvent::Map) | None) => {}
+                        Err(end) => return failed(self.ended(end)),
                     }
-                    _ => refused("The host sent something unexpected"),
-                },
-                Err(Closed) => refused("The start failed; try joining again"),
-            },
+                }
+                if let Err(end) = guest.poll(now) {
+                    return failed(self.ended(end));
+                }
+                for line in guest.take_outgoing() {
+                    connection.send(&line);
+                }
+                (
+                    Joining::Gathering {
+                        connection,
+                        guest,
+                        game,
+                    },
+                    None,
+                )
+            }
             other => (other, None),
+        }
+    }
+
+    /// Why the lobby ended, for the player.
+    fn ended(&self, end: GuestEnd) -> String {
+        match end {
+            GuestEnd::OtherBuild { commit } => {
+                format!(
+                    "The host runs build {commit}; this is build {}",
+                    self.commit
+                )
+            }
+            GuestEnd::Full => "The match is full".to_owned(),
+            GuestEnd::Removed => "The host removed you from the lobby".to_owned(),
+            GuestEnd::Silent => "Lost contact with the host".to_owned(),
+            GuestEnd::Protocol => "The host sent something unexpected".to_owned(),
         }
     }
 }
