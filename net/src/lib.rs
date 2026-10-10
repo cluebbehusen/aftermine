@@ -4,6 +4,7 @@
 
 pub mod client;
 pub mod host;
+pub mod lobby;
 pub mod message;
 pub mod name;
 pub mod start;
@@ -14,7 +15,10 @@ use std::time::Duration;
 
 pub use client::{ClientEnd, ClientSession};
 pub use host::{DropReason, HostEvent, HostSession};
-pub use message::{ClientMessage, HostMessage, JoinMessage, LobbyMessage, same_build};
+pub use lobby::{Gathering, Guest, GuestEnd, GuestEvent, LeaveReason, LobbyEvent, MemberId};
+pub use message::{
+    ClientMessage, HostMessage, JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build,
+};
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
 pub use tcp::{Closed, Connection, Listener};
@@ -28,6 +32,14 @@ pub const DEFAULT_PORT: u16 = 4200;
 
 /// The host abandons a start that has not collected every Ready by then.
 pub const START_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The host drops a joining connection that has not introduced itself by
+/// then.
+pub const GREETING_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The longest line the host accepts from a client before Go. A longer
+/// one drops the client.
+pub const MAX_JOIN_LINE_BYTES: usize = 1024;
 
 /// The longest accepted line, excluding its newline.
 pub const MAX_LINE_BYTES: usize = 1 << 20;

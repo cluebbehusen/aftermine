@@ -579,20 +579,25 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
         HOST,
         &CLIENTS,
         host.state.hash(),
+        1,
         clock.elapsed(),
     );
     send_to_seats(&seated, barrier.take_outgoing());
     let mut machines: Vec<Machine> = clients
         .iter()
         .map(|connection| {
-            let LobbyMessage::Start { seat, scenario } =
-                LobbyMessage::decode(&recv(connection)).unwrap()
+            let LobbyMessage::Start {
+                seat,
+                scenario,
+                attempt,
+            } = LobbyMessage::decode(&recv(connection)).unwrap()
             else {
                 panic!("the host starts the match");
             };
             let machine = Machine::new(&scenario, seat);
             let ready = JoinMessage::Ready {
                 hash: machine.state.hash(),
+                attempt,
             };
             connection.send(&ready.encode());
             machine

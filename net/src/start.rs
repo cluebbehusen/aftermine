@@ -6,18 +6,19 @@ use crate::message::{JoinMessage, LobbyMessage};
 use oxide_sim::{PlayerId, Scenario};
 use std::time::Duration;
 
-/// Why a start was abandoned. The host closes every seated connection and
-/// keeps listening; clients rejoin.
+/// Why a start was abandoned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartFailed {
-    /// Not every client was ready within [`START_TIMEOUT`].
+    /// Not every client was ready within [`START_TIMEOUT`];
+    /// [`StartBarrier::unready`] names them.
     TimedOut,
     /// The client's world at tick zero hashed differently from the host's.
     Mismatch {
         /// The client's seat.
         seat: PlayerId,
     },
-    /// The client sent something other than one decodable Ready.
+    /// The client sent something other than heartbeats and one decodable
+    /// Ready.
     Protocol {
         /// The client's seat.
         seat: PlayerId,
@@ -30,11 +31,15 @@ pub enum StartFailed {
 /// and compares each tick-zero hash with the host's. Once all are in, it
 /// queues Go and hands over the [`HostSession`], whose liveness clocks start
 /// then. Send the Go lines before anything the session queues.
+///
+/// Each start carries an attempt number its Readys repeat, so a Ready that
+/// arrives after its start was abandoned is ignored rather than counted.
 #[derive(Debug)]
 pub struct StartBarrier {
     host: PlayerId,
     clients: Vec<PlayerId>,
     hash: u64,
+    attempt: u32,
     deadline: Duration,
     ready: Vec<bool>,
     started: bool,
@@ -44,12 +49,14 @@ pub struct StartBarrier {
 impl StartBarrier {
     /// Starts `scenario` with the host on `host` and clients on `clients`,
     /// which together must hold exactly the scenario's human seats.
-    /// `host_hash` is the host's `State::hash` at tick zero.
+    /// `host_hash` is the host's `State::hash` at tick zero, and `attempt`
+    /// numbers this start.
     pub fn new(
         scenario: &Scenario,
         host: PlayerId,
         clients: &[PlayerId],
         host_hash: u64,
+        attempt: u32,
         now: Duration,
     ) -> Self {
         let mut seated: Vec<PlayerId> = clients.iter().copied().chain([host]).collect();
@@ -71,6 +78,7 @@ impl StartBarrier {
                 let start = LobbyMessage::Start {
                     seat,
                     scenario: Box::new(scenario.clone()),
+                    attempt,
                 };
                 (seat, start.encode())
             })
@@ -79,6 +87,7 @@ impl StartBarrier {
             host,
             clients: clients.to_vec(),
             hash: host_hash,
+            attempt,
             deadline: now + START_TIMEOUT,
             ready: vec![false; clients.len()],
             started: false,
@@ -95,7 +104,9 @@ impl StartBarrier {
             .position(|&client| client == seat)
             .unwrap_or_else(|| panic!("{seat:?} is not a client seat"));
         match JoinMessage::decode(line) {
-            Ok(JoinMessage::Ready { hash }) if !self.ready[index] => {
+            Ok(JoinMessage::Heartbeat) => Ok(()),
+            Ok(JoinMessage::Ready { attempt, .. }) if attempt != self.attempt => Ok(()),
+            Ok(JoinMessage::Ready { hash, .. }) if !self.ready[index] => {
                 if hash != self.hash {
                     return Err(StartFailed::Mismatch { seat });
                 }
@@ -104,6 +115,16 @@ impl StartBarrier {
             }
             _ => Err(StartFailed::Protocol { seat }),
         }
+    }
+
+    /// The clients that have not sent their Ready.
+    pub fn unready(&self) -> Vec<PlayerId> {
+        self.clients
+            .iter()
+            .zip(&self.ready)
+            .filter(|(_, ready)| !**ready)
+            .map(|(&seat, _)| seat)
+            .collect()
     }
 
     /// The session once every client is ready, with Go queued for each;

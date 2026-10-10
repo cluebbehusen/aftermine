@@ -17,6 +17,11 @@ bot commands, then record, then `State::tick`.
   `LobbyMessage` before the match, `ClientMessage` and `HostMessage` after Go.
   Decoding rejects unknown tags and unknown fields on messages that carry data;
   a line that fails to decode is a protocol error.
+- `PlayerName` is a trimmed name of at most 16 printable ASCII characters,
+  checked when typed and when decoded.
+- `Gathering` and `Guest` are the host's and a joining client's halves of the
+  lobby before Go. Which member sits in which seat is the caller's policy; the
+  lobby carries it.
 - `StartBarrier` takes a frozen roster to tick zero.
 - `HostSession` stamps each arriving command for the next unsealed tick, orders
   a sealed tick's human commands, gates sealing on client progress, compares
@@ -33,16 +38,26 @@ bot commands, then record, then `State::tick`.
   launch the versions stay fixed and the commit decides
   ([versioning](../docs/versioning.md)). Local changes on top of a matching
   commit are the players' responsibility.
+- After a matching Hello the client sends `Introduce` with its name. The host
+  seats the member or refuses it with `Full`, and may later drop it with
+  `Removed`. Each seated member receives the map once in `Map`, then a `Room`
+  whenever who sits where changes from its point of view. The map stays fixed
+  while the lobby is open.
+- Before Go both sides heartbeat after `HEARTBEAT_INTERVAL` without sending, and
+  the host drops a member it has not heard from for `SILENCE_TIMEOUT`, one that
+  has not introduced itself within `GREETING_TIMEOUT`, and one that sends a line
+  longer than `MAX_JOIN_LINE_BYTES` or out of turn.
 - The host freezes the roster, which must hold exactly the scenario's human
-  seats, and `StartBarrier` sends each client its seat and the `Scenario`. Each
-  client builds the match and replies `Ready` with its tick-zero `State::hash`.
-  When every hash matches the host's, the barrier queues `Go` and returns the
-  `HostSession`, whose liveness clocks start there. Clients start their
-  `ClientSession` on `Go`.
-- A mismatched hash, a stray line, a seated connection closing, or
-  `START_TIMEOUT` fails the start. The host closes every seated connection and
-  keeps listening; clients rejoin, so no line from a failed start can reach the
-  next one.
+  seats, and `StartBarrier` sends each client its seat, the `Scenario`, and an
+  attempt number. Each client builds the match and replies `Ready` with its
+  tick-zero `State::hash` and the attempt. When every hash matches the host's,
+  the barrier queues `Go` and returns the `HostSession`, whose liveness clocks
+  start there. Clients start their `ClientSession` on `Go`.
+- A mismatched hash, a stray line, a seated member leaving, or `START_TIMEOUT`
+  fails the start. `Gathering` drops only the members who caused it and shows
+  the rest the room again, which tells their `Guest` the start is off. A `Ready`
+  for an earlier attempt is ignored, so it cannot count toward the next start.
+  Introductions that complete during a start wait for its outcome.
 
 ## Session contract
 
