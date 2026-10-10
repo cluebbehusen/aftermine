@@ -1,7 +1,5 @@
 use super::*;
 
-const LOOPBACK: &str = "127.0.0.1:0";
-
 #[test]
 fn the_tutorial_card_keeps_its_presses_and_a_tap_dismisses_it() {
     let card = macroquad::math::Rect::new(400.0, 36.0, 460.0, 120.0);
@@ -155,9 +153,9 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
     let first_base = personality_seeds.match_base();
     let draft = configured_new_match_draft();
 
-    assert!(resolve_new_match(WizardOut::Stay, &draft, &mut personality_seeds, LOOPBACK).is_none());
+    assert!(resolve_new_match(WizardOut::Stay, &draft, &mut personality_seeds).is_none());
     assert_eq!(personality_seeds.match_base(), first_base);
-    assert!(resolve_new_match(WizardOut::Home, &draft, &mut personality_seeds, LOOPBACK).is_none());
+    assert!(resolve_new_match(WizardOut::Home, &draft, &mut personality_seeds).is_none());
     assert_eq!(
         personality_seeds.match_base(),
         first_base,
@@ -166,13 +164,8 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
 
     let mut invalid = configured_new_match_draft();
     invalid.seats.pop();
-    let failed = resolve_new_match(
-        WizardOut::Launch,
-        &invalid,
-        &mut personality_seeds,
-        LOOPBACK,
-    )
-    .expect("launch outcome has a result");
+    let failed = resolve_new_match(WizardOut::Launch, &invalid, &mut personality_seeds)
+        .expect("launch outcome has a result");
     assert!(failed.is_err());
     assert_eq!(
         personality_seeds.match_base(),
@@ -180,9 +173,9 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
         "a launch refusal must leave the same seed window available for retry"
     );
 
-    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds, LOOPBACK)
+    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds)
         .expect("launch outcome has a result");
-    let Ok(NewMatch::Local(game)) = launched else {
+    let Ok(game) = launched else {
         panic!("a valid draft launches locally");
     };
     assert_eq!(
@@ -200,43 +193,12 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
 }
 
 #[test]
-fn a_remote_chair_hosts_the_match_and_a_refused_listen_keeps_the_seeds() {
-    let mut personality_seeds = PersonalitySeedSource::from_seed(41);
-    let first_base = personality_seeds.match_base();
-    let mut draft = configured_new_match_draft();
-    draft.seat_choice = 1;
-    draft.seats[0].remote = true;
-
-    let taken = std::net::TcpListener::bind(LOOPBACK).unwrap();
-    let busy = taken.local_addr().unwrap().to_string();
-    let refused = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds, &busy)
-        .expect("launch outcome has a result");
-    assert!(refused.is_err(), "the port is taken");
-    assert_eq!(personality_seeds.match_base(), first_base);
-
-    let hosted = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds, LOOPBACK)
-        .expect("launch outcome has a result");
-    let Ok(NewMatch::Hosted(lobby)) = hosted else {
-        panic!("a remote chair hosts");
-    };
-    assert!(
-        crate::netplay::Lobby::Host(lobby)
-            .status()
-            .ends_with("1 of 2 players here")
-    );
-    assert_eq!(
-        personality_seeds.match_base(),
-        first_base.wrapping_add(crate::screens::wizard::launch::BOT_PERSONALITY_WINDOW)
-    );
-}
-
-#[test]
 fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
     let mut personality_seeds = PersonalitySeedSource::from_seed(41);
     let draft = configured_new_match_draft();
-    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds, LOOPBACK)
+    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds)
         .expect("launch outcome has a result");
-    let Ok(NewMatch::Local(game)) = launched else {
+    let Ok(game) = launched else {
         panic!("a valid draft launches locally");
     };
     let next_base = personality_seeds.match_base();

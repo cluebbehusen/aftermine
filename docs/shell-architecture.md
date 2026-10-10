@@ -45,12 +45,18 @@ roster, including no bots; the New Match wizard authors one local seat. Sandbox
 completion rules belong to the simulation, so headless and native sessions
 reproduce the same open-ended scene.
 
-Match setup with a Remote seat, Home's Join Match, `--host`, and `--join` open a
-LAN lobby (`netplay::Lobby`) that runs the `oxide-net` lobby protocol over its
-sockets. The host's `seating::Seating` puts each named joiner on the first open
-seat in the setup screen's order, or in place of a bot when none is open, and
-frees a leaver's seat; every machine sees the roster, and the host starts the
-match through the start barrier once every seat has someone to play it. Players'
+Match setup's LOCAL | LAN switch makes the setup screen itself the host's lobby:
+it opens a `netplay::HostLobby` (asking for the player's name first if none is
+saved), opens every chair but the host's, and seats joiners from the draft.
+Tapping an open chair's controller chip gives it back to its bot. A joiner takes
+the first open chair in display order, or else a bot's; the host swaps occupants
+between seats, removes players after a confirmation, and Start waits until every
+open chair is filled. Leaving setup or switching to Local closes the lobby,
+asking first when players would be dropped. Home's Join Match and `--join` open
+a `netplay::Lobby` client, whose waiting face draws a read-only copy of the
+host's setup from the room the lobby protocol carries. `--host` hosts a fixed
+scenario through `netplay::ScenarioHost`, which seats joiners with
+`seating::Seating` and starts once every seat has someone to play it. Players'
 names replace their seats' names in the started scenario. In-game hosts listen
 on `oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App`
 then owns the match's `netplay::Link` and pumps it once per loop pass on every

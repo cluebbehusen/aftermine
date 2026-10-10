@@ -7,26 +7,34 @@
 //! reads only that.
 
 use crate::bot_label::{difficulty_name, stance_name};
+use crate::game::Game;
 use crate::game::SoundKind;
+use crate::game::network::NetRole;
+use crate::menu::{Label, Menu};
 use crate::menu::{PreviewCache, ScenarioEntry, discover_scenarios};
 use crate::nav::{Axis, Nav, step_line};
+use crate::netplay::{HostLobby, Link, StartPoll, shown_host_name, start_failed_notice};
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
 use crate::screens::browser::{Browser, Out as BrowserOut};
+use crate::seating::{Occupant, Seating};
+use crate::text_field::{Edit, Field, Form, Keyboard};
 use anyhow::{Context, Result};
 use macroquad::prelude::{
-    DrawTextureParams, Rect, Vec2, draw_circle, draw_circle_lines, draw_rectangle,
+    DrawTextureParams, Rect, Texture2D, Vec2, draw_circle, draw_circle_lines, draw_rectangle,
     draw_rectangle_lines, draw_text, draw_texture_ex, measure_text, vec2,
 };
+use oxide_net::{LobbyEvent, MemberId, PlayerName};
 use oxide_protocol::{Key, RawEvent};
-use oxide_sim::Scenario;
 use oxide_sim::scenario::{BotDifficulty, BotStance};
+use oxide_sim::{PlayerId, Scenario};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::theme::{
     BORDER_FAINT, BORDER_STRONG, CARD_IDLE, CHIP, MIN_TOUCH_TARGET, SURFACE_MENU, SURFACE_PLATE,
-    Stroke, TEXT_DANGER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
+    Stroke, TEXT_ACCENT, TEXT_DANGER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
 };
 
 /// One seat's editable choices in the draft.
@@ -38,10 +46,10 @@ pub struct SeatPlan {
     pub difficulty: BotDifficulty,
     /// Player-facing strategic posture for this opponent.
     pub stance: BotStance,
-    /// Whether another machine plays this chair; hosting the match lets
-    /// it join. Like the bot choices, launch ignores it for the human's
-    /// own chair.
-    pub remote: bool,
+    /// Whether the chair waits for a LAN player rather than playing a bot.
+    /// Only a hosting setup screen opens chairs; closing its lobby turns
+    /// them back into their bots.
+    pub open: bool,
     /// Team chip (feeds [`team_override`]): 0 is FFA — the seat stands
     /// alone — and `k` is Team `k`. [`NewMatchDraft::set_scenario`]
     /// seeds it from the map's authored teams, so the bare default is
@@ -60,19 +68,28 @@ pub fn team_override(choice: usize) -> Option<u8> {
 /// How the human's chair will see every seat once the draft launches: the
 /// match's own self, ally, and hostile colors, from the chosen teams.
 fn draft_styles(scenario: &Scenario, draft: &NewMatchDraft) -> crate::seat_style::SeatStyles {
-    use crate::seat_style::AllegianceCue;
-    let team = |seat: usize| {
+    seat_styles(scenario.players.len(), draft.seat_choice, |seat| {
         draft
             .seats
             .get(seat)
             .and_then(|plan| team_override(plan.team_choice))
-    };
-    let mine = team(draft.seat_choice);
+    })
+}
+
+/// How seat `mine` will see each of `seats` seats in the match: self, ally,
+/// and hostile colors from each seat's team, where `None` stands alone.
+pub(crate) fn seat_styles(
+    seats: usize,
+    mine: usize,
+    team: impl Fn(usize) -> Option<u8>,
+) -> crate::seat_style::SeatStyles {
+    use crate::seat_style::AllegianceCue;
+    let my_team = team(mine);
     crate::seat_style::SeatStyles::from_cues(
-        (0..scenario.players.len()).map(|seat| {
-            if seat == draft.seat_choice {
+        (0..seats).map(|seat| {
+            if seat == mine {
                 AllegianceCue::Mine
-            } else if mine.is_some() && team(seat) == mine {
+            } else if my_team.is_some() && team(seat) == my_team {
                 AllegianceCue::Ally
             } else {
                 AllegianceCue::Hostile
@@ -230,11 +247,12 @@ fn setup_hint(
     }
 }
 
-fn start_label(draft: &NewMatchDraft) -> &'static str {
-    if draft_hosts(draft) {
-        "Host match"
-    } else {
-        "Start match"
+/// The coaching line while an occupant is picked up.
+fn moving_hint(hands: crate::platform::Hands) -> &'static str {
+    match (hands.touch(), hands.keys) {
+        (true, false) => "tap the seat to swap with - tap the same seat to cancel",
+        (false, false) => "click the seat to swap with - click the same seat to cancel",
+        (_, true) => "{confirm} on a seat swaps them there - {back} cancels",
     }
 }
 
@@ -282,6 +300,21 @@ pub struct Wizard {
     back: crate::button::BackButton,
     /// Compact setup page. Full-height layouts always clamp this to zero.
     setup_page: usize,
+    /// The LAN lobby while this setup screen hosts one.
+    lan: Option<Box<LanHost>>,
+    /// The cursor sits on the LOCAL | LAN switch above the cards.
+    on_switch: bool,
+    /// The seat whose occupant was picked up, waiting for the seat to
+    /// swap with.
+    moving: Option<usize>,
+    /// A name prompt or a confirmation over the setup screen.
+    overlay: Option<Overlay>,
+    /// Why hosting or a start failed, until the next change.
+    notice: Option<String>,
+    /// A name the player gave the prompt, for the caller to save.
+    saved_name: Option<PlayerName>,
+    /// Where a lobby listens.
+    pub(crate) lan_bind: String,
 }
 
 /// One collision-free team key per seat: an authored id stays itself;
@@ -323,6 +356,8 @@ pub fn seat_display_order(scenario: &Scenario) -> Vec<usize> {
 /// window: seat cards on the left grouped under team headings, the
 /// Start button beneath them, the preview panel filling the right.
 pub struct SetupLayout {
+    /// The LOCAL | LAN switch above the cards: its two halves.
+    pub switch: [Rect; 2],
     /// Team headings and their text rects.
     pub headings: Vec<(String, Rect)>,
     /// One card per DISPLAY position (see [`seat_display_order`]);
@@ -417,7 +452,12 @@ impl CardRects {
 /// What a press on the setup screen arms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SetupZone {
-    Card { row: usize, cell: Cell },
+    Card {
+        row: usize,
+        cell: Cell,
+    },
+    /// A half of the LOCAL | LAN switch; `true` is LAN.
+    Switch(bool),
     Start,
     PrevPage,
     NextPage,
@@ -427,12 +467,29 @@ enum SetupZone {
 /// other seat receives direct difficulty and stance controls.
 #[cfg(test)]
 pub fn setup_layout(scenario: &Scenario, seat_choice: usize, view: Vec2, ui: f32) -> SetupLayout {
-    setup_layout_page(scenario, seat_choice, view, ui, 0)
+    setup_layout_page(scenario, seat_choice, &[], view, ui, 0)
 }
 
-fn setup_layout_page(
+/// The switch's two halves at the top of the seat column, and the top of
+/// what follows it.
+fn switch_rects(left_x: f32, top: f32, ui: f32) -> ([Rect; 2], f32) {
+    let half = 110.0 * ui;
+    let height = MIN_TOUCH_TARGET.max(36.0 * ui);
+    (
+        [
+            Rect::new(left_x, top, half, height),
+            Rect::new(left_x + half, top, half, height),
+        ],
+        top + height + 10.0 * ui,
+    )
+}
+
+/// `open` marks the chairs (by seat) that wait for LAN players, whose
+/// cards trade the difficulty and stance chips for one wide chip.
+pub(crate) fn setup_layout_page(
     scenario: &Scenario,
     seat_choice: usize,
+    open: &[bool],
     view: Vec2,
     ui: f32,
     page: usize,
@@ -455,7 +512,7 @@ fn setup_layout_page(
     // Margins yield before content: small windows compress the title
     // zone first, then chrome, then the cards. Cards shorter than a touch
     // target switch to the paginated compact layout below.
-    let top = (132.0 * ui).min(view.y * 0.22);
+    let (switch, top) = switch_rects(left_x, (132.0 * ui).min(view.y * 0.22), ui);
     let bottom = view.y - (44.0 * ui).min(view.y * 0.08);
     // Headings take rows only when a team actually groups seats; a duel
     // or an FFA would otherwise show one heading per lone seat.
@@ -481,7 +538,7 @@ fn setup_layout_page(
     }
 
     if card_h < MIN_TOUCH_TARGET {
-        return compact_setup_layout(scenario, seat_choice, view, ui, page);
+        return compact_setup_layout(scenario, seat_choice, open, view, ui, page);
     }
 
     let mut headings = Vec::new();
@@ -500,13 +557,15 @@ fn setup_layout_page(
             y += heading_h;
         }
         let card = Rect::new(left_x, y, left_w, card_h);
-        cards.push(Some(setup_card_controls(card, seat, seat_choice, ui)));
+        let wide = open.get(seat).copied().unwrap_or(false);
+        cards.push(Some(setup_card_controls(card, seat, seat_choice, wide, ui)));
         y += card_h + gap;
     }
     let start = Rect::new(left_x, y + 12.0 * ui, 240.0 * ui, start_h);
     let px = left_x + left_w + 28.0 * ui;
     let preview = Rect::new(px, top, view.x - px - 40.0 * ui, bottom - top - 20.0 * ui);
     SetupLayout {
+        switch,
         headings,
         cards,
         start: Some(start),
@@ -515,11 +574,18 @@ fn setup_layout_page(
         page_next: None,
         page: 0,
         page_count: 1,
-        visible_range: [0, n + 1],
+        // Every seat, Start, and the switch the protocol lists last.
+        visible_range: [0, n + 2],
     }
 }
 
-fn setup_card_controls(card: Rect, seat: usize, seat_choice: usize, ui: f32) -> CardRects {
+fn setup_card_controls(
+    card: Rect,
+    seat: usize,
+    seat_choice: usize,
+    wide: bool,
+    ui: f32,
+) -> CardRects {
     // Controls occupy equal semantic lanes on the right. Their visible
     // rectangles are inset within those lanes, so even the compact 640px
     // layout keeps every mouse and touch target independent and at least
@@ -562,11 +628,22 @@ fn setup_card_controls(card: Rect, seat: usize, seat_choice: usize, ui: f32) -> 
                 chip_h,
             )
         };
+        // An open chair's one chip spans the difficulty and stance lanes.
+        let (difficulty, stance) = if wide {
+            let first = control(0);
+            let second = control(1);
+            (
+                Rect::new(first.x, first.y, second.x + second.w - first.x, first.h),
+                None,
+            )
+        } else {
+            (control(0), Some(control(1)))
+        };
         CardRects {
             card,
             seat: Rect::new(card.x, card.y, controls_x - card.x, card.h),
-            difficulty: Some(control(0)),
-            stance: Some(control(1)),
+            difficulty: Some(difficulty),
+            stance,
             team: control(2),
         }
     }
@@ -575,6 +652,7 @@ fn setup_card_controls(card: Rect, seat: usize, seat_choice: usize, ui: f32) -> 
 fn compact_setup_layout(
     scenario: &Scenario,
     seat_choice: usize,
+    open: &[bool],
     view: Vec2,
     ui: f32,
     requested_page: usize,
@@ -584,6 +662,10 @@ fn compact_setup_layout(
     let top = (132.0 * ui).min(view.y * 0.22);
     let bottom = view.y - (44.0 * ui).min(view.y * 0.08);
     let order = seat_display_order(scenario);
+    // Paged cards need every pixel of the column, so the switch tops the
+    // preview instead.
+    let px = left_x + left_w + 28.0 * ui;
+    let (switch, preview_top) = switch_rects(px, top, ui);
     let n = order.len();
     let total_items = n + 1;
     let page_count = total_items.div_ceil(COMPACT_PAGE_ITEMS).max(1);
@@ -607,7 +689,14 @@ fn compact_setup_layout(
         if item == n {
             start = Some(Rect::new(rect.x, rect.y, (240.0 * ui).min(rect.w), rect.h));
         } else {
-            cards[item] = Some(setup_card_controls(rect, order[item], seat_choice, ui));
+            let wide = open.get(order[item]).copied().unwrap_or(false);
+            cards[item] = Some(setup_card_controls(
+                rect,
+                order[item],
+                seat_choice,
+                wide,
+                ui,
+            ));
         }
     }
 
@@ -616,9 +705,14 @@ fn compact_setup_layout(
     let page_prev = (page > 0).then(|| Rect::new(left_x, pager_y, pager_w, pager_h));
     let page_next = (page + 1 < page_count)
         .then(|| Rect::new(left_x + pager_w + split_gap, pager_y, pager_w, pager_h));
-    let px = left_x + left_w + 28.0 * ui;
-    let preview = Rect::new(px, top, view.x - px - 40.0 * ui, bottom - top - 20.0);
+    let preview = Rect::new(
+        px,
+        preview_top,
+        view.x - px - 40.0 * ui,
+        bottom - preview_top - 20.0,
+    );
     SetupLayout {
+        switch,
         headings: Vec::new(),
         cards,
         start,
@@ -631,27 +725,130 @@ fn compact_setup_layout(
     }
 }
 
-/// Steps the difficulty chip forward: every difficulty, then Remote, then
-/// back to the first difficulty.
-fn cycle_controller(plan: &mut SeatPlan) {
-    if plan.remote {
-        plan.remote = false;
-        plan.difficulty = BotDifficulty::ALL[0];
+/// Steps the controller chip forward: every difficulty, then Open while
+/// hosting a LAN lobby, then back to the first difficulty. A chair the
+/// LAN switch opened returns to the bot it had.
+fn cycle_controller(plan: &mut SeatPlan, lan: bool) {
+    if plan.open {
+        plan.open = false;
     } else if Some(&plan.difficulty) == BotDifficulty::ALL.last() {
-        plan.remote = true;
+        if lan {
+            plan.open = true;
+            plan.difficulty = BotDifficulty::ALL[0];
+        } else {
+            plan.difficulty = BotDifficulty::ALL[0];
+        }
     } else {
         plan.difficulty = cycle_difficulty(plan.difficulty, 1);
     }
 }
 
-/// Whether starting the draft hosts a LAN match: a chair other than the
-/// human's is remote.
-pub fn draft_hosts(draft: &NewMatchDraft) -> bool {
-    draft
-        .seats
-        .iter()
-        .enumerate()
-        .any(|(seat, plan)| plan.remote && seat != draft.seat_choice)
+/// Swaps who plays seats `a` and `b`: the human's chair, a bot with its
+/// difficulty and stance, an open chair, or the LAN member in it. Each
+/// seat keeps its team.
+fn swap_seats(draft: &mut NewMatchDraft, members: &mut [Option<MemberId>], a: usize, b: usize) {
+    let (team_a, team_b) = (draft.seats[a].team_choice, draft.seats[b].team_choice);
+    draft.seats.swap(a, b);
+    draft.seats[a].team_choice = team_a;
+    draft.seats[b].team_choice = team_b;
+    if a < members.len() && b < members.len() {
+        members.swap(a, b);
+    }
+    if draft.seat_choice == a {
+        draft.seat_choice = b;
+    } else if draft.seat_choice == b {
+        draft.seat_choice = a;
+    }
+}
+
+/// The address a hosting lobby shows, without the port every join
+/// assumes.
+fn shown_address(address: &str) -> String {
+    address.replace(&format!(":{}", oxide_net::DEFAULT_PORT), "")
+}
+
+/// A setup screen's LAN lobby: the sockets and who sits in each open
+/// chair.
+struct LanHost {
+    lobby: HostLobby,
+    /// Which joined member sits in each seat; only open chairs hold one.
+    members: Vec<Option<MemberId>>,
+    /// A running start.
+    starting: Option<LanStart>,
+}
+
+/// A start the setup screen's lobby is running.
+struct LanStart {
+    /// The host's match at tick zero.
+    game: Box<Game>,
+    /// The seating the start froze.
+    seated: Vec<(MemberId, PlayerId)>,
+}
+
+impl LanHost {
+    fn seated(&self) -> Vec<(MemberId, PlayerId)> {
+        self.members
+            .iter()
+            .enumerate()
+            .filter_map(|(seat, member)| member.map(|member| (member, PlayerId(seat.fit::<u8>()))))
+            .collect()
+    }
+
+    fn has_members(&self) -> bool {
+        self.members.iter().any(Option::is_some)
+    }
+
+    fn name_at(&self, seat: usize) -> Option<&PlayerName> {
+        self.members
+            .get(seat)
+            .copied()
+            .flatten()
+            .and_then(|member| self.lobby.name(member))
+    }
+}
+
+/// The seating a draft and its lobby describe.
+fn draft_seating(draft: &NewMatchDraft, members: &[Option<MemberId>]) -> Seating {
+    Seating::from_occupants(
+        draft
+            .seats
+            .iter()
+            .enumerate()
+            .map(|(seat, plan)| {
+                if seat == draft.seat_choice {
+                    Occupant::Host
+                } else if plan.open {
+                    members
+                        .get(seat)
+                        .copied()
+                        .flatten()
+                        .map_or(Occupant::Open, Occupant::Member)
+                } else {
+                    Occupant::Bot {
+                        difficulty: plan.difficulty,
+                        stance: plan.stance,
+                    }
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Something over the setup screen that takes its input.
+enum Overlay {
+    /// Asking for the player's name before hosting.
+    Naming(Form),
+    /// Asking before a step that drops players; Cancel sits preselected.
+    Confirm { ask: Confirm, menu: Menu<bool> },
+}
+
+/// A step that asks first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Confirm {
+    /// Remove the member in a seat.
+    Kick { member: MemberId },
+    /// Close the lobby, then go local or back to the map grid.
+    Close { to_map: bool },
 }
 
 fn cycle_difficulty(current: BotDifficulty, direction: i8) -> BotDifficulty {
@@ -703,16 +900,16 @@ pub fn seat_anchors(map: &[String]) -> Vec<(usize, (i32, i32))> {
 }
 
 /// Marks every seat's foundry on a drawn preview rect: numbered discs
-/// in the seat's ownership color as the human's chair will see it, a
-/// white ring for that chair, an accent ring for the focused seat.
+/// in the seat's ownership color as `seat_choice` will see it, a white
+/// ring for that chair, an accent ring for the focused seat.
 pub fn draw_seat_markers(
     scenario: &Scenario,
-    draft: &NewMatchDraft,
+    styles: &crate::seat_style::SeatStyles,
     rect: Rect,
+    seat_choice: usize,
     focus_seat: Option<usize>,
     ui: f32,
 ) {
-    let styles = draft_styles(scenario, draft);
     let map_w = scenario.map.first().map_or(1, |r| r.chars().count()) as f32;
     let map_h = scenario.map.len() as f32;
     for (seat, (ax, ay)) in seat_anchors(&scenario.map) {
@@ -723,7 +920,7 @@ pub fn draw_seat_markers(
         let px = rect.x + (ax as f32 + 1.0) / map_w * rect.w;
         let py = rect.y + (ay as f32 + 1.0) / map_h * rect.h;
         let accent = styles.get(oxide_sim::PlayerId::from_index(seat));
-        if seat == draft.seat_choice {
+        if seat == seat_choice {
             draw_circle_lines(px, py, 10.0 * ui, 2.5, macroquad::prelude::WHITE);
         } else if focus_seat == Some(seat) {
             draw_circle_lines(px, py, 10.0 * ui, 2.0, accent);
@@ -737,6 +934,260 @@ pub fn draw_seat_markers(
             py + 4.5 * ui,
             Type::Small.at(ui),
             SURFACE_PLATE,
+        );
+    }
+}
+
+/// Draws the setup layout's team headings, each with a rule to its right.
+pub(crate) fn draw_team_headings(layout: &SetupLayout, ui: f32) {
+    for (label, rect) in &layout.headings {
+        draw_text(
+            label,
+            rect.x,
+            rect.y + rect.h * 0.7,
+            Type::Body.at(ui),
+            TEXT_TITLE,
+        );
+        let dims = measure_text(label, None, numeric::font_size(Type::Body.at(ui)), 1.0);
+        draw_rectangle(
+            rect.x + dims.width + 12.0 * ui,
+            rect.y + rect.h * 0.55,
+            rect.w - dims.width - 12.0 * ui,
+            Stroke::Hairline.at(ui),
+            BORDER_FAINT,
+        );
+    }
+}
+
+/// Draws a map preview centered in `area`, graded with the map's theme,
+/// and returns where the map itself landed.
+pub(crate) fn draw_preview(tex: &Texture2D, theme: &str, area: Rect, ui: f32) -> Rect {
+    let scale = (area.w / tex.width()).min(area.h / tex.height());
+    let (pw, ph) = (tex.width() * scale, tex.height() * scale);
+    let x = area.x + (area.w - pw) * 0.5;
+    let y = area.y + (area.h - ph) * 0.5;
+    draw_rectangle(
+        x - 8.0 * ui,
+        y - 8.0 * ui,
+        pw + 16.0 * ui,
+        ph + 16.0 * ui,
+        SURFACE_MENU,
+    );
+    draw_texture_ex(
+        tex,
+        x,
+        y,
+        crate::render::theme_tint(theme),
+        DrawTextureParams {
+            dest_size: Some(vec2(pw, ph)),
+            ..Default::default()
+        },
+    );
+    Rect::new(x, y, pw, ph)
+}
+
+/// Who a seat card's controller chip names.
+pub(crate) enum CardController<'a> {
+    /// The viewer's own card, which has no controller chip.
+    Own,
+    /// A bot.
+    Bot {
+        difficulty: BotDifficulty,
+        stance: BotStance,
+    },
+    /// A chair waiting for a LAN player.
+    Open,
+    /// A LAN player, and whether they host.
+    Person { name: &'a str, host: bool },
+}
+
+/// What one seat card shows.
+pub(crate) struct CardView<'a> {
+    pub seat: usize,
+    /// The seat's ownership color as the viewer will see it.
+    pub accent: macroquad::prelude::Color,
+    /// The seat's name.
+    pub name: &'a str,
+    pub controller: CardController<'a>,
+    pub team: String,
+    /// The cursor's cell, while the cursor is on this card.
+    pub focus: Option<Cell>,
+    /// The card's occupant is picked up to move.
+    pub moving: bool,
+}
+
+/// Draws one seat card: its numbered disc, its name, its controller chip
+/// (one wide chip for a person or an open chair), and its team chip.
+pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
+    let rect = &card.card;
+    let seat = view.seat;
+    let display = view.name;
+    let selected = view.focus.is_some();
+    let is_you = matches!(view.controller, CardController::Own);
+    let moving = view.moving;
+    draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        if moving {
+            Stroke::Heavy
+        } else if selected {
+            Stroke::Focus
+        } else {
+            Stroke::Hairline
+        }
+        .at(ui),
+        if moving {
+            TEXT_ACCENT
+        } else if selected {
+            TEXT_TITLE
+        } else {
+            BORDER_FAINT
+        },
+    );
+    let accent = view.accent;
+    let cy = rect.y + rect.h * 0.5;
+    let chip_x = rect.x + 22.0 * ui;
+    // Everything on a card scales to the card, so a compressed
+    // roster never draws across its neighbors and chips.
+    let disc = (10.0 * ui).min(rect.h * 0.38);
+    if is_you {
+        draw_circle_lines(chip_x, cy, disc * 1.3, 2.0, macroquad::prelude::WHITE);
+    }
+    draw_circle(chip_x, cy, disc, accent);
+    let num = format!("{}", seat + 1);
+    let num_font = Type::Small.at(ui).min(rect.h * 0.55);
+    let ndims = measure_text(&num, None, numeric::font_size(num_font), 1.0);
+    draw_text(
+        &num,
+        chip_x - ndims.width * 0.5,
+        cy + num_font * 0.35,
+        num_font,
+        SURFACE_PLATE,
+    );
+    let text_right = card
+        .difficulty
+        .map_or(card.seat.x + card.seat.w, |difficulty| difficulty.x);
+    let name_room = (text_right - rect.x - 48.0 * ui).max(20.0);
+    let name_font = crate::typography::fit(
+        display,
+        Type::Body.at(ui).min(rect.h * 0.62),
+        name_room,
+        8.0,
+    );
+    draw_text(
+        display,
+        rect.x + 44.0 * ui,
+        cy + name_font * 0.35,
+        name_font,
+        TEXT_PRIMARY,
+    );
+    if is_you || moving {
+        let tag = if moving { "moving" } else { "your seat" };
+        let tag_font = Type::Small.at(ui).min(rect.h * 0.55);
+        let tdims = measure_text(tag, None, numeric::font_size(tag_font), 1.0);
+        draw_text(
+            tag,
+            card.team.x - tdims.width - 14.0 * ui,
+            cy + tag_font * 0.35,
+            tag_font,
+            TEXT_SECONDARY,
+        );
+    }
+    let host_label;
+    let (bot_labels, waiting) = match view.controller {
+        CardController::Own => (["", ""], false),
+        CardController::Bot { difficulty, stance } => {
+            ([difficulty_name(difficulty), stance_name(stance)], false)
+        }
+        CardController::Open => (["Open", ""], true),
+        CardController::Person { name, host } => {
+            host_label = if host {
+                format!("{name} (host)")
+            } else {
+                name.to_owned()
+            };
+            ([host_label.as_str(), ""], false)
+        }
+    };
+    for (cell, control, label) in [
+        (Cell::Difficulty, card.difficulty, bot_labels[0]),
+        (Cell::Stance, card.stance, bot_labels[1]),
+    ] {
+        let Some(control) = control.filter(|_| !label.is_empty()) else {
+            continue;
+        };
+        let on_cell = view.focus == Some(cell);
+        draw_rectangle(control.x, control.y, control.w, control.h, CARD_IDLE);
+        draw_rectangle_lines(
+            control.x,
+            control.y,
+            control.w,
+            control.h,
+            if on_cell {
+                Stroke::Focus
+            } else {
+                Stroke::Hairline
+            }
+            .at(ui),
+            if on_cell { TEXT_TITLE } else { accent },
+        );
+        let font = crate::typography::fit(label, Type::Small.at(ui), control.w - 6.0, 8.0);
+        let dims = measure_text(label, None, numeric::font_size(font), 1.0);
+        // An empty open chair reads quieter than a bot or a player.
+        draw_text(
+            label,
+            control.x + (control.w - dims.width) * 0.5,
+            control.y + control.h * 0.5 + font * 0.35,
+            font,
+            if waiting { TEXT_SECONDARY } else { accent },
+        );
+    }
+    // The boxed team chip; the cursor's cell wears the accent.
+    let label = view.team.as_str();
+    let chip = card.team;
+    let on_cell = view.focus == Some(Cell::Team);
+    draw_rectangle(chip.x, chip.y, chip.w, chip.h, CHIP);
+    draw_rectangle_lines(
+        chip.x,
+        chip.y,
+        chip.w,
+        chip.h,
+        if on_cell {
+            Stroke::Focus
+        } else {
+            Stroke::Hairline
+        }
+        .at(ui),
+        if on_cell { TEXT_TITLE } else { BORDER_STRONG },
+    );
+    // The label fits its chip: squeezed cards shrink the type
+    // instead of spilling text across neighbors.
+    let font = crate::typography::fit(label, Type::Small.at(ui), chip.w - 6.0, 8.0);
+    let ldims = measure_text(label, None, numeric::font_size(font), 1.0);
+    draw_text(
+        label,
+        chip.x + (chip.w - ldims.width) * 0.5,
+        chip.y + chip.h * 0.5 + font * 0.35,
+        font,
+        if on_cell {
+            TEXT_PRIMARY
+        } else {
+            TEXT_SECONDARY
+        },
+    );
+    // The seat-zone cell cursor: a soft inner line under
+    // the name, so "Enter takes this chair" reads.
+    if view.focus == Some(Cell::Seat) && !is_you {
+        let zone = card.seat;
+        draw_rectangle(
+            zone.x + 44.0 * ui,
+            cy + name_font * 0.55,
+            measure_text(display, None, numeric::font_size(name_font), 1.0).width,
+            1.5,
+            TEXT_TITLE,
         );
     }
 }
@@ -758,6 +1209,13 @@ impl Wizard {
             setup_press: Press::default(),
             back: crate::button::BackButton::default(),
             setup_page: 0,
+            lan: None,
+            on_switch: false,
+            moving: None,
+            overlay: None,
+            notice: None,
+            saved_name: None,
+            lan_bind: format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT),
         }
     }
 
@@ -770,11 +1228,17 @@ impl Wizard {
             .and_then(|i| self.entries.get(i).map(|e| (i, e)))
     }
 
-    fn goto(&mut self, step: Step, draft: &NewMatchDraft) {
+    fn goto(&mut self, step: Step, draft: &mut NewMatchDraft) {
         self.step = step;
         self.back.cancel();
+        self.moving = None;
+        self.on_switch = false;
+        self.notice = None;
         match step {
             Step::Map => {
+                // The map stays fixed while a lobby is open, so leaving
+                // setup closes it.
+                self.close_lan(draft);
                 self.entries = discover_scenarios();
                 self.browser
                     .select_path(&self.entries, draft.scenario_path.as_deref());
@@ -800,6 +1264,10 @@ impl Wizard {
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Result<Out> {
+        if self.overlay.is_some() {
+            self.update_overlay(events, mouse, draft, sounds);
+            return Ok(Out::Stay);
+        }
         // The corner Back button sees the pointer first; the step only
         // gets the events it leaves alone.
         let (back, events) = self.back.route(events);
@@ -808,7 +1276,7 @@ impl Wizard {
             match self.step {
                 Step::Map => return Ok(Out::Home),
                 Step::Setup => {
-                    self.goto(Step::Map, draft);
+                    self.back_from_setup(draft);
                     return Ok(Out::Stay);
                 }
             }
@@ -857,19 +1325,31 @@ impl Wizard {
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
         self.setup_page = self.setup_sel.min(start_index) / COMPACT_PAGE_ITEMS;
-        let layout = setup_layout_page(scenario, draft.seat_choice, view, ui, self.setup_page);
+        let open = self.open_flags(draft);
+        let lan_on = self.lan.is_some();
+        let layout = setup_layout_page(
+            scenario,
+            draft.seat_choice,
+            &open,
+            view,
+            ui,
+            self.setup_page,
+        );
         self.setup_page = layout.page;
         let cell_live = |row: usize, cell: Cell| -> bool {
             row < start_index
                 && match cell {
                     Cell::Seat | Cell::Team => true,
                     Cell::Difficulty => order[row] != draft.seat_choice,
-                    Cell::Stance => {
-                        order[row] != draft.seat_choice && !draft.seats[order[row]].remote
-                    }
+                    Cell::Stance => order[row] != draft.seat_choice && !open[order[row]],
                 }
         };
         let zone_at = |p: Vec2, touch: bool| -> Option<SetupZone> {
+            for (index, half) in layout.switch.iter().enumerate() {
+                if half.contains(p) {
+                    return Some(SetupZone::Switch(index == 1));
+                }
+            }
             for (row, card) in layout.cards.iter().enumerate() {
                 let Some(card) = card else {
                     continue;
@@ -902,6 +1382,7 @@ impl Wizard {
                 if let Some(p) = crate::press::position(event) {
                     *mouse = p;
                 }
+                self.on_switch = matches!(zone, SetupZone::Switch(_));
                 match zone {
                     SetupZone::Card { row, cell } => {
                         self.setup_sel = row;
@@ -910,18 +1391,20 @@ impl Wizard {
                         }
                     }
                     SetupZone::Start => self.setup_sel = start_index,
-                    SetupZone::PrevPage | SetupZone::NextPage => {}
+                    SetupZone::Switch(_) | SetupZone::PrevPage | SetupZone::NextPage => {}
                 }
                 activate = Some(zone);
                 break;
             }
             match *event {
                 RawEvent::KeyDown { key: Key::Escape } => {
-                    self.goto(Step::Map, draft);
+                    self.back_from_setup(draft);
                     return None;
                 }
                 RawEvent::KeyDown { key: Key::Enter } => {
-                    activate = Some(if self.setup_sel >= start_index {
+                    activate = Some(if self.on_switch {
+                        SetupZone::Switch(!lan_on)
+                    } else if self.setup_sel >= start_index {
                         SetupZone::Start
                     } else {
                         // The sticky column falls back to the seat zone
@@ -942,25 +1425,42 @@ impl Wizard {
                     let Some(nav) = Nav::decode(event) else {
                         continue;
                     };
-                    let rows = start_index + 1;
-                    if let Some(row) = step_line(
-                        rows,
-                        self.setup_sel,
-                        nav,
-                        Axis::Vertical,
-                        COMPACT_PAGE_ITEMS,
-                        |_| true,
-                    ) {
-                        self.setup_sel = row;
-                        self.setup_page = row / COMPACT_PAGE_ITEMS;
-                    } else if let Some(cell) = step_line(
-                        Cell::ALL.len(),
-                        self.setup_cell.index(),
-                        nav,
-                        Axis::Horizontal,
-                        1,
-                        |cell| cell_live(self.setup_sel, Cell::ALL[cell]),
-                    ) {
+                    // The switch is the line above the first card; Home,
+                    // End, and paging stay on the cards and Start.
+                    let target = if matches!(nav, Nav::Up | Nav::Down) {
+                        let line = if self.on_switch {
+                            0
+                        } else {
+                            self.setup_sel + 1
+                        };
+                        step_line(start_index + 2, line, nav, Axis::Vertical, 1, |_| true)
+                    } else {
+                        step_line(
+                            start_index + 1,
+                            self.setup_sel,
+                            nav,
+                            Axis::Vertical,
+                            COMPACT_PAGE_ITEMS,
+                            |_| true,
+                        )
+                        .map(|row| row + 1)
+                    };
+                    if let Some(line) = target {
+                        self.on_switch = line == 0;
+                        if let Some(row) = line.checked_sub(1) {
+                            self.setup_sel = row;
+                            self.setup_page = row / COMPACT_PAGE_ITEMS;
+                        }
+                    } else if !self.on_switch
+                        && let Some(cell) = step_line(
+                            Cell::ALL.len(),
+                            self.setup_cell.index(),
+                            nav,
+                            Axis::Horizontal,
+                            1,
+                            |cell| cell_live(self.setup_sel, Cell::ALL[cell]),
+                        )
+                    {
                         self.setup_cell = Cell::ALL[cell];
                     }
                 }
@@ -988,6 +1488,14 @@ impl Wizard {
                 self.setup_cell = Cell::Seat;
                 sounds.push((SoundKind::Click, None));
             }
+            SetupZone::Switch(lan) => {
+                sounds.push((SoundKind::Click, None));
+                if lan && !lan_on {
+                    self.open_lan(draft);
+                } else if !lan && lan_on {
+                    self.leave_lan(draft, false);
+                }
+            }
             SetupZone::Start => {
                 // Refuse an all-one-team draft here so the reason shows
                 // inline instead of a failed-launch notice.
@@ -995,18 +1503,42 @@ impl Wizard {
                     sounds.push((SoundKind::Denied, None));
                     return None;
                 }
+                if let Some(lan) = &self.lan {
+                    let waiting = order
+                        .iter()
+                        .copied()
+                        .find(|&seat| open[seat] && lan.members[seat].is_none());
+                    if let Some(seat) = waiting {
+                        sounds.push((SoundKind::Denied, None));
+                        self.notice = Some(format!("Seat {} is still open", seat + 1));
+                        return None;
+                    }
+                    if lan.starting.is_some() {
+                        return None;
+                    }
+                    if !lan.has_members() {
+                        // Nobody joined: a plain local match.
+                        self.close_lan(draft);
+                    }
+                }
                 sounds.push((SoundKind::Click, None));
                 return Some(Out::Launch);
             }
             SetupZone::Card { row, cell } => {
                 sounds.push((SoundKind::Click, None));
+                self.notice = None;
                 let seat = order[row];
+                let member = self.members().get(seat).copied().flatten();
                 let plan = &mut draft.seats[seat];
                 match cell {
-                    // Seat choice never permutes seats or their other
-                    // choices; it moves the human's chair.
-                    Cell::Seat => draft.seat_choice = seat,
-                    Cell::Difficulty => cycle_controller(plan),
+                    Cell::Seat => self.seat_pressed(draft, seat),
+                    Cell::Difficulty => match member {
+                        Some(member) => {
+                            let name = self.lan.as_ref().and_then(|lan| lan.lobby.name(member));
+                            self.overlay = Some(confirm_overlay(Confirm::Kick { member }, name));
+                        }
+                        None => cycle_controller(plan, lan_on),
+                    },
                     Cell::Stance => plan.stance = cycle_stance(plan.stance, 1),
                     // FFA, then every team up to the seat count
                     // (start_index is the full roster's length),
@@ -1020,18 +1552,23 @@ impl Wizard {
 
     /// Draws the setup screen: team-grouped seat cards, the Start
     /// button, and the live map with every chair marked.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "lays out and draws the whole setup screen"
-    )]
-    pub fn draw_setup(&self, draft: &NewMatchDraft, previews: &mut PreviewCache) {
+    pub fn draw_setup(&self, draft: &NewMatchDraft, previews: &mut PreviewCache, mouse: Vec2) {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
         };
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
-        let layout = setup_layout_page(scenario, draft.seat_choice, view, ui, self.setup_page);
+        let open = self.open_flags(draft);
+        let layout = setup_layout_page(
+            scenario,
+            draft.seat_choice,
+            &open,
+            view,
+            ui,
+            self.setup_page,
+        );
         let order = seat_display_order(scenario);
+        let hosting = self.hosting_line(draft);
 
         let title = "MATCH SETUP";
         let compact = layout.page_count > 1;
@@ -1049,7 +1586,9 @@ impl Wizard {
             TEXT_TITLE,
         );
         if !compact {
-            let sub = if crate::hints::showing() {
+            let sub = if let Some(hosting) = &hosting {
+                format!("{} - {hosting}", scenario.name)
+            } else if crate::hints::showing() {
                 format!("{} - pick your seat, opponents, and teams", scenario.name)
             } else {
                 scenario.name.clone()
@@ -1064,180 +1603,54 @@ impl Wizard {
             );
         }
 
-        for (label, rect) in &layout.headings {
+        self.draw_switch(&layout, ui);
+        if compact && let Some(hosting) = &hosting {
+            let switch = layout.switch[1];
+            let x = switch.x + switch.w + 14.0 * ui;
+            let room = layout.preview.x - x - 14.0 * ui;
+            let size = crate::typography::fit(hosting, Type::Small.at(ui), room, 8.0);
             draw_text(
-                label,
-                rect.x,
-                rect.y + rect.h * 0.7,
-                Type::Body.at(ui),
-                TEXT_TITLE,
-            );
-            let dims = measure_text(label, None, numeric::font_size(Type::Body.at(ui)), 1.0);
-            draw_rectangle(
-                rect.x + dims.width + 12.0 * ui,
-                rect.y + rect.h * 0.55,
-                rect.w - dims.width - 12.0 * ui,
-                Stroke::Hairline.at(ui),
-                BORDER_FAINT,
+                hosting,
+                x,
+                switch.y + switch.h * 0.5 + size * 0.35,
+                size,
+                TEXT_SECONDARY,
             );
         }
+        draw_team_headings(&layout, ui);
         let styles = draft_styles(scenario, draft);
         for (pos, card) in layout.cards.iter().enumerate() {
             let Some(card) = card else {
                 continue;
             };
-            let rect = &card.card;
             let seat = order[pos];
-            let display = scenario.players[seat].name.as_str();
-            let selected = self.setup_sel == pos;
-            let is_you = seat == draft.seat_choice;
             let plan = draft.seats[seat];
-            draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
-            draw_rectangle_lines(
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                if selected {
-                    Stroke::Focus
-                } else {
-                    Stroke::Hairline
+            let controller = if seat == draft.seat_choice {
+                CardController::Own
+            } else if open[seat] {
+                match self.lan.as_ref().and_then(|lan| lan.name_at(seat)) {
+                    Some(name) => CardController::Person {
+                        name: name.as_str(),
+                        host: false,
+                    },
+                    None => CardController::Open,
                 }
-                .at(ui),
-                if selected { TEXT_TITLE } else { BORDER_FAINT },
-            );
-            let accent = styles.get(oxide_sim::PlayerId::from_index(seat));
-            let cy = rect.y + rect.h * 0.5;
-            let chip_x = rect.x + 22.0 * ui;
-            // Everything on a card scales to the card, so a compressed
-            // roster never draws across its neighbors and chips.
-            let disc = (10.0 * ui).min(rect.h * 0.38);
-            if is_you {
-                draw_circle_lines(chip_x, cy, disc * 1.3, 2.0, macroquad::prelude::WHITE);
-            }
-            draw_circle(chip_x, cy, disc, accent);
-            let num = format!("{}", seat + 1);
-            let num_font = Type::Small.at(ui).min(rect.h * 0.55);
-            let ndims = measure_text(&num, None, numeric::font_size(num_font), 1.0);
-            draw_text(
-                &num,
-                chip_x - ndims.width * 0.5,
-                cy + num_font * 0.35,
-                num_font,
-                SURFACE_PLATE,
-            );
-            let text_right = card
-                .difficulty
-                .map_or(card.seat.x + card.seat.w, |difficulty| difficulty.x);
-            let name_room = (text_right - rect.x - 48.0 * ui).max(20.0);
-            let name_font = crate::typography::fit(
-                display,
-                Type::Body.at(ui).min(rect.h * 0.62),
-                name_room,
-                8.0,
-            );
-            draw_text(
-                display,
-                rect.x + 44.0 * ui,
-                cy + name_font * 0.35,
-                name_font,
-                TEXT_PRIMARY,
-            );
-            if is_you {
-                let tag = "your seat";
-                let tag_font = Type::Small.at(ui).min(rect.h * 0.55);
-                let tdims = measure_text(tag, None, numeric::font_size(tag_font), 1.0);
-                draw_text(
-                    tag,
-                    card.team.x - tdims.width - 14.0 * ui,
-                    cy + tag_font * 0.35,
-                    tag_font,
-                    TEXT_SECONDARY,
-                );
-            }
-            let bot_labels = if plan.remote {
-                ["Remote", ""]
             } else {
-                [difficulty_name(plan.difficulty), stance_name(plan.stance)]
-            };
-            for (cell, control, label) in [
-                (Cell::Difficulty, card.difficulty, bot_labels[0]),
-                (Cell::Stance, card.stance, bot_labels[1]),
-            ] {
-                let Some(control) = control.filter(|_| !label.is_empty()) else {
-                    continue;
-                };
-                let on_cell = selected && self.setup_cell == cell;
-                draw_rectangle(control.x, control.y, control.w, control.h, CARD_IDLE);
-                draw_rectangle_lines(
-                    control.x,
-                    control.y,
-                    control.w,
-                    control.h,
-                    if on_cell {
-                        Stroke::Focus
-                    } else {
-                        Stroke::Hairline
-                    }
-                    .at(ui),
-                    if on_cell { TEXT_TITLE } else { accent },
-                );
-                let font = crate::typography::fit(label, Type::Small.at(ui), control.w - 6.0, 8.0);
-                let dims = measure_text(label, None, numeric::font_size(font), 1.0);
-                draw_text(
-                    label,
-                    control.x + (control.w - dims.width) * 0.5,
-                    control.y + control.h * 0.5 + font * 0.35,
-                    font,
-                    accent,
-                );
-            }
-            // The boxed team chip; the cursor's cell wears the accent.
-            let team_label = team_chip_label(plan.team_choice);
-            let label = team_label.as_str();
-            let chip = card.team;
-            let on_cell = selected && self.setup_cell == Cell::Team;
-            draw_rectangle(chip.x, chip.y, chip.w, chip.h, CHIP);
-            draw_rectangle_lines(
-                chip.x,
-                chip.y,
-                chip.w,
-                chip.h,
-                if on_cell {
-                    Stroke::Focus
-                } else {
-                    Stroke::Hairline
+                CardController::Bot {
+                    difficulty: plan.difficulty,
+                    stance: plan.stance,
                 }
-                .at(ui),
-                if on_cell { TEXT_TITLE } else { BORDER_STRONG },
-            );
-            // The label fits its chip: squeezed cards shrink the type
-            // instead of spilling text across neighbors.
-            let font = crate::typography::fit(label, Type::Small.at(ui), chip.w - 6.0, 8.0);
-            let ldims = measure_text(label, None, numeric::font_size(font), 1.0);
-            draw_text(
-                label,
-                chip.x + (chip.w - ldims.width) * 0.5,
-                chip.y + chip.h * 0.5 + font * 0.35,
-                font,
-                if on_cell {
-                    TEXT_PRIMARY
-                } else {
-                    TEXT_SECONDARY
-                },
-            );
-            // The seat-zone cell cursor: a soft inner line under
-            // the name, so "Enter takes this chair" reads.
-            if selected && self.setup_cell == Cell::Seat && !is_you {
-                let zone = card.seat;
-                draw_rectangle(
-                    zone.x + 44.0 * ui,
-                    cy + name_font * 0.55,
-                    measure_text(display, None, numeric::font_size(name_font), 1.0).width,
-                    1.5,
-                    TEXT_TITLE,
-                );
-            }
+            };
+            let view = CardView {
+                seat,
+                accent: styles.get(oxide_sim::PlayerId::from_index(seat)),
+                name: scenario.players[seat].name.as_str(),
+                controller,
+                team: team_chip_label(plan.team_choice),
+                focus: (self.setup_sel == pos && !self.on_switch).then_some(self.setup_cell),
+                moving: self.moving == Some(seat),
+            };
+            draw_seat_card(card, &view, ui);
         }
         // Start button, disabled for an all-one-team draft.
         let one_team = draft_one_team(draft);
@@ -1263,7 +1676,7 @@ impl Wizard {
                     TEXT_SECONDARY
                 },
             );
-            let label = start_label(draft);
+            let label = "Start match";
             let ldims = measure_text(label, None, numeric::font_size(Type::Heading.at(ui)), 1.0);
             draw_text(
                 label,
@@ -1314,114 +1727,225 @@ impl Wizard {
         if let Some((_, entry)) = self.picked_entry(draft)
             && let Some(tex) = previews.get(entry)
         {
-            let scale = (layout.preview.w / tex.width()).min(layout.preview.h / tex.height());
-            let (pw, ph) = (tex.width() * scale, tex.height() * scale);
-            let x = layout.preview.x + (layout.preview.w - pw) * 0.5;
-            let y = layout.preview.y + (layout.preview.h - ph) * 0.5;
-            draw_rectangle(
-                x - 8.0 * ui,
-                y - 8.0 * ui,
-                pw + 16.0 * ui,
-                ph + 16.0 * ui,
-                SURFACE_MENU,
-            );
-            draw_texture_ex(
-                tex,
-                x,
-                y,
-                crate::render::theme_tint(&entry.theme),
-                DrawTextureParams {
-                    dest_size: Some(vec2(pw, ph)),
-                    ..Default::default()
-                },
-            );
+            let drawn = draw_preview(tex, &entry.theme, layout.preview, ui);
             let focus = (self.setup_sel < order.len()).then(|| order[self.setup_sel]);
-            draw_seat_markers(scenario, draft, Rect::new(x, y, pw, ph), focus, ui);
+            draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
 
-        if !compact {
-            let hint = setup_hint(
-                one_team,
-                self.setup_sel == order.len(),
-                self.setup_cell,
-                crate::platform::hands(),
-            );
-            let hint = crate::menu::binding_hint(hint);
-            let hdims = measure_text(&hint, None, numeric::font_size(Type::Body.at(ui)), 1.0);
+        if !compact || self.notice.is_some() {
+            let hands = crate::platform::hands();
+            let (hint, warning) = if let Some(notice) = &self.notice {
+                (notice.clone(), true)
+            } else if self.moving.is_some() {
+                (crate::menu::binding_hint(moving_hint(hands)), false)
+            } else {
+                let hint = setup_hint(
+                    one_team,
+                    self.setup_sel == order.len(),
+                    self.setup_cell,
+                    hands,
+                );
+                (crate::menu::binding_hint(hint), one_team)
+            };
+            let size = crate::typography::fit(&hint, Type::Body.at(ui), view.x - 32.0 * ui, 10.0);
+            let hdims = measure_text(&hint, None, numeric::font_size(size), 1.0);
             draw_text(
                 &hint,
                 (view.x - hdims.width) * 0.5,
                 view.y - 20.0 * ui,
-                Type::Body.at(ui),
-                // The one-team warning is information, not coaching.
-                if one_team {
+                size,
+                // Warnings are information, not coaching.
+                if warning {
                     TEXT_DANGER
                 } else {
                     crate::hints::fade(TEXT_SECONDARY)
                 },
             );
         }
+        self.draw_overlay(mouse);
+    }
+
+    /// The LOCAL | LAN switch: the active half filled, the cursor's outline
+    /// when it sits on the switch.
+    fn draw_switch(&self, layout: &SetupLayout, ui: f32) {
+        let lan = self.lan.is_some();
+        for (index, (half, label)) in layout.switch.iter().zip(["LOCAL", "LAN"]).enumerate() {
+            let active = (index == 1) == lan;
+            draw_rectangle(
+                half.x,
+                half.y,
+                half.w,
+                half.h,
+                if active { CARD_IDLE } else { SURFACE_MENU },
+            );
+            draw_rectangle_lines(
+                half.x,
+                half.y,
+                half.w,
+                half.h,
+                Stroke::Hairline.at(ui),
+                if active { TEXT_ACCENT } else { BORDER_STRONG },
+            );
+            let size = Type::Small.at(ui);
+            let dims = measure_text(label, None, numeric::font_size(size), 1.0);
+            draw_text(
+                label,
+                half.x + (half.w - dims.width) * 0.5,
+                half.y + half.h * 0.5 + size * 0.35,
+                size,
+                if active { TEXT_PRIMARY } else { TEXT_SECONDARY },
+            );
+        }
+        if self.on_switch {
+            let [left, right] = layout.switch;
+            draw_rectangle_lines(
+                left.x,
+                left.y,
+                right.x + right.w - left.x,
+                left.h,
+                Stroke::Focus.at(ui),
+                TEXT_TITLE,
+            );
+        }
+    }
+
+    /// Where the lobby stands, for the line under the title: its address
+    /// and how many players are here; `None` while local.
+    fn hosting_line(&self, draft: &NewMatchDraft) -> Option<String> {
+        let lan = self.lan.as_ref()?;
+        if lan.starting.is_some() {
+            return Some("starting the match...".to_owned());
+        }
+        let open = self.open_flags(draft);
+        let here = 1 + lan.members.iter().flatten().count();
+        let waiting = (0..open.len())
+            .filter(|&seat| open[seat] && lan.members[seat].is_none())
+            .count();
+        Some(format!(
+            "hosting on {} - {here} of {} players here",
+            shown_address(lan.lobby.address()),
+            here + waiting
+        ))
+    }
+
+    /// Draws the name prompt or a confirmation over a veil.
+    fn draw_overlay(&self, mouse: Vec2) {
+        let Some(overlay) = &self.overlay else {
+            return;
+        };
+        let view = crate::render::viewport();
+        draw_rectangle(0.0, 0.0, view.x, view.y, crate::theme::VEIL);
+        match overlay {
+            Overlay::Naming(form) => form.draw("", TEXT_SECONDARY, mouse),
+            Overlay::Confirm { ask, menu } => {
+                let line = match ask {
+                    Confirm::Kick { .. } => String::new(),
+                    Confirm::Close { .. } => {
+                        let players = self
+                            .lan
+                            .as_ref()
+                            .map_or(0, |lan| lan.members.iter().flatten().count());
+                        match players {
+                            1 => "1 player will be disconnected".to_owned(),
+                            n => format!("{n} players will be disconnected"),
+                        }
+                    }
+                };
+                menu.draw(&line);
+            }
+        }
     }
 
     /// The debug protocol's stable mode name for the current step, which
     /// automation scripts depend on.
     pub fn mode_name(&self) -> &'static str {
-        match self.step {
-            Step::Map => "main_menu",
-            Step::Setup => "match_setup",
+        match (&self.overlay, self.step) {
+            (Some(Overlay::Naming(_)), _) => "player_name",
+            (Some(Overlay::Confirm { .. }), _) => "confirm_lobby",
+            (None, Step::Map) => "main_menu",
+            (None, Step::Setup) => "match_setup",
         }
     }
 
     /// The (title, items, selected) surface `QueryUi` reports — the
-    /// custom screens speak the same protocol the row menus do.
+    /// custom screens speak the same protocol the row menus do. Setup
+    /// lists the seats, Start, and last the LOCAL | LAN switch.
     pub fn ui_surface(&self, draft: &NewMatchDraft) -> (String, Vec<String>, usize) {
-        match self.step {
-            Step::Map => (
+        match (&self.overlay, self.step) {
+            (Some(Overlay::Naming(form)), _) => {
+                let view = form.menu(|_| ()).view();
+                (view.title, view.items, view.selected)
+            }
+            (Some(Overlay::Confirm { menu, .. }), _) => {
+                let view = menu.view();
+                (view.title, view.items, view.selected)
+            }
+            (None, Step::Map) => (
                 "OXIDE".to_string(),
                 self.entries.iter().map(|e| e.label.clone()).collect(),
                 self.browser.selected,
             ),
-            Step::Setup => {
+            (None, Step::Setup) => {
+                let open = self.open_flags(draft);
                 let mut items: Vec<String> = draft
                     .scenario
                     .as_deref()
                     .map(|sc| {
                         seat_display_order(sc)
                             .into_iter()
-                            .map(|seat| {
-                                let name = &sc.players[seat].name;
-                                let plan = draft.seats[seat];
-                                let team = team_chip_label(plan.team_choice);
-                                if seat == draft.seat_choice || plan.remote {
-                                    format!(
-                                        "{}. {} ({}) | {}",
-                                        seat + 1,
-                                        name,
-                                        if seat == draft.seat_choice {
-                                            "you"
-                                        } else {
-                                            "remote"
-                                        },
-                                        team
-                                    )
-                                } else {
-                                    format!(
-                                        "{}. {} | Difficulty {} | Stance {} | {}",
-                                        seat + 1,
-                                        name,
-                                        difficulty_name(plan.difficulty),
-                                        stance_name(plan.stance),
-                                        team
-                                    )
-                                }
-                            })
+                            .map(|seat| self.seat_row(sc, draft, &open, seat))
                             .collect()
                     })
                     .unwrap_or_default();
-                items.push(start_label(draft).to_string());
-                ("MATCH SETUP".to_string(), items, self.setup_sel)
+                items.push("Start match".to_string());
+                items.push(format!(
+                    "Mode: {}",
+                    if self.lan.is_some() { "LAN" } else { "Local" }
+                ));
+                let selected = if self.on_switch {
+                    items.len() - 1
+                } else {
+                    self.setup_sel
+                };
+                ("MATCH SETUP".to_string(), items, selected)
             }
         }
+    }
+
+    /// One seat's protocol row: who plays it and its team.
+    fn seat_row(
+        &self,
+        scenario: &Scenario,
+        draft: &NewMatchDraft,
+        open: &[bool],
+        seat: usize,
+    ) -> String {
+        let name = &scenario.players[seat].name;
+        let plan = draft.seats[seat];
+        let team = team_chip_label(plan.team_choice);
+        let who = if seat == draft.seat_choice {
+            "you".to_owned()
+        } else if open[seat] {
+            self.lan
+                .as_ref()
+                .and_then(|lan| lan.name_at(seat))
+                .map_or_else(|| "open".to_owned(), |player| format!("player {player}"))
+        } else {
+            return format!(
+                "{}. {} | Difficulty {} | Stance {} | {}",
+                seat + 1,
+                name,
+                difficulty_name(plan.difficulty),
+                stance_name(plan.stance),
+                team
+            );
+        };
+        let moving = if self.moving == Some(seat) {
+            " moving"
+        } else {
+            ""
+        };
+        format!("{}. {} ({who}{moving}) | {team}", seat + 1, name)
     }
 
     /// The half-open item-index range actually on screen — `QueryUi`'s
@@ -1431,6 +1955,9 @@ impl Wizard {
     /// showing none reports `[0, 0]`). Compact setup reports only the
     /// current nonoverlapping page; full-height setup reports every row.
     pub fn ui_visible_range(&self, draft: &NewMatchDraft, view: Vec2, ui: f32) -> [usize; 2] {
+        if self.overlay.is_some() {
+            return [0, self.ui_surface(draft).1.len()];
+        }
         match self.step {
             Step::Map => {
                 let layout = self.browser.layout(&self.entries, view, ui);
@@ -1440,8 +1967,16 @@ impl Wizard {
                 }
             }
             Step::Setup => draft.scenario.as_deref().map_or([0, 0], |scenario| {
-                setup_layout_page(scenario, draft.seat_choice, view, ui, self.setup_page)
-                    .visible_range
+                let open = self.open_flags(draft);
+                setup_layout_page(
+                    scenario,
+                    draft.seat_choice,
+                    &open,
+                    view,
+                    ui,
+                    self.setup_page,
+                )
+                .visible_range
             }),
         }
     }
@@ -1457,7 +1992,349 @@ impl Wizard {
     }
 }
 
+fn name_check(name: &str) -> Result<(), &'static str> {
+    PlayerName::new(name)
+        .map(drop)
+        .map_err(oxide_net::NameError::reason)
+}
+
+/// The first chair, in display order, a joining member takes: an open one
+/// nobody holds, or else a bot's; `None` when every chair holds a person.
+fn seat_for_joiner(
+    draft: &NewMatchDraft,
+    members: &[Option<MemberId>],
+    order: &[usize],
+) -> Option<usize> {
+    let free = |seat: usize| seat != draft.seat_choice && members[seat].is_none();
+    order
+        .iter()
+        .copied()
+        .find(|&seat| free(seat) && draft.seats[seat].open)
+        .or_else(|| {
+            order
+                .iter()
+                .copied()
+                .find(|&seat| free(seat) && !draft.seats[seat].open)
+        })
+}
+
+/// A confirmation for `ask`; Cancel sits preselected.
+fn confirm_overlay(ask: Confirm, name: Option<&PlayerName>) -> Overlay {
+    let (title, yes) = match ask {
+        Confirm::Kick { .. } => (
+            format!(
+                "REMOVE {}?",
+                name.map_or("THIS PLAYER".to_owned(), |name| name
+                    .as_str()
+                    .to_uppercase())
+            ),
+            "Remove",
+        ),
+        Confirm::Close { .. } => ("CLOSE THE LOBBY?".to_owned(), "Close the lobby"),
+    };
+    let mut menu = Menu::rows(
+        title,
+        [(Label::from("Cancel"), false), (Label::from(yes), true)],
+    );
+    menu.select(0);
+    Overlay::Confirm { ask, menu }
+}
+
+impl Wizard {
+    /// Whether the chairs (by seat) wait for LAN players.
+    fn open_flags(&self, draft: &NewMatchDraft) -> Vec<bool> {
+        draft
+            .seats
+            .iter()
+            .enumerate()
+            .map(|(seat, plan)| self.lan.is_some() && plan.open && seat != draft.seat_choice)
+            .collect()
+    }
+
+    /// The lobby's members, one slot per seat; empty while local.
+    fn members(&self) -> &[Option<MemberId>] {
+        self.lan.as_ref().map_or(&[], |lan| lan.members.as_slice())
+    }
+
+    /// Opens the LAN lobby, asking for the player's name first if none is
+    /// saved. Every chair but the player's opens for joiners.
+    fn open_lan(&mut self, draft: &mut NewMatchDraft) {
+        let Some(scenario) = draft.scenario.as_deref() else {
+            return;
+        };
+        if draft.player_name.is_none() {
+            let field =
+                Field::new("", PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
+            self.overlay = Some(Overlay::Naming(Form::new(
+                "YOUR NAME",
+                "HOST",
+                vec![field],
+                0,
+            )));
+            return;
+        }
+        match HostLobby::open(&self.lan_bind, &crate::build_identity().revision, scenario) {
+            Ok(lobby) => {
+                self.lan = Some(Box::new(LanHost {
+                    lobby,
+                    members: vec![None; scenario.players.len()],
+                    starting: None,
+                }));
+                let host = draft.seat_choice;
+                for (seat, plan) in draft.seats.iter_mut().enumerate() {
+                    plan.open = seat != host;
+                }
+                self.notice = None;
+            }
+            Err(error) => self.notice = Some(format!("Cannot host: {error:#}")),
+        }
+    }
+
+    /// Closes the LAN lobby, dropping its players; open chairs go back to
+    /// their bots.
+    fn close_lan(&mut self, draft: &mut NewMatchDraft) {
+        self.lan = None;
+        self.moving = None;
+        for plan in &mut draft.seats {
+            plan.open = false;
+        }
+    }
+
+    /// Asks before closing a lobby with players in it, and closes an empty
+    /// one at once; returns whether it closed.
+    fn leave_lan(&mut self, draft: &mut NewMatchDraft, to_map: bool) -> bool {
+        if self.lan.as_ref().is_some_and(|lan| lan.has_members()) {
+            self.overlay = Some(confirm_overlay(Confirm::Close { to_map }, None));
+            return false;
+        }
+        self.close_lan(draft);
+        true
+    }
+
+    /// Runs the LAN lobby for a frame: seats joiners, frees leavers' seats,
+    /// shows everyone the room, and advances a running start. Returns the
+    /// match once every machine is at tick zero.
+    pub fn poll_lan(&mut self, draft: &mut NewMatchDraft, now: Duration) -> Option<(Game, Link)> {
+        let lan = self.lan.as_mut()?;
+        let scenario = draft.scenario.as_deref()?;
+        let order = seat_display_order(scenario);
+        for event in lan.lobby.poll(now, lan.starting.is_some()) {
+            match event {
+                LobbyEvent::Joined { member, .. } => {
+                    match seat_for_joiner(draft, &lan.members, &order) {
+                        Some(seat) => {
+                            draft.seats[seat].open = true;
+                            lan.members[seat] = Some(member);
+                        }
+                        None => lan.lobby.refuse(member),
+                    }
+                }
+                LobbyEvent::Left { member, .. } => {
+                    for slot in &mut lan.members {
+                        if *slot == Some(member) {
+                            *slot = None;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(start) = &lan.starting {
+            match lan.lobby.poll_start(now, &start.seated) {
+                StartPoll::Waiting => return None,
+                StartPoll::Started(session, peers) => {
+                    let game = lan.starting.take()?.game;
+                    self.lan = None;
+                    for plan in &mut draft.seats {
+                        plan.open = false;
+                    }
+                    return Some((*game, Link::host(session, peers, now)));
+                }
+                StartPoll::Failed(failed) => {
+                    lan.starting = None;
+                    self.notice = Some(start_failed_notice(failed).to_owned());
+                }
+            }
+        }
+        let host = shown_host_name(
+            draft.player_name.as_ref(),
+            scenario,
+            PlayerId(draft.seat_choice.fit::<u8>()),
+        );
+        let seating = draft_seating(draft, &lan.members);
+        let lobby = &lan.lobby;
+        let room = seating.room(
+            &host,
+            |member| lobby.name(member).cloned(),
+            |seat| team_override(draft.seats[seat].team_choice),
+        );
+        lan.lobby
+            .publish(&room, |member| seating.seat_of(member), now);
+        None
+    }
+
+    /// Whether Start hosts a LAN match: the lobby holds players.
+    pub fn hosting_players(&self) -> bool {
+        self.lan.as_ref().is_some_and(|lan| lan.has_members())
+    }
+
+    /// The name of the LAN player in each seat, for naming their seats.
+    pub fn member_names(&self) -> Vec<Option<PlayerName>> {
+        self.lan.as_ref().map_or_else(Vec::new, |lan| {
+            (0..lan.members.len())
+                .map(|seat| lan.name_at(seat).cloned())
+                .collect()
+        })
+    }
+
+    /// Starts the lobby's match on `scenario`, built from the draft; the
+    /// start then runs through [`Wizard::poll_lan`].
+    pub fn start_lan(
+        &mut self,
+        draft: &NewMatchDraft,
+        scenario: &Scenario,
+        now: Duration,
+    ) -> Result<()> {
+        let lan = self.lan.as_mut().context("no lobby is open")?;
+        let host = PlayerId(draft.seat_choice.fit::<u8>());
+        let game = Game::networked(
+            scenario.clone(),
+            host,
+            NetRole::Host,
+            crate::render::viewport(),
+        )?;
+        let seated = lan.seated();
+        lan.lobby
+            .start(scenario, host, &seated, game.state.hash(), now);
+        lan.starting = Some(LanStart {
+            game: Box::new(game),
+            seated,
+        });
+        self.notice = None;
+        Ok(())
+    }
+
+    /// A name the player gave the prompt since the last call, to save.
+    pub fn take_saved_name(&mut self) -> Option<PlayerName> {
+        self.saved_name.take()
+    }
+
+    /// The keyboard the name prompt asks for while it is up.
+    pub fn keyboard(&self) -> Option<Keyboard> {
+        match &self.overlay {
+            Some(Overlay::Naming(form)) => Some(form.keyboard()),
+            _ => None,
+        }
+    }
+
+    /// Consumes the name prompt's request to raise the on-screen keyboard.
+    pub fn take_keyboard_request(&mut self) -> bool {
+        match &mut self.overlay {
+            Some(Overlay::Naming(form)) => form.take_keyboard_request(),
+            _ => false,
+        }
+    }
+
+    /// Runs the overlay for a frame.
+    fn update_overlay(
+        &mut self,
+        events: &[RawEvent],
+        mouse: &mut Vec2,
+        draft: &mut NewMatchDraft,
+        sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+    ) {
+        match self.overlay.as_mut() {
+            Some(Overlay::Naming(form)) => match form.update(events, sounds) {
+                Edit::Commit => {
+                    let name = PlayerName::new(form.value(0));
+                    self.overlay = None;
+                    if let Ok(name) = name {
+                        draft.player_name = Some(name.clone());
+                        self.saved_name = Some(name);
+                        self.open_lan(draft);
+                    }
+                }
+                Edit::Cancel => self.overlay = None,
+                Edit::Stay => {}
+            },
+            Some(Overlay::Confirm { ask, menu }) => {
+                let ask = *ask;
+                let escaped = events
+                    .iter()
+                    .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+                if let Some(picked) = menu.handle(events, mouse) {
+                    sounds.push((SoundKind::Click, None));
+                    self.overlay = None;
+                    if picked.value {
+                        self.confirmed(ask, draft);
+                    }
+                } else if escaped {
+                    self.overlay = None;
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn confirmed(&mut self, ask: Confirm, draft: &mut NewMatchDraft) {
+        match ask {
+            Confirm::Kick { member } => {
+                if let Some(lan) = self.lan.as_mut() {
+                    lan.lobby.remove(member);
+                    for slot in &mut lan.members {
+                        if *slot == Some(member) {
+                            *slot = None;
+                        }
+                    }
+                }
+            }
+            Confirm::Close { to_map } => {
+                self.close_lan(draft);
+                if to_map {
+                    self.goto(Step::Map, draft);
+                }
+            }
+        }
+    }
+
+    /// Back or Escape on setup: drops a pick first, then leaves for the map
+    /// grid, asking first when that would drop players.
+    fn back_from_setup(&mut self, draft: &mut NewMatchDraft) {
+        if self.moving.take().is_some() {
+            return;
+        }
+        if self.leave_lan(draft, true) {
+            self.goto(Step::Map, draft);
+        }
+    }
+
+    /// A press on a seat card's name: puts a picked-up occupant here, picks
+    /// up the human or a LAN player sitting here, or sits the human here.
+    fn seat_pressed(&mut self, draft: &mut NewMatchDraft, seat: usize) {
+        let mut none: [Option<MemberId>; 0] = [];
+        let members = match self.lan.as_mut() {
+            Some(lan) => lan.members.as_mut_slice(),
+            None => &mut none,
+        };
+        match self.moving.take() {
+            Some(from) if from == seat => {}
+            Some(from) => swap_seats(draft, members, from, seat),
+            None => {
+                let held = members.get(seat).copied().flatten().is_some();
+                if seat == draft.seat_choice || held {
+                    self.moving = Some(seat);
+                } else {
+                    let you = draft.seat_choice;
+                    swap_seats(draft, members, you, seat);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) mod launch;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod lan_tests;

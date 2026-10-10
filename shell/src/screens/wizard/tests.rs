@@ -45,6 +45,14 @@ fn pick_first_map(w: &mut Wizard, draft: &mut NewMatchDraft) {
     assert_eq!(drive(w, draft, Key::Enter), Out::Stay);
 }
 
+/// Turns the setup screen's LAN switch on, listening on loopback.
+fn host(wizard: &mut Wizard, draft: &mut NewMatchDraft) {
+    wizard.lan_bind = "127.0.0.1:0".to_owned();
+    draft.player_name = Some(PlayerName::new("Host").unwrap());
+    wizard.open_lan(draft);
+    assert!(wizard.lan.is_some(), "{:?}", wizard.notice);
+}
+
 fn explicit_team_setup() -> (Wizard, NewMatchDraft) {
     let path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -54,7 +62,7 @@ fn explicit_team_setup() -> (Wizard, NewMatchDraft) {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(scenario, Some(path));
     let mut wizard = Wizard::open(&draft);
-    wizard.goto(Step::Setup, &draft);
+    wizard.goto(Step::Setup, &mut draft);
     (wizard, draft)
 }
 
@@ -689,7 +697,7 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
 }
 
 #[test]
-fn the_difficulty_chip_cycles_through_remote_and_hosting_follows_it() {
+fn the_controller_chip_reaches_open_only_while_hosting() {
     crate::render::set_viewport(640.0, 400.0);
     let (mut wizard, mut draft) = explicit_team_setup();
     let scenario = draft.scenario.clone().expect("picked scenario");
@@ -698,66 +706,81 @@ fn the_difficulty_chip_cycles_through_remote_and_hosting_follows_it() {
     let stance = draft.seats[opponent].stance;
     wizard.setup_sel = row;
     wizard.setup_cell = Cell::Difficulty;
-    let start = |wizard: &Wizard, draft: &NewMatchDraft| {
-        wizard.ui_surface(draft).1.last().cloned().unwrap()
+    let cycle = |wizard: &mut Wizard, draft: &mut NewMatchDraft| {
+        (0..5)
+            .map(|_| {
+                drive(wizard, draft, Key::Enter);
+                let plan = draft.seats[opponent];
+                (!plan.open).then_some(plan.difficulty)
+            })
+            .collect::<Vec<_>>()
     };
-    let mut seen = Vec::new();
-    for _ in 0..5 {
-        drive(&mut wizard, &mut draft, Key::Enter);
-        let plan = draft.seats[opponent];
-        seen.push((!plan.remote).then_some(plan.difficulty));
-    }
     assert_eq!(
-        seen,
+        cycle(&mut wizard, &mut draft),
+        [
+            Some(BotDifficulty::Veteran),
+            Some(BotDifficulty::Prime),
+            Some(BotDifficulty::Scrapheap),
+            Some(BotDifficulty::Standard),
+            Some(BotDifficulty::Veteran),
+        ],
+        "a local match has no open chairs"
+    );
+
+    host(&mut wizard, &mut draft);
+    assert!(draft.seats[opponent].open, "hosting opens the chair");
+    assert_eq!(
+        cycle(&mut wizard, &mut draft),
         [
             Some(BotDifficulty::Veteran),
             Some(BotDifficulty::Prime),
             None,
             Some(BotDifficulty::Scrapheap),
             Some(BotDifficulty::Standard),
-        ]
+        ],
+        "the chair's bot comes back first"
     );
     assert_eq!(draft.seats[opponent].stance, stance, "the stance survives");
-    assert_eq!(start(&wizard, &draft), "Start match");
-
-    draft.seats[opponent].remote = true;
-    assert_eq!(start(&wizard, &draft), "Host match");
-    assert!(wizard.ui_surface(&draft).1[row].contains("(remote)"));
+    for _ in 0..3 {
+        drive(&mut wizard, &mut draft, Key::Enter);
+    }
+    assert!(draft.seats[opponent].open);
+    assert!(wizard.ui_surface(&draft).1[row].contains("(open)"));
     drive(&mut wizard, &mut draft, Key::Right);
     assert_eq!(
         wizard.setup_cell,
         Cell::Team,
-        "the stance chip is inert on a remote chair"
+        "an open chair has no stance chip"
     );
-    let layout = setup_layout(
+    let open: Vec<bool> = (0..draft.seats.len())
+        .map(|seat| seat == opponent)
+        .collect();
+    let layout = setup_layout_page(
         &scenario,
         draft.seat_choice,
+        &open,
         crate::render::viewport(),
         crate::render::ui_scale(),
+        wizard.setup_page,
     );
-    let hidden = card(&layout, row).stance.unwrap().center();
-    let tap = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: hidden.x,
-            y: hidden.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: hidden.x,
-            y: hidden.y,
-        },
-    ];
-    wizard
-        .update(&tap, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
-        .expect("tap");
-    assert_eq!(draft.seats[opponent].stance, stance);
-    assert_ne!(draft.seat_choice, opponent);
+    let wide = card(&layout, row);
+    assert!(wide.stance.is_none());
+    assert!(
+        wide.difficulty.unwrap().w > card(&layout, 0).team.w * 1.5,
+        "one wide chip"
+    );
 
+    // Taking an open chair swaps: the human's old chair waits open.
+    let before = draft.seat_choice;
     wizard.setup_cell = Cell::Seat;
     drive(&mut wizard, &mut draft, Key::Enter);
-    assert_eq!(draft.seat_choice, opponent, "a remote chair can be taken");
-    assert_eq!(start(&wizard, &draft), "Start match");
+    assert_eq!(draft.seat_choice, opponent);
+    assert!(draft.seats[before].open);
+
+    // Leaving setup closes the lobby and turns open chairs back into bots.
+    drive(&mut wizard, &mut draft, Key::Escape);
+    assert_eq!(wizard.step, Step::Map);
+    assert!(draft.seats.iter().all(|plan| !plan.open));
 }
 
 #[test]
@@ -771,7 +794,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(scenario, Some(path));
     let mut wizard = Wizard::open(&draft);
-    wizard.goto(Step::Setup, &draft);
+    wizard.goto(Step::Setup, &mut draft);
     assert_eq!(
         wizard.setup_page, 1,
         "Start opens on the page that contains it"
@@ -782,6 +805,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
     let last_page = setup_layout_page(
         draft.scenario.as_deref().unwrap(),
         draft.seat_choice,
+        &[],
         view,
         ui,
         wizard.setup_page,
@@ -818,6 +842,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
     let first_page = setup_layout_page(
         draft.scenario.as_deref().unwrap(),
         draft.seat_choice,
+        &[],
         view,
         ui,
         wizard.setup_page,
@@ -876,13 +901,14 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
         let initial_stance = draft.seats[seat].stance;
         let initial_team = draft.seats[seat].team_choice;
         let mut wizard = Wizard::open(&draft);
-        wizard.goto(Step::Setup, &draft);
+        wizard.goto(Step::Setup, &mut draft);
         wizard.setup_sel = row;
         wizard.setup_page = 0;
 
         let layout = setup_layout_page(
             draft.scenario.as_deref().unwrap(),
             draft.seat_choice,
+            &[],
             crate::render::viewport(),
             crate::render::ui_scale(),
             0,
@@ -1204,8 +1230,8 @@ fn the_setup_layout_fits_the_smallest_supported_window() {
         (vec2(960.0, 400.0), 1.5),
     ] {
         let pages = [
-            setup_layout_page(&scenario, 0, view, ui, 0),
-            setup_layout_page(&scenario, 0, view, ui, 1),
+            setup_layout_page(&scenario, 0, &[], view, ui, 0),
+            setup_layout_page(&scenario, 0, &[], view, ui, 1),
         ];
         assert_eq!(pages[0].page_count, 2);
         assert_eq!(pages[0].visible_range, [0, 5]);
@@ -1407,12 +1433,13 @@ fn compact_setup_reports_only_the_page_actually_on_screen() {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(scenario, Some(path));
     let mut w = Wizard::open(&draft);
-    w.goto(Step::Setup, &draft);
+    w.goto(Step::Setup, &mut draft);
     crate::render::set_viewport(640.0, 400.0);
     let view = crate::render::viewport();
     let ui = crate::render::ui_scale();
-    let len = w.ui_surface(&draft).1.len();
-    assert_eq!(len, 9);
+    let items = w.ui_surface(&draft).1;
+    assert_eq!(items.len(), 10, "eight seats, Start, and the mode switch");
+    assert_eq!(items[9], "Mode: Local");
     assert_eq!(w.ui_visible_range(&draft, view, ui), [5, 9]);
     drive(&mut w, &mut draft, Key::Home);
     assert_eq!(w.ui_visible_range(&draft, view, ui), [0, 5]);

@@ -4,12 +4,18 @@
 //! it.
 
 use crate::game::{Game, SoundKind};
-use crate::menu::{Label, Line, Menu};
+use crate::menu::{Label, Line, Menu, PreviewCache};
 use crate::netplay::{Link, Lobby, address_char, parse_join_address};
+use crate::numeric;
+use crate::screens::wizard::{self, CardController, CardView};
 use crate::text_field::{Edit, Field, Form, Keyboard};
+use crate::theme::Type;
 use macroquad::prelude::Vec2;
+use macroquad::prelude::{draw_text, measure_text};
 use oxide_net::{NameError, PlayerName};
+use oxide_net::{RoomSeat, SeatHolder};
 use oxide_protocol::{Key, RawEvent};
+use oxide_sim::{PlayerId, Scenario};
 use std::time::Duration;
 
 /// Longest host address the field accepts: the longest DNS name and a port.
@@ -38,6 +44,8 @@ pub struct LobbyScreen {
     face: Face,
     /// The form's fields, or the roster and Cancel, for the UI report.
     pub menu: Menu<usize>,
+    /// The corner Back button over a joiner's copy of the setup screen.
+    back: crate::button::BackButton,
 }
 
 fn name_check(name: &str) -> Result<(), &'static str> {
@@ -88,7 +96,11 @@ impl LobbyScreen {
             Face::Join { form, .. } => form.menu(|index| index),
             Face::Waiting(lobby) => Menu::new("LAN MATCH", waiting_lines(lobby)),
         };
-        Self { face, menu }
+        Self {
+            face,
+            menu,
+            back: crate::button::BackButton::default(),
+        }
     }
 
     /// Polls the lobby; returns the match once it starts. A join that
@@ -165,10 +177,23 @@ impl LobbyScreen {
                     Edit::Stay => Out::Stay,
                 }
             }
-            Face::Waiting(_) => {
+            Face::Waiting(lobby) => {
                 let escaped = events
                     .iter()
                     .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+                if lobby.room_view().is_some() {
+                    // The copy of the setup screen draws no rows, so only
+                    // Back and Escape leave.
+                    let (back, _) = self.back.route(events);
+                    if back {
+                        sounds.push((SoundKind::Click, None));
+                    }
+                    return if back || escaped {
+                        Out::Cancel
+                    } else {
+                        Out::Stay
+                    };
+                }
                 if self.menu.handle(events, mouse).is_some() {
                     sounds.push((SoundKind::Click, None));
                     return Out::Cancel;
@@ -178,8 +203,16 @@ impl LobbyScreen {
         }
     }
 
-    /// Draws the form or the status and Cancel.
-    pub fn draw(&self, mouse: Vec2) {
+    /// Draws the form; or, waiting, a joiner's copy of the host's setup
+    /// once it arrives, else the status, roster, and Cancel.
+    pub fn draw(&self, mouse: Vec2, previews: &mut PreviewCache) {
+        if let Face::Waiting(lobby) = &self.face
+            && let Some((map, seats, you)) = lobby.room_view()
+        {
+            draw_room(map, seats, you, &self.subtitle(), previews);
+            crate::button::draw_back(mouse);
+            return;
+        }
         match &self.face {
             Face::Join { form, failure } => {
                 let color = if failure.is_some() {
@@ -191,6 +224,97 @@ impl LobbyScreen {
             }
             Face::Waiting(_) => self.menu.draw(&self.subtitle()),
         }
+    }
+}
+
+/// Draws a joiner's read-only copy of the host's setup screen: the seat
+/// cards grouped by team, the map with every chair marked, and the status.
+fn draw_room(
+    map: &Scenario,
+    seats: &[RoomSeat],
+    you: PlayerId,
+    status: &str,
+    previews: &mut PreviewCache,
+) {
+    let view = crate::render::viewport();
+    let ui = crate::render::ui_scale();
+    let you = usize::from(you.0);
+    // People and open chairs wear one wide chip, as on the host's screen.
+    let wide: Vec<bool> = seats
+        .iter()
+        .map(|seat| !matches!(seat.holder, SeatHolder::Bot { .. }))
+        .collect();
+    let order = wizard::seat_display_order(map);
+    let mine = order.iter().position(|&seat| seat == you).unwrap_or(0);
+    let mut layout = wizard::setup_layout_page(map, you, &wide, view, ui, 0);
+    for page in 1..layout.page_count {
+        if layout.cards.get(mine).is_some_and(Option::is_some) {
+            break;
+        }
+        layout = wizard::setup_layout_page(map, you, &wide, view, ui, page);
+    }
+
+    let centered = |text: &str, y: f32, size: f32, color| {
+        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+        draw_text(text, (view.x - width) * 0.5, y, size, color);
+    };
+    centered(
+        "MATCH SETUP",
+        64.0 * ui,
+        Type::Title.at(ui),
+        crate::theme::TEXT_TITLE,
+    );
+    let line = format!("{} - {status}", map.name);
+    let size = crate::typography::fit(&line, Type::Label.at(ui), view.x - 32.0 * ui, 10.0);
+    centered(&line, 92.0 * ui, size, crate::theme::TEXT_SECONDARY);
+
+    wizard::draw_team_headings(&layout, ui);
+    let styles = wizard::seat_styles(seats.len(), you, |seat| {
+        seats.get(seat).and_then(|seat| seat.team)
+    });
+    for (pos, card) in layout.cards.iter().enumerate() {
+        let Some(card) = card else {
+            continue;
+        };
+        let seat = order[pos];
+        let controller = if seat == you {
+            CardController::Own
+        } else {
+            match &seats[seat].holder {
+                SeatHolder::Host { name } => CardController::Person {
+                    name: name.as_str(),
+                    host: true,
+                },
+                SeatHolder::Player { name } => CardController::Person {
+                    name: name.as_str(),
+                    host: false,
+                },
+                SeatHolder::Bot { difficulty, stance } => CardController::Bot {
+                    difficulty: *difficulty,
+                    stance: *stance,
+                },
+                SeatHolder::Open => CardController::Open,
+            }
+        };
+        let team = seats[seat].team.map_or_else(
+            || "FFA".to_owned(),
+            |team| format!("Team {}", u16::from(team) + 1),
+        );
+        let card_view = CardView {
+            seat,
+            accent: styles.get(oxide_sim::PlayerId::from_index(seat)),
+            name: map.players[seat].name.as_str(),
+            controller,
+            team,
+            focus: None,
+            moving: false,
+        };
+        wizard::draw_seat_card(card, &card_view, ui);
+    }
+    if let Some(tex) = previews.get_map(map) {
+        let theme = map.meta.as_ref().map_or("", |meta| meta.theme.as_str());
+        let drawn = wizard::draw_preview(tex, theme, layout.preview, ui);
+        wizard::draw_seat_markers(map, &styles, drawn, you, None, ui);
     }
 }
 

@@ -3,9 +3,9 @@
 
 use super::NewMatchDraft;
 use crate::game::Game;
-use crate::numeric::Fit;
 use anyhow::{Context, Result};
 use chassis::rng::Pcg32;
+use oxide_net::PlayerName;
 use oxide_sim::Scenario;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -67,48 +67,20 @@ pub(crate) fn launch(draft: &NewMatchDraft, personality_seed_base: u64) -> Resul
     Game::new(draft_scenario(draft, personality_seed_base)?)
 }
 
-/// What starting a draft built.
-pub(crate) enum NewMatch {
-    /// A match on this machine alone.
-    Local(Box<Game>),
-    /// A lobby hosting the match for its remote chairs.
-    Hosted(Box<crate::netplay::HostLobby>),
-}
-
-/// Starts a draft: a local match, or a lobby listening on `bind` when a
-/// chair is remote.
-pub(crate) fn start_new_match(
-    draft: &NewMatchDraft,
-    personality_seed_base: u64,
-    bind: &str,
-) -> Result<NewMatch> {
-    if !super::draft_hosts(draft) {
-        return Ok(NewMatch::Local(Box::new(launch(
-            draft,
-            personality_seed_base,
-        )?)));
-    }
-    let scenario = draft_scenario(draft, personality_seed_base)?;
-    let host = oxide_sim::PlayerId(
-        draft
-            .seat_choice
-            .min(scenario.players.len() - 1)
-            .fit::<u8>(),
-    );
-    let lobby = crate::netplay::HostLobby::new(
-        bind,
-        scenario,
-        host,
-        &crate::build_identity().revision,
-        draft.player_name.clone(),
-    )?;
-    Ok(NewMatch::Hosted(Box::new(lobby)))
-}
-
-/// The scenario a filled-in draft describes.
+/// The scenario a filled-in local draft describes.
 pub(crate) fn draft_scenario(
     draft: &NewMatchDraft,
     personality_seed_base: u64,
+) -> Result<Scenario> {
+    hosted_scenario(draft, personality_seed_base, &[])
+}
+
+/// The scenario a filled-in draft describes with `names` (by seat) for its
+/// LAN players. The player's own name, when saved, names their seat.
+pub(crate) fn hosted_scenario(
+    draft: &NewMatchDraft,
+    personality_seed_base: u64,
+    names: &[Option<PlayerName>],
 ) -> Result<Scenario> {
     let mut scenario = (**draft.scenario.as_ref().context("draft has a map")?).clone();
     // Seats come from the per-seat plans the setup screen filled.
@@ -125,7 +97,7 @@ pub(crate) fn draft_scenario(
     let seat_choice = draft.seat_choice.min(scenario.players.len() - 1);
     for (i, player) in scenario.players.iter_mut().enumerate() {
         let plan = draft.seats[i];
-        player.bot = i != seat_choice && !plan.remote;
+        player.bot = i != seat_choice && !plan.open;
         player.bot_config = player.bot.then(|| {
             oxide_sim::scenario::BotConfig::new(
                 plan.difficulty,
@@ -142,26 +114,25 @@ pub(crate) fn draft_scenario(
     for (i, plan) in draft.seats.iter().enumerate() {
         scenario.players[i].team = super::team_override(plan.team_choice);
     }
-    // Seat names must stay unique: the victory banner, the panel, and
-    // the stats screen all address seats by name. An authored map may
-    // repeat one, so duplicates take an ordinal instead of refusing to
-    // launch.
-    let mut seen: Vec<String> = Vec::new();
-    for player in &mut scenario.players {
-        if seen.contains(&player.name) {
-            let mut n = 2;
-            while seen.contains(&format!("{} {n}", player.name)) {
-                n += 1;
-            }
-            player.name = format!("{} {n}", player.name);
-        }
-        seen.push(player.name.clone());
+    // People play under their own names; a repeated name takes an
+    // ordinal, since the victory banner, the panel, and the stats screen
+    // address seats by name.
+    if let Some(name) = &draft.player_name {
+        scenario.players[seat_choice].name = name.to_string();
     }
-    let mut names: Vec<&str> = scenario.players.iter().map(|p| p.name.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
+    for (seat, name) in names.iter().enumerate() {
+        if seat != seat_choice
+            && let Some(name) = name
+        {
+            scenario.players[seat].name = name.to_string();
+        }
+    }
+    crate::seating::unique_names(&mut scenario);
+    let mut seen: Vec<&str> = scenario.players.iter().map(|p| p.name.as_str()).collect();
+    seen.sort_unstable();
+    seen.dedup();
     anyhow::ensure!(
-        names.len() == scenario.players.len(),
+        seen.len() == scenario.players.len(),
         "seat names collide after setup"
     );
     Ok(scenario)

@@ -62,20 +62,20 @@ fn open_pause(game: &mut Game, cause: PauseCause) -> Screen {
     })
 }
 
-/// Resolves the wizard's semantic outcome and owns the one seed-consumption
-/// boundary. A failed launch leaves the current window available for retry;
-/// successful construction consumes exactly one window before the game is
-/// installed by the caller.
+/// Resolves the wizard's semantic outcome for a local match and owns its
+/// seed-consumption boundary. A failed launch leaves the current window
+/// available for retry; successful construction consumes exactly one window
+/// before the game is installed by the caller. A hosted match consumes its
+/// window only once every machine has started.
 fn resolve_new_match(
     out: WizardOut,
     draft: &NewMatchDraft,
     personality_seeds: &mut PersonalitySeedSource,
-    bind: &str,
-) -> Option<Result<NewMatch>> {
+) -> Option<Result<Game>> {
     match out {
         WizardOut::Home | WizardOut::Stay => None,
         WizardOut::Launch => {
-            let result = start_new_match(draft, personality_seeds.match_base(), bind);
+            let result = launch(draft, personality_seeds.match_base());
             if result.is_ok() {
                 personality_seeds.commit_launch();
             }
@@ -349,7 +349,7 @@ fn lobby_frame(
         &app.config.bindings,
     );
     veil();
-    lobby.draw(app.input.mouse);
+    lobby.draw(app.input.mouse, &mut app.previews);
     Screen::Lobby {
         screen: lobby,
         back,
@@ -555,6 +555,24 @@ fn codex_frame(
 }
 
 fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut bool) -> Screen {
+    app.draft.player_name = app
+        .config
+        .player_name
+        .as_deref()
+        .and_then(|name| oxide_net::PlayerName::new(name).ok());
+    // A hosting setup screen runs its lobby before input, like every lobby.
+    if let Some((game, link)) = w.poll_lan(&mut app.draft, app.clock.elapsed()) {
+        app.personality_seeds.commit_launch();
+        app.install(
+            game,
+            Install {
+                net: Some(link),
+                ..Install::local(false)
+            },
+        );
+        *rerun = true;
+        return Screen::Playing;
+    }
     // Wizard trouble — an unreadable map file, a scenario
     // that fails validation — is a dialog problem, never a
     // process abort: report and stay on the menu.
@@ -573,15 +591,28 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
             WizardOut::Stay
         }
     };
+    if let Some(name) = w.take_saved_name() {
+        app.config.player_name = Some(name.to_string());
+        if let Err(err) = app.config.save() {
+            app.notify(format!("could not save settings: {err}"), true);
+        }
+    }
     let mut next: Option<Screen> = None;
     drop(input_scope);
-    let bind = format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT);
-    app.draft.player_name = app
-        .config
-        .player_name
-        .as_deref()
-        .and_then(|name| oxide_net::PlayerName::new(name).ok());
-    let launch_result = resolve_new_match(out, &app.draft, &mut app.personality_seeds, &bind);
+    let hosted = out == WizardOut::Launch && w.hosting_players();
+    if hosted {
+        let names = w.member_names();
+        let started = hosted_scenario(&app.draft, app.personality_seeds.match_base(), &names)
+            .and_then(|scenario| w.start_lan(&app.draft, &scenario, app.clock.elapsed()));
+        if let Err(err) = started {
+            app.notify(format!("can't start that match: {err:#}"), true);
+        }
+    }
+    let launch_result = if hosted {
+        None
+    } else {
+        resolve_new_match(out, &app.draft, &mut app.personality_seeds)
+    };
     match out {
         WizardOut::Home => {
             let home = HomeScreen::open();
@@ -596,9 +627,10 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
             *rerun = true;
             next = Some(Screen::Home(home));
         }
-        WizardOut::Launch => match launch_result.expect("launch outcome has a result") {
-            Ok(NewMatch::Local(fresh)) => {
-                app.install(*fresh, Install::local(app.args.paused));
+        WizardOut::Launch => match launch_result {
+            None => {}
+            Some(Ok(fresh)) => {
+                app.install(fresh, Install::local(app.args.paused));
                 render::draw(
                     &app.game.view(),
                     &app.sprites,
@@ -608,16 +640,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
                 *rerun = true;
                 next = Some(Screen::Playing);
             }
-            Ok(NewMatch::Hosted(lobby)) => {
-                *rerun = true;
-                return Screen::Lobby {
-                    screen: Box::new(crate::screens::lobby::LobbyScreen::waiting(
-                        crate::netplay::Lobby::Host(lobby),
-                    )),
-                    back: Box::new(Screen::Wizard(w)),
-                };
-            }
-            Err(err) => {
+            Some(Err(err)) => {
                 app.notify(format!("can't start that match: {err:#}"), true);
             }
         },
@@ -635,7 +658,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         veil();
         match w.step {
             WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
-            WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews),
+            WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews, app.input.mouse),
         }
         crate::button::draw_back(app.input.mouse);
         Screen::Wizard(w)

@@ -777,12 +777,28 @@ fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
 /// Loading, building, and rasterizing a map takes long enough to hitch a
 /// frame, so that runs on a worker; only the texture upload, which must stay
 /// on the window thread, happens here. Entries are keyed by scenario path
-/// because the discovery list can be rebuilt while the cache lives on.
+/// because the discovery list can be rebuilt while the cache lives on; a
+/// map that arrived over the network is keyed by its content.
 pub struct PreviewCache {
     /// Present once requested: `None` while the worker is still drawing it,
     /// and for a scenario that failed to load or build.
-    slots: std::collections::HashMap<Option<PathBuf>, Option<Texture2D>>,
+    slots: std::collections::HashMap<PreviewKey, Option<Texture2D>>,
     worker: PreviewWorker,
+}
+
+/// Which preview a slot holds.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum PreviewKey {
+    /// A discovered map's path; `None` is the embedded skirmish.
+    Path(Option<PathBuf>),
+    /// A map held in memory, by a hash of its contents.
+    Map(u64),
+}
+
+/// What the worker draws.
+enum PreviewSource {
+    Path(Option<PathBuf>),
+    Map(Box<Scenario>),
 }
 
 impl Default for PreviewCache {
@@ -799,20 +815,43 @@ impl PreviewCache {
     /// until it is drawn, and for good when it cannot be: the browser just
     /// shows no panel for it.
     pub fn get(&mut self, entry: &ScenarioEntry) -> Option<&Texture2D> {
-        for (path, pixels) in self.worker.finished.try_iter() {
+        self.slot(&PreviewKey::Path(entry.path.clone()), || {
+            PreviewSource::Path(entry.path.clone())
+        })
+    }
+
+    /// The preview of a map held in memory, such as one a LAN host sent,
+    /// requested on first sight like [`PreviewCache::get`].
+    pub fn get_map(&mut self, scenario: &Scenario) -> Option<&Texture2D> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(scenario)
+            .unwrap_or_default()
+            .hash(&mut hasher);
+        self.slot(&PreviewKey::Map(hasher.finish()), || {
+            PreviewSource::Map(Box::new(scenario.clone()))
+        })
+    }
+
+    fn slot(
+        &mut self,
+        key: &PreviewKey,
+        source: impl FnOnce() -> PreviewSource,
+    ) -> Option<&Texture2D> {
+        for (finished, pixels) in self.worker.finished.try_iter() {
             let texture = pixels.map(|pixels| {
                 let texture = Texture2D::from_rgba8(pixels.width, pixels.height, &pixels.rgba);
                 texture.set_filter(FilterMode::Nearest);
                 texture
             });
-            self.slots.insert(path, texture);
+            self.slots.insert(finished, texture);
         }
-        if !self.slots.contains_key(&entry.path) {
-            self.slots.insert(entry.path.clone(), None);
+        if !self.slots.contains_key(key) {
+            self.slots.insert(key.clone(), None);
             // A dead worker leaves the slot empty, which draws as no panel.
-            self.worker.requests.send(entry.path.clone()).ok();
+            self.worker.requests.send((key.clone(), source())).ok();
         }
-        self.slots.get(&entry.path)?.as_ref()
+        self.slots.get(key)?.as_ref()
     }
 }
 
@@ -825,18 +864,23 @@ struct PreviewPixels {
 
 /// The thread that draws previews. It exits when the cache drops its sender.
 struct PreviewWorker {
-    requests: std::sync::mpsc::Sender<Option<PathBuf>>,
-    finished: std::sync::mpsc::Receiver<(Option<PathBuf>, Option<PreviewPixels>)>,
+    requests: std::sync::mpsc::Sender<(PreviewKey, PreviewSource)>,
+    finished: std::sync::mpsc::Receiver<(PreviewKey, Option<PreviewPixels>)>,
 }
 
 impl PreviewWorker {
     fn spawn() -> Self {
-        let (requests, queue) = std::sync::mpsc::channel::<Option<PathBuf>>();
+        let (requests, queue) = std::sync::mpsc::channel::<(PreviewKey, PreviewSource)>();
         let (done, finished) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            for path in queue {
-                let pixels = render_preview(path.as_deref());
-                if done.send((path, pixels)).is_err() {
+            for (key, source) in queue {
+                let scenario = match source {
+                    PreviewSource::Path(Some(path)) => Scenario::load(path).ok(),
+                    PreviewSource::Path(None) => Some(Scenario::skirmish()),
+                    PreviewSource::Map(scenario) => Some(*scenario),
+                };
+                let pixels = scenario.and_then(|scenario| render_preview(&scenario));
+                if done.send((key, pixels)).is_err() {
                     break;
                 }
             }
@@ -845,12 +889,8 @@ impl PreviewWorker {
     }
 }
 
-/// Draws one scenario's preview; `None` means the embedded skirmish.
-fn render_preview(path: Option<&std::path::Path>) -> Option<PreviewPixels> {
-    let scenario = match path {
-        Some(path) => Scenario::load(path).ok()?,
-        None => Scenario::skirmish(),
-    };
+/// Draws one scenario's preview.
+fn render_preview(scenario: &Scenario) -> Option<PreviewPixels> {
     let state = scenario.build().ok()?;
     // Seats draw in one neutral tone: the setup screen's seat markers carry
     // ownership, and a preview has no viewer to be relative to.

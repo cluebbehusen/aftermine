@@ -55,6 +55,16 @@ impl Seating {
         Self { seats }
     }
 
+    /// A seating of exactly these occupants, one of them the host.
+    pub(crate) fn from_occupants(seats: Vec<Occupant>) -> Self {
+        debug_assert_eq!(
+            seats.iter().filter(|seat| **seat == Occupant::Host).count(),
+            1,
+            "one seat holds the host"
+        );
+        Self { seats }
+    }
+
     /// Every seat's occupant, in seat order.
     pub(crate) fn seats(&self) -> &[Occupant] {
         &self.seats

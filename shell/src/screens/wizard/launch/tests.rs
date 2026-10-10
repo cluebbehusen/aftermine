@@ -1,4 +1,5 @@
 use super::*;
+use crate::numeric::Fit;
 
 fn team_draft() -> NewMatchDraft {
     let mut draft = NewMatchDraft::default();
@@ -8,11 +9,11 @@ fn team_draft() -> NewMatchDraft {
 }
 
 #[test]
-fn remote_chairs_launch_as_humans_without_a_bot() {
+fn open_chairs_launch_as_humans_without_a_bot() {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(Scenario::skirmish(), None);
-    draft.seats[0].remote = true;
-    draft.seats[1].remote = true;
+    draft.seats[0].open = true;
+    draft.seats[1].open = true;
     draft.seat_choice = 1;
     let scenario = draft_scenario(&draft, 0x1000).expect("builds");
     assert!(scenario.players.iter().all(|player| !player.bot));
@@ -22,12 +23,12 @@ fn remote_chairs_launch_as_humans_without_a_bot() {
             .iter()
             .all(|player| player.bot_config.is_none())
     );
-    draft.seats[0].remote = false;
+    draft.seats[0].open = false;
     let scenario = draft_scenario(&draft, 0x1000).expect("builds");
     assert!(scenario.players[0].bot && scenario.players[0].bot_config.is_some());
     assert!(
         !scenario.players[1].bot,
-        "the human's chair ignores its remote flag"
+        "the human's chair ignores its open flag"
     );
 }
 
@@ -254,4 +255,47 @@ fn a_stale_draft_fails_the_launch_instead_of_the_process() {
     let mut draft = team_draft();
     draft.seats.truncate(2);
     assert!(launch(&draft, 0xA000).is_err());
+}
+
+#[test]
+fn people_play_under_their_names_and_repeats_take_an_ordinal() {
+    let mut draft = team_draft();
+    draft.seat_choice = 1;
+    let authored: Vec<String> = draft
+        .scenario
+        .as_ref()
+        .unwrap()
+        .players
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    let scenario = draft_scenario(&draft, 0).expect("builds");
+    assert_eq!(
+        scenario.players[1].name, authored[1],
+        "no saved name keeps the seat's"
+    );
+
+    draft.player_name = Some(PlayerName::new("Alex").unwrap());
+    draft.seats[0].open = true;
+    draft.seats[2].open = true;
+    let names = [
+        Some(PlayerName::new("Alex").unwrap()),
+        Some(PlayerName::new("Riley").unwrap()),
+        Some(PlayerName::new("Sam").unwrap()),
+    ];
+    let scenario = hosted_scenario(&draft, 0, &names).expect("builds");
+    let shown: Vec<&str> = scenario.players[..3]
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(
+        shown,
+        ["Alex", "Alex 2", "Sam"],
+        "the host's seat takes the saved name, a member's name stays off it"
+    );
+    assert!(!scenario.players[0].bot && !scenario.players[2].bot);
+    assert!(
+        scenario.players[3].bot,
+        "a chair nobody opened plays its bot"
+    );
 }

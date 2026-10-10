@@ -38,7 +38,7 @@ use crate::screens::playback::PlaybackSession;
 use crate::screens::results::ResultsScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
-use crate::screens::wizard::launch::{NewMatch, PersonalitySeedSource, start_new_match};
+use crate::screens::wizard::launch::{PersonalitySeedSource, hosted_scenario, launch};
 use crate::screens::wizard::{NewMatchDraft, Out as WizardOut, Step as WizardStep, Wizard};
 use crate::{Args, assets, autosave, config, input, render, screens, theme, tutorial};
 use anyhow::{Context, Result};
@@ -223,7 +223,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         (args.debug_server && !args.automation) || args.scenario.is_some() || args.replay.is_some();
     let commit = crate::build_identity().revision;
     let mut screen = if let Some(address) = &args.host {
-        let lobby = crate::netplay::HostLobby::new(
+        let lobby = crate::netplay::ScenarioHost::new(
             address,
             game.scenario.clone(),
             game.presentation.human,

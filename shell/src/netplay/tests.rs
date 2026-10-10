@@ -78,13 +78,13 @@ fn three_humans() -> Scenario {
 
 fn host_lobby(scenario: Scenario) -> Lobby {
     Lobby::Host(Box::new(
-        HostLobby::new("127.0.0.1:0", scenario, HOST, COMMIT, Some(name("Host"))).unwrap(),
+        ScenarioHost::new("127.0.0.1:0", scenario, HOST, COMMIT, Some(name("Host"))).unwrap(),
     ))
 }
 
 fn address(lobby: &Lobby) -> String {
     match lobby {
-        Lobby::Host(host) => host.address.clone(),
+        Lobby::Host(host) => host.lobby.address().to_owned(),
         Lobby::Client(_) => unreachable!("a host lobby"),
     }
 }
@@ -116,7 +116,7 @@ impl Match {
 
     fn start_as(scenario: Scenario, seat: PlayerId) -> Self {
         let mut host = Lobby::Host(Box::new(
-            HostLobby::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap(),
+            ScenarioHost::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap(),
         ));
         let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
         let (mut hosted, mut joined) = (None, None);
@@ -423,13 +423,13 @@ fn a_silent_connection_is_closed_after_the_greeting_timeout() {
     let Lobby::Host(mut host) = host_lobby(duel()) else {
         unreachable!("a host lobby");
     };
-    let silent = std::net::TcpStream::connect(&host.address).unwrap();
+    let silent = std::net::TcpStream::connect(host.lobby.address()).unwrap();
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
-        (!host.connections.is_empty()).then_some(())
+        (host.lobby.connection_count() > 0).then_some(())
     });
     assert!(host.poll(oxide_net::GREETING_TIMEOUT, viewport()).is_none());
-    assert!(host.connections.is_empty());
+    assert_eq!(host.lobby.connection_count(), 0);
     drop(silent);
 }
 
@@ -440,17 +440,17 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
         unreachable!("a host lobby");
     };
     let silent: Vec<_> = (0..MAX_GREETING)
-        .map(|_| std::net::TcpStream::connect(&host.address).unwrap())
+        .map(|_| std::net::TcpStream::connect(host.lobby.address()).unwrap())
         .collect();
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
-        (host.connections.len() == MAX_GREETING).then_some(())
+        (host.lobby.connection_count() == MAX_GREETING).then_some(())
     });
-    let waiting = std::net::TcpStream::connect(&host.address).unwrap();
+    let waiting = std::net::TcpStream::connect(host.lobby.address()).unwrap();
     for _ in 0..10 {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
     }
-    assert_eq!(host.connections.len(), MAX_GREETING);
+    assert_eq!(host.lobby.connection_count(), MAX_GREETING);
 
     // The full slots time out, and only then is the waiting peer accepted
     // and greeted.
@@ -458,7 +458,7 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
     assert!(host.poll(timeout, viewport()).is_none());
     wait(|| {
         assert!(host.poll(timeout, viewport()).is_none());
-        (host.connections.len() == 1).then_some(())
+        (host.lobby.connection_count() == 1).then_some(())
     });
     waiting
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -476,8 +476,8 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
 
 #[test]
 fn a_host_needs_its_own_seat_and_another_human_seat() {
-    assert!(HostLobby::new("127.0.0.1:0", Scenario::skirmish(), HOST, COMMIT, None).is_err());
-    assert!(HostLobby::new("127.0.0.1:0", duel(), PlayerId(2), COMMIT, None).is_err());
+    assert!(ScenarioHost::new("127.0.0.1:0", Scenario::skirmish(), HOST, COMMIT, None).is_err());
+    assert!(ScenarioHost::new("127.0.0.1:0", duel(), PlayerId(2), COMMIT, None).is_err());
 }
 
 #[test]
