@@ -8,10 +8,11 @@ use crate::game::network::{CLIENT_BUFFER, NetRole};
 use crate::seating::{Occupant, Seating};
 use anyhow::{Context, Result, ensure};
 use macroquad::prelude::Vec2;
+use oxide_net::discovery::Beacon;
 use oxide_net::{
-    ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Gathering, Guest, GuestEnd,
-    GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName, RoomSeat,
-    SeatHolder, StartFailed,
+    Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Gathering, Guest,
+    GuestEnd, GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName,
+    RoomSeat, SeatHolder, StartFailed,
 };
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
@@ -492,6 +493,12 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
 pub(crate) struct HostLobby {
     listener: Listener,
     address: String,
+    commit: String,
+    /// The TCP port joiners connect to.
+    port: u16,
+    /// Announces the lobby on the local network; `None` on loopback, which
+    /// nobody else can reach, or where the platform refuses the socket.
+    advertiser: Option<Advertiser>,
     gathering: Gathering,
     connections: Vec<(MemberId, Connection)>,
     /// Members refused or removed since the last flush, whose connections
@@ -521,9 +528,15 @@ impl HostLobby {
         let bound = listener
             .local_addr()
             .with_context(|| format!("cannot listen on {address}"))?;
+        let advertiser = (!bound.ip().is_loopback())
+            .then(Advertiser::new)
+            .and_then(Result::ok);
         Ok(Self {
             listener,
             address: reachable(bound),
+            commit: commit.to_owned(),
+            port: bound.port(),
+            advertiser,
             gathering: Gathering::new(commit, map),
             connections: Vec::new(),
             farewells: Vec::new(),
@@ -539,6 +552,28 @@ impl HostLobby {
     /// A joined member's name.
     pub(crate) fn name(&self, member: MemberId) -> Option<&PlayerName> {
         self.gathering.name(member)
+    }
+
+    /// Announces the lobby on the local network, at most once per beacon
+    /// interval: `host`'s lobby on `map`, `players` of `seats` here.
+    pub(crate) fn advertise(
+        &mut self,
+        host: &PlayerName,
+        map: &str,
+        players: usize,
+        seats: usize,
+        now: Duration,
+    ) {
+        if let Some(advertiser) = &mut self.advertiser {
+            let beacon = Beacon::new(&self.commit, host.clone(), self.port, map, players, seats);
+            advertiser.poll(&beacon, now);
+        }
+    }
+
+    /// Announces to `target` instead of the whole network.
+    #[cfg(test)]
+    pub(crate) fn advertise_to(&mut self, target: std::net::SocketAddr) {
+        self.advertiser = Advertiser::with_target(target).ok();
     }
 
     /// How many connections are open, joined or not.
@@ -795,6 +830,17 @@ impl ScenarioHost {
         let seating = &self.seating;
         self.lobby
             .publish(&room, |member| seating.seat_of(member), now);
+        // Joiners can take any seat but the host's, so the map's seats are
+        // the lobby's room.
+        let here = 1 + self.seating.members().len();
+        let host = shown_host_name(
+            self.host_name.as_ref(),
+            &self.scenario,
+            self.seating.host_seat(),
+        );
+        let seats = self.scenario.players.len();
+        self.lobby
+            .advertise(&host, &self.scenario.name, here, seats, now);
         if self.seating.ready() && self.unbuildable.as_ref() != Some(&self.seating) {
             self.start(now, viewport);
         }

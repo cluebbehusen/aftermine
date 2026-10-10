@@ -7,11 +7,14 @@ use crate::game::{Game, SoundKind};
 use crate::menu::{Label, Line, Menu, PreviewCache};
 use crate::netplay::{Link, Lobby, address_char, parse_join_address};
 use crate::numeric;
+use crate::press::{Fed, Press};
 use crate::screens::wizard::{self, CardController, CardView};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use crate::theme::Type;
 use macroquad::prelude::Vec2;
-use macroquad::prelude::{draw_text, measure_text};
+use macroquad::prelude::{Rect, draw_rectangle, draw_rectangle_lines, draw_text, measure_text};
+use oxide_net::Scanner;
+use oxide_net::discovery::{Heard, Sighting};
 use oxide_net::{NameError, PlayerName};
 use oxide_net::{RoomSeat, SeatHolder};
 use oxide_protocol::{Key, RawEvent};
@@ -34,14 +37,34 @@ pub enum Out {
 
 enum Face {
     /// Asking who and where; `failure` says why the last join did not.
-    Join { form: Form, failure: Option<String> },
+    Join {
+        form: Form,
+        failure: Option<String>,
+        /// Listening for lobbies on the local network.
+        scan: Scan,
+        /// The lobbies heard lately.
+        sightings: Vec<Sighting>,
+        /// The match row a press armed.
+        press: Press<usize>,
+    },
     /// Machines gathering.
     Waiting(Lobby),
+}
+
+/// Whether the Join form listens for lobbies.
+enum Scan {
+    /// Not asked to (tests stay off the shared discovery port).
+    Off,
+    /// The platform refused the socket.
+    Failed,
+    Listening(Box<Scanner>),
 }
 
 /// The lobby screen.
 pub struct LobbyScreen {
     face: Face,
+    /// Whether forms this screen opens listen for lobbies.
+    discover: bool,
     /// The form's fields, or the roster and Cancel, for the UI report.
     pub menu: Menu<usize>,
     /// The corner Back button over a joiner's copy of the setup screen.
@@ -74,7 +97,32 @@ impl LobbyScreen {
         Self::face(Face::Join {
             form,
             failure: None,
+            scan: Scan::Off,
+            sightings: Vec::new(),
+            press: Press::default(),
         })
+    }
+
+    /// Lists the lobbies on the local network under the Join form, now and
+    /// on every return to it.
+    pub fn discovering(mut self) -> Self {
+        self.discover = true;
+        if let Face::Join { scan, .. } = &mut self.face {
+            *scan = match Scanner::bind(&crate::build_identity().revision) {
+                Ok(scanner) => Scan::Listening(Box::new(scanner)),
+                Err(_) => Scan::Failed,
+            };
+        }
+        self
+    }
+
+    /// Listens with `scanner` instead of the shared discovery port.
+    #[cfg(test)]
+    pub fn with_scanner(mut self, scanner: Scanner) -> Self {
+        if let Face::Join { scan, .. } = &mut self.face {
+            *scan = Scan::Listening(Box::new(scanner));
+        }
+        self
     }
 
     /// The Join form showing why the last join failed.
@@ -98,6 +146,7 @@ impl LobbyScreen {
         };
         Self {
             face,
+            discover: false,
             menu,
             back: crate::button::BackButton::default(),
         }
@@ -106,12 +155,30 @@ impl LobbyScreen {
     /// Polls the lobby; returns the match once it starts. A join that
     /// gives up comes back to the form, with the reason.
     pub fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
+        if let Face::Join {
+            form,
+            scan,
+            sightings,
+            ..
+        } = &mut self.face
+        {
+            if let Scan::Listening(scanner) = scan {
+                *sightings = scanner.poll(now).to_vec();
+            }
+            self.menu = join_menu(form, sightings);
+            return None;
+        }
         let Face::Waiting(lobby) = &mut self.face else {
             return None;
         };
         let started = lobby.poll(now, viewport);
         if let Some((name, address, reason)) = lobby.failure() {
-            *self = Self::failed(name.as_str(), address, reason.to_owned());
+            let form = Self::failed(name.as_str(), address, reason.to_owned());
+            *self = if self.discover {
+                form.discovering()
+            } else {
+                form
+            };
         } else {
             self.menu.set_lines(waiting_lines(lobby));
         }
@@ -159,9 +226,35 @@ impl LobbyScreen {
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
         match &mut self.face {
-            Face::Join { form, .. } => {
+            Face::Join {
+                form,
+                sightings,
+                press,
+                ..
+            } => {
+                let rows = match_rows(form, sightings.len());
+                let mut picked = None;
+                for event in events {
+                    if let Fed::Activated(row) =
+                        press.feed(event, |p, _| rows.iter().position(|rect| rect.contains(p)))
+                    {
+                        picked = Some(row);
+                    }
+                }
+                if let Some(address) = picked.and_then(|row| sightings[row].address()) {
+                    sounds.push((SoundKind::Click, None));
+                    match PlayerName::new(form.value(0)) {
+                        Ok(name) => {
+                            return Out::Join {
+                                name,
+                                address: address.to_string(),
+                            };
+                        }
+                        Err(error) => form.refuse(0, error.reason(), sounds),
+                    }
+                }
                 let edit = form.update(events, sounds);
-                self.menu = form.menu(|index| index);
+                self.menu = join_menu(form, sightings);
                 match edit {
                     Edit::Commit => {
                         match (
@@ -214,16 +307,152 @@ impl LobbyScreen {
             return;
         }
         match &self.face {
-            Face::Join { form, failure } => {
+            Face::Join {
+                form,
+                failure,
+                scan,
+                sightings,
+                ..
+            } => {
                 let color = if failure.is_some() {
                     crate::theme::TEXT_DANGER
                 } else {
                     crate::theme::TEXT_SECONDARY
                 };
                 form.draw(&self.subtitle(), color, mouse);
+                if !matches!(scan, Scan::Off) {
+                    draw_matches(form, scan, sightings, mouse);
+                }
             }
             Face::Waiting(_) => self.menu.draw(&self.subtitle()),
         }
+    }
+}
+
+/// The Join form's rows for the UI report: its fields, then one heading
+/// per lobby heard.
+fn join_menu(form: &Form, sightings: &[Sighting]) -> Menu<usize> {
+    let fields = form.menu(|index| index);
+    let mut lines = fields.lines().to_vec();
+    lines.extend(
+        sightings
+            .iter()
+            .map(|sighting| Line::Header(match_label(sighting))),
+    );
+    let mut menu = Menu::new("JOIN MATCH", lines);
+    menu.select(fields.selected);
+    menu
+}
+
+/// One lobby as the list names it.
+fn match_label(sighting: &Sighting) -> String {
+    match &sighting.heard {
+        Heard::Joinable(beacon) => format!(
+            "Match: {} | {} | {} of {} players",
+            beacon.map, beacon.host, beacon.players, beacon.seats
+        ),
+        Heard::OtherBuild { host, .. } => format!("Match: {host} | different build"),
+    }
+}
+
+/// Where the match list's rows sit, under the form's buttons.
+fn match_rows(form: &Form, count: usize) -> Vec<Rect> {
+    let s = crate::render::ui_scale();
+    let layout = form.layout(crate::render::viewport(), s);
+    let (Some(first), Some(last)) = (layout.fields.first(), layout.fields.last()) else {
+        return Vec::new();
+    };
+    let height = crate::theme::MIN_TOUCH_TARGET * s;
+    let top = layout.confirm.y + layout.confirm.h + 46.0 * s;
+    (0..count.min(4))
+        .map(|row| {
+            Rect::new(
+                first.x,
+                top + row as f32 * (height + 6.0 * s),
+                last.x + last.w - first.x,
+                height,
+            )
+        })
+        .collect()
+}
+
+/// Draws "Matches on your network" and a row per lobby heard.
+fn draw_matches(form: &Form, scan: &Scan, sightings: &[Sighting], mouse: Vec2) {
+    let s = crate::render::ui_scale();
+    let layout = form.layout(crate::render::viewport(), s);
+    let Some(first) = layout.fields.first() else {
+        return;
+    };
+    let heading_y = layout.confirm.y + layout.confirm.h + 34.0 * s;
+    draw_text(
+        "MATCHES ON YOUR NETWORK",
+        first.x,
+        heading_y,
+        Type::Small.at(s),
+        crate::theme::TEXT_SECONDARY,
+    );
+    let empty = match scan {
+        Scan::Failed => Some("Can't search this network"),
+        _ if sightings.is_empty() => Some("No matches found"),
+        _ => None,
+    };
+    if let Some(line) = empty {
+        draw_text(
+            line,
+            first.x,
+            heading_y + 30.0 * s,
+            Type::Label.at(s),
+            crate::theme::TEXT_DISABLED,
+        );
+        return;
+    }
+    for (rect, sighting) in match_rows(form, sightings.len()).iter().zip(sightings) {
+        let joinable = sighting.address().is_some();
+        let hovered = joinable && rect.contains(mouse);
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            if hovered {
+                crate::theme::SURFACE_CARD
+            } else {
+                crate::theme::SURFACE_PANEL
+            },
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            crate::theme::Stroke::Hairline.at(s),
+            if hovered {
+                crate::theme::TEXT_ACCENT
+            } else {
+                crate::theme::BORDER_STRONG
+            },
+        );
+        let (left, right) = match &sighting.heard {
+            Heard::Joinable(beacon) => (
+                beacon.map.clone(),
+                format!(
+                    "{} - {} of {} players",
+                    beacon.host, beacon.players, beacon.seats
+                ),
+            ),
+            Heard::OtherBuild { host, .. } => (host.clone(), "different build".to_owned()),
+        };
+        let size = Type::Body.at(s);
+        let y = rect.y + rect.h * 0.5 + size * 0.35;
+        let (strong, quiet) = if joinable {
+            (crate::theme::TEXT_PRIMARY, crate::theme::TEXT_SECONDARY)
+        } else {
+            (crate::theme::TEXT_DISABLED, crate::theme::TEXT_DISABLED)
+        };
+        draw_text(&left, rect.x + 12.0 * s, y, size, strong);
+        let small = Type::Label.at(s);
+        let width = measure_text(&right, None, numeric::font_size(small), 1.0).width;
+        draw_text(&right, rect.x + rect.w - width - 12.0 * s, y, small, quiet);
     }
 }
 

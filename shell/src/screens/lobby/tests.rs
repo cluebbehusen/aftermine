@@ -136,3 +136,98 @@ fn a_typed_address_that_cannot_parse_opens_the_form_with_why() {
     assert_eq!(screen.keyboard(), Some(Keyboard::Text));
     assert_eq!(LobbyScreen::join(None, "").subtitle(), "");
 }
+
+/// A Join form listening on loopback, and an advertiser aimed at it.
+fn listening(name: Option<&str>) -> (LobbyScreen, oxide_net::Advertiser) {
+    let scanner = oxide_net::Scanner::bind_to("127.0.0.1:0", "abc").unwrap();
+    let target = scanner.local_addr().unwrap();
+    let screen = LobbyScreen::join(name, "").with_scanner(scanner);
+    (screen, oxide_net::Advertiser::with_target(target).unwrap())
+}
+
+fn beacon(commit: &str) -> oxide_net::discovery::Beacon {
+    oxide_net::discovery::Beacon::new(
+        commit,
+        PlayerName::new("Connor").unwrap(),
+        4321,
+        "Broad Front",
+        2,
+        4,
+    )
+}
+
+/// Polls `screen` until its report lists `rows` entries.
+fn heard(screen: &mut LobbyScreen, rows: usize) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while screen.menu.view().items.len() < rows {
+        assert!(std::time::Instant::now() < deadline, "no beacon arrived");
+        screen.poll(Duration::ZERO, vec2(1280.0, 800.0));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn tap(at: Vec2) -> [RawEvent; 2] {
+    [
+        RawEvent::TouchDown {
+            id: 1,
+            x: at.x,
+            y: at.y,
+        },
+        RawEvent::TouchUp {
+            id: 1,
+            x: at.x,
+            y: at.y,
+        },
+    ]
+}
+
+#[test]
+fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    advertiser.poll(&beacon("abc"), Duration::ZERO);
+    heard(&mut screen, 3);
+    assert_eq!(
+        screen.menu.view().items[2],
+        "Match: Broad Front | Connor | 2 of 4 players"
+    );
+    let Face::Join { form, .. } = &screen.face else {
+        panic!("the form is up");
+    };
+    let row = match_rows(form, 1)[0].center();
+    assert_eq!(feed(&mut screen, &tap(row)), join("Alex", "127.0.0.1:4321"));
+}
+
+#[test]
+fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let (mut screen, mut advertiser) = listening(None);
+    advertiser.poll(&beacon("abc"), Duration::ZERO);
+    heard(&mut screen, 3);
+    let Face::Join { form, .. } = &screen.face else {
+        panic!("the form is up");
+    };
+    let row = match_rows(form, 1)[0].center();
+    let mut sounds = Vec::new();
+    let out = screen.update(&tap(row), &mut vec2(0.0, 0.0), &mut sounds);
+    assert_eq!(out, Out::Stay);
+    assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Denied));
+    assert_eq!(
+        screen.keyboard(),
+        Some(Keyboard::Text),
+        "the name takes focus"
+    );
+
+    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    advertiser.poll(&beacon("other"), Duration::ZERO);
+    heard(&mut screen, 3);
+    assert_eq!(
+        screen.menu.view().items[2],
+        "Match: Connor | different build"
+    );
+    let Face::Join { form, .. } = &screen.face else {
+        panic!("the form is up");
+    };
+    let row = match_rows(form, 1)[0].center();
+    assert_eq!(feed(&mut screen, &tap(row)), Out::Stay);
+}

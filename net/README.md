@@ -7,9 +7,9 @@ same ordered batches.
 
 The session core and start barrier perform no I/O and read no clock. Callers
 pass received lines and a monotonic `now`, and collect lines to send. The `tcp`
-module is the crate's only I/O. The crate does not own bots, recording, or
-`State` itself: hosts run their own batch path of staged human commands, then
-bot commands, then record, then `State::tick`.
+and `udp` modules are the crate's only I/O. The crate does not own bots,
+recording, or `State` itself: hosts run their own batch path of staged human
+commands, then bot commands, then record, then `State::tick`.
 
 ## Main pieces
 
@@ -29,6 +29,9 @@ bot commands, then record, then `State::tick`.
 - `ClientSession` gates execution on received batches, acknowledges every
   executed batch, and watches host liveness.
 - `tcp` provides `Listener` and `Connection`, which move lines between machines.
+- `discovery` defines the beacon a hosting lobby announces and the list of
+  lobbies a joining player has heard; `udp` provides the `Advertiser` and
+  `Scanner` sockets that carry it.
 
 ## Joining and starting
 
@@ -106,6 +109,23 @@ bot commands, then record, then `State::tick`.
 - `Listener::try_accept` never blocks, so the game loop can poll it. Bind a
   non-loopback address for other machines to reach. `DEFAULT_PORT` is the
   conventional port.
+
+## Discovery
+
+- A hosting lobby sends a `Beacon` to UDP `DISCOVERY_PORT` once per
+  `BEACON_INTERVAL`: its host's name, TCP port, map, how many players are here,
+  and how many seats the map has. It goes to the limited broadcast address and
+  to the broadcast address of the subnet the machine routes through, taken as a
+  /24, since macOS can refuse the limited address when several interfaces are up
+  and std cannot read a netmask. A joining player's `Scanner` lists what it
+  hears, dropping a lobby unheard for `BEACON_EXPIRY`.
+- A beacon opens with fields whose shape never changes (a tag, the protocol and
+  sim versions, the commit, and the host's name), so a lobby of another build
+  still lists, marked unjoinable.
+- Broadcasts stay on the local network, so a routed network such as Tailscale
+  needs a typed address. iOS sends and receives broadcasts only for apps with
+  Apple's multicast entitlement; elsewhere a refused socket leaves discovery
+  off.
 
 ## Development
 

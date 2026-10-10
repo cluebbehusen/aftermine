@@ -255,7 +255,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 typed,
                 reason.to_owned(),
             ),
-        };
+        }
+        .discovering();
         Screen::Lobby {
             screen: Box::new(screen),
             back: Box::new(Screen::Home(HomeScreen::open())),

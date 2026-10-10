@@ -214,6 +214,19 @@ impl Form {
         }
     }
 
+    /// Refuses a commit the caller checked itself: plays Denied, shows
+    /// `reason`, and focuses `field`.
+    pub fn refuse(
+        &mut self,
+        field: usize,
+        reason: &'static str,
+        sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+    ) {
+        self.focus = field.min(self.fields.len() - 1);
+        self.error = Some(reason);
+        sounds.push((SoundKind::Denied, None));
+    }
+
     /// Field `index`'s value, trimmed.
     pub fn value(&self, index: usize) -> &str {
         self.fields[index].value.trim()

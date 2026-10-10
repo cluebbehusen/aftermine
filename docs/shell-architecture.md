@@ -52,19 +52,21 @@ Tapping an open chair's controller chip gives it back to its bot. A joiner takes
 the first open chair in display order, or else a bot's; the host swaps occupants
 between seats, removes players after a confirmation, and Start waits until every
 open chair is filled. Leaving setup or switching to Local closes the lobby,
-asking first when players would be dropped. Home's Join Match and `--join` open
-a `netplay::Lobby` client, whose waiting face draws a read-only copy of the
-host's setup from the room the lobby protocol carries. `--host` hosts a fixed
-scenario through `netplay::ScenarioHost`, which seats joiners with
-`seating::Seating` and starts once every seat has someone to play it. Players'
-names replace their seats' names in the started scenario. In-game hosts listen
-on `oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App`
-then owns the match's `netplay::Link` and pumps it once per loop pass on every
-screen that holds the match, so menus sit over a running match, and a match
-decided under the pause menu opens its report. Leaving the match drops the link,
-except that a host leaving a decided match first finishes its connections so
-lagging clients still receive the deciding batches. The host paces its ticks at
-1x, seals each tick's human orders, appends bot commands, and runs the published
+asking first when players would be dropped. A hosting lobby broadcasts a
+discovery beacon unless it listens on loopback, and the Join form lists the
+lobbies its scanner hears. Home's Join Match and `--join` open a
+`netplay::Lobby` client, whose waiting face draws a read-only copy of the host's
+setup from the room the lobby protocol carries. `--host` hosts a fixed scenario
+through `netplay::ScenarioHost`, which seats joiners with `seating::Seating` and
+starts once every seat has someone to play it. Players' names replace their
+seats' names in the started scenario. In-game hosts listen on
+`oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App` then
+owns the match's `netplay::Link` and pumps it once per loop pass on every screen
+that holds the match, so menus sit over a running match, and a match decided
+under the pause menu opens its report. Leaving the match drops the link, except
+that a host leaving a decided match first finishes its connections so lagging
+clients still receive the deciding batches. The host paces its ticks at 1x,
+seals each tick's human orders, appends bot commands, and runs the published
 batch; a client runs batches as they arrive with a small buffer and catches up
 when behind. Once the match is decided, the host closes the connections only
 after every client has acknowledged the final batch, so late hash reports are

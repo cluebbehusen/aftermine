@@ -581,3 +581,31 @@ fn a_wildcard_bind_shows_a_reachable_address() {
         "{shown}"
     );
 }
+
+#[test]
+fn a_hosted_lobby_announces_itself_with_its_room() {
+    let Lobby::Host(mut host) = host_lobby(three_humans()) else {
+        unreachable!("a host lobby");
+    };
+    let mut scanner = oxide_net::Scanner::bind_to("127.0.0.1:0", COMMIT).unwrap();
+    host.lobby.advertise_to(scanner.local_addr().unwrap());
+    let port: u16 = host
+        .lobby
+        .address()
+        .rsplit_once(':')
+        .unwrap()
+        .1
+        .parse()
+        .unwrap();
+    let beacon = wait(|| {
+        assert!(host.poll(Duration::ZERO, viewport()).is_none());
+        scanner.poll(Duration::ZERO).first().cloned()
+    });
+    let oxide_net::discovery::Heard::Joinable(beacon) = beacon.heard else {
+        panic!("this build's beacon");
+    };
+    assert_eq!(beacon.host, name("Host"));
+    assert_eq!(beacon.port, port);
+    assert_eq!(beacon.map, "Twin Forges");
+    assert_eq!((beacon.players, beacon.seats), (1, 4));
+}

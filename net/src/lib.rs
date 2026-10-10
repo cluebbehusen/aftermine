@@ -3,12 +3,14 @@
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
 pub mod client;
+pub mod discovery;
 pub mod host;
 pub mod lobby;
 pub mod message;
 pub mod name;
 pub mod start;
 pub mod tcp;
+pub mod udp;
 
 use oxide_sim::{TICKS_PER_SECOND, Tick};
 use std::time::Duration;
@@ -22,6 +24,7 @@ pub use message::{
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
 pub use tcp::{Closed, Connection, Listener};
+pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
 
 /// The wire protocol version both sides' Hello must match. Bump it for any
 /// wire change other than Hello itself, whose shape never changes.
