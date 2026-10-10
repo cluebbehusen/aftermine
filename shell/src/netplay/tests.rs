@@ -411,13 +411,80 @@ fn a_typed_address_gets_the_default_port_when_it_names_none() {
     for (typed, full) in [
         ("192.168.1.20", "192.168.1.20:4200"),
         (" connor-mbp ", "connor-mbp:4200"),
+        ("connor-mbp.local.", "connor-mbp.local.:4200"),
         ("connor-mbp:5000", "connor-mbp:5000"),
         ("10.0.0.2:4201", "10.0.0.2:4201"),
         ("fd7a::1", "[fd7a::1]:4200"),
+        ("[fd7a::1]", "[fd7a::1]:4200"),
         ("[fd7a::1]:4201", "[fd7a::1]:4201"),
     ] {
-        assert_eq!(with_default_port(typed), full, "{typed}");
+        assert_eq!(parse_join_address(typed).as_deref(), Ok(full), "{typed}");
     }
+    let longest = format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    assert_eq!(parse_join_address(&longest), Ok(format!("{longest}:4200")));
+}
+
+#[test]
+fn a_typed_address_that_cannot_reach_a_host_says_why() {
+    for (typed, why) in [
+        ("", "enter the host's address"),
+        ("10.0.0.2:0", "the port must be a number from 1 to 65535"),
+        ("host:99999", "the port must be a number from 1 to 65535"),
+        ("host:", "the port must be a number from 1 to 65535"),
+        (
+            "192.168.1",
+            "that isn't an address - try one like 192.168.1.20",
+        ),
+        (
+            "192.168.1.300",
+            "that isn't an address - try one like 192.168.1.20",
+        ),
+        ("-host", "that isn't an address - try one like 192.168.1.20"),
+        ("a..b", "that isn't an address - try one like 192.168.1.20"),
+        (
+            "[fd7a::1",
+            "that isn't an address - try one like 192.168.1.20",
+        ),
+        (
+            "[nope]",
+            "that isn't an address - try one like 192.168.1.20",
+        ),
+        ("a:b:c", "that isn't an address - try one like 192.168.1.20"),
+    ] {
+        assert_eq!(parse_join_address(typed), Err(why), "{typed}");
+    }
+    assert!(
+        parse_join_address(&"a".repeat(64)).is_err(),
+        "a label caps at 63"
+    );
+    let too_long = vec!["a".repeat(63); 4].join(".");
+    assert!(parse_join_address(&too_long).is_err(), "a name caps at 253");
+}
+
+#[test]
+fn an_unreachable_host_on_apple_points_at_local_network_permission() {
+    let blocked = io::Error::from(io::ErrorKind::HostUnreachable);
+    assert!(unreachable("10.0.0.2:4200", &blocked, true).contains("Local Network"));
+    assert!(!unreachable("10.0.0.2:4200", &blocked, false).contains("Local Network"));
+    let refused = io::Error::from(io::ErrorKind::ConnectionRefused);
+    let reason = unreachable("10.0.0.2:4200", &refused, true);
+    assert!(
+        reason.starts_with("Cannot reach 10.0.0.2:4200: "),
+        "{reason}"
+    );
+    assert!(!reason.contains("Local Network"), "{reason}");
+}
+
+#[test]
+fn every_address_character_is_one_a_host_can_contain() {
+    assert!("Ab9.-:[]".chars().all(address_char));
+    assert!(!" /@_%".chars().any(address_char));
 }
 
 #[test]

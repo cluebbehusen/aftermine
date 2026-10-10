@@ -10,7 +10,9 @@ use crate::menu::{Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::render;
+use crate::text_field::{Edit, Field, Form, Keyboard};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
+use oxide_net::{NameError, PlayerName};
 use oxide_protocol::{Key, RawEvent};
 
 /// Which face is up.
@@ -170,6 +172,7 @@ pub(crate) enum Item {
 /// row cannot leave a stale index pointing at its neighbour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Row {
+    PlayerName,
     MasterVolume,
     EffectsVolume,
     UiVolume,
@@ -191,7 +194,8 @@ pub(crate) enum Row {
 
 impl Row {
     /// Every row, in the order the menu shows them.
-    const ALL: [Row; 17] = [
+    const ALL: [Row; 18] = [
+        Row::PlayerName,
         Row::MasterVolume,
         Row::EffectsVolume,
         Row::UiVolume,
@@ -222,6 +226,10 @@ impl Row {
         let pct = |v: f32| format!("{}%", (v * 100.0).round());
         let onoff = |v: bool| if v { "on" } else { "off" };
         match self {
+            Row::PlayerName => format!(
+                "Name: {}",
+                config.player_name.as_deref().unwrap_or("not set")
+            ),
             Row::MasterVolume => format!("Master volume: {}", pct(config.volumes.master)),
             Row::EffectsVolume => format!("Effects volume: {}", pct(config.volumes.effects)),
             Row::UiVolume => format!("UI volume: {}", pct(config.volumes.ui)),
@@ -326,7 +334,11 @@ fn cycle_setting(config: &mut Config, row: Row) -> bool {
             config.markers.scale = scale_step(config.markers.scale);
             crate::strategic_markers::set_prefs(config.markers);
         }
-        Row::LeftHandedPreset | Row::Controls | Row::OpenDiagnostics | Row::ExportDiagnostics => {
+        Row::PlayerName
+        | Row::LeftHandedPreset
+        | Row::Controls
+        | Row::OpenDiagnostics
+        | Row::ExportDiagnostics => {
             return false;
         }
     }
@@ -370,6 +382,12 @@ pub struct SettingsScreen {
     pub notice: Option<Notice>,
     binding_slot: usize,
     back: crate::button::BackButton,
+    /// The name form, while it is open over the settings rows.
+    naming: Option<Form>,
+}
+
+fn name_check(name: &str) -> Result<(), &'static str> {
+    PlayerName::new(name).map(drop).map_err(NameError::reason)
 }
 
 impl SettingsScreen {
@@ -382,11 +400,81 @@ impl SettingsScreen {
             notice: None,
             binding_slot: 0,
             back: crate::button::BackButton::default(),
+            naming: None,
+        }
+    }
+
+    /// The keyboard the name form asks for while it is open.
+    pub fn keyboard(&self) -> Option<Keyboard> {
+        self.naming.as_ref().map(Form::keyboard)
+    }
+
+    /// Consumes the name form's request to raise the on-screen keyboard.
+    pub fn take_keyboard_request(&mut self) -> bool {
+        self.naming
+            .as_mut()
+            .is_some_and(Form::take_keyboard_request)
+    }
+
+    /// Opens the name form, prefilled with the current name.
+    fn begin_naming(&mut self, config: &Config) {
+        let current = config.player_name.as_deref().unwrap_or_default();
+        let field =
+            Field::new(current, PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
+        let form = Form::new("YOUR NAME", "SAVE", vec![field], 0);
+        self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
+        self.naming = Some(form);
+    }
+
+    /// Closes the name form, back on the Name row.
+    fn end_naming(&mut self, config: &Config) {
+        self.naming = None;
+        self.menu = settings_menu(config);
+        self.menu
+            .select_where(|item| *item == Item::Setting(Row::PlayerName));
+    }
+
+    /// Runs the name form for a frame, saving a committed name.
+    fn update_naming(
+        &mut self,
+        events: &[RawEvent],
+        back: bool,
+        sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+        config: &mut Config,
+    ) -> bool {
+        let Some(form) = &mut self.naming else {
+            return false;
+        };
+        if back {
+            self.end_naming(config);
+            return false;
+        }
+        match form.update(events, sounds) {
+            Edit::Commit => {
+                let name = PlayerName::new(form.value(0)).ok().map(String::from);
+                let dirty = name.is_some();
+                if dirty {
+                    config.player_name = name;
+                }
+                self.end_naming(config);
+                dirty
+            }
+            Edit::Cancel => {
+                self.end_naming(config);
+                false
+            }
+            Edit::Stay => {
+                self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
+                false
+            }
         }
     }
 
     /// The debug protocol's stable mode name for the current face.
     pub fn mode_name(&self) -> &'static str {
+        if self.naming.is_some() {
+            return "player_name";
+        }
         match self.face {
             Face::Settings => "settings",
             Face::Controls { .. } => "controls",
@@ -435,7 +523,11 @@ impl SettingsScreen {
 
     /// Draws the face's menu and the screen-owned notice — the caller
     /// draws the veil first, so both land above it.
-    pub fn draw(&self) {
+    pub fn draw(&self, mouse: Vec2) {
+        if let Some(form) = &self.naming {
+            form.draw("", crate::theme::TEXT_SECONDARY, mouse);
+            return;
+        }
         self.menu
             .draw_with_coaching(self.subtitle(), self.coaching());
         if let Some(notice) = &self.notice {
@@ -477,6 +569,13 @@ impl SettingsScreen {
         // capture included: it cancels a rebind without binding anything.
         let (back, routed) = self.back.route(events);
         let events = routed.as_slice();
+        if self.naming.is_some() {
+            if back {
+                sounds.push((SoundKind::Click, None));
+            }
+            update.dirty = self.update_naming(events, back, sounds, config);
+            return update;
+        }
         if back {
             sounds.push((SoundKind::Click, None));
             match self.face {
@@ -522,6 +621,8 @@ impl SettingsScreen {
                         update.out = Out::OpenDiagnostics;
                     } else if row == Row::ExportDiagnostics {
                         update.out = Out::ExportDiagnostics;
+                    } else if row == Row::PlayerName {
+                        self.begin_naming(config);
                     } else if row == Row::Controls {
                         self.goto_controls(config, 0);
                     }

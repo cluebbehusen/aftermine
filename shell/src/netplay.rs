@@ -347,20 +347,74 @@ impl Lobby {
     }
 }
 
-/// `address` with the default port when it names none.
-pub(crate) fn with_default_port(address: &str) -> String {
-    let address = address.trim();
-    let has_port = address.parse::<SocketAddr>().is_ok()
-        || address
-            .rsplit_once(':')
-            .is_some_and(|(host, port)| !host.contains(':') && port.parse::<u16>().is_ok());
-    if has_port {
-        address.to_owned()
-    } else if address.parse::<Ipv6Addr>().is_ok() {
-        format!("[{address}]:{DEFAULT_PORT}")
-    } else {
-        format!("{address}:{DEFAULT_PORT}")
+/// Whether a host address can contain `ch`: host names, IPv4 and bracketed
+/// IPv6 addresses, and a port.
+pub(crate) fn address_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | ':' | '[' | ']')
+}
+
+/// A typed host address with its port, the default when it names none, or
+/// why it cannot reach a host.
+pub(crate) fn parse_join_address(typed: &str) -> Result<String, &'static str> {
+    const NOT_AN_ADDRESS: &str = "that isn't an address - try one like 192.168.1.20";
+    const BAD_PORT: &str = "the port must be a number from 1 to 65535";
+    let typed = typed.trim();
+    if typed.is_empty() {
+        return Err("enter the host's address");
     }
+    if let Ok(socket) = typed.parse::<SocketAddr>() {
+        return if socket.port() == 0 {
+            Err(BAD_PORT)
+        } else {
+            Ok(typed.to_owned())
+        };
+    }
+    match typed.parse::<IpAddr>() {
+        Ok(IpAddr::V4(_)) => return Ok(format!("{typed}:{DEFAULT_PORT}")),
+        Ok(IpAddr::V6(_)) => return Ok(format!("[{typed}]:{DEFAULT_PORT}")),
+        Err(_) => {}
+    }
+    if let Some(inner) = typed.strip_prefix('[') {
+        // A bracketed address with a valid port already parsed above.
+        return match inner.strip_suffix(']').map(str::parse::<Ipv6Addr>) {
+            Some(Ok(_)) => Ok(format!("{typed}:{DEFAULT_PORT}")),
+            _ => Err(NOT_AN_ADDRESS),
+        };
+    }
+    let (host, port) = match typed.rsplit_once(':') {
+        Some((host, _)) if host.contains(':') => return Err(NOT_AN_ADDRESS),
+        Some((host, port)) => match port.parse::<u16>() {
+            Ok(port) if port != 0 => (host, port),
+            _ => return Err(BAD_PORT),
+        },
+        None => (typed, DEFAULT_PORT),
+    };
+    if host_name(host) {
+        Ok(format!("{host}:{port}"))
+    } else {
+        Err(NOT_AN_ADDRESS)
+    }
+}
+
+/// Whether `host` is a well-formed DNS name. An all-digit last label is
+/// refused, which catches unfinished or out-of-range IPv4 addresses such as
+/// `192.168.1` and `192.168.1.300`.
+fn host_name(host: &str) -> bool {
+    let host = host.strip_suffix('.').unwrap_or(host);
+    let label = |label: &str| {
+        (1..=63).contains(&label.len())
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    };
+    host.len() <= 253
+        && host.split('.').all(label)
+        && host
+            .rsplit('.')
+            .next()
+            .is_some_and(|last| !last.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 /// Where other machines reach a listener bound to `bound`. A wildcard bind
@@ -607,6 +661,24 @@ fn send_to(seated: &[(PlayerId, Connection)], lines: Vec<(PlayerId, String)>) {
     }
 }
 
+/// Why a connect to `address` failed. Apple platforms report a connect
+/// that Local Network privacy blocked as an unreachable host, so there the
+/// reason points at the setting.
+fn unreachable(address: &str, error: &io::Error, apple: bool) -> String {
+    let unreachable = matches!(
+        error.kind(),
+        io::ErrorKind::HostUnreachable | io::ErrorKind::NetworkUnreachable
+    );
+    if apple && unreachable {
+        format!(
+            "Cannot reach {address}: check that you share the host's network and that \
+             Oxide is allowed under Privacy & Security > Local Network"
+        )
+    } else {
+        format!("Cannot reach {address}: {error}")
+    }
+}
+
 /// A client joining a host.
 pub(crate) struct ClientLobby {
     address: String,
@@ -672,7 +744,11 @@ impl ClientLobby {
                     connection.send(&JoinMessage::hello(&self.commit).encode());
                     (Joining::Greeting(connection), None)
                 }
-                Ok(Err(error)) => refused(&format!("Cannot reach {}: {error}", self.address)),
+                Ok(Err(error)) => refused(&unreachable(
+                    &self.address,
+                    &error,
+                    cfg!(any(target_os = "macos", target_os = "ios")),
+                )),
                 Err(_) => refused("Connecting failed"),
             },
             Joining::Greeting(connection) => match connection.try_recv() {

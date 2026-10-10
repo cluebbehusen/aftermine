@@ -330,15 +330,17 @@ fn lobby_frame(
     match lobby.update(events, &mut app.input.mouse, &mut app.ui_sounds) {
         crate::screens::lobby::Out::Stay => {}
         crate::screens::lobby::Out::Cancel => return *back,
-        crate::screens::lobby::Out::Join(address) => {
+        crate::screens::lobby::Out::Join { name, address } => {
             app.config.last_join_address = Some(address.clone());
+            app.config.player_name = Some(name.to_string());
             if let Err(err) = app.config.save() {
                 app.notify(format!("could not save settings: {err}"), true);
             }
             let commit = crate::build_identity().revision;
-            *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                crate::netplay::ClientLobby::new(&address, &commit),
-            ));
+            *lobby = crate::screens::lobby::LobbyScreen::joining(
+                crate::netplay::Lobby::Client(crate::netplay::ClientLobby::new(&address, &commit)),
+                name.as_str(),
+            );
         }
     }
     render::draw(
@@ -444,7 +446,10 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
     } else if out == screens::home::Out::Join {
         let address = app.config.last_join_address.as_deref().unwrap_or_default();
         Screen::Lobby {
-            screen: Box::new(crate::screens::lobby::LobbyScreen::address(address)),
+            screen: Box::new(crate::screens::lobby::LobbyScreen::join(
+                app.config.player_name.as_deref(),
+                address,
+            )),
             back: Box::new(Screen::Home(home)),
         }
     } else {
@@ -508,7 +513,7 @@ fn settings_frame(
         &app.config.bindings,
     );
     veil();
-    sc.draw();
+    sc.draw(app.input.mouse);
     crate::button::draw_back(app.input.mouse);
     if up.out == screens::settings::Out::Leave {
         // Back to wherever this screen displaced: Home, or

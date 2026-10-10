@@ -4,7 +4,7 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
-use crate::text_field::{Edit, TextField};
+use crate::text_field::{Edit, Field, Form, Keyboard};
 use macroquad::prelude::Vec2;
 use oxide_protocol::{Key, RawEvent};
 
@@ -216,7 +216,7 @@ enum Face {
     SaveFailed(SaveFailed),
     /// The save-name field has focus. Only here do Text events mean
     /// anything; letters stay semantic everywhere else.
-    Naming(TextField),
+    Naming(Form),
 }
 
 /// The pause screen: its rows and whichever face is up.
@@ -338,9 +338,15 @@ impl PauseScreen {
     /// Opens the name field over the pause menu, prefilled with the
     /// caller's suggestion so Enter-Enter saves without typing.
     pub fn begin_naming(&mut self, suggested: &str) {
-        let field = TextField::new("SAVE GAME", "SAVE", suggested, Self::NAME_MAX);
-        self.menu = field.menu(Choice::Field);
-        self.face = Face::Naming(field);
+        // Typing only ever adds printable ASCII; a prefill holds to the
+        // same alphabet (plus the middle dot saves use) so a map name
+        // cannot smuggle glyphs past the ingest filter.
+        let name = Field::new(suggested, Self::NAME_MAX, |ch| {
+            ch.is_ascii() || ch == '\u{b7}'
+        });
+        let form = Form::new("SAVE GAME", "SAVE", vec![name], 0);
+        self.menu = form.menu(|_| Choice::Field);
+        self.face = Face::Naming(form);
     }
 
     /// Reports the save verdict and returns to the pause rows, cursor
@@ -390,9 +396,12 @@ impl PauseScreen {
         matches!(self.face, Face::SaveFailed(_))
     }
 
-    /// Whether the save-name field has focus.
-    pub fn naming(&self) -> bool {
-        matches!(self.face, Face::Naming(_))
+    /// The keyboard the save-name field asks for while it is up.
+    pub fn keyboard(&self) -> Option<Keyboard> {
+        match &self.face {
+            Face::Naming(form) => Some(form.keyboard()),
+            Face::Rows | Face::Confirm(_) | Face::SaveFailed(_) => None,
+        }
     }
 
     /// The debug protocol's stable mode name for the current face.
@@ -425,10 +434,10 @@ impl PauseScreen {
         let escaped = events
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
-        if let Face::Naming(field) = &mut self.face {
-            match field.update(events, sounds) {
-                Edit::Commit(name) => return Out::Save(name),
-                Edit::Stay => self.menu = field.menu(Choice::Field),
+        if let Face::Naming(form) = &mut self.face {
+            match form.update(events, sounds) {
+                Edit::Commit => return Out::Save(form.value(0).to_owned()),
+                Edit::Stay => self.menu = form.menu(|_| Choice::Field),
                 Edit::Cancel => self.back_to_rows(Row::SaveGame),
             }
             return Out::Stay;

@@ -59,9 +59,9 @@ crate-level rustdoc.
   or raises combat music.
 - `debug_server` connects the frame loop to `oxide-protocol`.
 - `netplay` gathers LAN machines in a lobby and carries a running match between
-  them over `oxide-net`; `screens/lobby` asks for a host address and shows the
-  lobby's status. `text_field` is the one-line field it shares with the save
-  name.
+  them over `oxide-net`; `screens/lobby` asks for the player's name and a host
+  address and shows the lobby's status. `text_field` is the form of labeled
+  fields it shares with the save name and the Settings name.
 - `saved_game` owns compact checkpoint files with independently readable
   metadata. `autosave` owns atomic publication and retention; `saves` classifies
   checkpoints and recordings for the shelf. `app/persistence` runs capture
@@ -86,10 +86,10 @@ cargo run -p oxide-driver -- smoke --spawn
 
 To play over a LAN or Tailscale, build the same commit on every machine. In the
 game, the host sets other seats to Remote in match setup and starts the match;
-the others pick Join Match and enter the host's address (the port defaults to
-4200). From the command line, the host passes a scenario whose players are the
-seats with `"bot": false`; the host takes the first, and joining machines fill
-the rest in order:
+the others pick Join Match and enter their name and the host's address (the port
+defaults to 4200). From the command line, the host passes a scenario whose
+players are the seats with `"bot": false`; the host takes the first, and joining
+machines fill the rest in order:
 
 ```sh
 cargo run -p oxide-shell --release -- --host 0.0.0.0:4200 --scenario duel.json

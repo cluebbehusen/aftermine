@@ -179,7 +179,8 @@ fn music_volume_is_touch_reachable() {
     crate::render::set_user_scale(1.0);
     let mut config = Config::default();
     let mut screen = SettingsScreen::open(&config);
-    let row = screen.menu.item_rect(3).expect("music row is visible");
+    let music = index(Row::MusicVolume);
+    let row = screen.menu.item_rect(music).expect("music row is visible");
     let x = row.x + row.w * 0.5;
     let y = row.y + row.h * 0.5;
     // Another layout test must not move the row between measurement and input.
@@ -197,7 +198,49 @@ fn music_volume_is_touch_reachable() {
     );
     assert!(update.dirty);
     assert_eq!(config.volumes.music, 0.0);
-    assert_eq!(screen.menu.selected, 3);
+    assert_eq!(screen.menu.selected, music);
+}
+
+#[test]
+fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let mut config = Config::default();
+    let mut s = SettingsScreen::open(&config);
+    assert_eq!(s.menu.view().items[index(Row::PlayerName)], "Name: not set");
+    s.menu.select(index(Row::PlayerName));
+    let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+    assert!(!up.dirty);
+    assert_eq!(s.mode_name(), "player_name");
+    assert_eq!(s.keyboard(), Some(Keyboard::Text));
+    assert_eq!(s.menu.view().items, vec!["_"]);
+
+    let refused = drive(&mut s, &mut config, &press(Key::Enter), false);
+    assert!(!refused.dirty, "a blank name keeps the form up");
+    assert_eq!(s.mode_name(), "player_name");
+    let typed: Vec<RawEvent> = " Connor ".chars().map(|ch| RawEvent::Text { ch }).collect();
+    drive(&mut s, &mut config, &typed, false);
+    let saved = drive(&mut s, &mut config, &press(Key::Enter), false);
+    assert!(saved.dirty);
+    assert_eq!(config.player_name.as_deref(), Some("Connor"));
+    assert_eq!(s.mode_name(), "settings");
+    assert_eq!(s.keyboard(), None);
+    assert_eq!(s.menu.view().items[index(Row::PlayerName)], "Name: Connor");
+    assert_eq!(s.menu.selected, index(Row::PlayerName), "back on the row");
+
+    // Escape and the corner BACK both close the form without saving.
+    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &press(Key::Backspace), false);
+    let up = drive(&mut s, &mut config, &press(Key::Escape), false);
+    assert!(!up.dirty);
+    assert_eq!(up.out, Out::Stay, "Escape leaves the form, not Settings");
+    assert_eq!(config.player_name.as_deref(), Some("Connor"));
+    drive(&mut s, &mut config, &press(Key::Enter), false);
+    assert_eq!(s.menu.view().items, vec!["Connor_"], "prefilled");
+    assert!(!s.take_keyboard_request());
+    let back = crate::button::press_back(true);
+    let up = drive(&mut s, &mut config, &back, false);
+    assert_eq!(up.out, Out::Stay);
+    assert_eq!(s.mode_name(), "settings");
 }
 
 #[test]

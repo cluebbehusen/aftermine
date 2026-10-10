@@ -55,12 +55,29 @@ fn a_menu_opened_from_pause_still_counts_as_over_pause() {
 }
 
 #[test]
-fn keyboard_is_wanted_only_while_naming() {
+fn the_keyboard_follows_the_text_field_on_screen() {
+    use crate::text_field::Keyboard;
+
     let mut pause = PauseScreen::open(false, true);
-    assert!(!Screen::Pause(PauseScreen::open(false, true)).text_entry());
+    assert_eq!(
+        Screen::Pause(PauseScreen::open(false, true)).keyboard(),
+        None
+    );
     pause.begin_naming("Skirmish | t40");
-    assert!(Screen::Pause(pause).text_entry());
+    assert_eq!(Screen::Pause(pause).keyboard(), Some(Keyboard::Text));
     assert!(!Screen::Playing.text_entry());
+
+    let lobby = |name| Screen::Lobby {
+        screen: Box::new(LobbyScreen::join(name, "10.0.0.2")),
+        back: Box::new(Screen::Home(HomeScreen::open())),
+    };
+    assert_eq!(lobby(None).keyboard(), Some(Keyboard::Text), "a name first");
+    assert_eq!(
+        lobby(Some("Connor")).keyboard(),
+        Some(Keyboard::Address),
+        "then the address"
+    );
+    assert!(lobby(None).text_entry());
 }
 
 #[test]

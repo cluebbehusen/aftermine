@@ -5,6 +5,7 @@
 pub mod client;
 pub mod host;
 pub mod message;
+pub mod name;
 pub mod start;
 pub mod tcp;
 
@@ -14,6 +15,7 @@ use std::time::Duration;
 pub use client::{ClientEnd, ClientSession};
 pub use host::{DropReason, HostEvent, HostSession};
 pub use message::{ClientMessage, HostMessage, JoinMessage, LobbyMessage, same_build};
+pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
 pub use tcp::{Closed, Connection, Listener};
 
