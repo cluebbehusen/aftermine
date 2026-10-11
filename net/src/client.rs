@@ -25,7 +25,7 @@ pub enum ClientEnd {
     HostLeft,
 }
 
-/// The client's half of a lockstep session, starting at tick zero.
+/// The client's half of a lockstep session.
 ///
 /// Each game-loop step, the client executes every batch
 /// [`ClientSession::next_batch`] yields, calling
@@ -58,10 +58,16 @@ pub struct ClientSession {
 impl ClientSession {
     /// A session whose world is at tick zero.
     pub fn new(now: Duration) -> Self {
+        Self::at(0, now)
+    }
+
+    /// A session whose world is at `tick`, as a rejoining client's is once
+    /// it restored the host's snapshot.
+    pub fn at(tick: Tick, now: Duration) -> Self {
         Self {
             batches: VecDeque::new(),
-            next_batch: 0,
-            executed: 0,
+            next_batch: tick,
+            executed: tick,
             executing: false,
             heard: now,
             sent: now,

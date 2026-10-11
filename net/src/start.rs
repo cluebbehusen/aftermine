@@ -3,6 +3,7 @@
 use crate::START_TIMEOUT;
 use crate::host::HostSession;
 use crate::message::{JoinMessage, LobbyMessage};
+use crate::token::Token;
 use oxide_sim::{PlayerId, Scenario};
 use std::time::Duration;
 
@@ -38,6 +39,8 @@ pub enum StartFailed {
 pub struct StartBarrier {
     host: PlayerId,
     clients: Vec<PlayerId>,
+    /// Each client's rejoin token, sent with its Go.
+    tokens: Vec<Token>,
     hash: u64,
     attempt: u32,
     deadline: Duration,
@@ -48,17 +51,19 @@ pub struct StartBarrier {
 
 impl StartBarrier {
     /// Starts `scenario` with the host on `host` and clients on `clients`,
-    /// which together must hold exactly the scenario's human seats.
-    /// `host_hash` is the host's `State::hash` at tick zero, and `attempt`
-    /// numbers this start.
+    /// which together must hold exactly the scenario's human seats. Each
+    /// client's token reaches it with Go. `host_hash` is the host's
+    /// `State::hash` at tick zero, and `attempt` numbers this start.
     pub fn new(
         scenario: &Scenario,
         host: PlayerId,
-        clients: &[PlayerId],
+        clients: &[(PlayerId, Token)],
         host_hash: u64,
         attempt: u32,
         now: Duration,
     ) -> Self {
+        let tokens: Vec<Token> = clients.iter().map(|&(_, token)| token).collect();
+        let clients: Vec<PlayerId> = clients.iter().map(|&(seat, _)| seat).collect();
         let mut seated: Vec<PlayerId> = clients.iter().copied().chain([host]).collect();
         seated.sort_unstable();
         let humans: Vec<PlayerId> = scenario
@@ -85,11 +90,12 @@ impl StartBarrier {
             .collect();
         Self {
             host,
-            clients: clients.to_vec(),
+            ready: vec![false; clients.len()],
+            clients,
+            tokens,
             hash: host_hash,
             attempt,
             deadline: now + START_TIMEOUT,
-            ready: vec![false; clients.len()],
             started: false,
             outgoing,
         }
@@ -133,10 +139,19 @@ impl StartBarrier {
         assert!(!self.started, "the match already started");
         if self.ready.iter().all(|&ready| ready) {
             self.started = true;
-            let go = LobbyMessage::Go.encode();
-            self.outgoing
-                .extend(self.clients.iter().map(|&seat| (seat, go.clone())));
-            return Ok(Some(HostSession::new(self.host, &self.clients, now)));
+            let seats = self
+                .clients
+                .iter()
+                .copied()
+                .zip(self.tokens.iter().copied());
+            self.outgoing.extend(
+                seats
+                    .clone()
+                    .map(|(seat, token)| (seat, LobbyMessage::Go { token }.encode())),
+            );
+            let session =
+                HostSession::new(self.host, &self.clients, now).with_tokens(seats.collect());
+            return Ok(Some(session));
         }
         if now >= self.deadline {
             return Err(StartFailed::TimedOut);

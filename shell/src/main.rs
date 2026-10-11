@@ -18,6 +18,7 @@ mod config;
 mod debug_server;
 mod diagnostic_report;
 mod entity_lod;
+mod entropy;
 mod frame_profile;
 mod frame_time;
 mod game;

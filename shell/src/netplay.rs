@@ -793,12 +793,18 @@ impl HostLobby {
                 }
             }
         }
-        let events = self.gathering.poll(now);
+        let mut events = self.gathering.poll(now);
         for event in &events {
-            if let LobbyEvent::Left { member, .. } = event {
-                self.connections.retain(|(id, _)| id != member);
+            match event {
+                LobbyEvent::Left { member, .. } => {
+                    self.connections.retain(|(id, _)| id != member);
+                }
+                LobbyEvent::Turned { member } => self.farewells.push(*member),
+                LobbyEvent::Joined { .. } => {}
             }
         }
+        events.retain(|event| !matches!(event, LobbyEvent::Turned { .. }));
+        self.flush(now);
         events
     }
 
@@ -870,7 +876,14 @@ impl HostLobby {
         host_hash: u64,
         now: Duration,
     ) {
-        self.gathering.start(scenario, host, seated, host_hash, now);
+        self.gathering.start(
+            scenario,
+            host,
+            seated,
+            host_hash,
+            now,
+            crate::entropy::token,
+        );
         self.flush(now);
     }
 
@@ -1015,6 +1028,8 @@ impl ScenarioHost {
                 LobbyEvent::Left { member, .. } => {
                     self.seating.vacate(member);
                 }
+                // The lobby closes these itself.
+                LobbyEvent::Turned { .. } => {}
             }
         }
         if self.starting.is_some() {
@@ -1274,7 +1289,7 @@ impl ClientLobby {
                         Ok(Some(GuestEvent::Room)) => game = None,
                         // Stop reading at Go: the batches behind it belong to
                         // the link.
-                        Ok(Some(GuestEvent::Go)) => {
+                        Ok(Some(GuestEvent::Go { .. })) => {
                             for line in guest.take_outgoing() {
                                 connection.send(&line);
                             }
@@ -1318,6 +1333,7 @@ impl ClientLobby {
             }
             GuestEnd::Full => "The match is full".to_owned(),
             GuestEnd::Removed => "The host removed you from the lobby".to_owned(),
+            GuestEnd::Underway => "That match already started".to_owned(),
             GuestEnd::Silent => "Lost contact with the host".to_owned(),
             GuestEnd::Protocol => "The host sent something unexpected".to_owned(),
         }

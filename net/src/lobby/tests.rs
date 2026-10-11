@@ -52,6 +52,16 @@ fn room(players: &[&str]) -> Vec<RoomSeat> {
     seats
 }
 
+fn token(seat: PlayerId) -> Token {
+    Token::new(0x100 + u128::from(seat.0))
+}
+
+/// Hands out each seated member's token in seat order.
+fn seat_token(seating: &[(MemberId, PlayerId)]) -> impl FnMut() -> Token + '_ {
+    let mut seats = seating.iter().map(|&(_, seat)| seat);
+    move || token(seats.next().expect("one token per seat"))
+}
+
 /// One host lobby and its guests, passing lines between them in memory.
 struct Lan {
     host: Gathering,
@@ -148,7 +158,8 @@ impl Lan {
             .enumerate()
             .map(|(index, (id, _))| (*id, PlayerId(u8::try_from(index + 1).unwrap())))
             .collect();
-        self.host.start(&map(), HOST, &seating, HASH, self.now);
+        self.host
+            .start(&map(), HOST, &seating, HASH, self.now, seat_token(&seating));
     }
 }
 
@@ -185,6 +196,48 @@ fn a_guest_is_greeted_named_and_shown_the_map_once_and_the_room_on_change() {
     changed[2].team = Some(0);
     lan.publish(&changed);
     assert_eq!(lan.settle()[alex], vec![GuestEvent::Room], "no second map");
+}
+
+#[test]
+fn a_probe_or_rejoin_at_a_lobby_hears_there_is_no_match() {
+    for ask in [
+        JoinMessage::Probe {
+            token: Token::new(1),
+        },
+        JoinMessage::Rejoin {
+            token: Token::new(1),
+        },
+    ] {
+        let mut host = Gathering::new(COMMIT, &map());
+        let member = host.connected(secs(0));
+        host.receive(member, &JoinMessage::hello(COMMIT).encode(), secs(0));
+        host.take_outgoing();
+        host.receive(member, &ask.encode(), secs(0));
+        assert_eq!(
+            host.take_outgoing(),
+            [(
+                member,
+                LobbyMessage::Gone {
+                    reason: GoneReason::NoMatch
+                }
+                .encode()
+            )]
+        );
+        assert_eq!(host.poll(secs(0)), [LobbyEvent::Turned { member }]);
+        assert_eq!(host.name(member), None);
+    }
+}
+
+#[test]
+fn a_guest_hears_the_match_already_started() {
+    let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+    guest
+        .receive(&LobbyMessage::hello(COMMIT).encode(), secs(0))
+        .unwrap();
+    assert_eq!(
+        guest.receive(&LobbyMessage::Underway.encode(), secs(0)),
+        Err(GuestEnd::Underway)
+    );
 }
 
 #[test]
@@ -375,8 +428,18 @@ fn a_start_reaches_go_once_every_seated_guest_is_ready() {
     lan.settle();
     assert!(lan.host.poll_start(lan.now).unwrap().is_some());
     let heard = lan.settle();
-    assert_eq!(heard[alex], vec![GuestEvent::Go]);
-    assert_eq!(heard[sam], vec![GuestEvent::Go]);
+    assert_eq!(
+        heard[alex],
+        vec![GuestEvent::Go {
+            token: token(PlayerId(1))
+        }]
+    );
+    assert_eq!(
+        heard[sam],
+        vec![GuestEvent::Go {
+            token: token(PlayerId(2))
+        }]
+    );
     assert!(
         lan.guests[alex].1.poll(lan.now + SILENCE_TIMEOUT).is_ok(),
         "the session owns liveness now"
@@ -422,7 +485,14 @@ fn a_failed_start_drops_only_its_culprit_and_the_rest_wait_for_the_next() {
     let seating = [(lan.member(0), PlayerId(1))];
     let mut scenario = map();
     scenario.players[2].bot = true;
-    lan.host.start(&scenario, HOST, &seating, HASH, lan.now);
+    lan.host.start(
+        &scenario,
+        HOST,
+        &seating,
+        HASH,
+        lan.now,
+        seat_token(&seating),
+    );
     lan.host.receive(lan.member(0), &late.encode(), lan.now);
     assert!(lan.host.poll_start(lan.now).unwrap().is_none());
     lan.settle();
@@ -586,7 +656,14 @@ fn an_introduction_during_a_start_waits_for_its_outcome() {
     let seating = [(seated, PlayerId(1))];
     let mut scenario = map();
     scenario.players[2].bot = true;
-    lan.host.start(&scenario, HOST, &seating, HASH, lan.now);
+    lan.host.start(
+        &scenario,
+        HOST,
+        &seating,
+        HASH,
+        lan.now,
+        seat_token(&seating),
+    );
     let late = lan.join("Riley");
     lan.settle();
     assert!(lan.take_events().is_empty(), "no join while starting");
@@ -629,7 +706,15 @@ fn a_guest_refuses_a_room_that_does_not_fit_the_map_or_seat_it() {
         Err(GuestEnd::Protocol),
         "no map yet"
     );
-    assert_eq!(start(&LobbyMessage::Go.encode()), Err(GuestEnd::Protocol));
+    assert_eq!(
+        start(
+            &LobbyMessage::Go {
+                token: Token::new(1)
+            }
+            .encode()
+        ),
+        Err(GuestEnd::Protocol)
+    );
     assert_eq!(start("garbage"), Err(GuestEnd::Protocol));
     assert_eq!(
         start(&LobbyMessage::hello(COMMIT).encode()),

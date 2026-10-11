@@ -3,29 +3,36 @@
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
 pub mod client;
+pub mod desk;
 pub mod discovery;
 pub mod host;
 pub mod lobby;
 pub mod message;
 pub mod name;
+pub mod snapshot;
 pub mod start;
 pub mod tcp;
+pub mod token;
 pub mod udp;
+pub mod visit;
 
 use oxide_sim::{TICKS_PER_SECOND, Tick};
 use std::time::Duration;
 
 pub use client::{ClientEnd, ClientSession};
+pub use desk::{Desk, DeskEvent, VisitorId};
 pub use host::{Exit, HostEvent, HostSession};
 pub use lobby::{Gathering, Guest, GuestEnd, GuestEvent, LeaveReason, LobbyEvent, MemberId};
 pub use message::{
-    ClientMessage, HostMessage, JoinMessage, LobbyMessage, Release, RoomSeat, SeatHolder,
-    SeatNotice, SeatState, same_build,
+    ClientMessage, GoneReason, HostMessage, JoinMessage, LobbyMessage, Release, RoomSeat,
+    SeatHolder, SeatNotice, SeatState, same_build,
 };
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
 pub use tcp::{Closed, Connection, Listener};
+pub use token::Token;
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
+pub use visit::{Visit, VisitEnd, VisitEvent};
 
 /// The wire protocol version both sides' Hello must match. Bump it for any
 /// wire change other than Hello itself, whose shape never changes.
