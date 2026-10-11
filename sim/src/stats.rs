@@ -86,7 +86,7 @@ chassis::listed_enum! {
         /// needs a spotter at full reach.
         Bastion,
         /// Radar: a ring of true sight, and a wider ring of blips (contacts
-        /// without identity that never satisfy a targeted attack).
+        /// without identity whose contact tracks attacks may target).
         Array,
         /// Grinds ambient debris into a scrap trickle, so a match can outlive
         /// its scrap patches.
