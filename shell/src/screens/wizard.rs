@@ -9,6 +9,7 @@
 use crate::bot_label::{difficulty_name, stance_name};
 use crate::game::Game;
 use crate::game::SoundKind;
+use crate::game::checkpoint::LanSave;
 use crate::game::network::NetRole;
 use crate::menu::{Label, Menu};
 use crate::menu::{PreviewCache, ScenarioEntry, discover_scenarios};
@@ -25,7 +26,7 @@ use macroquad::prelude::{
     DrawTextureParams, Rect, Texture2D, Vec2, draw_circle, draw_circle_lines, draw_rectangle,
     draw_rectangle_lines, draw_text, draw_texture_ex, measure_text, vec2,
 };
-use oxide_net::{LobbyEvent, MemberId, PlayerName};
+use oxide_net::{InstallId, LobbyEvent, MemberId, PlayerName, RoomSeat, SeatHolder};
 use oxide_protocol::{Key, RawEvent};
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario};
@@ -315,6 +316,95 @@ pub struct Wizard {
     saved_name: Option<PlayerName>,
     /// Where a lobby listens.
     pub(crate) lan_bind: String,
+    /// The saved LAN match this setup screen resumes, if it resumes one.
+    resume: Option<Box<Resume>>,
+}
+
+/// A saved LAN match the setup screen resumes. Its map, bots, and teams are
+/// fixed; each joined player's seat waits, reserved, for its player.
+struct Resume {
+    save: LanSave,
+    /// The New Match draft this screen stands in for, given back when the
+    /// resume ends.
+    previous: NewMatchDraft,
+}
+
+impl Resume {
+    /// Whether `seat` was a joined player's.
+    fn reserved(&self, seat: usize) -> bool {
+        self.save
+            .players()
+            .iter()
+            .any(|(joined, _)| usize::from(joined.0) == seat)
+    }
+
+    /// The name `seat` was played under.
+    fn saved_name(&self, seat: usize) -> &str {
+        &self.save.scenario().players[seat].name
+    }
+
+    /// The reserved seat a joining player takes: the one its installation
+    /// played, else the one played under its name, else the first free one
+    /// in display order. An installation or a name another joined player
+    /// shares identifies nobody. `None` when no reserved seat is free.
+    fn seat_for(
+        &self,
+        draft: &NewMatchDraft,
+        members: &[Option<MemberId>],
+        lobby: &HostLobby,
+        joiner: (&PlayerName, InstallId),
+        order: &[usize],
+    ) -> Option<usize> {
+        let (name, install) = joiner;
+        let free =
+            |seat: usize| self.reserved(seat) && draft.seats[seat].open && members[seat].is_none();
+        let joined = || members.iter().flatten();
+        let saved = || {
+            self.save
+                .players()
+                .iter()
+                .map(|&(seat, saved)| (usize::from(seat.0), saved))
+                .filter(|&(seat, _)| free(seat))
+        };
+        let by_install = || {
+            (!joined().any(|&member| lobby.install(member) == Some(install)))
+                .then(|| saved().find(|&(_, saved)| saved == install))
+                .flatten()
+        };
+        let by_name = || {
+            (!joined().any(|&member| lobby.name(member) == Some(name)))
+                .then(|| saved().find(|&(seat, _)| self.saved_name(seat) == name.as_str()))
+                .flatten()
+        };
+        by_install()
+            .or_else(by_name)
+            .map(|(seat, _)| seat)
+            .or_else(|| order.iter().copied().find(|&seat| free(seat)))
+    }
+
+    /// Shows each reserved seat nobody holds as waiting for its player.
+    fn reserve(&self, draft: &NewMatchDraft, members: &[Option<MemberId>], room: &mut [RoomSeat]) {
+        for &(seat, _) in self.save.players() {
+            let seat = usize::from(seat.0);
+            if draft.seats[seat].open
+                && members.get(seat).copied().flatten().is_none()
+                && let Ok(name) = PlayerName::new(self.saved_name(seat))
+            {
+                room[seat].holder = SeatHolder::Reserved { name };
+            }
+        }
+    }
+
+    /// The reserved seats the host handed to bots, with their bots.
+    fn replaced(&self, draft: &NewMatchDraft) -> Vec<(PlayerId, BotDifficulty, BotStance)> {
+        self.save
+            .players()
+            .iter()
+            .map(|&(seat, _)| (seat, draft.seats[usize::from(seat.0)]))
+            .filter(|(_, plan)| !plan.open)
+            .map(|(seat, plan)| (seat, plan.difficulty, plan.stance))
+            .collect()
+    }
 }
 
 /// One collision-free team key per seat: an authored id stays itself;
@@ -1222,7 +1312,50 @@ impl Wizard {
             notice: None,
             saved_name: None,
             lan_bind: format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT),
+            resume: None,
         }
+    }
+
+    /// Opens setup on a saved LAN match and hosts its lobby, each joined
+    /// player's seat reserved. The draft stands in for New Match's until
+    /// the resume ends.
+    pub(crate) fn resume(save: LanSave, draft: &mut NewMatchDraft) -> Self {
+        let bind = format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT);
+        Self::resume_on(save, draft, &bind)
+    }
+
+    fn resume_on(save: LanSave, draft: &mut NewMatchDraft, bind: &str) -> Self {
+        let mut wizard = Self::open(draft);
+        bind.clone_into(&mut wizard.lan_bind);
+        let previous = std::mem::take(draft);
+        let scenario = save.scenario().clone();
+        draft.player_name.clone_from(&previous.player_name);
+        draft.seats = authored_seat_plans(&scenario);
+        draft.seat_choice = usize::from(save.host().0);
+        draft.scenario = Some(Box::new(scenario));
+        wizard.resume = Some(Box::new(Resume { save, previous }));
+        wizard.goto(Step::Setup, draft);
+        wizard.open_lan(draft);
+        wizard
+    }
+
+    /// Whether this setup screen resumes a saved LAN match.
+    pub(crate) fn resuming(&self) -> bool {
+        self.resume.is_some()
+    }
+
+    /// Ends a resume, giving back New Match's draft.
+    pub(crate) fn finish_resume(&mut self, draft: &mut NewMatchDraft) {
+        if let Some(resume) = self.resume.take() {
+            *draft = resume.previous;
+        }
+    }
+
+    /// The saved match as the host resumes it alone, every reserved seat
+    /// handed to its bot.
+    pub(crate) fn resume_alone(&self, draft: &NewMatchDraft) -> Result<Game> {
+        let resume = self.resume.as_deref().context("not resuming a match")?;
+        resume.save.local_game(&resume.replaced(draft))
     }
 
     /// The entry for the draft's picked map, with its stable index —
@@ -1299,7 +1432,9 @@ impl Wizard {
             match self.step {
                 Step::Map => return Ok(Out::Home),
                 Step::Setup => {
-                    self.back_from_setup(draft);
+                    if self.back_from_setup(draft) {
+                        return Ok(Out::Home);
+                    }
                     return Ok(Out::Stay);
                 }
             }
@@ -1359,12 +1494,25 @@ impl Wizard {
             self.setup_page,
         );
         self.setup_page = layout.page;
+        // A resume fixes the map's bots and teams and the host's seat: only
+        // the reserved seats change hands.
+        let resuming = self.resume.is_some();
+        let movable: Vec<bool> = (0..draft.seats.len())
+            .map(|seat| {
+                self.resume
+                    .as_deref()
+                    .is_none_or(|resume| resume.reserved(seat))
+            })
+            .collect();
         let cell_live = |row: usize, cell: Cell| -> bool {
             row < start_index
                 && match cell {
-                    Cell::Seat | Cell::Team => true,
-                    Cell::Difficulty => order[row] != draft.seat_choice,
-                    Cell::Stance => order[row] != draft.seat_choice && !open[order[row]],
+                    Cell::Seat => movable[order[row]],
+                    Cell::Team => !resuming,
+                    Cell::Difficulty => order[row] != draft.seat_choice && movable[order[row]],
+                    Cell::Stance => {
+                        order[row] != draft.seat_choice && !open[order[row]] && movable[order[row]]
+                    }
                 }
         };
         let zone_at = |p: Vec2, touch: bool| -> Option<SetupZone> {
@@ -1421,8 +1569,7 @@ impl Wizard {
             }
             match *event {
                 RawEvent::KeyDown { key: Key::Escape } => {
-                    self.back_from_setup(draft);
-                    return None;
+                    return self.back_from_setup(draft).then_some(Out::Home);
                 }
                 RawEvent::KeyDown { key: Key::Enter } => {
                     activate = Some(if self.on_switch {
@@ -1510,6 +1657,16 @@ impl Wizard {
                 self.setup_sel = (self.setup_page * COMPACT_PAGE_ITEMS).min(start_index);
                 self.setup_cell = Cell::Seat;
                 sounds.push((SoundKind::Click, None));
+            }
+            SetupZone::Switch(_) if resuming => {
+                // A saved LAN match resumes only with its players; the
+                // switch can only retry a lobby that failed to open.
+                if lan_on {
+                    sounds.push((SoundKind::Denied, None));
+                } else {
+                    sounds.push((SoundKind::Click, None));
+                    self.open_lan(draft);
+                }
             }
             SetupZone::Switch(lan) => {
                 sounds.push((SoundKind::Click, None));
@@ -1653,7 +1810,12 @@ impl Wizard {
                         name: name.as_str(),
                         host: false,
                     },
-                    None => CardController::Open,
+                    None => match &self.resume {
+                        Some(resume) => CardController::Reserved {
+                            name: resume.saved_name(seat),
+                        },
+                        None => CardController::Open,
+                    },
                 }
             } else {
                 CardController::Bot {
@@ -1946,10 +2108,14 @@ impl Wizard {
         let who = if seat == draft.seat_choice {
             "you".to_owned()
         } else if open[seat] {
-            self.lan
-                .as_ref()
-                .and_then(|lan| lan.name_at(seat))
-                .map_or_else(|| "open".to_owned(), |player| format!("player {player}"))
+            match (
+                self.lan.as_ref().and_then(|lan| lan.name_at(seat)),
+                &self.resume,
+            ) {
+                (Some(player), _) => format!("player {player}"),
+                (None, Some(resume)) => format!("was {}", resume.saved_name(seat)),
+                (None, None) => "open".to_owned(),
+            }
         } else {
             return format!(
                 "{}. {} | Difficulty {} | Stance {} | {}",
@@ -2105,8 +2271,9 @@ impl Wizard {
                     starting: None,
                 }));
                 let host = draft.seat_choice;
+                let resume = self.resume.as_deref();
                 for (seat, plan) in draft.seats.iter_mut().enumerate() {
-                    plan.open = seat != host;
+                    plan.open = resume.map_or(seat != host, |resume| resume.reserved(seat));
                 }
                 self.notice = None;
             }
@@ -2145,8 +2312,22 @@ impl Wizard {
         loop {
             for event in lan.lobby.poll(now, lan.starting.is_some()) {
                 match event {
-                    LobbyEvent::Joined { member, .. } => {
-                        match seat_for_joiner(draft, &lan.members, &order) {
+                    LobbyEvent::Joined {
+                        member,
+                        name,
+                        install,
+                    } => {
+                        let seat = match self.resume.as_deref() {
+                            Some(resume) => resume.seat_for(
+                                draft,
+                                &lan.members,
+                                &lan.lobby,
+                                (&name, install),
+                                &order,
+                            ),
+                            None => seat_for_joiner(draft, &lan.members, &order),
+                        };
+                        match seat {
                             Some(seat) => {
                                 draft.seats[seat].open = true;
                                 lan.members[seat] = Some(member);
@@ -2176,6 +2357,7 @@ impl Wizard {
                     for plan in &mut draft.seats {
                         plan.open = false;
                     }
+                    self.finish_resume(draft);
                     let link = Link::host(*started, &game, now);
                     return Some((*game, link));
                 }
@@ -2194,11 +2376,14 @@ impl Wizard {
         );
         let seating = draft_seating(draft, &lan.members);
         let lobby = &lan.lobby;
-        let room = seating.room(
+        let mut room = seating.room(
             &host,
             |member| lobby.name(member).cloned(),
             |seat| team_override(draft.seats[seat].team_choice),
         );
+        if let Some(resume) = &self.resume {
+            resume.reserve(draft, &lan.members, &mut room);
+        }
         lan.lobby
             .publish(&room, |member| seating.seat_of(member), now);
         // Joiners can take any chair but the host's, so the map's seats are
@@ -2243,6 +2428,43 @@ impl Wizard {
         lan.lobby.start(
             oxide_net::StartContent::Fresh(scenario),
             host,
+            &seated,
+            game.state.hash(),
+            now,
+        );
+        lan.starting = Some(LanStart {
+            game: Box::new(game),
+            seated,
+        });
+        self.notice = None;
+        Ok(())
+    }
+
+    /// Starts the lobby's players on the saved match, the reserved seats the
+    /// host handed to bots taken over; the start then runs through
+    /// [`Wizard::poll_lan`].
+    pub fn start_resume(&mut self, draft: &NewMatchDraft, now: Duration) -> Result<()> {
+        let resume = self.resume.as_deref().context("not resuming a match")?;
+        let lan = self.lan.as_mut().context("no lobby is open")?;
+        let (game, pending) = resume.save.host_game(&resume.replaced(draft))?;
+        let snapshot = crate::netplay::snapshot::encode(&game.world_snapshot()?)?;
+        let seated = lan.seated();
+        let seats: Vec<PlayerId> = resume
+            .save
+            .players()
+            .iter()
+            .map(|&(seat, _)| seat)
+            .filter(|&seat| draft.seats[usize::from(seat.0)].open)
+            .chain([game.presentation.human])
+            .collect();
+        lan.lobby.start(
+            oxide_net::StartContent::Resume {
+                seats: &seats,
+                tick: game.state.current_tick(),
+                snapshot: &snapshot,
+                pending: &pending,
+            },
+            game.presentation.human,
             &seated,
             game.state.hash(),
             now,
@@ -2339,14 +2561,19 @@ impl Wizard {
     }
 
     /// Back or Escape on setup: drops a pick first, then leaves for the map
-    /// grid, asking first when that would drop players.
-    fn back_from_setup(&mut self, draft: &mut NewMatchDraft) {
+    /// grid, asking first when that would drop players. A resume has no
+    /// map grid to go back to: returns whether to leave for Home instead.
+    fn back_from_setup(&mut self, draft: &mut NewMatchDraft) -> bool {
         if self.moving.take().is_some() {
-            return;
+            return false;
+        }
+        if self.resume.is_some() {
+            return true;
         }
         if self.leave_lan(draft, true) {
             self.goto(Step::Map, draft);
         }
+        false
     }
 
     /// A press on a seat card's name: puts a picked-up occupant here, picks
@@ -2362,7 +2589,13 @@ impl Wizard {
             Some(from) => swap_seats(draft, members, from, seat),
             None => {
                 let held = members.get(seat).copied().flatten().is_some();
-                if seat == draft.seat_choice || held {
+                if self.resume.is_some() {
+                    // The host keeps its seat; players move among the
+                    // reserved ones.
+                    if held {
+                        self.moving = Some(seat);
+                    }
+                } else if seat == draft.seat_choice || held {
                     self.moving = Some(seat);
                 } else {
                     let you = draft.seat_choice;
@@ -2380,3 +2613,6 @@ mod tests;
 
 #[cfg(test)]
 mod lan_tests;
+
+#[cfg(test)]
+mod resume_tests;

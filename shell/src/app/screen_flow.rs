@@ -661,20 +661,30 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     drop(input_scope);
     let hosted = out == WizardOut::Launch && w.hosting_players();
     if hosted {
-        let names = w.member_names();
-        let started = hosted_scenario(&app.draft, app.personality_seeds.match_base(), &names)
-            .and_then(|scenario| w.start_lan(&app.draft, &scenario, app.clock.elapsed()));
+        let started = if w.resuming() {
+            w.start_resume(&app.draft, app.clock.elapsed())
+        } else {
+            let names = w.member_names();
+            hosted_scenario(&app.draft, app.personality_seeds.match_base(), &names)
+                .and_then(|scenario| w.start_lan(&app.draft, &scenario, app.clock.elapsed()))
+        };
         if let Err(err) = started {
             app.notify(format!("can't start that match: {err:#}"), true);
         }
     }
     let launch_result = if hosted {
         None
+    } else if out == WizardOut::Launch && w.resuming() {
+        // Every other player's seat went to a bot: the host plays on alone.
+        let alone = w.resume_alone(&app.draft);
+        w.finish_resume(&mut app.draft);
+        Some(alone)
     } else {
         resolve_new_match(out, &app.draft, &mut app.personality_seeds)
     };
     match out {
         WizardOut::Home => {
+            w.finish_resume(&mut app.draft);
             let home = HomeScreen::open();
             render::draw(
                 &app.game.view(),

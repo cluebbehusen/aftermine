@@ -228,11 +228,12 @@ fn is_reservation_marker(path: &Path) -> bool {
     file.read_exact(&mut prefix).is_ok() && prefix == RESERVATION_MARKER_PREFIX.as_bytes()
 }
 
-/// Header-eligible autosaves, newest first. Loading must still validate the payload.
+/// Header-eligible autosaves, local and LAN, newest first. Loading must
+/// still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
     crate::saves::discover(|| false)
         .into_iter()
-        .filter(|entry| entry.compatible && entry.kind == crate::saves::RecordKind::Autosave)
+        .filter(|entry| entry.compatible && entry.kind.continues())
         .map(|entry| entry.path)
         .collect()
 }

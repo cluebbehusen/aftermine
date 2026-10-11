@@ -693,7 +693,7 @@ fn a_resumed_match_starts_from_its_snapshot_and_stays_in_sync() {
         .map(|&seat| (seat, Token::new(0x50 + u128::from(seat.0))))
         .collect();
     let content = StartContent::Resume {
-        scenario: &scenario,
+        seats: &[HOST, CLIENTS[0], CLIENTS[1]],
         tick,
         snapshot: &snapshot,
         pending: &pending,

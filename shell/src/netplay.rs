@@ -1216,6 +1216,11 @@ impl HostLobby {
         self.gathering.name(member)
     }
 
+    /// A joined member's installation.
+    pub(crate) fn install(&self, member: MemberId) -> Option<InstallId> {
+        self.gathering.install(member)
+    }
+
     /// Announces the lobby on the local network, at most once per beacon
     /// interval: `host`'s lobby on `map`, `players` of `seats` here.
     pub(crate) fn advertise(
@@ -1864,7 +1869,7 @@ impl ClientLobby {
     }
 }
 
-mod snapshot;
+pub(crate) mod snapshot;
 
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 use crate::game::Game;
-use crate::game::checkpoint::{GameCheckpoint, RestoredGame, SaveCapture};
+use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
@@ -130,7 +130,14 @@ fn lan_kind(kind: Option<&str>) -> bool {
     matches!(kind, Some("lan" | "lan-autosave"))
 }
 
-pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
+/// A save, checked and ready: a local match to install, or a LAN match
+/// for Match Setup to resume with its players.
+pub(crate) enum Loaded {
+    Local(Box<RestoredGame>),
+    Lan(Box<LanSave>),
+}
+
+pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     let (header, payload) = read_payload(path)?;
     let mut reader = payload.as_slice();
     let checkpoint: GameCheckpoint = ciborium::from_reader(&mut reader)?;
@@ -139,18 +146,30 @@ pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
         checkpoint.is_lan() == lan_kind(header.meta.kind.as_deref()),
         "save kind does not match the match"
     );
+    let (loaded, scenario, tick) = if checkpoint.is_lan() {
+        let save = checkpoint.into_lan_save()?;
+        let (scenario, tick) = (save.scenario().clone(), save.tick());
+        (Loaded::Lan(Box::new(save)), scenario, tick)
+    } else {
+        let game = checkpoint.restore()?;
+        let (scenario, tick) = (game.scenario().clone(), game.tick());
+        (Loaded::Local(Box::new(game)), scenario, tick)
+    };
     ensure!(
-        !checkpoint.is_lan(),
-        "a LAN match resumes from Match Setup with its players"
-    );
-    let game = checkpoint.restore()?;
-    ensure!(
-        header.meta.ticks == Some(game.tick())
-            && header.map == game.scenario().name
-            && header.seats == game.scenario().players.len(),
+        header.meta.ticks == Some(tick)
+            && header.map == scenario.name
+            && header.seats == scenario.players.len(),
         "save metadata does not match session"
     );
-    Ok(game)
+    Ok(loaded)
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
+    match prepare(path)? {
+        Loaded::Local(game) => Ok(*game),
+        Loaded::Lan(_) => anyhow::bail!("a LAN match resumes from Match Setup with its players"),
+    }
 }
 
 /// The checked header and decompressed checkpoint bytes of a player save.

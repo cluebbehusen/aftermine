@@ -267,4 +267,9 @@ fn a_lan_save_is_written_and_read_but_resumes_only_through_match_setup() {
     assert!(info.problem.is_none());
     let refused = prepare_load(&path.0).err().unwrap().to_string();
     assert!(refused.contains("resumes from Match Setup"), "{refused}");
+    let Loaded::Lan(save) = prepare(&path.0).unwrap() else {
+        panic!("a LAN save loads for Match Setup");
+    };
+    assert_eq!(save.tick(), 30);
+    assert_eq!(save.host(), PlayerId(0));
 }

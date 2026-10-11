@@ -34,8 +34,9 @@ pub enum StartContent<'a> {
     Fresh(&'a Scenario),
     /// A saved match, carried as a snapshot whose bytes are opaque here.
     Resume {
-        /// The saved match's scenario, whose human seats the roster fills.
-        scenario: &'a Scenario,
+        /// The human seats that take part, which the roster fills: a seat
+        /// whose player was out of the match when it was saved takes none.
+        seats: &'a [PlayerId],
         /// The tick the saved world is at.
         tick: Tick,
         /// The encoded snapshot every client restores.
@@ -46,9 +47,21 @@ pub enum StartContent<'a> {
 }
 
 impl StartContent<'_> {
-    fn scenario(&self) -> &Scenario {
+    /// The human seats the roster must fill, in seat order.
+    fn humans(&self) -> Vec<PlayerId> {
         match self {
-            StartContent::Fresh(scenario) | StartContent::Resume { scenario, .. } => scenario,
+            StartContent::Fresh(scenario) => scenario
+                .players
+                .iter()
+                .zip(0..)
+                .filter(|(player, _)| !player.bot)
+                .map(|(_, seat)| PlayerId(seat))
+                .collect(),
+            StartContent::Resume { seats, .. } => {
+                let mut seats = seats.to_vec();
+                seats.sort_unstable();
+                seats
+            }
         }
     }
 
@@ -112,7 +125,7 @@ pub struct StartBarrier {
 
 impl StartBarrier {
     /// Starts `content` with the host on `host` and clients on `clients`,
-    /// which together must hold exactly the scenario's human seats. Each
+    /// which together must hold exactly the human seats that take part. Each
     /// client's token reaches it with Go. `host_hash` is the host's
     /// `State::hash` at the starting tick, and `attempt` numbers this start.
     pub fn new(
@@ -127,17 +140,10 @@ impl StartBarrier {
         let clients: Vec<PlayerId> = clients.iter().map(|&(seat, _)| seat).collect();
         let mut seated: Vec<PlayerId> = clients.iter().copied().chain([host]).collect();
         seated.sort_unstable();
-        let humans: Vec<PlayerId> = content
-            .scenario()
-            .players
-            .iter()
-            .zip(0..)
-            .filter(|(player, _)| !player.bot)
-            .map(|(_, seat)| PlayerId(seat))
-            .collect();
         assert_eq!(
-            seated, humans,
-            "the host and clients must hold exactly the scenario's human seats"
+            seated,
+            content.humans(),
+            "the host and clients must hold exactly the human seats that take part"
         );
         let outgoing = clients
             .iter()

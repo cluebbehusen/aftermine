@@ -29,6 +29,11 @@ impl RecordKind {
     pub fn resumable(self) -> bool {
         !matches!(self, RecordKind::Match)
     }
+
+    /// Whether Continue picks up this record: the autosaves, local or LAN.
+    pub fn continues(self) -> bool {
+        matches!(self, RecordKind::Autosave | RecordKind::LanAutosave)
+    }
 }
 
 pub(crate) fn record_kind(meta: &chassis::replay::ReplayMeta) -> RecordKind {

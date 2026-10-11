@@ -65,9 +65,11 @@ commands, then bot commands, then record, then `State::tick`.
 - A resumed match starts the same way from `StartContent::Resume`: instead of
   the `Scenario`, each client receives `Resume` and the snapshot's `Part` lines,
   which its `Guest` reassembles as on a rejoin, and replies `Ready` with the
-  restored world's hash. The session starts at the saved tick with the orders
-  the saved match had not sealed queued first. The room shows a saved player's
-  seat as `Reserved` until someone takes it.
+  restored world's hash. The roster fills the human seats that take part, which
+  leaves out a seat whose player was out of the match when it was saved. The
+  session starts at the saved tick with the orders the saved match had not
+  sealed queued first. The room shows a saved player's seat as `Reserved` until
+  someone takes it.
 - A mismatched hash, a stray line, a seated member leaving or being removed, or
   `START_TIMEOUT` fails the start. `Gathering` drops every member who caused it
   and shows the rest the room again, which tells their `Guest` the start is off;
