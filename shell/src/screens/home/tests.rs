@@ -61,3 +61,30 @@ fn recovery_is_explicit_and_does_not_change_continue_or_play() {
         assert_eq!(pick(&mut home, usize::from(resumable) + 6), Out::Settings);
     }
 }
+
+#[test]
+fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
+    let mut home = HomeScreen::with_resumable(true);
+    home.set_rejoin(Some("Rejoin Connor's match on Broad Front".to_owned()));
+    assert_eq!(
+        home.menu.view().items[0],
+        "Rejoin Connor's match on Broad Front"
+    );
+    assert_eq!(pick(&mut home, 0), Out::Rejoin);
+    assert_eq!(
+        pick(&mut home, 1),
+        Out::Continue,
+        "the rows below keep their verbs"
+    );
+    assert!(home.menu.wide, "the long row fits inside the list");
+
+    home.set_catalog(true, None);
+    assert_eq!(
+        home.menu.view().items[0],
+        "Rejoin Connor's match on Broad Front",
+        "a catalog refresh keeps the offer"
+    );
+    home.set_rejoin(None);
+    assert_eq!(pick(&mut home, 0), Out::Continue);
+    assert!(!home.menu.wide);
+}

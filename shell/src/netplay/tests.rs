@@ -85,7 +85,7 @@ fn host_lobby(scenario: Scenario) -> Lobby {
 fn address(lobby: &Lobby) -> String {
     match lobby {
         Lobby::Host(host) => host.lobby.address().to_owned(),
-        Lobby::Client(_) => unreachable!("a host lobby"),
+        Lobby::Client(_) | Lobby::Rejoin(_) => unreachable!("a host lobby"),
     }
 }
 
@@ -347,6 +347,95 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
     );
 }
 
+/// The client's ticket, as its app would have kept it.
+fn ticket_of(lan: &Match) -> crate::rejoin_ticket::Ticket {
+    let mut ticket = lan
+        .client
+        .1
+        .ticket(&lan.client.0)
+        .expect("a connected client has a ticket");
+    ticket.contact = crate::rejoin_ticket::now();
+    ticket
+}
+
+#[test]
+fn a_relaunched_client_rejoins_from_its_ticket_once_its_host_confirms() {
+    let mut lan = Match::start(with_bots());
+    lan.run(10);
+    let ticket = ticket_of(&lan);
+    assert_eq!(ticket.host, "Host");
+    assert_eq!(ticket.seat, CLIENT.0);
+    let Match {
+        mut now,
+        host: (mut host, mut link),
+        client,
+    } = lan;
+    drop(client);
+    wait(|| {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+        (!link.status(now).waiting.is_empty()).then_some(())
+    });
+
+    // Home asks the host first.
+    let path = std::env::temp_dir().join(format!(
+        "oxide-netplay-ticket-{}-{}",
+        std::process::id(),
+        crate::entropy::bits()
+    ));
+    std::fs::write(&path, serde_json::to_vec(&ticket).unwrap()).unwrap();
+    let probe = crate::rejoin_ticket::probe(path.clone(), COMMIT.to_owned());
+    wait(|| {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+        probe.is_finished().then_some(())
+    });
+    assert_eq!(
+        probe.join().unwrap(),
+        crate::rejoin_ticket::Probed::Waiting(ticket.clone())
+    );
+
+    // Then takes the seat back.
+    let mut returning = Lobby::Rejoin(Box::new(Returning::new(&ticket, now)));
+    assert_eq!(returning.status(), "Rejoining Host's match...");
+    let (mut client, mut client_link) = wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        returning.poll(now, viewport())
+    });
+    for _ in 0..20 {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        assert_eq!(client_link.pump(&mut client, now), None);
+    }
+    host.clock.paused = true;
+    wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        assert_eq!(client_link.pump(&mut client, now), None);
+        (client.state.current_tick() == host.state.current_tick()).then_some(())
+    });
+    assert_eq!(client.state.hash(), host.state.hash());
+
+    // A seat the host gave away is no longer offered, and its ticket goes.
+    link.drop_seat(CLIENT);
+    let probe = crate::rejoin_ticket::probe(path.clone(), COMMIT.to_owned());
+    wait(|| {
+        now += STEP;
+        let _ = link.pump(&mut host, now);
+        probe.is_finished().then_some(())
+    });
+    let crate::rejoin_ticket::Probed::Gone(gone) = probe.join().unwrap() else {
+        panic!("the seat is gone");
+    };
+    let keeper = crate::rejoin_ticket::Keeper::new(Some(path.clone()));
+    keeper.forget(&gone);
+    wait(|| (!path.exists()).then_some(()));
+}
+
 #[test]
 fn a_rejoin_after_the_host_dropped_the_seat_hears_it_is_gone() {
     let mut lan = Match::start(with_bots());
@@ -374,6 +463,11 @@ fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
     assert!(lan.host.1.status(lan.now).waiting.is_empty());
     wait(|| {
         assert_eq!(lan.step(), (None, None));
+        assert_eq!(
+            lan.client.0.presentation.net_notice, None,
+            "a client never hears about itself"
+        );
+        assert_eq!(lan.client.1.status(lan.now), NetStatus::default());
         lan.host.0.presentation.net_notice.is_none().then_some(())
     });
 }
@@ -391,14 +485,25 @@ fn a_client_hears_the_host_paused() {
     for _ in 0..20 {
         assert_eq!(lan.step(), (None, None));
     }
-    assert!(
+    let stall_toast = |lan: &Match| {
         lan.client
             .0
             .presentation
             .toasts
             .iter()
-            .all(|toast| !toast.text.contains("Waiting for the host")),
-        "the notice explains the stall"
+            .any(|toast| toast.text.contains("Waiting for the host"))
+    };
+    assert!(!stall_toast(&lan), "the notice explains the stall");
+
+    let paused_at = lan.client.0.state.current_tick();
+    lan.host.0.clock.paused = false;
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.state.current_tick() > paused_at + 5).then_some(())
+    });
+    assert!(
+        !stall_toast(&lan),
+        "the explained pause does not count once play resumes"
     );
 }
 
@@ -862,6 +967,8 @@ fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
         address: "127.0.0.1:9".to_owned(),
         commit: COMMIT.to_owned(),
         token: Token::new(1),
+        host: "Host".to_owned(),
+        seat: CLIENT,
     };
     let link = Link::client(
         ClientSession::new(Duration::ZERO),
@@ -903,6 +1010,8 @@ fn time_the_app_slept_does_not_count_against_the_rejoin_window() {
         address: "127.0.0.1:9".to_owned(),
         commit: COMMIT.to_owned(),
         token: Token::new(1),
+        host: "Host".to_owned(),
+        seat: CLIENT,
     };
     let mut rejoin = Rejoin::start(home, Duration::ZERO);
     assert!(matches!(rejoin.poll(Duration::ZERO), RejoinPoll::Trying));

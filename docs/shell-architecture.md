@@ -78,19 +78,25 @@ probes and rejoins. A client that loses its connection to an undecided match
 keeps the token Go gave it and tries for 30 seconds to take its seat back: the
 host snapshots the waiting match as a
 `oxide_kit::world_snapshot::WorldSnapshot`, and the client restores it as a new
-game that records from that tick, keeping its camera. A player the host has
-heard nothing from lately shows as a pinned line on the HUD while play
-continues, as does a client's word that the host paused. A seat that can no
-longer act retires from the session, and a decided match concludes it, so
-neither is waited on. The host paces its ticks at 1x, seals each tick's human
-orders, appends bot commands, and runs the published batch; a client runs
-batches as they arrive with a small buffer and catches up when behind. Once the
-match is decided, the host closes the connections only after every client has
-acknowledged the final batch, so late hash reports are still checked. Staged
-orders reach the session through the game's outbox. Only the host pauses, and
-speed is fixed. Networked sessions never journal crash recovery, save only a
-watch-only recording, and leave through the ordinary leave save when the host is
-lost or a desync halts the match.
+game that records from that tick, keeping its camera. While it plays, a client
+keeps a rejoin ticket in the data directory, written off the frame loop and
+dropped once the seat can no longer be taken back: a result, a surrender, a
+leave, or the host saying so. A client whose rejoin found no host keeps it, and
+Home asks that host every few seconds whether the seat still waits, offering
+Rejoin only when it does; a ticket an hour stale, from another build, or naming
+a seat that is gone is deleted. A player the host has heard nothing from lately
+shows as a pinned line on the HUD while play continues, as does a client's word
+that the host paused. A seat that can no longer act retires from the session,
+and a decided match concludes it, so neither is waited on. The host paces its
+ticks at 1x, seals each tick's human orders, appends bot commands, and runs the
+published batch; a client runs batches as they arrive with a small buffer and
+catches up when behind. Once the match is decided, the host closes the
+connections only after every client has acknowledged the final batch, so late
+hash reports are still checked. Staged orders reach the session through the
+game's outbox. Only the host pauses, and speed is fixed. Networked sessions
+never journal crash recovery, save only a watch-only recording, and leave
+through the ordinary leave save when the host is lost or a desync halts the
+match.
 
 Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
 may think concurrently against the same immutable state; their work joins in

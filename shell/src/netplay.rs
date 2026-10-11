@@ -106,10 +106,16 @@ impl NetStatus {
         Self::from_notices(session.seats(now), Duration::ZERO, false)
     }
 
-    fn joined(session: &ClientSession, now: Duration) -> Self {
+    /// The status a client hears, leaving out its own `seat`: a client that
+    /// was away catches up on notices about itself before the host's latest.
+    fn joined(session: &ClientSession, seat: PlayerId, now: Duration) -> Self {
         let (seats, heard) = session.seats();
         Self::from_notices(
-            seats.to_vec(),
+            seats
+                .iter()
+                .filter(|notice| notice.seat != seat)
+                .cloned()
+                .collect(),
             now.saturating_sub(heard),
             session.host_paused(),
         )
@@ -201,6 +207,22 @@ struct Home {
     address: String,
     commit: String,
     token: Token,
+    /// The host's name, for the player.
+    host: String,
+    /// The seat this client plays.
+    seat: PlayerId,
+}
+
+impl Home {
+    fn from_ticket(ticket: &crate::rejoin_ticket::Ticket) -> Self {
+        Self {
+            address: ticket.address.clone(),
+            commit: ticket.build.clone(),
+            token: ticket.token,
+            host: ticket.host.clone(),
+            seat: PlayerId(ticket.seat),
+        }
+    }
 }
 
 /// How long a client keeps trying to take its seat back.
@@ -385,10 +407,12 @@ impl Pacing {
         dt
     }
 
-    /// Whether the match has not advanced for a while.
+    /// Whether the match has not advanced for a while with no network notice
+    /// to explain it. Time spent under a notice does not count, so the match
+    /// resuming afterwards is not mistaken for a stall.
     fn stalled(&mut self, game: &Game, now: Duration) -> bool {
         let tick = game.state.current_tick();
-        if tick != self.tick {
+        if tick != self.tick || game.presentation.net_notice.is_some() {
             self.tick = tick;
             self.moved = now;
         }
@@ -426,6 +450,26 @@ impl Link {
         })
     }
 
+    /// The ticket for the seat this client plays, so a relaunch can take it
+    /// back; none for a host, or while the client is out of touch.
+    pub(crate) fn ticket(&self, game: &Game) -> Option<crate::rejoin_ticket::Ticket> {
+        let Link::Client(client) = self else {
+            return None;
+        };
+        if client.rejoin.is_some() || client.connection.is_none() {
+            return None;
+        }
+        Some(crate::rejoin_ticket::Ticket {
+            address: client.home.address.clone(),
+            host: client.home.host.clone(),
+            map: game.scenario.name.clone(),
+            seat: game.presentation.human.0,
+            token: client.home.token,
+            build: client.home.commit.clone(),
+            contact: 0,
+        })
+    }
+
     /// The match a rejoin restored since the last call, to install in place
     /// of the stale one.
     pub(crate) fn take_rejoined(&mut self) -> Option<Box<Game>> {
@@ -439,7 +483,7 @@ impl Link {
     pub(crate) fn status(&self, now: Duration) -> NetStatus {
         match self {
             Link::Host(host) => NetStatus::hosted(&host.session, now),
-            Link::Client(client) => NetStatus::joined(&client.session, now),
+            Link::Client(client) => NetStatus::joined(&client.session, client.home.seat, now),
         }
     }
 
@@ -625,7 +669,7 @@ impl HostLink {
                 connection.finish();
             }
             self.closing = Some((now, end));
-        } else if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+        } else if self.clock.stalled(game, now) {
             game.presentation.toast("Waiting for players...");
         }
         None
@@ -820,8 +864,9 @@ impl ClientLink {
         for line in self.session.take_outgoing() {
             connection.send(&line);
         }
-        game.presentation.net_notice = NetStatus::joined(&self.session, now).notice(game);
-        if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+        game.presentation.net_notice =
+            NetStatus::joined(&self.session, self.home.seat, now).notice(game);
+        if self.clock.stalled(game, now) {
             game.presentation.toast("Waiting for the host...");
         }
         None
@@ -868,6 +913,54 @@ pub(crate) enum Lobby {
     Host(Box<ScenarioHost>),
     /// This machine joins a host.
     Client(ClientLobby),
+    /// This machine takes back a seat in a running match.
+    Rejoin(Box<Returning>),
+}
+
+/// A client taking back its seat after the app was closed, from its ticket.
+pub(crate) struct Returning {
+    home: Home,
+    rejoin: Rejoin,
+    /// Why it gave up, once it did.
+    failed: Option<String>,
+}
+
+impl Returning {
+    /// Starts taking back the seat on `ticket`.
+    pub(crate) fn new(ticket: &crate::rejoin_ticket::Ticket, now: Duration) -> Self {
+        let home = Home::from_ticket(ticket);
+        Self {
+            rejoin: Rejoin::start(home.clone(), now),
+            home,
+            failed: None,
+        }
+    }
+
+    fn poll(&mut self, now: Duration) -> Option<(Game, Link)> {
+        if self.failed.is_some() {
+            return None;
+        }
+        match self.rejoin.poll(now) {
+            RejoinPoll::Trying => None,
+            RejoinPoll::Back(game, connection) => {
+                let session = ClientSession::at(game.state.current_tick(), now);
+                Some((
+                    *game,
+                    Link::client(session, connection, self.home.clone(), now),
+                ))
+            }
+            RejoinPoll::Failed(end) => {
+                self.failed = Some(end.notice());
+                None
+            }
+        }
+    }
+
+    fn status(&self) -> String {
+        self.failed
+            .clone()
+            .unwrap_or_else(|| format!("Rejoining {}'s match...", self.home.host))
+    }
 }
 
 impl Lobby {
@@ -876,6 +969,7 @@ impl Lobby {
         match self {
             Lobby::Host(host) => host.poll(now, viewport),
             Lobby::Client(client) => client.poll(now, viewport),
+            Lobby::Rejoin(returning) => returning.poll(now),
         }
     }
 
@@ -884,6 +978,7 @@ impl Lobby {
         match self {
             Lobby::Host(host) => host.status(),
             Lobby::Client(client) => client.status(),
+            Lobby::Rejoin(returning) => returning.status(),
         }
     }
 
@@ -892,6 +987,7 @@ impl Lobby {
         match self {
             Lobby::Host(host) => host.roster(),
             Lobby::Client(client) => client.roster(),
+            Lobby::Rejoin(_) => Vec::new(),
         }
     }
 
@@ -1673,13 +1769,21 @@ impl ClientLobby {
                             for line in guest.take_outgoing() {
                                 connection.send(&line);
                             }
-                            let Some((built, _)) = game else {
+                            let Some((built, seat)) = game else {
                                 return failed("The host sent something unexpected".to_owned());
                             };
+                            let host = guest.room().and_then(|(seats, _)| {
+                                seats.iter().find_map(|seat| match &seat.holder {
+                                    SeatHolder::Host { name } => Some(name.to_string()),
+                                    _ => None,
+                                })
+                            });
                             let home = Home {
                                 address: self.address.clone(),
                                 commit: self.commit.clone(),
                                 token,
+                                host: host.unwrap_or_else(|| "the host".to_owned()),
+                                seat,
                             };
                             let link = Link::client(ClientSession::new(now), connection, home, now);
                             return (Joining::Started, Some((*built, link)));

@@ -45,6 +45,11 @@ pub fn data_dir() -> Option<PathBuf> {
     }
 }
 
+/// The ticket of a LAN seat this player may still take back.
+pub fn rejoin_ticket() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("rejoin.json"))
+}
+
 /// Where autosave rotation lives; Continue resumes from here.
 pub fn autosave_dir() -> Option<PathBuf> {
     data_dir().map(|d| d.join("autosaves"))
