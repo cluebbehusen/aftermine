@@ -937,3 +937,34 @@ fn a_guest_refuses_snapshot_parts_it_was_not_promised() {
         Err(GuestEnd::Protocol)
     );
 }
+
+#[test]
+fn a_member_quiet_while_it_builds_the_start_is_left_to_the_start() {
+    let mut lan = Lan::new();
+    let alex = lan.join("Alex");
+    let sam = lan.join("Sam");
+    lan.settle();
+    lan.publish(&room(&["Alex", "Sam"]));
+    lan.settle();
+    lan.start();
+    lan.settle();
+    lan.take_events();
+    lan.now += SILENCE_TIMEOUT + secs(1);
+    assert_eq!(
+        lan.host.poll(lan.now),
+        [],
+        "not dropped as silent mid-start"
+    );
+    assert!(lan.host.name(lan.member(alex)).is_some());
+    lan.now = START_TIMEOUT + secs(1);
+    assert_eq!(
+        lan.host.poll_start(lan.now).err(),
+        Some(StartFailed::TimedOut)
+    );
+    let left = |member| LobbyEvent::Left {
+        member,
+        reason: LeaveReason::FailedStart,
+    };
+    let culprits = [left(lan.member(alex)), left(lan.member(sam))];
+    assert_eq!(lan.host.poll(lan.now), culprits);
+}
