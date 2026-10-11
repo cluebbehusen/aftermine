@@ -512,9 +512,9 @@ tick, and a decision takes them all. A repeat of a unit's stall for the same
 reason, or of a rejection for the same reason, replaces the earlier one in its
 place; the buffer is bounded and drops the oldest first. A tick without a
 decision leaves the buffer untouched. A rejection holds back that decision's
-income sample. A unit whose order stalled for want of a route sits out orders,
-and joins no new mission or work, until it moves off where it stopped or a while
-passes. The trace reports the events.
+income sample. A unit whose order stalled for want of a route or a firing
+position sits out orders, and joins no new mission or work, until it moves off
+where it stopped or a while passes. The trace reports the events.
 
 ## Selection
 
