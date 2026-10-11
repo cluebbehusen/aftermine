@@ -525,6 +525,18 @@ impl Link {
         Some(host.capture(game))
     }
 
+    /// Remembers the installations of seats no client holds, such as the
+    /// players out of a resumed match, so the next save still lists them.
+    pub(crate) fn remember_installs(&mut self, saved: &[(PlayerId, InstallId)]) {
+        if let Link::Host(host) = self {
+            for &(seat, install) in saved {
+                if !host.installs.iter().any(|&(held, _)| held == seat) {
+                    host.installs.push((seat, install));
+                }
+            }
+        }
+    }
+
     /// Makes the host's own save due again, after one failed.
     pub(crate) fn rearm_autosave(&mut self) {
         if let Link::Host(host) = self {

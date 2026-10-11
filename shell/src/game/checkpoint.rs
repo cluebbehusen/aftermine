@@ -178,19 +178,37 @@ impl LanSave {
         &self.players
     }
 
+    /// Every joined seat, the players out of the match included, with the
+    /// installation that played it: what the next save must list again.
+    pub(crate) fn joined(&self) -> &[(PlayerId, oxide_net::InstallId)] {
+        self.checkpoint
+            .lan
+            .as_ref()
+            .map_or(&[], |lan| lan.seats.as_slice())
+    }
+
     /// The match as the host resumes it, with `replaced` seats handed to
-    /// bots, and every seat's unsealed orders for the session to seal
-    /// first. The game projects only the host's own orders, as every
-    /// networked game does.
+    /// bots, and the unsealed orders of every seat taking part for the
+    /// session to seal first. The game projects only the host's own orders,
+    /// as every networked game does.
     pub(crate) fn host_game(
         &self,
         replaced: &[(PlayerId, BotDifficulty, BotStance)],
     ) -> Result<(Game, Vec<oxide_sim::PlayerCommand>)> {
-        let mut game = self.local_game(replaced)?;
+        let mut game = self.with_bots(replaced)?;
         game.net = Some(network::NetRole::Host);
         game.clock.paused = false;
         let host = game.presentation.human;
-        let pending = std::mem::take(&mut game.pending.0);
+        // A player out of the match takes no part, so neither do its orders.
+        let taking_part = |seat: PlayerId| {
+            seat == host
+                || (self.players.iter().any(|&(player, _)| player == seat)
+                    && !replaced.iter().any(|&(bot, ..)| bot == seat))
+        };
+        let pending: Vec<oxide_sim::PlayerCommand> = std::mem::take(&mut game.pending.0)
+            .into_iter()
+            .filter(|order| taking_part(order.player))
+            .collect();
         game.pending.0 = pending
             .iter()
             .filter(|order| order.player == host)
@@ -200,22 +218,37 @@ impl LanSave {
     }
 
     /// The match as the host resumes it alone, once every other player's
-    /// seat was handed to a bot.
+    /// seat was handed to a bot. Players out of the match get bots too, so
+    /// the host holds the only human seat, as a local match's checkpoint
+    /// requires.
     pub(crate) fn local_game(
         &self,
         replaced: &[(PlayerId, BotDifficulty, BotStance)],
     ) -> Result<Game> {
+        let out = self
+            .joined()
+            .iter()
+            .map(|&(seat, _)| seat)
+            .filter(|&seat| !self.players.iter().any(|&(player, _)| player == seat))
+            .map(|seat| (seat, BotDifficulty::default(), BotStance::default()));
+        let bots: Vec<_> = replaced.iter().copied().chain(out).collect();
+        self.with_bots(&bots)
+    }
+
+    /// The saved match with `bots` seats handed to bots and their orders
+    /// dropped.
+    fn with_bots(&self, bots: &[(PlayerId, BotDifficulty, BotStance)]) -> Result<Game> {
         let mut game = self.checkpoint.clone().restore()?.install();
-        for &(seat, difficulty, stance) in replaced {
+        for &(seat, difficulty, stance) in bots {
             anyhow::ensure!(
-                self.players().iter().any(|(joined, _)| *joined == seat),
+                self.joined().iter().any(|(joined, _)| *joined == seat),
                 "{seat:?} was not a joined player's seat"
             );
             game.take_over_seat(seat, difficulty, stance)?;
         }
         game.pending
             .0
-            .retain(|order| !replaced.iter().any(|(seat, ..)| *seat == order.player));
+            .retain(|order| !bots.iter().any(|(seat, ..)| *seat == order.player));
         Ok(game)
     }
 }

@@ -28,6 +28,11 @@ fn name(name: &str) -> PlayerName {
 /// East and Alex South West, and South East is a bot. Its display order
 /// groups the teams: seats 0, 2, 1, 3.
 fn saved_match() -> LanSave {
+    saved_with(&[])
+}
+
+/// The same match, with `surrendered` seats out of it when it was saved.
+fn saved_with(surrendered: &[PlayerId]) -> LanSave {
     let path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../scenarios/broad-front.json"
@@ -41,6 +46,12 @@ fn saved_match() -> LanSave {
     scenario.players[1].name = "Sam".to_owned();
     scenario.players[2].name = "Alex".to_owned();
     let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
+    for &seat in surrendered {
+        game.stage(oxide_sim::PlayerCommand {
+            player: seat,
+            command: oxide_sim::Command::Surrender,
+        });
+    }
     game.advance_ticks(40);
     let lan = LanManifest::new(
         &scenario,
@@ -58,13 +69,18 @@ fn saved_match() -> LanSave {
 /// The resume screen hosting on loopback, over a New Match draft it gives
 /// back when the resume ends.
 fn resuming() -> (Wizard, NewMatchDraft) {
+    let (wizard, draft) = resuming_on(saved_match(), "127.0.0.1:0");
+    assert!(wizard.lan.is_some(), "{:?}", wizard.notice);
+    (wizard, draft)
+}
+
+fn resuming_on(save: LanSave, bind: &str) -> (Wizard, NewMatchDraft) {
     let mut draft = NewMatchDraft {
         player_name: Some(name("Host")),
         seat_choice: 7,
         ..NewMatchDraft::default()
     };
-    let wizard = Wizard::resume_on(saved_match(), &mut draft, "127.0.0.1:0");
-    assert!(wizard.lan.is_some(), "{:?}", wizard.notice);
+    let wizard = Wizard::resume_on(save, &mut draft, bind);
     (wizard, draft)
 }
 
@@ -326,4 +342,69 @@ fn a_missing_player_can_go_to_a_bot_and_the_host_can_resume_alone() {
     assert_eq!(alone.state.current_tick(), 40);
     assert_eq!(alone.net_role(), None);
     assert!(alone.scenario.players[1].bot && alone.scenario.players[2].bot);
+}
+
+#[test]
+fn the_saved_players_keep_their_seats_while_the_lobby_cannot_open() {
+    let (mut w, mut draft) = resuming_on(saved_match(), "not an address");
+    assert!(w.lan.is_none());
+    assert!(
+        w.notice
+            .as_deref()
+            .is_some_and(|notice| notice.starts_with("Cannot host"))
+    );
+    let rows = w.ui_surface(&draft).1;
+    assert!(rows[1].contains("(was Alex)"), "{rows:?}");
+    w.setup_sel = 4;
+    assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
+    assert_eq!(
+        w.notice.as_deref(),
+        Some("Players rejoin through the LAN lobby"),
+        "nobody is handed to a bot behind the host's back"
+    );
+}
+
+#[test]
+fn leaving_a_resume_with_players_back_asks_first() {
+    let (mut w, mut draft) = resuming();
+    let mut clients = vec![join(&w, "Alex", ALEX)];
+    settle(&mut w, &mut draft, &mut clients, |w, _| {
+        member_at(w, 2).is_some()
+    });
+    assert_eq!(drive(&mut w, &mut draft, Key::Escape), Out::Stay);
+    assert_eq!(w.mode_name(), "confirm_lobby");
+    assert_eq!(
+        drive(&mut w, &mut draft, Key::Enter),
+        Out::Stay,
+        "Cancel stays"
+    );
+    assert!(w.lan.is_some());
+    drive(&mut w, &mut draft, Key::Escape);
+    drive(&mut w, &mut draft, Key::Down);
+    assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Home);
+}
+
+#[test]
+fn a_resume_without_a_player_who_was_out_still_saves_them() {
+    let (mut w, mut draft) = resuming_on(saved_with(&[PlayerId(1)]), "127.0.0.1:0");
+    assert!(
+        !draft.seats[1].open,
+        "Sam was out: nobody waits for that seat"
+    );
+    let mut clients = vec![join(&w, "Alex", InstallId::new(77))];
+    settle(&mut w, &mut draft, &mut clients, |w, _| {
+        member_at(w, 2).is_some()
+    });
+    w.setup_sel = 4;
+    assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
+    w.start_resume(&draft, Duration::ZERO).unwrap();
+    let machines = run_start(&mut w, &mut draft, &mut clients);
+    let (host, link) = &machines[0];
+    let saved =
+        serde_json::to_value(link.capture_lan_save(host).unwrap().checkpoint().unwrap()).unwrap();
+    assert_eq!(
+        saved["lan"]["seats"],
+        serde_json::json!([[1, SAM.to_hex()], [2, InstallId::new(77).to_hex()]]),
+        "the next save still lists the player who was out"
+    );
 }

@@ -628,8 +628,12 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         .as_deref()
         .and_then(|name| oxide_net::PlayerName::new(name).ok());
     // A hosting setup screen runs its lobby before input, like every lobby.
+    let resuming = w.resuming();
     if let Some((game, link)) = w.poll_lan(&mut app.draft, app.clock.elapsed()) {
-        app.personality_seeds.commit_launch();
+        // A resumed match made no new personalities.
+        if !resuming {
+            app.personality_seeds.commit_launch();
+        }
         app.install(
             game,
             Install {

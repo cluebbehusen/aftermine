@@ -318,6 +318,8 @@ pub struct Wizard {
     pub(crate) lan_bind: String,
     /// The saved LAN match this setup screen resumes, if it resumes one.
     resume: Option<Box<Resume>>,
+    /// The host chose to leave a resume for Home.
+    leaving: bool,
 }
 
 /// A saved LAN match the setup screen resumes. Its map, bots, and teams are
@@ -1313,6 +1315,7 @@ impl Wizard {
             saved_name: None,
             lan_bind: format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT),
             resume: None,
+            leaving: false,
         }
     }
 
@@ -1333,7 +1336,13 @@ impl Wizard {
         draft.seats = authored_seat_plans(&scenario);
         draft.seat_choice = usize::from(save.host().0);
         draft.scenario = Some(Box::new(scenario));
-        wizard.resume = Some(Box::new(Resume { save, previous }));
+        let resume = Resume { save, previous };
+        // The saved players' seats wait for them even while the lobby is
+        // not open.
+        for (seat, plan) in draft.seats.iter_mut().enumerate() {
+            plan.open = resume.reserved(seat);
+        }
+        wizard.resume = Some(Box::new(resume));
         wizard.goto(Step::Setup, draft);
         wizard.open_lan(draft);
         wizard
@@ -1422,7 +1431,11 @@ impl Wizard {
         }
         if self.overlay.is_some() {
             self.update_overlay(events, mouse, draft, sounds);
-            return Ok(Out::Stay);
+            return Ok(if std::mem::take(&mut self.leaving) {
+                Out::Home
+            } else {
+                Out::Stay
+            });
         }
         // The corner Back button sees the pointer first; the step only
         // gets the events it leaves alone.
@@ -1683,6 +1696,11 @@ impl Wizard {
                     sounds.push((SoundKind::Denied, None));
                     return None;
                 }
+                if resuming && self.lan.is_none() {
+                    sounds.push((SoundKind::Denied, None));
+                    self.notice = Some("Players rejoin through the LAN lobby".to_owned());
+                    return None;
+                }
                 if let Some(lan) = &self.lan {
                     let waiting = order
                         .iter()
@@ -1714,7 +1732,7 @@ impl Wizard {
                             let name = self.lan.as_ref().and_then(|lan| lan.lobby.name(member));
                             self.overlay = Some(confirm_overlay(Confirm::Kick { member }, name));
                         }
-                        None => cycle_controller(plan, lan_on),
+                        None => cycle_controller(plan, lan_on || resuming),
                     },
                     Cell::Stance => plan.stance = cycle_stance(plan.stance, 1),
                     // FFA, then every team up to the seat count
@@ -2244,7 +2262,11 @@ impl Wizard {
             .seats
             .iter()
             .enumerate()
-            .map(|(seat, plan)| self.lan.is_some() && plan.open && seat != draft.seat_choice)
+            .map(|(seat, plan)| {
+                (self.lan.is_some() || self.resume.is_some())
+                    && plan.open
+                    && seat != draft.seat_choice
+            })
             .collect()
     }
 
@@ -2368,8 +2390,11 @@ impl Wizard {
                     for plan in &mut draft.seats {
                         plan.open = false;
                     }
+                    let mut link = Link::host(*started, &game, now);
+                    if let Some(resume) = &self.resume {
+                        link.remember_installs(resume.save.joined());
+                    }
                     self.finish_resume(draft);
-                    let link = Link::host(*started, &game, now);
                     return Some((*game, link));
                 }
                 // The failed start dropped its culprits: free their chairs
@@ -2562,6 +2587,7 @@ impl Wizard {
                     }
                 }
             }
+            Confirm::Close { .. } if self.resume.is_some() => self.leaving = true,
             Confirm::Close { to_map } => {
                 self.close_lan(draft);
                 if to_map {
@@ -2579,6 +2605,11 @@ impl Wizard {
             return false;
         }
         if self.resume.is_some() {
+            // Leaving drops the players who came back; ask first.
+            if self.lan.as_ref().is_some_and(|lan| lan.has_members()) {
+                self.overlay = Some(confirm_overlay(Confirm::Close { to_map: true }, None));
+                return false;
+            }
             return true;
         }
         if self.leave_lan(draft, true) {

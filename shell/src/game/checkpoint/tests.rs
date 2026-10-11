@@ -365,8 +365,8 @@ fn a_lan_save_waits_only_for_players_still_in_the_match() {
     assert!(host.scenario.players[1].bot, "the bot took the seat");
     assert_eq!(
         pending,
-        vec![orders[0].clone(), orders[2].clone()],
-        "the replaced seat's orders go"
+        vec![orders[0].clone()],
+        "the replaced seat's orders go, and so do those of a player out of the match"
     );
     assert_eq!(
         host.pending.to_vec(),
@@ -378,4 +378,13 @@ fn a_lan_save_waits_only_for_players_still_in_the_match() {
             .is_err(),
         "only a player's seat goes to a bot"
     );
+
+    // Resuming alone hands the player out of the match a bot too, so the
+    // host holds the only human seat a local checkpoint expects.
+    let alone = save
+        .local_game(&[(PlayerId(1), BotDifficulty::Standard, BotStance::Balanced)])
+        .unwrap();
+    assert!(alone.scenario.players[2].bot);
+    assert_eq!(Game::local_seat(&alone.scenario), PlayerId(0));
+    assert_eq!(alone.pending.to_vec(), vec![orders[0].clone()]);
 }
