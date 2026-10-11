@@ -163,7 +163,11 @@ impl Busy {
 
 impl App {
     pub(super) fn persistence_screen(&mut self, intent: Intent, back: Screen) -> Screen {
-        self.game.clock.paused = true;
+        // A LAN host's pause would stop every machine, and its save is
+        // captured within one frame, so a LAN match plays on.
+        if self.net.is_none() {
+            self.game.clock.paused = true;
+        }
         if self.catalog_id.take().is_some() {
             self.persistence.cancel();
         }
