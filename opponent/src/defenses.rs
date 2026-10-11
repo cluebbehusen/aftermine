@@ -1404,6 +1404,7 @@ fn buildings(observation: &ObservationData, frame: HomeFrame) -> Vec<Asset> {
                 BuildingKind::Crucible => 10,
                 BuildingKind::Airworks => 9,
                 BuildingKind::Fabricator => 8,
+                BuildingKind::Extractor if building.tier >= 1 => 12,
                 BuildingKind::Extractor => {
                     let supported = foundries.iter().any(|foundry| {
                         gap(foundry.anchor, foundry.kind.size(), building.anchor, size)

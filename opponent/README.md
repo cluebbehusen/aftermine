@@ -16,6 +16,11 @@ after it stands empty; every ready producer left free trains toward the army's
 needs. Difficulty caps the unit orders one decision issues; purchases do not
 count against that allowance.
 
+Public enemy buildings, the Deep Bores every seat knows of, join the seat's
+known enemy buildings each decision as memories of unknown condition: built and
+at full health. Targets, raids and held frames treat a Deep Bore the seat never
+saw like one it remembers, and it is ordered on by its remembered footprint.
+
 ## Workers
 
 A seat with no worker alive, carried or queued queues a Harvester even behind
@@ -450,7 +455,9 @@ seat's building or its own Foundry, or failed at every anchor are skipped. An
 Extractor is worth more beside one of the seat's Foundries and less where it has
 seen danger, and none is bought on a frame while an armed enemy in sight stands
 near it. Once a Crucible stands, the supported Extractor nearest home is offered
-a Deep Bore upgrade, which needs that Foundry support to start. The seat saves
+a Deep Bore upgrade, which needs that Foundry support to start, and an expansion
+site is also worth a frame for each own remote Extractor a Foundry there would
+support. A Deep Bore is guarded as worth more than a Crucible. The seat saves
 for one target at a time. It starts saving only for an investment that scores
 well and could stand somewhere it knows of or could look, keeps it while it
 still scores, and switches only for one that scores clearly higher.

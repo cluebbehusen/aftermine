@@ -490,3 +490,41 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands() {
     assert!(upgraded);
     assert_eq!(state.building(extractor).unwrap().tier, 1);
 }
+
+#[test]
+fn a_crucible_makes_a_site_worth_more_for_the_remote_extractor_it_would_deepen() {
+    let frame = TilePos::new(16, 9);
+    let mut scenario = frontier(0);
+    scenario.map[9].replace_range(16..18, "E.");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Extractor,
+        x: frame.x,
+        y: frame.y,
+    });
+    let model = map(&scenario);
+    let (_, site) = site_with(&model, TilePos::new(12, 10));
+    let anchor = expansion::anchors(&model, PlayerId(0), site)[0];
+    assert!(
+        oxide_sim::geometry::foundry_supports(anchor, frame),
+        "premise: a Foundry at the site would support the frame"
+    );
+    let memory = Memory::default();
+    let worth = |scenario: &Scenario| {
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            !expansion::supported(&observation, frame),
+            "premise: remote"
+        );
+        expansion::value(&observation, &model, &memory, site, 50).unwrap()
+    };
+    let without = worth(&scenario);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 2,
+        y: 9,
+    });
+    assert!(worth(&scenario) > without);
+}

@@ -674,3 +674,66 @@ fn a_scuttler_out_scouting_leaves_the_raid_stock_short() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn sappers_raid_a_deep_bore_nobody_on_the_team_has_seen() {
+    let bore = TilePos::new(36, 3);
+    let mut scenario = field();
+    garrison(&mut scenario);
+    scenario.map[3].replace_range(36..37, "E");
+    scenario.players[1].scrap = 1_000;
+    // Its condition is unknown, so the raid brings blasts for full health.
+    let spots = [(18, 10), (18, 12), (18, 14), (18, 16)];
+    for (x, y) in spots {
+        scenario.units.push(unit(0, UnitKind::Sapper, x, y));
+    }
+    for (kind, x, y) in [
+        (BuildingKind::Extractor, bore.x, bore.y),
+        (BuildingKind::Crucible, 44, 18),
+    ] {
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind,
+            x,
+            y,
+        });
+    }
+    let mut state = scenario.build().unwrap();
+    let extractor = building_at(&state, bore);
+    // The refit starts on tick 0; West's next decision is on tick 12.
+    advance_to(
+        &mut state,
+        12,
+        &[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::UpgradeBuilding {
+                building: extractor,
+            },
+        }],
+    );
+    assert_eq!(state.building(extractor).unwrap().tier, 1, "premise");
+    assert!(!state.vision(PlayerId(0)).explored(bore), "premise");
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    let mission = raid(&trace.unwrap().missions).expect("a raid forms");
+    assert_eq!(
+        mission.kind,
+        MissionKind::Raid {
+            owner: PlayerId(1),
+            building: BuildingKind::Extractor,
+            anchor: bore,
+        }
+    );
+    let mut sappers: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    sappers.sort_unstable();
+    assert_eq!(
+        attacks(&commands),
+        [(
+            sappers,
+            AttackTarget::RememberedBuilding(oxide_sim::RememberedBuilding {
+                owner: PlayerId(1),
+                building_kind: BuildingKind::Extractor,
+                anchor: bore,
+            })
+        )]
+    );
+}
