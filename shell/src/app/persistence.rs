@@ -394,6 +394,13 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 return Ok(Screen::Playing);
             }
             Ok(Output::LanSave(save)) => {
+                // Nothing was installed, so quitting leaves as Home would.
+                if busy.quit_after {
+                    return Ok(app.persistence_screen(
+                        Intent::Leave(screens::pause::LeaveVerb::Quit, true),
+                        *busy.back,
+                    ));
+                }
                 // The lobby opens at once, under the player's saved name.
                 app.draft.player_name = app
                     .config
