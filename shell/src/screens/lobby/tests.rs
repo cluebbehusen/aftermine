@@ -199,6 +199,51 @@ fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
 }
 
 #[test]
+fn the_keyboard_reaches_a_listed_lobby_from_the_last_field() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    advertiser.poll(&beacon("abc"), Duration::ZERO);
+    heard(&mut screen, 3);
+    assert_eq!(press(&mut screen, Key::Down), Out::Stay);
+    assert_eq!(screen.menu.view().selected, 2, "Down leaves the address");
+    press(&mut screen, Key::Up);
+    assert_eq!(screen.menu.view().selected, 1, "Up returns to it");
+    press(&mut screen, Key::Down);
+    assert_eq!(feed(&mut screen, &typed("x")), Out::Stay);
+    assert_eq!(
+        press(&mut screen, Key::Enter),
+        join("Alex", "127.0.0.1:4321")
+    );
+}
+
+#[test]
+fn a_tap_joins_the_lobby_it_pressed_even_if_the_list_reorders() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    advertiser.poll(&beacon("abc"), Duration::ZERO);
+    heard(&mut screen, 3);
+    let Face::Join { form, .. } = &screen.face else {
+        panic!("the form is up");
+    };
+    let row = match_rows(form, 1)[0].center();
+    let [down, up] = tap(row);
+    assert_eq!(feed(&mut screen, &[down]), Out::Stay);
+
+    // A host that sorts first arrives under the finger.
+    let earlier = oxide_net::discovery::Beacon::new(
+        "abc",
+        PlayerName::new("Avery").unwrap(),
+        4322,
+        "Broad Front",
+        1,
+        4,
+    );
+    advertiser.poll(&earlier, Duration::from_secs(1));
+    heard(&mut screen, 4);
+    assert_eq!(feed(&mut screen, &[up]), Out::Stay, "Connor's lobby moved");
+}
+
+#[test]
 fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     crate::render::set_viewport(1280.0, 800.0);
     let (mut screen, mut advertiser) = listening(None);

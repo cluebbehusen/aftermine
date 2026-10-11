@@ -378,6 +378,13 @@ impl Lobby {
 
 /// Whether a host address can contain `ch`: host names, IPv4 and bracketed
 /// IPv6 addresses, and a port.
+/// Whether a lobby listening on `bound` advertises. Beacons are IPv4
+/// broadcasts and joiners dial the address one came from, so only an IPv4
+/// listener other machines can reach announces itself.
+fn advertises(bound: std::net::SocketAddr) -> bool {
+    bound.is_ipv4() && !bound.ip().is_loopback()
+}
+
 pub(crate) fn address_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | ':' | '[' | ']')
 }
@@ -528,9 +535,7 @@ impl HostLobby {
         let bound = listener
             .local_addr()
             .with_context(|| format!("cannot listen on {address}"))?;
-        let advertiser = (!bound.ip().is_loopback())
-            .then(Advertiser::new)
-            .and_then(Result::ok);
+        let advertiser = advertises(bound).then(Advertiser::new).and_then(Result::ok);
         Ok(Self {
             listener,
             address: reachable(bound),

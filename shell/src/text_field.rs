@@ -237,6 +237,11 @@ impl Form {
         self.fields[self.focus].keyboard
     }
 
+    /// Whether the focused field is the last.
+    pub fn on_last_field(&self) -> bool {
+        self.focus + 1 == self.fields.len()
+    }
+
     /// Consumes a request to raise the on-screen keyboard again.
     pub fn take_keyboard_request(&mut self) -> bool {
         std::mem::take(&mut self.keyboard_request)

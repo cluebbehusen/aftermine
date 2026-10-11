@@ -19,6 +19,7 @@ use oxide_net::{NameError, PlayerName};
 use oxide_net::{RoomSeat, SeatHolder};
 use oxide_protocol::{Key, RawEvent};
 use oxide_sim::{PlayerId, Scenario};
+use std::net::SocketAddr;
 use std::time::Duration;
 
 /// Longest host address the field accepts: the longest DNS name and a port.
@@ -44,8 +45,12 @@ enum Face {
         scan: Scan,
         /// The lobbies heard lately.
         sightings: Vec<Sighting>,
-        /// The match row a press armed.
-        press: Press<usize>,
+        /// The listed lobby the keyboard is on, once Down leaves the last
+        /// field.
+        cursor: Option<SocketAddr>,
+        /// The listed lobby a press armed, by address: the list can reorder
+        /// under a finger.
+        press: Press<SocketAddr>,
     },
     /// Machines gathering.
     Waiting(Lobby),
@@ -99,6 +104,7 @@ impl LobbyScreen {
             failure: None,
             scan: Scan::Off,
             sightings: Vec::new(),
+            cursor: None,
             press: Press::default(),
         })
     }
@@ -159,13 +165,14 @@ impl LobbyScreen {
             form,
             scan,
             sightings,
+            cursor,
             ..
         } = &mut self.face
         {
             if let Scan::Listening(scanner) = scan {
                 *sightings = scanner.poll(now).to_vec();
             }
-            self.menu = join_menu(form, sightings);
+            self.menu = join_menu(form, sightings, *cursor);
             return None;
         }
         let Face::Waiting(lobby) = &mut self.face else {
@@ -229,19 +236,58 @@ impl LobbyScreen {
             Face::Join {
                 form,
                 sightings,
+                cursor,
                 press,
                 ..
             } => {
                 let rows = match_rows(form, sightings.len());
+                let shown = &sightings[..rows.len()];
+                let joinable: Vec<SocketAddr> =
+                    shown.iter().filter_map(Sighting::address).collect();
+                if cursor.is_some_and(|at| !joinable.contains(&at)) {
+                    *cursor = None;
+                }
                 let mut picked = None;
+                let mut form_events = Vec::with_capacity(events.len());
                 for event in events {
-                    if let Fed::Activated(row) =
-                        press.feed(event, |p, _| rows.iter().position(|rect| rect.contains(p)))
-                    {
-                        picked = Some(row);
+                    let fed = press.feed(event, |p, _| {
+                        let row = rows.iter().position(|rect| rect.contains(p))?;
+                        shown[row].address()
+                    });
+                    if let Fed::Activated(address) = fed {
+                        picked = Some(address);
+                        continue;
+                    }
+                    match (*cursor, event) {
+                        (None, RawEvent::KeyDown { key: Key::Down })
+                            if form.on_last_field() && !joinable.is_empty() =>
+                        {
+                            *cursor = joinable.first().copied();
+                        }
+                        (Some(at), RawEvent::KeyDown { key }) => {
+                            let index = joinable.iter().position(|&listed| listed == at);
+                            let index = index.unwrap_or_default();
+                            match key {
+                                Key::Down => {
+                                    *cursor = Some(joinable[(index + 1).min(joinable.len() - 1)]);
+                                }
+                                Key::Up => *cursor = index.checked_sub(1).map(|up| joinable[up]),
+                                Key::Tab => *cursor = None,
+                                Key::Enter => picked = Some(at),
+                                Key::Escape => form_events.push(*event),
+                                _ => {}
+                            }
+                        }
+                        // Typing goes nowhere while the list has the keyboard.
+                        (Some(_), RawEvent::Text { .. }) => {}
+                        (Some(_), RawEvent::MouseDown { .. } | RawEvent::TouchDown { .. }) => {
+                            *cursor = None;
+                            form_events.push(*event);
+                        }
+                        _ => form_events.push(*event),
                     }
                 }
-                if let Some(address) = picked.and_then(|row| sightings[row].address()) {
+                if let Some(address) = picked {
                     sounds.push((SoundKind::Click, None));
                     match PlayerName::new(form.value(0)) {
                         Ok(name) => {
@@ -250,11 +296,14 @@ impl LobbyScreen {
                                 address: address.to_string(),
                             };
                         }
-                        Err(error) => form.refuse(0, error.reason(), sounds),
+                        Err(error) => {
+                            *cursor = None;
+                            form.refuse(0, error.reason(), sounds);
+                        }
                     }
                 }
-                let edit = form.update(events, sounds);
-                self.menu = join_menu(form, sightings);
+                let edit = form.update(&form_events, sounds);
+                self.menu = join_menu(form, sightings, *cursor);
                 match edit {
                     Edit::Commit => {
                         match (
@@ -312,6 +361,7 @@ impl LobbyScreen {
                 failure,
                 scan,
                 sightings,
+                cursor,
                 ..
             } => {
                 let color = if failure.is_some() {
@@ -321,7 +371,7 @@ impl LobbyScreen {
                 };
                 form.draw(&self.subtitle(), color, mouse);
                 if !matches!(scan, Scan::Off) {
-                    draw_matches(form, scan, sightings, mouse);
+                    draw_matches(form, scan, sightings, *cursor, mouse);
                 }
             }
             Face::Waiting(_) => self.menu.draw(&self.subtitle()),
@@ -329,18 +379,27 @@ impl LobbyScreen {
     }
 }
 
-/// The Join form's rows for the UI report: its fields, then one heading
-/// per lobby heard.
-fn join_menu(form: &Form, sightings: &[Sighting]) -> Menu<usize> {
+/// The Join form's rows for the UI report: its fields, then one line per
+/// lobby heard, a row for each joinable one.
+fn join_menu(form: &Form, sightings: &[Sighting], cursor: Option<SocketAddr>) -> Menu<usize> {
     let fields = form.menu(|index| index);
     let mut lines = fields.lines().to_vec();
-    lines.extend(
+    let first = lines.len();
+    lines.extend(sightings.iter().enumerate().map(|(index, sighting)| {
+        let label = match_label(sighting);
+        if sighting.address().is_some() {
+            Line::Row(Label::Text(label), first + index)
+        } else {
+            Line::Header(label)
+        }
+    }));
+    let mut menu = Menu::new("JOIN MATCH", lines);
+    let listed = cursor.and_then(|at| {
         sightings
             .iter()
-            .map(|sighting| Line::Header(match_label(sighting))),
-    );
-    let mut menu = Menu::new("JOIN MATCH", lines);
-    menu.select(fields.selected);
+            .position(|sighting| sighting.address() == Some(at))
+    });
+    menu.select(listed.map_or(fields.selected, |index| first + index));
     menu
 }
 
@@ -377,7 +436,13 @@ fn match_rows(form: &Form, count: usize) -> Vec<Rect> {
 }
 
 /// Draws "Matches on your network" and a row per lobby heard.
-fn draw_matches(form: &Form, scan: &Scan, sightings: &[Sighting], mouse: Vec2) {
+fn draw_matches(
+    form: &Form,
+    scan: &Scan,
+    sightings: &[Sighting],
+    cursor: Option<SocketAddr>,
+    mouse: Vec2,
+) {
     let s = crate::render::ui_scale();
     let layout = form.layout(crate::render::viewport(), s);
     let Some(first) = layout.fields.first() else {
@@ -408,7 +473,7 @@ fn draw_matches(form: &Form, scan: &Scan, sightings: &[Sighting], mouse: Vec2) {
     }
     for (rect, sighting) in match_rows(form, sightings.len()).iter().zip(sightings) {
         let joinable = sighting.address().is_some();
-        let hovered = joinable && rect.contains(mouse);
+        let hovered = joinable && (rect.contains(mouse) || sighting.address() == cursor);
         draw_rectangle(
             rect.x,
             rect.y,

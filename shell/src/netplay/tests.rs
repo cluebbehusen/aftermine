@@ -609,3 +609,16 @@ fn a_hosted_lobby_announces_itself_with_its_room() {
     assert_eq!(beacon.map, "Twin Forges");
     assert_eq!((beacon.players, beacon.seats), (1, 4));
 }
+
+#[test]
+fn only_an_ipv4_listener_other_machines_can_reach_advertises() {
+    for (bound, advertised) in [
+        ("0.0.0.0:4200", true),
+        ("192.168.1.20:4200", true),
+        ("127.0.0.1:4200", false),
+        ("[::]:4200", false),
+        ("[fe80::1]:4200", false),
+    ] {
+        assert_eq!(advertises(bound.parse().unwrap()), advertised, "{bound}");
+    }
+}
