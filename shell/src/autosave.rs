@@ -181,6 +181,7 @@ fn now_unix() -> u64 {
 fn rotate(dir: &Path) {
     chassis::fsx::sweep_temps(dir, TEMP_ORPHAN_AGE);
     rotate_prefix(dir, "autosave-", KEEP_AUTOSAVES);
+    rotate_prefix(dir, "lan-autosave-", KEEP_AUTOSAVES);
     rotate_prefix(dir, "match-", KEEP_MATCHES);
 }
 
@@ -299,6 +300,33 @@ impl SaveJob {
             named,
             already_saved: game.autosave_done,
             recovery: (!named).then(|| game.recovery.clone()).flatten(),
+        }
+    }
+
+    /// A LAN host's save of its running match, `capture` taken from its
+    /// link: by `name`, or among the autosaves when unnamed.
+    pub(crate) fn lan(
+        game: &Game,
+        capture: crate::game::checkpoint::SaveCapture,
+        name: Option<&str>,
+    ) -> Self {
+        let named = name.is_some();
+        let mut meta = game.recorder.meta.clone();
+        meta.ticks = Some(game.state.current_tick());
+        meta.saved_at = Some(now_unix());
+        meta.kind = Some(if named { "lan" } else { "lan-autosave" }.into());
+        meta.description = name.map(Into::into);
+        Self {
+            data: Some(SaveData::Checkpoint(capture)),
+            meta,
+            dir: if named {
+                crate::paths::saves_dir()
+            } else {
+                crate::paths::autosave_dir()
+            },
+            named,
+            already_saved: false,
+            recovery: None,
         }
     }
 

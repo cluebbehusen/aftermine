@@ -16,6 +16,10 @@ pub enum RecordKind {
     Save,
     /// A finished match, kept to watch.
     Match,
+    /// A LAN match the host saved by name.
+    LanSave,
+    /// A LAN match the host saved on its own.
+    LanAutosave,
 }
 
 impl RecordKind {
@@ -23,7 +27,7 @@ impl RecordKind {
     /// saves are live sessions: watching one fog-free mid-match would
     /// scout the enemy, so they resume instead.
     pub fn resumable(self) -> bool {
-        matches!(self, RecordKind::Autosave | RecordKind::Save)
+        !matches!(self, RecordKind::Match)
     }
 }
 
@@ -31,6 +35,8 @@ pub(crate) fn record_kind(meta: &chassis::replay::ReplayMeta) -> RecordKind {
     match meta.kind.as_deref() {
         Some("autosave") => RecordKind::Autosave,
         Some("save") => RecordKind::Save,
+        Some("lan") => RecordKind::LanSave,
+        Some("lan-autosave") => RecordKind::LanAutosave,
         _ => RecordKind::Match,
     }
 }
@@ -177,7 +183,9 @@ fn scan_cancellable(
         } else if kind.resumable() {
             let what = match kind {
                 RecordKind::Save => "a saved game",
-                _ => "a live session",
+                RecordKind::LanSave => "a saved LAN match",
+                RecordKind::LanAutosave => "a live LAN match",
+                RecordKind::Autosave | RecordKind::Match => "a live session",
             };
             (what.to_string(), Some(("loads paused", "load paused")))
         } else {

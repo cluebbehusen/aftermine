@@ -196,7 +196,13 @@ impl App {
         let Some((id, result)) = self.persistence.poll() else {
             return;
         };
-        if self.catalog_id == Some(id) {
+        if self.autosave_id == Some(id) {
+            self.autosave_id = None;
+            if let Err(error) = result {
+                eprintln!("LAN autosave failed: {error:#}");
+                self.notify(error.to_string(), true);
+            }
+        } else if self.catalog_id == Some(id) {
             self.catalog_id = None;
             if let Err(error) = &result {
                 self.notify(format!("Could not refresh saves: {error:#}"), true);
@@ -215,6 +221,34 @@ impl App {
             }
         } else if matches!(screen, Screen::Busy(busy) if busy.id == Some(id)) {
             self.persistence_result = Some(result);
+        }
+    }
+
+    /// Starts the host's own save of its running LAN match when one is due
+    /// and the worker is free; a busy worker leaves it due for a later
+    /// frame.
+    pub(super) fn lan_autosave(&mut self) {
+        if self.persistence.busy() {
+            return;
+        }
+        let Some(capture) = self
+            .net
+            .as_mut()
+            .and_then(|link| link.lan_autosave(&self.game))
+        else {
+            return;
+        };
+        let job = autosave::SaveJob::lan(&self.game, capture, None);
+        let task: Task = Box::new(move |_| {
+            job.run().map_err(|error| {
+                let line = error.player_line();
+                anyhow::Error::new(error).context(line)
+            })?;
+            Ok(Output::Saved)
+        });
+        match self.persistence.start(task) {
+            Ok(id) => self.autosave_id = Some(id),
+            Err(error) => self.notify(error.to_string(), true),
         }
     }
 
@@ -404,7 +438,17 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 } else {
                     None
                 };
-                let job = autosave::SaveJob::capture(&app.game, name);
+                // A LAN host keeps an undecided match resumable; everyone
+                // else keeps what a local or decided match keeps.
+                let lan = app
+                    .net
+                    .as_ref()
+                    .filter(|_| app.game.state.result().is_none())
+                    .and_then(|link| link.capture_lan_save(&app.game));
+                let job = match lan {
+                    Some(capture) => autosave::SaveJob::lan(&app.game, capture, name),
+                    None => autosave::SaveJob::capture(&app.game, name),
+                };
                 Box::new(move |_| {
                     job.run().map_err(|error| {
                         let line = error.player_line();

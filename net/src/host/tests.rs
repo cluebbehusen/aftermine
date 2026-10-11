@@ -804,8 +804,14 @@ fn a_resumed_session_seals_the_saved_orders_first_from_the_saved_tick() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0))
         .resumed(500, vec![from(A, stop(1)), from(HOST, stop(2))]);
     host.submit(stop(3));
+    assert_eq!(
+        host.unsealed(),
+        vec![from(A, stop(1)), from(HOST, stop(2)), from(HOST, stop(3))],
+        "unsealed orders keep arrival order"
+    );
     assert_eq!(host.tick(), 500);
     let batch = step(&mut host, secs(0), 7).unwrap();
+    assert!(host.unsealed().is_empty());
     let mut sealed = batch.clone();
     sealed.sort_by_key(|order| order.player);
     assert_eq!(

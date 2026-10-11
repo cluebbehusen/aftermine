@@ -4,6 +4,7 @@
 
 use crate::bot_label::{BotLabelStyle, bot_label};
 use crate::game::Game;
+use crate::game::checkpoint::{LanManifest, SaveCapture};
 use crate::game::network::{CLIENT_BUFFER, NetRole};
 use crate::seating::{Occupant, Seating};
 use anyhow::{Context, Result, ensure};
@@ -176,6 +177,25 @@ pub(crate) struct HostLink {
     /// and every client had acknowledged it, or on a desync.
     closing: Option<(Duration, Option<End>)>,
     clock: Pacing,
+    /// Each joined seat's installation, for saves.
+    installs: Vec<(PlayerId, InstallId)>,
+    saves: Autosaves,
+}
+
+/// How often a host saves its running LAN match on its own: every minute
+/// of play.
+const LAN_AUTOSAVE_TICKS: Tick = 60 * oxide_sim::TICKS_PER_SECOND as Tick;
+
+/// When a host next saves its running LAN match on its own.
+#[derive(Debug, Clone, Copy)]
+struct Autosaves {
+    /// The tick of the last one.
+    last: Tick,
+    /// Something worth saving at once happened: a wait began, or a seat was
+    /// dropped or handed to a bot.
+    due: bool,
+    /// The match was waiting at the last pump.
+    waiting: bool,
 }
 
 /// The client's connection to its host.
@@ -409,6 +429,15 @@ impl Pacing {
     }
 }
 
+impl HostLink {
+    /// The running match as a LAN save: every seat's unsealed orders, and
+    /// who plays each joined seat.
+    fn capture(&self, game: &Game) -> SaveCapture {
+        let lan = LanManifest::new(&game.scenario, game.presentation.human, &self.installs);
+        game.capture_save().for_lan(self.session.unsealed(), lan)
+    }
+}
+
 impl Link {
     pub(crate) fn host(started: Started, game: &Game, now: Duration) -> Self {
         let host = game.presentation.human;
@@ -422,6 +451,12 @@ impl Link {
             departing: Vec::new(),
             closing: None,
             clock: Pacing::new(now),
+            installs: started.installs,
+            saves: Autosaves {
+                last: game.state.current_tick(),
+                due: false,
+                waiting: false,
+            },
         })
     }
 
@@ -484,7 +519,33 @@ impl Link {
     pub(crate) fn drop_seat(&mut self, seat: PlayerId) {
         if let Link::Host(host) = self {
             host.session.drop_seat(seat);
+            host.saves.due = true;
         }
+    }
+
+    /// The host's save of the running match; none on a client.
+    pub(crate) fn capture_lan_save(&self, game: &Game) -> Option<SaveCapture> {
+        let Link::Host(host) = self else {
+            return None;
+        };
+        Some(host.capture(game))
+    }
+
+    /// The host's own save of the running match when one is due: every
+    /// minute of play, when a wait begins, and when a seat is dropped or
+    /// handed to a bot. None on a client or once the match is decided.
+    pub(crate) fn lan_autosave(&mut self, game: &Game) -> Option<SaveCapture> {
+        let Link::Host(host) = self else {
+            return None;
+        };
+        let tick = game.state.current_tick();
+        let timed = tick >= host.saves.last + LAN_AUTOSAVE_TICKS;
+        if game.state.result().is_some() || !(timed || host.saves.due) {
+            return None;
+        }
+        host.saves.last = tick;
+        host.saves.due = false;
+        Some(host.capture(game))
     }
 
     /// Hands a seat the match is waiting for to a bot, and play resumes.
@@ -500,6 +561,7 @@ impl Link {
         if let Link::Host(host) = self {
             let config = game.take_over_seat(seat, difficulty, stance)?;
             host.session.replace_seat(seat, config);
+            host.saves.due = true;
             let name = &game.scenario.players[usize::from(seat.0)].name;
             game.presentation
                 .toast(format!("A bot took over {name}'s seat"));
@@ -631,6 +693,9 @@ impl HostLink {
             }
         }
         game.presentation.net_notice = NetStatus::hosted(&self.session, now).notice(game);
+        let waiting = self.session.waiting();
+        self.saves.due |= waiting && !self.saves.waiting;
+        self.saves.waiting = waiting;
         self.send_outgoing();
         for seat in released {
             if let Some(index) = self.peers.iter().position(|(peer, _)| *peer == seat) {
@@ -1104,6 +1169,7 @@ pub(crate) struct Started {
     peers: Vec<(PlayerId, Connection)>,
     listener: Option<Listener>,
     commit: String,
+    installs: Vec<(PlayerId, InstallId)>,
 }
 
 /// Where a running start stands.
@@ -1307,9 +1373,13 @@ impl HostLobby {
             Ok(None) => StartPoll::Waiting,
             Ok(Some(session)) => {
                 let mut peers = Vec::new();
+                let mut installs = Vec::new();
                 for &(member, seat) in seated {
                     if let Some(index) = self.connections.iter().position(|(id, _)| *id == member) {
                         peers.push((seat, self.connections.remove(index).1));
+                    }
+                    if let Some(install) = self.gathering.install(member) {
+                        installs.push((seat, install));
                     }
                 }
                 StartPoll::Started(Box::new(Started {
@@ -1317,6 +1387,7 @@ impl HostLobby {
                     peers,
                     listener: self.listener.take(),
                     commit: self.commit.clone(),
+                    installs,
                 }))
             }
             Err(failed) => StartPoll::Failed(failed),

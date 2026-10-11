@@ -311,10 +311,13 @@ impl PauseScreen {
     }
 
     /// The menu over a LAN match, which keeps running underneath: no
-    /// saving and no restart.
-    pub fn for_lan_match(mut self) -> Self {
-        self.rows
-            .retain(|row| !matches!(row, Row::SaveGame | Row::Restart));
+    /// restart, and only the host saves.
+    pub fn for_lan_match(mut self, host: bool) -> Self {
+        self.rows.retain(|row| match row {
+            Row::Restart => false,
+            Row::SaveGame => host,
+            _ => true,
+        });
         self.lan = true;
         self.menu = pause_menu(&self.rows, true);
         self

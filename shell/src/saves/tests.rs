@@ -246,3 +246,19 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
 
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
+    let replay: GameReplay =
+        chassis::replay::Replay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+    let mut meta = replay.meta;
+    for (tag, kind) in [
+        ("lan", RecordKind::LanSave),
+        ("lan-autosave", RecordKind::LanAutosave),
+    ] {
+        meta.kind = Some(tag.to_owned());
+        assert_eq!(record_kind(&meta), kind);
+        assert!(kind.resumable(), "{kind:?}");
+    }
+    assert!(!RecordKind::Match.resumable());
+}

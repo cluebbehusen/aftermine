@@ -7,8 +7,16 @@ fn confirming(p: &PauseScreen) -> bool {
 }
 
 #[test]
+fn a_lan_host_saves_from_its_menu_but_cannot_restart() {
+    let host = PauseScreen::open(false, true).for_lan_match(true);
+    assert!(host.rows.contains(&Row::SaveGame));
+    assert!(!host.rows.contains(&Row::Restart));
+    assert_eq!(host.rows.len(), host.menu.view().items.len());
+}
+
+#[test]
 fn a_lan_match_menu_offers_no_save_or_restart() {
-    let lan = PauseScreen::open(false, true).for_lan_match();
+    let lan = PauseScreen::open(false, true).for_lan_match(false);
     assert_eq!(lan.menu.title, "MENU");
     assert!(!lan.rows.contains(&Row::SaveGame));
     assert!(!lan.rows.contains(&Row::Restart));
@@ -30,7 +38,7 @@ fn a_lan_menu_keeps_its_rows_through_every_dialog() {
         assert_eq!(p.menu.view().items.len(), p.rows.len());
     };
     for label in ["Surrender", "Main Menu", "Quit"] {
-        let mut p = PauseScreen::open(false, true).for_lan_match();
+        let mut p = PauseScreen::open(false, true).for_lan_match(false);
         activate(&mut p, label);
         assert!(confirming(&p));
         drive(&mut p, Key::Enter);
@@ -39,7 +47,7 @@ fn a_lan_menu_keeps_its_rows_through_every_dialog() {
         assert_eq!(activate(&mut p, "Settings"), Out::Settings);
     }
     let mut p = PauseScreen::open(false, true)
-        .for_lan_match()
+        .for_lan_match(false)
         .with_save_failed("x".to_string(), LeaveVerb::MainMenu, false);
     assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
     lan_rows(&p);
