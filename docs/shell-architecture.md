@@ -67,17 +67,21 @@ screen that holds the match, so menus sit over a running match, and a match
 decided under the pause menu opens its report. Leaving the match says goodbye
 and lets the link's connections flush: a client's seat surrenders, a host
 leaving an undecided match tells its clients, and a host leaving a decided match
-lets lagging clients still receive the deciding batches. Until the match can
-wait for a lost player, a seat the session would wait for surrenders. The host
-paces its ticks at 1x, seals each tick's human orders, appends bot commands, and
-runs the published batch; a client runs batches as they arrive with a small
-buffer and catches up when behind. Once the match is decided, the host closes
-the connections only after every client has acknowledged the final batch, so
-late hash reports are still checked. Staged orders reach the session through the
-game's outbox. Only the host pauses, and speed is fixed. Networked sessions
-never journal crash recovery, save only a watch-only recording, and leave
-through the ordinary leave save when the host is lost or a desync halts the
-match.
+lets lagging clients still receive the deciding batches. When the session waits
+for a lost player, every machine shows the waiting screen over the match, naming
+who it waits for and for how long, and only the host can drop the seat. A player
+the host has heard nothing from lately shows as a pinned line on the HUD while
+play continues, as does a client's word that the host paused. A seat that can no
+longer act retires from the session, and a decided match concludes it, so
+neither is waited on. The host paces its ticks at 1x, seals each tick's human
+orders, appends bot commands, and runs the published batch; a client runs
+batches as they arrive with a small buffer and catches up when behind. Once the
+match is decided, the host closes the connections only after every client has
+acknowledged the final batch, so late hash reports are still checked. Staged
+orders reach the session through the game's outbox. Only the host pauses, and
+speed is fixed. Networked sessions never journal crash recovery, save only a
+watch-only recording, and leave through the ordinary leave save when the host is
+lost or a desync halts the match.
 
 Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
 may think concurrently against the same immutable state; their work joins in

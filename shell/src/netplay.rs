@@ -12,7 +12,7 @@ use oxide_net::discovery::Beacon;
 use oxide_net::{
     Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Exit, Gathering, Guest,
     GuestEnd, GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName,
-    Release, RoomSeat, SeatHolder, SeatState, StartFailed,
+    Release, RoomSeat, SeatHolder, SeatNotice, SeatState, StartFailed,
 };
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
@@ -67,6 +67,82 @@ pub(crate) enum Link {
     Host(HostLink),
     /// This machine joined a host.
     Client(ClientLink),
+}
+
+/// Who a running LAN match is waiting for or has lost track of, and
+/// whether its host paused it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct NetStatus {
+    /// Seats the match waits for, with how long it has waited.
+    pub(crate) waiting: Vec<(PlayerId, Duration)>,
+    /// Seats the host has heard nothing from lately; play continues.
+    pub(crate) quiet: Vec<PlayerId>,
+    /// The host paused the match. Only a client is told.
+    pub(crate) host_paused: bool,
+}
+
+impl NetStatus {
+    fn hosted(session: &HostSession, now: Duration) -> Self {
+        Self::from_notices(session.seats(now), Duration::ZERO, false)
+    }
+
+    fn joined(session: &ClientSession, now: Duration) -> Self {
+        let (seats, heard) = session.seats();
+        Self::from_notices(
+            seats.to_vec(),
+            now.saturating_sub(heard),
+            session.host_paused(),
+        )
+    }
+
+    fn from_notices(notices: Vec<SeatNotice>, since: Duration, host_paused: bool) -> Self {
+        let mut status = Self {
+            host_paused,
+            ..Self::default()
+        };
+        for notice in notices {
+            match notice.state {
+                SeatState::Quiet => status.quiet.push(notice.seat),
+                SeatState::Away { waited_ms } => status
+                    .waiting
+                    .push((notice.seat, Duration::from_millis(waited_ms) + since)),
+            }
+        }
+        status
+    }
+
+    /// The pinned HUD line for this status, if it calls for one.
+    fn notice(&self, game: &Game) -> Option<String> {
+        if !self.quiet.is_empty() {
+            Some(format!(
+                "Lost connection to {}",
+                seat_names(game, &self.quiet)
+            ))
+        } else if !self.waiting.is_empty() {
+            let seats: Vec<PlayerId> = self.waiting.iter().map(|(seat, _)| *seat).collect();
+            Some(format!("Waiting for {}", seat_names(game, &seats)))
+        } else {
+            self.host_paused.then(|| "Paused by the host".to_owned())
+        }
+    }
+}
+
+/// The seats' names as a sentence.
+fn seat_names(game: &Game, seats: &[PlayerId]) -> String {
+    let names: Vec<&str> = seats
+        .iter()
+        .map(|seat| game.scenario.players[usize::from(seat.0)].name.as_str())
+        .collect();
+    sentence(&names)
+}
+
+/// Names as a sentence: "Alex", "Alex and Sam", "Alex, Sam and Kim".
+pub(crate) fn sentence(names: &[&str]) -> String {
+    match names.split_last() {
+        None => String::new(),
+        Some((last, [])) => (*last).to_owned(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// The host's connections, one per client seat.
@@ -147,6 +223,27 @@ impl Link {
             closed: false,
             clock: Pacing::new(now),
         })
+    }
+
+    /// Who the match is waiting for or has lost track of.
+    pub(crate) fn status(&self, now: Duration) -> NetStatus {
+        match self {
+            Link::Host(host) => NetStatus::hosted(&host.session, now),
+            Link::Client(client) => NetStatus::joined(&client.session, now),
+        }
+    }
+
+    /// Whether this machine hosts the match.
+    pub(crate) fn hosting(&self) -> bool {
+        matches!(self, Link::Host(_))
+    }
+
+    /// Drops a seat the match is waiting for: it surrenders and play
+    /// resumes. Only the host can.
+    pub(crate) fn drop_seat(&mut self, seat: PlayerId) {
+        if let Link::Host(host) = self {
+            host.session.drop_seat(seat);
+        }
     }
 
     /// Moves lines, runs due ticks, and reports how the match ended, once.
@@ -246,6 +343,14 @@ impl HostLink {
         }
 
         game.host_frame(&mut self.session, dt, now);
+        for seat in self.session.playing_seats() {
+            if !game.state.accepts_commands(seat) {
+                self.session.retire_seat(seat);
+            }
+        }
+        if game.state.result().is_some() {
+            self.session.conclude();
+        }
 
         let mut end = None;
         let mut released = Vec::new();
@@ -262,15 +367,7 @@ impl HostLink {
                 HostEvent::Desync { tick, .. } => end = Some(End::Desync { tick }),
             }
         }
-        // Until the match can wait for a player, a seat it would wait for
-        // surrenders as before.
-        for notice in self.session.seats(now) {
-            if matches!(notice.state, SeatState::Away { .. }) {
-                self.session.drop_seat(notice.seat);
-                let name = &game.scenario.players[usize::from(notice.seat.0)].name;
-                game.presentation.toast(format!("{name} left the match"));
-            }
-        }
+        game.presentation.net_notice = NetStatus::hosted(&self.session, now).notice(game);
         self.send_outgoing();
         for seat in released {
             if let Some(index) = self.peers.iter().position(|(peer, _)| *peer == seat) {
@@ -290,7 +387,7 @@ impl HostLink {
                 connection.finish();
             }
             self.closing = Some((now, end));
-        } else if self.clock.stalled(game, now) {
+        } else if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
             game.presentation.toast("Waiting for players...");
         }
         None
@@ -345,7 +442,8 @@ impl ClientLink {
         for line in self.session.take_outgoing() {
             connection.send(&line);
         }
-        if self.clock.stalled(game, now) {
+        game.presentation.net_notice = NetStatus::joined(&self.session, now).notice(game);
+        if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
             game.presentation.toast("Waiting for the host...");
         }
         None

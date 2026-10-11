@@ -209,25 +209,111 @@ fn a_hosted_match_with_bots_stays_in_sync() {
 }
 
 #[test]
-fn a_client_that_leaves_surrenders_its_seat() {
+fn a_lost_client_makes_the_host_wait_until_it_drops_the_seat() {
+    let mut lan = Match::start(with_bots());
+    lan.run(3);
     let Match {
         mut now,
         host: (mut host, mut link),
         client,
-    } = Match::start(with_bots());
+    } = lan;
     drop(client);
+    wait(|| {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+        (!link.status(now).waiting.is_empty()).then_some(())
+    });
+    assert_eq!(link.status(now).waiting[0].0, CLIENT);
+    assert_eq!(
+        host.presentation.net_notice.as_deref(),
+        Some("Waiting for Alex")
+    );
+    let held = host.state.current_tick();
+    for _ in 0..20 {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+    }
+    assert_eq!(host.state.current_tick(), held, "the match waits");
+    assert!(host.state.accepts_commands(CLIENT), "nobody surrendered");
+
+    link.drop_seat(CLIENT);
     wait(|| {
         now += STEP;
         assert_eq!(link.pump(&mut host, now), None);
         (!host.state.accepts_commands(CLIENT)).then_some(())
     });
+    assert!(link.status(now).waiting.is_empty());
+    assert!(host.presentation.net_notice.is_none());
+    let resumed = host.state.current_tick();
+    for _ in 0..5 {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+    }
+    assert!(host.state.current_tick() > resumed, "play resumed");
     assert!(host.state.result().is_none(), "the ally fights on");
+}
+
+#[test]
+fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
+    let mut lan = Match::start(duel());
+    lan.run(3);
+    // The client stops polling, so it falls silent once its last lines land.
+    wait(|| {
+        lan.step_host();
+        (lan.host.0.presentation.net_notice.as_deref() == Some("Lost connection to Alex"))
+            .then_some(())
+    });
+    assert!(lan.host.1.status(lan.now).waiting.is_empty());
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        lan.host.0.presentation.net_notice.is_none().then_some(())
+    });
+}
+
+#[test]
+fn a_client_hears_the_host_paused() {
+    let mut lan = Match::start(duel());
+    lan.run(3);
+    lan.host.0.clock.paused = true;
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.presentation.net_notice.as_deref() == Some("Paused by the host"))
+            .then_some(())
+    });
+    for _ in 0..20 {
+        assert_eq!(lan.step(), (None, None));
+    }
     assert!(
-        host.presentation
+        lan.client
+            .0
+            .presentation
             .toasts
             .iter()
-            .any(|toast| toast.text.contains("left the match"))
+            .all(|toast| !toast.text.contains("Waiting for the host")),
+        "the notice explains the stall"
     );
+}
+
+#[test]
+fn a_defeated_client_that_goes_away_holds_nothing() {
+    let mut lan = Match::start(with_bots());
+    lan.run(3);
+    lan.client.0.issue(Command::Surrender);
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (!lan.host.0.state.accepts_commands(CLIENT)).then_some(())
+    });
+    let Match {
+        mut now,
+        host: (mut host, mut link),
+        client,
+    } = lan;
+    drop(client);
+    for _ in 0..40 {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+    }
+    assert!(link.status(now).waiting.is_empty());
 }
 
 #[test]

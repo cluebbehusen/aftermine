@@ -423,6 +423,15 @@ impl HostSession {
             .all(|link| link.acked == self.next_tick)
     }
 
+    /// The client seats still playing.
+    pub fn playing_seats(&self) -> Vec<PlayerId> {
+        self.clients
+            .iter()
+            .filter(|client| client.playing())
+            .map(|client| client.seat)
+            .collect()
+    }
+
     /// Whether the match is held for a seat that is away.
     pub fn waiting(&self) -> bool {
         self.course == Course::Playing && self.clients.iter().any(Client::away)

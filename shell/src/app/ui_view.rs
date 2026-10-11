@@ -61,6 +61,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         Screen::Lobby { screen: lobby, .. } => (screen.mode(), Some(lobby.menu.view())),
         Screen::Busy(busy) => (screen.mode(), Some(busy.menu.view())),
         Screen::Pause(ps) => (screen.mode(), Some(ps.menu.view())),
+        Screen::Waiting(waiting) => (screen.mode(), Some(waiting.view())),
     };
     let (title, selected, items, visible_range, hover) = match menu {
         Some(MenuView {

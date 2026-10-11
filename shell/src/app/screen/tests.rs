@@ -19,6 +19,7 @@ fn each_screen_kind_states_its_gameplay_and_performance_context() {
         ScreenKind::Replays,
         ScreenKind::Results,
         ScreenKind::Pause,
+        ScreenKind::Waiting,
         ScreenKind::Busy,
     ] {
         assert!(!kind.gameplay(), "{kind:?}");
@@ -159,4 +160,22 @@ fn backdrop_animation_freezes_only_when_a_live_match_is_paused() {
     };
     assert!(settings_from_home.backdrop_runs());
     assert!(!settings_from_pause.backdrop_runs());
+}
+
+#[test]
+fn the_waiting_screen_holds_the_lan_match_over_a_frozen_backdrop() {
+    use crate::screens::waiting::{Absent, WaitingScreen};
+    let waiting = Screen::Waiting(WaitingScreen::open(
+        vec![Absent {
+            seat: oxide_sim::PlayerId(1),
+            name: "Alex".to_owned(),
+            waited: std::time::Duration::ZERO,
+        }],
+        true,
+    ));
+    assert!(waiting.holds_live_match());
+    assert!(!waiting.backdrop_runs());
+    assert_eq!(waiting.keyboard(), None);
+    assert_eq!(waiting.mode(), "waiting");
+    assert_eq!(waiting.profile_mode(), "waiting");
 }

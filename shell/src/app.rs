@@ -359,7 +359,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             width: numeric::to_u32(screen_width()),
             height: numeric::to_u32(screen_height()),
             dpi: f64::from(macroquad::miniquad::window::dpi_scale()),
-            paused: screen.kind() == ScreenKind::Pause || visible.paused(),
+            paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
+                || visible.paused(),
             minimized: input::reported_minimized(),
             recording: visible.recording(),
         });

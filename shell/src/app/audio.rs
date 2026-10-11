@@ -61,7 +61,9 @@ pub(super) fn soundtrack_scene(screen: &Screen, game: &Game) -> crate::soundtrac
             session.clock.paused || session.seeking.is_some(),
         ),
         Screen::FinalMap(_) => crate::soundtrack::match_scene(&game.view(), true),
-        Screen::Busy(_) | Screen::Pause(_) => crate::soundtrack::match_scene(&game.view(), true),
+        Screen::Busy(_) | Screen::Pause(_) | Screen::Waiting(_) => {
+            crate::soundtrack::match_scene(&game.view(), true)
+        }
         Screen::Settings { .. } | Screen::Codex { .. } if screen.over_pause() => {
             crate::soundtrack::match_scene(&game.view(), true)
         }

@@ -14,4 +14,5 @@ pub mod playback;
 pub mod results;
 pub mod settings;
 pub mod shelf;
+pub mod waiting;
 pub mod wizard;

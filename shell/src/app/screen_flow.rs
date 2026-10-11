@@ -124,6 +124,7 @@ fn exit(game: &mut Game, from: ScreenKind) {
         | ScreenKind::Replays
         | ScreenKind::Results
         | ScreenKind::Pause
+        | ScreenKind::Waiting
         | ScreenKind::Busy => {}
     }
 }
@@ -157,6 +158,7 @@ fn enter(game: &mut Game, screen: &Screen) {
         | ScreenKind::Playback
         | ScreenKind::Replays
         | ScreenKind::Results
+        | ScreenKind::Waiting
         | ScreenKind::Busy => {}
     }
 }
@@ -193,7 +195,7 @@ pub(super) fn deliver_notices(
 ) {
     for Notice { text, danger } in notices.drain(..) {
         match screen {
-            Screen::Playing => live.presentation.toast(text),
+            Screen::Playing | Screen::Waiting(_) => live.presentation.toast(text),
             Screen::Playback { session, .. } => session.presentation.toast(text),
             Screen::Settings { screen, .. } => {
                 screen.notice = Some(screens::settings::Notice { text, danger });
@@ -280,15 +282,21 @@ pub(super) fn update_and_draw(
             screen: lobby,
             back,
         } => lobby_frame(app, lobby, back, &events, &mut rerun),
-        Screen::Playing => playing_frame(
-            app,
-            &mut events,
-            time,
-            &mut rerun,
-            &mut profile_frame_active,
-            ctrl_at_frame_start,
-            shift_at_frame_start,
-        ),
+        Screen::Playing => {
+            let next = playing_frame(
+                app,
+                &mut events,
+                time,
+                &mut rerun,
+                &mut profile_frame_active,
+                ctrl_at_frame_start,
+                shift_at_frame_start,
+            );
+            match next {
+                Screen::Playing => wait_if_lost(app),
+                other => other,
+            }
+        }
         Screen::Playback { session, back } => {
             playback_frame(app, session, back, &events, time, &mut rerun)
         }
@@ -298,6 +306,7 @@ pub(super) fn update_and_draw(
         Screen::Results(results) => results_frame(app, results, &events, &mut rerun),
         Screen::Replays(shelf) => replays_frame(app, shelf, &events, &mut rerun),
         Screen::Pause(ps) => pause_frame(app, ps, &events)?,
+        Screen::Waiting(waiting) => waiting_frame(app, waiting, &events),
         Screen::Busy(busy) => persistence::frame(app, busy, &events)?,
     };
 
@@ -1094,6 +1103,65 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
             .draw_with_coaching(&shelf.subtitle(), shelf.coaching().as_deref());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
+    }
+}
+
+/// The seats a LAN match waits for, named.
+fn absent_players(app: &App) -> Vec<screens::waiting::Absent> {
+    let Some(link) = &app.net else {
+        return Vec::new();
+    };
+    link.status(app.clock.elapsed())
+        .waiting
+        .into_iter()
+        .map(|(seat, waited)| screens::waiting::Absent {
+            seat,
+            name: app.game.scenario.players[usize::from(seat.0)].name.clone(),
+            waited,
+        })
+        .collect()
+}
+
+/// Play, or the waiting screen once a LAN match waits for a lost player.
+fn wait_if_lost(app: &App) -> Screen {
+    let absent = absent_players(app);
+    if absent.is_empty() {
+        return Screen::Playing;
+    }
+    let host = app.net.as_ref().is_some_and(crate::netplay::Link::hosting);
+    Screen::Waiting(screens::waiting::WaitingScreen::open(absent, host))
+}
+
+/// A LAN match waiting for a lost player: the host may drop them; anyone
+/// may open the match menu. Play returns once nobody is waited on.
+fn waiting_frame(
+    app: &mut App,
+    mut waiting: screens::waiting::WaitingScreen,
+    events: &[RawEvent],
+) -> Screen {
+    let absent = absent_players(app);
+    if absent.is_empty() {
+        return Screen::Playing;
+    }
+    waiting.refresh(absent);
+    let out = waiting.update(events, &mut app.input.mouse, &mut app.ui_sounds);
+    render::draw(
+        &app.game.view(),
+        &app.sprites,
+        &app.input,
+        &app.config.bindings,
+    );
+    veil();
+    waiting.draw();
+    match out {
+        screens::waiting::Out::Stay => Screen::Waiting(waiting),
+        screens::waiting::Out::Drop(seat) => {
+            if let Some(link) = &mut app.net {
+                link.drop_seat(seat);
+            }
+            Screen::Waiting(waiting)
+        }
+        screens::waiting::Out::Menu => Screen::Pause(super::pause_menu(&app.game)),
     }
 }
 
