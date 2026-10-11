@@ -70,8 +70,8 @@ enum Stage {
     Greeting,
     /// The builds match; waiting for the member's Introduce.
     Introducing,
-    /// Named and in the room.
-    Joined(PlayerName),
+    /// Named and in the room, from an installation.
+    Joined(PlayerName, InstallId),
 }
 
 #[derive(Debug)]
@@ -192,7 +192,7 @@ impl Gathering {
         let (greeting, introducing) = match self.members[index].stage {
             Stage::Greeting => (true, false),
             Stage::Introducing => (false, true),
-            Stage::Joined(_) => (false, false),
+            Stage::Joined(..) => (false, false),
         };
         match JoinMessage::decode(line) {
             Ok(JoinMessage::Hello {
@@ -214,7 +214,7 @@ impl Gathering {
                 self.events.push(LobbyEvent::Turned { member });
             }
             Ok(JoinMessage::Introduce { name, install }) if introducing => {
-                self.members[index].stage = Stage::Joined(name.clone());
+                self.members[index].stage = Stage::Joined(name.clone(), install);
                 let joined = LobbyEvent::Joined {
                     member,
                     name,
@@ -266,7 +266,18 @@ impl Gathering {
             .iter()
             .find(|candidate| candidate.id == member)
             .and_then(|member| match &member.stage {
-                Stage::Joined(name) => Some(name),
+                Stage::Joined(name, _) => Some(name),
+                Stage::Greeting | Stage::Introducing => None,
+            })
+    }
+
+    /// A joined member's installation.
+    pub fn install(&self, member: MemberId) -> Option<InstallId> {
+        self.members
+            .iter()
+            .find(|candidate| candidate.id == member)
+            .and_then(|member| match member.stage {
+                Stage::Joined(_, install) => Some(install),
                 Stage::Greeting | Stage::Introducing => None,
             })
     }
@@ -280,7 +291,7 @@ impl Gathering {
         }
         let mut lines = Vec::new();
         for member in &mut self.members {
-            if !matches!(member.stage, Stage::Joined(_)) {
+            if !matches!(member.stage, Stage::Joined(..)) {
                 continue;
             }
             let Some(seat) = seat_of(member.id) else {
@@ -320,7 +331,7 @@ impl Gathering {
                 }
                 // A seated member may go quiet while it builds or restores
                 // the start; the start's own deadline covers it.
-                Stage::Joined(_) => {
+                Stage::Joined(..) => {
                     now.saturating_sub(member.heard) >= SILENCE_TIMEOUT
                         && !self.starting.as_ref().is_some_and(|starting| {
                             starting
@@ -331,7 +342,7 @@ impl Gathering {
                 }
             };
             if expired {
-                let reason = if matches!(member.stage, Stage::Joined(_)) {
+                let reason = if matches!(member.stage, Stage::Joined(..)) {
                     LeaveReason::Silent
                 } else {
                     LeaveReason::Unintroduced
@@ -341,7 +352,7 @@ impl Gathering {
             }
             if std::mem::take(&mut member.spoke) {
                 member.sent = now;
-            } else if matches!(member.stage, Stage::Joined(_))
+            } else if matches!(member.stage, Stage::Joined(..))
                 && now.saturating_sub(member.sent) >= HEARTBEAT_INTERVAL
             {
                 member.sent = now;

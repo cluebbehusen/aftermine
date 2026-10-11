@@ -411,3 +411,54 @@ fn a_directory_at_budget_loses_nothing() {
     }
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn lan_autosaves_rotate_against_their_own_budget() {
+    let dir = scratch("lan-autosaves");
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in 0..=KEEP_AUTOSAVES {
+        std::fs::write(dir.join(format!("lan-autosave-{n:010}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-{n:010}.oxsave")), b"{}").unwrap();
+    }
+    std::fs::write(dir.join("lan-0000000007.oxsave"), b"{}").unwrap();
+    rotate(&dir);
+    for prefix in ["lan-autosave", "autosave"] {
+        assert!(!dir.join(format!("{prefix}-{:010}.oxsave", 0)).exists());
+        for n in 1..=KEEP_AUTOSAVES {
+            assert!(dir.join(format!("{prefix}-{n:010}.oxsave")).exists());
+        }
+    }
+    assert!(
+        dir.join("lan-0000000007.oxsave").exists(),
+        "a named LAN save stays"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_lan_host_save_is_a_resumable_checkpoint() {
+    let dir = scratch("lan-host");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    game.advance_ticks(12);
+    let capture = || {
+        let manifest =
+            crate::game::checkpoint::LanManifest::new(&game.scenario, game.presentation.human, &[]);
+        game.capture_save().for_lan(Vec::new(), manifest)
+    };
+    for (name, kind) in [(None, "lan-autosave"), (Some("raid"), "lan")] {
+        let mut job = SaveJob::lan(&game, capture(), name);
+        job.dir = Some(dir.clone());
+        let SaveOutcome::Wrote(path) = job.run().unwrap() else {
+            panic!("a LAN save lands");
+        };
+        assert!(
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|file| file.starts_with(&format!("{kind}-")))
+        );
+        let info = crate::saved_game::inspect(&path).unwrap();
+        assert_eq!(info.meta.kind.as_deref(), Some(kind));
+        assert_eq!(info.meta.description.as_deref(), name);
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}

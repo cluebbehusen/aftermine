@@ -40,6 +40,10 @@ fn write(game: &Game, meta: ReplayMeta, path: &Path) -> Result<()> {
 }
 
 pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path) -> Result<()> {
+    ensure!(
+        capture.is_lan() == lan_kind(meta.kind.as_deref()),
+        "save kind does not match the match"
+    );
     let checkpoint = capture.checkpoint()?;
     let mut payload = Vec::new();
     ciborium::into_writer(&checkpoint, &mut payload)?;
@@ -112,10 +116,18 @@ fn check_header(header: &Header) -> Result<()> {
         header.meta.sim_version
     );
     ensure!(
-        matches!(header.meta.kind.as_deref(), Some("save" | "autosave")),
+        matches!(
+            header.meta.kind.as_deref(),
+            Some("save" | "autosave" | "lan" | "lan-autosave")
+        ),
         "invalid save kind"
     );
     Ok(())
+}
+
+/// Whether a save of `kind` holds a LAN match.
+fn lan_kind(kind: Option<&str>) -> bool {
+    matches!(kind, Some("lan" | "lan-autosave"))
 }
 
 pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
@@ -123,6 +135,14 @@ pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
     let mut reader = payload.as_slice();
     let checkpoint: GameCheckpoint = ciborium::from_reader(&mut reader)?;
     ensure!(reader.is_empty(), "trailing checkpoint payload");
+    ensure!(
+        checkpoint.is_lan() == lan_kind(header.meta.kind.as_deref()),
+        "save kind does not match the match"
+    );
+    ensure!(
+        !checkpoint.is_lan(),
+        "a LAN match resumes from Match Setup with its players"
+    );
     let game = checkpoint.restore()?;
     ensure!(
         header.meta.ticks == Some(game.tick())

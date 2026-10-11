@@ -189,6 +189,7 @@ fn a_guest_is_greeted_named_and_shown_the_map_once_and_the_room_on_change() {
         }]
     );
     assert_eq!(lan.host.name(lan.member(alex)), Some(&name("Alex")));
+    assert_eq!(lan.host.install(lan.member(alex)), Some(install(alex)));
 
     lan.publish(&room(&["Alex"]));
     let heard = lan.settle();

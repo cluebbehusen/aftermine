@@ -263,8 +263,60 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
             demo: Demo::default(),
             concede_stats: None,
             boundary_fog: crate::boundary_fog::BoundaryFog::new(&state, PlayerId(0)),
+            lan: None,
         };
         let game = checkpoint.restore().unwrap().install();
         assert_eq!(game.presentation.human, PlayerId(0));
     }
+}
+
+#[test]
+fn a_lan_checkpoint_binds_the_host_seat_and_lists_every_other_player() {
+    let mut scenario =
+        Scenario::from_json(include_str!("../../../../scenarios/twin-forges.json")).unwrap();
+    for (seat, player) in scenario.players.iter_mut().enumerate() {
+        player.bot = seat == 3;
+        player.bot_config = player.bot.then_some(BotConfig::default());
+    }
+    let game = Game::with_viewport(scenario.clone(), vec2(1280.0, 720.0)).unwrap();
+    let host = PlayerId(1);
+    let installs = [
+        (PlayerId(2), oxide_net::InstallId::new(12)),
+        (PlayerId(0), oxide_net::InstallId::new(10)),
+    ];
+    let lan = LanManifest::new(&scenario, host, &installs);
+    assert_eq!(lan.seats, vec![installs[1], installs[0]], "in seat order");
+    let pending = vec![oxide_sim::PlayerCommand {
+        player: PlayerId(2),
+        command: Command::Surrender,
+    }];
+    let mut capture = game.capture_save().for_lan(pending.clone(), lan);
+    capture.human = host;
+    let checkpoint = serde_json::to_value(capture.checkpoint().unwrap()).unwrap();
+
+    let restored: GameCheckpoint = serde_json::from_value(checkpoint.clone()).unwrap();
+    assert!(restored.is_lan());
+    let game = restored.restore().unwrap().install();
+    assert_eq!(game.presentation.human, host, "any human seat can host");
+    assert_eq!(
+        game.pending.to_vec(),
+        pending,
+        "every seat's unsealed orders"
+    );
+
+    let refused = |edit: &dyn Fn(&mut serde_json::Value)| {
+        let mut bad = checkpoint.clone();
+        edit(&mut bad);
+        let bad: GameCheckpoint = serde_json::from_value(bad).unwrap();
+        bad.restore().err().unwrap().to_string()
+    };
+    assert!(
+        refused(&|bad| bad["lan"]["seats"].as_array_mut().unwrap().truncate(1))
+            .contains("LAN players do not match")
+    );
+    assert!(refused(&|bad| bad["human"] = serde_json::json!(3)).contains("invalid host seat"));
+    assert!(
+        refused(&|bad| bad["lan"] = serde_json::Value::Null).contains("invalid local seat"),
+        "a local checkpoint keeps the default local seat"
+    );
 }

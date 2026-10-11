@@ -478,6 +478,58 @@ fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
 }
 
 #[test]
+fn a_host_saves_its_running_match_with_its_players_and_unsealed_orders() {
+    let mut lan = Match::start(with_bots());
+    lan.run(3);
+    assert!(
+        lan.client.1.capture_lan_save(&lan.client.0).is_none(),
+        "only the host saves"
+    );
+    assert!(
+        lan.host.1.lan_autosave(&lan.host.0).is_none(),
+        "nothing is due yet"
+    );
+
+    // The client falls silent until the match waits for it.
+    wait(|| {
+        lan.step_host();
+        (!lan.host.1.status(lan.now).waiting.is_empty()).then_some(())
+    });
+    lan.host.0.issue(Command::Surrender);
+    lan.step_host();
+    let autosave = lan.host.1.lan_autosave(&lan.host.0);
+    assert!(autosave.is_some(), "a wait beginning makes a save due");
+    assert!(lan.host.1.lan_autosave(&lan.host.0).is_none(), "once");
+    lan.host.1.rearm_autosave();
+    assert!(
+        lan.host.1.lan_autosave(&lan.host.0).is_some(),
+        "a failed save is due again"
+    );
+
+    let saved = serde_json::to_value(autosave.unwrap().checkpoint().unwrap()).unwrap();
+    assert_eq!(
+        saved["lan"]["seats"],
+        serde_json::json!([[CLIENT.0, InstallId::new(1).to_hex()]]),
+        "the client's seat and installation"
+    );
+    assert_eq!(
+        saved["session"]["pending"],
+        serde_json::to_value([PlayerCommand {
+            player: HOST,
+            command: Command::Surrender,
+        }])
+        .unwrap(),
+        "the order the wait held back"
+    );
+
+    lan.host.1.drop_seat(CLIENT);
+    assert!(
+        lan.host.1.lan_autosave(&lan.host.0).is_some(),
+        "dropping a seat makes a save due"
+    );
+}
+
+#[test]
 fn a_client_hears_the_host_paused() {
     let mut lan = Match::start(duel());
     lan.run(3);

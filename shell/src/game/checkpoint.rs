@@ -9,10 +9,54 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub(crate) struct GameCheckpoint {
     session: SessionCheckpoint,
+    /// The local seat; for a LAN match, the host's.
     human: PlayerId,
     demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
+    /// Who played the other seats of a saved LAN match.
+    lan: Option<LanManifest>,
+}
+
+/// The joined players of a saved LAN match: each human seat other than the
+/// host's, with the installation that played it, so a resume can seat
+/// each player again. Seats handed to bots are no longer listed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LanManifest {
+    /// In seat order.
+    pub(crate) seats: Vec<(PlayerId, oxide_net::InstallId)>,
+}
+
+impl LanManifest {
+    /// Lists `installs` for the human seats of `scenario` other than
+    /// `host`'s. A seat that never sent one cannot be in a running match.
+    pub(crate) fn new(
+        scenario: &Scenario,
+        host: PlayerId,
+        installs: &[(PlayerId, oxide_net::InstallId)],
+    ) -> Self {
+        let seats = joined_seats(scenario, host)
+            .filter_map(|seat| {
+                installs
+                    .iter()
+                    .find(|(installed, _)| *installed == seat)
+                    .copied()
+            })
+            .collect();
+        Self { seats }
+    }
+}
+
+/// The human seats of `scenario` other than `host`'s, in seat order.
+fn joined_seats(scenario: &Scenario, host: PlayerId) -> impl Iterator<Item = PlayerId> + '_ {
+    scenario
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(_, player)| !player.bot)
+        .map(|(seat, _)| PlayerId::from_index(seat))
+        .filter(move |&seat| seat != host)
 }
 
 pub(crate) struct SaveCapture {
@@ -25,6 +69,7 @@ pub(crate) struct SaveCapture {
     demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
+    lan: Option<LanManifest>,
 }
 
 impl Game {
@@ -39,11 +84,30 @@ impl Game {
             demo: self.demo,
             concede_stats: self.concede_stats.clone(),
             boundary_fog: self.presentation.boundary_fog.clone(),
+            lan: None,
         }
     }
 }
 
 impl SaveCapture {
+    /// The same capture as a saved LAN match: `pending` holds every seat's
+    /// unsealed orders in arrival order, and `lan` who played each joined
+    /// seat.
+    pub(crate) fn for_lan(
+        mut self,
+        pending: Vec<oxide_sim::PlayerCommand>,
+        lan: LanManifest,
+    ) -> Self {
+        self.pending = pending;
+        self.lan = Some(lan);
+        self
+    }
+
+    /// Whether this is a saved LAN match.
+    pub(crate) fn is_lan(&self) -> bool {
+        self.lan.is_some()
+    }
+
     pub(crate) fn checkpoint(self) -> Result<GameCheckpoint> {
         Ok(GameCheckpoint {
             session: SessionCheckpoint::capture(
@@ -57,6 +121,7 @@ impl SaveCapture {
             demo: self.demo,
             concede_stats: self.concede_stats,
             boundary_fog: self.boundary_fog,
+            lan: self.lan,
         })
     }
 }
@@ -96,15 +161,38 @@ impl GameCheckpoint {
         self.session.metadata()
     }
 
+    /// Whether this is a saved LAN match.
+    pub(crate) fn is_lan(&self) -> bool {
+        self.lan.is_some()
+    }
+
     pub(crate) fn restore(self) -> Result<RestoredGame> {
         let checkpoint = self;
         let recorder = checkpoint.session.recording(&crate::build_identity())?;
         let recovery_origin = Some(checkpoint.session.clone());
         let core = checkpoint.session.restore()?;
-        anyhow::ensure!(
-            checkpoint.human == Game::local_seat(&core.scenario),
-            "invalid local seat"
-        );
+        match &checkpoint.lan {
+            None => anyhow::ensure!(
+                checkpoint.human == Game::local_seat(&core.scenario),
+                "invalid local seat"
+            ),
+            Some(lan) => {
+                anyhow::ensure!(
+                    core.scenario
+                        .players
+                        .get(usize::from(checkpoint.human.0))
+                        .is_some_and(|player| !player.bot),
+                    "invalid host seat"
+                );
+                anyhow::ensure!(
+                    lan.seats
+                        .iter()
+                        .map(|(seat, _)| *seat)
+                        .eq(joined_seats(&core.scenario, checkpoint.human)),
+                    "LAN players do not match the human seats"
+                );
+            }
+        }
         anyhow::ensure!(
             checkpoint.boundary_fog.valid_checkpoint(&core.state),
             "invalid boundary fog"

@@ -245,6 +245,15 @@ impl HostSession {
         self
     }
 
+    /// The orders not yet sealed, in arrival order: what a saved match
+    /// must carry so that none is lost on resume.
+    pub fn unsealed(&self) -> Vec<PlayerCommand> {
+        self.pending
+            .iter()
+            .map(|pending| pending.command.clone())
+            .collect()
+    }
+
     /// The same session, knowing each client's rejoin token.
     #[must_use]
     pub fn with_tokens(mut self, tokens: Vec<(PlayerId, Token)>) -> Self {

@@ -94,9 +94,14 @@ catches up when behind. Once the match is decided, the host closes the
 connections only after every client has acknowledged the final batch, so late
 hash reports are still checked. Staged orders reach the session through the
 game's outbox. Only the host pauses, and speed is fixed. Networked sessions
-never journal crash recovery, save only a watch-only recording, and leave
-through the ordinary leave save when the host is lost or a desync halts the
-match.
+never journal crash recovery. A client saves only a watch-only recording. The
+host saves the undecided match as a LAN checkpoint instead: by name from its
+menu, and on its own every minute of play, when a wait begins, when it drops or
+replaces a seat, and when it leaves. A LAN checkpoint carries every seat's
+unsealed orders and the installation that played each joined seat, binds the
+host's seat rather than the default local one, and resumes only through Match
+Setup with its players. Everyone leaves through the ordinary leave save when the
+host is lost or a desync halts the match.
 
 Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
 may think concurrently against the same immutable state; their work joins in
@@ -479,9 +484,10 @@ byte strings. No old player-save import or format migration is provided.
 
 Restoration runs no historical ticks and starts a fresh world-origin recording
 at the saved tick. Pending input remains pending until that tick executes. A
-save is self-contained. Named saves persist until explicitly deleted; autosaves
-and finished-match recordings rotate separately. Finished matches remain JSON
-recordings, containing the available history since the current segment began.
+save is self-contained. Named saves persist until explicitly deleted; autosaves,
+LAN autosaves, and finished-match recordings rotate separately. Finished matches
+remain JSON recordings, containing the available history since the current
+segment began.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 decompression, restoration, catalog scans, and recovery preparation. Smaller

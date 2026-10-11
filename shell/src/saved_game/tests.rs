@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{BuildingId, Command, Scenario, UnitKind};
+use oxide_sim::{BuildingId, Command, PlayerId, Scenario, UnitKind};
 use std::path::PathBuf;
 
 struct Fixture(PathBuf);
@@ -240,4 +240,31 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
         std::fs::write(&path.0, file).unwrap();
         assert!(prepare_load(&path.0).is_err(), "{field}");
     }
+}
+
+#[test]
+fn a_lan_save_is_written_and_read_but_resumes_only_through_match_setup() {
+    let path = Fixture::new();
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.advance_ticks(30);
+    let lan = || {
+        let manifest = crate::game::checkpoint::LanManifest::new(&game.scenario, PlayerId(0), &[]);
+        game.capture_save().for_lan(Vec::new(), manifest)
+    };
+    let mut lan_meta = meta(&game);
+    lan_meta.kind = Some("lan-autosave".into());
+    assert!(
+        write_capture(game.capture_save(), lan_meta.clone(), &path.0).is_err(),
+        "a local match is never written as a LAN save"
+    );
+    assert!(
+        write_capture(lan(), meta(&game), &path.0).is_err(),
+        "a LAN match is never written as a local save"
+    );
+    write_capture(lan(), lan_meta, &path.0).unwrap();
+    let info = inspect(&path.0).unwrap();
+    assert_eq!(info.meta.kind.as_deref(), Some("lan-autosave"));
+    assert!(info.problem.is_none());
+    let refused = prepare_load(&path.0).err().unwrap().to_string();
+    assert!(refused.contains("resumes from Match Setup"), "{refused}");
 }
