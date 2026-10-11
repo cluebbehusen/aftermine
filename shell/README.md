@@ -86,12 +86,13 @@ cargo run -p oxide-driver -- smoke --spawn
 
 To play over a LAN or Tailscale, build the same commit on every machine. In the
 game, the host switches match setup to LAN, which opens every other chair and
-shows the address to join; the others pick Join Match and enter their name and
-that address (the port defaults to 4200). Joiners take open chairs, or a bot's
-when none is open; the host can move players between seats or remove them, and
-starts once every open chair is filled. From the command line, the host passes a
-scenario whose players are the seats with `"bot": false`; the host takes the
-first, and joining machines fill the rest in order:
+shows the address to join; the others pick Join Match, enter their name, and
+choose the host from the matches found on the network or type that address (the
+port defaults to 4200). Joiners take open chairs, or a bot's when none is open;
+the host can move players between seats or remove them, and starts once every
+open chair is filled. From the command line, the host passes a scenario whose
+players are the seats with `"bot": false`; the host takes the first, and joining
+machines fill the rest in order:
 
 ```sh
 cargo run -p oxide-shell --release -- --host 0.0.0.0:4200 --scenario duel.json

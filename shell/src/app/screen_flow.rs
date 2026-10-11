@@ -339,7 +339,8 @@ fn lobby_frame(
             let commit = crate::build_identity().revision;
             *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
                 crate::netplay::ClientLobby::new(&address, &commit, name),
-            ));
+            ))
+            .discovering();
         }
     }
     render::draw(
@@ -445,10 +446,13 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
     } else if out == screens::home::Out::Join {
         let address = app.config.last_join_address.as_deref().unwrap_or_default();
         Screen::Lobby {
-            screen: Box::new(crate::screens::lobby::LobbyScreen::join(
-                app.config.player_name.as_deref(),
-                address,
-            )),
+            screen: Box::new(
+                crate::screens::lobby::LobbyScreen::join(
+                    app.config.player_name.as_deref(),
+                    address,
+                )
+                .discovering(),
+            ),
             back: Box::new(Screen::Home(home)),
         }
     } else {

@@ -2192,6 +2192,11 @@ impl Wizard {
         );
         lan.lobby
             .publish(&room, |member| seating.seat_of(member), now);
+        // Joiners can take any chair but the host's, so the map's seats are
+        // the lobby's room.
+        let here = 1 + lan.members.iter().flatten().count();
+        lan.lobby
+            .advertise(&host, &scenario.name, here, draft.seats.len(), now);
         None
     }
 
