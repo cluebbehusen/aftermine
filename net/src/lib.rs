@@ -29,7 +29,7 @@ pub use message::{
 };
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartContent, StartFailed};
-pub use tcp::{Closed, Connection, Listener};
+pub use tcp::{Closed, Connection, Listener, WRITE_TIMEOUT};
 pub use token::{InstallId, Token};
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
 pub use visit::{Visit, VisitEnd, VisitEvent};
