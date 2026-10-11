@@ -254,6 +254,46 @@ fn a_lost_client_makes_the_host_wait_until_it_drops_the_seat() {
 }
 
 #[test]
+fn the_host_hands_a_waited_seat_to_a_bot_and_its_client_hears_why() {
+    use oxide_sim::scenario::{BotDifficulty, BotStance};
+    let mut lan = Match::start(with_bots());
+    lan.run(3);
+    // The client stops polling until the host waits for it.
+    wait(|| {
+        lan.step_host();
+        (!lan.host.1.status(lan.now).waiting.is_empty()).then_some(())
+    });
+    let Match {
+        mut now,
+        host: (mut host, mut link),
+        client: (mut client, mut client_link),
+    } = lan;
+    link.replace_seat(
+        &mut host,
+        CLIENT,
+        BotDifficulty::Standard,
+        BotStance::Balanced,
+    )
+    .unwrap();
+    assert!(host.scenario.players[usize::from(CLIENT.0)].bot);
+    assert!(link.status(now).waiting.is_empty());
+    let end = wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        client_link.pump(&mut client, now)
+    });
+    assert_eq!(end, End::Replaced);
+    let resumed = host.state.current_tick();
+    for _ in 0..5 {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+    }
+    assert!(host.state.current_tick() > resumed, "play resumed");
+    assert!(host.state.accepts_commands(CLIENT), "nobody surrendered");
+}
+
+#[test]
 fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
     let mut lan = Match::start(duel());
     lan.run(3);
@@ -756,7 +796,6 @@ fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
 
 #[test]
 fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
-    let (mut game, mut link, host) = hand_hosted(duel());
     let seats = oxide_net::HostMessage::Seats {
         seats: vec![SeatNotice {
             seat: PlayerId(9),
@@ -764,11 +803,18 @@ fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
         }],
         paused: false,
     };
-    host.send(&seats.encode());
-    let mut now = Duration::ZERO;
-    let end = wait(|| {
-        now += STEP;
-        link.pump(&mut game, now)
-    });
-    assert_eq!(end, End::HostLost);
+    let replaced = oxide_net::HostMessage::Replaced {
+        seat: PlayerId(9),
+        config: BotConfig::default(),
+    };
+    for line in [seats.encode(), replaced.encode()] {
+        let (mut game, mut link, host) = hand_hosted(duel());
+        host.send(&line);
+        let mut now = Duration::ZERO;
+        let end = wait(|| {
+            now += STEP;
+            link.pump(&mut game, now)
+        });
+        assert_eq!(end, End::HostLost, "{line}");
+    }
 }

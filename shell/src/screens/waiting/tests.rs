@@ -20,7 +20,16 @@ fn press(screen: &mut WaitingScreen, key: Key) -> Out {
 #[test]
 fn the_host_can_drop_each_absent_seat_and_everyone_can_open_the_menu() {
     let host = WaitingScreen::open(vec![absent(1, "Alex", 42), absent(2, "Sam", 5)], true);
-    assert_eq!(host.view().items, ["Drop Alex", "Drop Sam", "Menu"]);
+    assert_eq!(
+        host.view().items,
+        [
+            "Drop Alex",
+            "Replace Alex with a bot",
+            "Drop Sam",
+            "Replace Sam with a bot",
+            "Menu"
+        ]
+    );
     assert_eq!(host.subtitle(), "Waiting for Alex and Sam · 0:42");
     assert_eq!(host.mode_name(), "waiting");
 
@@ -64,7 +73,10 @@ fn a_confirmation_for_a_seat_no_longer_waited_on_closes() {
     assert_eq!(host.mode_name(), "confirm_drop");
     host.refresh(vec![absent(2, "Sam", 4)]);
     assert_eq!(host.mode_name(), "waiting");
-    assert_eq!(host.view().items, ["Drop Sam", "Menu"]);
+    assert_eq!(
+        host.view().items,
+        ["Drop Sam", "Replace Sam with a bot", "Menu"]
+    );
 }
 
 #[test]
@@ -75,4 +87,61 @@ fn the_same_seats_keep_the_cursor_as_the_wait_grows() {
     host.refresh(vec![absent(1, "Alex", 70), absent(2, "Sam", 9)]);
     assert_eq!(host.view().selected, 1);
     assert_eq!(host.subtitle(), "Waiting for Alex and Sam · 1:10");
+}
+
+#[test]
+fn replacing_picks_a_difficulty_then_a_stance() {
+    let mut host = WaitingScreen::open(vec![absent(1, "Alex", 3)], true);
+    press(&mut host, Key::Down);
+    assert_eq!(press(&mut host, Key::Enter), Out::Stay);
+    assert_eq!(host.mode_name(), "replace_difficulty");
+    assert_eq!(host.view().title, "REPLACE ALEX");
+    assert_eq!(
+        host.view().items,
+        ["Scrapheap", "Standard", "Veteran", "Prime", "Cancel"]
+    );
+    let default = BotDifficulty::ALL
+        .iter()
+        .position(|&difficulty| difficulty == BotDifficulty::default())
+        .unwrap();
+    assert_eq!(host.view().selected, default, "the usual rung is ready");
+    press(&mut host, Key::Down);
+    assert_eq!(press(&mut host, Key::Enter), Out::Stay);
+    assert_eq!(host.mode_name(), "replace_stance");
+    assert_eq!(
+        host.view().items,
+        ["Turtle", "Balanced", "Aggressive", "Cancel"]
+    );
+    assert_eq!(
+        press(&mut host, Key::Enter),
+        Out::Replace(
+            PlayerId(1),
+            BotDifficulty::ALL[default + 1],
+            BotStance::default()
+        )
+    );
+    assert_eq!(host.mode_name(), "waiting");
+}
+
+#[test]
+fn cancelling_or_escaping_a_replacement_returns_to_the_rows() {
+    let mut host = WaitingScreen::open(vec![absent(1, "Alex", 3)], true);
+    press(&mut host, Key::Down);
+    press(&mut host, Key::Enter);
+    assert_eq!(press(&mut host, Key::Escape), Out::Stay);
+    assert_eq!(host.mode_name(), "waiting");
+
+    press(&mut host, Key::Down);
+    press(&mut host, Key::Enter);
+    press(&mut host, Key::Enter);
+    assert_eq!(host.mode_name(), "replace_stance");
+    let default = BotStance::ALL
+        .iter()
+        .position(|&stance| stance == BotStance::default())
+        .unwrap();
+    for _ in default..BotStance::ALL.len() {
+        press(&mut host, Key::Down);
+    }
+    assert_eq!(press(&mut host, Key::Enter), Out::Stay, "Cancel");
+    assert_eq!(host.mode_name(), "waiting");
 }

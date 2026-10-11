@@ -795,3 +795,47 @@ fn time_the_host_spent_suspended_is_nobodys_silence() {
         "silence after the line counts from when it was heard"
     );
 }
+
+#[test]
+fn a_replaced_seat_drops_its_orders_and_every_client_hears_who_took_it() {
+    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    let config = BotConfig::new(BotDifficulty::Prime, BotStance::Turtle, 7);
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.receive(A, &command_line(10), secs(0));
+    host.disconnected(A, secs(0));
+    host.poll(secs(0));
+    assert!(host.waiting());
+    host.take_outgoing();
+    host.replace_seat(A, config);
+    assert!(!host.waiting());
+    assert_eq!(
+        sent_lines(&mut host),
+        [(B, HostMessage::Replaced { seat: A, config }.encode())]
+    );
+    assert_eq!(
+        step(&mut host, secs(0), 0),
+        Some(Vec::new()),
+        "no surrender and no stale order"
+    );
+
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    host.replace_seat(A, config);
+    assert_eq!(
+        host.take_outgoing(),
+        [(
+            A,
+            HostMessage::Released {
+                reason: Release::Replaced
+            }
+            .encode()
+        )],
+        "a connected client hears why before it closes"
+    );
+    assert_eq!(
+        host.poll(secs(0)),
+        [HostEvent::Released {
+            seat: A,
+            exit: Exit::Replaced
+        }]
+    );
+}

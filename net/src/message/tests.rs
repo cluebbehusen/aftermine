@@ -175,6 +175,21 @@ fn wire_shape_is_stable() {
         r#"{"type":"released","reason":"dropped"}"#
     );
     assert_eq!(HostMessage::Ended.encode(), r#"{"type":"ended"}"#);
+    assert_eq!(
+        HostMessage::Replaced {
+            seat: PlayerId(2),
+            config: BotConfig::new(BotDifficulty::Prime, BotStance::Turtle, 9)
+        }
+        .encode(),
+        r#"{"type":"replaced","seat":2,"config":{"difficulty":"prime","stance":"turtle","personality_seed":9}}"#
+    );
+    assert_eq!(
+        HostMessage::Released {
+            reason: Release::Replaced
+        }
+        .encode(),
+        r#"{"type":"released","reason":"replaced"}"#
+    );
     let hello = format!(
         r#"{{"type":"hello","protocol":{PROTOCOL_VERSION},"sim":{SIM_VERSION},"commit":"abc"}}"#
     );
