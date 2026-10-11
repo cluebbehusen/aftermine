@@ -47,6 +47,15 @@ fn step(host: &mut HostSession, now: Duration, hash: u64) -> Option<Vec<PlayerCo
     Some(batch)
 }
 
+/// What the host queued, heartbeats aside.
+fn sent_lines(host: &mut HostSession) -> Vec<(PlayerId, String)> {
+    let heartbeat = HostMessage::Heartbeat.encode();
+    host.take_outgoing()
+        .into_iter()
+        .filter(|(_, line)| *line != heartbeat)
+        .collect()
+}
+
 fn ack_through(host: &mut HostSession, seat: PlayerId, from: Tick, to: Tick, now: Duration) {
     for tick in from..=to {
         host.receive(seat, &ack_line(tick, 0), now);
@@ -82,7 +91,7 @@ fn commands_join_the_next_sealed_tick_in_rotated_seat_order() {
 }
 
 #[test]
-fn published_batches_carry_the_complete_batch_to_every_live_client() {
+fn published_batches_carry_the_complete_batch_to_every_connected_client() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     let mut batch = host.seal(secs(0)).unwrap();
     batch.push(from(PlayerId(3), stop(30)));
@@ -144,12 +153,10 @@ fn out_of_order_or_misreported_acks_are_protocol_violations() {
         break_protocol(&mut host);
         assert_eq!(
             host.poll(secs(0)),
-            vec![HostEvent::Dropped {
-                seat: A,
-                reason: DropReason::Protocol
-            }],
+            vec![HostEvent::Lost { seat: A }],
             "{name}"
         );
+        assert!(host.waiting(), "{name}: the match waits for A's player");
     }
 }
 
@@ -169,17 +176,11 @@ fn a_report_tick_ack_without_a_hash_is_a_protocol_violation() {
         .encode(),
         secs(0),
     );
-    assert_eq!(
-        host.poll(secs(0)),
-        vec![HostEvent::Dropped {
-            seat: A,
-            reason: DropReason::Protocol
-        }]
-    );
+    assert_eq!(host.poll(secs(0)), vec![HostEvent::Lost { seat: A }]);
 }
 
 #[test]
-fn a_heartbeating_client_is_dropped_after_blocking_the_host_for_the_progress_timeout() {
+fn a_client_holding_the_host_back_for_the_progress_timeout_makes_the_match_wait() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     for _ in 0..LEAD_CAP {
         step(&mut host, secs(0), 0).unwrap();
@@ -192,18 +193,32 @@ fn a_heartbeating_client_is_dropped_after_blocking_the_host_for_the_progress_tim
         host.receive(A, &ClientMessage::Heartbeat.encode(), now);
         host.receive(B, &ClientMessage::Heartbeat.encode(), now);
         assert!(step(&mut host, now, 0).is_none());
-        assert!(host.poll(now).is_empty(), "dropped early at {now:?}");
+        assert!(host.poll(now).is_empty());
+        assert!(!host.waiting(), "waiting early at {now:?}");
         now += Duration::from_millis(250);
     }
+    host.receive(A, &ClientMessage::Heartbeat.encode(), deadline);
+    host.receive(B, &ClientMessage::Heartbeat.encode(), deadline);
+    assert!(host.poll(deadline).is_empty(), "nobody is dropped");
+    assert!(host.waiting());
     assert_eq!(
-        host.poll(deadline),
-        vec![HostEvent::Dropped {
+        host.seats(deadline + secs(3)),
+        [SeatNotice {
             seat: A,
-            reason: DropReason::Stalled
+            state: SeatState::Away { waited_ms: 3000 }
         }]
     );
-    let batch = step(&mut host, deadline, 0).expect("A left the gate");
-    assert_eq!(batch, vec![from(A, Command::Surrender)]);
+    assert!(step(&mut host, deadline, 0).is_none());
+
+    // A catches up, and play resumes.
+    ack_through(&mut host, A, 1, LEAD_CAP, deadline);
+    assert!(host.poll(deadline).is_empty());
+    assert!(!host.waiting());
+    assert_eq!(
+        step(&mut host, deadline, 0),
+        Some(Vec::new()),
+        "no surrender"
+    );
 }
 
 #[test]
@@ -217,20 +232,19 @@ fn time_spent_paused_never_counts_toward_the_progress_timeout() {
     for second in 2..30 {
         host.receive(A, &ClientMessage::Heartbeat.encode(), secs(second));
         assert!(step(&mut host, secs(second), 0).is_none());
-        assert!(host.poll(secs(second)).is_empty());
+        host.poll(secs(second));
+        assert!(!host.waiting());
     }
     host.set_paused(false);
     assert!(step(&mut host, secs(30), 0).is_none());
-    host.receive(A, &ClientMessage::Heartbeat.encode(), secs(35));
-    assert!(host.poll(secs(35)).is_empty());
+    for second in 30..40 {
+        host.receive(A, &ClientMessage::Heartbeat.encode(), secs(second));
+        host.poll(secs(second));
+        assert!(!host.waiting(), "{second}");
+    }
     host.receive(A, &ClientMessage::Heartbeat.encode(), secs(40));
-    assert_eq!(
-        host.poll(secs(40)),
-        vec![HostEvent::Dropped {
-            seat: A,
-            reason: DropReason::Stalled
-        }]
-    );
+    host.poll(secs(40));
+    assert!(host.waiting());
 }
 
 #[test]
@@ -244,50 +258,52 @@ fn repeating_the_pause_state_keeps_the_progress_timer() {
         host.set_paused(false);
         host.receive(A, &ClientMessage::Heartbeat.encode(), secs(second));
         assert!(step(&mut host, secs(second), 0).is_none());
-        assert!(host.poll(secs(second)).is_empty());
+        host.poll(secs(second));
+        assert!(!host.waiting());
     }
     host.set_paused(false);
     host.receive(A, &ClientMessage::Heartbeat.encode(), secs(11));
-    assert_eq!(
-        host.poll(secs(11)),
-        vec![HostEvent::Dropped {
-            seat: A,
-            reason: DropReason::Stalled
-        }]
-    );
+    host.poll(secs(11));
+    assert!(host.waiting());
 }
 
 #[test]
-fn a_silent_client_is_dropped_and_heartbeats_keep_it() {
+fn a_silent_client_goes_quiet_then_away_and_heartbeats_keep_it() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     let mut now = secs(0);
     while now < SILENCE_TIMEOUT {
         host.receive(A, &ClientMessage::Heartbeat.encode(), now);
         assert!(host.poll(now).is_empty());
-        now += secs(1);
+        let expected: &[SeatNotice] = if now >= QUIET_AFTER {
+            &[SeatNotice {
+                seat: B,
+                state: SeatState::Quiet,
+            }]
+        } else {
+            &[]
+        };
+        assert_eq!(host.seats(now), expected, "{now:?}");
+        assert!(!host.waiting(), "{now:?}");
+        now += Duration::from_millis(500);
     }
-    assert_eq!(
-        host.poll(SILENCE_TIMEOUT),
-        vec![HostEvent::Dropped {
-            seat: B,
-            reason: DropReason::Silent
-        }]
-    );
+    host.receive(A, &ClientMessage::Heartbeat.encode(), SILENCE_TIMEOUT);
+    assert!(host.poll(SILENCE_TIMEOUT).is_empty(), "nobody is dropped");
+    assert!(host.waiting());
 }
 
 #[test]
-fn every_drop_leaves_the_gate_at_once_and_seals_one_surrender() {
-    type DropA = fn(&mut HostSession, Duration);
+fn a_lost_seat_waits_until_the_host_drops_it_then_surrenders_once() {
+    type LoseA = fn(&mut HostSession, Duration);
     let later = PROGRESS_TIMEOUT;
-    let drops: [(DropReason, DropA); 4] = [
-        (DropReason::Closed, |host, _| host.disconnected(A)),
-        (DropReason::Protocol, |host, now| host.receive(A, "{", now)),
-        (DropReason::Silent, |_, _| {}),
-        (DropReason::Stalled, |host, now| {
+    let losses: [(&str, LoseA); 4] = [
+        ("closed", |host, now| host.disconnected(A, now)),
+        ("protocol", |host, now| host.receive(A, "{", now)),
+        ("silent", |_, _| {}),
+        ("stalled", |host, now| {
             host.receive(A, &ClientMessage::Heartbeat.encode(), now);
         }),
     ];
-    for (reason, drop_a) in drops {
+    for (name, lose_a) in losses {
         let mut host = HostSession::new(HOST, &[A, B], secs(0));
         for _ in 0..LEAD_CAP {
             step(&mut host, secs(0), 0).unwrap();
@@ -296,20 +312,38 @@ fn every_drop_leaves_the_gate_at_once_and_seals_one_surrender() {
         assert!(step(&mut host, secs(0), 0).is_none(), "blocked on A");
         host.take_outgoing();
         host.receive(B, &ClientMessage::Heartbeat.encode(), later);
-        drop_a(&mut host, later);
+        lose_a(&mut host, later);
+        host.poll(later);
+        assert!(host.waiting(), "{name}");
+        assert!(
+            step(&mut host, later, 0).is_none(),
+            "{name}: the match waits"
+        );
+
+        host.drop_seat(A);
+        let connected = matches!(name, "silent" | "stalled");
+        let released = host
+            .take_outgoing()
+            .into_iter()
+            .any(|(seat, line)| seat == A && line.contains("released"));
+        assert_eq!(released, connected, "{name}: a connected client hears why");
+        let events = host.poll(later);
         assert_eq!(
-            host.poll(later),
-            vec![HostEvent::Dropped { seat: A, reason }],
-            "{reason:?}"
+            events.contains(&HostEvent::Released {
+                seat: A,
+                exit: Exit::Dropped
+            }),
+            connected,
+            "{name}"
         );
         host.receive(A, &command_line(10), later);
-        host.disconnected(A);
-        assert!(host.poll(later).is_empty(), "{reason:?}: dropped twice");
+        host.drop_seat(A);
+        assert!(!host.waiting(), "{name}");
         let batch = step(&mut host, later, 0).expect("A left the gate");
-        assert_eq!(batch, vec![from(A, Command::Surrender)], "{reason:?}");
+        assert_eq!(batch, vec![from(A, Command::Surrender)], "{name}");
         assert!(
             host.take_outgoing().iter().all(|(seat, _)| *seat == B),
-            "{reason:?}: a dropped client is sent nothing"
+            "{name}: a dropped client is sent nothing"
         );
     }
 }
@@ -364,7 +398,7 @@ fn a_mismatched_hash_halts_the_session_and_tells_every_client() {
 }
 
 #[test]
-fn a_host_is_caught_up_once_every_live_client_acknowledged_every_batch() {
+fn a_host_is_caught_up_once_every_client_it_is_not_waiting_on_acknowledged_every_batch() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     assert!(host.caught_up());
     for _ in 0..3 {
@@ -373,8 +407,8 @@ fn a_host_is_caught_up_once_every_live_client_acknowledged_every_batch() {
     ack_through(&mut host, A, 1, 3, secs(0));
     ack_through(&mut host, B, 1, 2, secs(0));
     assert!(!host.caught_up(), "B is a batch behind");
-    host.disconnected(B);
-    assert!(host.caught_up(), "a dropped client is not waited on");
+    host.disconnected(B, secs(0));
+    assert!(host.caught_up(), "an away client is not counted");
 }
 
 #[test]
@@ -438,20 +472,14 @@ fn bulky_line(bytes: usize) -> String {
 }
 
 #[test]
-fn an_oversized_client_line_drops_the_client() {
+fn an_oversized_client_line_loses_the_connection() {
     let mut host = HostSession::new(HOST, &[A], secs(0));
     host.receive(A, &bulky_line(crate::MAX_CLIENT_LINE_BYTES + 1), secs(0));
-    assert_eq!(
-        host.poll(secs(0)),
-        [HostEvent::Dropped {
-            seat: A,
-            reason: DropReason::Protocol,
-        }]
-    );
+    assert_eq!(host.poll(secs(0)), [HostEvent::Lost { seat: A }]);
 }
 
 #[test]
-fn a_client_flooding_a_paused_host_is_dropped() {
+fn a_client_flooding_a_paused_host_loses_its_connection() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     host.set_paused(true);
     let line = bulky_line(crate::MAX_CLIENT_LINE_BYTES);
@@ -462,13 +490,7 @@ fn a_client_flooding_a_paused_host_is_dropped() {
     }
     assert_eq!(host.poll(secs(0)), []);
     host.receive(A, &line, secs(0));
-    assert_eq!(
-        host.poll(secs(0)),
-        [HostEvent::Dropped {
-            seat: A,
-            reason: DropReason::Protocol,
-        }]
-    );
+    assert_eq!(host.poll(secs(0)), [HostEvent::Lost { seat: A }]);
 }
 
 #[test]
@@ -515,4 +537,220 @@ fn every_published_batch_fits_one_line() {
     }
     assert_eq!(sealed, sent);
     assert!(tick > 1, "the flood spans several ticks");
+}
+
+#[test]
+fn a_quiet_client_lets_play_run_up_to_ten_seconds_ahead() {
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    for _ in 0..LEAD_CAP {
+        step(&mut host, secs(0), 0).unwrap();
+    }
+    assert!(
+        step(&mut host, secs(0), 0).is_none(),
+        "a live client holds play"
+    );
+    host.poll(QUIET_AFTER);
+    assert!(!host.waiting());
+    let mut sealed = LEAD_CAP;
+    while step(&mut host, QUIET_AFTER, 0).is_some() {
+        sealed += 1;
+    }
+    assert_eq!(sealed, QUIET_LEAD_CAP, "a quiet client gets the wider lead");
+    let mut now = QUIET_AFTER;
+    while now < SILENCE_TIMEOUT {
+        host.poll(now);
+        assert!(!host.waiting(), "{now:?}");
+        now += Duration::from_millis(500);
+    }
+    host.poll(SILENCE_TIMEOUT);
+    assert!(
+        host.waiting(),
+        "silence past the timeout makes the match wait"
+    );
+}
+
+#[test]
+fn a_recovering_connection_ends_the_wait_on_its_own() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    for _ in 0..LEAD_CAP {
+        step(&mut host, secs(0), 0).unwrap();
+    }
+    ack_through(&mut host, B, 1, LEAD_CAP, secs(0));
+    host.receive(B, &ClientMessage::Heartbeat.encode(), SILENCE_TIMEOUT);
+    host.poll(SILENCE_TIMEOUT);
+    assert!(host.waiting());
+    let later = SILENCE_TIMEOUT + secs(1);
+    host.receive(B, &ClientMessage::Heartbeat.encode(), later);
+    host.receive(A, &ClientMessage::Heartbeat.encode(), later);
+    host.poll(later);
+    assert!(host.waiting(), "A is heard but a full lead behind");
+    ack_through(&mut host, A, 1, 1, later);
+    host.take_outgoing();
+    host.poll(later);
+    assert!(!host.waiting());
+    let seats = HostMessage::Seats {
+        seats: Vec::new(),
+        paused: false,
+    }
+    .encode();
+    assert_eq!(
+        sent_lines(&mut host),
+        vec![(A, seats.clone()), (B, seats)],
+        "everyone hears the wait is over"
+    );
+}
+
+#[test]
+fn seat_changes_and_the_pause_reach_every_connected_client_once() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.poll(secs(0));
+    assert!(
+        sent_lines(&mut host).is_empty(),
+        "nothing out of the ordinary"
+    );
+    host.receive(A, &ClientMessage::Heartbeat.encode(), QUIET_AFTER);
+    host.poll(QUIET_AFTER);
+    let quiet = HostMessage::Seats {
+        seats: vec![SeatNotice {
+            seat: B,
+            state: SeatState::Quiet,
+        }],
+        paused: false,
+    }
+    .encode();
+    assert_eq!(sent_lines(&mut host), vec![(A, quiet.clone()), (B, quiet)]);
+    host.receive(A, &ClientMessage::Heartbeat.encode(), QUIET_AFTER);
+    host.poll(QUIET_AFTER);
+    assert!(
+        sent_lines(&mut host).is_empty(),
+        "unchanged states go unsaid"
+    );
+    host.receive(B, &ClientMessage::Heartbeat.encode(), QUIET_AFTER);
+    host.set_paused(true);
+    host.poll(QUIET_AFTER);
+    let paused = HostMessage::Seats {
+        seats: Vec::new(),
+        paused: true,
+    }
+    .encode();
+    assert_eq!(
+        sent_lines(&mut host),
+        vec![(A, paused.clone()), (B, paused)]
+    );
+}
+
+#[test]
+fn a_leaving_client_surrenders_without_holding_the_match() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.receive(A, &command_line(10), secs(0));
+    host.receive(A, &ClientMessage::Leave.encode(), secs(0));
+    assert_eq!(
+        host.poll(secs(0)),
+        [HostEvent::Released {
+            seat: A,
+            exit: Exit::Left
+        }]
+    );
+    assert!(!host.waiting());
+    host.take_outgoing();
+    let batch = step(&mut host, secs(0), 0).unwrap();
+    assert_eq!(
+        batch,
+        vec![from(A, stop(10)), from(A, Command::Surrender)],
+        "its last orders and its surrender seal behind everyone else"
+    );
+    assert!(host.take_outgoing().iter().all(|(seat, _)| *seat == B));
+}
+
+#[test]
+fn seats_still_in_play_share_first_place_once_one_leaves() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.receive(A, &ClientMessage::Leave.encode(), secs(0));
+    step(&mut host, secs(0), 0).unwrap();
+    let firsts: Vec<PlayerId> = (1..5)
+        .map(|_| {
+            host.submit(stop(0));
+            host.receive(B, &command_line(20), secs(0));
+            step(&mut host, secs(0), 0).unwrap()[0].player
+        })
+        .collect();
+    assert_eq!(
+        firsts,
+        [B, HOST, B, HOST],
+        "turns alternate between the two"
+    );
+}
+
+#[test]
+fn a_quiet_client_catching_up_reports_hashes_the_host_kept() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.poll(QUIET_AFTER);
+    let mut tick = 0;
+    while step(&mut host, QUIET_AFTER, 7).is_some() {
+        tick += 1;
+        host.receive(B, &ack_line(tick, 7), QUIET_AFTER);
+    }
+    assert!(tick > 2 * HASH_INTERVAL, "play ran on without A");
+    for report in 1..=tick {
+        host.receive(A, &ack_line(report, 7), QUIET_AFTER);
+    }
+    assert!(host.poll(QUIET_AFTER).is_empty(), "no desync, no lost link");
+}
+
+#[test]
+fn a_defeated_client_watches_without_holding_the_match() {
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    host.retire_seat(A);
+    host.receive(A, &command_line(10), secs(0));
+    for _ in 0..(2 * LEAD_CAP) {
+        assert_eq!(step(&mut host, secs(0), 0), Some(Vec::new()));
+    }
+    host.poll(SILENCE_TIMEOUT);
+    assert!(!host.waiting());
+    assert!(
+        host.take_outgoing().iter().any(|(seat, _)| *seat == A),
+        "it still receives batches"
+    );
+}
+
+#[test]
+fn a_concluded_match_waits_on_nobody() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    step(&mut host, secs(0), 0).unwrap();
+    ack_through(&mut host, B, 1, 1, secs(0));
+    host.disconnected(A, secs(0));
+    host.poll(secs(0));
+    assert!(host.waiting());
+    host.conclude();
+    assert!(!host.waiting());
+    assert!(host.caught_up());
+    assert!(host.seats(secs(1)).is_empty());
+}
+
+#[test]
+fn an_abandoning_host_tells_every_connected_client() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.disconnected(B, secs(0));
+    host.abandon();
+    assert_eq!(host.take_outgoing(), [(A, HostMessage::Ended.encode())]);
+}
+
+#[test]
+fn time_the_host_spent_suspended_is_nobodys_silence() {
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    host.poll(secs(0));
+    host.poll(secs(30));
+    assert!(
+        host.seats(secs(30)).is_empty(),
+        "A is neither quiet nor away"
+    );
+    host.poll(secs(31));
+    assert_eq!(
+        host.seats(secs(31)),
+        [SeatNotice {
+            seat: A,
+            state: SeatState::Quiet
+        }],
+        "silence after the gap still counts"
+    );
 }

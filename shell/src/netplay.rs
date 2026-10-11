@@ -10,9 +10,9 @@ use anyhow::{Context, Result, ensure};
 use macroquad::prelude::Vec2;
 use oxide_net::discovery::Beacon;
 use oxide_net::{
-    Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Gathering, Guest,
+    Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Exit, Gathering, Guest,
     GuestEnd, GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName,
-    RoomSeat, SeatHolder, StartFailed,
+    Release, RoomSeat, SeatHolder, SeatState, StartFailed,
 };
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
@@ -36,6 +36,10 @@ const MAX_GREETING: usize = 8;
 pub(crate) enum End {
     /// The host is gone and the match was not decided.
     HostLost,
+    /// The host dropped this machine's seat, which surrendered.
+    Dropped,
+    /// The host left before the match was decided.
+    HostLeft,
     /// A hash report disagreed and every machine halted.
     Desync {
         /// The report tick that disagreed.
@@ -48,6 +52,8 @@ impl End {
     pub(crate) fn notice(self) -> String {
         match self {
             End::HostLost => "Lost connection to the host.".to_owned(),
+            End::Dropped => "The host dropped you from the match.".to_owned(),
+            End::HostLeft => "The host left the match.".to_owned(),
             End::Desync { tick } => {
                 format!("Desync at tick {tick}: the match halted and its replay was saved.")
             }
@@ -67,6 +73,8 @@ pub(crate) enum Link {
 pub(crate) struct HostLink {
     session: HostSession,
     peers: Vec<(PlayerId, Connection)>,
+    /// Finished connections of seats that left, flushing their last lines.
+    departing: Vec<(Connection, Duration)>,
     /// When the host finished every connection, once the match was decided
     /// and every client had acknowledged it, or on a desync.
     closing: Option<(Duration, Option<End>)>,
@@ -119,13 +127,14 @@ impl Pacing {
 
 impl Link {
     pub(crate) fn host(
-        session: HostSession,
+        session: Box<HostSession>,
         peers: Vec<(PlayerId, Connection)>,
         now: Duration,
     ) -> Self {
         Self::Host(HostLink {
-            session,
+            session: *session,
             peers,
+            departing: Vec::new(),
             closing: None,
             clock: Pacing::new(now),
         })
@@ -148,29 +157,46 @@ impl Link {
         }
     }
 
-    /// Leaves the match. A host of a decided match finishes its connections
-    /// and hands them back to flush, so a client still behind receives the
-    /// deciding batches instead of losing its host. Anything else drops at
-    /// once: a client's seat surrenders, and an undecided host ends the match.
+    /// Leaves the match, handing back finished connections to flush their
+    /// last lines. A host of a decided match lets a client still behind
+    /// receive the deciding batches; an undecided host tells its clients it
+    /// left. A client tells its host it left, surrendering its seat.
     pub(crate) fn leave(self, game: &Game, now: Duration) -> Option<Lingering> {
-        match self {
-            Link::Host(host) if game.state.result().is_some() => Some(Lingering {
-                peers: host
-                    .peers
+        let peers = match self {
+            Link::Host(mut host) => {
+                if game.state.result().is_none() {
+                    host.session.abandon();
+                    host.send_outgoing();
+                }
+                host.peers
                     .into_iter()
-                    .map(|(_, mut connection)| {
-                        connection.finish();
-                        connection
-                    })
-                    .collect(),
-                since: now,
-            }),
-            _ => None,
-        }
+                    .map(|(_, connection)| connection)
+                    .chain(host.departing.into_iter().map(|(connection, _)| connection))
+                    .collect()
+            }
+            Link::Client(mut client) => {
+                let connection = client.connection.take()?;
+                client.session.leave();
+                for line in client.session.take_outgoing() {
+                    connection.send(&line);
+                }
+                vec![connection]
+            }
+        };
+        Some(Lingering {
+            peers: peers
+                .into_iter()
+                .map(|mut connection| {
+                    connection.finish();
+                    connection
+                })
+                .collect(),
+            since: now,
+        })
     }
 }
 
-/// A departed host's finished connections, flushing their last lines.
+/// A departed machine's finished connections, flushing their last lines.
 pub(crate) struct Lingering {
     peers: Vec<Connection>,
     since: Duration,
@@ -207,7 +233,7 @@ impl HostLink {
                     Ok(Some(line)) => self.session.receive(*seat, &line, now),
                     Ok(None) => break,
                     Err(Closed) => {
-                        self.session.disconnected(*seat);
+                        self.session.disconnected(*seat, now);
                         closed.push(*seat);
                         break;
                     }
@@ -222,21 +248,40 @@ impl HostLink {
         game.host_frame(&mut self.session, dt, now);
 
         let mut end = None;
+        let mut released = Vec::new();
         for event in self.session.poll(now) {
             match event {
-                HostEvent::Dropped { seat, .. } => {
-                    self.peers.retain(|(peer, _)| *peer != seat);
-                    let name = &game.scenario.players[usize::from(seat.0)].name;
-                    game.presentation.toast(format!("{name} left the match"));
+                HostEvent::Released { seat, exit } => {
+                    released.push(seat);
+                    if exit == Exit::Left {
+                        let name = &game.scenario.players[usize::from(seat.0)].name;
+                        game.presentation.toast(format!("{name} left the match"));
+                    }
                 }
+                HostEvent::Lost { seat } => self.peers.retain(|(peer, _)| *peer != seat),
                 HostEvent::Desync { tick, .. } => end = Some(End::Desync { tick }),
             }
         }
-        for (seat, line) in self.session.take_outgoing() {
-            if let Some((_, connection)) = self.peers.iter().find(|(peer, _)| *peer == seat) {
-                connection.send(&line);
+        // Until the match can wait for a player, a seat it would wait for
+        // surrenders as before.
+        for notice in self.session.seats(now) {
+            if matches!(notice.state, SeatState::Away { .. }) {
+                self.session.drop_seat(notice.seat);
+                let name = &game.scenario.players[usize::from(notice.seat.0)].name;
+                game.presentation.toast(format!("{name} left the match"));
             }
         }
+        self.send_outgoing();
+        for seat in released {
+            if let Some(index) = self.peers.iter().position(|(peer, _)| *peer == seat) {
+                let (_, mut connection) = self.peers.remove(index);
+                connection.finish();
+                self.departing.push((connection, now));
+            }
+        }
+        self.departing.retain(|(connection, since)| {
+            drain(connection).is_ok() && now.saturating_sub(*since) < CLOSE_GRACE
+        });
         // A decided match still waits for the final acknowledgements, so
         // a divergence in the last report ticks is caught, not dropped.
         let settled = game.state.result().is_some() && self.session.caught_up();
@@ -249,6 +294,14 @@ impl HostLink {
             game.presentation.toast("Waiting for players...");
         }
         None
+    }
+
+    fn send_outgoing(&mut self) {
+        for (seat, line) in self.session.take_outgoing() {
+            if let Some((_, connection)) = self.peers.iter().find(|(peer, _)| *peer == seat) {
+                connection.send(&line);
+            }
+        }
     }
 }
 
@@ -303,6 +356,8 @@ impl ClientLink {
         match end {
             ClientEnd::Desync { tick } => End::Desync { tick },
             ClientEnd::HostSilent | ClientEnd::Protocol => End::HostLost,
+            ClientEnd::Released(Release::Dropped) => End::Dropped,
+            ClientEnd::HostLeft => End::HostLeft,
         }
     }
 }
@@ -521,7 +576,7 @@ pub(crate) enum StartPoll {
     Waiting,
     /// Every machine is at tick zero: the session and each seated
     /// member's connection.
-    Started(HostSession, Vec<(PlayerId, Connection)>),
+    Started(Box<HostSession>, Vec<(PlayerId, Connection)>),
     /// The start failed; the members who caused it leave through the next
     /// poll, and the rest are back in the room.
     Failed(StartFailed),
@@ -713,7 +768,7 @@ impl HostLobby {
                         peers.push((seat, self.connections.remove(index).1));
                     }
                 }
-                StartPoll::Started(session, peers)
+                StartPoll::Started(Box::new(session), peers)
             }
             Err(failed) => StartPoll::Failed(failed),
         }

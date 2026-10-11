@@ -172,6 +172,8 @@ pub enum ClientMessage {
     },
     /// Sent when the client has sent nothing else recently.
     Heartbeat,
+    /// The client is leaving, surrendering its seat.
+    Leave,
 }
 
 /// A line the host sends to a client.
@@ -193,6 +195,53 @@ pub enum HostMessage {
         /// The report tick that disagreed.
         tick: Tick,
     },
+    /// The seats not keeping up, and whether the host paused, replacing the
+    /// last such line. Sent whenever either changes.
+    Seats {
+        /// Every seat still playing that is not keeping up.
+        seats: Vec<SeatNotice>,
+        /// The host paused the match.
+        paused: bool,
+    },
+    /// The host took this client's seat out of the match; the connection
+    /// closes next.
+    Released {
+        /// Why.
+        reason: Release,
+    },
+    /// The host left before the match ended; the connection closes next.
+    Ended,
+}
+
+/// A seat that is not keeping up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SeatNotice {
+    /// The seat.
+    pub seat: PlayerId,
+    /// How it is doing.
+    pub state: SeatState,
+}
+
+/// How a seat that is not keeping up is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SeatState {
+    /// The host heard nothing from it lately; play continues for now.
+    Quiet,
+    /// The match is waiting for its player.
+    Away {
+        /// How long the match has waited, as of the line.
+        waited_ms: u64,
+    },
+}
+
+/// Why the host took a client's seat out of the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Release {
+    /// The host dropped the seat, which surrendered.
+    Dropped,
 }
 
 macro_rules! wire_lines {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::HASH_INTERVAL;
+use crate::{HASH_INTERVAL, SeatState};
 use oxide_sim::{PlayerId, UnitId};
 
 fn stop(unit: u32) -> Command {
@@ -103,13 +103,14 @@ fn a_silent_host_ends_the_session_and_heartbeats_keep_it() {
         now += secs(1);
     }
     let heard = now.checked_sub(secs(1)).unwrap();
-    client
-        .poll(
-            (heard + SILENCE_TIMEOUT)
-                .checked_sub(Duration::from_millis(1))
-                .unwrap(),
-        )
+    let silent = (heard + SILENCE_TIMEOUT)
+        .checked_sub(Duration::from_millis(1))
         .unwrap();
+    while now < silent {
+        client.poll(now).unwrap();
+        now += secs(1);
+    }
+    client.poll(silent).unwrap();
     assert_eq!(
         client.poll(heard + SILENCE_TIMEOUT),
         Err(ClientEnd::HostSilent)
@@ -119,6 +120,54 @@ fn a_silent_host_ends_the_session_and_heartbeats_keep_it() {
         Err(ClientEnd::HostSilent),
         "an ended session stays ended"
     );
+}
+
+#[test]
+fn time_the_client_spent_suspended_is_not_the_hosts_silence() {
+    let mut client = ClientSession::new(secs(0));
+    client.poll(secs(0)).unwrap();
+    client.poll(secs(60)).unwrap();
+    client
+        .receive(&HostMessage::Heartbeat.encode(), secs(60))
+        .unwrap();
+    assert_eq!(client.poll(secs(60)), Ok(()));
+}
+
+#[test]
+fn the_client_keeps_the_hosts_seat_line_and_hears_why_it_ended() {
+    let mut client = ClientSession::new(secs(0));
+    let notice = SeatNotice {
+        seat: PlayerId(2),
+        state: SeatState::Away { waited_ms: 1500 },
+    };
+    let seats = HostMessage::Seats {
+        seats: vec![notice.clone()],
+        paused: true,
+    };
+    client.receive(&seats.encode(), secs(3)).unwrap();
+    assert_eq!(client.seats(), (&[notice][..], secs(3)));
+    assert!(client.host_paused());
+
+    let ends = [
+        (
+            HostMessage::Released {
+                reason: Release::Dropped,
+            },
+            ClientEnd::Released(Release::Dropped),
+        ),
+        (HostMessage::Ended, ClientEnd::HostLeft),
+    ];
+    for (line, end) in ends {
+        let mut client = ClientSession::new(secs(0));
+        assert_eq!(client.receive(&line.encode(), secs(0)), Err(end));
+    }
+}
+
+#[test]
+fn leaving_tells_the_host() {
+    let mut client = ClientSession::new(secs(0));
+    client.leave();
+    assert_eq!(client.take_outgoing(), [ClientMessage::Leave.encode()]);
 }
 
 #[test]

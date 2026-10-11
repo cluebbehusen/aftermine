@@ -299,16 +299,51 @@ fn a_host_leaving_a_decided_match_still_delivers_the_result() {
     });
     assert_eq!(client.state.hash(), host.state.hash());
     wait(|| (!lingering.pump(now)).then_some(()));
+}
 
+#[test]
+fn a_host_leaving_an_undecided_match_tells_its_clients() {
     let mut lan = Match::start(duel());
     lan.run(3);
-    let (host, link) = lan.host;
+    let Match {
+        mut now,
+        host: (host, link),
+        client: (mut client, mut client_link),
+    } = lan;
+    let mut lingering = link.leave(&host, now).expect("the host says it left");
+    let end = wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        lingering.pump(now);
+        client_link.pump(&mut client, now)
+    });
+    assert_eq!(end, End::HostLeft);
+}
+
+#[test]
+fn a_client_leaving_surrenders_its_seat_and_the_match_plays_on() {
+    let Match {
+        mut now,
+        host: (mut host, mut link),
+        client: (client, client_link),
+    } = Match::start(with_bots());
+    let mut lingering = client_link
+        .leave(&client, now)
+        .expect("the client says it left");
+    wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        lingering.pump(now);
+        assert_eq!(link.pump(&mut host, now), None);
+        (!host.state.accepts_commands(CLIENT)).then_some(())
+    });
+    assert!(host.state.result().is_none(), "the ally fights on");
     assert!(
-        link.leave(&host, lan.now).is_none(),
-        "undecided: drop at once"
+        host.presentation
+            .toasts
+            .iter()
+            .any(|toast| toast.text.contains("left the match"))
     );
-    let (client, link) = lan.client;
-    assert!(link.leave(&client, lan.now).is_none());
 }
 
 #[test]

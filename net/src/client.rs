@@ -1,7 +1,7 @@
 //! The client side: the batch gate, acknowledgements, and host liveness.
 
-use crate::message::{ClientMessage, HostMessage};
-use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, reports_hash};
+use crate::message::{ClientMessage, HostMessage, Release, SeatNotice};
+use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash};
 use oxide_sim::{Command, PlayerCommand, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -18,6 +18,10 @@ pub enum ClientEnd {
     },
     /// The host sent a line that failed to decode or broke the protocol.
     Protocol,
+    /// The host took this client's seat out of the match.
+    Released(Release),
+    /// The host left before the match ended.
+    HostLeft,
 }
 
 /// The client's half of a lockstep session, starting at tick zero.
@@ -37,6 +41,13 @@ pub struct ClientSession {
     heard: Duration,
     sent: Duration,
     spoke: bool,
+    /// The seats not keeping up, as the host last said.
+    seats: Vec<SeatNotice>,
+    /// When the host's last seat line arrived.
+    seats_heard: Duration,
+    /// The host paused the match, as it last said.
+    paused: bool,
+    last_poll: Option<Duration>,
     end: Option<ClientEnd>,
     outgoing: Vec<String>,
 }
@@ -52,6 +63,10 @@ impl ClientSession {
             heard: now,
             sent: now,
             spoke: false,
+            seats: Vec::new(),
+            seats_heard: now,
+            paused: false,
+            last_poll: None,
             end: None,
             outgoing: Vec::new(),
         }
@@ -68,7 +83,15 @@ impl ClientSession {
                 Ok(())
             }
             Ok(HostMessage::Heartbeat) => Ok(()),
+            Ok(HostMessage::Seats { seats, paused }) => {
+                self.seats = seats;
+                self.seats_heard = now;
+                self.paused = paused;
+                Ok(())
+            }
             Ok(HostMessage::Desync { tick }) => self.end(ClientEnd::Desync { tick }),
+            Ok(HostMessage::Released { reason }) => self.end(ClientEnd::Released(reason)),
+            Ok(HostMessage::Ended) => self.end(ClientEnd::HostLeft),
             Ok(HostMessage::Batch { .. }) | Err(_) => self.end(ClientEnd::Protocol),
         }
     }
@@ -76,6 +99,21 @@ impl ClientSession {
     /// Sends an order for this client's seat.
     pub fn send(&mut self, command: Command) {
         self.say(&ClientMessage::Command { command });
+    }
+
+    /// Tells the host this client is leaving, surrendering its seat.
+    pub fn leave(&mut self) {
+        self.say(&ClientMessage::Leave);
+    }
+
+    /// The seats not keeping up, as the host last said, and when it said so.
+    pub fn seats(&self) -> (&[SeatNotice], Duration) {
+        (&self.seats, self.seats_heard)
+    }
+
+    /// Whether the host paused the match, as it last said.
+    pub fn host_paused(&self) -> bool {
+        self.paused
     }
 
     /// The next batch to execute, if it has arrived. Execute it on the
@@ -109,6 +147,14 @@ impl ClientSession {
     /// client has sent nothing recently.
     pub fn poll(&mut self, now: Duration) -> Result<(), ClientEnd> {
         self.ended()?;
+        // Time this client itself was suspended is not the host's silence.
+        let gap = self
+            .last_poll
+            .map_or(Duration::ZERO, |last| now.saturating_sub(last));
+        self.last_poll = Some(now);
+        if gap > SUSPEND_GAP {
+            self.heard += gap;
+        }
         if now.saturating_sub(self.heard) >= SILENCE_TIMEOUT {
             return self.end(ClientEnd::HostSilent);
         }

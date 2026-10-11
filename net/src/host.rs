@@ -1,40 +1,46 @@
 //! The host side: stamping, sealing order, the progress gate, desync
-//! detection, and client liveness.
+//! detection, and client presence.
 
-use crate::message::{ClientMessage, HostMessage};
+use crate::message::{ClientMessage, HostMessage, Release, SeatNotice, SeatState};
 use crate::{
     BATCH_COMMAND_BYTES, CLIENT_PENDING_BYTES, HEARTBEAT_INTERVAL, LEAD_CAP, MAX_CLIENT_LINE_BYTES,
-    PROGRESS_TIMEOUT, SILENCE_TIMEOUT, reports_hash,
+    PROGRESS_TIMEOUT, QUIET_AFTER, QUIET_LEAD_CAP, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash,
 };
 use oxide_sim::{Command, PlayerCommand, PlayerId, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
 
-/// Why the host stopped serving a client.
+/// How a client seat left the match for good.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DropReason {
-    /// The transport reported the connection closed.
-    Closed,
-    /// Nothing arrived for [`SILENCE_TIMEOUT`].
-    Silent,
-    /// The host was blocked on the client for [`PROGRESS_TIMEOUT`].
-    Stalled,
-    /// The client sent a line that failed to decode or broke the protocol.
-    Protocol,
+pub enum Exit {
+    /// The host dropped the seat, which surrendered.
+    Dropped,
+    /// The client left, surrendering its seat.
+    Left,
+    /// The seat can no longer act in the world; its client may stay on to
+    /// watch.
+    Defeated,
 }
 
 /// Something the host's caller must act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostEvent {
-    /// The client left the progress gate; its `Surrender` is pending.
-    Dropped {
+    /// The seat left the match: send its queued lines, then close its
+    /// connection.
+    Released {
         /// The client's seat.
         seat: PlayerId,
-        /// Why it was dropped.
-        reason: DropReason,
+        /// How it left.
+        exit: Exit,
+    },
+    /// The seat's connection broke the protocol: close it. The match waits
+    /// for the seat's player as for any lost connection.
+    Lost {
+        /// The client's seat.
+        seat: PlayerId,
     },
     /// The client's hash report disagreed with the host; the session has
-    /// halted and every live client has been told.
+    /// halted and every connected client has been told.
     Desync {
         /// The reporting client's seat.
         seat: PlayerId,
@@ -43,10 +49,29 @@ pub enum HostEvent {
     },
 }
 
+/// Whether a seat still playing is keeping up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Presence {
+    Live,
+    /// Heard nothing for [`QUIET_AFTER`]: play continues, within
+    /// [`QUIET_LEAD_CAP`].
+    Quiet,
+    /// Silent for [`SILENCE_TIMEOUT`], blocking for [`PROGRESS_TIMEOUT`], or
+    /// without a connection: the match waits.
+    Away {
+        since: Duration,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    Playing(Presence),
+    Out(Exit),
+}
+
+/// A client connection's progress and liveness.
 #[derive(Debug)]
-struct Client {
-    seat: PlayerId,
-    live: bool,
+struct Link {
     /// World tick after the last batch the client acknowledged.
     acked: Tick,
     /// When the host last received a line from the client.
@@ -57,6 +82,34 @@ struct Client {
     spoke: bool,
     /// When a failed seal started waiting on this client.
     blocked_since: Option<Duration>,
+}
+
+#[derive(Debug)]
+struct Client {
+    seat: PlayerId,
+    /// The seat's connection, while it has one.
+    link: Option<Link>,
+    standing: Standing,
+}
+
+impl Client {
+    fn playing(&self) -> bool {
+        matches!(self.standing, Standing::Playing(_))
+    }
+
+    fn away(&self) -> bool {
+        matches!(self.standing, Standing::Playing(Presence::Away { .. }))
+    }
+}
+
+/// Where the match stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Course {
+    Playing,
+    /// The match has a result: nobody is waited on any more.
+    Concluded,
+    /// A hash report disagreed: nothing more is sealed.
+    Halted,
 }
 
 /// A command waiting to be sealed, with the bytes it adds to a batch line.
@@ -84,7 +137,7 @@ impl Pending {
 #[derive(Debug)]
 pub struct HostSession {
     host: PlayerId,
-    /// Human seats in rotation order, fixed at creation.
+    /// Every human seat, fixed at creation: the seats commands may come from.
     humans: Vec<PlayerId>,
     clients: Vec<Client>,
     /// Orders in arrival order, sealed oldest first.
@@ -93,10 +146,13 @@ pub struct HostSession {
     next_tick: Tick,
     sealed: bool,
     paused: bool,
-    halted: bool,
-    /// The host's own hashes at report ticks some live client has yet to
-    /// acknowledge.
+    course: Course,
+    /// The host's own hashes at report ticks some connected client has yet
+    /// to acknowledge.
     hashes: VecDeque<(Tick, u64)>,
+    /// The seat states and pause last shown to clients.
+    shown: Option<(Vec<SeatNotice>, bool)>,
+    last_poll: Option<Duration>,
     events: Vec<HostEvent>,
     outgoing: Vec<(PlayerId, String)>,
 }
@@ -116,20 +172,24 @@ impl HostSession {
                 .iter()
                 .map(|&seat| Client {
                     seat,
-                    live: true,
-                    acked: 0,
-                    heard: now,
-                    sent: now,
-                    spoke: false,
-                    blocked_since: None,
+                    link: Some(Link {
+                        acked: 0,
+                        heard: now,
+                        sent: now,
+                        spoke: false,
+                        blocked_since: None,
+                    }),
+                    standing: Standing::Playing(Presence::Live),
                 })
                 .collect(),
             pending: Vec::new(),
             next_tick: 0,
             sealed: false,
             paused: false,
-            halted: false,
+            course: Course::Playing,
             hashes: VecDeque::new(),
+            shown: None,
+            last_poll: None,
             events: Vec::new(),
             outgoing: Vec::new(),
         }
@@ -140,21 +200,28 @@ impl HostSession {
         self.pending.push(Pending::new(self.host, command));
     }
 
-    /// Handles one line received from `seat`'s connection. Lines from a
-    /// dropped client are ignored. `seat` must be one of this session's
-    /// clients.
+    /// Handles one line received from `seat`'s connection. Lines that
+    /// arrive after the seat lost or gave up its connection are ignored.
+    /// `seat` must be one of this session's clients.
     pub fn receive(&mut self, seat: PlayerId, line: &str, now: Duration) {
         let index = self.client_index(seat);
-        if !self.clients[index].live {
+        let client = &mut self.clients[index];
+        let Some(link) = &mut client.link else {
             return;
+        };
+        link.heard = now;
+        if client.standing == Standing::Playing(Presence::Quiet) {
+            client.standing = Standing::Playing(Presence::Live);
         }
-        self.clients[index].heard = now;
         if line.len() > MAX_CLIENT_LINE_BYTES {
-            self.drop_client(index, DropReason::Protocol);
+            self.lose(index, now);
             return;
         }
         match ClientMessage::decode(line) {
             Ok(ClientMessage::Command { command }) => {
+                if !self.clients[index].playing() {
+                    return;
+                }
                 let pending = Pending::new(seat, command);
                 let queued: usize = self
                     .pending
@@ -163,22 +230,25 @@ impl HostSession {
                     .map(|queued| queued.bytes)
                     .sum();
                 if queued + pending.bytes > CLIENT_PENDING_BYTES {
-                    self.drop_client(index, DropReason::Protocol);
+                    self.lose(index, now);
                 } else {
                     self.pending.push(pending);
                 }
             }
-            Ok(ClientMessage::Ack { tick, hash }) => self.acknowledge(index, tick, hash),
+            Ok(ClientMessage::Ack { tick, hash }) => self.acknowledge(index, tick, hash, now),
             Ok(ClientMessage::Heartbeat) => {}
-            Err(_) => self.drop_client(index, DropReason::Protocol),
+            Ok(ClientMessage::Leave) => self.release(index, Exit::Left),
+            Err(_) => self.lose(index, now),
         }
     }
 
-    /// The transport reported `seat`'s connection closed.
-    pub fn disconnected(&mut self, seat: PlayerId) {
+    /// The transport reported `seat`'s connection closed. A seat still
+    /// playing makes the match wait for its player.
+    pub fn disconnected(&mut self, seat: PlayerId, now: Duration) {
         let index = self.client_index(seat);
-        if self.clients[index].live {
-            self.drop_client(index, DropReason::Closed);
+        if self.clients[index].link.take().is_some() {
+            self.go_away(index, now);
+            self.prune_hashes();
         }
     }
 
@@ -190,42 +260,90 @@ impl HostSession {
             return;
         }
         self.paused = paused;
-        for client in &mut self.clients {
-            client.blocked_since = None;
+        for link in self
+            .clients
+            .iter_mut()
+            .filter_map(|client| client.link.as_mut())
+        {
+            link.blocked_since = None;
         }
     }
 
+    /// Drops `seat` at the host's request: it surrenders, and its client
+    /// is told before its connection closes.
+    pub fn drop_seat(&mut self, seat: PlayerId) {
+        let index = self.client_index(seat);
+        if self.clients[index].playing() {
+            self.release(index, Exit::Dropped);
+        }
+    }
+
+    /// Takes `seat` out of the match once it can no longer act in the
+    /// world. Its client may stay connected to watch.
+    pub fn retire_seat(&mut self, seat: PlayerId) {
+        let index = self.client_index(seat);
+        if self.clients[index].playing() {
+            self.clients[index].standing = Standing::Out(Exit::Defeated);
+        }
+    }
+
+    /// The match has a result: nobody is waited on, and the seat states
+    /// clear.
+    pub fn conclude(&mut self) {
+        if self.course == Course::Playing {
+            self.course = Course::Concluded;
+        }
+    }
+
+    /// Tells every connected client the host left before the match ended.
+    /// The caller finishes the connections after sending.
+    pub fn abandon(&mut self) {
+        self.broadcast(&HostMessage::Ended.encode());
+    }
+
     /// The human commands for the next tick in sealed order, or `None` while
-    /// paused, halted, or waiting on a client at the lead cap. Commands past
-    /// [`BATCH_COMMAND_BYTES`] wait for a later tick. A sealed batch must be
-    /// published before the next seal.
+    /// paused, halted, waiting on an away seat, or held at a lead cap.
+    /// Commands past [`BATCH_COMMAND_BYTES`] wait for a later tick. A sealed
+    /// batch must be published before the next seal.
     pub fn seal(&mut self, now: Duration) -> Option<Vec<PlayerCommand>> {
         assert!(
             !self.sealed,
             "publish the sealed batch before sealing again"
         );
-        if self.paused || self.halted {
+        if self.paused || self.course == Course::Halted || self.waiting() {
             return None;
         }
         let tick = self.next_tick;
         let mut blocked = false;
         for client in &mut self.clients {
-            if client.live && tick >= client.acked + LEAD_CAP {
+            let Some(link) = &mut client.link else {
+                continue;
+            };
+            let cap = match client.standing {
+                Standing::Playing(Presence::Live) => LEAD_CAP,
+                Standing::Playing(Presence::Quiet) => QUIET_LEAD_CAP,
+                _ => continue,
+            };
+            if tick >= link.acked + cap {
                 blocked = true;
-                client.blocked_since.get_or_insert(now);
+                if cap == LEAD_CAP {
+                    link.blocked_since.get_or_insert(now);
+                }
             } else {
-                client.blocked_since = None;
+                link.blocked_since = None;
             }
         }
         if blocked {
             return None;
         }
-        for client in &mut self.clients {
-            client.blocked_since = None;
+        for link in self
+            .clients
+            .iter_mut()
+            .filter_map(|client| client.link.as_mut())
+        {
+            link.blocked_since = None;
         }
         self.sealed = true;
-        let seats = self.humans.len() as Tick;
-        let first = tick % seats;
         let mut budget = BATCH_COMMAND_BYTES;
         let fits = self
             .pending
@@ -242,18 +360,31 @@ impl HostSession {
             .drain(..taken)
             .map(|pending| pending.command)
             .collect();
+        // Seats still in play take turns going first; a seat that left
+        // seals its last orders behind them.
+        let in_play: Vec<PlayerId> = self
+            .humans
+            .iter()
+            .copied()
+            .filter(|&seat| seat == self.host || self.client(seat).playing())
+            .collect();
+        let seats = in_play.len() as Tick;
+        let first = tick % seats;
         batch.sort_by_key(|command| {
-            let index = self
-                .humans
-                .binary_search(&command.player)
-                .expect("pending commands come from human seats") as Tick;
-            (index + seats - first) % seats
+            assert!(
+                self.humans.binary_search(&command.player).is_ok(),
+                "pending commands come from human seats"
+            );
+            match in_play.iter().position(|&seat| seat == command.player) {
+                Some(index) => (0, (index as Tick + seats - first) % seats),
+                None => (1, 0),
+            }
         });
         Some(batch)
     }
 
     /// Sends the complete sealed batch (sealed humans, then bots) to every
-    /// live client.
+    /// connected client.
     pub fn publish(&mut self, batch: &[PlayerCommand]) {
         assert!(
             std::mem::take(&mut self.sealed),
@@ -272,48 +403,102 @@ impl HostSession {
     /// `hash` runs only when the resulting tick is a report tick.
     pub fn executed(&mut self, hash: impl FnOnce() -> u64) {
         let tick = self.next_tick;
-        if reports_hash(tick) && self.clients.iter().any(|client| client.live) {
+        if reports_hash(tick) && self.clients.iter().any(|client| client.link.is_some()) {
             self.hashes.push_back((tick, hash()));
         }
     }
 
-    /// Whether every live client has acknowledged every published batch, and
-    /// so reported every hash the host is waiting on.
+    /// Whether every client the host is not waiting on has acknowledged
+    /// every published batch, and so reported every hash the host expects.
     pub fn caught_up(&self) -> bool {
         self.clients
             .iter()
-            .filter(|client| client.live)
-            .all(|client| client.acked == self.next_tick)
+            .filter(|client| {
+                !matches!(
+                    client.standing,
+                    Standing::Playing(Presence::Quiet | Presence::Away { .. })
+                )
+            })
+            .filter_map(|client| client.link.as_ref())
+            .all(|link| link.acked == self.next_tick)
     }
 
-    /// Applies timeouts, queues heartbeats, and returns what happened since
-    /// the last poll. Call it from the game loop, never from a network thread,
-    /// so a hung host stops heartbeating.
+    /// Whether the match is held for a seat that is away.
+    pub fn waiting(&self) -> bool {
+        self.course == Course::Playing && self.clients.iter().any(Client::away)
+    }
+
+    /// Every seat still playing that is not keeping up, as of `now`.
+    pub fn seats(&self, now: Duration) -> Vec<SeatNotice> {
+        if self.course != Course::Playing {
+            return Vec::new();
+        }
+        self.clients
+            .iter()
+            .filter_map(|client| {
+                let state = match client.standing {
+                    Standing::Playing(Presence::Quiet) => SeatState::Quiet,
+                    Standing::Playing(Presence::Away { since }) => SeatState::Away {
+                        waited_ms: millis(now.saturating_sub(since)),
+                    },
+                    _ => return None,
+                };
+                Some(SeatNotice {
+                    seat: client.seat,
+                    state,
+                })
+            })
+            .collect()
+    }
+
+    /// Applies presence timeouts, queues heartbeats and seat changes, and
+    /// returns what happened since the last poll. Call it from the game
+    /// loop, never from a network thread, so a hung host stops heartbeating.
     pub fn poll(&mut self, now: Duration) -> Vec<HostEvent> {
-        for index in 0..self.clients.len() {
-            let client = &mut self.clients[index];
-            if !client.live {
+        // Time the host itself was suspended is nobody's silence.
+        let gap = self
+            .last_poll
+            .map_or(Duration::ZERO, |last| now.saturating_sub(last));
+        self.last_poll = Some(now);
+        for client in &mut self.clients {
+            let Some(link) = &mut client.link else {
                 continue;
+            };
+            if gap > SUSPEND_GAP {
+                link.heard += gap;
+                if let Some(since) = &mut link.blocked_since {
+                    *since += gap;
+                }
             }
-            if now.saturating_sub(client.heard) >= SILENCE_TIMEOUT {
-                self.drop_client(index, DropReason::Silent);
-                continue;
-            }
-            if client
+            let silence = now.saturating_sub(link.heard);
+            let stalled = link
                 .blocked_since
-                .is_some_and(|since| now.saturating_sub(since) >= PROGRESS_TIMEOUT)
-            {
-                self.drop_client(index, DropReason::Stalled);
-                continue;
+                .is_some_and(|since| now.saturating_sub(since) >= PROGRESS_TIMEOUT);
+            let caught_up = self.next_tick < link.acked + LEAD_CAP;
+            match client.standing {
+                Standing::Playing(Presence::Live | Presence::Quiet)
+                    if silence >= SILENCE_TIMEOUT || stalled =>
+                {
+                    link.blocked_since = None;
+                    client.standing = Standing::Playing(Presence::Away { since: now });
+                }
+                Standing::Playing(Presence::Live) if silence >= QUIET_AFTER => {
+                    client.standing = Standing::Playing(Presence::Quiet);
+                }
+                Standing::Playing(Presence::Away { .. }) if silence < QUIET_AFTER && caught_up => {
+                    client.standing = Standing::Playing(Presence::Live);
+                }
+                _ => {}
             }
-            if std::mem::take(&mut client.spoke) {
-                client.sent = now;
-            } else if now.saturating_sub(client.sent) >= HEARTBEAT_INTERVAL {
-                client.sent = now;
+            if std::mem::take(&mut link.spoke) {
+                link.sent = now;
+            } else if now.saturating_sub(link.sent) >= HEARTBEAT_INTERVAL {
+                link.sent = now;
                 self.outgoing
                     .push((client.seat, HostMessage::Heartbeat.encode()));
             }
         }
+        self.show_seats(now);
         std::mem::take(&mut self.events)
     }
 
@@ -329,14 +514,19 @@ impl HostSession {
             .unwrap_or_else(|| panic!("{seat:?} is not a client seat"))
     }
 
-    fn acknowledge(&mut self, index: usize, tick: Tick, hash: Option<u64>) {
-        let client = &self.clients[index];
-        if tick != client.acked + 1 || tick > self.next_tick || hash.is_some() != reports_hash(tick)
-        {
-            self.drop_client(index, DropReason::Protocol);
+    fn client(&self, seat: PlayerId) -> &Client {
+        &self.clients[self.client_index(seat)]
+    }
+
+    fn acknowledge(&mut self, index: usize, tick: Tick, hash: Option<u64>, now: Duration) {
+        let Some(link) = &mut self.clients[index].link else {
+            return;
+        };
+        if tick != link.acked + 1 || tick > self.next_tick || hash.is_some() != reports_hash(tick) {
+            self.lose(index, now);
             return;
         }
-        self.clients[index].acked = tick;
+        link.acked = tick;
         if let Some(hash) = hash {
             let expected = self
                 .hashes
@@ -351,26 +541,90 @@ impl HostSession {
         self.prune_hashes();
     }
 
-    fn drop_client(&mut self, index: usize, reason: DropReason) {
+    /// A seat still playing waits for its player from `now`.
+    fn go_away(&mut self, index: usize, now: Duration) {
         let client = &mut self.clients[index];
-        client.live = false;
-        client.blocked_since = None;
+        if matches!(
+            client.standing,
+            Standing::Playing(Presence::Live | Presence::Quiet)
+        ) {
+            client.standing = Standing::Playing(Presence::Away { since: now });
+        }
+    }
+
+    /// Closes a connection that broke the protocol.
+    fn lose(&mut self, index: usize, now: Duration) {
+        if self.clients[index].link.take().is_some() {
+            self.go_away(index, now);
+            let seat = self.clients[index].seat;
+            self.events.push(HostEvent::Lost { seat });
+            self.prune_hashes();
+        }
+    }
+
+    /// Takes a seat out of the match for good. A seat that was still
+    /// playing surrenders; a dropped client hears why.
+    fn release(&mut self, index: usize, exit: Exit) {
+        let client = &mut self.clients[index];
         let seat = client.seat;
-        self.pending.push(Pending::new(seat, Command::Surrender));
-        self.events.push(HostEvent::Dropped { seat, reason });
+        if client.playing() {
+            client.standing = Standing::Out(exit);
+            self.pending.push(Pending::new(seat, Command::Surrender));
+        }
+        if exit == Exit::Dropped && self.clients[index].link.is_some() {
+            self.outgoing.push((
+                seat,
+                HostMessage::Released {
+                    reason: Release::Dropped,
+                }
+                .encode(),
+            ));
+        }
+        if self.clients[index].link.take().is_some() {
+            self.events.push(HostEvent::Released { seat, exit });
+        }
         self.prune_hashes();
     }
 
     fn halt(&mut self, seat: PlayerId, tick: Tick) {
-        self.halted = true;
+        self.course = Course::Halted;
         self.events.push(HostEvent::Desync { seat, tick });
         self.broadcast(&HostMessage::Desync { tick }.encode());
     }
 
+    /// Tells every connected client which seats are not keeping up, and
+    /// whether the host paused, whenever either changed.
+    fn show_seats(&mut self, now: Duration) {
+        let seats = self.seats(now);
+        let key = |seats: &[SeatNotice]| -> Vec<(PlayerId, bool)> {
+            seats
+                .iter()
+                .map(|notice| (notice.seat, notice.state == SeatState::Quiet))
+                .collect()
+        };
+        let changed = self
+            .shown
+            .as_ref()
+            .is_none_or(|(shown, paused)| key(shown) != key(&seats) || *paused != self.paused);
+        // Nothing to say until something is out of the ordinary.
+        if changed && (self.shown.is_some() || !seats.is_empty() || self.paused) {
+            self.broadcast(
+                &HostMessage::Seats {
+                    seats: seats.clone(),
+                    paused: self.paused,
+                }
+                .encode(),
+            );
+            self.shown = Some((seats, self.paused));
+        }
+    }
+
     fn broadcast(&mut self, line: &str) {
-        for client in self.clients.iter_mut().filter(|client| client.live) {
-            client.spoke = true;
-            self.outgoing.push((client.seat, line.to_owned()));
+        for client in &mut self.clients {
+            if let Some(link) = &mut client.link {
+                link.spoke = true;
+                self.outgoing.push((client.seat, line.to_owned()));
+            }
         }
     }
 
@@ -378,14 +632,18 @@ impl HostSession {
         let oldest = self
             .clients
             .iter()
-            .filter(|client| client.live)
-            .map(|client| client.acked)
+            .filter_map(|client| client.link.as_ref())
+            .map(|link| link.acked)
             .min();
         match oldest {
             Some(oldest) => self.hashes.retain(|(tick, _)| *tick > oldest),
             None => self.hashes.clear(),
         }
     }
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -149,6 +149,32 @@ fn wire_shape_is_stable() {
         HostMessage::Desync { tick: 40 }.encode(),
         r#"{"type":"desync","tick":40}"#
     );
+    assert_eq!(ClientMessage::Leave.encode(), r#"{"type":"leave"}"#);
+    assert_eq!(
+        HostMessage::Seats {
+            seats: vec![
+                SeatNotice {
+                    seat: PlayerId(1),
+                    state: SeatState::Quiet
+                },
+                SeatNotice {
+                    seat: PlayerId(2),
+                    state: SeatState::Away { waited_ms: 1500 }
+                }
+            ],
+            paused: false
+        }
+        .encode(),
+        r#"{"type":"seats","seats":[{"seat":1,"state":{"kind":"quiet"}},{"seat":2,"state":{"kind":"away","waited_ms":1500}}],"paused":false}"#
+    );
+    assert_eq!(
+        HostMessage::Released {
+            reason: Release::Dropped
+        }
+        .encode(),
+        r#"{"type":"released","reason":"dropped"}"#
+    );
+    assert_eq!(HostMessage::Ended.encode(), r#"{"type":"ended"}"#);
     let hello = format!(
         r#"{{"type":"hello","protocol":{PROTOCOL_VERSION},"sim":{SIM_VERSION},"commit":"abc"}}"#
     );
