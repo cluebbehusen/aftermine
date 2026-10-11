@@ -44,11 +44,14 @@ commands, then bot commands, then record, then `State::tick`.
   launch the versions stay fixed and the commit decides
   ([versioning](../docs/versioning.md)). Local changes on top of a matching
   commit are the players' responsibility.
-- After a matching Hello the client sends `Introduce` with its name. The host
-  seats the member or refuses it with `Full`, and may later drop it with
-  `Removed`. Each seated member receives the map once in `Map`, then a `Room`
-  whenever who sits where changes from its point of view. The map stays fixed
-  while the lobby is open.
+- After a matching Hello the client sends `Introduce` with its name and its
+  `InstallId`, a random identifier the installation keeps; the host never relays
+  the identifier, and uses it only to give a player back their seat when a saved
+  match resumes. A chair left in the lobby before the start is simply free
+  again. The host seats the member or refuses it with `Full`, and may later drop
+  it with `Removed`. Each seated member receives the map once in `Map`, then a
+  `Room` whenever who sits where changes from its point of view. The map stays
+  fixed while the lobby is open.
 - Before Go both sides heartbeat after `HEARTBEAT_INTERVAL` without sending, and
   the host drops a member it has not heard from for `SILENCE_TIMEOUT`, one that
   has not introduced itself within `GREETING_TIMEOUT`, and one that sends a line

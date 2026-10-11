@@ -213,6 +213,10 @@ pub struct Config {
     /// The name other players see and that replaces the player's seat
     /// name; unset until the player first gives one.
     pub player_name: Option<String>,
+    /// This installation's identifier as hex, sent only to hosts it joins
+    /// so a resumed match can seat the player again; made up the first
+    /// time it is needed.
+    pub install_id: Option<String>,
 }
 
 impl Default for Config {
@@ -232,6 +236,7 @@ impl Default for Config {
             touch: TouchPrefs::default(),
             last_join_address: None,
             player_name: None,
+            install_id: None,
         }
     }
 }
@@ -274,10 +279,28 @@ impl Config {
                     .player_name
                     .and_then(|name| oxide_net::PlayerName::new(&name).ok())
                     .map(String::from);
+                config.install_id = config
+                    .install_id
+                    .filter(|id| oxide_net::InstallId::from_hex(id).is_some());
                 config
             }
             _ => Self::default(),
         }
+    }
+
+    /// This installation's identifier, made up on first use; the caller
+    /// saves the config to keep a new one.
+    pub fn install_id(&mut self) -> oxide_net::InstallId {
+        if let Some(id) = self
+            .install_id
+            .as_deref()
+            .and_then(oxide_net::InstallId::from_hex)
+        {
+            return id;
+        }
+        let id = oxide_net::InstallId::new(crate::entropy::bits());
+        self.install_id = Some(id.to_hex());
+        id
     }
 
     /// Persists atomically (temp + rename), creating the directory.

@@ -354,12 +354,13 @@ fn lobby_frame(
         crate::screens::lobby::Out::Join { name, address } => {
             app.config.last_join_address = Some(address.clone());
             app.config.player_name = Some(name.to_string());
+            let install = app.config.install_id();
             if let Err(err) = app.config.save() {
                 app.notify(format!("could not save settings: {err}"), true);
             }
             let commit = crate::build_identity().revision;
             *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                crate::netplay::ClientLobby::new(&address, &commit, name),
+                crate::netplay::ClientLobby::new(&address, &commit, name, install),
             ))
             .discovering();
         }

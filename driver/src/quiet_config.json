@@ -108,5 +108,6 @@
   "control_groups": true,
   "touch": {"double_tap_ms": 300, "long_press_ms": 350},
   "last_join_address": null,
-  "player_name": null
+  "player_name": null,
+  "install_id": null
 }

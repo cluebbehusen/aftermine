@@ -10,6 +10,11 @@ fn secs(seconds: u64) -> Duration {
     Duration::from_secs(seconds)
 }
 
+/// The installation of the `index`th guest to connect.
+fn install(index: usize) -> InstallId {
+    InstallId::new(0xA000 + index as u128)
+}
+
 fn name(name: &str) -> PlayerName {
     PlayerName::new(name).unwrap()
 }
@@ -85,8 +90,9 @@ impl Lan {
     /// Connects a guest of build `commit` named `player`.
     fn connect(&mut self, player: &str, commit: &str) -> usize {
         let member = self.host.connected(self.now);
+        let install = install(self.guests.len());
         self.guests
-            .push((member, Guest::new(commit, name(player), self.now)));
+            .push((member, Guest::new(commit, name(player), install, self.now)));
         self.ended.push(None);
         self.guests.len() - 1
     }
@@ -173,6 +179,7 @@ fn a_guest_is_greeted_named_and_shown_the_map_once_and_the_room_on_change() {
         vec![LobbyEvent::Joined {
             member: lan.member(alex),
             name: name("Alex"),
+            install: install(alex),
         }]
     );
     assert_eq!(lan.host.name(lan.member(alex)), Some(&name("Alex")));
@@ -230,7 +237,7 @@ fn a_probe_or_rejoin_at_a_lobby_hears_there_is_no_match() {
 
 #[test]
 fn a_guest_hears_the_match_already_started() {
-    let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+    let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
     guest
         .receive(&LobbyMessage::hello(COMMIT).encode(), secs(0))
         .unwrap();
@@ -329,7 +336,10 @@ fn the_host_heartbeats_only_joined_members_it_has_been_quiet_with() {
         "no heartbeat before joining"
     );
     host.receive(member, &JoinMessage::hello(COMMIT).encode(), secs(1));
-    let introduce = JoinMessage::Introduce { name: name("Alex") };
+    let introduce = JoinMessage::Introduce {
+        name: name("Alex"),
+        install: install(0),
+    };
     host.receive(member, &introduce.encode(), secs(1));
     host.poll(secs(1));
     host.take_outgoing();
@@ -343,7 +353,11 @@ fn the_host_heartbeats_only_joined_members_it_has_been_quiet_with() {
 #[test]
 fn a_member_that_breaks_the_protocol_is_dropped() {
     let hello = JoinMessage::hello(COMMIT).encode();
-    let introduce = JoinMessage::Introduce { name: name("Alex") }.encode();
+    let introduce = JoinMessage::Introduce {
+        name: name("Alex"),
+        install: install(0),
+    }
+    .encode();
     let long = format!(r#"{{"type":"introduce","name":"{}"}}"#, " ".repeat(1100));
     for (before, line) in [
         (vec![], "not json".to_owned()),
@@ -675,6 +689,7 @@ fn an_introduction_during_a_start_waits_for_its_outcome() {
     assert!(events.contains(&LobbyEvent::Joined {
         member: lan.member(late),
         name: name("Riley"),
+        install: install(late),
     }));
     assert!(!events.iter().any(
         |event| matches!(event, LobbyEvent::Joined { member, .. } if *member == lan.member(sam))
@@ -684,7 +699,7 @@ fn an_introduction_during_a_start_waits_for_its_outcome() {
 #[test]
 fn a_guest_refuses_a_room_that_does_not_fit_the_map_or_seat_it() {
     let start = |line: &str| {
-        let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+        let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
         guest
             .receive(&LobbyMessage::hello(COMMIT).encode(), secs(0))
             .unwrap();
@@ -727,7 +742,7 @@ fn a_guest_refuses_a_room_that_does_not_fit_the_map_or_seat_it() {
         (room(&["Alex"]), 9),
         (room(&["Alex"])[..3].to_vec(), 1),
     ] {
-        let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+        let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
         guest
             .receive(&LobbyMessage::hello(COMMIT).encode(), secs(0))
             .unwrap();
@@ -737,7 +752,7 @@ fn a_guest_refuses_a_room_that_does_not_fit_the_map_or_seat_it() {
             Err(GuestEnd::Protocol),
             "a second map"
         );
-        let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+        let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
         guest
             .receive(&LobbyMessage::hello(COMMIT).encode(), secs(0))
             .unwrap();
@@ -751,7 +766,7 @@ fn a_guest_refuses_a_room_that_does_not_fit_the_map_or_seat_it() {
 
 #[test]
 fn a_guest_heartbeats_once_named_and_gives_up_on_a_silent_host() {
-    let mut guest = Guest::new(COMMIT, name("Alex"), secs(0));
+    let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
     assert_eq!(
         guest.take_outgoing(),
         vec![JoinMessage::hello(COMMIT).encode()]
@@ -767,7 +782,13 @@ fn a_guest_heartbeats_once_named_and_gives_up_on_a_silent_host() {
         .unwrap();
     assert_eq!(
         guest.take_outgoing(),
-        vec![JoinMessage::Introduce { name: name("Alex") }.encode()]
+        vec![
+            JoinMessage::Introduce {
+                name: name("Alex"),
+                install: install(0),
+            }
+            .encode()
+        ]
     );
     guest.poll(secs(1)).unwrap();
     guest.poll(secs(1) + HEARTBEAT_INTERVAL).unwrap();
@@ -778,5 +799,5 @@ fn a_guest_heartbeats_once_named_and_gives_up_on_a_silent_host() {
 #[test]
 #[should_panic(expected = "no start to be ready for")]
 fn readying_without_a_start_is_a_caller_bug() {
-    Guest::new(COMMIT, name("Alex"), secs(0)).ready(HASH);
+    Guest::new(COMMIT, name("Alex"), install(0), secs(0)).ready(HASH);
 }

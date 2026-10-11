@@ -11,9 +11,9 @@ use macroquad::prelude::Vec2;
 use oxide_net::discovery::Beacon;
 use oxide_net::{
     Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Desk, DeskEvent, Exit,
-    Gathering, GoneReason, Guest, GuestEnd, GuestEvent, HostEvent, HostSession, Listener,
-    LobbyEvent, MemberId, PlayerName, Release, RoomSeat, SeatHolder, SeatNotice, SeatState,
-    StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
+    Gathering, GoneReason, Guest, GuestEnd, GuestEvent, HostEvent, HostSession, InstallId,
+    Listener, LobbyEvent, MemberId, PlayerName, Release, RoomSeat, SeatHolder, SeatNotice,
+    SeatState, StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
 };
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario, Tick};
@@ -1634,6 +1634,7 @@ pub(crate) struct ClientLobby {
     address: String,
     commit: String,
     name: PlayerName,
+    install: InstallId,
     state: Joining,
 }
 
@@ -1651,12 +1652,13 @@ enum Joining {
 
 impl ClientLobby {
     /// Starts connecting to the host at `address`, to join as `name`.
-    pub(crate) fn new(address: &str, commit: &str, name: PlayerName) -> Self {
+    pub(crate) fn new(address: &str, commit: &str, name: PlayerName, install: InstallId) -> Self {
         let target = address.to_owned();
         Self {
             address: address.to_owned(),
             commit: commit.to_owned(),
             name,
+            install,
             state: Joining::Connecting(thread::spawn(move || Connection::connect(target))),
         }
     }
@@ -1714,7 +1716,12 @@ impl ClientLobby {
         match state {
             Joining::Connecting(handle) if handle.is_finished() => match handle.join() {
                 Ok(Ok(connection)) => {
-                    let mut guest = Box::new(Guest::new(&self.commit, self.name.clone(), now));
+                    let mut guest = Box::new(Guest::new(
+                        &self.commit,
+                        self.name.clone(),
+                        self.install,
+                        now,
+                    ));
                     for line in guest.take_outgoing() {
                         connection.send(&line);
                     }
