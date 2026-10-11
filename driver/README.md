@@ -122,6 +122,18 @@ exporter's identity. Source archives report unknown provenance.
   of value kept, flags kinds that win or lose every matchup, play alike or are
   outclassed, tier margins, seat-split legs and timeouts, and `--json` writes
   every leg. The results are reports for balance work, never pinned tests.
+- `composition_search` (the `composition-search` command) looks for a mix of up
+  to three unit kinds that nobody beats at equal scrap, using the duel lab's
+  staged fights. Each candidate is one fixed army: its kinds split the budget
+  evenly (or, with `--skewed`, one kind takes a double share), each kind but the
+  cheapest buys its share, and the cheapest fills the rest to land as close to
+  the budget as whole bodies allow. A round-robin over every candidate would
+  take about a million duels, so it grows a pool instead: it solves the blend of
+  pool candidates that no member beats, tests every candidate against that
+  blend, and adds the strongest challenger until none gains anything. A mix that
+  no candidate beats alone is a dominant composition. It reports each budget's
+  blend with every member's army and best counter, plus the range of spends;
+  `--json` writes them. It is offline evaluation and never feeds a controller.
 - `tick_profile` shows where simulation time goes inside a window of recorded
   ticks. It rebuilds a replay to the window's first tick, re-simulates the
   window from a clone of that world under macOS's `sample`, and reports each

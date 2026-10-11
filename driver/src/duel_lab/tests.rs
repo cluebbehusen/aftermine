@@ -46,7 +46,7 @@ fn every_layout_mirrors_through_the_center() {
 fn every_planned_duel_stages_at_small_and_large_budgets() {
     for budget in [600, 1_800, 5_000] {
         for duel in plan(budget).duels() {
-            let sc = scenario(&duel, duel.layout.map());
+            let sc = scenario(&duel);
             sc.build()
                 .unwrap_or_else(|e| panic!("{} at {budget}: {e}", sc.name));
         }
@@ -210,13 +210,13 @@ fn upgraded_defenses_refit_before_the_fight() {
         formation: Formation::Line,
         a_west: true,
     };
-    let sc = scenario(&duel, duel.layout.map());
+    let sc = scenario(&duel);
     let mut state = sc.build().expect("the line stages");
     refit(
         &mut state,
         [
-            (PlayerId(0), duel.a.contender),
-            (PlayerId(1), duel.b.contender),
+            (PlayerId(0), &Force::of(duel.a)),
+            (PlayerId(1), &Force::of(duel.b)),
         ],
     )
     .expect("the line refits");
@@ -317,4 +317,26 @@ fn tier_margins_skip_matchups_where_one_side_cannot_fire() {
         (3, 1, 1)
     );
     assert!((tiers[0].mean - 0.6).abs() < 1e-9);
+}
+
+#[test]
+fn a_pairing_against_a_defense_line_scores_the_same_from_either_seat() {
+    // Swapping seats rotates the whole scene, so the score must not move.
+    // Even footprints have no center tile, so a goal taken from a building's
+    // anchor would differ by one tile between the seats.
+    let (a, b) = Side::matched(
+        Contender::Unit(UnitKind::Avalanche),
+        Contender::Defense(Defense::base(BuildingKind::Bastion)),
+        1_800,
+    );
+    let leg = |a_west| Duel {
+        a,
+        b,
+        layout: Layout::Open,
+        formation: Formation::Line,
+        a_west,
+    };
+    let west = run(&leg(true), 8_000).expect("west leg runs");
+    let east = run(&leg(false), 8_000).expect("east leg runs");
+    assert_eq!((west.score, west.ticks), (east.score, east.ticks));
 }

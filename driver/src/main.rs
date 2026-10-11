@@ -420,12 +420,41 @@ enum Cmd {
         defenses: bool,
         /// Tick cap per duel. The slowest pairings (three Condors or
         /// Avalanches grinding through 21 Turrets) need about 6,000.
-        #[arg(long, default_value_t = 8_000)]
+        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
         ticks: u32,
         /// Maximum simultaneous duels.
         #[arg(long, default_value = "8")]
         jobs: std::num::NonZeroUsize,
         /// Write the full report, every leg included, as JSON.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
+    /// Search mixes of up to three unit kinds at equal scrap for a
+    /// composition nobody beats: grows a pool of strong mixes and the blend
+    /// of them no challenger improves on, at each budget. Built on the duel
+    /// lab's staged fights, so every run is identical.
+    CompositionSearch {
+        /// Scrap each side spends, comma-separated; each budget is searched
+        /// separately.
+        #[arg(long, value_delimiter = ',', default_value = "600,1800,5000")]
+        budgets: Vec<u32>,
+        /// Unit kinds to mix, comma-separated (default: every armed kind).
+        #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
+        kinds: Vec<oxide_sim::UnitKind>,
+        /// Most kinds in one mix.
+        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
+        max_kinds: u8,
+        /// Also search splits where one kind takes a double share. About four
+        /// times the candidates, so several times the run time.
+        #[arg(long)]
+        skewed: bool,
+        /// Tick cap per duel.
+        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
+        ticks: u32,
+        /// Maximum simultaneous duels.
+        #[arg(long, default_value = "8")]
+        jobs: std::num::NonZeroUsize,
+        /// Write every budget's outcome as JSON.
         #[arg(long)]
         json: Option<PathBuf>,
     },
@@ -605,6 +634,32 @@ fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
         print!("{}", report.render());
     }
     Ok(())
+}
+
+/// Refuse requested unit kinds a tool cannot field, naming them, rather than
+/// quietly running on a smaller roster than was asked for.
+fn refuse_unusable(
+    requested: &[oxide_sim::UnitKind],
+    usable: &[oxide_sim::UnitKind],
+    tool: &str,
+) -> Result<()> {
+    let refused: Vec<&str> = requested
+        .iter()
+        .filter(|kind| !usable.contains(kind))
+        .map(|kind| kind.name())
+        .collect();
+    if refused.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{tool} cannot field {}: they carry no weapon for these fights{}",
+        refused.join(", "),
+        if refused.contains(&"sapper") {
+            " (Sappers fight only defenses, with --defenses in the duel lab)"
+        } else {
+            ""
+        }
+    )
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm per subcommand")]
@@ -1203,6 +1258,12 @@ fn main() -> Result<()> {
             json,
         } => {
             use oxide_driver::duel_lab;
+            let usable: Vec<_> = if defenses {
+                duel_lab::defense_attackers()
+            } else {
+                duel_lab::armed_units()
+            };
+            refuse_unusable(&kinds, &usable, "the duel lab")?;
             let chosen = |all: Vec<oxide_sim::UnitKind>| {
                 if kinds.is_empty() {
                     all
@@ -1234,6 +1295,52 @@ fn main() -> Result<()> {
             eprintln!("ran in {:.1}s", start.elapsed().as_secs_f64());
             if let Some(path) = json {
                 std::fs::write(&path, serde_json::to_string_pretty(&report)?)
+                    .with_context(|| format!("writing {}", path.display()))?;
+                eprintln!("wrote {}", path.display());
+            }
+        }
+        Cmd::CompositionSearch {
+            budgets,
+            kinds,
+            max_kinds,
+            skewed,
+            ticks,
+            jobs,
+            json,
+        } => {
+            use oxide_driver::{composition_search, duel_lab};
+            refuse_unusable(&kinds, &duel_lab::armed_units(), "the composition search")?;
+            let kinds = if kinds.is_empty() {
+                duel_lab::armed_units()
+            } else {
+                duel_lab::armed_units()
+                    .into_iter()
+                    .filter(|kind| kinds.contains(kind))
+                    .collect()
+            };
+            let mut outcomes = Vec::new();
+            for budget in budgets {
+                let start = std::time::Instant::now();
+                let outcome = composition_search::run(
+                    &kinds,
+                    usize::from(max_kinds),
+                    budget,
+                    skewed,
+                    ticks,
+                    jobs,
+                )?;
+                print!(
+                    "{}",
+                    composition_search::render(std::slice::from_ref(&outcome))
+                );
+                eprintln!(
+                    "{budget} scrap searched in {:.1}s",
+                    start.elapsed().as_secs_f64()
+                );
+                outcomes.push(outcome);
+            }
+            if let Some(path) = json {
+                std::fs::write(&path, serde_json::to_string_pretty(&outcomes)?)
                     .with_context(|| format!("writing {}", path.display()))?;
                 eprintln!("wrote {}", path.display());
             }

@@ -199,13 +199,6 @@ impl Contender {
         }
     }
 
-    fn max_hp(self) -> u32 {
-        match self {
-            Self::Unit(kind) => kind.stats().max_hp,
-            Self::Defense(defense) => defense.stats().max_hp,
-        }
-    }
-
     fn domain(self) -> Domain {
         match self {
             Self::Unit(kind) => kind.stats().domain,
@@ -438,28 +431,100 @@ pub struct Outcome {
     pub score: f64,
 }
 
-/// Stage one leg as a sandbox scenario.
-pub fn scenario(duel: &Duel, layout_map: Vec<String>) -> Scenario {
-    let (west, east) = if duel.a_west {
-        (duel.a, duel.b)
+/// Everything one side fields: unit kinds hunting together, or one defense
+/// line. The duel lab fields one kind a side; the composition search fields
+/// mixes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Force {
+    /// Units hunting together, the shortest-ranged in the front ranks.
+    Army(Vec<(UnitKind, u32)>),
+    /// A line of one defense.
+    Line(Defense, u32),
+}
+
+impl Force {
+    /// The force one duel lab side fields.
+    pub fn of(side: Side) -> Self {
+        match side.contender {
+            Contender::Unit(kind) => Self::Army(vec![(kind, side.count)]),
+            Contender::Defense(defense) => Self::Line(defense, side.count),
+        }
+    }
+
+    /// Scrap the whole force cost.
+    pub fn spent(&self) -> u32 {
+        match self {
+            Self::Army(members) => members
+                .iter()
+                .map(|&(kind, count)| kind.stats().cost * count)
+                .sum(),
+            Self::Line(defense, count) => defense.cost() * count,
+        }
+    }
+
+    fn contenders(&self) -> Vec<Contender> {
+        match self {
+            Self::Army(members) => members
+                .iter()
+                .map(|&(kind, _)| Contender::Unit(kind))
+                .collect(),
+            Self::Line(defense, _) => vec![Contender::Defense(*defense)],
+        }
+    }
+
+    /// Whether any part of this force can hurt any part of the other.
+    pub fn threatens(&self, other: &Self) -> bool {
+        let theirs = other.contenders();
+        self.contenders()
+            .iter()
+            .any(|&mine| theirs.iter().any(|&their| mine.threatens(their)))
+    }
+
+    fn needs_spotter(&self) -> bool {
+        self.contenders().iter().any(|c| c.needs_spotter())
+    }
+
+    fn fields(&self, kind: UnitKind) -> bool {
+        matches!(self, Self::Army(members) if members.iter().any(|&(k, _)| k == kind))
+    }
+
+    /// The force's kinds joined with `+`.
+    pub fn name(&self) -> String {
+        self.contenders()
+            .iter()
+            .map(|c| c.name())
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+}
+
+fn mirrored(player: u8, tile: TilePos) -> TilePos {
+    if player == 0 {
+        tile
     } else {
-        (duel.b, duel.a)
-    };
+        TilePos::new(WIDTH - 1 - tile.x, HEIGHT - 1 - tile.y)
+    }
+}
+
+/// Stage an engagement as a sandbox scenario: `west` takes seat 0, `east`
+/// seat 1, mirrored through the field's center.
+pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -> Scenario {
     let mut units = Vec::new();
     let mut buildings = Vec::new();
     let mut scrap = [0u32; 2];
-    for (player, side) in [(0u8, west), (1u8, east)] {
-        let place = |tile: TilePos| -> TilePos {
-            if player == 0 {
-                tile
-            } else {
-                TilePos::new(WIDTH - 1 - tile.x, HEIGHT - 1 - tile.y)
-            }
-        };
-        match side.contender {
-            Contender::Unit(kind) => {
-                for tile in duel.formation.tiles(side.count) {
-                    let tile = place(tile);
+    for (player, force) in [(0u8, west), (1u8, east)] {
+        match force {
+            Force::Army(members) => {
+                let mut ranks: Vec<(UnitKind, u32)> = members.clone();
+                ranks.sort_by_key(|&(kind, _)| kind.stats().weapons.iter().map(|w| w.range).max());
+                let bodies: Vec<UnitKind> = ranks
+                    .iter()
+                    .flat_map(|&(kind, count)| std::iter::repeat_n(kind, count as usize))
+                    .collect();
+                let count = u32::try_from(bodies.len()).expect("army sizes fit in u32");
+                for (kind, tile) in bodies.into_iter().zip(formation.tiles(count)) {
+                    let tile = mirrored(player, tile);
                     units.push(UnitSpec {
                         player,
                         kind,
@@ -468,12 +533,12 @@ pub fn scenario(duel: &Duel, layout_map: Vec<String>) -> Scenario {
                     });
                 }
             }
-            Contender::Defense(defense) => {
+            Force::Line(defense, count) => {
                 let kind = defense.kind;
                 let (w, h) = kind.size();
                 let per_column = (LAST_ROW - FIRST_ROW + 2) / (h + 1);
-                let count = i32::try_from(side.count).expect("defense counts fit in i32");
-                for i in 0..count {
+                let count_i = i32::try_from(*count).expect("defense counts fit in i32");
+                for i in 0..count_i {
                     let anchor = TilePos::new(
                         FRONT_X - (w - 1) - (i / per_column) * (w + 1),
                         FIRST_ROW + (i % per_column) * (h + 1),
@@ -511,12 +576,11 @@ pub fn scenario(duel: &Duel, layout_map: Vec<String>) -> Scenario {
                         y: anchor.y,
                     });
                 }
-                scrap[usize::from(player)] =
-                    side.count * (defense.cost() - Defense::base(kind).cost());
+                scrap[usize::from(player)] = count * (defense.cost() - Defense::base(kind).cost());
             }
         }
-        if side.contender.needs_spotter() {
-            let tile = place(TilePos::new(SPOTTER_X, HEIGHT / 2));
+        if force.needs_spotter() {
+            let tile = mirrored(player, TilePos::new(SPOTTER_X, HEIGHT / 2));
             units.push(UnitSpec {
                 player,
                 kind: UnitKind::Kestrel,
@@ -534,12 +598,8 @@ pub fn scenario(duel: &Duel, layout_map: Vec<String>) -> Scenario {
     };
     Scenario {
         mode: ScenarioMode::Sandbox,
-        name: format!(
-            "duel-{}-vs-{}",
-            duel.a.contender.name(),
-            duel.b.contender.name()
-        ),
-        map: layout_map,
+        name: format!("duel-{}-vs-{}", west.name(), east.name()),
+        map: layout.map(),
         players: vec![seat("West", scrap[0]), seat("East", scrap[1])],
         units,
         buildings,
@@ -547,24 +607,97 @@ pub fn scenario(duel: &Duel, layout_map: Vec<String>) -> Scenario {
     }
 }
 
-/// Bodies a side still fields, and their health-scaled value.
-fn standing(state: &State, player: PlayerId, contender: Contender) -> Standing {
-    let (alive, hp): (u32, u64) = match contender {
-        Contender::Unit(kind) => state
+/// Stage one duel lab leg.
+pub fn scenario(duel: &Duel) -> Scenario {
+    let (west, east) = seated(duel);
+    stage(&west, &east, duel.layout, duel.formation)
+}
+
+fn seated(duel: &Duel) -> (Force, Force) {
+    let (a, b) = (Force::of(duel.a), Force::of(duel.b));
+    if duel.a_west { (a, b) } else { (b, a) }
+}
+
+/// Bodies a force still fields, and their health-scaled value.
+fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
+    let mut alive = 0;
+    let mut retained = 0.0;
+    match force {
+        Force::Army(_) => {
+            for u in state
+                .units()
+                .iter()
+                .filter(|u| u.player == player && force.fields(u.kind) && u.hp > 0)
+            {
+                let stats = u.kind.stats();
+                alive += 1;
+                retained += f64::from(stats.cost) * f64::from(u.hp) / f64::from(stats.max_hp);
+            }
+        }
+        Force::Line(defense, _) => {
+            for b in state
+                .buildings()
+                .iter()
+                .filter(|b| b.player == player && b.kind == defense.kind && b.hp > 0)
+            {
+                alive += 1;
+                retained +=
+                    f64::from(defense.cost()) * f64::from(b.hp) / f64::from(defense.stats().max_hp);
+            }
+        }
+    }
+    Standing { alive, retained }
+}
+
+/// Where a force's nearest live body stands, measured from `from`: a unit's
+/// tile, or a building's nearest footprint tile with its id and anchor.
+fn nearest(
+    state: &State,
+    player: PlayerId,
+    force: &Force,
+    from: chassis::fx::Vec2Fx,
+) -> Option<(TilePos, Option<(oxide_sim::BuildingId, TilePos)>)> {
+    match force {
+        Force::Army(_) => state
             .units()
             .iter()
-            .filter(|u| u.player == player && u.kind == kind && u.hp > 0)
-            .fold((0, 0), |(n, hp), u| (n + 1, hp + u64::from(u.hp))),
-        Contender::Defense(defense) => state
+            .filter(|u| u.player == player && force.fields(u.kind) && u.hp > 0)
+            .min_by_key(|u| (from.dist_sq(u.pos), u.id))
+            .map(|u| (u.tile(), None)),
+        Force::Line(defense, _) => state
             .buildings()
             .iter()
             .filter(|b| b.player == player && b.kind == defense.kind && b.hp > 0)
-            .fold((0, 0), |(n, hp), b| (n + 1, hp + u64::from(b.hp))),
-    };
-    Standing {
-        alive,
-        retained: f64::from(contender.cost()) * hp as f64 / f64::from(contender.max_hp()),
+            .min_by_key(|b| (from.dist_sq(b.closest_point_to(from)), b.id))
+            .map(|b| {
+                let tile = nearest_tile(b.anchor, defense.kind.size(), from, player);
+                (tile, Some((b.id, b.anchor)))
+            }),
     }
+}
+
+/// The footprint tile nearest `from`. A building's anchor is its top-left
+/// tile, and the mirror building's anchor is not that tile's mirror, so a goal
+/// taken from the anchor would differ by seat. The nearest tile mirrors
+/// exactly; an exact tie falls to the owner's own reading order, which mirrors
+/// too.
+fn nearest_tile(
+    anchor: TilePos,
+    (w, h): (i32, i32),
+    from: chassis::fx::Vec2Fx,
+    owner: PlayerId,
+) -> TilePos {
+    let reading = if owner == PlayerId(0) { 1 } else { -1 };
+    (0..h)
+        .flat_map(|dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
+        .min_by_key(|tile| {
+            (
+                from.dist_sq(tile.center()),
+                tile.y * reading,
+                tile.x * reading,
+            )
+        })
+        .expect("every footprint has a tile")
 }
 
 /// Send a side's idle bodies after the nearest live enemy. Sappers only ever
@@ -574,55 +707,44 @@ fn standing(state: &State, player: PlayerId, contender: Contender) -> Standing {
 fn seek(
     state: &State,
     me: PlayerId,
-    mine: Contender,
+    mine: &Force,
     foe: PlayerId,
-    theirs: Contender,
+    theirs: &Force,
 ) -> Option<PlayerCommand> {
-    let Contender::Unit(kind) = mine else {
-        return None;
-    };
     let idle: Vec<_> = state
         .units()
         .iter()
-        .filter(|u| u.player == me && u.kind == kind && u.hp > 0 && matches!(u.order, Order::Idle))
+        .filter(|u| {
+            u.player == me && mine.fields(u.kind) && u.hp > 0 && matches!(u.order, Order::Idle)
+        })
         .collect();
     let from = idle.first()?.pos;
-    let command = match theirs {
-        Contender::Unit(enemy) => {
-            let target = state
-                .units()
-                .iter()
-                .filter(|u| u.player == foe && u.kind == enemy && u.hp > 0)
-                .min_by_key(|u| (from.dist_sq(u.pos), u.id))?;
-            Command::Hunt {
-                units: idle.iter().map(|u| u.id).collect(),
-                goal: target.tile(),
-                queue: false,
-            }
-        }
-        Contender::Defense(enemy) => {
-            let (w, h) = enemy.kind.size();
-            let target = state
-                .buildings()
-                .iter()
-                .filter(|b| b.player == foe && b.kind == enemy.kind && b.hp > 0)
-                .min_by_key(|b| (from.dist_sq(b.anchor.center()), b.id))?;
-            let seen =
-                (0..w).any(|dx| (0..h).any(|dy| state.can_see(me, target.anchor.offset(dx, dy))));
-            if kind.stats().demolition.is_some() && seen {
+    let (goal, building) = nearest(state, foe, theirs, from)?;
+    let units = idle.iter().map(|u| u.id).collect();
+    let demolition = idle.iter().any(|u| u.kind.stats().demolition.is_some());
+    let command = match (building, theirs) {
+        (Some((id, anchor)), Force::Line(defense, _)) if demolition => {
+            let (w, h) = defense.kind.size();
+            let seen = (0..w).any(|dx| (0..h).any(|dy| state.can_see(me, anchor.offset(dx, dy))));
+            if seen {
                 Command::Attack {
-                    units: idle.iter().map(|u| u.id).collect(),
-                    target: AttackTarget::Building(target.id),
+                    units,
+                    target: AttackTarget::Building(id),
                     queue: false,
                 }
             } else {
                 Command::Hunt {
-                    units: idle.iter().map(|u| u.id).collect(),
-                    goal: target.anchor,
+                    units,
+                    goal,
                     queue: false,
                 }
             }
         }
+        _ => Command::Hunt {
+            units,
+            goal,
+            queue: false,
+        },
     };
     Some(PlayerCommand {
         player: me,
@@ -635,9 +757,9 @@ fn seek(
 fn spot(
     state: &State,
     me: PlayerId,
-    mine: Contender,
+    mine: &Force,
     foe: PlayerId,
-    theirs: Contender,
+    theirs: &Force,
 ) -> Option<PlayerCommand> {
     if !mine.needs_spotter() {
         return None;
@@ -646,21 +768,7 @@ fn spot(
         .units()
         .iter()
         .find(|u| u.player == me && u.kind == UnitKind::Kestrel && u.hp > 0)?;
-    let nearest = match theirs {
-        Contender::Unit(enemy) => state
-            .units()
-            .iter()
-            .filter(|u| u.player == foe && u.kind == enemy && u.hp > 0)
-            .map(|u| (spotter.pos.dist_sq(u.pos), u.tile()))
-            .min_by_key(|&(d, tile)| (d, tile.y, tile.x))?,
-        Contender::Defense(enemy) => state
-            .buildings()
-            .iter()
-            .filter(|b| b.player == foe && b.kind == enemy.kind && b.hp > 0)
-            .map(|b| (spotter.pos.dist_sq(b.anchor.center()), b.anchor))
-            .min_by_key(|&(d, tile)| (d, tile.y, tile.x))?,
-    }
-    .1;
+    let (nearest, _) = nearest(state, foe, theirs, spotter.pos)?;
     let toward_home = if me == PlayerId(0) {
         -SPOTTER_STANDOFF
     } else {
@@ -679,12 +787,12 @@ fn spot(
 
 /// Upgrade every defense line to its tier with ordinary commands, one rung
 /// at a time, while the armies wait out of reach.
-fn refit(state: &mut State, sides: [(PlayerId, Contender); 2]) -> Result<()> {
+fn refit(state: &mut State, sides: [(PlayerId, &Force); 2]) -> Result<()> {
     for _ in 0..REFIT_LIMIT {
         let mut orders = Vec::new();
         let mut done = true;
-        for (player, contender) in sides {
-            let Contender::Defense(defense) = contender else {
+        for (player, force) in sides {
+            let Force::Line(defense, _) = force else {
                 continue;
             };
             for b in state
@@ -712,37 +820,41 @@ fn refit(state: &mut State, sides: [(PlayerId, Contender); 2]) -> Result<()> {
     anyhow::bail!("defense refits did not finish in {REFIT_LIMIT} ticks")
 }
 
-/// Run one leg to a wipe or the tick cap.
-pub fn run(duel: &Duel, tick_limit: u32) -> Result<Outcome> {
-    let sc = scenario(duel, duel.layout.map());
+/// How an engagement ended, by seat.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Fought {
+    /// How it ended.
+    pub end: End,
+    /// Ticks it ran, refits excluded.
+    pub ticks: u32,
+    /// The west force at the end.
+    pub west: Standing,
+    /// The east force at the end.
+    pub east: Standing,
+}
+
+/// Stage and play one engagement to a wipe or the tick cap.
+pub fn fight(
+    west: &Force,
+    east: &Force,
+    layout: Layout,
+    formation: Formation,
+    tick_limit: u32,
+) -> Result<Fought> {
+    let sc = stage(west, east, layout, formation);
     let mut state = sc.build().with_context(|| format!("staging {}", sc.name))?;
-    let (west, east) = if duel.a_west {
-        (duel.a, duel.b)
-    } else {
-        (duel.b, duel.a)
-    };
-    refit(
-        &mut state,
-        [(PlayerId(0), west.contender), (PlayerId(1), east.contender)],
-    )
-    .with_context(|| format!("refitting {}", sc.name))?;
-    let front = |player: u8| {
-        let tile = TilePos::new(FRONT_X, HEIGHT / 2);
-        if player == 0 {
-            tile
-        } else {
-            TilePos::new(WIDTH - 1 - tile.x, HEIGHT - 1 - tile.y)
-        }
-    };
+    refit(&mut state, [(PlayerId(0), west), (PlayerId(1), east)])
+        .with_context(|| format!("refitting {}", sc.name))?;
+    let front = |player: u8| mirrored(player, TilePos::new(FRONT_X, HEIGHT / 2));
     let mut orders = Vec::new();
-    for (player, side, goal) in [(0u8, west, front(1)), (1u8, east, front(0))] {
-        let Contender::Unit(kind) = side.contender else {
+    for (player, force, goal) in [(0u8, west, front(1)), (1u8, east, front(0))] {
+        if !matches!(force, Force::Army(_)) {
             continue;
-        };
+        }
         let units = state
             .units()
             .iter()
-            .filter(|u| u.player == PlayerId(player) && u.kind == kind)
+            .filter(|u| u.player == PlayerId(player) && force.fields(u.kind))
             .map(|u| u.id)
             .collect();
         orders.push(PlayerCommand {
@@ -756,46 +868,59 @@ pub fn run(duel: &Duel, tick_limit: u32) -> Result<Outcome> {
     }
     state.tick(&orders);
     let mut ticks = 1;
-    let (a_seat, b_seat) = if duel.a_west {
-        (PlayerId(0), PlayerId(1))
-    } else {
-        (PlayerId(1), PlayerId(0))
-    };
+    let sides = [
+        (PlayerId(0), west, PlayerId(1), east),
+        (PlayerId(1), east, PlayerId(0), west),
+    ];
     let end = loop {
-        let a = standing(&state, a_seat, duel.a.contender);
-        let b = standing(&state, b_seat, duel.b.contender);
-        if a.alive == 0 || b.alive == 0 {
+        let (w, e) = (
+            standing(&state, PlayerId(0), west),
+            standing(&state, PlayerId(1), east),
+        );
+        if w.alive == 0 || e.alive == 0 {
             break End::Wipe;
         }
         if ticks >= tick_limit {
             break End::Timeout;
         }
         let orders = if ticks % SEEK_PERIOD == 0 {
-            [
-                (a_seat, duel.a.contender, b_seat, duel.b.contender),
-                (b_seat, duel.b.contender, a_seat, duel.a.contender),
-            ]
-            .into_iter()
-            .flat_map(|(me, mine, foe, theirs)| {
-                [
-                    seek(&state, me, mine, foe, theirs),
-                    spot(&state, me, mine, foe, theirs),
-                ]
-            })
-            .flatten()
-            .collect()
+            sides
+                .iter()
+                .flat_map(|&(me, mine, foe, theirs)| {
+                    [
+                        seek(&state, me, mine, foe, theirs),
+                        spot(&state, me, mine, foe, theirs),
+                    ]
+                })
+                .flatten()
+                .collect()
         } else {
             Vec::new()
         };
         state.tick(&orders);
         ticks += 1;
     };
-    let a = standing(&state, a_seat, duel.a.contender);
-    let b = standing(&state, b_seat, duel.b.contender);
-    Ok(Outcome {
-        duel: *duel,
+    Ok(Fought {
         end,
         ticks,
+        west: standing(&state, PlayerId(0), west),
+        east: standing(&state, PlayerId(1), east),
+    })
+}
+
+/// Run one duel lab leg to a wipe or the tick cap.
+pub fn run(duel: &Duel, tick_limit: u32) -> Result<Outcome> {
+    let (west, east) = seated(duel);
+    let fought = fight(&west, &east, duel.layout, duel.formation, tick_limit)?;
+    let (a, b) = if duel.a_west {
+        (fought.west, fought.east)
+    } else {
+        (fought.east, fought.west)
+    };
+    Ok(Outcome {
+        duel: *duel,
+        end: fought.end,
+        ticks: fought.ticks,
         a,
         b,
         score: a.retained / f64::from(duel.a.spent) - b.retained / f64::from(duel.b.spent),
