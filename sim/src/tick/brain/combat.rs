@@ -615,8 +615,11 @@ pub(super) fn turret_fire(
 
 /// Firing positions for a chaser around an unstandable victim tile,
 /// ring-scanned outward, keeping only tiles the chaser can stand on and
-/// that lie within the weapon's Euclidean reach (ring corners sit √2
-/// further out than their Chebyshev radius). Within a ring the scan is
+/// whose centres lie within the weapon's Euclidean reach of `aim`, the
+/// victim's own position (ring corners sit √2 further out than their
+/// Chebyshev radius). Reach runs from the body, not its tile's centre: a
+/// body overhanging a footprint's empty margin stands within a short
+/// weapon's reach of the tile beside it. Within a ring the scan is
 /// row-major, which a half-turn does not preserve, so a caller that picks
 /// one must rank them. Empty when the victim sits deeper in blocked ground
 /// than any weapon reaches.
@@ -624,9 +627,9 @@ fn chase_stand_ins(
     state: &State,
     domain: Domain,
     around: TilePos,
+    aim: Vec2Fx,
     range: chassis::fx::Fx,
 ) -> Vec<TilePos> {
-    let aim = around.center();
     let mut out = Vec::new();
     for r in 1..=crate::stats::CHASE_STAND_RADIUS {
         for dy in -r..=r {
@@ -832,7 +835,7 @@ pub(super) fn acquire_target_from(
                         .iter()
                         .find(|w| w.targets.covers(u.domain()))
                         .map_or(chassis::fx::Fx::ZERO, |w| w.range);
-                    if chase_stand_ins(state, stats.domain, victim_tile, range).is_empty() {
+                    if chase_stand_ins(state, stats.domain, victim_tile, u.pos, range).is_empty() {
                         continue;
                     }
                 }
@@ -1714,8 +1717,7 @@ pub(super) fn attack(
                         p.goal != target_tile && p.goal.chebyshev(target_tile) > 1
                     } else {
                         !(state.passable_for(stats.domain, p.goal)
-                            && p.goal.center().dist_sq(target_tile.center())
-                                <= weapon.range * weapon.range)
+                            && p.goal.center().dist_sq(aim_point) <= weapon.range * weapon.range)
                     }
                 });
             if stale {
@@ -1728,7 +1730,7 @@ pub(super) fn attack(
                     // pocket next to the victim must not stall a chaser that
                     // could fire from the far side.
                     let mut stand_ins =
-                        chase_stand_ins(state, stats.domain, target_tile, weapon.range);
+                        chase_stand_ins(state, stats.domain, target_tile, aim_point, weapon.range);
                     stand_ins.sort_by_key(|goal| {
                         (
                             goal.chebyshev(target_tile),
@@ -1756,8 +1758,14 @@ pub(super) fn attack(
                     // report that no route worked.
                     None if !direct
                         && state.can_see(me, target_tile)
-                        && chase_stand_ins(state, stats.domain, target_tile, weapon.range)
-                            .is_empty() =>
+                        && chase_stand_ins(
+                            state,
+                            stats.domain,
+                            target_tile,
+                            aim_point,
+                            weapon.range,
+                        )
+                        .is_empty() =>
                     {
                         Err(StallReason::NoFiringPosition)
                     }
