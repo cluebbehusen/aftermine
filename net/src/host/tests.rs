@@ -721,6 +721,23 @@ fn a_defeated_client_watches_without_holding_the_match() {
         host.take_outgoing().iter().any(|(seat, _)| *seat == A),
         "it still receives batches"
     );
+    assert!(host.caught_up(), "nor does it hold the end of the match");
+}
+
+#[test]
+fn a_retired_seat_holds_no_hashes_and_may_report_late() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.retire_seat(B);
+    let ticks = 2 * HASH_INTERVAL;
+    for tick in 1..=ticks {
+        step(&mut host, secs(0), 0).unwrap();
+        host.receive(A, &ack_line(tick, 0), secs(0));
+    }
+    assert!(host.caught_up());
+    assert!(host.hashes.is_empty(), "nothing is kept for B");
+    // B's reports come after the host stopped keeping those hashes.
+    ack_through(&mut host, B, 1, ticks, secs(0));
+    assert_eq!(host.poll(secs(0)), Vec::new(), "no desync and no loss");
 }
 
 #[test]
