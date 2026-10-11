@@ -448,16 +448,15 @@ impl ClientLink {
         }
         // A host naming a seat the match does not have broke the protocol.
         let roster = game.scenario.players.len();
-        if self
-            .session
-            .seats()
-            .0
-            .iter()
-            .any(|notice| usize::from(notice.seat.0) >= roster)
+        let replaced = self.session.take_replaced();
+        let named = self.session.seats().0.iter().map(|notice| notice.seat);
+        if named
+            .chain(replaced.iter().map(|&(seat, _)| seat))
+            .any(|seat| usize::from(seat.0) >= roster)
         {
             return Some(self.end(ClientEnd::Protocol));
         }
-        for (seat, config) in self.session.take_replaced() {
+        for (seat, config) in replaced {
             game.mirror_bot(seat, config);
             let name = &game.scenario.players[usize::from(seat.0)].name;
             game.presentation

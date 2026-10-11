@@ -796,7 +796,6 @@ fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
 
 #[test]
 fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
-    let (mut game, mut link, host) = hand_hosted(duel());
     let seats = oxide_net::HostMessage::Seats {
         seats: vec![SeatNotice {
             seat: PlayerId(9),
@@ -804,11 +803,18 @@ fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
         }],
         paused: false,
     };
-    host.send(&seats.encode());
-    let mut now = Duration::ZERO;
-    let end = wait(|| {
-        now += STEP;
-        link.pump(&mut game, now)
-    });
-    assert_eq!(end, End::HostLost);
+    let replaced = oxide_net::HostMessage::Replaced {
+        seat: PlayerId(9),
+        config: BotConfig::default(),
+    };
+    for line in [seats.encode(), replaced.encode()] {
+        let (mut game, mut link, host) = hand_hosted(duel());
+        host.send(&line);
+        let mut now = Duration::ZERO;
+        let end = wait(|| {
+            now += STEP;
+            link.pump(&mut game, now)
+        });
+        assert_eq!(end, End::HostLost, "{line}");
+    }
 }
