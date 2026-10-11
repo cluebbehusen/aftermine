@@ -38,6 +38,9 @@ pub(crate) struct Staffing {
     /// Known nodes with scrap whose route from home avoids known danger, in
     /// `known_scrap` order.
     reachable: Vec<TilePos>,
+    /// Known wreck off any node whose route from home avoids known danger,
+    /// with its salvage, in `known_wrecks` order.
+    wrecks: Vec<(TilePos, u32)>,
     crew: usize,
 }
 
@@ -78,8 +81,8 @@ fn slots(kind: UnitKind) -> usize {
     }
 }
 
-/// Counts the worked nodes with their crews and the worker slots filled by
-/// workers alive, carried or queued.
+/// Counts the worked nodes and wrecks with their crews and the worker slots
+/// filled by workers alive, carried or queued.
 pub(crate) fn staffing(
     observation: &ObservationData,
     map: &MapModel,
@@ -89,10 +92,33 @@ pub(crate) fn staffing(
     scratch: &Scratch,
 ) -> Staffing {
     let homes: Vec<&BuildingObs> = foundries.iter().map(|foundry| foundry.building).collect();
-    let reachable = reachable(observation, map, frame, scratch, &homes);
+    let mut routes = Routes::new(observation, map, frame, scratch, &homes);
+    let reachable: Vec<TilePos> = observation
+        .known_scrap
+        .iter()
+        .filter(|(_, amount)| *amount > 0)
+        .map(|(node, _)| *node)
+        .filter(|node| routes.clear(*node))
+        .collect();
+    let wrecks: Vec<(TilePos, u32)> = observation
+        .known_wrecks
+        .iter()
+        .filter(|(tile, amount)| *amount > 0 && !observation.known_scrap_at(*tile))
+        .filter(|(tile, _)| routes.clear(*tile))
+        .copied()
+        .collect();
     Staffing {
-        worked: worked_nodes(observation, map, frame, profile, foundries, &reachable),
+        worked: worked_nodes(
+            observation,
+            map,
+            frame,
+            profile,
+            foundries,
+            &reachable,
+            &wrecks,
+        ),
         reachable,
+        wrecks,
         crew: crew(observation),
     }
 }
@@ -289,6 +315,12 @@ fn weld(
             if threatened || hazards.iter().any(|hazard| hazard.covers(centre)) {
                 return None;
             }
+            // A building other buildings and rock wall in on every side
+            // leaves a welder nowhere to stand.
+            let ground = map.component(building.anchor)?;
+            if room(observation, map, building.anchor, size, ground) == 0 {
+                return None;
+            }
             let price = building
                 .kind
                 .base_stats()
@@ -396,12 +428,12 @@ fn crew(observation: &ObservationData) -> usize {
         .sum()
 }
 
-/// The live known nodes the seat works, each with its crew. A node belongs
-/// to the nearest built Foundry whose ground reaches it, is worked when its
-/// route from home avoids known danger and a Harvester hauling from there
-/// repays its price within the seat's horizon. Its crew fills the free tiles
-/// around it that its remaining scrap repays, as full as stance and greed
-/// make it.
+/// The live known nodes and wrecks the seat works, each with its crew. A
+/// source belongs to the nearest built Foundry whose ground reaches it, is
+/// worked when its route from home avoids known danger and a Harvester
+/// hauling from there repays its price within the seat's horizon. Its crew
+/// fills the free tiles around it that its remaining scrap or salvage
+/// repays, as full as stance and greed make it.
 fn worked_nodes(
     observation: &ObservationData,
     map: &MapModel,
@@ -409,6 +441,7 @@ fn worked_nodes(
     profile: &ResolvedProfile,
     foundries: &[Producer<'_>],
     reachable: &[TilePos],
+    wrecks: &[(TilePos, u32)],
 ) -> Vec<(TilePos, usize)> {
     let harvester = UnitKind::Harvester.stats();
     let Some(harvest) = harvester.harvest else {
@@ -434,6 +467,7 @@ fn worked_nodes(
                 .binary_search_by_key(&(node.y, node.x), |tile| (tile.y, tile.x))
                 .is_ok()
         })
+        .chain(wrecks)
         .filter_map(|(node, amount)| {
             let (component, reach) = homes
                 .iter()
@@ -454,7 +488,7 @@ fn worked_nodes(
             if payback * cycle > horizon {
                 return None;
             }
-            let room = room(observation, map, *node, component) as u64;
+            let room = room(observation, map, *node, (1, 1), component) as u64;
             let repaid = u64::from(*amount) / price;
             let places = room.min(repaid);
             (places > 0).then(|| {
@@ -462,26 +496,6 @@ fn worked_nodes(
                 (*node, usize::try_from(crew).expect("crews fit in usize"))
             })
         })
-        .collect()
-}
-
-/// Known nodes with scrap whose route from home stays out of known danger:
-/// the reach of known enemy ground fire, and the surroundings of enemy
-/// Foundries, known or presumed, where their owners' defenders gather.
-fn reachable(
-    observation: &ObservationData,
-    map: &MapModel,
-    frame: HomeFrame,
-    scratch: &Scratch,
-    homes: &[&BuildingObs],
-) -> Vec<TilePos> {
-    let danger = danger(map, scratch);
-    observation
-        .known_scrap
-        .iter()
-        .filter(|(_, amount)| *amount > 0)
-        .map(|(node, _)| *node)
-        .filter(|node| clear_route(map, observation.me, frame, &danger, homes, *node))
         .collect()
 }
 
@@ -508,52 +522,98 @@ fn danger(map: &MapModel, scratch: &Scratch) -> Grid<bool> {
     danger
 }
 
-/// Whether the shortest ground route from the seat's start to `node`, which
-/// workers roughly follow, stays out of `danger` until it comes home to one
-/// of `homes`. The route is traced back from the node down the start's
-/// distance field; a node that field does not reach is judged by itself.
-fn clear_route(
-    map: &MapModel,
+/// Whether the shortest ground routes from the seat's start to known
+/// sources, which workers roughly follow, stay out of known danger until they
+/// come home to one of the seat's Foundries: the reach of known enemy ground
+/// fire, and the surroundings of enemy Foundries, known or presumed, where
+/// their owners' defenders gather. A route is traced back from its source down
+/// the start's distance field; a source that field does not reach is judged
+/// by itself. Every route through a tile ends as the first one traced through
+/// it did, so a decision traces each tile once however many sources share it.
+pub(crate) struct Routes<'a> {
+    map: &'a MapModel,
     me: PlayerId,
     frame: HomeFrame,
-    danger: &Grid<bool>,
-    homes: &[&BuildingObs],
-    node: TilePos,
-) -> bool {
-    let size = BuildingKind::Foundry.size();
-    let mut tile = node;
-    let mut distance = map.distance(me, tile);
-    loop {
-        if homes
-            .iter()
-            .any(|home| gap(home.anchor, size, tile, (1, 1)) <= HOME_TILES)
-        {
-            return true;
+    homes: &'a [&'a BuildingObs],
+    danger: Grid<bool>,
+    /// Whether the route on from each tile already traced is clear.
+    traced: Grid<Option<bool>>,
+}
+
+impl<'a> Routes<'a> {
+    pub(crate) fn new(
+        observation: &ObservationData,
+        map: &'a MapModel,
+        frame: HomeFrame,
+        scratch: &Scratch,
+        homes: &'a [&'a BuildingObs],
+    ) -> Self {
+        let (width, height) = map.size();
+        Self {
+            map,
+            me: observation.me,
+            frame,
+            homes,
+            danger: danger(map, scratch),
+            traced: Grid::new(width, height, None),
         }
-        if danger.get(tile) == Some(&true) {
-            return false;
+    }
+
+    /// Whether the route from home to `source` is clear.
+    pub(crate) fn clear(&mut self, source: TilePos) -> bool {
+        let (map, me) = (self.map, self.me);
+        let size = BuildingKind::Foundry.size();
+        let mut tile = source;
+        let mut distance = map.distance(me, tile);
+        let mut walked = Vec::new();
+        let clear = loop {
+            // The source's own first step may cut a corner, so only the
+            // tiles past it share their outcome.
+            if tile != source {
+                if let Some(clear) = self.traced.get(tile).copied().flatten() {
+                    break clear;
+                }
+                walked.push(tile);
+            }
+            if self
+                .homes
+                .iter()
+                .any(|home| gap(home.anchor, size, tile, (1, 1)) <= HOME_TILES)
+            {
+                break true;
+            }
+            if self.danger.get(tile) == Some(&true) {
+                break false;
+            }
+            let from = doubled(tile);
+            let open = |tile: TilePos| map.component(tile).is_some();
+            // Diagonal steps never cut a corner, as in the distance field. A
+            // worker stands on any tile beside the source, so the first step
+            // may.
+            let legal = |next: &TilePos| {
+                let (dx, dy) = (next.x - tile.x, next.y - tile.y);
+                tile == source
+                    || dx == 0
+                    || dy == 0
+                    || (open(tile.offset(dx, 0)) && open(tile.offset(0, dy)))
+            };
+            let next = ring(tile, (1, 1))
+                .filter(legal)
+                .map(|next| (map.distance(me, next), next))
+                .filter(|(closer, _)| *closer < distance)
+                .min_by_key(|(closer, next)| (*closer, self.frame.rank(from, doubled(*next))));
+            let Some((closer, next)) = next else {
+                break true;
+            };
+            tile = next;
+            distance = closer;
+        };
+        for tile in walked {
+            if let Some(cell) = self.traced.get_mut(tile) {
+                *cell = Some(clear);
+            }
         }
-        let from = doubled(tile);
-        let open = |tile: TilePos| map.component(tile).is_some();
-        // Diagonal steps never cut a corner, as in the distance field. A
-        // worker stands on any tile beside the node, so the first step may.
-        let legal = |next: &TilePos| {
-            let (dx, dy) = (next.x - tile.x, next.y - tile.y);
-            tile == node
-                || dx == 0
-                || dy == 0
-                || (open(tile.offset(dx, 0)) && open(tile.offset(0, dy)))
-        };
-        let next = ring(tile, (1, 1))
-            .filter(legal)
-            .map(|next| (map.distance(me, next), next))
-            .filter(|(closer, _)| *closer < distance)
-            .min_by_key(|(closer, next)| (*closer, frame.rank(from, doubled(*next))));
-        let Some((closer, next)) = next else {
-            return true;
-        };
-        tile = next;
-        distance = closer;
+        clear
     }
 }
 
@@ -582,10 +642,16 @@ pub(crate) fn fill(profile: &ResolvedProfile) -> u64 {
         .cast_unsigned()
 }
 
-/// Free tiles a worker could stand on to work `node`: its neighbours on
-/// `component` that no known building, the seat's, an ally's or an enemy's,
-/// or other node covers.
-fn room(observation: &ObservationData, map: &MapModel, node: TilePos, component: u32) -> usize {
+/// Free tiles a worker could stand on to work the footprint of `size` at
+/// `anchor`: its neighbours on `component` that no known building, the
+/// seat's, an ally's or an enemy's, or scrap node covers.
+fn room(
+    observation: &ObservationData,
+    map: &MapModel,
+    anchor: TilePos,
+    size: (i32, i32),
+    component: u32,
+) -> usize {
     let covered = |tile: TilePos| {
         observation
             .my_buildings
@@ -602,18 +668,20 @@ fn room(observation: &ObservationData, map: &MapModel, node: TilePos, component:
                 .binary_search_by_key(&(tile.y, tile.x), |(other, _)| (other.y, other.x))
                 .is_ok()
     };
-    ring(node, (1, 1))
+    ring(anchor, size)
         .filter(|tile| map.component(*tile) == Some(component) && !covered(*tile))
         .count()
 }
 
-/// Sends each idle worker, nearest home first, to the reachable worked
-/// node with the most places open, or to its nearest reachable known node
-/// when none is worked, never to a node inside known danger or whose route
-/// crosses it. A worker harvesting a node whose route has turned dangerous
-/// is sent elsewhere the same way, or home when nowhere is left. A worker
-/// with nowhere to go that still carries scrap delivers it instead. One
-/// order per node.
+/// Sends each idle worker, nearest home first, to the reachable worked node
+/// or wreck with the most places open; with none open, to the nearest known
+/// wreck holding more salvage than the workers on it carry away in a load
+/// each, then to the most open worked source, or to its nearest reachable
+/// known node when none is worked. It never sends one to a source inside
+/// known danger or whose route crosses it. A worker harvesting a source whose
+/// route has turned dangerous is sent elsewhere the same way, or home when
+/// nowhere is left. A worker with nowhere to go that still carries scrap
+/// delivers it instead. One order per source.
 fn assign_idle(
     observation: &ObservationData,
     map: &MapModel,
@@ -643,14 +711,35 @@ fn assign_idle(
             )
         })
         .collect();
+    // The simulation's harvest loop moves a worker on to nearby wreck when
+    // its node runs dry, so a reachable wreck is as good as a node.
     let stale = |unit: &UnitObs| {
-        unit.harvesting.is_some_and(|node| {
+        unit.harvesting.is_some_and(|source| {
+            let key = (source.y, source.x);
             staffing
                 .reachable
-                .binary_search_by_key(&(node.y, node.x), |tile| (tile.y, tile.x))
+                .binary_search_by_key(&key, |tile| (tile.y, tile.x))
                 .is_err()
+                && staffing
+                    .wrecks
+                    .binary_search_by_key(&key, |(tile, _)| (tile.y, tile.x))
+                    .is_err()
         })
     };
+    let mut salvage: Vec<(TilePos, i64)> = staffing
+        .wrecks
+        .iter()
+        .filter(|(tile, _)| safe(tile))
+        .map(|(tile, amount)| {
+            let loads: u32 = observation
+                .my_units
+                .iter()
+                .filter(|unit| unit.harvesting == Some(*tile))
+                .map(|unit| capacity(unit.kind))
+                .sum();
+            (*tile, i64::from(*amount) - i64::from(loads))
+        })
+        .collect();
     let mut idle: Vec<_> = observation
         .my_units
         .iter()
@@ -674,25 +763,40 @@ fn assign_idle(
             .iter_mut()
             .filter(|(node, _)| map.touches(*node, component))
             .min_by_key(|(node, open)| (Reverse(*open), frame.rank(from, doubled(*node))));
-        let node = if let Some((node, open)) = most_open {
-            *open -= 1;
-            *node
-        } else {
-            let nearest = staffing
-                .reachable
-                .iter()
-                .copied()
-                .filter(|node| map.touches(*node, component) && safe(node))
-                .min_by_key(|node| frame.rank(from, doubled(*node)));
-            let Some(node) = nearest else {
-                if unit.carrying > 0 {
-                    loaded.push(unit);
-                } else if stale(unit) {
-                    stranded.push(unit);
-                }
-                continue;
-            };
-            node
+        let leftover = salvage
+            .iter_mut()
+            .filter(|(tile, left)| *left > 0 && map.touches(*tile, component))
+            .min_by_key(|(tile, _)| frame.rank(from, doubled(*tile)));
+        let node = match (most_open, leftover) {
+            (Some((node, open)), _) if *open > 0 => {
+                *open -= 1;
+                *node
+            }
+            (_, Some((tile, left))) => {
+                *left -= i64::from(capacity(unit.kind));
+                *tile
+            }
+            (Some((node, open)), None) => {
+                *open -= 1;
+                *node
+            }
+            (None, None) => {
+                let nearest = staffing
+                    .reachable
+                    .iter()
+                    .copied()
+                    .filter(|node| map.touches(*node, component) && safe(node))
+                    .min_by_key(|node| frame.rank(from, doubled(*node)));
+                let Some(node) = nearest else {
+                    if unit.carrying > 0 {
+                        loaded.push(unit);
+                    } else if stale(unit) {
+                        stranded.push(unit);
+                    }
+                    continue;
+                };
+                node
+            }
         };
         assignments.push((node, unit.id));
     }
@@ -736,6 +840,11 @@ fn assign_idle(
             return;
         }
     }
+}
+
+/// Scrap a worker of `kind` carries in one load.
+fn capacity(kind: UnitKind) -> u32 {
+    kind.stats().harvest.map_or(0, |harvest| harvest.capacity)
 }
 
 /// Octile distance between two doubled-coordinate points, in tenths of a tile.

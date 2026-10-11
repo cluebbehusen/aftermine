@@ -19,33 +19,36 @@ count against that allowance.
 ## Workers
 
 A seat with no worker alive, carried or queued queues a Harvester even behind
-other work, from protected scrap if it must. A live known scrap node's route is
-the shortest ground route from the seat's start, followed back until it comes
-home to one of the seat's Foundries; it is clear while it crosses neither the
-reach of known enemy weapons (a site in sight cannot fire yet) nor the
-surroundings of an enemy Foundry, known or presumed. Each node with a clear
-route belongs to the nearest built Foundry whose ground reaches it, and is
-worked when a Harvester hauling from there repays its price within a horizon
+other work, from protected scrap if it must. A live known scrap node's or
+wreck's route is the shortest ground route from the seat's start, followed back
+until it comes home to one of the seat's Foundries; it is clear while it crosses
+neither the reach of known enemy weapons (a site in sight cannot fire yet) nor
+the surroundings of an enemy Foundry, known or presumed. Each node or wreck with
+a clear route belongs to the nearest built Foundry whose ground reaches it, and
+is worked when a Harvester hauling from there repays its price within a horizon
 that is longer the more the stance invests at home and stretched by greed. A
-worked node wants as many Harvesters as free tiles beside it hold and its
-remaining scrap repays, filled to a share that falls from Turtle to Aggressive
-and rises with greed, and ready Foundries train workers until every worked node
-has its crew. Until the army reaches the stance's minimum, workers that would
-cost more than the army wait for army production and take only the Foundries it
-leaves. Once a Fabricator stands, an Excavator, worth two Harvesters, fills two
-open places when the seat can pay for it with scrap to spare, less the greedier
-it is.
+worked source wants as many Harvesters as free tiles beside it hold and its
+remaining scrap or salvage repays, filled to a share that falls from Turtle to
+Aggressive and rises with greed, and ready Foundries train workers until every
+worked source has its crew. Until the army reaches the stance's minimum, workers
+that would cost more than the army wait for army production and take only the
+Foundries it leaves. Once a Fabricator stands, an Excavator, worth two
+Harvesters, fills two open places when the seat can pay for it with scrap to
+spare, less the greedier it is.
 
 A harvesting or idle worker away from home runs back beside the nearest Foundry
 once known enemy fire reaches it. Paid sites nobody is building get the nearest
 free worker. While no armed enemy in sight stands near it, no known enemy weapon
 reaches it and the seat has scrap to pay, each damaged building nobody welds yet
-gets the nearest free worker, most missing value first. Idle workers go to the
-reachable worked node with the most places open, or with none worked to the
-nearest node with a clear route, never one inside the reach of known enemy
-weapons. A worker harvesting a node whose route has turned dangerous is sent
-elsewhere the same way, or home. A worker left with nowhere to go first delivers
-any scrap it carries to a Foundry on its ground.
+that has a free tile beside it gets the nearest free worker, most missing value
+first. Idle workers go to the reachable worked node or wreck with the most
+places open; with none open, to the nearest wreck with a clear route holding
+more salvage than the workers on it carry away in a load each, then to the most
+open worked source, or with none worked to the nearest node with a clear route,
+never one inside the reach of known enemy weapons. A worker harvesting a node or
+wreck whose route has turned dangerous is sent elsewhere the same way, or home.
+A worker left with nowhere to go first delivers any scrap it carries to a
+Foundry on its ground.
 
 ## Defense
 
