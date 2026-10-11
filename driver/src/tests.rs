@@ -271,3 +271,23 @@ fn profile_shell_parses_an_exact_replay_window() {
     assert_eq!(speed, 8.0);
     assert!(!dev);
 }
+
+#[test]
+fn the_balance_tools_refuse_a_zero_tick_cap() {
+    for tool in ["duel-lab", "composition-search"] {
+        assert!(Cli::try_parse_from(["oxide-driver", tool, "--ticks", "0"]).is_err());
+        assert!(Cli::try_parse_from(["oxide-driver", tool, "--ticks", "1"]).is_ok());
+    }
+}
+
+#[test]
+fn the_balance_tools_name_kinds_they_cannot_field() {
+    use oxide_sim::UnitKind::{Kestrel, Sapper, Sentinel};
+    let armed = oxide_driver::duel_lab::armed_units();
+    assert!(refuse_unusable(&[Sentinel], &armed, "the search").is_ok());
+    let refused = refuse_unusable(&[Sentinel, Kestrel, Sapper], &armed, "the search")
+        .expect_err("unarmed kinds are refused");
+    let message = refused.to_string();
+    assert!(message.contains("kestrel, sapper"), "{message}");
+    assert!(message.contains("--defenses"), "{message}");
+}

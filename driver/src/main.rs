@@ -403,7 +403,7 @@ enum Cmd {
         defenses: bool,
         /// Tick cap per duel. The slowest pairings (three Condors or
         /// Avalanches grinding through 21 Turrets) need about 6,000.
-        #[arg(long, default_value_t = 8_000)]
+        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
         ticks: u32,
         /// Maximum simultaneous duels.
         #[arg(long, default_value = "8")]
@@ -428,7 +428,7 @@ enum Cmd {
         #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
         max_kinds: u8,
         /// Tick cap per duel.
-        #[arg(long, default_value_t = 8_000)]
+        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
         ticks: u32,
         /// Maximum simultaneous duels.
         #[arg(long, default_value = "8")]
@@ -613,6 +613,32 @@ fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
         print!("{}", report.render());
     }
     Ok(())
+}
+
+/// Refuse requested unit kinds a tool cannot field, naming them, rather than
+/// quietly running on a smaller roster than was asked for.
+fn refuse_unusable(
+    requested: &[oxide_sim::UnitKind],
+    usable: &[oxide_sim::UnitKind],
+    tool: &str,
+) -> Result<()> {
+    let refused: Vec<&str> = requested
+        .iter()
+        .filter(|kind| !usable.contains(kind))
+        .map(|kind| kind.name())
+        .collect();
+    if refused.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{tool} cannot field {}: they carry no weapon for these fights{}",
+        refused.join(", "),
+        if refused.contains(&"sapper") {
+            " (Sappers fight only defenses, with --defenses in the duel lab)"
+        } else {
+            ""
+        }
+    )
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm per subcommand")]
@@ -1197,6 +1223,12 @@ fn main() -> Result<()> {
             json,
         } => {
             use oxide_driver::duel_lab;
+            let usable: Vec<_> = if defenses {
+                duel_lab::defense_attackers()
+            } else {
+                duel_lab::armed_units()
+            };
+            refuse_unusable(&kinds, &usable, "the duel lab")?;
             let chosen = |all: Vec<oxide_sim::UnitKind>| {
                 if kinds.is_empty() {
                     all
@@ -1241,6 +1273,7 @@ fn main() -> Result<()> {
             json,
         } => {
             use oxide_driver::{composition_search, duel_lab};
+            refuse_unusable(&kinds, &duel_lab::armed_units(), "the composition search")?;
             let kinds = if kinds.is_empty() {
                 duel_lab::armed_units()
             } else {

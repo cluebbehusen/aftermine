@@ -24,7 +24,7 @@ const SETTLED: f64 = 0.02;
 const ROUND_LIMIT: usize = 40;
 /// Fictitious-play iterations when solving the pool's blend.
 const SOLVER_ITERATIONS: usize = 20_000;
-/// Share below which a mix is left out of the reported blend.
+/// Share below which a blend member is summarized rather than printed.
 const REPORTED_WEIGHT: f64 = 0.01;
 
 /// One to three unit kinds splitting a budget evenly.
@@ -59,19 +59,41 @@ impl Mix {
         mixes
     }
 
-    /// The army this mix fields at a budget: each kind gets an even share,
-    /// rounded to the nearest whole body and at least one.
-    pub fn force(&self, budget: u32) -> Force {
-        let share = budget / u32::try_from(self.0.len()).expect("mix sizes are small");
-        Force::Army(
-            self.0
-                .iter()
-                .map(|&kind| {
-                    let cost = kind.stats().cost.max(1);
-                    (kind, ((share + cost / 2) / cost).max(1))
-                })
-                .collect(),
-        )
+    /// The army this mix fields for about `target` scrap: one body of each
+    /// kind, then another of whichever kind has the least scrap committed, for
+    /// as long as it brings the total closer to the target. Rounding each kind
+    /// to its share separately would let coarse mixes stray far from the
+    /// budget.
+    pub fn force(&self, target: u32) -> Force {
+        let costs: Vec<u32> = self.0.iter().map(|kind| kind.stats().cost.max(1)).collect();
+        let mut counts = vec![1u32; costs.len()];
+        let mut total: u32 = costs.iter().sum();
+        loop {
+            let next = (0..costs.len())
+                .min_by_key(|&i| (counts[i] * costs[i], i))
+                .expect("a mix has a kind");
+            let grown = total + costs[next];
+            if grown.abs_diff(target) >= total.abs_diff(target) {
+                break;
+            }
+            counts[next] += 1;
+            total = grown;
+        }
+        Force::Army(self.0.iter().copied().zip(counts).collect())
+    }
+
+    /// Size a pairing to equal spend: the mix with the costlier body fills the
+    /// budget first, then the other matches what it actually spent.
+    pub fn matched(a: &Self, b: &Self, budget: u32) -> (Force, Force) {
+        let coarsest = |mix: &Self| mix.0.iter().map(|kind| kind.stats().cost).max();
+        if coarsest(a) >= coarsest(b) {
+            let a = a.force(budget);
+            let b = b.force(a.spent());
+            (a, b)
+        } else {
+            let b = b.force(budget);
+            (a.force(b.spent()), b)
+        }
     }
 
     /// The kinds joined with `+`.
@@ -257,13 +279,14 @@ pub struct Outcome {
     pub rounds: usize,
     /// Payoffs evaluated.
     pub payoffs: usize,
-    /// The blend no mix beats, heaviest first.
+    /// The blend no mix beats, heaviest first, every member with any weight.
     pub blend: Vec<Blended>,
     /// The strongest mix against the blend when the search stopped.
     pub challenger: Mix,
     /// Its gain against the blend; at or below 0.02 the blend holds.
     pub challenger_gain: f64,
-    /// Whether one mix alone holds: a dominant composition.
+    /// Whether no mix beats the heaviest member on its own: a dominant
+    /// composition.
     pub dominant: bool,
 }
 
@@ -277,21 +300,21 @@ pub fn run(
 ) -> Result<Outcome> {
     let mixes = Mix::all(kinds, max_kinds, budget);
     anyhow::ensure!(!mixes.is_empty(), "no mix fits a budget of {budget}");
-    let forces: Vec<Force> = mixes.iter().map(|mix| mix.force(budget)).collect();
     let singles: Vec<usize> = (0..mixes.len())
         .filter(|&i| mixes[i].0.len() == 1)
         .collect();
     let initial = if singles.is_empty() { vec![0] } else { singles };
     let settled = search(mixes.len(), &initial, |pairs| {
         crate::pool::fan_out_bounded(pairs, jobs, |&(i, j)| {
-            payoff(&forces[i], &forces[j], tick_limit)
+            let (a, b) = Mix::matched(&mixes[i], &mixes[j], budget);
+            payoff(&a, &b, tick_limit)
         })
     })?;
     let mut blend: Vec<Blended> = settled
         .pool
         .iter()
         .zip(&settled.weights)
-        .filter(|&(_, &w)| w >= REPORTED_WEIGHT)
+        .filter(|&(_, &w)| w > 0.0)
         .map(|(&m, &weight)| {
             let (counter, counter_score) = (0..mixes.len())
                 .filter_map(|c| settled.table[c][m].map(|v| (c, v)))
@@ -306,7 +329,7 @@ pub fn run(
         })
         .collect();
     blend.sort_by(|x, y| y.weight.total_cmp(&x.weight));
-    let dominant = blend.len() == 1 && settled.challenger.1 <= SETTLED;
+    let dominant = dominant(&blend);
     Ok(Outcome {
         budget,
         mixes: mixes.len(),
@@ -319,6 +342,15 @@ pub fn run(
     })
 }
 
+/// Whether no mix beats the blend's heaviest member on its own. The blend's
+/// small partners never count toward it: a heavy mix they prop up is not a
+/// composition that holds alone.
+fn dominant(blend: &[Blended]) -> bool {
+    blend
+        .first()
+        .is_some_and(|top| top.counter_score <= SETTLED)
+}
+
 /// The human-readable summary of every budget searched.
 pub fn render(outcomes: &[Outcome]) -> String {
     let mut out = String::new();
@@ -328,8 +360,13 @@ pub fn render(outcomes: &[Outcome]) -> String {
             "composition search at {} scrap: {} mixes, {} rounds, {} payoffs ({} legs each)",
             o.budget, o.mixes, o.rounds, o.payoffs, LEGS_PER_PAYOFF
         );
+        let major = o.blend.iter().filter(|b| b.weight >= REPORTED_WEIGHT);
+        let minor = o.blend.len() - major.clone().count();
         let verdict = if o.dominant {
-            "one mix holds alone: a dominant composition".to_string()
+            format!(
+                "nothing beats {} alone: a dominant composition",
+                o.blend[0].mix.name()
+            )
         } else if o.challenger_gain <= SETTLED {
             format!("{} mixes hold together; none dominates", o.blend.len())
         } else {
@@ -341,7 +378,7 @@ pub fn render(outcomes: &[Outcome]) -> String {
             )
         };
         let _ = writeln!(out, "  {verdict}");
-        for b in &o.blend {
+        for b in major {
             let _ = writeln!(
                 out,
                 "  {:>4.0}%  {}   (best counter: {} {:+.2})",
@@ -350,6 +387,9 @@ pub fn render(outcomes: &[Outcome]) -> String {
                 b.counter.name(),
                 b.counter_score
             );
+        }
+        if minor > 0 {
+            let _ = writeln!(out, "  plus {minor} more under 1%");
         }
         let _ = writeln!(
             out,

@@ -25,8 +25,21 @@ fn mixes_split_the_budget_and_leave_out_kinds_a_share_cannot_buy() {
     let Force::Army(army) = Mix(vec![Lancer, Sentinel]).force(1_800) else {
         panic!("a mix fields an army");
     };
-    // 900 apiece: 8.2 Lancers round to 8, 10 Sentinels exactly.
-    assert_eq!(army, vec![(Lancer, 8), (Sentinel, 10)]);
+    // Bodies fill until another would overshoot more than it closes, with
+    // the kinds' scrap kept within one body of each other.
+    let spends: Vec<u32> = army.iter().map(|&(k, n)| k.stats().cost * n).collect();
+    let total: u32 = spends.iter().sum();
+    assert!(total.abs_diff(1_800) <= 55, "{army:?}");
+    assert!(spends[0].abs_diff(spends[1]) <= 110, "{army:?}");
+}
+
+#[test]
+fn a_pairing_fields_equal_spend_even_for_coarse_mixes() {
+    use UnitKind::{Avalanche, Condor};
+    // Rounding each kind alone fields three Condors (2,100) against one
+    // Condor and one Avalanche (1,400).
+    let (a, b) = Mix::matched(&Mix(vec![Condor]), &Mix(vec![Condor, Avalanche]), 1_800);
+    assert_eq!(a.spent(), b.spent(), "{a:?} vs {b:?}");
 }
 
 #[test]
@@ -109,4 +122,22 @@ fn a_small_search_reports_its_blend() {
         "{table}"
     );
     serde_json::to_string(&outcome).expect("the outcome serializes");
+}
+
+#[test]
+fn a_heavy_mix_propped_up_by_small_partners_is_not_dominant() {
+    use UnitKind::{Breaker, Lancer, Talon};
+    let member = |kinds: Vec<UnitKind>, weight, counter_score| Blended {
+        mix: Mix(kinds),
+        weight,
+        counter: Mix(vec![Lancer]),
+        counter_score,
+    };
+    // Lancers beat the Breaker alone; only the 1% Talon partner covers it.
+    let propped = [
+        member(vec![Breaker], 0.99, 0.3),
+        member(vec![Talon], 0.01, 0.5),
+    ];
+    assert!(!dominant(&propped));
+    assert!(dominant(&[member(vec![Breaker], 1.0, 0.0)]));
 }
