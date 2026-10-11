@@ -999,3 +999,24 @@ fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
         assert_eq!(end, End::HostLost, "{line}");
     }
 }
+
+#[test]
+fn time_the_app_slept_does_not_count_against_the_rejoin_window() {
+    let home = Home {
+        address: "127.0.0.1:9".to_owned(),
+        commit: COMMIT.to_owned(),
+        token: Token::new(1),
+        host: "Host".to_owned(),
+        seat: CLIENT,
+    };
+    let mut rejoin = Rejoin::start(home, Duration::ZERO);
+    assert!(matches!(rejoin.poll(Duration::ZERO), RejoinPoll::Trying));
+    // A minute asleep, then the window runs as frames do.
+    let mut now = Duration::from_secs(60);
+    assert!(matches!(rejoin.poll(now), RejoinPoll::Trying));
+    while matches!(rejoin.poll(now), RejoinPoll::Trying) {
+        now += STEP;
+        assert!(now < Duration::from_secs(120), "the window never closed");
+    }
+    assert!(now >= Duration::from_secs(60) + REJOIN_WINDOW);
+}

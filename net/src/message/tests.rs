@@ -280,6 +280,13 @@ fn wire_shape_is_stable() {
         .encode(),
         r#"{"type":"gone","reason":"over"}"#
     );
+    assert_eq!(
+        LobbyMessage::Gone {
+            reason: GoneReason::TooLarge
+        }
+        .encode(),
+        r#"{"type":"gone","reason":"too_large"}"#
+    );
     assert_eq!(LobbyMessage::Underway.encode(), r#"{"type":"underway"}"#);
     assert_eq!(
         LobbyMessage::Resume {

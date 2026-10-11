@@ -216,8 +216,9 @@ impl Visit {
             .last_poll
             .map_or(Duration::ZERO, |last| now.saturating_sub(last));
         self.last_poll = Some(now);
+        // A line received since the gap already reset the clock.
         if gap > SUSPEND_GAP {
-            self.heard += gap;
+            self.heard = (self.heard + gap).min(now);
         }
         if now.saturating_sub(self.heard) >= SILENCE_TIMEOUT {
             return Err(VisitEnd::Silent);

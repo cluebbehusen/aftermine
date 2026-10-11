@@ -128,6 +128,8 @@ struct App {
     net: Option<crate::netplay::Link>,
     /// A departed host's connections, still flushing the deciding batches.
     lingering: Option<crate::netplay::Lingering>,
+    /// The LAN match waited for a lost player as of the last frame.
+    net_waiting: bool,
     /// The ticket of the LAN seat this client plays, kept on disk.
     ticket: crate::rejoin_ticket::Keeper,
     /// Home asking the ticket's host whether the seat still waits, and when
@@ -345,6 +347,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         soft_keyboard: None,
         net: None,
         lingering: None,
+        net_waiting: false,
         ticket: crate::rejoin_ticket::Keeper::new(crate::paths::rejoin_ticket()),
         probe: None,
         next_probe: std::time::Duration::ZERO,

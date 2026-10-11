@@ -150,4 +150,16 @@ fn a_silent_host_ends_the_visit_but_its_own_pause_does_not() {
         now += secs(1);
     }
     assert_eq!(visit.poll(now), Err(VisitEnd::Silent));
+
+    // A line received in the pump that sees the gap is not moved into the
+    // future: silence from it ends the visit on time.
+    let mut visit = Visit::rejoin("abc", Token::new(5), secs(0));
+    visit.poll(secs(0)).unwrap();
+    visit
+        .receive(&LobbyMessage::hello("abc").encode(), secs(30))
+        .unwrap();
+    visit.poll(secs(30)).unwrap();
+    let silent =
+        (31..=30 + 2 * SILENCE_TIMEOUT.as_secs()).find(|&second| visit.poll(secs(second)).is_err());
+    assert_eq!(silent, Some(30 + SILENCE_TIMEOUT.as_secs()));
 }
