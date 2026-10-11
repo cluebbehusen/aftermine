@@ -84,6 +84,20 @@ impl Connection {
         Self::spawn(TcpStream::connect_timeout(address, timeout)?)
     }
 
+    /// Connects to the first of `address`'s resolved addresses that answers,
+    /// giving each up to `timeout`: a host name can resolve to an address
+    /// the host does not listen on before one it does.
+    pub fn connect_any(address: impl ToSocketAddrs, timeout: Duration) -> io::Result<Self> {
+        let mut failed = io::Error::other("the address names no host");
+        for target in address.to_socket_addrs()? {
+            match TcpStream::connect_timeout(&target, timeout) {
+                Ok(socket) => return Self::spawn(socket),
+                Err(error) => failed = error,
+            }
+        }
+        Err(failed)
+    }
+
     fn spawn(socket: TcpStream) -> io::Result<Self> {
         socket.set_nodelay(true)?;
         socket.set_write_timeout(Some(WRITE_TIMEOUT))?;

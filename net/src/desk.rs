@@ -50,12 +50,14 @@ enum Stage {
     Greeting,
     /// Waiting to hear what the visitor wants.
     Asking,
-    /// Rejoining `seat`; `hash` is the snapshot's, once it went out.
+    /// Rejoining `seat`; `hash` is the snapshot's, once it went out. The
+    /// visitor has `allowed` from `since` to restore it.
     Restoring {
         seat: PlayerId,
         attempt: u32,
         hash: Option<u64>,
         since: Duration,
+        allowed: Duration,
     },
 }
 
@@ -179,6 +181,7 @@ impl Desk {
                         attempt: self.attempt,
                         hash: None,
                         since: now,
+                        allowed: START_TIMEOUT,
                     };
                     self.events.push(DeskEvent::Snapshot { visitor, seat });
                 }
@@ -235,12 +238,15 @@ impl Desk {
             attempt,
             hash: expected,
             since,
+            allowed,
         } = &mut self.visitors[index].stage
         else {
             return;
         };
         *expected = Some(hash);
         *since = now;
+        // A large snapshot on a slow link takes a while to arrive.
+        *allowed = START_TIMEOUT + snapshot::transfer_time(bytes.len() as u64);
         let (seat, attempt) = (*seat, *attempt);
         let parts = snapshot::parts(bytes);
         let resume = LobbyMessage::Resume {
@@ -268,8 +274,9 @@ impl Desk {
 
     /// Applies timeouts, heartbeats visitors, and returns what happened.
     /// A visitor that has not asked after [`GREETING_TIMEOUT`], or not
-    /// restored the match [`START_TIMEOUT`] after its snapshot, is turned
-    /// away, as is one whose seat the host dropped meanwhile.
+    /// restored the match [`START_TIMEOUT`] after its snapshot, plus the
+    /// time the snapshot takes to cross a slow link, is turned away, as is
+    /// one whose seat the host dropped meanwhile.
     pub fn poll(&mut self, session: &mut HostSession, now: Duration) -> Vec<DeskEvent> {
         let mut index = 0;
         while index < self.visitors.len() {
@@ -278,9 +285,12 @@ impl Desk {
                 Stage::Greeting | Stage::Asking => {
                     now.saturating_sub(visitor.connected) >= GREETING_TIMEOUT
                 }
-                Stage::Restoring { seat, since, .. } => {
-                    !session.is_rejoining(seat) || now.saturating_sub(since) >= START_TIMEOUT
-                }
+                Stage::Restoring {
+                    seat,
+                    since,
+                    allowed,
+                    ..
+                } => !session.is_rejoining(seat) || now.saturating_sub(since) >= allowed,
             };
             if expired {
                 if let Stage::Restoring { seat, .. } = visitor.stage

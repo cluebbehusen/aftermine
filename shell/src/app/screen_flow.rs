@@ -108,6 +108,7 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
         app.lingering = link.leave(&app.game, app.clock.elapsed());
         // Leaving surrenders the seat; there is nothing to take back.
         app.ticket.clear();
+        app.game.presentation.net_notice = None;
     }
 }
 

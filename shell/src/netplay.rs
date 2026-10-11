@@ -18,7 +18,7 @@ use oxide_net::{
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -362,13 +362,7 @@ fn call(
 /// Connects to `address` off the frame loop.
 fn connect(address: &str) -> JoinHandle<io::Result<Connection>> {
     let address = address.to_owned();
-    thread::spawn(move || {
-        let target = address
-            .to_socket_addrs()?
-            .next()
-            .ok_or_else(|| io::Error::other("the address names no host"))?;
-        Connection::connect_timeout(&target, CONNECT_TIMEOUT)
-    })
+    thread::spawn(move || Connection::connect_any(address.as_str(), CONNECT_TIMEOUT))
 }
 
 /// Frame timing and the last time the match advanced.
@@ -574,6 +568,9 @@ impl HostLink {
     fn pump(&mut self, game: &mut Game, now: Duration) -> Option<End> {
         let dt = self.clock.step(now);
         if let Some((since, end)) = self.closing {
+            // A client that lost its connection near the end still asks
+            // after its seat: it hears the match is over.
+            self.serve_visitors(game, now);
             self.peers
                 .retain(|(_, connection)| drain(connection).is_ok());
             let done = self.peers.is_empty() || now.saturating_sub(since) >= CLOSE_GRACE;
@@ -694,12 +691,20 @@ impl HostLink {
                     let snapshot = game
                         .world_snapshot()
                         .and_then(|snapshot| snapshot::encode(&snapshot));
-                    if let Ok(bytes) = snapshot
-                        && game.state.current_tick() == self.session.tick()
-                    {
-                        let tick = self.session.tick();
-                        self.desk
-                            .send_snapshot(visitor, tick, game.state.hash(), &bytes, now);
+                    match snapshot {
+                        Ok(bytes) if game.state.current_tick() == self.session.tick() => {
+                            let tick = self.session.tick();
+                            self.desk
+                                .send_snapshot(visitor, tick, game.state.hash(), &bytes, now);
+                        }
+                        Ok(_) => {}
+                        // A world that cannot travel cannot be rejoined:
+                        // turn the visitor away rather than let it retry.
+                        Err(error) => {
+                            eprintln!("cannot send a rejoin snapshot: {error:#}");
+                            self.desk.disconnected(&mut self.session, visitor);
+                            done.push(visitor);
+                        }
                     }
                 }
                 DeskEvent::Admitted { visitor, seat } => admitted.push((visitor, seat)),
@@ -745,7 +750,12 @@ impl ClientLink {
                     game.presentation.net_notice = Some("Reconnecting to the host...".to_owned());
                     return None;
                 }
-                RejoinPoll::Back(restored, connection) => {
+                RejoinPoll::Back(mut restored, connection) => {
+                    // Orders given while reconnecting still stand: the match
+                    // waited for this seat.
+                    for order in game.take_outbox() {
+                        restored.issue(order);
+                    }
                     let tick = restored.state.current_tick();
                     self.session = ClientSession::at(tick, now);
                     self.connection = Some(connection);
@@ -777,7 +787,17 @@ impl ClientLink {
                 }
             }
         }
-        for (seat, config) in self.session.take_replaced() {
+        // A host naming a seat the match does not have broke the protocol.
+        let roster = game.scenario.players.len();
+        let replaced = self.session.take_replaced();
+        let named = self.session.seats().0.iter().map(|notice| notice.seat);
+        if named
+            .chain(replaced.iter().map(|&(seat, _)| seat))
+            .any(|seat| usize::from(seat.0) >= roster)
+        {
+            return Some(self.end(ClientEnd::Protocol));
+        }
+        for (seat, config) in replaced {
             game.mirror_bot(seat, config);
             let name = &game.scenario.players[usize::from(seat.0)].name;
             game.presentation
@@ -787,12 +807,24 @@ impl ClientLink {
             self.session.send(order);
         }
 
-        let keep = if self.closed { 0 } else { CLIENT_BUFFER };
+        // A closed connection or the host's last word leaves nothing to
+        // buffer against: run every batch that arrived.
+        let keep = if self.closed || self.session.parting() {
+            0
+        } else {
+            CLIENT_BUFFER
+        };
         game.client_frame(&mut self.session, dt, keep);
 
         if self.closed {
             if self.session.backlog() > 0 {
                 return None;
+            }
+            // The host said why it closed: that is the end, not a loss.
+            if self.session.parting()
+                && let Err(end) = self.session.poll(now)
+            {
+                return Some(self.end(end));
             }
             return self.lost(ClientEnd::HostSilent, game, now);
         }
