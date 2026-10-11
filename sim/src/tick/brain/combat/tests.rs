@@ -13,9 +13,7 @@ fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
         return None;
     }
     let (pos, me) = (unit.pos, unit.player);
-    let acquisition_range = stats.aggro_range;
-    let needs_shared_sight = acquisition_range > Fx::from_num(stats.vision);
-    let aggro_sq = acquisition_range * acquisition_range;
+    let aggro_sq = stats.aggro_range * stats.aggro_range;
     let unit_target = state
         .units
         .iter()
@@ -23,7 +21,7 @@ fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
             state.hostile(me, u.player)
                 && u.hp > 0
                 && stats.can_target(u.domain())
-                && (!needs_shared_sight || state.can_see(me, u.tile()))
+                && state.can_see(me, u.tile())
         })
         .map(|u| (pos.dist_sq(u.pos), u.id))
         .filter(|(d, uid)| {
@@ -50,7 +48,7 @@ fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
         .buildings
         .iter()
         .filter(|b| state.hostile(me, b.player) && b.hp > 0)
-        .filter(|b| !needs_shared_sight || b.tiles().any(|tile| state.can_see(me, tile)))
+        .filter(|b| b.tiles().any(|tile| state.can_see(me, tile)))
         .map(|b| (pos.dist_sq(b.closest_point_to(pos)), b.id))
         .filter(|(d, _)| {
             *d <= aggro_sq
@@ -109,20 +107,33 @@ fn boundary_duel() -> State {
     .expect("boundary duel builds")
 }
 
+/// The acquisition window reaches past the map's first and last rows. A
+/// victim on a border row is picked; one beyond it, which the coordinate
+/// envelope accepts, stands on ground nobody can see and never is.
 #[test]
-fn indexed_acquisition_keeps_targets_beyond_north_and_south_rows() {
+fn indexed_acquisition_matches_the_scan_at_north_and_south_rows() {
     let mut state = boundary_duel();
     let height = state.map.height();
     let attacker = state.units[0].id;
     let victim = state.units[1].id;
     let mut index = UnitIndex::new();
 
-    for (inside, outside) in [
-        (TilePos::new(5, 0), TilePos::new(5, -1)),
-        (TilePos::new(5, height - 1), TilePos::new(5, height)),
+    for (attacker_tile, victim_tile, expected) in [
+        (
+            TilePos::new(5, 1),
+            TilePos::new(5, 0),
+            Some(Target::Unit(victim)),
+        ),
+        (
+            TilePos::new(5, height - 2),
+            TilePos::new(5, height - 1),
+            Some(Target::Unit(victim)),
+        ),
+        (TilePos::new(5, 0), TilePos::new(5, -1), None),
+        (TilePos::new(5, height - 1), TilePos::new(5, height), None),
     ] {
-        state.units[0].pos = inside.center();
-        state.units[1].pos = outside.center();
+        state.units[0].pos = attacker_tile.center();
+        state.units[1].pos = victim_tile.center();
         state.refresh_vision();
         state
             .validate_invariants()
@@ -131,7 +142,7 @@ fn indexed_acquisition_keeps_targets_beyond_north_and_south_rows() {
         index.survey(&state);
 
         let indexed = acquire_target(&state, &index, attacker);
-        assert_eq!(indexed, Some(Target::Unit(victim)));
+        assert_eq!(indexed, expected);
         assert_eq!(indexed, linear_acquire(&state, attacker));
     }
 }
@@ -482,5 +493,86 @@ fn predictive_splash_aim_uses_the_near_edge_of_the_footprint() {
         aim.dist(predicted),
         radius,
         tolerance
+    );
+}
+
+/// Range is measured between positions while sight covers whole tiles, so
+/// a victim on the tile just past a Breaker's sight disc can sit well
+/// inside its equal aggro range. It must never be picked: the attack order
+/// would drop it the next tick, and the hunt would re-acquire it forever.
+#[test]
+fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
+    let width = 30usize;
+    let height = 12usize;
+    let map = (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| match (x, y) {
+                    (1, 10) => '1',
+                    (28, 1) => '2',
+                    _ => '.',
+                })
+                .collect::<String>()
+        })
+        .collect();
+    let mut state = Scenario {
+        mode: ScenarioMode::Match,
+        name: "unseen-edge".into(),
+        map,
+        players: vec![seat("West"), seat("East")],
+        units: vec![
+            UnitSpec {
+                player: 0,
+                kind: UnitKind::Breaker,
+                x: 14,
+                y: 6,
+            },
+            UnitSpec {
+                player: 1,
+                kind: UnitKind::Sentinel,
+                x: 20,
+                y: 7,
+            },
+        ],
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .expect("unseen-edge builds");
+    let breaker = state.units[0].id;
+    let me = state.units[0].player;
+    // Tile offset (6, 1) lies outside the radius-6 sight disc, yet the
+    // positions are only about 5.2 tiles apart.
+    state.units[0].pos = chassis::fx::Vec2Fx::new(Fx::lit("14.9"), Fx::lit("6.9"));
+    state.units[1].pos = chassis::fx::Vec2Fx::new(Fx::lit("20.1"), Fx::lit("7.1"));
+    state.refresh_vision();
+    let stats = UnitKind::Breaker.stats();
+    assert!(
+        state.units[0].pos.dist_sq(state.units[1].pos) <= stats.aggro_range * stats.aggro_range
+    );
+    assert!(!state.can_see(me, state.units[1].tile()));
+
+    let mut index = UnitIndex::new();
+    index.rebuild(&state.units);
+    index.survey(&state);
+    assert_eq!(acquire_target(&state, &index, breaker), None);
+    assert_eq!(linear_acquire(&state, breaker), None);
+
+    let start = state.units[0].pos;
+    state.tick(&[PlayerCommand {
+        player: me,
+        command: Command::Hunt {
+            units: vec![breaker],
+            goal: TilePos::new(27, 10),
+            queue: false,
+        },
+    }]);
+    for _ in 0..100 {
+        state.tick(&[]);
+    }
+    let end = state.unit(breaker).expect("the Breaker lives").pos;
+    assert!(
+        start.dist_sq(end) > Fx::from_num(1),
+        "the hunt never left its tile"
     );
 }

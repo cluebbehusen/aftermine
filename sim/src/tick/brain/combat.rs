@@ -782,11 +782,12 @@ pub(super) fn acquire_target_from(
     }
     let me = unit.player;
     let acquisition_range = stats.aggro_range;
-    // Acquisition normally rides on the unit's own eyes because its vision
-    // covers its aggro range. A long gun whose acquisition horizon outruns
-    // those eyes, or a pick judged from somewhere else, must instead lean on
-    // current team sight or it becomes an oracle.
-    let needs_sight = acquisition_range > Fx::from_num(stats.vision) || pos != unit.pos;
+    // Every pick needs current team sight of the victim, even within the
+    // unit's own vision radius: range is measured between positions while
+    // sight covers whole tiles around the unit's tile, so a victim just past
+    // the sight disc's edge can still be in range. An attack order cannot
+    // keep an unseen victim, and the unit would re-acquire it every tick
+    // without ever moving or firing.
     let aggro_sq = acquisition_range * acquisition_range;
 
     let home = TilePos::containing(pos);
@@ -805,7 +806,7 @@ pub(super) fn acquire_target_from(
                 if !state.hostile(me, u.player)
                     || u.hp == 0
                     || !stats.can_target(u.domain())
-                    || (needs_sight && !state.can_see(me, u.tile()))
+                    || !state.can_see(me, u.tile())
                 {
                     continue;
                 }
@@ -867,7 +868,7 @@ pub(super) fn acquire_target_from(
         // An undetected buried charge must never be auto-attacked: that
         // would leak its existence to the attacker's owner.
         .filter(|(_, b)| state.building_apparent(me, b))
-        .filter(|(_, b)| !needs_sight || b.tiles().any(|tile| state.can_see(me, tile)))
+        .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
         .map(|(d, b)| (d, b.id))
         .min()
         .map(|(_, bid)| Target::Building(bid))
