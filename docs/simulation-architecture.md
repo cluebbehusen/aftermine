@@ -642,13 +642,13 @@ Deserialization bounds the deployment counter and rejects a braced motor on
 kinds without a brace; a transported rider keeps no motor at all.
 
 `AttackTarget` resolves through team knowledge to a visible entity, remembered
-building footprint, or mobile contact. Explicit attacks approach weapon range
-without requiring sight. Building attacks end when observation clears the
-memory. An automatic engagement also ends rather than fire on a building out of
-current sight: one destroyed out of sight leaves its memory standing, and only
-an explicit order may shell that memory. Contact attacks end when sight and
-radar are both lost, or identification reveals an incompatible domain. Contact
-loss also clears defense focus and advances queued orders.
+or public building footprint, or mobile contact. Explicit attacks approach
+weapon range without requiring sight. Building attacks end when observation
+clears the memory. An automatic engagement also ends rather than fire on a
+building out of current sight: one destroyed out of sight leaves its memory
+standing, and only an explicit order may shell that memory. Contact attacks end
+when sight and radar are both lost, or identification reveals an incompatible
+domain. Contact loss also clears defense focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Automatic radar fire may stop Idle, Hunt, or
@@ -703,6 +703,12 @@ permission to assign or command a passenger. Allied and enemy manifests remain
 opaque. The debug protocol's `FogView` projects the same knowledge for players
 and agents; a parity test in `protocol/src/view/tests.rs` keeps the two in
 agreement.
+
+Public buildings are the one hostile fact every seat holds regardless of fog: a
+Deep Bore's owner, kind, tier and footprint, from the moment its upgrade starts
+until it falls, never its condition. Both projections derive them from current
+state, so they add no memory. A public building is a valid attack target without
+sight or a ghost, and when one falls every seat forgets its ghost.
 
 `oxide-opponent` also builds one immutable `MapModel` per match from the
 authored `Scenario`, through the same `Scenario::parse_map_and_anchors` that

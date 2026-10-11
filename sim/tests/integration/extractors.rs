@@ -1083,3 +1083,178 @@ fn a_deep_bore_triples_the_yield_and_support_still_does_not_stack() {
         "a second Foundry adds nothing"
     );
 }
+
+const BASTION: TilePos = TilePos { x: 20, y: 14 };
+
+/// Seat one's Bastion within range of the support frame but beyond its own
+/// sight, and seat zero's Extractor ready to refit.
+fn public_arena() -> Scenario {
+    support_arena(
+        350,
+        vec![],
+        vec![
+            building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY),
+            crucible(),
+            building(1, BuildingKind::Bastion, BASTION),
+        ],
+    )
+}
+
+fn bore_target() -> oxide_sim::RememberedBuilding {
+    oxide_sim::RememberedBuilding {
+        owner: PlayerId(0),
+        building_kind: BuildingKind::Extractor,
+        anchor: SUPPORT_FRAME,
+    }
+}
+
+fn focus_on_the_bore(state: &mut State) -> oxide_sim::TickReport {
+    let bastion = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Bastion)
+        .unwrap()
+        .id;
+    state.tick(&[cmd(
+        1,
+        Command::FocusFire {
+            buildings: vec![bastion],
+            target: oxide_sim::AttackTarget::RememberedBuilding(bore_target()),
+        },
+    )])
+}
+
+#[test]
+fn every_seat_knows_a_deep_bore_from_the_moment_its_refit_starts() {
+    let mut state = public_arena().build().unwrap();
+    let extractor = extractor_id(&state);
+    let unseen = |state: &State| {
+        (0..2).all(|dy| {
+            (0..2).all(|dx| {
+                !state
+                    .vision(PlayerId(1))
+                    .visible(SUPPORT_FRAME.offset(dx, dy))
+            })
+        })
+    };
+    assert!(unseen(&state), "premise: seat one cannot see the frame");
+    assert!(
+        oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(1))
+            .public_buildings
+            .is_empty()
+    );
+    let refused = focus_on_the_bore(&mut state);
+    assert!(
+        refused
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "an unseen, unremembered Extractor is no target"
+    );
+
+    state.tick(&[cmd(
+        0,
+        Command::UpgradeBuilding {
+            building: extractor,
+        },
+    )]);
+    assert!(unseen(&state));
+    let known = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(1));
+    assert_eq!(
+        known.public_buildings,
+        vec![oxide_sim::PublicBuilding {
+            owner: PlayerId(0),
+            kind: BuildingKind::Extractor,
+            tier: 1,
+            anchor: SUPPORT_FRAME,
+        }],
+        "known mid-refit, with no sight"
+    );
+    assert!(
+        oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
+            .public_buildings
+            .is_empty(),
+        "a seat's own Deep Bore is already a full row"
+    );
+    assert!(state.extractor_frame_claim_known(PlayerId(1), SUPPORT_FRAME));
+    let accepted = focus_on_the_bore(&mut state);
+    assert!(
+        !accepted
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "a public Deep Bore is a target without a ghost"
+    );
+}
+
+#[test]
+fn a_fallen_deep_bore_is_forgotten_everywhere_but_an_extractor_ghost_stays() {
+    for tier in [0u8, 1] {
+        let built = public_arena().build().unwrap();
+        let mut value = serde_json::to_value(&built).unwrap();
+        let extractor = extractor_id(&built);
+        for building in value["buildings"].as_array_mut().unwrap() {
+            if building["id"] == serde_json::json!(extractor) {
+                building["tier"] = serde_json::json!(tier);
+            }
+        }
+        let ghost = oxide_sim::GhostBuilding {
+            kind: BuildingKind::Extractor,
+            owner: PlayerId(0),
+            anchor: SUPPORT_FRAME,
+            hp: 600,
+            built: true,
+        };
+        value["vision"][1]["ghosts"] = serde_json::json!([ghost]);
+        let mut state: State = serde_json::from_value(value).unwrap();
+        state.validate_invariants().unwrap();
+
+        let report = focus_on_the_bore(&mut state);
+        assert!(
+            !report
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::CommandRejected { .. })),
+            "tier {tier}: the ghost makes it a target"
+        );
+        let mut blind = false;
+        for _ in 0..3_000 {
+            if state.building(extractor).is_none() {
+                break;
+            }
+            let report = state.tick(&[]);
+            blind |= report.events.iter().any(|event| {
+                matches!(
+                    event,
+                    Event::ShellLaunched {
+                        target: None,
+                        player: PlayerId(1),
+                        ..
+                    }
+                )
+            });
+        }
+        assert!(blind, "tier {tier}: the Bastion fires without sight");
+        assert!(
+            state.building(extractor).is_none(),
+            "tier {tier}: premise: the Bastion levels it"
+        );
+        let remembered = state
+            .vision(PlayerId(1))
+            .ghosts()
+            .iter()
+            .any(|ghost| ghost.anchor == SUPPORT_FRAME);
+        assert_eq!(remembered, tier == 0, "tier {tier}");
+        assert_eq!(
+            state
+                .attack_objective(
+                    PlayerId(1),
+                    oxide_sim::AttackTarget::RememberedBuilding(bore_target())
+                )
+                .is_some(),
+            tier == 0,
+            "tier {tier}"
+        );
+        state.validate_invariants().unwrap();
+    }
+}

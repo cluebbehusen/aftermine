@@ -173,8 +173,9 @@ impl State {
     }
 
     /// Whether the player knows a derelict frame is covered by a live or
-    /// remembered claim. Own and allied works are shared facts; a hostile
-    /// claim counts only while apparent and visible or retained as a building ghost.
+    /// remembered claim. Own and allied works and public buildings are shared
+    /// facts; any other hostile claim counts only while apparent and visible
+    /// or retained as a building ghost.
     pub fn extractor_frame_claim_known(&self, player: PlayerId, frame: TilePos) -> bool {
         let vision = self.vision(player);
         self.buildings.iter().any(|building| {
@@ -187,6 +188,7 @@ impl State {
             .ghosts()
             .iter()
             .any(|ghost| ghost.hp > 0 && ghost.anchor == frame)
+            || self.public_buildings().any(|public| public.anchor == frame)
     }
 
     /// Whether `player` may *intend* to build `kind` at `anchor` — the
@@ -197,7 +199,8 @@ impl State {
     /// explored-but-unseen tile is judged ONLY on what the issuer
     /// knows — static terrain (immutable after parse), remembered
     /// scrap (conservative: nodes only shrink), remembered enemy
-    /// buildings, live own/allied buildings (team-internal facts),
+    /// buildings, public buildings (every seat's facts), live own/allied
+    /// buildings (team-internal facts),
     /// and the issuer's own pending [`Order::Found`] claims; a
     /// never-explored tile refuses as [`PlaceRefusal::Fog`], except on an
     /// Extractor frame discovered through any footprint tile: its authored
@@ -296,7 +299,8 @@ impl State {
                 let ghosted = vision
                     .ghosts()
                     .iter()
-                    .any(|g| covers(g.anchor, g.kind.size(), t));
+                    .any(|g| covers(g.anchor, g.kind.size(), t))
+                    || self.public_buildings().any(|public| public.covers(t));
                 let allied_building = self.buildings.iter().any(|b| {
                     self.players[b.player.0 as usize].team == my_team
                         && !released.contains(&b.id)

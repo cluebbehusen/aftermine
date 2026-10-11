@@ -1720,6 +1720,13 @@ impl BuildingKind {
     pub const fn is_stealthy(self) -> bool {
         matches!(self, BuildingKind::ScuttleCharge)
     }
+
+    /// Whether every seat knows where a building of this kind stands at
+    /// `tier`, regardless of fog: the Deep Bore, from the moment its
+    /// upgrade starts.
+    pub const fn is_public(self, tier: u8) -> bool {
+        matches!(self, BuildingKind::Extractor) && tier >= 1
+    }
 }
 
 /// Scrap contained in a freshly parsed node tile.

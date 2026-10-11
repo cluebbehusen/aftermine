@@ -249,6 +249,21 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
                 color,
             );
         }
+        // Public buildings are known facts, not fading memories: a full
+        // seat-colored outline, set apart from the filled ghosts.
+        for public in
+            oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
+        {
+            let (w, h) = public.kind.size();
+            draw_rectangle_lines(
+                rect.x + public.anchor.x as f32 * scale - 1.0,
+                rect.y + public.anchor.y as f32 * scale - 1.0,
+                w as f32 * scale + 2.0,
+                h as f32 * scale + 2.0,
+                2.0,
+                mini_entity_color(game, public.owner),
+            );
+        }
     }
     for building in game.state.buildings() {
         let seen = omniscient

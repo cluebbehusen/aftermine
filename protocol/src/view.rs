@@ -178,7 +178,8 @@ pub struct BuildingView {
 /// [`oxide_sim::Vision`], the same source as the bots' fog-honest
 /// `ObservationData`, so it cannot leak what fog hides: live entities
 /// appear only under current sight, memories carry no more than the seat
-/// last saw, and radar contacts are bare tiles.
+/// last saw, radar contacts are bare tiles, and public buildings carry only
+/// where, what and whose.
 ///
 /// Every debug session builds this through [`FogView::capture`], so live,
 /// playback, and headless answers cannot drift.
@@ -213,6 +214,23 @@ pub struct FogView {
     pub contacts: Vec<[i32; 2]>,
     /// Continuously observed contacts; entity identity appears only in true sight.
     pub contact_tracks: Vec<oxide_sim::vision::ContactTrack>,
+    /// Hostile buildings every seat knows of regardless of fog, such as Deep
+    /// Bores, sorted by (y, x, owner). They carry no condition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub public_buildings: Vec<PublicBuildingView>,
+}
+
+/// A hostile building every seat knows of regardless of fog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicBuildingView {
+    /// Its kind.
+    pub kind: oxide_sim::BuildingKind,
+    /// Its tier.
+    pub tier: u8,
+    /// Its owner index.
+    pub owner: u8,
+    /// Top-left footprint tile `[x, y]`.
+    pub anchor: [i32; 2],
 }
 
 /// An enemy building as one seat remembers it.
@@ -328,6 +346,15 @@ impl FogView {
             wrecks,
             contacts: vision.contacts().iter().map(|t| [t.x, t.y]).collect(),
             contact_tracks: vision.tracks().to_vec(),
+            public_buildings: oxide_sim::observation::hostile_public_buildings(state, player)
+                .into_iter()
+                .map(|public| PublicBuildingView {
+                    kind: public.kind,
+                    tier: public.tier,
+                    owner: public.owner.0,
+                    anchor: [public.anchor.x, public.anchor.y],
+                })
+                .collect(),
         }
     }
 }

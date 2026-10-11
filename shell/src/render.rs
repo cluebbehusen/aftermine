@@ -523,6 +523,7 @@ pub(crate) fn draw_with_performance(
     draw_pings(game);
     draw_range_rings(game, input);
     draw_blips(game);
+    entities::draw_public_buildings(game);
     draw_rally_marker(game);
     draw_breadcrumbs(game, input);
     // Deferred claims are the player's own intent, like breadcrumbs; a

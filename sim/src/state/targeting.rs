@@ -55,15 +55,16 @@ impl State {
                     anchor: b.anchor,
                 }))
             }
-            AttackTarget::RememberedBuilding(memory) => view
-                .ghosts()
-                .iter()
-                .any(|g| {
-                    g.owner == memory.owner
-                        && g.kind == memory.building_kind
-                        && g.anchor == memory.anchor
-                })
-                .then_some(target),
+            AttackTarget::RememberedBuilding(memory) => (view.ghosts().iter().any(|g| {
+                g.owner == memory.owner
+                    && g.kind == memory.building_kind
+                    && g.anchor == memory.anchor
+            }) || (self
+                .hostile(player, memory.owner)
+                && self
+                    .public_buildings()
+                    .any(|public| public.target() == memory)))
+            .then_some(target),
             AttackTarget::Contact(id) => view.track(id).map(|_| target),
         }
     }

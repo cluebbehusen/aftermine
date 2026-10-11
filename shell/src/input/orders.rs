@@ -122,6 +122,17 @@ fn known_hostile_target_at(
             Some(oxide_sim::stats::Domain::Ground),
         ));
     }
+    if let Some(public) =
+        oxide_sim::observation::hostile_public_buildings(&game.state, game.presentation.human)
+            .into_iter()
+            .find(|public| public.covers(tile))
+    {
+        return Some((
+            oxide_sim::AttackTarget::RememberedBuilding(public.target()),
+            world,
+            Some(oxide_sim::stats::Domain::Ground),
+        ));
+    }
     None
 }
 

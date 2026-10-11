@@ -70,7 +70,8 @@ pub enum Target {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ContactId(pub u32);
 
-/// A building footprint known through friendly observation.
+/// A building footprint known through friendly observation, or a public
+/// building every seat knows of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RememberedBuilding {

@@ -210,6 +210,7 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
     for id in dead_charges {
         crate::vision::forget_observed_building(state, id, false);
     }
+    crate::vision::forget_fallen_public_buildings(state);
     aircraft_crashes::schedule(state);
     let mut deposits: Vec<(TilePos, u32)> = Vec::new();
     for unit in state.units.iter().filter(|u| u.hp == 0) {
