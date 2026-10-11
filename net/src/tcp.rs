@@ -11,7 +11,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// A blocked write gives up after this long and closes the connection.
-const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Received lines waiting for the game loop. When they fill up, the reader
 /// stops reading and TCP pushes back on the peer, so a small queue loses
