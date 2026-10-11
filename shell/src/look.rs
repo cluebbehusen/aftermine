@@ -72,8 +72,6 @@ pub(crate) enum WorkerTool {
     Drum,
     /// The Scuttler's shears.
     Shears,
-    /// The Tender's welding arm.
-    Welder,
 }
 
 /// Shadow and lift of an airframe, in tiles at unit zoom.
@@ -109,7 +107,6 @@ pub(crate) enum MarkerRole {
     Siege,
     AntiAir,
     Scout,
-    Support,
     Transport,
     Demolition,
 }
@@ -292,13 +289,6 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             ],
             rig: true,
             weapon: Some(weapon(SoundKind::WardenFire, heavy, 0.36 * HEAVY_SCALE)),
-            ..plain
-        },
-        UnitKind::Tender => UnitLook {
-            gait: Gait::Treads,
-            belts: &[[20., 52., 33., 108.], [95., 52., 108., 108.]],
-            tool: Some(WorkerTool::Welder),
-            marker: M::Support,
             ..plain
         },
         UnitKind::Excavator => UnitLook {

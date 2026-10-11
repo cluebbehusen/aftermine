@@ -444,6 +444,15 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                         defer,
                     }
                 }
+                Command::RepairUnit {
+                    units: sent,
+                    target,
+                    queue,
+                } => Command::RepairUnit {
+                    units: units(sent),
+                    target: units(vec![target])[0],
+                    queue,
+                },
                 Command::Train { building, kind } => {
                     let west = foundries(state, PlayerId(0));
                     let index = west.iter().position(|id| *id == building).unwrap();

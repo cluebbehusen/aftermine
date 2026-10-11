@@ -42,7 +42,7 @@ const DEFENSES: [BuildingKind; 3] = [
     BuildingKind::Bastion,
 ];
 
-/// The role a unit fills. Harvesters, raiders, support, scouts and transports
+/// The role a unit fills. Harvesters, raiders, scouts and transports
 /// fill none here. Every unit kind is listed, so a new one must be placed
 /// before the bot can field it.
 pub(crate) fn role(kind: UnitKind) -> Option<Role> {
@@ -55,7 +55,6 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         | UnitKind::Excavator
         | UnitKind::Scuttler
         | UnitKind::Sapper
-        | UnitKind::Tender
         | UnitKind::Kestrel
         | UnitKind::Skyhook => None,
     }

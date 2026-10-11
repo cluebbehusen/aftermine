@@ -90,14 +90,14 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                 f"rig_harvester_body{tag}_cargo{cargo}",
                 workers.harvester(variant, cargo=cargo, body_only=True),
             )
-        for kind in ("excavator", "tender", "scuttler"):
+        for kind in ("excavator", "scuttler"):
             for phase in range(3):
                 suffix = "" if phase == 0 else f"_move{phase}"
                 put(
                     f"rig_{kind}_body{tag}{suffix}",
                     getattr(workers, kind)(variant, move=phase, body_only=True),
                 )
-        for kind in ("excavator", "tender", "scuttler", "sapper"):
+        for kind in ("excavator", "scuttler", "sapper"):
             for suffix, move, action in [
                 ("", 0, 0),
                 ("_move1", 1, 0),

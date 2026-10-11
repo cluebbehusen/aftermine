@@ -1116,7 +1116,6 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     let first = units.iter().find(|u| u.id == subject_id)?;
     let owner = first.player;
     let has_builder = units.iter().any(|u| u.kind.stats().harvest.is_some());
-    let has_welder = units.iter().any(|u| u.kind.stats().welder);
     let has_fighter = units.iter().any(|u| u.kind.stats().can_fight());
     let mut panel = Panel {
         info: info::SelectionInfo::default(),
@@ -1264,9 +1263,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             progress: None,
         });
     }
-    // The torch decides the Weld card, not the harvest kit: the Tender
-    // welds without ever gathering.
-    if has_welder {
+    if has_builder {
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Repair),
             title: "Weld".into(),

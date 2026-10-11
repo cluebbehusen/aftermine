@@ -224,8 +224,8 @@ fn for_owned_units(
     applied
 }
 
-/// [`for_owned_units`] narrowed to the gathering crew — Harvest and
-/// Salvage address machines with cargo gear, and each reports
+/// [`for_owned_units`] narrowed to the workers — Harvest, Salvage and the
+/// Repair verbs address machines with harvest gear, and each reports
 /// `NoValidUnits` when the selection holds none.
 fn for_owned_workers(
     state: &mut State,
@@ -238,28 +238,6 @@ fn for_owned_workers(
         if let Some(unit) = state.unit_mut(id)
             && unit.player == player
             && unit.kind.stats().harvest.is_some()
-        {
-            f(unit);
-            applied += 1;
-        }
-    }
-    applied
-}
-
-/// [`for_owned_units`] narrowed to the welding crew: the Repair verbs
-/// take anyone carrying a torch — harvesters, Excavators, and the
-/// Tender alike.
-fn for_owned_welders(
-    state: &mut State,
-    player: PlayerId,
-    ids: &[UnitId],
-    mut f: impl FnMut(&mut crate::state::Unit),
-) -> usize {
-    let mut applied = 0;
-    for &id in ids {
-        if let Some(unit) = state.unit_mut(id)
-            && unit.player == player
-            && unit.kind.stats().welder
         {
             f(unit);
             applied += 1;
@@ -1004,7 +982,7 @@ fn apply_repair(
         return Err(RejectReason::InvalidTarget);
     }
     let mut landed = 0;
-    let applied = for_owned_welders(state, player, units, |unit| {
+    let applied = for_owned_workers(state, player, units, |unit| {
         if assign(unit, Order::Repair { building }, queue) {
             landed += 1;
         }
@@ -1078,7 +1056,7 @@ fn apply_repair_unit(
     }
     let crew: Vec<UnitId> = units.iter().copied().filter(|&id| id != target).collect();
     let mut landed = 0;
-    let applied = for_owned_welders(state, player, &crew, |unit| {
+    let applied = for_owned_workers(state, player, &crew, |unit| {
         if assign(unit, Order::RepairUnit { unit: target }, queue) {
             landed += 1;
         }

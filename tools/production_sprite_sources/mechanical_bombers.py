@@ -1,9 +1,22 @@
 """The Condor in shared aircraft materials, keeping its flying-wing silhouette."""
 
+from dataclasses import dataclass
+
 from PIL import Image, ImageDraw
 
 from tools import gen_sprites as gen
-from tools.production_sprite_sources.tender_condor_final import PALETTES
+
+
+@dataclass(frozen=True)
+class Palette:
+    base: tuple[int, int, int]
+    dark: tuple[int, int, int]
+
+
+PALETTES = {
+    "base": Palette((176, 75, 52), (105, 43, 33)),
+    "probe": Palette((48, 132, 113), (29, 79, 68)),
+}
 
 BLACK = (11, 11, 15)
 IRON_DEEP = (24, 25, 31)

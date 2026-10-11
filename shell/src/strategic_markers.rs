@@ -130,10 +130,6 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
                     stroke_circle(center, 3.0, 1.3, ink);
                     fill_circle(center, 1.0, ink);
                 }
-                crate::look::MarkerRole::Support => {
-                    line((-3.5, 0.0), (3.5, 0.0));
-                    line((0.0, -3.5), (0.0, 3.5));
-                }
                 crate::look::MarkerRole::Transport => {
                     line((-3.0, -2.0), (-3.0, 2.0));
                     line((3.0, -2.0), (3.0, 2.0));

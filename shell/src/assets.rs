@@ -18,7 +18,6 @@ pub struct Sprites {
     harvester_body: Option<[[Rect; 2]; 6]>,
     excavator_body: Option<[[Rect; 2]; 3]>,
     scuttler_body: Option<[[Rect; 2]; 3]>,
-    tender_body: Option<[[Rect; 2]; 3]>,
     /// Hull and mount layers for every kind whose look draws a rig.
     unit_rigs: std::collections::HashMap<UnitKind, UnitRig>,
     bombard_spades: Option<[Rect; 5]>,
@@ -746,7 +745,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
             ));
         }
     }
-    for stem in ["rig_excavator_body", "rig_tender_body", "rig_scuttler_body"] {
+    for stem in ["rig_excavator_body", "rig_scuttler_body"] {
         if atlas.keys().any(|key| key.starts_with(stem)) {
             for suffix in ["", "_move1", "_move2"] {
                 keys.extend(variant_keys(stem, suffix));
@@ -922,7 +921,6 @@ impl Sprites {
             harvester_body: harvester_body_rows(&rects)?,
             excavator_body: worker_body_rows(&rects, "rig_excavator_body")?,
             scuttler_body: worker_body_rows(&rects, "rig_scuttler_body")?,
-            tender_body: worker_body_rows(&rects, "rig_tender_body")?,
             page_height,
             verb_icons: pick(&rects, VERB_ICON_KEYS)?,
             ground: pick(&rects, GROUND_KEYS)?,
@@ -973,7 +971,6 @@ impl Sprites {
             crate::look::WorkerTool::Scoop => return self.harvester_body(cargo),
             crate::look::WorkerTool::Drum => self.excavator_body.as_ref()?,
             crate::look::WorkerTool::Shears => self.scuttler_body.as_ref()?,
-            crate::look::WorkerTool::Welder => self.tender_body.as_ref()?,
         };
         let row = rows[phase.min(2)];
         Some((row[BASE], row[ACCENT]))

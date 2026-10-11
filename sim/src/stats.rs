@@ -39,9 +39,6 @@ chassis::listed_enum! {
         Talon,
         /// Tier-two line brawler: an upgunned sentinel-class hull.
         Warden,
-        /// Armored mobile welder: field sustain for long pushes. No harvest
-        /// gear.
-        Tender,
         /// Tier-two super-harvester: digs faster, hauls triple, and builds
         /// at twice the pace.
         Excavator,
@@ -245,7 +242,7 @@ pub struct UnitStats {
     /// Idle units acquire targets inside this radius on their own. Zero
     /// for units with no weapons.
     pub aggro_range: Fx,
-    /// Present iff the unit can gather.
+    /// Present iff the unit is a worker: it gathers, builds and welds.
     pub harvest: Option<HarvestStats>,
     /// Fog-of-war reveal radius, in tiles.
     pub vision: i32,
@@ -253,10 +250,6 @@ pub struct UnitStats {
     /// unit; identical for humans and bots. Empty means the producer alone
     /// decides.
     pub requires: &'static [BuildingKind],
-    /// Whether this machine carries a welding torch: eligibility for the
-    /// Repair and `RepairUnit` crews (and construction labor rides with
-    /// `harvest` or a torch).
-    pub welder: bool,
     /// Construction work applied per adjacent tick (1 for everyone but
     /// the Excavator).
     pub build_rate: u32,
@@ -552,7 +545,6 @@ impl UnitKind {
             UnitKind::Buzzard => "buzzard",
             UnitKind::Talon => "talon",
             UnitKind::Warden => "warden",
-            UnitKind::Tender => "tender",
             UnitKind::Excavator => "excavator",
             UnitKind::Kestrel => "kestrel",
             UnitKind::Shrike => "shrike",
@@ -587,9 +579,6 @@ impl UnitKind {
             }
             UnitKind::Warden => {
                 "Armored frontline unit with a stronger main gun than the Sentinel."
-            }
-            UnitKind::Tender => {
-                "Mobile repair unit. Spends scrap to repair nearby friendly ground units."
             }
             UnitKind::Excavator => {
                 "Heavy harvester with faster mining, more cargo space, and faster construction."
@@ -633,7 +622,6 @@ const HARVESTER: UnitStats = UnitStats {
     }),
     vision: 6,
     requires: &[],
-    welder: true,
     build_rate: 1,
     demolition: None,
     transport_size: 1,
@@ -685,7 +673,6 @@ const SENTINEL: UnitStats = UnitStats {
     harvest: None,
     vision: 7, // strictly wider than aggro, so acquired targets are seen
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 1,
@@ -720,7 +707,6 @@ const SCUTTLER: UnitStats = UnitStats {
     harvest: None,
     vision: 6,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 1,
@@ -757,7 +743,6 @@ const LANCER: UnitStats = UnitStats {
     harvest: None,
     vision: 7,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 2,
@@ -795,7 +780,6 @@ const BOMBARD: UnitStats = UnitStats {
     harvest: None,
     vision: 5, // shorter than its range: full reach needs a spotter
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 3,
@@ -834,7 +818,6 @@ const FLAKHOUND: UnitStats = UnitStats {
     harvest: None,
     vision: 7,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 2,
@@ -869,7 +852,6 @@ const BUZZARD: UnitStats = UnitStats {
     harvest: None,
     vision: 7,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -904,7 +886,6 @@ const TALON: UnitStats = UnitStats {
     harvest: None,
     vision: 8,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -941,7 +922,6 @@ const WARDEN: UnitStats = UnitStats {
     harvest: None,
     vision: 7,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 2,
@@ -949,34 +929,6 @@ const WARDEN: UnitStats = UnitStats {
     turn_rate: 0,
     cruise_turn_rate: 0,
     turret_turn_rate: 5,
-    hull_turn_rate: None,
-    brace: None,
-    crash: None,
-};
-
-const TENDER: UnitStats = UnitStats {
-    contact_reach: None,
-    max_hp: 150,
-    speed: Fx::lit("0.11"),
-    radius: Fx::lit("0.38"),
-    // Priced as a mobile line attachment rather than a substitute for
-    // the static Repair Bay.
-    cost: 130,
-    train_ticks: 300,
-    domain: Domain::Ground,
-    weapons: &[],
-    aggro_range: Fx::ZERO,
-    harvest: None,
-    vision: 7,
-    requires: &[],
-    welder: true,
-    build_rate: 1,
-    demolition: None,
-    transport_size: 2,
-    transport_capacity: 0,
-    turn_rate: 0,
-    cruise_turn_rate: 0,
-    turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
     crash: None,
@@ -998,7 +950,6 @@ const EXCAVATOR: UnitStats = UnitStats {
     }),
     vision: 6,
     requires: &[BuildingKind::Fabricator],
-    welder: true,
     build_rate: 2,
     demolition: None,
     transport_size: 2,
@@ -1024,7 +975,6 @@ const KESTREL: UnitStats = UnitStats {
     harvest: None,
     vision: 10,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -1059,7 +1009,6 @@ const SHRIKE: UnitStats = UnitStats {
     harvest: None,
     vision: 8,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -1097,7 +1046,6 @@ const CONDOR: UnitStats = UnitStats {
     harvest: None,
     vision: 6,
     requires: &[BuildingKind::Crucible],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -1139,7 +1087,6 @@ const BREAKER: UnitStats = UnitStats {
     harvest: None,
     vision: 6,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 4,
@@ -1180,7 +1127,6 @@ const AVALANCHE: UnitStats = UnitStats {
     harvest: None,
     vision: 5,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 4,
@@ -1206,7 +1152,6 @@ const SKYHOOK: UnitStats = UnitStats {
     harvest: None,
     vision: 6,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -1236,7 +1181,6 @@ const SAPPER: UnitStats = UnitStats {
     harvest: None,
     vision: 5,
     requires: &[],
-    welder: false,
     build_rate: 1,
     demolition: Some(DemolitionStats {
         contact_range: Fx::lit("0.9"),
@@ -1306,7 +1250,6 @@ const FABRICATOR: BuildingStats = BuildingStats {
         UnitKind::Bombard,
         UnitKind::Flakhound,
         UnitKind::Warden,
-        UnitKind::Tender,
         UnitKind::Sapper,
     ],
     weapons: &[],
@@ -1600,7 +1543,6 @@ impl UnitKind {
             UnitKind::Buzzard => &BUZZARD,
             UnitKind::Talon => &TALON,
             UnitKind::Warden => &WARDEN,
-            UnitKind::Tender => &TENDER,
             UnitKind::Excavator => &EXCAVATOR,
             UnitKind::Kestrel => &KESTREL,
             UnitKind::Shrike => &SHRIKE,

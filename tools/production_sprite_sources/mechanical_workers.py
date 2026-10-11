@@ -159,56 +159,6 @@ def excavator_cargo(level):
     return finish(im, rim=False)
 
 
-def tender(variant, move=0, work=0, *, body_only=False):
-    im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
-    for bounds in ((17, 40, 36, 113), (92, 40, 111, 113)):
-        track(d, bounds, move, paint)
-    poly(d, [(33, 47), (44, 37), (82, 37), (94, 50), (87, 112), (41, 112)], VOID)
-    poly(d, [(39, 50), (47, 43), (79, 43), (88, 52), (83, 107), (46, 107)], DARK)
-    box(d, (44, 47, 69, 70), paint, 3)
-    line(d, [(47, 49), (66, 49)], EDGE)
-    for x in (48, 60):
-        box(d, (x, 52, x + 6, 64), DEEP, 2)
-        line(d, [(x + 1, 54), (x + 1, 60)], IRON)
-    circle(d, (44, 77, 74, 103), VOID)
-    circle(d, (48, 81, 70, 99), IRON)
-    circle(d, (52, 84, 66, 97), DEEP)
-    pin(d, 59, 90)
-    line(d, [(49, 89), (68, 91)], EDGE, 2)
-    box(d, (77, 76, 86, 98), paint, 1)
-    for y in (81, 88, 95):
-        line(d, [(78, y), (84, y)], DARK, 2)
-    base = finish(im)
-    if body_only:
-        return base
-    im, d = canvas()
-    paths = [
-        [(81, 58), (89, 42), (76, 33)],
-        [(81, 58), (83, 32), (69, 22)],
-        [(81, 58), (77, 30), (64, 13)],
-        [(81, 58), (77, 30), (64, 13)],
-        [(81, 58), (83, 32), (69, 22)],
-    ]
-    arm = paths[work]
-    line(d, [(68, 90), (85, 85), (92, 66), arm[1], arm[2]], VOID, 4)
-    line(d, [(68, 90), (85, 85), (92, 66), arm[1], arm[2]], IRON, 1)
-    line(d, arm, VOID, 9)
-    line(d, arm[:2], paint, 5)
-    line(d, arm[1:], STEEL, 3)
-    for x, y in arm[:2]:
-        pin(d, x, y, 3)
-    x, y = arm[-1]
-    box(d, (x - 4, y - 4, x + 4, y + 6), DEEP, 1)
-    line(d, [(x, y), (x, y - 7)], STEEL, 2)
-    if work == 3:
-        circle(d, (x - 2, y - 10, x + 2, y - 6), SCRAP_EDGE)
-        for dx, dy in ((-7, -10), (6, -12), (5, -4)):
-            line(d, [(x + dx, y + dy), (x + dx * 1.3, y + dy - 2)], SCRAP_EDGE)
-    base.alpha_composite(finish(im, rim=False))
-    return base
-
-
 def leg(d, root, knee, foot):
     line(d, [root, knee, foot], VOID, 7)
     line(d, [root, knee], IRON, 4)

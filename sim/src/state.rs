@@ -1791,8 +1791,8 @@ impl State {
             return Err(E::HarvestSourceOutsideZone(id));
         }
         if orders().any(|order| {
-            matches!(order, Order::ReturnCargo { foundry, repair } if
-                stats.harvest.is_none() || (*repair && !stats.welder)
+            matches!(order, Order::ReturnCargo { foundry, .. } if
+                stats.harvest.is_none()
                 || self.building(*foundry).is_some_and(|building|
                     building.player != *player || !building.kind.is_drop_off()))
         }) {

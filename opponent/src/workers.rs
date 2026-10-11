@@ -1,6 +1,6 @@
 //! Workers (Harvesters and Excavators): how many the seat wants, training
-//! them, keeping them out of harm, and sending free ones to build, weld and
-//! harvest.
+//! them, keeping them out of harm, and sending free ones to build, weld
+//! buildings and wounded units, and harvest.
 
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
@@ -30,6 +30,36 @@ const WELD_CLEARANCE: i32 = 12;
 
 /// Empty tiles from an own Foundry inside which a worker counts as home.
 const HOME_TILES: i32 = 8;
+
+/// Per mille of its health a unit must miss before workers weld it.
+const UNIT_WELD_DAMAGE: u64 = 100;
+
+/// Scrap of missing health among wounded units one welder answers for at
+/// middling support: how many welders the seat sends follows from need.
+const WOUNDS_PER_WELDER: u64 = 500;
+
+/// Scrap of missing health among the armed ground units of `units`.
+pub(crate) fn wounds<'a>(units: impl Iterator<Item = &'a UnitObs>) -> u64 {
+    units
+        .filter(|unit| armed_ground(unit.kind))
+        .map(|unit| {
+            let stats = unit.kind.stats();
+            let max = u64::from(stats.max_hp.max(1));
+            u64::from(stats.cost) * max.saturating_sub(u64::from(unit.hp)) / max
+        })
+        .sum()
+}
+
+/// Missing health one welder answers for: less the more the seat leans on
+/// support.
+pub(crate) fn per_welder(support: u8) -> u64 {
+    WOUNDS_PER_WELDER * 1_000 / crate::composition::weight(support)
+}
+
+fn armed_ground(kind: UnitKind) -> bool {
+    let stats = kind.stats();
+    stats.domain == oxide_sim::stats::Domain::Ground && !stats.weapons.is_empty()
+}
 
 /// The nodes the seat's Foundries work, each with the Harvesters it wants
 /// there, and the worker slots it fills.
@@ -187,20 +217,35 @@ pub(crate) fn train(
 }
 
 /// Brings workers away from home back out of known enemy fire, sends a
-/// worker to each unattended construction site, welds damaged buildings,
-/// then sends idle workers to the least-worked node whose route and site are
-/// clear of known danger.
+/// worker to each unattended construction site, welds damaged buildings and
+/// then the wounded among `patients`, then sends idle workers to the
+/// least-worked node whose route and site are clear of known danger.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each pass reads a different slice of the decision"
+)]
 pub(crate) fn run(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     hazards: &[Hazard],
     staffing: &Staffing,
+    patients: &[UnitId],
+    support: u8,
     ledger: &mut Ledger,
 ) {
     flee(observation, map, frame, hazards, ledger);
     resume_sites(observation, map, frame, ledger);
     weld(observation, map, frame, hazards, ledger);
+    weld_units(
+        observation,
+        map,
+        frame,
+        hazards,
+        patients,
+        per_welder(support),
+        ledger,
+    );
     assign_idle(observation, map, frame, staffing, hazards, ledger);
 }
 
@@ -319,12 +364,8 @@ fn weld(
                 return None;
             }
             let size = building.kind.size();
-            let threatened = observation.enemy_units.iter().any(|enemy| {
-                enemy.kind.stats().can_fight()
-                    && gap(building.anchor, size, enemy.tile, (1, 1)) <= WELD_CLEARANCE
-            });
             let centre = footprint_centre(building.kind, building.anchor);
-            if threatened || hazards.iter().any(|hazard| hazard.covers(centre)) {
+            if !calm(observation, hazards, building.anchor, size, centre) {
                 return None;
             }
             // A building other buildings and rock wall in on every side
@@ -364,6 +405,125 @@ fn weld(
         }) {
             return;
         }
+    }
+}
+
+/// Whether no armed enemy in sight stands within the weld clearance of the
+/// footprint at `anchor` and no known enemy weapon reaches `centre`.
+fn calm(
+    observation: &ObservationData,
+    hazards: &[Hazard],
+    anchor: TilePos,
+    size: (i32, i32),
+    centre: (i64, i64),
+) -> bool {
+    let threatened = observation.enemy_units.iter().any(|enemy| {
+        enemy.kind.stats().can_fight() && gap(anchor, size, enemy.tile, (1, 1)) <= WELD_CLEARANCE
+    });
+    !threatened && !hazards.iter().any(|hazard| hazard.covers(centre))
+}
+
+/// Sends workers at home to weld the wounded armed ground units of `patients`
+/// at home that no worker welds yet, most missing value first, while they are
+/// calm and the seat has scrap to pay. They send as many welders as the
+/// wounds call for, one to a patient: the sturdiest workers first, so
+/// Excavators before Harvesters, then the idle before the harvesting, then
+/// the nearest.
+fn weld_units(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    hazards: &[Hazard],
+    patients: &[UnitId],
+    per_welder: u64,
+    ledger: &mut Ledger,
+) {
+    let foundries = built_foundries(observation);
+    let size = BuildingKind::Foundry.size();
+    let home = |tile: TilePos| {
+        foundries
+            .iter()
+            .any(|foundry| gap(foundry.anchor, size, tile, (1, 1)) <= HOME_TILES)
+    };
+    let welded: Vec<UnitId> = observation
+        .my_units
+        .iter()
+        .filter(|unit| worker(unit.kind) && unit.repairing)
+        .filter_map(|unit| match observation.repair_target(unit.id)? {
+            Target::Unit(patient) => Some(patient),
+            Target::Building(_) => None,
+        })
+        .collect();
+    let mut wounded: Vec<(u64, &UnitObs)> = patients
+        .iter()
+        .filter_map(|id| {
+            let index = observation
+                .my_units
+                .binary_search_by_key(id, |unit| unit.id)
+                .ok()?;
+            Some(&observation.my_units[index])
+        })
+        .filter(|unit| armed_ground(unit.kind) && !welded.contains(&unit.id) && home(unit.tile))
+        .filter(|unit| calm(observation, hazards, unit.tile, (1, 1), doubled(unit.tile)))
+        .filter_map(|unit| {
+            let stats = unit.kind.stats();
+            let (hp, max) = (u64::from(unit.hp), u64::from(stats.max_hp.max(1)));
+            (hp * 1_000 <= max * (1_000 - UNIT_WELD_DAMAGE))
+                .then(|| (u64::from(stats.cost) * (max - hp) / max, unit))
+        })
+        .collect();
+    let wanted = wounds(wounded.iter().map(|(_, unit)| *unit)) / per_welder.max(1);
+    let mut room = usize::try_from(wanted.max(1))
+        .unwrap_or(usize::MAX)
+        .saturating_sub(welded.len())
+        .min(wounded.len());
+    wounded.sort_by_key(|(missing, unit)| {
+        (
+            Reverse(*missing),
+            frame.rank(frame.home, doubled(unit.tile)),
+            unit.id,
+        )
+    });
+    for (_, patient) in wounded {
+        if room == 0 || ledger.spendable() < WELD_FLOOR {
+            return;
+        }
+        let Some(ground) = map.component(patient.tile) else {
+            continue;
+        };
+        let at = doubled(patient.tile);
+        let welder = observation
+            .my_units
+            .iter()
+            .filter(|unit| {
+                worker(unit.kind)
+                    && unit.site.is_none()
+                    && unit.founding.is_none()
+                    && !unit.repairing
+                    && home(unit.tile)
+                    && map.component(unit.tile) == Some(ground)
+                    && !ledger.employs(unit.id)
+                    && !ledger.stuck(unit.id)
+            })
+            .min_by_key(|unit| {
+                (
+                    Reverse(unit.kind.stats().max_hp),
+                    !unit.idle,
+                    frame.rank(at, doubled(unit.tile)),
+                    unit.id,
+                )
+            });
+        let Some(welder) = welder else {
+            continue;
+        };
+        if !ledger.order(Command::RepairUnit {
+            units: vec![welder.id],
+            target: patient.id,
+            queue: false,
+        }) {
+            return;
+        }
+        room -= 1;
     }
 }
 
