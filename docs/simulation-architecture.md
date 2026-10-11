@@ -640,9 +640,11 @@ kinds without a brace; a transported rider keeps no motor at all.
 `AttackTarget` resolves through team knowledge to a visible entity, remembered
 building footprint, or mobile contact. Explicit attacks approach weapon range
 without requiring sight. Building attacks end when observation clears the
-memory; contact attacks end when sight and radar are both lost, or
-identification reveals an incompatible domain. Contact loss also clears defense
-focus and advances queued orders.
+memory. An automatic engagement also ends rather than fire on a building out of
+current sight: one destroyed out of sight leaves its memory standing, and only
+an explicit order may shell that memory. Contact attacks end when sight and
+radar are both lost, or identification reveals an incompatible domain. Contact
+loss also clears defense focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Automatic radar fire may stop Idle, Hunt, or

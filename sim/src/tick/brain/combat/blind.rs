@@ -447,6 +447,13 @@ pub(in crate::tick::brain) fn attack_known(
         {
             // Turn-limited bombers obtain their own sight before release range.
             if stats.turn_rate == 0 {
+                // Only an order fires on a building nobody sees. One destroyed
+                // out of sight leaves its memory standing, and an automatic
+                // engagement shelling that memory would never move on.
+                if !pursue && matches!(target, AttackTarget::RememberedBuilding(_)) {
+                    complete(state, id, resume);
+                    return;
+                }
                 fire_unit(
                     state,
                     id,

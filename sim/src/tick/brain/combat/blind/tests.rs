@@ -264,3 +264,82 @@ fn blind_hitscan_selects_one_eligible_occupant_and_splash_never_duplicates_it() 
     );
     assert!(hits.is_empty());
 }
+
+/// An automatic engagement drops a building its team stops seeing: the
+/// building may have died out of sight, leaving only its memory, and a gun
+/// left shelling that memory would never move on. An explicit order on the
+/// same memory stands.
+#[test]
+fn an_automatic_attack_drops_an_unseen_building_but_an_order_keeps_it() {
+    let mut scenario = crate::Scenario::skirmish();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Bombard,
+            x: 5,
+            y: 10,
+        },
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Kestrel,
+            x: 13,
+            y: 10,
+        },
+    ];
+    let mut rows = vec![vec!['.'; 40]; 30];
+    rows[1][1] = '1';
+    rows[27][37] = '2';
+    scenario.map = rows
+        .into_iter()
+        .map(|row| row.into_iter().collect())
+        .collect();
+    scenario.buildings = vec![crate::scenario::BuildingSpec {
+        player: 1,
+        kind: crate::BuildingKind::Turret,
+        x: 13,
+        y: 12,
+    }];
+    let mut state = scenario.build().unwrap();
+    let gun = state.units[0].id;
+    let turret = TilePos::new(13, 12);
+    let memory = crate::RememberedBuilding {
+        owner: PlayerId(1),
+        building_kind: crate::BuildingKind::Turret,
+        anchor: turret,
+    };
+    for _ in 0..3 {
+        state.tick(&[]);
+    }
+    assert!(matches!(
+        state.unit(gun).unwrap().order,
+        Order::Attack { target: AttackTarget::RememberedBuilding(m), pursue: false, .. } if m == memory
+    ));
+
+    // The spotter leaves; the turret stands, but only as a memory.
+    state.units[1].pos = TilePos::new(35, 3).center();
+    state.refresh_vision();
+    assert!(!state.can_see(PlayerId(0), turret));
+    assert!(
+        state
+            .vision(PlayerId(0))
+            .ghosts()
+            .iter()
+            .any(|g| g.anchor == turret)
+    );
+    state.tick(&[]);
+    assert_eq!(state.unit(gun).unwrap().order, Order::Idle);
+
+    state.tick(&[crate::PlayerCommand {
+        player: PlayerId(0),
+        command: crate::Command::Attack {
+            units: vec![gun],
+            target: AttackTarget::RememberedBuilding(memory),
+            queue: false,
+        },
+    }]);
+    state.tick(&[]);
+    assert!(matches!(
+        state.unit(gun).unwrap().order,
+        Order::Attack { target: AttackTarget::RememberedBuilding(m), pursue: true, .. } if m == memory
+    ));
+}
