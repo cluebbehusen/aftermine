@@ -1,7 +1,7 @@
 use super::*;
 use macroquad::prelude::vec2;
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{BuildingId, Command, UnitKind};
+use oxide_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use std::time::Instant;
 
 const COMMIT: &str = "lan-test";
@@ -312,6 +312,14 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
     let mut lan = Match::start(with_bots());
     lan.run(20);
     cut(&mut lan);
+    // An order given while reconnecting still reaches the match.
+    let order = Command::Stop { units: Vec::new() };
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.presentation.net_notice.as_deref() == Some("Reconnecting to the host..."))
+            .then_some(())
+    });
+    lan.client.0.issue(order.clone());
     let mut rejoined = false;
     wait(|| {
         assert_eq!(lan.step(), (None, None));
@@ -325,6 +333,19 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
     lan.run(20);
     lan.drain();
     assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
+    let sent = PlayerCommand {
+        player: CLIENT,
+        command: order,
+    };
+    assert!(
+        lan.host
+            .0
+            .recorder
+            .commands
+            .iter()
+            .any(|timed| timed.command == sent),
+        "the order given while reconnecting executed"
+    );
     assert!(
         lan.host.0.state.accepts_commands(CLIENT),
         "nobody surrendered"
@@ -949,5 +970,52 @@ fn only_an_ipv4_listener_other_machines_can_reach_advertises() {
         ("[fe80::1]:4200", false),
     ] {
         assert_eq!(advertises(bound.parse().unwrap()), advertised, "{bound}");
+    }
+}
+
+/// A client link to a host this test plays by hand, over loopback.
+fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
+    let listener = Listener::bind("127.0.0.1:0").unwrap();
+    let client = Connection::connect(listener.local_addr().unwrap()).unwrap();
+    let host = wait(|| listener.try_accept().unwrap());
+    let game = Game::networked(scenario, CLIENT, NetRole::Client, viewport()).unwrap();
+    let home = Home {
+        address: "127.0.0.1:9".to_owned(),
+        commit: COMMIT.to_owned(),
+        token: Token::new(1),
+        host: "Host".to_owned(),
+        seat: CLIENT,
+    };
+    let link = Link::client(
+        ClientSession::new(Duration::ZERO),
+        client,
+        home,
+        Duration::ZERO,
+    );
+    (game, link, host)
+}
+
+#[test]
+fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
+    let seats = oxide_net::HostMessage::Seats {
+        seats: vec![SeatNotice {
+            seat: PlayerId(9),
+            state: SeatState::Quiet,
+        }],
+        paused: false,
+    };
+    let replaced = oxide_net::HostMessage::Replaced {
+        seat: PlayerId(9),
+        config: BotConfig::default(),
+    };
+    for line in [seats.encode(), replaced.encode()] {
+        let (mut game, mut link, host) = hand_hosted(duel());
+        host.send(&line);
+        let mut now = Duration::ZERO;
+        let end = wait(|| {
+            now += STEP;
+            link.pump(&mut game, now)
+        });
+        assert_eq!(end, End::HostLost, "{line}");
     }
 }
