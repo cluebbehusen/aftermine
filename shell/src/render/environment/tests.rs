@@ -26,22 +26,6 @@ fn solid_authored_walls_are_absorbed_but_open_lanes_stay_playable() {
 }
 
 #[test]
-fn terrace_material_never_enters_the_battlefield_rect() {
-    let field = TerraceField::new(MapFrame {
-        rect: Rect::new(32.0, 48.0, 640.0, 384.0),
-        tile: 32.0,
-    });
-    for iy in 0..field.inner_height {
-        for ix in 0..field.inner_width {
-            assert_eq!(field.material(ix, iy), Material::Void);
-        }
-    }
-    for layer in LAYERS {
-        assert!(layer.bench_cells >= 3);
-    }
-}
-
-#[test]
 fn floor_wave_carries_across_the_terrace_benches() {
     let phases: Vec<_> = (0..6)
         .map(|tile_x| WAVE_LIFTS[as_index(tile_x) % 6])

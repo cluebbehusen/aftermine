@@ -670,26 +670,28 @@ fn finalized_environment_regions_keep_their_authored_footprints() {
             [footprint.0 as f32 * 64.0, footprint.1 as f32 * 64.0]
         );
     }
-    for (key, footprint) in ROCK_KEYS.into_iter().zip(
-        std::iter::repeat_n((1, 1), 14)
-            .chain(std::iter::repeat_n((2, 1), 5))
-            .chain(std::iter::repeat_n((3, 1), 4)),
-    ) {
-        assert_eq!(
-            atlas[key][2..],
-            [footprint.0 as f32 * 64.0, footprint.1 as f32 * 64.0]
-        );
+    // Slab canvases grow with their size class and are never smaller than a
+    // tile, so a slab's footprint always covers the tile it stands on.
+    for size in 0..ROCK_SLAB_SIZES {
+        for variant in 0..ROCK_SLAB_VARIANTS {
+            let [.., width, height] = atlas[ROCK_SLAB_KEYS[size * ROCK_SLAB_VARIANTS + variant]];
+            assert!(width >= 64.0 && height >= 64.0);
+            if size > 0 {
+                let [.., smaller, _] = atlas[ROCK_SLAB_KEYS[(size - 1) * ROCK_SLAB_VARIANTS]];
+                assert!(width > smaller, "slab size {size} is not larger");
+            }
+        }
     }
 }
 
 #[test]
-fn every_peak_neighbor_mask_has_two_full_tile_barriers() {
-    let atlas = manifest();
-    for mask in 0..16 {
-        for variant in 0..2 {
-            let key = format!("peak_barrier_{mask:02x}_{variant}");
-            assert_eq!(PEAK_BARRIER_KEYS[mask * 2 + variant], key);
-            assert_eq!(atlas[&key][2..], [64.0, 64.0]);
+fn rock_slab_keys_follow_size_then_variant_order() {
+    for size in 0..ROCK_SLAB_SIZES {
+        for variant in 0..ROCK_SLAB_VARIANTS {
+            assert_eq!(
+                ROCK_SLAB_KEYS[size * ROCK_SLAB_VARIANTS + variant],
+                format!("rock_slab_{size}_{variant}")
+            );
         }
     }
 }

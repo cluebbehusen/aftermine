@@ -1,26 +1,27 @@
-//! Quarry boundary: collapsed, dark industrial terraces rising
-//! away from the battlefield floor.
+//! Quarry boundary vocabulary: the terrace palette, decals, and edge
+//! geometry the boundary, peak, and pit passes share.
 
 use crate::game::Scene;
-use crate::numeric;
 use crate::numeric::Fit;
-use crate::render::prim::{fill_rect, line_between};
+use crate::render::prim::line_between;
+use chassis::grid::TilePos;
 use macroquad::prelude::*;
 
-const SALT: u32 = 347;
+/// Salt for the boundary's bench jogs and decals.
+pub(super) const SALT: u32 = 347;
 pub(super) const WAVE_LIFTS: [i16; 6] = [-4, -2, 0, 1, 2, 4];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[expect(clippy::struct_excessive_bools, reason = "one flag per map edge")]
-struct BoundaryInsets {
-    top: bool,
-    right: bool,
-    bottom: bool,
-    left: bool,
+pub(super) struct BoundaryInsets {
+    pub(super) top: bool,
+    pub(super) right: bool,
+    pub(super) bottom: bool,
+    pub(super) left: bool,
 }
 
 impl BoundaryInsets {
-    fn from_rows(rows: &[String]) -> Self {
+    pub(super) fn from_rows(rows: &[String]) -> Self {
         let width = rows.first().map_or(0, String::len);
         let blocked = |cell: u8| matches!(cell, b'#' | b'^');
         Self {
@@ -42,42 +43,17 @@ impl BoundaryInsets {
     }
 }
 
-#[derive(Clone, Copy)]
-struct MapFrame {
-    rect: Rect,
-    tile: f32,
-}
-
-impl MapFrame {
-    fn from_game(game: &Scene<'_>) -> Self {
-        let origin = game.presentation.camera.to_screen(vec2(0.0, 0.0));
-        let far = game.presentation.camera.to_screen(vec2(
-            game.state.map().width() as f32,
-            game.state.map().height() as f32,
-        ));
-        let tile = game.presentation.camera.zoom;
-        let mut rect = Rect::new(
-            origin.x.floor(),
-            origin.y.floor(),
-            far.x.ceil() - origin.x.floor(),
-            far.y.ceil() - origin.y.floor(),
-        );
-        let insets = BoundaryInsets::from_rows(&game.scenario.map);
-        if insets.left {
-            rect.x += tile;
-            rect.w -= tile;
-        }
-        if insets.right {
-            rect.w -= tile;
-        }
-        if insets.top {
-            rect.y += tile;
-            rect.h -= tile;
-        }
-        if insets.bottom {
-            rect.h -= tile;
-        }
-        Self { rect, tile }
+/// Whether a tile sits in a fully blocked edge row or column, which the
+/// boundary terraces draw over instead of the tile pass.
+pub(super) fn boundary_ring(rows: &[String]) -> impl Fn(TilePos) -> bool + use<> {
+    let insets = BoundaryInsets::from_rows(rows);
+    let width = rows.first().map_or(0, String::len).fit::<i32>();
+    let height = rows.len().fit::<i32>();
+    move |pos: TilePos| {
+        (insets.top && pos.y == 0)
+            || (insets.bottom && pos.y == height - 1)
+            || (insets.left && pos.x == 0)
+            || (insets.right && pos.x == width - 1)
     }
 }
 
@@ -101,7 +77,10 @@ pub(super) const fn rgba(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba(r, g, b, 255)
 }
 
-const LAYERS: [Layer; 3] = [
+/// The boundary's rising terraces, nearest the floor first; peaks share
+/// them. Each level lifts its bench and lip by about twelve tones so height
+/// reads in color as well as in the risers.
+pub(super) const LAYERS: [Layer; 3] = [
     Layer {
         bench_cells: 4,
         riser: rgba(24, 25, 30),
@@ -111,152 +90,16 @@ const LAYERS: [Layer; 3] = [
     Layer {
         bench_cells: 5,
         riser: rgba(28, 28, 34),
-        top: rgba(55, 54, 59),
-        lip: rgba(74, 71, 77),
+        top: rgba(64, 63, 68),
+        lip: rgba(84, 80, 86),
     },
     Layer {
         bench_cells: 3,
         riser: rgba(32, 31, 37),
-        top: rgba(58, 56, 62),
-        lip: rgba(79, 74, 80),
+        top: rgba(76, 74, 80),
+        lip: rgba(99, 94, 100),
     },
 ];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Side {
-    Top,
-    Right,
-    Bottom,
-    Left,
-}
-
-struct TerraceField {
-    rect: Rect,
-    tile: f32,
-    cell: f32,
-    inner_width: i32,
-    inner_height: i32,
-}
-
-impl TerraceField {
-    fn new(frame: MapFrame) -> Self {
-        let cell = frame.tile / 4.0;
-        Self {
-            rect: frame.rect,
-            tile: frame.tile,
-            cell,
-            inner_width: numeric::to_i32((frame.rect.w / cell).round()),
-            inner_height: numeric::to_i32((frame.rect.h / cell).round()),
-        }
-    }
-
-    fn max_depth() -> i32 {
-        LAYERS
-            .iter()
-            .map(|layer| 1 + layer.bench_cells + 1)
-            .sum::<i32>()
-            + 6
-    }
-
-    fn outside(&self, ix: i32, iy: i32) -> bool {
-        ix < 0 || iy < 0 || ix >= self.inner_width || iy >= self.inner_height
-    }
-
-    fn depth(&self, ix: i32, iy: i32) -> i32 {
-        let x = if ix < 0 {
-            -ix
-        } else if ix >= self.inner_width {
-            ix - self.inner_width + 1
-        } else {
-            0
-        };
-        let y = if iy < 0 {
-            -iy
-        } else if iy >= self.inner_height {
-            iy - self.inner_height + 1
-        } else {
-            0
-        };
-        x.max(y)
-    }
-
-    fn side_segment(&self, ix: i32, iy: i32) -> Option<(Side, i32)> {
-        let (side, along, length) = if iy < 0 && (0..self.inner_width).contains(&ix) {
-            (Side::Top, ix, self.inner_width)
-        } else if ix >= self.inner_width && (0..self.inner_height).contains(&iy) {
-            (Side::Right, iy, self.inner_height)
-        } else if iy >= self.inner_height && (0..self.inner_width).contains(&ix) {
-            (Side::Bottom, self.inner_width - 1 - ix, self.inner_width)
-        } else if ix < 0 && (0..self.inner_height).contains(&iy) {
-            (Side::Left, self.inner_height - 1 - iy, self.inner_height)
-        } else {
-            return None;
-        };
-        Some((side, (along * 6 / length.max(1)).clamp(0, 5)))
-    }
-
-    fn bench_cells(layer: usize, segment: Option<(Side, i32)>) -> i32 {
-        let Some((side, segment)) = segment else {
-            return LAYERS[layer].bench_cells;
-        };
-        let token = hash(
-            segment + layer.fit::<i32>() * 11,
-            side as i32 + layer.fit::<i32>() * 7,
-            SALT,
-        ) % 11;
-        (LAYERS[layer].bench_cells
-            + match token {
-                0..=3 => -1,
-                4 => 1,
-                _ => 0,
-            })
-        .clamp(3, 5)
-    }
-
-    fn material(&self, ix: i32, iy: i32) -> Material {
-        if !self.outside(ix, iy) {
-            return Material::Void;
-        }
-        let depth = self.depth(ix, iy);
-        let segment = self.side_segment(ix, iy);
-        let mut cursor = 0;
-        for layer in 0..LAYERS.len() {
-            cursor += 1;
-            if depth <= cursor {
-                return Material::Riser(layer);
-            }
-            cursor += Self::bench_cells(layer, segment);
-            if depth <= cursor {
-                return Material::Bench(layer);
-            }
-        }
-        if depth <= cursor + 4 {
-            Material::Vignette((depth - cursor).fit::<u8>())
-        } else {
-            Material::Void
-        }
-    }
-
-    fn rect(&self, ix: i32, iy: i32) -> Rect {
-        Rect::new(
-            self.rect.x + ix as f32 * self.cell,
-            self.rect.y + iy as f32 * self.cell,
-            self.cell,
-            self.cell,
-        )
-    }
-
-    fn visible_ranges(&self) -> (std::ops::Range<i32>, std::ops::Range<i32>) {
-        let pad = Self::max_depth();
-        let left = (numeric::to_i32(((-self.rect.x) / self.cell).floor()) - 1).max(-pad);
-        let right = (numeric::to_i32(((screen_width() - self.rect.x) / self.cell).ceil()) + 1)
-            .min(self.inner_width + pad);
-        let top = (numeric::to_i32(((-self.rect.y) / self.cell).floor()) - 1).max(-pad);
-        let bottom = (numeric::to_i32(((screen_height() - self.rect.y) / self.cell).ceil()) + 1)
-            .min(self.inner_height + pad);
-        (left..right, top..bottom)
-    }
-}
 
 pub(super) fn shifted(color: Color, amount: i16) -> Color {
     let amount = f32::from(amount) / 255.0;
@@ -275,22 +118,6 @@ pub(super) fn mixed(left: Color, right: Color, amount: f32) -> Color {
         left.b + (right.b - left.b) * amount,
         left.a + (right.a - left.a) * amount,
     )
-}
-
-fn cell_color(material: Material, ix: i32, iy: i32) -> Option<Color> {
-    match material {
-        Material::Riser(layer) => Some(LAYERS[layer].riser),
-        Material::Bench(layer) => {
-            let phase = (ix.div_euclid(4) - iy.div_euclid(4)).rem_euclid(6) as usize;
-            Some(shifted(LAYERS[layer].top, WAVE_LIFTS[phase]))
-        }
-        Material::Vignette(step) => Some(mixed(
-            LAYERS.last().expect("terrace layers").top,
-            super::FOG_UNEXPLORED,
-            (0.25 + f32::from(step) / 4.0 * 0.75).min(1.0),
-        )),
-        Material::Void => None,
-    }
 }
 
 pub(super) fn quarry_color(color: Color, material: Material, fractured: bool) -> Color {
@@ -352,16 +179,6 @@ pub(super) fn draw_lip(rect: Rect, direction: (i32, i32), thickness: f32, color:
         ),
         _ => unreachable!("terrace lips are cardinal"),
     }
-}
-
-fn uniform_bench(field: &TerraceField, ix: i32, iy: i32) -> Option<usize> {
-    let Material::Bench(level) = field.material(ix, iy) else {
-        return None;
-    };
-    (0..2)
-        .flat_map(|dy| (0..2).map(move |dx| (dx, dy)))
-        .all(|(dx, dy)| field.material(ix + dx, iy + dy) == Material::Bench(level))
-        .then_some(level)
 }
 
 pub(super) fn draw_missing_slab(rect: Rect, cell: f32, top: Color, value: u32) {
@@ -430,64 +247,6 @@ pub(super) fn draw_rebar(rect: Rect, cell: f32, tile: f32) {
     }
 }
 
-fn draw_boundary_terraces(frame: MapFrame, fractured: bool) {
-    let field = TerraceField::new(frame);
-    let (x_range, y_range) = field.visible_ranges();
-    for iy in y_range.clone() {
-        for ix in x_range.clone() {
-            let material = field.material(ix, iy);
-            let Some(color) = cell_color(material, ix, iy) else {
-                continue;
-            };
-            let rect = field.rect(ix, iy);
-            fill_rect(rect, quarry_color(color, material, fractured));
-        }
-    }
-
-    for iy in y_range.clone() {
-        for ix in x_range.clone() {
-            if ix.rem_euclid(4) != 0 || iy.rem_euclid(4) != 0 {
-                continue;
-            }
-            let Some(level) = uniform_bench(&field, ix, iy) else {
-                continue;
-            };
-            let value = hash(ix.div_euclid(4), iy.div_euclid(4), SALT + 503);
-            let rect = field.rect(ix, iy);
-            if value.is_multiple_of(41) {
-                draw_missing_slab(rect, field.cell, LAYERS[level].top, value);
-            } else if value % 17 == 3 {
-                draw_fracture(rect, field.cell, field.tile, LAYERS[level].top, value);
-            } else if value % 43 == 13 {
-                draw_rebar(rect, field.cell, field.tile);
-            }
-        }
-    }
-
-    let lip = (frame.tile * 0.055).max(1.0);
-    for iy in y_range {
-        for ix in x_range.clone() {
-            let Material::Bench(level) = field.material(ix, iy) else {
-                continue;
-            };
-            let rect = field.rect(ix, iy);
-            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                if field.material(ix + dx, iy + dy) == Material::Riser(level) {
-                    draw_lip(rect, (dx, dy), lip, LAYERS[level].lip);
-                    if fractured {
-                        draw_strata(
-                            field.rect(ix + dx, iy + dy),
-                            (-dx, -dy),
-                            LAYERS[level],
-                            hash(ix + dx, iy + dy, SALT + 607),
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
-
 pub(super) fn hash(x: i32, y: i32, salt: u32) -> u32 {
     let mut value = 2_166_136_261u32;
     for word in [x.cast_unsigned(), y.cast_unsigned(), salt] {
@@ -508,10 +267,6 @@ pub(super) fn draw_backdrop(_game: &Scene<'_>) {
         screen_height(),
         super::FOG_UNEXPLORED,
     );
-}
-
-pub(super) fn draw_boundary(game: &Scene<'_>, fractured: bool) {
-    draw_boundary_terraces(MapFrame::from_game(game), fractured);
 }
 
 #[cfg(test)]

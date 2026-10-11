@@ -9,6 +9,7 @@
 //! fog and no step is ever invented along a fog line or read from hidden
 //! terrain.
 
+use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
     Layer, Material, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
     draw_strata, hash, mixed, quarry_color, rgba, shifted,
@@ -21,7 +22,6 @@ use macroquad::prelude::*;
 use oxide_sim::map::Terrain;
 
 const SALT: u32 = 911;
-const CELLS: i32 = 4;
 const VIGNETTE_CELLS: i32 = 4;
 /// Bench widths vary per block of this many tiles so lips jog along the rim
 /// the way the boundary's do per side segment.
@@ -136,10 +136,7 @@ fn seed(terrain: Option<Terrain>, explored: bool) -> Option<bool> {
 /// standing cell, over the visible tiles plus enough margin that every
 /// drawn cell sees its true nearest rim.
 struct PitField {
-    origin: TilePos,
-    width: i32,
-    height: i32,
-    depth: Vec<u8>,
+    field: CellField,
     /// Explored pit tiles: the only ones the pass draws.
     known: Vec<bool>,
 }
@@ -150,89 +147,34 @@ impl PitField {
         let origin = TilePos::new(min.x - pad, min.y - pad);
         let width = max.x - min.x + 2 * pad;
         let height = max.y - min.y + 2 * pad;
-        let (cw, ch) = (width * CELLS, height * CELLS);
-        let mut depth = vec![0u8; as_index((cw * ch).max(0))];
         let mut known = vec![false; as_index((width * height).max(0))];
         let map = game.state.map();
         let vision = game.my_vision();
         let all_seeing = game.presentation.all_seeing();
-        for ty in 0..height {
-            for tx in 0..width {
-                let pos = TilePos::new(origin.x + tx, origin.y + ty);
-                let terrain = map.tile(pos).map(|tile| tile.terrain);
-                let explored = all_seeing || vision.explored(pos);
-                let Some(known_pit) = seed(terrain, explored) else {
-                    continue;
-                };
-                known[as_index(ty * width + tx)] = known_pit;
-                for sy in 0..CELLS {
-                    let row = as_index((ty * CELLS + sy) * cw + tx * CELLS);
-                    depth[row..row + CELLS as usize].fill(u8::MAX);
-                }
-            }
-        }
-        let mut field = Self {
-            origin,
-            width,
-            height,
-            depth,
-            known,
-        };
-        field.relax(cw, ch, false);
-        field.relax(cw, ch, true);
-        field
-    }
-
-    /// One chamfer pass with unit weights; forward then backward yields the
-    /// exact chessboard distance.
-    fn relax(&mut self, cw: i32, ch: i32, backward: bool) {
-        let sign = if backward { -1 } else { 1 };
-        let neighbors =
-            [(-1, -1), (0, -1), (1, -1), (-1, 0)].map(|(dx, dy)| (dx * sign, dy * sign));
-        for step_y in 0..ch {
-            let y = if backward { ch - 1 - step_y } else { step_y };
-            for step_x in 0..cw {
-                let x = if backward { cw - 1 - step_x } else { step_x };
-                let index = as_index(y * cw + x);
-                if self.depth[index] == 0 {
-                    continue;
-                }
-                let nearest = neighbors
-                    .iter()
-                    .map(|(dx, dy)| self.cell(x + dx, y + dy))
-                    .min()
-                    .unwrap_or(u8::MAX);
-                self.depth[index] = self.depth[index].min(nearest.saturating_add(1));
-            }
-        }
-    }
-
-    /// Cells beyond the window are unknown, never a rim.
-    fn cell(&self, x: i32, y: i32) -> u8 {
-        let (cw, ch) = (self.width * CELLS, self.height * CELLS);
-        if x < 0 || y < 0 || x >= cw || y >= ch {
-            u8::MAX
-        } else {
-            self.depth[as_index(y * cw + x)]
-        }
+        let field = CellField::seeded(origin, width, height, CELLS, |pos| {
+            let terrain = map.tile(pos).map(|tile| tile.terrain);
+            let explored = all_seeing || vision.explored(pos);
+            let Some(known_pit) = seed(terrain, explored) else {
+                return false;
+            };
+            known[as_index((pos.y - origin.y) * width + (pos.x - origin.x))] = known_pit;
+            true
+        });
+        Self { field, known }
     }
 
     fn known_pit(&self, pos: TilePos) -> bool {
-        let (tx, ty) = (pos.x - self.origin.x, pos.y - self.origin.y);
+        let field = &self.field;
+        let (tx, ty) = (pos.x - field.origin.x, pos.y - field.origin.y);
         tx >= 0
             && ty >= 0
-            && tx < self.width
-            && ty < self.height
-            && self.known[as_index(ty * self.width + tx)]
+            && tx < field.width
+            && ty < field.height
+            && self.known[as_index(ty * field.width + tx)]
     }
 
-    /// Depth of a cell addressed by absolute tile and sub-cell; the sub-cell
-    /// may step outside the tile.
     fn at(&self, pos: TilePos, sx: i32, sy: i32) -> u8 {
-        self.cell(
-            (pos.x - self.origin.x) * CELLS + sx,
-            (pos.y - self.origin.y) * CELLS + sy,
-        )
+        self.field.at(pos, sx, sy)
     }
 
     fn material_at(&self, pos: TilePos, sx: i32, sy: i32) -> Option<Material> {
@@ -244,23 +186,6 @@ impl PitField {
         );
         material(self.at(pos, sx, sy), widths)
     }
-}
-
-/// Screen-space cell edges for one tile, floored so neighbors share exact
-/// edges and no hairline opens between cells.
-fn cell_edges(game: &Scene<'_>, pos: TilePos) -> ([f32; 5], [f32; 5]) {
-    let mut xs = [0.0; 5];
-    let mut ys = [0.0; 5];
-    for (i, (x, y)) in xs.iter_mut().zip(ys.iter_mut()).enumerate() {
-        let frac = i as f32 / CELLS as f32;
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(pos.x as f32 + frac, pos.y as f32 + frac));
-        *x = screen.x.floor();
-        *y = screen.y.floor();
-    }
-    (xs, ys)
 }
 
 fn draw_glints(xs: &[f32; 5], ys: &[f32; 5], pos: TilePos, zoom: f32) {

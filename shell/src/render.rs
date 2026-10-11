@@ -69,6 +69,8 @@ pub(crate) fn resource_memory_opacity(game: &Scene<'_>, pos: chassis::grid::Tile
     }
 }
 
+mod boulders;
+mod cell_field;
 mod chrome;
 mod destruction;
 pub(crate) mod entities;
@@ -83,6 +85,7 @@ mod performance;
 mod pits;
 pub(crate) mod prim;
 mod support_brackets;
+mod terraces;
 mod worker;
 mod world;
 use chrome::{
@@ -498,8 +501,9 @@ pub(crate) fn draw_with_performance(
     let alpha = game.clock.render_alpha();
     draw_tiles(game, sprites);
     pits::draw_pits(game, sprites.quarry_dressing(0).is_some());
+    boulders::draw_boulders(game, sprites);
     crate::render::world::draw_extractor_frames(game, sprites);
-    environment::draw_boundary(game, sprites.quarry_dressing(0).is_some());
+    terraces::draw_terraces(game, sprites.quarry_dressing(0).is_some());
     draw_scorches(game, sprites);
     destruction::draw_ground_effects(game, sprites);
     draw_range_ground(game, input);
