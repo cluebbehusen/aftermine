@@ -64,8 +64,10 @@ pub(crate) fn read(path: &Path) -> Option<Ticket> {
 
 /// Keeps the ticket file current from the frame loop. A writer thread does
 /// the disk work, so a slow disk never stalls a frame or the save worker.
+/// Every write and deletion goes through that one thread, so none can
+/// interleave with another.
 pub(crate) struct Keeper {
-    writer: Option<Sender<Option<Ticket>>>,
+    writer: Option<Sender<Write>>,
     /// The ticket last written this session, and when.
     kept: Option<(Ticket, Duration)>,
 }
@@ -74,20 +76,10 @@ impl Keeper {
     /// Keeps the ticket at `path`; `None` keeps nothing.
     pub(crate) fn new(path: Option<PathBuf>) -> Self {
         let writer = path.map(|path| {
-            let (writer, wanted) = mpsc::channel::<Option<Ticket>>();
+            let (writer, wanted) = mpsc::channel::<Write>();
             thread::spawn(move || {
-                for ticket in wanted {
-                    let _ = match ticket {
-                        Some(ticket) => chassis::fsx::write_atomic(&path, |file| {
-                            serde_json::to_writer(file, &ticket).map_err(std::io::Error::other)
-                        }),
-                        None => match std::fs::remove_file(&path) {
-                            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                                Err(error)
-                            }
-                            _ => Ok(()),
-                        },
-                    };
+                for write in wanted {
+                    let _ = apply(&path, write);
                 }
             });
             writer
@@ -107,7 +99,7 @@ impl Keeper {
             return;
         }
         ticket.contact = self::now();
-        self.send(Some(ticket.clone()));
+        self.send(Write::Keep(ticket.clone()));
         self.kept = Some((ticket, now));
     }
 
@@ -115,14 +107,48 @@ impl Keeper {
     /// player's to take back.
     pub(crate) fn clear(&mut self) {
         if self.kept.take().is_some() {
-            self.send(None);
+            self.send(Write::Clear);
         }
     }
 
-    fn send(&self, ticket: Option<Ticket>) {
+    /// Drops `ticket` if it is still the one on disk: a probe found its seat
+    /// gone, or the ticket stale.
+    pub(crate) fn forget(&self, ticket: &Ticket) {
+        self.send(Write::Forget(ticket.token));
+    }
+
+    fn send(&self, write: Write) {
         if let Some(writer) = &self.writer {
-            let _ = writer.send(ticket);
+            let _ = writer.send(write);
         }
+    }
+}
+
+/// What the keeper's thread does to the ticket file.
+enum Write {
+    Keep(Ticket),
+    Clear,
+    /// Deletes the file if it still holds this token.
+    Forget(Token),
+}
+
+/// Does `write` to the ticket file at `path`.
+fn apply(path: &Path, write: Write) -> std::io::Result<()> {
+    match write {
+        Write::Keep(ticket) => chassis::fsx::write_atomic(path, |file| {
+            serde_json::to_writer(file, &ticket).map_err(std::io::Error::other)
+        }),
+        Write::Clear => remove(path),
+        // Another match's ticket may have replaced it since.
+        Write::Forget(token) if read(path).is_some_and(|kept| kept.token == token) => remove(path),
+        Write::Forget(_) => Ok(()),
+    }
+}
+
+fn remove(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
     }
 }
 
@@ -133,38 +159,26 @@ pub(crate) enum Probed {
     Missing,
     /// The seat waits: offer to rejoin.
     Waiting(Ticket),
-    /// The seat or the match is gone; the ticket was deleted.
-    Gone,
+    /// The seat or the match is gone, or the ticket is stale: forget it.
+    Gone(Ticket),
     /// The host did not answer; ask again later.
     Silent,
 }
 
 /// Asks the host on the ticket at `path` whether the seat still waits, off
 /// the frame loop. A ticket that expired, came from a build other than
-/// `build`, or names a seat that is gone is deleted.
+/// `build`, or names a seat that is gone comes back as gone, for the
+/// [`Keeper`] to forget.
 pub(crate) fn probe(path: PathBuf, build: String) -> JoinHandle<Probed> {
     thread::spawn(move || {
         let Some(ticket) = read(&path) else {
             return Probed::Missing;
         };
         if ticket.expired(now()) || ticket.build != build {
-            forget(&path, &ticket);
-            return Probed::Gone;
+            return Probed::Gone(ticket);
         }
-        let probed = ask(&ticket);
-        if probed == Probed::Gone {
-            forget(&path, &ticket);
-        }
-        probed
+        ask(&ticket)
     })
-}
-
-/// Deletes the ticket at `path` if it is still `ticket`: the player may have
-/// joined another match, whose ticket replaced it, while it was asked after.
-fn forget(path: &Path, ticket: &Ticket) {
-    if read(path).is_some_and(|kept| kept.token == ticket.token) {
-        let _ = std::fs::remove_file(path);
-    }
 }
 
 fn ask(ticket: &Ticket) -> Probed {
@@ -184,7 +198,9 @@ fn ask(ticket: &Ticket) -> Probed {
                 Ok(Some(line)) => match visit.receive(&line, elapsed()) {
                     Ok(Some(VisitEvent::Waiting { .. })) => return Probed::Waiting(ticket.clone()),
                     Ok(_) => {}
-                    Err(VisitEnd::Gone(_) | VisitEnd::OtherBuild { .. }) => return Probed::Gone,
+                    Err(VisitEnd::Gone(_) | VisitEnd::OtherBuild { .. }) => {
+                        return Probed::Gone(ticket.clone());
+                    }
                     Err(VisitEnd::Silent | VisitEnd::Protocol) => return Probed::Silent,
                 },
                 Ok(None) => break,

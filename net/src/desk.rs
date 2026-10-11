@@ -221,15 +221,21 @@ impl Desk {
     }
 
     /// Sends a rejoining visitor its snapshot: `bytes` encode the world at
-    /// `tick`, which hashes to `hash`.
+    /// `tick`, which hashes to `hash`. A snapshot no client would accept
+    /// turns the visitor away instead.
     pub fn send_snapshot(
         &mut self,
+        session: &mut HostSession,
         visitor: VisitorId,
         tick: Tick,
         hash: u64,
         bytes: &[u8],
         now: Duration,
     ) {
+        if bytes.is_empty() || bytes.len() as u64 > snapshot::MAX_SNAPSHOT_BYTES {
+            self.refuse(session, visitor, GoneReason::TooLarge);
+            return;
+        }
         let Some(index) = self.index(visitor) else {
             return;
         };
@@ -260,6 +266,16 @@ impl Desk {
         for data in parts {
             self.send(visitor, LobbyMessage::Part { data }.encode());
         }
+    }
+
+    /// Turns `visitor` away for `reason`. A rejoin it began fails, and the
+    /// match waits for the seat as before.
+    pub fn refuse(&mut self, session: &mut HostSession, visitor: VisitorId, reason: GoneReason) {
+        let Some(index) = self.index(visitor) else {
+            return;
+        };
+        self.send(visitor, LobbyMessage::Gone { reason }.encode());
+        self.dismiss(session, index);
     }
 
     /// The transport reported `visitor`'s connection closed.

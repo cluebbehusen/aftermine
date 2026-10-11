@@ -298,3 +298,30 @@ fn deliberate_salvage_is_not_counted_as_a_building_loss() {
     assert_eq!(players[1].buildings_lost, 0);
     assert_eq!(players[1].buildings_salvaged, 0);
 }
+
+#[test]
+fn event_counters_saturate_where_a_restored_record_left_them() {
+    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let mut live = LiveMatchStats::new(&state);
+    live.stats.players[0].units_trained = u32::MAX;
+    live.stats.players[0].buildings_completed = u32::MAX;
+    let player = oxide_sim::PlayerId(0);
+    accumulate_events(
+        &mut live.stats.players,
+        &[
+            Event::UnitTrained {
+                building: oxide_sim::BuildingId(0),
+                unit: oxide_sim::UnitId(0),
+                kind: oxide_sim::UnitKind::Harvester,
+                player,
+            },
+            Event::BuildingCompleted {
+                building: oxide_sim::BuildingId(0),
+                player,
+                kind: oxide_sim::BuildingKind::Foundry,
+            },
+        ],
+    );
+    assert_eq!(live.stats.players[0].units_trained, u32::MAX);
+    assert_eq!(live.stats.players[0].buildings_completed, u32::MAX);
+}

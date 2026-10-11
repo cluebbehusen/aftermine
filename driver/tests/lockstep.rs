@@ -585,7 +585,14 @@ fn a_lost_client_rejoins_from_a_snapshot_and_stays_in_sync() {
                     let state = &net.host.machine.state;
                     let bytes = serde_json::to_vec(state).unwrap();
                     let tick = net.host.session.tick();
-                    desk.send_snapshot(visitor, tick, state.hash(), &bytes, now);
+                    desk.send_snapshot(
+                        &mut net.host.session,
+                        visitor,
+                        tick,
+                        state.hash(),
+                        &bytes,
+                        now,
+                    );
                 }
                 DeskEvent::Admitted { seat, .. } => {
                     assert_eq!(seat, gone);

@@ -230,20 +230,27 @@ fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
                     .scrap_collected
                     .saturating_add(*amount);
             }
+            // Counters saturate: a checkpoint or snapshot from elsewhere may
+            // start them anywhere.
             Event::UnitTrained { player, .. } => {
-                stats[player.0 as usize].units_trained += 1;
+                let counter = &mut stats[player.0 as usize].units_trained;
+                *counter = counter.saturating_add(1);
             }
             Event::BuildingCompleted { player, .. } => {
-                stats[player.0 as usize].buildings_completed += 1;
+                let counter = &mut stats[player.0 as usize].buildings_completed;
+                *counter = counter.saturating_add(1);
             }
             Event::UnitDied { player, .. } => {
-                stats[player.0 as usize].units_lost += 1;
+                let counter = &mut stats[player.0 as usize].units_lost;
+                *counter = counter.saturating_add(1);
             }
             Event::BuildingDestroyed { player, .. } => {
-                stats[player.0 as usize].buildings_lost += 1;
+                let counter = &mut stats[player.0 as usize].buildings_lost;
+                *counter = counter.saturating_add(1);
             }
             Event::BuildingSalvaged { player, .. } => {
-                stats[player.0 as usize].buildings_salvaged += 1;
+                let counter = &mut stats[player.0 as usize].buildings_salvaged;
+                *counter = counter.saturating_add(1);
             }
             _ => {}
         }
