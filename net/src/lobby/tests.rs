@@ -432,6 +432,98 @@ fn a_failed_start_drops_only_its_culprit_and_the_rest_wait_for_the_next() {
 }
 
 #[test]
+fn every_member_that_fails_a_start_is_dropped() {
+    let mut lan = Lan::new();
+    let (alex, sam) = (lan.join("Alex"), lan.join("Sam"));
+    lan.settle();
+    lan.publish(&room(&["Alex", "Sam"]));
+    lan.settle();
+    lan.take_events();
+    lan.start();
+    lan.settle();
+    lan.guests[alex].1.ready(HASH + 1);
+    lan.guests[sam].1.ready(HASH + 2);
+    lan.settle();
+    assert_eq!(
+        lan.host.poll_start(lan.now).unwrap_err(),
+        StartFailed::Mismatch { seat: PlayerId(1) },
+        "the first failure names the start's"
+    );
+    lan.settle();
+    assert_eq!(
+        lan.take_events(),
+        [alex, sam].map(|guest| LobbyEvent::Left {
+            member: lan.member(guest),
+            reason: LeaveReason::FailedStart,
+        })
+    );
+}
+
+#[test]
+fn removing_a_seated_member_fails_the_start() {
+    let mut lan = Lan::new();
+    let (alex, sam) = (lan.join("Alex"), lan.join("Sam"));
+    lan.settle();
+    lan.publish(&room(&["Alex", "Sam"]));
+    lan.settle();
+    lan.take_events();
+    lan.start();
+    lan.settle();
+    lan.guests[alex].1.ready(HASH);
+    lan.guests[sam].1.ready(HASH);
+    lan.settle();
+    lan.host.remove(lan.member(sam));
+    assert_eq!(
+        lan.host.poll_start(lan.now).unwrap_err(),
+        StartFailed::Protocol { seat: PlayerId(2) },
+        "no session goes ahead without Sam"
+    );
+    lan.settle();
+    assert_eq!(lan.ended[sam], Some(GuestEnd::Removed));
+    assert!(lan.take_events().is_empty(), "the host already knows");
+    assert_eq!(lan.host.name(lan.member(alex)), Some(&name("Alex")));
+}
+
+#[test]
+fn a_cancelled_start_returns_everyone_to_the_room() {
+    let mut lan = Lan::new();
+    let (alex, sam) = (lan.join("Alex"), lan.join("Sam"));
+    lan.settle();
+    lan.publish(&room(&["Alex", "Sam"]));
+    lan.settle();
+    lan.take_events();
+    lan.start();
+    lan.settle();
+    lan.guests[alex].1.ready(HASH);
+    lan.settle();
+    lan.host.cancel_start();
+    lan.publish(&room(&["Alex", "Sam"]));
+    let heard = lan.settle();
+    assert_eq!(heard[alex], vec![GuestEvent::Room]);
+    assert_eq!(heard[sam], vec![GuestEvent::Room]);
+    assert!(lan.take_events().is_empty(), "nobody leaves");
+
+    // The next start counts only its own Readys.
+    lan.start();
+    lan.host.receive(
+        lan.member(sam),
+        &JoinMessage::Ready {
+            hash: HASH,
+            attempt: 1,
+        }
+        .encode(),
+        lan.now,
+    );
+    lan.settle();
+    assert!(lan.host.poll_start(lan.now).unwrap().is_none());
+    for guest in [alex, sam] {
+        lan.guests[guest].1.ready(HASH);
+    }
+    lan.settle();
+    assert!(lan.host.poll_start(lan.now).unwrap().is_some());
+}
+
+#[test]
 fn a_start_that_times_out_drops_the_unready_and_a_closed_seat_fails_it() {
     let mut lan = Lan::new();
     let (alex, sam) = (lan.join("Alex"), lan.join("Sam"));

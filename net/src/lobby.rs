@@ -84,8 +84,21 @@ struct Starting {
     seating: Vec<(MemberId, PlayerId)>,
     /// The first failure, once one happened.
     failed: Option<StartFailed>,
+    /// Every seat whose client failed it, in order.
+    culprits: Vec<PlayerId>,
     /// Introductions that completed mid-start, released if it fails.
     held: Vec<LobbyEvent>,
+}
+
+impl Starting {
+    fn fail(&mut self, failed: StartFailed) {
+        self.failed.get_or_insert(failed);
+        if let StartFailed::Mismatch { seat } | StartFailed::Protocol { seat } = failed
+            && !self.culprits.contains(&seat)
+        {
+            self.culprits.push(seat);
+        }
+    }
 }
 
 /// The host's half of the lobby.
@@ -161,7 +174,7 @@ impl Gathering {
             && let Some(&(_, seat)) = starting.seating.iter().find(|(id, _)| *id == member)
         {
             if let Err(failed) = starting.barrier.receive(seat, line) {
-                starting.failed.get_or_insert(failed);
+                starting.fail(failed);
             }
             return;
         }
@@ -211,7 +224,8 @@ impl Gathering {
     }
 
     /// Removes a member at the host's request: queues `Removed` and forgets
-    /// it. The caller finishes its connection after sending.
+    /// it, failing a running start that seated it. The caller finishes its
+    /// connection after sending.
     pub fn remove(&mut self, member: MemberId) {
         self.forget(member, &LobbyMessage::Removed);
     }
@@ -220,6 +234,7 @@ impl Gathering {
         if let Some(index) = self.index(member) {
             self.outgoing.push((member, farewell.encode()));
             self.members.remove(index);
+            self.leave_start(member);
         }
     }
 
@@ -336,6 +351,7 @@ impl Gathering {
             barrier,
             seating: seating.to_vec(),
             failed: None,
+            culprits: Vec::new(),
             held: Vec::new(),
         };
         for (seat, line) in lines {
@@ -362,13 +378,16 @@ impl Gathering {
                     }
                     return Ok(Some(session));
                 }
-                Err(failed) => failed,
+                Err(failed) => {
+                    starting.fail(failed);
+                    failed
+                }
             },
         };
         let starting = self.starting.take().expect("checked above");
-        let culprits: Vec<PlayerId> = match failed {
+        let culprits = match failed {
             StartFailed::TimedOut => starting.barrier.unready(),
-            StartFailed::Mismatch { seat } | StartFailed::Protocol { seat } => vec![seat],
+            StartFailed::Mismatch { .. } | StartFailed::Protocol { .. } => starting.culprits,
         };
         for seat in culprits {
             if let Some(index) = self.index(member_at(&starting.seating, seat)) {
@@ -380,6 +399,17 @@ impl Gathering {
         }
         self.events.extend(starting.held);
         Err(failed)
+    }
+
+    /// Abandons a running start at the host's request: every seated member
+    /// goes back to the room, shown it again on the next publish, and a
+    /// late Ready for the abandoned attempt counts for nothing.
+    pub fn cancel_start(&mut self) {
+        let starting = self.starting.take().expect("no start is running");
+        for member in &mut self.members {
+            member.shown = None;
+        }
+        self.events.extend(starting.held);
     }
 
     fn index(&self, member: MemberId) -> Option<usize> {
@@ -397,20 +427,24 @@ impl Gathering {
 
     fn drop_member(&mut self, index: usize, reason: LeaveReason) {
         let member = self.members.remove(index);
-        if let Some(starting) = &mut self.starting {
-            if let Some(&(_, seat)) = starting.seating.iter().find(|(id, _)| *id == member.id) {
-                starting
-                    .failed
-                    .get_or_insert(StartFailed::Protocol { seat });
-            }
-            starting.held.retain(
-                |held| !matches!(held, LobbyEvent::Joined { member: id, .. } if *id == member.id),
-            );
-        }
+        self.leave_start(member.id);
         self.events.push(LobbyEvent::Left {
             member: member.id,
             reason,
         });
+    }
+
+    /// Fails a running start that seated `member`, who is gone, and drops
+    /// the introduction it completed mid-start.
+    fn leave_start(&mut self, member: MemberId) {
+        if let Some(starting) = &mut self.starting {
+            if let Some(&(_, seat)) = starting.seating.iter().find(|(id, _)| *id == member) {
+                starting.fail(StartFailed::Protocol { seat });
+            }
+            starting.held.retain(
+                |held| !matches!(held, LobbyEvent::Joined { member: id, .. } if *id == member),
+            );
+        }
     }
 }
 
