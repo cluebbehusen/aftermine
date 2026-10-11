@@ -576,3 +576,142 @@ fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
         "the hunt never left its tile"
     );
 }
+
+/// An East Scuttler and a West `kind` whose centre stands at `pos`, inside
+/// the tile of a West Barricade at (6, 2), as an attacking body may in a
+/// footprint's empty margin.
+fn overhanging(kind: UnitKind, pos: Vec2Fx) -> (State, UnitId, UnitId) {
+    let mut state = Scenario {
+        mode: ScenarioMode::Match,
+        name: "overhang".into(),
+        map: vec![
+            "................".into(),
+            "................".into(),
+            "................".into(),
+            "1.............2.".into(),
+            "................".into(),
+            "................".into(),
+            "................".into(),
+            "................".into(),
+        ],
+        players: vec![seat("West"), seat("East")],
+        units: vec![
+            UnitSpec {
+                player: 0,
+                kind,
+                x: 6,
+                y: 1,
+            },
+            UnitSpec {
+                player: 1,
+                kind: UnitKind::Scuttler,
+                x: 9,
+                y: 1,
+            },
+        ],
+        buildings: vec![crate::scenario::BuildingSpec {
+            player: 0,
+            kind: crate::stats::BuildingKind::Barricade,
+            x: 6,
+            y: 2,
+        }],
+        meta: None,
+    }
+    .build()
+    .expect("overhang builds");
+    let (victim, scuttler) = (state.units[0].id, state.units[1].id);
+    state.units[0].pos = pos;
+    state.refresh_vision();
+    state
+        .validate_invariants()
+        .expect("a body may overhang a footprint's margin");
+    (state, victim, scuttler)
+}
+
+/// A Scuttler and an Avalanche whose centre stands just inside the
+/// Barricade's tile.
+fn overhanging_victim() -> (State, UnitId, UnitId) {
+    overhanging(
+        UnitKind::Avalanche,
+        Vec2Fx::new(Fx::lit("6.74"), Fx::lit("2.02")),
+    )
+}
+
+/// A contact weapon's reach of a small victim falls short of the weapon's
+/// range. The tile above stands within that range of a Scuttler 0.26 tiles
+/// inside the Barricade's tile, but beyond the hulls plus contact reach, so
+/// a chaser parked there could never fire.
+#[test]
+fn a_contact_chaser_takes_no_stand_in_beyond_its_reach() {
+    let (mut state, victim, scuttler) = overhanging(
+        UnitKind::Scuttler,
+        Vec2Fx::new(Fx::lit("6.5"), Fx::lit("2.26")),
+    );
+    let report = state.tick(&[PlayerCommand {
+        player: crate::PlayerId(1),
+        command: Command::Attack {
+            units: vec![scuttler],
+            target: Target::Unit(victim).into(),
+            queue: false,
+        },
+    }]);
+    assert!(
+        report.events.iter().any(|event| matches!(
+            event,
+            crate::Event::OrderStalled {
+                unit,
+                reason: crate::StallReason::NoFiringPosition,
+                ..
+            } if *unit == scuttler
+        )),
+        "{:?}",
+        report.events
+    );
+}
+
+/// A contact weapon cannot reach the centre of the blocked tile from any
+/// tile beside it, but it reaches the body itself from the tile above.
+#[test]
+fn a_contact_chaser_closes_on_a_victim_overhanging_blocked_ground() {
+    let (mut state, avalanche, scuttler) = overhanging_victim();
+    assert!(
+        !state.passable(state.unit(avalanche).unwrap().tile()),
+        "premise: the victim's tile is blocked"
+    );
+    let report = state.tick(&[PlayerCommand {
+        player: crate::PlayerId(1),
+        command: Command::Attack {
+            units: vec![scuttler],
+            target: Target::Unit(avalanche).into(),
+            queue: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, crate::Event::OrderStalled { .. })),
+        "{:?}",
+        report.events
+    );
+    assert!(matches!(
+        state.unit(scuttler).unwrap().order,
+        Order::Attack { .. }
+    ));
+    for _ in 0..100 {
+        state.tick(&[]);
+    }
+    assert!(state.unit(avalanche).unwrap().hp < UnitKind::Avalanche.stats().max_hp);
+}
+
+#[test]
+fn a_victim_overhanging_blocked_ground_is_acquired_by_a_contact_weapon() {
+    let (state, avalanche, scuttler) = overhanging_victim();
+    let mut index = UnitIndex::new();
+    index.rebuild(&state.units);
+    index.survey(&state);
+    assert_eq!(
+        acquire_target(&state, &index, scuttler),
+        Some(Target::Unit(avalanche))
+    );
+}

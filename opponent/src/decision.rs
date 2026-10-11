@@ -51,7 +51,8 @@ pub(crate) struct Ledger {
     bank: u32,
     protected: u32,
     planned: Vec<(BuildingKind, TilePos)>,
-    /// Own units sitting out orders after stalling for want of a route, by id.
+    /// Own units sitting out orders after stalling for want of a route or a
+    /// firing position, by id.
     stuck: Vec<UnitId>,
     decision: Decision,
 }
@@ -154,7 +155,8 @@ impl Ledger {
         true
     }
 
-    /// Whether `unit` sits out orders after stalling for want of a route.
+    /// Whether `unit` sits out orders after stalling for want of a route or a
+    /// firing position.
     pub(crate) fn stuck(&self, unit: UnitId) -> bool {
         self.stuck.binary_search(&unit).is_ok()
     }

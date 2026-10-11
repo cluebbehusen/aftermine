@@ -124,7 +124,7 @@ Checkpoints preserve all non-derivable state that affects future decisions. No
 other non-derivable state persists between decisions:
 
 - memory of enemy units and buildings, of failed objectives, and of own units
-  whose orders stalled for want of a route;
+  whose orders stalled for want of a route or a firing position;
 - missions and their phases;
 - the investment list and saving target;
 - the previous bank and spending used to estimate income;

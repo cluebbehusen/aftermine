@@ -4,8 +4,9 @@
 //! it gave up attacking, so it attacks something else for a while; enemy
 //! buildings it raided, so the next raid goes elsewhere; when it last saw
 //! each of its scouting points; and its own units whose orders stalled for
-//! want of a route, so they sit out orders for a while. Enemy buildings need
-//! no other memory here: the observation keeps their ghosts.
+//! want of a route or a firing position, so they sit out orders for a while.
+//! Enemy buildings need no other memory here: the observation keeps their
+//! ghosts.
 
 use crate::events::OwnEvent;
 use chassis::grid::TilePos;
@@ -34,8 +35,8 @@ const STRANDED_TICKS: u64 = 3_600;
 /// `UNIT_TICKS` ago are forgotten anyway.
 const UNIT_CAP: usize = 4_096;
 
-/// Ticks an own unit whose order stalled for want of a route sits out orders,
-/// unless it moves off where it stopped first.
+/// Ticks an own unit whose order stalled for want of a route or a firing
+/// position sits out orders, unless it moves off where it stopped first.
 const STUCK_TICKS: u64 = 600;
 
 /// Stuck own units remembered at once, the oldest forgotten first: a
@@ -57,13 +58,14 @@ pub(crate) struct Memory {
     /// Tick each scouting point was last in sight, by point; empty before
     /// the first decision.
     scouted: Vec<u64>,
-    /// Own units whose orders stalled for want of a route, by id.
+    /// Own units whose orders stalled for want of a route or a firing
+    /// position, by id.
     #[serde(default)]
     stuck: Vec<Stuck>,
 }
 
-/// An own unit whose order stalled for want of a route: where it stopped,
-/// and when.
+/// An own unit whose order stalled for want of a route or a firing position:
+/// where it stopped, and when.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Stuck {
@@ -199,8 +201,8 @@ impl Memory {
         }
     }
 
-    /// Remembers the own units whose orders stalled for want of a route in
-    /// `events`, and forgets those that left where they stopped, are gone, or
+    /// Remembers the own units whose orders stalled for want of a route or a
+    /// firing position in `events`, and forgets those that left where they stopped, are gone, or
     /// sat out [`STUCK_TICKS`].
     pub(crate) fn stalls(&mut self, observation: &ObservationData, events: &[OwnEvent]) {
         let now = observation.tick;
@@ -208,7 +210,7 @@ impl Memory {
             if let OwnEvent::OrderStalled {
                 unit,
                 pos,
-                reason: StallReason::NoRoute,
+                reason: StallReason::NoRoute | StallReason::NoFiringPosition,
             } = *event
             {
                 let stuck = Stuck {

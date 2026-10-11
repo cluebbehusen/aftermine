@@ -865,7 +865,7 @@ fn anti_air_near_the_rally_escorts_an_attack() {
 }
 
 #[test]
-fn a_unit_sitting_out_a_stalled_route_joins_no_new_attack() {
+fn a_unit_sitting_out_a_stalled_route_or_firing_position_joins_no_new_attack() {
     let scenario = armed(8, &[]);
     let state = scenario.build().unwrap();
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
@@ -873,27 +873,32 @@ fn a_unit_sitting_out_a_stalled_route_joins_no_new_attack() {
         panic!("premise: an attack forms: {commands:?}");
     };
     let stuck = sent[0];
-    let mut events = OwnEvents::default();
-    events.record(
-        PlayerId(0),
-        &[oxide_sim::Event::OrderStalled {
-            unit: stuck,
-            player: PlayerId(0),
-            pos: state.unit(stuck).unwrap().pos,
-            reason: oxide_sim::StallReason::NoRoute,
-        }],
-    );
-    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut events);
-    let mission = attack(&trace.unwrap().missions).expect("the rest still attack");
-    let [(sent, _)] = &hunts(&commands)[..] else {
-        panic!("{commands:?}");
-    };
-    assert!(!sent.contains(&stuck), "{sent:?}");
-    assert_eq!(
-        sent.len(),
-        mission.units as usize,
-        "members are the units sent"
-    );
+    for reason in [
+        oxide_sim::StallReason::NoRoute,
+        oxide_sim::StallReason::NoFiringPosition,
+    ] {
+        let mut events = OwnEvents::default();
+        events.record(
+            PlayerId(0),
+            &[oxide_sim::Event::OrderStalled {
+                unit: stuck,
+                player: PlayerId(0),
+                pos: state.unit(stuck).unwrap().pos,
+                reason,
+            }],
+        );
+        let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut events);
+        let mission = attack(&trace.unwrap().missions).expect("the rest still attack");
+        let [(sent, _)] = &hunts(&commands)[..] else {
+            panic!("{reason:?}: {commands:?}");
+        };
+        assert!(!sent.contains(&stuck), "{reason:?}: {sent:?}");
+        assert_eq!(
+            sent.len(),
+            mission.units as usize,
+            "members are the units sent"
+        );
+    }
 }
 
 /// West's army with a Kestrel over the middle of the field, and East's
