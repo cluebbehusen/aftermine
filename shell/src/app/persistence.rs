@@ -38,6 +38,8 @@ pub(super) enum Output {
         recovery: Option<PathBuf>,
     },
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
+    /// A saved LAN match, for Match Setup to resume with its players.
+    LanSave(Box<crate::game::checkpoint::LanSave>),
     Saved,
     Retired,
 }
@@ -231,9 +233,7 @@ impl App {
             if let Ok(Output::Catalog { entries, recovery }) = result {
                 match screen {
                     Screen::Home(home) => home.set_catalog(
-                        entries
-                            .iter()
-                            .any(|e| e.compatible && e.kind == crate::saves::RecordKind::Autosave),
+                        entries.iter().any(|e| e.compatible && e.kind.continues()),
                         recovery,
                     ),
                     Screen::Replays(shelf) => shelf.set_catalog(entries),
@@ -315,17 +315,23 @@ fn load_candidates(
     for path in paths {
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
         let result = if recovery {
-            oxide_kit::recovery::inspect(&path).and_then(|record| {
-                crate::game::checkpoint::RestoredGame::recover(record, || cancel.cancelled())
-            })
+            oxide_kit::recovery::inspect(&path)
+                .and_then(|record| {
+                    crate::game::checkpoint::RestoredGame::recover(record, || cancel.cancelled())
+                })
+                .map(|game| crate::saved_game::Loaded::Local(Box::new(game)))
         } else {
-            crate::saved_game::prepare_load(&path)
+            crate::saved_game::prepare(&path)
         };
         match result {
-            Ok(mut loaded) => {
+            Ok(crate::saved_game::Loaded::Local(mut loaded)) => {
                 cancel.commit()?;
                 loaded.start_recovery(root, recovery.then_some(path))?;
-                return Ok(Output::Loaded(Box::new(loaded)));
+                return Ok(Output::Loaded(loaded));
+            }
+            Ok(crate::saved_game::Loaded::Lan(save)) => {
+                cancel.commit()?;
+                return Ok(Output::LanSave(save));
             }
             Err(error) => last_error = error,
         }
@@ -386,6 +392,25 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     ));
                 }
                 return Ok(Screen::Playing);
+            }
+            Ok(Output::LanSave(save)) => {
+                // Nothing was installed, so quitting leaves as Home would.
+                if busy.quit_after {
+                    return Ok(app.persistence_screen(
+                        Intent::Leave(screens::pause::LeaveVerb::Quit, true),
+                        *busy.back,
+                    ));
+                }
+                // The lobby opens at once, under the player's saved name.
+                app.draft.player_name = app
+                    .config
+                    .player_name
+                    .as_deref()
+                    .and_then(|name| oxide_net::PlayerName::new(name).ok());
+                return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
+                    *save,
+                    &mut app.draft,
+                )));
             }
             Ok(Output::Saved) => {
                 if !matches!(busy.intent, Intent::Named(_)) {

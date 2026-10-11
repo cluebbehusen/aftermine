@@ -544,6 +544,18 @@ impl Link {
         Some(host.capture(game))
     }
 
+    /// Remembers the installations of seats no client holds, such as the
+    /// players out of a resumed match, so the next save still lists them.
+    pub(crate) fn remember_installs(&mut self, saved: &[(PlayerId, InstallId)]) {
+        if let Link::Host(host) = self {
+            for &(seat, install) in saved {
+                if !host.installs.iter().any(|&(held, _)| held == seat) {
+                    host.installs.push((seat, install));
+                }
+            }
+        }
+    }
+
     /// Makes the host's own save due again, after one failed.
     pub(crate) fn rearm_autosave(&mut self) {
         if let Link::Host(host) = self {
@@ -1285,6 +1297,11 @@ impl HostLobby {
         self.gathering.name(member)
     }
 
+    /// A joined member's installation.
+    pub(crate) fn install(&self, member: MemberId) -> Option<InstallId> {
+        self.gathering.install(member)
+    }
+
     /// Announces the lobby on the local network, at most once per beacon
     /// interval: `host`'s lobby on `map`, `players` of `seats` here.
     pub(crate) fn advertise(
@@ -1933,7 +1950,7 @@ impl ClientLobby {
     }
 }
 
-mod snapshot;
+pub(crate) mod snapshot;
 
 #[cfg(test)]
 mod tests;

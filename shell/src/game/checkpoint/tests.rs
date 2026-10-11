@@ -320,3 +320,71 @@ fn a_lan_checkpoint_binds_the_host_seat_and_lists_every_other_player() {
         "a local checkpoint keeps the default local seat"
     );
 }
+
+#[test]
+fn a_lan_save_waits_only_for_players_still_in_the_match() {
+    let mut scenario =
+        Scenario::from_json(include_str!("../../../../scenarios/twin-forges.json")).unwrap();
+    for (seat, player) in scenario.players.iter_mut().enumerate() {
+        player.bot = seat == 3;
+        player.bot_config = player.bot.then_some(BotConfig::default());
+    }
+    let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 720.0)).unwrap();
+    game.stage(oxide_sim::PlayerCommand {
+        player: PlayerId(2),
+        command: Command::Surrender,
+    });
+    game.advance_ticks(2);
+    let orders = [PlayerId(0), PlayerId(1), PlayerId(2)].map(|player| oxide_sim::PlayerCommand {
+        player,
+        command: Command::Stop { units: Vec::new() },
+    });
+    let installs = [
+        (PlayerId(1), oxide_net::InstallId::new(1)),
+        (PlayerId(2), oxide_net::InstallId::new(2)),
+    ];
+    let lan = LanManifest::new(&scenario, PlayerId(0), &installs);
+    let save = game
+        .capture_save()
+        .for_lan(orders.to_vec(), lan)
+        .checkpoint()
+        .unwrap()
+        .into_lan_save()
+        .unwrap();
+    assert_eq!(
+        save.players(),
+        &installs[..1],
+        "the surrendered player is out"
+    );
+
+    let (host, pending) = save
+        .host_game(&[(PlayerId(1), BotDifficulty::Standard, BotStance::Balanced)])
+        .unwrap();
+    assert_eq!(host.net_role(), Some(network::NetRole::Host));
+    assert!(!host.clock.paused, "a LAN match runs at once");
+    assert!(host.scenario.players[1].bot, "the bot took the seat");
+    assert_eq!(
+        pending,
+        vec![orders[0].clone()],
+        "the replaced seat's orders go, and so do those of a player out of the match"
+    );
+    assert_eq!(
+        host.pending.to_vec(),
+        vec![orders[0].clone()],
+        "the host projects its own"
+    );
+    assert!(
+        save.host_game(&[(PlayerId(3), BotDifficulty::Standard, BotStance::Balanced)])
+            .is_err(),
+        "only a player's seat goes to a bot"
+    );
+
+    // Resuming alone hands the player out of the match a bot too, so the
+    // host holds the only human seat a local checkpoint expects.
+    let alone = save
+        .local_game(&[(PlayerId(1), BotDifficulty::Standard, BotStance::Balanced)])
+        .unwrap();
+    assert!(alone.scenario.players[2].bot);
+    assert_eq!(Game::local_seat(&alone.scenario), PlayerId(0));
+    assert_eq!(alone.pending.to_vec(), vec![orders[0].clone()]);
+}

@@ -864,7 +864,7 @@ fn a_resumed_start_reaches_every_guest_as_its_snapshot() {
     ];
     lan.host.start(
         StartContent::Resume {
-            scenario: &map(),
+            seats: &[HOST, PlayerId(1), PlayerId(2)],
             tick: 900,
             snapshot: &snapshot,
             pending: &[],

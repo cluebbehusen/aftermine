@@ -261,4 +261,19 @@ fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
         assert!(kind.resumable(), "{kind:?}");
     }
     assert!(!RecordKind::Match.resumable());
+    let continues: Vec<RecordKind> = [
+        RecordKind::Autosave,
+        RecordKind::Save,
+        RecordKind::Match,
+        RecordKind::LanSave,
+        RecordKind::LanAutosave,
+    ]
+    .into_iter()
+    .filter(|kind| kind.continues())
+    .collect();
+    assert_eq!(
+        continues,
+        [RecordKind::Autosave, RecordKind::LanAutosave],
+        "Continue picks up the newest autosave, local or LAN"
+    );
 }

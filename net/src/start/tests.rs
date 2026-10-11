@@ -219,14 +219,13 @@ fn lines_from_unknown_seats_are_a_caller_bug() {
 
 #[test]
 fn a_resume_start_ships_the_snapshot_and_seals_from_the_saved_tick() {
-    let scenario = scenario();
     let snapshot = [7_u8; 10];
     let pending = [PlayerCommand {
         player: CLIENTS[0],
         command: oxide_sim::Command::Surrender,
     }];
     let content = StartContent::Resume {
-        scenario: &scenario,
+        seats: &[HOST, CLIENTS[0], CLIENTS[1]],
         tick: 640,
         snapshot: &snapshot,
         pending: &pending,
@@ -262,10 +261,9 @@ fn a_resume_start_ships_the_snapshot_and_seals_from_the_saved_tick() {
 
 #[test]
 fn a_resume_start_gives_its_snapshot_time_to_reach_every_client() {
-    let scenario = scenario();
     let snapshot = vec![7_u8; 1 << 20];
     let content = StartContent::Resume {
-        scenario: &scenario,
+        seats: &[HOST, CLIENTS[0], CLIENTS[1]],
         tick: 640,
         snapshot: &snapshot,
         pending: &[],
