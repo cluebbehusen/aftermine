@@ -730,12 +730,32 @@ pub(super) fn resolve_collisions(
     let Some(pairs) = collision_pairs(state, reversed, index, &owner_ranks) else {
         return;
     };
+    let productive = productive_posts(state, &pairs);
     let mut spent = vec![Fx::ZERO; state.units.len()];
     for _ in 0..COLLISION_ITERATIONS {
-        if !relaxation_pass(state, travel, &owner_ranks, &mut spent, &pairs) {
+        if !relaxation_pass(state, travel, &owner_ranks, &productive, &mut spent, &pairs) {
             break;
         }
     }
+}
+
+/// Whether each body in a candidate pair holds a productive post, read once
+/// before any correction. A post can hang on another body (an attacker's
+/// target must stay in range), so reading it between corrections would let
+/// one seat's pairs see the other seat's half-resolved positions, and mirror
+/// seats would stop resolving alike.
+fn productive_posts(state: &State, pairs: &[(usize, usize)]) -> Vec<bool> {
+    let mut read = vec![false; state.units.len()];
+    let mut productive = vec![false; state.units.len()];
+    for &(i, j) in pairs {
+        for slot in [i, j] {
+            if !read[slot] {
+                read[slot] = true;
+                productive[slot] = super::crowding::productive(state, &state.units[slot]);
+            }
+        }
+    }
+    productive
 }
 
 /// Correction candidates for one body of an overlapping pair, best
@@ -1029,6 +1049,7 @@ fn relaxation_pass(
     state: &mut State,
     travel: &[Vec2Fx],
     owner_ranks: &[usize],
+    productive: &[bool],
     spent: &mut Vec<Fx>,
     pairs: &[(usize, usize)],
 ) -> bool {
@@ -1063,8 +1084,7 @@ fn relaxation_pass(
         if dist_sq >= full_spacing * full_spacing {
             continue;
         }
-        let productive_i = super::crowding::productive(state, &state.units[i]);
-        let productive_j = super::crowding::productive(state, &state.units[j]);
+        let (productive_i, productive_j) = (productive[i], productive[j]);
         let min_dist = if productive_i || productive_j {
             super::crowding::spacing(&state.units[i], &state.units[j])
         } else {

@@ -712,15 +712,17 @@ fn salvage_is_no_ones_damage() {
 
 #[test]
 fn a_crash_is_credited_to_the_aircraft_that_fell() {
+    // The block reaches well past the orbit, so the wreck falls among
+    // Sentinels however they jostle while shooting.
     let mut units = vec![(0, UnitKind::Condor, 16, 6)];
-    for y in 4..9 {
-        for x in 14..19 {
+    for y in 3..10 {
+        for x in 12..21 {
             if (x, y) != (16, 6) {
                 units.push((1, UnitKind::Sentinel, x, y));
             }
         }
     }
-    let scenario = field(0, &units, &[(1, BuildingKind::FlakTurret, 20, 6)]);
+    let scenario = field(0, &units, &[(1, BuildingKind::FlakTurret, 22, 6)]);
     let (_, ledgers) = play(scenario.build().unwrap(), 1_200, Vec::new());
     let condor = unit(&ledgers, 0, "condor");
     assert_eq!(condor.deaths, 1, "premise: it is shot down");
