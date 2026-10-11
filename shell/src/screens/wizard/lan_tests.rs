@@ -4,6 +4,8 @@
 use super::*;
 use crate::netplay::{ClientLobby, Lobby};
 use macroquad::prelude::vec2;
+use oxide_net::JoinMessage;
+use std::io::Write;
 use std::time::Instant;
 
 fn press(key: Key) -> [RawEvent; 2] {
@@ -224,6 +226,13 @@ fn a_full_lobby_starts_on_every_machine_under_the_players_names() {
     w.start_lan(&draft, &scenario, Duration::ZERO).unwrap();
     assert!(w.hosting_line(&draft).unwrap().starts_with("starting"));
 
+    // The start launches the setup it froze, so nothing changes it.
+    let frozen = draft.seats.clone();
+    w.setup_sel = 1;
+    w.setup_cell = Cell::Difficulty;
+    drive(&mut w, &mut draft, Key::Enter);
+    assert_eq!(draft.seats, frozen);
+
     let deadline = Instant::now() + std::time::Duration::from_secs(10);
     let (mut host, mut joiner) = (None, None);
     while host.is_none() || joiner.is_none() {
@@ -250,6 +259,93 @@ fn a_full_lobby_starts_on_every_machine_under_the_players_names() {
     assert_eq!(host.state.hash(), joiner.state.hash());
     assert!(w.lan.is_none(), "the lobby handed its sockets to the match");
     assert!(draft.seats.iter().all(|plan| !plan.open));
+}
+
+#[test]
+fn escape_calls_off_a_start_and_the_next_one_still_runs() {
+    let (mut w, mut draft) = hosting();
+    let mut clients = vec![join(&w, "Alex")];
+    settle(&mut w, &mut draft, &mut clients, |w, _, _| {
+        member_at(w, 2).is_some()
+    });
+    bot_chair(&mut w, &mut draft, 2);
+    bot_chair(&mut w, &mut draft, 3);
+    let scenario = launch::hosted_scenario(&draft, 0x500, &w.member_names()).unwrap();
+    w.start_lan(&draft, &scenario, Duration::ZERO).unwrap();
+    drive(&mut w, &mut draft, Key::Escape);
+    let lan = w.lan.as_ref().expect("the lobby stays open");
+    assert!(lan.starting.is_none());
+    assert_eq!(w.step, Step::Setup);
+    assert!(member_at(&w, 2).is_some(), "Alex keeps the seat");
+
+    assert!(w.poll_lan(&mut draft, Duration::ZERO).is_none());
+    w.start_lan(&draft, &scenario, Duration::ZERO).unwrap();
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    let (mut host, mut joiner) = (None, None);
+    while host.is_none() || joiner.is_none() {
+        assert!(Instant::now() < deadline, "timed out");
+        if host.is_none() {
+            host = w.poll_lan(&mut draft, Duration::ZERO);
+        }
+        if joiner.is_none() {
+            joiner = clients[0].poll(Duration::ZERO, vec2(1280.0, 800.0));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let ((host, _), (joiner, _)) = (host.unwrap(), joiner.unwrap());
+    assert_eq!(host.state.hash(), joiner.state.hash());
+}
+
+#[test]
+fn a_failed_start_frees_its_culprits_chairs_before_anything_can_start_again() {
+    let (mut w, mut draft) = hosting();
+    let address = w.lan.as_ref().unwrap().lobby.address().to_owned();
+    let mut rogue = std::net::TcpStream::connect(address).unwrap();
+    let revision = crate::build_identity().revision;
+    let introduce = JoinMessage::Introduce {
+        name: name("Rogue"),
+    };
+    for message in [JoinMessage::hello(&revision), introduce] {
+        writeln!(rogue, "{}", message.encode()).unwrap();
+    }
+    settle(&mut w, &mut draft, &mut [], |w, _, _| {
+        member_at(w, 2).is_some()
+    });
+    bot_chair(&mut w, &mut draft, 2);
+    bot_chair(&mut w, &mut draft, 3);
+    let scenario = launch::hosted_scenario(&draft, 0x500, &w.member_names()).unwrap();
+    w.start_lan(&draft, &scenario, Duration::ZERO).unwrap();
+    let wrong = JoinMessage::Ready {
+        hash: 0,
+        attempt: 1,
+    };
+    writeln!(rogue, "{}", wrong.encode()).unwrap();
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    while w.notice.is_none() {
+        assert!(Instant::now() < deadline, "timed out");
+        assert!(w.poll_lan(&mut draft, Duration::ZERO).is_none());
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(w.notice.as_deref(), Some("A player's game didn't match"));
+    assert_eq!(
+        member_at(&w, 2),
+        None,
+        "the same frame frees the chair, so Start cannot seat the culprit"
+    );
+}
+
+#[test]
+fn a_map_without_seats_cannot_host() {
+    let mut scenario = Scenario::skirmish();
+    scenario.players.clear();
+    let mut draft = NewMatchDraft::default();
+    draft.set_scenario(scenario, None);
+    draft.player_name = Some(name("Host"));
+    let mut w = Wizard::open(&draft);
+    w.lan_bind = "127.0.0.1:0".to_owned();
+    w.open_lan(&mut draft);
+    assert!(w.lan.is_none());
+    assert_eq!(w.notice.as_deref(), Some("This map has no seats"));
 }
 
 #[test]

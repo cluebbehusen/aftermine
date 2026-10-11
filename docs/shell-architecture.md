@@ -51,11 +51,12 @@ saved), opens every chair but the host's, and seats joiners from the draft.
 Tapping an open chair's controller chip gives it back to its bot. A joiner takes
 the first open chair in display order, or else a bot's; the host swaps occupants
 between seats, removes players after a confirmation, and Start waits until every
-open chair is filled. Leaving setup or switching to Local closes the lobby,
-asking first when players would be dropped. Home's Join Match and `--join` open
-a `netplay::Lobby` client, whose waiting face draws a read-only copy of the
-host's setup from the room the lobby protocol carries. `--host` hosts a fixed
-scenario through `netplay::ScenarioHost`, which seats joiners with
+open chair is filled. A running start freezes the setup until it resolves, and
+Back or Escape calls it off. Leaving setup or switching to Local closes the
+lobby, asking first when players would be dropped. Home's Join Match and
+`--join` open a `netplay::Lobby` client, whose waiting face draws a read-only
+copy of the host's setup from the room the lobby protocol carries. `--host`
+hosts a fixed scenario through `netplay::ScenarioHost`, which seats joiners with
 `seating::Seating` and starts once every seat has someone to play it. Players'
 names replace their seats' names in the started scenario. In-game hosts listen
 on `oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App`
