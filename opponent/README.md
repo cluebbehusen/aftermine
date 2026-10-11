@@ -52,7 +52,8 @@ first. Wounded armed ground units at home, free or in an attack regrouping
 there, come next under the same safety and scrap rules: one worker for so much
 missing health among them, less the more the seat leans on support, and at least
 one, each sent to the unit missing the most value, sturdiest workers first, so
-an Excavator before a Harvester, then idle before harvesting, then nearest. Idle
+an Excavator before a Harvester, then idle before harvesting, then nearest. A
+worker welding a unit that has left home stops rather than follow it out. Idle
 workers go to the reachable worked node or wreck with the most places open; with
 none open, to the nearest wreck with a clear route holding more salvage than the
 workers on it carry away in a load each, then to the most open worked source

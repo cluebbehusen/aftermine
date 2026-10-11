@@ -426,9 +426,10 @@ fn calm(
 /// Sends workers at home to weld the wounded armed ground units of `patients`
 /// at home that no worker welds yet, most missing value first, while they are
 /// calm and the seat has scrap to pay. They send as many welders as the
-/// wounds call for, one to a patient: the sturdiest workers first, so
-/// Excavators before Harvesters, then the idle before the harvesting, then
-/// the nearest.
+/// wounds at home call for, counting those already welding, one to a
+/// patient: the sturdiest workers first, so Excavators before Harvesters,
+/// then the idle before the harvesting, then the nearest. A worker welding a
+/// unit that has left home stops rather than follow it out.
 fn weld_units(
     observation: &ObservationData,
     map: &MapModel,
@@ -445,25 +446,34 @@ fn weld_units(
             .iter()
             .any(|foundry| gap(foundry.anchor, size, tile, (1, 1)) <= HOME_TILES)
     };
-    let welded: Vec<UnitId> = observation
+    let mine = |id: &UnitId| {
+        let index = observation
+            .my_units
+            .binary_search_by_key(id, |unit| unit.id)
+            .ok()?;
+        Some(&observation.my_units[index])
+    };
+    let mut welded: Vec<UnitId> = Vec::new();
+    for unit in observation
         .my_units
         .iter()
         .filter(|unit| worker(unit.kind) && unit.repairing)
-        .filter_map(|unit| match observation.repair_target(unit.id)? {
-            Target::Unit(patient) => Some(patient),
-            Target::Building(_) => None,
-        })
-        .collect();
-    let mut wounded: Vec<(u64, &UnitObs)> = patients
+    {
+        let Some(Target::Unit(patient)) = observation.repair_target(unit.id) else {
+            continue;
+        };
+        if mine(&patient).is_some_and(|patient| home(patient.tile)) {
+            welded.push(patient);
+        } else if !ledger.order(Command::Stop {
+            units: vec![unit.id],
+        }) {
+            return;
+        }
+    }
+    let wounded: Vec<(u64, &UnitObs)> = patients
         .iter()
-        .filter_map(|id| {
-            let index = observation
-                .my_units
-                .binary_search_by_key(id, |unit| unit.id)
-                .ok()?;
-            Some(&observation.my_units[index])
-        })
-        .filter(|unit| armed_ground(unit.kind) && !welded.contains(&unit.id) && home(unit.tile))
+        .filter_map(mine)
+        .filter(|unit| armed_ground(unit.kind) && home(unit.tile))
         .filter(|unit| calm(observation, hazards, unit.tile, (1, 1), doubled(unit.tile)))
         .filter_map(|unit| {
             let stats = unit.kind.stats();
@@ -473,18 +483,21 @@ fn weld_units(
         })
         .collect();
     let wanted = wounds(wounded.iter().map(|(_, unit)| *unit)) / per_welder.max(1);
+    let (attended, mut unattended): (Vec<_>, Vec<_>) = wounded
+        .into_iter()
+        .partition(|(_, unit)| welded.contains(&unit.id));
     let mut room = usize::try_from(wanted.max(1))
         .unwrap_or(usize::MAX)
-        .saturating_sub(welded.len())
-        .min(wounded.len());
-    wounded.sort_by_key(|(missing, unit)| {
+        .saturating_sub(attended.len())
+        .min(unattended.len());
+    unattended.sort_by_key(|(missing, unit)| {
         (
             Reverse(*missing),
             frame.rank(frame.home, doubled(unit.tile)),
             unit.id,
         )
     });
-    for (_, patient) in wounded {
+    for (_, patient) in unattended {
         if room == 0 || ledger.spendable() < WELD_FLOOR {
             return;
         }

@@ -359,6 +359,64 @@ fn mirrored_seats_weld_mirrored() {
     assert_eq!(mirror(&state, west), east);
 }
 
+/// `state` at West's next decision after its `worker` was sent to weld
+/// `patient`.
+fn welding(state: &State, worker: UnitId, patient: UnitId) -> State {
+    let mut state = state.clone();
+    advance_to(
+        &mut state,
+        12,
+        &[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::RepairUnit {
+                units: vec![worker],
+                target: patient,
+                queue: false,
+            },
+        }],
+    );
+    state
+}
+
+#[test]
+fn a_second_wound_gets_its_own_welder_while_the_first_weld_runs() {
+    let mut scenario = arena(5_000);
+    // Spare hands, since such wounds also call for a Repair Bay.
+    scenario.units.extend([
+        unit(0, UnitKind::Breaker, 2, 9),
+        unit(0, UnitKind::Breaker, 5, 10),
+        unit(0, UnitKind::Harvester, 1, 7),
+        unit(0, UnitKind::Harvester, 1, 8),
+    ]);
+    let state = scenario.build().unwrap();
+    let (first, second) = (at(&state, 2, 9), at(&state, 5, 10));
+    let state = all_wounded(&state, &[first, second], 1);
+    let welder = harvesters(&state, 0)[0];
+    let state = welding(&state, welder, first);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        welds(&commands)
+            .iter()
+            .any(|(units, patient)| *patient == second && !units.contains(&welder)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_welder_whose_patient_leaves_home_goes_back_to_work() {
+    let (scenario, state, hurt) = wounded_at(1_000, &[(14, 8)], 10);
+    let welder = harvesters(&state, 0)[0];
+    let state = welding(&state, welder, hurt[0]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|command| matches!(
+            &command.command,
+            Command::Stop { units } if *units == [welder]
+        )),
+        "{commands:?}"
+    );
+}
+
 /// An attack regrouping at its rally with the arena's West squad, one of
 /// them still walking in, and the squad's ids.
 fn regrouping(scrap: u32) -> (State, Opponent, Vec<UnitId>) {
