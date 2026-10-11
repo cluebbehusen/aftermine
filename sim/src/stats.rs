@@ -86,7 +86,7 @@ chassis::listed_enum! {
         /// needs a spotter at full reach.
         Bastion,
         /// Radar: a ring of true sight, and a wider ring of blips (contacts
-        /// without identity that never satisfy a targeted attack).
+        /// without identity whose contact tracks attacks may target).
         Array,
         /// Grinds ambient debris into a scrap trickle, so a match can outlive
         /// its scrap patches.
@@ -1641,7 +1641,7 @@ impl BuildingKind {
                 "Long-range artillery with explosive shells. Needs a spotter beyond its sight range."
             }
             BuildingKind::Array => {
-                "Extends vision, detects hidden charges, and tracks distant radar contacts. Radar contacts alone cannot be targeted."
+                "Extends vision, detects hidden charges, and tracks distant radar contacts that weapons can fire on."
             }
             BuildingKind::Reclaimer => {
                 "Produces scrap continuously without workers. Upgrade to a Refinery for higher output."
@@ -1722,7 +1722,7 @@ pub const WRECK_DECAY_TICKS: u64 = 300;
 
 /// Outer detection ring of the Array, in tiles: hostile units and buildings
 /// inside it but out of true sight appear as blips (a tile, no kind, no
-/// owner). Blips never satisfy targeted-attack visibility.
+/// owner). Each blip feeds a contact track that attacks may target.
 pub const RADAR_DETECT_RADIUS: i32 = 20;
 
 /// Ticks per scrap credited by each built Reclaimer. Slow enough to serve as
