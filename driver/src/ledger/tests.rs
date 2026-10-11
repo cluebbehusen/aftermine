@@ -775,7 +775,7 @@ fn crucibles_sharing_a_last_unit_of_wreck_do_not_both_smelt_it() {
         value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(1);
     });
     assert_eq!(state.map().wreck_at(TilePos::new(13, 8)), 1);
-    let smelting = smelters(&state);
+    let smelting = smelters(&hearths(&state), &BTreeMap::new());
     assert_eq!(smelting.len(), 1, "{smelting:?}");
 }
 
@@ -804,4 +804,207 @@ fn construction_gain_follows_the_simulations_ramp() {
         ..site
     };
     assert_eq!(built.built_gain(&built), Some(0));
+}
+
+#[test]
+fn a_crucible_and_a_worker_sharing_wreck_are_credited_what_the_bank_received() {
+    // On a smelting tick workers strip wreck before the Crucible feeds, so a
+    // worker taking the last reachable unit leaves the Crucible nothing.
+    // Each (order delay, wreck) layout here lands a pulse on such a tick.
+    for (delay, amount) in [(4, 6), (14, 5), (24, 4), (34, 8)] {
+        let scenario = field(
+            0,
+            &[(0, UnitKind::Harvester, 5, 9)],
+            &[(0, BuildingKind::Crucible, 8, 6)],
+        );
+        let mut state = staged(&scenario, |value| {
+            let width = value["map"]["grid"]["width"].as_i64().unwrap();
+            let cell = usize::try_from(9 * width + 11).unwrap();
+            value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(amount);
+        });
+        let worker = unit_at(&state, 5, 9);
+        let before = state.players()[0].scrap;
+        let mut ledger = ImpactLedger::new(&state);
+        for tick in 0..1_200 {
+            let orders = if tick == delay {
+                vec![order(
+                    0,
+                    Command::Harvest {
+                        units: vec![worker],
+                        node: TilePos::new(11, 9),
+                        queue: false,
+                    },
+                )]
+            } else {
+                Vec::new()
+            };
+            let report = state.tick(&orders);
+            ledger.observe(&state, &report);
+        }
+        let ledgers = ledger.finish(&state);
+        let passive: u64 = ledgers[0]
+            .buildings
+            .values()
+            .map(|totals| totals.passive)
+            .sum();
+        let harvested = unit(&ledgers, 0, "harvester").harvested;
+        assert!(
+            harvested > 0,
+            "premise: the worker salvages ({delay}, {amount})"
+        );
+        assert_eq!(
+            passive + harvested,
+            u64::from(state.players()[0].scrap - before),
+            "layout ({delay}, {amount})"
+        );
+    }
+}
+
+#[test]
+fn an_extractor_destroyed_on_its_payout_tick_is_still_credited_that_payout() {
+    // The simulation pays Extractors before the tick's combat, so one that
+    // falls on a payout tick has already paid.
+    let mut on_payout = false;
+    // Five Wardens at x 18 fell it on tick 79, a payout tick.
+    for (attackers, x) in [(1, 17), (3, 17), (5, 18)] {
+        let mut scenario = field(
+            0,
+            &(0..attackers)
+                .map(|row| (1, UnitKind::Warden, x, 4 + row))
+                .chain([(0, UnitKind::Harvester, 4, 9)])
+                .collect::<Vec<_>>(),
+            &[(0, BuildingKind::Extractor, 14, 6)],
+        );
+        let mut row: Vec<char> = scenario.map[6].chars().collect();
+        row[14] = 'E';
+        scenario.map[6] = row.into_iter().collect();
+        let mut state = scenario.build().unwrap();
+        let before = state.players()[0].scrap;
+        let mut ledger = ImpactLedger::new(&state);
+        let mut fell = None;
+        for _ in 0..1_200 {
+            let report = state.tick(&[]);
+            if report.events.iter().any(
+                |event| matches!(event, Event::BuildingDestroyed { player, .. } if player.0 == 0),
+            ) {
+                fell = Some(report.tick);
+            }
+            ledger.observe(&state, &report);
+        }
+        let fell = fell.expect("premise: the Extractor falls");
+        on_payout |= (fell + 1).is_multiple_of(EXTRACTOR_REMOTE_YIELD.1);
+        let ledgers = ledger.finish(&state);
+        let passive: u64 = ledgers[0]
+            .buildings
+            .values()
+            .map(|totals| totals.passive)
+            .sum();
+        assert_eq!(
+            passive,
+            u64::from(state.players()[0].scrap - before),
+            "{attackers} attackers at x {x}, fell on {fell}"
+        );
+    }
+    assert!(on_payout, "premise: some layout falls on a payout tick");
+}
+
+#[test]
+fn workers_sharing_a_tile_take_its_last_field_scrap_in_the_order_they_act() {
+    // Workers act in id order on even ticks and in reverse on odd ones, so
+    // when two dig a tile's last field scrap on one tick the first to act
+    // has it and the other strips wreck.
+    let scenario = field(
+        0,
+        &[
+            (0, UnitKind::Harvester, 7, 8),
+            (0, UnitKind::Harvester, 9, 8),
+        ],
+        &[],
+    );
+    let node = TilePos::new(8, 8);
+    let start = staged(&scenario, |value| {
+        let width = value["map"]["grid"]["width"].as_i64().unwrap();
+        let cell = usize::try_from(8 * width + 8).unwrap();
+        value["map"]["grid"]["cells"][cell]["scrap"] = serde_json::json!(1);
+        value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(5);
+    });
+    let dug = staged(&scenario, |value| {
+        let width = value["map"]["grid"]["width"].as_i64().unwrap();
+        let cell = usize::try_from(8 * width + 8).unwrap();
+        value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(4);
+        for unit in value["units"].as_array_mut().unwrap() {
+            if unit["kind"] == "harvester" {
+                unit["worker"]["carrying"] = serde_json::json!(1);
+            }
+        }
+    });
+    let low = unit_at(&start, 7, 8);
+    let high = unit_at(&start, 9, 8);
+    assert!(low < high);
+    for (tick, first) in [(10, low), (11, high)] {
+        let mut ledger = ImpactLedger::new(&start);
+        for id in [low, high] {
+            ledger.working.insert(id, node);
+        }
+        ledger.field_scrap.insert(node, 1);
+        let stripped = ledger.load(&dug, tick);
+        assert_eq!(stripped, BTreeMap::from([(node, 1)]), "tick {tick}");
+        for id in [low, high] {
+            let cargo = ledger.cargo[&id];
+            let field = u32::from(id == first);
+            assert_eq!(
+                (cargo.field, cargo.wreck),
+                (field, 1 - field),
+                "tick {tick}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_reclaimer_whose_upgrade_starts_on_its_payout_tick_earns_nothing_that_tick() {
+    // Commands run before the tick's income, and an upgrade takes the
+    // building out of service at once.
+    let scenario = field(
+        1_000,
+        &[(0, UnitKind::Harvester, 6, 8)],
+        &[
+            (0, BuildingKind::Fabricator, 8, 4),
+            (0, BuildingKind::Reclaimer, 12, 4),
+        ],
+    );
+    let mut state = scenario.build().unwrap();
+    let reclaimer = building(&state, 0, BuildingKind::Reclaimer);
+    let before = state.players()[0].scrap;
+    let mut ledger = ImpactLedger::new(&state);
+    for tick in 0..300 {
+        let orders = if tick == 2 * RECLAIMER_PERIOD {
+            vec![order(
+                0,
+                Command::UpgradeBuilding {
+                    building: reclaimer,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+        let report = state.tick(&orders);
+        ledger.observe(&state, &report);
+    }
+    assert_eq!(
+        state.building(reclaimer).unwrap().tier,
+        1,
+        "premise: the upgrade began"
+    );
+    let ledgers = ledger.finish(&state);
+    let passive: u64 = ledgers[0]
+        .buildings
+        .values()
+        .map(|totals| totals.passive)
+        .sum();
+    let spent: u64 = ledgers[0].spend.values().flatten().sum();
+    assert_eq!(
+        passive + u64::from(before),
+        u64::from(state.players()[0].scrap) + spent
+    );
 }

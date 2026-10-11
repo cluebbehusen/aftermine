@@ -13,6 +13,7 @@ pub mod ios;
 pub mod ledger;
 pub mod pool;
 pub mod profile;
+pub mod replay_health;
 pub mod replay_inspect;
 pub mod replay_ledger;
 pub mod replay_summary;

@@ -24,7 +24,8 @@ use oxide_sim::stats::{
     REFINERY_PERIOD, UnitKind,
 };
 use oxide_sim::{
-    BuildingId, Event, ExtractorIncome, State, Target, TickReport, UnitId, UnitRepairSource,
+    Building, BuildingId, Event, ExtractorIncome, Order, State, Target, TickReport, UnitId,
+    UnitRepairSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -268,6 +269,86 @@ pub struct SeatLedger {
     pub final_worth: u64,
 }
 
+/// Where a seat's income came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncomeSource {
+    /// Worker deliveries of scrap dug from scrap fields.
+    FieldHarvest,
+    /// Worker deliveries of scrap stripped from wrecks.
+    WreckSalvage,
+    /// A Reclaimer's trickle.
+    Reclaimer,
+    /// A Reclaimer upgraded to a Refinery.
+    Refinery,
+    /// An Extractor's yield.
+    Extractor,
+    /// The Foundry drip.
+    FoundryDrip,
+    /// A Crucible smelting wreck.
+    Smelting,
+}
+
+impl IncomeSource {
+    /// Every source, in report order.
+    pub const ALL: [IncomeSource; 7] = [
+        IncomeSource::FieldHarvest,
+        IncomeSource::WreckSalvage,
+        IncomeSource::Reclaimer,
+        IncomeSource::Refinery,
+        IncomeSource::Extractor,
+        IncomeSource::FoundryDrip,
+        IncomeSource::Smelting,
+    ];
+
+    /// The source's report name.
+    pub const fn name(self) -> &'static str {
+        match self {
+            IncomeSource::FieldHarvest => "field harvest",
+            IncomeSource::WreckSalvage => "wreck salvage",
+            IncomeSource::Reclaimer => "reclaimer",
+            IncomeSource::Refinery => "refinery",
+            IncomeSource::Extractor => "extractor",
+            IncomeSource::FoundryDrip => "foundry drip",
+            IncomeSource::Smelting => "smelting",
+        }
+    }
+}
+
+/// Scrap a seat earned in the last observed tick from one source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Credit {
+    /// The earning seat.
+    pub seat: u8,
+    /// Where it came from.
+    pub source: IncomeSource,
+    /// Scrap earned.
+    pub scrap: u64,
+}
+
+/// Health a body lost in the last observed tick and the hostile bodies
+/// credited with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    /// The body that lost health.
+    pub victim: Target,
+    /// Each credited body and its team.
+    pub sources: Vec<(Target, u8)>,
+}
+
+/// Scrap a worker carries, by where it picked it up.
+#[derive(Debug, Clone, Copy, Default)]
+struct Cargo {
+    field: u32,
+    wreck: u32,
+}
+
+impl Cargo {
+    fn total(self) -> u32 {
+        self.field + self.wreck
+    }
+}
+
 /// A shell in flight, waiting to land.
 #[derive(Debug, Clone, Copy)]
 struct Shell {
@@ -303,8 +384,22 @@ pub struct ImpactLedger {
     refunds: Vec<u64>,
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
-    /// Crucibles that have a wreck in reach as a smelting tick begins.
-    smelting: Vec<Key>,
+    /// The Crucibles and wreck in their reach as a smelting tick begins.
+    hearths: Hearths,
+    /// Extractor payouts as the coming tick begins: building, owner, scrap
+    /// and period.
+    payouts: Vec<(Key, u8, u64, u64)>,
+    /// Income credited in the last observed tick.
+    credits: Vec<Credit>,
+    /// Losses attributed in the last observed tick.
+    hits: Vec<Hit>,
+    /// Each worker's cargo by origin, kept while it rides a transport.
+    cargo: BTreeMap<UnitId, Cargo>,
+    /// The tile each harvesting worker was working, as the last observed
+    /// tick left it.
+    working: BTreeMap<UnitId, TilePos>,
+    /// Field scrap on those tiles then.
+    field_scrap: BTreeMap<TilePos, u32>,
 }
 
 fn snapshot(state: &State) -> Vec<Body> {
@@ -410,46 +505,101 @@ fn worth(state: &State, bodies: &[Body], seat: usize) -> u64 {
     owned + u64::from(state.players()[seat].scrap)
 }
 
-/// Crucibles in `state` that will smelt a wreck, by the simulation's reach
-/// rule and allocation: in id order, each takes one unit of salvage from the
-/// nearest wreck, the richer on a tie, so two sharing a last unit do not
-/// both smelt it.
-fn smelters(state: &State) -> Vec<Key> {
+/// Built Crucibles and the wreck within their reach, as a tick begins.
+#[derive(Debug, Clone, Default)]
+struct Hearths {
+    crucibles: Vec<Building>,
+    wreck: BTreeMap<TilePos, u32>,
+}
+
+/// Tiles a Crucible's smelting reach could cover, before the exact radius
+/// test.
+fn reach_box(building: &Building) -> impl Iterator<Item = TilePos> {
     let reach = CRUCIBLE_SMELT_RADIUS.to_num::<i32>() + 1;
+    let (w, h) = building.kind.size();
+    let anchor = building.anchor;
+    ((anchor.y - reach)..(anchor.y + h + reach)).flat_map(move |y| {
+        ((anchor.x - reach)..(anchor.x + w + reach)).map(move |x| TilePos::new(x, y))
+    })
+}
+
+fn hearths(state: &State) -> Hearths {
+    let crucibles: Vec<Building> = state
+        .buildings()
+        .iter()
+        .filter(|building| {
+            building.built() && building.hp > 0 && building.kind == BuildingKind::Crucible
+        })
+        .cloned()
+        .collect();
+    let wreck = crucibles
+        .iter()
+        .flat_map(reach_box)
+        .map(|tile| (tile, state.map().wreck_at(tile)))
+        .filter(|(_, wreck)| *wreck > 0)
+        .collect();
+    Hearths { crucibles, wreck }
+}
+
+/// The Crucibles of `hearths` that smelt a wreck once workers have stripped
+/// `stripped` from it, by the simulation's reach rule and allocation: in id
+/// order, each takes one unit of salvage from the nearest wreck, the richer
+/// on a tie, so two sharing a last unit do not both smelt it. Exact ties
+/// fall to row order here, where the simulation mirrors the order for half
+/// the map; that matters only when two Crucibles contest a last unit.
+fn smelters(hearths: &Hearths, stripped: &BTreeMap<TilePos, u32>) -> Vec<Key> {
     let radius = CRUCIBLE_SMELT_RADIUS * CRUCIBLE_SMELT_RADIUS;
-    let mut taken: BTreeMap<(i32, i32), u32> = BTreeMap::new();
+    let mut taken: BTreeMap<TilePos, u32> = stripped.clone();
     let mut smelting = Vec::new();
-    for building in state.buildings() {
-        if !building.built() || building.hp == 0 || building.kind != BuildingKind::Crucible {
-            continue;
-        }
-        let (w, h) = building.kind.size();
-        let anchor = building.anchor;
+    for building in &hearths.crucibles {
         let mut fuel = None;
-        for y in (anchor.y - reach)..(anchor.y + h + reach) {
-            for x in (anchor.x - reach)..(anchor.x + w + reach) {
-                let tile = TilePos::new(x, y);
-                let left = state
-                    .map()
-                    .wreck_at(tile)
-                    .saturating_sub(taken.get(&(x, y)).copied().unwrap_or(0));
-                let center = tile.center();
-                let distance = building.closest_point_to(center).dist_sq(center);
-                if left == 0 || distance > radius {
-                    continue;
-                }
-                let key = (distance, std::cmp::Reverse(left), (y, x));
-                if fuel.is_none_or(|best| key < best) {
-                    fuel = Some(key);
-                }
+        for tile in reach_box(building) {
+            let left = hearths
+                .wreck
+                .get(&tile)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(taken.get(&tile).copied().unwrap_or(0));
+            let center = tile.center();
+            let distance = building.closest_point_to(center).dist_sq(center);
+            if left == 0 || distance > radius {
+                continue;
+            }
+            let key = (distance, std::cmp::Reverse(left), (tile.y, tile.x));
+            if fuel.is_none_or(|best| key < best) {
+                fuel = Some(key);
             }
         }
         if let Some((_, _, (y, x))) = fuel {
-            *taken.entry((x, y)).or_default() += 1;
+            *taken.entry(TilePos::new(x, y)).or_default() += 1;
             smelting.push(Key::Building(building.id));
         }
     }
     smelting
+}
+
+/// Extractors that pay on a tick beginning from `state`, with their owner,
+/// scrap and period: the simulation pays before any combat in the tick.
+fn payouts(state: &State) -> Vec<(Key, u8, u64, u64)> {
+    state
+        .buildings()
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Extractor && building.built() && building.hp > 0
+        })
+        .filter_map(|building| {
+            let (amount, period) = match state.extractor_income(building.id)? {
+                ExtractorIncome::Supported => EXTRACTOR_SUPPORTED_YIELD,
+                ExtractorIncome::Remote => EXTRACTOR_REMOTE_YIELD,
+            };
+            Some((
+                Key::Building(building.id),
+                building.player.0,
+                u64::from(amount),
+                period,
+            ))
+        })
+        .collect()
 }
 
 fn within(a: TilePos, b: TilePos, radius: i32) -> bool {
@@ -479,7 +629,26 @@ impl ImpactLedger {
             records.insert(body.key, record);
         }
         let seats = state.players().len();
-        Self {
+        // Cargo held before the ledger began counts as field scrap.
+        let cargo = state
+            .units()
+            .iter()
+            .flat_map(|unit| {
+                std::iter::once((unit.id, unit.carrying()))
+                    .chain(unit.cargo.iter().map(|rider| (rider.id, rider.carrying)))
+            })
+            .filter(|(_, carrying)| *carrying > 0)
+            .map(|(id, carrying)| {
+                (
+                    id,
+                    Cargo {
+                        field: carrying,
+                        wreck: 0,
+                    },
+                )
+            })
+            .collect();
+        let mut ledger = Self {
             start,
             teams: state.players().iter().map(|player| player.team).collect(),
             bodies,
@@ -489,12 +658,35 @@ impl ImpactLedger {
             refunds: vec![0; seats],
             worth: vec![Vec::new(); seats],
             shells: Vec::new(),
-            smelting: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
-                smelters(state)
+            hearths: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
+                hearths(state)
             } else {
-                Vec::new()
+                Hearths::default()
             },
-        }
+            payouts: payouts(state),
+            credits: Vec::new(),
+            hits: Vec::new(),
+            cargo,
+            working: BTreeMap::new(),
+            field_scrap: BTreeMap::new(),
+        };
+        ledger.note_work(state);
+        ledger
+    }
+
+    /// Income credited in the last observed tick, by seat and source. A
+    /// delivery splits between field harvest and wreck salvage by where its
+    /// worker picked each piece up: a piece is field scrap when field scrap
+    /// left the tile the worker was working that tick, and workers sharing a
+    /// tile take the field scrap that left it first.
+    pub fn credits(&self) -> &[Credit] {
+        &self.credits
+    }
+
+    /// Losses attributed to hostile bodies in the last observed tick. A loss
+    /// no hit accounts for is absent.
+    pub fn hits(&self) -> &[Hit] {
+        &self.hits
     }
 
     /// Value of the damage unit `id` has dealt and taken so far, in
@@ -508,21 +700,25 @@ impl ImpactLedger {
     /// Accounts for the tick `report` describes, which left `state`.
     pub fn observe(&mut self, state: &State, report: &TickReport) {
         let now = report.tick;
+        self.credits.clear();
+        self.hits.clear();
         let after = snapshot(state);
         let sources = self.events(report);
+        let stripped = self.load(state, now);
         self.spending(&after, now);
         self.damage(&after, &sources, now);
-        self.passive(state, now);
+        self.passive(state, now, &stripped);
         if (now + 1 - self.start).is_multiple_of(WORTH_PERIOD) {
             for (seat, samples) in self.worth.iter_mut().enumerate() {
                 samples.push(worth(state, &after, seat));
             }
         }
-        self.smelting = if (now + 1).is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
-            smelters(state)
+        self.hearths = if (now + 1).is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
+            hearths(state)
         } else {
-            Vec::new()
+            Hearths::default()
         };
+        self.payouts = payouts(state);
         self.bodies = after;
     }
 
@@ -591,6 +787,7 @@ impl ImpactLedger {
                     self.spent(player.0, format!("{category}:{}", kind.name()), now, cost);
                 }
                 Event::UnitDied { unit, pos, .. } => {
+                    self.cargo.remove(unit);
                     sources
                         .died
                         .insert(Key::Unit(*unit), TilePos::containing(*pos));
@@ -606,9 +803,23 @@ impl ImpactLedger {
                 Event::ScrapDeposited {
                     unit,
                     foundry,
+                    player,
                     amount,
-                    ..
                 } => {
+                    let cargo = self.cargo.remove(unit).unwrap_or_default();
+                    let wreck = cargo.wreck.min(*amount);
+                    for (source, scrap) in [
+                        (IncomeSource::FieldHarvest, *amount - wreck),
+                        (IncomeSource::WreckSalvage, wreck),
+                    ] {
+                        if scrap > 0 {
+                            self.credits.push(Credit {
+                                seat: player.0,
+                                source,
+                                scrap: u64::from(scrap),
+                            });
+                        }
+                    }
                     if let Some(record) = self.records.get_mut(&Key::Unit(*unit)) {
                         record.harvested += u64::from(*amount);
                     }
@@ -757,6 +968,67 @@ impl ImpactLedger {
         }
         self.shells.retain(|shell| shell.lands + SHELL_SLACK >= now);
         sources
+    }
+
+    /// Splits what each worker picked up in tick `now` between field scrap
+    /// and wreck, by how much field scrap left the tile it was working, and
+    /// returns the wreck stripped from each tile.
+    fn load(&mut self, state: &State, now: u64) -> BTreeMap<TilePos, u32> {
+        let mut picked: BTreeMap<Option<TilePos>, Vec<(UnitId, u32)>> = BTreeMap::new();
+        for unit in state.units() {
+            if unit.kind.stats().harvest.is_none() {
+                continue;
+            }
+            // Only a delivery empties a load, and it settles the cargo.
+            let held = self.cargo.get(&unit.id).map_or(0, |cargo| cargo.total());
+            if unit.carrying() > held {
+                picked
+                    .entry(self.working.get(&unit.id).copied())
+                    .or_default()
+                    .push((unit.id, unit.carrying() - held));
+            }
+        }
+        let mut stripped: BTreeMap<TilePos, u32> = BTreeMap::new();
+        for (tile, mut workers) in picked {
+            // Workers act in id order on even ticks and in reverse on odd
+            // ones, so the first to act takes a tile's last field scrap.
+            if now % 2 == 1 {
+                workers.reverse();
+            }
+            // A worker with no tile on record picked up field scrap.
+            let mut field = tile.map_or(u32::MAX, |tile| {
+                self.field_scrap
+                    .get(&tile)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_sub(state.map().scrap_at(tile))
+            });
+            for (id, gained) in workers {
+                let from_field = gained.min(field);
+                field -= from_field;
+                let cargo = self.cargo.entry(id).or_default();
+                cargo.field += from_field;
+                cargo.wreck += gained - from_field;
+                if let Some(tile) = tile {
+                    *stripped.entry(tile).or_default() += gained - from_field;
+                }
+            }
+        }
+        self.note_work(state);
+        stripped
+    }
+
+    /// Records the tile each harvesting worker in `state` works and its
+    /// field scrap.
+    fn note_work(&mut self, state: &State) {
+        self.working.clear();
+        self.field_scrap.clear();
+        for unit in state.units() {
+            if let Order::Harvest { node, .. } = unit.order {
+                self.working.insert(unit.id, node);
+                self.field_scrap.insert(node, state.map().scrap_at(node));
+            }
+        }
     }
 
     fn repair(&mut self, patient: Key, welder: Key, amount: u32, sources: &mut Sources) {
@@ -948,6 +1220,13 @@ impl ImpactLedger {
         if let Some(record) = self.records.get_mut(&pre.key) {
             record.taken += value;
         }
+        self.hits.push(Hit {
+            victim: target(pre.key),
+            sources: from
+                .iter()
+                .map(|source| (target(source.key), source.team))
+                .collect(),
+        });
         let share = value / from.len() as u64;
         for source in &from {
             let place = place(before, source.owner, pre.owner, pre.tile);
@@ -1011,12 +1290,13 @@ impl ImpactLedger {
     }
 
     /// Credits the income the simulation pays without an event, by the same
-    /// rules and cadence: Reclaimers and the Foundry drip as buildings stood
-    /// when the tick began, before any combat in it; Extractors by the
-    /// support the state reports; and Crucibles that had a wreck in reach.
-    fn passive(&mut self, state: &State, now: u64) {
+    /// rules and cadence: Reclaimers, Extractors and the Foundry drip as
+    /// buildings stood when the tick began, before any combat in it, and
+    /// Crucibles with wreck still in reach once workers had stripped
+    /// `stripped` from it.
+    fn passive(&mut self, state: &State, now: u64, stripped: &BTreeMap<TilePos, u32>) {
         let completed = now + 1;
-        let mut credits: Vec<(Key, u64)> = Vec::new();
+        let mut credits: Vec<(Key, IncomeSource, u64)> = Vec::new();
         for body in &self.bodies {
             let Some((kind, tier, true)) = body.building else {
                 continue;
@@ -1024,50 +1304,59 @@ impl ImpactLedger {
             if body.hp == 0 {
                 continue;
             }
+            // Commands run before the tick's income, so an upgrade one
+            // started keeps the building out of service all tick.
+            if let Key::Building(id) = body.key
+                && state.building(id).is_some_and(|building| !building.built())
+            {
+                continue;
+            }
             let resigned = state.players()[usize::from(body.owner)].resigned;
-            let scrap = match kind {
-                BuildingKind::Reclaimer if tier == 0 => {
-                    u64::from(now.is_multiple_of(RECLAIMER_PERIOD))
-                }
-                BuildingKind::Reclaimer if tier == 1 => {
-                    u64::from(now.is_multiple_of(REFINERY_PERIOD))
-                }
+            let credit = match kind {
+                BuildingKind::Reclaimer if tier == 0 => now
+                    .is_multiple_of(RECLAIMER_PERIOD)
+                    .then_some(IncomeSource::Reclaimer),
+                BuildingKind::Reclaimer if tier == 1 => now
+                    .is_multiple_of(REFINERY_PERIOD)
+                    .then_some(IncomeSource::Refinery),
                 BuildingKind::Foundry
                     if !resigned
                         && completed >= FOUNDRY_DRIP_START_TICK
                         && completed.is_multiple_of(FOUNDRY_DRIP_PERIOD) =>
                 {
-                    1
+                    Some(IncomeSource::FoundryDrip)
                 }
-                _ => 0,
+                _ => None,
             };
-            if scrap > 0 {
-                credits.push((body.key, scrap));
+            if let Some(source) = credit {
+                credits.push((body.key, source, 1));
             }
         }
-        for building in state.buildings() {
-            if building.kind != BuildingKind::Extractor
-                || !building.built()
-                || building.hp == 0
-                || state.player(building.player).resigned
-            {
-                continue;
-            }
-            let (amount, period) = match state.extractor_income(building.id) {
-                Some(ExtractorIncome::Supported) => EXTRACTOR_SUPPORTED_YIELD,
-                Some(ExtractorIncome::Remote) => EXTRACTOR_REMOTE_YIELD,
-                None => continue,
-            };
-            if completed.is_multiple_of(period) {
-                credits.push((Key::Building(building.id), u64::from(amount)));
-            }
-        }
+        // A resignation is a command, applied before the tick's income.
+        credits.extend(
+            self.payouts
+                .iter()
+                .filter(|(_, owner, _, period)| {
+                    completed.is_multiple_of(*period)
+                        && !state.players()[usize::from(*owner)].resigned
+                })
+                .map(|(key, _, amount, _)| (*key, IncomeSource::Extractor, *amount)),
+        );
         if now.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
-            credits.extend(self.smelting.iter().map(|key| (*key, 1)));
+            credits.extend(
+                smelters(&self.hearths, stripped)
+                    .into_iter()
+                    .map(|key| (key, IncomeSource::Smelting, 1)),
+            );
         }
-        for (key, scrap) in credits {
+        for (key, source, scrap) in credits {
             if let Some(record) = self.records.get_mut(&key) {
                 record.passive += scrap;
+                self.credits.push(Credit {
+                    seat: record.owner,
+                    source,
+                    scrap,
+                });
             }
         }
     }
@@ -1145,11 +1434,37 @@ pub fn scrap(milli: u64) -> u64 {
     (milli + MILLI / 2) / MILLI
 }
 
-#[derive(Clone, Copy)]
-enum Place {
+/// Where a fight happened, from one side's view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Place {
+    /// Near that side's own buildings.
     Home,
+    /// Near the other side's buildings.
     Away,
+    /// Near neither.
     Field,
+}
+
+impl Place {
+    /// The place of a fight `own` tiles (Chebyshev) from the nearest
+    /// building of one side that [`Place::marks`] and `theirs` from the
+    /// other side's: home wins a tie.
+    pub fn from_distances(own: i32, theirs: i32) -> Place {
+        if own <= PLACE_TILES && own <= theirs {
+            Place::Home
+        } else if theirs <= PLACE_TILES {
+            Place::Away
+        } else {
+            Place::Field
+        }
+    }
+
+    /// Whether a building of `kind` marks its owner's ground: mines and
+    /// Barricades are scattered across the map and do not.
+    pub fn marks(kind: BuildingKind) -> bool {
+        !matches!(kind, BuildingKind::ScuttleCharge | BuildingKind::Barricade)
+    }
 }
 
 /// Where a loss to `victim`'s body at `tile` happened, from `dealer`'s view.
@@ -1158,24 +1473,13 @@ fn place(bodies: &[Body], dealer: u8, victim: u8, tile: TilePos) -> Place {
         bodies
             .iter()
             .filter(|body| {
-                body.owner == seat
-                    && !matches!(
-                        body.building,
-                        None | Some((BuildingKind::ScuttleCharge | BuildingKind::Barricade, _, _))
-                    )
+                body.owner == seat && body.building.is_some_and(|(kind, _, _)| Place::marks(kind))
             })
             .map(|body| body.tile.chebyshev(tile))
             .min()
             .unwrap_or(i32::MAX)
     };
-    let (own, theirs) = (near(dealer), near(victim));
-    if own <= PLACE_TILES && own <= theirs {
-        Place::Home
-    } else if theirs <= PLACE_TILES {
-        Place::Away
-    } else {
-        Place::Field
-    }
+    Place::from_distances(near(dealer), near(victim))
 }
 
 /// The spending category of a building kind.
@@ -1188,6 +1492,13 @@ fn category(kind: BuildingKind) -> &'static str {
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge => "defense",
         _ => "tech",
+    }
+}
+
+fn target(key: Key) -> Target {
+    match key {
+        Key::Unit(id) => Target::Unit(id),
+        Key::Building(id) => Target::Building(id),
     }
 }
 
