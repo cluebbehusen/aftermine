@@ -6,11 +6,16 @@ use super::{Game, MAX_TICKS_PER_FRAME, TICK_DT};
 use anyhow::{Result, ensure};
 use macroquad::prelude::Vec2;
 use oxide_net::{ClientSession, HostSession};
+use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, TickReport};
 use std::time::Duration;
 
 /// Batches a client keeps queued to absorb jitter while connected.
 pub(crate) const CLIENT_BUFFER: usize = 2;
+
+/// The stream a bot taking over a seat mid-match draws its personality
+/// seed from, keyed by the world's hash and the seat.
+const TAKEOVER_STREAM: u64 = 0x0B07_7A4E;
 
 /// Which side of a lockstep session this machine plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +48,40 @@ impl Game {
     /// This machine's side of a lockstep session, if any.
     pub(crate) fn net_role(&self) -> Option<NetRole> {
         self.net
+    }
+
+    /// Hands `seat` to a bot from the current tick. It starts with no
+    /// memory and plays from its seat's own view. Its personality seed
+    /// comes from the world and the seat, never fresh entropy, so the
+    /// scenario records it like any other bot's.
+    pub(crate) fn take_over_seat(
+        &mut self,
+        seat: PlayerId,
+        difficulty: BotDifficulty,
+        stance: BotStance,
+    ) -> Result<BotConfig> {
+        let seed = chassis::rng::Pcg32::new(self.state.hash() ^ u64::from(seat.0), TAKEOVER_STREAM)
+            .next_u64();
+        let config = BotConfig::new(difficulty, stance, seed);
+        let controller = oxide_kit::controller::SeatController::configured(
+            seat,
+            config,
+            &oxide_kit::controller::OpponentMap::new(&self.scenario),
+        )?;
+        // A decision prepared for the old roster cannot finish.
+        self.bot_decision = None;
+        self.mirror_bot(seat, config);
+        let at = self.bots.partition_point(|bot| bot.player() < seat);
+        self.bots.insert(at, controller);
+        Ok(config)
+    }
+
+    /// Records that a bot took `seat`, as a client learns from its host.
+    pub(crate) fn mirror_bot(&mut self, seat: PlayerId, config: BotConfig) {
+        if let Some(player) = self.scenario.players.get_mut(usize::from(seat.0)) {
+            player.bot = true;
+            player.bot_config = Some(config);
+        }
     }
 
     /// Orders staged since the last call, to hand to the session host.

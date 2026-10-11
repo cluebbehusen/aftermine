@@ -1161,6 +1161,14 @@ fn waiting_frame(
             }
             Screen::Waiting(waiting)
         }
+        screens::waiting::Out::Replace(seat, difficulty, stance) => {
+            if let Some(link) = &mut app.net
+                && let Err(error) = link.replace_seat(&mut app.game, seat, difficulty, stance)
+            {
+                app.notify(format!("Cannot hand the seat to a bot: {error:#}"), true);
+            }
+            Screen::Waiting(waiting)
+        }
         screens::waiting::Out::Menu => Screen::Pause(super::pause_menu(&app.game)),
     }
 }

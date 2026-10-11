@@ -2,7 +2,8 @@
 
 use crate::message::{ClientMessage, HostMessage, Release, SeatNotice};
 use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash};
-use oxide_sim::{Command, PlayerCommand, Tick};
+use oxide_sim::scenario::BotConfig;
+use oxide_sim::{Command, PlayerCommand, PlayerId, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -47,6 +48,8 @@ pub struct ClientSession {
     seats_heard: Duration,
     /// The host paused the match, as it last said.
     paused: bool,
+    /// Seats the host handed to bots, not yet taken.
+    replaced: Vec<(PlayerId, BotConfig)>,
     last_poll: Option<Duration>,
     end: Option<ClientEnd>,
     outgoing: Vec<String>,
@@ -66,6 +69,7 @@ impl ClientSession {
             seats: Vec::new(),
             seats_heard: now,
             paused: false,
+            replaced: Vec::new(),
             last_poll: None,
             end: None,
             outgoing: Vec::new(),
@@ -92,6 +96,10 @@ impl ClientSession {
             Ok(HostMessage::Desync { tick }) => self.end(ClientEnd::Desync { tick }),
             Ok(HostMessage::Released { reason }) => self.end(ClientEnd::Released(reason)),
             Ok(HostMessage::Ended) => self.end(ClientEnd::HostLeft),
+            Ok(HostMessage::Replaced { seat, config }) => {
+                self.replaced.push((seat, config));
+                Ok(())
+            }
             Ok(HostMessage::Batch { .. }) | Err(_) => self.end(ClientEnd::Protocol),
         }
     }
@@ -114,6 +122,11 @@ impl ClientSession {
     /// Whether the host paused the match, as it last said.
     pub fn host_paused(&self) -> bool {
         self.paused
+    }
+
+    /// Seats the host handed to bots since the last call.
+    pub fn take_replaced(&mut self) -> Vec<(PlayerId, BotConfig)> {
+        std::mem::take(&mut self.replaced)
     }
 
     /// The next batch to execute, if it has arrived. Execute it on the

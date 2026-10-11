@@ -69,9 +69,12 @@ and lets the link's connections flush: a client's seat surrenders, a host
 leaving an undecided match tells its clients, and a host leaving a decided match
 lets lagging clients still receive the deciding batches. When the session waits
 for a lost player, every machine shows the waiting screen over the match, naming
-who it waits for and for how long, and only the host can drop the seat. A player
-the host has heard nothing from lately shows as a pinned line on the HUD while
-play continues, as does a client's word that the host paused. A seat that can no
+who it waits for and for how long, and only the host can drop the seat or hand
+it to a bot. A bot taking over starts with no memory and plays from its seat's
+own view; its personality seed comes from the world's hash and the seat, and the
+scenario records it, so clients mirror it and saves capture it. A player the
+host has heard nothing from lately shows as a pinned line on the HUD while play
+continues, as does a client's word that the host paused. A seat that can no
 longer act retires from the session, and a decided match concludes it, so
 neither is waited on. The host paces its ticks at 1x, seals each tick's human
 orders, appends bot commands, and runs the published batch; a client runs

@@ -1,11 +1,13 @@
 //! A LAN match waiting for a lost player: who, for how long, and on the
-//! host the choice to drop them.
+//! host the choice to drop them or hand their seat to a bot.
 
+use crate::bot_label::{difficulty_name, stance_name};
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu, MenuView};
 use macroquad::prelude::Vec2;
 use oxide_protocol::{Key, RawEvent};
 use oxide_sim::PlayerId;
+use oxide_sim::scenario::{BotDifficulty, BotStance};
 use std::time::Duration;
 
 /// A seat the match waits for: its player's name and how long it waited.
@@ -22,6 +24,8 @@ pub enum Out {
     Stay,
     /// Drop the seat: it surrenders and play resumes.
     Drop(PlayerId),
+    /// Hand the seat to a bot, and play resumes.
+    Replace(PlayerId, BotDifficulty, BotStance),
     /// Open the match menu.
     Menu,
 }
@@ -29,28 +33,46 @@ pub enum Out {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Choice {
     Drop(PlayerId),
+    Replace(PlayerId),
     Menu,
     Cancel,
     Confirm,
+    Difficulty(BotDifficulty),
+    Stance(BotStance),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Face {
     Rows,
     /// Asking before dropping the seat.
     Confirm(PlayerId),
+    /// Choosing the replacing bot's difficulty.
+    Difficulty(PlayerId),
+    /// Choosing its stance.
+    Stance(PlayerId, BotDifficulty),
+}
+
+impl Face {
+    fn seat(self) -> Option<PlayerId> {
+        match self {
+            Face::Rows => None,
+            Face::Confirm(seat) | Face::Difficulty(seat) | Face::Stance(seat, _) => Some(seat),
+        }
+    }
 }
 
 /// The waiting screen over a LAN match.
 pub struct WaitingScreen {
     menu: Menu<Choice>,
     face: Face,
-    /// Only the host may drop a seat.
+    /// Only the host may drop or replace a seat.
     host: bool,
     absent: Vec<Absent>,
 }
 
 impl WaitingScreen {
-    /// Opens on the seats the match waits for. `host` offers dropping them.
+    /// Opens on the seats the match waits for. `host` offers dropping or
+    /// replacing them.
     pub fn open(absent: Vec<Absent>, host: bool) -> Self {
         let menu = rows_menu(&absent, host);
         Self {
@@ -62,20 +84,20 @@ impl WaitingScreen {
     }
 
     /// Takes the latest seats the match waits for, keeping the cursor's row
-    /// when the seats are unchanged. A confirmation for a seat no longer
-    /// waited on closes.
+    /// when the seats are unchanged. A choice about a seat no longer waited
+    /// on closes.
     pub fn refresh(&mut self, absent: Vec<Absent>) {
         let seats = |absent: &[Absent]| -> Vec<PlayerId> {
             absent.iter().map(|absent| absent.seat).collect()
         };
         let changed = seats(&absent) != seats(&self.absent);
         self.absent = absent;
-        match self.face {
-            Face::Confirm(seat) if !self.absent.iter().any(|absent| absent.seat == seat) => {
-                self.back_to_rows();
-            }
-            Face::Rows if changed => self.back_to_rows(),
-            Face::Rows | Face::Confirm(_) => {}
+        let gone = self
+            .face
+            .seat()
+            .is_some_and(|seat| !self.absent.iter().any(|absent| absent.seat == seat));
+        if gone || (self.face == Face::Rows && changed) {
+            self.back_to_rows();
         }
     }
 
@@ -92,33 +114,39 @@ impl WaitingScreen {
         if picked.is_some() {
             sounds.push((SoundKind::Click, None));
         }
-        match self.face {
-            Face::Rows => match picked {
+        if self.face == Face::Rows {
+            return match picked {
                 Some(Choice::Drop(seat)) => {
                     self.menu = confirm_menu(&self.name(seat));
                     self.face = Face::Confirm(seat);
                     Out::Stay
                 }
+                Some(Choice::Replace(seat)) => {
+                    self.menu = difficulty_menu(&self.name(seat));
+                    self.face = Face::Difficulty(seat);
+                    Out::Stay
+                }
                 Some(Choice::Menu) => Out::Menu,
                 None if escaped => Out::Menu,
                 _ => Out::Stay,
-            },
-            Face::Confirm(seat) => match picked {
-                Some(Choice::Confirm) => {
-                    self.back_to_rows();
-                    Out::Drop(seat)
-                }
-                Some(_) => {
-                    self.back_to_rows();
-                    Out::Stay
-                }
-                None if escaped => {
-                    self.back_to_rows();
-                    Out::Stay
-                }
-                None => Out::Stay,
-            },
+            };
         }
+        let out = match (self.face, picked) {
+            (Face::Confirm(seat), Some(Choice::Confirm)) => Out::Drop(seat),
+            (Face::Difficulty(seat), Some(Choice::Difficulty(difficulty))) => {
+                self.menu = stance_menu(&self.name(seat));
+                self.face = Face::Stance(seat, difficulty);
+                return Out::Stay;
+            }
+            (Face::Stance(seat, difficulty), Some(Choice::Stance(stance))) => {
+                Out::Replace(seat, difficulty, stance)
+            }
+            (_, None) if !escaped => return Out::Stay,
+            _ => Out::Stay,
+        };
+        // A choice made, cancelled, or escaped returns to the rows.
+        self.back_to_rows();
+        out
     }
 
     pub fn draw(&self) {
@@ -133,11 +161,13 @@ impl WaitingScreen {
         match self.face {
             Face::Rows => "waiting",
             Face::Confirm(_) => "confirm_drop",
+            Face::Difficulty(_) => "replace_difficulty",
+            Face::Stance(..) => "replace_stance",
         }
     }
 
-    /// Who the match waits for and the longest wait, or what dropping a
-    /// seat does.
+    /// Who the match waits for and the longest wait, or what the open
+    /// choice decides.
     fn subtitle(&self) -> String {
         match self.face {
             Face::Rows => {
@@ -159,6 +189,8 @@ impl WaitingScreen {
                 )
             }
             Face::Confirm(seat) => format!("{}'s seat surrenders", self.name(seat)),
+            Face::Difficulty(_) => "Pick the bot's difficulty".to_owned(),
+            Face::Stance(..) => "Pick the bot's stance".to_owned(),
         }
     }
 
@@ -176,16 +208,57 @@ impl WaitingScreen {
 }
 
 fn rows_menu(absent: &[Absent], host: bool) -> Menu<Choice> {
-    let drops = absent.iter().filter(|_| host).map(|absent| {
-        (
-            Label::from(format!("Drop {}", absent.name)),
-            Choice::Drop(absent.seat),
-        )
+    let choices = absent.iter().filter(|_| host).flat_map(|absent| {
+        [
+            (
+                Label::from(format!("Drop {}", absent.name)),
+                Choice::Drop(absent.seat),
+            ),
+            (
+                Label::from(format!("Replace {} with a bot", absent.name)),
+                Choice::Replace(absent.seat),
+            ),
+        ]
     });
     Menu::rows(
         "WAITING",
-        drops.chain([(Label::from("Menu"), Choice::Menu)]),
+        choices.chain([(Label::from("Menu"), Choice::Menu)]),
     )
+}
+
+fn difficulty_menu(name: &str) -> Menu<Choice> {
+    let mut menu = Menu::rows(
+        format!("REPLACE {}", name.to_uppercase()),
+        BotDifficulty::ALL
+            .iter()
+            .map(|&difficulty| {
+                (
+                    Label::from(difficulty_name(difficulty)),
+                    Choice::Difficulty(difficulty),
+                )
+            })
+            .chain([(Label::from("Cancel"), Choice::Cancel)]),
+    );
+    let default = BotDifficulty::ALL
+        .iter()
+        .position(|&difficulty| difficulty == BotDifficulty::default());
+    menu.select(default.unwrap_or_default());
+    menu
+}
+
+fn stance_menu(name: &str) -> Menu<Choice> {
+    let mut menu = Menu::rows(
+        format!("REPLACE {}", name.to_uppercase()),
+        BotStance::ALL
+            .iter()
+            .map(|&stance| (Label::from(stance_name(stance)), Choice::Stance(stance)))
+            .chain([(Label::from("Cancel"), Choice::Cancel)]),
+    );
+    let default = BotStance::ALL
+        .iter()
+        .position(|&stance| stance == BotStance::default());
+    menu.select(default.unwrap_or_default());
+    menu
 }
 
 fn confirm_menu(name: &str) -> Menu<Choice> {

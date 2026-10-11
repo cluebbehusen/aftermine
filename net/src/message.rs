@@ -4,7 +4,7 @@
 
 use crate::PROTOCOL_VERSION;
 use crate::name::PlayerName;
-use oxide_sim::scenario::{BotDifficulty, BotStance};
+use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
 use serde::{Deserialize, Serialize};
 
@@ -211,6 +211,13 @@ pub enum HostMessage {
     },
     /// The host left before the match ended; the connection closes next.
     Ended,
+    /// The host handed `seat` to a bot.
+    Replaced {
+        /// The seat.
+        seat: PlayerId,
+        /// The bot now playing it.
+        config: BotConfig,
+    },
 }
 
 /// A seat that is not keeping up.
@@ -242,6 +249,8 @@ pub enum SeatState {
 pub enum Release {
     /// The host dropped the seat, which surrendered.
     Dropped,
+    /// The host handed the seat to a bot.
+    Replaced,
 }
 
 macro_rules! wire_lines {

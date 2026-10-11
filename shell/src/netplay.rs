@@ -14,6 +14,7 @@ use oxide_net::{
     GuestEnd, GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName,
     Release, RoomSeat, SeatHolder, SeatNotice, SeatState, StartFailed,
 };
+use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
@@ -40,6 +41,8 @@ pub(crate) enum End {
     Dropped,
     /// The host left before the match was decided.
     HostLeft,
+    /// The host handed this machine's seat to a bot.
+    Replaced,
     /// A hash report disagreed and every machine halted.
     Desync {
         /// The report tick that disagreed.
@@ -54,6 +57,7 @@ impl End {
             End::HostLost => "Lost connection to the host.".to_owned(),
             End::Dropped => "The host dropped you from the match.".to_owned(),
             End::HostLeft => "The host left the match.".to_owned(),
+            End::Replaced => "The host gave your seat to a bot.".to_owned(),
             End::Desync { tick } => {
                 format!("Desync at tick {tick}: the match halted and its replay was saved.")
             }
@@ -246,6 +250,26 @@ impl Link {
         }
     }
 
+    /// Hands a seat the match is waiting for to a bot, and play resumes.
+    /// Only the host can. The bot and the session change together, so no
+    /// order from the seat's player seals beside the bot's.
+    pub(crate) fn replace_seat(
+        &mut self,
+        game: &mut Game,
+        seat: PlayerId,
+        difficulty: BotDifficulty,
+        stance: BotStance,
+    ) -> Result<()> {
+        if let Link::Host(host) = self {
+            let config = game.take_over_seat(seat, difficulty, stance)?;
+            host.session.replace_seat(seat, config);
+            let name = &game.scenario.players[usize::from(seat.0)].name;
+            game.presentation
+                .toast(format!("A bot took over {name}'s seat"));
+        }
+        Ok(())
+    }
+
     /// Moves lines, runs due ticks, and reports how the match ended, once.
     pub(crate) fn pump(&mut self, game: &mut Game, now: Duration) -> Option<End> {
         match self {
@@ -422,6 +446,12 @@ impl ClientLink {
                 }
             }
         }
+        for (seat, config) in self.session.take_replaced() {
+            game.mirror_bot(seat, config);
+            let name = &game.scenario.players[usize::from(seat.0)].name;
+            game.presentation
+                .toast(format!("A bot took over {name}'s seat"));
+        }
         for order in game.take_outbox() {
             self.session.send(order);
         }
@@ -455,6 +485,7 @@ impl ClientLink {
             ClientEnd::Desync { tick } => End::Desync { tick },
             ClientEnd::HostSilent | ClientEnd::Protocol => End::HostLost,
             ClientEnd::Released(Release::Dropped) => End::Dropped,
+            ClientEnd::Released(Release::Replaced) => End::Replaced,
             ClientEnd::HostLeft => End::HostLeft,
         }
     }

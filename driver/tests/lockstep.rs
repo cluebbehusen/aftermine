@@ -517,6 +517,41 @@ fn a_closed_connection_makes_the_match_wait_until_the_host_drops_it() {
 }
 
 #[test]
+fn a_seat_handed_to_a_bot_plays_on_in_sync() {
+    let mut net = Net::new([(40, 20), (40, 20)]);
+    let gone = CLIENTS[1];
+    net.run_until(Duration::from_secs(3));
+    net.client(gone).up.close();
+    net.client(gone).down.close();
+    net.host.session.disconnected(gone, net.now);
+    net.run_until(Duration::from_secs(4));
+    assert!(net.host.session.waiting());
+    let held = net.host.machine.state.current_tick();
+
+    let config = BotConfig::new(BotDifficulty::Standard, BotStance::Balanced, 11);
+    net.host.session.replace_seat(gone, config);
+    let setup = scenario();
+    let opponent_map = oxide_kit::controller::OpponentMap::new(&setup);
+    let controller = SeatController::configured(gone, config, &opponent_map).unwrap();
+    let at = net.host.bots.partition_point(|bot| bot.player() < gone);
+    net.host.bots.insert(at, controller);
+    // Early in the match a fresh bot has little to order; give it time.
+    net.run_until(Duration::from_secs(40));
+    assert!(!net.host.session.waiting());
+    assert!(
+        net.host
+            .machine
+            .commands()
+            .iter()
+            .any(|(tick, order)| order.player == gone && *tick > held),
+        "the bot plays the seat"
+    );
+    assert!(net.surrender_tick(gone).is_none());
+    net.drain();
+    net.assert_in_sync(&CLIENTS[..1]);
+}
+
+#[test]
 fn a_diverged_client_halts_every_machine_at_the_next_report() {
     let mut net = Net::new([(40, 20), (40, 20)]);
     let report = 2 * oxide_net::HASH_INTERVAL;

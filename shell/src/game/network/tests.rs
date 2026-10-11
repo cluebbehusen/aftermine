@@ -314,3 +314,51 @@ fn the_client_frame_paces_waits_and_catches_up() {
         "every batch was acknowledged"
     );
 }
+
+#[test]
+fn a_bot_takes_over_a_seat_with_a_seed_from_the_world() {
+    use oxide_sim::scenario::{BotDifficulty, BotStance};
+    let host_seat = PlayerId(0);
+    let mut host = Game::networked(duel(), host_seat, NetRole::Host, viewport()).unwrap();
+    let mut twin = Game::networked(duel(), host_seat, NetRole::Host, viewport()).unwrap();
+    assert!(host.bots.is_empty());
+    let config = host
+        .take_over_seat(PlayerId(1), BotDifficulty::Veteran, BotStance::Turtle)
+        .unwrap();
+    let twin_config = twin
+        .take_over_seat(PlayerId(1), BotDifficulty::Veteran, BotStance::Turtle)
+        .unwrap();
+    assert_eq!(config, twin_config, "the same world draws the same seed");
+    assert_eq!(config.difficulty, BotDifficulty::Veteran);
+    assert!(host.scenario.players[1].bot);
+    assert_eq!(host.scenario.players[1].bot_config, Some(config));
+    assert_eq!(
+        host.bots
+            .iter()
+            .map(oxide_kit::controller::SeatController::player)
+            .collect::<Vec<_>>(),
+        [PlayerId(1)]
+    );
+
+    // The bot plays from the current tick, and a save can capture it.
+    let mut ordered = false;
+    for _ in 0..240 {
+        let batch = host.bot_commands();
+        ordered |= batch.iter().any(|order| order.player == PlayerId(1));
+        host.run_batch(&batch);
+    }
+    assert!(ordered, "the new bot issued orders");
+    host.capture_save()
+        .checkpoint()
+        .expect("the takeover is a consistent roster");
+}
+
+#[test]
+fn a_client_mirrors_a_bot_taking_a_seat() {
+    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    let mut client = Game::networked(duel(), PlayerId(1), NetRole::Client, viewport()).unwrap();
+    let config = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 4);
+    client.mirror_bot(PlayerId(0), config);
+    assert!(client.scenario.players[0].bot);
+    assert!(client.bots.is_empty(), "a client still runs no bots");
+}
