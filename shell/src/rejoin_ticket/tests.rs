@@ -93,3 +93,19 @@ fn a_probe_without_a_live_ticket_offers_nothing() {
     );
     assert!(!elsewhere.exists());
 }
+
+#[test]
+fn a_probe_forgets_only_the_ticket_it_asked_after() {
+    let path = scratch("replaced");
+    let old = ticket("127.0.0.1:9", Token::new(1));
+    let new = ticket("127.0.0.1:9", Token::new(2));
+    std::fs::write(&path, serde_json::to_vec(&new).unwrap()).unwrap();
+    forget(&path, &old);
+    assert_eq!(
+        read(&path),
+        Some(new.clone()),
+        "a newer match's ticket stays"
+    );
+    forget(&path, &new);
+    assert!(!path.exists());
+}

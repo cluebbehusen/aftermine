@@ -1,12 +1,23 @@
 //! A snapshot's bytes split into lines and put back together. The bytes
 //! are opaque here; the caller encodes and validates the world they carry.
 
+use std::time::Duration;
+
 /// The raw bytes one part carries. As hex, a part line stays well under
 /// [`crate::MAX_LINE_BYTES`].
 pub const PART_BYTES: usize = 256 * 1024;
 
 /// The longest snapshot a client accepts.
 pub const MAX_SNAPSHOT_BYTES: u64 = 32 << 20;
+
+/// The slowest wire a snapshot is given time to cross, in bytes of lines a
+/// second. Hex doubles a snapshot, so this allows about 4 Mbit/s of it.
+const SLOWEST_LINE_BYTES_PER_SECOND: u64 = 1 << 20;
+
+/// Time to allow `bytes` of snapshot to cross the wire as hex parts.
+pub fn transfer_time(bytes: u64) -> Duration {
+    Duration::from_millis(bytes.saturating_mul(2_000) / SLOWEST_LINE_BYTES_PER_SECOND)
+}
 
 /// `bytes` as hex parts of [`PART_BYTES`] each, the last one shorter.
 pub fn parts(bytes: &[u8]) -> Vec<String> {

@@ -407,7 +407,17 @@ fn a_host_is_caught_up_once_every_client_it_is_not_waiting_on_acknowledged_every
     ack_through(&mut host, A, 1, 3, secs(0));
     ack_through(&mut host, B, 1, 2, secs(0));
     assert!(!host.caught_up(), "B is a batch behind");
-    host.disconnected(B, secs(0));
+    host.poll(secs(2));
+    assert!(
+        host.seats(secs(2))
+            .iter()
+            .any(|notice| notice.seat == B && notice.state == SeatState::Quiet)
+    );
+    assert!(
+        !host.caught_up(),
+        "a quiet client may still report a final hash"
+    );
+    host.disconnected(B, secs(2));
     assert!(host.caught_up(), "an away client is not counted");
 }
 
@@ -753,6 +763,20 @@ fn time_the_host_spent_suspended_is_nobodys_silence() {
         }],
         "silence after the gap still counts"
     );
+
+    // A line that arrives in the pump that sees the gap resets the clock to
+    // now, never later.
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    host.poll(secs(0));
+    host.receive(A, &ClientMessage::Heartbeat.encode(), secs(3600));
+    host.poll(secs(3600));
+    for second in 3601..=3600 + SILENCE_TIMEOUT.as_secs() {
+        host.poll(secs(second));
+    }
+    assert!(
+        host.waiting(),
+        "silence after the line counts from when it was heard"
+    );
 }
 
 #[test]
@@ -829,4 +853,46 @@ fn a_resumed_session_seals_the_saved_orders_first_from_the_saved_tick() {
 #[should_panic(expected = "a pending order must come from a human seat")]
 fn a_resumed_session_refuses_an_order_from_a_bot_seat() {
     let _ = HostSession::new(HOST, &[A], secs(0)).resumed(5, vec![from(B, stop(1))]);
+}
+
+#[test]
+fn a_rejoin_purges_lines_queued_for_the_old_connection() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let batch = host.seal(secs(0)).unwrap();
+    host.publish(&batch);
+    assert!(host.rejoining(A, secs(0)));
+    let lines = host.take_outgoing();
+    assert!(lines.iter().any(|(seat, _)| *seat == B));
+    assert!(lines.iter().all(|(seat, _)| *seat != A));
+}
+
+#[test]
+fn a_concluded_match_readmits_nobody() {
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    assert!(host.rejoining(A, secs(0)));
+    host.conclude();
+    assert!(!host.readmit(A, secs(0)));
+}
+
+#[test]
+fn everyone_hears_a_readmitted_seat_is_back() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.disconnected(A, secs(0));
+    host.poll(secs(0));
+    assert!(
+        sent_lines(&mut host)
+            .iter()
+            .any(|(seat, line)| *seat == B && line.contains("away"))
+    );
+    assert!(host.rejoining(A, secs(0)));
+    assert!(host.readmit(A, secs(0)));
+    host.poll(secs(0));
+    let cleared = HostMessage::Seats {
+        seats: Vec::new(),
+        paused: false,
+    }
+    .encode();
+    let lines = sent_lines(&mut host);
+    assert!(lines.contains(&(B, cleared.clone())), "{lines:?}");
+    assert!(lines.contains(&(A, cleared)), "{lines:?}");
 }

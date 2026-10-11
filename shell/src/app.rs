@@ -130,8 +130,12 @@ struct App {
     lingering: Option<crate::netplay::Lingering>,
     /// The ticket of the LAN seat this client plays, kept on disk.
     ticket: crate::rejoin_ticket::Keeper,
-    /// Home asking the ticket's host whether the seat still waits.
-    probe: Option<std::thread::JoinHandle<crate::rejoin_ticket::Probed>>,
+    /// Home asking the ticket's host whether the seat still waits, and when
+    /// it started asking.
+    probe: Option<(
+        std::thread::JoinHandle<crate::rejoin_ticket::Probed>,
+        std::time::Duration,
+    )>,
     /// When Home asks again.
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
@@ -254,9 +258,18 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             .and_then(|name| oxide_net::PlayerName::new(name).ok());
         // Without a saved name the Join form asks for one first.
         let screen = match (crate::netplay::parse_join_address(typed), name) {
-            (Ok(address), Some(name)) => LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                crate::netplay::ClientLobby::new(&address, &commit, name, config.install_id()),
-            )),
+            (Ok(address), Some(name)) => {
+                let made = config.install_id.is_none();
+                let install = config.install_id();
+                // A new install ID must outlive this run, or the next launch
+                // returns as a stranger.
+                if made && let Err(error) = config.save() {
+                    eprintln!("could not save settings: {error}");
+                }
+                LobbyScreen::waiting(crate::netplay::Lobby::Client(
+                    crate::netplay::ClientLobby::new(&address, &commit, name, install),
+                ))
+            }
             (Ok(_), None) => LobbyScreen::join(None, typed),
             (Err(reason), name) => LobbyScreen::failed(
                 name.as_ref().map_or("", oxide_net::PlayerName::as_str),
@@ -785,6 +798,9 @@ impl App {
     /// leave save, which keeps its replay.
     fn end_network_match(&mut self, end: crate::netplay::End, screen: Screen) -> Screen {
         self.notify(end.notice(), true);
+        // The match stays behind the menus; its network line no longer
+        // holds.
+        self.game.presentation.net_notice = None;
         if end == crate::netplay::End::HostLost {
             // The host may come back: the ticket stays for Home to offer.
             self.net = None;
