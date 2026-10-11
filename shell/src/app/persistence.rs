@@ -370,6 +370,12 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 return Ok(Screen::Playing);
             }
             Ok(Output::LanSave(save)) => {
+                // The lobby opens at once, under the player's saved name.
+                app.draft.player_name = app
+                    .config
+                    .player_name
+                    .as_deref()
+                    .and_then(|name| oxide_net::PlayerName::new(name).ok());
                 return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
                     *save,
                     &mut app.draft,

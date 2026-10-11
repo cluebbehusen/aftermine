@@ -1906,10 +1906,21 @@ impl Wizard {
             );
         }
 
-        if let Some((_, entry)) = self.picked_entry(draft)
-            && let Some(tex) = previews.get(entry)
-        {
-            let drawn = draw_preview(tex, &entry.theme, layout.preview, ui);
+        // A resumed match's map comes from its save, not from a file.
+        let preview = if self.resume.is_some() {
+            previews.get_map(scenario).map(|tex| {
+                let theme = scenario
+                    .meta
+                    .as_ref()
+                    .map_or("", |meta| meta.theme.as_str());
+                (tex, theme)
+            })
+        } else {
+            self.picked_entry(draft)
+                .and_then(|(_, entry)| previews.get(entry).map(|tex| (tex, entry.theme.as_str())))
+        };
+        if let Some((tex, theme)) = preview {
+            let drawn = draw_preview(tex, theme, layout.preview, ui);
             let focus = (self.setup_sel < order.len()).then(|| order[self.setup_sel]);
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
