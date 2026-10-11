@@ -77,35 +77,36 @@ fn a_probe_without_a_live_ticket_offers_nothing() {
         probe(stale.clone(), crate::build_identity().revision)
             .join()
             .unwrap(),
-        Probed::Gone
+        Probed::Gone(old),
+        "an expired ticket is gone"
     );
-    assert!(!stale.exists(), "an expired ticket is deleted");
+    assert!(stale.exists(), "only the keeper deletes");
 
     let elsewhere = scratch("elsewhere");
     let mut other = ticket("127.0.0.1:9", Token::new(1));
     other.build = "another build".to_owned();
     std::fs::write(&elsewhere, serde_json::to_vec(&other).unwrap()).unwrap();
     assert_eq!(
-        probe(elsewhere.clone(), crate::build_identity().revision)
+        probe(elsewhere, crate::build_identity().revision)
             .join()
             .unwrap(),
-        Probed::Gone
+        Probed::Gone(other)
     );
-    assert!(!elsewhere.exists());
 }
 
 #[test]
-fn a_probe_forgets_only_the_ticket_it_asked_after() {
+fn the_keeper_forgets_only_the_ticket_a_probe_asked_after() {
     let path = scratch("replaced");
     let old = ticket("127.0.0.1:9", Token::new(1));
     let new = ticket("127.0.0.1:9", Token::new(2));
     std::fs::write(&path, serde_json::to_vec(&new).unwrap()).unwrap();
-    forget(&path, &old);
+    apply(&path, Write::Forget(old.token)).unwrap();
     assert_eq!(
         read(&path),
         Some(new.clone()),
         "a newer match's ticket stays"
     );
-    forget(&path, &new);
-    assert!(!path.exists());
+    let keeper = Keeper::new(Some(path.clone()));
+    keeper.forget(&new);
+    eventually(|| !path.exists());
 }

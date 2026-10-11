@@ -396,6 +396,10 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
         if fresh {
             app.offer = match probe.join() {
                 Ok(crate::rejoin_ticket::Probed::Waiting(ticket)) => Some(ticket),
+                Ok(crate::rejoin_ticket::Probed::Gone(ticket)) => {
+                    app.ticket.forget(&ticket);
+                    None
+                }
                 _ => None,
             };
             home.set_rejoin(app.offer.as_ref().map(crate::rejoin_ticket::Ticket::label));

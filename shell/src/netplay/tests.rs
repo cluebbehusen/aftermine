@@ -428,8 +428,12 @@ fn a_relaunched_client_rejoins_from_its_ticket_once_its_host_confirms() {
         let _ = link.pump(&mut host, now);
         probe.is_finished().then_some(())
     });
-    assert_eq!(probe.join().unwrap(), crate::rejoin_ticket::Probed::Gone);
-    assert!(!path.exists());
+    let crate::rejoin_ticket::Probed::Gone(gone) = probe.join().unwrap() else {
+        panic!("the seat is gone");
+    };
+    let keeper = crate::rejoin_ticket::Keeper::new(Some(path.clone()));
+    keeper.forget(&gone);
+    wait(|| (!path.exists()).then_some(()));
 }
 
 #[test]
