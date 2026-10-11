@@ -4,7 +4,7 @@ use oxide_sim::vision::PublicBuilding;
 use oxide_sim::{BuildingKind, PlayerId, Scenario};
 
 #[test]
-fn a_public_building_joins_as_a_memory_and_a_remembered_one_takes_its_tier() {
+fn a_public_building_joins_as_a_memory_and_a_remembered_one_is_brought_up_to_date() {
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     observation.enemy_buildings.clear();
@@ -15,7 +15,7 @@ fn a_public_building_joins_as_a_memory_and_a_remembered_one_takes_its_tier() {
         kind: BuildingKind::Extractor,
         anchor: TilePos::new(30, 18),
         hp: 300,
-        built: true,
+        built: false,
         seen: false,
         tier: 0,
     };
@@ -41,10 +41,16 @@ fn a_public_building_joins_as_a_memory_and_a_remembered_one_takes_its_tier() {
             BuildingObs {
                 anchor: TilePos::new(15, 9),
                 hp: 900,
+                built: true,
                 tier: 1,
                 ..ghost.clone()
             },
-            BuildingObs { tier: 1, ..ghost },
+            BuildingObs {
+                hp: 900,
+                built: true,
+                tier: 1,
+                ..ghost
+            },
         ]
     );
 }
