@@ -1,13 +1,14 @@
 use super::*;
 
 #[test]
-fn mixes_split_the_budget_and_leave_out_kinds_a_share_cannot_buy() {
+fn a_mix_is_legal_when_one_body_of_each_kind_fits_the_budget() {
     use UnitKind::{Breaker, Lancer, Sentinel};
     let kinds = [Sentinel, Lancer, Breaker];
     let names = |mixes: Vec<Mix>| mixes.iter().map(Mix::name).collect::<Vec<_>>();
-    // A third of 1,800 buys no Breaker, so no three-kind mix holds one.
+    // One of each costs 1,100, so a Breaker joins a three-kind mix at 1,800
+    // even though a third of the budget cannot buy one.
     assert_eq!(
-        names(Mix::all(&kinds, 3, 1_800)),
+        names(Mix::all(&kinds, 3, 1_800, false)),
         [
             "sentinel",
             "lancer",
@@ -15,31 +16,62 @@ fn mixes_split_the_budget_and_leave_out_kinds_a_share_cannot_buy() {
             "sentinel + lancer",
             "sentinel + breaker",
             "lancer + breaker",
+            "sentinel + lancer + breaker",
         ]
     );
-    // A third of 600 buys no Breaker, and neither does all of it.
     assert_eq!(
-        names(Mix::all(&kinds, 3, 600)),
+        names(Mix::all(&kinds, 3, 600, false)),
         ["sentinel", "lancer", "sentinel + lancer"]
     );
-    let Force::Army(army) = Mix(vec![Lancer, Sentinel]).force(1_800) else {
-        panic!("a mix fields an army");
-    };
-    // Bodies fill until another would overshoot more than it closes, with
-    // the kinds' scrap kept within one body of each other.
-    let spends: Vec<u32> = army.iter().map(|&(k, n)| k.stats().cost * n).collect();
-    let total: u32 = spends.iter().sum();
-    assert!(total.abs_diff(1_800) <= 55, "{army:?}");
-    assert!(spends[0].abs_diff(spends[1]) <= 110, "{army:?}");
 }
 
 #[test]
-fn a_pairing_fields_equal_spend_even_for_coarse_mixes() {
-    use UnitKind::{Avalanche, Condor};
-    // Rounding each kind alone fields three Condors (2,100) against one
-    // Condor and one Avalanche (1,400).
-    let (a, b) = Mix::matched(&Mix(vec![Condor]), &Mix(vec![Condor, Avalanche]), 1_800);
-    assert_eq!(a.spent(), b.spent(), "{a:?} vs {b:?}");
+fn an_army_lands_as_close_to_the_budget_as_whole_bodies_allow() {
+    use UnitKind::{Bombard, Flakhound, Lancer, Sentinel, Shrike};
+    // Nine of each spends 1,800 exactly.
+    assert_eq!(
+        Mix::even(vec![Lancer, Sentinel]).force(1_800),
+        Force::Army(vec![(Lancer, 9), (Sentinel, 9)])
+    );
+    // A fill that stopped when its next body would overshoot left Flakhound +
+    // Shrike at 530 against Bombard + Shrike's 660.
+    assert_eq!(Mix::even(vec![Bombard, Shrike]).force(600).spent(), 660);
+    assert_eq!(Mix::even(vec![Flakhound, Shrike]).force(600).spent(), 610);
+    // No legal army strays from the budget by more than half its costliest
+    // body.
+    for budget in [600, 1_800, 5_000] {
+        for mix in Mix::all(&crate::duel_lab::armed_units(), 3, budget, true) {
+            let army = mix.force(budget);
+            let costliest = mix.kinds.iter().map(|k| k.stats().cost).max().unwrap();
+            assert!(
+                army.spent().abs_diff(budget) <= costliest / 2,
+                "{} at {budget}: {army:?}",
+                mix.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn skewed_splits_give_each_kind_a_double_share_once() {
+    use UnitKind::{Lancer, Sentinel};
+    let mixes = Mix::all(&[Sentinel, Lancer], 2, 1_800, true);
+    let names: Vec<String> = mixes.iter().map(Mix::name).collect();
+    assert_eq!(
+        names,
+        [
+            "sentinel",
+            "lancer",
+            "sentinel + lancer",
+            "sentinel + lancer (2:1)",
+            "sentinel + lancer (1:2)",
+        ]
+    );
+    // A split that fields an army already listed is not a new candidate.
+    let armies: Vec<Force> = mixes.iter().map(|m| m.force(1_800)).collect();
+    for (i, army) in armies.iter().enumerate() {
+        assert!(!armies[..i].contains(army), "{army:?} repeats");
+    }
 }
 
 #[test]
@@ -108,6 +140,7 @@ fn a_small_search_reports_its_blend() {
         &[UnitKind::Sentinel, UnitKind::Lancer, UnitKind::Bombard],
         2,
         600,
+        false,
         4_000,
         jobs,
     )
@@ -118,7 +151,7 @@ fn a_small_search_reports_its_blend() {
     assert!(weights > 0.95 && weights <= 1.0 + 1e-9, "{weights}");
     let table = render(std::slice::from_ref(&outcome));
     assert!(
-        table.contains("composition search at 600 scrap: 6 mixes"),
+        table.contains("composition search at 600 scrap: 6 even-split mixes"),
         "{table}"
     );
     serde_json::to_string(&outcome).expect("the outcome serializes");
@@ -127,11 +160,15 @@ fn a_small_search_reports_its_blend() {
 #[test]
 fn a_heavy_mix_propped_up_by_small_partners_is_not_dominant() {
     use UnitKind::{Breaker, Lancer, Talon};
-    let member = |kinds: Vec<UnitKind>, weight, counter_score| Blended {
-        mix: Mix(kinds),
-        weight,
-        counter: Mix(vec![Lancer]),
-        counter_score,
+    let member = |kinds: Vec<UnitKind>, weight, counter_score| {
+        let mix = Mix::even(kinds);
+        Blended {
+            army: mix.force(1_800),
+            mix,
+            weight,
+            counter: Mix::even(vec![Lancer]),
+            counter_score,
+        }
     };
     // Lancers beat the Breaker alone; only the 1% Talon partner covers it.
     let propped = [

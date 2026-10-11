@@ -427,6 +427,10 @@ enum Cmd {
         /// Most kinds in one mix.
         #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
         max_kinds: u8,
+        /// Also search splits where one kind takes a double share. About four
+        /// times the candidates, so several times the run time.
+        #[arg(long)]
+        skewed: bool,
         /// Tick cap per duel.
         #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
         ticks: u32,
@@ -1268,6 +1272,7 @@ fn main() -> Result<()> {
             budgets,
             kinds,
             max_kinds,
+            skewed,
             ticks,
             jobs,
             json,
@@ -1285,8 +1290,14 @@ fn main() -> Result<()> {
             let mut outcomes = Vec::new();
             for budget in budgets {
                 let start = std::time::Instant::now();
-                let outcome =
-                    composition_search::run(&kinds, usize::from(max_kinds), budget, ticks, jobs)?;
+                let outcome = composition_search::run(
+                    &kinds,
+                    usize::from(max_kinds),
+                    budget,
+                    skewed,
+                    ticks,
+                    jobs,
+                )?;
                 print!(
                     "{}",
                     composition_search::render(std::slice::from_ref(&outcome))

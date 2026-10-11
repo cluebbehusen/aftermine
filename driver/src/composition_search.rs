@@ -27,23 +27,53 @@ const SOLVER_ITERATIONS: usize = 20_000;
 /// Share below which a blend member is summarized rather than printed.
 const REPORTED_WEIGHT: f64 = 0.01;
 
-/// One to three unit kinds splitting a budget evenly.
+/// One to three unit kinds splitting a budget by fixed weights: even, or
+/// with one kind taking a double share.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Mix(pub Vec<UnitKind>);
+pub struct Mix {
+    /// The kinds, in roster order.
+    pub kinds: Vec<UnitKind>,
+    /// Each kind's share of the budget, in parts.
+    pub weights: Vec<u32>,
+}
 
 impl Mix {
-    /// Every mix of one to `max_kinds` of `kinds` that a budget can field:
-    /// each kind's share must buy at least one body. Smaller mixes first,
-    /// each size in roster order.
-    pub fn all(kinds: &[UnitKind], max_kinds: usize, budget: u32) -> Vec<Self> {
-        let mut mixes = Vec::new();
+    /// An even split of `kinds`.
+    pub fn even(kinds: Vec<UnitKind>) -> Self {
+        let weights = vec![1; kinds.len()];
+        Self { kinds, weights }
+    }
+
+    /// Every mix of one to `max_kinds` of `kinds` whose bodies fit a budget
+    /// with one of each. Smaller mixes first, each size in roster order. With
+    /// `skewed`, each mix of two or three kinds also gives each kind in turn a
+    /// double share; a skewed split that fields the same army as one already
+    /// listed is left out.
+    pub fn all(kinds: &[UnitKind], max_kinds: usize, budget: u32, skewed: bool) -> Vec<Self> {
+        let mut mixes: Vec<Self> = Vec::new();
+        let mut armies: Vec<Force> = Vec::new();
         for size in 1..=max_kinds.min(kinds.len()) {
-            let share = budget / u32::try_from(size).expect("mix sizes are small");
             let mut picks: Vec<usize> = (0..size).collect();
             loop {
-                let mix: Vec<UnitKind> = picks.iter().map(|&i| kinds[i]).collect();
-                if mix.iter().all(|kind| kind.stats().cost <= share) {
-                    mixes.push(Self(mix));
+                let chosen: Vec<UnitKind> = picks.iter().map(|&i| kinds[i]).collect();
+                if chosen.iter().map(|kind| kind.stats().cost).sum::<u32>() <= budget {
+                    let mut splits = vec![vec![1; size]];
+                    if skewed && size > 1 {
+                        splits.extend((0..size).map(|heavy| {
+                            (0..size).map(|i| if i == heavy { 2 } else { 1 }).collect()
+                        }));
+                    }
+                    for weights in splits {
+                        let mix = Self {
+                            kinds: chosen.clone(),
+                            weights,
+                        };
+                        let army = mix.force(budget);
+                        if !armies.contains(&army) {
+                            armies.push(army);
+                            mixes.push(mix);
+                        }
+                    }
                 }
                 // Advance to the next combination in lexicographic order.
                 let Some(slot) = (0..size).rev().find(|&s| picks[s] < kinds.len() - size + s)
@@ -59,50 +89,72 @@ impl Mix {
         mixes
     }
 
-    /// The army this mix fields for about `target` scrap: one body of each
-    /// kind, then another of whichever kind has the least scrap committed, for
-    /// as long as it brings the total closer to the target. Rounding each kind
-    /// to its share separately would let coarse mixes stray far from the
-    /// budget.
-    pub fn force(&self, target: u32) -> Force {
-        let costs: Vec<u32> = self.0.iter().map(|kind| kind.stats().cost.max(1)).collect();
-        let mut counts = vec![1u32; costs.len()];
-        let mut total: u32 = costs.iter().sum();
+    /// The army this mix fields at a budget. Every kind but the cheapest buys
+    /// its share rounded down or up, at least one body; the cheapest then
+    /// fills whatever the others leave, to the nearest body. The counts whose
+    /// total lands closest to the budget win, then the ones closest to their
+    /// shares. A candidate is fixed: it fields this army against every
+    /// opponent.
+    pub fn force(&self, budget: u32) -> Force {
+        let parts: u32 = self.weights.iter().sum();
+        let costs: Vec<u32> = self.kinds.iter().map(|k| k.stats().cost.max(1)).collect();
+        let shares: Vec<u32> = self.weights.iter().map(|&w| budget * w / parts).collect();
+        let filler = (0..costs.len())
+            .min_by_key(|&i| (costs[i], i))
+            .expect("a mix has a kind");
+        let fits = |i: usize| (shares[i] / costs[i]).max(1);
+        let lowest = |i: usize| if i == filler { 1 } else { fits(i) };
+        let highest = |i: usize| if i == filler { 1 } else { fits(i) + 1 };
+        let mut counts: Vec<u32> = (0..costs.len()).map(lowest).collect();
+        let mut best: Option<((u32, u32), Vec<u32>)> = None;
         loop {
-            let next = (0..costs.len())
-                .min_by_key(|&i| (counts[i] * costs[i], i))
-                .expect("a mix has a kind");
-            let grown = total + costs[next];
-            if grown.abs_diff(target) >= total.abs_diff(target) {
-                break;
+            let others: u32 = (0..costs.len())
+                .filter(|&i| i != filler)
+                .map(|i| counts[i] * costs[i])
+                .sum();
+            let room = budget.saturating_sub(others);
+            counts[filler] = ((room + costs[filler] / 2) / costs[filler]).max(1);
+            let spent: u32 = (0..costs.len()).map(|i| counts[i] * costs[i]).sum();
+            let off_share: u32 = (0..costs.len())
+                .map(|i| (counts[i] * costs[i]).abs_diff(shares[i]))
+                .sum();
+            let key = (spent.abs_diff(budget), off_share);
+            if best.as_ref().is_none_or(|(k, _)| key < *k) {
+                best = Some((key, counts.clone()));
             }
-            counts[next] += 1;
-            total = grown;
+            // Advance like an odometer over the other kinds' ranges.
+            let Some(slot) = (0..costs.len()).find(|&i| i != filler && counts[i] < highest(i))
+            else {
+                break;
+            };
+            counts[slot] += 1;
+            for i in (0..slot).filter(|&i| i != filler) {
+                counts[i] = lowest(i);
+            }
         }
-        Force::Army(self.0.iter().copied().zip(counts).collect())
+        let (_, counts) = best.expect("every kind has a count");
+        Force::Army(self.kinds.iter().copied().zip(counts).collect())
     }
 
-    /// Size a pairing to equal spend: the mix with the costlier body fills the
-    /// budget first, then the other matches what it actually spent.
-    pub fn matched(a: &Self, b: &Self, budget: u32) -> (Force, Force) {
-        let coarsest = |mix: &Self| mix.0.iter().map(|kind| kind.stats().cost).max();
-        if coarsest(a) >= coarsest(b) {
-            let a = a.force(budget);
-            let b = b.force(a.spent());
-            (a, b)
-        } else {
-            let b = b.force(budget);
-            (a.force(b.spent()), b)
-        }
-    }
-
-    /// The kinds joined with `+`.
+    /// The kinds joined with `+`, and the split when it is not even.
     pub fn name(&self) -> String {
-        self.0
+        let kinds = self
+            .kinds
             .iter()
             .map(|kind| kind.name())
             .collect::<Vec<_>>()
-            .join(" + ")
+            .join(" + ");
+        if self.weights.iter().all(|&w| w == self.weights[0]) {
+            kinds
+        } else {
+            let split = self
+                .weights
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(":");
+            format!("{kinds} ({split})")
+        }
     }
 }
 
@@ -260,6 +312,8 @@ fn search(
 pub struct Blended {
     /// The mix.
     pub mix: Mix,
+    /// The army it fields at this budget.
+    pub army: Force,
     /// Its share of the blend.
     pub weight: f64,
     /// The candidate that scores best against it.
@@ -275,6 +329,11 @@ pub struct Outcome {
     pub budget: u32,
     /// Legal mixes at this budget.
     pub mixes: usize,
+    /// Whether skewed splits were searched besides even ones.
+    pub skewed: bool,
+    /// The least and most scrap any candidate army spends. Whole bodies keep
+    /// fixed armies from all spending the budget exactly.
+    pub spend: (u32, u32),
     /// Rounds the pool grew for.
     pub rounds: usize,
     /// Payoffs evaluated.
@@ -295,19 +354,25 @@ pub fn run(
     kinds: &[UnitKind],
     max_kinds: usize,
     budget: u32,
+    skewed: bool,
     tick_limit: u32,
     jobs: NonZeroUsize,
 ) -> Result<Outcome> {
-    let mixes = Mix::all(kinds, max_kinds, budget);
+    let mixes = Mix::all(kinds, max_kinds, budget, skewed);
     anyhow::ensure!(!mixes.is_empty(), "no mix fits a budget of {budget}");
+    let armies: Vec<Force> = mixes.iter().map(|mix| mix.force(budget)).collect();
+    let spends = armies.iter().map(Force::spent);
+    let spend = (
+        spends.clone().min().expect("there is a mix"),
+        spends.max().expect("there is a mix"),
+    );
     let singles: Vec<usize> = (0..mixes.len())
-        .filter(|&i| mixes[i].0.len() == 1)
+        .filter(|&i| mixes[i].kinds.len() == 1)
         .collect();
     let initial = if singles.is_empty() { vec![0] } else { singles };
     let settled = search(mixes.len(), &initial, |pairs| {
         crate::pool::fan_out_bounded(pairs, jobs, |&(i, j)| {
-            let (a, b) = Mix::matched(&mixes[i], &mixes[j], budget);
-            payoff(&a, &b, tick_limit)
+            payoff(&armies[i], &armies[j], tick_limit)
         })
     })?;
     let mut blend: Vec<Blended> = settled
@@ -322,6 +387,7 @@ pub fn run(
                 .expect("every blend member met every candidate");
             Blended {
                 mix: mixes[m].clone(),
+                army: armies[m].clone(),
                 weight,
                 counter: mixes[counter].clone(),
                 counter_score,
@@ -333,6 +399,8 @@ pub fn run(
     Ok(Outcome {
         budget,
         mixes: mixes.len(),
+        skewed,
+        spend,
         rounds: settled.rounds,
         payoffs: settled.evaluated,
         blend,
@@ -351,24 +419,45 @@ fn dominant(blend: &[Blended]) -> bool {
         .is_some_and(|top| top.counter_score <= SETTLED)
 }
 
+/// An army as counts: `9 lancer, 9 sentinel (1,800)`.
+fn roll_call(army: &Force) -> String {
+    let Force::Army(members) = army else {
+        return army.name();
+    };
+    let counts = members
+        .iter()
+        .map(|(kind, count)| format!("{count} {}", kind.name()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{counts}; {} scrap", army.spent())
+}
+
 /// The human-readable summary of every budget searched.
 pub fn render(outcomes: &[Outcome]) -> String {
     let mut out = String::new();
     for o in outcomes {
+        let splits = if o.skewed {
+            "even and skewed"
+        } else {
+            "even-split"
+        };
         let _ = writeln!(
             out,
-            "composition search at {} scrap: {} mixes, {} rounds, {} payoffs ({} legs each)",
-            o.budget, o.mixes, o.rounds, o.payoffs, LEGS_PER_PAYOFF
+            "composition search at {} scrap: {} {splits} mixes spending {} to {}, {} rounds, {} payoffs ({} legs each)",
+            o.budget, o.mixes, o.spend.0, o.spend.1, o.rounds, o.payoffs, LEGS_PER_PAYOFF
         );
         let major = o.blend.iter().filter(|b| b.weight >= REPORTED_WEIGHT);
         let minor = o.blend.len() - major.clone().count();
         let verdict = if o.dominant {
             format!(
-                "nothing beats {} alone: a dominant composition",
+                "no {splits} mix beats {} alone: a dominant composition",
                 o.blend[0].mix.name()
             )
         } else if o.challenger_gain <= SETTLED {
-            format!("{} mixes hold together; none dominates", o.blend.len())
+            format!(
+                "{} mixes hold together; no {splits} mix dominates",
+                o.blend.len()
+            )
         } else {
             format!(
                 "unsettled after {} rounds: {} still gains {:+.2}",
@@ -381,9 +470,10 @@ pub fn render(outcomes: &[Outcome]) -> String {
         for b in major {
             let _ = writeln!(
                 out,
-                "  {:>4.0}%  {}   (best counter: {} {:+.2})",
+                "  {:>4.0}%  {}   [{}]   (best counter: {} {:+.2})",
                 b.weight * 100.0,
                 b.mix.name(),
+                roll_call(&b.army),
                 b.counter.name(),
                 b.counter_score
             );
