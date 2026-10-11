@@ -407,7 +407,17 @@ fn a_host_is_caught_up_once_every_client_it_is_not_waiting_on_acknowledged_every
     ack_through(&mut host, A, 1, 3, secs(0));
     ack_through(&mut host, B, 1, 2, secs(0));
     assert!(!host.caught_up(), "B is a batch behind");
-    host.disconnected(B, secs(0));
+    host.poll(secs(2));
+    assert!(
+        host.seats(secs(2))
+            .iter()
+            .any(|notice| notice.seat == B && notice.state == SeatState::Quiet)
+    );
+    assert!(
+        !host.caught_up(),
+        "a quiet client may still report a final hash"
+    );
+    host.disconnected(B, secs(2));
     assert!(host.caught_up(), "an away client is not counted");
 }
 
@@ -752,6 +762,20 @@ fn time_the_host_spent_suspended_is_nobodys_silence() {
             state: SeatState::Quiet
         }],
         "silence after the gap still counts"
+    );
+
+    // A line that arrives in the pump that sees the gap resets the clock to
+    // now, never later.
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    host.poll(secs(0));
+    host.receive(A, &ClientMessage::Heartbeat.encode(), secs(3600));
+    host.poll(secs(3600));
+    for second in 3601..=3600 + SILENCE_TIMEOUT.as_secs() {
+        host.poll(secs(second));
+    }
+    assert!(
+        host.waiting(),
+        "silence after the line counts from when it was heard"
     );
 }
 
