@@ -442,11 +442,17 @@ impl HostSession {
     /// Whether every client the host is not waiting on has acknowledged
     /// every published batch, and so reported every hash the host expects.
     /// A quiet client still counts: it is connected and may yet report a
-    /// final hash that disagrees.
+    /// final hash that disagrees. A retired seat's watching client does
+    /// not: it holds nothing.
     pub fn caught_up(&self) -> bool {
         self.clients
             .iter()
-            .filter(|client| !matches!(client.standing, Standing::Playing(Presence::Away { .. })))
+            .filter(|client| {
+                !matches!(
+                    client.standing,
+                    Standing::Playing(Presence::Away { .. }) | Standing::Out(_)
+                )
+            })
             .filter_map(|client| client.link.as_ref())
             .all(|link| link.acked == self.next_tick)
     }
@@ -571,10 +577,16 @@ impl HostSession {
                 .hashes
                 .iter()
                 .find(|(report, _)| *report == tick)
-                .map(|(_, hash)| *hash)
-                .expect("the host records its hash before a client can report that tick");
-            if hash != expected {
-                self.halt(self.clients[index].seat, tick);
+                .map(|(_, hash)| *hash);
+            match expected {
+                Some(expected) if hash != expected => self.halt(self.clients[index].seat, tick),
+                Some(_) => {}
+                // The host keeps no hashes for a retired seat's watching
+                // client, which may report long after the rest.
+                None => assert!(
+                    matches!(self.clients[index].standing, Standing::Out(_)),
+                    "the host records its hash before a playing client can report that tick"
+                ),
             }
         }
         self.prune_hashes();
@@ -671,6 +683,7 @@ impl HostSession {
         let oldest = self
             .clients
             .iter()
+            .filter(|client| !matches!(client.standing, Standing::Out(_)))
             .filter_map(|client| client.link.as_ref())
             .map(|link| link.acked)
             .min();

@@ -28,6 +28,12 @@ const WAIT_NOTICE: Duration = Duration::from_millis(500);
 /// the last lines: a desync halt, or the batches that decided the match.
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
 
+/// How long a released seat's connection gets to write what is queued for
+/// it: a client that lagged before it went away can have seconds of
+/// batches ahead of its release, and a blocked write gives up on its own.
+const FLUSH_GRACE: Duration =
+    Duration::from_secs(oxide_net::WRITE_TIMEOUT.as_secs() + CLOSE_GRACE.as_secs());
+
 /// Connections awaiting Hello at once. Each holds two transport threads, so
 /// later ones wait unaccepted until a slot frees.
 const MAX_GREETING: usize = 8;
@@ -367,13 +373,16 @@ impl HostLink {
         }
 
         game.host_frame(&mut self.session, dt, now);
-        for seat in self.session.playing_seats() {
-            if !game.state.accepts_commands(seat) {
-                self.session.retire_seat(seat);
-            }
-        }
         if game.state.result().is_some() {
+            // Every seat stops acting once the match is decided; the clients
+            // still owe their final hashes, so none retires now.
             self.session.conclude();
+        } else {
+            for seat in self.session.playing_seats() {
+                if !game.state.accepts_commands(seat) {
+                    self.session.retire_seat(seat);
+                }
+            }
         }
 
         let mut end = None;
@@ -401,7 +410,7 @@ impl HostLink {
             }
         }
         self.departing.retain(|(connection, since)| {
-            drain(connection).is_ok() && now.saturating_sub(*since) < CLOSE_GRACE
+            drain(connection).is_ok() && now.saturating_sub(*since) < FLUSH_GRACE
         });
         // A decided match still waits for the final acknowledgements, so
         // a divergence in the last report ticks is caught, not dropped.

@@ -24,7 +24,7 @@ pub use message::{
 };
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
-pub use tcp::{Closed, Connection, Listener};
+pub use tcp::{Closed, Connection, Listener, WRITE_TIMEOUT};
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
 
 /// The wire protocol version both sides' Hello must match. Bump it for any
