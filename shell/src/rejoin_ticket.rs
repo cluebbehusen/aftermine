@@ -4,7 +4,6 @@
 
 use oxide_net::{Connection, Token, Visit, VisitEnd, VisitEvent};
 use serde::{Deserialize, Serialize};
-use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::thread::{self, JoinHandle};
@@ -149,30 +148,30 @@ pub(crate) fn probe(path: PathBuf, build: String) -> JoinHandle<Probed> {
             return Probed::Missing;
         };
         if ticket.expired(now()) || ticket.build != build {
-            let _ = std::fs::remove_file(&path);
+            forget(&path, &ticket);
             return Probed::Gone;
         }
         let probed = ask(&ticket);
         if probed == Probed::Gone {
-            let _ = std::fs::remove_file(&path);
+            forget(&path, &ticket);
         }
         probed
     })
 }
 
+/// Deletes the ticket at `path` if it is still `ticket`: the player may have
+/// joined another match, whose ticket replaced it, while it was asked after.
+fn forget(path: &Path, ticket: &Ticket) {
+    if read(path).is_some_and(|kept| kept.token == ticket.token) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 fn ask(ticket: &Ticket) -> Probed {
+    let Ok(connection) = Connection::connect_any(ticket.address.as_str(), PROBE_TIMEOUT) else {
+        return Probed::Silent;
+    };
     let deadline = Instant::now() + PROBE_TIMEOUT;
-    let Some(target) = ticket
-        .address
-        .to_socket_addrs()
-        .ok()
-        .and_then(|mut addresses| addresses.next())
-    else {
-        return Probed::Silent;
-    };
-    let Ok(connection) = Connection::connect_timeout(&target, PROBE_TIMEOUT) else {
-        return Probed::Silent;
-    };
     let started = Instant::now();
     let elapsed = || started.elapsed();
     let mut visit = Visit::probe(&ticket.build, ticket.token, elapsed());

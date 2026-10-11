@@ -19,6 +19,10 @@ pub(crate) fn encode(snapshot: &WorldSnapshot) -> Result<Vec<u8>> {
     encoder.write_all(&payload)?;
     let mut bytes = decoded.to_le_bytes().to_vec();
     bytes.extend(encoder.finish()?);
+    ensure!(
+        bytes.len() as u64 <= oxide_net::snapshot::MAX_SNAPSHOT_BYTES,
+        "snapshot exceeds what a client accepts"
+    );
     Ok(bytes)
 }
 

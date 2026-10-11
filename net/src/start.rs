@@ -11,7 +11,8 @@ use std::time::Duration;
 /// Why a start was abandoned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartFailed {
-    /// Not every client was ready within [`START_TIMEOUT`];
+    /// Not every client was ready within [`START_TIMEOUT`], plus the time a
+    /// resumed match's snapshot takes to reach every client;
     /// [`StartBarrier::unready`] names them.
     TimedOut,
     /// The client's world at tick zero hashed differently from the host's.
@@ -65,33 +66,50 @@ impl StartContent<'_> {
         }
     }
 
-    /// The lines that start `seat`'s client.
-    fn lines(&self, seat: PlayerId, attempt: u32) -> Vec<String> {
+    /// The lines that start each of `seats`' clients. A snapshot is encoded
+    /// once, however many clients it goes to.
+    fn lines(&self, seats: &[PlayerId], attempt: u32) -> Vec<(PlayerId, String)> {
         match *self {
-            StartContent::Fresh(scenario) => vec![
-                LobbyMessage::Start {
-                    seat,
-                    scenario: Box::new(scenario.clone()),
-                    attempt,
-                }
-                .encode(),
-            ],
+            StartContent::Fresh(scenario) => seats
+                .iter()
+                .map(|&seat| {
+                    let start = LobbyMessage::Start {
+                        seat,
+                        scenario: Box::new(scenario.clone()),
+                        attempt,
+                    };
+                    (seat, start.encode())
+                })
+                .collect(),
             StartContent::Resume { tick, snapshot, .. } => {
-                let parts = snapshot::parts(snapshot);
-                let resume = LobbyMessage::Resume {
-                    seat,
-                    tick,
-                    bytes: snapshot.len() as u64,
-                    parts: u32::try_from(parts.len()).unwrap_or(u32::MAX),
-                    attempt,
-                };
-                std::iter::once(resume.encode())
-                    .chain(
-                        parts
-                            .into_iter()
-                            .map(|data| LobbyMessage::Part { data }.encode()),
-                    )
-                    .collect()
+                let parts: Vec<String> = snapshot::parts(snapshot)
+                    .into_iter()
+                    .map(|data| LobbyMessage::Part { data }.encode())
+                    .collect();
+                let mut lines = Vec::with_capacity(seats.len() * (parts.len() + 1));
+                for &seat in seats {
+                    let resume = LobbyMessage::Resume {
+                        seat,
+                        tick,
+                        bytes: snapshot.len() as u64,
+                        parts: u32::try_from(parts.len()).unwrap_or(u32::MAX),
+                        attempt,
+                    };
+                    lines.push((seat, resume.encode()));
+                    lines.extend(parts.iter().map(|part| (seat, part.clone())));
+                }
+                lines
+            }
+        }
+    }
+
+    /// Time for the start to reach `clients` clients sharing the host's
+    /// link: a snapshot crosses it once per client.
+    fn transfer_time(&self, clients: usize) -> Duration {
+        match self {
+            StartContent::Fresh(_) => Duration::ZERO,
+            StartContent::Resume { snapshot, .. } => {
+                snapshot::transfer_time(snapshot.len() as u64 * clients as u64)
             }
         }
     }
@@ -145,15 +163,8 @@ impl StartBarrier {
             content.humans(),
             "the host and clients must hold exactly the human seats that take part"
         );
-        let outgoing = clients
-            .iter()
-            .flat_map(|&seat| {
-                content
-                    .lines(seat, attempt)
-                    .into_iter()
-                    .map(move |line| (seat, line))
-            })
-            .collect();
+        let outgoing = content.lines(&clients, attempt);
+        let deadline = now + START_TIMEOUT + content.transfer_time(clients.len());
         let from = match content {
             StartContent::Fresh(_) => (0, Vec::new()),
             StartContent::Resume { tick, pending, .. } => (tick, pending.to_vec()),
@@ -166,7 +177,7 @@ impl StartBarrier {
             from,
             hash: host_hash,
             attempt,
-            deadline: now + START_TIMEOUT,
+            deadline,
             started: false,
             outgoing,
         }

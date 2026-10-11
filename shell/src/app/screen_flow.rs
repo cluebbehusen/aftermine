@@ -108,6 +108,7 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
         app.lingering = link.leave(&app.game, app.clock.elapsed());
         // Leaving surrenders the seat; there is nothing to take back.
         app.ticket.clear();
+        app.game.presentation.net_notice = None;
     }
 }
 
@@ -379,25 +380,31 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
     if app
         .probe
         .as_ref()
-        .is_some_and(std::thread::JoinHandle::is_finished)
+        .is_some_and(|(probe, _)| probe.is_finished())
+        && let Some((probe, started)) = app.probe.take()
     {
-        let probed = app.probe.take().and_then(|probe| probe.join().ok());
-        app.offer = match probed {
-            Some(crate::rejoin_ticket::Probed::Waiting(ticket)) => Some(ticket),
-            _ => None,
-        };
-        home.set_rejoin(app.offer.as_ref().map(crate::rejoin_ticket::Ticket::label));
-        app.next_probe = now + PROBE_EVERY;
+        // An answer that waited while Home was away is too old to offer.
+        let fresh = now.saturating_sub(started) < PROBE_EVERY;
+        if fresh {
+            app.offer = match probe.join() {
+                Ok(crate::rejoin_ticket::Probed::Waiting(ticket)) => Some(ticket),
+                _ => None,
+            };
+            home.set_rejoin(app.offer.as_ref().map(crate::rejoin_ticket::Ticket::label));
+            app.next_probe = now + PROBE_EVERY;
+        } else {
+            app.offer = None;
+            home.set_rejoin(None);
+            app.next_probe = now;
+        }
     }
     if app.probe.is_none()
         && app.net.is_none()
         && now >= app.next_probe
         && let Some(path) = crate::paths::rejoin_ticket()
     {
-        app.probe = Some(crate::rejoin_ticket::probe(
-            path,
-            crate::build_identity().revision,
-        ));
+        let probe = crate::rejoin_ticket::probe(path, crate::build_identity().revision);
+        app.probe = Some((probe, now));
     }
 }
 

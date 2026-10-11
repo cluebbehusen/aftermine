@@ -131,6 +131,18 @@ fn time_the_client_spent_suspended_is_not_the_hosts_silence() {
         .receive(&HostMessage::Heartbeat.encode(), secs(60))
         .unwrap();
     assert_eq!(client.poll(secs(60)), Ok(()));
+
+    // A line received in the pump that sees the gap is not moved into the
+    // future: silence from it ends the session on time.
+    let mut client = ClientSession::new(secs(0));
+    client.poll(secs(0)).unwrap();
+    client
+        .receive(&HostMessage::Heartbeat.encode(), secs(60))
+        .unwrap();
+    client.poll(secs(60)).unwrap();
+    let silent = (61..=60 + 2 * SILENCE_TIMEOUT.as_secs())
+        .find(|&second| client.poll(secs(second)).is_err());
+    assert_eq!(silent, Some(60 + SILENCE_TIMEOUT.as_secs()));
 }
 
 #[test]
@@ -165,7 +177,17 @@ fn the_client_keeps_the_hosts_seat_line_and_hears_why_it_ended() {
     ];
     for (line, end) in ends {
         let mut client = ClientSession::new(secs(0));
-        assert_eq!(client.receive(&line.encode(), secs(0)), Err(end));
+        client.receive(&batch_line(0, 1), secs(0)).unwrap();
+        client.receive(&batch_line(1, 2), secs(0)).unwrap();
+        client.receive(&line.encode(), secs(0)).unwrap();
+        assert!(client.parting());
+        assert_eq!(client.poll(secs(0)), Ok(()), "batches before it still run");
+        for _ in 0..2 {
+            client.next_batch().expect("queued before the last word");
+            client.executed(|| 0);
+        }
+        assert_eq!(client.poll(secs(0)), Err(end));
+        assert_eq!(client.receive(&batch_line(2, 3), secs(0)), Err(end));
     }
 }
 
