@@ -259,3 +259,38 @@ fn a_resume_start_ships_the_snapshot_and_seals_from_the_saved_tick() {
     assert_eq!(session.tick(), 640);
     assert_eq!(session.seal(secs(1)), Some(pending.to_vec()));
 }
+
+#[test]
+fn a_resume_start_gives_its_snapshot_time_to_reach_every_client() {
+    let scenario = scenario();
+    let snapshot = vec![7_u8; 1 << 20];
+    let content = StartContent::Resume {
+        scenario: &scenario,
+        tick: 640,
+        snapshot: &snapshot,
+        pending: &[],
+    };
+    let mut barrier = StartBarrier::new(content, HOST, &seated(&CLIENTS), HASH, 1, secs(0));
+    let lines = barrier.take_outgoing();
+    let parts: Vec<&String> = lines
+        .iter()
+        .filter(|(seat, _)| *seat == CLIENTS[0])
+        .map(|(_, line)| line)
+        .skip(1)
+        .collect();
+    let others: Vec<&String> = lines
+        .iter()
+        .filter(|(seat, _)| *seat == CLIENTS[1])
+        .map(|(_, line)| line)
+        .skip(1)
+        .collect();
+    assert_eq!(parts, others, "every client gets the same parts");
+    // Two clients share the host's link for 2 MiB of snapshot.
+    let crossing = snapshot::transfer_time(2 << 20);
+    assert_eq!(crossing, secs(4));
+    assert!(barrier.poll(START_TIMEOUT).unwrap().is_none());
+    assert!(matches!(
+        barrier.poll(START_TIMEOUT + crossing),
+        Err(StartFailed::TimedOut)
+    ));
+}
