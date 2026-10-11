@@ -106,6 +106,7 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
         && let Some(link) = app.net.take()
     {
         app.lingering = link.leave(&app.game, app.clock.elapsed());
+        app.game.presentation.net_notice = None;
     }
 }
 

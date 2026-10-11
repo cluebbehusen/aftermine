@@ -446,6 +446,17 @@ impl ClientLink {
                 }
             }
         }
+        // A host naming a seat the match does not have broke the protocol.
+        let roster = game.scenario.players.len();
+        if self
+            .session
+            .seats()
+            .0
+            .iter()
+            .any(|notice| usize::from(notice.seat.0) >= roster)
+        {
+            return Some(self.end(ClientEnd::Protocol));
+        }
         for (seat, config) in self.session.take_replaced() {
             game.mirror_bot(seat, config);
             let name = &game.scenario.players[usize::from(seat.0)].name;
@@ -456,12 +467,24 @@ impl ClientLink {
             self.session.send(order);
         }
 
-        let keep = if self.closed { 0 } else { CLIENT_BUFFER };
+        // A closed connection or the host's last word leaves nothing to
+        // buffer against: run every batch that arrived.
+        let keep = if self.closed || self.session.parting() {
+            0
+        } else {
+            CLIENT_BUFFER
+        };
         game.client_frame(&mut self.session, dt, keep);
 
         if self.closed {
             if self.session.backlog() > 0 {
                 return None;
+            }
+            // The host said why it closed: that is the end, not a loss.
+            if self.session.parting()
+                && let Err(end) = self.session.poll(now)
+            {
+                return Some(self.end(end));
             }
             self.connection = None;
             return game.state.result().is_none().then_some(End::HostLost);
