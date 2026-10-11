@@ -258,9 +258,18 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             .and_then(|name| oxide_net::PlayerName::new(name).ok());
         // Without a saved name the Join form asks for one first.
         let screen = match (crate::netplay::parse_join_address(typed), name) {
-            (Ok(address), Some(name)) => LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                crate::netplay::ClientLobby::new(&address, &commit, name, config.install_id()),
-            )),
+            (Ok(address), Some(name)) => {
+                let made = config.install_id.is_none();
+                let install = config.install_id();
+                // A new install ID must outlive this run, or the next launch
+                // returns as a stranger.
+                if made && let Err(error) = config.save() {
+                    eprintln!("could not save settings: {error}");
+                }
+                LobbyScreen::waiting(crate::netplay::Lobby::Client(
+                    crate::netplay::ClientLobby::new(&address, &commit, name, install),
+                ))
+            }
             (Ok(_), None) => LobbyScreen::join(None, typed),
             (Err(reason), name) => LobbyScreen::failed(
                 name.as_ref().map_or("", oxide_net::PlayerName::as_str),
