@@ -1,7 +1,7 @@
 use super::*;
 use macroquad::prelude::vec2;
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{BuildingId, Command, UnitKind};
+use oxide_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use std::time::Instant;
 
 const COMMIT: &str = "lan-test";
@@ -307,6 +307,14 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
     let mut lan = Match::start(with_bots());
     lan.run(20);
     cut(&mut lan);
+    // An order given while reconnecting still reaches the match.
+    let order = Command::Stop { units: Vec::new() };
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.presentation.net_notice.as_deref() == Some("Reconnecting to the host..."))
+            .then_some(())
+    });
+    lan.client.0.issue(order.clone());
     let mut rejoined = false;
     wait(|| {
         assert_eq!(lan.step(), (None, None));
@@ -320,6 +328,19 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
     lan.run(20);
     lan.drain();
     assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
+    let sent = PlayerCommand {
+        player: CLIENT,
+        command: order,
+    };
+    assert!(
+        lan.host
+            .0
+            .recorder
+            .commands
+            .iter()
+            .any(|timed| timed.command == sent),
+        "the order given while reconnecting executed"
+    );
     assert!(
         lan.host.0.state.accepts_commands(CLIENT),
         "nobody surrendered"
