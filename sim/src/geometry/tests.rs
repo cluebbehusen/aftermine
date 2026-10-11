@@ -1,4 +1,4 @@
-use super::work_tile;
+use super::{footprint_distance, foundry_supports, work_tile};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -25,4 +25,15 @@ fn a_worker_on_a_work_position_s_edge_takes_a_mirrored_tile() {
             "{entry:?} from {from:?}"
         );
     }
+}
+
+#[test]
+fn footprints_touching_are_one_apart_and_support_ends_past_eight() {
+    let at = TilePos::new;
+    assert_eq!(footprint_distance(at(0, 0), (2, 2), at(2, 0), (2, 2)), 1);
+    assert_eq!(footprint_distance(at(0, 0), (2, 2), at(1, 1), (2, 2)), 0);
+    assert_eq!(footprint_distance(at(0, 0), (1, 1), at(4, 8), (2, 2)), 8);
+    assert!(foundry_supports(at(0, 0), at(9, 0)));
+    assert!(!foundry_supports(at(0, 0), at(10, 0)));
+    assert!(foundry_supports(at(9, 9), at(0, 0)));
 }

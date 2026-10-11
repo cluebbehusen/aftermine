@@ -303,3 +303,21 @@ fn every_building_inherits_single_and_group_actions_from_capabilities() {
         }
     }
 }
+
+#[test]
+fn a_deep_bore_waits_for_a_foundry_in_reach() {
+    let game = fixture(BuildingKind::Extractor, &[0], 1_000);
+    let mut selected = SelectedBuildings::inspect(&game.view());
+    assert_eq!(
+        selected.upgrade_batch().unwrap().recipients.len(),
+        1,
+        "the home Foundry supports the Extractor"
+    );
+    selected.foundries.clear();
+    let batch = selected.upgrade_batch().unwrap();
+    assert!(batch.recipients.is_empty());
+    assert_eq!(
+        batch.reason.as_deref(),
+        Some("needs a Foundry within 8 tiles")
+    );
+}

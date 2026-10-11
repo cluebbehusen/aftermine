@@ -1490,6 +1490,11 @@ fn apply_upgrade(
     if !met {
         return Err(RejectReason::MissingPrerequisite);
     }
+    if kind.upgrade_needs_foundry_support(tier)
+        && state.foundry_support(b) == crate::state::ExtractorSupport::Remote
+    {
+        return Err(RejectReason::MissingFoundrySupport);
+    }
     if state.players[player.0 as usize].scrap < upgrade.cost {
         return Err(RejectReason::NotEnoughScrap);
     }

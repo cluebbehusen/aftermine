@@ -860,34 +860,63 @@ pub struct Building {
     pub salvage_credited: u32,
 }
 
-/// The recurring-income state of a completed, living Extractor.
+/// Whether a completed own Foundry lies inside an Extractor's support radius.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtractorIncome {
+pub enum ExtractorSupport {
     /// No completed own Foundry lies inside the support radius.
     Remote,
     /// At least one completed own Foundry lies inside the support radius.
     Supported,
 }
 
+/// The recurring-income state of a completed, living Extractor. Its tier
+/// and its Foundry support set the yield independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtractorIncome {
+    tier: u8,
+    support: ExtractorSupport,
+}
+
 impl ExtractorIncome {
-    /// Scrap generated per minute at the fixed simulation rate.
-    pub const fn scrap_per_minute(self) -> u32 {
-        match self {
-            Self::Remote => crate::stats::EXTRACTOR_REMOTE_INCOME_PER_MINUTE,
-            Self::Supported => crate::stats::EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE,
-        }
+    /// The income of an Extractor at `tier` with `support`.
+    pub const fn new(tier: u8, support: ExtractorSupport) -> Self {
+        Self { tier, support }
+    }
+
+    /// The Extractor's tier: 1 is the Deep Bore.
+    pub const fn tier(self) -> u8 {
+        self.tier
+    }
+
+    /// Whether a completed own Foundry currently supports the Extractor.
+    pub const fn support(self) -> ExtractorSupport {
+        self.support
     }
 
     /// Whether nearby Foundry support is currently active.
     pub const fn is_supported(self) -> bool {
-        matches!(self, Self::Supported)
+        matches!(self.support, ExtractorSupport::Supported)
     }
 
-    pub(crate) const fn yield_cadence(self) -> (u32, u64) {
-        match self {
-            Self::Remote => crate::stats::EXTRACTOR_REMOTE_YIELD,
-            Self::Supported => crate::stats::EXTRACTOR_SUPPORTED_YIELD,
+    /// Scrap paid per payout and the ticks between payouts.
+    pub const fn yield_cadence(self) -> (u32, u64) {
+        use crate::stats::{
+            DEEP_BORE_REMOTE_YIELD, DEEP_BORE_SUPPORTED_YIELD, EXTRACTOR_REMOTE_YIELD,
+            EXTRACTOR_SUPPORTED_YIELD,
+        };
+        match (self.tier, self.support) {
+            (0, ExtractorSupport::Remote) => EXTRACTOR_REMOTE_YIELD,
+            (0, ExtractorSupport::Supported) => EXTRACTOR_SUPPORTED_YIELD,
+            (_, ExtractorSupport::Remote) => DEEP_BORE_REMOTE_YIELD,
+            (_, ExtractorSupport::Supported) => DEEP_BORE_SUPPORTED_YIELD,
         }
+    }
+
+    /// Scrap generated per minute at the fixed simulation rate.
+    pub fn scrap_per_minute(self) -> u32 {
+        let (amount, period) = self.yield_cadence();
+        let per_minute = u64::from(amount) * 60 * u64::from(crate::TICKS_PER_SECOND) / period;
+        u32::try_from(per_minute).expect("Extractor yields fit in u32")
     }
 }
 
@@ -1311,15 +1340,24 @@ impl State {
             return None;
         }
 
-        let supported = self
+        Some(ExtractorIncome::new(
+            extractor.tier,
+            self.foundry_support(extractor),
+        ))
+    }
+
+    /// Whether a completed own Foundry supports a completed, living
+    /// Extractor. An unfinished or fallen Extractor is remote.
+    pub(crate) fn foundry_support(&self, extractor: &Building) -> ExtractorSupport {
+        if self
             .buildings
             .iter()
-            .any(|building| self.extractor_supported_by(id, building.id));
-        Some(if supported {
-            ExtractorIncome::Supported
+            .any(|building| self.extractor_supported_by(extractor.id, building.id))
+        {
+            ExtractorSupport::Supported
         } else {
-            ExtractorIncome::Remote
-        })
+            ExtractorSupport::Remote
+        }
     }
 
     /// Whether one completed own Foundry currently supports an Extractor.
@@ -1339,7 +1377,7 @@ impl State {
             && foundry.built()
             && foundry.hp > 0
             && foundry.player == extractor.player
-            && footprint_distance(extractor, foundry) <= crate::stats::EXTRACTOR_SUPPORT_RADIUS
+            && crate::geometry::foundry_supports(foundry.anchor, extractor.anchor)
     }
 
     /// The match outcome, once decided.
@@ -2550,19 +2588,6 @@ impl State {
         self.buildings.retain(|b| b.id != id);
         self.next_building_id = id.0;
     }
-}
-
-fn footprint_distance(a: &Building, b: &Building) -> i32 {
-    fn axis_distance(a: i32, a_len: i32, b: i32, b_len: i32) -> i32 {
-        let a_far = a + a_len - 1;
-        let b_far = b + b_len - 1;
-        (a - b_far).max(b - a_far).max(0)
-    }
-
-    let a_size = a.kind.size();
-    let b_size = b.kind.size();
-    axis_distance(a.anchor.x, a_size.0, b.anchor.x, b_size.0)
-        .max(axis_distance(a.anchor.y, a_size.1, b.anchor.y, b_size.1))
 }
 
 /// How far outside the map a coordinate may sit before a snapshot is

@@ -594,19 +594,12 @@ fn reachable_ground_rect_perimeter(
 }
 
 fn extractor_foundry_distance(foundry: TilePos, extractor: TilePos) -> i32 {
-    let foundry_size = BuildingKind::Foundry.size();
-    let extractor_size = BuildingKind::Extractor.size();
-    let axis = |a: i32, a_len: i32, b: i32, b_len: i32| {
-        let a_far = a + a_len - 1;
-        let b_far = b + b_len - 1;
-        (a - b_far).max(b - a_far).max(0)
-    };
-    axis(foundry.x, foundry_size.0, extractor.x, extractor_size.0).max(axis(
-        foundry.y,
-        foundry_size.1,
-        extractor.y,
-        extractor_size.1,
-    ))
+    oxide_sim::geometry::footprint_distance(
+        foundry,
+        BuildingKind::Foundry.size(),
+        extractor,
+        BuildingKind::Extractor.size(),
+    )
 }
 
 fn distinct_opening_claims_exist(candidates: &[(PlayerId, Vec<TilePos>)]) -> bool {

@@ -1226,24 +1226,37 @@ impl Presentation {
                     self.sounds_pending.push((SoundKind::Deposit, None));
                 }
                 Event::CommandRejected { player, reason } if *player == self.human => {
-                    let why = match reason {
-                        oxide_sim::command::RejectReason::NotEnoughScrap => "Not enough scrap",
-                        oxide_sim::command::RejectReason::QueueFull => "Queue is full",
-                        oxide_sim::command::RejectReason::UnreachableGoal => "Can't reach that",
-                        oxide_sim::command::RejectReason::InvalidTarget => "Can't target that",
-                        oxide_sim::command::RejectReason::NotANode => "Nothing to mine there",
-                        oxide_sim::command::RejectReason::NotYourBuilding => "Not your building",
+                    let why: std::borrow::Cow<'static, str> = match reason {
+                        oxide_sim::command::RejectReason::MissingFoundrySupport => {
+                            crate::building_actions::foundry_reach_reason().into()
+                        }
+                        oxide_sim::command::RejectReason::NotEnoughScrap => {
+                            "Not enough scrap".into()
+                        }
+                        oxide_sim::command::RejectReason::QueueFull => "Queue is full".into(),
+                        oxide_sim::command::RejectReason::UnreachableGoal => {
+                            "Can't reach that".into()
+                        }
+                        oxide_sim::command::RejectReason::InvalidTarget => {
+                            "Can't target that".into()
+                        }
+                        oxide_sim::command::RejectReason::NotANode => {
+                            "Nothing to mine there".into()
+                        }
+                        oxide_sim::command::RejectReason::NotYourBuilding => {
+                            "Not your building".into()
+                        }
                         oxide_sim::command::RejectReason::CannotProduce => {
-                            "That factory can't make those"
+                            "That factory can't make those".into()
                         }
-                        oxide_sim::command::RejectReason::BadSite => "Can't build there",
+                        oxide_sim::command::RejectReason::BadSite => "Can't build there".into(),
                         oxide_sim::command::RejectReason::NoValidUnits => {
-                            "Nothing selected can do that"
+                            "Nothing selected can do that".into()
                         }
-                        oxide_sim::command::RejectReason::OutOfBounds => "Outside the map",
-                        oxide_sim::command::RejectReason::Eliminated => "You are eliminated",
+                        oxide_sim::command::RejectReason::OutOfBounds => "Outside the map".into(),
+                        oxide_sim::command::RejectReason::Eliminated => "You are eliminated".into(),
                         oxide_sim::command::RejectReason::MissingPrerequisite => {
-                            "Needs its tech building first"
+                            "Needs its tech building first".into()
                         }
                     };
                     self.toast(why);

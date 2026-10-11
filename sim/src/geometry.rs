@@ -152,6 +152,28 @@ pub fn rect_approach_origin_for_map(
     )
 }
 
+/// Shortest Chebyshev tile distance between two footprints: touching
+/// footprints are 1 apart and overlapping ones 0.
+pub fn footprint_distance(a: TilePos, a_size: (i32, i32), b: TilePos, b_size: (i32, i32)) -> i32 {
+    fn axis(a: i32, a_len: i32, b: i32, b_len: i32) -> i32 {
+        (a - (b + b_len - 1)).max(b - (a + a_len - 1)).max(0)
+    }
+    axis(a.x, a_size.0, b.x, b_size.0).max(axis(a.y, a_size.1, b.y, b_size.1))
+}
+
+/// Whether a Foundry anchored at `foundry` lies close enough to support an
+/// Extractor anchored at `extractor`. Geometry only: ownership, completion
+/// and health are the caller's to check.
+pub fn foundry_supports(foundry: TilePos, extractor: TilePos) -> bool {
+    use crate::stats::BuildingKind;
+    footprint_distance(
+        foundry,
+        BuildingKind::Foundry.size(),
+        extractor,
+        BuildingKind::Extractor.size(),
+    ) <= crate::stats::EXTRACTOR_SUPPORT_RADIUS
+}
+
 /// Center of a footprint in world coordinates. An even side puts it on a tile seam.
 pub fn footprint_center(anchor: TilePos, size: (i32, i32)) -> chassis::fx::Vec2Fx {
     use chassis::fx::{Fx, HALF, Vec2Fx};

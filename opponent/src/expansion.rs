@@ -21,9 +21,6 @@ const HELD_REACH: i32 = 6;
 /// Footprint of Foundries and Extractors, and so of sites and frames.
 const WORKS: (i32, i32) = (2, 2);
 
-/// An own Foundry this close to a frame supports its Extractor.
-const SUPPORT_REACH: i32 = 8;
-
 /// Expansion and Extractor investments with their scores. `greed` is the
 /// 0..=100 trait; `depletion` is the per-mille share of home scrap mined.
 pub(crate) fn candidates(
@@ -59,11 +56,7 @@ pub(crate) fn candidates(
         {
             continue;
         }
-        let supported = observation.my_buildings.iter().any(|building| {
-            building.kind == BuildingKind::Foundry
-                && building.built
-                && gap(building.anchor, WORKS, *frame, WORKS) <= SUPPORT_REACH
-        });
+        let supported = supported(observation, *frame);
         let greed = u64::from(greed);
         let base = if supported {
             500 + 3 * greed
@@ -80,6 +73,16 @@ pub(crate) fn candidates(
 }
 
 /// The site's anchors on the seat's home ground, best first.
+/// Whether a completed own Foundry supports an Extractor on `frame`, by the
+/// simulation's own reach.
+pub(crate) fn supported(observation: &ObservationData, frame: TilePos) -> bool {
+    observation.my_buildings.iter().any(|building| {
+        building.kind == BuildingKind::Foundry
+            && building.built
+            && oxide_sim::geometry::foundry_supports(building.anchor, frame)
+    })
+}
+
 pub(crate) fn anchors(map: &MapModel, player: PlayerId, site: &Site) -> Vec<TilePos> {
     let home = map.start(player).and_then(|start| map.component(start));
     site.anchors

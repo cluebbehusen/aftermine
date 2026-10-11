@@ -396,3 +396,97 @@ fn a_lost_extractor_is_rebuilt_once_its_attacker_is_gone() {
         "a new Extractor goes on the frame once the attacker is gone"
     );
 }
+
+/// The arena with a Crucible and a completed Extractor on a frame at `x`
+/// in row 5, the home Foundry's row.
+fn bore_arena(x: i32) -> Scenario {
+    let mut scenario = arena(1_000);
+    let column = usize::try_from(x).unwrap();
+    scenario.map[5].replace_range(column..=column, "E");
+    scenario.buildings.extend([
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Crucible,
+            x: 1,
+            y: 8,
+        },
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Extractor,
+            x,
+            y: 5,
+        },
+    ]);
+    scenario
+}
+
+fn own_extractor(state: &State) -> BuildingId {
+    state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id
+}
+
+#[test]
+fn foundry_support_reads_the_simulation_reach() {
+    // The home Foundry spans columns 3 and 4: an Extractor at column 12 is
+    // eight tiles away, at 13 nine.
+    for x in 11..=14 {
+        let state = bore_arena(x).build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert_eq!(
+            expansion::supported(&observation, TilePos::new(x, 5)),
+            state
+                .extractor_income(own_extractor(&state))
+                .unwrap()
+                .is_supported(),
+            "column {x}"
+        );
+    }
+}
+
+#[test]
+fn a_remote_extractor_is_never_deepened() {
+    let state = bore_arena(13).build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let deep_bore = Investment::Upgrade {
+        building: own_extractor(&state),
+        tier: 1,
+    };
+    assert_eq!(crate::investments::step(&observation, deep_bore), None);
+}
+
+#[test]
+fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands() {
+    let scenario = bore_arena(12);
+    let mut state = scenario.build().unwrap();
+    let extractor = own_extractor(&state);
+    // Reclaimers and Deep Bores wait for the Foundry drip to begin.
+    advance_to(&mut state, 2_400, &[]);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let mut upgraded = false;
+    while state.current_tick() < 3_600 && !upgraded {
+        let commands = opponent.act(&state, &mut events);
+        upgraded = commands.iter().any(|command| {
+            matches!(command.command, Command::UpgradeBuilding { building } if building == extractor)
+        });
+        let report = state.tick(&commands);
+        assert!(
+            !report.events.iter().any(|event| matches!(
+                event,
+                Event::CommandRejected {
+                    reason: RejectReason::MissingFoundrySupport,
+                    ..
+                }
+            )),
+            "tick {}",
+            report.tick
+        );
+        events.record(PlayerId(0), &report.events);
+    }
+    assert!(upgraded);
+    assert_eq!(state.building(extractor).unwrap().tier, 1);
+}

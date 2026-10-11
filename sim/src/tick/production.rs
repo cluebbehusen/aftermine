@@ -39,6 +39,20 @@ pub(super) fn capture_recovery_entitlements(state: &mut State) {
     }
 }
 
+// The Extractor payout pass wakes only on multiples of the remote period.
+const _: () = {
+    use crate::stats::{
+        DEEP_BORE_REMOTE_YIELD, DEEP_BORE_SUPPORTED_YIELD, EXTRACTOR_REMOTE_YIELD,
+        EXTRACTOR_SUPPORTED_YIELD,
+    };
+    let gate = EXTRACTOR_REMOTE_YIELD.1;
+    assert!(
+        EXTRACTOR_SUPPORTED_YIELD.1.is_multiple_of(gate)
+            && DEEP_BORE_REMOTE_YIELD.1.is_multiple_of(gate)
+            && DEEP_BORE_SUPPORTED_YIELD.1.is_multiple_of(gate)
+    );
+};
+
 pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
     // Every built Reclaimer credits one scrap per period. Credits are
     // per-player sums, so order does not matter.

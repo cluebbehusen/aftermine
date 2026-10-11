@@ -331,4 +331,8 @@ pub enum RejectReason {
     /// The issuer has not completed the tech buildings this kind
     /// requires — the tree gates humans and bots identically.
     MissingPrerequisite,
+    /// The upgrade needs a completed own Foundry within
+    /// [`EXTRACTOR_SUPPORT_RADIUS`](crate::stats::EXTRACTOR_SUPPORT_RADIUS)
+    /// footprint tiles when it starts.
+    MissingFoundrySupport,
 }

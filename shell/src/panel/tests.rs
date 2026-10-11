@@ -140,12 +140,22 @@ fn own_extractors_name_current_income_without_exposing_foreign_support() {
     let supported = own_extractors
         .iter()
         .copied()
-        .find(|id| game.state.extractor_income(*id) == Some(oxide_sim::ExtractorIncome::Supported))
+        .find(|id| {
+            game.state
+                .extractor_income(*id)
+                .map(oxide_sim::ExtractorIncome::support)
+                == Some(oxide_sim::ExtractorSupport::Supported)
+        })
         .expect("a home Extractor is supported");
     let remote = own_extractors
         .iter()
         .copied()
-        .find(|id| game.state.extractor_income(*id) == Some(oxide_sim::ExtractorIncome::Remote))
+        .find(|id| {
+            game.state
+                .extractor_income(*id)
+                .map(oxide_sim::ExtractorIncome::support)
+                == Some(oxide_sim::ExtractorSupport::Remote)
+        })
         .expect("a distant Extractor is remote");
 
     game.presentation.selection.buildings = vec![supported];
@@ -170,8 +180,10 @@ fn own_extractors_name_current_income_without_exposing_foreign_support() {
         .expect("foreign Extractor")
         .id;
     assert_eq!(
-        game.state.extractor_income(foreign),
-        Some(oxide_sim::ExtractorIncome::Supported),
+        game.state
+            .extractor_income(foreign)
+            .map(oxide_sim::ExtractorIncome::support),
+        Some(oxide_sim::ExtractorSupport::Supported),
         "the fixture needs private dynamic support to hide"
     );
     game.presentation.selection.buildings = vec![foreign];

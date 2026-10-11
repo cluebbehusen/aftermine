@@ -182,6 +182,31 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             };
             list.push((refinery, base * 7 / 5));
         }
+        if built(observation, BuildingKind::Crucible) {
+            // The supported Extractor nearest home in the seat's frame, so
+            // mirrored seats deepen mirrored frames.
+            let frame = HomeFrame::of(observation, situation.map);
+            let bore = observation
+                .my_buildings
+                .iter()
+                .filter(|building| {
+                    building.kind == BuildingKind::Extractor
+                        && building.built
+                        && building.tier == 0
+                        && expansion::supported(observation, building.anchor)
+                })
+                .min_by_key(|building| {
+                    let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
+                    frame.map(|frame| frame.rank(frame.home, centre))
+                });
+            if let Some(extractor) = bore {
+                let deep_bore = Investment::Upgrade {
+                    building: extractor.id,
+                    tier: 1,
+                };
+                list.push((deep_bore, base * 2));
+            }
+        }
     }
     let settled = saturated || observation.tick >= defenses::SETTLE_TICKS;
     list.extend(defenses::investments(
@@ -288,6 +313,11 @@ pub(crate) fn step(observation: &ObservationData, investment: Investment) -> Opt
                 own.id == building && own.built && own.tier.checked_add(1) == Some(tier)
             })?;
             let upgrade = building.kind.upgrade_from(building.tier)?;
+            if building.kind.upgrade_needs_foundry_support(building.tier)
+                && !expansion::supported(observation, building.anchor)
+            {
+                return None;
+            }
             match upgrade
                 .requires
                 .iter()

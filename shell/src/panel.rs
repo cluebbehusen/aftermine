@@ -324,9 +324,11 @@ pub fn building_stat_line(kind: BuildingKind) -> String {
 
 /// Economy details shared by build cards and the codex.
 pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
+    use oxide_sim::{ExtractorIncome, ExtractorSupport};
     let radius = oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
-    let remote = oxide_sim::stats::EXTRACTOR_REMOTE_INCOME_PER_MINUTE;
-    let supported = oxide_sim::stats::EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE;
+    let rate = |tier, support| ExtractorIncome::new(tier, support).scrap_per_minute();
+    let remote = rate(0, ExtractorSupport::Remote);
+    let supported = rate(0, ExtractorSupport::Supported);
     match kind {
         BuildingKind::Reclaimer => vec![format!(
             "Generates {} scrap/min. Upgrading to a Refinery raises output to {} scrap/min.",
@@ -339,6 +341,11 @@ pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
             ),
             format!(
                 "Supported by one or more own completed Foundries within {radius} footprint tiles."
+            ),
+            format!(
+                "Upgrading to a Deep Bore raises output to {} scrap/min remote, {} supported; it needs a Foundry within {radius} tiles to start.",
+                rate(1, ExtractorSupport::Remote),
+                rate(1, ExtractorSupport::Supported),
             ),
         ],
         BuildingKind::Foundry => vec![format!(

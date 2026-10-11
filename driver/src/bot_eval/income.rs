@@ -7,8 +7,7 @@ use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use oxide_kit::stats::LiveMatchStats;
 use oxide_sim::stats::{
-    EXTRACTOR_REMOTE_INCOME_PER_MINUTE, EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE, FOUNDRY_DRIP_PERIOD,
-    FOUNDRY_DRIP_START_TICK, RECLAIMER_PERIOD, REFINERY_PERIOD,
+    FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, RECLAIMER_PERIOD, REFINERY_PERIOD,
 };
 use oxide_sim::{Building, BuildingKind, Event, ExtractorIncome, PlayerId, State, UnitKind};
 use serde::{Deserialize, Serialize};
@@ -183,13 +182,9 @@ fn passive_per_minute(state: &State, player: PlayerId) -> u32 {
             BuildingKind::Reclaimer => {
                 TICKS_PER_MINUTE / u32::try_from(REFINERY_PERIOD).expect("periods fit in u32")
             }
-            BuildingKind::Extractor if !seat.resigned => {
-                match state.extractor_income(building.id) {
-                    Some(ExtractorIncome::Supported) => EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE,
-                    Some(ExtractorIncome::Remote) => EXTRACTOR_REMOTE_INCOME_PER_MINUTE,
-                    None => 0,
-                }
-            }
+            BuildingKind::Extractor if !seat.resigned => state
+                .extractor_income(building.id)
+                .map_or(0, ExtractorIncome::scrap_per_minute),
             BuildingKind::Foundry if drip => {
                 TICKS_PER_MINUTE / u32::try_from(FOUNDRY_DRIP_PERIOD).expect("periods fit in u32")
             }

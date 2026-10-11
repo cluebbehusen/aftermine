@@ -4,14 +4,27 @@ use crate::action::{Action, BindingMap};
 use crate::game::{Game, Scene};
 use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
 use crate::typography::entity_name;
+use chassis::grid::TilePos;
 use oxide_sim::{Building, BuildingId, BuildingKind, Command};
 
 #[derive(Clone)]
 pub(crate) struct SelectedBuildings {
     pub buildings: Vec<Building>,
     pub tech: Vec<BuildingKind>,
+    /// Anchors of the viewer's completed, living Foundries, for upgrades
+    /// that need one in reach.
+    pub foundries: Vec<TilePos>,
     pub scrap: u32,
     pub accepts: bool,
+}
+
+/// Why an upgrade that needs Foundry support cannot start.
+pub(crate) fn foundry_reach_reason() -> String {
+    format!(
+        "needs a {} within {} tiles",
+        entity_name(BuildingKind::Foundry.name()),
+        oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+    )
 }
 
 pub(crate) struct UpgradeBatch {
@@ -36,6 +49,16 @@ impl SelectedBuildings {
                 .iter()
                 .filter(|b| b.player == game.presentation.human && b.built())
                 .map(|b| b.kind)
+                .collect(),
+            foundries: buildings
+                .iter()
+                .filter(|b| {
+                    b.player == game.presentation.human
+                        && b.kind == BuildingKind::Foundry
+                        && b.built()
+                        && b.hp > 0
+                })
+                .map(|b| b.anchor)
                 .collect(),
             scrap,
             accepts,
@@ -123,6 +146,13 @@ impl SelectedBuildings {
             } else if let Some(upgrade) = b.kind.upgrade_from(b.tier) {
                 if let Some(req) = upgrade.requires.iter().find(|req| !self.tech.contains(req)) {
                     Some(format!("needs a standing {}", entity_name(req.name())))
+                } else if b.kind.upgrade_needs_foundry_support(b.tier)
+                    && !self
+                        .foundries
+                        .iter()
+                        .any(|&foundry| oxide_sim::geometry::foundry_supports(foundry, b.anchor))
+                {
+                    Some(foundry_reach_reason())
                 } else if bank < upgrade.cost {
                     Some(format!("needs {} scrap", upgrade.cost))
                 } else {

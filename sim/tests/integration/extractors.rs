@@ -1,19 +1,18 @@
 //! Derelict Extractor frames: the contestable economy. The map authors
 //! 2x2 frames ('E'); an Extractor rebuilds only there, nothing else may
 //! pave a frame over, the machine earns a fixed remote yield that nearby
-//! Foundry support improves, and its death re-derelicts the frame for
-//! whoever holds the ground next.
+//! Foundry support improves, its Deep Bore upgrade triples that yield, and
+//! its death re-derelicts the frame for whoever holds the ground next.
 
 use crate::common;
 use common::{cmd, players};
 
 use chassis::grid::TilePos;
+use oxide_sim::command::RejectReason;
 use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{
-    BuildingKind, EXTRACTOR_REMOTE_INCOME_PER_MINUTE, EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE,
-};
+use oxide_sim::stats::BuildingKind;
 use oxide_sim::{
-    Command, Event, ExtractorIncome, PlayerCommand, PlayerId, Scenario, State, UnitKind,
+    Command, Event, ExtractorSupport, PlayerCommand, PlayerId, Scenario, State, UnitKind,
 };
 
 /// A 20x10 arena with one frame mid-field ('E' anchor at (9, 4)).
@@ -641,7 +640,7 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
         .id;
     assert_eq!(
         state_income(&at_boundary, extractor),
-        ExtractorIncome::Supported,
+        ExtractorSupport::Supported,
         "anchors are nine tiles apart, but the 2x2 footprints are exactly eight apart"
     );
     assert!(at_boundary.extractor_supported_by(extractor, foundry));
@@ -658,7 +657,7 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
     .build()
     .unwrap();
     let extractor = extractor_id(&outside);
-    assert_eq!(state_income(&outside, extractor), ExtractorIncome::Remote);
+    assert_eq!(state_income(&outside, extractor), ExtractorSupport::Remote);
 
     let wrong_owner = support_arena(
         0,
@@ -678,16 +677,17 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
         .id;
     assert_eq!(
         state_income(&wrong_owner, extractor),
-        ExtractorIncome::Remote,
+        ExtractorSupport::Remote,
         "an enemy forward base cannot develop this owner's claim"
     );
     assert!(!wrong_owner.extractor_supported_by(extractor, enemy_foundry));
 }
 
-fn state_income(state: &State, extractor: oxide_sim::BuildingId) -> ExtractorIncome {
+fn state_income(state: &State, extractor: oxide_sim::BuildingId) -> ExtractorSupport {
     state
         .extractor_income(extractor)
         .expect("the authored Extractor is completed and living")
+        .support()
 }
 
 #[test]
@@ -712,12 +712,18 @@ fn extractor_yield_is_fixed_and_foundry_support_does_not_stack() {
     .unwrap();
 
     assert_eq!(
-        state_income(&remote, extractor_id(&remote)).scrap_per_minute(),
-        EXTRACTOR_REMOTE_INCOME_PER_MINUTE
+        remote
+            .extractor_income(extractor_id(&remote))
+            .unwrap()
+            .scrap_per_minute(),
+        120
     );
     assert_eq!(
-        state_income(&supported, extractor_id(&supported)).scrap_per_minute(),
-        EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE
+        supported
+            .extractor_income(extractor_id(&supported))
+            .unwrap()
+            .scrap_per_minute(),
+        180
     );
     for start in [0, 24_000] {
         assert_eq!(
@@ -760,7 +766,7 @@ fn an_unfinished_foundry_does_not_support_until_construction_completes() {
         .expect("the legal expansion command places a site");
     assert!(!expansion.built());
     let expansion = expansion.id;
-    assert_eq!(state_income(&state, extractor), ExtractorIncome::Remote);
+    assert_eq!(state_income(&state, extractor), ExtractorSupport::Remote);
 
     for _ in 0..1_000 {
         if state
@@ -777,7 +783,7 @@ fn an_unfinished_foundry_does_not_support_until_construction_completes() {
             .is_some_and(oxide_sim::Building::built),
         "the adjacent Harvester completes the expansion"
     );
-    assert_eq!(state_income(&state, extractor), ExtractorIncome::Supported);
+    assert_eq!(state_income(&state, extractor), ExtractorSupport::Supported);
 }
 
 #[test]
@@ -808,7 +814,7 @@ fn destroying_the_supporting_foundry_returns_the_extractor_to_remote_yield() {
         .filter(|unit| unit.player == PlayerId(1) && unit.kind == UnitKind::Avalanche)
         .map(|unit| unit.id)
         .collect();
-    assert_eq!(state_income(&state, extractor), ExtractorIncome::Supported);
+    assert_eq!(state_income(&state, extractor), ExtractorSupport::Supported);
 
     state.tick(&[cmd(
         1,
@@ -832,7 +838,7 @@ fn destroying_the_supporting_foundry_returns_the_extractor_to_remote_yield() {
         state.building(extractor).is_some(),
         "the Extractor survives"
     );
-    assert_eq!(state_income(&state, extractor), ExtractorIncome::Remote);
+    assert_eq!(state_income(&state, extractor), ExtractorSupport::Remote);
 }
 
 #[test]
@@ -902,5 +908,178 @@ fn the_contest_cycle_re_derelicts_and_rebuilds() {
                 && b.anchor == FRAME
                 && b.player == PlayerId(1)),
         "the ground changes hands"
+    );
+}
+
+fn crucible() -> BuildingSpec {
+    building(0, BuildingKind::Crucible, TilePos::new(30, 10))
+}
+
+fn deep_bore(state: &State) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let extractor = extractor_id(state);
+    for building in value["buildings"].as_array_mut().unwrap() {
+        if building["id"] == serde_json::json!(extractor) {
+            building["tier"] = serde_json::json!(1);
+        }
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+/// Why seat zero's Deep Bore upgrade was refused, if it was. A refusal
+/// leaves the world exactly as an idle tick would.
+fn refusal(scenario: &Scenario) -> Option<RejectReason> {
+    let mut state = scenario.build().unwrap();
+    let extractor = extractor_id(&state);
+    let mut idle = state.clone();
+    idle.tick(&[]);
+    let report = state.tick(&[cmd(
+        0,
+        Command::UpgradeBuilding {
+            building: extractor,
+        },
+    )]);
+    let reason = report.events.iter().find_map(|event| match event {
+        Event::CommandRejected { reason, .. } => Some(*reason),
+        _ => None,
+    });
+    if reason.is_some() {
+        assert_eq!(
+            state.hash(),
+            idle.hash(),
+            "a refused upgrade changes nothing"
+        );
+    }
+    reason
+}
+
+#[test]
+fn a_deep_bore_needs_a_crucible_and_a_foundry_in_reach_when_it_starts() {
+    let support = building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY);
+    assert_eq!(
+        refusal(&support_arena(350, vec![], vec![support, crucible()])),
+        None,
+        "footprints exactly eight apart support the upgrade"
+    );
+    assert_eq!(
+        refusal(&support_arena(
+            350,
+            vec![],
+            vec![
+                building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY.offset(-1, 0)),
+                crucible(),
+            ],
+        )),
+        Some(RejectReason::MissingFoundrySupport),
+        "nine tiles is out of reach"
+    );
+    assert_eq!(
+        refusal(&support_arena(
+            350,
+            vec![],
+            vec![
+                building(1, BuildingKind::Foundry, SUPPORT_FOUNDRY),
+                crucible()
+            ],
+        )),
+        Some(RejectReason::MissingFoundrySupport),
+        "an enemy Foundry supports nothing of ours"
+    );
+    assert_eq!(
+        refusal(&support_arena(350, vec![], vec![])),
+        Some(RejectReason::MissingPrerequisite),
+        "the Crucible is checked before the Foundry"
+    );
+    assert_eq!(
+        refusal(&support_arena(349, vec![], vec![support, crucible()])),
+        Some(RejectReason::NotEnoughScrap)
+    );
+}
+
+#[test]
+fn a_supported_extractor_refits_offline_into_a_deep_bore() {
+    let mut state = support_arena(
+        350,
+        vec![],
+        vec![
+            building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY),
+            crucible(),
+        ],
+    )
+    .build()
+    .unwrap();
+    let extractor = extractor_id(&state);
+    let refit = BuildingKind::Extractor
+        .upgrade_from(0)
+        .expect("the Extractor has a Deep Bore rung");
+    assert_eq!((refit.cost, refit.build_ticks), (350, 600));
+
+    state.tick(&[cmd(
+        0,
+        Command::UpgradeBuilding {
+            building: extractor,
+        },
+    )]);
+    for _ in 2..refit.build_ticks {
+        assert!(!state.building(extractor).unwrap().built());
+        assert_eq!(state.extractor_income(extractor), None);
+        assert_eq!(
+            state.player(PlayerId(0)).scrap,
+            0,
+            "the refit earns nothing"
+        );
+        state.tick(&[]);
+    }
+    state.tick(&[]);
+
+    let bore = state.building(extractor).unwrap();
+    assert!(bore.built());
+    assert_eq!(bore.kind.tier_name(bore.tier), "deep bore");
+    assert_eq!(bore.hp, 900);
+    let income = state.extractor_income(extractor).unwrap();
+    assert_eq!(
+        (income.tier(), income.support()),
+        (1, ExtractorSupport::Supported)
+    );
+}
+
+#[test]
+fn a_deep_bore_triples_the_yield_and_support_still_does_not_stack() {
+    let remote = deep_bore(&support_arena(0, vec![], vec![]).build().unwrap());
+    let supported = deep_bore(
+        &support_arena(
+            0,
+            vec![],
+            vec![building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY)],
+        )
+        .build()
+        .unwrap(),
+    );
+    let twice_supported = deep_bore(
+        &support_arena(
+            0,
+            vec![],
+            vec![
+                building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY),
+                building(0, BuildingKind::Foundry, TilePos::new(20, 14)),
+            ],
+        )
+        .build()
+        .unwrap(),
+    );
+    let per_minute = |state: &State| {
+        state
+            .extractor_income(extractor_id(state))
+            .unwrap()
+            .scrap_per_minute()
+    };
+    assert_eq!(per_minute(&remote), 360);
+    assert_eq!(per_minute(&supported), 540);
+    assert_eq!(earnings_over(remote, 0, 20), 6);
+    assert_eq!(earnings_over(supported, 0, 20), 9);
+    assert_eq!(
+        earnings_over(twice_supported, 0, 20),
+        9,
+        "a second Foundry adds nothing"
     );
 }
