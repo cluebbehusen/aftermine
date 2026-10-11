@@ -159,8 +159,9 @@ fn a_rejoining_client_restores_the_match_and_takes_its_seat_back() {
     );
     assert!(session.waiting() && session.is_rejoining(A));
     let snapshot: Vec<u8> = (0..1000u32).map(|byte| byte.to_le_bytes()[0]).collect();
+    let tick = session.tick();
     call.desk
-        .send_snapshot(call.visitor, session.tick(), 77, &snapshot, secs(2));
+        .send_snapshot(&mut session, call.visitor, tick, 77, &snapshot, secs(2));
     call.events.clear();
     call.settle(&mut session, secs(2));
     assert_eq!(
@@ -213,8 +214,9 @@ fn a_restore_that_disagrees_or_stalls_leaves_the_match_waiting() {
     session.disconnected(A, secs(0));
     let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
     call.settle(&mut session, secs(0));
+    let tick = session.tick();
     call.desk
-        .send_snapshot(call.visitor, session.tick(), 77, &[1, 2, 3], secs(0));
+        .send_snapshot(&mut session, call.visitor, tick, 77, &[1, 2, 3], secs(0));
     call.settle(&mut session, secs(0));
     call.visit.ready(78);
     call.settle(&mut session, secs(0));
@@ -228,8 +230,9 @@ fn a_restore_that_disagrees_or_stalls_leaves_the_match_waiting() {
 
     let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(1)), secs(1));
     call.settle(&mut session, secs(1));
+    let tick = session.tick();
     call.desk
-        .send_snapshot(call.visitor, session.tick(), 77, &[1, 2, 3], secs(1));
+        .send_snapshot(&mut session, call.visitor, tick, 77, &[1, 2, 3], secs(1));
     call.settle(&mut session, secs(1));
     assert!(session.is_rejoining(A));
     let events = call.desk.poll(&mut session, secs(1) + START_TIMEOUT);
@@ -325,8 +328,9 @@ fn a_large_snapshot_gets_time_to_cross_a_slow_link() {
     let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
     call.settle(&mut session, secs(0));
     let big = vec![7; 4 << 20];
+    let tick = session.tick();
     call.desk
-        .send_snapshot(call.visitor, session.tick(), 77, &big, secs(0));
+        .send_snapshot(&mut session, call.visitor, tick, 77, &big, secs(0));
     let crossing = snapshot::transfer_time(big.len() as u64);
     assert_eq!(crossing, secs(8));
     assert_eq!(call.desk.poll(&mut session, START_TIMEOUT), []);
@@ -337,4 +341,31 @@ fn a_large_snapshot_gets_time_to_cross_a_slow_link() {
             visitor: call.visitor
         }]
     );
+}
+
+#[test]
+fn a_snapshot_no_client_would_accept_turns_the_rejoin_away() {
+    let too_big = usize::try_from(snapshot::MAX_SNAPSHOT_BYTES).unwrap() + 1;
+    for size in [0, too_big] {
+        let mut session = session();
+        session.disconnected(A, secs(0));
+        let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
+        call.settle(&mut session, secs(0));
+        let tick = session.tick();
+        call.desk.send_snapshot(
+            &mut session,
+            call.visitor,
+            tick,
+            77,
+            &vec![7; size],
+            secs(0),
+        );
+        call.settle(&mut session, secs(0));
+        assert_eq!(
+            call.ended,
+            Some(VisitEnd::Gone(GoneReason::TooLarge)),
+            "{size}"
+        );
+        assert!(session.waiting() && !session.is_rejoining(A));
+    }
 }
