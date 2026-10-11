@@ -256,7 +256,15 @@ fn mirrored_collision_pushes_agree_at_rock_faces_and_corners() {
             let ranks = owner_local_ranks(&state);
             let mut index = UnitIndex::new();
             let pairs = collision_pairs(&state, false, &mut index, &ranks).unwrap_or_default();
-            relaxation_pass(&mut state, &[Vec2Fx::ZERO; 4], &ranks, &mut vec![], &pairs);
+            let productive = productive_posts(&state, &pairs);
+            relaxation_pass(
+                &mut state,
+                &[Vec2Fx::ZERO; 4],
+                &ranks,
+                &productive,
+                &mut vec![],
+                &pairs,
+            );
             for (a, b) in [(0, 2), (1, 3)] {
                 assert_eq!(
                     state.units[b].pos,
@@ -987,7 +995,17 @@ fn collision_finds_border_crossing_pairs_in_either_id_order() {
                 .expect("the boundary pair overlaps");
 
             assert!(
-                relaxation_pass(&mut state, &travel, &owner_ranks, &mut spent, &pairs),
+                {
+                    let productive = productive_posts(&state, &pairs);
+                    relaxation_pass(
+                        &mut state,
+                        &travel,
+                        &owner_ranks,
+                        &productive,
+                        &mut spent,
+                        &pairs,
+                    )
+                },
                 "{edge} pair with outside slot {outside_slot} was not visited"
             );
             assert_ne!(
@@ -1308,4 +1326,58 @@ fn diagonal_head_on_pair_passes_shared_waypoint() {
             .map(|unit| (unit.id, unit.pos, unit.path.as_ref().map(|path| path.next)))
             .collect::<Vec<_>>()
     );
+}
+
+/// Each seat's overlapping Lancer pair shoots the front Lancer of the other
+/// seat's pair, which stands just inside their range. Resolving the west
+/// pair first pushes its front Lancer out of the east pair's range; if the
+/// east pair then read that position, it would split its overlap as if it had
+/// lost its target, and the mirror seats would separate differently.
+#[test]
+fn a_seat_resolving_first_cannot_change_how_its_mirror_splits_through_targets() {
+    let mut state = Scenario::skirmish().build().expect("skirmish builds");
+    state.units.clear();
+    let center_twice = Vec2Fx::new(
+        Fx::from_num(state.map.width()),
+        Fx::from_num(state.map.height()),
+    );
+    let front = Vec2Fx::new(Fx::lit("17.275"), Fx::lit("12"));
+    let back = Vec2Fx::new(Fx::lit("17.575"), Fx::lit("12"));
+    let west = [
+        state.spawn_unit(crate::PlayerId(0), UnitKind::Lancer, front),
+        state.spawn_unit(crate::PlayerId(0), UnitKind::Lancer, back),
+    ];
+    let east = [
+        state.spawn_unit(crate::PlayerId(1), UnitKind::Lancer, center_twice - front),
+        state.spawn_unit(crate::PlayerId(1), UnitKind::Lancer, center_twice - back),
+    ];
+    for (attackers, target) in [(west, east[0]), (east, west[0])] {
+        for id in attackers {
+            state.unit_mut(id).unwrap().order = Order::Attack {
+                target: crate::AttackTarget::Unit(target),
+                pursue: false,
+                resume: None,
+            };
+        }
+    }
+    state.refresh_vision();
+    let range = UnitKind::Lancer.stats().weapons[0].range;
+    assert!(state.unit(east[0]).unwrap().pos.dist_sq(front) < range * range);
+
+    let mut index = UnitIndex::new();
+    resolve_collisions(&mut state, &[Vec2Fx::ZERO; 4], &mut index);
+
+    let moved = state.unit(west[0]).unwrap().pos;
+    assert_ne!(moved, front, "the west pair must have separated");
+    assert!(
+        state.unit(east[0]).unwrap().pos.dist_sq(moved) > range * range,
+        "the push must carry the target out of range for the scene to bite"
+    );
+    for (w, e) in west.into_iter().zip(east) {
+        assert_eq!(
+            state.unit(e).unwrap().pos,
+            center_twice - state.unit(w).unwrap().pos,
+            "mirror seats separated differently"
+        );
+    }
 }
