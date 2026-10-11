@@ -169,6 +169,8 @@ pub struct HostSession {
     hashes: VecDeque<(Tick, u64)>,
     /// The seat states and pause last shown to clients.
     shown: Option<(Vec<SeatNotice>, bool)>,
+    /// Show the seat states on the next poll even if unchanged.
+    reshow: bool,
     /// Each client's rejoin token.
     tokens: Vec<(PlayerId, Token)>,
     last_poll: Option<Duration>,
@@ -208,6 +210,7 @@ impl HostSession {
             course: Course::Playing,
             hashes: VecDeque::new(),
             shown: None,
+            reshow: false,
             tokens: Vec::new(),
             last_poll: None,
             events: Vec::new(),
@@ -270,6 +273,8 @@ impl HostSession {
         if self.clients[index].link.take().is_some() {
             self.events.push(HostEvent::Lost { seat });
         }
+        // Lines queued for the old connection must not reach the new one.
+        self.outgoing.retain(|(addressed, _)| *addressed != seat);
         self.pending
             .retain(|pending| pending.command.player != seat);
         self.clients[index].standing = Standing::Rejoining { away_since };
@@ -279,10 +284,12 @@ impl HostSession {
 
     /// The rejoining client restored the match at [`HostSession::tick`]:
     /// its new connection joins the session, acknowledging batches from
-    /// there. False unless the seat was rejoining.
+    /// there. False unless the seat was rejoining a match still in play.
     pub fn readmit(&mut self, seat: PlayerId, now: Duration) -> bool {
         let index = self.client_index(seat);
-        if !matches!(self.clients[index].standing, Standing::Rejoining { .. }) {
+        if self.course != Course::Playing
+            || !matches!(self.clients[index].standing, Standing::Rejoining { .. })
+        {
             return false;
         }
         self.clients[index].link = Some(Link {
@@ -293,8 +300,9 @@ impl HostSession {
             blocked_since: None,
         });
         self.clients[index].standing = Standing::Playing(Presence::Live);
-        // The new connection hears the seat states afresh.
-        self.shown = None;
+        // The new connection hears the seat states afresh, and everyone
+        // hears the seat is back.
+        self.reshow = true;
         true
     }
 
@@ -765,7 +773,8 @@ impl HostSession {
             .as_ref()
             .is_none_or(|(shown, paused)| key(shown) != key(&seats) || *paused != self.paused);
         // Nothing to say until something is out of the ordinary.
-        if changed && (self.shown.is_some() || !seats.is_empty() || self.paused) {
+        let ordinary = self.shown.is_none() && seats.is_empty() && !self.paused;
+        if std::mem::take(&mut self.reshow) || (changed && !ordinary) {
             self.broadcast(
                 &HostMessage::Seats {
                     seats: seats.clone(),

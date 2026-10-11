@@ -317,3 +317,24 @@ fn the_desk_heartbeats_a_visitor_it_has_nothing_to_say_to() {
         [(visitor, LobbyMessage::Heartbeat.encode())]
     );
 }
+
+#[test]
+fn a_large_snapshot_gets_time_to_cross_a_slow_link() {
+    let mut session = session();
+    session.disconnected(A, secs(0));
+    let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
+    call.settle(&mut session, secs(0));
+    let big = vec![7; 4 << 20];
+    call.desk
+        .send_snapshot(call.visitor, session.tick(), 77, &big, secs(0));
+    let crossing = snapshot::transfer_time(big.len() as u64);
+    assert_eq!(crossing, secs(8));
+    assert_eq!(call.desk.poll(&mut session, START_TIMEOUT), []);
+    assert!(session.is_rejoining(A));
+    assert_eq!(
+        call.desk.poll(&mut session, START_TIMEOUT + crossing),
+        [DeskEvent::Done {
+            visitor: call.visitor
+        }]
+    );
+}
