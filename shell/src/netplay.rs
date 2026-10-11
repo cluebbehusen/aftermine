@@ -422,6 +422,17 @@ impl ClientLink {
                 }
             }
         }
+        // A host naming a seat the match does not have broke the protocol.
+        let roster = game.scenario.players.len();
+        if self
+            .session
+            .seats()
+            .0
+            .iter()
+            .any(|notice| usize::from(notice.seat.0) >= roster)
+        {
+            return Some(self.end(ClientEnd::Protocol));
+        }
         for order in game.take_outbox() {
             self.session.send(order);
         }
