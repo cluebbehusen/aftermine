@@ -410,15 +410,12 @@ impl HostSession {
 
     /// Whether every client the host is not waiting on has acknowledged
     /// every published batch, and so reported every hash the host expects.
+    /// A quiet client still counts: it is connected and may yet report a
+    /// final hash that disagrees.
     pub fn caught_up(&self) -> bool {
         self.clients
             .iter()
-            .filter(|client| {
-                !matches!(
-                    client.standing,
-                    Standing::Playing(Presence::Quiet | Presence::Away { .. })
-                )
-            })
+            .filter(|client| !matches!(client.standing, Standing::Playing(Presence::Away { .. })))
             .filter_map(|client| client.link.as_ref())
             .all(|link| link.acked == self.next_tick)
     }
@@ -464,10 +461,12 @@ impl HostSession {
             let Some(link) = &mut client.link else {
                 continue;
             };
+            // A line received since the gap already reset its clock, and
+            // nothing was heard in the future.
             if gap > SUSPEND_GAP {
-                link.heard += gap;
+                link.heard = (link.heard + gap).min(now);
                 if let Some(since) = &mut link.blocked_since {
-                    *since += gap;
+                    *since = (*since + gap).min(now);
                 }
             }
             let silence = now.saturating_sub(link.heard);
