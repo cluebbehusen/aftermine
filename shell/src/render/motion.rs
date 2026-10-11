@@ -143,12 +143,6 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         return UnitFrame::Excavator { cargo, pose };
     }
 
-    if kind == UnitKind::Tender
-        && let UnitWorkState::Repairing { cycle, .. } = state.work
-    {
-        return tender_work_frame(cycle);
-    }
-
     if let LocomotionState::Moving { cycle } = state.locomotion {
         return match state.propulsion {
             PropulsionState::LiftRotors { cycle } => lift_rotor_frame(cycle),
@@ -302,13 +296,6 @@ fn excavator_work_frame(cycle: f32) -> ExcavatorPose {
     }
 }
 
-fn tender_work_frame(cycle: f32) -> UnitFrame {
-    match cycle_index(cycle, 5) {
-        0 => UnitFrame::Idle,
-        phase => UnitFrame::Action(phase - 1),
-    }
-}
-
 fn skyhook_transport_frame(action: TransportActionState) -> UnitFrame {
     let action = match action {
         TransportActionState::Boarding { progress } => cycle_index(progress, 4),
@@ -358,7 +345,6 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Condor
         | UnitKind::Breaker => 0,
         UnitKind::Harvester
-        | UnitKind::Tender
         | UnitKind::Excavator
         | UnitKind::Kestrel
         | UnitKind::Skyhook
@@ -387,7 +373,6 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Breaker
             | UnitKind::Avalanche => 1,
             UnitKind::Harvester
-            | UnitKind::Tender
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook
@@ -406,7 +391,6 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Condor
             | UnitKind::Breaker => 2 + cycle_index(progress, 2),
             UnitKind::Harvester
-            | UnitKind::Tender
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook

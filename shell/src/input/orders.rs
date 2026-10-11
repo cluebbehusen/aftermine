@@ -220,9 +220,11 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
             .unit(*id)
             .is_some_and(|u| u.kind.stats().harvest.is_some())
     });
-    let has_welder = units
-        .iter()
-        .any(|id| game.state.unit(*id).is_some_and(|u| u.kind.stats().welder));
+    let has_welder = units.iter().any(|id| {
+        game.state
+            .unit(*id)
+            .is_some_and(|u| u.kind.stats().harvest.is_some())
+    });
 
     // Own-footprint hits outrank enemy-radius hits: a raider attacking a
     // wall sits inside the pick radius of a click on that wall, and the
@@ -277,7 +279,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 .filter(|id| {
                     game.state
                         .unit(*id)
-                        .is_some_and(|unit| unit.kind.stats().welder)
+                        .is_some_and(|unit| unit.kind.stats().harvest.is_some())
                 })
                 .collect();
             game.issue(Command::ReturnCargo {

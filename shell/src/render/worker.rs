@@ -396,97 +396,59 @@ pub(super) fn draw(
             );
         }
     } else {
-        let tender = unit.kind == oxide_sim::UnitKind::Tender;
-        let root = if tender {
-            local(81., 58.)
-        } else {
-            local(64., 53.)
-        };
-        let rest = if tender {
-            local(76., 33.)
-        } else {
-            local(64., 28.)
-        };
-        let limit = if tender { 44. } else { 34. } * width;
+        let root = local(64., 53.);
+        let rest = local(64., 28.);
         let drum = match animation.work.excavator_tool() {
             ExcavatorTool::Drum { cycle } => Some(cycle),
             ExcavatorTool::WeldingArm { .. } | ExcavatorTool::Stowed => None,
         };
-        let roller_parked = !tender && drum.is_none();
+        let roller_parked = drum.is_none();
         let tool_target = if roller_parked { None } else { target };
-        let tip = if tender {
-            tool_target.map_or(rest, |p| {
-                let surface = root + (p - root).clamp_length_max(limit);
-                rest.lerp(surface, if holding { 1. } else { reach })
-            })
-        } else {
-            tool_target.map_or(rest, |p| forward_work_point(p, root, forward, width))
-        };
-        if tender {
-            let elbow = root.lerp(tip, 0.55) + lateral * 7. * width;
-            for (a, b, w, color) in [(root, elbow, 5., iron), (elbow, tip, 3., steel)] {
-                draw_line(a.x, a.y, b.x, b.y, 9. * width, outline);
-                draw_line(a.x, a.y, b.x, b.y, w * width, color);
-            }
-            for p in [root, elbow] {
-                draw_circle(p.x, p.y, 3. * width, outline);
-                draw_circle(p.x, p.y, 1.5 * width, steel);
-            }
-            let reel = local(68., 90.);
-            let hose = local(91., 72.);
-            for (a, b) in [(reel, hose), (hose, elbow)] {
-                draw_line(a.x, a.y, b.x, b.y, 3. * width, outline);
-                draw_line(a.x, a.y, b.x, b.y, width, iron);
-            }
-            let nozzle = tip - forward * 6. * width;
-            draw_line(nozzle.x, nozzle.y, tip.x, tip.y, 6. * width, outline);
-            draw_line(nozzle.x, nozzle.y, tip.x, tip.y, 2. * width, steel);
-        } else {
-            for side in [-1., 1.] {
-                let base = local(64. + side * 21., 53.);
-                let end = tip + lateral * side * 25. * width;
-                draw_line(base.x, base.y, end.x, end.y, 7. * width, outline);
-                draw_line(base.x, base.y, end.x, end.y, 3. * width, steel);
-                draw_circle(base.x, base.y, 3. * width, outline);
-                draw_circle(base.x, base.y, 1.5 * width, iron);
-            }
-            let a = tip - lateral * 30. * width;
-            let b = tip + lateral * 30. * width;
-            draw_line(a.x, a.y, b.x, b.y, 16. * width, outline);
-            draw_line(a.x, a.y, b.x, b.y, 11. * width, iron);
-            for side in [-1., 1.] {
-                let cap = tip + lateral * side * 30. * width;
-                let a = cap - forward * 6. * width;
-                let b = cap + forward * 6. * width;
-                draw_line(a.x, a.y, b.x, b.y, 5. * width, outline);
-                draw_line(a.x, a.y, b.x, b.y, 2. * width, steel);
-            }
-            let phase = drum.filter(|_| !reduced_motion()).unwrap_or(0.);
-            for column in 0..6 {
-                for row in 0..3 {
-                    let angle = (phase + row as f32 / 3. + (column % 2) as f32 / 6.)
-                        * std::f32::consts::TAU;
-                    let face = angle.cos();
-                    if face <= 0. {
-                        continue;
-                    }
-                    let p = tip
-                        + lateral * (column as f32 - 2.5) * 9. * width
-                        + forward * angle.sin() * 4. * width;
-                    let half = lateral * 3.5 * width;
-                    let point = p + forward * (4. + 5. * face) * width + lateral * 1.5 * width;
-                    draw_triangle(p - half, p + half, point, outline);
-                    let inset = forward * width;
-                    draw_triangle(
-                        p - half * 0.65 + inset,
-                        p + half * 0.65 + inset,
-                        point - forward * 1.5 * width,
-                        steel,
-                    );
-                    let a = p - half * 0.65 + inset;
-                    let b = point - forward * 1.5 * width;
-                    draw_line(a.x, a.y, b.x, b.y, width, edge);
+        let tip = tool_target.map_or(rest, |p| forward_work_point(p, root, forward, width));
+        for side in [-1., 1.] {
+            let base = local(64. + side * 21., 53.);
+            let end = tip + lateral * side * 25. * width;
+            draw_line(base.x, base.y, end.x, end.y, 7. * width, outline);
+            draw_line(base.x, base.y, end.x, end.y, 3. * width, steel);
+            draw_circle(base.x, base.y, 3. * width, outline);
+            draw_circle(base.x, base.y, 1.5 * width, iron);
+        }
+        let a = tip - lateral * 30. * width;
+        let b = tip + lateral * 30. * width;
+        draw_line(a.x, a.y, b.x, b.y, 16. * width, outline);
+        draw_line(a.x, a.y, b.x, b.y, 11. * width, iron);
+        for side in [-1., 1.] {
+            let cap = tip + lateral * side * 30. * width;
+            let a = cap - forward * 6. * width;
+            let b = cap + forward * 6. * width;
+            draw_line(a.x, a.y, b.x, b.y, 5. * width, outline);
+            draw_line(a.x, a.y, b.x, b.y, 2. * width, steel);
+        }
+        let phase = drum.filter(|_| !reduced_motion()).unwrap_or(0.);
+        for column in 0..6 {
+            for row in 0..3 {
+                let angle =
+                    (phase + row as f32 / 3. + (column % 2) as f32 / 6.) * std::f32::consts::TAU;
+                let face = angle.cos();
+                if face <= 0. {
+                    continue;
                 }
+                let p = tip
+                    + lateral * (column as f32 - 2.5) * 9. * width
+                    + forward * angle.sin() * 4. * width;
+                let half = lateral * 3.5 * width;
+                let point = p + forward * (4. + 5. * face) * width + lateral * 1.5 * width;
+                draw_triangle(p - half, p + half, point, outline);
+                let inset = forward * width;
+                draw_triangle(
+                    p - half * 0.65 + inset,
+                    p + half * 0.65 + inset,
+                    point - forward * 1.5 * width,
+                    steel,
+                );
+                let a = p - half * 0.65 + inset;
+                let b = point - forward * 1.5 * width;
+                draw_line(a.x, a.y, b.x, b.y, width, edge);
             }
         }
         if holding && !roller_parked && target.is_some_and(|p| p.distance(tip) < 5. * width) {

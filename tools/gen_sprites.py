@@ -94,7 +94,6 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "buzzard",
             "talon",
             "warden",
-            "tender",
             "excavator",
             "kestrel",
             "shrike",
@@ -1818,37 +1817,6 @@ def warden(variant: str, move: int = 0, action: int = 0) -> None:
     finish(img, px, f"warden{variant_tag(variant)}{suffix}")
 
 
-def tender(variant: str, move: int = 0) -> None:
-    """Armored mobile welder: a boxy sled with a jointed torch arm and a
-    coil drum — the field workshop that follows the push."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    dy = (0, -1, 1)[move % 3]
-    for x in (12, 46):
-        d.rounded_rectangle(
-            [s(x), s(24), s(x + 6), s(52)], radius=s(2), fill=(*IRON_DARK, 255)
-        )
-    d.rounded_rectangle(
-        [s(16), s(16 + dy), s(48), s(54 + dy)], radius=s(6), fill=(*IRON, 255)
-    )
-    d.rounded_rectangle(
-        [s(20), s(22 + dy), s(44), s(48 + dy)], radius=s(4), fill=(*pal["base"], 255)
-    )
-    # Coil drum on the back deck.
-    d.ellipse([s(24), s(36 + dy), s(40), s(52 + dy)], fill=(*pal["dark"], 255))
-    d.ellipse([s(28), s(40 + dy), s(36), s(48 + dy)], fill=(*IRON_LIGHT, 255))
-    # The torch arm, folded forward; its tip glows faintly always.
-    d.line(
-        [(s(32), s(26 + dy)), (s(24), s(12 + dy)), (s(38), s(6 + dy))],
-        fill=(*IRON_DARK, 255),
-        width=s(4),
-    )
-    d.ellipse([s(36), s(3 + dy), s(42), s(9 + dy)], fill=(*SCRAP_LIGHT, 255))
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"tender{variant_tag(variant)}{suffix}")
-
-
 def excavator(variant: str, move: int = 0) -> None:
     """Tier-two super-harvester: twin bucket arms around a tall hopper —
     the harvester's silhouette grown into industry."""
@@ -3276,7 +3244,7 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (tender, excavator, kestrel, skyhook, sapper):
+        for unit_fn in (excavator, kestrel, skyhook, sapper):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)

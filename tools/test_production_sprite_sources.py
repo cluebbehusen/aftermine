@@ -91,7 +91,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 551)
+        self.assertEqual(len(frames), 531)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -99,7 +99,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "1a2920b836388bed4f19f209ffcdba6fa34c321e7ec75d6be5293f41b1fd026b",
+            "ac861bdc3887ac8e33d19f16ca9647c2935c3453aebf5c668519080f5b4c26be",
         )
 
     def test_skyhook_rotors_keep_three_distinct_poses_during_actions(self) -> None:
@@ -432,7 +432,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 self.assertNotEqual(frames[0].tobytes(), frames[1].tobytes())
 
     def test_tracked_workers_move_only_their_treads(self) -> None:
-        for stem in ("tender", "excavator"):
+        for stem in ("excavator",):
             for variant in gen.PALETTES:
                 tag = gen.variant_tag(variant)
                 idle = self.registry[f"{stem}{tag}"]
@@ -475,22 +475,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 )
             self.assertTrue(any(idle.tobytes() != frame.tobytes() for frame in phases))
             self.assertNotEqual(phases[0].tobytes(), phases[1].tobytes())
-
-    def test_tender_adds_sparks_only_at_welding_contact(self) -> None:
-        for variant in gen.PALETTES:
-            tag = gen.variant_tag(variant)
-            contact = self.registry[f"tender{tag}_action2"]
-            weld = self.registry[f"tender{tag}_action3"]
-            self.assertEqual(
-                contact.crop((0, 32, 128, 128)).tobytes(),
-                weld.crop((0, 32, 128, 128)).tobytes(),
-            )
-            self.assertGreater(
-                _changed_pixels(
-                    contact.crop((50, 0, 80, 25)), weld.crop((50, 0, 80, 25))
-                ),
-                5,
-            )
 
     def test_condor_keeps_its_wing_fixed_while_the_nose_opens(self) -> None:
         for variant in gen.PALETTES:

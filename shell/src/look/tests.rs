@@ -35,7 +35,7 @@ fn looks_agree_with_what_the_simulation_states() {
         );
         assert_eq!(
             look.tool.is_some(),
-            stats.harvest.is_some() || stats.welder || stats.contact_reach.is_some(),
+            stats.harvest.is_some() || stats.contact_reach.is_some(),
             "{kind:?}: a worker body belongs to the kinds that work with a tool"
         );
         assert!(
@@ -77,7 +77,6 @@ fn markers_name_each_kind_for_what_it_does_on_the_field() {
         (UnitKind::Flakhound, M::AntiAir),
         (UnitKind::Shrike, M::AntiAir),
         (UnitKind::Kestrel, M::Scout),
-        (UnitKind::Tender, M::Support),
         (UnitKind::Skyhook, M::Transport),
         (UnitKind::Scuttler, M::Demolition),
         (UnitKind::Sapper, M::Demolition),

@@ -120,9 +120,23 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             .unwrap()
             .id,
     ];
-    let panel =
+    let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
+    // One card beyond what the Fabricator offers, so its actions wrap.
+    let last = panel.cards.last().unwrap();
+    let extra = crate::panel::Card {
+        icon: last.icon,
+        title: last.title.clone(),
+        cost: last.cost,
+        hotkey: last.hotkey.clone(),
+        action: last.action,
+        enabled: last.enabled,
+        why: last.why.clone(),
+        desc: last.desc.clone(),
+        progress: last.progress,
+    };
+    panel.cards.push(extra);
     for (viewport, scale) in [(vec2(1280.0, 800.0), 1.0), (vec2(1920.0, 1200.0), 1.5)] {
         let minimap = minimap_rect_scaled(40, 24, viewport, scale);
         let packing = panel_packing(
@@ -489,7 +503,7 @@ fn a_mixed_small_window_selection_keeps_roster_and_queue_in_the_corner() {
     for (index, kind) in [
         oxide_sim::UnitKind::Sentinel,
         oxide_sim::UnitKind::Harvester,
-        oxide_sim::UnitKind::Tender,
+        oxide_sim::UnitKind::Excavator,
         oxide_sim::UnitKind::Skyhook,
         oxide_sim::UnitKind::Scuttler,
         oxide_sim::UnitKind::Lancer,

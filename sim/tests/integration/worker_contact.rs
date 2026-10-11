@@ -164,11 +164,8 @@ fn displacement_restarts_release_and_stop_keeps_the_uncredited_load() {
 
 #[test]
 fn adjacent_build_repair_and_salvage_approach_before_advancing_work() {
-    for kind in [UnitKind::Harvester, UnitKind::Excavator, UnitKind::Tender] {
+    for kind in [UnitKind::Harvester, UnitKind::Excavator] {
         for job in ["build", "repair", "salvage"] {
-            if kind == UnitKind::Tender && job != "repair" {
-                continue;
-            }
             let mut scenario = open_arena(24, 16, vec![unit(0, kind, 9, 5)]);
             scenario.players[0].scrap = 1000;
             scenario
@@ -273,7 +270,7 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
 
 #[test]
 fn field_repair_closes_to_each_pair_of_hulls_before_billing() {
-    for welder in [UnitKind::Harvester, UnitKind::Excavator, UnitKind::Tender] {
+    for welder in [UnitKind::Harvester, UnitKind::Excavator] {
         for patient in [UnitKind::Scuttler, UnitKind::Sentinel, UnitKind::Excavator] {
             let mut scenario =
                 open_arena(24, 16, vec![unit(0, welder, 8, 7), unit(0, patient, 10, 7)]);

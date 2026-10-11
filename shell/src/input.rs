@@ -1802,7 +1802,7 @@ fn armed_verb_click(
             let has_other_welder = game.presentation.selection.units.iter().any(|id| {
                 *id != target
                     && game.state.unit(*id).is_some_and(|u| {
-                        u.kind.stats().welder && u.player == game.presentation.human
+                        u.kind.stats().harvest.is_some() && u.player == game.presentation.human
                     })
             });
             if !has_other_welder {

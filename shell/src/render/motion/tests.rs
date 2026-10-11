@@ -72,7 +72,6 @@ fn tread_loop_includes_the_base_phase_instead_of_reversing_between_two_frames() 
         UnitKind::Avalanche,
         UnitKind::Bombard,
         UnitKind::Flakhound,
-        UnitKind::Tender,
     ] {
         let mut state = unit_state();
         let frames = [0.0, 0.34, 0.67, 0.99, 0.0].map(|cycle| {
@@ -359,22 +358,6 @@ fn excavator_work_and_motion_retain_the_authoritative_cargo_bucket() {
             pose: ExcavatorPose::Moving(1),
         }
     );
-}
-
-#[test]
-fn tender_welds_only_while_real_repair_work_is_active() {
-    let mut state = unit_state();
-    state.work = UnitWorkState::Repairing {
-        target: chassis::grid::TilePos::new(6, 5).center(),
-        cycle: 0.7,
-    };
-    assert_eq!(unit_frame(UnitKind::Tender, state), UnitFrame::Action(2));
-
-    state.work = UnitWorkState::Idle;
-    assert_eq!(unit_frame(UnitKind::Tender, state), UnitFrame::Idle);
-
-    state.locomotion = LocomotionState::Moving { cycle: 0.75 };
-    assert_eq!(unit_frame(UnitKind::Tender, state), UnitFrame::Moving(1));
 }
 
 #[test]

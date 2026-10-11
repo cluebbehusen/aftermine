@@ -16,6 +16,7 @@ mod memory;
 mod missions;
 mod placement;
 mod profile;
+mod public;
 mod saving;
 mod trace;
 mod workers;
@@ -141,7 +142,8 @@ impl Opponent {
         {
             return None;
         }
-        let observation = ObservationData::fog_honest(state, self.player);
+        let mut observation = ObservationData::fog_honest(state, self.player);
+        public::merge(&mut observation);
         let events = events.take();
         let mut decision = decision::decide(
             &observation,

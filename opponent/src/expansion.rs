@@ -137,7 +137,29 @@ pub(crate) fn value(
         .filter(|frame| observation.known_frames.contains(frame) && !held(observation, **frame, -1))
         .count();
     let frames = i64::try_from(frames).expect("frame counts fit in i64");
-    let resource = scrap.min(3_200) / 4 + 150 * frames;
+    // Once a Crucible stands, a Foundry here would let own remote Extractors
+    // in its reach become Deep Bores.
+    let deepens = if observation
+        .my_buildings
+        .iter()
+        .any(|building| building.kind == BuildingKind::Crucible && building.built)
+    {
+        observation
+            .my_buildings
+            .iter()
+            .filter(|building| {
+                building.kind == BuildingKind::Extractor
+                    && building.built
+                    && building.tier == 0
+                    && !supported(observation, building.anchor)
+                    && oxide_sim::geometry::foundry_supports(anchor, building.anchor)
+            })
+            .count()
+    } else {
+        0
+    };
+    let deepens = i64::try_from(deepens).expect("frame counts fit in i64");
+    let resource = scrap.min(3_200) / 4 + 150 * (frames + deepens);
     let distance = i64::from(distance);
     let contested = (distance - i64::from(map.hostile_distance(me, anchor)) + 100).max(0);
     let penalty = 8 * distance / 10

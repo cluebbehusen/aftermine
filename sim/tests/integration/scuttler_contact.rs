@@ -14,7 +14,7 @@ fn scuttler_closes_to_building_contact_from_faces_and_corners() {
             24,
             vec![
                 unit(0, UnitKind::Scuttler, start.0, start.1),
-                unit(0, UnitKind::Tender, 10, 15),
+                unit(0, UnitKind::Flakhound, 10, 15),
             ],
         );
         scenario.buildings.push(BuildingSpec {

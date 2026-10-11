@@ -222,66 +222,50 @@ fn a_worker_away_from_home_runs_from_artillery_in_range() {
     );
 }
 
-#[test]
-fn a_wounded_army_brings_a_tender() {
-    let tenders = |hp: u32| {
-        let (mut scenario, ids) = squad(400);
-        scenario
-            .buildings
-            .push(building(0, BuildingKind::Fabricator, 3, 1));
-        let state = scenario.build().unwrap();
-        let state = all_wounded(&state, &ids(&state), hp);
-        trains(&seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default()))
-            .into_iter()
-            .filter(|(_, kind)| *kind == UnitKind::Tender)
-            .count()
-    };
-    assert_eq!(tenders(UnitKind::Sentinel.stats().max_hp), 0);
-    assert_eq!(tenders(1), 1);
-}
-
-#[test]
-fn heavy_wounds_keep_more_than_two_tenders() {
-    let mut scenario = arena(400);
-    for (x, y) in SQUAD {
-        scenario.units.push(unit(0, UnitKind::Warden, x, y));
+/// West's arena with Sentinels at `spots` and the scrap to pay for welds.
+fn wounded_at(scrap: u32, spots: &[(i32, i32)], hp: u32) -> (Scenario, State, Vec<UnitId>) {
+    let mut scenario = arena(scrap);
+    for (x, y) in spots {
+        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
     }
-    scenario.units.extend([
-        unit(0, UnitKind::Tender, 6, 8),
-        unit(0, UnitKind::Tender, 6, 10),
-    ]);
-    scenario
-        .buildings
-        .push(building(0, BuildingKind::Fabricator, 3, 1));
     let state = scenario.build().unwrap();
-    let wardens: Vec<UnitId> = SQUAD.iter().map(|(x, y)| at(&state, *x, *y)).collect();
-    let state = all_wounded(&state, &wardens, 1);
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
-    assert!(
-        trains(&commands)
-            .iter()
-            .any(|(_, kind)| *kind == UnitKind::Tender),
-        "{commands:?}"
-    );
+    let hurt: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    let state = all_wounded(&state, &hurt, hp);
+    (scenario, state, hurt)
+}
+
+fn harvesters(state: &State, player: u8) -> Vec<UnitId> {
+    state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == PlayerId(player) && unit.kind == UnitKind::Harvester)
+        .map(|unit| unit.id)
+        .collect()
 }
 
 #[test]
-fn a_free_tender_welds_the_most_wounded_free_unit_while_scrap_pays() {
+fn a_worker_welds_the_most_wounded_unit_at_home_while_scrap_pays() {
     let welded = |scrap: u32| {
         let mut scenario = arena(scrap);
         scenario.units.extend([
-            unit(0, UnitKind::Tender, 5, 8),
             unit(0, UnitKind::Sentinel, 3, 10),
             unit(0, UnitKind::Sentinel, 4, 10),
         ]);
         let state = scenario.build().unwrap();
-        let (tender, grazed, mauled) = (at(&state, 5, 8), at(&state, 3, 10), at(&state, 4, 10));
+        let (grazed, mauled) = (at(&state, 3, 10), at(&state, 4, 10));
         let state = wounded(&wounded(&state, grazed, 40), mauled, 10);
         let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
-        (tender, mauled, welds(&commands))
+        (harvesters(&state, 0), mauled, welds(&commands))
     };
-    let (tender, mauled, paid) = welded(1_000);
-    assert_eq!(paid, [(vec![tender], mauled)]);
+    let (workers, mauled, paid) = welded(1_000);
+    let [(welders, patient)] = &paid[..] else {
+        panic!("one weld: {paid:?}");
+    };
+    assert_eq!(*patient, mauled);
+    assert!(
+        welders.len() == 1 && workers.contains(&welders[0]),
+        "{paid:?}"
+    );
     let (_, _, short) = welded(0);
     assert!(
         short.is_empty(),
@@ -289,25 +273,161 @@ fn a_free_tender_welds_the_most_wounded_free_unit_while_scrap_pays() {
     );
 }
 
-/// An attack regrouping at its rally with the arena's West squad (one of
-/// them still walking in), `tended` when a Tender already belongs to it, and
-/// the squad's ids.
-fn regrouping(tended: bool, scrap: u32) -> (State, Opponent, Vec<UnitId>, UnitId) {
-    let (mut scenario, ids) = squad(scrap);
-    scenario.units.push(unit(0, UnitKind::Tender, 6, 9));
+#[test]
+fn an_excavator_welds_before_a_nearer_harvester() {
+    let (mut scenario, _, _) = wounded_at(1_000, &[(8, 8)], 10);
+    scenario.units.push(unit(0, UnitKind::Excavator, 1, 8));
+    let state = scenario.build().unwrap();
+    let (patient, excavator) = (at(&state, 8, 8), at(&state, 1, 8));
+    let state = wounded(&state, patient, 10);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert_eq!(welds(&commands), [(vec![excavator], patient)]);
+}
+
+#[test]
+fn heavy_wounds_draw_more_welders_but_never_more_than_their_patients() {
+    let crew = [(1, 7), (1, 8), (2, 7), (2, 8)];
+    let welders = |kind: UnitKind, spots: &[(i32, i32)]| {
+        let mut scenario = arena(5_000);
+        for (x, y) in spots {
+            scenario.units.push(unit(0, kind, *x, *y));
+        }
+        for (x, y) in crew {
+            scenario.units.push(unit(0, UnitKind::Harvester, x, y));
+        }
+        let state = scenario.build().unwrap();
+        let hurt: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        let state = all_wounded(&state, &hurt, 1);
+        welds(&seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default())).len()
+    };
+    assert!(welders(UnitKind::Bombard, &SQUAD) > 1);
+    assert_eq!(welders(UnitKind::Breaker, &[(4, 9)]), 1);
+}
+
+#[test]
+fn workers_weld_no_unit_under_threat_or_away_from_home() {
+    let (mut scenario, _, _) = wounded_at(1_000, &[(4, 10)], 10);
+    // Anti-air only, so home defense leaves the patient free; armed all the
+    // same, so the weld waits.
+    scenario.units.push(unit(1, UnitKind::Flakhound, 9, 10));
+    let state = scenario.build().unwrap();
+    let state = wounded(&state, at(&state, 4, 10), 10);
+    let near_enemy = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(welds(&near_enemy).is_empty(), "{near_enemy:?}");
+
+    let (scenario, state, _) = wounded_at(1_000, &[(14, 9)], 10);
+    let away = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(welds(&away).is_empty(), "{away:?}");
+}
+
+#[test]
+fn a_damaged_building_is_welded_before_a_wounded_unit() {
+    let (mut scenario, _, _) = wounded_at(1_000, &[(4, 10)], 10);
+    scenario.units.retain(|unit| (unit.x, unit.y) != (6, 6));
+    let state = scenario.build().unwrap();
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0))
+        .unwrap()
+        .id;
+    let state = damaged(&wounded(&state, at(&state, 4, 10), 10), foundry, 100);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert_eq!(repairs(&commands).len(), 1, "{commands:?}");
+    assert!(welds(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
+fn mirrored_seats_weld_mirrored() {
+    let mut scenario = arena(1_000);
+    let (width, height) = (24, 12);
+    for (x, y) in [(3, 10), (4, 10)] {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+        scenario
+            .units
+            .push(unit(1, UnitKind::Sentinel, width - 1 - x, height - 1 - y));
+    }
+    let state = scenario.build().unwrap();
+    let hurt: Vec<UnitId> = [(3, 10), (4, 10), (20, 1), (19, 1)]
+        .iter()
+        .map(|(x, y)| at(&state, *x, *y))
+        .collect();
+    let state = all_wounded(&state, &hurt, 10);
+    let west = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let east = seat(&scenario, 1).act(&state, &mut OwnEvents::default());
+    assert!(!welds(&west).is_empty(), "premise: {west:?}");
+    assert_eq!(mirror(&state, west), east);
+}
+
+/// `state` at West's next decision after its `worker` was sent to weld
+/// `patient`.
+fn welding(state: &State, worker: UnitId, patient: UnitId) -> State {
+    let mut state = state.clone();
+    advance_to(
+        &mut state,
+        12,
+        &[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::RepairUnit {
+                units: vec![worker],
+                target: patient,
+                queue: false,
+            },
+        }],
+    );
+    state
+}
+
+#[test]
+fn a_second_wound_gets_its_own_welder_while_the_first_weld_runs() {
+    let mut scenario = arena(5_000);
+    // Spare hands, since such wounds also call for a Repair Bay.
+    scenario.units.extend([
+        unit(0, UnitKind::Breaker, 2, 9),
+        unit(0, UnitKind::Breaker, 5, 10),
+        unit(0, UnitKind::Harvester, 1, 7),
+        unit(0, UnitKind::Harvester, 1, 8),
+    ]);
+    let state = scenario.build().unwrap();
+    let (first, second) = (at(&state, 2, 9), at(&state, 5, 10));
+    let state = all_wounded(&state, &[first, second], 1);
+    let welder = harvesters(&state, 0)[0];
+    let state = welding(&state, welder, first);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        welds(&commands)
+            .iter()
+            .any(|(units, patient)| *patient == second && !units.contains(&welder)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_welder_whose_patient_leaves_home_goes_back_to_work() {
+    let (scenario, state, hurt) = wounded_at(1_000, &[(14, 8)], 10);
+    let welder = harvesters(&state, 0)[0];
+    let state = welding(&state, welder, hurt[0]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|command| matches!(
+            &command.command,
+            Command::Stop { units } if *units == [welder]
+        )),
+        "{commands:?}"
+    );
+}
+
+/// An attack regrouping at its rally with the arena's West squad, one of
+/// them still walking in, and the squad's ids.
+fn regrouping(scrap: u32) -> (State, Opponent, Vec<UnitId>) {
+    let (scenario, ids) = squad(scrap);
     let mut state = scenario.build().unwrap();
     let squad = ids(&state);
-    let tender = at(&state, 6, 9);
     let walker = squad[7];
     state.tick(&[run(0, vec![walker], 5, 11)]);
     while state.current_tick() < 12 {
         state.tick(&[]);
     }
-    let mut members = squad.clone();
-    if tended {
-        members.push(tender);
-    }
-    members.sort_unstable();
     let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
     json["missions"] = serde_json::json!({
         "next": 1,
@@ -319,40 +439,30 @@ fn regrouping(tended: bool, scrap: u32) -> (State, Opponent, Vec<UnitId>, UnitId
                 "phase": "recover",
             },
             "since": 12,
-            "units": members,
+            "units": squad,
             "goal": {"x": 6, "y": 9},
         }],
     });
     let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
     let opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    (state, opponent, squad, tender)
+    (state, opponent, squad)
 }
 
 #[test]
-fn a_regrouping_attack_takes_a_free_tender_along() {
-    let (state, mut opponent, _, tender) = regrouping(false, 0);
-    let commands = opponent.act(&state, &mut OwnEvents::default());
-    assert!(
-        runs(&commands).iter().any(|(units, _)| *units == [tender]),
-        "{commands:?}"
-    );
-    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
-    let members = json["missions"]["list"][0]["units"].as_array().unwrap();
-    assert!(members.contains(&tender.0.into()), "{members:?}");
-}
-
-#[test]
-fn a_tender_welds_its_attack_while_the_army_regroups_and_scrap_pays() {
+fn workers_weld_a_regrouping_attack_at_its_rally_while_scrap_pays() {
     let welded = |scrap: u32| {
-        let (state, mut opponent, squad, tender) = regrouping(true, scrap);
+        let (state, mut opponent, squad) = regrouping(scrap);
         let hurt = squad[0];
         let state = wounded(&state, hurt, 30);
         let commands = opponent.act(&state, &mut OwnEvents::default());
-        (tender, hurt, welds(&commands))
+        (hurt, welds(&commands))
     };
-    let (tender, hurt, paid) = welded(1_000);
-    assert_eq!(paid, [(vec![tender], hurt)]);
-    let (_, _, short) = welded(0);
+    let (hurt, paid) = welded(1_000);
+    assert!(
+        matches!(&paid[..], [(welders, patient)] if *patient == hurt && welders.len() == 1),
+        "{paid:?}"
+    );
+    let (_, short) = welded(0);
     assert!(short.is_empty(), "{short:?}");
 }
 

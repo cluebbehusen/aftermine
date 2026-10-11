@@ -16,6 +16,11 @@ after it stands empty; every ready producer left free trains toward the army's
 needs. Difficulty caps the unit orders one decision issues; purchases do not
 count against that allowance.
 
+Public enemy buildings, the Deep Bores every seat knows of, join the seat's
+known enemy buildings each decision as memories of unknown condition: built and
+at full health. Targets, raids and held frames treat a Deep Bore the seat never
+saw like one it remembers, and it is ordered on by its remembered footprint.
+
 ## Workers
 
 A seat with no worker alive, carried or queued queues a Harvester even behind
@@ -43,14 +48,20 @@ once known enemy fire reaches it. Paid sites nobody is building get the nearest
 free worker. While no armed enemy in sight stands near it, no known enemy weapon
 reaches it and the seat has scrap to pay, each damaged building nobody welds yet
 that has a free tile beside it gets the nearest free worker, most missing value
-first. Idle workers go to the reachable worked node or wreck with the most
-places open; with none open, to the nearest wreck with a clear route holding
-more salvage than the workers on it carry away in a load each, then to the most
-open worked source with something left, or with none worked to the nearest node
-with a clear route, never one inside the reach of known enemy weapons. A worker
-harvesting a node or wreck whose route has turned dangerous is sent elsewhere
-the same way, or home. A worker left with nowhere to go first delivers any scrap
-it carries to a Foundry on its ground.
+first. Wounded armed ground units at home, free or in an attack regrouping
+there, come next under the same safety and scrap rules: one worker for so much
+missing health among them, less the more the seat leans on support, and at least
+one, each sent to the unit missing the most value, sturdiest workers first, so
+an Excavator before a Harvester, then idle before harvesting, then nearest. A
+worker welding a unit that has left home stops rather than follow it out. Idle
+workers go to the reachable worked node or wreck with the most places open; with
+none open, to the nearest wreck with a clear route holding more salvage than the
+workers on it carry away in a load each, then to the most open worked source
+with something left, or with none worked to the nearest node with a clear route,
+never one inside the reach of known enemy weapons. A worker harvesting a node or
+wreck whose route has turned dangerous is sent elsewhere the same way, or home.
+A worker left with nowhere to go first delivers any scrap it carries to a
+Foundry on its ground.
 
 ## Defense
 
@@ -244,10 +255,6 @@ knows one, however well guarded; and misjudges the enemy's strength by up to two
 fifths either way, a misjudgment drawn from its personality seed that holds for
 600 ticks, both when setting out and when deciding to pull back.
 
-Free Tenders join an attack while it gathers or recovers, one for so much
-missing health among its members and at least one, weld its wounded while the
-army regroups there and the seat has scrap to pay, and follow it otherwise.
-
 An engaged mission focuses its fire: when every member that can hit an enemy
 near it already reaches that enemy in a straight line that terrain does not
 stop, and every member on the ground stands on that enemy's ground, they shoot
@@ -374,14 +381,6 @@ mission could take another. An air scout flies around known anti-air when the
 straight line crosses it, and a point whose scout was lost on the way counts as
 seen, so the next scout waits until it is stale again.
 
-## Support
-
-The seat keeps a Tender, alive or queued, for so much missing health among its
-armed ground units, more the more it leans on support. While the seat has scrap
-to pay for a weld, a free idle Tender welds the free wounded ground unit on its
-ground missing the most value; one decision sends no two Tenders to the same
-patient.
-
 ## Army composition
 
 The seat remembers every enemy unit it has seen for 600 ticks, trusting them
@@ -420,11 +419,11 @@ reaches no enemy, a strike aircraft's splash is worth instead the targets one
 blast takes in the densest known clump of enemy ground units; the seat then
 saves for a splash bomber the more, within a cap, the more targets its blast
 takes than the cheaper strike aircraft, and pulls toward the tech building such
-a bomber requires. Scouts, carriers, Tenders, Scuttlers and Sappers are bought
-only as the sections above describe. A role it needs but cannot train at all
-adds to the investment score of the cheapest building that would let it, and a
-role it can train adds to a producer it lacks whose unit would suit it better,
-as much as saving for that unit is worth.
+a bomber requires. Scouts, carriers, Scuttlers and Sappers are bought only as
+the sections above describe. A role it needs but cannot train at all adds to the
+investment score of the cheapest building that would let it, and a role it can
+train adds to a producer it lacks whose unit would suit it better, as much as
+saving for that unit is worth.
 
 ## Investments and saving
 
@@ -432,15 +431,15 @@ Each decision scores its investments: a first Fabricator, Airworks and Crucible,
 another Fabricator, Airworks, Crucible or home Foundry when every one of that
 kind is working and either a unit the seat has saved enough for waits on it, or
 an army role it trains is still wanted and the income the working producers
-leave unspent could keep one more as busy (carriers, Tenders, Scuttlers and
-Sappers never call for one), an expansion Foundry at a scrap field away from
-every start, an Extractor on a free frame on its home ground, more Reclaimers
-(worth more with no expansion left, and each one owned weighing less against the
-next as the scrap around home runs out), static defenses, Repair Bays, upgrades,
-and the unit a wanted role suits best when it costs more than the scrap on hand
-and the role has a cheaper unit production would buy instead, worth more the
-more of two of it the role lacks. Saturated harvesting, time, income, home
-depletion, army needs, a needed lift and personality set the scores.
+leave unspent could keep one more as busy (carriers, Scuttlers and Sappers never
+call for one), an expansion Foundry at a scrap field away from every start, an
+Extractor on a free frame on its home ground, more Reclaimers (worth more with
+no expansion left, and each one owned weighing less against the next as the
+scrap around home runs out), static defenses, Repair Bays, upgrades, and the
+unit a wanted role suits best when it costs more than the scrap on hand and the
+role has a cheaper unit production would buy instead, worth more the more of two
+of it the role lacks. Saturated harvesting, time, income, home depletion, army
+needs, a needed lift and personality set the scores.
 
 An expansion site's value weighs the scrap it still holds and its free frames,
 up with greed, against its ground distance from home, how much nearer a hostile
@@ -450,7 +449,9 @@ seat's building or its own Foundry, or failed at every anchor are skipped. An
 Extractor is worth more beside one of the seat's Foundries and less where it has
 seen danger, and none is bought on a frame while an armed enemy in sight stands
 near it. Once a Crucible stands, the supported Extractor nearest home is offered
-a Deep Bore upgrade, which needs that Foundry support to start. The seat saves
+a Deep Bore upgrade, which needs that Foundry support to start, and an expansion
+site is also worth a frame for each own remote Extractor a Foundry there would
+support. A Deep Bore is guarded as worth more than a Crucible. The seat saves
 for one target at a time. It starts saving only for an investment that scores
 well and could stand somewhere it knows of or could look, keeps it while it
 still scores, and switches only for one that scores clearly higher.

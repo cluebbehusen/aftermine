@@ -246,32 +246,6 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
     ]);
     rows.push((UnitKind::Sapper, trained(&sapping, 0, UnitKind::Sapper)));
 
-    let mut tending = arena(400);
-    tending
-        .buildings
-        .push(building(0, BuildingKind::Fabricator, 3, 1));
-    let squad = [
-        (2, 8),
-        (3, 8),
-        (4, 8),
-        (5, 8),
-        (2, 10),
-        (3, 10),
-        (4, 10),
-        (5, 10),
-    ];
-    for (x, y) in squad {
-        tending.units.push(unit(0, UnitKind::Sentinel, x, y));
-    }
-    let mut state = tending.build().unwrap();
-    for (x, y) in squad {
-        state = wounded(&state, at(&state, x, y), 1);
-    }
-    let tender = trains(&seat(&tending, 0).act(&state, &mut OwnEvents::default()))
-        .iter()
-        .any(|(_, kind)| *kind == UnitKind::Tender);
-    rows.push((UnitKind::Tender, tender));
-
     let failed: Vec<UnitKind> = rows
         .iter()
         .filter(|(_, trained)| !trained)

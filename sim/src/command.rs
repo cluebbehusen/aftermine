@@ -118,11 +118,11 @@ pub enum Command {
         /// The site to abandon.
         building: BuildingId,
     },
-    /// Send welders (harvest-capable machines and the Tender) to weld a
-    /// damaged own built building back toward full. Repair bills per hp
+    /// Send workers (harvest-capable machines) to weld a damaged own built
+    /// building back toward full. Repair bills per hp
     /// welded, prepaid at whole-scrap boundaries.
     Repair {
-        /// The units to commit (only welders are accepted).
+        /// The units to commit (only workers are accepted).
         units: Vec<UnitId>,
         /// The patient.
         building: BuildingId,
@@ -164,14 +164,14 @@ pub enum Command {
     /// [`RejectReason::Eliminated`]; units already in the world keep
     /// executing their brains, like any eliminated seat's remnants.
     Surrender,
-    /// Send welders to weld a wounded own ground unit back toward full.
+    /// Send workers to weld a wounded own ground unit back toward full.
     /// Billed per hp against the patient's cost at repair pricing, prepaid
     /// at whole-scrap boundaries like a building weld. Airborne patients
     /// are refused, since a welder cannot stand where they hover. The
     /// patient's own orders are untouched: a fleeing machine keeps fleeing
     /// and goes unwelded while out of reach.
     RepairUnit {
-        /// The units to commit (only welders are accepted; the patient
+        /// The units to commit (only workers are accepted; the patient
         /// itself never joins its own crew).
         units: Vec<UnitId>,
         /// The wounded machine.

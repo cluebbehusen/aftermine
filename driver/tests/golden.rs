@@ -211,7 +211,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
         // Interleaved so every victim's shooter stands one column
         // over (2.24 tiles, inside every range).
         UnitKind::Warden,
-        UnitKind::Tender,
+        UnitKind::Harvester,
         UnitKind::Sentinel,
         UnitKind::Excavator,
         UnitKind::Sentinel,

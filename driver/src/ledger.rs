@@ -152,7 +152,7 @@ pub struct Dealt {
     pub army: u64,
     /// To workers.
     pub workers: u64,
-    /// To other units: transports, Tenders, scouts.
+    /// To other units: transports and scouts.
     pub other: u64,
     /// To buildings.
     pub buildings: u64,
