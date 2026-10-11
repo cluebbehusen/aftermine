@@ -181,3 +181,17 @@ fn dropping_a_connection_frees_a_writer_whose_peer_stopped_reading() {
         "the backlog was discarded"
     );
 }
+
+#[test]
+fn connect_any_tries_each_address_until_one_answers() {
+    let open = Listener::bind("127.0.0.1:0").unwrap();
+    let refusing = Listener::bind("127.0.0.1:0").unwrap();
+    let refused = refusing.local_addr().unwrap();
+    drop(refusing);
+    let targets = [refused, open.local_addr().unwrap()];
+    let connection = Connection::connect_any(&targets[..], Duration::from_secs(2)).unwrap();
+    connection.send("hello");
+    let accepted = wait(|| open.try_accept().unwrap());
+    assert_eq!(recv(&accepted), Ok("hello".to_owned()));
+    assert!(Connection::connect_any(&[refused][..], Duration::from_secs(2)).is_err());
+}

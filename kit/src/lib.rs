@@ -11,6 +11,7 @@ pub mod render;
 mod replay;
 pub mod runner;
 pub mod stats;
+pub mod world_snapshot;
 
 use oxide_sim::{PlayerCommand, Scenario};
 

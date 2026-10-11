@@ -468,6 +468,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             screen = app.end_network_match(end, screen);
             screen_flow::settle(&mut app, before, &screen);
         }
+        if let Some(link) = &mut app.net
+            && let Some(game) = link.take_rejoined()
+        {
+            app.rejoin(*game);
+        }
         if app
             .lingering
             .as_mut()
@@ -723,6 +728,21 @@ impl App {
         }
         self.tutorial = how.tutorial;
         self.performance.reset();
+        self.input.reset_session();
+    }
+
+    /// Swaps in the match a rejoin restored, keeping the camera where the
+    /// player left it.
+    fn rejoin(&mut self, mut fresh: Game) {
+        std::mem::swap(
+            &mut fresh.presentation.camera,
+            &mut self.game.presentation.camera,
+        );
+        let fresh = keep_flags(fresh, &self.game);
+        let old = std::mem::replace(&mut self.game, fresh);
+        self.persistence.retire(old);
+        self.game.clock.speed = 1.0;
+        self.game.presentation.overlay = false;
         self.input.reset_session();
     }
 

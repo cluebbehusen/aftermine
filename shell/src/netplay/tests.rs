@@ -1,7 +1,7 @@
 use super::*;
 use macroquad::prelude::vec2;
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{BuildingId, Command, UnitKind};
+use oxide_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use std::time::Instant;
 
 const COMMIT: &str = "lan-test";
@@ -291,6 +291,74 @@ fn the_host_hands_a_waited_seat_to_a_bot_and_its_client_hears_why() {
     }
     assert!(host.state.current_tick() > resumed, "play resumed");
     assert!(host.state.accepts_commands(CLIENT), "nobody surrendered");
+}
+
+/// Cuts the host's connection to the client, as a crash or a network drop
+/// would, without telling the host's session.
+fn cut(lan: &mut Match) {
+    let Link::Host(host) = &mut lan.host.1 else {
+        unreachable!("the host hosts");
+    };
+    host.peers.clear();
+}
+
+#[test]
+fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
+    let mut lan = Match::start(with_bots());
+    lan.run(20);
+    cut(&mut lan);
+    // An order given while reconnecting still reaches the match.
+    let order = Command::Stop { units: Vec::new() };
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.presentation.net_notice.as_deref() == Some("Reconnecting to the host..."))
+            .then_some(())
+    });
+    lan.client.0.issue(order.clone());
+    let mut rejoined = false;
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        if let Some(game) = lan.client.1.take_rejoined() {
+            lan.client.0 = *game;
+            rejoined = true;
+        }
+        (rejoined && lan.host.1.status(lan.now).waiting.is_empty()).then_some(())
+    });
+    assert_eq!(lan.client.0.presentation.human, CLIENT);
+    lan.run(20);
+    lan.drain();
+    assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
+    let sent = PlayerCommand {
+        player: CLIENT,
+        command: order,
+    };
+    assert!(
+        lan.host
+            .0
+            .recorder
+            .commands
+            .iter()
+            .any(|timed| timed.command == sent),
+        "the order given while reconnecting executed"
+    );
+    assert!(
+        lan.host.0.state.accepts_commands(CLIENT),
+        "nobody surrendered"
+    );
+}
+
+#[test]
+fn a_rejoin_after_the_host_dropped_the_seat_hears_it_is_gone() {
+    let mut lan = Match::start(with_bots());
+    lan.run(5);
+    cut(&mut lan);
+    lan.host.1.drop_seat(CLIENT);
+    let end = wait(|| {
+        let (host, client) = lan.step();
+        assert_eq!(host, None);
+        client
+    });
+    assert_eq!(end, End::SeatGone);
 }
 
 #[test]
@@ -790,7 +858,17 @@ fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
     let client = Connection::connect(listener.local_addr().unwrap()).unwrap();
     let host = wait(|| listener.try_accept().unwrap());
     let game = Game::networked(scenario, CLIENT, NetRole::Client, viewport()).unwrap();
-    let link = Link::client(ClientSession::new(Duration::ZERO), client, Duration::ZERO);
+    let home = Home {
+        address: "127.0.0.1:9".to_owned(),
+        commit: COMMIT.to_owned(),
+        token: Token::new(1),
+    };
+    let link = Link::client(
+        ClientSession::new(Duration::ZERO),
+        client,
+        home,
+        Duration::ZERO,
+    );
     (game, link, host)
 }
 
@@ -817,4 +895,23 @@ fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
         });
         assert_eq!(end, End::HostLost, "{line}");
     }
+}
+
+#[test]
+fn time_the_app_slept_does_not_count_against_the_rejoin_window() {
+    let home = Home {
+        address: "127.0.0.1:9".to_owned(),
+        commit: COMMIT.to_owned(),
+        token: Token::new(1),
+    };
+    let mut rejoin = Rejoin::start(home, Duration::ZERO);
+    assert!(matches!(rejoin.poll(Duration::ZERO), RejoinPoll::Trying));
+    // A minute asleep, then the window runs as frames do.
+    let mut now = Duration::from_secs(60);
+    assert!(matches!(rejoin.poll(now), RejoinPoll::Trying));
+    while matches!(rejoin.poll(now), RejoinPoll::Trying) {
+        now += STEP;
+        assert!(now < Duration::from_secs(120), "the window never closed");
+    }
+    assert!(now >= Duration::from_secs(60) + REJOIN_WINDOW);
 }
