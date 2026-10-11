@@ -1547,8 +1547,8 @@ const REFINERY: BuildingStats = BuildingStats {
     produces: &[],
     weapons: &[],
     construction: Some(ConstructionStats {
-        cost: 150,
-        build_ticks: 300,
+        cost: 300,
+        build_ticks: 600,
         requires: &[BuildingKind::Fabricator],
     }),
 };
@@ -1727,7 +1727,7 @@ pub const RADAR_DETECT_RADIUS: i32 = 20;
 
 /// Ticks per scrap credited by each built Reclaimer. Slow enough to serve as
 /// insurance and a stalemate valve rather than an opening.
-pub const RECLAIMER_PERIOD: u64 = 24;
+pub const RECLAIMER_PERIOD: u64 = 40;
 
 /// Ticks per scrap credited by each completed Foundry: the income floor.
 ///

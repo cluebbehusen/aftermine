@@ -219,7 +219,7 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
         .id;
     let foundry = human_foundry(&game);
     let rate = |game: &Game, id| building_income(&game.view(), game.state.building(id).unwrap());
-    assert_eq!(rate(&game, reclaimer), 50);
+    assert_eq!(rate(&game, reclaimer), 30);
     assert_eq!(rate(&game, foundry), 0);
     let initial = game.state.player(game.presentation.human).scrap;
     for _ in 0..1_200 {
@@ -237,7 +237,7 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
     }]);
     assert!(!game.state.building(reclaimer).unwrap().built());
     assert_eq!(rate(&game, reclaimer), 0);
-    for _ in 0..300 {
+    for _ in 0..600 {
         game.state.tick(&[]);
     }
     assert_eq!(game.state.building(reclaimer).unwrap().tier, 1);

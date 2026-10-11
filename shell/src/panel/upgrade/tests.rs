@@ -48,7 +48,7 @@ fn previews_include_tradeoffs_and_non_weapon_benefits() {
     );
     assert_eq!(
         values(BuildingKind::Reclaimer, 0, "Income"),
-        ("50 scrap/min".into(), "120 scrap/min".into())
+        ("30 scrap/min".into(), "120 scrap/min".into())
     );
     assert_eq!(
         values(BuildingKind::Array, 0, "Sight"),

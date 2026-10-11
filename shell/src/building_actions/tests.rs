@@ -73,7 +73,7 @@ fn assert_accepted(game: &mut Game) {
 #[test]
 fn mixed_tiers_advance_once_and_skip_max_tier_with_pending_input() {
     for (kind, tiers, cost) in [
-        (BuildingKind::Reclaimer, vec![0, 0, 0, 1, 1, 1], 450),
+        (BuildingKind::Reclaimer, vec![0, 0, 0, 1, 1, 1], 900),
         (BuildingKind::Turret, vec![0, 1, 2], 450),
         (BuildingKind::FlakTurret, vec![0, 1], 120),
         (BuildingKind::Array, vec![0, 1], 150),
@@ -169,7 +169,7 @@ fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
 
 #[test]
 fn pending_purchases_refunds_invalid_commands_and_surrender_share_one_preview() {
-    let mut game = fixture(BuildingKind::Reclaimer, &[0, 0], 300);
+    let mut game = fixture(BuildingKind::Reclaimer, &[0, 0], 600);
     let home = game.home_foundry().unwrap().id;
     game.issue(Command::Train {
         building: home,
