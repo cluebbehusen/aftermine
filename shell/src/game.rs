@@ -253,16 +253,31 @@ impl Game {
     ) -> Result<Self> {
         let state = scenario.build()?;
         let live_stats = oxide_kit::stats::LiveMatchStats::new(&state);
-        let bots = if run_bots {
-            seat_controllers(&scenario)?
-        } else {
-            Vec::new()
-        };
         let recorder = Replay::new(
             SIM_VERSION,
             crate::build_identity().label(),
             scenario.clone(),
         );
+        Self::assemble_at(
+            scenario, state, live_stats, recorder, viewport, human, run_bots,
+        )
+    }
+
+    /// A session over `state`, which `recorder` records from.
+    fn assemble_at(
+        scenario: Scenario,
+        state: State,
+        live_stats: oxide_kit::stats::LiveMatchStats,
+        recorder: GameReplay,
+        viewport: Vec2,
+        human: PlayerId,
+        run_bots: bool,
+    ) -> Result<Self> {
+        let bots = if run_bots {
+            seat_controllers(&scenario)?
+        } else {
+            Vec::new()
+        };
         let presentation = Presentation::new(&state, human, viewport);
         Ok(Self {
             scenario,

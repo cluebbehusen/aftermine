@@ -10,14 +10,15 @@ use anyhow::{Context, Result, ensure};
 use macroquad::prelude::Vec2;
 use oxide_net::discovery::Beacon;
 use oxide_net::{
-    Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Exit, Gathering, Guest,
-    GuestEnd, GuestEvent, HostEvent, HostSession, Listener, LobbyEvent, MemberId, PlayerName,
-    Release, RoomSeat, SeatHolder, SeatNotice, SeatState, StartFailed,
+    Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Desk, DeskEvent, Exit,
+    Gathering, GoneReason, Guest, GuestEnd, GuestEvent, HostEvent, HostSession, Listener,
+    LobbyEvent, MemberId, PlayerName, Release, RoomSeat, SeatHolder, SeatNotice, SeatState,
+    StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
 };
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario, Tick};
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -43,6 +44,10 @@ pub(crate) enum End {
     HostLeft,
     /// The host handed this machine's seat to a bot.
     Replaced,
+    /// Rejoining found the seat gone from the match.
+    SeatGone,
+    /// Rejoining found the match over.
+    Over,
     /// A hash report disagreed and every machine halted.
     Desync {
         /// The report tick that disagreed.
@@ -58,6 +63,8 @@ impl End {
             End::Dropped => "The host dropped you from the match.".to_owned(),
             End::HostLeft => "The host left the match.".to_owned(),
             End::Replaced => "The host gave your seat to a bot.".to_owned(),
+            End::SeatGone => "Your seat left the match while you were away.".to_owned(),
+            End::Over => "That match is over.".to_owned(),
             End::Desync { tick } => {
                 format!("Desync at tick {tick}: the match halted and its replay was saved.")
             }
@@ -153,6 +160,10 @@ pub(crate) fn sentence(names: &[&str]) -> String {
 pub(crate) struct HostLink {
     session: HostSession,
     peers: Vec<(PlayerId, Connection)>,
+    /// Takes the connections of players probing or rejoining their seats.
+    listener: Option<Listener>,
+    desk: Desk,
+    visitors: Vec<(VisitorId, Connection)>,
     /// Finished connections of seats that left, flushing their last lines.
     departing: Vec<(Connection, Duration)>,
     /// When the host finished every connection, once the match was decided
@@ -167,6 +178,175 @@ pub(crate) struct ClientLink {
     connection: Option<Connection>,
     closed: bool,
     clock: Pacing,
+    /// Where the seat lives, to take it back from.
+    home: Home,
+    /// Taking the seat back after losing the connection.
+    rejoin: Option<Rejoin>,
+    /// The match as restored by a rejoin, for the app to install.
+    rejoined: Option<Box<Game>>,
+}
+
+/// The host a client's seat lives on, and the token that proves it.
+#[derive(Clone)]
+struct Home {
+    address: String,
+    commit: String,
+    token: Token,
+}
+
+/// How long a client keeps trying to take its seat back.
+const REJOIN_WINDOW: Duration = Duration::from_secs(30);
+
+/// The pause between rejoin attempts.
+const REJOIN_PAUSE: Duration = Duration::from_secs(1);
+
+/// How long one rejoin attempt waits to connect.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// A client taking its seat back.
+struct Rejoin {
+    home: Home,
+    since: Duration,
+    attempt: Attempt,
+}
+
+enum Attempt {
+    Connecting(JoinHandle<io::Result<Connection>>),
+    /// Connected; `game` is the restored match, once the snapshot arrived.
+    Calling {
+        connection: Connection,
+        visit: Box<Visit>,
+        game: Option<Box<Game>>,
+    },
+    /// Waiting to try again.
+    Resting(Duration),
+}
+
+/// Where a rejoin stands.
+enum RejoinPoll {
+    Trying,
+    /// The seat is back: the restored match and the connection to play it on.
+    Back(Box<Game>, Connection),
+    Failed(End),
+}
+
+impl Rejoin {
+    fn start(home: Home, now: Duration) -> Self {
+        let attempt = Attempt::Connecting(connect(&home.address));
+        Self {
+            home,
+            since: now,
+            attempt,
+        }
+    }
+
+    fn poll(&mut self, now: Duration) -> RejoinPoll {
+        let expired = now.saturating_sub(self.since) >= REJOIN_WINDOW;
+        let retry = Attempt::Resting(now + REJOIN_PAUSE);
+        match std::mem::replace(&mut self.attempt, Attempt::Resting(now)) {
+            Attempt::Connecting(handle) if !handle.is_finished() => {
+                self.attempt = Attempt::Connecting(handle);
+            }
+            Attempt::Connecting(handle) => {
+                self.attempt = match handle.join() {
+                    Ok(Ok(connection)) => Attempt::Calling {
+                        connection,
+                        visit: Box::new(Visit::rejoin(&self.home.commit, self.home.token, now)),
+                        game: None,
+                    },
+                    _ => retry,
+                };
+            }
+            Attempt::Calling {
+                connection,
+                mut visit,
+                mut game,
+            } => match call(&connection, &mut visit, &mut game, now) {
+                Ok(true) => {
+                    if let Some(game) = game {
+                        return RejoinPoll::Back(game, connection);
+                    }
+                    self.attempt = retry;
+                }
+                Ok(false) => {
+                    self.attempt = Attempt::Calling {
+                        connection,
+                        visit,
+                        game,
+                    };
+                }
+                Err(Some(end)) => return RejoinPoll::Failed(end),
+                Err(None) => self.attempt = retry,
+            },
+            Attempt::Resting(until) if now >= until => {
+                self.attempt = Attempt::Connecting(connect(&self.home.address));
+            }
+            resting @ Attempt::Resting(_) => self.attempt = resting,
+        }
+        if expired {
+            RejoinPoll::Failed(End::HostLost)
+        } else {
+            RejoinPoll::Trying
+        }
+    }
+}
+
+/// Moves one frame of a rejoin call: true once the seat is back, an end
+/// when the host refused it for good, or `None` to try again.
+fn call(
+    connection: &Connection,
+    visit: &mut Visit,
+    game: &mut Option<Box<Game>>,
+    now: Duration,
+) -> Result<bool, Option<End>> {
+    loop {
+        let line = match connection.try_recv() {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(Closed) => return Err(None),
+        };
+        match visit.receive(&line, now) {
+            Ok(Some(VisitEvent::Snapshot { seat, bytes, .. })) => {
+                let restored = snapshot::decode(&bytes)
+                    .and_then(|snapshot| Game::rejoined(snapshot, seat, crate::render::viewport()));
+                let Ok(restored) = restored else {
+                    return Err(None);
+                };
+                visit.ready(restored.state.hash());
+                *game = Some(Box::new(restored));
+            }
+            Ok(Some(VisitEvent::Go)) => {
+                for line in visit.take_outgoing() {
+                    connection.send(&line);
+                }
+                return Ok(true);
+            }
+            Ok(Some(VisitEvent::Waiting { .. }) | None) => {}
+            Err(VisitEnd::Gone(GoneReason::SeatTaken)) => return Err(Some(End::SeatGone)),
+            Err(VisitEnd::Gone(GoneReason::Over | GoneReason::NoMatch)) => {
+                return Err(Some(End::Over));
+            }
+            Err(VisitEnd::OtherBuild { .. }) => return Err(Some(End::HostLost)),
+            Err(VisitEnd::Silent | VisitEnd::Protocol) => return Err(None),
+        }
+    }
+    visit.poll(now).map_err(|_| None)?;
+    for line in visit.take_outgoing() {
+        connection.send(&line);
+    }
+    Ok(false)
+}
+
+/// Connects to `address` off the frame loop.
+fn connect(address: &str) -> JoinHandle<io::Result<Connection>> {
+    let address = address.to_owned();
+    thread::spawn(move || {
+        let target = address
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| io::Error::other("the address names no host"))?;
+        Connection::connect_timeout(&target, CONNECT_TIMEOUT)
+    })
 }
 
 /// Frame timing and the last time the match advanced.
@@ -206,27 +386,40 @@ impl Pacing {
 }
 
 impl Link {
-    pub(crate) fn host(
-        session: Box<HostSession>,
-        peers: Vec<(PlayerId, Connection)>,
-        now: Duration,
-    ) -> Self {
+    pub(crate) fn host(started: Started, game: &Game, now: Duration) -> Self {
+        let host = game.presentation.human;
+        let name = shown_host_name(None, &game.scenario, host);
         Self::Host(HostLink {
-            session: *session,
-            peers,
+            session: started.session,
+            peers: started.peers,
+            listener: started.listener,
+            desk: Desk::new(&started.commit, name, &game.scenario.name),
+            visitors: Vec::new(),
             departing: Vec::new(),
             closing: None,
             clock: Pacing::new(now),
         })
     }
 
-    fn client(session: ClientSession, connection: Connection, now: Duration) -> Self {
+    fn client(session: ClientSession, connection: Connection, home: Home, now: Duration) -> Self {
         Self::Client(ClientLink {
             session,
             connection: Some(connection),
             closed: false,
             clock: Pacing::new(now),
+            home,
+            rejoin: None,
+            rejoined: None,
         })
+    }
+
+    /// The match a rejoin restored since the last call, to install in place
+    /// of the stale one.
+    pub(crate) fn take_rejoined(&mut self) -> Option<Box<Game>> {
+        match self {
+            Link::Client(client) => client.rejoined.take(),
+            Link::Host(_) => None,
+        }
     }
 
     /// Who the match is waiting for or has lost track of.
@@ -293,6 +486,7 @@ impl Link {
                     .into_iter()
                     .map(|(_, connection)| connection)
                     .chain(host.departing.into_iter().map(|(connection, _)| connection))
+                    .chain(host.visitors.into_iter().map(|(_, connection)| connection))
                     .collect()
             }
             Link::Client(mut client) => {
@@ -362,6 +556,7 @@ impl HostLink {
             }
         }
         self.peers.retain(|(seat, _)| !closed.contains(seat));
+        self.serve_visitors(game, now);
         for order in game.take_outbox() {
             self.session.submit(order);
         }
@@ -417,6 +612,77 @@ impl HostLink {
         None
     }
 
+    /// Takes new visitors, reads them, snapshots the match for a rejoin,
+    /// and hands an admitted visitor's connection to the session. The desk's
+    /// lines go out first, so Go precedes anything the session says.
+    fn serve_visitors(&mut self, game: &Game, now: Duration) {
+        if let Some(listener) = &self.listener {
+            while self.visitors.len() < MAX_GREETING {
+                let Ok(Some(connection)) = listener.try_accept() else {
+                    break;
+                };
+                let visitor = self.desk.connected(now);
+                self.visitors.push((visitor, connection));
+            }
+        }
+        let mut closed = Vec::new();
+        for (visitor, connection) in &self.visitors {
+            loop {
+                match connection.try_recv() {
+                    Ok(Some(line)) => self.desk.receive(&mut self.session, *visitor, &line, now),
+                    Ok(None) => break,
+                    Err(Closed) => {
+                        self.desk.disconnected(&mut self.session, *visitor);
+                        closed.push(*visitor);
+                        break;
+                    }
+                }
+            }
+        }
+        self.visitors
+            .retain(|(visitor, _)| !closed.contains(visitor));
+        let mut admitted = Vec::new();
+        let mut done = Vec::new();
+        for event in self.desk.poll(&mut self.session, now) {
+            match event {
+                // The session waits, so the world sits at its tick.
+                DeskEvent::Snapshot { visitor, .. } => {
+                    let snapshot = game
+                        .world_snapshot()
+                        .and_then(|snapshot| snapshot::encode(&snapshot));
+                    if let Ok(bytes) = snapshot
+                        && game.state.current_tick() == self.session.tick()
+                    {
+                        let tick = self.session.tick();
+                        self.desk
+                            .send_snapshot(visitor, tick, game.state.hash(), &bytes, now);
+                    }
+                }
+                DeskEvent::Admitted { visitor, seat } => admitted.push((visitor, seat)),
+                DeskEvent::Done { visitor } => done.push(visitor),
+            }
+        }
+        for (visitor, line) in self.desk.take_outgoing() {
+            if let Some((_, connection)) = self.visitors.iter().find(|(id, _)| *id == visitor) {
+                connection.send(&line);
+            }
+        }
+        for (visitor, seat) in admitted {
+            if let Some(index) = self.visitors.iter().position(|(id, _)| *id == visitor) {
+                let (_, connection) = self.visitors.remove(index);
+                self.peers.retain(|(peer, _)| *peer != seat);
+                self.peers.push((seat, connection));
+            }
+        }
+        for visitor in done {
+            if let Some(index) = self.visitors.iter().position(|(id, _)| *id == visitor) {
+                let (_, mut connection) = self.visitors.remove(index);
+                connection.finish();
+                self.departing.push((connection, now));
+            }
+        }
+    }
+
     fn send_outgoing(&mut self) {
         for (seat, line) in self.session.take_outgoing() {
             if let Some((_, connection)) = self.peers.iter().find(|(peer, _)| *peer == seat) {
@@ -429,13 +695,34 @@ impl HostLink {
 impl ClientLink {
     fn pump(&mut self, game: &mut Game, now: Duration) -> Option<End> {
         let dt = self.clock.step(now);
+        if let Some(rejoin) = &mut self.rejoin {
+            match rejoin.poll(now) {
+                RejoinPoll::Trying => {
+                    game.presentation.net_notice = Some("Reconnecting to the host...".to_owned());
+                    return None;
+                }
+                RejoinPoll::Back(restored, connection) => {
+                    let tick = restored.state.current_tick();
+                    self.session = ClientSession::at(tick, now);
+                    self.connection = Some(connection);
+                    self.closed = false;
+                    self.rejoin = None;
+                    self.rejoined = Some(restored);
+                    return None;
+                }
+                RejoinPoll::Failed(end) => {
+                    self.rejoin = None;
+                    return Some(end);
+                }
+            }
+        }
         let connection = self.connection.as_ref()?;
         if !self.closed {
             loop {
                 match connection.try_recv() {
                     Ok(Some(line)) => {
                         if let Err(end) = self.session.receive(&line, now) {
-                            return Some(self.end(end));
+                            return self.lost(end, game, now);
                         }
                     }
                     Ok(None) => break,
@@ -463,11 +750,10 @@ impl ClientLink {
             if self.session.backlog() > 0 {
                 return None;
             }
-            self.connection = None;
-            return game.state.result().is_none().then_some(End::HostLost);
+            return self.lost(ClientEnd::HostSilent, game, now);
         }
         if let Err(end) = self.session.poll(now) {
-            return Some(self.end(end));
+            return self.lost(end, game, now);
         }
         for line in self.session.take_outgoing() {
             connection.send(&line);
@@ -477,6 +763,22 @@ impl ClientLink {
             game.presentation.toast("Waiting for the host...");
         }
         None
+    }
+
+    /// The session ended. A host gone from an undecided match is rejoined
+    /// rather than given up on; a decided one ends quietly.
+    fn lost(&mut self, end: ClientEnd, game: &Game, now: Duration) -> Option<End> {
+        let gone = matches!(end, ClientEnd::HostSilent | ClientEnd::Protocol);
+        if gone && game.state.result().is_some() {
+            self.connection = None;
+            return None;
+        }
+        if gone {
+            self.connection = None;
+            self.rejoin = Some(Rejoin::start(self.home.clone(), now));
+            return None;
+        }
+        Some(self.end(end))
     }
 
     fn end(&mut self, end: ClientEnd) -> End {
@@ -682,7 +984,8 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
 /// the caller's policy: it answers [`HostLobby::poll`]'s events and
 /// publishes the room.
 pub(crate) struct HostLobby {
-    listener: Listener,
+    /// Moves on to the match once it starts.
+    listener: Option<Listener>,
     address: String,
     commit: String,
     /// The TCP port joiners connect to.
@@ -699,13 +1002,21 @@ pub(crate) struct HostLobby {
     leaving: Vec<(Connection, Duration)>,
 }
 
+/// A started match's session and connections, for its link.
+pub(crate) struct Started {
+    session: HostSession,
+    peers: Vec<(PlayerId, Connection)>,
+    listener: Option<Listener>,
+    commit: String,
+}
+
 /// Where a running start stands.
 pub(crate) enum StartPoll {
     /// Waiting for every seated member to be ready.
     Waiting,
-    /// Every machine is at tick zero: the session and each seated
-    /// member's connection.
-    Started(Box<HostSession>, Vec<(PlayerId, Connection)>),
+    /// Every machine is at tick zero: the session, each seated member's
+    /// connection, and the listener the match keeps for rejoins.
+    Started(Box<Started>),
     /// The start failed; the members who caused it leave through the next
     /// poll, and the rest are back in the room.
     Failed(StartFailed),
@@ -721,7 +1032,7 @@ impl HostLobby {
             .with_context(|| format!("cannot listen on {address}"))?;
         let advertiser = advertises(bound).then(Advertiser::new).and_then(Result::ok);
         Ok(Self {
-            listener,
+            listener: Some(listener),
             address: reachable(bound),
             commit: commit.to_owned(),
             port: bound.port(),
@@ -817,7 +1128,8 @@ impl HostLobby {
             .filter(|(member, _)| self.gathering.name(*member).is_none())
             .count();
         while unnamed < MAX_GREETING {
-            let Ok(Some(connection)) = self.listener.try_accept() else {
+            let Some(Ok(Some(connection))) = self.listener.as_ref().map(Listener::try_accept)
+            else {
                 break;
             };
             let member = self.gathering.connected(now);
@@ -910,7 +1222,12 @@ impl HostLobby {
                         peers.push((seat, self.connections.remove(index).1));
                     }
                 }
-                StartPoll::Started(Box::new(session), peers)
+                StartPoll::Started(Box::new(Started {
+                    session,
+                    peers,
+                    listener: self.listener.take(),
+                    commit: self.commit.clone(),
+                }))
             }
             Err(failed) => StartPoll::Failed(failed),
         }
@@ -1085,9 +1402,10 @@ impl ScenarioHost {
     fn poll_start(&mut self, now: Duration) -> Option<(Game, Link)> {
         match self.lobby.poll_start(now, &self.seating.members()) {
             StartPoll::Waiting => None,
-            StartPoll::Started(session, peers) => {
+            StartPoll::Started(started) => {
                 let game = self.starting.take()?;
-                Some((*game, Link::host(session, peers, now)))
+                let link = Link::host(*started, &game, now);
+                Some((*game, link))
             }
             StartPoll::Failed(failed) => {
                 self.starting = None;
@@ -1289,14 +1607,19 @@ impl ClientLobby {
                         Ok(Some(GuestEvent::Room)) => game = None,
                         // Stop reading at Go: the batches behind it belong to
                         // the link.
-                        Ok(Some(GuestEvent::Go { .. })) => {
+                        Ok(Some(GuestEvent::Go { token })) => {
                             for line in guest.take_outgoing() {
                                 connection.send(&line);
                             }
                             let Some((built, _)) = game else {
                                 return failed("The host sent something unexpected".to_owned());
                             };
-                            let link = Link::client(ClientSession::new(now), connection, now);
+                            let home = Home {
+                                address: self.address.clone(),
+                                commit: self.commit.clone(),
+                                token,
+                            };
+                            let link = Link::client(ClientSession::new(now), connection, home, now);
                             return (Joining::Started, Some((*built, link)));
                         }
                         Ok(Some(GuestEvent::Map) | None) => {}
@@ -1339,6 +1662,8 @@ impl ClientLobby {
         }
     }
 }
+
+mod snapshot;
 
 #[cfg(test)]
 mod tests;

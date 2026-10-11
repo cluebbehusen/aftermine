@@ -293,6 +293,53 @@ fn the_host_hands_a_waited_seat_to_a_bot_and_its_client_hears_why() {
     assert!(host.state.accepts_commands(CLIENT), "nobody surrendered");
 }
 
+/// Cuts the host's connection to the client, as a crash or a network drop
+/// would, without telling the host's session.
+fn cut(lan: &mut Match) {
+    let Link::Host(host) = &mut lan.host.1 else {
+        unreachable!("the host hosts");
+    };
+    host.peers.clear();
+}
+
+#[test]
+fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
+    let mut lan = Match::start(with_bots());
+    lan.run(20);
+    cut(&mut lan);
+    let mut rejoined = false;
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        if let Some(game) = lan.client.1.take_rejoined() {
+            lan.client.0 = *game;
+            rejoined = true;
+        }
+        (rejoined && lan.host.1.status(lan.now).waiting.is_empty()).then_some(())
+    });
+    assert_eq!(lan.client.0.presentation.human, CLIENT);
+    lan.run(20);
+    lan.drain();
+    assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
+    assert!(
+        lan.host.0.state.accepts_commands(CLIENT),
+        "nobody surrendered"
+    );
+}
+
+#[test]
+fn a_rejoin_after_the_host_dropped_the_seat_hears_it_is_gone() {
+    let mut lan = Match::start(with_bots());
+    lan.run(5);
+    cut(&mut lan);
+    lan.host.1.drop_seat(CLIENT);
+    let end = wait(|| {
+        let (host, client) = lan.step();
+        assert_eq!(host, None);
+        client
+    });
+    assert_eq!(end, End::SeatGone);
+}
+
 #[test]
 fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
     let mut lan = Match::start(duel());

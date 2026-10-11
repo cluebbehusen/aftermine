@@ -2164,13 +2164,14 @@ impl Wizard {
             };
             match lan.lobby.poll_start(now, &start.seated) {
                 StartPoll::Waiting => return None,
-                StartPoll::Started(session, peers) => {
+                StartPoll::Started(started) => {
                     let game = lan.starting.take()?.game;
                     self.lan = None;
                     for plan in &mut draft.seats {
                         plan.open = false;
                     }
-                    return Some((*game, Link::host(session, peers, now)));
+                    let link = Link::host(*started, &game, now);
+                    return Some((*game, link));
                 }
                 // The failed start dropped its culprits: free their chairs
                 // now, before anything can start again this frame.

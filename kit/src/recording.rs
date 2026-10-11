@@ -24,6 +24,11 @@ impl WorldOrigin {
         origin.validate(scenario)?;
         Ok(origin)
     }
+
+    /// The world.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
 }
 
 impl RecordingOrigin<Scenario> for WorldOrigin {

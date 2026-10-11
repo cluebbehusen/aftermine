@@ -5,6 +5,7 @@
 use super::{Game, MAX_TICKS_PER_FRAME, TICK_DT};
 use anyhow::{Result, ensure};
 use macroquad::prelude::Vec2;
+use oxide_kit::world_snapshot::WorldSnapshot;
 use oxide_net::{ClientSession, HostSession};
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, TickReport};
@@ -43,6 +44,37 @@ impl Game {
         let mut game = Self::assemble(scenario, viewport, seat, role == NetRole::Host)?;
         game.net = Some(role);
         Ok(game)
+    }
+
+    /// A client rejoining a running match on `seat` from the host's
+    /// snapshot. It records from the snapshot's tick, and runs no bots.
+    pub(crate) fn rejoined(
+        snapshot: WorldSnapshot,
+        seat: PlayerId,
+        viewport: Vec2,
+    ) -> Result<Self> {
+        snapshot.validate()?;
+        let (scenario, origin, stats) = snapshot.into_parts();
+        let player = scenario.players.get(usize::from(seat.0));
+        ensure!(
+            player.is_some_and(|player| !player.bot),
+            "{seat:?} is not a human seat"
+        );
+        let state = origin.state().clone();
+        let recorder = super::Replay::with_origin(
+            oxide_sim::SIM_VERSION,
+            crate::build_identity().label(),
+            scenario.clone(),
+            origin,
+        )?;
+        let mut game = Self::assemble_at(scenario, state, stats, recorder, viewport, seat, false)?;
+        game.net = Some(NetRole::Client);
+        Ok(game)
+    }
+
+    /// The match as a rejoining client restores it.
+    pub(crate) fn world_snapshot(&self) -> Result<WorldSnapshot> {
+        WorldSnapshot::capture(&self.scenario, &self.state, &self.live_stats)
     }
 
     /// This machine's side of a lockstep session, if any.

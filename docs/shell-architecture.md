@@ -72,8 +72,14 @@ for a lost player, every machine shows the waiting screen over the match, naming
 who it waits for and for how long, and only the host can drop the seat or hand
 it to a bot. A bot taking over starts with no memory and plays from its seat's
 own view; its personality seed comes from the world's hash and the seat, and the
-scenario records it, so clients mirror it and saves capture it. A player the
-host has heard nothing from lately shows as a pinned line on the HUD while play
+scenario records it, so clients mirror it and saves capture it. The host's link
+keeps the lobby's listener for the match, and its `oxide_net::Desk` answers
+probes and rejoins. A client that loses its connection to an undecided match
+keeps the token Go gave it and tries for 30 seconds to take its seat back: the
+host snapshots the waiting match as a
+`oxide_kit::world_snapshot::WorldSnapshot`, and the client restores it as a new
+game that records from that tick, keeping its camera. A player the host has
+heard nothing from lately shows as a pinned line on the HUD while play
 continues, as does a client's word that the host paused. A seat that can no
 longer act retires from the session, and a decided match concludes it, so
 neither is waited on. The host paces its ticks at 1x, seals each tick's human
