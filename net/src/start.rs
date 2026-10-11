@@ -3,8 +3,9 @@
 use crate::START_TIMEOUT;
 use crate::host::HostSession;
 use crate::message::{JoinMessage, LobbyMessage};
+use crate::snapshot;
 use crate::token::Token;
-use oxide_sim::{PlayerId, Scenario};
+use oxide_sim::{PlayerCommand, PlayerId, Scenario, Tick};
 use std::time::Duration;
 
 /// Why a start was abandoned.
@@ -26,6 +27,63 @@ pub enum StartFailed {
     },
 }
 
+/// What a start sets up on every machine.
+#[derive(Debug, Clone, Copy)]
+pub enum StartContent<'a> {
+    /// A new match at tick zero.
+    Fresh(&'a Scenario),
+    /// A saved match, carried as a snapshot whose bytes are opaque here.
+    Resume {
+        /// The saved match's scenario, whose human seats the roster fills.
+        scenario: &'a Scenario,
+        /// The tick the saved world is at.
+        tick: Tick,
+        /// The encoded snapshot every client restores.
+        snapshot: &'a [u8],
+        /// Orders the saved match had not sealed, in arrival order.
+        pending: &'a [PlayerCommand],
+    },
+}
+
+impl StartContent<'_> {
+    fn scenario(&self) -> &Scenario {
+        match self {
+            StartContent::Fresh(scenario) | StartContent::Resume { scenario, .. } => scenario,
+        }
+    }
+
+    /// The lines that start `seat`'s client.
+    fn lines(&self, seat: PlayerId, attempt: u32) -> Vec<String> {
+        match *self {
+            StartContent::Fresh(scenario) => vec![
+                LobbyMessage::Start {
+                    seat,
+                    scenario: Box::new(scenario.clone()),
+                    attempt,
+                }
+                .encode(),
+            ],
+            StartContent::Resume { tick, snapshot, .. } => {
+                let parts = snapshot::parts(snapshot);
+                let resume = LobbyMessage::Resume {
+                    seat,
+                    tick,
+                    bytes: snapshot.len() as u64,
+                    parts: u32::try_from(parts.len()).unwrap_or(u32::MAX),
+                    attempt,
+                };
+                std::iter::once(resume.encode())
+                    .chain(
+                        parts
+                            .into_iter()
+                            .map(|data| LobbyMessage::Part { data }.encode()),
+                    )
+                    .collect()
+            }
+        }
+    }
+}
+
 /// The host's half of starting a match once the roster is frozen.
 ///
 /// The barrier queues each client's Start, collects every client's Ready,
@@ -41,6 +99,9 @@ pub struct StartBarrier {
     clients: Vec<PlayerId>,
     /// Each client's rejoin token, sent with its Go.
     tokens: Vec<Token>,
+    /// Where the session starts: the saved tick and unsealed orders of a
+    /// resumed match, tick zero and none for a new one.
+    from: (Tick, Vec<PlayerCommand>),
     hash: u64,
     attempt: u32,
     deadline: Duration,
@@ -50,12 +111,12 @@ pub struct StartBarrier {
 }
 
 impl StartBarrier {
-    /// Starts `scenario` with the host on `host` and clients on `clients`,
+    /// Starts `content` with the host on `host` and clients on `clients`,
     /// which together must hold exactly the scenario's human seats. Each
     /// client's token reaches it with Go. `host_hash` is the host's
-    /// `State::hash` at tick zero, and `attempt` numbers this start.
+    /// `State::hash` at the starting tick, and `attempt` numbers this start.
     pub fn new(
-        scenario: &Scenario,
+        content: StartContent<'_>,
         host: PlayerId,
         clients: &[(PlayerId, Token)],
         host_hash: u64,
@@ -66,7 +127,8 @@ impl StartBarrier {
         let clients: Vec<PlayerId> = clients.iter().map(|&(seat, _)| seat).collect();
         let mut seated: Vec<PlayerId> = clients.iter().copied().chain([host]).collect();
         seated.sort_unstable();
-        let humans: Vec<PlayerId> = scenario
+        let humans: Vec<PlayerId> = content
+            .scenario()
             .players
             .iter()
             .zip(0..)
@@ -79,20 +141,23 @@ impl StartBarrier {
         );
         let outgoing = clients
             .iter()
-            .map(|&seat| {
-                let start = LobbyMessage::Start {
-                    seat,
-                    scenario: Box::new(scenario.clone()),
-                    attempt,
-                };
-                (seat, start.encode())
+            .flat_map(|&seat| {
+                content
+                    .lines(seat, attempt)
+                    .into_iter()
+                    .map(move |line| (seat, line))
             })
             .collect();
+        let from = match content {
+            StartContent::Fresh(_) => (0, Vec::new()),
+            StartContent::Resume { tick, pending, .. } => (tick, pending.to_vec()),
+        };
         Self {
             host,
             ready: vec![false; clients.len()],
             clients,
             tokens,
+            from,
             hash: host_hash,
             attempt,
             deadline: now + START_TIMEOUT,
@@ -149,8 +214,10 @@ impl StartBarrier {
                     .clone()
                     .map(|(seat, token)| (seat, LobbyMessage::Go { token }.encode())),
             );
-            let session =
-                HostSession::new(self.host, &self.clients, now).with_tokens(seats.collect());
+            let (tick, pending) = std::mem::take(&mut self.from);
+            let session = HostSession::new(self.host, &self.clients, now)
+                .with_tokens(seats.collect())
+                .resumed(tick, pending);
             return Ok(Some(session));
         }
         if now >= self.deadline {

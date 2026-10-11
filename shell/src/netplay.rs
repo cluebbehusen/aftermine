@@ -13,7 +13,7 @@ use oxide_net::{
     Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Desk, DeskEvent, Exit,
     Gathering, GoneReason, Guest, GuestEnd, GuestEvent, HostEvent, HostSession, InstallId,
     Listener, LobbyEvent, MemberId, PlayerName, Release, RoomSeat, SeatHolder, SeatNotice,
-    SeatState, StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
+    SeatState, StartContent, StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
 };
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{PlayerId, Scenario, Tick};
@@ -1278,20 +1278,14 @@ impl HostLobby {
     /// `seated` on its seat; `host_hash` is the host's tick-zero hash.
     pub(crate) fn start(
         &mut self,
-        scenario: &Scenario,
+        content: StartContent<'_>,
         host: PlayerId,
         seated: &[(MemberId, PlayerId)],
         host_hash: u64,
         now: Duration,
     ) {
-        self.gathering.start(
-            scenario,
-            host,
-            seated,
-            host_hash,
-            now,
-            crate::entropy::token,
-        );
+        self.gathering
+            .start(content, host, seated, host_hash, now, crate::entropy::token);
         self.flush(now);
     }
 
@@ -1483,8 +1477,13 @@ impl ScenarioHost {
         match Game::networked(scenario.clone(), host, NetRole::Host, viewport) {
             Ok(game) => {
                 let seated = self.seating.members();
-                self.lobby
-                    .start(&scenario, host, &seated, game.state.hash(), now);
+                self.lobby.start(
+                    StartContent::Fresh(&scenario),
+                    host,
+                    &seated,
+                    game.state.hash(),
+                    now,
+                );
                 self.starting = Some(Box::new(game));
                 self.notice = None;
             }
@@ -1543,6 +1542,7 @@ pub(crate) fn roster_lines(seats: &[RoomSeat], you: Option<PlayerId>) -> Vec<Str
                     bot_label(*difficulty, *stance, BotLabelStyle::Controller)
                 }
                 SeatHolder::Open => "Open".to_owned(),
+                SeatHolder::Reserved { name } => format!("Was {name}"),
             };
             format!("{}. {who}", seat + 1)
         })
@@ -1706,6 +1706,24 @@ impl ClientLobby {
                                 Err(error) => return failed(format!("Cannot start: {error}")),
                             }
                         }
+                        Ok(Some(GuestEvent::Resume { seat, tick, bytes })) => {
+                            let restored = snapshot::decode(&bytes)
+                                .and_then(|world| Game::rejoined(world, seat, viewport))
+                                .and_then(|built| {
+                                    anyhow::ensure!(
+                                        built.state.current_tick() == tick,
+                                        "the saved match is at another tick"
+                                    );
+                                    Ok(built)
+                                });
+                            match restored {
+                                Ok(built) => {
+                                    guest.ready(built.state.hash());
+                                    game = Some((Box::new(built), seat));
+                                }
+                                Err(error) => return failed(format!("Cannot resume: {error}")),
+                            }
+                        }
                         // A room during a start means the start is off.
                         Ok(Some(GuestEvent::Room)) => game = None,
                         // Stop reading at Go: the batches behind it belong to
@@ -1730,7 +1748,8 @@ impl ClientLobby {
                                 host: host.unwrap_or_else(|| "the host".to_owned()),
                                 seat,
                             };
-                            let link = Link::client(ClientSession::new(now), connection, home, now);
+                            let session = ClientSession::at(built.state.current_tick(), now);
+                            let link = Link::client(session, connection, home, now);
                             return (Joining::Started, Some((*built, link)));
                         }
                         Ok(Some(GuestEvent::Map) | None) => {}

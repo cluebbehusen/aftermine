@@ -215,6 +215,33 @@ impl HostSession {
         }
     }
 
+    /// The same session, resuming a saved match whose world is at `tick`,
+    /// with the orders it had not yet sealed queued in arrival order. Each
+    /// order must come from one of the session's human seats.
+    #[must_use]
+    pub fn resumed(mut self, tick: Tick, pending: Vec<PlayerCommand>) -> Self {
+        assert_eq!(self.next_tick, 0, "a session resumes before it seals");
+        for command in &pending {
+            assert!(
+                self.humans.contains(&command.player),
+                "a pending order must come from a human seat"
+            );
+        }
+        self.next_tick = tick;
+        for link in self
+            .clients
+            .iter_mut()
+            .filter_map(|client| client.link.as_mut())
+        {
+            link.acked = tick;
+        }
+        self.pending = pending
+            .into_iter()
+            .map(|command| Pending::new(command.player, command.command))
+            .collect();
+        self
+    }
+
     /// The same session, knowing each client's rejoin token.
     #[must_use]
     pub fn with_tokens(mut self, tokens: Vec<(PlayerId, Token)>) -> Self {

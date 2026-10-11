@@ -27,6 +27,12 @@ fn room() -> Vec<RoomSeat> {
             holder: SeatHolder::Open,
             team: None,
         },
+        RoomSeat {
+            holder: SeatHolder::Reserved {
+                name: PlayerName::new("Sam").unwrap(),
+            },
+            team: None,
+        },
     ]
 }
 
@@ -242,7 +248,7 @@ fn wire_shape_is_stable() {
             r#"{"type":"room","seats":[{"holder":{"kind":"host","name":"Connor"},"team":0},"#,
             r#"{"holder":{"kind":"player","name":"Alex"}},"#,
             r#"{"holder":{"kind":"bot","difficulty":"standard","stance":"balanced"},"team":1},"#,
-            r#"{"holder":{"kind":"open"}}],"seat":1}"#
+            r#"{"holder":{"kind":"open"}},{"holder":{"kind":"reserved","name":"Sam"}}],"seat":1}"#
         )
     );
     assert_eq!(LobbyMessage::Full.encode(), r#"{"type":"full"}"#);

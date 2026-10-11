@@ -22,7 +22,8 @@ commands, then bot commands, then record, then `State::tick`.
 - `Gathering` and `Guest` are the host's and a joining client's halves of the
   lobby before Go. Which member sits in which seat is the caller's policy; the
   lobby carries it.
-- `StartBarrier` takes a frozen roster to tick zero.
+- `StartBarrier` takes a frozen roster to the first tick: zero for a new match,
+  the saved tick for a resumed one.
 - `HostSession` stamps each arriving command for the next unsealed tick, orders
   a sealed tick's human commands, gates sealing on client progress, compares
   client hash reports, and watches client liveness.
@@ -61,6 +62,12 @@ commands, then bot commands, then record, then `State::tick`.
   tick-zero `State::hash` and the attempt. When every hash matches the host's,
   the barrier queues `Go` and returns the `HostSession`, whose liveness clocks
   start there. Clients start their `ClientSession` on `Go`.
+- A resumed match starts the same way from `StartContent::Resume`: instead of
+  the `Scenario`, each client receives `Resume` and the snapshot's `Part` lines,
+  which its `Guest` reassembles as on a rejoin, and replies `Ready` with the
+  restored world's hash. The session starts at the saved tick with the orders
+  the saved match had not sealed queued first. The room shows a saved player's
+  seat as `Reserved` until someone takes it.
 - A mismatched hash, a stray line, a seated member leaving or being removed, or
   `START_TIMEOUT` fails the start. `Gathering` drops every member who caused it
   and shows the rest the room again, which tells their `Guest` the start is off;

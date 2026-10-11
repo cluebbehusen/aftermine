@@ -188,6 +188,11 @@ pub enum SeatHolder {
     },
     /// Waiting for a player.
     Open,
+    /// Waiting for the player who held the seat in a saved match.
+    Reserved {
+        /// That player's name.
+        name: PlayerName,
+    },
 }
 
 impl JoinMessage {

@@ -164,8 +164,14 @@ impl Lan {
             .enumerate()
             .map(|(index, (id, _))| (*id, PlayerId(u8::try_from(index + 1).unwrap())))
             .collect();
-        self.host
-            .start(&map(), HOST, &seating, HASH, self.now, seat_token(&seating));
+        self.host.start(
+            StartContent::Fresh(&map()),
+            HOST,
+            &seating,
+            HASH,
+            self.now,
+            seat_token(&seating),
+        );
     }
 }
 
@@ -500,7 +506,7 @@ fn a_failed_start_drops_only_its_culprit_and_the_rest_wait_for_the_next() {
     let mut scenario = map();
     scenario.players[2].bot = true;
     lan.host.start(
-        &scenario,
+        StartContent::Fresh(&scenario),
         HOST,
         &seating,
         HASH,
@@ -671,7 +677,7 @@ fn an_introduction_during_a_start_waits_for_its_outcome() {
     let mut scenario = map();
     scenario.players[2].bot = true;
     lan.host.start(
-        &scenario,
+        StartContent::Fresh(&scenario),
         HOST,
         &seating,
         HASH,
@@ -800,4 +806,134 @@ fn a_guest_heartbeats_once_named_and_gives_up_on_a_silent_host() {
 #[should_panic(expected = "no start to be ready for")]
 fn readying_without_a_start_is_a_caller_bug() {
     Guest::new(COMMIT, name("Alex"), install(0), secs(0)).ready(HASH);
+}
+
+/// A guest seated as Alex on seat 1, in the room.
+fn seated_guest() -> Guest {
+    let mut guest = Guest::new(COMMIT, name("Alex"), install(0), secs(0));
+    for message in [
+        LobbyMessage::hello(COMMIT),
+        LobbyMessage::Map {
+            scenario: Box::new(map()),
+        },
+        LobbyMessage::Room {
+            seats: room(&["Alex"]),
+            seat: PlayerId(1),
+        },
+    ] {
+        guest.receive(&message.encode(), secs(0)).unwrap();
+    }
+    guest.take_outgoing();
+    guest
+}
+
+fn resume_line(tick: Tick, bytes: u64, parts: u32) -> String {
+    LobbyMessage::Resume {
+        seat: PlayerId(1),
+        tick,
+        bytes,
+        parts,
+        attempt: 1,
+    }
+    .encode()
+}
+
+fn part_line(data: &str) -> String {
+    LobbyMessage::Part {
+        data: data.to_owned(),
+    }
+    .encode()
+}
+
+#[test]
+fn a_resumed_start_reaches_every_guest_as_its_snapshot() {
+    let mut lan = Lan::new();
+    let alex = lan.join("Alex");
+    let sam = lan.join("Sam");
+    lan.settle();
+    lan.publish(&room(&["Alex", "Sam"]));
+    lan.settle();
+    let snapshot: Vec<u8> = (0..=u8::MAX)
+        .cycle()
+        .take(crate::snapshot::PART_BYTES + 10)
+        .collect();
+    let seating = [
+        (lan.member(alex), PlayerId(1)),
+        (lan.member(sam), PlayerId(2)),
+    ];
+    lan.host.start(
+        StartContent::Resume {
+            scenario: &map(),
+            tick: 900,
+            snapshot: &snapshot,
+            pending: &[],
+        },
+        HOST,
+        &seating,
+        HASH,
+        lan.now,
+        seat_token(&seating),
+    );
+    let heard = lan.settle();
+    for (guest, seat) in [(alex, PlayerId(1)), (sam, PlayerId(2))] {
+        assert_eq!(
+            heard[guest],
+            vec![GuestEvent::Resume {
+                seat,
+                tick: 900,
+                bytes: snapshot.clone(),
+            }]
+        );
+        lan.guests[guest].1.ready(HASH);
+    }
+    lan.settle();
+    let session = lan.host.poll_start(lan.now).unwrap().expect("both ready");
+    assert_eq!(session.tick(), 900);
+    let heard = lan.settle();
+    assert!(
+        heard
+            .iter()
+            .all(|events| matches!(events[..], [GuestEvent::Go { .. }]))
+    );
+}
+
+#[test]
+fn a_guest_refuses_snapshot_parts_it_was_not_promised() {
+    assert_eq!(
+        seated_guest().receive(&part_line("00"), secs(1)),
+        Err(GuestEnd::Protocol),
+        "a part with no resume"
+    );
+
+    let mut guest = seated_guest();
+    guest.receive(&resume_line(9, 1, 1), secs(1)).unwrap();
+    assert_eq!(
+        guest.receive(&part_line("0011"), secs(1)),
+        Err(GuestEnd::Protocol),
+        "longer than announced"
+    );
+
+    let too_big = crate::snapshot::MAX_SNAPSHOT_BYTES + 1;
+    let parts = u32::try_from(crate::snapshot::part_count(too_big)).unwrap();
+    assert_eq!(
+        seated_guest().receive(&resume_line(9, too_big, parts), secs(1)),
+        Err(GuestEnd::Protocol),
+        "larger than any snapshot"
+    );
+
+    let mut guest = seated_guest();
+    guest.receive(&resume_line(9, 1, 1), secs(1)).unwrap();
+    let room = LobbyMessage::Room {
+        seats: room(&["Alex"]),
+        seat: PlayerId(1),
+    };
+    assert_eq!(
+        guest.receive(&room.encode(), secs(1)),
+        Ok(Some(GuestEvent::Room)),
+        "a room calls the start off"
+    );
+    assert_eq!(
+        guest.receive(&part_line("00"), secs(1)),
+        Err(GuestEnd::Protocol)
+    );
 }
