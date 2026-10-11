@@ -152,6 +152,8 @@ pub enum GoneReason {
     SeatTaken,
     /// The host is not running a match.
     NoMatch,
+    /// The match is too large to send.
+    TooLarge,
 }
 
 /// One seat as the lobby shows it.
