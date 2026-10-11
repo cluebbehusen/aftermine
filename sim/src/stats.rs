@@ -408,7 +408,7 @@ impl BuildingKind {
             BuildingKind::Fabricator => &[&FABRICATOR],
             BuildingKind::Bastion => &[&BASTION],
             BuildingKind::RepairBay => &[&REPAIR_BAY],
-            BuildingKind::Extractor => &[&EXTRACTOR],
+            BuildingKind::Extractor => &[&EXTRACTOR, &DEEP_BORE],
             BuildingKind::Airworks => &[&AIRWORKS],
             BuildingKind::Crucible => &[&CRUCIBLE],
             BuildingKind::Barricade => &[&BARRICADE],
@@ -449,8 +449,16 @@ impl BuildingKind {
             (BuildingKind::FlakTurret, 1) => "burst flak",
             (BuildingKind::Reclaimer, 1) => "refinery",
             (BuildingKind::Array, 1) => "deep array",
+            (BuildingKind::Extractor, 1) => "deep bore",
             _ => self.name(),
         }
+    }
+
+    /// Whether lifting a building of this kind off `tier` also needs a
+    /// completed own Foundry within [`EXTRACTOR_SUPPORT_RADIUS`] when the
+    /// upgrade starts. Each extra Deep Bore therefore means an expansion.
+    pub const fn upgrade_needs_foundry_support(self, tier: u8) -> bool {
+        matches!(self, BuildingKind::Extractor) && tier == 0
     }
 }
 
@@ -1553,6 +1561,18 @@ const REFINERY: BuildingStats = BuildingStats {
     }),
 };
 
+const DEEP_BORE: BuildingStats = BuildingStats {
+    max_hp: 900,
+    vision: 4,
+    produces: &[],
+    weapons: &[],
+    construction: Some(ConstructionStats {
+        cost: 350,
+        build_ticks: 600,
+        requires: &[BuildingKind::Crucible],
+    }),
+};
+
 const DEEP_ARRAY: BuildingStats = BuildingStats {
     max_hp: 300,
     vision: 11,
@@ -1650,7 +1670,7 @@ impl BuildingKind {
                 "Repairs nearby friendly units and completed buildings using scrap. Cannot repair itself."
             }
             BuildingKind::Extractor => {
-                "Rebuild on a derelict mining frame to generate scrap. A nearby own Foundry increases output."
+                "Rebuild on a derelict mining frame to generate scrap. A nearby own Foundry increases output. Upgrade to a Deep Bore for triple output."
             }
             BuildingKind::Airworks => "Produces aircraft.",
             BuildingKind::Crucible => {
@@ -1837,18 +1857,19 @@ pub const REFINERY_PERIOD: u64 = 10;
 /// Foundry supports an Extractor.
 pub const EXTRACTOR_SUPPORT_RADIUS: i32 = 8;
 
-/// Fixed income of a completed Extractor without nearby Foundry support.
-pub const EXTRACTOR_REMOTE_INCOME_PER_MINUTE: u32 = 120;
-
-/// Fixed income of a completed Extractor supported by at least one nearby
-/// completed own Foundry. Additional Foundries do not stack.
-pub const EXTRACTOR_SUPPORTED_INCOME_PER_MINUTE: u32 = 180;
-
-/// Remote Extractors pay one scrap every half second.
+/// Remote Extractors pay one scrap every half second: 120 a minute.
 pub const EXTRACTOR_REMOTE_YIELD: (u32, u64) = (1, 10);
 
-/// Supported Extractors pay three scrap every second.
+/// Extractors supported by at least one nearby completed own Foundry pay
+/// three scrap every second: 180 a minute. Additional Foundries do not stack.
 pub const EXTRACTOR_SUPPORTED_YIELD: (u32, u64) = (3, 20);
+
+/// Remote Deep Bores (Extractor tier 1) pay three times a remote Extractor:
+/// 360 a minute.
+pub const DEEP_BORE_REMOTE_YIELD: (u32, u64) = (3, 10);
+
+/// Supported Deep Bores pay three times a supported Extractor: 540 a minute.
+pub const DEEP_BORE_SUPPORTED_YIELD: (u32, u64) = (9, 20);
 
 /// Ticks between one-hp decay steps on an abandoned tier-zero construction
 /// site.

@@ -892,7 +892,7 @@ fn an_extractor_destroyed_on_its_payout_tick_is_still_credited_that_payout() {
             ledger.observe(&state, &report);
         }
         let fell = fell.expect("premise: the Extractor falls");
-        on_payout |= (fell + 1).is_multiple_of(EXTRACTOR_REMOTE_YIELD.1);
+        on_payout |= (fell + 1).is_multiple_of(oxide_sim::stats::EXTRACTOR_REMOTE_YIELD.1);
         let ledgers = ledger.finish(&state);
         let passive: u64 = ledgers[0]
             .buildings
@@ -1007,4 +1007,56 @@ fn a_reclaimer_whose_upgrade_starts_on_its_payout_tick_earns_nothing_that_tick()
         passive + u64::from(before),
         u64::from(state.players()[0].scrap) + spent
     );
+}
+
+#[test]
+fn a_deep_bore_refit_starting_on_its_payout_tick_earns_nothing_that_tick() {
+    // The Extractor sits three tiles from seat zero's home Foundry, so it
+    // is supported and pays every 20 ticks.
+    let mut scenario = field(
+        1_000,
+        &[(0, UnitKind::Harvester, 6, 8)],
+        &[
+            (0, BuildingKind::Extractor, 6, 4),
+            (0, BuildingKind::Crucible, 10, 4),
+        ],
+    );
+    let mut row: Vec<char> = scenario.map[4].chars().collect();
+    row[6] = 'E';
+    scenario.map[4] = row.into_iter().collect();
+    let mut state = scenario.build().unwrap();
+    let extractor = building(&state, 0, BuildingKind::Extractor);
+    let (_, period) = state.extractor_income(extractor).unwrap().yield_cadence();
+    let before = state.players()[0].scrap;
+    let mut ledger = ImpactLedger::new(&state);
+    for tick in 0..1_200 {
+        let orders = if tick + 1 == 2 * period {
+            vec![order(
+                0,
+                Command::UpgradeBuilding {
+                    building: extractor,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+        let report = state.tick(&orders);
+        ledger.observe(&state, &report);
+    }
+    assert!(
+        state.building(extractor).unwrap().built(),
+        "premise: the Deep Bore finished"
+    );
+    let ledgers = ledger.finish(&state);
+    let passive: u64 = ledgers[0]
+        .buildings
+        .values()
+        .map(|totals| totals.passive)
+        .sum();
+    let spent: u64 = ledgers[0].spend.values().flatten().sum();
+    assert_eq!(
+        passive + u64::from(before),
+        u64::from(state.players()[0].scrap) + spent
+    );
+    assert!(built(&ledgers, 0, "deep bore").passive > 0);
 }

@@ -2,7 +2,7 @@
 
 use super::info::SelectionInfo;
 use oxide_sim::{
-    BuildingKind,
+    BuildingKind, ExtractorIncome, ExtractorSupport,
     stats::{
         CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, RECLAIMER_PERIOD,
         REFINERY_PERIOD,
@@ -58,6 +58,20 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
                     60 * u64::from(oxide_sim::TICKS_PER_SECOND) / period
                 ),
             ));
+        }
+        BuildingKind::Extractor => {
+            for (label, support) in [
+                ("Remote income", ExtractorSupport::Remote),
+                ("Supported income", ExtractorSupport::Supported),
+            ] {
+                facts.push((
+                    label.into(),
+                    format!(
+                        "{} scrap/min",
+                        ExtractorIncome::new(tier, support).scrap_per_minute()
+                    ),
+                ));
+            }
         }
         BuildingKind::Array => {
             let radius = if tier == 0 {

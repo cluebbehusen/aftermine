@@ -152,11 +152,15 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             ("repair_bay", 4),
             ("array", 6),
             ("extractor", 4),
+            # Placeholder: the Deep Bore ships the Extractor's art until its
+            # own is approved.
+            ("extractor_t1", 4),
             ("reclaimer", economy.RECLAIMER_WORK_FRAMES),
             ("reclaimer_t1", economy.RECLAIMER_WORK_FRAMES),
         ):
             render = {
                 "extractor": extractor.render_extractor,
+                "extractor_t1": extractor.render_extractor,
                 "reclaimer": economy.render_reclaimer,
                 "reclaimer_t1": economy.render_refinery,
             }.get(kind)

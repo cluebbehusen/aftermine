@@ -62,3 +62,15 @@ fn previews_include_tradeoffs_and_non_weapon_benefits() {
         )
     );
 }
+
+#[test]
+fn a_deep_bore_preview_shows_both_tripled_rates() {
+    assert_eq!(
+        values(BuildingKind::Extractor, 0, "Remote income"),
+        ("120 scrap/min".into(), "360 scrap/min".into())
+    );
+    assert_eq!(
+        values(BuildingKind::Extractor, 0, "Supported income"),
+        ("180 scrap/min".into(), "540 scrap/min".into())
+    );
+}

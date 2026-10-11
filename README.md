@@ -120,10 +120,12 @@ group recall always selects the group and leaves construction. Click another
 construction card to change buildings while placing. The build ghost explains
 why a site is invalid. A discovered Extractor frame is one 2x2 site. A restored
 Extractor earns fixed remote income; a nearby completed own Foundry raises that
-income without stacking. Amber placement on remembered ground creates a deferred
-order; the builders walk there and validate the site only when they can see it.
-Upgrades rebuild themselves on a fixed timer: the building stays offline and
-vulnerable, but Harvesters keep their existing work.
+income without stacking. Upgrading it to a Deep Bore triples both rates; the
+upgrade needs a Crucible and an own Foundry within support reach to start. Amber
+placement on remembered ground creates a deferred order; the builders walk there
+and validate the site only when they can see it. Upgrades rebuild themselves on
+a fixed timer: the building stays offline and vulnerable, but Harvesters keep
+their existing work.
 
 Rock blocks direct ground fire. Peaks block ground movement, aircraft, and all
 fire across them. Pits block ground movement, but aircraft and fire cross the

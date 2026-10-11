@@ -386,8 +386,16 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             if c.requires.is_empty() {
                 String::new()
             } else {
-                let names: Vec<String> = c.requires.iter().map(|b| entity_name(b.name())).collect();
-                format!(", needs a {}", names.join(" and "))
+                let mut names: Vec<String> =
+                    c.requires.iter().map(|b| entity_name(b.name())).collect();
+                if kind.upgrade_needs_foundry_support(tier.fit::<u8>() - 1) {
+                    names.push(format!(
+                        "{} within {} tiles",
+                        entity_name(BuildingKind::Foundry.name()),
+                        oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+                    ));
+                }
+                format!(", needs a {}", names.join(" and a "))
             },
             stats.max_hp
         );

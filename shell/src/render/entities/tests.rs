@@ -54,8 +54,11 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .find(|building| {
             building.player == game.presentation.human
                 && building.kind == oxide_sim::BuildingKind::Extractor
-                && game.state.extractor_income(building.id)
-                    == Some(oxide_sim::ExtractorIncome::Supported)
+                && game
+                    .state
+                    .extractor_income(building.id)
+                    .map(oxide_sim::ExtractorIncome::support)
+                    == Some(oxide_sim::ExtractorSupport::Supported)
         })
         .expect("supported own Extractor")
         .id;
@@ -66,8 +69,11 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .find(|building| {
             building.player == game.presentation.human
                 && building.kind == oxide_sim::BuildingKind::Extractor
-                && game.state.extractor_income(building.id)
-                    == Some(oxide_sim::ExtractorIncome::Remote)
+                && game
+                    .state
+                    .extractor_income(building.id)
+                    .map(oxide_sim::ExtractorIncome::support)
+                    == Some(oxide_sim::ExtractorSupport::Remote)
         })
         .expect("remote own Extractor")
         .id;
@@ -78,8 +84,11 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .find(|building| {
             building.player != game.presentation.human
                 && building.kind == oxide_sim::BuildingKind::Extractor
-                && game.state.extractor_income(building.id)
-                    == Some(oxide_sim::ExtractorIncome::Supported)
+                && game
+                    .state
+                    .extractor_income(building.id)
+                    .map(oxide_sim::ExtractorIncome::support)
+                    == Some(oxide_sim::ExtractorSupport::Supported)
         })
         .expect("supported foreign Extractor")
         .id;

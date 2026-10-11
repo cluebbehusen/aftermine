@@ -478,13 +478,14 @@ Destroyed eligible entities leave decaying wreck salvage; wrecks do not block
 movement. Recurring economy runs in the production phase: Reclaimers and
 Refineries pay on their cadences, restored Extractors provide fixed remote
 income, and a completed same-owner Foundry within the support radius raises an
-Extractor's fixed yield without stacking. Completed Foundries also provide the
-baseline drip and a finite recovery entitlement for a stranded seat: one with no
-machine that can harvest, whether in the world, aboard a transport, or prepaid
-in a live production queue. Crucibles consume nearby wreck salvage for income,
-nearest tile first and then the richer one, with exact ties ordered in the
-crucible's half-turn frame so mirrored crucibles burn mirrored tiles. These are
-ordinary authoritative rules, not shell conveniences.
+Extractor's fixed yield without stacking. A Deep Bore, the Extractor's upgrade,
+triples both yields. Completed Foundries also provide the baseline drip and a
+finite recovery entitlement for a stranded seat: one with no machine that can
+harvest, whether in the world, aboard a transport, or prepaid in a live
+production queue. Crucibles consume nearby wreck salvage for income, nearest
+tile first and then the richer one, with exact ties ordered in the crucible's
+half-turn frame so mirrored crucibles burn mirrored tiles. These are ordinary
+authoritative rules, not shell conveniences.
 
 Extractor frames are immutable authored map features. Only an Extractor may
 claim one, other foundations cannot cover one, and destroying an Extractor
@@ -541,6 +542,9 @@ building refits itself at one progress tick per simulation tick: it cannot be
 accelerated by workers, paused, cancelled, or abandoned to decay. Its hp gain
 and completion use the shared damage-first work resolver, so lethal fire wins a
 completion-tick tie and nonlethal damage remains when it returns to service.
+Besides its tech prerequisites, a Deep Bore upgrade starts only while a
+completed same-owner Foundry stands within the Extractor support radius; losing
+that Foundry later only drops it to the remote yield.
 
 Cancelling before the first build tick returns the full price. Cancelling an
 unfinished site after work starts returns value proportional to its remaining

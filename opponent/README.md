@@ -449,10 +449,12 @@ depletion raises every expansion. Sites off the seat's home ground, near another
 seat's building or its own Foundry, or failed at every anchor are skipped. An
 Extractor is worth more beside one of the seat's Foundries and less where it has
 seen danger, and none is bought on a frame while an armed enemy in sight stands
-near it. The seat saves for one target at a time. It starts saving only for an
-investment that scores well and could stand somewhere it knows of or could look,
-keeps it while it still scores, and switches only for one that scores clearly
-higher. Prerequisites come first: saving for Airworks buys a Fabricator.
+near it. Once a Crucible stands, the supported Extractor nearest home is offered
+a Deep Bore upgrade, which needs that Foundry support to start. The seat saves
+for one target at a time. It starts saving only for an investment that scores
+well and could stand somewhere it knows of or could look, keeps it while it
+still scores, and switches only for one that scores clearly higher.
+Prerequisites come first: saving for Airworks buys a Fabricator.
 
 When it adopts a target a share of its bank is protected from ordinary spending,
 and while it saves a share of its estimated income is added, up to the next

@@ -19,13 +19,11 @@
 use chassis::grid::TilePos;
 use oxide_sim::stats::{
     BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
-    CRUCIBLE_SMELT_PERIOD, CRUCIBLE_SMELT_RADIUS, EXTRACTOR_REMOTE_YIELD,
-    EXTRACTOR_SUPPORTED_YIELD, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, RECLAIMER_PERIOD,
-    REFINERY_PERIOD, UnitKind,
+    CRUCIBLE_SMELT_PERIOD, CRUCIBLE_SMELT_RADIUS, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK,
+    RECLAIMER_PERIOD, REFINERY_PERIOD, UnitKind,
 };
 use oxide_sim::{
-    Building, BuildingId, Event, ExtractorIncome, Order, State, Target, TickReport, UnitId,
-    UnitRepairSource,
+    Building, BuildingId, Event, Order, State, Target, TickReport, UnitId, UnitRepairSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -283,6 +281,8 @@ pub enum IncomeSource {
     Refinery,
     /// An Extractor's yield.
     Extractor,
+    /// An Extractor upgraded to a Deep Bore.
+    DeepBore,
     /// The Foundry drip.
     FoundryDrip,
     /// A Crucible smelting wreck.
@@ -291,12 +291,13 @@ pub enum IncomeSource {
 
 impl IncomeSource {
     /// Every source, in report order.
-    pub const ALL: [IncomeSource; 7] = [
+    pub const ALL: [IncomeSource; 8] = [
         IncomeSource::FieldHarvest,
         IncomeSource::WreckSalvage,
         IncomeSource::Reclaimer,
         IncomeSource::Refinery,
         IncomeSource::Extractor,
+        IncomeSource::DeepBore,
         IncomeSource::FoundryDrip,
         IncomeSource::Smelting,
     ];
@@ -309,6 +310,7 @@ impl IncomeSource {
             IncomeSource::Reclaimer => "reclaimer",
             IncomeSource::Refinery => "refinery",
             IncomeSource::Extractor => "extractor",
+            IncomeSource::DeepBore => "deep bore",
             IncomeSource::FoundryDrip => "foundry drip",
             IncomeSource::Smelting => "smelting",
         }
@@ -386,9 +388,8 @@ pub struct ImpactLedger {
     shells: Vec<Shell>,
     /// The Crucibles and wreck in their reach as a smelting tick begins.
     hearths: Hearths,
-    /// Extractor payouts as the coming tick begins: building, owner, scrap
-    /// and period.
-    payouts: Vec<(Key, u8, u64, u64)>,
+    /// Extractor payouts as the coming tick begins.
+    payouts: Vec<Payout>,
     /// Income credited in the last observed tick.
     credits: Vec<Credit>,
     /// Losses attributed in the last observed tick.
@@ -578,26 +579,35 @@ fn smelters(hearths: &Hearths, stripped: &BTreeMap<TilePos, u32>) -> Vec<Key> {
     smelting
 }
 
-/// Extractors that pay on a tick beginning from `state`, with their owner,
-/// scrap and period: the simulation pays before any combat in the tick.
-fn payouts(state: &State) -> Vec<(Key, u8, u64, u64)> {
+/// An Extractor that pays on a tick beginning from the state it was read
+/// from: the simulation pays before any combat in the tick.
+#[derive(Debug, Clone, Copy)]
+struct Payout {
+    key: Key,
+    owner: u8,
+    source: IncomeSource,
+    amount: u64,
+    period: u64,
+}
+
+fn payouts(state: &State) -> Vec<Payout> {
     state
         .buildings()
         .iter()
-        .filter(|building| {
-            building.kind == BuildingKind::Extractor && building.built() && building.hp > 0
-        })
         .filter_map(|building| {
-            let (amount, period) = match state.extractor_income(building.id)? {
-                ExtractorIncome::Supported => EXTRACTOR_SUPPORTED_YIELD,
-                ExtractorIncome::Remote => EXTRACTOR_REMOTE_YIELD,
-            };
-            Some((
-                Key::Building(building.id),
-                building.player.0,
-                u64::from(amount),
+            let income = state.extractor_income(building.id)?;
+            let (amount, period) = income.yield_cadence();
+            Some(Payout {
+                key: Key::Building(building.id),
+                owner: building.player.0,
+                source: if income.tier() == 0 {
+                    IncomeSource::Extractor
+                } else {
+                    IncomeSource::DeepBore
+                },
+                amount: u64::from(amount),
                 period,
-            ))
+            })
         })
         .collect()
 }
@@ -1332,15 +1342,18 @@ impl ImpactLedger {
                 credits.push((body.key, source, 1));
             }
         }
-        // A resignation is a command, applied before the tick's income.
+        // A resignation is a command, applied before the tick's income, and
+        // so is an upgrade that takes an Extractor out of service.
         credits.extend(
             self.payouts
                 .iter()
-                .filter(|(_, owner, _, period)| {
-                    completed.is_multiple_of(*period)
-                        && !state.players()[usize::from(*owner)].resigned
+                .filter(|payout| {
+                    completed.is_multiple_of(payout.period)
+                        && !state.players()[usize::from(payout.owner)].resigned
+                        && !matches!(payout.key, Key::Building(id)
+                            if state.building(id).is_some_and(|building| !building.built()))
                 })
-                .map(|(key, _, amount, _)| (*key, IncomeSource::Extractor, *amount)),
+                .map(|payout| (payout.key, payout.source, payout.amount)),
         );
         if now.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
             credits.extend(

@@ -162,6 +162,13 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = tiered(&crucible.build().unwrap(), BuildingKind::Turret, 1);
     offer(&crucible, &state, 3_000);
 
+    // A Deep Bore on the home frame, which the home Foundry supports.
+    let mut bore = crucible.clone();
+    bore.buildings
+        .push(building(0, BuildingKind::Extractor, 6, 1));
+    let state = bore.build().unwrap();
+    offer(&bore, &state, 3_000);
+
     // A Repair Bay where the wounded gather.
     let mut hurt = arena(0);
     let squad = [
