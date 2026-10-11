@@ -128,6 +128,8 @@ struct App {
     net: Option<crate::netplay::Link>,
     /// A departed host's connections, still flushing the deciding batches.
     lingering: Option<crate::netplay::Lingering>,
+    /// The LAN match waited for a lost player as of the last frame.
+    net_waiting: bool,
     /// The session clock the lobby and the link read.
     clock: std::time::Instant,
 }
@@ -333,6 +335,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         soft_keyboard: None,
         net: None,
         lingering: None,
+        net_waiting: false,
         clock: std::time::Instant::now(),
     };
     let mut ui_view = ui_view::capture_ui(&screen, &app);
