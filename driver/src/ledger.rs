@@ -1304,6 +1304,13 @@ impl ImpactLedger {
             if body.hp == 0 {
                 continue;
             }
+            // Commands run before the tick's income, so an upgrade one
+            // started keeps the building out of service all tick.
+            if let Key::Building(id) = body.key
+                && state.building(id).is_some_and(|building| !building.built())
+            {
+                continue;
+            }
             let resigned = state.players()[usize::from(body.owner)].resigned;
             let credit = match kind {
                 BuildingKind::Reclaimer if tier == 0 => now

@@ -169,8 +169,8 @@ pub enum TimelineKind {
         losses: Vec<SeatLoss>,
         /// `"even"`, or `"favors team N"` for the lightest-losing team.
         verdict: String,
-        /// The whole cluster is one tick and holds a transport loss: an
-        /// interception of a loaded airframe, not a fight.
+        /// The whole cluster is one tick of transports and the riders that
+        /// died with them: an interception of loaded airframes, not a fight.
         shootdown: bool,
     },
     /// A seat completed a Foundry beyond its starting count.
@@ -505,7 +505,10 @@ struct BattleCluster {
     sum_x: i64,
     sum_y: i64,
     n: i64,
-    transports: u32,
+    /// Tiles where transports were lost; riders die on their carrier's tile.
+    transport_tiles: Vec<TilePos>,
+    /// Tiles of every other loss.
+    other_tiles: Vec<TilePos>,
     losses: BTreeMap<u8, SeatLoss>,
     victims: Vec<Target>,
 }
@@ -533,8 +536,8 @@ pub(crate) struct Battle {
     pub(crate) at: [i32; 2],
     /// Per participating seat, heaviest first.
     pub(crate) losses: Vec<SeatLoss>,
-    /// An instantaneous cluster containing a transport loss: the
-    /// airframe and its riders died together, nothing landed.
+    /// An instantaneous cluster of transports and the riders that died
+    /// with them: nothing landed.
     pub(crate) shootdown: bool,
     /// Every body lost, in loss order.
     pub(crate) victims: Vec<Target>,
@@ -586,7 +589,8 @@ impl BattleClusterer {
                 sum_x: 0,
                 sum_y: 0,
                 n: 0,
-                transports: 0,
+                transport_tiles: Vec::new(),
+                other_tiles: Vec::new(),
                 losses: BTreeMap::new(),
                 victims: Vec::new(),
             });
@@ -597,6 +601,11 @@ impl BattleClusterer {
         cluster.n += 1;
         cluster.last_loss_tick = tick;
         cluster.victims.push(victim);
+        if kind == LossKind::Transport {
+            cluster.transport_tiles.push(tile);
+        } else {
+            cluster.other_tiles.push(tile);
+        }
         let loss = cluster.losses.entry(seat).or_insert(SeatLoss {
             seat,
             value: 0,
@@ -621,7 +630,6 @@ impl BattleClusterer {
             LossKind::Transport => {
                 loss.units += 1;
                 loss.transport_value += value;
-                cluster.transports += 1;
             }
             LossKind::Building => {
                 loss.buildings += 1;
@@ -667,7 +675,12 @@ impl BattleClusterer {
                 to_tick: cluster.last_loss_tick,
                 at,
                 losses,
-                shootdown: cluster.transports > 0 && cluster.from_tick == cluster.last_loss_tick,
+                shootdown: !cluster.transport_tiles.is_empty()
+                    && cluster.from_tick == cluster.last_loss_tick
+                    && cluster
+                        .other_tiles
+                        .iter()
+                        .all(|tile| cluster.transport_tiles.contains(tile)),
                 victims: cluster.victims,
             });
         } else {

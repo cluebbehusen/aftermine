@@ -776,3 +776,114 @@ fn a_recording_restored_on_a_whole_minute_samples_that_minute() {
     );
     assert!(Pass::new(&scenario.build().unwrap()).wrecks.is_empty());
 }
+
+#[test]
+fn a_factory_still_under_construction_marks_no_home() {
+    // The fight is 21 tiles from either Foundry and 10 from East's
+    // Fabricator, beyond the Wardens' sight: standing, or still a site its
+    // worker is raising.
+    let place = |site: bool| {
+        let scenario = wide_field(
+            48,
+            1_000,
+            &[
+                (0, UnitKind::Warden, 22, 6),
+                (0, UnitKind::Warden, 22, 7),
+                (0, UnitKind::Warden, 22, 8),
+                (1, UnitKind::Sentinel, 24, 6),
+                (1, UnitKind::Sentinel, 24, 7),
+                (1, UnitKind::Sentinel, 24, 8),
+                (1, UnitKind::Harvester, 33, 4),
+            ],
+            if site {
+                &[]
+            } else {
+                &[(1, BuildingKind::Fabricator, 33, 1)]
+            },
+        );
+        let state = scenario.build().unwrap();
+        let raise = PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Build {
+                units: vec![unit_at(&state, 33, 4)],
+                kind: BuildingKind::Fabricator,
+                anchor: TilePos::new(33, 1),
+                queue: false,
+                defer: false,
+            },
+        };
+        let orders = if site { vec![(0, raise)] } else { Vec::new() };
+        let (health, _) = play(&scenario, state, MINUTE, &orders);
+        let [battle] = &health.battles[..] else {
+            panic!("{:#?}", health.battles)
+        };
+        let follow = battle.follow_up.clone().unwrap();
+        (follow.place, follow.own_ground)
+    };
+    assert_eq!(place(false), (Place::Away, false));
+    assert_eq!(
+        place(true),
+        (Place::Field, false),
+        "the site is still the loser's ground"
+    );
+}
+
+#[test]
+fn a_seat_earns_nothing_once_it_is_out_of_the_match() {
+    // Middle loses its only Foundry while its ally East keeps the match
+    // going; its Reclaimer keeps paying a bank nobody plays.
+    let ground = ".".repeat(40);
+    let mut map = vec![ground.clone(); 12];
+    let mut top: Vec<char> = ground.chars().collect();
+    top[2] = '1';
+    top[20] = '2';
+    top[36] = '3';
+    map[2] = top.into_iter().collect();
+    let scenario = Scenario {
+        mode: ScenarioMode::Match,
+        name: "teams".into(),
+        map,
+        players: [0, 1, 1]
+            .into_iter()
+            .enumerate()
+            .map(|(seat, team)| PlayerSpec {
+                name: format!("seat {seat}"),
+                team: Some(team),
+                scrap: 0,
+                bot: false,
+                bot_config: None,
+            })
+            .collect(),
+        units: [(19, 4), (20, 4), (21, 4), (22, 4), (22, 3)]
+            .into_iter()
+            .map(|(x, y)| UnitSpec {
+                player: 0,
+                kind: UnitKind::Warden,
+                x,
+                y,
+            })
+            .collect(),
+        buildings: vec![BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Reclaimer,
+            x: 30,
+            y: 10,
+        }],
+        meta: None,
+    };
+    let state = scenario.build().unwrap();
+    let (health, ledgers) = play(&scenario, state, 4 * MINUTE, &[]);
+    let out = health.seats[1]
+        .eliminated_at
+        .expect("premise: Middle loses its Foundry");
+    assert!(health.result.is_none(), "premise: East plays on");
+    let paid_while_in = (0..out).filter(|tick| tick % RECLAIMER_PERIOD == 0).count();
+    let earned: u64 = health.seats[1].income[&IncomeSource::Reclaimer]
+        .iter()
+        .sum();
+    assert_eq!(earned, u64::try_from(paid_while_in).unwrap());
+    assert!(
+        ledgers[1].buildings["reclaimer"].passive > earned,
+        "premise: the Reclaimer kept paying"
+    );
+}

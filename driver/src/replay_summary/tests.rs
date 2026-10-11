@@ -191,6 +191,34 @@ fn sub_floor_battles_fold_into_skirmishes() {
 }
 
 #[test]
+fn only_a_transport_and_its_riders_make_a_shootdown() {
+    let lost = |id: u32, x: i32, kind| Loss {
+        seat: 1,
+        tile: TilePos::new(x, 10),
+        value: 300,
+        kind,
+        victim: Target::Unit(UnitId(id)),
+    };
+    let mut clusterer = BattleClusterer::default();
+    clusterer.note_loss(100, lost(1, 10, LossKind::Transport));
+    clusterer.note_loss(100, lost(2, 10, LossKind::Combat));
+    clusterer.note_loss(2_000, lost(3, 10, LossKind::Transport));
+    clusterer.note_loss(2_000, lost(4, 10, LossKind::Combat));
+    clusterer.note_loss(2_000, lost(5, 13, LossKind::Combat));
+    clusterer.finish();
+    let shootdowns: Vec<bool> = clusterer
+        .battles
+        .iter()
+        .map(|battle| battle.shootdown)
+        .collect();
+    assert_eq!(
+        shootdowns,
+        [true, false],
+        "a gun lost beside the airframe is a fight"
+    );
+}
+
+#[test]
 fn verdicts_read_the_loss_gap_by_team() {
     let loss = |seat, value| SeatLoss {
         seat,

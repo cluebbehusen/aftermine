@@ -958,3 +958,51 @@ fn workers_sharing_a_tile_take_its_last_field_scrap_in_the_order_they_act() {
         }
     }
 }
+
+#[test]
+fn a_reclaimer_whose_upgrade_starts_on_its_payout_tick_earns_nothing_that_tick() {
+    // Commands run before the tick's income, and an upgrade takes the
+    // building out of service at once.
+    let scenario = field(
+        1_000,
+        &[(0, UnitKind::Harvester, 6, 8)],
+        &[
+            (0, BuildingKind::Fabricator, 8, 4),
+            (0, BuildingKind::Reclaimer, 12, 4),
+        ],
+    );
+    let mut state = scenario.build().unwrap();
+    let reclaimer = building(&state, 0, BuildingKind::Reclaimer);
+    let before = state.players()[0].scrap;
+    let mut ledger = ImpactLedger::new(&state);
+    for tick in 0..300 {
+        let orders = if tick == 2 * RECLAIMER_PERIOD {
+            vec![order(
+                0,
+                Command::UpgradeBuilding {
+                    building: reclaimer,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+        let report = state.tick(&orders);
+        ledger.observe(&state, &report);
+    }
+    assert_eq!(
+        state.building(reclaimer).unwrap().tier,
+        1,
+        "premise: the upgrade began"
+    );
+    let ledgers = ledger.finish(&state);
+    let passive: u64 = ledgers[0]
+        .buildings
+        .values()
+        .map(|totals| totals.passive)
+        .sum();
+    let spent: u64 = ledgers[0].spend.values().flatten().sum();
+    assert_eq!(
+        passive + u64::from(before),
+        u64::from(state.players()[0].scrap) + spent
+    );
+}

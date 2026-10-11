@@ -57,9 +57,10 @@ exporter's identity. Source archives report unknown provenance.
   razes production, destroys at least 200 scrap of income, or holds ground
   nearer the losers' buildings than its own; the report leads with pushes, the
   wins away from the winner's home. A seat's home is the ground within 12 tiles
-  of its production buildings. Battles are `replay-summary`'s. It accepts
-  directories such as a `bot-eval --replay-dir`, prints a pooled report, and
-  with `--json` prints each match's row and the pooled summary.
+  of its completed production buildings, and a seat earns nothing once it is out
+  of the match. Battles are `replay-summary`'s. It accepts directories such as a
+  `bot-eval --replay-dir`, prints a pooled report, and with `--json` prints each
+  match's row and the pooled summary.
 - `bot_eval` runs the player-facing controllers to a decision, tick ceiling, or
   stall-loop anomaly, and emits compact JSONL with candidate, scenario,
   tick-ceiling, exact-profile, and anomaly provenance. It can exchange complete

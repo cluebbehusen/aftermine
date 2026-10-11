@@ -97,7 +97,8 @@ pub struct SeatHealth {
     /// Tick the seat was eliminated.
     pub eliminated_at: Option<u64>,
     /// Scrap earned by source in each minute from the match's
-    /// `first_minute`; the last minute may be partial.
+    /// `first_minute` until the seat was eliminated; the last minute may be
+    /// partial.
     pub income: BTreeMap<IncomeSource, Vec<u64>>,
     /// Whole minutes from [`LATE_MINUTE`] the seat was sampled in the
     /// match.
@@ -130,8 +131,8 @@ pub struct WreckSample {
     /// Scrap of salvage left on the map.
     pub total: u64,
     /// Of that, scrap lying at each seat's home, by seat: within home reach
-    /// of that seat's production buildings, the nearer seat taking a tile
-    /// both reach.
+    /// of that seat's completed production buildings, the nearer seat taking
+    /// a tile both reach.
     pub home: Vec<u64>,
 }
 
@@ -163,7 +164,7 @@ pub struct BattleHealth {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FollowUp {
     /// Where the battle was, from the winner's view, by the production
-    /// buildings standing at its first loss.
+    /// buildings complete and standing at its first loss.
     pub place: Place,
     /// The battle was on the winner's own ground by every building it had
     /// standing then, not just production: holding the ground there proves
@@ -245,7 +246,7 @@ struct Life {
     kind: BuildingKind,
     tile: TilePos,
     born: u64,
-    completed: bool,
+    completed_at: Option<u64>,
     gone: Option<u64>,
 }
 
@@ -304,7 +305,7 @@ impl Pass {
                 kind: building.kind,
                 tile: TilePos::containing(building.center()),
                 born: start,
-                completed: building.built(),
+                completed_at: building.built().then_some(start),
                 gone: None,
             })
             .collect();
@@ -347,7 +348,13 @@ impl Pass {
         let now = state.current_tick();
         let minute = usize::try_from(report.tick / MINUTE - self.first_minute)
             .expect("minutes of a recording fit in usize");
-        for credit in ledger.credits() {
+        // A seat out of the match can keep Reclaimers and Extractors paying
+        // its idle bank, but that is no longer income it plays with.
+        for credit in ledger.credits().iter().filter(|credit| {
+            state.players()[usize::from(credit.seat)]
+                .eliminated_at
+                .is_none_or(|out| report.tick < out)
+        }) {
             let series = self.income[usize::from(credit.seat)]
                 .entry(credit.source)
                 .or_default();
@@ -371,7 +378,7 @@ impl Pass {
                 kind: building.kind,
                 tile: TilePos::containing(building.center()),
                 born: now,
-                completed: building.built(),
+                completed_at: building.built().then_some(now),
                 gone: None,
             });
         }
@@ -386,7 +393,7 @@ impl Pass {
             match event {
                 Event::BuildingCompleted { building, .. } => {
                     if let Some(life) = self.life(*building) {
-                        life.completed = true;
+                        life.completed_at.get_or_insert(now);
                     }
                 }
                 Event::BuildingSalvaged { building, .. }
@@ -431,7 +438,7 @@ impl Pass {
             Event::BuildingDestroyed { building, tier, .. } => {
                 let completed = self
                     .life(*building)
-                    .filter(|life| life.completed)
+                    .filter(|life| life.completed_at.is_some())
                     .map(|life| life.kind);
                 let role = match completed {
                     Some(kind) if !kind.tier_stats(*tier).produces.is_empty() => Role::Production,
@@ -533,25 +540,32 @@ impl Pass {
                 .map(|(source, _)| *source)
                 .collect();
             let centroid = TilePos::new(battle.at[0], battle.at[1]);
-            let near = |teams: &dyn Fn(u8) -> bool, marks: fn(BuildingKind) -> bool| {
+            let near = |teams: &dyn Fn(u8) -> bool, marks: &dyn Fn(&Life) -> bool| {
                 self.buildings
                     .iter()
                     .filter(|life| {
-                        teams(life.team) && marks(life.kind) && life.standing(battle.from_tick)
+                        teams(life.team) && marks(life) && life.standing(battle.from_tick)
                     })
                     .map(|life| life.tile.chebyshev(centroid))
                     .min()
                     .unwrap_or(i32::MAX)
             };
-            let place_by = |marks: fn(BuildingKind) -> bool| {
+            let place_by = |marks: &dyn Fn(&Life) -> bool| {
                 Place::from_distances(
                     near(&|team| team == winner, marks),
                     near(&|team| losers.contains(&team), marks),
                 )
             };
+            // A factory still under construction trains nothing yet.
+            let home = |life: &Life| {
+                marks_home(life.kind)
+                    && life
+                        .completed_at
+                        .is_some_and(|completed| completed <= battle.from_tick)
+            };
             health.follow_up = Some(FollowUp {
-                place: place_by(marks_home),
-                own_ground: place_by(Place::marks) == Place::Home,
+                place: place_by(&home),
+                own_ground: place_by(&|life: &Life| Place::marks(life.kind)) == Place::Home,
                 losers,
                 force: u32::try_from(force.len()).expect("a force fits in u32"),
                 until: now,
@@ -650,7 +664,7 @@ impl Pass {
         let seats = self.teams.len();
         let mut marks: Vec<Vec<TilePos>> = vec![Vec::new(); seats];
         for building in state.buildings() {
-            if marks_home(building.kind) {
+            if marks_home(building.kind) && building.built() {
                 marks[usize::from(building.player.0)].push(TilePos::containing(building.center()));
             }
         }
