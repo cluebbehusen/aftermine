@@ -447,3 +447,40 @@ fn an_extractor_frame_waits_while_an_armed_enemy_stands_near() {
         "once the enemy is out of sight the frame is wanted again"
     );
 }
+
+#[test]
+fn a_building_walled_in_on_every_side_is_not_welded() {
+    let welded = |boxed: bool| {
+        let mut scenario = arena(200);
+        // A Turret in the arena's corner, rock on two sides and Barricades
+        // on the rest.
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Turret, 1, 1));
+        let walls: &[(i32, i32)] = if boxed {
+            &[(2, 1), (1, 2), (2, 2)]
+        } else {
+            &[(2, 1), (1, 2)]
+        };
+        for (x, y) in walls {
+            scenario
+                .buildings
+                .push(building(0, BuildingKind::Barricade, *x, *y));
+        }
+        let state = scenario.build().unwrap();
+        let turret = state
+            .buildings()
+            .iter()
+            .find(|building| building.kind == BuildingKind::Turret)
+            .unwrap()
+            .id;
+        let max = BuildingKind::Turret.base_stats().max_hp;
+        let state = damaged(&state, turret, max / 2);
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        repairs(&commands)
+            .iter()
+            .any(|(_, patient)| *patient == turret)
+    };
+    assert!(welded(false), "premise: one free tile is enough");
+    assert!(!welded(true));
+}

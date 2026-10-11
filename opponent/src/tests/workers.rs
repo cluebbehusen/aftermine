@@ -504,3 +504,299 @@ fn an_allied_building_beside_a_node_takes_its_places_as_an_own_one_does() {
     assert!(own.is_some(), "premise: the node is worked");
     assert_eq!(crews_beside(2), own);
 }
+
+/// `state` with each `(x, y, salvage)` of `wreck` lying on the map.
+fn wrecked(state: &State, wreck: &[(i32, i32, u32)]) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let grid = &mut value["map"]["grid"];
+    let width = grid["width"].as_i64().unwrap();
+    let cells = grid["cells"].as_array_mut().unwrap();
+    for (x, y, salvage) in wreck {
+        let index = usize::try_from(i64::from(*y) * width + i64::from(*x)).unwrap();
+        cells[index]["wreck"] = (*salvage).into();
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+/// West's commands for a field with no scrap left, an idle Harvester beside
+/// the Foundry and `wreck` on the map.
+fn salvaging(wreck: &[(i32, i32, u32)]) -> (UnitId, Vec<PlayerCommand>) {
+    let mut scenario = field();
+    scenario.units.push(harvester(0, 5, 11));
+    let state = scenario.build().unwrap();
+    let worker = at(&state, 5, 11);
+    let state = wrecked(&state, wreck);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    (worker, commands)
+}
+
+#[test]
+fn an_idle_harvester_with_no_node_left_salvages_known_wreck() {
+    let (_, bare) = salvaging(&[]);
+    assert!(harvests(&bare).is_empty(), "premise: {bare:?}");
+    let (worker, commands) = salvaging(&[(9, 12, 30)]);
+    assert_eq!(
+        harvests(&commands),
+        [(TilePos::new(9, 12), vec![worker])],
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn unseen_wreck_is_never_salvaged() {
+    let mut scenario = field();
+    scenario.units.push(harvester(0, 5, 11));
+    let state = wrecked(&scenario.build().unwrap(), &[(30, 11, 400)]);
+    let fogged = ObservationData::fog_honest(&state, PlayerId(0));
+    let omniscient = ObservationData::omniscient(&state, PlayerId(0));
+    assert!(fogged.known_wrecks.is_empty());
+    assert_eq!(omniscient.known_wrecks.len(), 1, "premise: the wreck lies");
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(harvests(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
+fn wreck_past_a_known_turret_is_not_salvaged() {
+    let sent = |guarded| {
+        let mut scenario = walled(guarded);
+        scenario.map[3].replace_range(30..31, ".");
+        scenario.units.push(harvester(0, 5, 11));
+        let state = wrecked(&scenario.build().unwrap(), &[(30, 3, 400)]);
+        let mut opponent = seat_with(&scenario, 0, fortified());
+        harvests(&opponent.act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .any(|(source, _)| source == TilePos::new(30, 3))
+    };
+    assert!(sent(false), "premise: an open route draws the Harvester");
+    assert!(!sent(true));
+}
+
+#[test]
+fn a_harvester_working_known_wreck_is_left_to_it() {
+    // A worked node beside the Foundry would draw a stale worker.
+    let mut scenario = fielded((10, 11));
+    scenario.units.push(harvester(0, 8, 14));
+    let state = scenario.build().unwrap();
+    let worker = at(&state, 8, 14);
+    let mut state = wrecked(&state, &[(9, 14, 300)]);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Harvest {
+            units: vec![worker],
+            node: TilePos::new(9, 14),
+            queue: false,
+        },
+    }]);
+    let observed = ObservationData::fog_honest(&state, PlayerId(0));
+    let unit = observed
+        .my_units
+        .iter()
+        .find(|unit| unit.id == worker)
+        .unwrap();
+    assert_eq!(unit.harvesting, Some(TilePos::new(9, 14)), "premise");
+    let mut opponent = seat_with(&scenario, 0, thrifty());
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(!harvesting(&commands).contains(&worker), "{commands:?}");
+    assert!(
+        !runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&worker)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn wreck_worth_a_harvester_is_worked_and_less_is_not() {
+    let scenario = field();
+    let price = UnitKind::Harvester.stats().cost;
+    let state = wrecked(
+        &scenario.build().unwrap(),
+        &[(9, 9, 8 * price), (9, 14, price / 2)],
+    );
+    let worked = crews(&scenario, &state, BotStance::Turtle, 50);
+    assert!(crew(&worked, (9, 9)).is_some(), "{worked:?}");
+    assert_eq!(crew(&worked, (9, 14)), None, "{worked:?}");
+}
+
+#[test]
+fn a_seat_with_its_fields_dry_trains_harvesters_for_wreck_that_repays_them() {
+    let trained = |wreck: &[(i32, i32, u32)]| {
+        let mut scenario = field();
+        scenario.players[0].scrap = 1_000;
+        garrison(&mut scenario);
+        scenario.units.push(harvester(0, 5, 11));
+        let state = wrecked(&scenario.build().unwrap(), wreck);
+        trains(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .any(|(_, kind)| kind == UnitKind::Harvester)
+    };
+    assert!(
+        !trained(&[]),
+        "premise: one Harvester is enough without wreck"
+    );
+    let price = UnitKind::Harvester.stats().cost;
+    assert!(trained(&[(9, 9, 8 * price)]));
+}
+
+#[test]
+fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does() {
+    for scenario in [walled(true), staggered(true)] {
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let model = map(&scenario);
+        let frame = HomeFrame::of(&observation, &model).unwrap();
+        let memory = {
+            let mut memory = crate::memory::Memory::default();
+            memory.observe(&observation);
+            memory
+        };
+        let scratch = crate::missions::Scratch::new(
+            &observation,
+            &model,
+            frame,
+            &memory,
+            BotStance::Turtle,
+            &crate::missions::Missions::default(),
+        );
+        let homes: Vec<&oxide_sim::observation::BuildingObs> = observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::Foundry)
+            .collect();
+        let (width, height) = model.size();
+        let tiles: Vec<TilePos> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+            .collect();
+        let alone: Vec<bool> = tiles
+            .iter()
+            .map(|tile| {
+                crate::workers::Routes::new(&observation, &model, frame, &scratch, &homes)
+                    .clear(*tile)
+            })
+            .collect();
+        assert!(alone.contains(&false), "premise: some routes cross danger");
+        for order in [tiles.clone(), tiles.iter().rev().copied().collect()] {
+            let mut shared =
+                crate::workers::Routes::new(&observation, &model, frame, &scratch, &homes);
+            let mut results = std::collections::BTreeMap::new();
+            for tile in &order {
+                results.insert((tile.y, tile.x), shared.clear(*tile));
+            }
+            let shared: Vec<bool> = tiles
+                .iter()
+                .map(|tile| results[&(tile.y, tile.x)])
+                .collect();
+            assert_eq!(shared, alone);
+        }
+    }
+}
+
+#[test]
+fn workers_beyond_every_open_place_salvage_wreck_before_crowding_a_node() {
+    let salvaged = |wreck: &[(i32, i32, u32)]| {
+        let mut scenario = arena(0);
+        scenario.units.extend(workforce(0));
+        let state = wrecked(&scenario.build().unwrap(), wreck);
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        harvests(&commands)
+            .into_iter()
+            .find(|(source, _)| *source == TilePos::new(4, 8))
+            .map_or(0, |(_, units)| units.len())
+    };
+    assert_eq!(salvaged(&[]), 0, "premise");
+    // Less than a Harvester's price, so no worked source: only spare
+    // workers take it, as many as its loads.
+    let price = UnitKind::Harvester.stats().cost;
+    let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
+    assert_eq!(
+        salvaged(&[(4, 8, price - 1)]),
+        (price - 1).div_ceil(capacity) as usize
+    );
+}
+
+/// `state` with West's team warned of a recent allied loss at `(x, y)`.
+fn warned(state: &State, x: i32, y: i32) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let expires = state.current_tick() + oxide_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS;
+    value["vision"][0]["salvage_incidents"] =
+        serde_json::json!([{"tile": {"x": x, "y": y}, "expires_at": expires}]);
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn wreck_beside_a_recent_allied_loss_is_not_salvaged() {
+    let sent = |warning: bool| {
+        let mut scenario = field();
+        scenario.units.push(harvester(0, 5, 11));
+        let state = wrecked(&scenario.build().unwrap(), &[(9, 12, 300)]);
+        let state = if warning {
+            warned(&state, 10, 12)
+        } else {
+            state
+        };
+        assert_eq!(
+            ObservationData::fog_honest(&state, PlayerId(0))
+                .salvage_incidents
+                .len(),
+            usize::from(warning),
+            "premise"
+        );
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        harvests(&commands)
+            .iter()
+            .any(|(source, _)| *source == TilePos::new(9, 12))
+    };
+    assert!(sent(false), "premise: the wreck draws the Harvester");
+    assert!(!sent(true));
+}
+
+#[test]
+fn spare_workers_count_the_loads_of_those_filling_a_wrecks_places() {
+    let price = UnitKind::Harvester.stats().cost;
+    let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
+    let mut scenario = field();
+    for x in 2..=6 {
+        for y in 13..=16 {
+            scenario.units.push(harvester(0, x, y));
+        }
+    }
+    let state = wrecked(&scenario.build().unwrap(), &[(9, 9, 3 * price)]);
+    let worked = crews(&scenario, &state, BotStance::Balanced, 50);
+    assert!(crew(&worked, (9, 9)).is_some(), "premise: {worked:?}");
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let sent = harvests(&commands)
+        .into_iter()
+        .find(|(source, _)| *source == TilePos::new(9, 9))
+        .map_or(0, |(_, units)| units.len());
+    assert_eq!(
+        sent,
+        (3 * price).div_ceil(capacity) as usize,
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn wreck_whose_route_passes_a_recent_allied_loss_is_not_salvaged() {
+    let sent = |warning: bool| {
+        let mut scenario = field();
+        scenario.units.push(harvester(0, 5, 11));
+        // A Kestrel has seen the wreck, out beyond home.
+        scenario.units.push(unit(0, UnitKind::Kestrel, 23, 10));
+        let state = wrecked(&scenario.build().unwrap(), &[(24, 11, 300)]);
+        // Eight tiles short of the wreck, on its way home.
+        let state = if warning {
+            warned(&state, 16, 11)
+        } else {
+            state
+        };
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        harvests(&commands)
+            .iter()
+            .any(|(source, _)| *source == TilePos::new(24, 11))
+    };
+    assert!(sent(false), "premise: the wreck draws the Harvester");
+    assert!(!sent(true));
+}
