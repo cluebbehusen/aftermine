@@ -28,7 +28,7 @@ pub use message::{
     SeatHolder, SeatNotice, SeatState, same_build,
 };
 pub use name::{NameError, PlayerName};
-pub use start::{StartBarrier, StartFailed};
+pub use start::{StartBarrier, StartContent, StartFailed};
 pub use tcp::{Closed, Connection, Listener, WRITE_TIMEOUT};
 pub use token::{InstallId, Token};
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};

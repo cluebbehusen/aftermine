@@ -841,6 +841,38 @@ fn a_replaced_seat_drops_its_orders_and_every_client_hears_who_took_it() {
 }
 
 #[test]
+fn a_resumed_session_seals_the_saved_orders_first_from_the_saved_tick() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0))
+        .resumed(500, vec![from(A, stop(1)), from(HOST, stop(2))]);
+    host.submit(stop(3));
+    assert_eq!(host.tick(), 500);
+    let batch = step(&mut host, secs(0), 7).unwrap();
+    let mut sealed = batch.clone();
+    sealed.sort_by_key(|order| order.player);
+    assert_eq!(
+        sealed,
+        vec![from(HOST, stop(2)), from(HOST, stop(3)), from(A, stop(1))]
+    );
+    let lines = sent_lines(&mut host);
+    assert!(lines.iter().any(|(seat, line)| *seat == A
+        && matches!(
+            HostMessage::decode(line),
+            Ok(HostMessage::Batch { tick: 500, .. })
+        )));
+    // The clients start acknowledged through the saved tick.
+    host.receive(A, &ack_line(501, 7), secs(0));
+    host.receive(B, &ack_line(501, 7), secs(0));
+    assert_eq!(host.poll(secs(0)), Vec::new());
+    assert!(host.caught_up());
+}
+
+#[test]
+#[should_panic(expected = "a pending order must come from a human seat")]
+fn a_resumed_session_refuses_an_order_from_a_bot_seat() {
+    let _ = HostSession::new(HOST, &[A], secs(0)).resumed(5, vec![from(B, stop(1))]);
+}
+
+#[test]
 fn a_rejoin_purges_lines_queued_for_the_old_connection() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     let batch = host.seal(secs(0)).unwrap();

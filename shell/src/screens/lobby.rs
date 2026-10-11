@@ -588,6 +588,9 @@ fn draw_room(
                     stance: *stance,
                 },
                 SeatHolder::Open => CardController::Open,
+                SeatHolder::Reserved { name } => CardController::Reserved {
+                    name: name.as_str(),
+                },
             }
         };
         let team = seats[seat].team.map_or_else(

@@ -7,9 +7,10 @@ use chassis::rng::Pcg32;
 use oxide_kit::controller::{SeatController, record_events, seat_controllers};
 use oxide_kit::{GameReplay, bot_execution, runner};
 use oxide_net::{
-    ClientEnd, ClientSession, Connection, Desk, DeskEvent, HostEvent, HostSession, JoinMessage,
-    Listener, LobbyMessage, PROGRESS_TIMEOUT, PlayerName, SILENCE_TIMEOUT, SeatNotice, SeatState,
-    StartBarrier, Token, Visit, VisitEvent, reports_hash, same_build,
+    ClientEnd, ClientSession, Connection, Desk, DeskEvent, Guest, GuestEvent, HostEvent,
+    HostSession, InstallId, JoinMessage, Listener, LobbyMessage, PROGRESS_TIMEOUT, PlayerName,
+    RoomSeat, SILENCE_TIMEOUT, SeatHolder, SeatNotice, SeatState, StartBarrier, StartContent,
+    Token, Visit, VisitEvent, reports_hash, same_build,
 };
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State, Tick, TickReport};
@@ -636,6 +637,124 @@ fn a_lost_client_rejoins_from_a_snapshot_and_stays_in_sync() {
     assert!(reported.iter().all(|report| host.hashes.contains(report)));
 }
 
+/// A guest already in the room on `seat` of `scenario`, its greeting sent.
+fn seated_guest(scenario: &Scenario, seat: PlayerId, now: Duration) -> Guest {
+    let name = |seat: u8| PlayerName::new(&format!("Player {seat}")).unwrap();
+    let mut guest = Guest::new(
+        "test",
+        name(seat.0),
+        InstallId::new(u128::from(seat.0)),
+        now,
+    );
+    let seats = scenario
+        .players
+        .iter()
+        .zip(0..)
+        .map(|(player, index)| RoomSeat {
+            holder: if player.bot {
+                SeatHolder::Bot {
+                    difficulty: BotDifficulty::Standard,
+                    stance: BotStance::Balanced,
+                }
+            } else if PlayerId(index) == HOST {
+                SeatHolder::Host { name: name(index) }
+            } else {
+                SeatHolder::Player { name: name(index) }
+            },
+            team: None,
+        })
+        .collect();
+    for message in [
+        LobbyMessage::hello("test"),
+        LobbyMessage::Map {
+            scenario: Box::new(scenario.clone()),
+        },
+        LobbyMessage::Room { seats, seat },
+    ] {
+        guest.receive(&message.encode(), now).unwrap();
+    }
+    guest.take_outgoing();
+    guest
+}
+
+#[test]
+fn a_resumed_match_starts_from_its_snapshot_and_stays_in_sync() {
+    let mut net = Net::new([(40, 20), (40, 20)]);
+    net.run_until(Duration::from_secs(3));
+    net.drain();
+    net.assert_in_sync(&CLIENTS);
+
+    // The saved match: the host's world as JSON, and an order it had not
+    // sealed yet.
+    let now = net.now;
+    let scenario = scenario();
+    let state = net.host.machine.state.clone();
+    let tick = state.current_tick();
+    let snapshot = serde_json::to_vec(&state).unwrap();
+    let pending = [PlayerCommand {
+        player: CLIENTS[0],
+        command: Command::Stop { units: Vec::new() },
+    }];
+    let tokens: Vec<(PlayerId, Token)> = CLIENTS
+        .iter()
+        .map(|&seat| (seat, Token::new(0x50 + u128::from(seat.0))))
+        .collect();
+    let content = StartContent::Resume {
+        scenario: &scenario,
+        tick,
+        snapshot: &snapshot,
+        pending: &pending,
+    };
+    let mut barrier = StartBarrier::new(content, HOST, &tokens, state.hash(), 1, now);
+    let mut guests: Vec<Guest> = CLIENTS
+        .iter()
+        .map(|&seat| seated_guest(&scenario, seat, now))
+        .collect();
+    for (seat, line) in barrier.take_outgoing() {
+        let guest = &mut guests[usize::from(seat.0) - 1];
+        if let Some(GuestEvent::Resume {
+            seat: restored_seat,
+            tick: at,
+            bytes,
+        }) = guest.receive(&line, now).unwrap()
+        {
+            assert_eq!((restored_seat, at), (seat, tick));
+            let restored: State = serde_json::from_slice(&bytes).unwrap();
+            guest.ready(restored.hash());
+            net.client(seat).machine.state = restored;
+        }
+    }
+    for (guest, &seat) in guests.iter_mut().zip(&CLIENTS) {
+        for line in guest.take_outgoing() {
+            barrier.receive(seat, &line).unwrap();
+        }
+    }
+    net.host.session = barrier.poll(now).unwrap().expect("every client is ready");
+    for (seat, line) in barrier.take_outgoing() {
+        let go = guests[usize::from(seat.0) - 1].receive(&line, now);
+        assert!(matches!(go, Ok(Some(GuestEvent::Go { .. }))), "{go:?}");
+    }
+    for (stream, &seat) in (10_u64..).step_by(2).zip(&CLIENTS) {
+        let client = net.client(seat);
+        client.session = ClientSession::at(tick, now);
+        client.up = Link::new(ms(40), 20, stream);
+        client.down = Link::new(ms(40), 20, stream + 1);
+    }
+
+    net.run_until(now + Duration::from_secs(5));
+    net.drain();
+    assert!(net.host.events.is_empty(), "{:?}", net.host.events);
+    assert!(net.host.machine.state.current_tick() > tick + 40);
+    net.assert_in_sync(&CLIENTS);
+    assert!(
+        net.host
+            .machine
+            .commands()
+            .contains(&(tick, pending[0].clone())),
+        "the unsealed order seals on the saved tick"
+    );
+}
+
 #[test]
 fn a_diverged_client_halts_every_machine_at_the_next_report() {
     let mut net = Net::new([(40, 20), (40, 20)]);
@@ -744,7 +863,7 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
         .map(|&seat| (seat, oxide_net::Token::new(u128::from(seat.0))))
         .collect();
     let mut barrier = StartBarrier::new(
-        &scenario,
+        StartContent::Fresh(&scenario),
         HOST,
         &tokens,
         host.state.hash(),

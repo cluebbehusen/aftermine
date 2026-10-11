@@ -7,8 +7,9 @@ use std::time::Duration;
 /// [`crate::MAX_LINE_BYTES`].
 pub const PART_BYTES: usize = 256 * 1024;
 
-/// The longest snapshot a client accepts.
-pub const MAX_SNAPSHOT_BYTES: u64 = 32 << 20;
+/// The longest snapshot a client accepts: many times a real match's, and
+/// small enough that a start sending it to every client stays bounded.
+pub const MAX_SNAPSHOT_BYTES: u64 = 8 << 20;
 
 /// The slowest wire a snapshot is given time to cross, in bytes of lines a
 /// second. Hex doubles a snapshot, so this allows about 4 Mbit/s of it.

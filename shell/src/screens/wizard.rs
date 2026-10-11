@@ -997,6 +997,8 @@ pub(crate) enum CardController<'a> {
     },
     /// A chair waiting for a LAN player.
     Open,
+    /// A chair waiting for the player who held it in a saved match.
+    Reserved { name: &'a str },
     /// A LAN player, and whether they host.
     Person { name: &'a str, host: bool },
 }
@@ -1096,20 +1098,24 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
             TEXT_SECONDARY,
         );
     }
-    let host_label;
+    let person_label;
     let (bot_labels, waiting) = match view.controller {
         CardController::Own => (["", ""], false),
         CardController::Bot { difficulty, stance } => {
             ([difficulty_name(difficulty), stance_name(stance)], false)
         }
         CardController::Open => (["Open", ""], true),
+        CardController::Reserved { name } => {
+            person_label = format!("Was {name}");
+            ([person_label.as_str(), ""], true)
+        }
         CardController::Person { name, host } => {
-            host_label = if host {
+            person_label = if host {
                 format!("{name} (host)")
             } else {
                 name.to_owned()
             };
-            ([host_label.as_str(), ""], false)
+            ([person_label.as_str(), ""], false)
         }
     };
     for (cell, control, label) in [
@@ -2234,8 +2240,13 @@ impl Wizard {
             crate::render::viewport(),
         )?;
         let seated = lan.seated();
-        lan.lobby
-            .start(scenario, host, &seated, game.state.hash(), now);
+        lan.lobby.start(
+            oxide_net::StartContent::Fresh(scenario),
+            host,
+            &seated,
+            game.state.hash(),
+            now,
+        );
         lan.starting = Some(LanStart {
             game: Box::new(game),
             seated,

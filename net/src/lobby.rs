@@ -8,11 +8,12 @@
 use crate::host::HostSession;
 use crate::message::{GoneReason, JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build};
 use crate::name::PlayerName;
-use crate::start::{StartBarrier, StartFailed};
+use crate::snapshot::Assembler;
+use crate::start::{StartBarrier, StartContent, StartFailed};
 use crate::token::InstallId;
 use crate::token::Token;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, SILENCE_TIMEOUT};
-use oxide_sim::{PlayerId, Scenario};
+use oxide_sim::{PlayerId, Scenario, Tick};
 use std::time::Duration;
 
 /// A connection the host's lobby knows, numbered in arrival order.
@@ -317,7 +318,17 @@ impl Gathering {
                 Stage::Greeting | Stage::Introducing => {
                     now.saturating_sub(member.connected) >= GREETING_TIMEOUT
                 }
-                Stage::Joined(_) => now.saturating_sub(member.heard) >= SILENCE_TIMEOUT,
+                // A seated member may go quiet while it builds or restores
+                // the start; the start's own deadline covers it.
+                Stage::Joined(_) => {
+                    now.saturating_sub(member.heard) >= SILENCE_TIMEOUT
+                        && !self.starting.as_ref().is_some_and(|starting| {
+                            starting
+                                .seating
+                                .iter()
+                                .any(|&(seated, _)| seated == member.id)
+                        })
+                }
             };
             if expired {
                 let reason = if matches!(member.stage, Stage::Joined(_)) {
@@ -347,14 +358,14 @@ impl Gathering {
         std::mem::take(&mut self.outgoing)
     }
 
-    /// Starts `scenario` with the host on `host` and each joined member of
+    /// Starts `content` with the host on `host` and each joined member of
     /// `seating` on its seat; together they must hold exactly the
     /// scenario's human seats. `host_hash` is the host's `State::hash` at
-    /// tick zero. Introductions that complete during the start wait for
-    /// its outcome.
+    /// the starting tick. Introductions that complete during the start wait
+    /// for its outcome.
     pub fn start(
         &mut self,
-        scenario: &Scenario,
+        content: StartContent<'_>,
         host: PlayerId,
         seating: &[(MemberId, PlayerId)],
         host_hash: u64,
@@ -368,7 +379,7 @@ impl Gathering {
         self.attempt += 1;
         let clients: Vec<(PlayerId, Token)> =
             seating.iter().map(|&(_, seat)| (seat, token())).collect();
-        let mut barrier = StartBarrier::new(scenario, host, &clients, host_hash, self.attempt, now);
+        let mut barrier = StartBarrier::new(content, host, &clients, host_hash, self.attempt, now);
         let lines = barrier.take_outgoing();
         let starting = Starting {
             barrier,
@@ -515,8 +526,18 @@ pub enum GuestEvent {
         /// The match every machine builds.
         scenario: Box<Scenario>,
     },
-    /// The match begins at tick zero; lines after this one belong to the
-    /// session. `token` takes the seat back if the connection is lost.
+    /// Restore this saved match on `seat`, then call [`Guest::ready`] with
+    /// the restored world's hash.
+    Resume {
+        /// The seat this player plays.
+        seat: PlayerId,
+        /// The tick the saved world is at; the session starts there.
+        tick: Tick,
+        /// The encoded snapshot.
+        bytes: Vec<u8>,
+    },
+    /// The match begins; lines after this one belong to the session.
+    /// `token` takes the seat back if the connection is lost.
     Go {
         /// This player's rejoin token.
         token: Token,
@@ -547,6 +568,9 @@ pub struct Guest {
     spoke: bool,
     map: Option<Box<Scenario>>,
     room: Option<(Vec<RoomSeat>, PlayerId)>,
+    /// A resumed match's snapshot arriving: the seat, its tick, and the
+    /// parts so far.
+    incoming: Option<(PlayerId, Tick, Assembler)>,
     outgoing: Vec<String>,
 }
 
@@ -564,6 +588,7 @@ impl Guest {
             spoke: true,
             map: None,
             room: None,
+            incoming: None,
             outgoing: vec![JoinMessage::hello(commit).encode()],
         }
     }
@@ -626,6 +651,7 @@ impl Guest {
             LobbyMessage::Room { seats, seat } if self.fits(&seats, seat) => {
                 self.room = Some((seats, seat));
                 self.stage = GuestStage::Waiting;
+                self.incoming = None;
                 Ok(Some(GuestEvent::Room))
             }
             LobbyMessage::Start {
@@ -638,6 +664,29 @@ impl Guest {
                     ready: false,
                 };
                 Ok(Some(GuestEvent::Start { seat, scenario }))
+            }
+            LobbyMessage::Resume {
+                seat,
+                tick,
+                bytes,
+                parts,
+                attempt,
+            } if self.room.is_some() => {
+                let assembler = Assembler::new(bytes, parts).ok_or(GuestEnd::Protocol)?;
+                self.stage = GuestStage::Starting {
+                    attempt,
+                    ready: false,
+                };
+                self.incoming = Some((seat, tick, assembler));
+                Ok(None)
+            }
+            LobbyMessage::Part { data } => {
+                let (_, _, assembler) = self.incoming.as_mut().ok_or(GuestEnd::Protocol)?;
+                let Some(bytes) = assembler.push(&data).map_err(|_| GuestEnd::Protocol)? else {
+                    return Ok(None);
+                };
+                let (seat, tick, _) = self.incoming.take().expect("checked above");
+                Ok(Some(GuestEvent::Resume { seat, tick, bytes }))
             }
             LobbyMessage::Go { token }
                 if matches!(self.stage, GuestStage::Starting { ready: true, .. }) =>
@@ -662,8 +711,8 @@ impl Guest {
             )
     }
 
-    /// Reports the started match built, its world at tick zero hashing to
-    /// `hash`.
+    /// Reports the started match built or restored, its world at the
+    /// starting tick hashing to `hash`.
     pub fn ready(&mut self, hash: u64) {
         let GuestStage::Starting { attempt, ready } = &mut self.stage else {
             panic!("no start to be ready for");
