@@ -8,8 +8,8 @@
 //!
 //! Fog is both a presentation surface and the knowledge boundary for built-in
 //! opponents. Fog-honest views expose current sight, explored terrain, ghosts,
-//! remembered salvage, and anonymous radar contacts; targeted attack commands
-//! still require current team sight when the simulation validates them.
+//! remembered salvage, and anonymous radar contacts. A targeted attack needs
+//! current team sight, a remembered building, or a live contact track.
 
 use crate::ids::PlayerId;
 use crate::state::State;
