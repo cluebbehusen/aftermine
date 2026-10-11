@@ -96,12 +96,19 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
 fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
     crate::render::set_viewport(1280.0, 800.0);
     let unreachable = "127.0.0.1:1";
-    let mut screen =
-        LobbyScreen::joining(Lobby::Client(ClientLobby::new(unreachable, "abc")), "Alex");
+    let mut screen = LobbyScreen::waiting(Lobby::Client(ClientLobby::new(
+        unreachable,
+        "abc",
+        PlayerName::new("Alex").unwrap(),
+    )));
     assert_eq!(screen.keyboard(), None);
     assert_eq!(screen.mode_name(), "lobby");
     assert!(screen.subtitle().starts_with("Connecting to"));
-    assert_eq!(screen.menu.view().items, vec!["Cancel"]);
+    assert_eq!(
+        screen.menu.view().items,
+        vec!["Cancel"],
+        "no roster before the room arrives"
+    );
     assert_eq!(press(&mut screen, Key::Escape), Out::Cancel);
     assert_eq!(press(&mut screen, Key::Enter), Out::Cancel);
 

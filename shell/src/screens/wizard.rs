@@ -163,6 +163,8 @@ pub struct NewMatchDraft {
     /// map to a 2-seat map must not leave a stale seat 7. The human's
     /// own row is inert at launch.
     pub seats: Vec<SeatPlan>,
+    /// The player's saved name, which a hosted lobby shows for the host.
+    pub player_name: Option<oxide_net::PlayerName>,
 }
 
 impl NewMatchDraft {

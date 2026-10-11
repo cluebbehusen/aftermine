@@ -228,6 +228,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             game.scenario.clone(),
             game.presentation.human,
             &commit,
+            config
+                .player_name
+                .as_deref()
+                .and_then(|name| oxide_net::PlayerName::new(name).ok()),
         )?;
         Screen::Lobby {
             screen: Box::new(LobbyScreen::waiting(crate::netplay::Lobby::Host(Box::new(
@@ -236,13 +240,21 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             back: Box::new(Screen::Home(HomeScreen::open())),
         }
     } else if let Some(typed) = &args.join {
-        let name = config.player_name.as_deref().unwrap_or_default();
-        let screen = match crate::netplay::parse_join_address(typed) {
-            Ok(address) => LobbyScreen::joining(
-                crate::netplay::Lobby::Client(crate::netplay::ClientLobby::new(&address, &commit)),
-                name,
+        let name = config
+            .player_name
+            .as_deref()
+            .and_then(|name| oxide_net::PlayerName::new(name).ok());
+        // Without a saved name the Join form asks for one first.
+        let screen = match (crate::netplay::parse_join_address(typed), name) {
+            (Ok(address), Some(name)) => LobbyScreen::waiting(crate::netplay::Lobby::Client(
+                crate::netplay::ClientLobby::new(&address, &commit, name),
+            )),
+            (Ok(_), None) => LobbyScreen::join(None, typed),
+            (Err(reason), name) => LobbyScreen::failed(
+                name.as_ref().map_or("", oxide_net::PlayerName::as_str),
+                typed,
+                reason.to_owned(),
             ),
-            Err(reason) => LobbyScreen::failed(name, typed, reason.to_owned()),
         };
         Screen::Lobby {
             screen: Box::new(screen),

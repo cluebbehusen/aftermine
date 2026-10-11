@@ -46,16 +46,19 @@ completion rules belong to the simulation, so headless and native sessions
 reproduce the same open-ended scene.
 
 Match setup with a Remote seat, Home's Join Match, `--host`, and `--join` open a
-LAN lobby (`netplay::Lobby`) that exchanges `oxide-net` Hellos, fills the
-scenario's human seats other than the host's in join order, and passes the start
-barrier before installing the match. In-game hosts listen on
-`oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App` then
-owns the match's `netplay::Link` and pumps it once per loop pass on every screen
-that holds the match, so menus sit over a running match, and a match decided
-under the pause menu opens its report. Leaving the match drops the link, except
-that a host leaving a decided match first finishes its connections so lagging
-clients still receive the deciding batches. The host paces its ticks at 1x,
-seals each tick's human orders, appends bot commands, and runs the published
+LAN lobby (`netplay::Lobby`) that runs the `oxide-net` lobby protocol over its
+sockets. The host's `seating::Seating` puts each named joiner on the first open
+seat in the setup screen's order, or in place of a bot when none is open, and
+frees a leaver's seat; every machine sees the roster, and the host starts the
+match through the start barrier once every seat has someone to play it. Players'
+names replace their seats' names in the started scenario. In-game hosts listen
+on `oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App`
+then owns the match's `netplay::Link` and pumps it once per loop pass on every
+screen that holds the match, so menus sit over a running match, and a match
+decided under the pause menu opens its report. Leaving the match drops the link,
+except that a host leaving a decided match first finishes its connections so
+lagging clients still receive the deciding batches. The host paces its ticks at
+1x, seals each tick's human orders, appends bot commands, and runs the published
 batch; a client runs batches as they arrive with a small buffer and catches up
 when behind. Once the match is decided, the host closes the connections only
 after every client has acknowledged the final batch, so late hash reports are
