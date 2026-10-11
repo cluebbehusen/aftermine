@@ -252,12 +252,20 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
     assert_mode(&mut client, "home", "Replays > Esc")?;
 
     activate_labeled(&mut client, "join match")?;
-    assert_mode(&mut client, "lobby", "Home > Join Match")?;
+    assert_mode(&mut client, "join_match", "Home > Join Match")?;
+    // A fresh settings file has no name, so the name field takes the text.
     inject(&mut client, RawEvent::Text { ch: '7' })?;
-    let field = ui(&mut client)?.items;
+    let fields = ui(&mut client)?.items;
     assert!(
-        field.len() == 1 && field[0].ends_with("7_"),
-        "the address field takes text: {field:?}"
+        fields.len() == 2 && fields[0].ends_with("7_"),
+        "the name field takes text: {fields:?}"
+    );
+    press_key(&mut client, Key::Tab)?;
+    inject(&mut client, RawEvent::Text { ch: '7' })?;
+    let fields = ui(&mut client)?.items;
+    assert!(
+        fields[1].ends_with("7_"),
+        "Tab moves to the address field: {fields:?}"
     );
     press_key(&mut client, Key::Escape)?;
     assert_mode(&mut client, "home", "Join Match > Esc")?;

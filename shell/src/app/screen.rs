@@ -14,6 +14,7 @@ use crate::screens::results::ResultsScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
 use crate::screens::wizard::Wizard;
+use crate::text_field::Keyboard;
 
 /// Which screen owns input this frame, holding that screen's state.
 /// Match choices live in the [`crate::screens::wizard::NewMatchDraft`] on
@@ -279,14 +280,14 @@ impl Screen {
         }
     }
 
-    /// Whether a text field owns input: the save-name field or the host
-    /// address.
-    pub(super) fn text_entry(&self) -> bool {
+    /// The keyboard a text field on screen asks for: the save-name field,
+    /// the player-name field, or the Join form.
+    pub(super) fn keyboard(&self) -> Option<Keyboard> {
         match self {
-            Self::Pause(pause) => pause.naming(),
-            Self::Lobby { screen, .. } => screen.text_entry(),
+            Self::Pause(pause) => pause.keyboard(),
+            Self::Lobby { screen, .. } => screen.keyboard(),
+            Self::Settings { screen, .. } => screen.keyboard(),
             Self::Home(_)
-            | Self::Settings { .. }
             | Self::Codex { .. }
             | Self::Wizard(_)
             | Self::Playing
@@ -294,8 +295,13 @@ impl Screen {
             | Self::Replays(_)
             | Self::Results(_)
             | Self::FinalMap(_)
-            | Self::Busy(_) => false,
+            | Self::Busy(_) => None,
         }
+    }
+
+    /// Whether a text field owns input.
+    pub(super) fn text_entry(&self) -> bool {
+        self.keyboard().is_some()
     }
 
     /// Whether the text field on screen asked to bring back the on-screen
@@ -304,8 +310,8 @@ impl Screen {
         match self {
             Self::Pause(pause) => pause.take_keyboard_request(),
             Self::Lobby { screen, .. } => screen.take_keyboard_request(),
+            Self::Settings { screen, .. } => screen.take_keyboard_request(),
             Self::Home(_)
-            | Self::Settings { .. }
             | Self::Codex { .. }
             | Self::Wizard(_)
             | Self::Playing
@@ -348,7 +354,7 @@ impl Screen {
             Self::FinalMap(_) => "final_map",
             Self::Results(_) => "results",
             Self::Replays(_) => "replays",
-            Self::Lobby { .. } => "lobby",
+            Self::Lobby { screen, .. } => screen.mode_name(),
             Self::Busy(busy) => busy.mode(),
             Self::Pause(pause) => pause.mode_name(),
         }

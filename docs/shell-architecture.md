@@ -335,9 +335,13 @@ live cell, and paging stops at the ends. Menu rows stand for typed values
 (`Menu<R>`), so a screen never maps a row index back to its meaning. Chrome
 colors, stroke weights and the eight type sizes come from `theme`; world colors
 stay with the renderer. The read-only viewers pan and pinch through
-`ViewerTouch`, within the shared `camera::controls::ViewerHands`. The save-name
-field has Save and Cancel; on touch-only builds the frame loop raises and hides
-the on-screen keyboard to follow it.
+`ViewerTouch`, within the shared `camera::controls::ViewerHands`. Text entry
+(the save name, the Settings name, and the Join form's name and host address) is
+a `text_field::Form`: labeled fields in one row above Cancel and a confirm
+button, each filtering what it accepts and checking its value before a commit.
+On touch-only builds the frame loop raises and hides the on-screen keyboard to
+follow the focused field and asks for the numbers-and-punctuation layout on the
+address.
 
 Hints, toasts, card descriptions, and the tutorial say tap or click for the last
 pointer and name keys only once a hardware key has been pressed; copy that mixes

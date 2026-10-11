@@ -121,8 +121,8 @@ struct App {
     /// Presented frames in a row spent in live play; the suspension
     /// pause reads it to tell a stalled match from a heavy transition.
     live_streak: u8,
-    /// Whether this app last asked for the on-screen keyboard.
-    soft_keyboard: bool,
+    /// The on-screen keyboard this app last asked for, if any.
+    soft_keyboard: Option<crate::text_field::Keyboard>,
     /// The running LAN match's link, pumped every frame while a screen
     /// holds the match, so menus sit over a running match.
     net: Option<crate::netplay::Link>,
@@ -235,11 +235,17 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             )))),
             back: Box::new(Screen::Home(HomeScreen::open())),
         }
-    } else if let Some(address) = &args.join {
-        let address = crate::netplay::with_default_port(address);
-        let lobby = crate::netplay::ClientLobby::new(&address, &commit);
+    } else if let Some(typed) = &args.join {
+        let name = config.player_name.as_deref().unwrap_or_default();
+        let screen = match crate::netplay::parse_join_address(typed) {
+            Ok(address) => LobbyScreen::joining(
+                crate::netplay::Lobby::Client(crate::netplay::ClientLobby::new(&address, &commit)),
+                name,
+            ),
+            Err(reason) => LobbyScreen::failed(name, typed, reason.to_owned()),
+        };
         Screen::Lobby {
-            screen: Box::new(LobbyScreen::waiting(crate::netplay::Lobby::Client(lobby))),
+            screen: Box::new(screen),
             back: Box::new(Screen::Home(HomeScreen::open())),
         }
     } else if let Some(path) = &args.watch {
@@ -311,7 +317,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         catalog_delete: None,
         performance: crate::performance::Performance::default(),
         live_streak: 0,
-        soft_keyboard: false,
+        soft_keyboard: None,
         net: None,
         lingering: None,
         clock: std::time::Instant::now(),
@@ -523,12 +529,20 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
 
         // A touch-only player types through the on-screen keyboard, which
-        // follows the name field: every way out of naming hides it, and a
-        // tap on the field brings back one the player dismissed.
+        // follows the focused text field: every way out of a field hides
+        // it, its layout follows the field's kind, and a tap on a field
+        // brings back one the player dismissed.
         let refocus = screen.take_keyboard_request();
-        let wanted = screen.text_entry();
-        if crate::platform::TOUCH_ONLY && (wanted != app.soft_keyboard || (wanted && refocus)) {
-            macroquad::miniquad::window::show_keyboard(wanted);
+        let wanted = screen.keyboard();
+        if crate::platform::TOUCH_ONLY {
+            if let Some(kind) = wanted
+                && wanted != app.soft_keyboard
+            {
+                macroquad::miniquad::window::set_keyboard_type(kind.native());
+            }
+            if wanted.is_some() != app.soft_keyboard.is_some() || (wanted.is_some() && refocus) {
+                macroquad::miniquad::window::show_keyboard(wanted.is_some());
+            }
             app.soft_keyboard = wanted;
         }
         ui_view = ui_view::capture_ui(&screen, &app);

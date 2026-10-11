@@ -43,6 +43,7 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Oxide connects to other players on your network for LAN matches.</string>
     <key>CFBundleIconFile</key><string>oxide.icns</string>
 </dict>
 </plist>

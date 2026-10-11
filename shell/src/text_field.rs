@@ -1,119 +1,227 @@
-//! A one-line text field for the menus: a title, the field, and Cancel
-//! plus a confirm button.
+//! Text entry for the menus: a title, a row of one or more fields, and
+//! Cancel plus a confirm button.
 
 use crate::game::SoundKind;
 use crate::menu::Menu;
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::theme::{
+    BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_CARD, SURFACE_PANEL, Stroke, TEXT_ACCENT, TEXT_DANGER,
+    TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
+};
 use macroquad::prelude::{
     Color, Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
 };
 use oxide_protocol::{Key, RawEvent};
 
-/// The field's pointer targets.
+/// The on-screen keyboard a field asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keyboard {
+    /// The standard text keyboard.
+    Text,
+    /// Numbers and punctuation first, for host addresses.
+    Address,
+}
+
+impl Keyboard {
+    /// The platform layout behind this keyboard.
+    pub fn native(self) -> macroquad::miniquad::KeyboardType {
+        match self {
+            Keyboard::Text => macroquad::miniquad::KeyboardType::Default,
+            Keyboard::Address => macroquad::miniquad::KeyboardType::NumbersAndPunctuation,
+        }
+    }
+}
+
+/// One field: its value and what it takes.
+pub struct Field {
+    label: &'static str,
+    placeholder: &'static str,
+    value: String,
+    max: usize,
+    accepts: fn(char) -> bool,
+    validate: fn(&str) -> Result<(), &'static str>,
+    keyboard: Keyboard,
+    /// The field's share of the row's width.
+    weight: f32,
+}
+
+/// The default check: anything but blank.
+fn not_blank(value: &str) -> Result<(), &'static str> {
+    if value.is_empty() {
+        Err("type something first")
+    } else {
+        Ok(())
+    }
+}
+
+impl Field {
+    /// An unlabeled field holding at most `max` characters that `accepts`
+    /// takes, prefilled with the ones `value` has.
+    pub fn new(value: &str, max: usize, accepts: fn(char) -> bool) -> Self {
+        Self {
+            label: "",
+            placeholder: "",
+            value: value.chars().filter(|&ch| accepts(ch)).take(max).collect(),
+            max,
+            accepts,
+            validate: not_blank,
+            keyboard: Keyboard::Text,
+            weight: 1.0,
+        }
+    }
+
+    /// Names the field and says what it expects while empty.
+    pub fn labeled(mut self, label: &'static str, placeholder: &'static str) -> Self {
+        self.label = label;
+        self.placeholder = placeholder;
+        self
+    }
+
+    /// Replaces the not-blank check; `validate` sees the trimmed value.
+    pub fn validated(mut self, validate: fn(&str) -> Result<(), &'static str>) -> Self {
+        self.validate = validate;
+        self
+    }
+
+    /// Asks for `keyboard` while the field has focus.
+    pub fn keyboard(mut self, keyboard: Keyboard) -> Self {
+        self.keyboard = keyboard;
+        self
+    }
+
+    /// Takes `weight` shares of the row's width.
+    pub fn weight(mut self, weight: f32) -> Self {
+        self.weight = weight;
+        self
+    }
+}
+
+/// The form's pointer targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Zone {
-    Field,
+    Field(usize),
     Confirm,
     Cancel,
 }
 
-/// Where the field's face sits. It hugs the top of the window: an
+/// Where the form's face sits. It hugs the top of the window: an
 /// on-screen keyboard covers roughly the bottom half in landscape, and
 /// the platform does not resize the canvas around it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub title_y: f32,
     pub hint_y: f32,
-    pub field: Rect,
+    /// The labels' baseline, when the fields have labels.
+    pub label_y: f32,
+    pub fields: Vec<Rect>,
     pub cancel: Rect,
     pub confirm: Rect,
 }
 
 impl Layout {
     fn zone_at(&self, p: Vec2) -> Option<Zone> {
-        [
-            (self.field, Zone::Field),
-            (self.confirm, Zone::Confirm),
-            (self.cancel, Zone::Cancel),
-        ]
-        .into_iter()
-        .find(|(rect, _)| rect.contains(p))
-        .map(|(_, zone)| zone)
+        if let Some(index) = self.fields.iter().position(|rect| rect.contains(p)) {
+            return Some(Zone::Field(index));
+        }
+        [(self.confirm, Zone::Confirm), (self.cancel, Zone::Cancel)]
+            .into_iter()
+            .find(|(rect, _)| rect.contains(p))
+            .map(|(_, zone)| zone)
     }
 }
 
-pub fn layout(view: Vec2, s: f32) -> Layout {
-    let width = (420.0 * s).min(view.x - 32.0 * s);
-    let x = (view.x - width) * 0.5;
-    let field = Rect::new(x, 92.0 * s, width, crate::theme::MIN_TOUCH_TARGET * s);
+/// Lays out fields sharing one row by `weights`, with room above them for
+/// labels when `labeled`, and the buttons beneath.
+pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool) -> Layout {
     let gap = 12.0 * s;
-    let button_w = (width - gap) * 0.5;
-    let buttons_y = field.y + field.h + gap;
+    let height = MIN_TOUCH_TARGET * s;
+    let row_w = if weights.len() > 1 { 640.0 } else { 420.0 } * s;
+    let width = row_w.min(view.x - 32.0 * s);
+    let label_h = if labeled { 24.0 * s } else { 0.0 };
+    let top = 92.0 * s;
+    let field_y = top + label_h;
+    let room = width - gap * weights.len().saturating_sub(1) as f32;
+    let total: f32 = weights.iter().sum();
+    let mut x = (view.x - width) * 0.5;
+    let fields = weights
+        .iter()
+        .map(|weight| {
+            let w = room * weight / total;
+            let rect = Rect::new(x, field_y, w, height);
+            x += w + gap;
+            rect
+        })
+        .collect();
+    let buttons_w = (420.0 * s).min(width);
+    let button_w = (buttons_w - gap) * 0.5;
+    let buttons_x = (view.x - buttons_w) * 0.5;
+    let buttons_y = field_y + height + gap;
     Layout {
         title_y: 56.0 * s,
         hint_y: 80.0 * s,
-        field,
-        cancel: Rect::new(x, buttons_y, button_w, crate::theme::MIN_TOUCH_TARGET * s),
-        confirm: Rect::new(
-            x + button_w + gap,
-            buttons_y,
-            button_w,
-            crate::theme::MIN_TOUCH_TARGET * s,
-        ),
+        label_y: top + label_h * 0.7,
+        fields,
+        cancel: Rect::new(buttons_x, buttons_y, button_w, height),
+        confirm: Rect::new(buttons_x + button_w + gap, buttons_y, button_w, height),
     }
 }
 
-/// What a frame did with the field.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a frame did with the form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edit {
     /// Still editing.
     Stay,
-    /// Enter or the confirm button, with the trimmed, non-empty value.
-    Commit(String),
+    /// Enter or the confirm button with every field valid; read them with
+    /// [`Form::value`].
+    Commit,
     /// Escape or Cancel.
     Cancel,
 }
 
-/// The field: its value and the presses on its buttons.
-pub struct TextField {
+/// The form: its fields, which one has focus, and the presses on it.
+pub struct Form {
     title: &'static str,
     confirm: &'static str,
-    value: String,
-    max: usize,
+    fields: Vec<Field>,
+    focus: usize,
+    /// Why the last commit was refused, shown until the next edit.
+    error: Option<&'static str>,
     press: Press<Zone>,
-    /// A tap on the field asked for the on-screen keyboard again (the
+    /// A tap on a field asked for the on-screen keyboard again (the
     /// player may have dismissed it); the frame loop takes this.
     keyboard_request: bool,
 }
 
-impl TextField {
-    /// A field titled `title` whose confirm button reads `confirm`,
-    /// prefilled with `value` and holding at most `max` characters.
-    pub fn new(title: &'static str, confirm: &'static str, value: &str, max: usize) -> Self {
-        // Typing only ever adds printable ASCII; a prefill holds to the
-        // same alphabet (plus the middle dot saves use) so a map name
-        // cannot smuggle glyphs past the ingest filter.
-        let mut value: String = value.chars().take(max).collect();
-        value.retain(|c| c.is_ascii() || c == '\u{b7}');
+impl Form {
+    /// A form titled `title` whose confirm button reads `confirm`, with
+    /// focus on field `focus`.
+    pub fn new(
+        title: &'static str,
+        confirm: &'static str,
+        fields: Vec<Field>,
+        focus: usize,
+    ) -> Self {
+        assert!(!fields.is_empty(), "a form needs a field");
         Self {
             title,
             confirm,
-            value,
-            max,
+            focus: focus.min(fields.len() - 1),
+            fields,
+            error: None,
             press: Press::default(),
             keyboard_request: false,
         }
     }
 
-    /// The field as a one-row menu, for the UI report. The caret is a
-    /// static underscore, never a blink, so reduced motion holds and the
-    /// shots suite stays deterministic.
-    pub fn menu<R: Clone>(&self, value: R) -> Menu<R> {
-        Menu::rows(
-            self.title,
-            [(crate::menu::Label::Text(format!("{}_", self.value)), value)],
-        )
+    /// Field `index`'s value, trimmed.
+    pub fn value(&self, index: usize) -> &str {
+        self.fields[index].value.trim()
+    }
+
+    /// The keyboard the focused field asks for.
+    pub fn keyboard(&self) -> Keyboard {
+        self.fields[self.focus].keyboard
     }
 
     /// Consumes a request to raise the on-screen keyboard again.
@@ -121,112 +229,131 @@ impl TextField {
         std::mem::take(&mut self.keyboard_request)
     }
 
-    /// Applies a frame's events. The field owns the frame: typed
-    /// characters edit, Backspace deletes, Enter or the confirm button
-    /// commits, Escape or Cancel abandons.
+    /// The form's layout in `view` at UI scale `s`.
+    pub fn layout(&self, view: Vec2, s: f32) -> Layout {
+        let weights: Vec<f32> = self.fields.iter().map(|field| field.weight).collect();
+        let labeled = self.fields.iter().any(|field| !field.label.is_empty());
+        layout(view, s, &weights, labeled)
+    }
+
+    /// The fields as menu rows, for the UI report, the focused one
+    /// selected. The caret is a static underscore, never a blink, so
+    /// reduced motion holds and the shots suite stays deterministic.
+    pub fn menu<R: Clone>(&self, row: impl Fn(usize) -> R) -> Menu<R> {
+        let rows = self.fields.iter().enumerate().map(|(index, field)| {
+            let caret = if index == self.focus { "_" } else { "" };
+            let text = if field.label.is_empty() {
+                format!("{}{caret}", field.value)
+            } else {
+                format!("{}: {}{caret}", field.label, field.value)
+            };
+            (crate::menu::Label::Text(text), row(index))
+        });
+        let mut menu = Menu::rows(self.title, rows);
+        menu.select(self.focus);
+        menu
+    }
+
+    /// Applies a frame's events. The form owns the frame: typed characters
+    /// edit the focused field, Backspace deletes, Tab and Down move focus
+    /// on and Up back, a tap focuses a field, Enter advances to the next
+    /// field or commits from the last, the confirm button commits, and
+    /// Escape or Cancel abandons. A commit with an invalid field plays
+    /// Denied, shows why, and focuses that field instead.
     pub fn update(
         &mut self,
         events: &[RawEvent],
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Edit {
-        let layout = layout(crate::render::viewport(), crate::render::ui_scale());
+        let layout = self.layout(crate::render::viewport(), crate::render::ui_scale());
         let mut pressed = None;
         for event in events {
             if let Fed::Activated(zone) = self.press.feed(event, |p, _| layout.zone_at(p)) {
                 pressed = Some(zone);
             }
         }
-        if pressed == Some(Zone::Field) {
+        if let Some(Zone::Field(index)) = pressed {
+            self.focus = index;
             self.keyboard_request = true;
         }
+        let last = self.fields.len() - 1;
+        let mut enter = false;
         for event in events {
             match *event {
-                RawEvent::Text { ch } if self.value.chars().count() < self.max => {
-                    self.value.push(ch);
+                RawEvent::Text { ch } => {
+                    let field = &mut self.fields[self.focus];
+                    if (field.accepts)(ch) && field.value.chars().count() < field.max {
+                        field.value.push(ch);
+                        self.error = None;
+                    }
                 }
                 RawEvent::KeyDown {
                     key: Key::Backspace,
                 } => {
-                    self.value.pop();
+                    self.fields[self.focus].value.pop();
+                    self.error = None;
                 }
+                RawEvent::KeyDown {
+                    key: Key::Tab | Key::Down,
+                } => self.focus = (self.focus + 1) % self.fields.len(),
+                RawEvent::KeyDown { key: Key::Up } => {
+                    self.focus = self.focus.checked_sub(1).unwrap_or(last);
+                }
+                RawEvent::KeyDown { key: Key::Enter } => enter = true,
                 _ => {}
             }
         }
-        let key = |wanted: Key| {
-            events
-                .iter()
-                .any(|e| matches!(e, RawEvent::KeyDown { key } if *key == wanted))
-        };
-        if pressed == Some(Zone::Confirm) || key(Key::Enter) {
-            let value = self.value.trim();
-            if value.is_empty() {
-                sounds.push((SoundKind::Denied, None));
-            } else {
-                return Edit::Commit(value.to_owned());
+        if enter && self.focus < last {
+            self.focus += 1;
+        } else if enter || pressed == Some(Zone::Confirm) {
+            match self.first_invalid() {
+                Some((index, reason)) => {
+                    self.focus = index;
+                    self.error = Some(reason);
+                    sounds.push((SoundKind::Denied, None));
+                }
+                None => return Edit::Commit,
             }
         }
-        if pressed == Some(Zone::Cancel) || key(Key::Escape) {
+        let escaped = events
+            .iter()
+            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
+        if pressed == Some(Zone::Cancel) || escaped {
             self.press.cancel();
             return Edit::Cancel;
         }
         Edit::Stay
     }
 
-    /// Draws the title, `hint` under it in `hint_color`, the field, and
-    /// its buttons. Coaching passes a faded color; a notice such as a
-    /// failure passes a plain one, since warnings never wait.
+    /// The first field that fails its check, and why.
+    fn first_invalid(&self) -> Option<(usize, &'static str)> {
+        self.fields.iter().enumerate().find_map(|(index, field)| {
+            (field.validate)(field.value.trim())
+                .err()
+                .map(|reason| (index, reason))
+        })
+    }
+
+    /// Draws the title, `hint` under it in `hint_color` (or why the last
+    /// commit was refused, in danger red), the fields, and the buttons.
+    /// Coaching passes a faded color; a notice such as a failure passes a
+    /// plain one, since warnings never wait.
     pub fn draw(&self, hint: &str, hint_color: Color, mouse: Vec2) {
         let s = crate::render::ui_scale();
         let view = crate::render::viewport();
-        let layout = layout(view, s);
-        let title_size = crate::theme::Type::Title.at(s);
-        let dims = measure_text(self.title, None, numeric::font_size(title_size), 1.0);
-        draw_text(
-            self.title,
-            (view.x - dims.width) * 0.5,
-            layout.title_y,
-            title_size,
-            crate::theme::TEXT_TITLE,
-        );
-        let hint_size = crate::theme::Type::Label.at(s);
-        let dims = measure_text(hint, None, numeric::font_size(hint_size), 1.0);
-        draw_text(
-            hint,
-            (view.x - dims.width) * 0.5,
-            layout.hint_y,
-            hint_size,
-            hint_color,
-        );
-        let field = layout.field;
-        draw_rectangle(
-            field.x,
-            field.y,
-            field.w,
-            field.h,
-            crate::theme::SURFACE_CARD,
-        );
-        draw_rectangle_lines(
-            field.x,
-            field.y,
-            field.w,
-            field.h,
-            crate::theme::Stroke::Focus.at(s),
-            crate::theme::TEXT_ACCENT,
-        );
-        let text = format!("{}_", self.value);
-        let room = field.w - 24.0 * s;
-        let mut size = crate::theme::Type::Heading.at(s);
-        let width = measure_text(&text, None, numeric::font_size(size), 1.0).width;
-        if width > room {
-            size = (size * room / width).max(10.0);
+        let layout = self.layout(view, s);
+        let centered = |text: &str, y: f32, size: f32, color: Color| {
+            let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+            draw_text(text, (view.x - width) * 0.5, y, size, color);
+        };
+        centered(self.title, layout.title_y, Type::Title.at(s), TEXT_TITLE);
+        match self.error {
+            Some(reason) => centered(reason, layout.hint_y, Type::Label.at(s), TEXT_DANGER),
+            None => centered(hint, layout.hint_y, Type::Label.at(s), hint_color),
         }
-        draw_text(
-            &text,
-            field.x + 12.0 * s,
-            field.y + field.h * 0.66,
-            size,
-            crate::theme::TEXT_PRIMARY,
-        );
+        for (index, (field, rect)) in self.fields.iter().zip(&layout.fields).enumerate() {
+            draw_field(field, *rect, index == self.focus, layout.label_y, s);
+        }
         crate::button::draw(layout.cancel, "CANCEL", layout.cancel.contains(mouse), s);
         crate::button::draw(
             layout.confirm,
@@ -235,6 +362,49 @@ impl TextField {
             s,
         );
     }
+}
+
+/// Draws one field's label, box, and value (or its placeholder while
+/// empty), the caret on the focused field.
+fn draw_field(field: &Field, rect: Rect, focused: bool, label_y: f32, s: f32) {
+    if !field.label.is_empty() {
+        draw_text(
+            field.label.to_uppercase(),
+            rect.x,
+            label_y,
+            Type::Small.at(s),
+            if focused { TEXT_ACCENT } else { TEXT_SECONDARY },
+        );
+    }
+    let (fill, stroke, edge) = if focused {
+        (SURFACE_CARD, Stroke::Focus, TEXT_ACCENT)
+    } else {
+        (SURFACE_PANEL, Stroke::Hairline, BORDER_STRONG)
+    };
+    draw_rectangle(rect.x, rect.y, rect.w, rect.h, fill);
+    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, stroke.at(s), edge);
+    // The focus outline marks where typing goes, so an empty field shows
+    // its placeholder alone rather than a caret glued to it.
+    let (text, color) = if field.value.is_empty() && !field.placeholder.is_empty() {
+        (field.placeholder.to_owned(), TEXT_DISABLED)
+    } else if focused {
+        (format!("{}_", field.value), TEXT_PRIMARY)
+    } else {
+        (field.value.clone(), TEXT_PRIMARY)
+    };
+    let room = rect.w - 24.0 * s;
+    let mut size = Type::Heading.at(s);
+    let width = measure_text(&text, None, numeric::font_size(size), 1.0).width;
+    if width > room {
+        size = (size * room / width).max(10.0);
+    }
+    draw_text(
+        &text,
+        rect.x + 12.0 * s,
+        rect.y + rect.h * 0.66,
+        size,
+        color,
+    );
 }
 
 #[cfg(test)]

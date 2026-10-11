@@ -264,6 +264,9 @@ fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<
     auto::activate_labeled(suite.client, "replays")?;
     suite.shot("replay-shelf", "replays")?;
     auto::press_key(suite.client, Key::Escape)?;
+    auto::activate_labeled(suite.client, "join match")?;
+    suite.shot("join-form", "join_match")?;
+    auto::press_key(suite.client, Key::Escape)?;
 
     // The new-match wizard.
     auto::activate_labeled(suite.client, "play")?;

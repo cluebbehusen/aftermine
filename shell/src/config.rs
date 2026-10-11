@@ -210,6 +210,9 @@ pub struct Config {
     pub touch: TouchPrefs,
     /// The host address the last LAN join used.
     pub last_join_address: Option<String>,
+    /// The name other players see and that replaces the player's seat
+    /// name; unset until the player first gives one.
+    pub player_name: Option<String>,
 }
 
 impl Default for Config {
@@ -228,6 +231,7 @@ impl Default for Config {
             control_groups: true,
             touch: TouchPrefs::default(),
             last_join_address: None,
+            player_name: None,
         }
     }
 }
@@ -264,6 +268,12 @@ impl Config {
                 config.window = Self::sane_window(config.window);
                 config.touch = config.touch.clamped();
                 config.markers = config.markers.clamped();
+                // A hand-edited name that no longer passes is forgotten,
+                // not allowed to reset everything else.
+                config.player_name = config
+                    .player_name
+                    .and_then(|name| oxide_net::PlayerName::new(&name).ok())
+                    .map(String::from);
                 config
             }
             _ => Self::default(),

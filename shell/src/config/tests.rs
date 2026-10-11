@@ -152,7 +152,7 @@ fn a_config_round_trips_through_disk() {
 }
 
 #[test]
-fn performance_modes_and_the_last_join_address_persist() {
+fn performance_modes_the_last_join_address_and_the_name_persist() {
     let dir = std::env::temp_dir().join(format!("oxide-config-performance-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config {
@@ -170,8 +170,16 @@ fn performance_modes_and_the_last_join_address_persist() {
         assert_eq!(Config::load_from(Some(path.clone())), config);
     }
     config.last_join_address = Some("connor-mbp:4200".to_owned());
+    config.player_name = Some("Connor".to_owned());
     config.save_to(&path).unwrap();
-    assert_eq!(Config::load_from(Some(path)), config);
+    assert_eq!(Config::load_from(Some(path.clone())), config);
+
+    // A name edited past what the game accepts is dropped on its own.
+    config.player_name = Some("\u{7}".repeat(3));
+    config.save_to(&path).unwrap();
+    let loaded = Config::load_from(Some(path));
+    assert_eq!(loaded.player_name, None);
+    assert_eq!(loaded.ui_scale, 1.25, "the rest of the settings survive");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

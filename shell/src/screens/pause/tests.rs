@@ -242,7 +242,12 @@ fn naming_at_1280(suggested: &str) -> (PauseScreen, crate::text_field::Layout) {
     crate::render::set_viewport(1280.0, 800.0);
     let mut p = PauseScreen::open(false, true);
     p.begin_naming(suggested);
-    let layout = crate::text_field::layout(vec2(1280.0, 800.0), crate::render::ui_scale());
+    let layout = crate::text_field::layout(
+        vec2(1280.0, 800.0),
+        crate::render::ui_scale(),
+        &[1.0],
+        false,
+    );
     (p, layout)
 }
 
@@ -291,14 +296,14 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
     let (out, sounds) = pointer(&mut p, &click);
     assert_eq!(out, Out::Stay);
     assert!(sounds.contains(&SoundKind::Denied));
-    assert!(p.naming(), "a blank name keeps the field open");
+    assert!(p.keyboard().is_some(), "a blank name keeps the field open");
 }
 
 #[test]
 fn the_cancel_button_abandons_like_escape() {
     let (mut p, layout) = naming_at_1280("Skirmish | t40");
     assert_eq!(pointer(&mut p, &tap(layout.cancel.center())).0, Out::Stay);
-    assert!(!p.naming());
+    assert!(p.keyboard().is_none());
     assert_eq!(p.menu.view().items[p.menu.selected], "Save Game");
 }
 
@@ -319,14 +324,14 @@ fn a_save_press_released_elsewhere_keeps_naming() {
         },
     ];
     assert_eq!(pointer(&mut p, &events).0, Out::Stay);
-    assert!(p.naming());
+    assert!(p.keyboard().is_some());
 }
 
 #[test]
 fn tapping_the_field_requests_the_keyboard_once() {
     let (mut p, layout) = naming_at_1280("Skirmish | t40");
     assert!(!p.take_keyboard_request());
-    pointer(&mut p, &tap(layout.field.center()));
+    pointer(&mut p, &tap(layout.fields[0].center()));
     assert!(p.take_keyboard_request());
     assert!(!p.take_keyboard_request());
 }
@@ -337,7 +342,7 @@ fn save_game_never_confirms_and_bare_enter_saves_the_suggestion() {
     assert_eq!(activate(&mut p, "Save Game"), Out::SaveGame);
     assert!(!confirming(&p), "saving destroys nothing — no dialog");
     p.begin_naming("skirmish | t100");
-    assert!(p.naming());
+    assert!(p.keyboard().is_some());
     assert_eq!(
         p.menu.view().items[0],
         "skirmish | t100_",
@@ -362,7 +367,7 @@ fn the_name_field_edits_with_text_and_backspace_and_escape_cancels() {
     drive(&mut p, Key::H);
     assert_eq!(p.menu.view().items[0], "ab_");
     assert_eq!(drive(&mut p, Key::Escape), Out::Stay, "Escape abandons");
-    assert!(!p.naming());
+    assert!(p.keyboard().is_none());
     assert_eq!(
         p.menu.view().items[p.menu.selected],
         "Save Game",
@@ -371,7 +376,7 @@ fn the_name_field_edits_with_text_and_backspace_and_escape_cancels() {
     // An empty name refuses to commit instead of writing a blank.
     p.begin_naming("");
     assert_eq!(drive(&mut p, Key::Enter), Out::Stay);
-    assert!(p.naming(), "the field waits for a real name");
+    assert!(p.keyboard().is_some(), "the field waits for a real name");
 }
 
 #[test]
@@ -415,7 +420,7 @@ fn the_name_field_caps_its_length_and_the_verdict_shows_until_the_next_pick() {
     assert_eq!(p.menu.view().items[0], shown, "a full field refuses more");
     drive(&mut p, Key::Enter);
     p.end_naming("saved: x".to_string());
-    assert!(!p.naming());
+    assert!(p.keyboard().is_none());
     assert_eq!(p.subtitle("map"), "saved: x", "the verdict is the subtitle");
     assert_eq!(p.menu.view().items[p.menu.selected], "Save Game");
     assert_eq!(activate(&mut p, "Resume"), Out::Resume);

@@ -1,12 +1,14 @@
-//! A LAN match before it starts: the host address a join asks for, then
-//! the lobby's status and Cancel while machines gather. The caller
-//! starts joins and installs the match once the lobby starts it.
+//! A LAN match before it starts: the Join form (your name and the host's
+//! address), then the lobby's status and Cancel while machines gather.
+//! The caller starts joins and installs the match once the lobby starts
+//! it.
 
 use crate::game::{Game, SoundKind};
 use crate::menu::Menu;
-use crate::netplay::{Link, Lobby, with_default_port};
-use crate::text_field::{Edit, TextField};
+use crate::netplay::{Link, Lobby, address_char, parse_join_address};
+use crate::text_field::{Edit, Field, Form, Keyboard};
 use macroquad::prelude::Vec2;
+use oxide_net::{NameError, PlayerName};
 use oxide_protocol::{Key, RawEvent};
 use std::time::Duration;
 
@@ -18,18 +20,15 @@ const ADDRESS_MAX: usize = 253 + ":65535".len();
 pub enum Out {
     /// Keep going.
     Stay,
-    /// Join the host at this address, which names a port.
-    Join(String),
+    /// Join the host at `address`, which names a port, as `name`.
+    Join { name: PlayerName, address: String },
     /// Leave for the screen underneath.
     Cancel,
 }
 
 enum Face {
-    /// Asking where the host is; `failure` says why the last join did not.
-    Address {
-        field: TextField,
-        failure: Option<String>,
-    },
+    /// Asking who and where; `failure` says why the last join did not.
+    Join { form: Form, failure: Option<String> },
     /// Machines gathering.
     Waiting(Lobby),
 }
@@ -37,68 +36,113 @@ enum Face {
 /// The lobby screen.
 pub struct LobbyScreen {
     face: Face,
-    /// The field or the Cancel row, for drawing and the UI report.
+    /// The name a failed join brings back to the form.
+    name: String,
+    /// The form's fields or the Cancel row, for the UI report.
     pub menu: Menu<usize>,
 }
 
+fn name_check(name: &str) -> Result<(), &'static str> {
+    PlayerName::new(name).map(drop).map_err(NameError::reason)
+}
+
+fn address_check(address: &str) -> Result<(), &'static str> {
+    parse_join_address(address).map(drop)
+}
+
 impl LobbyScreen {
-    /// Asks for a host address, prefilled with `address`.
-    pub fn address(address: &str) -> Self {
-        Self::face(Face::Address {
-            field: TextField::new("JOIN MATCH", "JOIN", address, ADDRESS_MAX),
-            failure: None,
-        })
+    /// The Join form, prefilled with the saved `name` and `address`;
+    /// focus starts on whichever the player still has to type.
+    pub fn join(name: Option<&str>, address: &str) -> Self {
+        let name = name.unwrap_or_default();
+        let name_field = Field::new(name, PlayerName::MAX_CHARS, PlayerName::accepts)
+            .labeled("Your name", "")
+            .validated(name_check);
+        let address_field = Field::new(address, ADDRESS_MAX, address_char)
+            .labeled("Host address", "e.g. 192.168.1.20")
+            .validated(address_check)
+            .keyboard(Keyboard::Address)
+            .weight(2.0);
+        let focus = usize::from(PlayerName::new(name).is_ok());
+        let form = Form::new("JOIN MATCH", "JOIN", vec![name_field, address_field], focus);
+        Self::face(
+            Face::Join {
+                form,
+                failure: None,
+            },
+            name.to_owned(),
+        )
+    }
+
+    /// The Join form showing why the last join failed.
+    pub fn failed(name: &str, address: &str, reason: String) -> Self {
+        let mut screen = Self::join(Some(name), address);
+        if let Face::Join { failure, .. } = &mut screen.face {
+            *failure = Some(reason);
+        }
+        screen
     }
 
     /// Waits on `lobby`.
     pub fn waiting(lobby: Lobby) -> Self {
-        Self::face(Face::Waiting(lobby))
+        Self::face(Face::Waiting(lobby), String::new())
     }
 
-    fn face(face: Face) -> Self {
+    /// Waits on a join as `name`, which a failure brings back to the form.
+    pub fn joining(lobby: Lobby, name: &str) -> Self {
+        Self::face(Face::Waiting(lobby), name.to_owned())
+    }
+
+    fn face(face: Face, name: String) -> Self {
         let menu = match &face {
-            Face::Address { field, .. } => field.menu(0),
+            Face::Join { form, .. } => form.menu(|index| index),
             Face::Waiting(_) => Menu::list("LAN MATCH", vec!["Cancel".to_owned()]),
         };
-        Self { face, menu }
+        Self { face, name, menu }
     }
 
     /// Polls the lobby; returns the match once it starts. A join that
-    /// gives up comes back to the address, with the reason.
+    /// gives up comes back to the form, with the reason.
     pub fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
         let Face::Waiting(lobby) = &mut self.face else {
             return None;
         };
         let started = lobby.poll(now, viewport);
         if let Some((address, reason)) = lobby.failure() {
-            let failure = Some(reason.to_owned());
-            let mut screen = Self::address(address);
-            if let Face::Address { failure: slot, .. } = &mut screen.face {
-                *slot = failure;
-            }
-            *self = screen;
+            *self = Self::failed(&self.name, address, reason.to_owned());
         }
         started
     }
 
-    /// Whether the address field owns input.
-    pub fn text_entry(&self) -> bool {
-        matches!(self.face, Face::Address { .. })
+    /// The keyboard the focused field asks for, while the form is up.
+    pub fn keyboard(&self) -> Option<Keyboard> {
+        match &self.face {
+            Face::Join { form, .. } => Some(form.keyboard()),
+            Face::Waiting(_) => None,
+        }
     }
 
     /// Consumes a request to raise the on-screen keyboard again.
     pub fn take_keyboard_request(&mut self) -> bool {
         match &mut self.face {
-            Face::Address { field, .. } => field.take_keyboard_request(),
+            Face::Join { form, .. } => form.take_keyboard_request(),
             Face::Waiting(_) => false,
         }
     }
 
-    /// The line under the title: the lobby's status, or why the last
-    /// join failed.
+    /// The debug protocol's stable mode name for the current face.
+    pub fn mode_name(&self) -> &'static str {
+        match self.face {
+            Face::Join { .. } => "join_match",
+            Face::Waiting(_) => "lobby",
+        }
+    }
+
+    /// The line under the title: the lobby's status, or why the last join
+    /// failed.
     pub fn subtitle(&self) -> String {
         match &self.face {
-            Face::Address { failure, .. } => failure.clone().unwrap_or_default(),
+            Face::Join { failure, .. } => failure.clone().unwrap_or_default(),
             Face::Waiting(lobby) => lobby.status(),
         }
     }
@@ -111,14 +155,24 @@ impl LobbyScreen {
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
         match &mut self.face {
-            Face::Address { field, .. } => match field.update(events, sounds) {
-                Edit::Commit(address) => Out::Join(with_default_port(&address)),
-                Edit::Cancel => Out::Cancel,
-                Edit::Stay => {
-                    self.menu = field.menu(0);
-                    Out::Stay
+            Face::Join { form, .. } => {
+                let edit = form.update(events, sounds);
+                self.menu = form.menu(|index| index);
+                match edit {
+                    Edit::Commit => {
+                        match (
+                            PlayerName::new(form.value(0)),
+                            parse_join_address(form.value(1)),
+                        ) {
+                            (Ok(name), Ok(address)) => Out::Join { name, address },
+                            // The form refuses a commit either check fails.
+                            _ => Out::Stay,
+                        }
+                    }
+                    Edit::Cancel => Out::Cancel,
+                    Edit::Stay => Out::Stay,
                 }
-            },
+            }
             Face::Waiting(_) => {
                 let escaped = events
                     .iter()
@@ -132,11 +186,16 @@ impl LobbyScreen {
         }
     }
 
-    /// Draws the field or the status and Cancel.
+    /// Draws the form or the status and Cancel.
     pub fn draw(&self, mouse: Vec2) {
         match &self.face {
-            Face::Address { field, .. } => {
-                field.draw(&self.subtitle(), crate::theme::TEXT_SECONDARY, mouse);
+            Face::Join { form, failure } => {
+                let color = if failure.is_some() {
+                    crate::theme::TEXT_DANGER
+                } else {
+                    crate::theme::TEXT_SECONDARY
+                };
+                form.draw(&self.subtitle(), color, mouse);
             }
             Face::Waiting(_) => self.menu.draw(&self.subtitle()),
         }
