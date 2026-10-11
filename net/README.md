@@ -53,11 +53,12 @@ bot commands, then record, then `State::tick`.
   tick-zero `State::hash` and the attempt. When every hash matches the host's,
   the barrier queues `Go` and returns the `HostSession`, whose liveness clocks
   start there. Clients start their `ClientSession` on `Go`.
-- A mismatched hash, a stray line, a seated member leaving, or `START_TIMEOUT`
-  fails the start. `Gathering` drops only the members who caused it and shows
-  the rest the room again, which tells their `Guest` the start is off. A `Ready`
-  for an earlier attempt is ignored, so it cannot count toward the next start.
-  Introductions that complete during a start wait for its outcome.
+- A mismatched hash, a stray line, a seated member leaving or being removed, or
+  `START_TIMEOUT` fails the start. `Gathering` drops every member who caused it
+  and shows the rest the room again, which tells their `Guest` the start is off;
+  `Gathering::cancel_start` does the same for everyone at the host's request. A
+  `Ready` for an earlier attempt is ignored, so it cannot count toward the next
+  start. Introductions that complete during a start wait for its outcome.
 
 ## Session contract
 
