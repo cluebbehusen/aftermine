@@ -329,7 +329,17 @@ impl Gathering {
                 Stage::Greeting | Stage::Introducing => {
                     now.saturating_sub(member.connected) >= GREETING_TIMEOUT
                 }
-                Stage::Joined(..) => now.saturating_sub(member.heard) >= SILENCE_TIMEOUT,
+                // A seated member may go quiet while it builds or restores
+                // the start; the start's own deadline covers it.
+                Stage::Joined(..) => {
+                    now.saturating_sub(member.heard) >= SILENCE_TIMEOUT
+                        && !self.starting.as_ref().is_some_and(|starting| {
+                            starting
+                                .seating
+                                .iter()
+                                .any(|&(seated, _)| seated == member.id)
+                        })
+                }
             };
             if expired {
                 let reason = if matches!(member.stage, Stage::Joined(..)) {

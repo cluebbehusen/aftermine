@@ -263,6 +263,15 @@ pub(super) fn update_and_draw(
         // A LAN match keeps ticking under menus, so its effects age too.
         app.game.update_wall_clock_fx(time.presentation);
     }
+    // A wait that begins while a match menu is up brings the waiting
+    // screen forward, where the host can end it. Opening the menu again
+    // during the same wait leaves it be.
+    let waiting = !absent_players(app).is_empty();
+    let began = waiting && !app.net_waiting;
+    app.net_waiting = waiting;
+    if began && screen.over_pause() {
+        screen = wait_if_lost(app);
+    }
     // A `rerun` transition re-enters the loop under the new screen before
     // presenting, so the frame shows the destination.
     let mut rerun = false;
@@ -309,7 +318,7 @@ pub(super) fn update_and_draw(
         Screen::Results(results) => results_frame(app, results, &events, &mut rerun),
         Screen::Replays(shelf) => replays_frame(app, shelf, &events, &mut rerun),
         Screen::Pause(ps) => pause_frame(app, ps, &events)?,
-        Screen::Waiting(waiting) => waiting_frame(app, waiting, &events),
+        Screen::Waiting(waiting) => waiting_frame(app, waiting, &events, &mut rerun),
         Screen::Busy(busy) => persistence::frame(app, busy, &events)?,
     };
 
@@ -388,6 +397,10 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
         if fresh {
             app.offer = match probe.join() {
                 Ok(crate::rejoin_ticket::Probed::Waiting(ticket)) => Some(ticket),
+                Ok(crate::rejoin_ticket::Probed::Gone(ticket)) => {
+                    app.ticket.forget(&ticket);
+                    None
+                }
                 _ => None,
             };
             home.set_rejoin(app.offer.as_ref().map(crate::rejoin_ticket::Ticket::label));
@@ -1206,9 +1219,12 @@ fn waiting_frame(
     app: &mut App,
     mut waiting: screens::waiting::WaitingScreen,
     events: &[RawEvent],
+    rerun: &mut bool,
 ) -> Screen {
     let absent = absent_players(app);
     if absent.is_empty() {
+        // Show play this frame, so no click lands on a menu already gone.
+        *rerun = true;
         return Screen::Playing;
     }
     waiting.refresh(absent);

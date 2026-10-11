@@ -30,6 +30,12 @@ const WAIT_NOTICE: Duration = Duration::from_millis(500);
 /// the last lines: a desync halt, or the batches that decided the match.
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
 
+/// How long a released seat's connection gets to write what is queued for
+/// it: a client that lagged before it went away can have seconds of
+/// batches ahead of its release, and a blocked write gives up on its own.
+const FLUSH_GRACE: Duration =
+    Duration::from_secs(oxide_net::WRITE_TIMEOUT.as_secs() + CLOSE_GRACE.as_secs());
+
 /// Connections awaiting Hello at once. Each holds two transport threads, so
 /// later ones wait unaccepted until a slot frees.
 const MAX_GREETING: usize = 8;
@@ -49,6 +55,8 @@ pub(crate) enum End {
     SeatGone,
     /// Rejoining found the match over.
     Over,
+    /// Rejoining found the match too large to send.
+    TooLarge,
     /// A hash report disagreed and every machine halted.
     Desync {
         /// The report tick that disagreed.
@@ -66,6 +74,7 @@ impl End {
             End::Replaced => "The host gave your seat to a bot.".to_owned(),
             End::SeatGone => "Your seat left the match while you were away.".to_owned(),
             End::Over => "That match is over.".to_owned(),
+            End::TooLarge => "The match is too large to rejoin.".to_owned(),
             End::Desync { tick } => {
                 format!("Desync at tick {tick}: the match halted and its replay was saved.")
             }
@@ -249,6 +258,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 struct Rejoin {
     home: Home,
     since: Duration,
+    /// When the rejoin last ran, so time the app spent suspended is not
+    /// counted against its window.
+    polled: Duration,
     attempt: Attempt,
 }
 
@@ -278,11 +290,17 @@ impl Rejoin {
         Self {
             home,
             since: now,
+            polled: now,
             attempt,
         }
     }
 
     fn poll(&mut self, now: Duration) -> RejoinPoll {
+        let gap = now.saturating_sub(self.polled);
+        self.polled = now;
+        if gap > oxide_net::SUSPEND_GAP {
+            self.since += gap;
+        }
         let expired = now.saturating_sub(self.since) >= REJOIN_WINDOW;
         let retry = Attempt::Resting(now + REJOIN_PAUSE);
         match std::mem::replace(&mut self.attempt, Attempt::Resting(now)) {
@@ -368,6 +386,7 @@ fn call(
             Err(VisitEnd::Gone(GoneReason::Over | GoneReason::NoMatch)) => {
                 return Err(Some(End::Over));
             }
+            Err(VisitEnd::Gone(GoneReason::TooLarge)) => return Err(Some(End::TooLarge)),
             Err(VisitEnd::OtherBuild { .. }) => return Err(Some(End::HostLost)),
             Err(VisitEnd::Silent | VisitEnd::Protocol) => return Err(None),
         }
@@ -684,13 +703,16 @@ impl HostLink {
         }
 
         game.host_frame(&mut self.session, dt, now);
-        for seat in self.session.playing_seats() {
-            if !game.state.accepts_commands(seat) {
-                self.session.retire_seat(seat);
-            }
-        }
         if game.state.result().is_some() {
+            // Every seat stops acting once the match is decided; the clients
+            // still owe their final hashes, so none retires now.
             self.session.conclude();
+        } else {
+            for seat in self.session.playing_seats() {
+                if !game.state.accepts_commands(seat) {
+                    self.session.retire_seat(seat);
+                }
+            }
         }
 
         let mut end = None;
@@ -721,7 +743,7 @@ impl HostLink {
             }
         }
         self.departing.retain(|(connection, since)| {
-            drain(connection).is_ok() && now.saturating_sub(*since) < CLOSE_GRACE
+            drain(connection).is_ok() && now.saturating_sub(*since) < FLUSH_GRACE
         });
         // A decided match still waits for the final acknowledgements, so
         // a divergence in the last report ticks is caught, not dropped.
@@ -778,15 +800,23 @@ impl HostLink {
                     match snapshot {
                         Ok(bytes) if game.state.current_tick() == self.session.tick() => {
                             let tick = self.session.tick();
-                            self.desk
-                                .send_snapshot(visitor, tick, game.state.hash(), &bytes, now);
+                            self.desk.send_snapshot(
+                                &mut self.session,
+                                visitor,
+                                tick,
+                                game.state.hash(),
+                                &bytes,
+                                now,
+                            );
                         }
                         Ok(_) => {}
                         // A world that cannot travel cannot be rejoined:
-                        // turn the visitor away rather than let it retry.
+                        // turn the visitor away for good rather than let it
+                        // retry.
                         Err(error) => {
                             eprintln!("cannot send a rejoin snapshot: {error:#}");
-                            self.desk.disconnected(&mut self.session, visitor);
+                            self.desk
+                                .refuse(&mut self.session, visitor, GoneReason::TooLarge);
                             done.push(visitor);
                         }
                     }
