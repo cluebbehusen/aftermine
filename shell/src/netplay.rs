@@ -216,6 +216,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 struct Rejoin {
     home: Home,
     since: Duration,
+    /// When the rejoin last ran, so time the app spent suspended is not
+    /// counted against its window.
+    polled: Duration,
     attempt: Attempt,
 }
 
@@ -245,11 +248,17 @@ impl Rejoin {
         Self {
             home,
             since: now,
+            polled: now,
             attempt,
         }
     }
 
     fn poll(&mut self, now: Duration) -> RejoinPoll {
+        let gap = now.saturating_sub(self.polled);
+        self.polled = now;
+        if gap > oxide_net::SUSPEND_GAP {
+            self.since += gap;
+        }
         let expired = now.saturating_sub(self.since) >= REJOIN_WINDOW;
         let retry = Attempt::Resting(now + REJOIN_PAUSE);
         match std::mem::replace(&mut self.attempt, Attempt::Resting(now)) {
@@ -674,10 +683,12 @@ impl HostLink {
                         }
                         Ok(_) => {}
                         // A world that cannot travel cannot be rejoined:
-                        // turn the visitor away rather than let it retry.
+                        // turn the visitor away for good rather than let it
+                        // retry.
                         Err(error) => {
                             eprintln!("cannot send a rejoin snapshot: {error:#}");
-                            self.desk.disconnected(&mut self.session, visitor);
+                            self.desk
+                                .refuse(&mut self.session, visitor, GoneReason::TooLarge);
                             done.push(visitor);
                         }
                     }
