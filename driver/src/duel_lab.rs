@@ -650,13 +650,13 @@ fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
 }
 
 /// Where a force's nearest live body stands, measured from `from`: a unit's
-/// tile or a building's anchor, with the building's id when it is one.
+/// tile, or a building's nearest footprint tile with its id and anchor.
 fn nearest(
     state: &State,
     player: PlayerId,
     force: &Force,
     from: chassis::fx::Vec2Fx,
-) -> Option<(TilePos, Option<oxide_sim::BuildingId>)> {
+) -> Option<(TilePos, Option<(oxide_sim::BuildingId, TilePos)>)> {
     match force {
         Force::Army(_) => state
             .units()
@@ -668,9 +668,36 @@ fn nearest(
             .buildings()
             .iter()
             .filter(|b| b.player == player && b.kind == defense.kind && b.hp > 0)
-            .min_by_key(|b| (from.dist_sq(b.anchor.center()), b.id))
-            .map(|b| (b.anchor, Some(b.id))),
+            .min_by_key(|b| (from.dist_sq(b.closest_point_to(from)), b.id))
+            .map(|b| {
+                let tile = nearest_tile(b.anchor, defense.kind.size(), from, player);
+                (tile, Some((b.id, b.anchor)))
+            }),
     }
+}
+
+/// The footprint tile nearest `from`. A building's anchor is its top-left
+/// tile, and the mirror building's anchor is not that tile's mirror, so a goal
+/// taken from the anchor would differ by seat. The nearest tile mirrors
+/// exactly; an exact tie falls to the owner's own reading order, which mirrors
+/// too.
+fn nearest_tile(
+    anchor: TilePos,
+    (w, h): (i32, i32),
+    from: chassis::fx::Vec2Fx,
+    owner: PlayerId,
+) -> TilePos {
+    let reading = if owner == PlayerId(0) { 1 } else { -1 };
+    (0..h)
+        .flat_map(|dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
+        .min_by_key(|tile| {
+            (
+                from.dist_sq(tile.center()),
+                tile.y * reading,
+                tile.x * reading,
+            )
+        })
+        .expect("every footprint has a tile")
 }
 
 /// Send a side's idle bodies after the nearest live enemy. Sappers only ever
@@ -696,9 +723,9 @@ fn seek(
     let units = idle.iter().map(|u| u.id).collect();
     let demolition = idle.iter().any(|u| u.kind.stats().demolition.is_some());
     let command = match (building, theirs) {
-        (Some(id), Force::Line(defense, _)) if demolition => {
+        (Some((id, anchor)), Force::Line(defense, _)) if demolition => {
             let (w, h) = defense.kind.size();
-            let seen = (0..w).any(|dx| (0..h).any(|dy| state.can_see(me, goal.offset(dx, dy))));
+            let seen = (0..w).any(|dx| (0..h).any(|dy| state.can_see(me, anchor.offset(dx, dy))));
             if seen {
                 Command::Attack {
                     units,

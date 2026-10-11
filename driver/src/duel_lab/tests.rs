@@ -318,3 +318,25 @@ fn tier_margins_skip_matchups_where_one_side_cannot_fire() {
     );
     assert!((tiers[0].mean - 0.6).abs() < 1e-9);
 }
+
+#[test]
+fn a_pairing_against_a_defense_line_scores_the_same_from_either_seat() {
+    // Swapping seats rotates the whole scene, so the score must not move.
+    // Even footprints have no center tile, so a goal taken from a building's
+    // anchor would differ by one tile between the seats.
+    let (a, b) = Side::matched(
+        Contender::Unit(UnitKind::Avalanche),
+        Contender::Defense(Defense::base(BuildingKind::Bastion)),
+        1_800,
+    );
+    let leg = |a_west| Duel {
+        a,
+        b,
+        layout: Layout::Open,
+        formation: Formation::Line,
+        a_west,
+    };
+    let west = run(&leg(true), 8_000).expect("west leg runs");
+    let east = run(&leg(false), 8_000).expect("east leg runs");
+    assert_eq!((west.score, west.ticks), (east.score, east.ticks));
+}
