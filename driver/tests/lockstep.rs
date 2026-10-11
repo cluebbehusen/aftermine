@@ -7,9 +7,9 @@ use chassis::rng::Pcg32;
 use oxide_kit::controller::{SeatController, record_events, seat_controllers};
 use oxide_kit::{GameReplay, bot_execution, runner};
 use oxide_net::{
-    ClientEnd, ClientSession, Connection, DropReason, HostEvent, HostSession, JoinMessage,
-    Listener, LobbyMessage, PROGRESS_TIMEOUT, SILENCE_TIMEOUT, StartBarrier, reports_hash,
-    same_build,
+    ClientEnd, ClientSession, Connection, HostEvent, HostSession, JoinMessage, Listener,
+    LobbyMessage, PROGRESS_TIMEOUT, SILENCE_TIMEOUT, SeatNotice, SeatState, StartBarrier,
+    reports_hash, same_build,
 };
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State, Tick, TickReport};
@@ -172,7 +172,11 @@ struct Client {
     machine: Machine,
     up: Link,
     down: Link,
+    /// Receives and heartbeats but executes nothing, like a client that
+    /// cannot keep up.
     stuck: Option<(Duration, Duration)>,
+    /// Does nothing at all, like a suspended app.
+    silent: Option<(Duration, Duration)>,
     doctor_at: Option<Tick>,
     end: Option<(Duration, ClientEnd)>,
 }
@@ -180,6 +184,11 @@ struct Client {
 impl Client {
     fn stuck(&self, now: Duration) -> bool {
         self.stuck
+            .is_some_and(|(from, until)| from <= now && now < until)
+    }
+
+    fn silent(&self, now: Duration) -> bool {
+        self.silent
             .is_some_and(|(from, until)| from <= now && now < until)
     }
 
@@ -249,6 +258,7 @@ impl Net {
                 up: Link::new(ms(latency), jitter, 2 * stream),
                 down: Link::new(ms(latency), jitter, 2 * stream + 1),
                 stuck: None,
+                silent: None,
                 doctor_at: None,
                 end: None,
             })
@@ -295,7 +305,9 @@ impl Net {
             self.host_step(now);
         }
         for client in &mut self.clients {
-            client.step(now);
+            if !client.silent(now) {
+                client.step(now);
+            }
         }
     }
 
@@ -307,7 +319,7 @@ impl Net {
             }
         }
         for event in host.session.poll(now) {
-            if let HostEvent::Dropped { seat, .. } = event {
+            if let HostEvent::Released { seat, .. } | HostEvent::Lost { seat } = event {
                 let client = &mut self.clients[usize::from(seat.0) - 1];
                 client.up.close();
                 client.down.close();
@@ -394,37 +406,68 @@ fn a_short_client_stall_makes_the_host_wait_without_dropping_anyone() {
 }
 
 #[test]
-fn a_stuck_client_with_a_live_network_is_dropped_and_surrenders() {
+fn a_stuck_client_with_a_live_network_makes_the_match_wait_until_the_host_drops_it() {
     let mut net = Net::new([(40, 20), (40, 20)]);
     let stuck = CLIENTS[1];
     net.client(stuck).stuck = Some((Duration::from_secs(2), Duration::MAX));
     net.run_until(Duration::from_secs(20));
-    let (dropped_at, event) = net.host.events[0];
-    assert_eq!(
-        event,
-        HostEvent::Dropped {
-            seat: stuck,
-            reason: DropReason::Stalled
-        }
-    );
-    assert_eq!(net.host.events.len(), 1);
-    assert!(dropped_at + ms(500) >= Duration::from_secs(4) + PROGRESS_TIMEOUT);
+    assert!(net.host.events.is_empty(), "{:?}", net.host.events);
+    assert!(net.host.session.waiting());
+    let [
+        SeatNotice {
+            seat,
+            state: SeatState::Away { waited_ms },
+        },
+    ] = net.host.session.seats(net.now)[..]
+    else {
+        panic!("the stuck seat is away");
+    };
+    assert_eq!(seat, stuck);
+    let waited_from = net.now.checked_sub(ms(waited_ms)).unwrap();
+    assert!(waited_from + ms(500) >= Duration::from_secs(4) + PROGRESS_TIMEOUT);
     assert!(
         net.clients[0].end.is_none(),
         "the waiting host kept heartbeating"
     );
     let stuck_tick = net.clients[1].machine.state.current_tick();
     assert_eq!(
+        net.host.machine.state.current_tick(),
+        stuck_tick + oxide_net::LEAD_CAP,
+        "the match stopped at the lead cap"
+    );
+
+    net.host.session.drop_seat(stuck);
+    net.run_until(net.now + Duration::from_secs(2));
+    assert_eq!(
         net.surrender_tick(stuck),
         Some(stuck_tick + oxide_net::LEAD_CAP),
-        "the first tick past the lead cap carries the Surrender, without the stuck ack"
+        "the first tick after the wait carries the Surrender"
     );
     assert!(!net.host.machine.state.accepts_commands(stuck));
-    net.run_until(net.now + Duration::from_secs(2));
     net.drain();
     net.assert_in_sync(&CLIENTS[..1]);
     let stuck_commands = net.clients[1].machine.commands();
     assert!(net.host.machine.commands().starts_with(&stuck_commands));
+}
+
+#[test]
+fn a_briefly_silent_client_lets_play_run_on_and_catches_up() {
+    let mut net = Net::new([(40, 20), (40, 20)]);
+    let quiet = CLIENTS[1];
+    net.client(quiet).silent = Some((Duration::from_secs(2), Duration::from_secs(7)));
+    net.run_until(Duration::from_secs(2));
+    let before = net.host.machine.state.current_tick();
+    net.run_until(Duration::from_secs(7));
+    assert!(
+        net.host.machine.state.current_tick() > before + oxide_net::LEAD_CAP,
+        "play ran past the usual lead"
+    );
+    assert!(!net.host.session.waiting());
+    net.run_until(Duration::from_secs(9));
+    assert!(net.host.events.is_empty(), "{:?}", net.host.events);
+    assert!(net.host.session.seats(net.now).is_empty(), "back to normal");
+    net.drain();
+    net.assert_in_sync(&CLIENTS);
 }
 
 #[test]
@@ -446,25 +489,27 @@ fn clients_end_the_session_when_the_host_falls_silent() {
 }
 
 #[test]
-fn a_closed_connection_surrenders_the_seat_and_the_match_continues() {
+fn a_closed_connection_makes_the_match_wait_until_the_host_drops_it() {
     let mut net = Net::new([(40, 20), (40, 20)]);
     let gone = CLIENTS[1];
     net.run_until(Duration::from_secs(3));
     net.client(gone).up.close();
     net.client(gone).down.close();
-    net.host.session.disconnected(gone);
+    net.host.session.disconnected(gone, net.now);
+    net.run_until(Duration::from_secs(4));
+    let held = net.host.machine.state.current_tick();
     net.run_until(Duration::from_secs(8));
+    assert!(net.host.events.is_empty(), "{:?}", net.host.events);
+    assert!(net.host.session.waiting());
     assert_eq!(
-        net.host
-            .events
-            .iter()
-            .map(|(_, event)| *event)
-            .collect::<Vec<_>>(),
-        vec![HostEvent::Dropped {
-            seat: gone,
-            reason: DropReason::Closed
-        }]
+        net.host.machine.state.current_tick(),
+        held,
+        "the match waits"
     );
+    assert!(net.surrender_tick(gone).is_none());
+
+    net.host.session.drop_seat(gone);
+    net.run_until(Duration::from_secs(9));
     assert!(net.surrender_tick(gone).is_some());
     assert!(!net.host.machine.state.accepts_commands(gone));
     net.drain();

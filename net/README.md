@@ -68,25 +68,38 @@ commands, then bot commands, then record, then `State::tick`.
 - A batch for tick N turns state N into state N+1. Clients acknowledge each
   batch with the resulting tick and attach `State::hash` when that tick is a
   multiple of `HASH_INTERVAL`.
-- Human seats go first in a sealed batch, in an order that rotates each tick
-  (starting at `tick % human seats`), so neither the host nor the lowest-latency
-  client always wins same-tick conflicts. Each seat's commands keep arrival
-  order. Hosts append bot commands after the sealed humans.
+- Human seats still in play go first in a sealed batch, in an order that rotates
+  each tick over those seats, so neither the host nor the lowest-latency client
+  always wins same-tick conflicts. Each seat's commands keep arrival order. A
+  seat that left seals its last orders and its `Surrender` behind them. Hosts
+  append bot commands after the sealed humans.
 - The host seals tick N only while N is less than every live client's
-  acknowledged tick plus `LEAD_CAP`.
-- A client the host has been blocked on for `PROGRESS_TIMEOUT` is dropped, even
-  if its heartbeats continue. A client silent for `SILENCE_TIMEOUT`, a closed
-  connection, or a protocol violation also drops it. A dropped seat leaves the
-  progress gate at once, and its `Surrender` joins the next sealed batch.
+  acknowledged tick plus `LEAD_CAP`. A client the host has heard nothing from
+  for `QUIET_AFTER` is quiet: play continues within `QUIET_LEAD_CAP` of it.
+- A client silent for `SILENCE_TIMEOUT`, one that has held the host back at the
+  lead cap for `PROGRESS_TIMEOUT` even while heartbeating, a closed connection,
+  or a protocol violation makes the seat away: the host stops sealing and waits
+  for its player, with no timeout and no automatic surrender. A connection that
+  is heard again and catches back up to within `LEAD_CAP` ends the wait. Only
+  the host's `drop_seat` ends it early: the seat surrenders and its client hears
+  why. A client that sends `Leave` surrenders without holding the match, and a
+  seat that can no longer act in the world retires, its client free to watch.
+- The host tells every connected client which seats are quiet or away, and
+  whether it paused, whenever that changes. A gap between a peer's own polls
+  longer than `SUSPEND_GAP` counts as that peer's suspension, never as the other
+  side's silence.
 - A client line longer than `MAX_CLIENT_LINE_BYTES`, or orders that would leave
   more than `CLIENT_PENDING_BYTES` of a client's commands waiting, is a protocol
   violation. A sealed batch carries at most `BATCH_COMMAND_BYTES` of human
   commands; later orders wait for the next tick in arrival order, so a batch
   line stays under `MAX_LINE_BYTES`.
-- A mismatched hash report halts the session and tells every client.
-  `HostSession::caught_up` reports when every live client has acknowledged every
-  published batch; a host ending a decided match waits for it so the final
-  reports are still checked.
+- A mismatched hash report halts the session and tells every client. The host
+  keeps its hashes until every connected client has reported them, so a client
+  catching up from a quiet spell still has them checked.
+  `HostSession::caught_up` reports when every client the host is not waiting on
+  has acknowledged every published batch; a host ending a decided match waits
+  for it so the final reports are still checked. A host leaving an undecided
+  match tells its clients so.
 - Each side heartbeats when it has sent nothing for `HEARTBEAT_INTERVAL`.
   `HostSession::poll` must run on the host's game loop: a host whose loop hangs
   stops heartbeating, and clients end the session after `SILENCE_TIMEOUT`.
@@ -99,10 +112,10 @@ commands, then bot commands, then record, then `State::tick`.
 - Each `Connection` has a reader thread and a writer thread, so a slow peer
   never blocks the game loop that polls it. Received lines wait in a bounded
   queue; when the game loop falls behind, the reader stops reading and TCP
-  pushes back on the peer. Outgoing lines are bounded by the session's lead cap
-  and progress timeout. A write that stalls past the write timeout or fails
-  closes the connection. There is no read timeout: the lobby may wait
-  indefinitely, and in-match liveness belongs to the session core.
+  pushes back on the peer. Outgoing lines are bounded by the session's lead
+  caps, since an away seat stops sealing. A write that stalls past the write
+  timeout or fails closes the connection. There is no read timeout: the lobby
+  may wait indefinitely, and in-match liveness belongs to the session core.
 - Dropping a `Connection` aborts it and discards unsent lines. To close cleanly,
   call `finish` and keep polling until `Closed` before dropping; after `finish`,
   `Closed` waits until every queued line has been written, so the final lines

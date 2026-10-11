@@ -1,7 +1,7 @@
 //! The client side: the batch gate, acknowledgements, and host liveness.
 
-use crate::message::{ClientMessage, HostMessage};
-use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, reports_hash};
+use crate::message::{ClientMessage, HostMessage, Release, SeatNotice};
+use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash};
 use oxide_sim::{Command, PlayerCommand, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -18,6 +18,10 @@ pub enum ClientEnd {
     },
     /// The host sent a line that failed to decode or broke the protocol.
     Protocol,
+    /// The host took this client's seat out of the match.
+    Released(Release),
+    /// The host left before the match ended.
+    HostLeft,
 }
 
 /// The client's half of a lockstep session, starting at tick zero.
@@ -37,6 +41,15 @@ pub struct ClientSession {
     heard: Duration,
     sent: Duration,
     spoke: bool,
+    /// The seats not keeping up, as the host last said.
+    seats: Vec<SeatNotice>,
+    /// When the host's last seat line arrived.
+    seats_heard: Duration,
+    /// The host paused the match, as it last said.
+    paused: bool,
+    last_poll: Option<Duration>,
+    /// The host's last word, delivered once the batches before it ran.
+    parting: Option<ClientEnd>,
     end: Option<ClientEnd>,
     outgoing: Vec<String>,
 }
@@ -52,6 +65,11 @@ impl ClientSession {
             heard: now,
             sent: now,
             spoke: false,
+            seats: Vec::new(),
+            seats_heard: now,
+            paused: false,
+            last_poll: None,
+            parting: None,
             end: None,
             outgoing: Vec::new(),
         }
@@ -61,6 +79,10 @@ impl ClientSession {
     pub fn receive(&mut self, line: &str, now: Duration) -> Result<(), ClientEnd> {
         self.ended()?;
         self.heard = now;
+        // The host's last word is out; nothing after it counts.
+        if self.parting.is_some() {
+            return Ok(());
+        }
         match HostMessage::decode(line) {
             Ok(HostMessage::Batch { tick, commands }) if tick == self.next_batch => {
                 self.next_batch += 1;
@@ -68,7 +90,21 @@ impl ClientSession {
                 Ok(())
             }
             Ok(HostMessage::Heartbeat) => Ok(()),
+            Ok(HostMessage::Seats { seats, paused }) => {
+                self.seats = seats;
+                self.seats_heard = now;
+                self.paused = paused;
+                Ok(())
+            }
             Ok(HostMessage::Desync { tick }) => self.end(ClientEnd::Desync { tick }),
+            Ok(HostMessage::Released { reason }) => {
+                self.parting = Some(ClientEnd::Released(reason));
+                Ok(())
+            }
+            Ok(HostMessage::Ended) => {
+                self.parting = Some(ClientEnd::HostLeft);
+                Ok(())
+            }
             Ok(HostMessage::Batch { .. }) | Err(_) => self.end(ClientEnd::Protocol),
         }
     }
@@ -76,6 +112,21 @@ impl ClientSession {
     /// Sends an order for this client's seat.
     pub fn send(&mut self, command: Command) {
         self.say(&ClientMessage::Command { command });
+    }
+
+    /// Tells the host this client is leaving, surrendering its seat.
+    pub fn leave(&mut self) {
+        self.say(&ClientMessage::Leave);
+    }
+
+    /// The seats not keeping up, as the host last said, and when it said so.
+    pub fn seats(&self) -> (&[SeatNotice], Duration) {
+        (&self.seats, self.seats_heard)
+    }
+
+    /// Whether the host paused the match, as it last said.
+    pub fn host_paused(&self) -> bool {
+        self.paused
     }
 
     /// The next batch to execute, if it has arrived. Execute it on the
@@ -105,10 +156,32 @@ impl ClientSession {
         });
     }
 
+    /// Whether the host said its last word: the batches before it still
+    /// run, and [`ClientSession::poll`] ends the session once they have.
+    pub fn parting(&self) -> bool {
+        self.parting.is_some()
+    }
+
     /// Applies the host silence timeout and queues a heartbeat when the
-    /// client has sent nothing recently.
+    /// client has sent nothing recently. Ends the session once the batches
+    /// before the host's last word have run.
     pub fn poll(&mut self, now: Duration) -> Result<(), ClientEnd> {
         self.ended()?;
+        if let Some(end) = self.parting
+            && self.batches.is_empty()
+            && !self.executing
+        {
+            return self.end(end);
+        }
+        // Time this client itself was suspended is not the host's silence.
+        let gap = self
+            .last_poll
+            .map_or(Duration::ZERO, |last| now.saturating_sub(last));
+        self.last_poll = Some(now);
+        // A line received since the gap already reset the clock.
+        if gap > SUSPEND_GAP {
+            self.heard = (self.heard + gap).min(now);
+        }
         if now.saturating_sub(self.heard) >= SILENCE_TIMEOUT {
             return self.end(ClientEnd::HostSilent);
         }

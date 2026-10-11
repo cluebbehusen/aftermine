@@ -16,14 +16,15 @@ use oxide_sim::{TICKS_PER_SECOND, Tick};
 use std::time::Duration;
 
 pub use client::{ClientEnd, ClientSession};
-pub use host::{DropReason, HostEvent, HostSession};
+pub use host::{Exit, HostEvent, HostSession};
 pub use lobby::{Gathering, Guest, GuestEnd, GuestEvent, LeaveReason, LobbyEvent, MemberId};
 pub use message::{
-    ClientMessage, HostMessage, JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build,
+    ClientMessage, HostMessage, JoinMessage, LobbyMessage, Release, RoomSeat, SeatHolder,
+    SeatNotice, SeatState, same_build,
 };
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
-pub use tcp::{Closed, Connection, Listener};
+pub use tcp::{Closed, Connection, Listener, WRITE_TIMEOUT};
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
 
 /// The wire protocol version both sides' Hello must match. Bump it for any
@@ -71,11 +72,27 @@ pub const LEAD_CAP: Tick = 2 * TICKS_PER_SECOND as Tick;
 /// Each side sends a heartbeat after this long without sending anything else.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(500);
 
-/// A peer that has heard nothing for this long treats the other side as gone.
+/// A peer that has heard nothing for this long treats the other side as
+/// gone: a client ends its session, and the host waits for the client's
+/// player.
 pub const SILENCE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The host drops a client it has been blocked on for this long.
+/// A client the host has been held back by for this long makes the match
+/// wait for it.
 pub const PROGRESS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A client the host has heard nothing from for this long is quiet: play
+/// continues within [`QUIET_LEAD_CAP`] until [`SILENCE_TIMEOUT`].
+pub const QUIET_AFTER: Duration = Duration::from_secs(1);
+
+/// How many ticks the host may seal beyond a quiet client's acknowledged
+/// tick.
+pub const QUIET_LEAD_CAP: Tick = 10 * TICKS_PER_SECOND as Tick;
+
+/// A gap this long between a peer's own polls means its loop was
+/// suspended, as iOS does to a backgrounded app; the gap counts as nobody's
+/// silence.
+pub const SUSPEND_GAP: Duration = Duration::from_secs(2);
 
 /// Whether the acknowledgement of a batch that leaves the world at `tick`
 /// carries a state hash.
