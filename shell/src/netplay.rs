@@ -349,13 +349,16 @@ impl HostLink {
         }
 
         game.host_frame(&mut self.session, dt, now);
-        for seat in self.session.playing_seats() {
-            if !game.state.accepts_commands(seat) {
-                self.session.retire_seat(seat);
-            }
-        }
         if game.state.result().is_some() {
+            // Every seat stops acting once the match is decided; the clients
+            // still owe their final hashes, so none retires now.
             self.session.conclude();
+        } else {
+            for seat in self.session.playing_seats() {
+                if !game.state.accepts_commands(seat) {
+                    self.session.retire_seat(seat);
+                }
+            }
         }
 
         let mut end = None;
