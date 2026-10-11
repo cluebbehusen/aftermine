@@ -182,6 +182,23 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Late-game health over recorded games: income by source per minute,
+    /// the share of matches reaching 30 minutes, wreck left on the map,
+    /// army variety from minute 15, and whether winning a battle destroyed
+    /// production, took income or held the ground over the next minute.
+    /// Accepts replays, match recordings and directories of them, such as a
+    /// `bot-eval --replay-dir`; not player saves.
+    ReplayHealth {
+        /// Replay or match recording paths, or directories of them.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Maximum recordings re-executed at once; bounded by available CPUs.
+        #[arg(long, default_value = "4")]
+        jobs: std::num::NonZeroUsize,
+        /// Print each match's row and the pooled summary as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Report rows written by `bot-ladder`.
     BotLadderReport {
         /// rows.jsonl files.
@@ -829,6 +846,20 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&games)?);
             } else {
                 print!("{}", oxide_driver::replay_ledger::render(&games));
+            }
+        }
+        Cmd::ReplayHealth { paths, jobs, json } => {
+            use oxide_driver::replay_health;
+            let matches = replay_health::measure(&paths, jobs)?;
+            let summary = replay_health::summarize(&matches);
+            if json {
+                let report = replay_health::HealthReport {
+                    matches: &matches,
+                    summary: &summary,
+                };
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", replay_health::render(&matches, &summary));
             }
         }
         Cmd::BotPressure {

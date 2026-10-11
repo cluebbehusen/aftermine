@@ -43,6 +43,22 @@ exporter's identity. Source archives report unknown provenance.
   emit nothing it can credit. `replay-ledger <replay>...` re-executes replays
   and match recordings, not player saves, through it and pools seats by
   controller; `--json` prints each game's ledgers.
+- `replay_health` (the `replay-health` command) measures late-game health from
+  replays and match recordings, so bot evaluations and human playtests answer
+  the same questions: each seat's income by source per minute, with worker
+  deliveries split between scrap fields and wreck salvage, the share of matches
+  reaching 30 minutes, wreck left on the map each minute and how much lies at a
+  seat's home, the variety of standing and newly trained armed units from minute
+  15 as entropy over unit kinds by value, and what each won battle turned into
+  over the next minute. The winning force is every body that hit something lost
+  in the battle; the follow-up counts the losers' production, income works and
+  workers that force destroyed, and whether the winner's armed units outweigh
+  the losers' near the battle a minute later. A win converts when the force
+  razes production, destroys at least 200 scrap of income, or holds ground away
+  from the winner's own home; the report leads with pushes, the wins away from
+  home. Battles are `replay-summary`'s. It accepts directories such as a
+  `bot-eval --replay-dir`, prints a pooled report, and with `--json` prints each
+  match's row and the pooled summary.
 - `bot_eval` runs the player-facing controllers to a decision, tick ceiling, or
   stall-loop anomaly, and emits compact JSONL with candidate, scenario,
   tick-ceiling, exact-profile, and anomaly provenance. It can exchange complete

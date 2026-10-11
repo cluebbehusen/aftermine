@@ -76,34 +76,18 @@ pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
         ledger.observe(&state, &report);
     }
     let ledgers = ledger.finish(&state);
-    let evaluated = evaluation_controllers(replay);
     let seats = replay
         .setup
         .players
         .iter()
+        .zip(seat_players(replay))
         .zip(ledgers)
         .enumerate()
-        .map(|(seat, (spec, ledger))| LedgerSeat {
+        .map(|(seat, ((spec, controller), ledger))| LedgerSeat {
             seat: u8::try_from(seat).expect("seat indices fit in u8"),
             name: spec.name.clone(),
             team: state.players()[seat].team,
-            controller: if spec.bot {
-                SeatPlayer::Bot {
-                    config: spec.bot_config.unwrap_or_default(),
-                }
-            } else {
-                match &evaluated {
-                    None => SeatPlayer::Human,
-                    Some(Ok(controllers)) => match controllers.get(seat) {
-                        Some(Some(recorded)) => SeatPlayer::Bot {
-                            config: recorded.config,
-                        },
-                        Some(None) => SeatPlayer::Human,
-                        None => SeatPlayer::Unknown,
-                    },
-                    Some(Err(_)) => SeatPlayer::Unknown,
-                }
-            },
+            controller,
             ledger,
         })
         .collect();
@@ -113,6 +97,35 @@ pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
         ticks: state.current_tick() - start,
         seats,
     })
+}
+
+/// Who played each seat of `replay`, by seat.
+pub fn seat_players(replay: &GameReplay) -> Vec<SeatPlayer> {
+    let evaluated = evaluation_controllers(replay);
+    replay
+        .setup
+        .players
+        .iter()
+        .enumerate()
+        .map(|(seat, spec)| {
+            if spec.bot {
+                return SeatPlayer::Bot {
+                    config: spec.bot_config.unwrap_or_default(),
+                };
+            }
+            match &evaluated {
+                None => SeatPlayer::Human,
+                Some(Ok(controllers)) => match controllers.get(seat) {
+                    Some(Some(recorded)) => SeatPlayer::Bot {
+                        config: recorded.config,
+                    },
+                    Some(None) => SeatPlayer::Human,
+                    None => SeatPlayer::Unknown,
+                },
+                Some(Err(_)) => SeatPlayer::Unknown,
+            }
+        })
+        .collect()
 }
 
 /// A controller as an evaluation replay records it.
@@ -152,13 +165,15 @@ pub fn load(path: &Path) -> Result<GameReplay> {
     oxide_kit::load_replay(path).with_context(|| format!("loading {}", path.display()))
 }
 
-/// The label a seat pools under: its controller and, for a bot, its
-/// difficulty.
-fn group(seat: &LedgerSeat) -> String {
-    match seat.controller {
-        SeatPlayer::Human => "human".to_owned(),
-        SeatPlayer::Unknown => "unknown controller".to_owned(),
-        SeatPlayer::Bot { config } => format!("bot {}", config.difficulty),
+impl SeatPlayer {
+    /// The label a seat pools under: its controller and, for a bot, its
+    /// difficulty.
+    pub fn label(self) -> String {
+        match self {
+            SeatPlayer::Human => "human".to_owned(),
+            SeatPlayer::Unknown => "unknown controller".to_owned(),
+            SeatPlayer::Bot { config } => format!("bot {}", config.difficulty),
+        }
     }
 }
 
@@ -167,7 +182,10 @@ pub fn render(games: &[GameLedger]) -> String {
     let mut pools: BTreeMap<String, LedgerPool> = BTreeMap::new();
     for game in games {
         for seat in &game.seats {
-            pools.entry(group(seat)).or_default().add(&seat.ledger);
+            pools
+                .entry(seat.controller.label())
+                .or_default()
+                .add(&seat.ledger);
         }
     }
     let mut out = String::new();

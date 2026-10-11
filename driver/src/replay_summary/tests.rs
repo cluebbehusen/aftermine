@@ -141,32 +141,41 @@ fn lulls_begin_only_after_contact_and_need_two_quiet_windows() {
     }
 }
 
+/// A fighting unit `id` of `seat` worth `value`, lost at `(x, y)`.
+fn combat(id: u32, seat: u8, x: i32, y: i32, value: u64) -> Loss {
+    Loss {
+        seat,
+        tile: TilePos::new(x, y),
+        value,
+        kind: LossKind::Combat,
+        victim: Target::Unit(UnitId(id)),
+    }
+}
+
 #[test]
 fn nearby_losses_merge_and_distant_losses_split() {
     let mut clusterer = BattleClusterer::default();
-    clusterer.note_loss(100, 0, TilePos::new(10, 10), 90, LossKind::Combat);
-    clusterer.note_loss(200, 1, TilePos::new(18, 10), 110, LossKind::Combat);
-    clusterer.note_loss(250, 0, TilePos::new(40, 40), 500, LossKind::Combat);
+    clusterer.note_loss(100, combat(1, 0, 10, 10, 90));
+    clusterer.note_loss(200, combat(2, 1, 18, 10, 110));
+    clusterer.note_loss(250, combat(3, 0, 40, 40, 500));
     clusterer.finish();
     assert_eq!(clusterer.battles.len(), 2);
     let merged = &clusterer.battles[0];
     assert_eq!(merged.from_tick, 100);
     assert_eq!(merged.to_tick, 200);
     assert_eq!(merged.losses.len(), 2);
+    assert_eq!(
+        merged.victims,
+        [Target::Unit(UnitId(1)), Target::Unit(UnitId(2))]
+    );
     assert_eq!(clusterer.battles[1].losses[0].value, 500);
 }
 
 #[test]
 fn a_quiet_gap_closes_the_battle() {
     let mut clusterer = BattleClusterer::default();
-    clusterer.note_loss(100, 0, TilePos::new(10, 10), 300, LossKind::Combat);
-    clusterer.note_loss(
-        100 + BATTLE_QUIET_TICKS + 1,
-        1,
-        TilePos::new(10, 10),
-        300,
-        LossKind::Combat,
-    );
+    clusterer.note_loss(100, combat(1, 0, 10, 10, 300));
+    clusterer.note_loss(100 + BATTLE_QUIET_TICKS + 1, combat(2, 1, 10, 10, 300));
     clusterer.finish();
     assert_eq!(clusterer.battles.len(), 2);
 }
@@ -174,20 +183,8 @@ fn a_quiet_gap_closes_the_battle() {
 #[test]
 fn sub_floor_battles_fold_into_skirmishes() {
     let mut clusterer = BattleClusterer::default();
-    clusterer.note_loss(
-        100,
-        0,
-        TilePos::new(10, 10),
-        BATTLE_VALUE_FLOOR - 20,
-        LossKind::Combat,
-    );
-    clusterer.note_loss(
-        2_000,
-        0,
-        TilePos::new(10, 10),
-        BATTLE_VALUE_FLOOR + 10,
-        LossKind::Combat,
-    );
+    clusterer.note_loss(100, combat(1, 0, 10, 10, BATTLE_VALUE_FLOOR - 20));
+    clusterer.note_loss(2_000, combat(2, 0, 10, 10, BATTLE_VALUE_FLOOR + 10));
     clusterer.finish();
     assert_eq!(clusterer.battles.len(), 1);
     assert_eq!(clusterer.skirmishes, vec![100]);
@@ -223,6 +220,8 @@ fn verdicts_read_the_loss_gap_by_team() {
         battle_verdict(&[loss(1, 400), loss(0, 300), loss(2, 300)], two_on_one),
         "favors team 1"
     );
+    assert_eq!(battle_verdict(&[], duel), "even");
+    assert_eq!(verdict(&[loss(0, 400)], duel), Verdict::OneSided(0));
 }
 
 #[test]

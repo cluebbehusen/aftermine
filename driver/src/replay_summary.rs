@@ -31,16 +31,16 @@ pub const REPLAY_SUMMARY_SCHEMA_VERSION: u32 = 1;
 /// (Chebyshev) of the battle's first loss. Above the longest direct-fire
 /// range, so both ends of an exchange cluster together; well below spawn
 /// spacing, so two bases never merge.
-const BATTLE_RADIUS_TILES: i64 = 12;
+pub(crate) const BATTLE_RADIUS_TILES: i64 = 12;
 
 /// Time gate: a battle closes after this many ticks (30 seconds) without a
 /// nearby loss, so reinforcement waves stay in one battle while assaults
 /// minutes apart read as separate battles.
-const BATTLE_QUIET_TICKS: u64 = 300;
+pub(crate) const BATTLE_QUIET_TICKS: u64 = 300;
 
 /// Battles totaling less lost value than this fold into the digest window's
 /// skirmish counter instead of a timeline line.
-const BATTLE_VALUE_FLOOR: u64 = 200;
+pub(crate) const BATTLE_VALUE_FLOOR: u64 = 200;
 
 /// Minimap cell army value at or above which the seat letter capitalizes.
 const MINIMAP_MASS_THRESHOLD: u64 = 300;
@@ -232,7 +232,7 @@ pub enum TimelineKind {
 }
 
 /// One seat's losses inside a battle.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SeatLoss {
     /// The losing seat.
     pub seat: u8,
@@ -413,7 +413,7 @@ impl Ledgers {
 
 /// What a loss was, for the per-battle value splits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LossKind {
+pub(crate) enum LossKind {
     /// A fighting unit.
     Combat,
     /// A worker or other non-combat unit.
@@ -424,6 +424,74 @@ enum LossKind {
     Building,
     /// A never-completed construction site.
     Site,
+}
+
+/// One unit or building lost, as battles weigh it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Loss {
+    /// The losing seat.
+    pub(crate) seat: u8,
+    /// Where it was lost.
+    pub(crate) tile: TilePos,
+    /// Scrap value lost.
+    pub(crate) value: u64,
+    /// What it was.
+    pub(crate) kind: LossKind,
+    /// The body lost.
+    pub(crate) victim: Target,
+}
+
+/// The loss `event` reports, if it reports one: a unit at its cost, and a
+/// building at its invested cost when `known` names its kind, else as a
+/// valueless construction site.
+pub(crate) fn loss(
+    event: &Event,
+    known: impl FnOnce(BuildingId) -> Option<BuildingKind>,
+) -> Option<Loss> {
+    match event {
+        Event::UnitDied {
+            unit,
+            kind,
+            player,
+            pos,
+            ..
+        } => {
+            let stats = kind.stats();
+            Some(Loss {
+                seat: player.0,
+                tile: TilePos::containing(*pos),
+                value: u64::from(stats.cost),
+                kind: if stats.transport_capacity > 0 {
+                    LossKind::Transport
+                } else if stats.can_fight() {
+                    LossKind::Combat
+                } else {
+                    LossKind::Worker
+                },
+                victim: Target::Unit(*unit),
+            })
+        }
+        Event::BuildingDestroyed {
+            building,
+            player,
+            tier,
+            pos,
+        } => {
+            let known = known(*building);
+            Some(Loss {
+                seat: player.0,
+                tile: TilePos::containing(*pos),
+                value: known.map_or(0, |kind| u64::from(kind.invested_cost(*tier))),
+                kind: if known.is_some() {
+                    LossKind::Building
+                } else {
+                    LossKind::Site
+                },
+                victim: Target::Building(*building),
+            })
+        }
+        _ => None,
+    }
 }
 
 /// One battle being accumulated.
@@ -439,6 +507,7 @@ struct BattleCluster {
     n: i64,
     transports: u32,
     losses: BTreeMap<u8, SeatLoss>,
+    victims: Vec<Target>,
 }
 
 impl BattleCluster {
@@ -455,20 +524,26 @@ impl BattleCluster {
 }
 
 /// A closed battle above the value floor.
-struct Battle {
-    from_tick: u64,
-    to_tick: u64,
-    at: [i32; 2],
-    losses: Vec<SeatLoss>,
+pub(crate) struct Battle {
+    /// First loss tick.
+    pub(crate) from_tick: u64,
+    /// Last loss tick.
+    pub(crate) to_tick: u64,
+    /// Loss centroid tile.
+    pub(crate) at: [i32; 2],
+    /// Per participating seat, heaviest first.
+    pub(crate) losses: Vec<SeatLoss>,
     /// An instantaneous cluster containing a transport loss: the
     /// airframe and its riders died together, nothing landed.
-    shootdown: bool,
+    pub(crate) shootdown: bool,
+    /// Every body lost, in loss order.
+    pub(crate) victims: Vec<Target>,
 }
 
 /// Streaming space-time clusterer over loss events. Pure integer math and
 /// first-match-in-insertion-order keep it bit-deterministic.
 #[derive(Default)]
-struct BattleClusterer {
+pub(crate) struct BattleClusterer {
     active: Vec<BattleCluster>,
     battles: Vec<Battle>,
     /// Closing tick of each sub-floor battle, for the window counters.
@@ -476,7 +551,22 @@ struct BattleClusterer {
 }
 
 impl BattleClusterer {
-    fn note_loss(&mut self, tick: u64, seat: u8, tile: TilePos, value: u64, kind: LossKind) {
+    /// Battles closed so far, in closing order until [`Self::finish`]
+    /// sorts them.
+    pub(crate) fn battles(&self) -> &[Battle] {
+        &self.battles
+    }
+
+    /// Adds `loss` at `tick` to the first open battle whose first loss lies
+    /// within the space gate, or opens a new battle.
+    pub(crate) fn note_loss(&mut self, tick: u64, loss: Loss) {
+        let Loss {
+            seat,
+            tile,
+            value,
+            kind,
+            victim,
+        } = loss;
         self.expire(tick);
         let x = i64::from(tile.x);
         let y = i64::from(tile.y);
@@ -498,6 +588,7 @@ impl BattleClusterer {
                 n: 0,
                 transports: 0,
                 losses: BTreeMap::new(),
+                victims: Vec::new(),
             });
             self.active.last_mut().expect("just pushed")
         };
@@ -505,6 +596,7 @@ impl BattleClusterer {
         cluster.sum_y += y;
         cluster.n += 1;
         cluster.last_loss_tick = tick;
+        cluster.victims.push(victim);
         let loss = cluster.losses.entry(seat).or_insert(SeatLoss {
             seat,
             value: 0,
@@ -539,7 +631,8 @@ impl BattleClusterer {
         }
     }
 
-    fn expire(&mut self, tick: u64) {
+    /// Closes every battle quiet for longer than the time gate at `tick`.
+    pub(crate) fn expire(&mut self, tick: u64) {
         let mut index = 0;
         while index < self.active.len() {
             if self.active[index].last_loss_tick + BATTLE_QUIET_TICKS < tick {
@@ -551,10 +644,15 @@ impl BattleClusterer {
         }
     }
 
-    fn finish(&mut self) {
+    /// Closes every battle still open, appending to [`Self::battles`].
+    pub(crate) fn close_all(&mut self) {
         while let Some(cluster) = self.active.pop() {
             self.close(cluster);
         }
+    }
+
+    fn finish(&mut self) {
+        self.close_all();
         self.battles.sort_by_key(|battle| battle.from_tick);
         self.skirmishes.sort_unstable();
     }
@@ -570,6 +668,7 @@ impl BattleClusterer {
                 at,
                 losses,
                 shootdown: cluster.transports > 0 && cluster.from_tick == cluster.last_loss_tick,
+                victims: cluster.victims,
             });
         } else {
             self.skirmishes.push(cluster.last_loss_tick);
@@ -577,11 +676,31 @@ impl BattleClusterer {
     }
 }
 
-/// `"even"` when the two heaviest team losses are within 25% of each other,
+/// Which team a battle favored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    /// No losses, or the two heaviest team losses are within 25% of each
+    /// other.
+    Even,
+    /// Only this team lost anything.
+    OneSided(u8),
+    /// This team lost least.
+    Favors(u8),
+}
+
+fn battle_verdict(losses: &[SeatLoss], seat_team: &[u8]) -> String {
+    match verdict(losses, seat_team) {
+        Verdict::Even => "even".to_owned(),
+        Verdict::OneSided(team) => format!("one-sided against team {team}"),
+        Verdict::Favors(team) => format!("favors team {team}"),
+    }
+}
+
+/// Even when the two heaviest team losses are within 25% of each other,
 /// else the lightest-losing team is favored. Losses aggregate by team so two
 /// allies each losing half an army do not read as an even three-way trade
 /// against their lone opponent.
-fn battle_verdict(losses: &[SeatLoss], seat_team: &[u8]) -> String {
+pub(crate) fn verdict(losses: &[SeatLoss], seat_team: &[u8]) -> Verdict {
     let mut team_losses: BTreeMap<u8, u64> = BTreeMap::new();
     for loss in losses {
         let team = seat_team
@@ -597,15 +716,15 @@ fn battle_verdict(losses: &[SeatLoss], seat_team: &[u8]) -> String {
     // Heaviest first; value ties go to the lower team id.
     ordered.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     match ordered.as_slice() {
-        [] => "even".to_owned(),
-        [(_, team)] => format!("one-sided against team {team}"),
-        [(heaviest, _), (second, _), ..] if second * 4 >= heaviest * 3 => "even".to_owned(),
+        [] => Verdict::Even,
+        [(_, team)] => Verdict::OneSided(*team),
+        [(heaviest, _), (second, _), ..] if second * 4 >= heaviest * 3 => Verdict::Even,
         _ => {
             let lightest = ordered
                 .iter()
                 .min_by_key(|(value, team)| (*value, *team))
                 .expect("at least two teams");
-            format!("favors team {}", lightest.1)
+            Verdict::Favors(lightest.1)
         }
     }
 }
@@ -757,43 +876,27 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
                         &mut timeline,
                     );
                 }
-                Event::UnitDied {
-                    kind, player, pos, ..
-                } => {
+                Event::UnitDied { player, .. } => {
                     window_combat += 1;
                     windows[player.0 as usize].lost += 1;
-                    let stats = kind.stats();
-                    let loss_kind = if stats.transport_capacity > 0 {
-                        LossKind::Transport
-                    } else if stats.can_fight() {
-                        LossKind::Combat
-                    } else {
-                        LossKind::Worker
-                    };
-                    clusterer.note_loss(
-                        now,
-                        player.0,
-                        TilePos::containing(*pos),
-                        u64::from(stats.cost),
-                        loss_kind,
-                    );
+                    if let Some(loss) = loss(event, |_| None) {
+                        clusterer.note_loss(now, loss);
+                    }
                 }
                 Event::BuildingDestroyed {
                     building,
                     player,
-                    tier,
                     pos,
+                    ..
                 } => {
                     let tile = TilePos::containing(*pos);
                     let known = ledgers.building.get(building).map(|(_, kind)| *kind);
-                    let value = known.map_or(0, |kind| u64::from(kind.invested_cost(*tier)));
-                    let loss_kind = if known.is_some() {
+                    if known.is_some() {
                         windows[player.0 as usize].buildings_lost += 1;
-                        LossKind::Building
-                    } else {
-                        LossKind::Site
-                    };
-                    clusterer.note_loss(now, player.0, tile, value, loss_kind);
+                    }
+                    if let Some(loss) = loss(event, |_| known) {
+                        clusterer.note_loss(now, loss);
+                    }
                     if known == Some(BuildingKind::Foundry) {
                         timeline.push(entry(
                             now,
