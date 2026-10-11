@@ -592,6 +592,7 @@ fn the_report_renders_every_section_and_a_line_per_match() {
         winner: Some(0),
         follow_up: Some(FollowUp {
             place: Place::Away,
+            own_ground: false,
             losers: vec![1],
             force: 4,
             until: LATE_TICK + 100 + FOLLOW_UP_TICKS,
@@ -682,9 +683,10 @@ fn pooled_kind_shares_weigh_each_seat_game_equally() {
 }
 
 #[test]
-fn a_win_converts_on_production_real_income_or_ground_held_away_from_home() {
-    let follow = |place, production, income, held| FollowUp {
+fn a_win_converts_on_production_real_income_or_ground_that_is_not_its_own() {
+    let follow = |place, own_ground, production, income, held| FollowUp {
         place,
+        own_ground,
         losers: vec![1],
         force: 1,
         until: 0,
@@ -703,12 +705,14 @@ fn a_win_converts_on_production_real_income_or_ground_held_away_from_home() {
         winner: Some(0),
         follow_up: Some(follow_up),
     };
-    let held_at_home = follow(Place::Home, 0, 0, true);
-    let one_worker = follow(Place::Away, 0, INCOME_FLOOR - 1, false);
-    let held_away = follow(Place::Field, 0, 0, true);
-    let workers = follow(Place::Home, 0, INCOME_FLOOR, false);
-    let razed = follow(Place::Away, 120, 0, false);
-    assert!(!held_at_home.converted() && !one_worker.converted());
+    let held_at_home = follow(Place::Home, true, 0, 0, true);
+    let one_worker = follow(Place::Away, false, 0, INCOME_FLOOR - 1, false);
+    let held_away = follow(Place::Field, false, 0, 0, true);
+    // Away from its factories but among its Refineries and turrets.
+    let held_outskirts = follow(Place::Field, true, 0, 0, true);
+    let workers = follow(Place::Home, true, 0, INCOME_FLOOR, false);
+    let razed = follow(Place::Away, false, 120, 0, false);
+    assert!(!held_at_home.converted() && !one_worker.converted() && !held_outskirts.converted());
     assert!(held_away.converted() && workers.converted() && razed.converted());
 
     let mut matches = [game(MINUTE * 30, None, Vec::new())];
@@ -716,6 +720,7 @@ fn a_win_converts_on_production_real_income_or_ground_held_away_from_home() {
         battle(0, held_at_home),
         battle(0, one_worker),
         battle(0, held_away),
+        battle(0, held_outskirts),
         battle(LATE_TICK, workers),
         battle(LATE_TICK, razed),
     ];
@@ -725,11 +730,12 @@ fn a_win_converts_on_production_real_income_or_ground_held_away_from_home() {
         (row.won, row.converted, row.production, row.income, row.held)
     };
     assert_eq!(rows[0].label, "pushes");
-    assert_eq!(row("pushes"), (3, 2, 1, 0, 1));
-    assert_eq!(row("pushes before minute 15"), (2, 1, 0, 0, 1));
+    assert_eq!(row("pushes"), (4, 2, 1, 0, 1));
+    assert_eq!(row("pushes before minute 15"), (3, 1, 0, 0, 1));
     assert_eq!(row("pushes from minute 15"), (1, 1, 1, 0, 0));
     assert_eq!(row("at the winner's home"), (2, 1, 0, 1, 0));
-    assert_eq!(row("all"), (5, 3, 1, 1, 1));
+    assert_eq!(row("in the field"), (2, 1, 0, 0, 1));
+    assert_eq!(row("all"), (6, 3, 1, 1, 1));
 }
 
 #[test]
@@ -751,4 +757,22 @@ fn only_buildings_that_train_units_mark_a_home() {
     ] {
         assert!(!marks_home(kind), "{kind:?}");
     }
+}
+
+#[test]
+fn a_recording_restored_on_a_whole_minute_samples_that_minute() {
+    let scenario = field(0, &[(0, UnitKind::Lancer, 4, 9)], &[]);
+    let mut state = scenario.build().unwrap();
+    for _ in 0..MINUTE {
+        state.tick(&[]);
+    }
+    let restored = Pass::new(&state);
+    let minutes: Vec<u64> = restored.wrecks.iter().map(|sample| sample.minute).collect();
+    assert_eq!(minutes, [1]);
+    state.tick(&[]);
+    assert!(
+        Pass::new(&state).wrecks.is_empty(),
+        "mid-minute starts wait"
+    );
+    assert!(Pass::new(&scenario.build().unwrap()).wrecks.is_empty());
 }

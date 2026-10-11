@@ -24,7 +24,8 @@ use oxide_sim::stats::{
     REFINERY_PERIOD, UnitKind,
 };
 use oxide_sim::{
-    BuildingId, Event, ExtractorIncome, Order, State, Target, TickReport, UnitId, UnitRepairSource,
+    Building, BuildingId, Event, ExtractorIncome, Order, State, Target, TickReport, UnitId,
+    UnitRepairSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -383,8 +384,11 @@ pub struct ImpactLedger {
     refunds: Vec<u64>,
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
-    /// Crucibles that have a wreck in reach as a smelting tick begins.
-    smelting: Vec<Key>,
+    /// The Crucibles and wreck in their reach as a smelting tick begins.
+    hearths: Hearths,
+    /// Extractor payouts as the coming tick begins: building, owner, scrap
+    /// and period.
+    payouts: Vec<(Key, u8, u64, u64)>,
     /// Income credited in the last observed tick.
     credits: Vec<Credit>,
     /// Losses attributed in the last observed tick.
@@ -501,46 +505,101 @@ fn worth(state: &State, bodies: &[Body], seat: usize) -> u64 {
     owned + u64::from(state.players()[seat].scrap)
 }
 
-/// Crucibles in `state` that will smelt a wreck, by the simulation's reach
-/// rule and allocation: in id order, each takes one unit of salvage from the
-/// nearest wreck, the richer on a tie, so two sharing a last unit do not
-/// both smelt it.
-fn smelters(state: &State) -> Vec<Key> {
+/// Built Crucibles and the wreck within their reach, as a tick begins.
+#[derive(Debug, Clone, Default)]
+struct Hearths {
+    crucibles: Vec<Building>,
+    wreck: BTreeMap<TilePos, u32>,
+}
+
+/// Tiles a Crucible's smelting reach could cover, before the exact radius
+/// test.
+fn reach_box(building: &Building) -> impl Iterator<Item = TilePos> {
     let reach = CRUCIBLE_SMELT_RADIUS.to_num::<i32>() + 1;
+    let (w, h) = building.kind.size();
+    let anchor = building.anchor;
+    ((anchor.y - reach)..(anchor.y + h + reach)).flat_map(move |y| {
+        ((anchor.x - reach)..(anchor.x + w + reach)).map(move |x| TilePos::new(x, y))
+    })
+}
+
+fn hearths(state: &State) -> Hearths {
+    let crucibles: Vec<Building> = state
+        .buildings()
+        .iter()
+        .filter(|building| {
+            building.built() && building.hp > 0 && building.kind == BuildingKind::Crucible
+        })
+        .cloned()
+        .collect();
+    let wreck = crucibles
+        .iter()
+        .flat_map(reach_box)
+        .map(|tile| (tile, state.map().wreck_at(tile)))
+        .filter(|(_, wreck)| *wreck > 0)
+        .collect();
+    Hearths { crucibles, wreck }
+}
+
+/// The Crucibles of `hearths` that smelt a wreck once workers have stripped
+/// `stripped` from it, by the simulation's reach rule and allocation: in id
+/// order, each takes one unit of salvage from the nearest wreck, the richer
+/// on a tie, so two sharing a last unit do not both smelt it. Exact ties
+/// fall to row order here, where the simulation mirrors the order for half
+/// the map; that matters only when two Crucibles contest a last unit.
+fn smelters(hearths: &Hearths, stripped: &BTreeMap<TilePos, u32>) -> Vec<Key> {
     let radius = CRUCIBLE_SMELT_RADIUS * CRUCIBLE_SMELT_RADIUS;
-    let mut taken: BTreeMap<(i32, i32), u32> = BTreeMap::new();
+    let mut taken: BTreeMap<TilePos, u32> = stripped.clone();
     let mut smelting = Vec::new();
-    for building in state.buildings() {
-        if !building.built() || building.hp == 0 || building.kind != BuildingKind::Crucible {
-            continue;
-        }
-        let (w, h) = building.kind.size();
-        let anchor = building.anchor;
+    for building in &hearths.crucibles {
         let mut fuel = None;
-        for y in (anchor.y - reach)..(anchor.y + h + reach) {
-            for x in (anchor.x - reach)..(anchor.x + w + reach) {
-                let tile = TilePos::new(x, y);
-                let left = state
-                    .map()
-                    .wreck_at(tile)
-                    .saturating_sub(taken.get(&(x, y)).copied().unwrap_or(0));
-                let center = tile.center();
-                let distance = building.closest_point_to(center).dist_sq(center);
-                if left == 0 || distance > radius {
-                    continue;
-                }
-                let key = (distance, std::cmp::Reverse(left), (y, x));
-                if fuel.is_none_or(|best| key < best) {
-                    fuel = Some(key);
-                }
+        for tile in reach_box(building) {
+            let left = hearths
+                .wreck
+                .get(&tile)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(taken.get(&tile).copied().unwrap_or(0));
+            let center = tile.center();
+            let distance = building.closest_point_to(center).dist_sq(center);
+            if left == 0 || distance > radius {
+                continue;
+            }
+            let key = (distance, std::cmp::Reverse(left), (tile.y, tile.x));
+            if fuel.is_none_or(|best| key < best) {
+                fuel = Some(key);
             }
         }
         if let Some((_, _, (y, x))) = fuel {
-            *taken.entry((x, y)).or_default() += 1;
+            *taken.entry(TilePos::new(x, y)).or_default() += 1;
             smelting.push(Key::Building(building.id));
         }
     }
     smelting
+}
+
+/// Extractors that pay on a tick beginning from `state`, with their owner,
+/// scrap and period: the simulation pays before any combat in the tick.
+fn payouts(state: &State) -> Vec<(Key, u8, u64, u64)> {
+    state
+        .buildings()
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Extractor && building.built() && building.hp > 0
+        })
+        .filter_map(|building| {
+            let (amount, period) = match state.extractor_income(building.id)? {
+                ExtractorIncome::Supported => EXTRACTOR_SUPPORTED_YIELD,
+                ExtractorIncome::Remote => EXTRACTOR_REMOTE_YIELD,
+            };
+            Some((
+                Key::Building(building.id),
+                building.player.0,
+                u64::from(amount),
+                period,
+            ))
+        })
+        .collect()
 }
 
 fn within(a: TilePos, b: TilePos, radius: i32) -> bool {
@@ -599,11 +658,12 @@ impl ImpactLedger {
             refunds: vec![0; seats],
             worth: vec![Vec::new(); seats],
             shells: Vec::new(),
-            smelting: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
-                smelters(state)
+            hearths: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
+                hearths(state)
             } else {
-                Vec::new()
+                Hearths::default()
             },
+            payouts: payouts(state),
             credits: Vec::new(),
             hits: Vec::new(),
             cargo,
@@ -644,20 +704,21 @@ impl ImpactLedger {
         self.hits.clear();
         let after = snapshot(state);
         let sources = self.events(report);
-        self.load(state);
+        let stripped = self.load(state, now);
         self.spending(&after, now);
         self.damage(&after, &sources, now);
-        self.passive(state, now);
+        self.passive(state, now, &stripped);
         if (now + 1 - self.start).is_multiple_of(WORTH_PERIOD) {
             for (seat, samples) in self.worth.iter_mut().enumerate() {
                 samples.push(worth(state, &after, seat));
             }
         }
-        self.smelting = if (now + 1).is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
-            smelters(state)
+        self.hearths = if (now + 1).is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
+            hearths(state)
         } else {
-            Vec::new()
+            Hearths::default()
         };
+        self.payouts = payouts(state);
         self.bodies = after;
     }
 
@@ -909,9 +970,10 @@ impl ImpactLedger {
         sources
     }
 
-    /// Splits what each worker picked up this tick between field scrap and
-    /// wreck, by how much field scrap left the tile it was working.
-    fn load(&mut self, state: &State) {
+    /// Splits what each worker picked up in tick `now` between field scrap
+    /// and wreck, by how much field scrap left the tile it was working, and
+    /// returns the wreck stripped from each tile.
+    fn load(&mut self, state: &State, now: u64) -> BTreeMap<TilePos, u32> {
         let mut picked: BTreeMap<Option<TilePos>, Vec<(UnitId, u32)>> = BTreeMap::new();
         for unit in state.units() {
             if unit.kind.stats().harvest.is_none() {
@@ -926,7 +988,13 @@ impl ImpactLedger {
                     .push((unit.id, unit.carrying() - held));
             }
         }
-        for (tile, workers) in picked {
+        let mut stripped: BTreeMap<TilePos, u32> = BTreeMap::new();
+        for (tile, mut workers) in picked {
+            // Workers act in id order on even ticks and in reverse on odd
+            // ones, so the first to act takes a tile's last field scrap.
+            if now % 2 == 1 {
+                workers.reverse();
+            }
             // A worker with no tile on record picked up field scrap.
             let mut field = tile.map_or(u32::MAX, |tile| {
                 self.field_scrap
@@ -941,9 +1009,13 @@ impl ImpactLedger {
                 let cargo = self.cargo.entry(id).or_default();
                 cargo.field += from_field;
                 cargo.wreck += gained - from_field;
+                if let Some(tile) = tile {
+                    *stripped.entry(tile).or_default() += gained - from_field;
+                }
             }
         }
         self.note_work(state);
+        stripped
     }
 
     /// Records the tile each harvesting worker in `state` works and its
@@ -1218,10 +1290,11 @@ impl ImpactLedger {
     }
 
     /// Credits the income the simulation pays without an event, by the same
-    /// rules and cadence: Reclaimers and the Foundry drip as buildings stood
-    /// when the tick began, before any combat in it; Extractors by the
-    /// support the state reports; and Crucibles that had a wreck in reach.
-    fn passive(&mut self, state: &State, now: u64) {
+    /// rules and cadence: Reclaimers, Extractors and the Foundry drip as
+    /// buildings stood when the tick began, before any combat in it, and
+    /// Crucibles with wreck still in reach once workers had stripped
+    /// `stripped` from it.
+    fn passive(&mut self, state: &State, now: u64, stripped: &BTreeMap<TilePos, u32>) {
         let completed = now + 1;
         let mut credits: Vec<(Key, IncomeSource, u64)> = Vec::new();
         for body in &self.bodies {
@@ -1252,32 +1325,21 @@ impl ImpactLedger {
                 credits.push((body.key, source, 1));
             }
         }
-        for building in state.buildings() {
-            if building.kind != BuildingKind::Extractor
-                || !building.built()
-                || building.hp == 0
-                || state.player(building.player).resigned
-            {
-                continue;
-            }
-            let (amount, period) = match state.extractor_income(building.id) {
-                Some(ExtractorIncome::Supported) => EXTRACTOR_SUPPORTED_YIELD,
-                Some(ExtractorIncome::Remote) => EXTRACTOR_REMOTE_YIELD,
-                None => continue,
-            };
-            if completed.is_multiple_of(period) {
-                credits.push((
-                    Key::Building(building.id),
-                    IncomeSource::Extractor,
-                    u64::from(amount),
-                ));
-            }
-        }
+        // A resignation is a command, applied before the tick's income.
+        credits.extend(
+            self.payouts
+                .iter()
+                .filter(|(_, owner, _, period)| {
+                    completed.is_multiple_of(*period)
+                        && !state.players()[usize::from(*owner)].resigned
+                })
+                .map(|(key, _, amount, _)| (*key, IncomeSource::Extractor, *amount)),
+        );
         if now.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
             credits.extend(
-                self.smelting
-                    .iter()
-                    .map(|key| (*key, IncomeSource::Smelting, 1)),
+                smelters(&self.hearths, stripped)
+                    .into_iter()
+                    .map(|key| (key, IncomeSource::Smelting, 1)),
             );
         }
         for (key, source, scrap) in credits {
@@ -1379,8 +1441,8 @@ pub enum Place {
 
 impl Place {
     /// The place of a fight `own` tiles (Chebyshev) from the nearest
-    /// building marking one side's ground and `theirs` from the other
-    /// side's: home wins a tie.
+    /// building of one side that [`Place::marks`] and `theirs` from the
+    /// other side's: home wins a tie.
     pub fn from_distances(own: i32, theirs: i32) -> Place {
         if own <= PLACE_TILES && own <= theirs {
             Place::Home
@@ -1393,7 +1455,7 @@ impl Place {
 
     /// Whether a building of `kind` marks its owner's ground: mines and
     /// Barricades are scattered across the map and do not.
-    fn marks(kind: BuildingKind) -> bool {
+    pub fn marks(kind: BuildingKind) -> bool {
         !matches!(kind, BuildingKind::ScuttleCharge | BuildingKind::Barricade)
     }
 }

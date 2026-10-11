@@ -165,6 +165,10 @@ pub struct FollowUp {
     /// Where the battle was, from the winner's view, by the production
     /// buildings standing at its first loss.
     pub place: Place,
+    /// The battle was on the winner's own ground by every building it had
+    /// standing then, not just production: holding the ground there proves
+    /// nothing.
+    pub own_ground: bool,
     /// Teams on the losing side.
     pub losers: Vec<u8>,
     /// Bodies in the winning force.
@@ -179,7 +183,8 @@ pub struct FollowUp {
     /// the force destroyed over the same span.
     pub income: u64,
     /// Scrap of the winning team's armed units within the battle radius of
-    /// its centroid at `until`.
+    /// its centroid at `until`. Units riding a transport count for neither
+    /// side, since they cannot fight until set down.
     pub stayed: u64,
     /// Scrap of the losers' armed units and defenses within it then.
     pub opposed: u64,
@@ -199,10 +204,10 @@ impl FollowUp {
         self.income >= INCOME_FLOOR
     }
 
-    /// The winner held ground other than its own home, where its army
-    /// stands anyway.
+    /// The winner held ground that is not its own, where its army stands
+    /// anyway.
     pub fn held_ground(&self) -> bool {
-        self.held && self.place != Place::Home
+        self.held && !self.own_ground
     }
 
     /// The win knocked the losers back: it razed production, took income or
@@ -303,7 +308,7 @@ impl Pass {
                 gone: None,
             })
             .collect();
-        Self {
+        let mut pass = Self {
             first_minute: start / MINUTE,
             teams,
             income: vec![BTreeMap::new(); seats],
@@ -317,7 +322,13 @@ impl Pass {
             closed: 0,
             watching: Vec::new(),
             battles: Vec::new(),
+        };
+        // A full recording samples this minute as the tick before it ends;
+        // a restored one starting on it samples it here.
+        if start > 0 && start.is_multiple_of(MINUTE) {
+            pass.sample(state, start / MINUTE);
         }
+        pass
     }
 
     fn life(&mut self, id: BuildingId) -> Option<&mut Life> {
@@ -522,22 +533,25 @@ impl Pass {
                 .map(|(source, _)| *source)
                 .collect();
             let centroid = TilePos::new(battle.at[0], battle.at[1]);
-            let near = |teams: &dyn Fn(u8) -> bool| {
+            let near = |teams: &dyn Fn(u8) -> bool, marks: fn(BuildingKind) -> bool| {
                 self.buildings
                     .iter()
                     .filter(|life| {
-                        teams(life.team) && marks_home(life.kind) && life.standing(battle.from_tick)
+                        teams(life.team) && marks(life.kind) && life.standing(battle.from_tick)
                     })
                     .map(|life| life.tile.chebyshev(centroid))
                     .min()
                     .unwrap_or(i32::MAX)
             };
-            let place = Place::from_distances(
-                near(&|team| team == winner),
-                near(&|team| losers.contains(&team)),
-            );
+            let place_by = |marks: fn(BuildingKind) -> bool| {
+                Place::from_distances(
+                    near(&|team| team == winner, marks),
+                    near(&|team| losers.contains(&team), marks),
+                )
+            };
             health.follow_up = Some(FollowUp {
-                place,
+                place: place_by(marks_home),
+                own_ground: place_by(Place::marks) == Place::Home,
                 losers,
                 force: u32::try_from(force.len()).expect("a force fits in u32"),
                 until: now,
@@ -1263,7 +1277,7 @@ pub fn render(matches: &[MatchHealth], summary: &HealthSummary) -> String {
     );
     let _ = writeln!(
         out,
-        "  converted: the winning force razed production, took at least {INCOME_FLOOR} scrap of income, or held ground away from home"
+        "  converted: the winning force razed production, took at least {INCOME_FLOOR} scrap of income, or held ground nearer the losers' buildings than its own"
     );
     let _ = writeln!(
         out,
