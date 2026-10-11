@@ -5,15 +5,16 @@
 //! the whole state for focused tests, while [`ObservationData::fog_honest`]
 //! filters through the player's own vision:
 //! visible enemies live, remembered buildings as ghosts, remembered scrap
-//! amounts, and anonymous team-shared salvage warnings, nothing else. Both
-//! produce the same shape; they differ only in how much they reveal.
+//! amounts, anonymous team-shared salvage warnings, and the public buildings
+//! every seat knows of, nothing else. Both produce the same shape; they differ
+//! only in how much they reveal.
 //!
 //! Fog-honesty is enforced by explicit filtering, not trust:
 //! `Vision` alone is not a safe boundary (the `State` behind it exposes
 //! every player's economy), so the builder touches enemy state only
-//! through visibility checks and vision memory, and a regression test
-//! pins the guarantee that unseen enemy activity cannot change a single
-//! serialized byte of a fog-honest observation.
+//! through visibility checks, vision memory and the public-building rule,
+//! and a regression test pins the guarantee that other unseen enemy activity
+//! cannot change a single serialized byte of a fog-honest observation.
 
 use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, State};
@@ -215,6 +216,10 @@ pub struct ObservationData {
     /// an Array's outer ring but out of sight. Always empty under the
     /// omniscient builder. Sorted by (y, x).
     pub blips: Vec<TilePos>,
+    /// Hostile buildings every seat knows of regardless of fog, such as
+    /// Deep Bores. Sorted by (y, x, owner).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub public_buildings: Vec<crate::vision::PublicBuilding>,
     /// Team-local contacts usable by ordinary attack commands.
     #[serde(default)]
     pub contact_tracks: Vec<crate::vision::ContactTrack>,
@@ -574,11 +579,23 @@ impl ObservationData {
                 .map(|incident| incident.tile)
                 .collect(),
             blips: Vec::new(),
+            public_buildings: hostile_public_buildings(state, me),
             contact_tracks: Vec::new(),
             my_shells: 0,
             incoming_shells: Vec::new(),
         }
     }
+}
+
+/// The public buildings hostile to `me`, sorted by (y, x, owner). Own and
+/// allied ones are already full rows.
+pub fn hostile_public_buildings(state: &State, me: PlayerId) -> Vec<crate::vision::PublicBuilding> {
+    let mut public: Vec<_> = state
+        .public_buildings()
+        .filter(|building| state.hostile(me, building.owner))
+        .collect();
+    public.sort_by_key(|building| (building.anchor.y, building.anchor.x, building.owner.0));
+    public
 }
 
 impl ObservationData {

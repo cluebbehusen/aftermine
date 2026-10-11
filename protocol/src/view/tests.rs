@@ -384,7 +384,26 @@ fn the_fog_view_and_the_bot_observation_agree() {
     use oxide_sim::observation::ObservationData;
     use std::collections::BTreeSet;
 
-    let mut state = oxide_sim::Scenario::skirmish().build().unwrap();
+    // Each seat refits its home Extractor into a Deep Bore at once, so the
+    // public rule is compared as well.
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    for player in &mut scenario.players {
+        player.scrap = 1_000;
+    }
+    for (seat, kind, x, y) in [
+        (0, oxide_sim::BuildingKind::Extractor, 8, 4),
+        (1, oxide_sim::BuildingKind::Extractor, 30, 18),
+        (0, oxide_sim::BuildingKind::Crucible, 1, 1),
+        (1, oxide_sim::BuildingKind::Crucible, 37, 21),
+    ] {
+        scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
+            player: seat,
+            kind,
+            x,
+            y,
+        });
+    }
+    let mut state = scenario.build().unwrap();
     let foundry = |state: &oxide_sim::State, seat: u8| {
         state
             .buildings()
@@ -408,9 +427,20 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 queue: false,
             },
         })
+        .chain(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| b.kind == oxide_sim::BuildingKind::Extractor)
+                .map(|b| oxide_sim::PlayerCommand {
+                    player: b.player,
+                    command: oxide_sim::Command::UpgradeBuilding { building: b.id },
+                }),
+        )
         .collect();
     state.tick(&raids);
     let mut compared_hostiles = false;
+    let mut compared_public = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
             for seat in [PlayerId(0), PlayerId(1)] {
@@ -479,6 +509,22 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog_contacts, obs_contacts,
                     "tick {tick} seat {seat:?} contacts"
                 );
+
+                let fog_public: Vec<_> = fog
+                    .public_buildings
+                    .iter()
+                    .map(|p| (p.owner, p.kind, p.tier, p.anchor[0], p.anchor[1]))
+                    .collect();
+                let obs_public: Vec<_> = obs
+                    .public_buildings
+                    .iter()
+                    .map(|p| (p.owner.0, p.kind, p.tier, p.anchor.x, p.anchor.y))
+                    .collect();
+                assert_eq!(fog_public, obs_public, "tick {tick} seat {seat:?} public");
+                compared_public |= obs
+                    .public_buildings
+                    .iter()
+                    .any(|p| !state.vision(seat).visible(p.anchor));
             }
         }
         state.tick(&[]);
@@ -487,4 +533,12 @@ fn the_fog_view_and_the_bot_observation_agree() {
         compared_hostiles,
         "the raids met, so hostile filtering was compared"
     );
+    assert!(compared_public, "a Deep Bore out of sight was compared");
+}
+
+#[test]
+fn a_fog_view_without_public_buildings_omits_the_field() {
+    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let json = serde_json::to_value(FogView::capture(&state, PlayerId(0))).unwrap();
+    assert!(json.get("public_buildings").is_none());
 }

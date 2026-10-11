@@ -267,6 +267,12 @@ impl SelectedBuildings {
                         tick_time_label(upgrade.build_ticks)
                     ));
                 }
+                if first.kind.is_public(tier + 1) {
+                    desc.push(format!(
+                        "Every player will see where your {} stands.",
+                        entity_name(first.kind.tier_name(tier + 1))
+                    ));
+                }
             }
             if plural {
                 desc.push(format!(

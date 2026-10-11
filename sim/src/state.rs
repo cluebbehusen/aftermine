@@ -1329,6 +1329,21 @@ impl State {
         &self.buildings
     }
 
+    /// Every living building every seat knows of regardless of fog, in id
+    /// order. Decisions must rank these by their own geometry, never take
+    /// the first.
+    pub fn public_buildings(&self) -> impl Iterator<Item = crate::vision::PublicBuilding> + '_ {
+        self.buildings
+            .iter()
+            .filter(|b| b.hp > 0 && b.kind.is_public(b.tier))
+            .map(|b| crate::vision::PublicBuilding {
+                owner: b.player,
+                kind: b.kind,
+                tier: b.tier,
+                anchor: b.anchor,
+            })
+    }
+
     /// Returns the current income state of a completed, living Extractor.
     ///
     /// Foundry support is binary and owner-specific. It uses the shortest

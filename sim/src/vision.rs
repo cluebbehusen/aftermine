@@ -8,8 +8,9 @@
 //!
 //! Fog is both a presentation surface and the knowledge boundary for built-in
 //! opponents. Fog-honest views expose current sight, explored terrain, ghosts,
-//! remembered salvage, and anonymous radar contacts. A targeted attack needs
-//! current team sight, a remembered building, or a live contact track.
+//! remembered salvage, anonymous radar contacts, and the public buildings every
+//! seat knows of. A targeted attack needs current team sight, a remembered or
+//! public building, or a live contact track.
 
 use crate::ids::PlayerId;
 use crate::state::State;
@@ -22,6 +23,40 @@ use std::cell::{Cell, OnceCell, RefCell};
 
 mod tracking;
 pub use tracking::{ContactSample, ContactTrack};
+
+/// A building every seat knows of regardless of fog: where it stands, what it
+/// is and whose it is, never its condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicBuilding {
+    /// Its owner.
+    pub owner: PlayerId,
+    /// Its kind.
+    pub kind: BuildingKind,
+    /// Its tier.
+    pub tier: u8,
+    /// Its footprint's top-left tile.
+    pub anchor: TilePos,
+}
+
+impl PublicBuilding {
+    /// The attack target that names it.
+    pub fn target(self) -> crate::ids::RememberedBuilding {
+        crate::ids::RememberedBuilding {
+            owner: self.owner,
+            building_kind: self.kind,
+            anchor: self.anchor,
+        }
+    }
+
+    /// Whether its footprint covers `tile`.
+    pub fn covers(self, tile: TilePos) -> bool {
+        let (width, height) = self.kind.size();
+        tile.x >= self.anchor.x
+            && tile.x < self.anchor.x + width
+            && tile.y >= self.anchor.y
+            && tile.y < self.anchor.y + height
+    }
+}
 
 /// A remembered enemy building: what its ground looked like the last time
 /// this player saw it. Ghosts are beliefs, not facts — the building may be
@@ -1122,6 +1157,22 @@ fn disc_spans(radius: i32) -> &'static [i32] {
             .collect()
     });
     &table[as_index(radius)]
+}
+
+/// Every seat learns at once that a public building fell, so every seat,
+/// teammates alike, forgets its ghost with it.
+pub(crate) fn forget_fallen_public_buildings(state: &mut State) {
+    let fallen: Vec<_> = state
+        .buildings
+        .iter()
+        .filter(|b| b.hp == 0 && b.kind.is_public(b.tier))
+        .map(|b| (b.player, b.kind, b.anchor))
+        .collect();
+    for (owner, kind, anchor) in fallen {
+        for vision in &mut state.vision {
+            vision.forget_building(owner, kind, anchor);
+        }
+    }
 }
 
 /// Forget a building only when its removal itself was observable.

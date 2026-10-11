@@ -8106,3 +8106,60 @@ fn mixed_workers_use_the_cargo_shortcut_and_keep_other_unit_bindings() {
         Command::Stop { .. }
     ));
 }
+
+#[test]
+fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
+    use oxide_sim::scenario::{BuildingSpec, UnitSpec};
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut rows = vec![vec!['.'; 40]; 30];
+    rows[1][1] = '1';
+    rows[27][37] = '2';
+    rows[24][30] = 'E';
+    scenario.map = rows.into_iter().map(|r| r.into_iter().collect()).collect();
+    scenario.players[1].scrap = 1_000;
+    scenario.units = vec![UnitSpec {
+        player: 0,
+        kind: UnitKind::Lancer,
+        x: 3,
+        y: 4,
+    }];
+    scenario.buildings = vec![
+        BuildingSpec {
+            player: 1,
+            kind: oxide_sim::BuildingKind::Extractor,
+            x: 30,
+            y: 24,
+        },
+        BuildingSpec {
+            player: 1,
+            kind: oxide_sim::BuildingKind::Crucible,
+            x: 34,
+            y: 22,
+        },
+    ];
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let bore = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == oxide_sim::BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: oxide_sim::PlayerId(1),
+        command: Command::UpgradeBuilding { building: bore },
+    }]);
+    assert_eq!(game.state.building(bore).unwrap().tier, 1, "premise");
+    assert!(!game.my_vision().explored(TilePos::new(30, 24)));
+    assert!(game.my_vision().ghosts().is_empty());
+    game.presentation.selection.units = vec![game.state.units()[0].id];
+    let screen = game.presentation.camera.to_screen(vec2(31.0, 25.0));
+    context_order(&mut game, screen, false);
+    assert!(matches!(
+        game.pending.last().unwrap().command,
+        Command::Attack {
+            target: oxide_sim::AttackTarget::RememberedBuilding(memory),
+            ..
+        } if memory.anchor == TilePos::new(30, 24)
+    ));
+}

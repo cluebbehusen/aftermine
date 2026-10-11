@@ -26,7 +26,7 @@ pub use state::{
 };
 pub use stats::{BuildingKind, ProjectileKind, UnitKind};
 pub use tick::CommandPhaseView;
-pub use vision::{GhostBuilding, Vision};
+pub use vision::{GhostBuilding, PublicBuilding, Vision};
 
 /// Version stamped into replays, saves and checkpoints; a replay is only
 /// guaranteed to reproduce on the sim version that recorded it. It tracks

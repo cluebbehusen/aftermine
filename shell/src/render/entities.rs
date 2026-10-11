@@ -1947,6 +1947,59 @@ pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
     }
 }
 
+/// Hostile Deep Bores every seat knows of, drawn above the fog wherever no
+/// footprint tile is in sight: corner brackets around the footprint and a
+/// drill bit inside, so shape alone tells them from radar blips and
+/// remembered buildings; the owner's color only confirms whose it is.
+pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
+    if game.presentation.all_seeing() {
+        return;
+    }
+    let camera = &game.presentation.camera;
+    let zoom = camera.zoom;
+    let vision = game.my_vision();
+    for public in
+        oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
+    {
+        let (w, h) = public.kind.size();
+        if (0..h).any(|dy| (0..w).any(|dx| vision.visible(public.anchor.offset(dx, dy)))) {
+            continue; // the live building is on show
+        }
+        let color = super::seat_identity_color(game, public.owner);
+        let low = camera.to_screen(vec2(public.anchor.x as f32, public.anchor.y as f32));
+        let high = camera.to_screen(vec2(
+            (public.anchor.x + w) as f32,
+            (public.anchor.y + h) as f32,
+        ));
+        let arm = zoom * 0.5;
+        for (corner, toward) in [
+            (vec2(low.x, low.y), vec2(1.0, 1.0)),
+            (vec2(high.x, low.y), vec2(-1.0, 1.0)),
+            (vec2(low.x, high.y), vec2(1.0, -1.0)),
+            (vec2(high.x, high.y), vec2(-1.0, -1.0)),
+        ] {
+            line_between(corner, corner + vec2(toward.x * arm, 0.0), 2.0, color);
+            line_between(corner, corner + vec2(0.0, toward.y * arm), 2.0, color);
+        }
+        let centre = (low + high) * 0.5;
+        let r = zoom * 0.45;
+        let (left, right, tip) = (
+            centre + vec2(-r * 0.55, -r * 0.1),
+            centre + vec2(r * 0.55, -r * 0.1),
+            centre + vec2(0.0, r * 0.9),
+        );
+        line_between(left, right, 2.0, color);
+        line_between(right, tip, 2.0, color);
+        line_between(tip, left, 2.0, color);
+        line_between(
+            centre + vec2(0.0, -r),
+            centre + vec2(0.0, -r * 0.1),
+            2.0,
+            color,
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BuildingRangeKind {
     Weapon,
