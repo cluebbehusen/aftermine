@@ -117,7 +117,11 @@ impl Pacing {
 }
 
 impl Link {
-    fn host(session: HostSession, peers: Vec<(PlayerId, Connection)>, now: Duration) -> Self {
+    pub(crate) fn host(
+        session: HostSession,
+        peers: Vec<(PlayerId, Connection)>,
+        now: Duration,
+    ) -> Self {
         Self::Host(HostLink {
             session,
             peers,
@@ -311,8 +315,8 @@ fn drain(connection: &Connection) -> Result<(), Closed> {
 
 /// Gathering machines until a match starts.
 pub(crate) enum Lobby {
-    /// This machine hosts.
-    Host(Box<HostLobby>),
+    /// This machine hosts a fixed scenario.
+    Host(Box<ScenarioHost>),
     /// This machine joins a host.
     Client(ClientLobby),
 }
@@ -340,6 +344,20 @@ impl Lobby {
             Lobby::Host(host) => host.roster(),
             Lobby::Client(client) => client.roster(),
         }
+    }
+
+    /// A joiner's view of the host's setup: the map, who sits where, and
+    /// its own seat; `None` until both arrive, and for a host.
+    pub(crate) fn room_view(&self) -> Option<(&Scenario, &[RoomSeat], PlayerId)> {
+        let Lobby::Client(ClientLobby {
+            state: Joining::Gathering { guest, .. },
+            ..
+        }) = self
+        else {
+            return None;
+        };
+        let (seats, seat) = guest.room()?;
+        Some((guest.map()?, seats, seat))
     }
 
     /// A client that gave up: the name it joined as, the address it tried,
@@ -467,53 +485,37 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
         .filter(|ip| !ip.is_unspecified())
 }
 
-/// A host gathering machines for the scenario's human seats. Joiners take
-/// open seats (or a bot's, when none is open), leavers free theirs, every
-/// machine sees who sits where, and the match starts once every seat has
-/// someone to play it.
+/// A host's lobby sockets: accepting connections, running the `oxide-net`
+/// lobby over them, and handing the seated ones to the match. Seating is
+/// the caller's policy: it answers [`HostLobby::poll`]'s events and
+/// publishes the room.
 pub(crate) struct HostLobby {
     listener: Listener,
     address: String,
-    scenario: Scenario,
-    host_name: Option<PlayerName>,
     gathering: Gathering,
-    seating: Seating,
-    /// The seat order joiners fill: the setup screen's, grouped by team.
-    order: Vec<usize>,
     connections: Vec<(MemberId, Connection)>,
-    /// Members refused or removed this frame, whose connections finish
-    /// once their last line is out.
+    /// Members refused or removed since the last flush, whose connections
+    /// finish once their last line is out.
     farewells: Vec<MemberId>,
     /// Finished connections flushing their last line.
     leaving: Vec<(Connection, Duration)>,
-    /// The host's match while a start runs.
-    starting: Option<Box<Game>>,
-    /// A seating whose match could not be built, so it is not retried.
-    unbuildable: Option<Seating>,
-    notice: Option<String>,
+}
+
+/// Where a running start stands.
+pub(crate) enum StartPoll {
+    /// Waiting for every seated member to be ready.
+    Waiting,
+    /// Every machine is at tick zero: the session and each seated
+    /// member's connection.
+    Started(HostSession, Vec<(PlayerId, Connection)>),
+    /// The start failed; the members who caused it leave through the next
+    /// poll, and the rest are back in the room.
+    Failed(StartFailed),
 }
 
 impl HostLobby {
-    /// Listens on `address` for the scenario's human seats other than
-    /// `host`'s. `host_name`, when given, names the host's seat.
-    pub(crate) fn new(
-        address: &str,
-        scenario: Scenario,
-        host: PlayerId,
-        commit: &str,
-        host_name: Option<PlayerName>,
-    ) -> Result<Self> {
-        let humans: Vec<PlayerId> = scenario
-            .players
-            .iter()
-            .zip(0..)
-            .filter(|(player, _)| !player.bot)
-            .map(|(_, seat)| PlayerId(seat))
-            .collect();
-        ensure!(
-            humans.len() >= 2 && humans.contains(&host),
-            "a hosted scenario needs the host's seat and another human seat (seats with \"bot\": false)"
-        );
+    /// Listens on `address` for builds of `commit` to play `map`.
+    pub(crate) fn open(address: &str, commit: &str, map: &Scenario) -> Result<Self> {
         let listener =
             Listener::bind(address).with_context(|| format!("cannot listen on {address}"))?;
         let bound = listener
@@ -522,104 +524,58 @@ impl HostLobby {
         Ok(Self {
             listener,
             address: reachable(bound),
-            gathering: Gathering::new(commit, &scenario),
-            seating: Seating::from_scenario(&scenario, host),
-            order: crate::screens::wizard::seat_display_order(&scenario),
-            scenario,
-            host_name,
+            gathering: Gathering::new(commit, map),
             connections: Vec::new(),
             farewells: Vec::new(),
             leaving: Vec::new(),
-            starting: None,
-            unbuildable: None,
-            notice: None,
         })
     }
 
-    fn status(&self) -> String {
-        let place = if self.starting.is_some() {
-            "Starting the match...".to_owned()
-        } else {
-            let open = self
-                .seating
-                .seats()
-                .iter()
-                .filter(|occupant| **occupant == Occupant::Open)
-                .count();
-            let here = 1 + self.seating.members().len();
-            format!(
-                "Hosting on {}: {here} of {} players here",
-                self.address,
-                here + open
-            )
-        };
-        match &self.notice {
-            Some(notice) => format!("{place}. {notice}"),
-            None => place,
-        }
+    /// Where other machines reach this lobby.
+    pub(crate) fn address(&self) -> &str {
+        &self.address
     }
 
-    /// One line per seat: its number and who plays it.
-    fn roster(&self) -> Vec<String> {
-        let host = self.shown_host_name();
-        let seats = self.seating.room(
-            &host,
-            |member| self.gathering.name(member).cloned(),
-            |_| None,
-        );
-        roster_lines(&seats, None)
+    /// A joined member's name.
+    pub(crate) fn name(&self, member: MemberId) -> Option<&PlayerName> {
+        self.gathering.name(member)
     }
 
-    /// The host's name as the room shows it: the player's, or the seat's.
-    fn shown_host_name(&self) -> PlayerName {
-        self.host_name.clone().unwrap_or_else(|| {
-            let seat = &self.scenario.players[usize::from(self.seating.host_seat().0)];
-            PlayerName::new(&seat.name)
-                .unwrap_or_else(|_| PlayerName::new("Host").expect("a valid name"))
-        })
+    /// How many connections are open, joined or not.
+    #[cfg(test)]
+    pub(crate) fn connection_count(&self) -> usize {
+        self.connections.len()
     }
 
-    fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
+    /// Accepts and reads connections and reports who joined and who left;
+    /// a leaver's connection is already closed. No one is accepted while a
+    /// start runs.
+    pub(crate) fn poll(&mut self, now: Duration, starting: bool) -> Vec<LobbyEvent> {
         self.leaving.retain(|(connection, since)| {
             drain(connection).is_ok() && now.saturating_sub(*since) < CLOSE_GRACE
         });
-        if self.starting.is_none() {
+        if !starting {
             self.accept(now);
         }
-        self.read(now);
-        for event in self.gathering.poll(now) {
-            match event {
-                LobbyEvent::Joined { member, .. } => {
-                    if self.seating.place(member, &self.order).is_none() {
-                        self.gathering.refuse(member);
-                        self.farewells.push(member);
+        for (member, connection) in &self.connections {
+            loop {
+                match connection.try_recv() {
+                    Ok(Some(line)) => self.gathering.receive(*member, &line, now),
+                    Ok(None) => break,
+                    Err(Closed) => {
+                        self.gathering.disconnected(*member);
+                        break;
                     }
-                }
-                LobbyEvent::Left { member, .. } => {
-                    self.seating.vacate(member);
-                    self.connections.retain(|(id, _)| *id != member);
                 }
             }
         }
-        if self.starting.is_some() {
-            return self.poll_start(now);
+        let events = self.gathering.poll(now);
+        for event in &events {
+            if let LobbyEvent::Left { member, .. } = event {
+                self.connections.retain(|(id, _)| id != member);
+            }
         }
-        let host = self.shown_host_name();
-        let gathering = &self.gathering;
-        let scenario = &self.scenario;
-        let room = self.seating.room(
-            &host,
-            |member| gathering.name(member).cloned(),
-            |seat| scenario.players[seat].team,
-        );
-        let seating = &self.seating;
-        self.gathering
-            .publish(&room, |member| seating.seat_of(member));
-        self.flush(now);
-        if self.seating.ready() && self.unbuildable.as_ref() != Some(&self.seating) {
-            self.start(now, viewport);
-        }
-        None
+        events
     }
 
     /// Accepts waiting connections while fewer than [`MAX_GREETING`] have
@@ -640,22 +596,31 @@ impl HostLobby {
         }
     }
 
-    fn read(&mut self, now: Duration) {
-        for (member, connection) in &self.connections {
-            loop {
-                match connection.try_recv() {
-                    Ok(Some(line)) => self.gathering.receive(*member, &line, now),
-                    Ok(None) => break,
-                    Err(Closed) => {
-                        self.gathering.disconnected(*member);
-                        break;
-                    }
-                }
-            }
-        }
+    /// Turns a joined member away: every seat holds a person.
+    pub(crate) fn refuse(&mut self, member: MemberId) {
+        self.gathering.refuse(member);
+        self.farewells.push(member);
     }
 
-    /// Sends what the lobby queued, then finishes refused connections.
+    /// Removes a member at the host's request.
+    pub(crate) fn remove(&mut self, member: MemberId) {
+        self.gathering.remove(member);
+        self.farewells.push(member);
+    }
+
+    /// Shows the room, then sends everything queued.
+    pub(crate) fn publish(
+        &mut self,
+        room: &[RoomSeat],
+        seat_of: impl Fn(MemberId) -> Option<PlayerId>,
+        now: Duration,
+    ) {
+        self.gathering.publish(room, seat_of);
+        self.flush(now);
+    }
+
+    /// Sends what the lobby queued, then finishes refused and removed
+    /// connections.
     fn flush(&mut self, now: Duration) {
         for (member, line) in self.gathering.take_outgoing() {
             if let Some((_, connection)) = self.connections.iter().find(|(id, _)| *id == member) {
@@ -671,23 +636,192 @@ impl HostLobby {
         }
     }
 
+    /// Starts `scenario` with the host on `host` and each member of
+    /// `seated` on its seat; `host_hash` is the host's tick-zero hash.
+    pub(crate) fn start(
+        &mut self,
+        scenario: &Scenario,
+        host: PlayerId,
+        seated: &[(MemberId, PlayerId)],
+        host_hash: u64,
+        now: Duration,
+    ) {
+        self.gathering.start(scenario, host, seated, host_hash, now);
+        self.flush(now);
+    }
+
+    /// Abandons a running start; everyone returns to the room.
+    pub(crate) fn cancel_start(&mut self) {
+        self.gathering.cancel_start();
+    }
+
+    /// Advances a running start; on success the seated connections leave
+    /// with the session.
+    pub(crate) fn poll_start(
+        &mut self,
+        now: Duration,
+        seated: &[(MemberId, PlayerId)],
+    ) -> StartPoll {
+        let started = self.gathering.poll_start(now);
+        self.flush(now);
+        match started {
+            Ok(None) => StartPoll::Waiting,
+            Ok(Some(session)) => {
+                let mut peers = Vec::new();
+                for &(member, seat) in seated {
+                    if let Some(index) = self.connections.iter().position(|(id, _)| *id == member) {
+                        peers.push((seat, self.connections.remove(index).1));
+                    }
+                }
+                StartPoll::Started(session, peers)
+            }
+            Err(failed) => StartPoll::Failed(failed),
+        }
+    }
+}
+
+/// The host's notice for a failed start.
+pub(crate) fn start_failed_notice(failed: StartFailed) -> &'static str {
+    match failed {
+        StartFailed::TimedOut => "A player didn't get ready",
+        StartFailed::Mismatch { .. } => "A player's game didn't match",
+        StartFailed::Protocol { .. } => "A player left",
+    }
+}
+
+/// A host for a fixed scenario (`--host`): its human seats open, joiners
+/// take them (or a bot's, when none is open), leavers free theirs, and the
+/// match starts once every seat has someone to play it.
+pub(crate) struct ScenarioHost {
+    lobby: HostLobby,
+    scenario: Scenario,
+    host_name: Option<PlayerName>,
+    seating: Seating,
+    /// The seat order joiners fill: the setup screen's, grouped by team.
+    order: Vec<usize>,
+    /// The host's match while a start runs.
+    starting: Option<Box<Game>>,
+    /// A seating whose match could not be built, so it is not retried.
+    unbuildable: Option<Seating>,
+    notice: Option<String>,
+}
+
+impl ScenarioHost {
+    /// Listens on `address` for the scenario's human seats other than
+    /// `host`'s. `host_name`, when given, names the host's seat.
+    pub(crate) fn new(
+        address: &str,
+        scenario: Scenario,
+        host: PlayerId,
+        commit: &str,
+        host_name: Option<PlayerName>,
+    ) -> Result<Self> {
+        let humans: Vec<PlayerId> = scenario
+            .players
+            .iter()
+            .zip(0..)
+            .filter(|(player, _)| !player.bot)
+            .map(|(_, seat)| PlayerId(seat))
+            .collect();
+        ensure!(
+            humans.len() >= 2 && humans.contains(&host),
+            "a hosted scenario needs the host's seat and another human seat (seats with \"bot\": false)"
+        );
+        Ok(Self {
+            lobby: HostLobby::open(address, commit, &scenario)?,
+            seating: Seating::from_scenario(&scenario, host),
+            order: crate::screens::wizard::seat_display_order(&scenario),
+            scenario,
+            host_name,
+            starting: None,
+            unbuildable: None,
+            notice: None,
+        })
+    }
+
+    fn status(&self) -> String {
+        let place = if self.starting.is_some() {
+            "Starting the match...".to_owned()
+        } else {
+            let open = self
+                .seating
+                .seats()
+                .iter()
+                .filter(|occupant| **occupant == Occupant::Open)
+                .count();
+            let here = 1 + self.seating.members().len();
+            format!(
+                "Hosting on {}: {here} of {} players here",
+                self.lobby.address(),
+                here + open
+            )
+        };
+        match &self.notice {
+            Some(notice) => format!("{place}. {notice}"),
+            None => place,
+        }
+    }
+
+    /// One line per seat: its number and who plays it.
+    fn roster(&self) -> Vec<String> {
+        roster_lines(&self.room(), None)
+    }
+
+    fn room(&self) -> Vec<RoomSeat> {
+        let host = shown_host_name(
+            self.host_name.as_ref(),
+            &self.scenario,
+            self.seating.host_seat(),
+        );
+        self.seating.room(
+            &host,
+            |member| self.lobby.name(member).cloned(),
+            |seat| self.scenario.players[seat].team,
+        )
+    }
+
+    fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
+        for event in self.lobby.poll(now, self.starting.is_some()) {
+            match event {
+                LobbyEvent::Joined { member, .. } => {
+                    if self.seating.place(member, &self.order).is_none() {
+                        self.lobby.refuse(member);
+                    }
+                }
+                LobbyEvent::Left { member, .. } => {
+                    self.seating.vacate(member);
+                }
+            }
+        }
+        if self.starting.is_some() {
+            return self.poll_start(now);
+        }
+        let room = self.room();
+        let seating = &self.seating;
+        self.lobby
+            .publish(&room, |member| seating.seat_of(member), now);
+        if self.seating.ready() && self.unbuildable.as_ref() != Some(&self.seating) {
+            self.start(now, viewport);
+        }
+        None
+    }
+
     fn start(&mut self, now: Duration, viewport: Vec2) {
         let mut scenario = self.scenario.clone();
-        let gathering = &self.gathering;
+        let lobby = &self.lobby;
         // Every bot seat here came from the scenario and keeps its seed.
         self.seating.apply(
             &mut scenario,
             self.host_name.as_ref(),
-            |member| gathering.name(member).cloned(),
+            |member| lobby.name(member).cloned(),
             0,
         );
         let host = self.seating.host_seat();
         match Game::networked(scenario.clone(), host, NetRole::Host, viewport) {
             Ok(game) => {
                 let seated = self.seating.members();
-                self.gathering
+                self.lobby
                     .start(&scenario, host, &seated, game.state.hash(), now);
-                self.flush(now);
                 self.starting = Some(Box::new(game));
                 self.notice = None;
             }
@@ -699,39 +833,36 @@ impl HostLobby {
     }
 
     fn poll_start(&mut self, now: Duration) -> Option<(Game, Link)> {
-        let started = self.gathering.poll_start(now);
-        self.flush(now);
-        match started {
-            Ok(None) => None,
-            Ok(Some(session)) => {
+        match self.lobby.poll_start(now, &self.seating.members()) {
+            StartPoll::Waiting => None,
+            StartPoll::Started(session, peers) => {
                 let game = self.starting.take()?;
-                let mut seated = Vec::new();
-                for (member, seat) in self.seating.members() {
-                    if let Some(index) = self.connections.iter().position(|(id, _)| *id == member) {
-                        seated.push((seat, self.connections.remove(index).1));
-                    }
-                }
-                Some((*game, Link::host(session, seated, now)))
+                Some((*game, Link::host(session, peers, now)))
             }
-            Err(failed) => {
+            StartPoll::Failed(failed) => {
                 self.starting = None;
-                self.notice = Some(
-                    match failed {
-                        StartFailed::TimedOut => "A player didn't get ready",
-                        StartFailed::Mismatch { .. } => "A player's game didn't match",
-                        StartFailed::Protocol { .. } => "A player left",
-                    }
-                    .to_owned(),
-                );
+                self.notice = Some(start_failed_notice(failed).to_owned());
                 None
             }
         }
     }
 }
 
+/// The host's name as a room shows it: the player's, or else the seat's.
+pub(crate) fn shown_host_name(
+    host_name: Option<&PlayerName>,
+    scenario: &Scenario,
+    seat: PlayerId,
+) -> PlayerName {
+    host_name.cloned().unwrap_or_else(|| {
+        PlayerName::new(&scenario.players[usize::from(seat.0)].name)
+            .unwrap_or_else(|_| PlayerName::new("Host").expect("a valid name"))
+    })
+}
+
 /// One line per seat: its number, who plays it, and whether that is the
 /// host or the player at `you`.
-fn roster_lines(seats: &[RoomSeat], you: Option<PlayerId>) -> Vec<String> {
+pub(crate) fn roster_lines(seats: &[RoomSeat], you: Option<PlayerId>) -> Vec<String> {
     seats
         .iter()
         .enumerate()
