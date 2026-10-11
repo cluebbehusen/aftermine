@@ -46,7 +46,7 @@ fn every_layout_mirrors_through_the_center() {
 fn every_planned_duel_stages_at_small_and_large_budgets() {
     for budget in [600, 1_800, 5_000] {
         for duel in plan(budget).duels() {
-            let sc = scenario(&duel, duel.layout.map());
+            let sc = scenario(&duel);
             sc.build()
                 .unwrap_or_else(|e| panic!("{} at {budget}: {e}", sc.name));
         }
@@ -210,13 +210,13 @@ fn upgraded_defenses_refit_before_the_fight() {
         formation: Formation::Line,
         a_west: true,
     };
-    let sc = scenario(&duel, duel.layout.map());
+    let sc = scenario(&duel);
     let mut state = sc.build().expect("the line stages");
     refit(
         &mut state,
         [
-            (PlayerId(0), duel.a.contender),
-            (PlayerId(1), duel.b.contender),
+            (PlayerId(0), &Force::of(duel.a)),
+            (PlayerId(1), &Force::of(duel.b)),
         ],
     )
     .expect("the line refits");
