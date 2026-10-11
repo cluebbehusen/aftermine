@@ -755,6 +755,9 @@ impl App {
     /// leave save, which keeps its replay.
     fn end_network_match(&mut self, end: crate::netplay::End, screen: Screen) -> Screen {
         self.notify(end.notice(), true);
+        // The match stays behind the menus; its network line no longer
+        // holds.
+        self.game.presentation.net_notice = None;
         if matches!(screen, Screen::Busy(_)) {
             return screen;
         }
