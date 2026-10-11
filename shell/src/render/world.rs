@@ -195,24 +195,6 @@ fn tile_fog(game: &crate::game::Scene<'_>, tile: TilePos) -> Fog {
     }
 }
 
-/// Fog-honest peak connectivity. An explored barrier cannot disclose that
-/// its wall continues into an unexplored neighbor merely through edge art.
-fn peak_neighbor_mask(game: &crate::game::Scene<'_>, pos: TilePos) -> u8 {
-    [(0, -1, 1), (1, 0, 2), (0, 1, 4), (-1, 0, 8)]
-        .into_iter()
-        .fold(0, |mask, (dx, dy, bit)| {
-            let neighbor = pos.offset(dx, dy);
-            let known = game.presentation.all_seeing() || game.my_vision().explored(neighbor);
-            let connected = known
-                && game
-                    .state
-                    .map()
-                    .tile(neighbor)
-                    .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Peak);
-            if connected { mask | bit } else { mask }
-        })
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ThemePropPlacement {
     variant: usize,
@@ -233,18 +215,6 @@ impl ThemePropPlacement {
     }
 }
 
-const ONE_TILE_ROCK_COUNT: usize = 14;
-const MULTI_ROCK_FOOTPRINTS: [(i32, i32); 9] = [
-    (2, 1),
-    (2, 1),
-    (2, 1),
-    (2, 1),
-    (2, 1),
-    (3, 1),
-    (3, 1),
-    (3, 1),
-    (3, 1),
-];
 const GROUND_BLOCKER_FOOTPRINTS: [(i32, i32); 9] = [
     (2, 2),
     (2, 1),
@@ -258,16 +228,11 @@ const GROUND_BLOCKER_FOOTPRINTS: [(i32, i32); 9] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ObstacleArt {
-    Rock(usize),
-    Industrial(usize),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ObstaclePlacement {
     anchor: TilePos,
     footprint: (i32, i32),
-    art: ObstacleArt,
+    /// Index into the ground-blocker library.
+    variant: usize,
 }
 
 impl ObstaclePlacement {
@@ -295,51 +260,31 @@ fn placement_for_group(
     mut known_rock: impl FnMut(TilePos) -> bool,
 ) -> Option<ObstaclePlacement> {
     let hash = coordinate_hash(group.x, group.y, 0x5155_4152);
-    // Most rock stays as individual outcrops; selected 3x2 cells occasionally
-    // resolve into one cluster or abandoned machine footprint.
-    if !hash.is_multiple_of(3) {
+    // Rock is slabs; about one 3x2 cell in six resolves into an abandoned
+    // machine footprint instead.
+    if !hash.is_multiple_of(3) || !(hash / 3).is_multiple_of(2) {
         return None;
     }
-
-    let industrial_first = (hash / 3).is_multiple_of(2);
-    for family in 0..2 {
-        let industrial = if family == 0 {
-            industrial_first
-        } else {
-            !industrial_first
-        };
-        let footprints = if industrial {
-            &GROUND_BLOCKER_FOOTPRINTS
-        } else {
-            &MULTI_ROCK_FOOTPRINTS
-        };
-        let start = (hash as usize / 11 + family * 5) % footprints.len();
-        for step in 0..footprints.len() {
-            let variant = (start + step) % footprints.len();
-            let footprint = footprints[variant];
-            let x_slack = 3 - footprint.0;
-            let y_slack = 2 - footprint.1;
-            let anchor = TilePos::new(
-                group.x
-                    + ((hash / 37 + step.fit::<u32>()) % (x_slack.cast_unsigned() + 1))
-                        .cast_signed(),
-                group.y
-                    + ((hash / 71 + step.fit::<u32>()) % (y_slack.cast_unsigned() + 1))
-                        .cast_signed(),
-            );
-            let fits = (0..footprint.1)
-                .all(|dy| (0..footprint.0).all(|dx| known_rock(anchor.offset(dx, dy))));
-            if fits {
-                return Some(ObstaclePlacement {
-                    anchor,
-                    footprint,
-                    art: if industrial {
-                        ObstacleArt::Industrial(variant)
-                    } else {
-                        ObstacleArt::Rock(ONE_TILE_ROCK_COUNT + variant)
-                    },
-                });
-            }
+    let start = hash as usize / 11 % GROUND_BLOCKER_FOOTPRINTS.len();
+    for step in 0..GROUND_BLOCKER_FOOTPRINTS.len() {
+        let variant = (start + step) % GROUND_BLOCKER_FOOTPRINTS.len();
+        let footprint = GROUND_BLOCKER_FOOTPRINTS[variant];
+        let x_slack = 3 - footprint.0;
+        let y_slack = 2 - footprint.1;
+        let anchor = TilePos::new(
+            group.x
+                + ((hash / 37 + step.fit::<u32>()) % (x_slack.cast_unsigned() + 1)).cast_signed(),
+            group.y
+                + ((hash / 71 + step.fit::<u32>()) % (y_slack.cast_unsigned() + 1)).cast_signed(),
+        );
+        let fits =
+            (0..footprint.1).all(|dy| (0..footprint.0).all(|dx| known_rock(anchor.offset(dx, dy))));
+        if fits {
+            return Some(ObstaclePlacement {
+                anchor,
+                footprint,
+                variant,
+            });
         }
     }
     None
@@ -349,10 +294,26 @@ fn group_origin(pos: TilePos) -> TilePos {
     TilePos::new(pos.x.div_euclid(3) * 3, pos.y.div_euclid(2) * 2)
 }
 
-fn visible_obstacle(game: &crate::game::Scene<'_>, group: TilePos) -> Option<ObstaclePlacement> {
+/// Whether an industrial blocker stands on this rock tile, so no slab does.
+pub(super) fn industrial_covers(
+    game: &crate::game::Scene<'_>,
+    pos: TilePos,
+    ring: &impl Fn(TilePos) -> bool,
+) -> bool {
+    visible_obstacle(game, group_origin(pos), ring).is_some_and(|placement| placement.covers(pos))
+}
+
+/// The blocker a 3x2 group shows, if any. Blockers stand only on explored
+/// rock inside the boundary's edge ring, which the boundary draws over.
+fn visible_obstacle(
+    game: &crate::game::Scene<'_>,
+    group: TilePos,
+    ring: &impl Fn(TilePos) -> bool,
+) -> Option<ObstaclePlacement> {
     placement_for_group(group, |pos| {
         let known = game.presentation.all_seeing() || game.my_vision().explored(pos);
         known
+            && !ring(pos)
             && game
                 .state
                 .map()
@@ -695,21 +656,14 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 1.0
             };
             let (overlay, flip) = match (tile.terrain, scrap) {
-                (oxide_sim::map::Terrain::Rock, _)
-                    if visible_obstacle(game, group_origin(pos))
-                        .is_some_and(|placement| placement.covers(pos)) =>
-                {
-                    (None, false)
-                }
-                (oxide_sim::map::Terrain::Rock, _) => {
-                    (Some(sprites.rock(h % ONE_TILE_ROCK_COUNT)), h % 7 < 3)
-                }
-                (oxide_sim::map::Terrain::Peak, _) => (
-                    Some(sprites.peak_barrier(peak_neighbor_mask(game, pos), h % 2)),
-                    false,
-                ),
-                // Pit terraces are drawn by the environment pass after the tiles.
-                (oxide_sim::map::Terrain::Pit, _) => (None, false),
+                // Rock slabs, peak terraces, and pit drops are drawn by their
+                // own passes after the tiles.
+                (
+                    oxide_sim::map::Terrain::Rock
+                    | oxide_sim::map::Terrain::Peak
+                    | oxide_sim::map::Terrain::Pit,
+                    _,
+                ) => (None, false),
                 (_, 0) if wreck > 0 => (Some(sprites.wreck_pile()), h % 5 < 2),
                 (_, 0) => (None, false),
                 (_, s) => (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false),
@@ -736,15 +690,13 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     }
 
     let start = group_origin(min);
+    let ring = super::environment::boundary_ring(&game.scenario.map);
     for y in (start.y..max.y).step_by(2) {
         for x in (start.x..max.x).step_by(3) {
-            let Some(placement) = visible_obstacle(game, TilePos::new(x, y)) else {
+            let Some(placement) = visible_obstacle(game, TilePos::new(x, y), &ring) else {
                 continue;
             };
-            let source = match placement.art {
-                ObstacleArt::Rock(variant) => sprites.rock(variant),
-                ObstacleArt::Industrial(variant) => sprites.ground_blocker(variant),
-            };
+            let source = sprites.ground_blocker(placement.variant);
             let screen = game
                 .presentation
                 .camera

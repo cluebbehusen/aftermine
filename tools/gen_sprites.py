@@ -36,12 +36,6 @@ REGISTRY: dict[str, Image.Image] = {}
 GROUND = (35, 35, 41)
 GROUND_DARK = (28, 28, 34)
 GROUND_LIGHT = (44, 44, 52)
-ROCK = (82, 82, 94)
-ROCK_DARK = (58, 58, 68)
-ROCK_LIGHT = (104, 104, 118)
-PEAK = (66, 64, 82)
-PEAK_DARK = (46, 44, 58)
-PEAK_LIGHT = (118, 114, 138)
 SCRAP = (217, 164, 65)
 SCRAP_DARK = (140, 106, 47)
 SCRAP_LIGHT = (240, 200, 120)
@@ -302,138 +296,8 @@ def ground_detail(variant: int) -> None:
     finish(img, px, f"ground_detail_{variant}")
 
 
-def rock(variant: int) -> None:
-    px = 64
-    img, d = canvas(px)
-    rng = random.Random(7 + variant * 31)
-
-    def boulder(cx, cy, r, tone, dark, light):
-        pts = []
-        n = 9
-        for i in range(n):
-            angle = i / n * 6.28318
-            wobble = r * (0.78 + 0.22 * rng.random())
-            pts.append((cx + wobble * math.cos(angle), cy + wobble * math.sin(angle)))
-        d.polygon([(s(x), s(y)) for x, y in pts], fill=(*tone, 255))
-        # Top-left facet catches light; bottom-right falls into shade.
-        facet = [
-            (s(x * 0.62 + cx * 0.38 - r * 0.12), s(y * 0.62 + cy * 0.38 - r * 0.12))
-            for x, y in pts[:5]
-        ]
-        d.polygon(facet, fill=(*light, 255))
-        shade = [
-            (s(x * 0.72 + cx * 0.28 + r * 0.10), s(y * 0.72 + cy * 0.28 + r * 0.10))
-            for x, y in pts[4:9]
-        ]
-        d.polygon(shade, fill=(*dark, 255))
-
-    layouts = [
-        [(30, 34, 24), (46, 44, 12), (16, 48, 8)],
-        [(34, 28, 22), (18, 40, 14), (46, 50, 9)],
-        [(26, 40, 26), (48, 24, 11)],
-        [(32, 32, 18), (14, 26, 10), (50, 46, 12), (20, 52, 7)],
-    ]
-    for i, (cx, cy, r) in enumerate(layouts[variant % 4]):
-        tone = ROCK if i < 2 else ROCK_DARK
-        boulder(cx, cy, r, tone, ROCK_DARK, ROCK_LIGHT if i < 2 else ROCK)
-    finish(img, px, f"rock_{variant}")
-
-
 def _mix(a, b, t):
     return tuple(int(x + (y - x) * t) for x, y in zip(a, b))
-
-
-def peak_barrier(mask: int, variant: int) -> None:
-    """A full-tile plated exclusion barrier.
-
-    `mask` is north/east/south/west in the low four bits. Connected edges
-    open their bevel and carry the central hazard band through; exposed
-    edges keep a hard bright rim. The result reads as one authored wall
-    instead of a row of mountain icons, while remaining flat enough not to
-    imply that units can pass behind it.
-    """
-    px = 64
-    base = _mix(PEAK_DARK, (30, 31, 40), 0.28 + variant * 0.07)
-    img, d = canvas(px, color=(*base, 255))
-    rng = random.Random(977 + mask * 71 + variant * 313)
-
-    # Broad inset plates create a mechanical mass wholly unlike the loose,
-    # round rock sprites. Their shared center seam is intentionally quiet so
-    # the crossed hazard bands stay dominant at play zoom.
-    d.rectangle([s(4), s(4), s(60), s(60)], fill=(*_mix(base, PEAK, 0.28), 255))
-    d.polygon(
-        [(s(5), s(5)), (s(31), s(5)), (s(26), s(31)), (s(5), s(36))],
-        fill=(*_mix(base, PEAK_LIGHT, 0.12), 255),
-    )
-    d.polygon(
-        [(s(59), s(59)), (s(33), s(59)), (s(38), s(33)), (s(59), s(28))],
-        fill=(*_mix(base, PEAK_DARK, 0.62), 255),
-    )
-
-    # Crossed industrial hatching is the terrain's gameplay signifier:
-    # yellow-bone strokes over a black backing, clipped to the tile.
-    hazard_dark = (25, 24, 22, 255)
-    hazard = _mix(SCRAP, BONE, 0.16 + variant * 0.08)
-    for offset in range(-56, 72, 16):
-        d.line(
-            [(s(offset), s(64)), (s(offset + 64), s(0))],
-            fill=hazard_dark,
-            width=s(8),
-        )
-        d.line(
-            [(s(offset + 2), s(64)), (s(offset + 66), s(0))],
-            fill=(*hazard, 238),
-            width=s(3),
-        )
-    for offset in range(-48, 80, 24):
-        d.line(
-            [(s(offset), s(0)), (s(offset + 64), s(64))],
-            fill=(20, 20, 24, 205),
-            width=s(5),
-        )
-        d.line(
-            [(s(offset), s(0)), (s(offset + 64), s(64))],
-            fill=(*_mix(PEAK_DARK, PEAK_LIGHT, 0.48), 205),
-            width=s(2),
-        )
-
-    # Exposed sides are capped; connected sides instead expose two dark
-    # bridge rails so adjacent tiles join as one continuous barrier.
-    edges = (
-        (1, [(0, 0), (64, 0)], [(19, 0), (45, 0)]),
-        (2, [(64, 0), (64, 64)], [(64, 19), (64, 45)]),
-        (4, [(64, 64), (0, 64)], [(45, 64), (19, 64)]),
-        (8, [(0, 64), (0, 0)], [(0, 45), (0, 19)]),
-    )
-    for bit, rim, bridge in edges:
-        if mask & bit:
-            d.line(
-                [(s(x), s(y)) for x, y in bridge], fill=(17, 18, 24, 255), width=s(8)
-            )
-            d.line(
-                [(s(x), s(y)) for x, y in bridge],
-                fill=(*_mix(PEAK, PEAK_LIGHT, 0.35), 255),
-                width=s(2),
-            )
-        else:
-            d.line([(s(x), s(y)) for x, y in rim], fill=(*PEAK_DARK, 255), width=s(6))
-            inset = [(min(62, max(2, x)), min(62, max(2, y))) for x, y in rim]
-            d.line(
-                [(s(x), s(y)) for x, y in inset], fill=(*PEAK_LIGHT, 235), width=s(2)
-            )
-
-    # Rivets and a few scuffs keep large fields from reading as one flat
-    # procedural texture. Their seeded positions stay clear of the edges.
-    for x, y in ((8, 8), (56, 8), (56, 56), (8, 56)):
-        d.ellipse([s(x - 1.5), s(y - 1.5), s(x + 1.5), s(y + 1.5)], fill=(*BONE, 215))
-    for _ in range(7):
-        x, y = rng.randrange(10, 54), rng.randrange(10, 54)
-        d.line(
-            [(s(x), s(y)), (s(x + rng.randrange(2, 7)), s(y + rng.randrange(-2, 3)))],
-            fill=(*PEAK_LIGHT, 105),
-            width=SS,
-        )
-    finish(img, px, f"peak_barrier_{mask:02x}_{variant}")
 
 
 def extractor_frame_marker() -> None:
@@ -3333,13 +3197,8 @@ def generate(output: Path) -> None:
         ground(i)
     for i in range(12):
         ground_detail(i)
-    for i in range(4):
-        rock(i)
     rock_skirt()
     extractor_frame_marker()
-    for mask in range(16):
-        for variant in range(2):
-            peak_barrier(mask, variant)
     decal("decal_crack", 41, "crack")
     decal("decal_plate", 42, "plate")
     decal("decal_stain", 43, "stain")

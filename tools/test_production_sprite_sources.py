@@ -18,6 +18,7 @@ from tools.production_sprite_sources import (
     installed_defenses_final,
     mechanical_final,
     quarry_final,
+    quarry_rocks,
     skyhook_sapper_crucible_final,
     specialists_final,
     tier_one_combat_final,
@@ -165,7 +166,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "0ec627a546131cd5592ce2a85d13a94c04734de181c32989f3e173b956d4e253",
+            "70683cfbc918b9c02747e50873e87e89af8a669ffff11fc2d8287819c167c645",
         )
 
     def test_promoted_specialists_match_approved_pixels(self) -> None:
@@ -213,8 +214,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_finalized_environment_bank_is_complete_and_pixel_stable(self) -> None:
         self.assertEqual(len(environment_final.FIELD_DEBRIS_KEYS), 10)
         self.assertEqual(len(environment_final.GROUND_BLOCKER_KEYS), 9)
-        self.assertEqual(len(environment_final.ROCK_KEYS), 23)
-        self.assertEqual(len(environment_final.ROCK_FOOTPRINTS), 23)
 
         digest = hashlib.sha256()
         for key in environment_final.FIELD_DEBRIS_KEYS:
@@ -231,30 +230,29 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             self.assertEqual(image.size, tuple(side * 64 for side in footprint))
             digest.update(key.encode())
             digest.update(image.tobytes())
-        for key, footprint in zip(
-            environment_final.ROCK_KEYS[4:],
-            environment_final.ROCK_FOOTPRINTS[4:],
-            strict=True,
-        ):
-            image = self.registry[key]
-            self.assertEqual(image.size, tuple(side * 64 for side in footprint))
-            digest.update(key.encode())
-            digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "b2a1438a5ee46f53243ba66666a2424b4972763113efa54d6b162a5ff27e92c9",
+            "3c9dbbd2cc09cd516004a5309784db2cb271d4e35b3f602a8d48ae7df4a2b2cd",
         )
 
-    def test_peak_bank_covers_every_fog_honest_connectivity_mask(self) -> None:
+    def test_slab_library_covers_every_size_class_without_clipping(self) -> None:
         images = []
-        for mask in range(16):
-            for variant in range(2):
-                key = f"peak_barrier_{mask:02x}_{variant}"
-                image = self.registry[key]
-                self.assertEqual(image.size, (64, 64))
-                self.assertEqual(image.getchannel("A").getbbox(), (0, 0, 64, 64))
+        for size in range(len(quarry_rocks.SLAB_RADII)):
+            canvas = quarry_rocks.slab_canvas(size)
+            for variant in range(quarry_rocks.SLAB_VARIANTS):
+                image = self.registry[f"rock_slab_{size}_{variant}"]
+                self.assertEqual(image.size, canvas)
+                left, top, right, bottom = image.getchannel("A").getbbox()
+                # A slab touching its canvas edge would be cut off in game.
+                self.assertGreater(left, 0)
+                self.assertGreater(top, 0)
+                self.assertLess(right, canvas[0])
+                self.assertLess(bottom, canvas[1])
                 images.append(image.tobytes())
-        self.assertEqual(len(set(images)), 32)
+        self.assertEqual(len(set(images)), len(images))
+        self.assertEqual(
+            list(quarry_rocks.SLAB_RADII), sorted(quarry_rocks.SLAB_RADII)
+        )
 
     def test_metadata_counts_match_every_generated_action_row(self) -> None:
         for stem, frame_set in finalized.UNIT_ACTIONS.items():

@@ -1,4 +1,4 @@
-"""Approved quarry floor, salvage sites, surface dressing, and layered stone."""
+"""Approved quarry floor, salvage sites, and surface dressing."""
 
 import math
 import random
@@ -18,7 +18,6 @@ from tools.production_sprite_sources.specialists_final import (
     circle,
     finish,
     line,
-    poly,
 )
 
 
@@ -176,41 +175,6 @@ def dressing(index):
     return im.resize((64, 64), Image.Resampling.LANCZOS)
 
 
-def rock():
-    im, d = gen.canvas(64)
-
-    def polygon(points, color):
-        d.polygon([(gen.s(x), gen.s(y)) for x, y in points], fill=(*color, 255))
-
-    polygon(
-        [(7, 36), (15, 20), (28, 10), (43, 16), (53, 33), (51, 48), (36, 55), (16, 51)],
-        (28, 27, 32),
-    )
-    polygon(
-        [(10, 35), (18, 19), (29, 12), (43, 18), (49, 34), (35, 42), (20, 39)],
-        (79, 76, 79),
-    )
-    polygon([(20, 39), (35, 42), (49, 34), (49, 46), (35, 53), (19, 48)], (44, 42, 48))
-    polygon([(13, 32), (21, 22), (31, 20), (40, 26), (35, 32), (22, 31)], (94, 89, 87))
-    polygon([(31, 20), (36, 14), (44, 20), (49, 33), (39, 36), (40, 26)], (62, 60, 66))
-    for points in [
-        [(18, 39), (34, 43), (46, 37)],
-        [(20, 44), (34, 48), (45, 42)],
-        [(23, 28), (31, 27), (38, 31)],
-    ]:
-        d.line(
-            [(gen.s(x), gen.s(y)) for x, y in points],
-            fill=(29, 29, 34, 255),
-            width=gen.SS,
-        )
-    for pts in [
-        [(8, 47), (11, 39), (17, 41), (20, 50), (13, 54)],
-        [(46, 52), (48, 46), (57, 46), (59, 51), (54, 57)],
-    ]:
-        polygon(pts, (60, 56, 59))
-    return im.resize((64, 64), Image.Resampling.LANCZOS)
-
-
 def source_frames(controls: dict[str, Image.Image]):
     for phase in range(6):
         key = f"ground_{phase}"
@@ -218,7 +182,6 @@ def source_frames(controls: dict[str, Image.Image]):
     yield "extractor_frame", extractor_site()
     for stage in ("full", "mid", "low", "rich"):
         yield f"scrap_{stage}", scrap(stage)
-    yield "rock_0", rock()
     for index in range(12):
         yield f"quarry_dressing_{index}", dressing(index)
 

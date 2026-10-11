@@ -62,10 +62,13 @@ fn bench_widths_jog_within_bounds_and_never_exceed_the_padding() {
 
 fn flat_field(cells: i32) -> PitField {
     PitField {
-        origin: TilePos::new(0, 0),
-        width: cells / CELLS,
-        height: cells / CELLS,
-        depth: vec![u8::MAX; as_index(cells * cells)],
+        field: CellField {
+            origin: TilePos::new(0, 0),
+            width: cells / CELLS,
+            height: cells / CELLS,
+            cells: CELLS,
+            depth: vec![u8::MAX; as_index(cells * cells)],
+        },
         known: vec![true; as_index((cells / CELLS) * (cells / CELLS))],
     }
 }
@@ -74,13 +77,12 @@ fn flat_field(cells: i32) -> PitField {
 fn chessboard_distance_is_exact_from_a_flat_field() {
     let mut field = flat_field(12);
     // A single standing cell in the middle; everything else is pit.
-    field.depth[6 * 12 + 6] = 0;
-    field.relax(12, 12, false);
-    field.relax(12, 12, true);
+    field.field.depth[6 * 12 + 6] = 0;
+    field.field.relax();
     for y in 0..12i32 {
         for x in 0..12i32 {
             let expected = (x - 6).abs().max((y - 6).abs()).fit::<u8>();
-            assert_eq!(field.cell(x, y), expected, "cell {x},{y}");
+            assert_eq!(field.field.cell(x, y), expected, "cell {x},{y}");
         }
     }
 }
@@ -105,7 +107,6 @@ fn unknown_ground_never_becomes_a_rim() {
     // Unexplored tiles enter the field exactly like pit: with no explored
     // standing cell anywhere, every cell stays void.
     let mut field = flat_field(12);
-    field.relax(12, 12, false);
-    field.relax(12, 12, true);
-    assert!(field.depth.iter().all(|depth| *depth == u8::MAX));
+    field.field.relax();
+    assert!(field.field.depth.iter().all(|depth| *depth == u8::MAX));
 }

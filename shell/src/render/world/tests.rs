@@ -342,7 +342,7 @@ fn obstacle_groups_never_cover_non_rock_or_overlap_neighbor_groups() {
 }
 
 #[test]
-fn incomplete_fog_knowledge_falls_back_to_individual_rocks() {
+fn incomplete_fog_knowledge_falls_back_to_slabs() {
     for group_y in (0..20).step_by(2) {
         for group_x in (0..30).step_by(3) {
             let group = TilePos::new(group_x, group_y);
@@ -361,7 +361,7 @@ fn incomplete_fog_knowledge_falls_back_to_individual_rocks() {
 }
 
 #[test]
-fn shipped_maps_exercise_every_approved_multi_tile_obstacle() {
+fn shipped_maps_exercise_every_industrial_blocker() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
     let mut paths: Vec<_> = std::fs::read_dir(&root)
         .expect("scenario directory")
@@ -372,7 +372,6 @@ fn shipped_maps_exercise_every_approved_multi_tile_obstacle() {
         })
         .collect();
     paths.sort();
-    let mut rocks = BTreeSet::new();
     let mut industrial = BTreeSet::new();
     for path in paths {
         let scenario = oxide_sim::Scenario::load(&path)
@@ -384,27 +383,24 @@ fn shipped_maps_exercise_every_approved_multi_tile_obstacle() {
             .expect("scenario row")
             .len()
             .fit::<i32>();
-        let authored_rock =
-            |pos: TilePos| authored_tile(&scenario.map, pos).is_some_and(|cell| cell == b'#');
+        // Blockers keep off the edge ring, which the boundary draws over.
+        let ring = super::super::environment::boundary_ring(&scenario.map);
+        let open_rock = |pos: TilePos| {
+            !ring(pos) && authored_tile(&scenario.map, pos).is_some_and(|cell| cell == b'#')
+        };
         for y in (0..height).step_by(2) {
             for x in (0..width).step_by(3) {
-                let Some(placement) = placement_for_group(TilePos::new(x, y), authored_rock) else {
+                let Some(placement) = placement_for_group(TilePos::new(x, y), open_rock) else {
                     continue;
                 };
-                match placement.art {
-                    ObstacleArt::Rock(variant) => {
-                        rocks.insert(variant);
-                    }
-                    ObstacleArt::Industrial(variant) => {
-                        industrial.insert(variant);
+                for dy in 0..placement.footprint.1 {
+                    for dx in 0..placement.footprint.0 {
+                        assert!(!ring(placement.anchor.offset(dx, dy)), "{}", path.display());
                     }
                 }
+                industrial.insert(placement.variant);
             }
         }
     }
-    assert_eq!(
-        rocks,
-        (ONE_TILE_ROCK_COUNT..ONE_TILE_ROCK_COUNT + MULTI_ROCK_FOOTPRINTS.len()).collect()
-    );
     assert_eq!(industrial, (0..GROUND_BLOCKER_FOOTPRINTS.len()).collect());
 }

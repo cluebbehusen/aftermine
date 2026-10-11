@@ -193,7 +193,7 @@ fn building_layers_and_resources_enter_the_bank_but_terrain_does_not() {
     ] {
         assert!(is_entity_source(key), "{key}");
     }
-    for key in ["ground_0", "peak_barrier_1", "scorch"] {
+    for key in ["ground_0", "rock_slab_0_0", "scorch"] {
         assert!(!is_entity_source(key));
     }
 }
