@@ -1264,6 +1264,23 @@ impl Wizard {
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Result<Out> {
+        // A running start launches the setup it froze, so nothing may
+        // change the setup until the start succeeds or fails; Back and
+        // Escape call it off.
+        if self.lan.as_ref().is_some_and(|lan| lan.starting.is_some()) {
+            let (back, events) = self.back.route(events);
+            let escaped = events
+                .iter()
+                .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+            if (back || escaped)
+                && let Some(lan) = self.lan.as_mut()
+            {
+                sounds.push((SoundKind::Click, None));
+                lan.lobby.cancel_start();
+                lan.starting = None;
+            }
+            return Ok(Out::Stay);
+        }
         if self.overlay.is_some() {
             self.update_overlay(events, mouse, draft, sounds);
             return Ok(Out::Stay);
@@ -1511,9 +1528,6 @@ impl Wizard {
                     if let Some(seat) = waiting {
                         sounds.push((SoundKind::Denied, None));
                         self.notice = Some(format!("Seat {} is still open", seat + 1));
-                        return None;
-                    }
-                    if lan.starting.is_some() {
                         return None;
                     }
                     if !lan.has_members() {
@@ -2062,6 +2076,10 @@ impl Wizard {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
         };
+        if scenario.players.is_empty() {
+            self.notice = Some("This map has no seats".to_owned());
+            return;
+        }
         if draft.player_name.is_none() {
             let field =
                 Field::new("", PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
@@ -2118,27 +2136,30 @@ impl Wizard {
         let lan = self.lan.as_mut()?;
         let scenario = draft.scenario.as_deref()?;
         let order = seat_display_order(scenario);
-        for event in lan.lobby.poll(now, lan.starting.is_some()) {
-            match event {
-                LobbyEvent::Joined { member, .. } => {
-                    match seat_for_joiner(draft, &lan.members, &order) {
-                        Some(seat) => {
-                            draft.seats[seat].open = true;
-                            lan.members[seat] = Some(member);
+        loop {
+            for event in lan.lobby.poll(now, lan.starting.is_some()) {
+                match event {
+                    LobbyEvent::Joined { member, .. } => {
+                        match seat_for_joiner(draft, &lan.members, &order) {
+                            Some(seat) => {
+                                draft.seats[seat].open = true;
+                                lan.members[seat] = Some(member);
+                            }
+                            None => lan.lobby.refuse(member),
                         }
-                        None => lan.lobby.refuse(member),
                     }
-                }
-                LobbyEvent::Left { member, .. } => {
-                    for slot in &mut lan.members {
-                        if *slot == Some(member) {
-                            *slot = None;
+                    LobbyEvent::Left { member, .. } => {
+                        for slot in &mut lan.members {
+                            if *slot == Some(member) {
+                                *slot = None;
+                            }
                         }
                     }
                 }
             }
-        }
-        if let Some(start) = &lan.starting {
+            let Some(start) = &lan.starting else {
+                break;
+            };
             match lan.lobby.poll_start(now, &start.seated) {
                 StartPoll::Waiting => return None,
                 StartPoll::Started(session, peers) => {
@@ -2149,6 +2170,8 @@ impl Wizard {
                     }
                     return Some((*game, Link::host(session, peers, now)));
                 }
+                // The failed start dropped its culprits: free their chairs
+                // now, before anything can start again this frame.
                 StartPoll::Failed(failed) => {
                     lan.starting = None;
                     self.notice = Some(start_failed_notice(failed).to_owned());

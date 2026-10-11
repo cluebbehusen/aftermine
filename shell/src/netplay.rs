@@ -685,6 +685,11 @@ impl HostLobby {
         self.flush(now);
     }
 
+    /// Abandons a running start; everyone returns to the room.
+    pub(crate) fn cancel_start(&mut self) {
+        self.gathering.cancel_start();
+    }
+
     /// Advances a running start; on success the seated connections leave
     /// with the session.
     pub(crate) fn poll_start(
