@@ -412,6 +412,31 @@ enum Cmd {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// Search mixes of up to three unit kinds at equal scrap for a
+    /// composition nobody beats: grows a pool of strong mixes and the blend
+    /// of them no challenger improves on, at each budget. Built on the duel
+    /// lab's staged fights, so every run is identical.
+    CompositionSearch {
+        /// Scrap each side spends, comma-separated; each budget is searched
+        /// separately.
+        #[arg(long, value_delimiter = ',', default_value = "600,1800,5000")]
+        budgets: Vec<u32>,
+        /// Unit kinds to mix, comma-separated (default: every armed kind).
+        #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
+        kinds: Vec<oxide_sim::UnitKind>,
+        /// Most kinds in one mix.
+        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
+        max_kinds: u8,
+        /// Tick cap per duel.
+        #[arg(long, default_value_t = 8_000)]
+        ticks: u32,
+        /// Maximum simultaneous duels.
+        #[arg(long, default_value = "8")]
+        jobs: std::num::NonZeroUsize,
+        /// Write every budget's outcome as JSON.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
     /// Measure a map: room per seat, route lengths by domain, resources,
     /// artillery pressure, spawn spacing.
     MapAudit {
@@ -1203,6 +1228,44 @@ fn main() -> Result<()> {
             eprintln!("ran in {:.1}s", start.elapsed().as_secs_f64());
             if let Some(path) = json {
                 std::fs::write(&path, serde_json::to_string_pretty(&report)?)
+                    .with_context(|| format!("writing {}", path.display()))?;
+                eprintln!("wrote {}", path.display());
+            }
+        }
+        Cmd::CompositionSearch {
+            budgets,
+            kinds,
+            max_kinds,
+            ticks,
+            jobs,
+            json,
+        } => {
+            use oxide_driver::{composition_search, duel_lab};
+            let kinds = if kinds.is_empty() {
+                duel_lab::armed_units()
+            } else {
+                duel_lab::armed_units()
+                    .into_iter()
+                    .filter(|kind| kinds.contains(kind))
+                    .collect()
+            };
+            let mut outcomes = Vec::new();
+            for budget in budgets {
+                let start = std::time::Instant::now();
+                let outcome =
+                    composition_search::run(&kinds, usize::from(max_kinds), budget, ticks, jobs)?;
+                print!(
+                    "{}",
+                    composition_search::render(std::slice::from_ref(&outcome))
+                );
+                eprintln!(
+                    "{budget} scrap searched in {:.1}s",
+                    start.elapsed().as_secs_f64()
+                );
+                outcomes.push(outcome);
+            }
+            if let Some(path) = json {
+                std::fs::write(&path, serde_json::to_string_pretty(&outcomes)?)
                     .with_context(|| format!("writing {}", path.display()))?;
                 eprintln!("wrote {}", path.display());
             }

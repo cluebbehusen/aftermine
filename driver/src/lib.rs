@@ -7,6 +7,7 @@ pub mod bot_eval;
 pub mod bot_ladder;
 pub mod bot_pressure;
 pub mod client;
+pub mod composition_search;
 pub mod duel_lab;
 pub mod evaluation;
 pub mod ios;
