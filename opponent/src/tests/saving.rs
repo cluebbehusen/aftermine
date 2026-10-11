@@ -498,9 +498,8 @@ fn a_seat_saves_for_the_dear_unit_its_line_prefers_and_trains_it() {
 
 #[test]
 fn a_producer_saved_for_queues_nothing_else_first() {
-    // Line wanted against East's army out of reach of West's buildings, the
-    // Fabricator's Warden its dear unit, and a wounded West army that would
-    // otherwise call for a Tender there.
+    // Line wanted against East's army out of reach of West's buildings, and
+    // the Fabricator's Warden its dear unit.
     let mut scenario = saturated(200);
     scenario
         .units
@@ -520,16 +519,7 @@ fn a_producer_saved_for_queues_nothing_else_first() {
         x: 5,
         y: 7,
     });
-    let mut state = scenario.build().unwrap();
-    let hurt: Vec<UnitId> = state
-        .units()
-        .iter()
-        .filter(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Sentinel)
-        .map(|unit| unit.id)
-        .collect();
-    for unit in hurt {
-        state = wounded(&state, unit, 1);
-    }
+    let state = scenario.build().unwrap();
     let fabricator = state
         .buildings()
         .iter()

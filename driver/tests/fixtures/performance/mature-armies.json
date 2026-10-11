@@ -317,13 +317,13 @@
   },
   {
    "player": 0,
-   "kind": "tender",
+   "kind": "excavator",
    "x": 5,
    "y": 15
   },
   {
    "player": 0,
-   "kind": "tender",
+   "kind": "excavator",
    "x": 7,
    "y": 15
   },
@@ -647,13 +647,13 @@
   },
   {
    "player": 1,
-   "kind": "tender",
+   "kind": "excavator",
    "x": 54,
    "y": 24
   },
   {
    "player": 1,
-   "kind": "tender",
+   "kind": "excavator",
    "x": 52,
    "y": 24
   },

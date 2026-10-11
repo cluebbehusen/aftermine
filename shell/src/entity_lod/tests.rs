@@ -13,7 +13,7 @@ fn live_body_frames_have_cached_production_contact_sources() {
     for name in [
         "rig_harvester_body_cargo5",
         "rig_excavator_body_move2",
-        "rig_tender_body_move1",
+        "rig_excavator_body_move1",
         "rig_scuttler_body_move2",
         "rig_buzzard_hull_move2",
         "bombard_action2",

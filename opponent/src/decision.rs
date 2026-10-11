@@ -243,9 +243,9 @@ pub(crate) struct Producer<'a> {
 }
 
 /// Defense first, then worker recovery, then an affordable saving target
-/// unless a defense is short, then workers, then lifts, attacks, anti-air
-/// clearing, strikes, raids, focus fire, tending and scouting, then
-/// production. A short defense instead buys an emergency static defense,
+/// unless a defense is short, then workers, who also weld the wounded, then
+/// lifts, attacks, anti-air clearing, strikes, raids, focus fire and
+/// scouting, then production. A short defense instead buys an emergency static defense,
 /// trains no Harvester beyond worker recovery, and frees protected scrap for
 /// this decision's production.
 #[expect(
@@ -469,12 +469,15 @@ pub(crate) fn decide(
             &mut ledger,
         );
     }
+    let patients = persistent.missions.patients(observation, &ledger);
     workers::run(
         observation,
         map,
         frame,
         &scratch.ground,
         &staffing,
+        &patients,
+        profile.traits.support,
         &mut ledger,
     );
     for (kind, anchor) in persistent.missions.lift(
@@ -528,9 +531,6 @@ pub(crate) fn decide(
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
-    persistent
-        .missions
-        .tend(observation, map, frame, &mut ledger);
     let lacking = persistent.missions.scout(
         observation,
         map,
@@ -566,7 +566,6 @@ pub(crate) fn decide(
             train_scout(observation, &free, lacking, &mut ledger);
         }
         if !short {
-            train_tenders(observation, profile, &free, &mut ledger);
             let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;
             let scuttlers = if raiding {
                 Missions::raid_squad(observation, map, profile, &persistent.memory, &scratch)
@@ -933,43 +932,6 @@ fn train_scout(
         (foundry, UnitKind::Scuttler)
     };
     ledger.train(producer.building.id, kind);
-}
-
-/// Keeps a Tender, alive or queued, for so much missing health among the
-/// seat's armed ground units, more the more it leans on support, training
-/// one at a ready producer that can.
-fn train_tenders(
-    observation: &ObservationData,
-    profile: &ResolvedProfile,
-    producers: &[Producer<'_>],
-    ledger: &mut Ledger,
-) {
-    let wanted = crate::missions::wounds(observation.my_units.iter())
-        / crate::missions::per_tender(profile.traits.support);
-    let have = observation
-        .my_units
-        .iter()
-        .map(|unit| unit.kind)
-        .chain(observation.my_queues.iter().flatten().copied())
-        .filter(|kind| *kind == UnitKind::Tender)
-        .count() as u64
-        + ledger.queued(UnitKind::Tender) as u64;
-    if have >= wanted {
-        return;
-    }
-    let producer = producers.iter().find(|producer| {
-        producer.ready
-            && !ledger.queued_at(producer.building.id)
-            && producer
-                .building
-                .kind
-                .base_stats()
-                .produces
-                .contains(&UnitKind::Tender)
-    });
-    if let Some(producer) = producer {
-        ledger.train(producer.building.id, UnitKind::Tender);
-    }
 }
 
 /// Keeps `scuttlers`, alive or queued and held by no mission but a raid, for

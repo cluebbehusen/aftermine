@@ -36,7 +36,6 @@ from tools.production_sprite_sources import (
     skyhook_sapper_crucible_final,
     specialists_final,
     structures_base,
-    tender_condor_final,
     tier_one_combat_final,
     turret_family,
     warden_final,
@@ -511,7 +510,6 @@ def install_finalized_sprites(registry: Registry, out: Path) -> None:
         _install_units(registry, out, variant)
         _install_working_buildings(registry, out, variant)
         _install_defenses(registry, out, variant)
-    tender_condor_final.install_tender_condor(registry, out)
     crucible_final.install_crucible_units(registry, out)
     warden_final.install_warden(registry, out)
     shrike_final.install_shrike(registry, out)

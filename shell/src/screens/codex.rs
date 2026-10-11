@@ -295,7 +295,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
             oxide_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
         ));
     }
-    if stats.welder {
+    if stats.harvest.is_some() {
         notes.push(if stats.build_rate > 1 {
             format!(
                 "Welds: repairs machines and raises buildings at {}x pace.",

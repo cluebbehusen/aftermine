@@ -28,7 +28,6 @@ mod reserve;
 mod rival;
 mod scouting;
 mod strike;
-mod support;
 
 pub(crate) use air::{Hazard, hazards};
 pub(crate) use attack::{building_value, minimum};
@@ -36,7 +35,6 @@ pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
 pub(crate) use scouting::{look, points};
 pub(crate) use strike::strike_need;
-pub(crate) use support::{per_tender, wounds};
 
 /// Missions the seat runs at once: a computation bound on the missions each
 /// decision advances, above a scout at every scouting point a map can hold
@@ -590,6 +588,24 @@ impl Missions {
         let mut free = self.available(observation, false);
         free.retain(|unit| !ledger.stuck(*unit));
         free
+    }
+
+    /// Own units workers may weld: those no mission holds, and the members
+    /// of attacks regrouping, in id order.
+    pub(crate) fn patients(&self, observation: &ObservationData, ledger: &Ledger) -> Vec<UnitId> {
+        let mut patients = self.free(observation, ledger);
+        for mission in &self.list {
+            if let Task::Attack {
+                phase: AttackPhase::Gather | AttackPhase::Recover,
+                ..
+            } = mission.task
+            {
+                patients.extend(&mission.units);
+            }
+        }
+        patients.sort_unstable();
+        patients.dedup();
+        patients
     }
 
     /// Takes `units` out of every mission, dropping missions left empty.

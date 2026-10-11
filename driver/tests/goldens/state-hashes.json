@@ -1,25 +1,25 @@
 {
   "sim_version": 1,
   "hashes": {
-    "air#attack": "0xebdcbd5bbbd8c15e",
-    "air#boarded": "0x5fea50dbe93c2d66",
-    "air#delivered": "0x13b59e9c6d63b1a3",
-    "air#landed": "0x7fbeeb71ccaf5a1f",
+    "air#attack": "0x9f8065cf690f8ab8",
+    "air#boarded": "0x0d5687c8c71aeab0",
+    "air#delivered": "0x628663d681d4bf95",
+    "air#landed": "0x447395be68f0cf95",
     "construction#completed": "0xf6030fbde340871d",
     "construction#interrupted": "0x4f32639a50f03606",
     "construction#salvaged": "0x754c8db0e89d189a",
     "construction#upgraded": "0x96b54aec75d990f5",
     "economy#delivery": "0x2a4691190c137a0a",
     "economy#refund": "0x0a6e3e16f8143945",
-    "fog#foreign-command-refused": "0x235238bf8bddc52c",
-    "fog#radar-fire": "0xba53070188bbf32f",
-    "fog#remembered": "0x31342fe466a21ce2",
+    "fog#foreign-command-refused": "0x47611c1e9570d496",
+    "fog#radar-fire": "0xb8631c0ec9762035",
+    "fog#remembered": "0x0d420ab9f7058c64",
     "ground#arrival": "0x657f00e4c7970eac",
     "ground#damage": "0xa6d35b3bbec8c2ff",
     "ground#wreck": "0xa70652214ddbf853",
-    "teams#ally-survives": "0xb8698389d2969003",
-    "teams#post-result": "0x7300109a4ed4a0d5",
-    "teams#shared-sight": "0x246157c1dff1935d",
-    "teams#victory": "0x2a17d0e3d58ce77e"
+    "teams#ally-survives": "0xa62a9e1e71410e60",
+    "teams#post-result": "0xaf192f94efb269f0",
+    "teams#shared-sight": "0x42194683e206d58c",
+    "teams#victory": "0xb1723f817f502b5b"
   }
 }

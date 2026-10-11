@@ -962,14 +962,12 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 6.0,
         },
-        UnitKind::Tender
-        | UnitKind::Excavator
-        | UnitKind::Kestrel
-        | UnitKind::Skyhook
-        | UnitKind::Sapper => AttackTiming {
-            report_ticks: 1.0,
-            recover_ticks: 1.0,
-        },
+        UnitKind::Excavator | UnitKind::Kestrel | UnitKind::Skyhook | UnitKind::Sapper => {
+            AttackTiming {
+                report_ticks: 1.0,
+                recover_ticks: 1.0,
+            }
+        }
         UnitKind::Talon => AttackTiming {
             report_ticks: 2.0,
             recover_ticks: 3.0,
@@ -1051,7 +1049,6 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Flakhound
         | UnitKind::Talon
         | UnitKind::Warden
-        | UnitKind::Tender
         | UnitKind::Excavator
         | UnitKind::Kestrel
         | UnitKind::Shrike
@@ -1121,7 +1118,7 @@ fn active_unit_construction(state: &State, unit: &Unit) -> Option<(BuildingId, V
 }
 
 fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
-    if !unit.kind.stats().welder || unit.progress == 0 || !unit.work_stopped() {
+    if unit.kind.stats().harvest.is_none() || unit.progress == 0 || !unit.work_stopped() {
         return None;
     }
     match unit.order {

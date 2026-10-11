@@ -1,4 +1,4 @@
-//! Roster additions: the Warden line, the Tender's torch, the
+//! Roster additions: the Warden line, the
 //! Excavator's double-pace labor and its tech gate, and the scout and
 //! interceptor wings.
 
@@ -10,7 +10,7 @@ use chassis::grid::TilePos;
 use oxide_sim::command::RejectReason;
 use oxide_sim::scenario::UnitSpec;
 use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, PlayerId, Scenario, UnitKind};
+use oxide_sim::{Command, Event, Scenario, UnitKind};
 
 fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
     let mut buildings = Vec::new();
@@ -101,103 +101,6 @@ fn the_excavator_waits_on_the_fabricator_and_builds_at_double_pace() {
         harvester_pace,
         "double hands: excavator {excavator_pace} vs harvester {harvester_pace}"
     );
-}
-
-#[test]
-fn the_tender_welds_but_never_harvests() {
-    let mut state = arena(
-        1_000,
-        true,
-        vec![
-            unit(0, UnitKind::Tender, 8, 4),
-            unit(0, UnitKind::Sentinel, 9, 4),
-            unit(1, UnitKind::Scuttler, 10, 4),
-        ],
-    )
-    .build()
-    .unwrap();
-    let (tender, patient, raider) = (
-        state.units()[0].id,
-        state.units()[1].id,
-        state.units()[2].id,
-    );
-
-    // The gathering verb refuses a machine with no cargo gear. (One empty
-    // tick first so the node is inside reconciled vision.)
-    state.tick(&[]);
-    assert!(
-        state.map().scrap_at(TilePos::new(5, 4)) > 0,
-        "the arena's scrap node is where the test thinks it is"
-    );
-    assert!(
-        state.vision(PlayerId(0)).visible(TilePos::new(5, 4)),
-        "the node sits inside the Tender's sight"
-    );
-    let report = state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![tender],
-            node: TilePos::new(5, 4),
-            queue: false,
-        },
-    )]);
-    assert!(
-        report.events.iter().any(|e| matches!(
-            e,
-            Event::CommandRejected {
-                reason: RejectReason::NoValidUnits,
-                ..
-            }
-        )),
-        "no bucket, no harvest: {:?}",
-        report.events
-    );
-
-    // Wound the sentinel, then the Tender welds it back.
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![raider],
-            target: oxide_sim::Target::Unit(patient).into(),
-            queue: false,
-        },
-    )]);
-    for _ in 0..60 {
-        state.tick(&[]);
-        if state.unit(patient).unwrap().hp < 40 {
-            break;
-        }
-    }
-    state.tick(&[cmd(
-        1,
-        Command::Stop {
-            units: vec![raider],
-        },
-    )]);
-    let wounded = state.unit(patient).unwrap().hp;
-    assert!(wounded < UnitKind::Sentinel.stats().max_hp);
-    let report = state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![tender],
-            target: patient,
-            queue: false,
-        },
-    )]);
-    assert!(
-        !report
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::CommandRejected { .. })),
-        "the torch is accepted"
-    );
-    for _ in 0..400 {
-        state.tick(&[]);
-        if state.unit(patient).unwrap().hp > wounded {
-            return;
-        }
-    }
-    panic!("the Tender never welded a single hp");
 }
 
 #[test]

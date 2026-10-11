@@ -72,8 +72,8 @@ the running total and mission state.
   buy. Needs, capability needs, personality and situation set the scores.
   Production capacity comes from the income working producers leave unspent
   while their army roles have need, and producers queue far enough to stay busy
-  until the next decision. Small stocks such as carriers, Tenders and Sappers
-  draw on the producers the army leaves, and never add one.
+  until the next decision. Small stocks such as carriers and Sappers draw on the
+  producers the army leaves, and never add one.
 - The top investment is funded through its next purchasable step. The bot keeps
   one optional saving target with its price, reason and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
@@ -97,10 +97,9 @@ the running total and mission state.
   sends.
 - Missions recruit from available units in a fixed order (defend, lift, attack,
   clearance, strike, raid), and each takes only the roles it uses: attack takes
-  line, siege and anti-air units, with Tenders and Sappers in support; raid
-  takes Scuttlers, Sappers, or ground-attack aircraft too few for a strike; lift
-  takes carriers and a payload; a clearance takes splash bombers while ground
-  reaches no enemy.
+  line, siege and anti-air units, with Sappers in support; raid takes Scuttlers,
+  Sappers, or ground-attack aircraft too few for a strike; lift takes carriers
+  and a payload; a clearance takes splash bombers while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at

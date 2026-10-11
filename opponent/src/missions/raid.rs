@@ -70,7 +70,6 @@ fn raider(kind: UnitKind) -> Option<Raider> {
         | UnitKind::Flakhound
         | UnitKind::Talon
         | UnitKind::Shrike
-        | UnitKind::Tender
         | UnitKind::Kestrel
         | UnitKind::Skyhook => None,
     }
