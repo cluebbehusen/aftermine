@@ -85,7 +85,7 @@ fn host_lobby(scenario: Scenario) -> Lobby {
 fn address(lobby: &Lobby) -> String {
     match lobby {
         Lobby::Host(host) => host.lobby.address().to_owned(),
-        Lobby::Client(_) => unreachable!("a host lobby"),
+        Lobby::Client(_) | Lobby::Rejoin(_) => unreachable!("a host lobby"),
     }
 }
 
@@ -324,6 +324,91 @@ fn a_client_that_loses_its_connection_rejoins_and_stays_in_sync() {
         lan.host.0.state.accepts_commands(CLIENT),
         "nobody surrendered"
     );
+}
+
+/// The client's ticket, as its app would have kept it.
+fn ticket_of(lan: &Match) -> crate::rejoin_ticket::Ticket {
+    let mut ticket = lan
+        .client
+        .1
+        .ticket(&lan.client.0)
+        .expect("a connected client has a ticket");
+    ticket.contact = crate::rejoin_ticket::now();
+    ticket
+}
+
+#[test]
+fn a_relaunched_client_rejoins_from_its_ticket_once_its_host_confirms() {
+    let mut lan = Match::start(with_bots());
+    lan.run(10);
+    let ticket = ticket_of(&lan);
+    assert_eq!(ticket.host, "Host");
+    assert_eq!(ticket.seat, CLIENT.0);
+    let Match {
+        mut now,
+        host: (mut host, mut link),
+        client,
+    } = lan;
+    drop(client);
+    wait(|| {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+        (!link.status(now).waiting.is_empty()).then_some(())
+    });
+
+    // Home asks the host first.
+    let path = std::env::temp_dir().join(format!(
+        "oxide-netplay-ticket-{}-{}",
+        std::process::id(),
+        crate::entropy::bits()
+    ));
+    std::fs::write(&path, serde_json::to_vec(&ticket).unwrap()).unwrap();
+    let probe = crate::rejoin_ticket::probe(path.clone(), COMMIT.to_owned());
+    wait(|| {
+        now += STEP;
+        assert_eq!(link.pump(&mut host, now), None);
+        probe.is_finished().then_some(())
+    });
+    assert_eq!(
+        probe.join().unwrap(),
+        crate::rejoin_ticket::Probed::Waiting(ticket.clone())
+    );
+
+    // Then takes the seat back.
+    let mut returning = Lobby::Rejoin(Box::new(Returning::new(&ticket, now)));
+    assert_eq!(returning.status(), "Rejoining Host's match...");
+    let (mut client, mut client_link) = wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        returning.poll(now, viewport())
+    });
+    for _ in 0..20 {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        assert_eq!(client_link.pump(&mut client, now), None);
+    }
+    host.clock.paused = true;
+    wait(|| {
+        now += STEP;
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(link.pump(&mut host, now), None);
+        assert_eq!(client_link.pump(&mut client, now), None);
+        (client.state.current_tick() == host.state.current_tick()).then_some(())
+    });
+    assert_eq!(client.state.hash(), host.state.hash());
+
+    // A seat the host gave away is no longer offered, and its ticket goes.
+    link.drop_seat(CLIENT);
+    let probe = crate::rejoin_ticket::probe(path.clone(), COMMIT.to_owned());
+    wait(|| {
+        now += STEP;
+        let _ = link.pump(&mut host, now);
+        probe.is_finished().then_some(())
+    });
+    assert_eq!(probe.join().unwrap(), crate::rejoin_ticket::Probed::Gone);
+    assert!(!path.exists());
 }
 
 #[test]

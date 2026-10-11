@@ -128,6 +128,14 @@ struct App {
     net: Option<crate::netplay::Link>,
     /// A departed host's connections, still flushing the deciding batches.
     lingering: Option<crate::netplay::Lingering>,
+    /// The ticket of the LAN seat this client plays, kept on disk.
+    ticket: crate::rejoin_ticket::Keeper,
+    /// Home asking the ticket's host whether the seat still waits.
+    probe: Option<std::thread::JoinHandle<crate::rejoin_ticket::Probed>>,
+    /// When Home asks again.
+    next_probe: std::time::Duration,
+    /// The seat Home offers back, as its host confirmed.
+    offer: Option<crate::rejoin_ticket::Ticket>,
     /// The session clock the lobby and the link read.
     clock: std::time::Instant,
 }
@@ -333,6 +341,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         soft_keyboard: None,
         net: None,
         lingering: None,
+        ticket: crate::rejoin_ticket::Keeper::new(crate::paths::rejoin_ticket()),
+        probe: None,
+        next_probe: std::time::Duration::ZERO,
+        offer: None,
         clock: std::time::Instant::now(),
     };
     let mut ui_view = ui_view::capture_ui(&screen, &app);
@@ -470,6 +482,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         {
             app.rejoin(*game);
         }
+        app.keep_ticket(now);
         if app
             .lingering
             .as_mut()
@@ -728,6 +741,23 @@ impl App {
         self.input.reset_session();
     }
 
+    /// Keeps the ticket of the seat this client plays while it can still be
+    /// taken back, and drops it once it cannot. A rejoin in progress leaves
+    /// it as it is.
+    fn keep_ticket(&mut self, now: std::time::Duration) {
+        let Some(link) = &self.net else {
+            return;
+        };
+        let state = &self.game.state;
+        let playing =
+            state.result().is_none() && state.accepts_commands(self.game.presentation.human);
+        if !playing {
+            self.ticket.clear();
+        } else if let Some(ticket) = link.ticket(&self.game) {
+            self.ticket.keep(ticket, now);
+        }
+    }
+
     /// Swaps in the match a rejoin restored, keeping the camera where the
     /// player left it.
     fn rejoin(&mut self, mut fresh: Game) {
@@ -755,6 +785,12 @@ impl App {
     /// leave save, which keeps its replay.
     fn end_network_match(&mut self, end: crate::netplay::End, screen: Screen) -> Screen {
         self.notify(end.notice(), true);
+        if end == crate::netplay::End::HostLost {
+            // The host may come back: the ticket stays for Home to offer.
+            self.net = None;
+        } else {
+            self.ticket.clear();
+        }
         if matches!(screen, Screen::Busy(_)) {
             return screen;
         }

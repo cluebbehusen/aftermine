@@ -106,6 +106,8 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
         && let Some(link) = app.net.take()
     {
         app.lingering = link.leave(&app.game, app.clock.elapsed());
+        // Leaving surrenders the seat; there is nothing to take back.
+        app.ticket.clear();
     }
 }
 
@@ -366,10 +368,43 @@ fn lobby_frame(
     }
 }
 
+/// How often Home asks the ticket's host whether the seat still waits.
+const PROBE_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Offers a LAN seat back on Home only while its host confirms it waits,
+/// asking again every so often.
+fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
+    let now = app.clock.elapsed();
+    if app
+        .probe
+        .as_ref()
+        .is_some_and(std::thread::JoinHandle::is_finished)
+    {
+        let probed = app.probe.take().and_then(|probe| probe.join().ok());
+        app.offer = match probed {
+            Some(crate::rejoin_ticket::Probed::Waiting(ticket)) => Some(ticket),
+            _ => None,
+        };
+        home.set_rejoin(app.offer.as_ref().map(crate::rejoin_ticket::Ticket::label));
+        app.next_probe = now + PROBE_EVERY;
+    }
+    if app.probe.is_none()
+        && app.net.is_none()
+        && now >= app.next_probe
+        && let Some(path) = crate::paths::rejoin_ticket()
+    {
+        app.probe = Some(crate::rejoin_ticket::probe(
+            path,
+            crate::build_identity().revision,
+        ));
+    }
+}
+
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Result<Screen> {
     if !home.catalog_ready {
         app.request_catalog();
     }
+    offer_rejoin(app, &mut home);
     // The title scene: a cold front door drifts its camera
     // slowly across the backdrop world instead of freezing
     // a frame — presentation only, and only while nothing
@@ -396,7 +431,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         screens::home::Out::Stay
         | screens::home::Out::Settings
         | screens::home::Out::Roster
-        | screens::home::Out::Join => {}
+        | screens::home::Out::Join
+        | screens::home::Out::Rejoin => {}
         screens::home::Out::Recover => {
             if let Some(record) = &home.recovery {
                 let path = record.directory.clone();
@@ -450,6 +486,16 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
     } else if out == screens::home::Out::Roster {
         Screen::Codex {
             screen: CodexScreen::open(),
+            back: Box::new(Screen::Home(home)),
+        }
+    } else if out == screens::home::Out::Rejoin
+        && let Some(ticket) = &app.offer
+    {
+        let returning = crate::netplay::Returning::new(ticket, app.clock.elapsed());
+        Screen::Lobby {
+            screen: Box::new(crate::screens::lobby::LobbyScreen::waiting(
+                crate::netplay::Lobby::Rejoin(Box::new(returning)),
+            )),
             back: Box::new(Screen::Home(home)),
         }
     } else if out == screens::home::Out::Join {
