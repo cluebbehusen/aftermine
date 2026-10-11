@@ -130,8 +130,12 @@ struct App {
     lingering: Option<crate::netplay::Lingering>,
     /// The ticket of the LAN seat this client plays, kept on disk.
     ticket: crate::rejoin_ticket::Keeper,
-    /// Home asking the ticket's host whether the seat still waits.
-    probe: Option<std::thread::JoinHandle<crate::rejoin_ticket::Probed>>,
+    /// Home asking the ticket's host whether the seat still waits, and when
+    /// it started asking.
+    probe: Option<(
+        std::thread::JoinHandle<crate::rejoin_ticket::Probed>,
+        std::time::Duration,
+    )>,
     /// When Home asks again.
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
