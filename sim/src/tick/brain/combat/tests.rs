@@ -577,9 +577,10 @@ fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
     );
 }
 
-/// A Scuttler and an Avalanche whose centre stands just inside the tile of
-/// a West Barricade, as an attacking body may in a footprint's empty margin.
-fn overhanging_victim() -> (State, UnitId, UnitId) {
+/// An East Scuttler and a West `kind` whose centre stands at `pos`, inside
+/// the tile of a West Barricade at (6, 2), as an attacking body may in a
+/// footprint's empty margin.
+fn overhanging(kind: UnitKind, pos: Vec2Fx) -> (State, UnitId, UnitId) {
     let mut state = Scenario {
         mode: ScenarioMode::Match,
         name: "overhang".into(),
@@ -597,7 +598,7 @@ fn overhanging_victim() -> (State, UnitId, UnitId) {
         units: vec![
             UnitSpec {
                 player: 0,
-                kind: UnitKind::Avalanche,
+                kind,
                 x: 6,
                 y: 1,
             },
@@ -618,13 +619,54 @@ fn overhanging_victim() -> (State, UnitId, UnitId) {
     }
     .build()
     .expect("overhang builds");
-    let (avalanche, scuttler) = (state.units[0].id, state.units[1].id);
-    state.units[0].pos = Vec2Fx::new(Fx::lit("6.74"), Fx::lit("2.02"));
+    let (victim, scuttler) = (state.units[0].id, state.units[1].id);
+    state.units[0].pos = pos;
     state.refresh_vision();
     state
         .validate_invariants()
         .expect("a body may overhang a footprint's margin");
-    (state, avalanche, scuttler)
+    (state, victim, scuttler)
+}
+
+/// A Scuttler and an Avalanche whose centre stands just inside the
+/// Barricade's tile.
+fn overhanging_victim() -> (State, UnitId, UnitId) {
+    overhanging(
+        UnitKind::Avalanche,
+        Vec2Fx::new(Fx::lit("6.74"), Fx::lit("2.02")),
+    )
+}
+
+/// A contact weapon's reach of a small victim falls short of the weapon's
+/// range. The tile above stands within that range of a Scuttler 0.26 tiles
+/// inside the Barricade's tile, but beyond the hulls plus contact reach, so
+/// a chaser parked there could never fire.
+#[test]
+fn a_contact_chaser_takes_no_stand_in_beyond_its_reach() {
+    let (mut state, victim, scuttler) = overhanging(
+        UnitKind::Scuttler,
+        Vec2Fx::new(Fx::lit("6.5"), Fx::lit("2.26")),
+    );
+    let report = state.tick(&[PlayerCommand {
+        player: crate::PlayerId(1),
+        command: Command::Attack {
+            units: vec![scuttler],
+            target: Target::Unit(victim).into(),
+            queue: false,
+        },
+    }]);
+    assert!(
+        report.events.iter().any(|event| matches!(
+            event,
+            crate::Event::OrderStalled {
+                unit,
+                reason: crate::StallReason::NoFiringPosition,
+                ..
+            } if *unit == scuttler
+        )),
+        "{:?}",
+        report.events
+    );
 }
 
 /// A contact weapon cannot reach the centre of the blocked tile from any

@@ -51,6 +51,26 @@ fn within_weapon_reach(weapon: &WeaponStats, distance_sq: chassis::fx::Fx) -> bo
         && distance_sq >= weapon.minimum_range * weapon.minimum_range
 }
 
+/// How far `kind`'s `weapon` reaches `target`: a contact weapon reaches no
+/// further than the two hulls plus its contact reach.
+fn unit_weapon_reach(
+    state: &State,
+    kind: crate::UnitKind,
+    target: Target,
+    weapon: &WeaponStats,
+) -> Fx {
+    let Some(reach) = kind.stats().contact_reach else {
+        return weapon.range;
+    };
+    let target_radius = match target {
+        Target::Unit(id) => state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius),
+        Target::Building(_) => Fx::ZERO,
+    };
+    weapon
+        .range
+        .min(kind.stats().radius + target_radius + reach)
+}
+
 fn within_unit_weapon_reach(
     state: &State,
     kind: crate::UnitKind,
@@ -58,17 +78,7 @@ fn within_unit_weapon_reach(
     weapon: &WeaponStats,
     distance_sq: Fx,
 ) -> bool {
-    let range = if let Some(reach) = kind.stats().contact_reach {
-        let target_radius = match target {
-            Target::Unit(id) => state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius),
-            Target::Building(_) => Fx::ZERO,
-        };
-        weapon
-            .range
-            .min(kind.stats().radius + target_radius + reach)
-    } else {
-        weapon.range
-    };
+    let range = unit_weapon_reach(state, kind, target, weapon);
     distance_sq <= range * range && distance_sq >= weapon.minimum_range * weapon.minimum_range
 }
 
@@ -834,7 +844,9 @@ pub(super) fn acquire_target_from(
                         .weapons
                         .iter()
                         .find(|w| w.targets.covers(u.domain()))
-                        .map_or(chassis::fx::Fx::ZERO, |w| w.range);
+                        .map_or(chassis::fx::Fx::ZERO, |w| {
+                            unit_weapon_reach(state, unit.kind, Target::Unit(u.id), w)
+                        });
                     if chase_stand_ins(state, stats.domain, victim_tile, u.pos, range).is_empty() {
                         continue;
                     }
@@ -1702,6 +1714,9 @@ pub(super) fn attack(
             // instead. Air chasers and standable victim tiles keep the
             // direct goal.
             let direct = state.passable_for(stats.domain, target_tile);
+            // A stand-in must lie within the reach the trigger checks, or
+            // the chaser parks where it can never fire.
+            let reach = unit_weapon_reach(state, kind, target, weapon);
             // Repath when the target has drifted a tile from the
             // path's goal — cheap pursuit without per-tick A*. A path
             // already aimed at a firing position for this victim stays
@@ -1717,7 +1732,7 @@ pub(super) fn attack(
                         p.goal != target_tile && p.goal.chebyshev(target_tile) > 1
                     } else {
                         !(state.passable_for(stats.domain, p.goal)
-                            && p.goal.center().dist_sq(aim_point) <= weapon.range * weapon.range)
+                            && p.goal.center().dist_sq(aim_point) <= reach * reach)
                     }
                 });
             if stale {
@@ -1730,7 +1745,7 @@ pub(super) fn attack(
                     // pocket next to the victim must not stall a chaser that
                     // could fire from the far side.
                     let mut stand_ins =
-                        chase_stand_ins(state, stats.domain, target_tile, aim_point, weapon.range);
+                        chase_stand_ins(state, stats.domain, target_tile, aim_point, reach);
                     stand_ins.sort_by_key(|goal| {
                         (
                             goal.chebyshev(target_tile),
@@ -1758,14 +1773,8 @@ pub(super) fn attack(
                     // report that no route worked.
                     None if !direct
                         && state.can_see(me, target_tile)
-                        && chase_stand_ins(
-                            state,
-                            stats.domain,
-                            target_tile,
-                            aim_point,
-                            weapon.range,
-                        )
-                        .is_empty() =>
+                        && chase_stand_ins(state, stats.domain, target_tile, aim_point, reach)
+                            .is_empty() =>
                     {
                         Err(StallReason::NoFiringPosition)
                     }
