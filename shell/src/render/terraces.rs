@@ -342,11 +342,20 @@ fn peaks(map: &Map, frame: &Frame) -> (Vec<Peak>, Vec<Option<usize>>) {
     (peaks, owner)
 }
 
-/// Exploration a field reads, so a cached field rebuilds only when it moves.
+/// Exploration a field reads, so a cached field rebuilds only when it
+/// changes: a fingerprint of exactly which tiles are explored, so another
+/// session or seat with the same count never reuses a stale field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Seen {
-    explored: usize,
+    explored: u64,
     all_seeing: bool,
+}
+
+/// An order-sensitive fingerprint of explored flags.
+fn explored_print(flags: impl Iterator<Item = bool>) -> u64 {
+    flags.fold(0xcbf2_9ce4_8422_2325, |acc, explored| {
+        (acc ^ u64::from(explored) ^ 0x9e).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 struct Cache {
@@ -376,7 +385,7 @@ fn seen(game: &Scene<'_>, tiles: impl Iterator<Item = TilePos>) -> Seen {
         explored: if all_seeing {
             0
         } else {
-            tiles.filter(|&pos| vision.explored(pos)).count()
+            explored_print(tiles.map(|pos| vision.explored(pos)))
         },
         all_seeing,
     }

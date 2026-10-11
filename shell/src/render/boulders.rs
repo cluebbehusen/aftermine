@@ -54,14 +54,21 @@ fn unit(value: u32, shift: u32) -> f32 {
 fn candidates(pos: TilePos, depth: u8) -> impl Iterator<Item = Slab> {
     let depth = depth.min(MAX_DEPTH);
     let count = if depth > 1 { 1 } else { 2 };
-    let jitter = if count == 1 { 0.15 } else { 0.28 };
     (0..count).map(move |j| {
         let value = hash(pos.x, pos.y, SALT + j);
         let grown = (0.32 + 0.24 * f32::from(depth - 1)).min(1.05);
+        let radius = grown * (0.82 + 0.33 * unit(value, 16));
+        // An edge slab stays inside its own tile, so it always fits even
+        // where every neighbor is open ground.
+        let jitter = if count == 1 {
+            0.15
+        } else {
+            (0.48 - 0.75 * radius).clamp(0.0, 0.28)
+        };
         Slab {
             x: pos.x as f32 + 0.5 + (unit(value, 0) * 2.0 - 1.0) * jitter,
             y: pos.y as f32 + 0.5 + (unit(value, 8) * 2.0 - 1.0) * jitter,
-            radius: grown * (0.82 + 0.33 * unit(value, 16)),
+            radius,
             rank: (depth, value),
         }
     })
@@ -113,6 +120,43 @@ fn tile_of(coordinate: f32) -> i32 {
     crate::numeric::to_i32(coordinate.floor())
 }
 
+/// Adds the smallest slab at the center of every rock tile no standing
+/// slab reaches, so an impassable tile never reads as open floor. Coverage
+/// depends only on slabs within reach, so it is as stable as `standing`.
+fn with_fallbacks(mut slabs: Vec<Slab>, tiles: &[TilePos]) -> Vec<Slab> {
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    for (index, slab) in slabs.iter().enumerate() {
+        grid.entry((tile_of(slab.x), tile_of(slab.y)))
+            .or_default()
+            .push(index);
+    }
+    let reach = tile_of(SLAB_RADII[ROCK_SLAB_SIZES - 1] * 1.2) + 1;
+    let uncovered: Vec<TilePos> = tiles
+        .iter()
+        .copied()
+        .filter(|pos| {
+            let (cx, cy) = (pos.x as f32 + 0.5, pos.y as f32 + 0.5);
+            !(-reach..=reach).any(|dy| {
+                (-reach..=reach).any(|dx| {
+                    grid.get(&(pos.x + dx, pos.y + dy)).is_some_and(|nearby| {
+                        nearby.iter().any(|&index| {
+                            let slab = &slabs[index];
+                            (slab.x - cx).hypot(slab.y - cy) <= slab.radius
+                        })
+                    })
+                })
+            })
+        })
+        .collect();
+    slabs.extend(uncovered.into_iter().map(|pos| Slab {
+        x: pos.x as f32 + 0.5,
+        y: pos.y as f32 + 0.5,
+        radius: SLAB_RADII[0],
+        rank: (0, hash(pos.x, pos.y, SALT + 7)),
+    }));
+    slabs
+}
+
 /// The library size class closest to a radius.
 fn size_class(radius: f32) -> usize {
     SLAB_RADII
@@ -146,6 +190,7 @@ pub(super) fn draw_boulders(game: &Scene<'_>, sprites: &Sprites) {
         known_rock,
     );
     let mut slabs = Vec::new();
+    let mut tiles = Vec::new();
     for y in min.y - CANDIDATE_PAD..max.y + CANDIDATE_PAD {
         for x in min.x - CANDIDATE_PAD..max.x + CANDIDATE_PAD {
             let pos = TilePos::new(x, y);
@@ -156,11 +201,12 @@ pub(super) fn draw_boulders(game: &Scene<'_>, sprites: &Sprites) {
             {
                 continue;
             }
+            tiles.push(pos);
             slabs
                 .extend(candidates(pos, field.at(pos, 0, 0)).filter(|slab| fits(slab, known_rock)));
         }
     }
-    let mut drawn: Vec<Slab> = standing(&slabs)
+    let mut drawn: Vec<Slab> = with_fallbacks(standing(&slabs), &tiles)
         .into_iter()
         .filter(|slab| {
             let (tx, ty) = (tile_of(slab.x), tile_of(slab.y));

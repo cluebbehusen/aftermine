@@ -97,3 +97,91 @@ fn a_slab_stands_by_its_neighbors_alone() {
         }
     }
 }
+
+#[test]
+fn an_edge_slab_fits_on_its_tile_alone() {
+    for y in -20..20 {
+        for x in -20..20 {
+            let pos = TilePos::new(x, y);
+            for slab in candidates(pos, 1) {
+                assert!(fits(&slab, |tile| tile == pos), "{pos:?} {slab:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn every_rock_tile_gets_a_slab_reaching_its_center() {
+    let tiles: Vec<TilePos> = (0..12).map(|x| TilePos::new(x, 3)).collect();
+    // One far-reaching slab and nothing else: every tile it misses gets a
+    // fallback.
+    let lone = Slab {
+        x: 2.5,
+        y: 3.5,
+        radius: 1.0,
+        rank: (4, 0),
+    };
+    let slabs = with_fallbacks(vec![lone], &tiles);
+    for pos in &tiles {
+        let (cx, cy) = (pos.x as f32 + 0.5, pos.y as f32 + 0.5);
+        assert!(
+            slabs
+                .iter()
+                .any(|slab| (slab.x - cx).hypot(slab.y - cy) <= slab.radius),
+            "{pos:?} reads as open floor"
+        );
+    }
+    assert_eq!(slabs.len(), 1 + tiles.len() - 3);
+}
+
+#[test]
+fn no_rock_tile_on_a_shipped_map_reads_as_open_floor() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
+    let mut paths: Vec<_> = std::fs::read_dir(&root)
+        .expect("scenario directory")
+        .map(|entry| entry.expect("scenario entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    for path in paths {
+        let scenario = oxide_sim::Scenario::load(&path).expect("shipped map loads");
+        let rows = &scenario.map;
+        let ring = super::super::environment::boundary_ring(rows);
+        let height = i32::try_from(rows.len()).expect("small map");
+        let width = i32::try_from(rows[0].len()).expect("small map");
+        let cell = |pos: TilePos| {
+            usize::try_from(pos.y)
+                .ok()
+                .zip(usize::try_from(pos.x).ok())
+                .and_then(|(y, x)| rows.get(y)?.as_bytes().get(x).copied())
+        };
+        let rock = |pos: TilePos| cell(pos).is_none_or(|c| c == b'#') || ring(pos);
+        let field = CellField::seeded(
+            TilePos::new(-FIELD_PAD, -FIELD_PAD),
+            width + 2 * FIELD_PAD,
+            height + 2 * FIELD_PAD,
+            1,
+            rock,
+        );
+        let tiles: Vec<TilePos> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+            .filter(|&pos| cell(pos) == Some(b'#') && !ring(pos))
+            .collect();
+        let slabs: Vec<Slab> = tiles
+            .iter()
+            .flat_map(|&pos| candidates(pos, field.at(pos, 0, 0)))
+            .filter(|slab| fits(slab, rock))
+            .collect();
+        let drawn = with_fallbacks(standing(&slabs), &tiles);
+        for pos in &tiles {
+            let (cx, cy) = (pos.x as f32 + 0.5, pos.y as f32 + 0.5);
+            assert!(
+                drawn
+                    .iter()
+                    .any(|slab| (slab.x - cx).hypot(slab.y - cy) <= slab.radius),
+                "{}: rock at {pos:?} reads as open floor",
+                path.display()
+            );
+        }
+    }
+}

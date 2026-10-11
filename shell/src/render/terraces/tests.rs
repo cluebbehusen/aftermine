@@ -268,3 +268,11 @@ fn peaks_are_eight_connected_playfield_regions() {
     assert_eq!(owner[as_index(7 + 1)], Some(0));
     assert_eq!(owner[as_index(3 * 7 + 5)], Some(1));
 }
+
+#[test]
+fn the_cache_key_tells_exploration_apart_not_just_its_size() {
+    let a = explored_print([true, false, false, true].into_iter());
+    let b = explored_print([false, true, true, false].into_iter());
+    assert_ne!(a, b, "two masks with the same count must not share a field");
+    assert_eq!(a, explored_print([true, false, false, true].into_iter()));
+}
