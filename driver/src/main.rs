@@ -387,6 +387,31 @@ enum Cmd {
         #[arg(long, requires = "scenario")]
         personality_seed: Option<u64>,
     },
+    /// Equal-scrap duels between unit kinds, every pairing on every layout,
+    /// formation and seat: a matrix of value kept, with kinds that win or
+    /// lose everything, kinds that play alike, and tier margins flagged.
+    /// Staged scenarios with no controller, so every run is identical.
+    DuelLab {
+        /// Scrap each side spends; counts round to the nearest whole body.
+        #[arg(long, default_value_t = 1_800)]
+        budget: u32,
+        /// Unit kinds to include, comma-separated (default: every armed kind).
+        #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
+        kinds: Vec<oxide_sim::UnitKind>,
+        /// Also send each kind against a line of each defense.
+        #[arg(long)]
+        defenses: bool,
+        /// Tick cap per duel. The slowest pairings (three Condors or
+        /// Avalanches grinding through 21 Turrets) need about 6,000.
+        #[arg(long, default_value_t = 8_000)]
+        ticks: u32,
+        /// Maximum simultaneous duels.
+        #[arg(long, default_value = "8")]
+        jobs: std::num::NonZeroUsize,
+        /// Write the full report, every leg included, as JSON.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
     /// Measure a map: room per seat, route lengths by domain, resources,
     /// artillery pressure, spawn spacing.
     MapAudit {
@@ -1137,6 +1162,50 @@ fn main() -> Result<()> {
                 state.hash(),
             );
             println!("bench-latency: whole tick {}", latency_summary(&tick_ns));
+        }
+        Cmd::DuelLab {
+            budget,
+            kinds,
+            defenses,
+            ticks,
+            jobs,
+            json,
+        } => {
+            use oxide_driver::duel_lab;
+            let chosen = |all: Vec<oxide_sim::UnitKind>| {
+                if kinds.is_empty() {
+                    all
+                } else {
+                    all.into_iter()
+                        .filter(|kind| kinds.contains(kind))
+                        .collect()
+                }
+            };
+            let plan = duel_lab::Plan {
+                budget,
+                units: chosen(duel_lab::armed_units()),
+                attackers: if defenses {
+                    chosen(duel_lab::defense_attackers())
+                } else {
+                    Vec::new()
+                },
+                defenses: if defenses {
+                    duel_lab::armed_defenses()
+                } else {
+                    Vec::new()
+                },
+                tick_limit: ticks,
+            };
+            let start = std::time::Instant::now();
+            let outcomes = duel_lab::run_plan(&plan, jobs)?;
+            let report = duel_lab::report(&plan, outcomes);
+            print!("{}", duel_lab::render(&report));
+            eprintln!("ran in {:.1}s", start.elapsed().as_secs_f64());
+            if let Some(path) = json {
+                std::fs::write(&path, serde_json::to_string_pretty(&report)?)
+                    .with_context(|| format!("writing {}", path.display()))?;
+                eprintln!("wrote {}", path.display());
+            }
         }
         Cmd::MapAudit { scenario, json } => {
             let scenario = runner::load_scenario(&scenario)?;

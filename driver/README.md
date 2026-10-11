@@ -94,6 +94,16 @@ exporter's identity. Source archives report unknown provenance.
   average and p99 wall time per decision, total CPU, and the fog-honest
   observation cost, per seat and pooled. Seats decide serially with tracing off;
   its command and final hashes equal an untimed run.
+- `duel_lab` (the `duel-lab` command) fights unit kinds against each other at
+  equal scrap on staged sandbox fields: every pairing on open, choke and cover
+  layouts, in line and clump formations, from both seats. No controller runs:
+  armies hunt each other, idle bodies periodically hunt the nearest live enemy,
+  long guns get a Kestrel spotter hovering short of the fight, Sappers get
+  attack orders on defenses they can see, and upgraded defense tiers are
+  refitted with ordinary upgrade commands before the fight. It prints a matrix
+  of value kept, flags kinds that win or lose every matchup, play alike or are
+  outclassed, tier margins, seat-split legs and timeouts, and `--json` writes
+  every leg. The results are reports for balance work, never pinned tests.
 - `tick_profile` shows where simulation time goes inside a window of recorded
   ticks. It rebuilds a replay to the window's first tick, re-simulates the
   window from a clone of that world under macOS's `sample`, and reports each
