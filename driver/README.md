@@ -56,7 +56,8 @@ exporter's identity. Source archives report unknown provenance.
   the losers' near the battle a minute later. A win converts when the force
   razes production, destroys at least 200 scrap of income, or holds ground away
   from the winner's own home; the report leads with pushes, the wins away from
-  home. Battles are `replay-summary`'s. It accepts directories such as a
+  home. A seat's home is the ground within 12 tiles of its production buildings.
+  Battles are `replay-summary`'s. It accepts directories such as a
   `bot-eval --replay-dir`, prints a pooled report, and with `--json` prints each
   match's row and the pooled summary.
 - `bot_eval` runs the player-facing controllers to a decision, tick ceiling, or

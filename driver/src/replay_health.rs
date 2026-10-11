@@ -7,7 +7,8 @@
 //! Each recording is re-executed once. The [`ImpactLedger`] supplies each
 //! tick's income credits and hit attribution, and `replay-summary`'s
 //! clusterer finds the battles. A construction site destroyed before it
-//! completed weighs nothing in a battle here. Everything is omniscient QA
+//! completed weighs nothing in a battle here, and a seat's home is the
+//! ground near its production buildings. Everything is omniscient QA
 //! evidence that never reaches a controller.
 
 use crate::ledger::{ImpactLedger, IncomeSource, Place};
@@ -128,9 +129,9 @@ pub struct WreckSample {
     pub minute: u64,
     /// Scrap of salvage left on the map.
     pub total: u64,
-    /// Of that, scrap lying at each seat's home, by seat: within the
-    /// ledger's home reach of that seat's buildings, the nearer seat taking
-    /// a tile both reach.
+    /// Of that, scrap lying at each seat's home, by seat: within home reach
+    /// of that seat's production buildings, the nearer seat taking a tile
+    /// both reach.
     pub home: Vec<u64>,
 }
 
@@ -161,8 +162,8 @@ pub struct BattleHealth {
 /// within the same gate before the death.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FollowUp {
-    /// Where the battle was, from the winner's view, by the buildings
-    /// standing at its first loss.
+    /// Where the battle was, from the winner's view, by the production
+    /// buildings standing at its first loss.
     pub place: Place,
     /// Teams on the losing side.
     pub losers: Vec<u8>,
@@ -525,9 +526,7 @@ impl Pass {
                 self.buildings
                     .iter()
                     .filter(|life| {
-                        teams(life.team)
-                            && Place::marks(life.kind)
-                            && life.standing(battle.from_tick)
+                        teams(life.team) && marks_home(life.kind) && life.standing(battle.from_tick)
                     })
                     .map(|life| life.tile.chebyshev(centroid))
                     .min()
@@ -637,7 +636,7 @@ impl Pass {
         let seats = self.teams.len();
         let mut marks: Vec<Vec<TilePos>> = vec![Vec::new(); seats];
         for building in state.buildings() {
-            if Place::marks(building.kind) {
+            if marks_home(building.kind) {
                 marks[usize::from(building.player.0)].push(TilePos::containing(building.center()));
             }
         }
@@ -748,6 +747,13 @@ impl Pass {
             battles: self.battles,
         }
     }
+}
+
+/// Whether a building of `kind` marks its owner's home: anything that trains
+/// units. Refineries, defenses and Extractors spread across the map, so
+/// counting them would leave no neutral ground.
+fn marks_home(kind: BuildingKind) -> bool {
+    kind.tiers().iter().any(|stats| !stats.produces.is_empty())
 }
 
 fn composition(value: &BTreeMap<&'static str, u64>) -> Composition {

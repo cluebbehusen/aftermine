@@ -361,8 +361,10 @@ fn a_won_push_that_razes_production_and_workers_converts() {
 
 #[test]
 fn only_the_winning_force_converts_and_leaving_gives_up_the_ground() {
-    // The battle is 21 tiles from either Foundry; the Fabricator and the
-    // worker each stand more than the battle radius away from it.
+    // The battle is 21 tiles from either Foundry, and a Reclaimer, which
+    // trains nothing, does not make the ground nearby East's home. The
+    // Fabricator and the worker each stand more than the battle radius
+    // away from it.
     let scenario = wide_field(
         48,
         0,
@@ -376,7 +378,10 @@ fn only_the_winning_force_converts_and_leaving_gives_up_the_ground() {
             (0, UnitKind::Sentinel, 38, 11),
             (1, UnitKind::Harvester, 46, 11),
         ],
-        &[(1, BuildingKind::Fabricator, 4, 9)],
+        &[
+            (1, BuildingKind::Fabricator, 4, 9),
+            (1, BuildingKind::Reclaimer, 31, 1),
+        ],
     );
     let state = scenario.build().unwrap();
     let wardens: Vec<UnitId> = (6..=8).map(|y| unit_at(&state, 22, y)).collect();
@@ -725,4 +730,25 @@ fn a_win_converts_on_production_real_income_or_ground_held_away_from_home() {
     assert_eq!(row("pushes from minute 15"), (1, 1, 1, 0, 0));
     assert_eq!(row("at the winner's home"), (2, 1, 0, 1, 0));
     assert_eq!(row("all"), (5, 3, 1, 1, 1));
+}
+
+#[test]
+fn only_buildings_that_train_units_mark_a_home() {
+    for kind in [
+        BuildingKind::Foundry,
+        BuildingKind::Fabricator,
+        BuildingKind::Airworks,
+        BuildingKind::Crucible,
+    ] {
+        assert!(marks_home(kind), "{kind:?}");
+    }
+    for kind in [
+        BuildingKind::Reclaimer,
+        BuildingKind::Extractor,
+        BuildingKind::Turret,
+        BuildingKind::Bastion,
+        BuildingKind::Array,
+    ] {
+        assert!(!marks_home(kind), "{kind:?}");
+    }
 }

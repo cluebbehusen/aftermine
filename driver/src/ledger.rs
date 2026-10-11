@@ -1379,8 +1379,8 @@ pub enum Place {
 
 impl Place {
     /// The place of a fight `own` tiles (Chebyshev) from the nearest
-    /// building of one side that [`Place::marks`] and `theirs` from the
-    /// other side's: home wins a tie.
+    /// building marking one side's ground and `theirs` from the other
+    /// side's: home wins a tie.
     pub fn from_distances(own: i32, theirs: i32) -> Place {
         if own <= PLACE_TILES && own <= theirs {
             Place::Home
@@ -1393,7 +1393,7 @@ impl Place {
 
     /// Whether a building of `kind` marks its owner's ground: mines and
     /// Barricades are scattered across the map and do not.
-    pub fn marks(kind: BuildingKind) -> bool {
+    fn marks(kind: BuildingKind) -> bool {
         !matches!(kind, BuildingKind::ScuttleCharge | BuildingKind::Barricade)
     }
 }
