@@ -4,7 +4,7 @@
 
 use crate::PROTOCOL_VERSION;
 use crate::name::PlayerName;
-use crate::token::Token;
+use crate::token::{InstallId, Token};
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ pub enum JoinMessage {
     Introduce {
         /// What the lobby shows and the seat is renamed to.
         name: PlayerName,
+        /// The joining installation, for the host alone: it is never
+        /// relayed to other members.
+        install: InstallId,
     },
     /// The client built the match for start `attempt` and its world at
     /// tick zero hashes to `hash`.

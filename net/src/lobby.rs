@@ -9,6 +9,7 @@ use crate::host::HostSession;
 use crate::message::{GoneReason, JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build};
 use crate::name::PlayerName;
 use crate::start::{StartBarrier, StartFailed};
+use crate::token::InstallId;
 use crate::token::Token;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, SILENCE_TIMEOUT};
 use oxide_sim::{PlayerId, Scenario};
@@ -44,6 +45,8 @@ pub enum LobbyEvent {
         member: MemberId,
         /// Its name.
         name: PlayerName,
+        /// Its installation.
+        install: InstallId,
     },
     /// A member is gone: free its seat and close its connection.
     Left {
@@ -209,9 +212,13 @@ impl Gathering {
                 self.forget(member, &gone);
                 self.events.push(LobbyEvent::Turned { member });
             }
-            Ok(JoinMessage::Introduce { name }) if introducing => {
+            Ok(JoinMessage::Introduce { name, install }) if introducing => {
                 self.members[index].stage = Stage::Joined(name.clone());
-                let joined = LobbyEvent::Joined { member, name };
+                let joined = LobbyEvent::Joined {
+                    member,
+                    name,
+                    install,
+                };
                 match &mut self.starting {
                     Some(starting) => starting.held.push(joined),
                     None => self.events.push(joined),
@@ -533,6 +540,7 @@ enum GuestStage {
 pub struct Guest {
     commit: String,
     name: PlayerName,
+    install: InstallId,
     stage: GuestStage,
     heard: Duration,
     sent: Duration,
@@ -543,11 +551,13 @@ pub struct Guest {
 }
 
 impl Guest {
-    /// A guest of build `commit` joining as `name`; queues its Hello.
-    pub fn new(commit: &str, name: PlayerName, now: Duration) -> Self {
+    /// A guest of build `commit` joining as `name` from installation
+    /// `install`; queues its Hello.
+    pub fn new(commit: &str, name: PlayerName, install: InstallId, now: Duration) -> Self {
         Self {
             commit: commit.to_owned(),
             name,
+            install,
             stage: GuestStage::Greeting,
             heard: now,
             sent: now,
@@ -592,6 +602,7 @@ impl Guest {
                 self.stage = GuestStage::Waiting;
                 let introduce = JoinMessage::Introduce {
                     name: self.name.clone(),
+                    install: self.install,
                 };
                 self.send(introduce.encode());
                 Ok(None)

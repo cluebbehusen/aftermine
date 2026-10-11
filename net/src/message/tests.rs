@@ -71,6 +71,7 @@ fn every_message_survives_a_round_trip() {
         JoinMessage::hello("abc"),
         JoinMessage::Introduce {
             name: PlayerName::new("Alex").unwrap(),
+            install: crate::InstallId::new(1),
         },
         JoinMessage::Ready {
             hash: 9,
@@ -225,10 +226,11 @@ fn wire_shape_is_stable() {
     );
     assert_eq!(
         JoinMessage::Introduce {
-            name: PlayerName::new("Alex").unwrap()
+            name: PlayerName::new("Alex").unwrap(),
+            install: crate::InstallId::new(1),
         }
         .encode(),
-        r#"{"type":"introduce","name":"Alex"}"#
+        r#"{"type":"introduce","name":"Alex","install":"00000000000000000000000000000001"}"#
     );
     assert_eq!(
         LobbyMessage::Room {

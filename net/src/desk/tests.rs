@@ -275,7 +275,11 @@ fn newcomers_other_builds_and_idlers_are_turned_away() {
     desk.receive(
         &mut session,
         newcomer,
-        &JoinMessage::Introduce { name }.encode(),
+        &JoinMessage::Introduce {
+            name,
+            install: crate::InstallId::new(1),
+        }
+        .encode(),
         secs(0),
     );
     assert_eq!(

@@ -31,3 +31,14 @@ fn anything_but_32_hex_digits_is_refused() {
 fn a_token_never_prints() {
     assert_eq!(format!("{:?}", Token::new(7)), "Token(..)");
 }
+
+#[test]
+fn an_install_id_travels_as_32_hex_digits_and_refuses_anything_else() {
+    let install = InstallId::new(0x00ff_0000_0000_0000_0000_0000_0000_0001);
+    let json = serde_json::to_string(&install).unwrap();
+    assert_eq!(json, r#""00ff0000000000000000000000000001""#);
+    assert_eq!(serde_json::from_str::<InstallId>(&json).unwrap(), install);
+    assert_eq!(InstallId::from_hex(&install.to_hex()), Some(install));
+    assert_eq!(InstallId::from_hex("00ff"), None);
+    assert!(serde_json::from_str::<InstallId>(r#""xyz""#).is_err());
+}

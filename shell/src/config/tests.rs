@@ -237,3 +237,33 @@ fn the_driver_quiet_config_has_the_current_shape() {
         serde_json::to_string(&BindingMap::classic()).unwrap()
     );
 }
+
+#[test]
+fn an_install_id_is_made_once_kept_and_a_bad_one_forgotten() {
+    let mut config = Config::default();
+    let id = config.install_id();
+    assert_eq!(config.install_id(), id, "the first id sticks");
+
+    let dir = std::env::temp_dir().join(format!(
+        "oxide-config-install-{}-{}",
+        std::process::id(),
+        crate::entropy::bits()
+    ));
+    let path = dir.join("config.json");
+    config.save_to(&path).unwrap();
+    let mut loaded = Config::load_from(Some(path.clone()));
+    assert_eq!(loaded.install_id(), id, "a saved id survives a relaunch");
+
+    let mut edited = config.clone();
+    edited.install_id = Some("not hex".to_owned());
+    edited.player_name = Some("Alex".to_owned());
+    edited.save_to(&path).unwrap();
+    let loaded = Config::load_from(Some(path));
+    assert_eq!(loaded.install_id, None, "a bad id is forgotten");
+    assert_eq!(
+        loaded.player_name.as_deref(),
+        Some("Alex"),
+        "and nothing else with it"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

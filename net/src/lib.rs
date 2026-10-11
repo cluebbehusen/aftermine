@@ -30,7 +30,7 @@ pub use message::{
 pub use name::{NameError, PlayerName};
 pub use start::{StartBarrier, StartFailed};
 pub use tcp::{Closed, Connection, Listener};
-pub use token::Token;
+pub use token::{InstallId, Token};
 pub use udp::{Advertiser, DISCOVERY_PORT, Scanner};
 pub use visit::{Visit, VisitEnd, VisitEvent};
 

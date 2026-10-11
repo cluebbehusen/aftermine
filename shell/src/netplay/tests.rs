@@ -118,7 +118,12 @@ impl Match {
         let mut host = Lobby::Host(Box::new(
             ScenarioHost::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap(),
         ));
-        let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
+        let mut client = Lobby::Client(ClientLobby::new(
+            &address(&host),
+            COMMIT,
+            name("Alex"),
+            InstallId::new(1),
+        ));
         let (mut hosted, mut joined) = (None, None);
         wait(|| {
             if hosted.is_none() {
@@ -656,7 +661,12 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
 #[test]
 fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
     let mut host = host_lobby(duel());
-    let mut client = Lobby::Client(ClientLobby::new(&address(&host), "other", name("Alex")));
+    let mut client = Lobby::Client(ClientLobby::new(
+        &address(&host),
+        "other",
+        name("Alex"),
+        InstallId::new(1),
+    ));
     let reason = wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         assert!(client.poll(Duration::ZERO, viewport()).is_none());
@@ -673,7 +683,12 @@ fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
 #[test]
 fn every_machine_sees_who_sits_where_and_a_leaver_frees_the_seat() {
     let mut host = host_lobby(three_humans());
-    let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
+    let mut client = Lobby::Client(ClientLobby::new(
+        &address(&host),
+        COMMIT,
+        name("Alex"),
+        InstallId::new(1),
+    ));
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         assert!(client.poll(Duration::ZERO, viewport()).is_none());
@@ -701,7 +716,12 @@ fn every_machine_sees_who_sits_where_and_a_leaver_frees_the_seat() {
 #[test]
 fn a_joiner_that_falls_silent_loses_its_seat() {
     let mut host = host_lobby(three_humans());
-    let mut client = Lobby::Client(ClientLobby::new(&address(&host), COMMIT, name("Alex")));
+    let mut client = Lobby::Client(ClientLobby::new(
+        &address(&host),
+        COMMIT,
+        name("Alex"),
+        InstallId::new(1),
+    ));
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         assert!(client.poll(Duration::ZERO, viewport()).is_none());

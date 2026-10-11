@@ -185,7 +185,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     if !args.automation {
         input::arm_hardware();
     }
-    let config = config::Config::load();
+    let mut config = config::Config::load();
     render::set_user_scale(config.ui_scale);
     render::set_reduced_motion(config.reduced_motion);
     render::set_colorblind(config.colorblind);
@@ -255,7 +255,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         // Without a saved name the Join form asks for one first.
         let screen = match (crate::netplay::parse_join_address(typed), name) {
             (Ok(address), Some(name)) => LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                crate::netplay::ClientLobby::new(&address, &commit, name),
+                crate::netplay::ClientLobby::new(&address, &commit, name, config.install_id()),
             )),
             (Ok(_), None) => LobbyScreen::join(None, typed),
             (Err(reason), name) => LobbyScreen::failed(

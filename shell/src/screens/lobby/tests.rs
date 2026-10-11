@@ -100,6 +100,7 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
         unreachable,
         "abc",
         PlayerName::new("Alex").unwrap(),
+        oxide_net::InstallId::new(1),
     )));
     assert_eq!(screen.keyboard(), None);
     assert_eq!(screen.mode_name(), "lobby");
