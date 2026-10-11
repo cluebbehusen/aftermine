@@ -716,3 +716,87 @@ fn workers_beyond_every_open_place_salvage_wreck_before_crowding_a_node() {
         (price - 1).div_ceil(capacity) as usize
     );
 }
+
+/// `state` with West's team warned of a recent allied loss at `(x, y)`.
+fn warned(state: &State, x: i32, y: i32) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let expires = state.current_tick() + oxide_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS;
+    value["vision"][0]["salvage_incidents"] =
+        serde_json::json!([{"tile": {"x": x, "y": y}, "expires_at": expires}]);
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn wreck_beside_a_recent_allied_loss_is_not_salvaged() {
+    let sent = |warning: bool| {
+        let mut scenario = field();
+        scenario.units.push(harvester(0, 5, 11));
+        let state = wrecked(&scenario.build().unwrap(), &[(9, 12, 300)]);
+        let state = if warning {
+            warned(&state, 10, 12)
+        } else {
+            state
+        };
+        assert_eq!(
+            ObservationData::fog_honest(&state, PlayerId(0))
+                .salvage_incidents
+                .len(),
+            usize::from(warning),
+            "premise"
+        );
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        harvests(&commands)
+            .iter()
+            .any(|(source, _)| *source == TilePos::new(9, 12))
+    };
+    assert!(sent(false), "premise: the wreck draws the Harvester");
+    assert!(!sent(true));
+}
+
+#[test]
+fn spare_workers_count_the_loads_of_those_filling_a_wrecks_places() {
+    let price = UnitKind::Harvester.stats().cost;
+    let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
+    let mut scenario = field();
+    for x in 2..=6 {
+        for y in 13..=16 {
+            scenario.units.push(harvester(0, x, y));
+        }
+    }
+    let state = wrecked(&scenario.build().unwrap(), &[(9, 9, 3 * price)]);
+    let worked = crews(&scenario, &state, BotStance::Balanced, 50);
+    assert!(crew(&worked, (9, 9)).is_some(), "premise: {worked:?}");
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let sent = harvests(&commands)
+        .into_iter()
+        .find(|(source, _)| *source == TilePos::new(9, 9))
+        .map_or(0, |(_, units)| units.len());
+    assert_eq!(
+        sent,
+        (3 * price).div_ceil(capacity) as usize,
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn wreck_whose_route_passes_a_recent_allied_loss_is_not_salvaged() {
+    let sent = |warning: bool| {
+        let mut scenario = field();
+        scenario.units.push(harvester(0, 5, 11));
+        // A Kestrel has seen the wreck, out beyond home.
+        scenario.units.push(unit(0, UnitKind::Kestrel, 23, 10));
+        let state = wrecked(&scenario.build().unwrap(), &[(24, 11, 300)]);
+        // Eight tiles short of the wreck, on its way home.
+        let state = if warning {
+            warned(&state, 16, 11)
+        } else {
+            state
+        };
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        harvests(&commands)
+            .iter()
+            .any(|(source, _)| *source == TilePos::new(24, 11))
+    };
+    assert!(sent(false), "premise: the wreck draws the Harvester");
+    assert!(!sent(true));
+}

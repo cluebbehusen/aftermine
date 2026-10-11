@@ -13,7 +13,7 @@ use oxide_sim::TICKS_PER_SECOND;
 use oxide_sim::ids::Target;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::BotStance;
-use oxide_sim::stats::FOUNDRY_REPAIR_PRICE;
+use oxide_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
 use oxide_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use std::cmp::Reverse;
 
@@ -100,11 +100,23 @@ pub(crate) fn staffing(
         .map(|(node, _)| *node)
         .filter(|node| routes.clear(*node))
         .collect();
+    // Wreck lies where something died: until the warning of an allied loss
+    // expires, salvage keeps clear of its ground, even at home, as the
+    // simulation's own salvage does.
+    let warned = |tile: TilePos| {
+        observation
+            .salvage_incidents
+            .iter()
+            .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+    };
+    let mut salvage_routes = routes.around_incidents(&observation.salvage_incidents);
     let wrecks: Vec<(TilePos, u32)> = observation
         .known_wrecks
         .iter()
-        .filter(|(tile, amount)| *amount > 0 && !observation.known_scrap_at(*tile))
-        .filter(|(tile, _)| routes.clear(*tile))
+        .filter(|(tile, amount)| {
+            *amount > 0 && !observation.known_scrap_at(*tile) && !warned(*tile)
+        })
+        .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()
         .collect();
     Staffing {
@@ -559,6 +571,31 @@ impl<'a> Routes<'a> {
         }
     }
 
+    /// These routes with the ground around each recent allied loss in
+    /// `incidents` counted as danger too.
+    pub(crate) fn around_incidents(&self, incidents: &[TilePos]) -> Self {
+        let mut danger = self.danger.clone();
+        let radius = HARVEST_INCIDENT_DANGER_RADIUS;
+        for incident in incidents {
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    if let Some(cell) = danger.get_mut(incident.offset(dx, dy)) {
+                        *cell = true;
+                    }
+                }
+            }
+        }
+        let (width, height) = self.map.size();
+        Self {
+            map: self.map,
+            me: self.me,
+            frame: self.frame,
+            homes: self.homes,
+            danger,
+            traced: Grid::new(width, height, None),
+        }
+    }
+
     /// Whether the route from home to `source` is clear.
     pub(crate) fn clear(&mut self, source: TilePos) -> bool {
         let (map, me) = (self.map, self.me);
@@ -675,9 +712,9 @@ fn room(
 
 /// Sends each idle worker, nearest home first, to the reachable worked node
 /// or wreck with the most places open; with none open, to the nearest known
-/// wreck holding more salvage than the workers on it carry away in a load
-/// each, then to the most open worked source, or to its nearest reachable
-/// known node when none is worked. It never sends one to a source inside
+/// wreck holding more salvage than the workers sent to it carry away in a
+/// load each, then to the most open worked source with something left, or to
+/// its nearest reachable known node when none is worked. It never sends one to a source inside
 /// known danger or whose route crosses it. A worker harvesting a source whose
 /// route has turned dangerous is sent elsewhere the same way, or home when
 /// nowhere is left. A worker with nowhere to go that still carries scrap
@@ -759,9 +796,16 @@ fn assign_idle(
             continue;
         };
         let from = doubled(unit.tile);
+        // A worked wreck whose salvage the workers already sent carry away
+        // has nothing left for another.
+        let spoken_for = |source: TilePos| {
+            salvage
+                .binary_search_by_key(&(source.y, source.x), |(tile, _)| (tile.y, tile.x))
+                .is_ok_and(|index| salvage[index].1 <= 0)
+        };
         let most_open = miners
             .iter_mut()
-            .filter(|(node, _)| map.touches(*node, component))
+            .filter(|(node, _)| map.touches(*node, component) && !spoken_for(*node))
             .min_by_key(|(node, open)| (Reverse(*open), frame.rank(from, doubled(*node))));
         let leftover = salvage
             .iter_mut()
@@ -772,10 +816,7 @@ fn assign_idle(
                 *open -= 1;
                 *node
             }
-            (_, Some((tile, left))) => {
-                *left -= i64::from(capacity(unit.kind));
-                *tile
-            }
+            (_, Some((tile, _))) => *tile,
             (Some((node, open)), None) => {
                 *open -= 1;
                 *node
@@ -798,6 +839,13 @@ fn assign_idle(
                 node
             }
         };
+        // A worker filling an open place on a worked wreck carries its load
+        // away too, so spare workers count it.
+        if let Ok(index) =
+            salvage.binary_search_by_key(&(node.y, node.x), |(tile, _)| (tile.y, tile.x))
+        {
+            salvage[index].1 -= i64::from(capacity(unit.kind));
+        }
         assignments.push((node, unit.id));
     }
     assignments.sort_by_key(|(node, unit)| (frame.rank(frame.home, doubled(*node)), *unit));
