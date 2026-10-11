@@ -583,11 +583,14 @@ impl HostLobby {
                 return None;
             }
         };
+        // A failed start drops every seated connection, so no Ready from
+        // one attempt can reach the next and every start can be the first.
         let mut barrier = StartBarrier::new(
             &self.scenario,
             self.host,
             &self.seats,
             game.state.hash(),
+            1,
             now,
         );
         let seated: Vec<(PlayerId, Connection)> = self
@@ -772,18 +775,21 @@ impl ClientLobby {
             Joining::Waiting(connection) => match connection.try_recv() {
                 Ok(None) => (Joining::Waiting(connection), None),
                 Ok(Some(line)) => match LobbyMessage::decode(&line) {
-                    Ok(LobbyMessage::Start { seat, scenario }) => {
-                        match Game::networked(*scenario, seat, NetRole::Client, viewport) {
-                            Ok(game) => {
-                                let ready = JoinMessage::Ready {
-                                    hash: game.state.hash(),
-                                };
-                                connection.send(&ready.encode());
-                                (Joining::Ready(connection, Box::new(game), seat), None)
-                            }
-                            Err(error) => refused(&format!("Cannot start: {error}")),
+                    Ok(LobbyMessage::Start {
+                        seat,
+                        scenario,
+                        attempt,
+                    }) => match Game::networked(*scenario, seat, NetRole::Client, viewport) {
+                        Ok(game) => {
+                            let ready = JoinMessage::Ready {
+                                hash: game.state.hash(),
+                                attempt,
+                            };
+                            connection.send(&ready.encode());
+                            (Joining::Ready(connection, Box::new(game), seat), None)
                         }
-                    }
+                        Err(error) => refused(&format!("Cannot start: {error}")),
+                    },
                     _ => refused("The host sent something unexpected"),
                 },
                 Err(Closed) => refused("The host closed the lobby"),

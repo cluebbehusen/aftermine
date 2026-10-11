@@ -3,6 +3,8 @@
 //! [`ClientMessage`] and [`HostMessage`].
 
 use crate::PROTOCOL_VERSION;
+use crate::name::PlayerName;
+use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
 use serde::{Deserialize, Serialize};
 
@@ -20,12 +22,22 @@ pub enum JoinMessage {
         /// The commit the client was built from.
         commit: String,
     },
-    /// The client built the match and its world at tick zero hashes to
-    /// `hash`.
+    /// The player's name, sent once, after a host Hello that matched.
+    Introduce {
+        /// What the lobby shows and the seat is renamed to.
+        name: PlayerName,
+    },
+    /// The client built the match for start `attempt` and its world at
+    /// tick zero hashes to `hash`.
     Ready {
         /// `State::hash` at tick zero.
         hash: u64,
+        /// The start this answers, so a late Ready cannot count toward a
+        /// later start.
+        attempt: u32,
     },
+    /// Sent when the client has sent nothing else recently.
+    Heartbeat,
 }
 
 /// A line the host sends to a joining client before the match starts.
@@ -42,6 +54,25 @@ pub enum LobbyMessage {
         /// The commit the host was built from.
         commit: String,
     },
+    /// The map the lobby plays, sent once after the host accepts the
+    /// client's Introduce. The map stays fixed while the lobby is open.
+    Map {
+        /// The map as authored; [`LobbyMessage::Room`] says who plays it.
+        scenario: Box<Scenario>,
+    },
+    /// Who sits where, sent whenever it changes for this client.
+    Room {
+        /// One entry per seat of the map, in seat order.
+        seats: Vec<RoomSeat>,
+        /// The receiving client's seat.
+        seat: PlayerId,
+    },
+    /// Refused: every seat already holds a person.
+    Full,
+    /// The host removed this client from the lobby.
+    Removed,
+    /// Sent when the host has sent nothing else recently.
+    Heartbeat,
     /// The frozen roster's match: the client's seat and the scenario every
     /// machine builds.
     Start {
@@ -49,9 +80,47 @@ pub enum LobbyMessage {
         seat: PlayerId,
         /// The match every machine builds.
         scenario: Box<Scenario>,
+        /// Which start this is; the client's Ready repeats it.
+        attempt: u32,
     },
     /// Every client is ready; the match begins at tick zero.
     Go,
+}
+
+/// One seat as the lobby shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoomSeat {
+    /// Who plays the seat.
+    pub holder: SeatHolder,
+    /// The seat's team; `None` stands alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<u8>,
+}
+
+/// Who plays a seat in the lobby.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SeatHolder {
+    /// The hosting player.
+    Host {
+        /// The host's name.
+        name: PlayerName,
+    },
+    /// A joined player.
+    Player {
+        /// The player's name.
+        name: PlayerName,
+    },
+    /// A bot.
+    Bot {
+        /// How well it plays.
+        difficulty: BotDifficulty,
+        /// Its strategic posture.
+        stance: BotStance,
+    },
+    /// Waiting for a player.
+    Open,
 }
 
 impl JoinMessage {

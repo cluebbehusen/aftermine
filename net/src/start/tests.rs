@@ -19,13 +19,13 @@ fn scenario() -> Scenario {
 }
 
 fn ready(hash: u64) -> String {
-    JoinMessage::Ready { hash }.encode()
+    JoinMessage::Ready { hash, attempt: 1 }.encode()
 }
 
 #[test]
 fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, secs(0));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
     let starts = barrier.take_outgoing();
     assert_eq!(starts.len(), CLIENTS.len());
     for (seat, line) in starts {
@@ -33,7 +33,8 @@ fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
             LobbyMessage::decode(&line).unwrap(),
             LobbyMessage::Start {
                 seat,
-                scenario: Box::new(scenario.clone())
+                scenario: Box::new(scenario.clone()),
+                attempt: 1,
             }
         );
     }
@@ -62,7 +63,7 @@ fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
 #[test]
 fn a_mismatched_hash_or_a_stray_line_fails_the_start() {
     let scenario = scenario();
-    let fresh = || StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, secs(0));
+    let fresh = || StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
     let seat = CLIENTS[0];
     assert_eq!(
         fresh().receive(seat, &ready(HASH + 1)),
@@ -85,10 +86,30 @@ fn a_mismatched_hash_or_a_stray_line_fails_the_start() {
 }
 
 #[test]
+fn heartbeats_and_readys_for_another_attempt_are_ignored() {
+    let scenario = scenario();
+    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 2, secs(0));
+    let seat = CLIENTS[0];
+    barrier
+        .receive(seat, &JoinMessage::Heartbeat.encode())
+        .unwrap();
+    // A late Ready from the abandoned first attempt neither counts nor fails.
+    barrier.receive(seat, &ready(HASH + 1)).unwrap();
+    assert_eq!(barrier.unready(), CLIENTS.to_vec());
+    let current = JoinMessage::Ready {
+        hash: HASH,
+        attempt: 2,
+    };
+    barrier.receive(seat, &current.encode()).unwrap();
+    assert_eq!(barrier.unready(), vec![CLIENTS[1]]);
+}
+
+#[test]
 fn the_start_times_out_at_its_deadline() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, secs(5));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(5));
     barrier.receive(CLIENTS[0], &ready(HASH)).unwrap();
+    assert_eq!(barrier.unready(), vec![CLIENTS[1]]);
     let deadline = secs(5) + START_TIMEOUT;
     assert!(
         barrier
@@ -107,8 +128,9 @@ fn the_seats_must_be_exactly_the_scenarios_humans() {
         &[PlayerId(1), PlayerId(2), PlayerId(3)],
         &[PlayerId(1), PlayerId(3)],
     ] {
-        let result =
-            std::panic::catch_unwind(|| StartBarrier::new(&scenario, HOST, clients, HASH, secs(0)));
+        let result = std::panic::catch_unwind(|| {
+            StartBarrier::new(&scenario, HOST, clients, HASH, 1, secs(0))
+        });
         assert!(result.is_err(), "{clients:?}");
     }
 }
@@ -117,7 +139,7 @@ fn the_seats_must_be_exactly_the_scenarios_humans() {
 #[should_panic(expected = "the match already started")]
 fn polling_after_the_start_is_a_caller_bug() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, secs(0));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
     for seat in CLIENTS {
         barrier.receive(seat, &ready(HASH)).unwrap();
     }
@@ -129,6 +151,6 @@ fn polling_after_the_start_is_a_caller_bug() {
 #[should_panic(expected = "is not a client seat")]
 fn lines_from_unknown_seats_are_a_caller_bug() {
     let scenario = scenario();
-    let _ = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, secs(0))
+    let _ = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0))
         .receive(PlayerId(3), &ready(HASH));
 }
