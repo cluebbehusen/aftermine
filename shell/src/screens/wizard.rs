@@ -2155,6 +2155,8 @@ impl Wizard {
                             }
                         }
                     }
+                    // The lobby closes these itself.
+                    LobbyEvent::Turned { .. } => {}
                 }
             }
             let Some(start) = &lan.starting else {

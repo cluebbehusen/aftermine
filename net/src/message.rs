@@ -4,6 +4,7 @@
 
 use crate::PROTOCOL_VERSION;
 use crate::name::PlayerName;
+use crate::token::Token;
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
 use serde::{Deserialize, Serialize};
@@ -38,9 +39,22 @@ pub enum JoinMessage {
     },
     /// Sent when the client has sent nothing else recently.
     Heartbeat,
+    /// Asks a host whether `token` still names a seat in its running match,
+    /// in place of an introduction.
+    Probe {
+        /// The token the host gave at Go.
+        token: Token,
+    },
+    /// Asks to take back the seat `token` names in the host's running match,
+    /// in place of an introduction.
+    Rejoin {
+        /// The token the host gave at Go.
+        token: Token,
+    },
 }
 
-/// A line the host sends to a joining client before the match starts.
+/// A line the host sends to a joining client before the match starts, or
+/// to a client rejoining its running match.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LobbyMessage {
@@ -83,8 +97,60 @@ pub enum LobbyMessage {
         /// Which start this is; the client's Ready repeats it.
         attempt: u32,
     },
-    /// Every client is ready; the match begins at tick zero.
-    Go,
+    /// Every client is ready; the match begins. `token` lets this client
+    /// take its seat back if it loses its connection.
+    Go {
+        /// The client's rejoin token.
+        token: Token,
+    },
+    /// The probed token names a seat the running match is waiting for.
+    Waiting {
+        /// The host's name.
+        host: PlayerName,
+        /// The match's map.
+        map: String,
+    },
+    /// The token names no seat to take back; the connection closes next.
+    Gone {
+        /// Why.
+        reason: GoneReason,
+    },
+    /// The match already started, so a new player cannot join; the
+    /// connection closes next.
+    Underway,
+    /// The match as it stands for a rejoining client, in `parts` lines of
+    /// [`LobbyMessage::Part`] that follow.
+    Resume {
+        /// The seat the client takes back.
+        seat: PlayerId,
+        /// The world tick the snapshot holds; batches resume from it.
+        tick: Tick,
+        /// The snapshot's length in bytes.
+        bytes: u64,
+        /// How many parts carry it.
+        parts: u32,
+        /// Which rejoin this is; the client's Ready repeats it.
+        attempt: u32,
+    },
+    /// The next piece of a [`LobbyMessage::Resume`] snapshot, as hex.
+    Part {
+        /// The bytes, two hex digits each.
+        data: String,
+    },
+}
+
+/// Why a token names no seat to take back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoneReason {
+    /// The match ended, or is not the one the token came from.
+    Over,
+    /// The seat was dropped, defeated, or handed to a bot.
+    SeatTaken,
+    /// The host is not running a match.
+    NoMatch,
+    /// The match is too large to send.
+    TooLarge,
 }
 
 /// One seat as the lobby shows it.

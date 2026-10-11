@@ -97,7 +97,27 @@ fn every_message_survives_a_round_trip() {
             scenario: Box::new(Scenario::skirmish()),
             attempt: 3,
         },
-        LobbyMessage::Go,
+        LobbyMessage::Go {
+            token: Token::new(9),
+        },
+        LobbyMessage::Waiting {
+            host: PlayerName::new("Connor").unwrap(),
+            map: "Broad Front".to_owned(),
+        },
+        LobbyMessage::Gone {
+            reason: GoneReason::SeatTaken,
+        },
+        LobbyMessage::Underway,
+        LobbyMessage::Resume {
+            seat: PlayerId(1),
+            tick: 400,
+            bytes: 1000,
+            parts: 1,
+            attempt: 2,
+        },
+        LobbyMessage::Part {
+            data: "00ff".to_owned(),
+        },
     ] {
         assert_eq!(LobbyMessage::decode(&message.encode()).unwrap(), message);
     }
@@ -224,7 +244,68 @@ fn wire_shape_is_stable() {
         )
     );
     assert_eq!(LobbyMessage::Full.encode(), r#"{"type":"full"}"#);
-    assert_eq!(LobbyMessage::Go.encode(), r#"{"type":"go"}"#);
+    assert_eq!(
+        LobbyMessage::Go {
+            token: Token::new(0xab)
+        }
+        .encode(),
+        r#"{"type":"go","token":"000000000000000000000000000000ab"}"#
+    );
+    assert_eq!(
+        JoinMessage::Rejoin {
+            token: Token::new(1)
+        }
+        .encode(),
+        r#"{"type":"rejoin","token":"00000000000000000000000000000001"}"#
+    );
+    assert_eq!(
+        JoinMessage::Probe {
+            token: Token::new(1)
+        }
+        .encode(),
+        r#"{"type":"probe","token":"00000000000000000000000000000001"}"#
+    );
+    assert_eq!(
+        LobbyMessage::Waiting {
+            host: PlayerName::new("Connor").unwrap(),
+            map: "Broad Front".to_owned()
+        }
+        .encode(),
+        r#"{"type":"waiting","host":"Connor","map":"Broad Front"}"#
+    );
+    assert_eq!(
+        LobbyMessage::Gone {
+            reason: GoneReason::Over
+        }
+        .encode(),
+        r#"{"type":"gone","reason":"over"}"#
+    );
+    assert_eq!(
+        LobbyMessage::Gone {
+            reason: GoneReason::TooLarge
+        }
+        .encode(),
+        r#"{"type":"gone","reason":"too_large"}"#
+    );
+    assert_eq!(LobbyMessage::Underway.encode(), r#"{"type":"underway"}"#);
+    assert_eq!(
+        LobbyMessage::Resume {
+            seat: PlayerId(1),
+            tick: 400,
+            bytes: 1000,
+            parts: 1,
+            attempt: 2
+        }
+        .encode(),
+        r#"{"type":"resume","seat":1,"tick":400,"bytes":1000,"parts":1,"attempt":2}"#
+    );
+    assert_eq!(
+        LobbyMessage::Part {
+            data: "00ff".to_owned()
+        }
+        .encode(),
+        r#"{"type":"part","data":"00ff"}"#
+    );
     let start = LobbyMessage::Start {
         seat: PlayerId(2),
         scenario: Box::new(Scenario::skirmish()),

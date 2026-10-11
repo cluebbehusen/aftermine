@@ -7,9 +7,9 @@ use chassis::rng::Pcg32;
 use oxide_kit::controller::{SeatController, record_events, seat_controllers};
 use oxide_kit::{GameReplay, bot_execution, runner};
 use oxide_net::{
-    ClientEnd, ClientSession, Connection, HostEvent, HostSession, JoinMessage, Listener,
-    LobbyMessage, PROGRESS_TIMEOUT, SILENCE_TIMEOUT, SeatNotice, SeatState, StartBarrier,
-    reports_hash, same_build,
+    ClientEnd, ClientSession, Connection, Desk, DeskEvent, HostEvent, HostSession, JoinMessage,
+    Listener, LobbyMessage, PROGRESS_TIMEOUT, PlayerName, SILENCE_TIMEOUT, SeatNotice, SeatState,
+    StartBarrier, Token, Visit, VisitEvent, reports_hash, same_build,
 };
 use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State, Tick, TickReport};
@@ -239,7 +239,12 @@ impl Net {
     fn new(links: [(u64, u32); 2]) -> Self {
         let scenario = scenario();
         let host = Host {
-            session: HostSession::new(HOST, &CLIENTS, Duration::ZERO),
+            session: HostSession::new(HOST, &CLIENTS, Duration::ZERO).with_tokens(
+                CLIENTS
+                    .iter()
+                    .map(|&seat| (seat, Token::new(u128::from(seat.0))))
+                    .collect(),
+            ),
             machine: Machine::new(&scenario, HOST),
             bots: seat_controllers(&scenario).unwrap(),
             next_due: Duration::ZERO,
@@ -552,6 +557,86 @@ fn a_seat_handed_to_a_bot_plays_on_in_sync() {
 }
 
 #[test]
+fn a_lost_client_rejoins_from_a_snapshot_and_stays_in_sync() {
+    let mut net = Net::new([(40, 20), (40, 20)]);
+    let gone = CLIENTS[1];
+    net.run_until(Duration::from_secs(3));
+    net.client(gone).up.close();
+    net.client(gone).down.close();
+    net.host.session.disconnected(gone, net.now);
+    net.run_until(Duration::from_secs(4));
+    assert!(net.host.session.waiting());
+
+    // The handshake, in memory: the snapshot is the host's world as JSON.
+    let now = net.now;
+    let mut desk = Desk::new("test", PlayerName::new("Host").unwrap(), "Twin Forges");
+    let visitor = desk.connected(now);
+    let mut visit = Visit::rejoin("test", Token::new(u128::from(gone.0)), now);
+    let mut restored = None;
+    let mut admitted = false;
+    while !admitted {
+        for line in visit.take_outgoing() {
+            desk.receive(&mut net.host.session, visitor, &line, now);
+        }
+        for event in desk.poll(&mut net.host.session, now) {
+            match event {
+                DeskEvent::Snapshot { .. } => {
+                    let state = &net.host.machine.state;
+                    let bytes = serde_json::to_vec(state).unwrap();
+                    let tick = net.host.session.tick();
+                    desk.send_snapshot(
+                        &mut net.host.session,
+                        visitor,
+                        tick,
+                        state.hash(),
+                        &bytes,
+                        now,
+                    );
+                }
+                DeskEvent::Admitted { seat, .. } => {
+                    assert_eq!(seat, gone);
+                    admitted = true;
+                }
+                DeskEvent::Done { .. } => panic!("the rejoin was turned away"),
+            }
+        }
+        for (_, line) in desk.take_outgoing() {
+            match visit.receive(&line, now).unwrap() {
+                Some(VisitEvent::Snapshot { bytes, tick, .. }) => {
+                    let state: State = serde_json::from_slice(&bytes).unwrap();
+                    assert_eq!(state.current_tick(), tick);
+                    visit.ready(state.hash());
+                    restored = Some(state);
+                }
+                Some(VisitEvent::Go | VisitEvent::Waiting { .. }) | None => {}
+            }
+        }
+    }
+    let state = restored.expect("the snapshot arrived");
+    let tick = state.current_tick();
+    let client = net.client(gone);
+    client.machine.state = state;
+    client.session = ClientSession::at(tick, now);
+    client.up = Link::new(ms(40), 20, 8);
+    client.down = Link::new(ms(40), 20, 9);
+    client.end = None;
+    let rejoined_hashes = client.machine.hashes.len();
+
+    net.run_until(Duration::from_secs(10));
+    assert!(!net.host.session.waiting());
+    assert!(net.host.events.is_empty(), "{:?}", net.host.events);
+    net.drain();
+    net.assert_in_sync(&CLIENTS[..1]);
+    let host = &net.host.machine;
+    let client = &net.clients[1].machine;
+    assert_eq!(client.state.current_tick(), host.state.current_tick());
+    assert_eq!(client.state.hash(), host.state.hash());
+    let reported = &client.hashes[rejoined_hashes..];
+    assert!(!reported.is_empty(), "the rejoined client kept reporting");
+    assert!(reported.iter().all(|report| host.hashes.contains(report)));
+}
+
+#[test]
 fn a_diverged_client_halts_every_machine_at_the_next_report() {
     let mut net = Net::new([(40, 20), (40, 20)]);
     let report = 2 * oxide_net::HASH_INTERVAL;
@@ -654,10 +739,14 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
 
     let mut host = Machine::new(&scenario, HOST);
     let mut bots = seat_controllers(&scenario).unwrap();
+    let tokens: Vec<(PlayerId, oxide_net::Token)> = CLIENTS
+        .iter()
+        .map(|&seat| (seat, oxide_net::Token::new(u128::from(seat.0))))
+        .collect();
     let mut barrier = StartBarrier::new(
         &scenario,
         HOST,
-        &CLIENTS,
+        &tokens,
         host.state.hash(),
         1,
         clock.elapsed(),
@@ -694,10 +783,11 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
     send_to_seats(&seated, barrier.take_outgoing());
     let mut sessions: Vec<ClientSession> = clients
         .iter()
-        .map(|connection| {
+        .zip(&tokens)
+        .map(|(connection, &(_, token))| {
             assert_eq!(
                 LobbyMessage::decode(&recv(connection)).unwrap(),
-                LobbyMessage::Go
+                LobbyMessage::Go { token }
             );
             ClientSession::new(clock.elapsed())
         })

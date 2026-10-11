@@ -18,6 +18,15 @@ fn scenario() -> Scenario {
     scenario
 }
 
+/// Each seat with its rejoin token.
+fn seated(clients: &[PlayerId]) -> Vec<(PlayerId, Token)> {
+    clients.iter().map(|&seat| (seat, token(seat))).collect()
+}
+
+fn token(seat: PlayerId) -> Token {
+    Token::new(0x100 + u128::from(seat.0))
+}
+
 fn ready(hash: u64) -> String {
     JoinMessage::Ready { hash, attempt: 1 }.encode()
 }
@@ -25,7 +34,7 @@ fn ready(hash: u64) -> String {
 #[test]
 fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 1, secs(0));
     let starts = barrier.take_outgoing();
     assert_eq!(starts.len(), CLIENTS.len());
     for (seat, line) in starts {
@@ -49,11 +58,13 @@ fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
         .poll(secs(2))
         .unwrap()
         .expect("every client is ready");
-    let go = LobbyMessage::Go.encode();
+    let go = |seat| LobbyMessage::Go { token: token(seat) }.encode();
     assert_eq!(
         barrier.take_outgoing(),
-        vec![(CLIENTS[0], go.clone()), (CLIENTS[1], go)]
+        vec![(CLIENTS[0], go(CLIENTS[0])), (CLIENTS[1], go(CLIENTS[1]))],
+        "each client gets its own token"
     );
+    assert_eq!(session.token_seat(token(CLIENTS[1])), Ok(CLIENTS[1]));
     assert!(
         session.seal(secs(2)).is_some(),
         "the session starts at tick zero"
@@ -63,7 +74,7 @@ fn each_client_gets_its_own_start_and_go_waits_for_every_ready() {
 #[test]
 fn a_mismatched_hash_or_a_stray_line_fails_the_start() {
     let scenario = scenario();
-    let fresh = || StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
+    let fresh = || StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 1, secs(0));
     let seat = CLIENTS[0];
     assert_eq!(
         fresh().receive(seat, &ready(HASH + 1)),
@@ -88,7 +99,7 @@ fn a_mismatched_hash_or_a_stray_line_fails_the_start() {
 #[test]
 fn heartbeats_and_readys_for_another_attempt_are_ignored() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 2, secs(0));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 2, secs(0));
     let seat = CLIENTS[0];
     barrier
         .receive(seat, &JoinMessage::Heartbeat.encode())
@@ -107,7 +118,7 @@ fn heartbeats_and_readys_for_another_attempt_are_ignored() {
 #[test]
 fn the_start_times_out_at_its_deadline() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(5));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 1, secs(5));
     barrier.receive(CLIENTS[0], &ready(HASH)).unwrap();
     assert_eq!(barrier.unready(), vec![CLIENTS[1]]);
     let deadline = secs(5) + START_TIMEOUT;
@@ -129,7 +140,7 @@ fn the_seats_must_be_exactly_the_scenarios_humans() {
         &[PlayerId(1), PlayerId(3)],
     ] {
         let result = std::panic::catch_unwind(|| {
-            StartBarrier::new(&scenario, HOST, clients, HASH, 1, secs(0))
+            StartBarrier::new(&scenario, HOST, &seated(clients), HASH, 1, secs(0))
         });
         assert!(result.is_err(), "{clients:?}");
     }
@@ -139,7 +150,7 @@ fn the_seats_must_be_exactly_the_scenarios_humans() {
 #[should_panic(expected = "the match already started")]
 fn polling_after_the_start_is_a_caller_bug() {
     let scenario = scenario();
-    let mut barrier = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0));
+    let mut barrier = StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 1, secs(0));
     for seat in CLIENTS {
         barrier.receive(seat, &ready(HASH)).unwrap();
     }
@@ -151,6 +162,6 @@ fn polling_after_the_start_is_a_caller_bug() {
 #[should_panic(expected = "is not a client seat")]
 fn lines_from_unknown_seats_are_a_caller_bug() {
     let scenario = scenario();
-    let _ = StartBarrier::new(&scenario, HOST, &CLIENTS, HASH, 1, secs(0))
+    let _ = StartBarrier::new(&scenario, HOST, &seated(&CLIENTS), HASH, 1, secs(0))
         .receive(PlayerId(3), &ready(HASH));
 }

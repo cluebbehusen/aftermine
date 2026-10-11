@@ -839,3 +839,45 @@ fn a_replaced_seat_drops_its_orders_and_every_client_hears_who_took_it() {
         }]
     );
 }
+
+#[test]
+fn a_rejoin_purges_lines_queued_for_the_old_connection() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let batch = host.seal(secs(0)).unwrap();
+    host.publish(&batch);
+    assert!(host.rejoining(A, secs(0)));
+    let lines = host.take_outgoing();
+    assert!(lines.iter().any(|(seat, _)| *seat == B));
+    assert!(lines.iter().all(|(seat, _)| *seat != A));
+}
+
+#[test]
+fn a_concluded_match_readmits_nobody() {
+    let mut host = HostSession::new(HOST, &[A], secs(0));
+    assert!(host.rejoining(A, secs(0)));
+    host.conclude();
+    assert!(!host.readmit(A, secs(0)));
+}
+
+#[test]
+fn everyone_hears_a_readmitted_seat_is_back() {
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    host.disconnected(A, secs(0));
+    host.poll(secs(0));
+    assert!(
+        sent_lines(&mut host)
+            .iter()
+            .any(|(seat, line)| *seat == B && line.contains("away"))
+    );
+    assert!(host.rejoining(A, secs(0)));
+    assert!(host.readmit(A, secs(0)));
+    host.poll(secs(0));
+    let cleared = HostMessage::Seats {
+        seats: Vec::new(),
+        paused: false,
+    }
+    .encode();
+    let lines = sent_lines(&mut host);
+    assert!(lines.contains(&(B, cleared.clone())), "{lines:?}");
+    assert!(lines.contains(&(A, cleared)), "{lines:?}");
+}

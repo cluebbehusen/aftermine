@@ -6,9 +6,10 @@
 //! the lobby only carries it.
 
 use crate::host::HostSession;
-use crate::message::{JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build};
+use crate::message::{GoneReason, JoinMessage, LobbyMessage, RoomSeat, SeatHolder, same_build};
 use crate::name::PlayerName;
 use crate::start::{StartBarrier, StartFailed};
+use crate::token::Token;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, SILENCE_TIMEOUT};
 use oxide_sim::{PlayerId, Scenario};
 use std::time::Duration;
@@ -50,6 +51,12 @@ pub enum LobbyEvent {
         member: MemberId,
         /// Why it left.
         reason: LeaveReason,
+    },
+    /// A connection asked after a running match the lobby does not have,
+    /// and was told so: finish its connection after sending.
+    Turned {
+        /// The connection.
+        member: MemberId,
     },
 }
 
@@ -195,6 +202,13 @@ impl Gathering {
                     self.drop_member(index, LeaveReason::OtherBuild);
                 }
             }
+            Ok(JoinMessage::Probe { .. } | JoinMessage::Rejoin { .. }) if introducing => {
+                let gone = LobbyMessage::Gone {
+                    reason: GoneReason::NoMatch,
+                };
+                self.forget(member, &gone);
+                self.events.push(LobbyEvent::Turned { member });
+            }
             Ok(JoinMessage::Introduce { name }) if introducing => {
                 self.members[index].stage = Stage::Joined(name.clone());
                 let joined = LobbyEvent::Joined { member, name };
@@ -338,13 +352,15 @@ impl Gathering {
         seating: &[(MemberId, PlayerId)],
         host_hash: u64,
         now: Duration,
+        mut token: impl FnMut() -> Token,
     ) {
         assert!(self.starting.is_none(), "a start is already running");
         for (member, _) in seating {
             assert!(self.name(*member).is_some(), "{member:?} has not joined");
         }
         self.attempt += 1;
-        let clients: Vec<PlayerId> = seating.iter().map(|&(_, seat)| seat).collect();
+        let clients: Vec<(PlayerId, Token)> =
+            seating.iter().map(|&(_, seat)| (seat, token())).collect();
         let mut barrier = StartBarrier::new(scenario, host, &clients, host_hash, self.attempt, now);
         let lines = barrier.take_outgoing();
         let starting = Starting {
@@ -469,6 +485,8 @@ pub enum GuestEnd {
     Full,
     /// The host removed this player.
     Removed,
+    /// The host's match already started.
+    Underway,
     /// Nothing arrived from the host for [`SILENCE_TIMEOUT`].
     Silent,
     /// The host sent a line that failed to decode or broke the protocol.
@@ -491,8 +509,11 @@ pub enum GuestEvent {
         scenario: Box<Scenario>,
     },
     /// The match begins at tick zero; lines after this one belong to the
-    /// session.
-    Go,
+    /// session. `token` takes the seat back if the connection is lost.
+    Go {
+        /// This player's rejoin token.
+        token: Token,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -607,10 +628,13 @@ impl Guest {
                 };
                 Ok(Some(GuestEvent::Start { seat, scenario }))
             }
-            LobbyMessage::Go if matches!(self.stage, GuestStage::Starting { ready: true, .. }) => {
+            LobbyMessage::Go { token }
+                if matches!(self.stage, GuestStage::Starting { ready: true, .. }) =>
+            {
                 self.stage = GuestStage::Started;
-                Ok(Some(GuestEvent::Go))
+                Ok(Some(GuestEvent::Go { token }))
             }
+            LobbyMessage::Underway => Err(GuestEnd::Underway),
             _ => Err(GuestEnd::Protocol),
         }
     }

@@ -1,7 +1,8 @@
 //! The host side: stamping, sealing order, the progress gate, desync
 //! detection, and client presence.
 
-use crate::message::{ClientMessage, HostMessage, Release, SeatNotice, SeatState};
+use crate::message::{ClientMessage, GoneReason, HostMessage, Release, SeatNotice, SeatState};
+use crate::token::Token;
 use crate::{
     BATCH_COMMAND_BYTES, CLIENT_PENDING_BYTES, HEARTBEAT_INTERVAL, LEAD_CAP, MAX_CLIENT_LINE_BYTES,
     PROGRESS_TIMEOUT, QUIET_AFTER, QUIET_LEAD_CAP, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash,
@@ -69,6 +70,11 @@ enum Presence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Standing {
     Playing(Presence),
+    /// Taking the seat back on a fresh connection; the match waits, as it
+    /// has since `away_since`.
+    Rejoining {
+        away_since: Duration,
+    },
     Out(Exit),
 }
 
@@ -96,12 +102,20 @@ struct Client {
 }
 
 impl Client {
+    /// Still in the match, connected or not.
     fn playing(&self) -> bool {
-        matches!(self.standing, Standing::Playing(_))
+        matches!(
+            self.standing,
+            Standing::Playing(_) | Standing::Rejoining { .. }
+        )
     }
 
+    /// The match waits for it.
     fn away(&self) -> bool {
-        matches!(self.standing, Standing::Playing(Presence::Away { .. }))
+        matches!(
+            self.standing,
+            Standing::Playing(Presence::Away { .. }) | Standing::Rejoining { .. }
+        )
     }
 }
 
@@ -155,6 +169,10 @@ pub struct HostSession {
     hashes: VecDeque<(Tick, u64)>,
     /// The seat states and pause last shown to clients.
     shown: Option<(Vec<SeatNotice>, bool)>,
+    /// Show the seat states on the next poll even if unchanged.
+    reshow: bool,
+    /// Each client's rejoin token.
+    tokens: Vec<(PlayerId, Token)>,
     last_poll: Option<Duration>,
     events: Vec<HostEvent>,
     outgoing: Vec<(PlayerId, String)>,
@@ -192,10 +210,113 @@ impl HostSession {
             course: Course::Playing,
             hashes: VecDeque::new(),
             shown: None,
+            reshow: false,
+            tokens: Vec::new(),
             last_poll: None,
             events: Vec::new(),
             outgoing: Vec::new(),
         }
+    }
+
+    /// The same session, knowing each client's rejoin token.
+    #[must_use]
+    pub fn with_tokens(mut self, tokens: Vec<(PlayerId, Token)>) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
+    /// The seat `token` lets a client take back, or why it cannot: the seat
+    /// must still be in a match that has not ended.
+    pub fn token_seat(&self, token: Token) -> Result<PlayerId, GoneReason> {
+        if self.course != Course::Playing {
+            return Err(GoneReason::Over);
+        }
+        let seat = self
+            .tokens
+            .iter()
+            .find(|(_, issued)| *issued == token)
+            .map(|&(seat, _)| seat)
+            .ok_or(GoneReason::Over)?;
+        if self.client(seat).playing() {
+            Ok(seat)
+        } else {
+            Err(GoneReason::SeatTaken)
+        }
+    }
+
+    /// The token issued to `seat`.
+    pub fn token(&self, seat: PlayerId) -> Option<Token> {
+        self.tokens
+            .iter()
+            .find(|(issued, _)| *issued == seat)
+            .map(|&(_, token)| token)
+    }
+
+    /// The tick the next batch executes on, which is the world tick a
+    /// snapshot taken now holds.
+    pub fn tick(&self) -> Tick {
+        self.next_tick
+    }
+
+    /// A client is taking `seat` back on a fresh connection: any old
+    /// connection is lost, the seat's unsealed orders go, and the match
+    /// waits until [`HostSession::readmit`] or
+    /// [`HostSession::rejoin_failed`]. False when the seat is not in play.
+    pub fn rejoining(&mut self, seat: PlayerId, now: Duration) -> bool {
+        let index = self.client_index(seat);
+        let away_since = match self.clients[index].standing {
+            Standing::Playing(Presence::Away { since }) => since,
+            Standing::Rejoining { away_since } => away_since,
+            Standing::Playing(Presence::Live | Presence::Quiet) => now,
+            Standing::Out(_) => return false,
+        };
+        if self.clients[index].link.take().is_some() {
+            self.events.push(HostEvent::Lost { seat });
+        }
+        // Lines queued for the old connection must not reach the new one.
+        self.outgoing.retain(|(addressed, _)| *addressed != seat);
+        self.pending
+            .retain(|pending| pending.command.player != seat);
+        self.clients[index].standing = Standing::Rejoining { away_since };
+        self.prune_hashes();
+        true
+    }
+
+    /// The rejoining client restored the match at [`HostSession::tick`]:
+    /// its new connection joins the session, acknowledging batches from
+    /// there. False unless the seat was rejoining a match still in play.
+    pub fn readmit(&mut self, seat: PlayerId, now: Duration) -> bool {
+        let index = self.client_index(seat);
+        if self.course != Course::Playing
+            || !matches!(self.clients[index].standing, Standing::Rejoining { .. })
+        {
+            return false;
+        }
+        self.clients[index].link = Some(Link {
+            acked: self.next_tick,
+            heard: now,
+            sent: now,
+            spoke: false,
+            blocked_since: None,
+        });
+        self.clients[index].standing = Standing::Playing(Presence::Live);
+        // The new connection hears the seat states afresh, and everyone
+        // hears the seat is back.
+        self.reshow = true;
+        true
+    }
+
+    /// The rejoin did not complete; the match waits for the seat as before.
+    pub fn rejoin_failed(&mut self, seat: PlayerId) {
+        let index = self.client_index(seat);
+        if let Standing::Rejoining { away_since } = self.clients[index].standing {
+            self.clients[index].standing = Standing::Playing(Presence::Away { since: away_since });
+        }
+    }
+
+    /// Whether `seat` is taking its seat back.
+    pub fn is_rejoining(&self, seat: PlayerId) -> bool {
+        matches!(self.client(seat).standing, Standing::Rejoining { .. })
     }
 
     /// Queues an order from the host's own seat for the next sealed tick.
@@ -450,7 +571,9 @@ impl HostSession {
             .filter(|client| {
                 !matches!(
                     client.standing,
-                    Standing::Playing(Presence::Away { .. }) | Standing::Out(_)
+                    Standing::Playing(Presence::Away { .. })
+                        | Standing::Rejoining { .. }
+                        | Standing::Out(_)
                 )
             })
             .filter_map(|client| client.link.as_ref())
@@ -481,7 +604,8 @@ impl HostSession {
             .filter_map(|client| {
                 let state = match client.standing {
                     Standing::Playing(Presence::Quiet) => SeatState::Quiet,
-                    Standing::Playing(Presence::Away { since }) => SeatState::Away {
+                    Standing::Playing(Presence::Away { since })
+                    | Standing::Rejoining { away_since: since } => SeatState::Away {
                         waited_ms: millis(now.saturating_sub(since)),
                     },
                     _ => return None,
@@ -658,7 +782,8 @@ impl HostSession {
             .as_ref()
             .is_none_or(|(shown, paused)| key(shown) != key(&seats) || *paused != self.paused);
         // Nothing to say until something is out of the ordinary.
-        if changed && (self.shown.is_some() || !seats.is_empty() || self.paused) {
+        let ordinary = self.shown.is_none() && seats.is_empty() && !self.paused;
+        if std::mem::take(&mut self.reshow) || (changed && !ordinary) {
             self.broadcast(
                 &HostMessage::Seats {
                     seats: seats.clone(),

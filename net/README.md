@@ -28,6 +28,9 @@ commands, then bot commands, then record, then `State::tick`.
   client hash reports, and watches client liveness.
 - `ClientSession` gates execution on received batches, acknowledges every
   executed batch, and watches host liveness.
+- `Desk` and `Visit` are the host's and a client's halves of a probe or a rejoin
+  while the match runs; `snapshot` splits the opaque world snapshot a rejoin
+  carries into lines and puts it back together.
 - `tcp` provides `Listener` and `Connection`, which move lines between machines.
 - `discovery` defines the beacon a hosting lobby announces and the list of
   lobbies a joining player has heard; `udp` provides the `Advertiser` and
@@ -62,6 +65,24 @@ commands, then bot commands, then record, then `State::tick`.
   `Gathering::cancel_start` does the same for everyone at the host's request. A
   `Ready` for an earlier attempt is ignored, so it cannot count toward the next
   start. Introductions that complete during a start wait for its outcome.
+
+## Rejoining
+
+- Go carries each client a random `Token` the host's caller chose. The host
+  session keeps them, and a token names its seat while the seat is still in the
+  match and the match has not ended.
+- A fresh connection to a running match says Hello and then, in place of an
+  introduction, `Probe` or `Rejoin` with its token. A probe hears `Waiting` with
+  the host's name and map, or `Gone` with why. A newcomer's introduction hears
+  `Underway`. A lobby answers either ask with `Gone`.
+- A rejoin makes the seat rejoining: any old connection is lost, the seat's
+  unsealed orders go, and the session waits. The host's caller snapshots the
+  world at `HostSession::tick` and the desk sends it as `Resume` and its `Part`
+  lines, at most `MAX_SNAPSHOT_BYTES`. The client restores it and answers with
+  its world's hash; a match readmits the seat, whose new connection acknowledges
+  batches from that tick, and Go follows. A wrong hash, a closed connection, or
+  `START_TIMEOUT` without an answer leaves the seat away, and a seat the host
+  drops meanwhile turns the visitor away.
 
 ## Session contract
 
