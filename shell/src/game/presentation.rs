@@ -53,6 +53,9 @@ pub struct Presentation {
     pub sounds_pending: Vec<(SoundKind, Option<Vec2>)>,
     /// Transient HUD messages, newest last.
     pub toasts: Vec<Toast>,
+    /// The network's word on players a LAN match lost track of, or on the
+    /// host's pause, pinned while it holds.
+    pub net_notice: Option<String>,
     /// Scorch decals where buildings died: (world pos, seconds old).
     pub scorches: Vec<(Vec2, f32)>,
     /// Live under-attack alerts: world position and seconds of age.
@@ -276,6 +279,7 @@ impl Presentation {
             minimap_layer: std::cell::RefCell::new(None),
             boundary_fog,
             toasts: Vec::new(),
+            net_notice: None,
             scorches: Vec::new(),
             alerts: Vec::new(),
             last_alert: None,

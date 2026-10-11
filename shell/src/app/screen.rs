@@ -13,6 +13,7 @@ use crate::screens::playback::PlaybackSession;
 use crate::screens::results::ResultsScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
+use crate::screens::waiting::WaitingScreen;
 use crate::screens::wizard::Wizard;
 use crate::text_field::Keyboard;
 
@@ -70,6 +71,8 @@ pub(super) enum Screen {
     /// Game visible but veiled; the pause screen owns input,
     /// confirmation and save-naming state included.
     Pause(PauseScreen),
+    /// A LAN match veiled while it waits for a lost player.
+    Waiting(WaitingScreen),
     /// A save or load in flight over the screen it displaced.
     Busy(Box<persistence::Busy>),
 }
@@ -89,6 +92,7 @@ pub(super) enum ScreenKind {
     Results,
     FinalMap,
     Pause,
+    Waiting,
     Busy,
 }
 
@@ -106,6 +110,7 @@ impl ScreenKind {
             | Self::Replays
             | Self::Results
             | Self::Pause
+            | Self::Waiting
             | Self::Busy => false,
         }
     }
@@ -124,6 +129,7 @@ impl ScreenKind {
             | Self::Replays
             | Self::Results
             | Self::Pause
+            | Self::Waiting
             | Self::Busy => 0,
         }
     }
@@ -198,6 +204,7 @@ impl Screen {
             Self::Results(_) => ScreenKind::Results,
             Self::FinalMap(_) => ScreenKind::FinalMap,
             Self::Pause(_) => ScreenKind::Pause,
+            Self::Waiting(_) => ScreenKind::Waiting,
             Self::Busy(_) => ScreenKind::Busy,
         }
     }
@@ -253,6 +260,7 @@ impl Screen {
             | Self::Results(_)
             | Self::FinalMap(_)
             | Self::Pause(_)
+            | Self::Waiting(_)
             | Self::Busy(_) => true,
             Self::Settings { .. } | Self::Codex { .. } => self.over_pause(),
             Self::Playback { back, .. } => back.holds_live_match(),
@@ -276,6 +284,7 @@ impl Screen {
             | Self::Playback { .. }
             | Self::FinalMap(_)
             | Self::Pause(_)
+            | Self::Waiting(_)
             | Self::Busy(_) => false,
         }
     }
@@ -295,6 +304,7 @@ impl Screen {
             | Self::Replays(_)
             | Self::Results(_)
             | Self::FinalMap(_)
+            | Self::Waiting(_)
             | Self::Busy(_) => None,
         }
     }
@@ -319,6 +329,7 @@ impl Screen {
             | Self::Replays(_)
             | Self::Results(_)
             | Self::FinalMap(_)
+            | Self::Waiting(_)
             | Self::Busy(_) => false,
         }
     }
@@ -337,6 +348,7 @@ impl Screen {
             Self::Results(_) => "results",
             Self::Replays(_) => "replays",
             Self::Pause(_) => "pause",
+            Self::Waiting(_) => "waiting",
             Self::Busy(busy) => busy.mode(),
         }
     }
@@ -357,6 +369,7 @@ impl Screen {
             Self::Lobby { screen, .. } => screen.mode_name(),
             Self::Busy(busy) => busy.mode(),
             Self::Pause(pause) => pause.mode_name(),
+            Self::Waiting(waiting) => waiting.mode_name(),
         }
     }
 }

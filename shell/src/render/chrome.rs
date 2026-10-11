@@ -819,6 +819,18 @@ pub(crate) fn draw_hud(
         );
         draw_text(text, x, 60.0 * s, crate::theme::Type::Heading.at(s), DANGER);
     }
+
+    // The network's word on a LAN match, pinned under the spectator strip.
+    if let Some(text) = &game.presentation.net_notice {
+        let spectating =
+            game.state.result().is_none() && !game.state.accepts_commands(game.presentation.human);
+        let top = if spectating { 76.0 } else { 40.0 } * s;
+        let size = crate::theme::Type::Heading.at(s);
+        let dims = measure_text(text, None, numeric::font_size(size), 1.0);
+        let x = (screen_width() - dims.width) * 0.5;
+        draw_rectangle(x - 12.0 * s, top, dims.width + 24.0 * s, 30.0 * s, PANEL);
+        draw_text(text, x, top + 20.0 * s, size, crate::theme::TEXT_ALERT);
+    }
 }
 
 /// A team-game concession can leave the match undecided while the ally

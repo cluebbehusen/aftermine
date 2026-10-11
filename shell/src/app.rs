@@ -128,6 +128,8 @@ struct App {
     net: Option<crate::netplay::Link>,
     /// A departed host's connections, still flushing the deciding batches.
     lingering: Option<crate::netplay::Lingering>,
+    /// The LAN match waited for a lost player as of the last frame.
+    net_waiting: bool,
     /// The session clock the lobby and the link read.
     clock: std::time::Instant,
 }
@@ -333,6 +335,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         soft_keyboard: None,
         net: None,
         lingering: None,
+        net_waiting: false,
         clock: std::time::Instant::now(),
     };
     let mut ui_view = ui_view::capture_ui(&screen, &app);
@@ -359,7 +362,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             width: numeric::to_u32(screen_width()),
             height: numeric::to_u32(screen_height()),
             dpi: f64::from(macroquad::miniquad::window::dpi_scale()),
-            paused: screen.kind() == ScreenKind::Pause || visible.paused(),
+            paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
+                || visible.paused(),
             minimized: input::reported_minimized(),
             recording: visible.recording(),
         });
@@ -734,6 +738,9 @@ impl App {
     /// leave save, which keeps its replay.
     fn end_network_match(&mut self, end: crate::netplay::End, screen: Screen) -> Screen {
         self.notify(end.notice(), true);
+        // The match stays behind the menus; its network line no longer
+        // holds.
+        self.game.presentation.net_notice = None;
         if matches!(screen, Screen::Busy(_)) {
             return screen;
         }

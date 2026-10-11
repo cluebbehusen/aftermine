@@ -81,7 +81,9 @@ commands, then bot commands, then record, then `State::tick`.
   or a protocol violation makes the seat away: the host stops sealing and waits
   for its player, with no timeout and no automatic surrender. A connection that
   is heard again and catches back up to within `LEAD_CAP` ends the wait. Only
-  the host's `drop_seat` ends it early: the seat surrenders and its client hears
+  the host ends it early: `drop_seat` surrenders the seat, and `replace_seat`
+  hands it to a bot the host then runs, dropping the seat's unsealed orders and
+  telling every client which bot took it. Either way the seat's client hears
   why. A client that sends `Leave` surrenders without holding the match, and a
   seat that can no longer act in the world retires, its client free to watch.
 - The host tells every connected client which seats are quiet or away, and

@@ -168,6 +168,12 @@ fn the_client_keeps_the_hosts_seat_line_and_hears_why_it_ended() {
             ClientEnd::Released(Release::Dropped),
         ),
         (HostMessage::Ended, ClientEnd::HostLeft),
+        (
+            HostMessage::Released {
+                reason: Release::Replaced,
+            },
+            ClientEnd::Released(Release::Replaced),
+        ),
     ];
     for (line, end) in ends {
         let mut client = ClientSession::new(secs(0));
@@ -239,4 +245,18 @@ fn taking_a_batch_before_acknowledging_the_last_is_a_caller_bug() {
     client.receive(&batch_line(1, 0), secs(0)).unwrap();
     client.next_batch();
     client.next_batch();
+}
+
+#[test]
+fn the_client_hears_which_bot_took_a_seat() {
+    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    let config = BotConfig::new(BotDifficulty::Veteran, BotStance::Aggressive, 3);
+    let mut client = ClientSession::new(secs(0));
+    let line = HostMessage::Replaced {
+        seat: PlayerId(2),
+        config,
+    };
+    client.receive(&line.encode(), secs(0)).unwrap();
+    assert_eq!(client.take_replaced(), [(PlayerId(2), config)]);
+    assert!(client.take_replaced().is_empty());
 }

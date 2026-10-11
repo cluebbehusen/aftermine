@@ -6,6 +6,7 @@ use crate::{
     BATCH_COMMAND_BYTES, CLIENT_PENDING_BYTES, HEARTBEAT_INTERVAL, LEAD_CAP, MAX_CLIENT_LINE_BYTES,
     PROGRESS_TIMEOUT, QUIET_AFTER, QUIET_LEAD_CAP, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash,
 };
+use oxide_sim::scenario::BotConfig;
 use oxide_sim::{Command, PlayerCommand, PlayerId, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -17,6 +18,8 @@ pub enum Exit {
     Dropped,
     /// The client left, surrendering its seat.
     Left,
+    /// The host handed the seat to a bot.
+    Replaced,
     /// The seat can no longer act in the world; its client may stay on to
     /// watch.
     Defeated,
@@ -278,6 +281,34 @@ impl HostSession {
         }
     }
 
+    /// Hands `seat` to a bot at the host's request: its unsealed orders are
+    /// dropped, its client is told before its connection closes, and every
+    /// other client hears which bot took it. The caller runs the bot.
+    pub fn replace_seat(&mut self, seat: PlayerId, config: BotConfig) {
+        let index = self.client_index(seat);
+        if !self.clients[index].playing() {
+            return;
+        }
+        self.pending
+            .retain(|pending| pending.command.player != seat);
+        self.clients[index].standing = Standing::Out(Exit::Replaced);
+        if self.clients[index].link.take().is_some() {
+            self.outgoing.push((
+                seat,
+                HostMessage::Released {
+                    reason: Release::Replaced,
+                }
+                .encode(),
+            ));
+            self.events.push(HostEvent::Released {
+                seat,
+                exit: Exit::Replaced,
+            });
+        }
+        self.broadcast(&HostMessage::Replaced { seat, config }.encode());
+        self.prune_hashes();
+    }
+
     /// Takes `seat` out of the match once it can no longer act in the
     /// world. Its client may stay connected to watch.
     pub fn retire_seat(&mut self, seat: PlayerId) {
@@ -424,6 +455,15 @@ impl HostSession {
             })
             .filter_map(|client| client.link.as_ref())
             .all(|link| link.acked == self.next_tick)
+    }
+
+    /// The client seats still playing.
+    pub fn playing_seats(&self) -> Vec<PlayerId> {
+        self.clients
+            .iter()
+            .filter(|client| client.playing())
+            .map(|client| client.seat)
+            .collect()
     }
 
     /// Whether the match is held for a seat that is away.
