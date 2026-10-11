@@ -496,6 +496,11 @@ fn a_host_saves_its_running_match_with_its_players_and_unsealed_orders() {
     let autosave = lan.host.1.lan_autosave(&lan.host.0);
     assert!(autosave.is_some(), "a wait beginning makes a save due");
     assert!(lan.host.1.lan_autosave(&lan.host.0).is_none(), "once");
+    lan.host.1.rearm_autosave();
+    assert!(
+        lan.host.1.lan_autosave(&lan.host.0).is_some(),
+        "a failed save is due again"
+    );
 
     let saved = serde_json::to_value(autosave.unwrap().checkpoint().unwrap()).unwrap();
     assert_eq!(

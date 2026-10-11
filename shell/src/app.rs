@@ -142,6 +142,8 @@ struct App {
     offer: Option<crate::rejoin_ticket::Ticket>,
     /// The host's own save of its running LAN match, while it runs.
     autosave_id: Option<u64>,
+    /// When the host tries again after its own save failed.
+    autosave_retry: Option<std::time::Duration>,
     /// The session clock the lobby and the link read.
     clock: std::time::Instant,
 }
@@ -361,6 +363,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         next_probe: std::time::Duration::ZERO,
         offer: None,
         autosave_id: None,
+        autosave_retry: None,
         clock: std::time::Instant::now(),
     };
     let mut ui_view = ui_view::capture_ui(&screen, &app);
@@ -811,8 +814,10 @@ impl App {
         } else {
             self.ticket.clear();
         }
-        if matches!(screen, Screen::Busy(_)) {
-            return screen;
+        if let Screen::Busy(mut busy) = screen {
+            // A save in flight finishes first, then the match is left.
+            busy.request_leave();
+            return Screen::Busy(busy);
         }
         self.persistence_screen(
             persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),

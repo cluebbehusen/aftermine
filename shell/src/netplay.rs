@@ -525,6 +525,13 @@ impl Link {
         Some(host.capture(game))
     }
 
+    /// Makes the host's own save due again, after one failed.
+    pub(crate) fn rearm_autosave(&mut self) {
+        if let Link::Host(host) = self {
+            host.saves.due = true;
+        }
+    }
+
     /// The host's own save of the running match when one is due: every
     /// minute of play, when a wait begins, and when a seat is dropped or
     /// handed to a bot. None on a client or once the match is decided.
