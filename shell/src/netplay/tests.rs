@@ -438,6 +438,11 @@ fn a_quiet_client_shows_on_the_host_while_play_runs_on() {
     assert!(lan.host.1.status(lan.now).waiting.is_empty());
     wait(|| {
         assert_eq!(lan.step(), (None, None));
+        assert_eq!(
+            lan.client.0.presentation.net_notice, None,
+            "a client never hears about itself"
+        );
+        assert_eq!(lan.client.1.status(lan.now), NetStatus::default());
         lan.host.0.presentation.net_notice.is_none().then_some(())
     });
 }
@@ -455,14 +460,25 @@ fn a_client_hears_the_host_paused() {
     for _ in 0..20 {
         assert_eq!(lan.step(), (None, None));
     }
-    assert!(
+    let stall_toast = |lan: &Match| {
         lan.client
             .0
             .presentation
             .toasts
             .iter()
-            .all(|toast| !toast.text.contains("Waiting for the host")),
-        "the notice explains the stall"
+            .any(|toast| toast.text.contains("Waiting for the host"))
+    };
+    assert!(!stall_toast(&lan), "the notice explains the stall");
+
+    let paused_at = lan.client.0.state.current_tick();
+    lan.host.0.clock.paused = false;
+    wait(|| {
+        assert_eq!(lan.step(), (None, None));
+        (lan.client.0.state.current_tick() > paused_at + 5).then_some(())
+    });
+    assert!(
+        !stall_toast(&lan),
+        "the explained pause does not count once play resumes"
     );
 }
 

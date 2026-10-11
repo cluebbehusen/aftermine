@@ -216,6 +216,9 @@ pub struct Menu<R> {
     /// width, zero for a centered list: the codex shifts its list left
     /// to make room for the page beside it.
     pub shift: f32,
+    /// Draws the list at the Controls width, for rows whose labels outgrow
+    /// the usual one.
+    pub wide: bool,
 }
 
 fn view_w() -> f32 {
@@ -263,6 +266,7 @@ impl<R: Clone> Menu<R> {
             press: ScrollPress::default(),
             carry: 0.0,
             shift: 0.0,
+            wide: false,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -326,11 +330,14 @@ impl<R: Clone> Menu<R> {
         }
     }
 
-    /// Whether any row draws as Controls columns, which widen the list.
+    /// Whether the list draws wide: asked to, or because a row draws as
+    /// Controls columns.
     fn wide(&self) -> bool {
-        self.lines
-            .iter()
-            .any(|line| matches!(line, Line::Row(Label::Binding { .. }, _)))
+        self.wide
+            || self
+                .lines
+                .iter()
+                .any(|line| matches!(line, Line::Row(Label::Binding { .. }, _)))
     }
 
     /// The nearest non-header row from `index`, toward the start when

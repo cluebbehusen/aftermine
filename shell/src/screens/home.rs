@@ -100,6 +100,8 @@ impl HomeScreen {
             )];
             lines.extend_from_slice(self.menu.lines());
             self.menu = Menu::new("OXIDE", lines);
+            // A host's name and a map's together outgrow the usual row.
+            self.menu.wide = true;
         }
         self.rejoin = label;
         self

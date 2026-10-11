@@ -97,10 +97,16 @@ impl NetStatus {
         Self::from_notices(session.seats(now), Duration::ZERO, false)
     }
 
-    fn joined(session: &ClientSession, now: Duration) -> Self {
+    /// The status a client hears, leaving out its own `seat`: a client that
+    /// was away catches up on notices about itself before the host's latest.
+    fn joined(session: &ClientSession, seat: PlayerId, now: Duration) -> Self {
         let (seats, heard) = session.seats();
         Self::from_notices(
-            seats.to_vec(),
+            seats
+                .iter()
+                .filter(|notice| notice.seat != seat)
+                .cloned()
+                .collect(),
             now.saturating_sub(heard),
             session.host_paused(),
         )
@@ -194,6 +200,8 @@ struct Home {
     token: Token,
     /// The host's name, for the player.
     host: String,
+    /// The seat this client plays.
+    seat: PlayerId,
 }
 
 impl Home {
@@ -203,6 +211,7 @@ impl Home {
             commit: ticket.build.clone(),
             token: ticket.token,
             host: ticket.host.clone(),
+            seat: PlayerId(ticket.seat),
         }
     }
 }
@@ -385,10 +394,12 @@ impl Pacing {
         dt
     }
 
-    /// Whether the match has not advanced for a while.
+    /// Whether the match has not advanced for a while with no network notice
+    /// to explain it. Time spent under a notice does not count, so the match
+    /// resuming afterwards is not mistaken for a stall.
     fn stalled(&mut self, game: &Game, now: Duration) -> bool {
         let tick = game.state.current_tick();
-        if tick != self.tick {
+        if tick != self.tick || game.presentation.net_notice.is_some() {
             self.tick = tick;
             self.moved = now;
         }
@@ -459,7 +470,7 @@ impl Link {
     pub(crate) fn status(&self, now: Duration) -> NetStatus {
         match self {
             Link::Host(host) => NetStatus::hosted(&host.session, now),
-            Link::Client(client) => NetStatus::joined(&client.session, now),
+            Link::Client(client) => NetStatus::joined(&client.session, client.home.seat, now),
         }
     }
 
@@ -639,7 +650,7 @@ impl HostLink {
                 connection.finish();
             }
             self.closing = Some((now, end));
-        } else if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+        } else if self.clock.stalled(game, now) {
             game.presentation.toast("Waiting for players...");
         }
         None
@@ -791,8 +802,9 @@ impl ClientLink {
         for line in self.session.take_outgoing() {
             connection.send(&line);
         }
-        game.presentation.net_notice = NetStatus::joined(&self.session, now).notice(game);
-        if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+        game.presentation.net_notice =
+            NetStatus::joined(&self.session, self.home.seat, now).notice(game);
+        if self.clock.stalled(game, now) {
             game.presentation.toast("Waiting for the host...");
         }
         None
@@ -1695,7 +1707,7 @@ impl ClientLobby {
                             for line in guest.take_outgoing() {
                                 connection.send(&line);
                             }
-                            let Some((built, _)) = game else {
+                            let Some((built, seat)) = game else {
                                 return failed("The host sent something unexpected".to_owned());
                             };
                             let host = guest.room().and_then(|(seats, _)| {
@@ -1709,6 +1721,7 @@ impl ClientLobby {
                                 commit: self.commit.clone(),
                                 token,
                                 host: host.unwrap_or_else(|| "the host".to_owned()),
+                                seat,
                             };
                             let link = Link::client(ClientSession::new(now), connection, home, now);
                             return (Joining::Started, Some((*built, link)));

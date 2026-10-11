@@ -76,6 +76,7 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
         Out::Continue,
         "the rows below keep their verbs"
     );
+    assert!(home.menu.wide, "the long row fits inside the list");
 
     home.set_catalog(true, None);
     assert_eq!(
@@ -85,4 +86,5 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
     );
     home.set_rejoin(None);
     assert_eq!(pick(&mut home, 0), Out::Continue);
+    assert!(!home.menu.wide);
 }
