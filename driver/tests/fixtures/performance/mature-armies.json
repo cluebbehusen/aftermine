@@ -371,13 +371,13 @@
   },
   {
    "player": 0,
-   "kind": "shrike",
+   "kind": "talon",
    "x": 23,
    "y": 15
   },
   {
    "player": 0,
-   "kind": "shrike",
+   "kind": "talon",
    "x": 25,
    "y": 15
   },
@@ -701,13 +701,13 @@
   },
   {
    "player": 1,
-   "kind": "shrike",
+   "kind": "talon",
    "x": 36,
    "y": 24
   },
   {
    "player": 1,
-   "kind": "shrike",
+   "kind": "talon",
    "x": 34,
    "y": 24
   },

@@ -7,7 +7,7 @@ use chassis::grid::TilePos;
 use common::{cmd, open_arena, open_arena_with, unit};
 use oxide_sim::{Command, Event, Order, State, Target, UnitKind};
 
-const CRUISERS: [UnitKind; 3] = [UnitKind::Talon, UnitKind::Shrike, UnitKind::Kestrel];
+const CRUISERS: [UnitKind; 2] = [UnitKind::Talon, UnitKind::Kestrel];
 
 fn facing(state: State, heading: u8) -> State {
     let mut snapshot = serde_json::to_value(state).unwrap();
@@ -151,71 +151,72 @@ fn cruising_aircraft_recover_from_corners_and_route_around_peaks() {
 
 #[test]
 fn cruising_fighters_turn_to_targets_without_becoming_bombers() {
-    for kind in [UnitKind::Talon, UnitKind::Shrike] {
-        let mut state = facing(
-            open_arena(
-                80,
-                52,
-                vec![
-                    unit(0, kind, 25, 26),
-                    unit(1, UnitKind::Skyhook, 27, 26),
-                    unit(1, UnitKind::Skyhook, 23, 26),
-                ],
-            )
-            .build()
-            .unwrap(),
-            128,
-        );
-        let id = state.units()[0].id;
-        let position = state.units()[0].pos;
-        for target_slot in [1, 2] {
-            let target = state.units()[target_slot].id;
-            let mut fired = false;
-            for tick in 0..100 {
-                let commands = if tick == 0 {
-                    vec![cmd(
-                        0,
-                        Command::Attack {
-                            units: vec![id],
-                            target: Target::Unit(target).into(),
-                            queue: false,
-                        },
-                    )]
-                } else {
-                    vec![]
-                };
-                let before = state.unit(id).unwrap().heading;
-                let report = state.tick(&commands);
-                let shooter = state.unit(id).unwrap();
-                assert_eq!(shooter.pos, position);
+    let kind = UnitKind::Talon;
+    let mut state = facing(
+        open_arena(
+            80,
+            52,
+            vec![
+                unit(0, kind, 25, 26),
+                unit(1, UnitKind::Skyhook, 27, 26),
+                unit(1, UnitKind::Skyhook, 23, 26),
+            ],
+        )
+        .build()
+        .unwrap(),
+        128,
+    );
+    let id = state.units()[0].id;
+    let position = state.units()[0].pos;
+    for target_slot in [1, 2] {
+        let target = state.units()[target_slot].id;
+        let mut fired = false;
+        for tick in 0..100 {
+            let commands = if tick == 0 {
+                vec![cmd(
+                    0,
+                    Command::Attack {
+                        units: vec![id],
+                        target: Target::Unit(target).into(),
+                        queue: false,
+                    },
+                )]
+            } else {
+                vec![]
+            };
+            let before = state.unit(id).unwrap().heading;
+            let report = state.tick(&commands);
+            let shooter = state.unit(id).unwrap();
+            assert_eq!(shooter.pos, position);
+            assert!(
+                shooter
+                    .heading
+                    .wrapping_sub(before)
+                    .cast_signed()
+                    .unsigned_abs()
+                    <= kind.stats().cruise_turn_rate
+            );
+            assert!(state.shells().is_empty());
+            if report
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::AttackHit { attacker, .. } if *attacker == id))
+            {
+                assert!(tick > 0);
+                let wanted = if target_slot == 1 { 0u8 } else { 128u8 };
                 assert!(
                     shooter
                         .heading
-                        .wrapping_sub(before)
+                        .wrapping_sub(wanted)
                         .cast_signed()
                         .unsigned_abs()
-                        <= kind.stats().cruise_turn_rate
+                        <= 2
                 );
-                assert!(state.shells().is_empty());
-                if report.events.iter().any(
-                    |event| matches!(event, Event::AttackHit { attacker, .. } if *attacker == id),
-                ) {
-                    assert!(tick > 0);
-                    let wanted = if target_slot == 1 { 0u8 } else { 128u8 };
-                    assert!(
-                        shooter
-                            .heading
-                            .wrapping_sub(wanted)
-                            .cast_signed()
-                            .unsigned_abs()
-                            <= 2
-                    );
-                    fired = true;
-                    break;
-                }
+                fired = true;
+                break;
             }
-            assert!(fired, "{kind:?}");
         }
+        assert!(fired, "{kind:?}");
     }
 }
 
@@ -254,42 +255,41 @@ fn cruise_turns_resume_identically_and_mirror_exactly() {
 
 #[test]
 fn advance_keeps_its_course_and_only_fires_forward() {
-    for kind in [UnitKind::Talon, UnitKind::Shrike] {
-        for target_x in [23, 27] {
-            let mut state = facing(
-                open_arena(
-                    80,
-                    52,
-                    vec![
-                        unit(0, kind, 25, 26),
-                        unit(1, UnitKind::Skyhook, target_x, 26),
-                    ],
-                )
-                .build()
-                .unwrap(),
-                0,
-            );
-            let id = state.units()[0].id;
-            let start = state.units()[0].pos;
-            let report = state.tick(&[cmd(
-                0,
-                Command::Advance {
-                    units: vec![id],
-                    goal: TilePos::new(60, 26),
-                    queue: false,
-                },
-            )]);
-            let fired = report
-                .events
-                .iter()
-                .any(|event| matches!(event, Event::AttackHit { attacker, .. } if *attacker == id));
-            assert_eq!(fired, target_x == 27, "{kind:?}");
-            assert_eq!(state.units()[0].heading, 0);
-            assert!(state.units()[0].pos.x > start.x);
-            assert_eq!(state.units()[0].pos.y, start.y);
-            assert!(matches!(state.units()[0].order, Order::Advance { .. }));
-            assert!(state.shells().is_empty());
-        }
+    let kind = UnitKind::Talon;
+    for target_x in [23, 27] {
+        let mut state = facing(
+            open_arena(
+                80,
+                52,
+                vec![
+                    unit(0, kind, 25, 26),
+                    unit(1, UnitKind::Skyhook, target_x, 26),
+                ],
+            )
+            .build()
+            .unwrap(),
+            0,
+        );
+        let id = state.units()[0].id;
+        let start = state.units()[0].pos;
+        let report = state.tick(&[cmd(
+            0,
+            Command::Advance {
+                units: vec![id],
+                goal: TilePos::new(60, 26),
+                queue: false,
+            },
+        )]);
+        let fired = report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::AttackHit { attacker, .. } if *attacker == id));
+        assert_eq!(fired, target_x == 27, "{kind:?}");
+        assert_eq!(state.units()[0].heading, 0);
+        assert!(state.units()[0].pos.x > start.x);
+        assert_eq!(state.units()[0].pos.y, start.y);
+        assert!(matches!(state.units()[0].order, Order::Advance { .. }));
+        assert!(state.shells().is_empty());
     }
 }
 

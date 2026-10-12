@@ -32,7 +32,6 @@ from tools.production_sprite_sources import (
     heavy_structures,
     installed_defenses_final,
     mechanical_final,
-    shrike_final,
     skyhook_sapper_crucible_final,
     specialists_final,
     structures_base,
@@ -512,7 +511,6 @@ def install_finalized_sprites(registry: Registry, out: Path) -> None:
         _install_defenses(registry, out, variant)
     crucible_final.install_crucible_units(registry, out)
     warden_final.install_warden(registry, out)
-    shrike_final.install_shrike(registry, out)
     excavator_final.install_excavator(registry, out)
     skyhook_sapper_crucible_final.install_skyhook_sapper_crucible(registry, out)
     airworks_scouts_final.install_airworks_scouts(registry, out)

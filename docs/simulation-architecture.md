@@ -270,18 +270,18 @@ instead. Building artwork and its approximate contact outline keep their
 authored facing, so asymmetric contact can differ under a map half-turn.
 Placement, travel, and ranged reach use the rectangular footprint.
 
-Talon, Shrike, and Kestrel cruise heading-first but can hover at rest. Their
-travel and fixed-gun traverse rates are independent of bomber flight; per-kind
-rates live in `UnitKind::cruise_turn_rate` in `sim/src/stats.rs`. Near waypoints
-they slow to tighten the arc; intermediate waypoints can be rounded only when
-the onward segment is clear. An obstructed step holds position and keeps its
-route while the nose turns, and replans from the actual position only once the
-nose faces the waypoint and is still blocked. Arrivals, Stop, and in-range
-attacks hover rather than orbit or land. Fixed guns traverse with the body
-before firing ordinary hitscan shots; Advance only fires when already aligned
-and does not turn away from its route to aim. These aircraft spawn facing the
-map center, matching mirrored initial turn costs. Buzzard and Skyhook travel
-independently of heading, with no cruise turn radius.
+Talon and Kestrel cruise heading-first but can hover at rest. Their travel and
+fixed-gun traverse rates are independent of bomber flight; per-kind rates live
+in `UnitKind::cruise_turn_rate` in `sim/src/stats.rs`. Near waypoints they slow
+to tighten the arc; intermediate waypoints can be rounded only when the onward
+segment is clear. An obstructed step holds position and keeps its route while
+the nose turns, and replans from the actual position only once the nose faces
+the waypoint and is still blocked. Arrivals, Stop, and in-range attacks hover
+rather than orbit or land. Fixed guns traverse with the body before firing
+ordinary hitscan shots; Advance only fires when already aligned and does not
+turn away from its route to aim. These aircraft spawn facing the map center,
+matching mirrored initial turn costs. Buzzard and Skyhook travel independently
+of heading, with no cruise turn radius.
 
 The Condor uses committed heading-first flight: only the heading steers, at most
 `turn_rate` compass steps per tick, so every waypoint is accepted inside the

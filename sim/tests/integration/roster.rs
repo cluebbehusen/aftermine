@@ -109,10 +109,10 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
         1_000,
         false,
         vec![
-            unit(0, UnitKind::Shrike, 8, 4),
+            unit(0, UnitKind::Talon, 8, 4),
             // The friendly Kestrel spots the distant enemy one so the
             // ordered attack is fog-legal; both scouts are unarmed and out
-            // of shrike aggro.
+            // of talon aggro.
             unit(0, UnitKind::Kestrel, 15, 2),
             unit(1, UnitKind::Kestrel, 17, 2),
             unit(1, UnitKind::Scuttler, 8, 6),
@@ -120,7 +120,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     )
     .build()
     .unwrap();
-    let (shrike, scout, crawler) = (
+    let (talon, scout, crawler) = (
         state.units()[0].id,
         state.units()[2].id,
         state.units()[3].id,
@@ -130,7 +130,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     let report = state.tick(&[cmd(
         0,
         Command::Attack {
-            units: vec![shrike],
+            units: vec![talon],
             target: oxide_sim::Target::Unit(crawler).into(),
             queue: false,
         },
@@ -140,7 +140,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
             .tick(&[])
             .events
             .iter()
-            .any(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == shrike))
+            .any(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == talon))
     });
     drop(report);
     assert!(!ground_hit, "an interceptor cannot touch the ground");
@@ -149,7 +149,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     state.tick(&[cmd(
         0,
         Command::Attack {
-            units: vec![shrike],
+            units: vec![talon],
             target: oxide_sim::Target::Unit(scout).into(),
             queue: false,
         },
@@ -168,8 +168,8 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     }
     assert!(
         fell,
-        "the scout has no answer: shrike {:?} scout {:?}",
-        state.unit(shrike),
+        "the scout has no answer: talon {:?} scout {:?}",
+        state.unit(talon),
         state.unit(scout)
     );
 }

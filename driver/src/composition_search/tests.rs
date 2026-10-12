@@ -27,16 +27,16 @@ fn a_mix_is_legal_when_one_body_of_each_kind_fits_the_budget() {
 
 #[test]
 fn an_army_lands_as_close_to_the_budget_as_whole_bodies_allow() {
-    use UnitKind::{Bombard, Flakhound, Lancer, Sentinel, Shrike};
+    use UnitKind::{Bombard, Flakhound, Lancer, Sentinel, Skyhook};
     // Nine of each spends 1,800 exactly.
     assert_eq!(
         Mix::even(vec![Lancer, Sentinel]).force(1_800),
         Force::Army(vec![(Lancer, 9), (Sentinel, 9)])
     );
     // A fill that stopped when its next body would overshoot left Flakhound +
-    // Shrike at 530 against Bombard + Shrike's 660.
-    assert_eq!(Mix::even(vec![Bombard, Shrike]).force(600).spent(), 660);
-    assert_eq!(Mix::even(vec![Flakhound, Shrike]).force(600).spent(), 610);
+    // Skyhook at 520 against Bombard + Skyhook's 650.
+    assert_eq!(Mix::even(vec![Bombard, Skyhook]).force(600).spent(), 650);
+    assert_eq!(Mix::even(vec![Flakhound, Skyhook]).force(600).spent(), 610);
     // No legal army strays from the budget by more than half its costliest
     // body.
     for budget in [600, 1_800, 5_000] {

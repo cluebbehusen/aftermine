@@ -1549,12 +1549,10 @@ fn shot_visuals_begin_at_the_authored_muzzle_not_chassis_center() {
     let origin = unit_shot_origin(UnitKind::Buzzard, from, to);
     assert!((origin.x - (from.x + buzzard_muzzle)).abs() < 1e-5);
     assert!((origin.y - (from.y - 0.18)).abs() < 1e-5);
-    for kind in [UnitKind::Talon, UnitKind::Shrike] {
-        assert_eq!(
-            unit_shot_origin(kind, from, to).y,
-            from.y - crate::render::air_presentation(kind, 1.0).2
-        );
-    }
+    assert_eq!(
+        unit_shot_origin(UnitKind::Talon, from, to).y,
+        from.y - crate::render::air_presentation(UnitKind::Talon, 1.0).2
+    );
     let warden_muzzle = 46.0 / 128.0 * crate::render::unit_draw_scale(UnitKind::Warden);
     assert!((unit_muzzle_reach(UnitKind::Warden).unwrap() - warden_muzzle).abs() < 0.002);
     assert_eq!(
