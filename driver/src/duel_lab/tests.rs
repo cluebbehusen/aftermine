@@ -250,6 +250,7 @@ fn every_armed_defense_tier_is_on_the_roster() {
         "flak turret",
         "burst flak",
         "bastion",
+        "citadel",
     ] {
         assert!(names.contains(&name), "{name} missing from {names:?}");
     }

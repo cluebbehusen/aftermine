@@ -325,8 +325,8 @@ fn building_body_sources(
             sprites.construction_accent(kind, tier, stage, phase),
         ),
         BuildingBodyFrame::Action(action) => (
-            sprites.building_action(kind, action),
-            sprites.building_action_accent(kind, action),
+            sprites.building_action(kind, tier, action),
+            sprites.building_action_accent(kind, tier, action),
         ),
     }
 }

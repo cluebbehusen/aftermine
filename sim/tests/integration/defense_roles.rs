@@ -116,7 +116,7 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!(bastion.max_hp, 500);
     assert_eq!(bastion.vision, 6);
     assert_eq!(bastion.weapons[0].damage, 40);
-    assert_eq!(bastion.weapons[0].range, chassis::fx::Fx::lit("11"));
+    assert_eq!(bastion.weapons[0].range, chassis::fx::Fx::lit("9.5"));
     assert_eq!(
         bastion.weapons[0].minimum_range,
         chassis::fx::Fx::lit("2.5")
@@ -125,6 +125,37 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!(bastion.weapons[0].splash, Some(chassis::fx::Fx::lit("1.3")));
     assert_eq!(bastion.construction.unwrap().cost, 210);
     assert_eq!(bastion.construction.unwrap().build_ticks, 500);
+    assert_eq!(
+        bastion.construction.unwrap().requires,
+        &[BuildingKind::Fabricator]
+    );
+
+    // The Citadel only reaches further.
+    let citadel = BuildingKind::Bastion.tier_stats(1);
+    assert_eq!(BuildingKind::Bastion.tier_name(1), "citadel");
+    assert_eq!(citadel.weapons[0].range, chassis::fx::Fx::lit("12.5"));
+    assert_eq!(
+        (citadel.max_hp, citadel.vision),
+        (bastion.max_hp, bastion.vision)
+    );
+    let (gun, long_gun) = (bastion.weapons[0], citadel.weapons[0]);
+    assert_eq!(
+        (
+            gun.damage,
+            gun.minimum_range,
+            gun.cooldown_ticks,
+            gun.splash
+        ),
+        (
+            long_gun.damage,
+            long_gun.minimum_range,
+            long_gun.cooldown_ticks,
+            long_gun.splash
+        )
+    );
+    let upgrade = citadel.construction.unwrap();
+    assert_eq!((upgrade.cost, upgrade.build_ticks), (250, 400));
+    assert_eq!(upgrade.requires, &[BuildingKind::Crucible]);
 }
 
 #[test]
@@ -168,52 +199,73 @@ fn lancer_sieges_a_turret_from_outside_return_range() {
 }
 
 #[test]
-fn a_spotted_bastion_answers_a_bombard_sieging_it_from_full_range() {
-    // The Bombard measures to the Bastion's nearest edge and the Bastion
-    // from its center, so the Bastion needs the footprint's half-diagonal
-    // beyond the Bombard's range to answer it from any side.
+fn a_bombard_outranges_a_bastion_and_a_citadel_answers_it_from_full_range() {
+    // The Bombard measures to the emplacement's nearest edge and the
+    // emplacement from its center, so answering a Bombard from any side takes
+    // the footprint's half-diagonal beyond the Bombard's range: the Bastion
+    // matches it and is outranged, the Citadel clears it.
     let bombard_range = UnitKind::Bombard.stats().weapons[0].range;
-    let bastion_range = BuildingKind::Bastion.base_stats().weapons[0].range;
-    assert!(bastion_range >= bombard_range + chassis::fx::Fx::lit("1.42"));
-    for defender in [0, 1] {
-        let attacker = 1 - defender;
-        let mut state = role_scenario(
-            defender,
-            &[(BuildingKind::Bastion, TilePos::new(20, 8))],
-            &[(UnitKind::Bombard, TilePos::new(10, 9))],
-            &[
-                (attacker, UnitKind::Talon, TilePos::new(16, 9)),
-                (defender, UnitKind::Harvester, TilePos::new(14, 9)),
-            ],
-        )
-        .build()
-        .unwrap();
-        let bastion = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::Bastion)
-            .unwrap()
-            .id;
-        let bombard = state
-            .units()
-            .iter()
-            .find(|unit| unit.player == PlayerId(attacker) && unit.kind == UnitKind::Bombard)
-            .unwrap()
-            .id;
-        let events = attack_building(&mut state, attacker, &[bombard], bastion);
+    let half_diagonal = chassis::fx::Fx::lit("1.42");
+    for (tier, answers) in [(0u8, false), (1, true)] {
+        let range = BuildingKind::Bastion.tier_stats(tier).weapons[0].range;
+        assert_eq!(range >= bombard_range + half_diagonal, answers);
+        for defender in [0, 1] {
+            let attacker = 1 - defender;
+            let state = role_scenario(
+                defender,
+                &[(BuildingKind::Bastion, TilePos::new(20, 8))],
+                &[(UnitKind::Bombard, TilePos::new(10, 9))],
+                &[
+                    (attacker, UnitKind::Talon, TilePos::new(16, 9)),
+                    (defender, UnitKind::Harvester, TilePos::new(14, 9)),
+                ],
+            )
+            .build()
+            .unwrap();
+            let bastion = state
+                .buildings()
+                .iter()
+                .find(|building| building.kind == BuildingKind::Bastion)
+                .unwrap()
+                .id;
+            let mut value = serde_json::to_value(&state).unwrap();
+            let row = value["buildings"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|row| row["id"] == serde_json::json!(bastion))
+                .unwrap();
+            row["tier"] = serde_json::json!(tier);
+            let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+            let bombard = state
+                .units()
+                .iter()
+                .find(|unit| unit.player == PlayerId(attacker) && unit.kind == UnitKind::Bombard)
+                .unwrap()
+                .id;
+            let events = attack_building(&mut state, attacker, &[bombard], bastion);
 
-        assert!(
-            events.iter().any(|event| matches!(
-                event,
-                Event::ShellLaunched {
-                    shooter: Target::Building(building),
-                    ..
-                } if *building == bastion
-            )),
-            "the spotted Bastion fires back at the gun shelling it"
-        );
-        assert!(state.unit(bombard).is_none(), "and wins the duel");
-        assert!(state.building(bastion).is_some());
+            let fired_back = events.iter().any(|event| {
+                matches!(
+                    event,
+                    Event::ShellLaunched {
+                        shooter: Target::Building(building),
+                        ..
+                    } if *building == bastion
+                )
+            });
+            assert_eq!(fired_back, answers, "tier {tier}, defender {defender}");
+            if answers {
+                assert!(state.unit(bombard).is_none(), "the Citadel wins the duel");
+                assert!(state.building(bastion).is_some());
+            } else {
+                assert!(state.building(bastion).is_none(), "the Bastion falls");
+                assert_eq!(
+                    state.unit(bombard).unwrap().hp,
+                    UnitKind::Bombard.stats().max_hp
+                );
+            }
+        }
     }
 }
 

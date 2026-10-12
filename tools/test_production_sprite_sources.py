@@ -240,7 +240,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "5f3c95e5eaa54f701ee9462f32508c053ebddbca412aa2aeea94c07e6f85c837",
+            "2ea890e0c62346d8c5ab62c095be51621177380b63d013bbac6613e6cf90c570",
         )
 
     def test_construction_bank_covers_every_building(self) -> None:

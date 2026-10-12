@@ -1996,10 +1996,13 @@ fn the_hunt_card_is_touchable_and_arms_the_same_world_tap() {
 
 #[test]
 fn a_paused_stroke_bills_each_kind_at_its_own_price() {
-    // Bank 360: one staged turret (100) plus an armed bastion (250) is
-    // affordable at the actual sum (350), not priced as two bastions
-    // (500).
-    let mut game = drag_arena(360);
+    // Bank 360: one staged turret (100) plus an armed bastion (210) is
+    // affordable at the actual sum (310), not priced as two bastions
+    // (420).
+    let mut game = drag_arena_with(
+        360,
+        &serde_json::json!([{"player": 0, "kind": "fabricator", "x": 14, "y": 5}]),
+    );
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
@@ -2019,7 +2022,7 @@ fn a_paused_stroke_bills_each_kind_at_its_own_price() {
     assert_eq!(
         staged_builds(&game),
         2,
-        "100 + 250 fits in 360 — the funded bastion must not be refused"
+        "100 + 210 fits in 360 — the funded bastion must not be refused"
     );
 }
 
@@ -5144,6 +5147,11 @@ fn the_stretch_between_press_and_frame_end_still_selects() {
 /// The drag arena, parameterized by bank: same shape as the funded
 /// test's fixture, one harvester, open ground.
 fn drag_arena(scrap: u32) -> Game {
+    drag_arena_with(scrap, &serde_json::json!([]))
+}
+
+/// The drag bank with `buildings` (scenario JSON) already standing.
+fn drag_arena_with(scrap: u32, buildings: &serde_json::Value) -> Game {
     let scenario = oxide_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Drag Bank",
@@ -5166,7 +5174,8 @@ fn drag_arena(scrap: u32) -> Game {
             ],
             "units": [
                 {"player": 0, "kind": "harvester", "x": 7, "y": 4}
-            ]
+            ],
+            "buildings": buildings
         })
         .to_string(),
     )

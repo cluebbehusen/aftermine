@@ -32,8 +32,8 @@ fn a_gun_holds_off_what_its_firepower_and_health_match_not_its_price() {
 
 #[test]
 fn a_gun_answers_only_enemies_it_can_fire_back_at() {
-    let gun = |kind: BuildingKind| Cover::of(kind, 0, TilePos::new(10, 10)).unwrap();
-    let answers = |kind: BuildingKind, enemy: UnitKind| gun(kind).answers(reach(enemy));
+    let gun = |kind: BuildingKind, tier: u8| Cover::of(kind, tier, TilePos::new(10, 10)).unwrap();
+    let answers = |kind: BuildingKind, enemy: UnitKind| gun(kind, 0).answers(reach(enemy));
     assert!(answers(BuildingKind::Turret, UnitKind::Sentinel));
     assert!(
         !answers(BuildingKind::Turret, UnitKind::Lancer),
@@ -43,8 +43,12 @@ fn a_gun_answers_only_enemies_it_can_fire_back_at() {
     assert!(answers(BuildingKind::Bastion, UnitKind::Sentinel));
     assert!(answers(BuildingKind::Bastion, UnitKind::Lancer));
     assert!(
-        answers(BuildingKind::Bastion, UnitKind::Bombard),
-        "even at a corner"
+        !answers(BuildingKind::Bastion, UnitKind::Bombard),
+        "a Bombard at a corner outranges the Bastion"
+    );
+    assert!(
+        gun(BuildingKind::Bastion, 1).answers(reach(UnitKind::Bombard)),
+        "the Citadel answers one even at a corner"
     );
     assert!(
         !answers(BuildingKind::Bastion, UnitKind::Scuttler),
