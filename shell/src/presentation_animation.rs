@@ -967,12 +967,14 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 6.0,
         },
-        UnitKind::Excavator | UnitKind::Kestrel | UnitKind::Skyhook | UnitKind::Sapper => {
-            AttackTiming {
-                report_ticks: 1.0,
-                recover_ticks: 1.0,
-            }
-        }
+        UnitKind::Excavator
+        | UnitKind::Kestrel
+        | UnitKind::Skyhook
+        | UnitKind::Sapper
+        | UnitKind::Mantle => AttackTiming {
+            report_ticks: 1.0,
+            recover_ticks: 1.0,
+        },
         UnitKind::Talon => AttackTiming {
             report_ticks: 2.0,
             recover_ticks: 3.0,
@@ -1059,7 +1061,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Condor
         | UnitKind::Breaker
         | UnitKind::Avalanche
-        | UnitKind::Sapper => None,
+        | UnitKind::Sapper
+        | UnitKind::Mantle => None,
     }
 }
 

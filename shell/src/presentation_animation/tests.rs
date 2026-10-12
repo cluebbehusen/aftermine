@@ -732,6 +732,7 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         worker: Some(oxide_sim::Worker::default()),
         cooldowns: [0; MAX_WEAPONS],
         turret_heading: None,
+        point_defense: None,
         progress: 0,
         order: Order::Build { site: site.id },
         queue: VecDeque::new(),

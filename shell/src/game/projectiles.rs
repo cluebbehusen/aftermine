@@ -21,6 +21,9 @@ pub(crate) struct Flight {
     pub(crate) target: Option<Target>,
     pub(crate) ticks: u64,
     pose: Option<LaunchPose>,
+    /// Where it was aimed, which tells apart the record of a shell shot down
+    /// in flight from its siblings'.
+    impact: chassis::fx::Vec2Fx,
 }
 
 impl ProjectileReleases {
@@ -29,11 +32,25 @@ impl ProjectileReleases {
         self.releases
             .retain(|(_, arrival), _| *arrival >= state.current_tick().saturating_sub(1));
         for event in events {
+            if let Event::ShellIntercepted {
+                shooter,
+                impact,
+                arrival,
+                ..
+            } = event
+                && let Some(flights) = self.releases.get_mut(&(*shooter, *arrival))
+                && let Some(slot) = flights.iter().position(|flight| flight.impact == *impact)
+            {
+                // Later siblings keep their launch order, so the occurrence
+                // index of every shell still in flight finds its own record.
+                flights.remove(slot);
+            }
             if let Event::ShellLaunched {
                 shooter,
                 target,
                 unit_pose,
                 flight,
+                to,
                 ..
             } = event
             {
@@ -52,6 +69,7 @@ impl ProjectileReleases {
                     target: *target,
                     ticks: *flight,
                     pose,
+                    impact: *to,
                 });
             }
         }

@@ -694,15 +694,16 @@ body-frame selection survives lethal removal. Reported unit strikes stay
 anchored to the hit-tick pose while the target moves. Compact contact regions
 derive from atlas alpha at load time and are shared by all instances. Projectile
 launch history retains recorded flight duration and identified targets through
-arrival. When launch history is absent after checkpoint restoration, payload
-recipients are reconstructed from visible world bodies at the fixed impact
-point; landing reports can also use pre-removal bodies. No historical ticks are
-executed. Unguided unit contacts stay on the original course and require the
-nominal impact to overlap the body; bomb spread and ground misses retain their
-positions. Surface flashes, fragments, dust and scorch marks share the cosmetic
-contact point. Weapon and recipient profiles distinguish rail, orb, mortar,
-shell, rocket and bomb contacts. Cosmetic contact never changes simulation
-targeting, damage, shell arrivals or splash centers.
+arrival, or until point defense shoots the shell down. When launch history is
+absent after checkpoint restoration, payload recipients are reconstructed from
+visible world bodies at the fixed impact point; landing reports can also use
+pre-removal bodies. No historical ticks are executed. Unguided unit contacts
+stay on the original course and require the nominal impact to overlap the body;
+bomb spread and ground misses retain their positions. Surface flashes,
+fragments, dust and scorch marks share the cosmetic contact point. Weapon and
+recipient profiles distinguish rail, orb, mortar, shell, rocket and bomb
+contacts. Cosmetic contact never changes simulation targeting, damage, shell
+arrivals or splash centers.
 
 `assets` loads the generated sprite atlas. Its manifest covers every resolved
 sprite key; the renderer does not load individual sprite textures. Optional rigs

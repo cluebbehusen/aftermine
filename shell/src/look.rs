@@ -346,6 +346,12 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Demolition,
             ..plain
         },
+        UnitKind::Mantle => UnitLook {
+            scale: HEAVY_SCALE,
+            gait: Gait::Legs,
+            marker: M::AntiAir,
+            ..plain
+        },
     }
 }
 

@@ -1312,6 +1312,31 @@ impl Presentation {
                         self.sounds_pending.push((sound, Some(world_vec(at))));
                     }
                 }
+                Event::ShellIntercepted {
+                    defender_player,
+                    defender_pos,
+                    player,
+                    at,
+                    ..
+                } => {
+                    // Placeholder until the interception has its own art: a
+                    // small burst where the shell was stopped, shown to
+                    // anyone who sees the shell or the defender.
+                    let shown = self.all_seeing()
+                        || *defender_player == self.human
+                        || *player == self.human
+                        || sees(self, *at)
+                        || sees(self, *defender_pos);
+                    if shown {
+                        self.fx.push(Effect {
+                            kind: EffectKind::Burst {
+                                at: world_vec(*at),
+                                radius: 0.5,
+                            },
+                            age: 0.0,
+                        });
+                    }
+                }
                 Event::ChargeDetonated { at, .. } => {
                     // A mine going off is loud and unmistakable whoever
                     // owned it.

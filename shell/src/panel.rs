@@ -431,6 +431,17 @@ pub fn weapon_lines(kind: UnitKind) -> Vec<String> {
     kind.stats().weapons.iter().map(weapon_line).collect()
 }
 
+/// A kind's point defense on one line, for kinds that carry it.
+pub fn point_defense_line(kind: UnitKind) -> Option<String> {
+    let defense = kind.stats().point_defense?;
+    Some(format!(
+        "Point defense | {} charges | {:.1} tiles | one back every {}",
+        defense.charges,
+        defense.radius.to_num::<f32>(),
+        tick_time_label(u32::from(defense.recharge_ticks))
+    ))
+}
+
 /// A building's weapon lines at `tier`, for the codex page.
 pub fn building_weapon_lines(kind: BuildingKind, tier: u8) -> Vec<String> {
     kind.tier_stats(tier)

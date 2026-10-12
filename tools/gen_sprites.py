@@ -101,6 +101,7 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "avalanche",
             "skyhook",
             "sapper",
+            "mantle",
         )
     ):
         img = rim_light(img)
@@ -1762,6 +1763,34 @@ def sapper(variant: str, move: int = 0) -> None:
     finish(img, px, f"sapper{variant_tag(variant)}{suffix}")
 
 
+def mantle(variant: str, move: int = 0) -> None:
+    """Placeholder point-defense walker until its art is chosen: a squat
+    plated hull on two legs carrying three emitter domes."""
+    px = 64
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    dy = (0, -1, 1)[move % 3]
+    for x, lift in ((14, (0, -2, 2)[move % 3]), (44, (0, 2, -2)[move % 3])):
+        d.rounded_rectangle(
+            [s(x), s(34 + lift), s(x + 6), s(58 + lift)],
+            radius=s(2),
+            fill=(*IRON_DARK, 255),
+        )
+    d.rounded_rectangle(
+        [s(12), s(18 + dy), s(52), s(48 + dy)], radius=s(8), fill=(*IRON, 255)
+    )
+    d.rounded_rectangle(
+        [s(16), s(22 + dy), s(48), s(44 + dy)], radius=s(6), fill=(*pal["base"], 255)
+    )
+    for x in (18, 28, 38):
+        d.ellipse([s(x), s(10 + dy), s(x + 8), s(18 + dy)], fill=(*IRON_DARK, 255))
+        d.ellipse(
+            [s(x + 2), s(12 + dy), s(x + 6), s(16 + dy)], fill=(*pal["light"], 255)
+        )
+    suffix = "" if move == 0 else f"_move{move}"
+    finish(img, px, f"mantle{variant_tag(variant)}{suffix}")
+
+
 def warden(variant: str, move: int = 0, action: int = 0) -> None:
     """Tier-two line brawler: a broad plated hull behind twin shield
     cheeks, one heavy fork cannon dead ahead — the wall that walks."""
@@ -3193,7 +3222,7 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper):
+        for unit_fn in (excavator, kestrel, skyhook, sapper, mantle):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
