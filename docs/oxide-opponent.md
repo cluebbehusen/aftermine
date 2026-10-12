@@ -97,9 +97,10 @@ the running total and mission state.
   sends.
 - Missions recruit from available units in a fixed order (defend, lift, attack,
   clearance, strike, raid), and each takes only the roles it uses: attack takes
-  line, siege and anti-air units, with Sappers in support; raid takes Scuttlers,
-  Sappers, or ground-attack aircraft too few for a strike; lift takes carriers
-  and a payload; a clearance takes splash bombers while ground reaches no enemy.
+  line, siege and anti-air units, with Sappers and point defenders in support;
+  raid takes Scuttlers, Sappers, or ground-attack aircraft too few for a strike;
+  lift takes carriers and a payload; a clearance takes splash bombers while
+  ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at
@@ -186,6 +187,7 @@ Each behavior is proven by a staged scenario test.
 | Enemy artillery shelling assets      | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                  |
 | Assets under indirect fire           | Target visible likely spotters                                                                                                                        |
 | Enemy unit mix                       | Choose units by coarse suitability against seen enemies                                                                                               |
+| Enemy shellfire known                | Point defenders in proportion to the heavy shots it fires, kept over the army                                                                         |
 | Expensive investment wanted          | Save for it while keeping an army share                                                                                                               |
 | Several enemies                      | Choose a target with hysteresis                                                                                                                       |
 
@@ -195,9 +197,9 @@ Scuttler raids, harvest-line harassment by air, team relief, escorts, repair,
 harvester evacuation, emergency and voluntary static defense sized to hold off
 the known threat, Extractor restoration, expansion timing, tech prerequisites,
 memory of failed objectives, a response to stalled production, focus fire, and
-pulling wounded units back between fights. It does no other per-unit micro. It
-builds every building kind, reaches every upgrade tier, and trains every unit
-kind.
+pulling wounded units back between fights. It does no other per-unit micro,
+except keeping point defenders over the army they travel with. It builds every
+building kind, reaches every upgrade tier, and trains every unit kind.
 
 ## Difficulty, stance and personality
 

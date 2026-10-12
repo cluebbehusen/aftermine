@@ -23,9 +23,17 @@ pub(crate) enum Role {
     AntiAir,
     /// Aircraft that attack the ground.
     AirStrike,
+    /// Unarmed point defenders that shoot down shells aimed at the army.
+    Screen,
 }
 
-const ROLES: [Role; 4] = [Role::Line, Role::Siege, Role::AntiAir, Role::AirStrike];
+const ROLES: [Role; 5] = [
+    Role::Line,
+    Role::Siege,
+    Role::AntiAir,
+    Role::AirStrike,
+    Role::Screen,
+];
 
 /// What a needed but untrainable role adds to its cheapest building's score.
 const PULL: u32 = 600;
@@ -51,6 +59,7 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         UnitKind::Lancer | UnitKind::Bombard | UnitKind::Avalanche => Some(Role::Siege),
         UnitKind::Flakhound | UnitKind::Talon => Some(Role::AntiAir),
         UnitKind::Buzzard | UnitKind::Condor => Some(Role::AirStrike),
+        UnitKind::Mantle => Some(Role::Screen),
         UnitKind::Harvester
         | UnitKind::Excavator
         | UnitKind::Scuttler
@@ -90,6 +99,9 @@ struct Enemy {
     air: u64,
     ground: u64,
     defenses: u64,
+    /// Per mille of one point defender: the known projectile fire its
+    /// recharge would answer (see [`shells_per_recharge`]).
+    shells: u64,
     reach: Option<Reach>,
     clustered: bool,
     /// The most recently seen enemy ground units, by tile and full health.
@@ -108,13 +120,21 @@ impl Enemy {
             air: 0,
             ground: 0,
             defenses: 0,
+            shells: 0,
             reach: None,
             clustered: false,
             targets: Vec::new(),
         };
+        let defender = defender();
+        let heaviest = heaviest_projectile();
         let mut reaches = [0_u64; 3];
         for unit in memory.units() {
             let value = unit.value(now);
+            if let Some((_, stats)) = defender {
+                enemy.shells += shells_per_recharge(unit.kind.stats().weapons, stats, heaviest)
+                    * u64::from(unit.confidence(now))
+                    / 1_000;
+            }
             if unit.kind.stats().domain == Domain::Air {
                 enemy.air += value;
             } else if unit.kind.stats().can_fight() {
@@ -134,6 +154,15 @@ impl Enemy {
             }
             if DEFENSES.contains(&building.kind) {
                 enemy.defenses += crate::missions::building_value(building);
+            }
+            if let Some((_, stats)) = defender
+                && building.built
+            {
+                enemy.shells += shells_per_recharge(
+                    building.kind.tier_stats(building.tier).weapons,
+                    stats,
+                    heaviest,
+                );
             }
         }
         enemy.clustered = clustered(memory.units());
@@ -201,10 +230,68 @@ pub(crate) fn clustered<'a>(units: impl IntoIterator<Item = &'a SeenUnit>) -> bo
     })
 }
 
+/// The point defender the seat would train for the screen role, with its
+/// price and point defense.
+fn defender() -> Option<(u64, oxide_sim::stats::PointDefenseStats)> {
+    UnitKind::ALL.into_iter().find_map(|kind| {
+        let stats = kind.stats();
+        (role(kind) == Some(Role::Screen))
+            .then_some(stats.point_defense)
+            .flatten()
+            .map(|defense| (u64::from(stats.cost), defense))
+    })
+}
+
+/// Per mille of one point defender: the shells `weapons` fire in one of its
+/// recharges, each weighted by its damage against `heaviest`, the damage of
+/// the heaviest projectile any machine or building fires. A charge stops one
+/// shell whatever it carries, so a few heavy shells are what a defender is
+/// for, and a stream of light ones spends charges for little.
+fn shells_per_recharge(
+    weapons: &[oxide_sim::stats::WeaponStats],
+    defender: oxide_sim::stats::PointDefenseStats,
+    heaviest: u64,
+) -> u64 {
+    weapons
+        .iter()
+        .filter(|weapon| weapon.projectile.is_some())
+        .map(|weapon| {
+            u64::from(defender.recharge_ticks) * 1_000 * u64::from(weapon.damage)
+                / (u64::from(weapon.cooldown_ticks.max(1)) * heaviest)
+        })
+        .sum()
+}
+
+/// The largest damage any projectile weapon carries, at least one.
+fn heaviest_projectile() -> u64 {
+    let units = UnitKind::ALL
+        .into_iter()
+        .flat_map(|kind| kind.stats().weapons.iter());
+    let buildings = BuildingKind::ALL
+        .into_iter()
+        .flat_map(|kind| kind.tiers().iter().flat_map(|tier| tier.weapons.iter()));
+    units
+        .chain(buildings)
+        .filter(|weapon| weapon.projectile.is_some())
+        .map(|weapon| u64::from(weapon.damage))
+        .max()
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// Per mille of the armed army that point defenders may make up at most, at
+/// a support trait of zero: a personality limit, so a seat facing heavy
+/// shells still fields guns before shields.
+const SCREEN_SHARE: i64 = 150;
+
+/// Per mille of the armed army each point of the support trait adds to the
+/// screen's limit: a personality limit.
+const SCREEN_SHARE_PER_TRAIT: i64 = 2;
+
 /// Deficits by role, in scrap, and the weight personality gives each role.
 pub(crate) struct Needs {
-    need: [i64; 4],
-    weight: [u64; 4],
+    need: [i64; 5],
+    weight: [u64; 5],
     /// Whether ground units can reach an enemy: a building or start, or
     /// invaders on the seat's own ground.
     ground: bool,
@@ -273,7 +360,7 @@ pub(crate) fn needs(
     outlet: Outlet,
 ) -> Needs {
     let enemy = Enemy::of(observation, memory);
-    let mut own = [0_i64; 4];
+    let mut own = [0_i64; 5];
     let mut kinds = [0_u32; UnitKind::ALL.len()];
     let owned = observation
         .my_units
@@ -287,11 +374,12 @@ pub(crate) fn needs(
         }
         kinds[index(kind)] += 1;
     }
-    let army: i64 = own.iter().sum();
+    // Point defenders shield the army rather than make it bigger.
+    let army: i64 = own[..Role::Screen as usize].iter().sum();
     let air = i64::try_from(enemy.air).unwrap_or(i64::MAX);
     let ground = i64::try_from(enemy.ground).unwrap_or(i64::MAX);
     let defenses = i64::try_from(enemy.defenses).unwrap_or(i64::MAX);
-    let mut need = [0_i64; 4];
+    let mut need = [0_i64; 5];
     if outlet.ground {
         need[Role::Line as usize] = (3 * ground / 4).max(2 * army / 5) - own[Role::Line as usize];
         let share = if outlet.lifted {
@@ -301,6 +389,21 @@ pub(crate) fn needs(
         };
         need[Role::Siege as usize] =
             defenses / 2 + army * share / 1_000 - own[Role::Siege as usize];
+        // Defenders walk with the army, which a lifted army leaves behind.
+        if !outlet.lifted
+            && let Some((cost, _)) = defender()
+        {
+            // Whole defenders only: a stray light gun is no reason to buy
+            // one, and the limit never rounds up to one more than it allows.
+            let cost = i64::try_from(cost).unwrap_or(i64::MAX).max(1);
+            let wanted = i64::try_from((enemy.shells + 500) / 1_000)
+                .unwrap_or(i64::MAX)
+                .saturating_mul(cost);
+            let limit =
+                army * (SCREEN_SHARE + SCREEN_SHARE_PER_TRAIT * i64::from(traits.support)) / 1_000;
+            need[Role::Screen as usize] =
+                wanted.min(limit / cost * cost) - own[Role::Screen as usize];
+        }
     } else {
         let invaders = i64::try_from(outlet.invaders).unwrap_or(i64::MAX);
         need[Role::Line as usize] = 3 * invaders / 4 - own[Role::Line as usize];
@@ -320,6 +423,7 @@ pub(crate) fn needs(
             weight(traits.siege),
             weight(traits.fortification),
             weight(traits.air),
+            weight(traits.support),
         ],
         enemy,
         traits,
@@ -601,7 +705,7 @@ impl Needs {
         };
         let worth = match role {
             Role::Siege => firepower(kind),
-            Role::Line | Role::AntiAir | Role::AirStrike => (750
+            Role::Line | Role::AntiAir | Role::AirStrike | Role::Screen => (750
                 + 5 * (i64::from(stats.max_hp) * 100 / i64::from(stats.cost) - 50))
                 .clamp(750, 1_250)
                 .cast_unsigned(),
@@ -634,6 +738,7 @@ impl Needs {
             Role::Siege => weight(self.traits.siege),
             Role::AntiAir => weight(self.traits.fortification),
             Role::AirStrike => weight(self.traits.air),
+            Role::Screen => weight(self.traits.support),
         };
         [
             reach,

@@ -2,14 +2,15 @@ use super::*;
 
 fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
     Needs {
-        need: [0; 4],
-        weight: [1_000; 4],
+        need: [0; 5],
+        weight: [1_000; 5],
         ground: true,
         lifted: false,
         enemy: Enemy {
             air: 0,
             ground: 1_000,
             defenses: 0,
+            shells: 0,
             reach,
             clustered,
             targets: Vec::new(),
