@@ -349,6 +349,11 @@ names, or their cancellation; only Patrol coaches its two-step start.
 letter, so refusal reasons stay lowercase fragments that also read inside longer
 messages.
 
+An own unit selection offers a Retire card, disabled with a reason until a
+Crucible is complete. It has no default key, so a stray keypress cannot scrap an
+army, and no right-click meaning; Shift queues it. A retiring own machine draws
+a gold dismantling meter under its health bar, as a building under salvage does.
+
 Loaded Harvesters and Excavators expose a Return Cargo card and shortcut (`U` by
 default). Worker selections use Return Cargo, a single selected transport uses
 Unload, and selected buildings use Upgrade on the same key. Mixed unit

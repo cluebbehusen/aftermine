@@ -44,14 +44,15 @@ fn command_tag(command: &Command) -> usize {
         Command::ClearFocus { .. } => 21,
         Command::ReturnCargo { .. } => 22,
         Command::CancelOrder { .. } => 23,
+        Command::Retire { .. } => 24,
     }
 }
 
-const COMMAND_VARIANTS: usize = 24;
+const COMMAND_VARIANTS: usize = 25;
 
 /// The verbs that carry a unit list — every one of them owes this file a
 /// duplicate-id row.
-const UNIT_BEARING_TAGS: [usize; 13] = [0, 1, 2, 3, 4, 5, 7, 8, 9, 14, 15, 19, 22];
+const UNIT_BEARING_TAGS: [usize; 14] = [0, 1, 2, 3, 4, 5, 7, 8, 9, 14, 15, 19, 22, 24];
 
 /// The verbs that address a building alone, with no list to canonicalize.
 const BUILDING_ONLY_TAGS: [usize; 5] = [6, 10, 11, 12, 18];
@@ -144,6 +145,13 @@ fn stage() -> Stage {
                 kind: BuildingKind::Fabricator,
                 x: 1,
                 y: 7,
+            },
+            // Where the retire family takes its units apart.
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Crucible,
+                x: 17,
+                y: 2,
             },
         ],
         meta: None,
@@ -347,6 +355,11 @@ fn families(stage: &Stage) -> Vec<Family> {
                 transport,
                 queue,
             }),
+        },
+        Family {
+            name: "retire",
+            actor: guard,
+            make: Box::new(move |units, queue| Command::Retire { units, queue }),
         },
     ]
 }

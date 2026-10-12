@@ -1397,6 +1397,43 @@ fn every_targeting_mode_has_persistent_human_copy() {
 }
 
 #[test]
+fn retire_has_no_default_key_and_its_card_needs_a_crucible() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let own: Vec<_> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| u.id)
+        .collect();
+    game.presentation.selection.units = own.clone();
+    assert_eq!(
+        crate::action::BindingMap::classic().labels(Action::Retire),
+        "",
+        "no keystroke scraps an army"
+    );
+    let card = |game: &Game| {
+        crate::panel::build_for_palette(&game.view(), &BindingMap::classic(), false)
+            .expect("panel")
+            .cards
+            .into_iter()
+            .find(|card| card.title == "Retire")
+            .expect("a Retire card")
+    };
+    assert!(!card(&game).enabled, "no Crucible yet");
+    dispatch_action(&mut game, &mut input, Action::Retire);
+    assert_eq!(
+        game.pending.iter().map(|c| &c.command).collect::<Vec<_>>(),
+        [&Command::Retire {
+            units: own,
+            queue: false,
+        }],
+        "the sim, not the shell, refuses a seat without a Crucible"
+    );
+}
+
+#[test]
 fn double_click_timing_obeys_the_injected_clock() {
     let mut game = headless_game();
     let mut input = InputState::new();

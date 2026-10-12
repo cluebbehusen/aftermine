@@ -168,6 +168,9 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 *from_end,
                 &canonical_units(units),
             ),
+            Command::Retire { units, queue } => {
+                apply_retire(state, pc.player, &canonical_units(units), *queue)
+            }
         };
         if let Err(reason) = outcome {
             events.push(Event::CommandRejected {
@@ -1051,7 +1054,12 @@ fn apply_repair_unit(
     let stats = t.kind.stats();
     // A parked airframe is a ground body a welder can reach; an airborne
     // one is not.
-    if t.player != player || t.hp == 0 || t.hp >= stats.max_hp || t.domain() != Domain::Ground {
+    if t.player != player
+        || t.hp == 0
+        || t.hp >= stats.max_hp
+        || t.domain() != Domain::Ground
+        || t.retiring()
+    {
         return Err(RejectReason::InvalidTarget);
     }
     let crew: Vec<UnitId> = units.iter().copied().filter(|&id| id != target).collect();
@@ -1070,6 +1078,53 @@ fn apply_repair_unit(
     Ok(())
 }
 
+/// Sends own units each to the nearest own completed Crucible it can reach,
+/// to be dismantled there.
+fn apply_retire(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    queue: bool,
+) -> Result<(), RejectReason> {
+    if !state.buildings().iter().any(|b| {
+        b.player == player
+            && b.hp > 0
+            && b.built()
+            && b.kind == crate::stats::BuildingKind::Crucible
+    }) {
+        return Err(RejectReason::MissingPrerequisite);
+    }
+    let own = accepted_units(state, player, units);
+    if own.is_empty() {
+        return Err(RejectReason::NoValidUnits);
+    }
+    let mut reach = super::reach::Reach::new(state);
+    let routed: Vec<(UnitId, crate::ids::BuildingId)> = own
+        .into_iter()
+        .filter_map(|id| {
+            super::brain::retire::nearest_crucible(state, &mut reach, id)
+                .map(|crucible| (id, crucible))
+        })
+        .collect();
+    if routed.is_empty() {
+        return Err(RejectReason::UnreachableGoal);
+    }
+    let mut landed = 0;
+    for (id, crucible) in routed {
+        let order = Order::Retire {
+            crucible,
+            pad: None,
+        };
+        if assign(state.unit_mut(id).expect("accepted unit"), order, queue) {
+            landed += 1;
+        }
+    }
+    if landed == 0 {
+        return Err(RejectReason::QueueFull);
+    }
+    Ok(())
+}
+
 /// Sends carriable ground machines to climb aboard an own transport.
 /// Capacity is checked at the sling, not here, because contents change
 /// while the boarders walk.
@@ -1081,7 +1136,7 @@ fn apply_load(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(transport).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 {
+    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 || t.retiring() {
         return Err(RejectReason::InvalidTarget);
     }
     let mut landed = 0;

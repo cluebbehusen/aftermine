@@ -86,6 +86,11 @@ pub enum OrderKey {
         /// The carrier.
         transport: UnitId,
     },
+    /// Being dismantled at this Crucible.
+    Retire {
+        /// The Crucible.
+        crucible: BuildingId,
+    },
 }
 
 impl Order {
@@ -122,6 +127,7 @@ impl Order {
             Order::Salvage { building } => OrderKey::Salvage { building },
             Order::RepairUnit { unit } => OrderKey::RepairUnit { unit },
             Order::Board { transport } => OrderKey::Board { transport },
+            Order::Retire { crucible, .. } => OrderKey::Retire { crucible },
         })
     }
 }

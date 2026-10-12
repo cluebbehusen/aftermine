@@ -3085,6 +3085,26 @@ def icon_rally() -> None:
     finish(img, ICON, "icon_rally")
 
 
+def icon_retire() -> None:
+    """Retirement: a gear melting down, its lower half running off as scrap."""
+    img, d = canvas(ICON)
+    cx, cy = 24, 18
+    teeth = []
+    for i in range(16):
+        ang = math.pi * 2 * i / 16
+        r = 14 if i % 2 == 0 else 10
+        teeth.append((s(cx + math.cos(ang) * r), s(cy + math.sin(ang) * r)))
+    d.polygon(teeth, fill=(*BONE, 255))
+    clear = (0, 0, 0, 0)
+    d.ellipse([s(19), s(13), s(29), s(23)], fill=clear)
+    d.rectangle([s(8), s(22), s(40), s(32)], fill=clear)
+    for x, length in ((14, 10), (24, 16), (34, 8)):
+        d.rounded_rectangle(
+            [s(x - 3), s(24), s(x + 3), s(24 + length)], radius=s(3), fill=(*SCRAP, 255)
+        )
+    finish(img, ICON, "icon_retire")
+
+
 def icon_idle() -> None:
     """Standing by: the three-beat wait."""
     img, d = canvas(ICON)
@@ -3223,6 +3243,7 @@ def generate(output: Path) -> None:
     icon_cancel()
     icon_rally()
     icon_idle()
+    icon_retire()
     pack_atlas()
     print("done")
 

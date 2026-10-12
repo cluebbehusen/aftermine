@@ -109,6 +109,25 @@ pub enum Event {
         /// Its center (for shell effects).
         pos: Vec2Fx,
     },
+    /// A machine was dismantled at its owner's Crucible: deliberate, not a
+    /// loss. It leaves no wreck, and stat screens must not count it among
+    /// casualties.
+    UnitRetired {
+        /// The dismantled machine.
+        unit: UnitId,
+        /// What it was.
+        kind: UnitKind,
+        /// Its owner, who banks the refund and the cargo.
+        player: PlayerId,
+        /// Where it stood.
+        pos: Vec2Fx,
+        /// The Crucible that took it apart.
+        crucible: BuildingId,
+        /// Scrap refunded for the machine itself, by its final hp.
+        refund: u32,
+        /// Scrap it carried, banked like a delivery.
+        cargo: u32,
+    },
     /// A building was taken apart by its own crew — deliberate, not a
     /// loss: no wreck, no scorch, and stat screens must not count it
     /// among casualties.

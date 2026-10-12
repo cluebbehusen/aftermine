@@ -333,8 +333,10 @@ pub(super) fn repair_unit(
             && t.hp > 0
             && t.hp < t.kind.stats().max_hp
             && t.domain() == crate::stats::Domain::Ground
+            && !t.retiring()
     }) else {
-        // Healed, dead, taken off, or never a patient: the job is over.
+        // Healed, dead, taken off, retiring, or never a patient: the job is
+        // over.
         state.unit_mut(id).expect("caller checked").advance_queue();
         return;
     };
@@ -399,6 +401,7 @@ pub(super) fn commit_unit_welds(
                     && t.hp > 0
                     && t.hp < t.kind.stats().max_hp
                     && t.domain() == crate::stats::Domain::Ground
+                    && !t.retiring()
             }) else {
                 stationary[slot] = false;
                 continue;

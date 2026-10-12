@@ -267,6 +267,14 @@ pub(super) fn run(
                 logistics::unload(state, index, &mut reach, id, &mut logistics_pending, events);
             }
             Order::Land { goal, from } => land(state, index, id, goal, from, events),
+            Order::Retire { crucible, pad } => retire::retire(
+                state,
+                &mut reach,
+                id,
+                (crucible, pad),
+                &mut logistics_pending,
+                events,
+            ),
         }
         if events[reported..]
             .iter()
@@ -296,6 +304,7 @@ mod economy;
 pub(super) use economy::return_cargo_destination;
 mod locomotion;
 pub(super) mod logistics;
+pub(super) mod retire;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{

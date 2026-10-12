@@ -251,6 +251,9 @@ pub struct SeatLedger {
     pub spend: BTreeMap<String, [u64; 4]>,
     /// Scrap refunded by cancelled and salvaged buildings.
     pub refunds: u64,
+    /// Scrap refunded by units retired at a Crucible: recycling, neither
+    /// income nor combat value.
+    pub retired: u64,
     /// Net worth every [`WORTH_PERIOD`] ticks after `start`: units, riders
     /// included, and buildings at their worth times their health fraction,
     /// plus the bank.
@@ -384,6 +387,7 @@ pub struct ImpactLedger {
     unattributed: Vec<u64>,
     spend: Vec<BTreeMap<String, [u64; 4]>>,
     refunds: Vec<u64>,
+    retired: Vec<u64>,
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
     /// The Crucibles and wreck in their reach as a smelting tick begins.
@@ -666,6 +670,7 @@ impl ImpactLedger {
             unattributed: vec![0; seats],
             spend: vec![BTreeMap::new(); seats],
             refunds: vec![0; seats],
+            retired: vec![0; seats],
             worth: vec![Vec::new(); seats],
             shells: Vec::new(),
             hearths: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
@@ -816,26 +821,23 @@ impl ImpactLedger {
                     player,
                     amount,
                 } => {
-                    let cargo = self.cargo.remove(unit).unwrap_or_default();
-                    let wreck = cargo.wreck.min(*amount);
-                    for (source, scrap) in [
-                        (IncomeSource::FieldHarvest, *amount - wreck),
-                        (IncomeSource::WreckSalvage, wreck),
-                    ] {
-                        if scrap > 0 {
-                            self.credits.push(Credit {
-                                seat: player.0,
-                                source,
-                                scrap: u64::from(scrap),
-                            });
-                        }
-                    }
-                    if let Some(record) = self.records.get_mut(&Key::Unit(*unit)) {
-                        record.harvested += u64::from(*amount);
-                    }
+                    self.delivered(player.0, *unit, *amount);
                     if let Some(record) = self.records.get_mut(&Key::Building(*foundry)) {
                         record.received += u64::from(*amount);
                     }
+                }
+                // A retirement is no death: the body leaves without `gone`,
+                // so its hp never counts as damage taken. The load it
+                // carried banks like a delivery.
+                Event::UnitRetired {
+                    unit,
+                    player,
+                    refund,
+                    cargo,
+                    ..
+                } => {
+                    self.retired[usize::from(player.0)] += u64::from(*refund);
+                    self.delivered(player.0, *unit, *cargo);
                 }
                 Event::UnitRepaired {
                     unit,
@@ -1049,6 +1051,28 @@ impl ImpactLedger {
         let value = u64::from(amount) * body.value * MILLI / u64::from(body.max_hp.max(1));
         if let Some(record) = self.records.get_mut(&welder) {
             record.repaired += value;
+        }
+    }
+
+    /// Credits `amount` of `unit`'s cargo to `seat` as harvest income, split
+    /// by how much of the load was wreck.
+    fn delivered(&mut self, seat: u8, unit: UnitId, amount: u32) {
+        let cargo = self.cargo.remove(&unit).unwrap_or_default();
+        let wreck = cargo.wreck.min(amount);
+        for (source, scrap) in [
+            (IncomeSource::FieldHarvest, amount - wreck),
+            (IncomeSource::WreckSalvage, wreck),
+        ] {
+            if scrap > 0 {
+                self.credits.push(Credit {
+                    seat,
+                    source,
+                    scrap: u64::from(scrap),
+                });
+            }
+        }
+        if let Some(record) = self.records.get_mut(&Key::Unit(unit)) {
+            record.harvested += u64::from(amount);
         }
     }
 
@@ -1383,6 +1407,7 @@ impl ImpactLedger {
                 unattributed: scrap(self.unattributed[seat]),
                 spend: self.spend[seat].clone(),
                 refunds: self.refunds[seat],
+                retired: self.retired[seat],
                 worth: self.worth[seat].clone(),
                 start: self.start,
                 end,

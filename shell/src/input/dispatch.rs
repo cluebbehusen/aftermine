@@ -27,6 +27,7 @@ pub(super) fn dispatch_action(
                 | Action::RepairUnit
                 | Action::Unload
                 | Action::ReturnCargo
+                | Action::Retire
         )
     {
         input.close_construction();
@@ -97,6 +98,18 @@ pub(super) fn dispatch_action(
                 units: game.presentation.selection.units.clone(),
                 foundry: None,
                 repair: false,
+            });
+        }
+        Action::Retire => {
+            if game.presentation.selection.units.is_empty() || !game.selection_commandable() {
+                game.presentation
+                    .toast("You can only command your own units");
+                return;
+            }
+            input.disarm_click_verbs();
+            game.issue(Command::Retire {
+                units: game.presentation.selection.units.clone(),
+                queue: input.queue_held(),
             });
         }
         Action::StopOrScrap => {

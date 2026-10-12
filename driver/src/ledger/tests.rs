@@ -711,6 +711,39 @@ fn salvage_is_no_ones_damage() {
 }
 
 #[test]
+fn a_retirement_is_recycling_not_damage_or_income() {
+    let scenario = field(
+        0,
+        &[(0, UnitKind::Harvester, 9, 6)],
+        &[(0, BuildingKind::Crucible, 10, 6)],
+    );
+    let mut state = scenario.build().unwrap();
+    state.tick(&[]);
+    let harvester = unit_at(&state, 9, 6);
+    let (state, ledgers) = play(
+        state,
+        200,
+        vec![order(
+            0,
+            Command::Retire {
+                units: vec![harvester],
+                queue: false,
+            },
+        )],
+    );
+    assert!(state.unit(harvester).is_none(), "premise: it was retired");
+    let refund = u64::from(oxide_sim::stats::retire_refund(
+        UnitKind::Harvester,
+        UnitKind::Harvester.stats().max_hp,
+    ));
+    assert_eq!(ledgers[0].retired, refund);
+    let worker = unit(&ledgers, 0, "harvester");
+    assert_eq!((worker.taken, worker.deaths), (0, 0));
+    assert_eq!(ledgers[0].unattributed, 0);
+    assert_eq!(ledgers[0].refunds, 0, "building refunds stay separate");
+}
+
+#[test]
 fn a_crash_is_credited_to_the_aircraft_that_fell() {
     // The block reaches well past the orbit, so the wreck falls among
     // Sentinels however they jostle while shooting.

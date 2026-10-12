@@ -404,10 +404,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
         E::DamageStampInTheFuture(_) => 81,
+        E::InvalidRetirement(_) => 82,
     }
 }
 
-const ROWS: usize = 82;
+const ROWS: usize = 83;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -502,6 +503,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
         E::DamageStampInTheFuture(UnitId(0)),
+        E::InvalidRetirement(UnitId(0)),
     ]
 }
 
@@ -950,6 +952,37 @@ fn every_checklist_row_refuses_its_forgery() {
                     json!({"order": "return_cargo", "foundry": foreign, "repair": false});
             },
             "unit u0 has an invalid cargo delivery",
+        ),
+        (
+            "a retirement at a building that is no Crucible",
+            |d| {
+                let owner = d["units"][0]["player"].clone();
+                let home = d["buildings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|b| b["player"] == owner && b["kind"] == json!("foundry"))
+                    .unwrap()["id"]
+                    .clone();
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": home});
+            },
+            "unit u0 has an invalid retirement",
+        ),
+        (
+            "a landing pad for an airframe that cannot land",
+            |d| {
+                d["units"][0]["order"] =
+                    json!({"order": "retire", "crucible": 0, "pad": {"x": 4, "y": 4}});
+            },
+            "has an invalid retirement",
+        ),
+        (
+            "a retirement resting on a full meter",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": 0});
+                d["units"][0]["progress"] = json!(oxide_sim::stats::RETIRE_TICKS);
+            },
+            "has an invalid retirement",
         ),
         (
             "a harvest source outside its anchored work zone",
@@ -1560,6 +1593,12 @@ fn a_full_verb_run_stays_valid_every_tick() {
             y: 6,
         },
     ]);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 15,
+        y: 1,
+    });
     let mut state = scenario.build().unwrap();
     let (harvester, bombard, sentinel, stray, condor, walker) = (
         state.units()[0].id,
@@ -1687,11 +1726,23 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 },
             )],
         ),
+        // The parked bomber lifts off, lands beside the Crucible, and is
+        // taken apart there.
+        (
+            600,
+            vec![cmd(
+                0,
+                Command::Retire {
+                    units: vec![condor],
+                    queue: false,
+                },
+            )],
+        ),
     ];
 
     let (mut saw_shell, mut saw_site, mut saw_strip, mut saw_weld) = (false, false, false, false);
     let (mut saw_haul, mut saw_short) = (false, false);
-    let (mut saw_pending, mut saw_handoff) = (false, false);
+    let (mut saw_pending, mut saw_handoff, mut saw_retired) = (false, false, false);
     let mut last_hp = state.building(fabricator).map(|b| b.hp);
     for tick in 0..1_200u32 {
         let commands = script
@@ -1719,6 +1770,9 @@ fn a_full_verb_run_stays_valid_every_tick() {
         saw_handoff |= state.unit(condor).is_some_and(
             |u| matches!(u.order, oxide_sim::Order::Land { from, .. } if from == Some(tile(6, 6))),
         );
+        saw_retired |= report.events.iter().any(
+            |event| matches!(event, oxide_sim::Event::UnitRetired { unit, .. } if *unit == condor),
+        );
         saw_shell |= !state.shells().is_empty();
         saw_haul |= state.units().iter().any(|u| u.carrying() > 0);
         saw_site |= state.buildings().iter().any(|b| !b.built());
@@ -1739,6 +1793,10 @@ fn a_full_verb_run_stays_valid_every_tick() {
         "premise: a walk waited for its click to be seen"
     );
     assert!(saw_handoff, "premise: a flight handed over to a landing");
+    assert!(
+        saw_retired,
+        "premise: a bomber was taken apart at a Crucible"
+    );
     assert!(
         state
             .building(fabricator)

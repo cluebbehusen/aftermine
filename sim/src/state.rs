@@ -211,6 +211,17 @@ pub enum Order {
         /// Repair this Foundry after delivery if it is still damaged.
         repair: bool,
     },
+    /// Go to an own completed Crucible and stand, hover, or, for a
+    /// turn-limited airframe, land beside it while it is dismantled for a
+    /// refund. A transport first sets its riders down there.
+    Retire {
+        /// The Crucible chosen when the order was issued, or the nearest
+        /// one since that one fell.
+        crucible: BuildingId,
+        /// The tile a turn-limited airframe lands on, once it has one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pad: Option<TilePos>,
+    },
 }
 
 impl Order {
@@ -735,9 +746,19 @@ impl Unit {
     pub(crate) fn stays_parked(&self) -> bool {
         match self.order {
             Order::Idle => true,
-            Order::Land { goal, .. } => goal == self.tile(),
+            Order::Land { goal, .. }
+            | Order::Retire {
+                pad: Some(goal), ..
+            } => goal == self.tile(),
             _ => false,
         }
+    }
+
+    /// Whether this machine is on its way to, or at, a Crucible to be
+    /// dismantled. No repair source mends it: welding it up would only
+    /// spend scrap the retirement refunds at a lower rate.
+    pub fn retiring(&self) -> bool {
+        matches!(self.order, Order::Retire { .. })
     }
 
     /// Ends the active order cleanly: a looping program rotates it to the
@@ -1398,8 +1419,8 @@ impl State {
 
     /// The machines each built, living Repair Bay services this pulse and how
     /// fast it heals each, Bays in building-id order and patients most
-    /// wounded first: own, wounded and in reach, landed or unable to land,
-    /// not taken by an earlier Bay, at most
+    /// wounded first: own, wounded and in reach, not retiring, landed or
+    /// unable to land, not taken by an earlier Bay, at most
     /// [`crate::stats::REPAIR_BAY_PATIENTS`] per Bay. The aura and
     /// presentation read the same choice; the aura also slows a patient the
     /// tick's own volley hits, before that hit stamps it.
@@ -1420,6 +1441,7 @@ impl State {
                     u.player == b.player
                         && u.hp > 0
                         && u.hp < max
+                        && !u.retiring()
                         && (u.landed() || !u.kind.stats().can_land())
                         && b.closest_point_to(u.pos).dist_sq(u.pos)
                             <= REPAIR_BAY_RADIUS * REPAIR_BAY_RADIUS
@@ -1889,6 +1911,18 @@ impl State {
                     building.player != *player || !building.kind.is_drop_off()))
         }) {
             return Err(E::InvalidReturnCargo(id));
+        }
+        // A retirement names an own Crucible while it stands, lands only a
+        // turn-limited airframe, and never rests on a full meter: cleanup
+        // takes a unit apart the tick its meter fills.
+        if orders().any(|order| {
+            matches!(order, Order::Retire { crucible, pad } if
+                (pad.is_some() && stats.turn_rate == 0)
+                || self.building(*crucible).is_some_and(|building|
+                    building.player != *player || building.kind != BuildingKind::Crucible))
+        }) || (u.retiring() && *progress >= crate::stats::RETIRE_TICKS)
+        {
+            return Err(E::InvalidRetirement(id));
         }
         if orders()
             .filter_map(order_reference)
@@ -2801,6 +2835,7 @@ fn order_inside_envelope(order: &Order) -> bool {
         Order::Land { goal, from } => {
             tile_inside_envelope(*goal) && from.is_none_or(tile_inside_envelope)
         }
+        Order::Retire { pad, .. } => pad.is_none_or(tile_inside_envelope),
     }
 }
 
@@ -2835,6 +2870,7 @@ fn order_reference(order: &Order) -> Option<Target> {
         Order::RepairUnit { unit } => Some(Target::Unit(*unit)),
         Order::Board { transport } => Some(Target::Unit(*transport)),
         Order::Unload { .. } => None,
+        Order::Retire { crucible, .. } => Some(Target::Building(*crucible)),
     }
 }
 
@@ -3031,6 +3067,10 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
+    /// A retirement names a foreign building or one that is no Crucible,
+    /// gives a pad to an airframe that cannot land, or holds a full meter.
+    #[error("unit {0} has an invalid retirement")]
+    InvalidRetirement(UnitId),
     /// A unit's order names an entity id this run never handed out.
     #[error("unit {0} is ordered against an id the run never minted")]
     UnmintedOrderTarget(UnitId),

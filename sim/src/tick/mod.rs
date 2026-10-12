@@ -238,7 +238,46 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
             deposits.push((unit.tile(), value));
         }
     }
-    state.units.retain(|u| u.hp > 0);
+    // A machine whose dismantling meter filled this tick, and that no
+    // damage source of the tick zeroed, comes apart at its Crucible:
+    // refunded by its final hp, its cargo banked like a delivery, and no
+    // wreck or death.
+    let complete =
+        |u: &crate::Unit| u.hp > 0 && u.retiring() && u.progress >= crate::stats::RETIRE_TICKS;
+    let retired: Vec<(
+        crate::ids::UnitId,
+        crate::ids::PlayerId,
+        crate::UnitKind,
+        u32,
+    )> = state
+        .units
+        .iter()
+        .filter(|u| complete(u))
+        .map(|u| (u.id, u.player, u.kind, u.hp))
+        .collect();
+    for (id, player, kind, hp) in retired {
+        let unit = state.unit(id).expect("just seen");
+        let (pos, cargo) = (unit.pos, unit.carrying());
+        let crate::state::Order::Retire { crucible, .. } = unit.order else {
+            unreachable!("only retiring units complete a dismantling meter");
+        };
+        let refund = crate::stats::retire_refund(kind, hp);
+        let seat = state.player_mut(player);
+        seat.scrap = seat.scrap.saturating_add(refund).saturating_add(cargo);
+        if cargo > 0 {
+            seat.recovery = crate::state::Recovery::Ready;
+        }
+        events.push(Event::UnitRetired {
+            unit: id,
+            kind,
+            player,
+            pos,
+            crucible,
+            refund,
+            cargo,
+        });
+    }
+    state.units.retain(|u| u.hp > 0 && !complete(u));
 
     let mut queue_refunds: Vec<(crate::ids::PlayerId, u32)> = Vec::new();
     for building in state.buildings.iter().filter(|b| b.hp == 0) {

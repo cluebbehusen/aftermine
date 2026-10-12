@@ -113,10 +113,11 @@ fn command_tag(command: &Command) -> usize {
         Command::ClearFocus { .. } => 21,
         Command::ReturnCargo { .. } => 22,
         Command::CancelOrder { .. } => 23,
+        Command::Retire { .. } => 24,
     }
 }
 
-const COMMAND_VARIANTS: usize = 24;
+const COMMAND_VARIANTS: usize = 25;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -359,6 +360,10 @@ fn every_command_variant_survives_the_send_command_wire() {
             },
             from_end: 1,
             units: vec![UnitId(4), UnitId(5)],
+        },
+        Command::Retire {
+            units: vec![UnitId(6)],
+            queue: true,
         },
     ];
     assert_every_tag_sampled(

@@ -673,7 +673,7 @@ fn the_harvester_panel_is_the_same_grammar() {
     // Unarmed, it has no Run or Hunt, and an empty hopper has
     // no cargo to return.
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
-    assert_eq!(titles, ["Patrol", "Salvage", "Weld", "Build"]);
+    assert_eq!(titles, ["Patrol", "Salvage", "Weld", "Retire", "Build"]);
     assert!(
         !panel
             .info
@@ -888,6 +888,7 @@ fn order_kind(order: &Order) -> usize {
         Order::Unload { .. } => 12,
         Order::Land { .. } => 13,
         Order::ReturnCargo { .. } => 14,
+        Order::Retire { .. } => 15,
     }
 }
 
@@ -952,13 +953,17 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Board {
                 transport: harvester,
             },
+            Order::Retire {
+                crucible: foundry,
+                pad: None,
+            },
         ],
         looping: false,
     };
     let mut kinds: Vec<usize> = program.orders.iter().map(order_kind).collect();
     kinds.sort_unstable();
     kinds.dedup();
-    assert_eq!(kinds, (0..15).collect::<Vec<_>>(), "every order has a chip");
+    assert_eq!(kinds, (0..16).collect::<Vec<_>>(), "every order has a chip");
 
     let view = game.view();
     let actions: Vec<CardAction> = (0..program.orders.len())
@@ -998,6 +1003,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
                 },
                 0
             ),
+            remove(OrderKey::Retire { crucible: foundry }, 0),
         ]
     );
 }

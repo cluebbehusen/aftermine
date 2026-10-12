@@ -20,8 +20,35 @@ use chassis::grid::TilePos;
 pub(in crate::tick) struct Pending {
     /// (rider, carrier) pairs within reach of a sling with room.
     boardings: Vec<(UnitId, UnitId)>,
-    /// (carrier, drop point) pairs standing on their drop tile.
-    landings: Vec<(UnitId, TilePos, bool)>,
+    /// Carriers setting their riders down this tick.
+    drops: Vec<Drop>,
+}
+
+/// A carrier setting every rider down on open ground around a tile.
+struct Drop {
+    carrier: UnitId,
+    /// The center of the drop ring.
+    at: TilePos,
+    /// Whether the ring scans half-turned.
+    reverse: bool,
+    /// An unload ends its order once the sling is empty or stuck. A retiring
+    /// transport keeps its order: it is dismantled once empty, and riders
+    /// with no open tile wait aboard for the next try.
+    ends_order: bool,
+}
+
+/// Sets every rider of `carrier`, a retiring transport standing at its
+/// Crucible, down around where it stands. Riders leave idle.
+pub(super) fn set_down_for_retirement(state: &State, carrier: UnitId, pending: &mut Pending) {
+    let unit = state.unit(carrier).expect("caller checked");
+    // The airframe's facing frames the ring, so mirrored transports set
+    // mirrored riders down: half-turned headings fall on opposite halves.
+    pending.drops.push(Drop {
+        carrier,
+        at: unit.tile(),
+        reverse: unit.heading >= 128,
+        ends_order: false,
+    });
 }
 
 /// Total sling room a transport's current riders occupy.
@@ -50,9 +77,10 @@ pub(super) fn board(
         unit.player,
         unit.kind.stats().transport_size,
     );
+    // A transport on its way to be dismantled takes no more riders.
     let Some(carrier) = state
         .unit(transport)
-        .filter(|t| t.hp > 0 && t.player == player)
+        .filter(|t| t.hp > 0 && t.player == player && !t.retiring())
     else {
         state.unit_mut(id).expect("caller checked").clear_program();
         return;
@@ -179,7 +207,12 @@ pub(super) fn unload(
         unreachable!("only an unload order steers here");
     };
     let (pos, tile, player, looping) = (unit.pos, unit.tile(), unit.player, unit.looping);
-    pending.landings.push((id, tile, reverse));
+    pending.drops.push(Drop {
+        carrier: id,
+        at: tile,
+        reverse,
+        ends_order: true,
+    });
     if short && !looping {
         events.push(Event::OrderStalled {
             unit: id,
@@ -197,8 +230,8 @@ pub(super) fn unload(
 pub(in crate::tick) fn resolve(state: &mut State, mut pending: Pending, events: &mut Vec<Event>) {
     pending.boardings.sort_unstable_by_key(|&(rider, _)| rider);
     for (rider_id, transport) in pending.boardings {
-        let Some(carrier) = state.unit(transport).filter(|t| t.hp > 0) else {
-            continue; // the sling died mid-tick; the order retries next tick
+        let Some(carrier) = state.unit(transport).filter(|t| t.hp > 0 && !t.retiring()) else {
+            continue; // the sling died or is retiring; the order retries next tick
         };
         let capacity = carrier.kind.stats().transport_capacity;
         let held = cargo_load(carrier);
@@ -230,10 +263,14 @@ pub(in crate::tick) fn resolve(state: &mut State, mut pending: Pending, events: 
         });
     }
 
-    pending
-        .landings
-        .sort_unstable_by_key(|&(carrier, ..)| carrier);
-    for (id, at, reverse) in pending.landings {
+    pending.drops.sort_unstable_by_key(|drop| drop.carrier);
+    for Drop {
+        carrier: id,
+        at,
+        reverse,
+        ends_order,
+    } in pending.drops
+    {
         let Some(carrier) = state.unit(id).filter(|t| t.hp > 0) else {
             continue;
         };
@@ -267,6 +304,9 @@ pub(in crate::tick) fn resolve(state: &mut State, mut pending: Pending, events: 
                 player,
                 at: spot,
             });
+        }
+        if !ends_order {
+            continue;
         }
         let carrier = state.unit_mut(id).expect("just seen");
         let stranded = !carrier.cargo.is_empty();
