@@ -65,6 +65,38 @@ fn manifest() -> Manifest {
 }
 
 #[test]
+fn extractor_loops_visit_every_pose_in_order_and_use_their_own_scaffolds() {
+    let atlas = manifest();
+    let art = building_art(&atlas).unwrap();
+    for (tier, period) in [(0, 16), (1, 48)] {
+        let rung = &art[BuildingKind::Extractor as usize][tier];
+        assert_eq!(rung.work.len(), period);
+        assert_eq!(
+            rung.hull, rung.work[0],
+            "reduced motion holds the idle pose"
+        );
+        for tick in 0..period * 2 {
+            for fraction in [0.0, 0.5, 0.99] {
+                let cycle = ((tick % period) as f32 + fraction) / period as f32;
+                assert_eq!(rung.work_cycle(cycle), rung.work[tick % period]);
+            }
+        }
+        assert_eq!(rung.work_cycle(1.0), rung.work[period - 1]);
+        let stem = rung_stem("extractor", tier);
+        for stage in 0..SITE_STAGES {
+            for phase in 0..SITE_PHASES {
+                assert_eq!(
+                    rung.construction[stage * SITE_PHASES + phase],
+                    variant_row(&atlas, &stem, &format!("_site{stage}_{phase}")).unwrap()
+                );
+            }
+        }
+    }
+    let inert = &art[BuildingKind::Barricade as usize][0];
+    assert_eq!(inert.work_cycle(0.5), inert.hull);
+}
+
+#[test]
 fn array_layers_require_both_tiers_and_every_allegiance_mask() {
     let mut atlas = Manifest::default();
     assert!(array_rig(&atlas).unwrap().is_none());

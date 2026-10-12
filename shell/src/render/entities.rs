@@ -43,7 +43,7 @@ pub(crate) fn draw_placement_ghost(
         tint,
         DrawTextureParams {
             dest_size: Some(dest),
-            source: Some(sprites.construction(kind, 0, 0)),
+            source: Some(sprites.construction(kind, 0, 0, 0)),
             ..Default::default()
         },
     );
@@ -102,7 +102,7 @@ pub(crate) fn draw_pending_founds(game: &crate::game::Scene<'_>, sprites: &Sprit
             Color::new(1.0, 0.85, 0.45, 0.3),
             DrawTextureParams {
                 dest_size: Some(vec2(w as f32 * zoom, h as f32 * zoom)),
-                source: Some(sprites.construction(site.kind, 0, 0)),
+                source: Some(sprites.construction(site.kind, 0, 0, 0)),
                 ..Default::default()
             },
         );
@@ -319,9 +319,10 @@ fn building_body_sources(
             sprites.building_working(kind, tier, work + 1),
             sprites.building_working_accent(kind, tier, work + 1),
         ),
+        BuildingBodyFrame::WorkCycle(cycle) => sprites.building_work_cycle(kind, tier, cycle),
         BuildingBodyFrame::Construction { stage, phase } => (
-            sprites.construction(kind, stage, phase),
-            sprites.construction_accent(kind, stage, phase),
+            sprites.construction(kind, tier, stage, phase),
+            sprites.construction_accent(kind, tier, stage, phase),
         ),
         BuildingBodyFrame::Action(action) => (
             sprites.building_action(kind, action),
@@ -704,12 +705,12 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let body = if ghost.built {
                 sprites.building(ghost.kind)
             } else {
-                sprites.construction(ghost.kind, 0, 0)
+                sprites.construction(ghost.kind, 0, 0, 0)
             };
             let body_accent = if ghost.built {
                 sprites.building_accent(ghost.kind)
             } else {
-                sprites.construction_accent(ghost.kind, 0, 0)
+                sprites.construction_accent(ghost.kind, 0, 0, 0)
             };
             let mut layers = vec![(body, tint), (body_accent, accent_tint)];
             if ghost.built
