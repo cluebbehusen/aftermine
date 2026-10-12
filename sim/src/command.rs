@@ -281,6 +281,22 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         units: Vec<UnitId>,
     },
+    /// Escort an own unit: each escort holds a slot around it at its own
+    /// top speed, fights threats near it, and, if it can weld, mends it and
+    /// its other escorts whenever it stops. When the escorted unit leaves
+    /// play each escort takes its next queued order, or idles where it
+    /// stands. The sim reads `units` as a sorted set, never lets the target
+    /// escort itself, and skips any unit the target already follows,
+    /// directly or through other escorts, now or later in its program.
+    Accompany {
+        /// The escorts.
+        units: Vec<UnitId>,
+        /// The own unit in the world to escort.
+        target: UnitId,
+        /// Append instead of replace (see [`Command::Run::queue`]).
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        queue: bool,
+    },
 }
 
 /// A command attributed to its issuing player. Ownership checks are made

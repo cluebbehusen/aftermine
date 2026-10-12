@@ -622,7 +622,10 @@ fn assert_calibration_open_symmetry(
                 assert_eq!(left_pursue, right_pursue, "{stage}: pursuit");
                 match (left_resume, right_resume) {
                     (None, None) => {}
-                    (Some(left_goal), Some(right_goal)) => {
+                    (
+                        Some(crate::state::Resume::Hunt(left_goal)),
+                        Some(crate::state::Resume::Hunt(right_goal)),
+                    ) => {
                         assert_goals_mirror(stage, state, left_goal, right_goal);
                     }
                     resumes => panic!("{stage}: resumes are not paired: {resumes:?}"),

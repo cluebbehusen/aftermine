@@ -301,6 +301,8 @@ fn well_formed_additions_are_accepted() {
         }
     }
     base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
+    let bombard = base["units"][1]["id"].clone();
+    base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
     serde_json::from_value::<State>(base).expect("legal additions stay legal");
 }
 
@@ -405,10 +407,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::GhostHpOutOfRange(_) => 80,
         E::DamageStampInTheFuture(_) => 81,
         E::PointDefenseOutOfRange(_) => 82,
+        E::InvalidEscort(_) => 83,
     }
 }
 
-const ROWS: usize = 83;
+const ROWS: usize = 84;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -504,6 +507,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::GhostHpOutOfRange(PlayerId(0)),
         E::DamageStampInTheFuture(UnitId(0)),
         E::PointDefenseOutOfRange(UnitId(0)),
+        E::InvalidEscort(UnitId(0)),
     ]
 }
 
@@ -985,6 +989,58 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 has an invalid cargo delivery",
         ),
         (
+            "escort duty around an enemy unit",
+            |d| {
+                let enemy = d["units"][2]["id"].clone();
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": enemy});
+            },
+            "unit u0 has an invalid escort duty",
+        ),
+        (
+            "an escort loop closed through a queued order",
+            |d| {
+                let (harvester, bombard) =
+                    (d["units"][0]["id"].clone(), d["units"][1]["id"].clone());
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": bombard});
+                d["units"][1]["queue"] = json!([{"order": "accompany", "unit": harvester}]);
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "escort duty around itself",
+            |d| {
+                let own = d["units"][0]["id"].clone();
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": own});
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "a torch without harvest gear",
+            |d| {
+                let harvester = d["units"][0]["id"].clone();
+                d["units"][1]["order"] =
+                    json!({"order": "accompany", "unit": harvester, "weld": harvester});
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "an escort's fight resuming duty around an enemy unit",
+            |d| {
+                let enemy = d["units"][2]["id"].clone();
+                d["units"][1]["order"] = json!({
+                    "order": "attack",
+                    "target": {"kind": "unit", "id": enemy},
+                    "resume": {"accompany": enemy},
+                });
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "escort duty around an unminted unit",
+            |d| d["units"][0]["order"] = json!({"order": "accompany", "unit": 999}),
+            "unit u0 is ordered against an id the run never minted",
+        ),
+        (
             "a harvest source outside its anchored work zone",
             |d| {
                 d["units"][0]["order"]["node"] = json!({"x": 15, "y": 8});
@@ -1016,7 +1072,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}},
+                    "resume": {"hunt": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}}},
                 });
             },
             "unit u0 names a coordinate outside the envelope",
@@ -1038,7 +1094,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 6, "y": 2, "endpoint": {"x": 6, "y": 2}},
+                    "resume": {"hunt": {"x": 6, "y": 2, "endpoint": {"x": 6, "y": 2}}},
                 });
             },
             "unit u0 stores a slot or endpoint equal to its own goal",
@@ -1060,7 +1116,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}},
+                    "resume": {"hunt": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}}},
                 });
             },
             "unit u0 names a coordinate outside the envelope",
@@ -1761,11 +1817,22 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 },
             )],
         ),
+        (
+            700,
+            vec![cmd(
+                0,
+                Command::Accompany {
+                    units: vec![walker],
+                    target: harvester,
+                    queue: false,
+                },
+            )],
+        ),
     ];
 
     let (mut saw_shell, mut saw_site, mut saw_strip, mut saw_weld) = (false, false, false, false);
     let (mut saw_haul, mut saw_short) = (false, false);
-    let (mut saw_pending, mut saw_handoff) = (false, false);
+    let (mut saw_pending, mut saw_handoff, mut saw_escort) = (false, false, false);
     let mut last_hp = state.building(fabricator).map(|b| b.hp);
     for tick in 0..1_200u32 {
         let commands = script
@@ -1793,6 +1860,12 @@ fn a_full_verb_run_stays_valid_every_tick() {
         saw_handoff |= state.unit(condor).is_some_and(
             |u| matches!(u.order, oxide_sim::Order::Land { from, .. } if from == Some(tile(6, 6))),
         );
+        saw_escort |= state.unit(walker).is_some_and(|u| {
+            oxide_sim::Order::Accompany {
+                unit: harvester,
+                weld: None,
+            } == u.order
+        });
         saw_shell |= !state.shells().is_empty();
         saw_haul |= state.units().iter().any(|u| u.carrying() > 0);
         saw_site |= state.buildings().iter().any(|b| !b.built());
@@ -1813,6 +1886,7 @@ fn a_full_verb_run_stays_valid_every_tick() {
         "premise: a walk waited for its click to be seen"
     );
     assert!(saw_handoff, "premise: a flight handed over to a landing");
+    assert!(saw_escort, "premise: a unit escorted another");
     assert!(
         state
             .building(fabricator)

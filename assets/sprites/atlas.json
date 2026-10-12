@@ -1698,19 +1698,19 @@
   128
  ],
  "debris_0": [
-  1750,
+  1802,
   4562,
   32,
   32
  ],
  "debris_1": [
-  1786,
+  1838,
   4562,
   32,
   32
  ],
  "debris_2": [
-  1822,
+  1874,
   4562,
   32,
   32
@@ -2928,13 +2928,13 @@
   128
  ],
  "field_debris_abandoned_canisters": [
-  1858,
+  1910,
   4562,
   32,
   32
  ],
  "field_debris_bent_service_rail": [
-  1894,
+  1946,
   4562,
   32,
   32
@@ -2976,7 +2976,7 @@
   64
  ],
  "field_debris_severed_cable": [
-  1930,
+  1982,
   4562,
   32,
   32
@@ -4193,86 +4193,92 @@
   128,
   128
  ],
- "icon_advance": [
+ "icon_accompany": [
   1022,
   4562,
   48,
   48
  ],
- "icon_attack": [
+ "icon_advance": [
   1074,
   4562,
   48,
   48
  ],
- "icon_build": [
+ "icon_attack": [
   1126,
   4562,
   48,
   48
  ],
- "icon_cancel": [
+ "icon_build": [
   1178,
   4562,
   48,
   48
  ],
- "icon_harvest": [
+ "icon_cancel": [
   1230,
   4562,
   48,
   48
  ],
- "icon_hunt": [
+ "icon_harvest": [
   1282,
   4562,
   48,
   48
  ],
- "icon_idle": [
+ "icon_hunt": [
   1334,
   4562,
   48,
   48
  ],
- "icon_move": [
+ "icon_idle": [
   1386,
   4562,
   48,
   48
  ],
- "icon_patrol": [
+ "icon_move": [
   1438,
   4562,
   48,
   48
  ],
- "icon_rally": [
+ "icon_patrol": [
   1490,
   4562,
   48,
   48
  ],
- "icon_repair": [
+ "icon_rally": [
   1542,
   4562,
   48,
   48
  ],
- "icon_run": [
+ "icon_repair": [
   1594,
   4562,
   48,
   48
  ],
- "icon_salvage": [
+ "icon_run": [
   1646,
   4562,
   48,
   48
  ],
- "icon_stop": [
+ "icon_salvage": [
   1698,
+  4562,
+  48,
+  48
+ ],
+ "icon_stop": [
+  1750,
   4562,
   48,
   48

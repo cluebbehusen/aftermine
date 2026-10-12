@@ -381,7 +381,7 @@ pub(super) fn commit_unit_welds(
             }
             let Some(unit) = state
                 .unit(weld.welder)
-                .filter(|u| u.order == (Order::RepairUnit { unit: weld.patient }))
+                .filter(|u| welding(u, weld.patient).is_some())
             else {
                 stationary[slot] = false;
                 continue;
@@ -412,8 +412,11 @@ pub(super) fn commit_unit_welds(
                 continue;
             }
             stationary[slot] = false;
-            chase_patient(state, weld.welder, weld.patient, events);
-            changed = true;
+            // Escort welders hold their slot until the party stops again.
+            if welding(unit, weld.patient) == Some(Torch::Commanded) {
+                chase_patient(state, weld.welder, weld.patient, events);
+                changed = true;
+            }
         }
         if !changed {
             break;
@@ -424,9 +427,9 @@ pub(super) fn commit_unit_welds(
         if !stationary {
             continue;
         }
-        let Some(unit) = state
+        let Some((unit, torch)) = state
             .unit(weld.welder)
-            .filter(|u| u.order == (Order::RepairUnit { unit: weld.patient }))
+            .and_then(|u| welding(u, weld.patient).map(|torch| (u, torch)))
         else {
             continue;
         };
@@ -451,6 +454,11 @@ pub(super) fn commit_unit_welds(
         let (ramp, ramp_ticks) = (stats.max_hp, stats.train_ticks);
         let due = crate::stats::unit_repair_debit(t_kind, p);
         let bank = state.player(me).scrap;
+        if due > bank && torch == Torch::Escort {
+            // An escort's torch is its own initiative: an empty bank only
+            // waits, and escort duty goes on.
+            continue;
+        }
         if due > bank {
             // Broke stalls the torch.
             let unit = state.unit_mut(weld.welder).expect("just seen");
@@ -481,6 +489,26 @@ pub(super) fn commit_unit_welds(
     }
 }
 
+/// Which program lit a torch on a patient.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Torch {
+    /// A `RepairUnit` order.
+    Commanded,
+    /// Escort duty mending its party.
+    Escort,
+}
+
+/// Whether `welder`'s program welds `patient`, and which program it is.
+fn welding(welder: &crate::state::Unit, patient: UnitId) -> Option<Torch> {
+    match welder.order {
+        Order::RepairUnit { unit } if unit == patient => Some(Torch::Commanded),
+        Order::Accompany {
+            weld: Some(unit), ..
+        } if unit == patient => Some(Torch::Escort),
+        _ => None,
+    }
+}
+
 /// Whether the movement pre-pass will give this pathless body an escape
 /// path from a claimed building footprint. Weld settlement runs before that
 /// pre-pass, so it must predict the same move to uphold the
@@ -490,8 +518,27 @@ fn footprint_eviction_pending(state: &State, id: UnitId) -> bool {
 }
 
 /// Reuses the current approach side as a patient moves, replanning only
-/// when its precise endpoint leaves the final tile.
+/// when its precise endpoint leaves the final tile. A patient no route
+/// reaches ends the weld order.
 fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Vec<Event>) {
+    if approach_patient(state, id, patient) {
+        return;
+    }
+    let unit = state.unit_mut(id).expect("caller checked");
+    let (player, pos) = (unit.player, unit.pos);
+    unit.drop_active_order();
+    events.push(Event::OrderStalled {
+        unit: id,
+        player,
+        pos,
+        reason: StallReason::NoRoute,
+    });
+}
+
+/// Routes welder `id` to a working position against `patient`'s hull,
+/// keeping the current approach side while it still routes. Returns false,
+/// leaving the welder's path untouched, when no position routes.
+pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -> bool {
     let unit = state.unit(id).expect("caller checked");
     let target = state.unit(patient).expect("caller checked");
     let gap =
@@ -525,24 +572,16 @@ fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Ve
                 .as_mut()
                 .expect("checked")
                 .final_point = Some(point);
-            return;
+            return true;
         }
         if let Some(waypoints) = route_for(state, kind, from, goal) {
             let mut path = work_position_path(goal, waypoints);
             path.final_point = Some(point);
             state.unit_mut(id).expect("caller checked").path = Some(path);
-            return;
+            return true;
         }
     }
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.drop_active_order();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    false
 }
 
 /// Strip an own built building for scrap: walk adjacent, then drain hp

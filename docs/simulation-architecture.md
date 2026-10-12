@@ -187,6 +187,36 @@ unit's station. `Harvest`, `Build`, `Found`, `Repair`, `RepairUnit`, and
 `Salvage` are persistent work programs lowered by unit behavior over later
 ticks.
 
+`Accompany` puts units on escort duty around one own unit. Each escort holds a
+slot of the open tiles ring-scanned around the escorted unit's tile, ranked in
+id order within its movement domain and framed per owner by the side of the map
+its earliest Foundry stands on, then seat parity, so slots never reshuffle as
+the party moves and mirrored seats take mirrored slots. Escorts move at their
+own top speed and replan only once their slot drifts more than a tile from their
+route's end; nothing couples the escorted unit's speed to theirs. An armed
+escort chases the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
+and its own aggro range, passing over any victim it can neither shoot from where
+it stands nor reach, including one over unstandable ground whose firing stands
+are all out of reach. Failing that, an escort within the engage radius of the
+escorted unit fires without moving at an enemy already in its own weapon reach,
+so a long gun escorts at full range from its slot; further out it is catching
+up. Either fight is an `Attack` that resumes escort duty. A victim within the
+wider `ESCORT_BREAK_RADIUS` of the escorted unit is chased wherever the escort
+is; one past it is fought only while it stays in the escort's reach and the
+escort stays within that radius. A stalled chase returns to duty without a stall
+report. Escorts answer fire from within the engage radius, or, while within it
+themselves, from anything their own guns reach. Weapon masks give each kind its
+role: a fighter escort rises only against aircraft. While the escorted unit
+stood still at the start of the brain phase, a welder escort mends the most
+urgent wounded ground member of the party, the escorted unit first, through the
+ordinary field weld. Its torch target lives in the order and owns the billing
+meter; an empty bank only pauses it. An escorted unit aboard a transport is
+followed through its carrier. When it leaves play, each escort drops the order
+without rotating a patrol and takes its next queued order or idles where it
+stands. Dispatch refuses any escort the target already follows, directly or
+through other escorts in any program, so escort chains are loop-free; the
+validator refuses a state holding a loop.
+
 `Run`, `Hunt`, `Advance`, and `Unload`, and the march an `Attack` resumes, carry
 a `Goal`: the clicked tile, the spread slot the unit aims for around it, and an
 optional endpoint. A tile goal must lie on the map, and an off-map one is
@@ -799,6 +829,7 @@ map rather than an exhaustive test inventory.
 | Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
 | Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
+| Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |

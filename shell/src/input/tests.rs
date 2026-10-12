@@ -1384,6 +1384,9 @@ fn every_targeting_mode_has_persistent_human_copy() {
     input.click_verb = Some(ClickVerb::Weld);
     assert_eq!(input.armed_mode().unwrap().label(), "Weld");
     input.disarm_click_verbs();
+    input.click_verb = Some(ClickVerb::Accompany);
+    assert_eq!(input.armed_mode().unwrap().label(), "Accompany");
+    input.disarm_click_verbs();
     input.click_verb = Some(ClickVerb::Run);
     assert_eq!(input.armed_mode().unwrap().label(), "Run");
     input.disarm_click_verbs();
@@ -1394,6 +1397,53 @@ fn every_targeting_mode_has_persistent_human_copy() {
     assert_eq!(input.armed_mode().unwrap().label(), "Patrol \u{b7} 2");
     assert!(input.cancel_armed_mode());
     assert_eq!(input.armed_mode(), None);
+}
+
+#[test]
+fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let own: Vec<_> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| (u.id, u.pos))
+        .collect();
+    assert!(own.len() >= 2, "premise: two own units to pair");
+    let (escort, (escorted, at)) = (own[0].0, own[1]);
+    let screen = game
+        .presentation
+        .camera
+        .to_screen(vec2(at.x.to_num::<f32>(), at.y.to_num::<f32>()));
+
+    // Alone in hand, the picked unit has nobody to escort it.
+    game.presentation.selection.units = vec![escorted];
+    apply_events(&mut game, &mut input, &[key_down(Key::E), key_up(Key::E)]);
+    assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
+    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    assert!(game.pending.is_empty(), "{:?}", game.pending);
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Accompany),
+        "a misclick keeps the mode"
+    );
+
+    game.presentation.selection.units = vec![escort, escorted];
+    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    assert_eq!(
+        game.pending.iter().map(|c| &c.command).collect::<Vec<_>>(),
+        [&Command::Accompany {
+            units: vec![escort, escorted],
+            target: escorted,
+            queue: false,
+        }]
+    );
+    assert_eq!(
+        input.armed_mode(),
+        None,
+        "an unqueued pick stands the mode down"
+    );
 }
 
 #[test]

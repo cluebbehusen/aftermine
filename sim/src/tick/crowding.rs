@@ -240,7 +240,11 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
         crate::Order::Repair { building } | crate::Order::Salvage { building } => {
             state.in_building_work_reach(unit, building)
         }
-        crate::Order::RepairUnit { unit: patient } => state
+        crate::Order::RepairUnit { unit: patient }
+        | crate::Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state
             .unit(patient)
             .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p)),
         crate::Order::Attack { target, .. } => {

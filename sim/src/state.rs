@@ -122,10 +122,10 @@ pub enum Order {
         /// engagements may only fire while radar remains in reach.
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         pursue: bool,
-        /// Where to resume hunting once the victim is gone. `None` for a
-        /// plain attack order.
+        /// The program the engagement interrupted, taken back once the
+        /// victim is gone. `None` for a plain attack order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        resume: Option<Goal>,
+        resume: Option<Resume>,
     },
     /// Walk to an unfinished own site and stand it up (harvesters only).
     Build {
@@ -211,9 +211,70 @@ pub enum Order {
         /// Repair this Foundry after delivery if it is still damaged.
         repair: bool,
     },
+    /// Hold a slot around an own unit at this machine's own top speed,
+    /// fighting threats near it and, for welders, mending it and its other
+    /// escorts whenever it stops. Ends when the escorted unit leaves play.
+    Accompany {
+        /// The escorted unit.
+        unit: UnitId,
+        /// The wounded escort-party member a welder is mending, which owns
+        /// the welder's billing meter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weld: Option<UnitId>,
+    },
+}
+
+/// The program an engagement interrupted, taken back once its victim is gone
+/// or out of bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Resume {
+    /// The march toward this goal: a hunt or a patrol leg.
+    Hunt(Goal),
+    /// Escort duty around this unit.
+    Accompany(UnitId),
+}
+
+impl Resume {
+    /// The march this engagement resumes, if it resumes one.
+    pub fn goal(&self) -> Option<Goal> {
+        match *self {
+            Resume::Hunt(goal) => Some(goal),
+            Resume::Accompany(_) => None,
+        }
+    }
+
+    /// [`Resume::goal`], for resolving a pending slot or endpoint.
+    pub(crate) fn goal_mut(&mut self) -> Option<&mut Goal> {
+        match self {
+            Resume::Hunt(goal) => Some(goal),
+            Resume::Accompany(_) => None,
+        }
+    }
+
+    /// The order that takes over once the engagement ends.
+    fn order(self) -> Order {
+        match self {
+            Resume::Hunt(goal) => Order::Hunt { goal },
+            Resume::Accompany(unit) => Order::Accompany { unit, weld: None },
+        }
+    }
 }
 
 impl Order {
+    /// The unit this order escorts: escort duty itself, or a fight escort
+    /// duty picked.
+    pub fn escorted(&self) -> Option<UnitId> {
+        match *self {
+            Order::Accompany { unit, .. }
+            | Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            } => Some(unit),
+            _ => None,
+        }
+    }
+
     /// The goal of a walking order: Run, Hunt, Advance, or Unload.
     pub(crate) fn walk_goal(&self) -> Option<Goal> {
         match *self {
@@ -235,13 +296,15 @@ impl Order {
     /// Whether issuing `other` to a unit already running `self` continues
     /// the same order rather than starting a new one. A walking order
     /// matches on its variant and clicked tile, and [`Order::reissue`] then
-    /// takes the new aim; every other order must match exactly.
+    /// takes the new aim. An escort matches on its escorted unit and keeps
+    /// its weld. Every other order must match exactly.
     pub(crate) fn reissue_matches(&self, other: &Order) -> bool {
         match (self, other) {
             (Order::Run { goal: a }, Order::Run { goal: b })
             | (Order::Hunt { goal: a }, Order::Hunt { goal: b })
             | (Order::Advance { goal: a }, Order::Advance { goal: b })
             | (Order::Unload { at: a, .. }, Order::Unload { at: b, .. }) => a.tile() == b.tile(),
+            (Order::Accompany { unit: a, .. }, Order::Accompany { unit: b, .. }) => a == b,
             _ => self == other,
         }
     }
@@ -804,9 +867,9 @@ impl Unit {
     }
 
     /// Completes an engagement without recycling its target into a patrol.
-    pub(crate) fn complete_attack(&mut self, resume: Option<Goal>) {
-        self.order = if let Some(goal) = resume {
-            Order::Hunt { goal }
+    pub(crate) fn complete_attack(&mut self, resume: Option<Resume>) {
+        self.order = if let Some(resume) = resume {
+            resume.order()
         } else {
             if self.leash.take().is_some() {
                 self.settled = crate::stats::LEASH_STATION_TICKS;
@@ -1660,6 +1723,9 @@ impl State {
                 self.validate_rider(u, rider)?;
             }
         }
+        if let Some(id) = self.escort_loop() {
+            return Err(E::InvalidEscort(id));
+        }
         // Two parked bodies inside their combined radius could never have
         // met: a touchdown needs that clearance and nothing moves a parked
         // body afterwards.
@@ -1926,8 +1992,29 @@ impl State {
         }) {
             return Err(E::InvalidReturnCargo(id));
         }
+        // An escort follows another own unit, and only harvest gear holds a
+        // torch. A foreign escort would track an enemy body through fog.
+        let own_other = |unit: UnitId| {
+            unit != id
+                && self
+                    .escorted(unit)
+                    .is_none_or(|body| body.player == *player)
+        };
+        if orders().any(|order| match *order {
+            Order::Accompany { unit, weld } => {
+                !own_other(unit)
+                    || weld.is_some_and(|patient| stats.harvest.is_none() || !own_other(patient))
+            }
+            Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            } => !own_other(unit),
+            _ => false,
+        }) {
+            return Err(E::InvalidEscort(id));
+        }
         if orders()
-            .filter_map(order_reference)
+            .flat_map(order_references)
             .any(|target| !self.minted(target))
         {
             return Err(E::UnmintedOrderTarget(id));
@@ -2457,6 +2544,59 @@ impl State {
             .map(|i| &self.units[i])
     }
 
+    /// The body escorts of unit `id` follow: the unit itself while it is in
+    /// the world, or the transport carrying it. `None` once it has left play.
+    pub fn escorted(&self, id: UnitId) -> Option<&Unit> {
+        self.unit(id).or_else(|| {
+            self.units
+                .iter()
+                .find(|carrier| carrier.cargo.iter().any(|rider| rider.id == id))
+        })
+    }
+
+    /// A unit that escorts itself through a chain of escorts, counting every
+    /// escort duty in every program, active and queued. Dispatch never
+    /// closes such a loop, so only a forged state holds one.
+    fn escort_loop(&self) -> Option<UnitId> {
+        let index = |id: UnitId| self.units.binary_search_by_key(&id, |u| u.id).ok();
+        let escorted = |slot: usize| -> Vec<usize> {
+            let unit = &self.units[slot];
+            std::iter::once(&unit.order)
+                .chain(&unit.queue)
+                .filter_map(Order::escorted)
+                .filter_map(index)
+                .collect()
+        };
+        // Depth-first over the escort graph: 1 marks a unit on the current
+        // chain, 2 one whose chains are all known to end.
+        let mut mark = vec![0u8; self.units.len()];
+        for start in 0..self.units.len() {
+            if mark[start] != 0 {
+                continue;
+            }
+            mark[start] = 1;
+            let mut chain = vec![(start, escorted(start), 0usize)];
+            while let Some(top) = chain.len().checked_sub(1) {
+                let (slot, next) = (chain[top].0, chain[top].2);
+                let Some(&target) = chain[top].1.get(next) else {
+                    mark[slot] = 2;
+                    chain.pop();
+                    continue;
+                };
+                chain[top].2 += 1;
+                match mark[target] {
+                    0 => {
+                        mark[target] = 1;
+                        chain.push((target, escorted(target), 0));
+                    }
+                    1 => return Some(self.units[target].id),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     /// Mutable lookup of a living unit.
     pub(crate) fn unit_mut(&mut self, id: UnitId) -> Option<&mut Unit> {
         self.units
@@ -2814,7 +2954,9 @@ fn order_goals_canonical(order: &Order) -> bool {
     match order {
         Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => goal.canonical(),
         Order::Unload { at, .. } => at.canonical(),
-        Order::Attack { resume, .. } => resume.as_ref().is_none_or(Goal::canonical),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_none_or(|goal| goal.canonical()),
         _ => true,
     }
 }
@@ -2829,14 +2971,17 @@ fn order_inside_envelope(order: &Order) -> bool {
         | Order::Build { .. }
         | Order::Repair { .. }
         | Order::Salvage { .. }
-        | Order::RepairUnit { .. } => true,
+        | Order::RepairUnit { .. }
+        | Order::Accompany { .. } => true,
         Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => {
             goal_inside_envelope(goal)
         }
         Order::Harvest { node, anchor, .. } => {
             tile_inside_envelope(*node) && tile_inside_envelope(*anchor)
         }
-        Order::Attack { resume, .. } => resume.as_ref().is_none_or(goal_inside_envelope),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_none_or(|goal| goal_inside_envelope(&goal)),
         Order::Found { anchor, .. } => tile_inside_envelope(*anchor),
         Order::Board { .. } => true,
         Order::Unload { at, .. } => goal_inside_envelope(at),
@@ -2857,27 +3002,39 @@ fn harvest_order_inside_zone(order: &Order) -> bool {
     }
 }
 
-/// The entity an order names, if any — exhaustive for the same reason as
+/// The entities an order names — exhaustive for the same reason as
 /// [`order_inside_envelope`].
-fn order_reference(order: &Order) -> Option<Target> {
-    match order {
+fn order_references(order: &Order) -> impl Iterator<Item = Target> {
+    let unit = |id: UnitId| Some(Target::Unit(id));
+    let names: [Option<Target>; 2] = match *order {
         Order::Idle
         | Order::Run { .. }
         | Order::Harvest { .. }
         | Order::Hunt { .. }
         | Order::Advance { .. }
         | Order::Found { .. }
-        | Order::Land { .. } => None,
-        Order::Attack { target, .. } => target.entity(),
-        Order::Build { site } => Some(Target::Building(*site)),
-        Order::ReturnCargo { foundry, .. } => Some(Target::Building(*foundry)),
+        | Order::Land { .. }
+        | Order::Unload { .. } => [None, None],
+        Order::Attack { target, resume, .. } => [
+            target.entity(),
+            match resume {
+                Some(Resume::Accompany(escorted)) => unit(escorted),
+                Some(Resume::Hunt(_)) | None => None,
+            },
+        ],
+        Order::Build { site } => [Some(Target::Building(site)), None],
+        Order::ReturnCargo { foundry, .. } => [Some(Target::Building(foundry)), None],
         Order::Repair { building } | Order::Salvage { building } => {
-            Some(Target::Building(*building))
+            [Some(Target::Building(building)), None]
         }
-        Order::RepairUnit { unit } => Some(Target::Unit(*unit)),
-        Order::Board { transport } => Some(Target::Unit(*transport)),
-        Order::Unload { .. } => None,
-    }
+        Order::RepairUnit { unit: patient } => [unit(patient), None],
+        Order::Board { transport } => [unit(transport), None],
+        Order::Accompany {
+            unit: escorted,
+            weld,
+        } => [unit(escorted), weld.and_then(unit)],
+    };
+    names.into_iter().flatten()
 }
 
 /// Whether every coordinate a unit carries — body, orders, walk, tether —
@@ -3073,6 +3230,11 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
+    /// Escort duty names the escort itself or another seat's unit, loops
+    /// back through other escorts, or puts a torch in a machine without
+    /// harvest gear.
+    #[error("unit {0} has an invalid escort duty")]
+    InvalidEscort(UnitId),
     /// A unit's order names an entity id this run never handed out.
     #[error("unit {0} is ordered against an id the run never minted")]
     UnmintedOrderTarget(UnitId),
