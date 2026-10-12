@@ -611,3 +611,90 @@ fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
         "a standing turret must not keep an eliminated player alive"
     );
 }
+
+/// `state` with `player`'s building at `anchor` refitted to `tier`, at that
+/// tier's full health.
+fn refitted(state: &oxide_sim::State, anchor: TilePos, tier: u8) -> oxide_sim::State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let kind = state
+        .buildings()
+        .iter()
+        .find(|building| building.anchor == anchor)
+        .unwrap()
+        .kind;
+    for building in value["buildings"].as_array_mut().unwrap() {
+        if building["anchor"] == serde_json::to_value(anchor).unwrap() {
+            building["tier"] = serde_json::json!(tier);
+            building["hp"] = serde_json::json!(kind.tier_stats(tier).max_hp);
+        }
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn a_remembered_building_keeps_the_tier_it_was_last_seen_at() {
+    // p0's Kestrel sees p1's Heavy Turret, flies off, and the Turret is
+    // refitted to a Bulwark out of sight: memory holds the Heavy Turret
+    // until the ground is seen again.
+    let anchor = TilePos::new(34, 5);
+    let mut scenario = open_arena(48, 12, vec![unit(0, UnitKind::Kestrel, 30, 5)]);
+    scenario.buildings.push(building(
+        1,
+        oxide_sim::BuildingKind::Turret,
+        anchor.x,
+        anchor.y,
+    ));
+    let mut state = refitted(&scenario.build().unwrap(), anchor, 1);
+    let scout = state.units()[0].id;
+    let me = PlayerId(0);
+    let remembered = |state: &oxide_sim::State| {
+        let ghost = state
+            .vision(me)
+            .ghosts()
+            .iter()
+            .find(|ghost| ghost.anchor == anchor)
+            .map(|ghost| ghost.tier);
+        let observed = oxide_sim::observation::ObservationData::fog_honest(state, me)
+            .enemy_buildings
+            .iter()
+            .find(|building| building.anchor == anchor)
+            .map(|building| (building.seen, building.tier));
+        (ghost, observed)
+    };
+    state.tick(&[]);
+    assert_eq!(remembered(&state), (Some(1), Some((true, 1))));
+
+    let fly = |goal| {
+        cmd(
+            0,
+            Command::Run {
+                units: vec![scout],
+                goal,
+                queue: false,
+            },
+        )
+    };
+    state.tick(&[fly(TilePos::new(5, 5))]);
+    run_until(&mut state, 400, |state, _| !state.can_see(me, anchor));
+    assert_eq!(
+        remembered(&state),
+        (Some(1), Some((false, 1))),
+        "the ghost keeps the Heavy Turret it saw"
+    );
+
+    let mut state = refitted(&state, anchor, 2);
+    state.tick(&[]);
+    assert_eq!(
+        remembered(&state),
+        (Some(1), Some((false, 1))),
+        "a refit out of sight is not known"
+    );
+
+    state.tick(&[fly(TilePos::new(30, 5))]);
+    run_until(&mut state, 400, |state, _| state.can_see(me, anchor));
+    assert_eq!(
+        remembered(&state),
+        (Some(2), Some((true, 2))),
+        "seen again, it is a Bulwark"
+    );
+}

@@ -403,7 +403,19 @@ fn the_fog_view_and_the_bot_observation_agree() {
             y,
         });
     }
-    let mut state = scenario.build().unwrap();
+    let state = scenario.build().unwrap();
+    // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
+    // tier is compared.
+    let mut value = serde_json::to_value(&state).unwrap();
+    assert_eq!(value["vision"][0]["ghosts"], serde_json::json!([]));
+    value["vision"][0]["ghosts"] = serde_json::json!([{
+        "kind": "extractor",
+        "owner": 1,
+        "anchor": {"x": 30, "y": 18},
+        "hp": oxide_sim::BuildingKind::Extractor.tier_stats(1).max_hp,
+        "tier": 1,
+    }]);
+    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
     let foundry = |state: &oxide_sim::State, seat: u8| {
         state
             .buildings()
@@ -441,6 +453,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     state.tick(&raids);
     let mut compared_hostiles = false;
     let mut compared_public = false;
+    let mut compared_tiered_ghost = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
             for seat in [PlayerId(0), PlayerId(1)] {
@@ -471,23 +484,24 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     "tick {tick} seat {seat:?} buildings"
                 );
 
-                let key = |owner: u8, kind, x, y| (owner, kind, x, y);
+                let key = |owner: u8, kind, x, y, tier| (owner, kind, x, y, tier);
                 let fog_ghosts: BTreeSet<_> = fog
                     .ghosts
                     .iter()
-                    .map(|g| key(g.owner, g.kind, g.anchor[0], g.anchor[1]))
+                    .map(|g| key(g.owner, g.kind, g.anchor[0], g.anchor[1], g.tier))
                     .collect();
                 let obs_known: BTreeSet<_> = obs
                     .enemy_buildings
                     .iter()
-                    .map(|b| key(b.player.0, b.kind, b.anchor.x, b.anchor.y))
+                    .map(|b| key(b.player.0, b.kind, b.anchor.x, b.anchor.y, b.tier))
                     .collect();
                 let obs_ghosts: BTreeSet<_> = obs
                     .enemy_buildings
                     .iter()
                     .filter(|b| !b.seen)
-                    .map(|b| key(b.player.0, b.kind, b.anchor.x, b.anchor.y))
+                    .map(|b| key(b.player.0, b.kind, b.anchor.x, b.anchor.y, b.tier))
                     .collect();
+                compared_tiered_ghost |= obs.enemy_buildings.iter().any(|b| !b.seen && b.tier > 0);
                 assert!(
                     fog_ghosts.is_subset(&obs_known),
                     "tick {tick} seat {seat:?} ghosts"
@@ -534,6 +548,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "the raids met, so hostile filtering was compared"
     );
     assert!(compared_public, "a Deep Bore out of sight was compared");
+    assert!(
+        compared_tiered_ghost,
+        "an upgraded building out of sight was compared"
+    );
 }
 
 #[test]

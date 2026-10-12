@@ -1531,9 +1531,10 @@ impl State {
     ///   only once built and only of what this kind produces, and a
     ///   coherent salvage ledger.
     /// - Shells: coordinates inside the envelope, shooter minted.
-    /// - Vision: ghost owners in the table and hostile to the viewer;
-    ///   ghosts, contacts, and recent allied impact sites inside their
-    ///   bounds and in canonical order.
+    /// - Vision: ghost owners in the table and hostile to the viewer,
+    ///   ghost tiers on the kind's ladder and hp inside `(0, max_hp]` for
+    ///   that tier; ghosts, contacts, and recent allied impact sites inside
+    ///   their bounds and in canonical order.
     ///
     /// Two rules are deliberately *permissive*, because tighter ones would
     /// refuse legitimately reachable states. References are checked
@@ -2194,6 +2195,12 @@ impl State {
             }
             if !tile_inside_envelope(ghost.anchor) {
                 return Err(E::GhostOutsideEnvelope(seat));
+            }
+            if usize::from(ghost.tier) >= ghost.kind.tiers().len() {
+                return Err(E::GhostTierBeyondLadder(seat));
+            }
+            if ghost.hp == 0 || ghost.hp > ghost.kind.tier_stats(ghost.tier).max_hp {
+                return Err(E::GhostHpOutOfRange(seat));
             }
         }
         // The real sort key carries the owner; two seats can hold footprints
@@ -3131,6 +3138,13 @@ pub enum StateIntegrityError {
     /// A remembered building's anchor sits outside the sanity envelope.
     #[error("player {0} remembers a building outside the envelope")]
     GhostOutsideEnvelope(PlayerId),
+    /// A remembered building claims a tier its kind's ladder does not reach.
+    #[error("player {0} remembers a building at a tier its ladder does not reach")]
+    GhostTierBeyondLadder(PlayerId),
+    /// A remembered building's hit points fall outside `(0, max_hp]` for
+    /// its remembered tier.
+    #[error("player {0} remembers a building with impossible hit points")]
+    GhostHpOutOfRange(PlayerId),
     /// A player's remembered buildings are not in canonical order.
     #[error("player {0} remembers buildings out of canonical order")]
     UnsortedGhosts(PlayerId),

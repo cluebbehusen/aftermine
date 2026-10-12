@@ -123,7 +123,7 @@ pub struct BuildingObs {
     pub built: bool,
     /// Live sight right now (false = remembered ghost).
     pub seen: bool,
-    /// Upgrade-ladder rung (0 = base). Ghosts always report 0.
+    /// Upgrade-ladder rung (0 = base) — for ghosts, as last seen.
     #[serde(default)]
     pub tier: u8,
 }
@@ -483,7 +483,7 @@ impl ObservationData {
                     hp: ghost.hp,
                     built: ghost.built,
                     seen: false,
-                    tier: 0,
+                    tier: ghost.tier,
                 });
             }
         }

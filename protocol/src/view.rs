@@ -246,6 +246,9 @@ pub struct GhostView {
     pub hp: u32,
     /// Whether it looked finished when last seen.
     pub built: bool,
+    /// Upgrade-ladder rung as last seen (0 = base).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tier: u8,
 }
 
 /// A remembered salvage amount at a tile.
@@ -340,6 +343,7 @@ impl FogView {
                     anchor: [g.anchor.x, g.anchor.y],
                     hp: g.hp,
                     built: g.built,
+                    tier: g.tier,
                 })
                 .collect(),
             scrap,

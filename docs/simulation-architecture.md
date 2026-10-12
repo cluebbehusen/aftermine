@@ -731,17 +731,20 @@ prior rather than a current enemy contact, and an initial resource amount says
 nothing about later depletion.
 
 Enemy buildings remain as last-seen ghosts until their footprint is observed
-again. Scrap and wreck amounts likewise freeze at the last visible value. Arrays
-add sorted, deduplicated radar contact tiles outside true sight. A hostile unit
-reports its tile; an apparent hostile building reports the one footprint tile
-nearest a mast, with distance ties ranked in its radial map frame and, for a
-footprint centered on the map, toward its owner's first Foundry. A contact
-carries no owner, type, domain, or concealed entity id, and radar fire at a
-building's contact tile can hit it. Team-shared tracks retain a contact id and
-one second of reported positions. Spatial buckets bound one-to-one matching,
-ranked by predicted distance, previous distance, contact id, and coordinates.
-Visible identity can link visible observations; radar matching uses only
-reported movement. Unmatched tracks end immediately, and ids are never reused.
+again: kind, owner, anchor, hit points, whether construction had finished, and
+upgrade tier, all as last seen. A refit out of sight stays unknown until the
+footprint is seen again. Scrap and wreck amounts likewise freeze at the last
+visible value. Arrays add sorted, deduplicated radar contact tiles outside true
+sight. A hostile unit reports its tile; an apparent hostile building reports the
+one footprint tile nearest a mast, with distance ties ranked in its radial map
+frame and, for a footprint centered on the map, toward its owner's first
+Foundry. A contact carries no owner, type, domain, or concealed entity id, and
+radar fire at a building's contact tile can hit it. Team-shared tracks retain a
+contact id and one second of reported positions. Spatial buckets bound
+one-to-one matching, ranked by predicted distance, previous distance, contact
+id, and coordinates. Visible identity can link visible observations; radar
+matching uses only reported movement. Unmatched tracks end immediately, and ids
+are never reused.
 
 Salvage-relevant hostile incidents, such as a hit on any machine that can
 harvest or an allied loss, remember only the victim's tile for a bounded caution

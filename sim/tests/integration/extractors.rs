@@ -1204,6 +1204,7 @@ fn a_fallen_deep_bore_is_forgotten_everywhere_but_an_extractor_ghost_stays() {
             anchor: SUPPORT_FRAME,
             hp: 600,
             built: true,
+            tier: 0,
         };
         value["vision"][1]["ghosts"] = serde_json::json!([ghost]);
         let mut state: State = serde_json::from_value(value).unwrap();
