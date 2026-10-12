@@ -60,6 +60,9 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
+        /// Unarmed tracked point-defense carrier: shoots down hostile projectiles
+        /// aimed near it, while gunfire passes through.
+        Mantle,
     }
 }
 
@@ -283,6 +286,8 @@ pub struct UnitStats {
     pub brace: Option<BraceStats>,
     /// The ground blast a large airframe makes when it crashes.
     pub crash: Option<CrashProfile>,
+    /// Charges that shoot down hostile projectiles aimed near the machine.
+    pub point_defense: Option<PointDefenseStats>,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -295,6 +300,20 @@ pub struct BraceStats {
     pub recoil_ticks: u32,
     /// Deployment lost per tick while retracting.
     pub retract_per_tick: u8,
+}
+
+/// Point defense: each charge destroys one hostile projectile in flight
+/// whose fixed aim point and current flight position both lie within
+/// `radius`. Hitscan fire is untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointDefenseStats {
+    /// Charges held when full.
+    pub charges: u8,
+    /// Reach from the machine's center, applied to both the aim point and
+    /// the projectile's flight position.
+    pub radius: Fx,
+    /// Ticks to restore one spent charge; charges return one at a time.
+    pub recharge_ticks: u16,
 }
 
 /// A machine's own warhead.
@@ -558,6 +577,7 @@ impl UnitKind {
             UnitKind::Avalanche => "avalanche",
             UnitKind::Skyhook => "skyhook",
             UnitKind::Sapper => "sapper",
+            UnitKind::Mantle => "mantle",
         }
     }
 
@@ -602,6 +622,9 @@ impl UnitKind {
             UnitKind::Sapper => {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
+            UnitKind::Mantle => {
+                "Unarmed tracked carrier with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
+            }
         }
     }
 }
@@ -636,6 +659,7 @@ const HARVESTER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -687,6 +711,7 @@ const SENTINEL: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -721,6 +746,7 @@ const SCUTTLER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -757,6 +783,7 @@ const LANCER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -798,6 +825,7 @@ const BOMBARD: UnitStats = UnitStats {
         retract_per_tick: 3,
     }),
     crash: None,
+    point_defense: None,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -832,6 +860,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -866,6 +895,7 @@ const BUZZARD: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -900,6 +930,7 @@ const TALON: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -938,6 +969,7 @@ const WARDEN: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -966,6 +998,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -991,6 +1024,7 @@ const KESTREL: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1032,6 +1066,7 @@ const CONDOR: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: false,
     }),
+    point_defense: None,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1069,6 +1104,7 @@ const BREAKER: UnitStats = UnitStats {
     hull_turn_rate: Some(4),
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1109,6 +1145,7 @@ const AVALANCHE: UnitStats = UnitStats {
     hull_turn_rate: Some(3),
     brace: None,
     crash: None,
+    point_defense: None,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1138,6 +1175,7 @@ const SKYHOOK: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: true,
     }),
+    point_defense: None,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1168,6 +1206,38 @@ const SAPPER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    point_defense: None,
+};
+
+const MANTLE: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 350,
+    speed: Fx::lit("0.07"),
+    radius: Fx::lit("0.45"),
+    cost: 450,
+    train_ticks: 500,
+    domain: Domain::Ground,
+    weapons: &[],
+    aggro_range: Fx::ZERO,
+    harvest: None,
+    // Sees past its reach, so anything it shoots down is in its own sight.
+    vision: 6,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 2,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: None,
+    brace: None,
+    crash: None,
+    point_defense: Some(PointDefenseStats {
+        charges: 3,
+        radius: Fx::lit("4.5"),
+        recharge_ticks: 60, // one charge back every 3 s
+    }),
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -1342,7 +1412,7 @@ const AIRWORKS: BuildingStats = BuildingStats {
 const CRUCIBLE: BuildingStats = BuildingStats {
     max_hp: 900,
     vision: 6,
-    produces: &[UnitKind::Breaker, UnitKind::Avalanche],
+    produces: &[UnitKind::Breaker, UnitKind::Avalanche, UnitKind::Mantle],
     weapons: &[],
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
@@ -1546,6 +1616,7 @@ impl UnitKind {
             UnitKind::Avalanche => &AVALANCHE,
             UnitKind::Skyhook => &SKYHOOK,
             UnitKind::Sapper => &SAPPER,
+            UnitKind::Mantle => &MANTLE,
         }
     }
 

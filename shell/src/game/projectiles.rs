@@ -20,7 +20,10 @@ pub(crate) struct LaunchPose {
 pub(crate) struct Flight {
     pub(crate) target: Option<Target>,
     pub(crate) ticks: u64,
-    pose: Option<LaunchPose>,
+    pub(crate) pose: Option<LaunchPose>,
+    /// Where it was aimed, which tells apart the record of a shell shot down
+    /// in flight from its siblings'.
+    impact: chassis::fx::Vec2Fx,
 }
 
 impl ProjectileReleases {
@@ -29,11 +32,25 @@ impl ProjectileReleases {
         self.releases
             .retain(|(_, arrival), _| *arrival >= state.current_tick().saturating_sub(1));
         for event in events {
+            if let Event::ShellIntercepted {
+                shooter,
+                impact,
+                arrival,
+                ..
+            } = event
+                && let Some(flights) = self.releases.get_mut(&(*shooter, *arrival))
+                && let Some(slot) = flights.iter().position(|flight| flight.impact == *impact)
+            {
+                // Later siblings keep their launch order, so the occurrence
+                // index of every shell still in flight finds its own record.
+                flights.remove(slot);
+            }
             if let Event::ShellLaunched {
                 shooter,
                 target,
                 unit_pose,
                 flight,
+                to,
                 ..
             } = event
             {
@@ -52,6 +69,7 @@ impl ProjectileReleases {
                     target: *target,
                     ticks: *flight,
                     pose,
+                    impact: *to,
                 });
             }
         }
@@ -76,6 +94,37 @@ impl ProjectileReleases {
             .pose
             .filter(|pose| crate::look::fires(pose.kind, ProjectileKind::Shell))
             .map(|pose| pose.heading)
+    }
+
+    pub(crate) fn bomber_pose(
+        &self,
+        state: &State,
+        shells: &[Shell],
+        index: usize,
+    ) -> Option<LaunchPose> {
+        self.release(shells, index).or_else(|| {
+            let shell = shells.get(index)?;
+            if shell.kind != oxide_sim::ProjectileKind::Bomb {
+                return None;
+            }
+            let oxide_sim::Target::Unit(id) = shell.shooter else {
+                return None;
+            };
+            let kind = state.unit(id)?.kind;
+            if !crate::look::fires(kind, oxide_sim::ProjectileKind::Bomb) {
+                return None;
+            }
+            // Seeks without launch history use a stable impact line, never the
+            // aircraft's later egress heading.
+            Some(LaunchPose {
+                heading: vec2(
+                    (shell.impact.x - shell.launch.x).to_num::<f32>(),
+                    (shell.impact.y - shell.launch.y).to_num::<f32>(),
+                )
+                .normalize_or_zero(),
+                kind,
+            })
+        })
     }
 
     pub(crate) fn release(&self, shells: &[Shell], index: usize) -> Option<LaunchPose> {

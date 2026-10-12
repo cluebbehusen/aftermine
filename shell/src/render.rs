@@ -693,7 +693,7 @@ pub(crate) struct UnitBodyPose {
     pub size: f32,
     pub source: Rect,
     accent: Rect,
-    cargo_meter: Option<Rect>,
+    mechanism_layer: Option<Rect>,
     rotation: f32,
     pub body_rotation: f32,
     worker: bool,
@@ -732,6 +732,7 @@ pub(crate) struct UnitSpriteFrame {
     hull_phase: u8,
     worker_phase: u8,
     cargo: u8,
+    point_defense: Option<u8>,
 }
 
 impl UnitSpriteFrame {
@@ -774,6 +775,16 @@ impl UnitSpriteFrame {
             frame,
             hull_phase: hull_phase.fit::<u8>(),
             worker_phase: worker_phase.fit::<u8>(),
+            point_defense: animation.point_defense.map(|held| {
+                let steps = crate::assets::MANTLE_RECHARGE_STEPS;
+                let charge = usize::from(held.charges.min(3)) * steps;
+                let progress = if held.charges >= 3 {
+                    0
+                } else {
+                    numeric::to_usize(held.recharge.clamp(0.0, 1.0) * steps as f32).min(steps - 1)
+                };
+                (charge + progress).fit::<u8>()
+            }),
             cargo: animation
                 .cargo
                 .map_or(0, |cargo| numeric::to_u8((cargo.fill * 5.0).ceil())),
@@ -786,7 +797,7 @@ pub(crate) fn unit_body_sources(
     kind: oxide_sim::UnitKind,
     frame: UnitSpriteFrame,
 ) -> (Rect, Rect, Option<Rect>, bool) {
-    let (source, accent, cargo_meter) = match frame.frame {
+    let (source, accent, mechanism_layer) = match frame.frame {
         motion::UnitFrame::Idle => (sprites.unit(kind), sprites.unit_accent(kind), None),
         motion::UnitFrame::Moving(phase) => (
             sprites.unit_moving(kind, phase + 1),
@@ -842,7 +853,14 @@ pub(crate) fn unit_body_sources(
         usize::from(frame.worker_phase),
     );
     let (source, accent) = worker_body.unwrap_or((source, accent));
-    (source, accent, cargo_meter, worker_body.is_some())
+    let mechanism_layer = if kind == oxide_sim::UnitKind::Mantle {
+        frame
+            .point_defense
+            .map(|frame| sprites.mantle_charge(usize::from(frame)))
+    } else {
+        mechanism_layer
+    };
+    (source, accent, mechanism_layer, worker_body.is_some())
 }
 
 pub(crate) fn unit_body_pose(
@@ -930,7 +948,7 @@ pub(crate) fn unit_body_pose(
     } else {
         rotation
     };
-    let (source, accent, cargo_meter, worker) = unit_body_sources(sprites, unit.kind, frame);
+    let (source, accent, mechanism_layer, worker) = unit_body_sources(sprites, unit.kind, frame);
     let mut center = game.presentation.draw_pos(unit.id, unit.pos, alpha);
     if unit.domain() == oxide_sim::stats::Domain::Air {
         center.y -= air_presentation(unit.kind, 1.0).2;
@@ -940,7 +958,7 @@ pub(crate) fn unit_body_pose(
         size: unit_draw_scale(unit.kind),
         source,
         accent,
-        cargo_meter,
+        mechanism_layer,
         rotation,
         body_rotation,
         worker,
@@ -986,7 +1004,7 @@ fn draw_unit_pass(
         let UnitBodyPose {
             source,
             accent,
-            cargo_meter,
+            mechanism_layer,
             rotation,
             body_rotation,
             worker: worker_body,
@@ -1160,14 +1178,14 @@ fn draw_unit_pass(
                 );
             }
         }
-        if let Some(cargo_meter) = cargo_meter {
+        if let Some(mechanism_layer) = mechanism_layer {
             sprites.draw_unit(
                 body.x - body_size.x * 0.5,
                 body.y - body_size.y * 0.5,
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(body_size),
-                    source: Some(cargo_meter),
+                    source: Some(mechanism_layer),
                     rotation,
                     ..Default::default()
                 },
