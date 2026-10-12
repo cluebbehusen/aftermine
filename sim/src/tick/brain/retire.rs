@@ -19,43 +19,48 @@ fn standing_crucible(state: &State, player: crate::ids::PlayerId, building: Buil
     })
 }
 
-/// The own completed Crucible nearest unit `id` that it can reach. An exact
-/// distance tie goes to the bearing from the unit, measured against its
-/// heading, a key a half-turn of the scene preserves.
+/// The own completed Crucible nearest unit `id` that it can reach and, for a
+/// turn-limited airframe, land beside. An exact distance tie goes to the
+/// Crucible further ahead of the unit, then by its side of the unit's
+/// heading: exact products in the unit's own frame, which a half-turn of the
+/// scene preserves and which differ for any two footprints.
 pub(in crate::tick) fn nearest_crucible(
     state: &State,
     reach: &mut Reach,
     id: UnitId,
 ) -> Option<BuildingId> {
     let unit = state.unit(id)?;
-    let (player, pos, heading) = (unit.player, unit.pos, unit.heading);
+    let (player, pos, lands) = (unit.player, unit.pos, unit.kind.stats().turn_rate > 0);
+    let ahead = chassis::compass::dir(unit.heading);
+    let (ahead_x, ahead_y) = (i128::from(ahead.x.to_bits()), i128::from(ahead.y.to_bits()));
     let mut crucibles: Vec<_> = state
         .buildings()
         .iter()
         .filter(|b| standing_crucible(state, player, b.id))
         .map(|b| {
             let toward = b.center() - pos;
+            let (x, y) = (
+                i128::from(toward.x.to_bits()),
+                i128::from(toward.y.to_bits()),
+            );
             (
                 pos.dist_sq(b.closest_point_to(pos)),
-                chassis::compass::heading_of(toward).wrapping_sub(heading),
+                std::cmp::Reverse(ahead_x * x + ahead_y * y),
+                ahead_x * y - ahead_y * x,
                 b.id,
-                b.anchor,
-                b.kind.size(),
             )
         })
         .collect();
-    crucibles
-        .sort_unstable_by_key(|&(distance, bearing, building, ..)| (distance, bearing, building));
+    crucibles.sort_unstable_by_key(|&(distance, along, side, _)| (distance, along, side));
     crucibles
         .into_iter()
-        .find(|&(.., anchor, size)| {
-            reach.reaches(
-                state,
-                id,
-                crate::geometry::rect_adjacent_tiles(anchor, size),
-            )
+        .map(|(.., building)| building)
+        .find(|&building| {
+            let b = state.building(building).expect("standing Crucible");
+            let doorsteps = crate::geometry::rect_adjacent_tiles(b.anchor, b.kind.size());
+            reach.reaches(state, id, doorsteps)
+                && (!lands || pad_beside(state, id, building).is_some())
         })
-        .map(|(_, _, building, ..)| building)
 }
 
 /// One tick of retirement for `id` at `crucible`.
@@ -81,6 +86,8 @@ pub(super) fn retire(
             pad: None,
         };
         unit.path = None;
+        // The meter counted work at the lost Crucible.
+        unit.progress = 0;
         (next, None)
     };
     let unit = state.unit(id).expect("caller checked");
@@ -121,42 +128,18 @@ fn land_beside(
 ) {
     let unit = state.unit(id).expect("caller checked");
     if unit.landed() {
-        // Parked anywhere but its pad, the airframe lifted off before
-        // planning: `stays_parked` keeps only a retirement on its pad.
-        dismantle(state.unit_mut(id).expect("caller checked"));
+        // `stays_parked` lifts an airframe off before planning unless it
+        // rests on its pad. Parked elsewhere, it lost its Crucible this tick
+        // and takes off for the next one.
+        if pad == Some(unit.tile()) {
+            dismantle(state.unit_mut(id).expect("caller checked"));
+        }
         return;
     }
     let pad = if let Some(pad) = pad {
         pad
     } else {
-        let (stats, pos, heading, player, tile) = (
-            unit.kind.stats(),
-            unit.pos,
-            unit.heading,
-            unit.player,
-            unit.tile(),
-        );
-        // The pad search starts from the doorstep the approach faces, not
-        // the footprint's center, which an even footprint floors to one
-        // side and so would break mirrored landings.
-        let building = state.building(crucible).expect("standing Crucible");
-        let (anchor, size) = (building.anchor, building.kind.size());
-        let from = super::super::rect_approach_origin(state, player, tile, anchor, size);
-        let doorstep = crate::geometry::rect_adjacent_tiles(anchor, size)
-            .min_by_key(|&t| crate::geometry::rect_approach_key_from(tile, from, anchor, size, t))
-            .expect("a footprint has doorsteps");
-        let Some(pad) = landing::nearest_landable(
-            state,
-            stats,
-            id,
-            doorstep,
-            pos,
-            heading,
-            crate::stats::GOAL_SNAP_RADIUS,
-            None,
-            Pick::Nearest,
-            Some(player),
-        ) else {
+        let Some(pad) = pad_beside(state, id, crucible) else {
             stall(state, id, StallReason::NoOpenGround, events);
             return;
         };
@@ -168,6 +151,33 @@ fn land_beside(
         Touchdown::Moved(next) => set_pad(state, id, crucible, next),
         Touchdown::Stalled(reason) => stall(state, id, reason, events),
     }
+}
+
+/// Open ground beside `crucible` for airframe `id` to land on. The search
+/// starts from the doorstep the approach faces, not the footprint's center,
+/// which an even footprint floors to one side and so would break mirrored
+/// landings.
+fn pad_beside(state: &State, id: UnitId, crucible: BuildingId) -> Option<TilePos> {
+    let unit = state.unit(id).expect("caller checked");
+    let (player, tile) = (unit.player, unit.tile());
+    let building = state.building(crucible).expect("standing Crucible");
+    let (anchor, size) = (building.anchor, building.kind.size());
+    let from = super::super::rect_approach_origin(state, player, tile, anchor, size);
+    let doorstep = crate::geometry::rect_adjacent_tiles(anchor, size)
+        .min_by_key(|&t| crate::geometry::rect_approach_key_from(tile, from, anchor, size, t))
+        .expect("a footprint has doorsteps");
+    landing::nearest_landable(
+        state,
+        unit.kind.stats(),
+        id,
+        doorstep,
+        unit.pos,
+        unit.heading,
+        crate::stats::GOAL_SNAP_RADIUS,
+        None,
+        Pick::Nearest,
+        Some(player),
+    )
 }
 
 fn set_pad(state: &mut State, id: UnitId, crucible: BuildingId, pad: TilePos) {

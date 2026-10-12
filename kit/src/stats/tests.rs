@@ -314,6 +314,7 @@ fn a_retirement_is_not_counted_as_a_unit_loss() {
             player: PlayerId(1),
             pos: Vec2Fx::ZERO,
             crucible: BuildingId(2),
+            hp: 30,
             refund: 25,
             cargo: 4,
         }],

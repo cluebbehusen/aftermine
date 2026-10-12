@@ -119,6 +119,19 @@ fn retired(events: &[Event], id: UnitId) -> Option<(u32, u32)> {
     })
 }
 
+/// The Crucible and position a retirement in `events` names for `id`.
+fn retired_at(events: &[Event], id: UnitId) -> Option<(BuildingId, Vec2Fx)> {
+    events.iter().find_map(|event| match event {
+        Event::UnitRetired {
+            unit,
+            crucible,
+            pos,
+            ..
+        } if *unit == id => Some((*crucible, *pos)),
+        _ => None,
+    })
+}
+
 fn edit(state: &mut State, poke: impl FnOnce(&mut Value)) {
     let mut data = serde_json::to_value(&*state).unwrap();
     poke(&mut data);
@@ -284,6 +297,139 @@ fn a_lost_crucible_sends_the_machine_to_the_next_or_ends_the_order() {
             .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == id)),
         "with none left, the order ends and says so"
     );
+}
+
+#[test]
+fn a_landed_condor_whose_crucible_falls_lifts_off_for_the_next() {
+    let mut state = build(
+        vec![unit(0, UnitKind::Condor, 6, 9)],
+        vec![crucible(0, 14, 9), crucible(0, 32, 9)],
+        0,
+    );
+    let bomber = state.units()[0].id;
+    let [near, far] = crucibles(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, retire(vec![bomber]))]);
+    run_until(&mut state, 1_500, |s, _| {
+        s.unit(bomber).is_some_and(|u| u.landed() && u.progress > 0)
+    });
+    edit(&mut state, |d| {
+        d["buildings"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|b| b["id"] != json!(near));
+    });
+    state.tick(&[]);
+    assert_eq!(
+        state.unit(bomber).unwrap().progress,
+        0,
+        "the meter counted work at the lost Crucible"
+    );
+    let mut lifted = false;
+    let events = run_until(&mut state, 2_000, |s, events| {
+        lifted |= s.unit(bomber).is_some_and(|u| !u.landed());
+        retired_at(events, bomber).is_some()
+    });
+    assert!(lifted, "it took off rather than finish on the old pad");
+    let (crucible, pos) = retired_at(&events, bomber).unwrap();
+    assert_eq!(crucible, far);
+    let site = state.building(far).unwrap().center();
+    assert!(
+        pos.dist_sq(site) <= Fx::from_num(16),
+        "it came apart beside the standing Crucible: {pos:?}"
+    );
+}
+
+#[test]
+fn a_condor_passes_over_a_crucible_with_no_open_ground_beside_it() {
+    let mut scenario = field(
+        vec![unit(0, UnitKind::Condor, 4, 9)],
+        vec![crucible(0, 14, 9), crucible(0, 32, 9)],
+        0,
+    );
+    // Pits ring the near Crucible beyond the landing search's reach.
+    for (y, row) in scenario.map.iter_mut().enumerate().take(17).skip(4) {
+        *row = row
+            .chars()
+            .enumerate()
+            .map(|(x, cell)| {
+                let footprint = (14..16).contains(&x) && (9..11).contains(&y);
+                if (8..22).contains(&x) && !footprint {
+                    '~'
+                } else {
+                    cell
+                }
+            })
+            .collect();
+    }
+    let mut state = scenario.build().unwrap();
+    let bomber = state.units()[0].id;
+    let [_, far] = crucibles(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, retire(vec![bomber]))]);
+    assert!(matches!(
+        state.unit(bomber).unwrap().order,
+        Order::Retire { crucible, .. } if crucible == far
+    ));
+    let events = run_until(&mut state, 2_000, |_, events| {
+        retired_at(events, bomber).is_some()
+    });
+    assert_eq!(retired_at(&events, bomber).unwrap().0, far);
+}
+
+#[test]
+fn equally_near_crucibles_are_ranked_by_geometry_not_mint_order() {
+    // The machine faces east between two Crucibles mirrored across its row.
+    let sites = [(14, 5), (14, 12)];
+    let picks: Vec<TilePos> = [sites, [sites[1], sites[0]]]
+        .into_iter()
+        .map(|sites| {
+            let mut state = build(
+                vec![unit(0, UnitKind::Sentinel, 10, 9)],
+                sites.iter().map(|&(x, y)| crucible(0, x, y)).collect(),
+                0,
+            );
+            let id = state.units()[0].id;
+            edit(&mut state, |d| unit_row(d, id)["heading"] = json!(0));
+            state.tick(&[cmd(0, retire(vec![id]))]);
+            let Order::Retire { crucible, .. } = state.unit(id).unwrap().order else {
+                panic!("the Sentinel retires");
+            };
+            state.building(crucible).unwrap().anchor
+        })
+        .collect();
+    assert_eq!(picks[0], picks[1]);
+}
+
+#[test]
+fn a_retirement_reports_only_the_scrap_the_bank_took() {
+    for (bank, credited) in [(u32::MAX - 3, (0, 3)), (u32::MAX, (0, 0))] {
+        let mut state = build(
+            vec![unit(0, UnitKind::Harvester, 14, 9)],
+            vec![crucible(0, 16, 9)],
+            0,
+        );
+        let hauler = state.units()[0].id;
+        let active = json!({"recovery": "active", "target": 140, "allowance": 140});
+        edit(&mut state, |d| {
+            d["players"][0]["scrap"] = json!(bank);
+            d["players"][0]["recovery"] = active.clone();
+            unit_row(d, hauler)["worker"]["carrying"] = json!(5);
+        });
+        state.tick(&[cmd(0, retire(vec![hauler]))]);
+        let events = run_until(&mut state, 600, |_, events| {
+            retired(events, hauler).is_some()
+        });
+        assert_eq!(retired(&events, hauler), Some(credited));
+        assert_eq!(state.player(PlayerId(0)).scrap, u32::MAX);
+        assert_eq!(
+            state.player(PlayerId(0)).recovery == Recovery::Ready,
+            credited.1 > 0,
+            "only banked cargo rearms recovery"
+        );
+    }
 }
 
 #[test]

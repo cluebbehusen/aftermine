@@ -261,9 +261,17 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         let crate::state::Order::Retire { crucible, .. } = unit.order else {
             unreachable!("only retiring units complete a dismantling meter");
         };
-        let refund = crate::stats::retire_refund(kind, hp);
+        // Saturating, like a delivery: the event reports what was actually
+        // credited, cargo first, which differs from the raw amounts only at
+        // the bank's ceiling.
         let seat = state.player_mut(player);
-        seat.scrap = seat.scrap.saturating_add(refund).saturating_add(cargo);
+        let cargo = seat.scrap.saturating_add(cargo) - seat.scrap;
+        seat.scrap += cargo;
+        let refund = seat
+            .scrap
+            .saturating_add(crate::stats::retire_refund(kind, hp))
+            - seat.scrap;
+        seat.scrap += refund;
         if cargo > 0 {
             seat.recovery = crate::state::Recovery::Ready;
         }
@@ -273,6 +281,7 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
             player,
             pos,
             crucible,
+            hp,
             refund,
             cargo,
         });

@@ -376,6 +376,8 @@ struct Sources {
     born: Vec<(Key, UnitKind, u8)>,
     /// Where each unit that died this tick died.
     died: BTreeMap<Key, TilePos>,
+    /// Each unit retired this tick, with its hp as it came apart.
+    retired: BTreeMap<Key, u32>,
 }
 
 /// The ledger.
@@ -827,17 +829,23 @@ impl ImpactLedger {
                     }
                 }
                 // A retirement is no death: the body leaves without `gone`,
-                // so its hp never counts as damage taken. The load it
-                // carried banks like a delivery.
+                // and only the hp it lost before coming apart is damage
+                // taken. The load it carried banks like a delivery.
                 Event::UnitRetired {
                     unit,
                     player,
+                    crucible,
+                    hp,
                     refund,
                     cargo,
                     ..
                 } => {
+                    sources.retired.insert(Key::Unit(*unit), *hp);
                     self.retired[usize::from(player.0)] += u64::from(*refund);
                     self.delivered(player.0, *unit, *cargo);
+                    if let Some(record) = self.records.get_mut(&Key::Building(*crucible)) {
+                        record.received += u64::from(*cargo);
+                    }
                 }
                 Event::UnitRepaired {
                     unit,
@@ -1144,6 +1152,18 @@ impl ImpactLedger {
                 continue;
             }
             let gained = sources.repaired.get(&pre.key).copied().unwrap_or(0);
+            // A retired machine has no body after the tick; what it lost
+            // that tick is the hp between its last body and its retirement.
+            if let Some(&hp) = sources.retired.get(&pre.key) {
+                self.attribute(
+                    &before,
+                    pre,
+                    (pre.hp + gained).saturating_sub(hp),
+                    false,
+                    sources,
+                );
+                continue;
+            }
             let lost = match after.get(cursor) {
                 // An upgrade rebuilds the building; what it loses to that is
                 // no one's damage.

@@ -555,23 +555,25 @@ Foundry; its cumulative refund ledger prevents rounding drift, and a salvaged
 building does not count as a combat loss or create a wreck. Prepaid production
 on a successfully salvaged producer is refunded.
 
-`Retire` sends own units to the nearest own completed Crucible each can reach;
-without one the command is refused as `MissingPrerequisite`. Walkers and
-hovering aircraft head for a doorstep chosen in their approach's frame and stop
-within `RETIRE_REACH` of the footprint; a Condor lands on open ground beside it.
-A machine standing still there runs a `RETIRE_TICKS` dismantling meter. A loaded
-transport first sets its riders down around itself, as an unload does, and
-riders that find no open ground wait aboard for the next try; a retiring
-transport takes no riders. If its Crucible falls, the machine re-picks the
-nearest standing one, or the order ends. The brain only runs the meter. Cleanup
-takes a unit apart the tick its meter fills, after every damage source of the
-tick, so a machine zeroed that tick dies and wrecks instead. A retired unit
-leaves no wreck and no death: it emits `UnitRetired`, refunds
-`RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks any
-carried scrap like a delivery. Only that cargo re-arms a stranded seat's
-recovery. The refund rate stays below the repair rate, so welding a machine up
-and then retiring it always loses scrap, and no repair source mends a retiring
-machine.
+`Retire` sends own units to the nearest own completed Crucible each can reach
+and, for a Condor, land beside. An exact distance tie goes by exact products in
+the unit's heading frame, never by mint order. Without a Crucible the command is
+refused as `MissingPrerequisite`. Walkers and hovering aircraft head for a
+doorstep chosen in their approach's frame and stop within `RETIRE_REACH` of the
+footprint; a Condor lands on open ground beside it. A machine standing still
+there runs a `RETIRE_TICKS` dismantling meter. A loaded transport first sets its
+riders down around itself, as an unload does, and riders that find no open
+ground wait aboard for the next try; a retiring transport takes no riders. If
+its Crucible falls, the machine re-picks the nearest standing one with its meter
+reset, a landed Condor lifting off for it, or the order ends. The brain only
+runs the meter. Cleanup takes a unit apart the tick its meter fills, after every
+damage source of the tick, so a machine zeroed that tick dies and wrecks
+instead. A retired unit leaves no wreck and no death: it emits `UnitRetired`,
+refunds `RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks
+any carried scrap like a delivery; the event reports what the bank actually
+credited. Only credited cargo re-arms a stranded seat's recovery. The refund
+rate stays below the repair rate, so welding a machine up and then retiring it
+always loses scrap, and no repair source mends a retiring machine.
 
 Building repair and Harvester field welding are billed per accepted hp. Repair
 Bays feed the same unit-heal resolver as field welders and the same

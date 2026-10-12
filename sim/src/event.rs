@@ -123,9 +123,11 @@ pub enum Event {
         pos: Vec2Fx,
         /// The Crucible that took it apart.
         crucible: BuildingId,
-        /// Scrap refunded for the machine itself, by its final hp.
+        /// Its hp as it came apart, after the tick's damage.
+        hp: u32,
+        /// Scrap credited for the machine itself, by that hp.
         refund: u32,
-        /// Scrap it carried, banked like a delivery.
+        /// Scrap credited from its cargo, banked like a delivery.
         cargo: u32,
     },
     /// A building was taken apart by its own crew — deliberate, not a

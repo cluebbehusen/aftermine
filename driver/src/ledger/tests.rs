@@ -717,7 +717,9 @@ fn a_retirement_is_recycling_not_damage_or_income() {
         &[(0, UnitKind::Harvester, 9, 6)],
         &[(0, BuildingKind::Crucible, 10, 6)],
     );
-    let mut state = scenario.build().unwrap();
+    let mut state = staged(&scenario, |value| {
+        value["units"][0]["worker"]["carrying"] = serde_json::json!(5);
+    });
     state.tick(&[]);
     let harvester = unit_at(&state, 9, 6);
     let (state, ledgers) = play(
@@ -741,6 +743,98 @@ fn a_retirement_is_recycling_not_damage_or_income() {
     assert_eq!((worker.taken, worker.deaths), (0, 0));
     assert_eq!(ledgers[0].unattributed, 0);
     assert_eq!(ledgers[0].refunds, 0, "building refunds stay separate");
+    assert_eq!(
+        built(&ledgers, 0, "crucible").received,
+        5,
+        "the Crucible received the load"
+    );
+}
+
+#[test]
+fn damage_on_the_tick_a_machine_retires_is_still_its_shooters() {
+    let scenario = field(
+        0,
+        &[
+            (0, UnitKind::Harvester, 9, 6),
+            (1, UnitKind::Sentinel, 8, 4),
+        ],
+        &[(0, BuildingKind::Crucible, 10, 6)],
+    );
+    let mut state = scenario.build().unwrap();
+    state.tick(&[]);
+    let (harvester, sentinel) = (unit_at(&state, 9, 6), unit_at(&state, 8, 4));
+    let orders = || {
+        vec![
+            order(
+                0,
+                Command::Retire {
+                    units: vec![harvester],
+                    queue: false,
+                },
+            ),
+            order(
+                1,
+                Command::Attack {
+                    units: vec![sentinel],
+                    target: AttackTarget::Unit(harvester),
+                    queue: false,
+                },
+            ),
+        ]
+    };
+    let hit = |report: &oxide_sim::TickReport| {
+        report.events.iter().any(|event| {
+            matches!(event, Event::AttackHit { target: Some(Target::Unit(id)), .. } if *id == harvester)
+        })
+    };
+    // A dry run finds the tick of the first hit; the real run then fills
+    // the meter on that very tick.
+    let mut dry = state.clone();
+    let mut first = dry.tick(&orders());
+    let mut ticks = 1;
+    while !hit(&first) {
+        first = dry.tick(&[]);
+        ticks += 1;
+    }
+    assert!(ticks < oxide_sim::stats::RETIRE_TICKS, "premise: hit early");
+    let mut ledger = ImpactLedger::new(&state);
+    let mut pending = Some(orders());
+    for tick in 1..=ticks {
+        if tick == ticks {
+            let mut value = serde_json::to_value(&state).unwrap();
+            for unit in value["units"].as_array_mut().unwrap() {
+                if unit["id"] == serde_json::json!(harvester) {
+                    unit["progress"] = serde_json::json!(oxide_sim::stats::RETIRE_TICKS - 1);
+                }
+            }
+            state = serde_json::from_value(value).unwrap();
+        }
+        let report = state.tick(&pending.take().unwrap_or_default());
+        ledger.observe(&state, &report);
+        if tick == ticks {
+            assert!(hit(&report), "premise: the hit lands on the last tick");
+            let hp = report
+                .events
+                .iter()
+                .find_map(|event| match event {
+                    Event::UnitRetired { unit, hp, .. } if *unit == harvester => Some(*hp),
+                    _ => None,
+                })
+                .expect("premise: it retires on the hit tick");
+            let ledgers = ledger.finish(&state);
+            let stats = UnitKind::Harvester.stats();
+            let lost = u64::from(stats.max_hp - hp);
+            let expected = lost * u64::from(stats.cost) / u64::from(stats.max_hp);
+            let taken = unit(&ledgers, 0, "harvester").taken;
+            assert!(lost > 0, "premise: it was hurt");
+            assert!(
+                taken.abs_diff(expected) <= 1,
+                "{taken} taken, {expected} expected"
+            );
+            assert_eq!(unit(&ledgers, 1, "sentinel").dealt.workers, taken);
+            return;
+        }
+    }
 }
 
 #[test]
