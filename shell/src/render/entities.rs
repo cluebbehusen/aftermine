@@ -646,8 +646,20 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     // Live enemy buildings only where we have sight; remembered ghosts
     // cover explored-but-unseen ground (skipped in the omniscient overlay).
     if !game.presentation.all_seeing() {
+        let public =
+            oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human);
         for ghost in game.my_vision().ghosts() {
             let (w, h) = ghost.kind.size();
+            // A building every seat knows of shows as it stands, built at its
+            // public tier, whatever the memory last saw.
+            let (tier, built) = public
+                .iter()
+                .find(|known| {
+                    known.owner == ghost.owner
+                        && known.kind == ghost.kind
+                        && known.anchor == ghost.anchor
+                })
+                .map_or((ghost.tier, ghost.built), |known| (known.tier, true));
             let visible = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| ghost.anchor.offset(dx, dy)))
                 .any(|t| game.my_vision().visible(t));
@@ -681,7 +693,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 .to_screen(vec2(ghost.anchor.x as f32, ghost.anchor.y as f32));
             // A remembered site stays translucent scaffolding until its
             // completion has actually been observed.
-            let tint = if ghost.built {
+            let tint = if built {
                 Color::new(
                     GHOST_TINT.r,
                     GHOST_TINT.g,
@@ -702,26 +714,24 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let owner = seat_identity_color(game, ghost.owner);
             let accent_tint = Color::new(owner.r, owner.g, owner.b, tint.a);
             let dest = vec2(w as f32 * zoom, h as f32 * zoom);
-            let body = if ghost.built {
-                sprites.building(ghost.kind)
+            let body = if built {
+                sprites.building_tiered(ghost.kind, tier)
             } else {
-                sprites.construction(ghost.kind, 0, 0, 0)
+                sprites.construction(ghost.kind, tier, 0, 0)
             };
-            let body_accent = if ghost.built {
-                sprites.building_accent(ghost.kind)
+            let body_accent = if built {
+                sprites.building_tiered_accent(ghost.kind, tier)
             } else {
-                sprites.construction_accent(ghost.kind, 0, 0, 0)
+                sprites.construction_accent(ghost.kind, tier, 0, 0)
             };
             let mut layers = vec![(body, tint), (body_accent, accent_tint)];
-            if ghost.built
-                && let Some(mount) = sprites.defense_mount(ghost.kind, 0)
-            {
+            if built && let Some(mount) = sprites.defense_mount(ghost.kind, tier) {
                 // Defense bases ship bare; memories retain a static,
                 // north-facing silhouette without inventing live aim.
                 layers.push((mount, tint));
                 layers.push((
                     sprites
-                        .defense_mount_accent(ghost.kind, 0)
+                        .defense_mount_accent(ghost.kind, tier)
                         .expect("a defense mount has an accent"),
                     accent_tint,
                 ));
