@@ -110,6 +110,16 @@ fn a_unit_rally_rides_with_its_unit_aboard_a_transport() {
         Some(Rally::Unit(guard)),
         "boarding keeps the unit in play"
     );
+    state.tick(&[cmd(0, rally(home, None))]);
+    let report = state.tick(&[cmd(0, rally(home, Some(Rally::Unit(guard))))]);
+    assert!(
+        rejected(&report.events).is_empty(),
+        "a rider can be rallied onto"
+    );
+    assert_eq!(
+        state.building(home).unwrap().rally,
+        Some(Rally::Unit(guard))
+    );
     let born = newborn(&mut state, home, UnitKind::Sentinel);
     assert!(matches!(
         state.unit(born).unwrap().order,

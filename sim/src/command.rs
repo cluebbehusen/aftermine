@@ -152,8 +152,9 @@ pub enum Command {
         /// Queue position (0 = currently training).
         index: u8,
     },
-    /// Point a building's fresh units at a tile or at an own unit in the
-    /// world for them to escort (`None` clears the rally).
+    /// Point a building's fresh units at a tile or at an own unit in play,
+    /// aboard a transport included, for them to escort (`None` clears the
+    /// rally).
     SetRally {
         /// The building.
         building: BuildingId,

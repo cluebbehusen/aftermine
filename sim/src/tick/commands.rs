@@ -1442,10 +1442,12 @@ fn apply_set_rally(
     {
         return Err(RejectReason::OutOfBounds);
     }
+    // A unit aboard a transport is still in play, so it can be rallied onto
+    // like one in the world.
     if let Some(Rally::Unit(unit)) = rally
         && state
-            .unit(unit)
-            .is_none_or(|u| u.player != player || u.hp == 0)
+            .escorted(unit)
+            .is_none_or(|body| body.player != player || body.hp == 0)
     {
         return Err(RejectReason::InvalidTarget);
     }
