@@ -298,6 +298,8 @@ chassis::listed_enum! {
         DemolitionBoom,
         /// A works coming back online one rung higher.
         UpgradeDone,
+        /// A point defender's emitter firing at a shell.
+        InterceptZap,
     }
 }
 
@@ -1430,6 +1432,14 @@ impl Presentation {
                                 ticks,
                             }
                         });
+                    // Like gunfire, the zap is heard when either end is seen:
+                    // at the emitter when it is, else where the shell
+                    // dissolves. The shell makes no sound of its own.
+                    if from.is_some() || impact_witnessed {
+                        let anchor = if from.is_some() { defender_pos } else { at };
+                        self.sounds_pending
+                            .push((SoundKind::InterceptZap, Some(world_vec(*anchor))));
+                    }
                     self.fx.push(Effect {
                         kind: EffectKind::Intercept {
                             from,

@@ -2174,6 +2174,69 @@ fn intercepted_own_shell_does_not_reveal_a_fogged_defender() {
             ..
         }
     ));
+    let zaps: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .filter(|(sound, _)| *sound == SoundKind::InterceptZap)
+        .collect();
+    assert_eq!(
+        zaps,
+        [&(SoundKind::InterceptZap, Some(world_vec(at)))],
+        "an unseen emitter is heard where the seen shell dissolves"
+    );
+}
+
+#[test]
+fn an_interception_seen_at_neither_end_is_silent() {
+    let mut game = mantle_interception_game();
+    let at = chassis::grid::TilePos::new(30, 20).center();
+    let event = Event::ShellIntercepted {
+        defender: UnitId(99),
+        defender_player: oxide_sim::PlayerId(1),
+        defender_pos: at,
+        player: oxide_sim::PlayerId(1),
+        shooter: Target::Unit(UnitId(1)),
+        kind: oxide_sim::ProjectileKind::Shell,
+        at,
+        impact: at,
+        arrival: 20,
+    };
+    game.presentation.spawn_fx(&game.state, &[event]);
+    assert!(
+        !game
+            .presentation
+            .sounds_pending
+            .iter()
+            .any(|(sound, _)| *sound == SoundKind::InterceptZap)
+    );
+}
+
+#[test]
+fn a_seen_emitter_zaps_once_per_shell_it_stops() {
+    let mut game = mantle_interception_game();
+    let at = chassis::grid::TilePos::new(10, 10).center();
+    let event = Event::ShellIntercepted {
+        defender: UnitId(0),
+        defender_player: oxide_sim::PlayerId(0),
+        defender_pos: at,
+        player: oxide_sim::PlayerId(1),
+        shooter: Target::Unit(UnitId(1)),
+        kind: oxide_sim::ProjectileKind::Shell,
+        at,
+        impact: at,
+        arrival: 20,
+    };
+    game.presentation
+        .spawn_fx(&game.state, &[event.clone(), event]);
+    let zaps: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .filter(|(sound, _)| *sound == SoundKind::InterceptZap)
+        .collect();
+    assert_eq!(zaps.len(), 2);
+    assert!(zaps.iter().all(|(_, pos)| *pos == Some(world_vec(at))));
 }
 
 #[test]
