@@ -87,6 +87,11 @@ pub struct UnitObs {
     /// cannot land.
     #[serde(default)]
     pub grounded: bool,
+    /// Ready point-defense charges, for kinds that carry point defense. Lit
+    /// emitters show them, so like `grounded` they are reported for allies
+    /// and enemies in sight too.
+    #[serde(default)]
+    pub charges: Option<u8>,
 }
 
 impl UnitObs {
@@ -657,6 +662,7 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
         },
         repairing: own_repair_target(&u.order).is_some(),
         grounded: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 
@@ -676,6 +682,7 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         founding: None,   // ditto
         repairing: false,
         grounded: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 

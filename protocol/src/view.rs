@@ -124,6 +124,10 @@ pub struct UnitView {
     /// one, so the fog view never redacts it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub landed: bool,
+    /// Ready point-defense charges, for kinds that carry point defense.
+    /// The emitters show them, so the fog view never redacts them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charges: Option<u8>,
 }
 
 /// One building.
@@ -530,11 +534,13 @@ fn unit_view(u: &Unit) -> UnitView {
         queue: u.queue.iter().copied().collect(),
         patrolling: Some(u.looping),
         landed: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 
-/// A hostile unit as the viewer sees it: body, position, wounds, and
-/// visible cargo, but never its orders, queue, or patrol flag.
+/// A hostile unit as the viewer sees it: body, position, wounds, visible
+/// cargo and point-defense charges, but never its orders, queue, or patrol
+/// flag.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,

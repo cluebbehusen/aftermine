@@ -602,8 +602,8 @@ fn persisted_evidence_requires_an_explicit_candidate() {
 fn a_later_invalid_scenario_publishes_no_partial_evidence() {
     let dir = scratch("prevalidation");
     let invalid = dir.join("invalid.json");
-    let shipped =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/skirmish.json");
+    let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../fixtures/scenarios/skirmish.json");
     let mut value: Value =
         serde_json::from_slice(&std::fs::read(shipped).unwrap()).expect("shipped JSON");
     value["players"] = serde_json::json!([]);

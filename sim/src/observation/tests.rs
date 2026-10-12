@@ -565,3 +565,39 @@ fn pit_knowledge_is_exploration_limited_and_serialized() {
         serde_json::from_str(&serde_json::to_string(&fog).unwrap()).unwrap();
     assert_eq!(restored, fog);
 }
+
+/// Seat 0's Mantle mid-basin with two charges and seat 1's Kestrel at
+/// `watcher`, a tick into the match.
+fn watched_mantle(watcher: (i32, i32)) -> State {
+    let mut scenario = Scenario::skirmish();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Mantle,
+            x: 24,
+            y: 12,
+        },
+        UnitSpec {
+            player: 1,
+            kind: UnitKind::Kestrel,
+            x: watcher.0,
+            y: watcher.1,
+        },
+    ];
+    let mut state = scenario.build().expect("the scenario builds");
+    state.units[0].point_defense.as_mut().unwrap().charges = 2;
+    state.tick(&[]);
+    state
+}
+
+#[test]
+fn a_seen_point_defenders_charges_reach_owner_and_enemy_alike() {
+    let state = watched_mantle((20, 12));
+    let own = Observation::fog_honest(&state, PlayerId(0));
+    assert_eq!(own.my_units[0].charges, Some(2));
+    let enemy = Observation::fog_honest(&state, PlayerId(1));
+    assert_eq!(enemy.enemy_units[0].charges, Some(2));
+    assert_eq!(enemy.my_units[0].charges, None);
+    let blind = Observation::fog_honest(&watched_mantle((2, 2)), PlayerId(1));
+    assert!(blind.enemy_units.is_empty(), "unseen, unshown");
+}

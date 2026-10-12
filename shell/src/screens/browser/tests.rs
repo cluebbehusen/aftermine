@@ -13,6 +13,7 @@ fn the_map_hint_names_only_what_the_hands_in_use_have() {
 fn entry(label: &str, seats: usize) -> ScenarioEntry {
     ScenarioEntry {
         seats,
+        teams: 2,
         label: label.to_string(),
         blurb: None,
         path: Some(std::path::PathBuf::from(format!("{label}.json"))),
@@ -403,4 +404,31 @@ fn enter_commits_a_card_scrolled_flush_with_the_shelf_bottom() {
         .find(|out| *out != Out::Stay);
     crate::render::set_viewport(1280.0, 800.0);
     assert_eq!(out, Some(Out::Pick(32)));
+}
+
+#[test]
+fn a_free_for_all_gets_its_own_section_after_the_team_format_of_its_size() {
+    let ffa = |label: &str, seats: usize| ScenarioEntry {
+        teams: seats,
+        ..entry(label, seats)
+    };
+    let entries = [
+        entry("m0", 2),
+        ffa("f3", 3),
+        entry("t0", 4),
+        ffa("f4", 4),
+        entry("t1", 6),
+        ffa("f6", 6),
+    ];
+    let headings: Vec<String> = lines(&entries, 4)
+        .into_iter()
+        .filter_map(|line| match line {
+            Line::Heading(heading) => Some(heading),
+            Line::Cards(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        headings,
+        ["1v1", "3-way FFA", "2v2", "4-way FFA", "3v3", "6-way FFA"]
+    );
 }

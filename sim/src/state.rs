@@ -377,6 +377,26 @@ pub struct PathFollow {
     pub next: u32,
 }
 
+/// A point defender's ready charges and its progress toward the next one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointDefense {
+    /// Charges ready to fire.
+    pub charges: u8,
+    /// Ticks spent restoring the next charge; held at zero while full.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub recharge: u16,
+}
+
+impl PointDefense {
+    fn full(stats: crate::stats::PointDefenseStats) -> Self {
+        Self {
+            charges: stats.charges,
+            recharge: 0,
+        }
+    }
+}
+
 /// What a harvesting machine has aboard and how its delivery stands.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -464,6 +484,10 @@ pub struct Unit {
     /// Machines riding aboard this transport.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cargo: Vec<Rider>,
+    /// Point-defense charges, for exactly the kinds that carry point
+    /// defense.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_defense: Option<PointDefense>,
 }
 
 fn is_zero_motion(motion: &Vec2Fx) -> bool {
@@ -566,6 +590,9 @@ pub struct Rider {
     /// Its independent gun bearing, if it had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turret_heading: Option<u8>,
+    /// Point-defense charges and recharge, frozen while carried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_defense: Option<PointDefense>,
     /// The tick it last took damage, kept through the ride.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damaged_at: Option<Tick>,
@@ -583,6 +610,7 @@ impl Rider {
             cooldowns,
             heading,
             turret_heading,
+            point_defense,
             ..
         } = *unit;
         Self {
@@ -593,6 +621,7 @@ impl Rider {
             cooldowns,
             heading,
             turret_heading,
+            point_defense,
             damaged_at,
         }
     }
@@ -604,6 +633,7 @@ impl Rider {
             damaged_at: self.damaged_at,
             cooldowns: self.cooldowns,
             turret_heading: self.turret_heading,
+            point_defense: self.point_defense,
             ..Unit::at_rest(self.id, player, self.kind, pos, self.heading)
         };
         if let Some(worker) = &mut unit.worker {
@@ -672,6 +702,7 @@ impl Unit {
             settled: 0,
             heading,
             cargo: Vec::new(),
+            point_defense: kind.stats().point_defense.map(PointDefense::full),
         }
     }
 
@@ -1828,6 +1859,7 @@ impl State {
             heading,
             turret_heading,
             cargo,
+            point_defense,
         } = u;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -1846,11 +1878,15 @@ impl State {
             return Err(E::DamageStampInTheFuture(id));
         }
         if worker.is_some() != stats.harvest.is_some()
+            || point_defense.is_some() != stats.point_defense.is_some()
             || !motor.fits(*kind)
             || (turret_heading.is_some() && !kind.has_ground_turret())
             || (!cargo.is_empty() && stats.transport_capacity == 0)
         {
             return Err(E::UnitPartMismatch(id));
+        }
+        if !point_defense_in_range(*point_defense, stats) {
+            return Err(E::PointDefenseOutOfRange(id));
         }
         let Worker {
             carrying,
@@ -2024,6 +2060,7 @@ impl State {
             cooldowns,
             heading: _,
             turret_heading,
+            point_defense,
             damaged_at,
         } = rider;
         let rstats = kind.stats();
@@ -2039,8 +2076,13 @@ impl State {
         if *carrying > rstats.harvest.map_or(0, |harvest| harvest.capacity) {
             return Err(E::ScrapBeyondCapacity(*id));
         }
-        if turret_heading.is_some() && !kind.has_ground_turret() {
+        if (turret_heading.is_some() && !kind.has_ground_turret())
+            || point_defense.is_some() != rstats.point_defense.is_some()
+        {
             return Err(E::UnitPartMismatch(*id));
+        }
+        if !point_defense_in_range(*point_defense, rstats) {
+            return Err(E::PointDefenseOutOfRange(*id));
         }
         // Cooldowns are the one scalar boarding does NOT reset — a machine
         // slung mid-cooldown keeps it frozen — so the bound is the walking
@@ -3282,6 +3324,11 @@ pub enum StateIntegrityError {
     /// A rider whose weapon cooldowns exceed its own weapon table.
     #[error("unit {0} carries a rider with impossible weapon cooldowns")]
     CargoCooldownOutOfRange(UnitId),
+    /// A point defender, walking or carried, holding more charges than its
+    /// kind, a recharge counter at or past a full recharge, or a running
+    /// counter while full.
+    #[error("unit {0} holds impossible point-defense charges")]
+    PointDefenseOutOfRange(UnitId),
     /// A landed airframe resting farther from its tile center than a
     /// touchdown allows.
     #[error("unit {0} is landed off its tile center")]
@@ -3375,6 +3422,21 @@ fn cooldowns_out_of_range(
     })
 }
 
+/// Whether held charges and the recharge counter are reachable for a kind
+/// with point defense: recharge counts only below full and resets on each
+/// restored charge. Presence against the kind is checked separately.
+fn point_defense_in_range(
+    point_defense: Option<PointDefense>,
+    stats: &crate::stats::UnitStats,
+) -> bool {
+    let (Some(held), Some(stats)) = (point_defense, stats.point_defense) else {
+        return true;
+    };
+    held.charges <= stats.charges
+        && held.recharge < stats.recharge_ticks
+        && (held.charges < stats.charges || held.recharge == 0)
+}
+
 fn valid_air_motion(unit: &Unit) -> bool {
     let motion = unit.air_motion();
     let speed = unit.kind.stats().speed;
@@ -3436,6 +3498,24 @@ pub struct Shell {
     pub targets: crate::stats::DomainMask,
     /// Splash radius, if the weapon splashes.
     pub splash: Option<chassis::fx::Fx>,
+}
+
+impl Shell {
+    /// Where the shell is over the ground on tick `now`: the straight track
+    /// from launch to impact, standing at impact from its arrival tick on.
+    /// Deserialized shells may carry any ticks with `launched_at <=
+    /// arrival`, so the progress is computed in wide integers instead of
+    /// trusting the span to fit a fixed-point value.
+    pub fn flight_position(&self, now: Tick) -> Vec2Fx {
+        let span = self.arrival.saturating_sub(self.launched_at);
+        let elapsed = now.saturating_sub(self.launched_at);
+        if elapsed >= span {
+            return self.impact;
+        }
+        let progress = (u128::from(elapsed) << 32) / u128::from(span);
+        let progress = Fx::from_bits(i64::try_from(progress).expect("progress below one fits"));
+        self.launch + (self.impact - self.launch) * progress
+    }
 }
 
 /// The wire shape of [`State`]: a private mirror that derives the actual

@@ -463,7 +463,7 @@ pub(crate) fn loss(
                 value: u64::from(stats.cost),
                 kind: if stats.transport_capacity > 0 {
                     LossKind::Transport
-                } else if stats.can_fight() {
+                } else if stats.can_fight() || stats.point_defense.is_some() {
                     LossKind::Combat
                 } else {
                     LossKind::Worker

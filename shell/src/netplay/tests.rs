@@ -17,7 +17,7 @@ fn viewport() -> Vec2 {
 fn with_bots() -> Scenario {
     let mut scenario = Scenario::load(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../scenarios/twin-forges.json"
+        "/../fixtures/scenarios/twin-forges.json"
     ))
     .unwrap();
     for (seat, player) in scenario.players.iter_mut().enumerate() {
