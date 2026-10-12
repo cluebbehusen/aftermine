@@ -91,3 +91,22 @@ fn defenders_refused_an_order_are_not_counted_as_sent() {
     assert_eq!(sent(1), [sentinel], "the anti-air hunt was refused");
     assert!(sent(0).is_empty());
 }
+
+#[test]
+fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
+    let gun = |tier: u8| BuildingObs {
+        provisional: false,
+        id: oxide_sim::BuildingId(0),
+        player: PlayerId(1),
+        kind: BuildingKind::Bastion,
+        anchor: TilePos::new(2, 4),
+        hp: BuildingKind::Bastion.tier_stats(tier).max_hp,
+        built: true,
+        seen: true,
+        tier,
+    };
+    // Ten and a half tiles from the footprint's centre.
+    let impact = TilePos::new(13, 4);
+    assert!(!battery(&gun(0), impact), "past the Bastion's reach");
+    assert!(battery(&gun(1), impact), "inside the Citadel's");
+}

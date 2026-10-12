@@ -777,8 +777,14 @@ fn place(
 }
 
 fn builder_game() -> (Game, oxide_sim::UnitId) {
+    builder_game_with(&[])
+}
+
+/// A builder's skirmish with `buildings` already standing.
+fn builder_game_with(buildings: &[oxide_sim::scenario::BuildingSpec]) -> (Game, oxide_sim::UnitId) {
     let mut scenario = Scenario::skirmish();
     scenario.players[0].scrap = 5000;
+    scenario.buildings.extend_from_slice(buildings);
     let game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
     let harvester = game
         .state
@@ -1133,7 +1139,12 @@ fn panel_copy_uses_only_supported_font_glyphs() {
 
 #[test]
 fn a_selected_bastion_shows_its_minimum_and_maximum_range() {
-    let (mut game, harvester) = builder_game();
+    let (mut game, harvester) = builder_game_with(&[oxide_sim::scenario::BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Fabricator,
+        x: 12,
+        y: 3,
+    }]);
     let bastion = place(&mut game, harvester, BuildingKind::Bastion, false);
     game.presentation.selection.units.clear();
     game.presentation.selection.buildings = vec![bastion];
@@ -1141,7 +1152,7 @@ fn a_selected_bastion_shows_its_minimum_and_maximum_range() {
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("Bastion panel");
     assert_eq!(panel.title, "Bastion");
-    assert_eq!(stat(&panel, "Range").value, "2.5-11.0 tiles");
+    assert_eq!(stat(&panel, "Range").value, "2.5-9.5 tiles");
     assert_eq!(stat(&panel, "Sight").value, "6 tiles");
     assert_eq!(
         stat(&panel, "Ground").icon,

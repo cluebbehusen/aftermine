@@ -584,7 +584,7 @@ fn battery(building: &BuildingObs, impact: TilePos) -> bool {
     (building.built || !building.seen)
         && building
             .kind
-            .base_stats()
+            .tier_stats(building.tier)
             .weapons
             .iter()
             .any(|weapon| shells(weapon, centre, impact))

@@ -314,6 +314,93 @@ fn the_deepest_rung_waits_for_the_crucible() {
 }
 
 #[test]
+fn the_bastion_ladder_starts_behind_the_fabricator() {
+    let build = |state: &State| {
+        let builder = state.units()[0].id;
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Bastion,
+                anchor: TilePos::new(11, 2),
+                queue: false,
+                defer: false,
+            },
+        )
+    };
+    let mut bare = arena(1_000, false, false);
+    bare.buildings
+        .retain(|building| building.kind != BuildingKind::Fabricator);
+    let mut bare = bare.build().unwrap();
+    let report = bare.tick(&[build(&bare)]);
+    assert!(
+        report.events.iter().any(|e| matches!(
+            e,
+            Event::CommandRejected {
+                reason: RejectReason::MissingPrerequisite,
+                ..
+            }
+        )),
+        "the Bastion waits for the Fabricator"
+    );
+    assert_eq!(bare.player(PlayerId(0)).scrap, 1_000, "nothing was charged");
+
+    let mut teched = arena(1_000, false, false).build().unwrap();
+    teched.tick(&[build(&teched)]);
+    assert_eq!(
+        teched.player(PlayerId(0)).scrap,
+        1_000
+            - BuildingKind::Bastion
+                .base_stats()
+                .construction
+                .unwrap()
+                .cost
+    );
+}
+
+#[test]
+fn the_citadel_waits_for_the_crucible_and_reaches_further() {
+    for crucible in [false, true] {
+        let mut scenario = arena(2_000, crucible, false);
+        scenario
+            .buildings
+            .push(common::building(0, BuildingKind::Bastion, 15, 2));
+        let mut state = scenario.build().unwrap();
+        let bastion = find(&state, BuildingKind::Bastion);
+        let bank = state.player(PlayerId(0)).scrap;
+        let report = state.tick(&[upgrade(bastion)]);
+        if !crucible {
+            assert!(
+                report.events.iter().any(|e| matches!(
+                    e,
+                    Event::CommandRejected {
+                        reason: RejectReason::MissingPrerequisite,
+                        ..
+                    }
+                )),
+                "the Citadel waits for the Crucible"
+            );
+            assert_eq!(state.building(bastion).unwrap().tier, 0, "nothing moved");
+            continue;
+        }
+        let citadel = BuildingKind::Bastion.upgrade_from(0).unwrap();
+        assert_eq!(state.player(PlayerId(0)).scrap, bank - citadel.cost);
+        assert!(
+            !state.building(bastion).unwrap().built(),
+            "offline for the refit"
+        );
+        run_until_built(&mut state, bastion, u64::from(citadel.build_ticks) + 10);
+        let b = state.building(bastion).unwrap();
+        assert_eq!(b.kind.tier_name(b.tier), "citadel");
+        assert_eq!(b.hp, b.stats().max_hp);
+        assert!(
+            b.stats().weapons[0].range > BuildingKind::Bastion.base_stats().weapons[0].range,
+            "the Citadel reaches further"
+        );
+    }
+}
+
+#[test]
 fn upgrades_refuse_the_broke_the_topped_out_and_the_cancel() {
     let mut state = arena(60, true, false).build().unwrap();
     let turret = find(&state, BuildingKind::Turret);

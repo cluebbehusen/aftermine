@@ -18,6 +18,16 @@ fn settled(scrap: u32) -> Scenario {
     scenario
 }
 
+/// [`settled`] with West's Fabricator standing behind its Foundry, where the
+/// base's edge stays put, so West may build Bastions.
+fn fabricated(scrap: u32) -> Scenario {
+    let mut scenario = settled(scrap);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 3, 8));
+    scenario
+}
+
 fn traits(fortification: u8) -> PersonalityTraits {
     PersonalityTraits {
         air: 50,
@@ -137,11 +147,11 @@ fn a_fortified_seat_guards_its_foundry_toward_the_enemy_and_a_thrifty_one_does_n
     );
 }
 
-/// The settled arena with an Array watching West's way in, so a Bastion fires
+/// The fabricated arena with an Array watching West's way in, so a Bastion fires
 /// as far as it reaches, and a known East army of `enemy` at `tiles` and
 /// East's `others`.
 fn watched(enemy: UnitKind, tiles: &[(i32, i32)], others: &[(UnitKind, i32, i32)]) -> Scenario {
-    let mut scenario = settled(0);
+    let mut scenario = fabricated(0);
     // Room for the guns along the standing army's row, and only `enemy` known.
     scenario
         .units
@@ -196,17 +206,19 @@ const CLUMPED: [(i32, i32); 6] = [(13, 4), (13, 5), (13, 6), (14, 4), (14, 5), (
 #[test]
 fn turrets_and_bastions_share_a_watched_approach_by_what_they_hold_per_scrap() {
     // A known army of Wardens outweighs any one gun.
-    let bastion = |laid: &[BuildingKind]| {
-        laid.iter()
-            .position(|kind| *kind == BuildingKind::Bastion)
-            .unwrap_or_else(|| panic!("{laid:?}"))
-    };
     let spread = guns_laid(UnitKind::Warden, &SPREAD);
     assert_eq!(spread.first(), Some(&BuildingKind::Turret), "{spread:?}");
-    let clumped = guns_laid(UnitKind::Warden, &CLUMPED);
+    let bastion = |tiles: &[(i32, i32)]| {
+        offer(
+            &offers(&watched(UnitKind::Warden, tiles, &[])),
+            BuildingKind::Bastion,
+        )
+        .expect("a Bastion is offered")
+        .1
+    };
     assert!(
-        bastion(&clumped) < bastion(&spread),
-        "a clump draws a Bastion sooner, its shells hitting several: {clumped:?} against {spread:?}"
+        bastion(&CLUMPED) > bastion(&SPREAD) * 3 / 2,
+        "a clump lifts a Bastion's worth, its shells hitting several"
     );
 }
 
@@ -651,12 +663,16 @@ fn checkpoints_reject_a_defense_off_the_map() {
 
 #[test]
 fn an_array_watches_the_way_in_and_lets_a_bastion_fire_further() {
-    let mut scenario = settled(0);
+    let mut scenario = fabricated(0);
     let state = scenario.build().unwrap();
     let bare = wanted(&scenario, &state, &Memory::default(), 85);
     let (array, _) = offer(&bare, BuildingKind::Array).expect("an Array is wanted");
     let bastion = offer(&bare, BuildingKind::Bastion).map_or(0, |(_, score)| score);
 
+    // A Harvester standing on the site steps aside for it.
+    scenario
+        .units
+        .retain(|unit| (unit.x, unit.y) != (array.x, array.y));
     scenario
         .buildings
         .push(building(0, BuildingKind::Array, array.x, array.y));
@@ -1431,4 +1447,123 @@ fn charges_go_first_to_the_gate_the_guns_leave_open() {
             .push(building(0, BuildingKind::Turret, mouth.x + step, mouth.y));
     }
     assert_eq!(holds(charge(&scenario)), Some(1 - first));
+}
+
+/// West's offer to raise its corner Bastion into a Citadel on [`watched`],
+/// with East's `enemy` far out east, a Crucible if `crucible`, and the Array
+/// watching the way in if `array`.
+fn citadel_offer(enemy: UnitKind, crucible: bool, array: bool) -> Option<u32> {
+    let far = [(18, 2), (18, 8), (19, 2), (19, 8), (20, 2), (20, 8)];
+    let mut scenario = watched(enemy, &far, &[]);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Bastion, 3, 2));
+    if crucible {
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Crucible, 5, 8));
+    }
+    if !array {
+        scenario
+            .buildings
+            .retain(|building| building.kind != BuildingKind::Array);
+    }
+    let state = scenario.build().unwrap();
+    let bastion = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Bastion)
+        .unwrap()
+        .id;
+    offers(&scenario)
+        .into_iter()
+        .find(|(investment, _)| {
+            *investment
+                == Investment::Upgrade {
+                    building: bastion,
+                    tier: 1,
+                }
+        })
+        .map(|(_, score)| score)
+}
+
+#[test]
+fn a_citadel_waits_for_a_crucible_and_answers_what_outranges_the_bastion() {
+    assert_eq!(
+        citadel_offer(UnitKind::Bombard, false, true),
+        None,
+        "a Citadel needs a Crucible"
+    );
+    let bombards =
+        citadel_offer(UnitKind::Bombard, true, true).expect("Bombards outrange the Bastion");
+    let wardens =
+        citadel_offer(UnitKind::Warden, true, true).expect("premise: reach counts against Wardens");
+    // Six Bombards are worth less than six Wardens, but only the Wardens are
+    // in the Bastion's answer already.
+    assert!(bombards > wardens, "{bombards} against {wardens}");
+}
+
+#[test]
+fn an_upgrade_firing_indirect_shells_counts_only_ground_something_sees() {
+    let watched = citadel_offer(UnitKind::Bombard, true, true).expect("the Array spots the way in");
+    let blind = citadel_offer(UnitKind::Bombard, true, false).unwrap_or(0);
+    assert!(
+        blind < watched,
+        "{blind} without the Array against {watched}"
+    );
+}
+
+#[test]
+fn a_bastion_is_offered_only_once_a_fabricator_stands() {
+    let bastion = |scenario: &Scenario| offer(&offers(scenario), BuildingKind::Bastion);
+    let teched = watched(UnitKind::Lancer, &SPREAD, &[]);
+    assert!(
+        bastion(&teched).is_some(),
+        "premise: Lancers draw a Bastion"
+    );
+    let mut bare = teched;
+    bare.buildings
+        .retain(|building| building.kind != BuildingKind::Fabricator);
+    assert_eq!(bastion(&bare), None, "a Bastion needs a Fabricator");
+}
+
+/// West's Turret offer against a lone Warden with a standing Bastion and no
+/// Array of its own, and a teammate whose Array watches the way in if
+/// `spotted`.
+fn turret_beside_a_bastion(spotted: bool) -> u32 {
+    let mut scenario = watched(UnitKind::Warden, &SPREAD[..1], &[]);
+    scenario
+        .buildings
+        .retain(|building| building.kind != BuildingKind::Array);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Bastion, 5, 3));
+    scenario.map[9].replace_range(5..6, "3");
+    scenario.players[0].team = Some(0);
+    scenario.players[1].team = Some(1);
+    scenario.players.push(PlayerSpec {
+        name: "ally".into(),
+        team: Some(0),
+        scrap: 0,
+        bot: false,
+        bot_config: None,
+    });
+    if spotted {
+        scenario
+            .buildings
+            .push(building(2, BuildingKind::Array, 11, 5));
+    }
+    offer(&offers(&scenario), BuildingKind::Turret)
+        .expect("a Turret is offered")
+        .1
+}
+
+#[test]
+fn a_standing_bastion_holds_only_ground_something_spots_for_it() {
+    let blind = turret_beside_a_bastion(false);
+    let spotted = turret_beside_a_bastion(true);
+    assert!(
+        spotted < blind,
+        "a teammate's radar lets the Bastion hold more of the way in: {spotted} against {blind}"
+    );
 }

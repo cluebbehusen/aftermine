@@ -398,7 +398,6 @@ fn yard_orders(cast: &Cast) -> Vec<PlayerCommand> {
         (BuildingKind::Array, 37, 23),
         (BuildingKind::Reclaimer, 39, 23),
         (BuildingKind::Fabricator, 32, 25),
-        (BuildingKind::Bastion, 38, 25),
         (BuildingKind::RepairBay, 41, 25),
     ]
     .into_iter()
@@ -415,11 +414,13 @@ fn yard_orders(cast: &Cast) -> Vec<PlayerCommand> {
     .collect()
 }
 
-/// The western field kit shares one worker's paid construction queue.
+/// The western field kit shares one worker's paid construction queue. The
+/// Bastion site rises here because only the west owns a Fabricator.
 fn field_kit_orders(cast: &Cast) -> Vec<PlayerCommand> {
     [
         (BuildingKind::Barricade, 2, 10),
         (BuildingKind::ScuttleCharge, 6, 10),
+        (BuildingKind::Bastion, 9, 12),
     ]
     .into_iter()
     .map(|(kind, x, y)| PlayerCommand {

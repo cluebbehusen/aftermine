@@ -360,10 +360,16 @@ def source_frames():
     """Yield the complete installed-defense rows before masks and construction."""
     for variant in gen.PALETTES:
         tag = gen.variant_tag(variant)
-        for phase in range(10):
-            suffix = f"_action{phase}" if phase else ""
-            yield f"bastion{tag}{suffix}", bastion_base(variant, phase)
-            yield f"bastion_mount{tag}{suffix}", bastion_mount(variant, phase)
+        # Placeholder: the Citadel ships the Bastion's art until its own is
+        # approved.
+        for tier_suffix in ("", "_t1"):
+            for phase in range(10):
+                suffix = f"_action{phase}" if phase else ""
+                yield f"bastion{tier_suffix}{tag}{suffix}", bastion_base(variant, phase)
+                yield (
+                    f"bastion_mount{tier_suffix}{tag}{suffix}",
+                    bastion_mount(variant, phase),
+                )
         for tier in range(3):
             tier_suffix = f"_t{tier}" if tier else ""
             yield f"turret{tier_suffix}{tag}", turret_base(variant, tier)

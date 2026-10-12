@@ -162,6 +162,15 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = tiered(&crucible.build().unwrap(), BuildingKind::Turret, 1);
     offer(&crucible, &state, 3_000);
 
+    // A Citadel once a Crucible stands, its longer reach covering more of
+    // the way in, from a corner clear of the aircraft.
+    let mut citadel = crucible.clone();
+    citadel
+        .buildings
+        .push(building(0, BuildingKind::Bastion, 1, 1));
+    let state = citadel.build().unwrap();
+    offer(&citadel, &state, 3_000);
+
     // A Deep Bore on the home frame, which the home Foundry supports.
     let mut bore = crucible.clone();
     bore.buildings

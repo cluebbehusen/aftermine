@@ -589,7 +589,9 @@ fn production_action_and_cargo_rows_match_the_runtime_contract() {
     let charge_racks = BuildingKind::ALL
         .into_iter()
         .filter(|kind| crate::look::defense(*kind).is_some_and(|look| look.charge_rack))
-        .map(|kind| building_stem(kind).to_owned());
+        .flat_map(|kind| {
+            (0..kind.tiers().len()).map(move |tier| rung_stem(building_stem(kind), tier))
+        });
     for stem in defense_rungs()
         .into_iter()
         .map(|(_, mount)| mount)
