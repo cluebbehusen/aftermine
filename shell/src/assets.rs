@@ -650,7 +650,7 @@ impl RungArt {
 fn construction_stem(kind: BuildingKind, tier: usize) -> String {
     rung_stem(
         building_stem(kind),
-        if kind == BuildingKind::Extractor {
+        if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
             tier
         } else {
             0
@@ -834,7 +834,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                 }
             }
         }
-        let site_tiers = if kind == BuildingKind::Extractor {
+        let site_tiers = if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
             kind.tiers().len()
         } else {
             1
@@ -1246,11 +1246,6 @@ impl Sprites {
     /// The allegiance mask matched to [`Self::building_tiered`].
     pub fn building_tiered_accent(&self, kind: oxide_sim::BuildingKind, tier: u8) -> Rect {
         self.rung(kind, tier).hull[ACCENT]
-    }
-
-    /// The allegiance-accent mask over a building's tintable regions: grayscale in the atlas, tinted at draw time.
-    pub fn building_accent(&self, kind: oxide_sim::BuildingKind) -> Rect {
-        self.building_row(kind)[ACCENT]
     }
 
     fn building_action_row(&self, kind: BuildingKind, tier: u8, frame: usize) -> &[Rect; 2] {

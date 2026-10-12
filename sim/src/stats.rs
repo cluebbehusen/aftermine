@@ -349,6 +349,12 @@ impl UnitStats {
 }
 
 impl UnitStats {
+    /// Whether this kind can set down and park. Only an airframe that turns
+    /// as it flies lands; the rest hover.
+    pub const fn can_land(&self) -> bool {
+        self.turn_rate > 0
+    }
+
     /// Whether this kind carries any weapon at all.
     pub const fn can_fight(&self) -> bool {
         !self.weapons.is_empty() || self.demolition.is_some()
@@ -1669,7 +1675,7 @@ impl BuildingKind {
                 "Produces scrap continuously without workers. Upgrade to a Refinery for higher output."
             }
             BuildingKind::RepairBay => {
-                "Repairs nearby friendly units and completed buildings using scrap. Cannot repair itself."
+                "Repairs up to four nearby friendly machines at a time, fast once they are out of combat, and completed buildings slowly, using scrap. Condors must land to be repaired. Cannot repair itself."
             }
             BuildingKind::Extractor => {
                 "Rebuild on a derelict mining frame to generate scrap. A nearby own Foundry increases output. Upgrade to a Deep Bore for triple output."
@@ -1911,10 +1917,19 @@ pub const SALVAGE_REFUND_PERMILLE: u64 = 800;
 /// healed defense is firing from outside it.
 pub const REPAIR_BAY_RADIUS: Fx = Fx::lit("4.0");
 
-/// Ticks between Repair Bay aura pulses. With [`REPAIR_BAY_STEP`] this sets
-/// the per-patient sustain rate, well below one Turret's damage rate, so an
-/// aura never out-heals focused fire; its value is breadth.
+/// Ticks between Repair Bay aura pulses.
 pub const REPAIR_BAY_PERIOD: u64 = 8;
+
+/// Machines one Repair Bay services at once, most wounded first.
+pub const REPAIR_BAY_PATIENTS: usize = 4;
+
+/// Ticks a machine must go undamaged before a Repair Bay heals it fast.
+pub const REPAIR_BAY_CALM_TICKS: u64 = 60;
+
+/// Per mille of max hp per second a Repair Bay restores to a machine that
+/// has gone [`REPAIR_BAY_CALM_TICKS`] undamaged: half a Breaker back in
+/// about 20 s. Never slower than [`REPAIR_BAY_STEP`] per pulse.
+pub const REPAIR_BAY_FAST_PERMILLE_PER_SECOND: u64 = 30;
 
 /// Reach of the Crucible's smelter, in tiles from the nearest point of its
 /// footprint.
@@ -1924,7 +1939,9 @@ pub const CRUCIBLE_SMELT_RADIUS: Fx = Fx::lit("6.0");
 /// scrap. The rate stays below a dedicated harvester working the same field.
 pub const CRUCIBLE_SMELT_PERIOD: u64 = 40;
 
-/// Hp each aura pulse offers each patient in the ring.
+/// Hp each aura pulse offers a patient under fire, and each damaged
+/// structure in the ring: well below one Turret's damage rate, so an aura
+/// never out-heals focused fire.
 pub const REPAIR_BAY_STEP: u32 = 1;
 
 /// Welding ramp for Foundry repair, used instead of its build time.

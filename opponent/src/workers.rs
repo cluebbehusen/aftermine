@@ -31,8 +31,9 @@ const WELD_CLEARANCE: i32 = 12;
 /// Empty tiles from an own Foundry inside which a worker counts as home.
 const HOME_TILES: i32 = 8;
 
-/// Per mille of its health a unit must miss before workers weld it.
-const UNIT_WELD_DAMAGE: u64 = 100;
+/// Per mille of its health a unit must miss before workers weld it or it
+/// goes to a Repair Bay.
+pub(crate) const UNIT_WELD_DAMAGE: u64 = 100;
 
 /// Scrap of missing health among wounded units one welder answers for at
 /// middling support: how many welders the seat sends follows from need.
@@ -410,7 +411,7 @@ fn weld(
 
 /// Whether no armed enemy in sight stands within the weld clearance of the
 /// footprint at `anchor` and no known enemy weapon reaches `centre`.
-fn calm(
+pub(crate) fn calm(
     observation: &ObservationData,
     hazards: &[Hazard],
     anchor: TilePos,

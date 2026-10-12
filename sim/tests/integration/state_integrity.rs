@@ -285,10 +285,14 @@ fn well_formed_additions_are_accepted() {
         0,
         4_294_967_296,
     ));
+    // A remembered Bulwark holds more than a Turret's base hit points.
+    let mut bulwark = ghost(1, 14, 5);
+    bulwark["tier"] = json!(2);
+    bulwark["hp"] = json!(900);
     base["vision"][0]["ghosts"]
         .as_array_mut()
         .unwrap()
-        .push(ghost(1, 12, 5));
+        .extend([ghost(1, 12, 5), bulwark]);
     for view in base["vision"].as_array_mut().unwrap() {
         for track in view["tracking"]["tracks"].as_array_mut().unwrap() {
             for sample in track["history"].as_array_mut().unwrap() {
@@ -397,11 +401,14 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::UnitPartMismatch(_) => 51,
         E::InvalidWorkEndpoint(_) => 56,
         E::InvalidDangerRetry(_) => 55,
-        E::PointDefenseOutOfRange(_) => 79,
+        E::GhostTierBeyondLadder(_) => 79,
+        E::GhostHpOutOfRange(_) => 80,
+        E::DamageStampInTheFuture(_) => 81,
+        E::PointDefenseOutOfRange(_) => 82,
     }
 }
 
-const ROWS: usize = 80;
+const ROWS: usize = 83;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -493,6 +500,9 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::ScrapBeyondCapacity(UnitId(0)),
         E::InvalidStallTicks(UnitId(0)),
         E::InvalidLeashClock(UnitId(0)),
+        E::GhostTierBeyondLadder(PlayerId(0)),
+        E::GhostHpOutOfRange(PlayerId(0)),
+        E::DamageStampInTheFuture(UnitId(0)),
         E::PointDefenseOutOfRange(UnitId(0)),
     ]
 }
@@ -929,6 +939,11 @@ fn every_checklist_row_refuses_its_forgery() {
             "a danger retry no failed search could schedule",
             |d| d["units"][0]["worker"]["danger_retry_at"] = json!(u64::MAX),
             "unit u0 carries an invalid danger retry",
+        ),
+        (
+            "a unit damaged at the tick that has yet to run",
+            |d| d["units"][0]["damaged_at"] = d["tick"].clone(),
+            "unit u0 was damaged at a tick that has not happened",
         ),
         (
             "harvest gear on a machine that never harvests",
@@ -1371,6 +1386,33 @@ fn every_checklist_row_refuses_its_forgery() {
             "a memory anchored at the far end of the coordinate space",
             |d| d["vision"][0]["ghosts"] = json!([ghost(1, i32::MAX, 5)]),
             "player p0 remembers a building outside the envelope",
+        ),
+        (
+            "a memory of a tier past its kind's ladder",
+            |d| {
+                let mut memory = ghost(1, 12, 5);
+                memory["tier"] = json!(3);
+                d["vision"][0]["ghosts"] = json!([memory]);
+            },
+            "player p0 remembers a building at a tier its ladder does not reach",
+        ),
+        (
+            "a memory with more hit points than its tier holds",
+            |d| {
+                let mut memory = ghost(1, 12, 5);
+                memory["hp"] = json!(351);
+                d["vision"][0]["ghosts"] = json!([memory]);
+            },
+            "player p0 remembers a building with impossible hit points",
+        ),
+        (
+            "a memory with no hit points",
+            |d| {
+                let mut memory = ghost(1, 12, 5);
+                memory["hp"] = json!(0);
+                d["vision"][0]["ghosts"] = json!([memory]);
+            },
+            "player p0 remembers a building with impossible hit points",
         ),
         (
             "memories out of canonical order",

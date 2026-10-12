@@ -294,8 +294,11 @@ Units take picking priority over buildings, as with single clicks.
 Selection panels and tooltips derive their facts from simulation accessors.
 Static capabilities may be shown for foreign selections; current enemy orders,
 loads, and building income remain private. Placement and support previews use
-authoritative queries rather than duplicating game rules. Unknown concealed
-mines cannot alter player-visible picking or placement feedback.
+authoritative queries rather than duplicating game rules. Each own Repair Bay
+draws a tether to every machine `State::repair_bay_patients` picks, solid at the
+fast rate and dotted at the slow rate, and a selected Bay shows one pip per
+patient slot. Unknown concealed mines cannot alter player-visible picking or
+placement feedback.
 
 A unit panel offers only the verbs its selection can use: Run and Hunt need a
 unit that can fight, while Patrol stays for unarmed scouts. Stop is not a card.
@@ -765,10 +768,11 @@ Resource summaries use world-anchored cells and follow the transition slightly
 later. Each cell averages its tiles' visibility and the same bounded memory-age
 fade as world salvage. Marker visibility shares player exploration, known
 claims, apparent buildings, and remembered salvage with world rendering. Ghosts
-remain distinct from live observations. A public enemy Deep Bore out of sight
-draws above the fog as corner brackets and a drill glyph in its owner's color,
-and as an outlined footprint on the minimap. Markers do not change entity
-positions, selection, picking, or simulation.
+remain distinct from live observations and draw at the tier they were last seen
+at, or at a public building's tier when every seat knows it. A public enemy Deep
+Bore out of sight draws above the fog as corner brackets and a drill glyph in
+its owner's color, and as an outlined footprint on the minimap. Markers do not
+change entity positions, selection, picking, or simulation.
 
 Settings persists marker timing presets (Standard, Earlier, Later) and size in
 `Config::markers`, applying changes immediately. A config without marker

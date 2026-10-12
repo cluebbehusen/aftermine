@@ -865,6 +865,63 @@ fn an_upgraded_building_is_worth_every_tier_it_paid_for() {
 }
 
 #[test]
+fn a_bulwark_out_of_sight_is_valued_and_feared_as_a_bulwark() {
+    let mut scenario = field();
+    scenario.units.push(unit(0, UnitKind::Kestrel, 20, 11));
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Turret,
+        x: 22,
+        y: 11,
+    });
+    let state = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&state).unwrap();
+    for building in value["buildings"].as_array_mut().unwrap() {
+        if building["kind"] == "turret" {
+            building["tier"] = 2.into();
+            building["hp"] = BuildingKind::Turret.tier_stats(2).max_hp.into();
+        }
+    }
+    let mut state: State = serde_json::from_value(value).unwrap();
+    let scout = state.units()[0].id;
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Run {
+            units: vec![scout],
+            goal: TilePos::new(4, 4),
+            queue: false,
+        },
+    }]);
+    let turret = TilePos::new(22, 11);
+    while state.can_see(PlayerId(0), turret) {
+        state.tick(&[]);
+    }
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let bulwark = &observation.enemy_buildings[0];
+    assert!(!bulwark.seen, "premise: only memory remains");
+    assert_eq!(
+        crate::missions::building_value(bulwark),
+        [100, 150, 300].iter().sum::<u64>(),
+        "worth every tier it was seen to have"
+    );
+    // Nine tiles out: clear of a Turret's hazard, inside a Bulwark's.
+    let beyond = crate::frame::doubled(TilePos::new(22, 20));
+    let memory = crate::memory::Memory::default();
+    let model = map(&scenario);
+    assert!(
+        crate::missions::hazards(
+            &observation,
+            &model,
+            &memory,
+            oxide_sim::stats::Domain::Ground,
+        )
+        .iter()
+        .any(|hazard| hazard.covers(beyond)),
+        "it reaches as far as a Bulwark"
+    );
+}
+
+#[test]
 fn a_gun_in_sight_shelling_the_base_is_attacked() {
     for config in [
         config(),

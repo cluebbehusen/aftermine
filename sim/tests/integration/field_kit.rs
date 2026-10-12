@@ -80,6 +80,9 @@ fn hidden_charge_reports_damage_to_its_victim_for_lethal_and_nonlethal_blasts() 
                 .max_hp
                 .saturating_sub(oxide_sim::stats::CHARGE_DAMAGE)
         );
+        if let Some(survivor) = state.unit(victim) {
+            assert_eq!(survivor.damaged_at, Some(0), "the blast stamps its tick");
+        }
         assert!(state.building(charge).is_none());
         assert!(
             !state

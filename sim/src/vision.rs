@@ -78,6 +78,9 @@ pub struct GhostBuilding {
         skip_serializing_if = "core::clone::Clone::clone"
     )]
     pub built: bool,
+    /// Upgrade tier as last seen.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub tier: u8,
 }
 
 fn ghost_built_default() -> bool {
@@ -512,7 +515,7 @@ impl GroundSalvageDanger {
             .iter()
             .filter(|ghost| ghost.built)
             .filter_map(|ghost| {
-                let range = ground_weapon_reach(ghost.kind.base_stats().weapons)?
+                let range = ground_weapon_reach(ghost.kind.tier_stats(ghost.tier).weapons)?
                     + crate::stats::HARVEST_STATIC_DANGER_MARGIN;
                 Some(StaticGroundPressure {
                     anchor: ghost.anchor,
@@ -1284,6 +1287,7 @@ pub(crate) fn refresh(state: &mut State) {
                     anchor: building.anchor,
                     hp: building.hp,
                     built: building.built(),
+                    tier: building.tier,
                 });
             }
         }

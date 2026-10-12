@@ -50,6 +50,36 @@ pub(crate) struct SelectionInfo {
 }
 
 impl SelectionInfo {
+    fn repair_bay_rows(&mut self) {
+        self.row(
+            "Repair radius",
+            format!("{:.1} tiles", REPAIR_BAY_RADIUS.to_num::<f32>()),
+            Some(StatIcon::Capability(CapabilityIcon::Repair)),
+        );
+        self.row(
+            "Patients",
+            oxide_sim::stats::REPAIR_BAY_PATIENTS.to_string(),
+            None,
+        );
+        self.row(
+            "Repair rate",
+            format!(
+                "{:.0}% hp/s",
+                oxide_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0
+            ),
+            None,
+        );
+        self.row(
+            "Under fire",
+            format!(
+                "{:.1} hp/s",
+                REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
+                    / REPAIR_BAY_PERIOD as f32
+            ),
+            None,
+        );
+    }
+
     fn row(&mut self, label: &str, value: String, icon: Option<StatIcon>) {
         self.rows.push(StatRow {
             label: label.into(),
@@ -239,22 +269,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                     Some(Cap(CapabilityIcon::Radar)),
                 );
             }
-            BuildingKind::RepairBay => {
-                info.row(
-                    "Repair radius",
-                    format!("{:.1} tiles", REPAIR_BAY_RADIUS.to_num::<f32>()),
-                    Some(Cap(CapabilityIcon::Repair)),
-                );
-                info.row(
-                    "Repair rate",
-                    format!(
-                        "{:.1} hp/s",
-                        REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
-                            / REPAIR_BAY_PERIOD as f32
-                    ),
-                    None,
-                );
-            }
+            BuildingKind::RepairBay => info.repair_bay_rows(),
             BuildingKind::Crucible => info.row(
                 "Smelt reach",
                 format!("{:.1} tiles", CRUCIBLE_SMELT_RADIUS.to_num::<f32>()),

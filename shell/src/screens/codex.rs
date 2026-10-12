@@ -358,7 +358,10 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
     let mut notes = building_economy_lines(kind);
     if kind == BuildingKind::RepairBay {
         notes.push(format!(
-            "Repairs each nearby target at {:.1} hp/s.",
+            "Repairs its {} most damaged machines nearby at {:.0}% of max hp per second once they have been out of combat for {:.0} s, or {:.1} hp/s under fire. Buildings repair at the slower rate.",
+            oxide_sim::stats::REPAIR_BAY_PATIENTS,
+            oxide_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0,
+            oxide_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / oxide_sim::TICKS_PER_SECOND as f32,
             oxide_sim::stats::REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
                 / oxide_sim::stats::REPAIR_BAY_PERIOD as f32
         ));

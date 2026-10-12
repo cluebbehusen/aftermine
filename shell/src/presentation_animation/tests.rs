@@ -730,6 +730,7 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
             UnitKind::Harvester.stats().radius,
         ),
         hp: UnitKind::Harvester.stats().max_hp,
+        damaged_at: None,
         worker: Some(oxide_sim::Worker::default()),
         cooldowns: [0; MAX_WEAPONS],
         turret_heading: None,
