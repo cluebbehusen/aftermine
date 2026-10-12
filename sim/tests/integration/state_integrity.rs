@@ -301,12 +301,8 @@ fn well_formed_additions_are_accepted() {
         }
     }
     base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
-    let (harvester, bombard) = (
-        base["units"][0]["id"].clone(),
-        base["units"][1]["id"].clone(),
-    );
+    let bombard = base["units"][1]["id"].clone();
     base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
-    base["units"][1]["order"] = json!({"order": "accompany", "unit": harvester});
     let owner = base["buildings"][0]["player"].clone();
     let own = base["units"]
         .as_array()
@@ -997,6 +993,16 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({"order": "accompany", "unit": enemy});
             },
             "unit u0 has an invalid escort duty",
+        ),
+        (
+            "an escort loop closed through a queued order",
+            |d| {
+                let (harvester, bombard) =
+                    (d["units"][0]["id"].clone(), d["units"][1]["id"].clone());
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": bombard});
+                d["units"][1]["queue"] = json!([{"order": "accompany", "unit": harvester}]);
+            },
+            "has an invalid escort duty",
         ),
         (
             "escort duty around itself",

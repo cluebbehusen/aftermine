@@ -248,6 +248,69 @@ fn an_escort_shelled_from_beyond_its_engage_radius_holds_its_slot() {
 }
 
 #[test]
+fn a_long_gun_escort_fires_at_its_full_reach_without_leaving_its_slot() {
+    // An enemy eight tiles from the escorted unit is past the engage radius,
+    // but inside a Bombard's reach from its slot; a scout spots for it.
+    let mut state = build(
+        vec![
+            unit(0, UnitKind::Harvester, 10, 10),
+            unit(0, UnitKind::Bombard, 11, 10),
+            unit(1, UnitKind::Sentinel, 18, 10),
+            unit(0, UnitKind::Kestrel, 16, 8),
+        ],
+        0,
+    );
+    let [lead, gun, target, _scout] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![gun], lead, false))]);
+    run_until(&mut state, 300, |s, _| fighting_for(s, gun, lead));
+    let stand = state.unit(gun).unwrap().pos;
+    let full = UnitKind::Sentinel.stats().max_hp;
+    run_until(&mut state, 600, |s, _| {
+        assert!(
+            s.unit(gun).unwrap().pos.dist_sq(stand) <= Fx::lit("0.25"),
+            "it fights from where it stands"
+        );
+        s.unit(target).is_none_or(|t| t.hp < full)
+    });
+}
+
+#[test]
+fn an_escort_passes_over_an_aircraft_it_could_shoot_only_from_a_sealed_stand() {
+    // An enemy scout hovers over rock five tiles from the escorted unit. The
+    // only ground within a Sentinel's anti-air reach of it is a pocket sealed
+    // in the rock, so a chase could only stall and be picked again.
+    let mut state = common::open_arena_with(
+        40,
+        20,
+        vec![
+            unit(0, UnitKind::Harvester, 10, 10),
+            unit(0, UnitKind::Sentinel, 9, 10),
+            unit(1, UnitKind::Kestrel, 15, 10),
+        ],
+        |rows| {
+            for row in rows.iter_mut().take(15).skip(6) {
+                for cell in row.iter_mut().take(19).skip(12) {
+                    *cell = '#';
+                }
+            }
+            rows[10][16] = '.';
+        },
+    )
+    .build()
+    .unwrap();
+    let [lead, guard, _scout] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    for _ in 0..100 {
+        state.tick(&[]);
+        assert!(escorting(&state, guard, lead), "no fight is ever picked");
+    }
+}
+
+#[test]
 fn a_talon_escort_rises_only_against_aircraft() {
     let duty = |threat: UnitKind| {
         let mut state = build(

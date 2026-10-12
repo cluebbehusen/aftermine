@@ -1130,7 +1130,7 @@ fn followed_from(state: &State, from: UnitId) -> Vec<UnitId> {
             continue;
         };
         for order in std::iter::once(&unit.order).chain(&unit.queue) {
-            if let Some(escorted) = super::brain::escort::escorted_by(order)
+            if let Some(escorted) = order.escorted()
                 && seen.insert(escorted)
             {
                 frontier.push(escorted);

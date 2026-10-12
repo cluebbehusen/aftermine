@@ -194,22 +194,26 @@ its earliest Foundry stands on, then seat parity, so slots never reshuffle as
 the party moves and mirrored seats take mirrored slots. Escorts move at their
 own top speed and replan only once their slot drifts more than a tile from their
 route's end; nothing couples the escorted unit's speed to theirs. An armed
-escort picks the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
+escort chases the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
 and its own aggro range, passing over any victim it can neither shoot from where
-it stands nor reach, and fights it as an `Attack` that resumes escort duty. That
-fight, firing included, ends once the victim strays past the wider
-`ESCORT_BREAK_RADIUS` of the escorted unit; a stalled chase returns to duty
-without a stall report, and escorts answer fire only from within the engage
-radius. Weapon masks give each kind its role: a fighter escort rises only
-against aircraft. While the escorted unit stood still at the start of the brain
-phase, a welder escort mends the most urgent wounded ground member of the party,
-the escorted unit first, through the ordinary field weld. Its torch target lives
-in the order and owns the billing meter; an empty bank only pauses it. An
-escorted unit aboard a transport is followed through its carrier. When it leaves
-play, each escort drops the order without rotating a patrol and takes its next
-queued order or idles where it stands. Dispatch refuses any escort the target
-already follows, directly or through other escorts in any program, so escort
-chains are loop-free.
+it stands nor reach, including one over unstandable ground whose firing stands
+are all out of reach. Failing that, it fires without moving at an enemy already
+in its own weapon reach, so a long gun escorts at full range from its slot.
+Either fight is an `Attack` that resumes escort duty. It ends once the victim is
+past the wider `ESCORT_BREAK_RADIUS` of the escorted unit and out of the
+escort's own reach, or once the escort itself is left past that radius; a
+stalled chase returns to duty without a stall report. Escorts answer fire from
+within the engage radius or from anything their own guns reach. Weapon masks
+give each kind its role: a fighter escort rises only against aircraft. While the
+escorted unit stood still at the start of the brain phase, a welder escort mends
+the most urgent wounded ground member of the party, the escorted unit first,
+through the ordinary field weld. Its torch target lives in the order and owns
+the billing meter; an empty bank only pauses it. An escorted unit aboard a
+transport is followed through its carrier. When it leaves play, each escort
+drops the order without rotating a patrol and takes its next queued order or
+idles where it stands. Dispatch refuses any escort the target already follows,
+directly or through other escorts in any program, so escort chains are
+loop-free; the validator refuses a state holding a loop.
 
 `Run`, `Hunt`, `Advance`, and `Unload`, and the march an `Attack` resumes, carry
 a `Goal`: the clicked tile, the spread slot the unit aims for around it, and an

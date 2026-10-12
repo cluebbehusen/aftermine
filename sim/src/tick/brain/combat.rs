@@ -791,11 +791,13 @@ pub(super) fn acquire_target_from(
     acquire_target_within(state, index, id, pos, None, |_| true)
 }
 
-/// An escort's pick: the threat nearest the followed body at `center`,
-/// within [`crate::stats::ESCORT_ENGAGE_RADIUS`] of it and the escort's own
-/// aggro range. A victim the escort can neither shoot from where it stands
-/// nor walk up to is passed over, or the escort would pick a chase it can
-/// only stall, return to its slot, and pick it again every tick.
+/// An escort's pick. It chases the threat nearest the followed body at
+/// `center`, within [`crate::stats::ESCORT_ENGAGE_RADIUS`] of it and the
+/// escort's own aggro range, passing over a victim it can neither shoot from
+/// where it stands nor reach: that chase could only stall, return to the
+/// slot, and pick the victim again every tick. Failing that, it fires
+/// without moving at an enemy already in its own weapon reach, so a long gun
+/// escorts at full range from its slot.
 pub(super) fn acquire_escort_target(
     state: &State,
     index: &super::super::spatial::UnitIndex,
@@ -805,24 +807,29 @@ pub(super) fn acquire_escort_target(
 ) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
     let (kind, pos, domain) = (unit.kind, unit.pos, unit.kind.stats().domain);
+    let in_reach_now = |target: Target| in_weapon_reach_from(state, kind, pos, target);
     let cap = Some(crate::stats::ESCORT_ENGAGE_RADIUS);
-    acquire_target_within(state, index, id, center, cap, |target| {
-        let victim = target_domain(state, target);
-        let in_reach_now = kind.stats().weapons.iter().any(|weapon| {
-            weapon.targets.covers(victim) && {
-                let aim = match target {
-                    Target::Unit(u) => state.unit(u).map(|u| u.pos),
-                    Target::Building(b) => state.building(b).map(|b| b.closest_point_to(pos)),
-                };
-                aim.is_some_and(|aim| {
-                    within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim))
-                })
-            }
-        });
-        in_reach_now
+    let near = acquire_target_within(state, index, id, center, cap, |target| {
+        in_reach_now(target)
             || match target {
-                Target::Unit(u) => state.unit(u).is_some_and(|u| {
-                    !state.passable_for(domain, u.tile()) || reach.reaches(state, id, [u.tile()])
+                Target::Unit(u) => state.unit(u).is_some_and(|victim| {
+                    let tile = victim.tile();
+                    if state.passable_for(domain, tile) {
+                        return reach.reaches(state, id, [tile]);
+                    }
+                    // A victim over ground the escort cannot stand on is a
+                    // fight only if a firing stand around it can be reached.
+                    let Some(weapon) = kind
+                        .stats()
+                        .weapons
+                        .iter()
+                        .find(|weapon| weapon.targets.covers(victim.domain()))
+                    else {
+                        return false;
+                    };
+                    let range = unit_weapon_reach(state, kind, target, weapon);
+                    let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
+                    reach.reaches(state, id, stands)
                 }),
                 Target::Building(b) => state.building(b).is_some_and(|b| {
                     let (w, h) = b.kind.size();
@@ -830,6 +837,23 @@ pub(super) fn acquire_escort_target(
                     reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)))
                 }),
             }
+    });
+    near.or_else(|| acquire_target_within(state, index, id, pos, None, in_reach_now))
+}
+
+/// Whether a `kind` machine standing at `pos` has a weapon that reaches
+/// `target` now.
+fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, target: Target) -> bool {
+    let victim = target_domain(state, target);
+    let aim = match target {
+        Target::Unit(u) => state.unit(u).map(|u| u.pos),
+        Target::Building(b) => state.building(b).map(|b| b.closest_point_to(pos)),
+    };
+    aim.is_some_and(|aim| {
+        kind.stats().weapons.iter().any(|weapon| {
+            weapon.targets.covers(victim)
+                && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim))
+        })
     })
 }
 
@@ -2032,8 +2056,9 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     let resume = match unit.order {
         Order::Idle => None,
         Order::Hunt { goal } => Some(Resume::Hunt(goal)),
-        // An escort answers only fire from near the unit it guards; a shooter
-        // past that would draw it away only to be broken off at once.
+        // An escort answers fire from near the unit it guards, or from
+        // anything its own guns reach where it stands; a shooter past both
+        // would draw it away only to be broken off at once.
         Order::Accompany { unit: escorted, .. } => {
             let near = state.escorted(escorted).is_some_and(|body| {
                 let from = match attacker {
@@ -2047,7 +2072,7 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
                         <= crate::stats::ESCORT_ENGAGE_RADIUS * crate::stats::ESCORT_ENGAGE_RADIUS
                 })
             });
-            if !near {
+            if !near && !in_weapon_reach_from(state, unit.kind, unit.pos, attacker) {
                 return;
             }
             Some(Resume::Accompany(escorted))
