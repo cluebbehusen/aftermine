@@ -2,6 +2,7 @@
 //! each decision reads who is wounded, where the Bays stand and how many
 //! patients each already serves.
 
+use super::air::Hazard;
 use super::lift::{fly_to, open, route_orders};
 use super::{Missions, Scratch, mine, run};
 use crate::decision::Ledger;
@@ -12,7 +13,7 @@ use crate::workers::{UNIT_WELD_DAMAGE, calm, worker};
 use chassis::grid::TilePos;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::stats::{Domain, REPAIR_BAY_PATIENTS};
-use oxide_sim::{BuildingKind, UnitId};
+use oxide_sim::{BuildingKind, UnitId, UnitKind};
 use std::cmp::Reverse;
 
 impl Missions {
@@ -43,19 +44,16 @@ impl Missions {
         if bays.is_empty() {
             return;
         }
-        let calm_for = |bay: &BuildingObs, domain: Domain| {
-            let hazards = if domain == Domain::Ground {
-                &scratch.ground
-            } else {
-                &scratch.air
-            };
-            calm(
-                observation,
-                hazards,
-                bay.anchor,
-                size,
-                footprint_centre(BuildingKind::RepairBay, bay.anchor),
-            )
+        // A unit that heals on the ground must be safe from ground fire there,
+        // and one that flies in from fire against aircraft; a Condor needs
+        // both.
+        let calm_for = |bay: &BuildingObs, kind: UnitKind| {
+            let stats = kind.stats();
+            let centre = footprint_centre(BuildingKind::RepairBay, bay.anchor);
+            let clear = |hazards: &[Hazard]| calm(observation, hazards, bay.anchor, size, centre);
+            let rests = stats.domain == Domain::Ground || stats.can_land();
+            let flies = stats.domain == Domain::Air;
+            (!rests || clear(&scratch.ground)) && (!flies || clear(&scratch.air))
         };
         // Every own body a Bay treats where it stands takes one of that Bay's
         // slots, whoever commands it.
@@ -84,10 +82,12 @@ impl Missions {
                 unit.id,
             )
         });
-        let mut groups: Vec<(usize, Domain, Vec<&UnitObs>)> = Vec::new();
+        // Units share an order when they head for the same Bay the same way:
+        // aircraft by the detour around known anti-air from where each is.
+        let mut groups: Vec<(usize, Domain, Option<TilePos>, Vec<&UnitObs>)> = Vec::new();
         for (_, unit) in wounded {
             let domain = unit.kind.stats().domain;
-            if treated_by(unit).is_some_and(|index| calm_for(bays[index], domain)) {
+            if treated_by(unit).is_some_and(|index| calm_for(bays[index], unit.kind)) {
                 ledger.dock(unit.id);
                 continue;
             }
@@ -96,7 +96,7 @@ impl Missions {
             }
             let ground = map.component(unit.tile);
             let Some(index) = (0..bays.len())
-                .filter(|index| room[*index] > 0 && calm_for(bays[*index], domain))
+                .filter(|index| room[*index] > 0 && calm_for(bays[*index], unit.kind))
                 .filter(|index| {
                     domain == Domain::Air || map.component(bays[*index].anchor) == ground
                 })
@@ -110,15 +110,26 @@ impl Missions {
                 continue;
             };
             room[index] -= 1;
+            let via = if domain == Domain::Air {
+                super::air::route(
+                    observation,
+                    frame,
+                    &scratch.air,
+                    unit.tile,
+                    bays[index].anchor,
+                )
+            } else {
+                None
+            };
             match groups
                 .iter_mut()
-                .find(|(bay, layer, _)| *bay == index && *layer == domain)
+                .find(|(bay, layer, way, _)| *bay == index && *layer == domain && *way == via)
             {
-                Some((_, _, units)) => units.push(unit),
-                None => groups.push((index, domain, vec![unit])),
+                Some((_, _, _, units)) => units.push(unit),
+                None => groups.push((index, domain, via, vec![unit])),
             }
         }
-        for (index, domain, units) in groups {
+        for (index, domain, via, units) in groups {
             let bay = bays[index];
             let lead = units[0].tile;
             let mut ids: Vec<UnitId> = units.iter().map(|unit| unit.id).collect();
@@ -131,12 +142,10 @@ impl Missions {
                     return;
                 }
             } else {
-                let goal = bay.anchor;
-                let via = super::air::route(observation, frame, &scratch.air, lead, goal);
                 if ledger.room() < route_orders(via) {
                     return;
                 }
-                fly_to(ids.clone(), via, goal, ledger);
+                fly_to(ids.clone(), via, bay.anchor, ledger);
             }
             for id in ids {
                 ledger.dock(id);

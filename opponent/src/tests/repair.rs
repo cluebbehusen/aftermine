@@ -260,3 +260,79 @@ fn a_full_bay_leaves_the_next_wounded_to_an_overlapping_one() {
         .collect();
     assert_eq!(sent, [ids[4]], "{commands:?}");
 }
+
+#[test]
+fn a_condor_keeps_off_a_bay_under_ground_fire_that_a_talon_may_use() {
+    let sent = |kind: UnitKind, hp: u32| {
+        let mut scenario = bay_arena();
+        // Fires on the ground only: a landed Condor is in its sights, a
+        // hovering Talon is not.
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Turret,
+            x: 13,
+            y: 9,
+        });
+        scenario.units.push(unit(0, kind, 15, 3));
+        let state = scenario.build().unwrap();
+        let (state, _) = hurt(&state, &[((15, 3), hp)]);
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        to_bay(&commands, BAY)
+    };
+    assert!(
+        !sent(UnitKind::Talon, 30).is_empty(),
+        "premise: the Talon goes"
+    );
+    assert!(sent(UnitKind::Condor, 100).is_empty());
+}
+
+#[test]
+fn each_aircraft_flies_to_a_bay_around_the_anti_air_on_its_own_way() {
+    let mut scenario = field();
+    for player in &mut scenario.players {
+        player.scrap = 1_000;
+    }
+    let anchor = (10, 11);
+    scenario.buildings.extend([
+        bay(0, anchor.0, anchor.1),
+        BuildingSpec {
+            player: 1,
+            kind: BuildingKind::FlakTurret,
+            x: 24,
+            y: 4,
+        },
+    ]);
+    // The more wounded Talon's straight way is clear; the other starts out
+    // of the Flak Turret's reach but its straight way crosses it. A Sentinel
+    // has the Turret in sight.
+    let (clear, crossing) = ((10, 3), (36, 5));
+    for (x, y) in [clear, crossing] {
+        scenario.units.push(unit(0, UnitKind::Talon, x, y));
+    }
+    scenario.units.push(unit(0, UnitKind::Sentinel, 28, 9));
+    let state = scenario.build().unwrap();
+    let (state, ids) = hurt(&state, &[(clear, 20), (crossing, 30)]);
+    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .enemy_buildings
+            .iter()
+            .any(|building| building.kind == BuildingKind::FlakTurret),
+        "premise: the Flak Turret is known"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let goal = TilePos::new(anchor.0, anchor.1);
+    let flights = runs(&commands);
+    let legs = |id: UnitId| -> Vec<TilePos> {
+        flights
+            .iter()
+            .filter(|(units, _)| units.contains(&id))
+            .map(|(_, to)| *to)
+            .collect()
+    };
+    assert_eq!(legs(ids[0]), [goal], "{commands:?}");
+    let detour = legs(ids[1]);
+    assert_eq!(detour.len(), 2, "{commands:?}");
+    assert_ne!(detour[0], goal, "the crossing Talon swings around first");
+    assert_eq!(detour[1], goal);
+}

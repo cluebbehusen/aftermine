@@ -66,17 +66,19 @@ Foundry on its ground.
 ## Repair Bays
 
 After defense, free wounded armed units go to a built Repair Bay with no armed
-enemy in sight near it and no known enemy fire reaching it. The bot counts each
-Bay's slots as the simulation fills them: Bays in building order, each taking up
-to four of the most wounded units in its reach that an earlier Bay did not take.
-A unit missing at least a tenth of its health that a calm Bay already treats
-stays there; an idle one goes to the nearest calm Bay with a free slot, most
-missing value first, ground units on the Bay's ground to the open tile beside it
-nearest them and aircraft over it, around known anti-air, where an idle Condor
-sets down on its own. Missions and welders leave those units alone for the rest
-of the decision, and since missions take only units at least half healthy, one
-badly hurt on its way is not drawn off before it arrives. The Bay bills its
-heals as income arrives, so no scrap is set aside for them.
+enemy in sight near it and no known enemy fire reaching it: fire against ground
+for units that heal on the ground, fire against aircraft for those that fly in,
+and both for a Condor. The bot counts each Bay's slots as the simulation fills
+them: Bays in building order, each taking up to four of the most wounded units
+in its reach that an earlier Bay did not take. A unit missing at least a tenth
+of its health that a calm Bay already treats stays there; an idle one goes to
+the nearest calm Bay with a free slot, most missing value first, ground units on
+the Bay's ground to the open tile beside it nearest them and aircraft over it,
+each around the known anti-air on its own way, where an idle Condor sets down on
+its own. Missions and welders leave those units alone for the rest of the
+decision, and since missions take only units at least half healthy, one badly
+hurt on its way is not drawn off before it arrives. The Bay bills its heals as
+income arrives, so no scrap is set aside for them.
 
 ## Defense
 
