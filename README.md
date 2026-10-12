@@ -203,7 +203,7 @@ The driver is the main inspection surface:
 
 ```sh
 cargo run -p oxide-driver -- --help
-cargo run -p oxide-driver -- run scenarios/skirmish.json --ticks 12000 --all-bots --map
+cargo run -p oxide-driver -- run scenarios/basalt-spine.json --ticks 12000 --all-bots --map
 cargo run -p oxide-driver -- bot-eval skirmish --difficulty prime --stance balanced --paired
 cargo run -p oxide-driver -- replay-summary replays/match.json --minimaps sparse
 cargo run -p oxide-driver -- smoke --spawn
