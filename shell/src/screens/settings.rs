@@ -64,12 +64,12 @@ pub struct Update {
 /// Every keyboard action is exposed, including contextual cards and navigation.
 fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
     use Action::{
-        AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm, CycleIdleWorker, DeleteSave,
-        HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd, MenuHome, MenuLeft, MenuPageDown,
-        MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft, PanRight, PanUp, Patrol, RecallBookmark,
-        RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed, ReplayStart,
-        ReplayStats, ReturnCargo, Run, Salvage, SetBookmark, SetRally, Slot, StopOrScrap,
-        ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
+        Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm, CycleIdleWorker,
+        DeleteSave, HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd, MenuHome, MenuLeft,
+        MenuPageDown, MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft, PanRight, PanUp, Patrol,
+        RecallBookmark, RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
+        ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, SetBookmark, SetRally, Slot,
+        StopOrScrap, ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
     };
     let mut sections = vec![
         (
@@ -91,6 +91,7 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
                 Run,
                 Hunt,
                 Patrol,
+                Accompany,
                 Salvage,
                 RepairUnit,
                 ReturnCargo,

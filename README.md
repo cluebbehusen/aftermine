@@ -71,6 +71,7 @@ shortcuts cover the core loop:
 | Shift + right click                      | Queue the contextual order.                                                                                               |
 | `F`, then ground                         | Hunt and engage along the route.                                                                                          |
 | `G`, then ground                         | Run without engaging.                                                                                                     |
+| `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.         |
 | `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                    |
 | `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                    |
 | `B`, then Q/E/R/T, then Q/E/R/T          | Choose a construction category, then a building.                                                                          |

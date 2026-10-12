@@ -147,6 +147,7 @@ pub(crate) fn breadcrumb_points(
         oxide_sim::Order::Board { .. }
         | oxide_sim::Order::Unload { .. }
         | oxide_sim::Order::Land { .. } => BONE_FAINT,
+        oxide_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
         oxide_sim::Order::Idle => BONE_FAINT,
     };
     // Building targets draw at their footprint's center, which lies on a
@@ -173,6 +174,11 @@ pub(crate) fn breadcrumb_points(
             oxide_sim::Order::RepairUnit { unit } => tile_center(game.state.unit(*unit)?.tile()),
             oxide_sim::Order::Board { transport } => {
                 tile_center(game.state.unit(*transport)?.tile())
+            }
+            // An escorted unit is own, so it is always seen, aboard a
+            // transport included.
+            oxide_sim::Order::Accompany { unit, .. } => {
+                tile_center(game.state.escorted(*unit)?.tile())
             }
             oxide_sim::Order::Unload { at, .. } => tile_center(at.tile()),
             // A landing that took over a walk marks the walk's click.

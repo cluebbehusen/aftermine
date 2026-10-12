@@ -67,11 +67,12 @@ enum CommandTag {
     ClearFocus,
     ReturnCargo,
     CancelOrder,
+    Accompany,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 24] = [
+const COMMAND_TAGS: [CommandTag; 25] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -96,6 +97,7 @@ const COMMAND_TAGS: [CommandTag; 24] = [
     CommandTag::ClearFocus,
     CommandTag::ReturnCargo,
     CommandTag::CancelOrder,
+    CommandTag::Accompany,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -136,6 +138,7 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::ClearFocus => 21,
         CommandTag::ReturnCargo => 22,
         CommandTag::CancelOrder => 23,
+        CommandTag::Accompany => 24,
     }
 }
 
@@ -166,6 +169,7 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::ClearFocus { .. } => CommandTag::ClearFocus,
         Command::ReturnCargo { .. } => CommandTag::ReturnCargo,
         Command::CancelOrder { .. } => CommandTag::CancelOrder,
+        Command::Accompany { .. } => CommandTag::Accompany,
     }
 }
 
@@ -555,6 +559,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             queue: queue(rng),
         },
         CommandTag::CancelOrder => cancel_order(rng, state),
+        CommandTag::Accompany => Command::Accompany {
+            units: units(rng, state),
+            target: unit_id(rng, state),
+            queue: queue(rng),
+        },
     }
 }
 
@@ -581,6 +590,8 @@ struct Reach {
     cancelled: u64,
     cancelled_found: u64,
     cancelled_order: u64,
+    /// Most units on escort duty at once.
+    escorts: usize,
 }
 
 impl Reach {
@@ -601,6 +612,7 @@ impl Reach {
         self.cancelled += other.cancelled;
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
+        self.escorts = self.escorts.max(other.escorts);
     }
 }
 
@@ -899,6 +911,13 @@ fn fuzz_run(seed: u64) -> Run {
                 .max()
                 .unwrap_or(0),
         );
+        reach.escorts = reach.escorts.max(
+            state
+                .units()
+                .iter()
+                .filter(|u| matches!(u.order, oxide_sim::Order::Accompany { .. }))
+                .count(),
+        );
         reach.train_queue = reach.train_queue.max(
             state
                 .buildings()
@@ -1032,6 +1051,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must land an order cancellation drawn from a real program"
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
+    assert!(
+        reach.escorts > 0,
+        "the sweep must put a unit on escort duty"
+    );
 }
 
 /// The forcing chain, stated as a test: the draw pool is the whole tag

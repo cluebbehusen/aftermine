@@ -25,6 +25,7 @@ pub(super) fn dispatch_action(
                 | Action::Hunt
                 | Action::Salvage
                 | Action::RepairUnit
+                | Action::Accompany
                 | Action::Unload
                 | Action::ReturnCargo
         )
@@ -283,6 +284,25 @@ pub(super) fn dispatch_action(
                 input.click_verb = Some(ClickVerb::Weld);
             } else {
                 game.presentation.toast("No welder in hand");
+            }
+        }
+        Action::Accompany => {
+            // A toggle, like weld: pressing again stands down.
+            if input.armed(ClickVerb::Accompany) {
+                input.click_verb = None;
+                return;
+            }
+            let has_own_unit = game.presentation.selection.units.iter().any(|id| {
+                game.state
+                    .unit(*id)
+                    .is_some_and(|u| u.player == game.presentation.human)
+            });
+            if has_own_unit {
+                input.disarm_click_verbs();
+                input.click_verb = Some(ClickVerb::Accompany);
+            } else {
+                game.presentation
+                    .toast("You can only command your own units");
             }
         }
         Action::Run => {

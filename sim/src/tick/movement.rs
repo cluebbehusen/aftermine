@@ -109,7 +109,11 @@ fn work_aim(state: &State, unit: &crate::state::Unit) -> Option<Vec2Fx> {
         Order::Repair { building } | Order::Salvage { building } => state
             .building(building)
             .map(|b| state.contact_surface(b).closest(unit.pos)),
-        Order::RepairUnit { unit: patient } => state.unit(patient).map(|u| u.pos),
+        Order::RepairUnit { unit: patient }
+        | Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state.unit(patient).map(|u| u.pos),
         _ => None,
     }
 }
@@ -660,6 +664,7 @@ fn is_anchored(unit: &crate::state::Unit) -> bool {
                     | Order::Build { .. }
                     | Order::Salvage { .. }
                     | Order::RepairUnit { .. }
+                    | Order::Accompany { weld: Some(_), .. }
                     | Order::ReturnCargo { .. }
             )
 }

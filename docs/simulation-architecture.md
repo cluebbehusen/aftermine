@@ -187,6 +187,30 @@ unit's station. `Harvest`, `Build`, `Found`, `Repair`, `RepairUnit`, and
 `Salvage` are persistent work programs lowered by unit behavior over later
 ticks.
 
+`Accompany` puts units on escort duty around one own unit. Each escort holds a
+slot of the open tiles ring-scanned around the escorted unit's tile, ranked in
+id order within its movement domain and framed per owner by the side of the map
+its earliest Foundry stands on, then seat parity, so slots never reshuffle as
+the party moves and mirrored seats take mirrored slots. Escorts move at their
+own top speed and replan only once their slot drifts more than a tile from their
+route's end; nothing couples the escorted unit's speed to theirs. An armed
+escort picks the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
+and its own aggro range, passing over any victim it can neither shoot from where
+it stands nor reach, and fights it as an `Attack` that resumes escort duty. That
+fight, firing included, ends once the victim strays past the wider
+`ESCORT_BREAK_RADIUS` of the escorted unit; a stalled chase returns to duty
+without a stall report, and escorts answer fire only from within the engage
+radius. Weapon masks give each kind its role: a fighter escort rises only
+against aircraft. While the escorted unit stood still at the start of the brain
+phase, a welder escort mends the most urgent wounded ground member of the party,
+the escorted unit first, through the ordinary field weld. Its torch target lives
+in the order and owns the billing meter; an empty bank only pauses it. An
+escorted unit aboard a transport is followed through its carrier. When it leaves
+play, each escort drops the order without rotating a patrol and takes its next
+queued order or idles where it stands. Dispatch refuses any escort the target
+already follows, directly or through other escorts in any program, so escort
+chains are loop-free.
+
 `Run`, `Hunt`, `Advance`, and `Unload`, and the march an `Attack` resumes, carry
 a `Goal`: the clicked tile, the spread slot the unit aims for around it, and an
 optional endpoint. A tile goal must lie on the map, and an off-map one is
@@ -780,6 +804,7 @@ map rather than an exhaustive test inventory.
 | Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
 | Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
+| Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

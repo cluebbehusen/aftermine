@@ -134,6 +134,7 @@ pub(super) fn run(
     index.rebuild(&state.units);
     index.survey(state);
     let motion = MotionSnapshot::capture(state);
+    let parties = escort::Parties::capture(state);
     let mut hits: Vec<PendingHit> = Vec::new();
     let mut builds: Vec<PendingHpGain> = Vec::new();
     let mut heals: Vec<PendingUnitHeal> = Vec::new();
@@ -267,6 +268,16 @@ pub(super) fn run(
                 logistics::unload(state, index, &mut reach, id, &mut logistics_pending, events);
             }
             Order::Land { goal, from } => land(state, index, id, goal, from, events),
+            Order::Accompany { unit, weld } => escort::accompany(
+                state,
+                index,
+                &mut reach,
+                &parties,
+                id,
+                unit,
+                weld,
+                &mut field_welds,
+            ),
         }
         if events[reported..]
             .iter()
@@ -294,6 +305,7 @@ mod combat;
 pub(in crate::tick) mod contact;
 mod economy;
 pub(super) use economy::return_cargo_destination;
+pub(super) mod escort;
 mod locomotion;
 pub(super) mod logistics;
 

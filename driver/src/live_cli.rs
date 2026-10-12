@@ -233,6 +233,21 @@ pub(crate) enum LiveCmd {
         #[arg(long)]
         queue: bool,
     },
+    /// Send units to escort an own unit: hold a slot around it, fight
+    /// threats near it, and weld its group whenever it stops.
+    Accompany {
+        /// Acting player index.
+        player: u8,
+        /// Escort unit ids, comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        units: Vec<u32>,
+        /// The escorted unit.
+        #[arg(long)]
+        target: u32,
+        /// Append behind current orders instead of replacing them.
+        #[arg(long)]
+        queue: bool,
+    },
     /// Send harvesters to strip an own built building for a partial
     /// refund (Foundries refuse; sites keep Cancel).
     Salvage {
@@ -604,6 +619,19 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
         } => Request::SendCommand {
             player: PlayerId(player),
             command: Command::RepairUnit {
+                units: units(ids),
+                target: UnitId(target),
+                queue,
+            },
+        },
+        LiveCmd::Accompany {
+            player,
+            units: ids,
+            target,
+            queue,
+        } => Request::SendCommand {
+            player: PlayerId(player),
+            command: Command::Accompany {
                 units: units(ids),
                 target: UnitId(target),
                 queue,

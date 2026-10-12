@@ -304,7 +304,10 @@ impl UnitAnimationFacts {
                 Order::Repair { building } | Order::Salvage { building } => {
                     Some(WorkTarget::Building(building))
                 }
-                Order::RepairUnit { unit } => Some(WorkTarget::Unit(unit)),
+                Order::RepairUnit { unit }
+                | Order::Accompany {
+                    weld: Some(unit), ..
+                } => Some(WorkTarget::Unit(unit)),
                 _ => None,
             }
         };
@@ -1134,7 +1137,11 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
                 && state.in_building_work_reach(unit, patient.id))
             .then_some(patient.center())
         }),
-        Order::RepairUnit { unit: patient } => state.unit(patient).and_then(|patient| {
+        Order::RepairUnit { unit: patient }
+        | Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state.unit(patient).and_then(|patient| {
             (patient.id != unit.id
                 && patient.player == unit.player
                 && patient.hp > 0

@@ -72,6 +72,8 @@ pub(crate) enum ArmedMode {
     Salvage,
     /// Weld a damaged own ground unit.
     Weld,
+    /// Escort an own unit.
+    Accompany,
     /// Move without engaging.
     Run,
     /// Fight and pursue along a route.
@@ -88,6 +90,7 @@ impl ArmedMode {
             Self::Rally => "Set rally".to_string(),
             Self::Salvage => "Salvage".to_string(),
             Self::Weld => "Weld".to_string(),
+            Self::Accompany => "Accompany".to_string(),
             Self::Run => "Run".to_string(),
             Self::Hunt => "Hunt".to_string(),
             Self::Patrol(0) => "Patrol".to_string(),
@@ -167,6 +170,9 @@ pub(crate) enum ClickVerb {
     /// The next left-click on a damaged own ground unit sends the
     /// selected harvesters to weld it.
     Weld,
+    /// The next left-click on an own unit sends the rest of the selection
+    /// to escort it.
+    Accompany,
     /// The next ground click sends the selection walking obliviously —
     /// no engaging, no auto-acquire en route.
     Run,
@@ -559,6 +565,7 @@ impl InputState {
                 self.click_verb.map(|verb| match verb {
                     ClickVerb::Salvage => ArmedMode::Salvage,
                     ClickVerb::Weld => ArmedMode::Weld,
+                    ClickVerb::Accompany => ArmedMode::Accompany,
                     ClickVerb::Run => ArmedMode::Run,
                     ClickVerb::Hunt => ArmedMode::Hunt,
                 })
@@ -1820,6 +1827,62 @@ fn armed_verb_click(
             });
             game.presentation
                 .ping_order(world, PingKind::Harvest, input.queue_held());
+            if !input.queue_held() {
+                input.click_verb = None;
+            }
+        }
+        return true;
+    }
+    if input.armed(ClickVerb::Accompany) {
+        // As in weld: the minimap jumps the camera, a misclick keeps the
+        // mode armed, and Shift queues the escort behind each program. The
+        // picked unit may be one of the selection; the rest escort it.
+        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
+            game.presentation.camera.center = world;
+            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+        } else if !click_on_hud(game, p) {
+            let world = game.presentation.camera.to_world(p);
+            let picked = game
+                .state
+                .units()
+                .iter()
+                .filter(|u| u.player == game.presentation.human && u.hp > 0)
+                .map(|u| {
+                    let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+                    (at.distance(world), u.id, u.kind)
+                })
+                .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            let Some((_, target, _)) = picked else {
+                game.presentation.toast("Accompany wants an own unit");
+                game.presentation
+                    .sounds_pending
+                    .push((crate::game::SoundKind::Denied, None));
+                return true;
+            };
+            let has_escort = game.presentation.selection.units.iter().any(|id| {
+                *id != target
+                    && game
+                        .state
+                        .unit(*id)
+                        .is_some_and(|u| u.player == game.presentation.human)
+            });
+            if !has_escort {
+                game.presentation
+                    .toast("Accompany needs another unit in hand");
+                game.presentation
+                    .sounds_pending
+                    .push((crate::game::SoundKind::Denied, None));
+                return true;
+            }
+            let units = game.presentation.selection.units.clone();
+            game.issue(Command::Accompany {
+                units,
+                target,
+                queue: input.queue_held(),
+            });
+            game.presentation
+                .ping_order(world, PingKind::Move, input.queue_held());
             if !input.queue_held() {
                 input.click_verb = None;
             }

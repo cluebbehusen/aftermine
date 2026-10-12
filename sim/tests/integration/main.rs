@@ -5,6 +5,7 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+mod accompany;
 mod aircraft_turning;
 mod bastion_acquisition;
 mod behavior_combat;

@@ -554,7 +554,9 @@ fn an_engagement_resumes_toward_the_same_slot() {
         unreachable!();
     };
     assert_eq!(
-        resume.map(|goal| (goal.tile(), goal.aim)),
+        resume
+            .and_then(|resume| resume.goal())
+            .map(|goal| (goal.tile(), goal.aim)),
         Some((click, march.aim))
     );
     run_until(&mut state, 600, |state, _| {
