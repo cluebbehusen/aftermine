@@ -274,6 +274,102 @@ fn a_long_gun_escort_fires_at_its_full_reach_without_leaving_its_slot() {
         );
         s.unit(target).is_none_or(|t| t.hp < full)
     });
+    // The escorted unit walks off mid-fight; the gun keeps up with it.
+    state.tick(&[cmd(0, run_to(vec![lead], 2, 10))]);
+    run_until(&mut state, 1_200, |s, _| {
+        s.unit(lead).unwrap().tile() == TilePos::new(2, 10) && apart(s, gun, lead) <= 2
+    });
+}
+
+#[test]
+fn a_long_gun_escort_left_behind_rejoins_before_firing_from_its_slot_again() {
+    // The Bombard trails its unit by thirteen tiles with an enemy in its own
+    // reach and nothing near the unit: it must catch up, not stand and pick
+    // the enemy again each tick only to be broken off.
+    let mut state = build(
+        vec![
+            unit(0, UnitKind::Harvester, 8, 10),
+            unit(0, UnitKind::Bombard, 21, 10),
+            unit(1, UnitKind::Harvester, 29, 10),
+            unit(0, UnitKind::Kestrel, 27, 10),
+        ],
+        0,
+    );
+    let [lead, gun, ..] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![gun], lead, false))]);
+    let engage = oxide_sim::stats::ESCORT_ENGAGE_RADIUS;
+    run_until(&mut state, 400, |s, _| {
+        let behind = s.unit(gun).unwrap().pos.dist_sq(s.unit(lead).unwrap().pos);
+        assert!(
+            behind <= engage * engage || !fighting_for(s, gun, lead),
+            "no fight from the slot while catching up"
+        );
+        apart(s, gun, lead) <= 2
+    });
+}
+
+#[test]
+fn an_escort_catching_up_does_not_answer_fire_from_beside_its_path() {
+    // A Turret far from the escorted unit shoots the trailing Lancer as it
+    // passes. The Lancer could answer from where it stands, but it is
+    // catching up, and the fight would be broken off at once.
+    let mut scenario = open_arena(
+        40,
+        20,
+        vec![
+            unit(0, UnitKind::Harvester, 8, 10),
+            unit(0, UnitKind::Lancer, 21, 10),
+        ],
+    );
+    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
+        player: 1,
+        kind: oxide_sim::stats::BuildingKind::Turret,
+        x: 21,
+        y: 6,
+    });
+    let mut state = scenario.build().unwrap();
+    let [lead, lancer] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![lancer], lead, false))]);
+    let (full, engage) = (
+        state.unit(lancer).unwrap().hp,
+        oxide_sim::stats::ESCORT_ENGAGE_RADIUS,
+    );
+    let mut hit = false;
+    run_until(&mut state, 400, |s, _| {
+        let (escort, body) = (s.unit(lancer).unwrap(), s.unit(lead).unwrap());
+        hit |= escort.hp < full;
+        let behind = escort.pos.dist_sq(body.pos);
+        assert!(
+            behind <= engage * engage || !fighting_for(s, lancer, lead),
+            "no answer while catching up"
+        );
+        behind <= engage * engage
+    });
+    assert!(hit, "premise: the Turret hit it");
+}
+
+#[test]
+fn an_escort_far_behind_closes_on_a_threat_near_its_unit() {
+    let mut state = build(
+        vec![
+            unit(0, UnitKind::Harvester, 8, 10),
+            unit(0, UnitKind::Sentinel, 30, 10),
+            unit(1, UnitKind::Harvester, 11, 10),
+        ],
+        0,
+    );
+    let [lead, guard, threat] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    let full = UnitKind::Harvester.stats().max_hp;
+    run_until(&mut state, 600, |s, _| {
+        s.unit(threat).is_none_or(|t| t.hp < full)
+    });
 }
 
 #[test]

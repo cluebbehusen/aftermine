@@ -795,9 +795,11 @@ pub(super) fn acquire_target_from(
 /// `center`, within [`crate::stats::ESCORT_ENGAGE_RADIUS`] of it and the
 /// escort's own aggro range, passing over a victim it can neither shoot from
 /// where it stands nor reach: that chase could only stall, return to the
-/// slot, and pick the victim again every tick. Failing that, it fires
-/// without moving at an enemy already in its own weapon reach, so a long gun
-/// escorts at full range from its slot.
+/// slot, and pick the victim again every tick. Failing that, an escort
+/// within the engage radius of the body fires without moving at an enemy
+/// already in its own weapon reach, so a long gun escorts at full range from
+/// its slot. Further out it is catching up: such a fight would be broken off
+/// at the break radius before it closed.
 pub(super) fn acquire_escort_target(
     state: &State,
     index: &super::super::spatial::UnitIndex,
@@ -838,7 +840,12 @@ pub(super) fn acquire_escort_target(
                 }),
             }
     });
-    near.or_else(|| acquire_target_within(state, index, id, pos, None, in_reach_now))
+    let engage = crate::stats::ESCORT_ENGAGE_RADIUS;
+    near.or_else(|| {
+        (pos.dist_sq(center) <= engage * engage)
+            .then(|| acquire_target_within(state, index, id, pos, None, in_reach_now))
+            .flatten()
+    })
 }
 
 /// Whether a `kind` machine standing at `pos` has a weapon that reaches
@@ -2056,23 +2063,23 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     let resume = match unit.order {
         Order::Idle => None,
         Order::Hunt { goal } => Some(Resume::Hunt(goal)),
-        // An escort answers fire from near the unit it guards, or from
-        // anything its own guns reach where it stands; a shooter past both
-        // would draw it away only to be broken off at once.
+        // An escort answers fire from near the unit it guards, or, while it
+        // stands within the engage radius itself, from anything its own guns
+        // reach; any other shooter would draw it away only to be broken off.
         Order::Accompany { unit: escorted, .. } => {
-            let near = state.escorted(escorted).is_some_and(|body| {
+            let engage = crate::stats::ESCORT_ENGAGE_RADIUS * crate::stats::ESCORT_ENGAGE_RADIUS;
+            let answers = state.escorted(escorted).is_some_and(|body| {
                 let from = match attacker {
                     Target::Unit(uid) => state.unit(uid).map(|a| a.pos),
                     Target::Building(bid) => {
                         state.building(bid).map(|b| b.closest_point_to(body.pos))
                     }
                 };
-                from.is_some_and(|from| {
-                    from.dist_sq(body.pos)
-                        <= crate::stats::ESCORT_ENGAGE_RADIUS * crate::stats::ESCORT_ENGAGE_RADIUS
-                })
+                from.is_some_and(|from| from.dist_sq(body.pos) <= engage)
+                    || (unit.pos.dist_sq(body.pos) <= engage
+                        && in_weapon_reach_from(state, unit.kind, unit.pos, attacker))
             });
-            if !near && !in_weapon_reach_from(state, unit.kind, unit.pos, attacker) {
+            if !answers {
                 return;
             }
             Some(Resume::Accompany(escorted))
