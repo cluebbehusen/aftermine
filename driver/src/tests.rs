@@ -281,6 +281,23 @@ fn the_balance_tools_refuse_a_zero_tick_cap() {
 }
 
 #[test]
+fn the_duel_lab_adds_flank_legs_on_request() {
+    let cli = Cli::try_parse_from(["oxide-driver", "duel-lab", "--flanks"]).unwrap();
+    let Cmd::DuelLab {
+        flanks, defenses, ..
+    } = cli.cmd
+    else {
+        panic!("duel-lab parsed as another command")
+    };
+    assert!(flanks && !defenses);
+    let cli = Cli::try_parse_from(["oxide-driver", "duel-lab"]).unwrap();
+    let Cmd::DuelLab { flanks, .. } = cli.cmd else {
+        panic!("duel-lab parsed as another command")
+    };
+    assert!(!flanks);
+}
+
+#[test]
 fn the_balance_tools_name_kinds_they_cannot_field() {
     use oxide_sim::UnitKind::{Kestrel, Sapper, Sentinel};
     let armed = oxide_driver::duel_lab::armed_units();

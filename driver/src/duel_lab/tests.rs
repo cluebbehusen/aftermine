@@ -6,7 +6,36 @@ fn plan(budget: u32) -> Plan {
         units: armed_units(),
         attackers: defense_attackers(),
         defenses: armed_defenses(),
+        flanks: true,
         tick_limit: 4_000,
+    }
+}
+
+/// The deployed army's seat and the flanker's.
+fn seats(leg: &FlankLeg) -> (PlayerId, PlayerId) {
+    if leg.deployed_west {
+        (PlayerId(0), PlayerId(1))
+    } else {
+        (PlayerId(1), PlayerId(0))
+    }
+}
+
+fn flank_leg(
+    flanker: UnitKind,
+    deployed: UnitKind,
+    budget: u32,
+    flank: Flank,
+    formation: Formation,
+    deployed_west: bool,
+) -> FlankLeg {
+    let (flanker, deployed) =
+        Side::matched(Contender::Unit(flanker), Contender::Unit(deployed), budget);
+    FlankLeg {
+        flanker,
+        deployed,
+        flank,
+        formation,
+        deployed_west,
     }
 }
 
@@ -262,6 +291,7 @@ fn a_small_plan_reports_both_matrices_and_its_flags() {
         units: vec![UnitKind::Lancer, UnitKind::Bombard],
         attackers: vec![UnitKind::Sapper],
         defenses: vec![Defense::base(BuildingKind::Bastion)],
+        flanks: true,
         tick_limit: 1_500,
     };
     let jobs = NonZeroUsize::new(2).expect("two workers");
@@ -270,7 +300,12 @@ fn a_small_plan_reports_both_matrices_and_its_flags() {
         outcomes.len(),
         4 * Layout::ALL.len() * Formation::ALL.len() * 2
     );
-    let report = report(&plan, outcomes);
+    let flank_outcomes = run_flanks(&plan, jobs).expect("the flanks run");
+    assert_eq!(
+        flank_outcomes.len(),
+        4 * Flank::ALL.len() * Formation::ALL.len() * 2
+    );
+    let report = report(&plan, outcomes, flank_outcomes);
     assert_eq!(report.units.cells.len(), 2);
     assert!(report.units.cells.iter().flatten().all(Option::is_some));
     assert_eq!(
@@ -281,13 +316,25 @@ fn a_small_plan_reports_both_matrices_and_its_flags() {
         report.defenses.cells[0][0].is_some(),
         "Sappers fought the Bastions"
     );
+    assert_eq!(report.flanks.len(), Flank::ALL.len());
+    assert!(
+        report.flanks.iter().all(|flanks| flanks
+            .matrix
+            .cells
+            .iter()
+            .flatten()
+            .all(Option::is_some))
+    );
     let table = render(&report);
     for section in [
         "units (",
         "defenses (",
+        "side flanks, row flanking column (",
+        "rear flanks, row flanking column (",
         "lance",
         "basti",
         "legs split by seat",
+        "flank legs split by seat",
     ] {
         assert!(
             table.contains(section),
@@ -339,4 +386,189 @@ fn a_pairing_against_a_defense_line_scores_the_same_from_either_seat() {
     let west = run(&leg(true), 8_000).expect("west leg runs");
     let east = run(&leg(false), 8_000).expect("east leg runs");
     assert_eq!((west.score, west.ticks), (east.score, east.ticks));
+}
+
+#[test]
+fn flank_legs_start_out_of_sight_and_reach_at_small_and_large_budgets() {
+    let direct_reach = |kind: UnitKind| {
+        kind.stats()
+            .weapons
+            .iter()
+            .filter(|weapon| !weapon.indirect)
+            .map(|weapon| weapon.range)
+            .max()
+            .unwrap_or(chassis::fx::Fx::ZERO)
+    };
+    for budget in [600, 1_800, 5_000] {
+        for leg in plan(budget).flank_legs() {
+            let scene = stage_flank(&leg).expect("a flank leg fields units");
+            let state = scene
+                .scenario
+                .build()
+                .unwrap_or_else(|e| panic!("{} at {budget}: {e}", scene.scenario.name));
+            let (deployed, flanker) = seats(&leg);
+            let side = |player| state.units().iter().filter(move |u| u.player == player);
+            assert!(
+                side(deployed).all(|u| state.can_see(deployed, u.tile())),
+                "premise: sight is live at the start"
+            );
+            for f in side(flanker) {
+                for d in side(deployed) {
+                    let name = &scene.scenario.name;
+                    assert!(!state.can_see(deployed, f.tile()), "{name} at {budget}");
+                    assert!(!state.can_see(flanker, d.tile()), "{name} at {budget}");
+                    let reach = direct_reach(f.kind).max(direct_reach(d.kind));
+                    assert!(f.pos.dist(d.pos) > reach, "{name} at {budget}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn every_flank_pairing_runs_both_approaches_formations_and_seats() {
+    use UnitKind::{Lancer, Talon, Warden};
+    let legs = plan(1_800).flank_legs();
+    let of = |flanker: UnitKind, deployed: UnitKind| -> Vec<&FlankLeg> {
+        legs.iter()
+            .filter(|leg| {
+                (leg.flanker.contender, leg.deployed.contender)
+                    == (Contender::Unit(flanker), Contender::Unit(deployed))
+            })
+            .collect()
+    };
+    let wardens_on_lancers = of(Warden, Lancer);
+    assert_eq!(wardens_on_lancers.len(), 8);
+    for flank in Flank::ALL {
+        for formation in Formation::ALL {
+            for deployed_west in [true, false] {
+                assert!(wardens_on_lancers.iter().any(|leg| {
+                    (leg.flank, leg.formation, leg.deployed_west)
+                        == (flank, formation, deployed_west)
+                }));
+            }
+        }
+    }
+    // Flanking runs one way, so the reverse is its own pairing, and a kind
+    // flanks its own kind too.
+    assert_eq!(of(Lancer, Warden).len(), 8);
+    assert_eq!(of(Warden, Warden).len(), 8);
+    assert!(of(Talon, Lancer).is_empty(), "neither can hurt the other");
+    let head_on = Plan {
+        flanks: false,
+        ..plan(1_800)
+    };
+    assert!(head_on.flank_legs().is_empty());
+}
+
+#[test]
+fn a_rear_flank_starts_behind_the_army_and_a_side_flank_off_its_end() {
+    for formation in Formation::ALL {
+        for deployed_west in [true, false] {
+            for flank in Flank::ALL {
+                let leg = flank_leg(
+                    UnitKind::Warden,
+                    UnitKind::Lancer,
+                    1_800,
+                    flank,
+                    formation,
+                    deployed_west,
+                );
+                let state = stage_flank(&leg)
+                    .expect("a flank leg fields units")
+                    .scenario
+                    .build()
+                    .expect("the leg stages");
+                let (deployed, flanker) = seats(&leg);
+                let side = |player| state.units().iter().filter(move |u| u.player == player);
+                let rows: Vec<i32> = side(deployed).map(|u| u.tile().y).collect();
+                let (top, bottom) = (rows.iter().min().unwrap(), rows.iter().max().unwrap());
+                for d in side(deployed) {
+                    let facing = chassis::compass::dir(d.heading);
+                    for f in side(flanker) {
+                        let to = f.pos - d.pos;
+                        let ahead = facing.x * to.x + facing.y * to.y;
+                        match flank {
+                            Flank::Rear => assert!(ahead < chassis::fx::Fx::ZERO, "{leg:?}"),
+                            Flank::Side => {
+                                let y = f.tile().y;
+                                assert!(y < *top || y > *bottom, "{leg:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_flank_leg_scores_the_same_from_either_seat_and_replays_identically() {
+    let leg = |deployed_west| {
+        flank_leg(
+            UnitKind::Warden,
+            UnitKind::Lancer,
+            900,
+            Flank::Rear,
+            Formation::Line,
+            deployed_west,
+        )
+    };
+    let west = run_flank(&leg(true), 2_000).expect("west leg runs");
+    let east = run_flank(&leg(false), 2_000).expect("east leg runs");
+    assert_eq!((west.score, west.ticks), (east.score, east.ticks));
+    assert_eq!(west.end, End::Wipe, "the flanker reached the army");
+    assert_eq!(
+        west,
+        run_flank(&leg(true), 2_000).expect("west leg runs again")
+    );
+}
+
+#[test]
+fn a_deployed_army_holds_until_it_sees_the_flanker() {
+    let leg = flank_leg(
+        UnitKind::Breaker,
+        UnitKind::Lancer,
+        1_800,
+        Flank::Rear,
+        Formation::Line,
+        true,
+    );
+    let mut state = stage_flank(&leg)
+        .expect("a flank leg fields units")
+        .scenario
+        .build()
+        .expect("the leg stages");
+    let (deployed, flanker) = (Force::of(leg.deployed), Force::of(leg.flanker));
+    let start: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == PlayerId(0))
+        .map(|u| (u.id, u.pos))
+        .collect();
+    // One seek round: the flanker's idle bodies go hunting, and an army that
+    // did not wait for sight would too.
+    play(
+        &mut state,
+        &deployed,
+        &flanker,
+        &[],
+        Some(PlayerId(0)),
+        SEEK_PERIOD + 1,
+    );
+    assert!(
+        state
+            .units()
+            .iter()
+            .any(|u| u.player == PlayerId(1) && u.order != Order::Idle),
+        "premise: the flanker is on its way"
+    );
+    assert!(
+        !sees(&state, PlayerId(0), PlayerId(1), &flanker),
+        "premise: the flanker is still out of sight"
+    );
+    for (id, pos) in start {
+        let unit = state.unit(id).expect("nobody has fought yet");
+        assert_eq!((unit.order, unit.pos), (Order::Idle, pos));
+    }
 }

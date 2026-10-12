@@ -6,8 +6,10 @@
 //! point-symmetric field, mirrored through its center, both hunting toward the
 //! other's start. Each pairing runs on every layout and formation and in both
 //! seat assignments, so a seat or geometry bias shows up as legs that disagree
-//! instead of hiding in an average. The numbers are a report, never a pinned
-//! test: balance is meant to move.
+//! instead of hiding in an average. Flank legs instead send one army at
+//! another standing deployed, from off the end of its front or from behind,
+//! so a kind's worth as a flanker shows apart from its worth head-on. The
+//! numbers are a report, never a pinned test: balance is meant to move.
 
 use anyhow::{Context, Result};
 use chassis::grid::{TilePos, as_index};
@@ -52,6 +54,15 @@ const SEEK_PERIOD: u32 = 40;
 /// Ticks allowed for refitting a defense line to its tier before the fight:
 /// the Bulwark's two upgrades take 800 between them.
 const REFIT_LIMIT: u32 = 2_000;
+/// Open tiles between a flank field's rock border and the nearest body.
+const FLANK_MARGIN: i32 = 2;
+/// The least distance between a deployed army's front and the flank field's
+/// center. Units spawn facing the map center, so the army faces away from the
+/// rear; a longer front puts the center further ahead, so the ends of the
+/// line face nearly straight ahead too.
+const FLANK_AHEAD: i32 = 8;
+/// Tiles a flanker starts beyond what either side sees or reaches.
+const FLANK_CLEARANCE: i32 = 2;
 
 /// The ground the armies meet on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -117,10 +128,10 @@ impl Formation {
     /// Every formation, in report order.
     pub const ALL: [Self; 2] = [Self::Line, Self::Clump];
 
-    /// West-side tiles for `count` bodies, front rank first.
-    fn tiles(self, count: u32) -> Vec<TilePos> {
+    /// Bodies in each rank for an army of `count`: the length of its front.
+    fn front(self, count: u32) -> i32 {
         let count = i32::try_from(count).expect("army sizes fit in i32");
-        let per_column = match self {
+        match self {
             Self::Line => {
                 let rows = LAST_ROW - FIRST_ROW + 1;
                 let columns = ((count + rows - 1) / rows).max(1);
@@ -131,11 +142,45 @@ impl Formation {
                 if root * root < count { root + 1 } else { root }
             }
         }
-        .max(1);
+        .max(1)
+    }
+
+    /// Ranks an army of `count` stands in.
+    fn depth(self, count: u32) -> i32 {
+        let front = self.front(count);
+        let count = i32::try_from(count).expect("army sizes fit in i32");
+        (count + front - 1) / front
+    }
+
+    /// West-side tiles for `count` bodies, front rank first.
+    fn tiles(self, count: u32) -> Vec<TilePos> {
+        let per_column = self.front(count);
         let top = (HEIGHT - per_column) / 2;
-        (0..count)
+        (0..i32::try_from(count).expect("army sizes fit in i32"))
             .map(|i| TilePos::new(FRONT_X - i / per_column, top + i % per_column))
             .collect()
+    }
+}
+
+/// Where a flanker starts against an army standing deployed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Flank {
+    /// Off one end of the army's front.
+    Side,
+    /// Behind the army's back rank.
+    Rear,
+}
+
+impl Flank {
+    /// Every approach, in report order.
+    pub const ALL: [Self; 2] = [Self::Side, Self::Rear];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Side => "side",
+            Self::Rear => "rear",
+        }
     }
 }
 
@@ -340,6 +385,22 @@ pub struct Duel {
     pub a_west: bool,
 }
 
+/// One flank leg: a flanker coming at an army that stands deployed and
+/// reacts only once it sees the flanker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FlankLeg {
+    /// The side coming in, which the flanks matrices score.
+    pub flanker: Side,
+    /// The army standing deployed.
+    pub deployed: Side,
+    /// Where the flanker starts.
+    pub flank: Flank,
+    /// How both sides stand at the start.
+    pub formation: Formation,
+    /// Whether the deployed army takes the west seat.
+    pub deployed_west: bool,
+}
+
 /// What to fight and for how long.
 #[derive(Debug, Clone)]
 pub struct Plan {
@@ -351,6 +412,8 @@ pub struct Plan {
     pub attackers: Vec<UnitKind>,
     /// Defenses standing against the attackers.
     pub defenses: Vec<Defense>,
+    /// Whether each unit kind also flanks each one standing deployed.
+    pub flanks: bool,
     /// Tick cap per duel.
     pub tick_limit: u32,
 }
@@ -392,6 +455,39 @@ impl Plan {
         }
         duels
     }
+
+    /// Every flank leg to run, in report order: each unit kind flanking each
+    /// one, itself included, from the side and the rear, in both formations
+    /// and seats. Pairings where neither side can hurt the other are left out.
+    pub fn flank_legs(&self) -> Vec<FlankLeg> {
+        if !self.flanks {
+            return Vec::new();
+        }
+        let mut legs = Vec::new();
+        for &flanker in &self.units {
+            for &deployed in &self.units {
+                let (flanker, deployed) = (Contender::Unit(flanker), Contender::Unit(deployed));
+                if !flanker.threatens(deployed) && !deployed.threatens(flanker) {
+                    continue;
+                }
+                let (flanker, deployed) = Side::matched(flanker, deployed, self.budget);
+                for flank in Flank::ALL {
+                    for formation in Formation::ALL {
+                        for deployed_west in [true, false] {
+                            legs.push(FlankLeg {
+                                flanker,
+                                deployed,
+                                flank,
+                                formation,
+                                deployed_west,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        legs
+    }
 }
 
 /// How a duel ended.
@@ -428,6 +524,23 @@ pub struct Outcome {
     pub b: Standing,
     /// Side `a`'s share of its value kept minus side `b`'s: +1 is a clean
     /// win for `a`, -1 a clean loss, 0 an even trade.
+    pub score: f64,
+}
+
+/// One flank leg's result.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct FlankOutcome {
+    /// The leg.
+    pub leg: FlankLeg,
+    /// How it ended.
+    pub end: End,
+    /// Ticks it ran.
+    pub ticks: u32,
+    /// The flanker at the end.
+    pub flanker: Standing,
+    /// The deployed army at the end.
+    pub deployed: Standing,
+    /// The flanker's share of its value kept minus the deployed army's.
     pub score: f64,
 }
 
@@ -499,6 +612,17 @@ impl Force {
     }
 }
 
+/// An army's bodies one by one, the shortest-ranged first so they take the
+/// front ranks.
+fn bodies(members: &[(UnitKind, u32)]) -> Vec<UnitKind> {
+    let mut ranks = members.to_vec();
+    ranks.sort_by_key(|&(kind, _)| kind.stats().weapons.iter().map(|w| w.range).max());
+    ranks
+        .iter()
+        .flat_map(|&(kind, count)| std::iter::repeat_n(kind, count as usize))
+        .collect()
+}
+
 fn mirrored(player: u8, tile: TilePos) -> TilePos {
     if player == 0 {
         tile
@@ -516,12 +640,7 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
     for (player, force) in [(0u8, west), (1u8, east)] {
         match force {
             Force::Army(members) => {
-                let mut ranks: Vec<(UnitKind, u32)> = members.clone();
-                ranks.sort_by_key(|&(kind, _)| kind.stats().weapons.iter().map(|w| w.range).max());
-                let bodies: Vec<UnitKind> = ranks
-                    .iter()
-                    .flat_map(|&(kind, count)| std::iter::repeat_n(kind, count as usize))
-                    .collect();
+                let bodies = bodies(members);
                 let count = u32::try_from(bodies.len()).expect("army sizes fit in u32");
                 for (kind, tile) in bodies.into_iter().zip(formation.tiles(count)) {
                     let tile = mirrored(player, tile);
@@ -605,6 +724,166 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
         buildings,
         meta: None,
     }
+}
+
+/// A staged flank leg.
+#[derive(Debug, Clone)]
+pub struct FlankScene {
+    /// The leg as a sandbox scenario.
+    pub scenario: Scenario,
+    /// The deployed army's middle tile, where the flanker hunts to.
+    pub goal: TilePos,
+}
+
+/// Tiles past which a side neither sees nor hits with direct fire. A flank
+/// leg stages no spotters, so an indirect gun reaches only what its own side
+/// sees.
+fn awareness(bodies: &[UnitKind]) -> i32 {
+    bodies
+        .iter()
+        .map(|kind| {
+            let stats = kind.stats();
+            let reach = stats
+                .weapons
+                .iter()
+                .filter(|weapon| !weapon.indirect)
+                .map(|weapon| weapon.range.ceil().to_num::<i32>())
+                .max()
+                .unwrap_or(0);
+            stats.vision.max(reach)
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Stage a flank leg on an open field sized for both sides. The deployed army
+/// stands in its formation facing the field's center; the flanker starts
+/// beyond either side's sight and direct reach, behind the army's back rank or
+/// off one end of its front, in the same formation turned toward it. The leg
+/// with the deployed army in the east seat is the west one mirrored through
+/// the field's center.
+pub fn stage_flank(leg: &FlankLeg) -> Result<FlankScene> {
+    let army = |side: Side| match Force::of(side) {
+        Force::Army(members) => Ok(bodies(&members)),
+        Force::Line(..) => anyhow::bail!("a flank leg fields units, not {}", side.contender.name()),
+    };
+    let (deployed, flanker) = (army(leg.deployed)?, army(leg.flanker)?);
+    let size = |bodies: &[UnitKind]| u32::try_from(bodies.len()).expect("army sizes fit in u32");
+    let formation = leg.formation;
+    let (front, depth) = (
+        formation.front(size(&deployed)),
+        formation.depth(size(&deployed)),
+    );
+    let (flank_front, flank_depth) = (
+        formation.front(size(&flanker)),
+        formation.depth(size(&flanker)),
+    );
+    let standoff = awareness(&deployed).max(awareness(&flanker)) + FLANK_CLEARANCE;
+
+    // Lay the west scene out: the army's front column, then the field around
+    // it, centered on the army's middle row so the army faces straight ahead.
+    let front_x = FLANK_MARGIN
+        + match leg.flank {
+            Flank::Rear => flank_depth - 1 + standoff + depth - 1,
+            Flank::Side => (depth - 1).max((depth - 1) / 2 + (flank_front - 1) / 2),
+        };
+    let width = 2 * (front_x + FLANK_AHEAD.max(front));
+    let rows = match leg.flank {
+        Flank::Rear => front.max(flank_front) + 2 * FLANK_MARGIN,
+        Flank::Side => front + 2 * (FLANK_MARGIN + standoff + flank_depth - 1),
+    };
+    let height = rows + (rows - front) % 2;
+    let top = (height - front) / 2;
+    let middle_x = front_x - (depth - 1) / 2;
+    let army_tiles = (0..).map(|i| TilePos::new(front_x - i / front, top + i % front));
+    let flanker_tiles: Vec<TilePos> = (0..i32::try_from(flanker.len()).expect("army sizes fit"))
+        .map(|i| match leg.flank {
+            Flank::Rear => TilePos::new(
+                front_x - (depth - 1) - standoff - i / flank_front,
+                (height - flank_front) / 2 + i % flank_front,
+            ),
+            Flank::Side => TilePos::new(
+                middle_x - (flank_front - 1) / 2 + i % flank_front,
+                top - standoff - i / flank_front,
+            ),
+        })
+        .collect();
+    let goal = TilePos::new(middle_x, top + (front - 1) / 2);
+
+    let place = |tile: TilePos| {
+        if leg.deployed_west {
+            tile
+        } else {
+            TilePos::new(width - 1 - tile.x, height - 1 - tile.y)
+        }
+    };
+    let (deployed_seat, flanker_seat) = if leg.deployed_west { (0, 1) } else { (1, 0) };
+    let units = deployed
+        .iter()
+        .zip(army_tiles)
+        .map(|(&kind, tile)| (deployed_seat, kind, tile))
+        .chain(
+            flanker
+                .iter()
+                .zip(flanker_tiles)
+                .map(|(&kind, tile)| (flanker_seat, kind, tile)),
+        )
+        .map(|(player, kind, tile)| {
+            let tile = place(tile);
+            UnitSpec {
+                player,
+                kind,
+                x: tile.x,
+                y: tile.y,
+            }
+        })
+        .collect();
+    let seat = |name: &str| PlayerSpec {
+        name: name.into(),
+        team: None,
+        scrap: 0,
+        bot: false,
+        bot_config: None,
+    };
+    let players = if leg.deployed_west {
+        vec![seat("Deployed"), seat("Flanker")]
+    } else {
+        vec![seat("Flanker"), seat("Deployed")]
+    };
+    Ok(FlankScene {
+        scenario: Scenario {
+            mode: ScenarioMode::Sandbox,
+            name: format!(
+                "flank-{}-{}-{}",
+                leg.flanker.contender.name(),
+                leg.flank.name(),
+                leg.deployed.contender.name()
+            ),
+            map: open_field(width, height),
+            players,
+            units,
+            buildings: Vec::new(),
+            meta: None,
+        },
+        goal: place(goal),
+    })
+}
+
+/// An open field inside a rock border.
+fn open_field(width: i32, height: i32) -> Vec<String> {
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| {
+                    if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Stage one duel lab leg.
@@ -866,16 +1145,33 @@ pub fn fight(
             },
         });
     }
-    state.tick(&orders);
+    Ok(play(&mut state, west, east, &orders, None, tick_limit))
+}
+
+/// Play a staged engagement from its opening orders to a wipe or the tick
+/// cap, `west` in seat 0. Every `SEEK_PERIOD` ticks each side's idle bodies
+/// hunt the nearest live enemy and its spotter hovers short of it, except
+/// that a `watcher` seat holds until it sees an enemy body, the way an army
+/// standing guard waits for contact.
+fn play(
+    state: &mut State,
+    west: &Force,
+    east: &Force,
+    opening: &[PlayerCommand],
+    watcher: Option<PlayerId>,
+    tick_limit: u32,
+) -> Fought {
+    state.tick(opening);
     let mut ticks = 1;
     let sides = [
         (PlayerId(0), west, PlayerId(1), east),
         (PlayerId(1), east, PlayerId(0), west),
     ];
+    let mut alert = sides.map(|(me, ..)| Some(me) != watcher);
     let end = loop {
         let (w, e) = (
-            standing(&state, PlayerId(0), west),
-            standing(&state, PlayerId(1), east),
+            standing(state, PlayerId(0), west),
+            standing(state, PlayerId(1), east),
         );
         if w.alive == 0 || e.alive == 0 {
             break End::Wipe;
@@ -886,11 +1182,17 @@ pub fn fight(
         let orders = if ticks % SEEK_PERIOD == 0 {
             sides
                 .iter()
-                .flat_map(|&(me, mine, foe, theirs)| {
-                    [
-                        seek(&state, me, mine, foe, theirs),
-                        spot(&state, me, mine, foe, theirs),
-                    ]
+                .zip(&mut alert)
+                .flat_map(|(&(me, mine, foe, theirs), alert)| {
+                    *alert = *alert || sees(state, me, foe, theirs);
+                    if *alert {
+                        [
+                            seek(state, me, mine, foe, theirs),
+                            spot(state, me, mine, foe, theirs),
+                        ]
+                    } else {
+                        [None, None]
+                    }
                 })
                 .flatten()
                 .collect()
@@ -900,11 +1202,18 @@ pub fn fight(
         state.tick(&orders);
         ticks += 1;
     };
-    Ok(Fought {
+    Fought {
         end,
         ticks,
-        west: standing(&state, PlayerId(0), west),
-        east: standing(&state, PlayerId(1), east),
+        west: standing(state, PlayerId(0), west),
+        east: standing(state, PlayerId(1), east),
+    }
+}
+
+/// Whether `me` currently sees a live body of the other force.
+fn sees(state: &State, me: PlayerId, foe: PlayerId, theirs: &Force) -> bool {
+    state.units().iter().any(|u| {
+        u.player == foe && theirs.fields(u.kind) && u.hp > 0 && state.can_see(me, u.tile())
     })
 }
 
@@ -931,6 +1240,69 @@ pub fn run(duel: &Duel, tick_limit: u32) -> Result<Outcome> {
 pub fn run_plan(plan: &Plan, jobs: NonZeroUsize) -> Result<Vec<Outcome>> {
     let duels = plan.duels();
     crate::pool::fan_out_bounded(&duels, jobs, |duel| run(duel, plan.tick_limit))
+}
+
+/// Run one flank leg to a wipe or the tick cap: the flanker hunts to the
+/// deployed army's middle, and the army stands until it sees the flanker.
+pub fn run_flank(leg: &FlankLeg, tick_limit: u32) -> Result<FlankOutcome> {
+    let scene = stage_flank(leg)?;
+    let mut state = scene
+        .scenario
+        .build()
+        .with_context(|| format!("staging {}", scene.scenario.name))?;
+    let (deployed, flanker) = (Force::of(leg.deployed), Force::of(leg.flanker));
+    let (deployed_seat, flanker_seat) = if leg.deployed_west {
+        (PlayerId(0), PlayerId(1))
+    } else {
+        (PlayerId(1), PlayerId(0))
+    };
+    let units = state
+        .units()
+        .iter()
+        .filter(|u| u.player == flanker_seat)
+        .map(|u| u.id)
+        .collect();
+    let opening = [PlayerCommand {
+        player: flanker_seat,
+        command: Command::Hunt {
+            units,
+            goal: scene.goal,
+            queue: false,
+        },
+    }];
+    let (west, east) = if leg.deployed_west {
+        (&deployed, &flanker)
+    } else {
+        (&flanker, &deployed)
+    };
+    let fought = play(
+        &mut state,
+        west,
+        east,
+        &opening,
+        Some(deployed_seat),
+        tick_limit,
+    );
+    let (deployed_end, flanker_end) = if leg.deployed_west {
+        (fought.west, fought.east)
+    } else {
+        (fought.east, fought.west)
+    };
+    Ok(FlankOutcome {
+        leg: *leg,
+        end: fought.end,
+        ticks: fought.ticks,
+        flanker: flanker_end,
+        deployed: deployed_end,
+        score: flanker_end.retained / f64::from(leg.flanker.spent)
+            - deployed_end.retained / f64::from(leg.deployed.spent),
+    })
+}
+
+/// Run every flank leg of a plan across at most `jobs` workers.
+pub fn run_flanks(plan: &Plan, jobs: NonZeroUsize) -> Result<Vec<FlankOutcome>> {
+    let legs = plan.flank_legs();
+    crate::pool::fan_out_bounded(&legs, jobs, |leg| run_flank(leg, plan.tick_limit))
 }
 
 /// A row kind's mean score against a column, over every layout, formation
@@ -979,9 +1351,66 @@ impl Matrix {
         }
     }
 
+    /// The one-way matrix for one approach: each row's mean score flanking
+    /// each column, never negated, since flanking and being flanked differ.
+    fn flanks(kinds: Vec<Contender>, flank: Flank, outcomes: &[FlankOutcome]) -> Self {
+        let cells = kinds
+            .iter()
+            .map(|&row| {
+                kinds
+                    .iter()
+                    .map(|&column| {
+                        let scores: Vec<f64> = outcomes
+                            .iter()
+                            .filter(|o| {
+                                o.leg.flank == flank
+                                    && (o.leg.flanker.contender, o.leg.deployed.contender)
+                                        == (row, column)
+                            })
+                            .map(|o| o.score)
+                            .collect();
+                        (!scores.is_empty())
+                            .then(|| scores.iter().sum::<f64>() / scores.len() as f64)
+                    })
+                    .collect()
+            })
+            .collect();
+        Self {
+            rows: kinds.clone(),
+            columns: kinds,
+            cells,
+        }
+    }
+
     fn cell(&self, row: usize, column: usize) -> Option<f64> {
         self.cells[row][column]
     }
+}
+
+/// Flanker against deployed army from one approach.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FlankMatrix {
+    /// The approach.
+    pub flank: Flank,
+    /// Rows flank columns.
+    pub matrix: Matrix,
+}
+
+/// A flank pairing whose two seat assignments disagree.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FlankSplit {
+    /// The flanker.
+    pub flanker: Contender,
+    /// The deployed army.
+    pub deployed: Contender,
+    /// The approach.
+    pub flank: Flank,
+    /// The start.
+    pub formation: Formation,
+    /// The flanker's score with the deployed army in the west seat.
+    pub deployed_west: f64,
+    /// The flanker's score with the deployed army in the east seat.
+    pub deployed_east: f64,
 }
 
 /// Two kinds whose results against everyone else look the same.
@@ -1061,6 +1490,13 @@ pub struct Report {
     pub flags: Flags,
     /// Every leg.
     pub outcomes: Vec<Outcome>,
+    /// Flanker against deployed army, one matrix per approach; empty without
+    /// flanks.
+    pub flanks: Vec<FlankMatrix>,
+    /// Flank legs that depend on the seat.
+    pub flank_splits: Vec<FlankSplit>,
+    /// Every flank leg.
+    pub flank_outcomes: Vec<FlankOutcome>,
 }
 
 /// Which tier a kind belongs to: what its producer and prerequisites ask.
@@ -1220,8 +1656,32 @@ fn flags(matrix: &Matrix, outcomes: &[Outcome]) -> Flags {
     }
 }
 
+fn flank_splits(outcomes: &[FlankOutcome]) -> Vec<FlankSplit> {
+    outcomes
+        .iter()
+        .filter(|o| o.leg.deployed_west)
+        .filter_map(|west| {
+            let east = outcomes.iter().find(|o| {
+                o.leg
+                    == FlankLeg {
+                        deployed_west: false,
+                        ..west.leg
+                    }
+            })?;
+            ((west.score - east.score).abs() > SPLIT_LEGS).then_some(FlankSplit {
+                flanker: west.leg.flanker.contender,
+                deployed: west.leg.deployed.contender,
+                flank: west.leg.flank,
+                formation: west.leg.formation,
+                deployed_west: west.score,
+                deployed_east: east.score,
+            })
+        })
+        .collect()
+}
+
 /// Assemble the report from every leg's outcome.
-pub fn report(plan: &Plan, outcomes: Vec<Outcome>) -> Report {
+pub fn report(plan: &Plan, outcomes: Vec<Outcome>, flank_outcomes: Vec<FlankOutcome>) -> Report {
     let units: Vec<Contender> = plan.units.iter().copied().map(Contender::Unit).collect();
     let unit_matrix = Matrix::build(units.clone(), units, &outcomes);
     let defense_matrix = Matrix::build(
@@ -1238,6 +1698,17 @@ pub fn report(plan: &Plan, outcomes: Vec<Outcome>) -> Report {
         &outcomes,
     );
     let flags = flags(&unit_matrix, &outcomes);
+    let flanks = if plan.flanks {
+        Flank::ALL
+            .into_iter()
+            .map(|flank| FlankMatrix {
+                flank,
+                matrix: Matrix::flanks(unit_matrix.rows.clone(), flank, &flank_outcomes),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Report {
         budget: plan.budget,
         tick_limit: plan.tick_limit,
@@ -1245,6 +1716,9 @@ pub fn report(plan: &Plan, outcomes: Vec<Outcome>) -> Report {
         defenses: defense_matrix,
         flags,
         outcomes,
+        flanks,
+        flank_splits: flank_splits(&flank_outcomes),
+        flank_outcomes,
     }
 }
 
@@ -1286,14 +1760,31 @@ pub fn render(report: &Report) -> String {
         .count();
     let _ = writeln!(
         out,
-        "duel lab: {} legs at {} scrap a side, {} timed out at {} ticks\n",
+        "duel lab: {} legs at {} scrap a side, {} timed out at {} ticks",
         report.outcomes.len(),
         report.budget,
         timeouts,
         report.tick_limit
     );
+    if !report.flank_outcomes.is_empty() {
+        let _ = writeln!(
+            out,
+            "flank duels: {} legs, {} timed out",
+            report.flank_outcomes.len(),
+            report
+                .flank_outcomes
+                .iter()
+                .filter(|o| o.end == End::Timeout)
+                .count()
+        );
+    }
+    let _ = writeln!(out);
     render_matrix(&mut out, "units", &report.units);
     render_matrix(&mut out, "defenses", &report.defenses);
+    for flanks in &report.flanks {
+        let title = format!("{} flanks, row flanking column", flanks.flank.name());
+        render_matrix(&mut out, &title, &flanks.matrix);
+    }
     let names = |kinds: &[UnitKind]| {
         if kinds.is_empty() {
             "none".to_string()
@@ -1340,6 +1831,13 @@ pub fn render(report: &Report) -> String {
         "legs split by seat (over {SPLIT_LEGS}): {}",
         flags.split_legs.len()
     );
+    if !report.flanks.is_empty() {
+        let _ = writeln!(
+            out,
+            "flank legs split by seat (over {SPLIT_LEGS}): {}",
+            report.flank_splits.len()
+        );
+    }
     let mut timed_out: Vec<(&'static str, &'static str, usize)> = Vec::new();
     for o in report.outcomes.iter().filter(|o| o.end == End::Timeout) {
         let pair = (o.duel.a.contender.name(), o.duel.b.contender.name());
@@ -1350,6 +1848,32 @@ pub fn render(report: &Report) -> String {
     }
     for (a, b, legs) in timed_out {
         let _ = writeln!(out, "timed out: {a} vs {b} ({legs} legs)");
+    }
+    let mut flanks_timed_out: Vec<(&'static str, &'static str, Flank, usize)> = Vec::new();
+    for o in report
+        .flank_outcomes
+        .iter()
+        .filter(|o| o.end == End::Timeout)
+    {
+        let leg = (
+            o.leg.flanker.contender.name(),
+            o.leg.deployed.contender.name(),
+            o.leg.flank,
+        );
+        match flanks_timed_out
+            .iter_mut()
+            .find(|(a, b, flank, _)| (*a, *b, *flank) == leg)
+        {
+            Some(entry) => entry.3 += 1,
+            None => flanks_timed_out.push((leg.0, leg.1, leg.2, 1)),
+        }
+    }
+    for (flanker, deployed, flank, legs) in flanks_timed_out {
+        let _ = writeln!(
+            out,
+            "timed out: {flanker} flanking {deployed} from the {} ({legs} legs)",
+            flank.name()
+        );
     }
     out
 }

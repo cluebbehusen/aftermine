@@ -418,6 +418,10 @@ enum Cmd {
         /// Also send each kind against a line of each defense.
         #[arg(long)]
         defenses: bool,
+        /// Also send each kind at each kind standing deployed, from off the
+        /// end of its front and from behind.
+        #[arg(long)]
+        flanks: bool,
         /// Tick cap per duel. The slowest pairings (three Condors or
         /// Avalanches grinding through 21 Turrets) need about 6,000.
         #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
@@ -1253,6 +1257,7 @@ fn main() -> Result<()> {
             budget,
             kinds,
             defenses,
+            flanks,
             ticks,
             jobs,
             json,
@@ -1286,11 +1291,13 @@ fn main() -> Result<()> {
                 } else {
                     Vec::new()
                 },
+                flanks,
                 tick_limit: ticks,
             };
             let start = std::time::Instant::now();
             let outcomes = duel_lab::run_plan(&plan, jobs)?;
-            let report = duel_lab::report(&plan, outcomes);
+            let flank_outcomes = duel_lab::run_flanks(&plan, jobs)?;
+            let report = duel_lab::report(&plan, outcomes, flank_outcomes);
             print!("{}", duel_lab::render(&report));
             eprintln!("ran in {:.1}s", start.elapsed().as_secs_f64());
             if let Some(path) = json {

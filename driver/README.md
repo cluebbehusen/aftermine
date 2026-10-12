@@ -118,10 +118,15 @@ exporter's identity. Source archives report unknown provenance.
   armies hunt each other, idle bodies periodically hunt the nearest live enemy,
   long guns get a Kestrel spotter hovering short of the fight, Sappers get
   attack orders on defenses they can see, and upgraded defense tiers are
-  refitted with ordinary upgrade commands before the fight. It prints a matrix
-  of value kept, flags kinds that win or lose every matchup, play alike or are
-  outclassed, tier margins, seat-split legs and timeouts, and `--json` writes
-  every leg. The results are reports for balance work, never pinned tests.
+  refitted with ordinary upgrade commands before the fight. With `--flanks`,
+  each kind also comes at each kind standing deployed on an open field, from off
+  the end of its front and from behind, starting beyond either side's sight and
+  direct reach. Neither side gets a spotter, and the deployed army takes no
+  order until it sees the flanker. It prints a matrix of value kept, one-way
+  flank matrices per approach, flags kinds that win or lose every matchup, play
+  alike or are outclassed, tier margins, seat-split legs and timeouts, and
+  `--json` writes every leg. The results are reports for balance work, never
+  pinned tests.
 - `composition_search` (the `composition-search` command) looks for a mix of up
   to three unit kinds that nobody beats at equal scrap, using the duel lab's
   staged fights. Each candidate is one fixed army: its kinds split the budget
