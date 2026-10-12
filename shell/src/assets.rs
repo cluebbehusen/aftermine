@@ -1232,11 +1232,6 @@ impl Sprites {
         self.rung(kind, tier).hull[ACCENT]
     }
 
-    /// The allegiance-accent mask over a building's tintable regions: grayscale in the atlas, tinted at draw time.
-    pub fn building_accent(&self, kind: oxide_sim::BuildingKind) -> Rect {
-        self.building_row(kind)[ACCENT]
-    }
-
     fn building_action_row(&self, kind: BuildingKind, frame: usize) -> &[Rect; 2] {
         let rung = self.rung(kind, 0);
         rung.charge.get(frame).unwrap_or(&rung.hull)

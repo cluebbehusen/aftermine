@@ -261,6 +261,7 @@ fn a_provisional_site_cannot_shield_a_physical_building_from_blind_fire() {
             anchor,
             hp: BuildingKind::ScuttleCharge.base_stats().max_hp,
             built: true,
+            tier: 0,
         })
         .unwrap(),
     );

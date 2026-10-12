@@ -337,6 +337,7 @@ fn known_building_projection_only_blocks_ground_claiming_footprints() {
             anchor: hostile_wall,
             hp: BuildingKind::Barricade.base_stats().max_hp,
             built: true,
+            tier: 0,
         },
         GhostBuilding {
             kind: BuildingKind::ScuttleCharge,
@@ -344,6 +345,7 @@ fn known_building_projection_only_blocks_ground_claiming_footprints() {
             anchor: hostile_charge,
             hp: BuildingKind::ScuttleCharge.base_stats().max_hp,
             built: true,
+            tier: 0,
         },
     ]);
 
@@ -506,4 +508,26 @@ fn threat_cells_agree_with_a_walk_over_every_record() {
         dangerous > 0 && safe > 0,
         "{dangerous} dangerous, {safe} safe"
     );
+}
+
+#[test]
+fn a_remembered_gun_endangers_salvage_out_to_its_remembered_tier() {
+    let anchor = TilePos::new(12, 3);
+    let near = TilePos::new(16, 3);
+    let far = TilePos::new(19, 3);
+    let danger = |tier: u8| {
+        let mut state = allied_incident_state();
+        state.vision[0].ghosts.push(GhostBuilding {
+            kind: BuildingKind::Turret,
+            owner: PlayerId(2),
+            anchor,
+            hp: BuildingKind::Turret.tier_stats(tier).max_hp,
+            built: true,
+            tier,
+        });
+        let knowledge = GroundSalvageDanger::capture(&state, PlayerId(0));
+        (knowledge.contains(near), knowledge.contains(far))
+    };
+    assert_eq!(danger(0), (true, false), "a Turret reaches the near tile");
+    assert_eq!(danger(2), (true, true), "a Bulwark reaches further");
 }
