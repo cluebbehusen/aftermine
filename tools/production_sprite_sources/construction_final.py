@@ -16,6 +16,7 @@ BUILDING_STEMS = (
     "fabricator",
     "flak_turret",
     "bastion",
+    "bastion_t1",
     "array",
     "reclaimer",
     "repair_bay",
@@ -31,6 +32,7 @@ DEFENSE_MOUNTS = {
     "turret": "turret_barrel",
     "flak_turret": "flak_mount",
     "bastion": "bastion_mount",
+    "bastion_t1": "bastion_mount_t1",
 }
 
 HULL_OPACITY = (96, 160, 224)

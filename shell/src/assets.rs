@@ -638,7 +638,7 @@ impl RungArt {
 fn construction_stem(kind: BuildingKind, tier: usize) -> String {
     rung_stem(
         building_stem(kind),
-        if kind == BuildingKind::Extractor {
+        if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
             tier
         } else {
             0
@@ -819,7 +819,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                 }
             }
         }
-        let site_tiers = if kind == BuildingKind::Extractor {
+        let site_tiers = if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
             kind.tiers().len()
         } else {
             1
