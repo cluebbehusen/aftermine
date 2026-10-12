@@ -281,8 +281,11 @@ pub(super) fn run(
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
     repair_bay_aura(state, &mut heals, &mut builds);
     crucible_smelter(state);
-    // Arrivals join this tick's volley; launches land on later ticks
-    // (flight is at least one tick), so ordering here cannot matter.
+    // Interception sees the shells still in flight before any arrive, so a
+    // shell is stoppable on its arrival tick. Arrivals join this tick's
+    // volley; launches land on later ticks (flight is at least one tick), so
+    // ordering here cannot matter.
+    point_defense::run(state, events);
     land_shells(state, &mut hits, events);
     state.shells.extend(launches);
     let salvaged = resolve_hits(state, &hits, &builds, &heals, &drains, events);
@@ -295,6 +298,7 @@ mod economy;
 pub(super) use economy::return_cargo_destination;
 mod locomotion;
 pub(super) mod logistics;
+mod point_defense;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{

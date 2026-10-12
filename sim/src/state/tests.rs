@@ -194,3 +194,59 @@ fn state_hash_changes_with_content() {
     a.spawn_unit(PlayerId(0), UnitKind::Harvester, Vec2Fx::ZERO);
     assert_ne!(a.hash(), b.hash());
 }
+
+fn flying(launch: Vec2Fx, impact: Vec2Fx, launched_at: Tick, arrival: Tick) -> Shell {
+    Shell {
+        kind: ProjectileKind::Shell,
+        shooter: Target::Unit(UnitId(0)),
+        player: PlayerId(0),
+        launch,
+        impact,
+        launched_at,
+        arrival,
+        damage: 1,
+        targets: crate::stats::DomainMask::GROUND,
+        splash: None,
+    }
+}
+
+#[test]
+fn a_shell_flies_its_straight_track_and_rests_at_impact() {
+    let launch = Vec2Fx::new(Fx::lit("2"), Fx::lit("4"));
+    let impact = Vec2Fx::new(Fx::lit("10"), Fx::lit("8"));
+    let shell = flying(launch, impact, 10, 14);
+    assert_eq!(shell.flight_position(10), launch);
+    assert_eq!(
+        shell.flight_position(12),
+        Vec2Fx::new(Fx::lit("6"), Fx::lit("6"))
+    );
+    assert_eq!(shell.flight_position(14), impact);
+    assert_eq!(shell.flight_position(99), impact);
+}
+
+#[test]
+fn forged_flight_ticks_saturate_instead_of_overflowing() {
+    let launch = Vec2Fx::new(Fx::lit("2"), Fx::lit("4"));
+    let impact = Vec2Fx::new(Fx::lit("10"), Fx::lit("8"));
+    assert_eq!(flying(launch, impact, 50, 60).flight_position(3), launch);
+    assert_eq!(flying(launch, impact, 7, 7).flight_position(3), impact);
+    let endless = flying(launch, impact, 0, Tick::MAX).flight_position(Tick::MAX - 1);
+    assert!(endless.dist_sq(impact) < Fx::lit("0.0001"));
+}
+
+#[test]
+fn mirrored_shells_fly_exactly_mirrored_tracks() {
+    let center = Vec2Fx::new(Fx::lit("32"), Fx::lit("24"));
+    let mirror = |p: Vec2Fx| center + center - p;
+    let launch = Vec2Fx::new(Fx::lit("3.3"), Fx::lit("7.1"));
+    let impact = Vec2Fx::new(Fx::lit("17.9"), Fx::lit("2.6"));
+    let shell = flying(launch, impact, 0, 7);
+    let twin = flying(mirror(launch), mirror(impact), 0, 7);
+    for now in 0..=7 {
+        assert_eq!(
+            mirror(shell.flight_position(now)),
+            twin.flight_position(now),
+            "{now}"
+        );
+    }
+}
