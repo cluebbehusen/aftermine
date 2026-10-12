@@ -44,8 +44,8 @@ impl Mix {
         Self { kinds, weights }
     }
 
-    /// Every mix of one to `max_kinds` of `kinds` whose bodies fit a budget
-    /// with one of each. Smaller mixes first, each size in roster order. With
+    /// Every mix of one to `max_kinds` of `kinds` with at least one kind that
+    /// fights and whose bodies fit a budget with one of each. Smaller mixes first, each size in roster order. With
     /// `skewed`, each mix of two or three kinds also gives each kind in turn a
     /// double share; a skewed split that fields the same army as one already
     /// listed is left out.
@@ -56,7 +56,8 @@ impl Mix {
             let mut picks: Vec<usize> = (0..size).collect();
             loop {
                 let chosen: Vec<UnitKind> = picks.iter().map(|&i| kinds[i]).collect();
-                if chosen.iter().map(|kind| kind.stats().cost).sum::<u32>() <= budget {
+                let fights = chosen.iter().any(|kind| kind.stats().can_fight());
+                if fights && chosen.iter().map(|kind| kind.stats().cost).sum::<u32>() <= budget {
                     let mut splits = vec![vec![1; size]];
                     if skewed && size > 1 {
                         splits.extend((0..size).map(|heavy| {
