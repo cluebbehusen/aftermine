@@ -6,15 +6,15 @@
 working rules.
 
 Each decision spends through one running total in a fixed precedence: defense
-and other emergencies, then an affordable saving target, then workers, then
-lifts, attacks, clearances, strikes and raids, focus fire, tending and scouting,
-then production. Missions command only units that exist: production keeps the
-stocks they draw on, such as scouts and carriers, but never trains for a
-particular mission. A producer is ready when its queue would run out before the
-next decision, so it queues its next unit as the last one finishes rather than
-after it stands empty; every ready producer left free trains toward the army's
-needs. Difficulty caps the unit orders one decision issues; purchases do not
-count against that allowance.
+and other emergencies, then an affordable saving target, then the wounded to
+Repair Bays, then workers, then lifts, attacks, clearances, strikes and raids,
+focus fire and scouting, then production. Missions command only units that
+exist: production keeps the stocks they draw on, such as scouts and carriers,
+but never trains for a particular mission. A producer is ready when its queue
+would run out before the next decision, so it queues its next unit as the last
+one finishes rather than after it stands empty; every ready producer left free
+trains toward the army's needs. Difficulty caps the unit orders one decision
+issues; purchases do not count against that allowance.
 
 Public enemy buildings, the Deep Bores every seat knows of, join the seat's
 known enemy buildings each decision as memories of unknown condition: built and
@@ -62,6 +62,21 @@ never one inside the reach of known enemy weapons. A worker harvesting a node or
 wreck whose route has turned dangerous is sent elsewhere the same way, or home.
 A worker left with nowhere to go first delivers any scrap it carries to a
 Foundry on its ground.
+
+## Repair Bays
+
+After defense, free wounded armed units go to a built Repair Bay with no armed
+enemy in sight near it and no known enemy fire reaching it. The bot counts each
+Bay's slots as the simulation fills them: Bays in building order, each taking up
+to four of the most wounded units in its reach that an earlier Bay did not take.
+A unit missing at least a tenth of its health that a calm Bay already treats
+stays there; an idle one goes to the nearest calm Bay with a free slot, most
+missing value first, ground units on the Bay's ground to the open tile beside it
+nearest them and aircraft over it, around known anti-air, where an idle Condor
+sets down on its own. Missions and welders leave those units alone for the rest
+of the decision, and since missions take only units at least half healthy, one
+badly hurt on its way is not drawn off before it arrives. The Bay bills its
+heals as income arrives, so no scrap is set aside for them.
 
 ## Defense
 
@@ -192,8 +207,11 @@ an army of Sentinels at the stance's minimum. Fortification weighs Barricades;
 fortification and guile weigh Arrays and charges.
 
 A Repair Bay goes up beside a guarded base's building where its aura reaches the
-most missing value among the seat's wounded ground units and damaged buildings
-that no Repair Bay reaches yet, weighted by support.
+most missing value among the seat's resting units missing at least a tenth of
+their health and its damaged buildings that no Repair Bay treats yet, weighted
+by support. A Bay, standing or planned, treats the buildings it reaches and as
+many units in reach as its slots hold after earlier Bays took theirs, so wounded
+a full Bay cannot take can justify another beside it.
 
 Defenses upgrade in place (Heavy Turret, Bulwark, Burst Flak, Citadel, Deep
 Array) once the next tier's prerequisite stands, worth how far the approach they

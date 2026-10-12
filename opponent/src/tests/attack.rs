@@ -14,7 +14,7 @@ const WEST: [(i32, i32); 8] = [
 
 /// The field with West's garrison, `west` West Sentinels and the given East
 /// units.
-fn armed(west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
+pub(super) fn armed(west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
     let mut scenario = field();
     for (x, y) in GARRISON.iter().chain(&WEST[..west]) {
         scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));

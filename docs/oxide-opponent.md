@@ -49,14 +49,16 @@ selects actions in precedence order:
 
 1. emergency defense and recovery;
 2. the saving target, when it is affordable and can be placed;
-3. workers, to keep harvesting saturated: every known node or wreck whose trip
+3. free wounded units to a calm Repair Bay with room, where they sit out
+   missions and welding while they heal;
+4. workers, to keep harvesting saturated: every known node or wreck whose trip
    repays a Harvester within a stance and greed horizon, filled as stance and
    greed choose, with workers left without a place salvaging other known wreck;
    until the army reaches the stance minimum, workers that would cost more than
    the army wait for army production, and a seat that exposed puts up a Turret
    before any tech;
-4. missions, advancing their phases and recruiting as needed;
-5. production toward composition needs, from scrap not protected for saving.
+5. missions, advancing their phases and recruiting as needed;
+6. production toward composition needs, from scrap not protected for saving.
 
 Spending and ownership are coordinated through one running total that lives
 inside the decision and never outlives it as a type. Difficulty limits unit
@@ -188,6 +190,7 @@ Each behavior is proven by a staged scenario test.
 | Enemy unit mix                       | Choose units by coarse suitability against seen enemies                                                                                               |
 | Expensive investment wanted          | Save for it while keeping an army share                                                                                                               |
 | Several enemies                      | Choose a target with hysteresis                                                                                                                       |
+| Wounded units and a calm Repair Bay  | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                           |
 
 It also covers scouting, where a point whose scout was lost on the way waits to
 go stale again rather than drawing scouts one after another into the same fire,
