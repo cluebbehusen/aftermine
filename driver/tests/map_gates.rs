@@ -424,11 +424,8 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
             // Quick maps may make the second claim a shared contested center.
             // Every longer format gives each seat a nearby natural beyond all
             // viable opening claims so expansion adds renewable value. A
-            // natural may still be shared by teammates. Skyhook Anchorage's
-            // compact starting islands contain no clear 2x2 footprint in this
-            // band; its second claims are transport-contested remote islands.
-            let compact_island_start = name == "skyhook-anchorage";
-            if pace == "quick" || compact_island_start {
+            // natural may still be shared by teammates.
+            if pace == "quick" {
                 continue;
             }
             assert!(
@@ -861,6 +858,66 @@ fn rect_contains(anchor: TilePos, size: (i32, i32), tile: TilePos) -> bool {
 
 fn rects_overlap(a: TilePos, a_size: (i32, i32), b: TilePos, b_size: (i32, i32)) -> bool {
     a.x < b.x + b_size.0 && b.x < a.x + a_size.0 && a.y < b.y + b_size.1 && b.y < a.y + a_size.1
+}
+
+#[test]
+fn rotated_seat_partners_carry_opposite_compass_names() {
+    // A seat is named for where it spawns, and the seat its Foundry
+    // rotates onto spawns across the map, so the two names are compass
+    // opposites: North West faces South East. This holds for the metric
+    // class too wherever its seats happen to rotate onto each other; a
+    // seat whose anchor rotates onto no seat has no partner to check.
+    let (fw, fh) = BuildingKind::Foundry.size();
+    let mut mismatched = Vec::new();
+    for (name, scenario) in shipped() {
+        let (map, anchors) =
+            Map::parse(&scenario.map).unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
+        for (seat, at) in &anchors {
+            let image = TilePos {
+                x: map.width() - fw - at.x,
+                y: map.height() - fh - at.y,
+            };
+            let Some((partner, _)) = anchors.iter().find(|(_, a)| *a == image) else {
+                continue;
+            };
+            let mine = &scenario.players[seat.0 as usize].name;
+            let theirs = &scenario.players[partner.0 as usize].name;
+            if *theirs != compass_opposite(mine) {
+                mismatched.push(format!(
+                    "{name}: seat {} ({mine}) rotates onto seat {} ({theirs})",
+                    seat.0, partner.0
+                ));
+            }
+        }
+    }
+    assert!(mismatched.is_empty(), "{mismatched:#?}");
+}
+
+/// A seat name with North and South, and East and West, exchanged,
+/// inside compound words too ("Northwest" becomes "Southeast").
+fn compass_opposite(name: &str) -> String {
+    const SWAPS: [(&str, &str); 8] = [
+        ("North", "South"),
+        ("South", "North"),
+        ("East", "West"),
+        ("West", "East"),
+        ("north", "south"),
+        ("south", "north"),
+        ("east", "west"),
+        ("west", "east"),
+    ];
+    let mut out = String::with_capacity(name.len());
+    let mut rest = name;
+    while let Some(c) = rest.chars().next() {
+        if let Some((from, to)) = SWAPS.iter().find(|(from, _)| rest.starts_with(from)) {
+            out.push_str(to);
+            rest = &rest[from.len()..];
+        } else {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
 }
 
 #[test]

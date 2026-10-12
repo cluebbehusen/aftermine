@@ -101,6 +101,7 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "avalanche",
             "skyhook",
             "sapper",
+            "mantle",
         )
     ):
         img = rim_light(img)

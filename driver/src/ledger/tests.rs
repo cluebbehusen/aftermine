@@ -1192,3 +1192,34 @@ fn a_deep_bore_refit_starting_on_its_payout_tick_earns_nothing_that_tick() {
     );
     assert!(built(&ledgers, 0, "deep bore").passive > 0);
 }
+
+#[test]
+fn a_shell_shot_down_is_counted_for_its_defender_and_deals_nothing() {
+    let scenario = field(
+        0,
+        &[
+            (0, UnitKind::Bombard, 8, 6),
+            (0, UnitKind::Kestrel, 15, 6),
+            (1, UnitKind::Mantle, 16, 8),
+        ],
+        &[(1, BuildingKind::Barricade, 16, 6)],
+    );
+    let mut state = scenario.build().unwrap();
+    state.tick(&[]);
+    let bombard = unit_at(&state, 8, 6);
+    let barricade = building(&state, 1, BuildingKind::Barricade);
+    let (_, ledgers) = play(
+        state,
+        600,
+        vec![order(
+            0,
+            Command::Attack {
+                units: vec![bombard],
+                target: AttackTarget::Building(barricade),
+                queue: false,
+            },
+        )],
+    );
+    assert!(unit(&ledgers, 1, "mantle").intercepted > 0);
+    assert_eq!(unit(&ledgers, 0, "bombard").dealt.total(), 0);
+}

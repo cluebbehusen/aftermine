@@ -287,9 +287,12 @@ pub(super) fn run(
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
-    // Arrivals join this tick's volley; launches land on later ticks
-    // (flight is at least one tick), so ordering here cannot matter. The
-    // aura reads the whole volley, so it comes after.
+    // Interception sees the shells still in flight before any arrive, so a
+    // shell is stoppable on its arrival tick. Arrivals join this tick's
+    // volley; launches land on later ticks (flight is at least one tick), so
+    // ordering here cannot matter. The aura reads the whole volley, so it
+    // comes after.
+    point_defense::run(state, events);
     land_shells(state, &mut hits, events);
     state.shells.extend(launches);
     repair_bay_aura(state, &hits, &mut heals, &mut builds);
@@ -304,6 +307,7 @@ mod economy;
 pub(super) use economy::return_cargo_destination;
 mod locomotion;
 pub(super) mod logistics;
+mod point_defense;
 pub(super) mod retire;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};

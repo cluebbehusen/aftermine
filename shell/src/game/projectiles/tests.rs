@@ -135,3 +135,52 @@ fn replay_projectile_releases_retain_heading_and_simulation_parity() {
     resumed.replace_state_after_jump(&game.state);
     assert_eq!(lookup(&resumed), None);
 }
+
+#[test]
+fn a_shell_shot_down_takes_its_own_release_record_with_it() {
+    // Releases are observed after the tick that reported them.
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.tick(&[]);
+    let shooter = Target::Unit(UnitId(7));
+    let at = |x: i32| TilePos::new(x, 4).center();
+    let launch = |victim: u32, x: i32| Event::ShellLaunched {
+        shooter,
+        unit_pose: None,
+        target: Some(Target::Unit(UnitId(victim))),
+        player: PlayerId(0),
+        from: at(0),
+        to: at(x),
+        flight: 12,
+    };
+    let mut releases = ProjectileReleases::default();
+    releases.observe(&state, &[launch(1, 5), launch(2, 6)]);
+    let arrival = state.current_tick() - 1 + 12;
+    releases.observe(
+        &state,
+        &[Event::ShellIntercepted {
+            defender: UnitId(9),
+            defender_player: PlayerId(1),
+            defender_pos: at(6),
+            player: PlayerId(0),
+            shooter,
+            kind: ProjectileKind::Shell,
+            at: at(4),
+            impact: at(5),
+            arrival,
+        }],
+    );
+    let survivor = oxide_sim::state::Shell {
+        kind: ProjectileKind::Shell,
+        shooter,
+        player: PlayerId(0),
+        launch: at(0),
+        impact: at(6),
+        launched_at: arrival - 12,
+        arrival,
+        damage: 1,
+        targets: oxide_sim::stats::DomainMask::GROUND,
+        splash: None,
+    };
+    let flight = releases.flight(&[survivor], 0).unwrap();
+    assert_eq!(flight.target, Some(Target::Unit(UnitId(2))));
+}

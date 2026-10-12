@@ -143,12 +143,13 @@ struct Record {
     received: u64,
     passive: u64,
     produced: u64,
+    intercepted: u64,
 }
 
 /// Scrap value of damage dealt, by what was hit and where.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dealt {
-    /// To armed units.
+    /// To armed units and the point defenders that shield them.
     pub army: u64,
     /// To workers.
     pub workers: u64,
@@ -213,6 +214,8 @@ pub struct KindLedger {
     pub deaths: u64,
     /// Ticks the destroyed ones lived, summed.
     pub lifetime: u64,
+    /// Hostile shells shot down in flight.
+    pub intercepted: u64,
 }
 
 impl KindLedger {
@@ -231,6 +234,7 @@ impl KindLedger {
         self.produced += other.produced;
         self.deaths += other.deaths;
         self.lifetime += other.lifetime;
+        self.intercepted += other.intercepted;
     }
 }
 
@@ -495,7 +499,7 @@ fn class(kind: UnitKind) -> Class {
     let stats = kind.stats();
     if stats.harvest.is_some() {
         Class::Worker
-    } else if stats.can_fight() {
+    } else if stats.can_fight() || stats.point_defense.is_some() {
         Class::Army
     } else {
         Class::Other
@@ -956,6 +960,25 @@ impl ImpactLedger {
                         let shell = self.shells.remove(index);
                         let radius = splash.map_or(1, tiles);
                         sources.splash.push((at, radius, shell.source));
+                    }
+                }
+                Event::ShellIntercepted {
+                    defender,
+                    player,
+                    impact,
+                    arrival,
+                    ..
+                } => {
+                    let to = TilePos::containing(*impact);
+                    if let Some(index) = self.shells.iter().position(|shell| {
+                        shell.owner == player.0
+                            && shell.to == to
+                            && shell.lands.abs_diff(*arrival) <= SHELL_SLACK
+                    }) {
+                        self.shells.remove(index);
+                    }
+                    if let Some(record) = self.records.get_mut(&Key::Unit(*defender)) {
+                        record.intercepted += 1;
                     }
                 }
                 Event::AircraftImpacted { crash } => {
@@ -1459,6 +1482,7 @@ impl ImpactLedger {
             entry.received += record.received;
             entry.passive += record.passive;
             entry.produced += record.produced;
+            entry.intercepted += record.intercepted;
             if let Some(gone) = record.gone {
                 entry.deaths += 1;
                 entry.lifetime += gone.min(end).saturating_sub(record.born);
@@ -1651,7 +1675,7 @@ impl LedgerPool {
         let unit_spend: u64 = self.units.values().map(|totals| totals.paid).sum();
         let _ = writeln!(
             out,
-            "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6}",
+            "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6} {:>7}",
             "unit",
             "built",
             "spend",
@@ -1666,7 +1690,8 @@ impl LedgerPool {
             "enabled",
             "repaired",
             "died",
-            "life s"
+            "life s",
+            "stopped"
         );
         let mut units: Vec<(&String, &KindLedger)> = self.units.iter().collect();
         units.sort_by_key(|(kind, totals)| (std::cmp::Reverse(totals.paid), (*kind).clone()));
@@ -1674,7 +1699,7 @@ impl LedgerPool {
             let dealt = totals.dealt.total();
             let _ = writeln!(
                 out,
-                "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6}",
+                "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6} {:>7}",
                 kind,
                 totals.built + totals.starting,
                 share(totals.paid, unit_spend),
@@ -1690,6 +1715,7 @@ impl LedgerPool {
                 ratio(totals.repaired, totals.paid),
                 share(totals.deaths, totals.built + totals.starting),
                 life(totals),
+                totals.intercepted,
             );
         }
         let _ = writeln!(

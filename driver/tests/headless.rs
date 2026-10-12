@@ -192,9 +192,13 @@ fn integrity_horizon(scenario: &Scenario) -> u64 {
 
 #[test]
 fn representative_scenarios_preserve_state_integrity() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
-    let paths =
-        ["skirmish", "twin-forges", "basalt-spine"].map(|name| dir.join(format!("{name}.json")));
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let paths = [
+        "fixtures/scenarios/skirmish.json",
+        "fixtures/scenarios/twin-forges.json",
+        "scenarios/basalt-spine.json",
+    ]
+    .map(|path| root.join(path));
     assert_scenarios_preserve_state_integrity(&paths);
 }
 

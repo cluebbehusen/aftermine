@@ -18,6 +18,7 @@ fn unit_facts(kind: UnitKind) -> UnitAnimationFacts {
         carrying: 0,
         demolition_contact: false,
         cooldowns: [0; MAX_WEAPONS],
+        point_defense: None,
     }
 }
 
@@ -733,6 +734,7 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         worker: Some(oxide_sim::Worker::default()),
         cooldowns: [0; MAX_WEAPONS],
         turret_heading: None,
+        point_defense: None,
         progress: 0,
         order: Order::Build { site: site.id },
         queue: VecDeque::new(),
@@ -1199,5 +1201,35 @@ fn only_buildings_with_guns_report_and_recover() {
     for kind in BuildingKind::ALL {
         let armed = kind.tiers().iter().any(|stats| !stats.weapons.is_empty());
         assert_eq!(building_attack_timing(kind).is_some(), armed, "{kind:?}");
+    }
+}
+
+#[test]
+fn mantle_charge_progress_follows_the_serial_counter_while_moving() {
+    let controller = AnimationController::default();
+    let mut facts = unit_facts(UnitKind::Mantle);
+    let stats = UnitKind::Mantle.stats().point_defense.unwrap();
+    facts.moved = true;
+    for charges in 0..=stats.charges {
+        facts.point_defense = Some(oxide_sim::state::PointDefense {
+            charges,
+            recharge: if charges == stats.charges {
+                0
+            } else {
+                stats.recharge_ticks / 2
+            },
+        });
+        let state = controller.unit_state(
+            facts,
+            AnimationClock::new(100, 0.0),
+            AnimationOptions::default(),
+        );
+        let held = state.point_defense.unwrap();
+        assert_eq!(held.charges, charges);
+        assert_eq!(
+            held.recharge,
+            if charges == stats.charges { 0.0 } else { 0.5 }
+        );
+        assert!(matches!(state.locomotion, LocomotionState::Moving { .. }));
     }
 }

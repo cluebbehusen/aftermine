@@ -341,3 +341,17 @@ fn a_pairing_against_a_defense_line_scores_the_same_from_either_seat() {
     let east = run(&leg(false), 8_000).expect("east leg runs");
     assert_eq!((west.score, west.ticks), (east.score, east.ticks));
 }
+
+#[test]
+fn support_walks_with_its_army_and_falls_with_it() {
+    let escorted = Force::Army(vec![(UnitKind::Mantle, 1), (UnitKind::Breaker, 1)]);
+    let mirror =
+        fight(&escorted, &escorted, Layout::Open, Formation::Line, 3_000).expect("the mirror runs");
+    assert_eq!(mirror.west, mirror.east, "both seats fare alike");
+    let lone = Force::Army(vec![(UnitKind::Mantle, 2), (UnitKind::Sentinel, 1)]);
+    let heavy = Force::Army(vec![(UnitKind::Breaker, 2)]);
+    let fought = fight(&lone, &heavy, Layout::Open, Formation::Line, 6_000).expect("it runs");
+    assert_eq!(fought.end, End::Wipe, "the fight ends with the last gun");
+    assert_eq!(fought.west.alive, 0);
+    assert_eq!(fought.west.retained, 0.0, "support is lost with its army");
+}

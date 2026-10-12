@@ -347,7 +347,8 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Excavator
         | UnitKind::Kestrel
         | UnitKind::Skyhook
-        | UnitKind::Sapper => 0,
+        | UnitKind::Sapper
+        | UnitKind::Mantle => 0,
     }
 }
 
@@ -374,7 +375,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook
-            | UnitKind::Sapper => 0,
+            | UnitKind::Sapper
+            | UnitKind::Mantle => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
             UnitKind::Avalanche => 2,
@@ -391,7 +393,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook
-            | UnitKind::Sapper => 0,
+            | UnitKind::Sapper
+            | UnitKind::Mantle => 0,
         },
     }
 }

@@ -404,11 +404,12 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
         E::DamageStampInTheFuture(_) => 81,
-        E::InvalidRetirement(_) => 82,
+        E::PointDefenseOutOfRange(_) => 82,
+        E::InvalidRetirement(_) => 83,
     }
 }
 
-const ROWS: usize = 83;
+const ROWS: usize = 84;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -503,6 +504,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
         E::DamageStampInTheFuture(UnitId(0)),
+        E::PointDefenseOutOfRange(UnitId(0)),
         E::InvalidRetirement(UnitId(0)),
     ]
 }
@@ -530,7 +532,7 @@ fn as_rider(unit: &Value) -> Value {
         "cooldowns": unit["cooldowns"],
     });
     // Zero scrap and a zero heading are left out, as a rider serializes them.
-    for key in ["carrying", "heading", "turret_heading"] {
+    for key in ["carrying", "heading", "turret_heading", "point_defense"] {
         if let Some(value) = unit.get(key).filter(|value| **value != json!(0)) {
             rider[key] = value.clone();
         }
@@ -627,6 +629,37 @@ fn scrap_load_is_bounded_for_walking_and_carried_units() {
             }
         }
     }
+}
+
+/// Rewrites units[0] (the working Harvester) into an idle Mantle holding
+/// the given point-defense state.
+fn make_mantle(d: &mut Value, point_defense: Value) {
+    d["units"][0]["kind"] = json!("mantle");
+    d["units"][0]["hp"] = json!(350);
+    d["units"][0]["order"] = json!({"order": "idle"});
+    d["units"][0]["progress"] = json!(0);
+    d["units"][0]["point_defense"] = point_defense;
+    let unit = d["units"][0].as_object_mut().expect("unit is a map");
+    unit.remove("worker");
+    unit.remove("path");
+    unit.remove("leash");
+    unit.remove("queue");
+}
+
+/// A carried Mantle with the given point-defense state aboard a Skyhook.
+fn carry_mantle(d: &mut Value, point_defense: Option<Value>) {
+    let mut rider = well_formed_rider(d);
+    rider["kind"] = json!("mantle");
+    // The Sentinel it is cut from turns a turret the Mantle lacks.
+    rider
+        .as_object_mut()
+        .expect("rider is a map")
+        .remove("turret_heading");
+    if let Some(point_defense) = point_defense {
+        rider["point_defense"] = point_defense;
+    }
+    make_transport(d);
+    d["units"][0]["cargo"] = json!([rider]);
 }
 
 /// Reshapes unit 0 into a Condor parked on a tile center, facing east
@@ -1265,6 +1298,47 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["cargo"] = json!([rider]);
             },
             "carries a rider with impossible weapon cooldowns",
+        ),
+        (
+            "point-defense charges on a kind without point defense",
+            |d| d["units"][0]["point_defense"] = json!({"charges": 1}),
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a Mantle without its point defense",
+            |d| {
+                make_mantle(d, json!(null));
+                d["units"][0]
+                    .as_object_mut()
+                    .expect("unit is a map")
+                    .remove("point_defense");
+            },
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a point defender holding more charges than its kind",
+            |d| make_mantle(d, json!({"charges": 4})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a full point defender counting toward another charge",
+            |d| make_mantle(d, json!({"charges": 3, "recharge": 1})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a recharge counter at a full recharge",
+            |d| make_mantle(d, json!({"charges": 1, "recharge": 60})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a carried Mantle without its point defense",
+            |d| carry_mantle(d, None),
+            "carries parts that do not match its kind",
+        ),
+        (
+            "a carried point defender holding impossible charges",
+            |d| carry_mantle(d, Some(json!({"charges": 9}))),
+            "holds impossible point-defense charges",
         ),
         (
             "extractor frames out of canonical order",

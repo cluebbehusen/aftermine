@@ -430,10 +430,25 @@ fn payload_contact(
     let surface =
         game.presentation
             .payload_surface(game.state, target, shell.player, at, shell.targets);
-    let from = vec2(
-        shell.launch.x.to_num::<f32>(),
-        shell.launch.y.to_num::<f32>(),
+    let point = payload_surface_contact(
+        game,
+        sprites,
+        surface,
+        crate::game::world_vec(shell.launch),
+        at,
+        shell.kind,
     );
+    (point, surface)
+}
+
+fn payload_surface_contact(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    surface: Option<crate::game::HitSurface>,
+    from: Vec2,
+    at: Vec2,
+    kind: oxide_sim::ProjectileKind,
+) -> Vec2 {
     let point = match surface {
         Some(crate::game::HitSurface::Unit(hit)) => {
             let unit = game
@@ -446,7 +461,7 @@ fn payload_contact(
                 posed_unit_contact(
                     sprites,
                     &pose,
-                    if shell.kind == oxide_sim::ProjectileKind::Bomb {
+                    if kind == oxide_sim::ProjectileKind::Bomb {
                         at
                     } else {
                         from
@@ -460,7 +475,7 @@ fn payload_contact(
             game,
             sprites,
             surface,
-            if shell.kind == oxide_sim::ProjectileKind::Bomb {
+            if kind == oxide_sim::ProjectileKind::Bomb {
                 at
             } else {
                 from
@@ -472,7 +487,7 @@ fn payload_contact(
     .filter(|point| {
         game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
     });
-    (point.unwrap_or(at), surface)
+    point.unwrap_or(at)
 }
 
 pub(super) fn impact_contact(
@@ -938,30 +953,7 @@ pub(crate) fn draw_units(game: &crate::game::Scene<'_>, sprites: &Sprites, alpha
 fn bomber_release(game: &crate::game::Scene<'_>, index: usize) -> Option<crate::game::LaunchPose> {
     game.presentation
         .projectile_releases
-        .release(game.state.shells(), index)
-        .or_else(|| {
-            let shell = game.state.shells().get(index)?;
-            if shell.kind != oxide_sim::ProjectileKind::Bomb {
-                return None;
-            }
-            let oxide_sim::Target::Unit(id) = shell.shooter else {
-                return None;
-            };
-            let kind = game.state.unit(id)?.kind;
-            if !crate::look::fires(kind, oxide_sim::ProjectileKind::Bomb) {
-                return None;
-            }
-            // Seeks without launch history use a stable impact line, never the
-            // aircraft's later egress heading.
-            Some(crate::game::LaunchPose {
-                heading: vec2(
-                    (shell.impact.x - shell.launch.x).to_num::<f32>(),
-                    (shell.impact.y - shell.launch.y).to_num::<f32>(),
-                )
-                .normalize_or_zero(),
-                kind,
-            })
-        })
+        .bomber_pose(game.state, game.state.shells(), index)
 }
 
 fn condor_bomb_pose(launch: Vec2, impact: Vec2, heading: Vec2, t: f32) -> (Vec2, Vec2) {
@@ -1007,10 +999,14 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             continue;
         }
         let flat = game.presentation.camera.to_screen(position);
-        let lift = crate::look::unit(release.kind)
-            .airframe
-            .map_or(0.0, |airframe| airframe.lift);
-        let center = flat - vec2(0.0, zoom * lift * (1.0 - t * t));
+        let center = game.presentation.camera.to_screen(payload_world_position(
+            launch,
+            impact,
+            shell.shooter,
+            shell.kind,
+            Some(release),
+            t,
+        ));
         let scale = zoom * (1.0 - 0.15 * t);
         let normal = vec2(-direction.y, direction.x);
         let nose = center + direction * scale * 0.14;
@@ -1069,6 +1065,70 @@ pub(crate) fn shell_visual_origin(
         oxide_sim::Target::Building(_) => oxide_sim::BuildingKind::Bastion.size().0 as f32 * 0.49,
     };
     launch + direction.normalize() * reach
+}
+
+fn payload_world_position(
+    launch: Vec2,
+    impact: Vec2,
+    shooter: oxide_sim::Target,
+    kind: oxide_sim::ProjectileKind,
+    pose: Option<crate::game::LaunchPose>,
+    progress: f32,
+) -> Vec2 {
+    let t = progress.clamp(0.0, 1.0);
+    if let Some(pose) = pose {
+        if kind == oxide_sim::ProjectileKind::Bomb {
+            let (at, _) = condor_bomb_pose(launch, impact, pose.heading, t);
+            let lift = crate::look::unit(pose.kind)
+                .airframe
+                .map_or(0.0, |air| air.lift);
+            return at - vec2(0.0, lift * (1.0 - t * t));
+        }
+        if kind == oxide_sim::ProjectileKind::Shell {
+            return bombard_shell_position(launch, impact, pose.heading, t);
+        }
+    }
+    let from = shell_visual_origin(launch, impact, shooter, kind);
+    let flat = from.lerp(impact, t);
+    if kind == oxide_sim::ProjectileKind::Shell && matches!(shooter, oxide_sim::Target::Unit(_)) {
+        flat - vec2(
+            0.0,
+            shell_arc_lift(from.distance(impact), 1.0, shooter) * 4.0 * t * (1.0 - t),
+        )
+    } else if kind == oxide_sim::ProjectileKind::Bomb {
+        flat - vec2(0.0, 0.18 * (1.0 - t))
+    } else {
+        flat
+    }
+}
+
+fn intercepted_position(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    flight: crate::game::InterceptFlight,
+) -> Vec2 {
+    let to = payload_surface_contact(
+        game,
+        sprites,
+        flight.surface,
+        flight.launch,
+        flight.impact,
+        flight.kind,
+    );
+    let from = shell_visual_origin(flight.launch, to, flight.shooter, flight.kind);
+    let t = if flight.kind == oxide_sim::ProjectileKind::Missile {
+        missile_travel_progress(flight.progress, flight.ticks, from.distance(to))
+    } else {
+        flight.progress
+    };
+    payload_world_position(
+        flight.launch,
+        to,
+        flight.shooter,
+        flight.kind,
+        flight.pose,
+        t,
+    )
 }
 
 fn bombard_shell_position(launch: Vec2, impact: Vec2, heading: Vec2, progress: f32) -> Vec2 {
@@ -1318,30 +1378,25 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         }
         let a = game.presentation.camera.to_screen(from);
         let b = game.presentation.camera.to_screen(to);
-        let dist = (b - a).length();
-        let lift = if shell.kind == oxide_sim::ProjectileKind::Shell {
-            shell_arc_lift(dist, game.presentation.camera.zoom, shell.shooter)
-        } else {
-            0.0
-        };
         let bastion_shell = shell.kind == oxide_sim::ProjectileKind::Shell
             && matches!(shell.shooter, oxide_sim::Target::Building(_));
         let artillery_heading = game
             .presentation
             .projectile_releases
             .artillery_heading(shell);
+        let pose = artillery_heading.map(|heading| crate::game::LaunchPose {
+            heading,
+            kind: oxide_sim::UnitKind::Bombard,
+        });
         let at = |t: f32| {
-            if let Some(heading) = artillery_heading {
-                return game
-                    .presentation
-                    .camera
-                    .to_screen(bombard_shell_position(launch, to, heading, t));
-            }
-            let flat = a.lerp(b, t);
-            if bastion_shell {
-                return flat;
-            }
-            vec2(flat.x, flat.y - lift * 4.0 * t * (1.0 - t))
+            game.presentation.camera.to_screen(payload_world_position(
+                launch,
+                to,
+                shell.shooter,
+                shell.kind,
+                pose,
+                t,
+            ))
         };
         let tail_t = if shell.kind == oxide_sim::ProjectileKind::Missile {
             (t - 0.65 / from.distance(to).max(f32::EPSILON)).max(0.0)
@@ -1357,15 +1412,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let missile = shell.kind == oxide_sim::ProjectileKind::Missile;
             let length = game.presentation.camera.zoom * if missile { 0.375 } else { 0.28 };
             let width = game.presentation.camera.zoom * if missile { 0.078_125 } else { 0.13 };
-            let center = shell_at
-                - vec2(
-                    0.0,
-                    if missile {
-                        0.0
-                    } else {
-                        game.presentation.camera.zoom * 0.18 * (1.0 - t)
-                    },
-                );
+            let center = shell_at;
             let back = center - direction * length * 0.5;
             let nose = center + direction * length * 0.5;
             let motor = missile_motor_strength(flight_progress, total);
@@ -1541,6 +1588,11 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // Directional geometry still requires a visible source and must
         // not pinpoint a fogged shooter.
         let in_sight = match fx.kind {
+            EffectKind::Intercept {
+                from,
+                impact_witnessed,
+                ..
+            } => from.is_some() || impact_witnessed,
             EffectKind::DirectShot {
                 style, from, to, ..
             } => shot_visibility(style, sees(from), sees(to)) != ShotVisibility::Hidden,
@@ -1574,6 +1626,67 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             continue;
         }
         match fx.kind {
+            EffectKind::Intercept {
+                from,
+                at,
+                flight,
+                impact_witnessed,
+                ..
+            } => {
+                let zoom = game.presentation.camera.zoom;
+                let age = fx.age_at(game.state.current_tick(), game.presentation.tick_fraction());
+                let progress = (age / (6.0 * crate::game::TICK_DT)).clamp(0.0, 1.0);
+                let opacity = 1.0 - progress;
+                let target =
+                    flight.map_or(at, |flight| intercepted_position(game, sprites, flight));
+                let end = game.presentation.camera.to_screen(target);
+                if impact_witnessed {
+                    super::destruction::draw_interception(
+                        end,
+                        zoom,
+                        age / (10.0 * crate::game::TICK_DT),
+                    );
+                }
+                if let Some(from) = from {
+                    let start = game.presentation.camera.to_screen(from);
+                    if impact_witnessed {
+                        line_between(
+                            start,
+                            end,
+                            (zoom * 0.045).max(1.5),
+                            Color::new(0.56, 0.55, 0.53, opacity),
+                        );
+                        line_between(
+                            start,
+                            end,
+                            (zoom * 0.018).max(0.75),
+                            Color::new(0.88, 0.80, 0.64, opacity),
+                        );
+                    }
+                    fill_circle(
+                        start,
+                        zoom * 0.035 * opacity,
+                        Color::new(0.88, 0.80, 0.64, opacity),
+                    );
+                }
+                if impact_witnessed {
+                    let radius = zoom * (0.07 + 0.12 * progress);
+                    for angle in [0.0_f32, 2.094_395, 4.188_79] {
+                        let direction = Vec2::from_angle(angle);
+                        line_between(
+                            end + direction * radius * 0.35,
+                            end + direction * radius,
+                            (zoom * 0.025).max(1.0),
+                            Color::new(0.73, 0.64, 0.44, opacity),
+                        );
+                    }
+                    fill_circle(
+                        end,
+                        zoom * 0.045 * opacity,
+                        Color::new(0.88, 0.80, 0.64, opacity),
+                    );
+                }
+            }
             EffectKind::DirectShot {
                 style,
                 from,

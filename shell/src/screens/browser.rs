@@ -1,11 +1,11 @@
 //! The map browser: a thumbnail grid, sectioned by format.
 //!
 //! Cards carry the fog-free preview, the map's name, and its pace
-//! badge; sections ("1v1", "2v2", …) are drawn bands, not rows, so the
-//! grouping is visible at a glance and the cursor only ever rests on a
-//! map. Layout is a pure function of (entries, viewport, scale), which
-//! keeps every hit-test headless-testable; drawing reads the same
-//! rects it publishes.
+//! badge; sections ("1v1", "2v2", "4-way FFA", …) are drawn bands, not
+//! rows, so the grouping is visible at a glance and the cursor only ever
+//! rests on a map. Layout is a pure function of (entries, viewport,
+//! scale), which keeps every hit-test headless-testable; drawing reads
+//! the same rects it publishes.
 
 use crate::menu::{PreviewCache, ScenarioEntry};
 use crate::nav::{Nav, step_grid};
@@ -74,12 +74,13 @@ pub struct Browser {
     last_view: Vec2,
 }
 
-/// The section heading for a seat count.
-fn heading(seats: usize) -> String {
-    match seats {
-        2 => "1v1".to_string(),
-        n if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
-        n => format!("{n} seats"),
+/// The section heading for a map's seats and the teams they form.
+fn heading(seats: usize, teams: usize) -> String {
+    match (seats, teams) {
+        (2, _) => "1v1".to_string(),
+        (n, t) if t == n => format!("{n}-way FFA"),
+        (n, 2) if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
+        (n, _) => format!("{n} seats"),
     }
 }
 
@@ -91,14 +92,14 @@ fn columns(view_w: f32, ui: f32) -> usize {
 fn lines(entries: &[ScenarioEntry], cols: usize) -> Vec<Line> {
     let mut out = Vec::new();
     let mut row: Vec<usize> = Vec::new();
-    let mut last_seats = 0;
+    let mut last = None;
     for (i, e) in entries.iter().enumerate() {
-        if e.seats != last_seats {
+        if last != Some((e.seats, e.teams)) {
             if !row.is_empty() {
                 out.push(Line::Cards(std::mem::take(&mut row)));
             }
-            out.push(Line::Heading(heading(e.seats)));
-            last_seats = e.seats;
+            out.push(Line::Heading(heading(e.seats, e.teams)));
+            last = Some((e.seats, e.teams));
         }
         row.push(i);
         if row.len() == cols {

@@ -175,7 +175,7 @@ fn tag_of(command: &Command) -> CommandTag {
 
 /// The whole roster — `apply_train` owes every one of them a verdict.
 /// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 16] = [
+const UNIT_KINDS: [UnitKind; 17] = [
     UnitKind::Harvester,
     UnitKind::Sentinel,
     UnitKind::Scuttler,
@@ -192,6 +192,7 @@ const UNIT_KINDS: [UnitKind; 16] = [
     UnitKind::Avalanche,
     UnitKind::Skyhook,
     UnitKind::Sapper,
+    UnitKind::Mantle,
 ];
 
 fn unit_kind_index(kind: UnitKind) -> usize {
@@ -212,6 +213,7 @@ fn unit_kind_index(kind: UnitKind) -> usize {
         UnitKind::Avalanche => 13,
         UnitKind::Skyhook => 14,
         UnitKind::Sapper => 15,
+        UnitKind::Mantle => 16,
     }
 }
 
@@ -856,16 +858,61 @@ fn exercise_retire_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+fn exercise_salvage_reach(state: &mut State) {
+    let worker = state
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Harvester)
+        .expect("fuzz arena has a seat-0 Harvester")
+        .id;
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Turret)
+        .expect("fuzz arena has a seat-0 Turret")
+        .id;
+    let report = state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Salvage {
+            units: vec![worker],
+            building: turret,
+            queue: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "the fuzz reach fixture must land Salvage"
+    );
+    let mut salvaged = false;
+    for _ in 0..2_000 {
+        let report = state.tick(&[]);
+        salvaged |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::BuildingSalvaged { building, .. } if *building == turret));
+        if salvaged {
+            break;
+        }
+    }
+    assert!(salvaged, "the fuzz reach fixture must strip a building");
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
     exercise_cancel_found_reach(&mut state);
     exercise_cancel_order_reach(&mut state);
     exercise_return_cargo_reach(&mut state);
     exercise_retire_reach(&mut state);
+    exercise_salvage_reach(&mut state);
     let mut rng = Pcg32::new(seed, 0xF022);
     let mut reach = Reach {
         cancelled_found: 1,
         retired: 1,
+        salvaged: 1,
         ..Reach::default()
     };
     let mut decided: Option<GameResult> = None;

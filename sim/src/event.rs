@@ -263,6 +263,28 @@ pub enum Event {
         /// Splash radius, when the shell splashes.
         splash: Option<chassis::fx::Fx>,
     },
+    /// A point defender shot a hostile shell down in flight: it left the
+    /// world without landing, splashing, or reporting [`Event::ShellLanded`].
+    ShellIntercepted {
+        /// The machine that spent a charge.
+        defender: UnitId,
+        /// Its owner.
+        defender_player: PlayerId,
+        /// Where it stood.
+        defender_pos: Vec2Fx,
+        /// The seat that fired the shell.
+        player: PlayerId,
+        /// The gun that launched it, which may be dead by now.
+        shooter: Target,
+        /// The shell's payload.
+        kind: crate::stats::ProjectileKind,
+        /// The shell's ground-track position when it was stopped.
+        at: Vec2Fx,
+        /// Where it would have landed.
+        impact: Vec2Fx,
+        /// The tick it would have landed on.
+        arrival: Tick,
+    },
     /// A construction site reached full function.
     BuildingCompleted {
         /// The finished building.

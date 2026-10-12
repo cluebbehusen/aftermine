@@ -354,7 +354,7 @@ impl Scenario {
 
     /// The built-in two-player map: a human seat against a bot.
     pub fn skirmish() -> Self {
-        Self::from_json(include_str!("../../scenarios/skirmish.json"))
+        Self::from_json(include_str!("../../fixtures/scenarios/skirmish.json"))
             .expect("embedded skirmish scenario is validated by tests")
     }
 

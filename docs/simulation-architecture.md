@@ -722,6 +722,25 @@ shooter survival; deserialization requires it to launch no later than it lands.
 On arrival, buildings take only a direct hit; eligible enemy units may take
 splash according to the weapon's domain mask.
 
+Point defense stops projectiles, never hitscan fire. A unit kind whose stats
+carry it holds serialized charges and a recharge counter. Each tick, before
+arrivals land, a live, charged defender destroys a hostile shell of any payload
+whose fixed aim point and current straight-line ground-track position both lie
+within its radius, so a shell aimed inside is stoppable at the latest on its
+arrival tick and a shell launched this tick on the next one. Hostility is to the
+firing seat, so a defender covers its teammates. Charges are the only limit: a
+defender may spend all of them in one tick. Pairs are assigned greedily in one
+complete order: earliest launch, then the shell nearest the defender, then the
+aim nearest it, then the shell's offset in the defender's own map frame, heavier
+shells first, and list order only for exact coincidences. Greedy assignment is
+not a maximal matching. A stopped shell vanishes without splash or a landing
+report and emits an interception event. Charges return one at a time on a fixed
+cadence that counts only below full and does not restart when a charge is spent.
+A carried defender freezes both, like weapon cooldowns. Validation requires the
+state exactly on kinds with point defense, charges within the kind's, a counter
+short of a full recharge, and a resting counter while full. Both fog projections
+report a visible unit's charges.
+
 ## Fog, memory, radar, and teams
 
 Each seat has `visible` and `explored` grids. Visibility is rebuilt every tick
@@ -805,4 +824,5 @@ map rather than an exhaustive test inventory.
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
+| Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |
