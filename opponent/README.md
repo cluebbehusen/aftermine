@@ -412,33 +412,38 @@ gun that fires shells, rockets or bombs adds the shots it fires in one
 defender's recharge, weighed by its shot's damage against the heaviest
 projectile's, so a few heavy launchers call for one and a stray light gun does
 not. Personality's support preference caps the defenders at a share of the armed
-army, whose size they never add to. Ground units count only while they can reach
-an enemy, by ground or by lift once an Airworks stands; before then, known enemy
-ground units on the seat's own ground still call for line units. While ground
-reaches no enemy, air strikes are wanted with or without an Airworks, at least
-what a strike needs against the easiest known target the seat has not given up
-on, or what bombers need to clear the anti-air around the next lift's target,
-whichever is more. The most wanted role goes first to the nearest ready producer
-that can afford a unit for it, then the next; ready producers left with nothing
-wanted train, while ground units can reach an enemy, for whichever of line and
-siege they serve is furthest below its share, line alone when the army goes only
-by lift, unless another producer serves a wanted role: the scrap then waits for
-that producer. While the seat saves for a unit, the producers that train it wait
-for it and no other producer trains a cheaper unit of its role. Each chooses the
-unit it can afford now by coarse suitability: reach against the enemy's usual
-reach, what its role is for at the price (firepower for siege, durability for
-the rest), covering both enemy domains, splash against clustered enemies,
-affordability at the seat's income, variety (a kind that already makes up most
-of its role counts for less, so every kind of a role gets its turn), and
-personality. While ground reaches no enemy, a strike aircraft's splash is worth
-instead the targets one blast takes in the densest known clump of enemy ground
-units; the seat then saves for a splash bomber the more, within a cap, the more
-targets its blast takes than the cheaper strike aircraft, and pulls toward the
-tech building such a bomber requires. Scouts, carriers, Scuttlers and Sappers
-are bought only as the sections above describe. A role it needs but cannot train
-at all adds to the investment score of the cheapest building that would let it,
-and a role it can train adds to a producer it lacks whose unit would suit it
-better, as much as saving for that unit is worth.
+army, to the nearest whole defender, and they never add to that army's size. The
+deficit counts the worth of the known guns whose fire no defender answers yet,
+as anti-air's counts the enemy air, so a screen against costly launchers can
+come before a line deficit of the same worth. A point defender has no cheaper
+stand-in, so the seat saves for one as it does for a premium unit. Ground units
+count only while they can reach an enemy, by ground or by lift once an Airworks
+stands; before then, known enemy ground units on the seat's own ground still
+call for line units. While ground reaches no enemy, air strikes are wanted with
+or without an Airworks, at least what a strike needs against the easiest known
+target the seat has not given up on, or what bombers need to clear the anti-air
+around the next lift's target, whichever is more. The most wanted role goes
+first to the nearest ready producer that can afford a unit for it, then the
+next; ready producers left with nothing wanted train, while ground units can
+reach an enemy, for whichever of line and siege they serve is furthest below its
+share, line alone when the army goes only by lift, unless another producer
+serves a wanted role: the scrap then waits for that producer. While the seat
+saves for a unit, the producers that train it wait for it and no other producer
+trains a cheaper unit of its role. Each chooses the unit it can afford now by
+coarse suitability: reach against the enemy's usual reach, what its role is for
+at the price (firepower for siege, durability for the rest), covering both enemy
+domains, splash against clustered enemies, affordability at the seat's income,
+variety (a kind that already makes up most of its role counts for less, so every
+kind of a role gets its turn), and personality. While ground reaches no enemy, a
+strike aircraft's splash is worth instead the targets one blast takes in the
+densest known clump of enemy ground units; the seat then saves for a splash
+bomber the more, within a cap, the more targets its blast takes than the cheaper
+strike aircraft, and pulls toward the tech building such a bomber requires.
+Scouts, carriers, Scuttlers and Sappers are bought only as the sections above
+describe. A role it needs but cannot train at all adds to the investment score
+of the cheapest building that would let it, and a role it can train adds to a
+producer it lacks whose unit would suit it better, as much as saving for that
+unit is worth.
 
 ## Investments and saving
 

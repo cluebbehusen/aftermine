@@ -475,7 +475,15 @@ fn an_idle_foundry_leaves_its_scrap_for_a_busy_producer_of_a_wanted_role() {
 /// line and siege shares are already met, with `remembered` enemy units seen
 /// over the east base and `owned` extra west units.
 fn crucible_seat(remembered: &[UnitKind], owned: &[UnitKind]) -> (Scenario, State, Opponent) {
-    let mut scenario = arena(2_000);
+    crucible_seat_banking(2_000, remembered, owned)
+}
+
+fn crucible_seat_banking(
+    scrap: u32,
+    remembered: &[UnitKind],
+    owned: &[UnitKind],
+) -> (Scenario, State, Opponent) {
+    let mut scenario = arena(scrap);
     scenario.units.extend(workforce(0));
     scenario
         .units
@@ -536,5 +544,27 @@ fn seen_heavy_shellfire_brings_point_defense_in_proportion() {
     assert!(
         !trains_mantle(&[UnitKind::Bombard, UnitKind::Bombard], &[]),
         "a few light shells are no reason for one"
+    );
+}
+
+#[test]
+fn a_short_bank_saves_for_point_defense_against_heavy_shellfire() {
+    let saving = |remembered: &[UnitKind]| {
+        let (_, state, mut opponent) = crucible_seat_banking(100, remembered, &[]);
+        opponent
+            .act_traced(&state, &mut OwnEvents::default())
+            .1
+            .unwrap()
+            .target
+            .map(|target| target.investment)
+    };
+    assert_eq!(
+        saving(&[UnitKind::Avalanche, UnitKind::Avalanche]),
+        Some(Investment::Unit(UnitKind::Mantle)),
+        "a Mantle has no cheaper stand-in, so the seat saves for one"
+    );
+    assert_ne!(
+        saving(&[UnitKind::Lancer, UnitKind::Lancer]),
+        Some(Investment::Unit(UnitKind::Mantle))
     );
 }
