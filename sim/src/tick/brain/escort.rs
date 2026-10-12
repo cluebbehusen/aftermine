@@ -47,7 +47,7 @@ impl Parties {
     pub(super) fn capture(state: &State) -> Self {
         let mut members: BTreeMap<UnitId, (Vec<UnitId>, Vec<UnitId>)> = BTreeMap::new();
         for unit in &state.units {
-            if let Some(escorted) = escorted_by(&unit.order) {
+            if let Some(escorted) = unit.order.escorted() {
                 let (air, ground) = members.entry(escorted).or_default();
                 match unit.kind.stats().domain {
                     Domain::Air => air.push(unit.id),
@@ -86,19 +86,6 @@ impl Parties {
             })
             .collect();
         Self { parties }
-    }
-}
-
-/// The unit an order escorts: escort duty itself, or a fight escort duty
-/// picked.
-pub(in crate::tick) fn escorted_by(order: &Order) -> Option<UnitId> {
-    match *order {
-        Order::Accompany { unit, .. }
-        | Order::Attack {
-            resume: Some(Resume::Accompany(unit)),
-            ..
-        } => Some(unit),
-        _ => None,
     }
 }
 

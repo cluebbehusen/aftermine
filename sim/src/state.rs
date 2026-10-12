@@ -262,6 +262,19 @@ impl Resume {
 }
 
 impl Order {
+    /// The unit this order escorts: escort duty itself, or a fight escort
+    /// duty picked.
+    pub fn escorted(&self) -> Option<UnitId> {
+        match *self {
+            Order::Accompany { unit, .. }
+            | Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            } => Some(unit),
+            _ => None,
+        }
+    }
+
     /// The goal of a walking order: Run, Hunt, Advance, or Unload.
     pub(crate) fn walk_goal(&self) -> Option<Goal> {
         match *self {
@@ -1679,6 +1692,9 @@ impl State {
                 self.validate_rider(u, rider)?;
             }
         }
+        if let Some(id) = self.escort_loop() {
+            return Err(E::InvalidEscort(id));
+        }
         // Two parked bodies inside their combined radius could never have
         // met: a touchdown needs that clearance and nothing moves a parked
         // body afterwards.
@@ -2496,6 +2512,49 @@ impl State {
         })
     }
 
+    /// A unit that escorts itself through a chain of escorts, counting every
+    /// escort duty in every program, active and queued. Dispatch never
+    /// closes such a loop, so only a forged state holds one.
+    fn escort_loop(&self) -> Option<UnitId> {
+        let index = |id: UnitId| self.units.binary_search_by_key(&id, |u| u.id).ok();
+        let escorted = |slot: usize| -> Vec<usize> {
+            let unit = &self.units[slot];
+            std::iter::once(&unit.order)
+                .chain(&unit.queue)
+                .filter_map(Order::escorted)
+                .filter_map(index)
+                .collect()
+        };
+        // Depth-first over the escort graph: 1 marks a unit on the current
+        // chain, 2 one whose chains are all known to end.
+        let mut mark = vec![0u8; self.units.len()];
+        for start in 0..self.units.len() {
+            if mark[start] != 0 {
+                continue;
+            }
+            mark[start] = 1;
+            let mut chain = vec![(start, escorted(start), 0usize)];
+            while let Some(top) = chain.len().checked_sub(1) {
+                let (slot, next) = (chain[top].0, chain[top].2);
+                let Some(&target) = chain[top].1.get(next) else {
+                    mark[slot] = 2;
+                    chain.pop();
+                    continue;
+                };
+                chain[top].2 += 1;
+                match mark[target] {
+                    0 => {
+                        mark[target] = 1;
+                        chain.push((target, escorted(target), 0));
+                    }
+                    1 => return Some(self.units[target].id),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     /// Mutable lookup of a living unit.
     pub(crate) fn unit_mut(&mut self, id: UnitId) -> Option<&mut Unit> {
         self.units
@@ -3129,8 +3188,9 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
-    /// Escort duty names the escort itself or another seat's unit, or a
-    /// machine without harvest gear holds a torch.
+    /// Escort duty names the escort itself or another seat's unit, loops
+    /// back through other escorts, or puts a torch in a machine without
+    /// harvest gear.
     #[error("unit {0} has an invalid escort duty")]
     InvalidEscort(UnitId),
     /// A unit's order names an entity id this run never handed out.
