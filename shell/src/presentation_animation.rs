@@ -950,10 +950,6 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 2.0,
             recover_ticks: 4.0,
         },
-        UnitKind::Shrike => AttackTiming {
-            report_ticks: 2.0,
-            recover_ticks: 3.0,
-        },
         UnitKind::Condor => AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 5.0,
@@ -1051,7 +1047,6 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Warden
         | UnitKind::Excavator
         | UnitKind::Kestrel
-        | UnitKind::Shrike
         | UnitKind::Condor
         | UnitKind::Breaker
         | UnitKind::Avalanche

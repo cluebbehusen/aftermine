@@ -341,7 +341,6 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Buzzard
         | UnitKind::Talon
         | UnitKind::Warden
-        | UnitKind::Shrike
         | UnitKind::Condor
         | UnitKind::Breaker => 0,
         UnitKind::Harvester
@@ -369,7 +368,6 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Buzzard
             | UnitKind::Talon
             | UnitKind::Warden
-            | UnitKind::Shrike
             | UnitKind::Breaker
             | UnitKind::Avalanche => 1,
             UnitKind::Harvester
@@ -387,7 +385,6 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Buzzard
             | UnitKind::Talon
             | UnitKind::Warden
-            | UnitKind::Shrike
             | UnitKind::Condor
             | UnitKind::Breaker => 2 + cycle_index(progress, 2),
             UnitKind::Harvester

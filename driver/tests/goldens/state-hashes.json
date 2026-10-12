@@ -1,10 +1,10 @@
 {
   "sim_version": 1,
   "hashes": {
-    "air#attack": "0x9f8065cf690f8ab8",
-    "air#boarded": "0x0d5687c8c71aeab0",
-    "air#delivered": "0x628663d681d4bf95",
-    "air#landed": "0x447395be68f0cf95",
+    "air#attack": "0x3a21f4d08046cda6",
+    "air#boarded": "0x762c0bfeec1d01b2",
+    "air#delivered": "0x48ba3fa8b6bf18fb",
+    "air#landed": "0x3a9e4294fff41dd7",
     "construction#completed": "0xf6030fbde340871d",
     "construction#interrupted": "0x4f32639a50f03606",
     "construction#salvaged": "0x754c8db0e89d189a",

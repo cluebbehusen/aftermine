@@ -96,7 +96,6 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "warden",
             "excavator",
             "kestrel",
-            "shrike",
             "condor",
             "breaker",
             "avalanche",
@@ -1887,56 +1886,6 @@ def kestrel(variant: str, move: int = 0) -> None:
     scout_flyer("kestrel", variant, move)
 
 
-def interceptor_flyer(stem: str, variant: str, move: int = 0, action: int = 0) -> None:
-    """Shared interceptor drawing: swept wings, twin intakes, and a
-    chin gun that flares through the action frames."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    tilt = (0, -2, 2)[move % 3]
-    # Swept wings.
-    d.polygon(
-        [
-            (s(32), s(6)),
-            (s(58), s(40 + tilt)),
-            (s(44), s(36)),
-            (s(32), s(52)),
-            (s(20), s(36)),
-            (s(6), s(40 - tilt)),
-        ],
-        fill=(*IRON, 255),
-    )
-    d.polygon(
-        [
-            (s(32), s(12)),
-            (s(50), s(38 + tilt)),
-            (s(40), s(34)),
-            (s(32), s(46)),
-            (s(24), s(34)),
-            (s(14), s(38 - tilt)),
-        ],
-        fill=(*pal["base"], 255),
-    )
-    # Twin intakes.
-    for x in (26, 34):
-        d.rectangle([s(x), s(18), s(x + 4), s(28)], fill=(*pal["dark"], 255))
-    # Chin gun with muzzle flare on report frames.
-    d.rectangle([s(30), s(4), s(34), s(14)], fill=(*IRON_DARK, 255))
-    if action in (2, 3):
-        d.ellipse([s(27), s(0), s(37), s(8)], fill=(*BONE, 210))
-    d.ellipse([s(29), s(26), s(35), s(32)], fill=(*pal["light"], 255))
-    suffix = ""
-    if move:
-        suffix = f"_move{move}"
-    if action:
-        suffix = f"_action{action}"
-    finish(img, px, f"{stem}{variant_tag(variant)}{suffix}")
-
-
-def shrike(variant: str, move: int = 0, action: int = 0) -> None:
-    interceptor_flyer("shrike", variant, move, action)
-
-
 def skyhook(variant: str, move: int = 0) -> None:
     """Air transport: a heavy-lift X-frame with four sling hardpoints
     and a hook boom below the rotor hub."""
@@ -3238,7 +3187,7 @@ def generate(output: Path) -> None:
         extractor(variant)
         for work in range(1, 4):
             extractor(variant, work)
-        for unit_fn in (warden, shrike, condor, breaker, avalanche):
+        for unit_fn in (warden, condor, breaker, avalanche):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)

@@ -302,17 +302,6 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Scout,
             ..plain
         },
-        // Interceptors share the air-superiority report family on purpose.
-        UnitKind::Shrike => UnitLook {
-            scale: 1.3,
-            weapon: Some(weapon(
-                SoundKind::TalonFire,
-                ShotStyle::ForgeSpot,
-                AIR_MUZZLE,
-            )),
-            marker: M::AntiAir,
-            ..plain
-        },
         UnitKind::Condor => UnitLook {
             scale: LARGE_SCALE,
             airframe: Some(Airframe {

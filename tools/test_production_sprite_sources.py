@@ -91,7 +91,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 531)
+        self.assertEqual(len(frames), 517)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -99,7 +99,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "ac861bdc3887ac8e33d19f16ca9647c2935c3453aebf5c668519080f5b4c26be",
+            "edfcc8556c6fdabe804616e77b678d54ea7a2063cd42d7de1ebc3b053567d544",
         )
 
     def test_skyhook_rotors_keep_three_distinct_poses_during_actions(self) -> None:

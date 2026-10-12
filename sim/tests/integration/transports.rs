@@ -631,9 +631,12 @@ fn a_rider_survives_when_its_sling_is_destroyed_during_boarding() {
     scenario.units.extend(
         [(8, 2), (10, 2), (12, 2), (8, 4), (12, 4), (9, 6), (11, 6)]
             .into_iter()
-            .map(|(x, y)| unit(1, UnitKind::Shrike, x, y)),
+            .map(|(x, y)| unit(1, UnitKind::Talon, x, y)),
     );
-    let mut state = scenario.build().unwrap();
+    let state = scenario.build().unwrap();
+    let mut document = serde_json::to_value(&state).unwrap();
+    document["units"][0]["hp"] = serde_json::json!(7 * UnitKind::Talon.stats().weapons[0].damage);
+    let mut state: State = serde_json::from_value(document).unwrap();
     let sky = state
         .units()
         .iter()
@@ -649,7 +652,7 @@ fn a_rider_survives_when_its_sling_is_destroyed_during_boarding() {
     let hunters: Vec<_> = state
         .units()
         .iter()
-        .filter(|unit| unit.kind == UnitKind::Shrike)
+        .filter(|unit| unit.kind == UnitKind::Talon)
         .map(|unit| unit.id)
         .collect();
 

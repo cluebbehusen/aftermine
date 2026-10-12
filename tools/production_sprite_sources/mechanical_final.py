@@ -114,7 +114,7 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                 f"condor{tag}{suffix}",
                 bombers.render_condor(variant, bombers.CONDOR_STATES[action]),
             )
-        for kind in ("buzzard", "talon", "shrike", "skyhook"):
+        for kind in ("buzzard", "talon", "skyhook"):
             for suffix, move, action in [
                 ("", 0, 0),
                 ("_move1", 1, 0),

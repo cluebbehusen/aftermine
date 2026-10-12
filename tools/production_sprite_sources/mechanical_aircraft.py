@@ -190,50 +190,6 @@ def talon(variant, move=0, action=0):
     return base
 
 
-def shrike(variant, move=0, action=0):
-    im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
-    for side in (-1, 1):
-        panel(
-            d,
-            [
-                (64 + side * 8, 28),
-                (64 + side * 53, 51),
-                (64 + side * 55, 70),
-                (64 + side * 24, 73),
-                (64 + side * 11, 85),
-            ],
-            DARK,
-        )
-        panel(
-            d,
-            [
-                (64 + side * 16, 42),
-                (64 + side * 46, 56),
-                (64 + side * 46, 64),
-                (64 + side * 21, 62),
-            ],
-            paint,
-        )
-        engine(d, 64 + side * 25 - 12, 68, 24, 43, paint, move)
-        panel(
-            d, [(64 + side * 13, 96), (64 + side * 26, 119), (64 + side * 5, 109)], IRON
-        )
-    panel(d, [(64, 9), (76, 28), (76, 94), (64, 112), (52, 94), (52, 28)], DARK)
-    panel(d, [(64, 23), (69, 35), (69, 78), (59, 78), (59, 35)], paint)
-    sensor(d, 64, 47, IRON)
-    box(d, (59, 83, 69, 97), VOID, 1)
-    base = finish(im)
-    im, d = canvas()
-    gun(d, 64, 12, 25, 7, action)
-    for side in (-1, 1):
-        x = 64 + side * 26
-        box(d, (x - 8, 55, x + 8, 63), VOID, 2)
-        box(d, (x - 5, 57, x + 5, 60), IRON, 1)
-    base.alpha_composite(finish(im, False))
-    return base
-
-
 def skyhook(variant, move=0, action=0, part=None):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]

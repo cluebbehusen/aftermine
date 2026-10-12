@@ -216,7 +216,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
         UnitKind::Excavator,
         UnitKind::Sentinel,
         UnitKind::Kestrel,
-        UnitKind::Shrike,
+        UnitKind::Talon,
         UnitKind::Flakhound,
     ];
     let west: Vec<UnitId> = line

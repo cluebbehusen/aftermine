@@ -49,7 +49,7 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
     match kind {
         UnitKind::Sentinel | UnitKind::Warden | UnitKind::Breaker => Some(Role::Line),
         UnitKind::Lancer | UnitKind::Bombard | UnitKind::Avalanche => Some(Role::Siege),
-        UnitKind::Flakhound | UnitKind::Talon | UnitKind::Shrike => Some(Role::AntiAir),
+        UnitKind::Flakhound | UnitKind::Talon => Some(Role::AntiAir),
         UnitKind::Buzzard | UnitKind::Condor => Some(Role::AirStrike),
         UnitKind::Harvester
         | UnitKind::Excavator

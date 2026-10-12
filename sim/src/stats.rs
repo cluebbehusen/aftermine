@@ -44,8 +44,6 @@ chassis::listed_enum! {
         Excavator,
         /// Scout flyer: fast, unarmed, far-sighted.
         Kestrel,
-        /// Heavy interceptor: escorts and counters bombers.
-        Shrike,
         /// Strategic bomber: one enormous bomb per pass, flown on a
         /// committed attack run — it cannot stop and strafe.
         Condor,
@@ -547,7 +545,6 @@ impl UnitKind {
             UnitKind::Warden => "warden",
             UnitKind::Excavator => "excavator",
             UnitKind::Kestrel => "kestrel",
-            UnitKind::Shrike => "shrike",
             UnitKind::Condor => "condor",
             UnitKind::Breaker => "breaker",
             UnitKind::Avalanche => "avalanche",
@@ -584,7 +581,6 @@ impl UnitKind {
                 "Heavy harvester with faster mining, more cargo space, and faster construction."
             }
             UnitKind::Kestrel => "Unarmed scout aircraft with long sight range.",
-            UnitKind::Shrike => "Heavy interceptor for fighting enemy aircraft.",
             UnitKind::Condor => {
                 "Heavy bomber. Drops one large bomb per attack run and turns for another pass."
             }
@@ -987,40 +983,6 @@ const KESTREL: UnitStats = UnitStats {
     crash: None,
 };
 
-const SHRIKE: UnitStats = UnitStats {
-    contact_reach: None,
-    max_hp: 160,
-    speed: Fx::lit("0.16"),
-    radius: Fx::lit("0.38"),
-    cost: 260,
-    train_ticks: 300,
-    domain: Domain::Air,
-    weapons: &[WeaponStats {
-        damage: 30,
-        range: Fx::lit("4"),
-        minimum_range: Fx::ZERO,
-        cooldown_ticks: 30,
-        targets: DomainMask::AIR,
-        splash: None,
-        indirect: false,
-        projectile: None,
-    }],
-    aggro_range: Fx::lit("6"),
-    harvest: None,
-    vision: 8,
-    requires: &[],
-    build_rate: 1,
-    demolition: None,
-    transport_size: 0,
-    transport_capacity: 0,
-    turn_rate: 0,
-    cruise_turn_rate: 6,
-    turret_turn_rate: 0,
-    hull_turn_rate: None,
-    brace: None,
-    crash: None,
-};
-
 const CONDOR: UnitStats = UnitStats {
     contact_reach: None,
     max_hp: 260,
@@ -1356,7 +1318,6 @@ const AIRWORKS: BuildingStats = BuildingStats {
         UnitKind::Buzzard,
         UnitKind::Talon,
         UnitKind::Kestrel,
-        UnitKind::Shrike,
         UnitKind::Condor,
         UnitKind::Skyhook,
     ],
@@ -1545,7 +1506,6 @@ impl UnitKind {
             UnitKind::Warden => &WARDEN,
             UnitKind::Excavator => &EXCAVATOR,
             UnitKind::Kestrel => &KESTREL,
-            UnitKind::Shrike => &SHRIKE,
             UnitKind::Condor => &CONDOR,
             UnitKind::Breaker => &BREAKER,
             UnitKind::Avalanche => &AVALANCHE,

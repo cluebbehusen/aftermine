@@ -350,10 +350,7 @@ pub(crate) fn owns_anti_air(state: &State, player: PlayerId) -> bool {
     let unit = state.units().iter().any(|unit| {
         unit.player == player
             && unit.hp > 0
-            && matches!(
-                unit.kind,
-                UnitKind::Flakhound | UnitKind::Talon | UnitKind::Shrike
-            )
+            && matches!(unit.kind, UnitKind::Flakhound | UnitKind::Talon)
     });
     unit || state.buildings().iter().any(|building| {
         building.player == player && building.kind == BuildingKind::FlakTurret && building.built()

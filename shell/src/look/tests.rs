@@ -75,7 +75,7 @@ fn markers_name_each_kind_for_what_it_does_on_the_field() {
         (UnitKind::Bombard, M::Siege),
         (UnitKind::Condor, M::Siege),
         (UnitKind::Flakhound, M::AntiAir),
-        (UnitKind::Shrike, M::AntiAir),
+        (UnitKind::Talon, M::AntiAir),
         (UnitKind::Kestrel, M::Scout),
         (UnitKind::Skyhook, M::Transport),
         (UnitKind::Scuttler, M::Demolition),
