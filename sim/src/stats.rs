@@ -1645,7 +1645,7 @@ impl BuildingKind {
     }
 
     /// Whether harvesters can deliver their cargo here. The one funnel
-    /// every drop-off decision consults — deliveries, retirement homes,
+    /// every drop-off decision consults — deliveries, withdrawal homes,
     /// and route planning alike.
     pub const fn is_drop_off(self) -> bool {
         matches!(self, BuildingKind::Foundry)
@@ -1917,7 +1917,7 @@ pub const UNLOAD_TICKS: u8 = 10;
 
 /// A radar blip only makes salvage unsafe when it is this close to a
 /// candidate source. Contacts carry no identity or range, so a distant
-/// blip must not retire an otherwise healthy work zone.
+/// blip must not withdraw an otherwise healthy work zone.
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile

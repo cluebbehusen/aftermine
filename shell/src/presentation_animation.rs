@@ -1091,7 +1091,7 @@ fn active_harvesting(state: &State, unit: &Unit) -> Option<Vec2Fx> {
     let harvest = unit.kind.stats().harvest?;
     let Order::Harvest {
         node,
-        retiring: false,
+        withdrawing: false,
         ..
     } = unit.order
     else {

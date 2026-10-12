@@ -455,10 +455,11 @@ Reissuing the same delivery preserves progress. Automatic deliveries can choose
 another Foundry after target loss; explicit deliveries retain their usual
 failure policy. A delivery route ends at any point already within unloading
 reach, then brakes before releasing cargo. Workers without a following order
-leave the contact ring after their final delivery so a retired crew cannot block
-the last loaded workers. Queued work takes precedence over this short departure.
-Reservations and blocked-dock replanning use physical approach points and hull
-clearance instead of tile centers. The following job begins on the next tick.
+leave the contact ring after their final delivery so a finished crew cannot
+block the last loaded workers. Queued work takes precedence over this short
+departure. Reservations and blocked-dock replanning use physical approach points
+and hull clearance instead of tile centers. The following job begins on the next
+tick.
 
 `ReturnCargo` replaces loaded workers' active and queued work with a delivery.
 The command selects an owned, living, completed Foundry before replacing each

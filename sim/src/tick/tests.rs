@@ -582,12 +582,12 @@ fn assert_calibration_open_symmetry(
                 Order::Harvest {
                     node: left_node,
                     anchor: left_anchor,
-                    retiring: left_retiring,
+                    withdrawing: left_withdrawing,
                 },
                 Order::Harvest {
                     node: right_node,
                     anchor: right_anchor,
-                    retiring: right_retiring,
+                    withdrawing: right_withdrawing,
                 },
             ) => {
                 assert_eq!(mirror_tile(state, left_node), right_node, "{stage}: node");
@@ -596,7 +596,7 @@ fn assert_calibration_open_symmetry(
                     right_anchor,
                     "{stage}: anchor"
                 );
-                assert_eq!(left_retiring, right_retiring, "{stage}: retirement");
+                assert_eq!(left_withdrawing, right_withdrawing, "{stage}: withdrawal");
             }
             (Order::Hunt { goal: left_goal }, Order::Hunt { goal: right_goal })
             | (Order::Run { goal: left_goal }, Order::Run { goal: right_goal }) => {
@@ -858,7 +858,7 @@ fn mirrored_haulers_replan_together_when_construction_closes_their_routes() {
         unit.order = Order::Harvest {
             node,
             anchor,
-            retiring: false,
+            withdrawing: false,
         };
         unit.path = Some(PathFollow {
             final_point: None,

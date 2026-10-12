@@ -227,7 +227,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
     match unit.order {
         crate::Order::Harvest {
             node,
-            retiring: false,
+            withdrawing: false,
             ..
         } => {
             unit.kind

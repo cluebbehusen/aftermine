@@ -510,7 +510,7 @@ fn apply_harvest(
             Order::Harvest {
                 node,
                 anchor: node,
-                retiring: false,
+                withdrawing: false,
             },
             queue,
         ) {

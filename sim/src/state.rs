@@ -112,7 +112,7 @@ pub enum Order {
         /// Harvester deposits its cargo, reaches a built Foundry, and
         /// advances its queued program.
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
-        retiring: bool,
+        withdrawing: bool,
     },
     /// Chase and attack one target until it is gone.
     Attack {

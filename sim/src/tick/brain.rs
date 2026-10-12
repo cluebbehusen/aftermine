@@ -218,14 +218,14 @@ pub(super) fn run(
             Order::Harvest {
                 node,
                 anchor,
-                retiring,
+                withdrawing,
             } => {
                 let player = state.unit(id).expect("just seen").player;
                 let team = state.player(player).team as usize;
                 let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
                     crate::vision::GroundSalvageDanger::capture(state, player)
                 });
-                harvest(state, danger, id, node, anchor, retiring, events);
+                harvest(state, danger, id, node, anchor, withdrawing, events);
             }
             Order::Attack {
                 target,

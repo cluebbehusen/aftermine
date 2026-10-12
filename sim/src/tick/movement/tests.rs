@@ -431,7 +431,7 @@ fn coasting_worker_is_not_anchored_until_its_motor_stops() {
     unit.order = Order::Harvest {
         node: TilePos::new(7, 1),
         anchor: TilePos::new(7, 1),
-        retiring: false,
+        withdrawing: false,
     };
     unit.set_drive_speed(unit.kind.stats().speed);
     let before = unit.pos;
