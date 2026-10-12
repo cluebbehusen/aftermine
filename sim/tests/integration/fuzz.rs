@@ -528,7 +528,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
         },
         CommandTag::SetRally => Command::SetRally {
             building: building_id(rng, state),
-            rally: (rng.next_below(3) != 0).then(|| tile(rng, state)),
+            rally: match rng.next_below(3) {
+                0 => None,
+                1 => Some(oxide_sim::Rally::Tile(tile(rng, state))),
+                _ => Some(oxide_sim::Rally::Unit(unit_id(rng, state))),
+            },
         },
         CommandTag::Surrender => Command::Surrender,
         CommandTag::RepairUnit => Command::RepairUnit {
@@ -594,6 +598,8 @@ struct Reach {
     cancelled_order: u64,
     /// Most units on escort duty at once.
     escorts: usize,
+    /// Most producers rallied onto a unit at once.
+    unit_rallies: usize,
 }
 
 impl Reach {
@@ -615,6 +621,7 @@ impl Reach {
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
         self.escorts = self.escorts.max(other.escorts);
+        self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
     }
 }
 
@@ -920,6 +927,13 @@ fn fuzz_run(seed: u64) -> Run {
                 .filter(|u| matches!(u.order, oxide_sim::Order::Accompany { .. }))
                 .count(),
         );
+        reach.unit_rallies = reach.unit_rallies.max(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| matches!(b.rally, Some(oxide_sim::Rally::Unit(_))))
+                .count(),
+        );
         reach.train_queue = reach.train_queue.max(
             state
                 .buildings()
@@ -1056,6 +1070,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
     assert!(
         reach.escorts > 0,
         "the sweep must put a unit on escort duty"
+    );
+    assert!(
+        reach.unit_rallies > 0,
+        "the sweep must rally a producer onto a unit"
     );
 }
 

@@ -530,7 +530,7 @@ fn selected_producers_receive_the_same_context_rally_in_id_order() {
         staged,
         producers
             .into_iter()
-            .map(|building| (building, rally))
+            .map(|building| (building, oxide_sim::Rally::Tile(rally)))
             .collect::<Vec<_>>()
     );
 }
@@ -1022,6 +1022,47 @@ fn a_minimap_order_pings_at_the_tile_centre() {
 }
 
 #[test]
+fn a_rally_click_on_an_own_unit_rallies_onto_it() {
+    let mut game = multi_producer_game();
+    let producers: Vec<_> = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|building| building.player == game.presentation.human)
+        .map(|building| building.id)
+        .collect();
+    let (unit, at) = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human)
+        .map(|u| (u.id, vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+        .expect("an own unit");
+    let onto_unit = |game: &Game| {
+        !game.pending.is_empty()
+            && game.pending.iter().all(|c| {
+                matches!(c.command, Command::SetRally {
+                    rally: Some(oxide_sim::Rally::Unit(picked)),
+                    ..
+                } if picked == unit)
+            })
+    };
+
+    // Right-click with only buildings selected.
+    game.presentation.selection.buildings = producers.clone();
+    let screen = game.presentation.camera.to_screen(at);
+    context_order(&mut game, screen, false);
+    assert!(onto_unit(&game), "{:?}", game.pending);
+
+    // The armed rally click.
+    let mut game = multi_producer_game();
+    let mut input = InputState::new();
+    input.rallying = producers;
+    apply_events(&mut game, &mut input, &[left_down(screen)]);
+    assert!(onto_unit(&game), "{:?}", game.pending);
+}
+
+#[test]
 fn patrol_waypoints_ping_at_the_tile_centre() {
     let (mut game, mut input, _) = armed_patrol();
     let tile = TilePos::new(10, 6);
@@ -1050,7 +1091,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
     assert!(
         !game.pending.is_empty()
             && game.pending.iter().all(
-                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == rally)
+                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == oxide_sim::Rally::Tile(rally))
             ),
         "{:?}",
         game.pending
@@ -1065,7 +1106,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
     assert!(
         !game.pending.is_empty()
             && game.pending.iter().all(
-                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == rally)
+                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == oxide_sim::Rally::Tile(rally))
             ),
         "{:?}",
         game.pending
@@ -1294,7 +1335,7 @@ fn the_rally_card_arms_a_touchable_world_target() {
                 rally: Some(staged),
             },
             ..
-        }] if *building == foundry && *staged == rally
+        }] if *building == foundry && *staged == oxide_sim::Rally::Tile(rally)
     ));
     assert!(
         input.rallying.is_empty(),
@@ -4688,7 +4729,7 @@ fn a_minimap_right_click_sets_every_selected_producer_rally() {
         staged,
         producers
             .into_iter()
-            .map(|building| (building, rally))
+            .map(|building| (building, oxide_sim::Rally::Tile(rally)))
             .collect::<Vec<_>>()
     );
 }
@@ -7693,7 +7734,7 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
         player: game.presentation.human,
         command: Command::SetRally {
             building: producers[0],
-            rally: Some(TilePos::new(14, 9)),
+            rally: Some(oxide_sim::Rally::Tile(TilePos::new(14, 9))),
         },
     }]);
     controls_key_with(&mut game, &mut input, &bindings, Key::I);

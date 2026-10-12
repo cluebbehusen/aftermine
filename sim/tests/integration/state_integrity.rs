@@ -303,6 +303,15 @@ fn well_formed_additions_are_accepted() {
     base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
     let bombard = base["units"][1]["id"].clone();
     base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
+    let owner = base["buildings"][0]["player"].clone();
+    let own = base["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["player"] == owner)
+        .unwrap()["id"]
+        .clone();
+    base["buildings"][0]["rally"] = json!({"unit": own});
     serde_json::from_value::<State>(base).expect("legal additions stay legal");
 }
 
@@ -408,10 +417,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::DamageStampInTheFuture(_) => 81,
         E::PointDefenseOutOfRange(_) => 82,
         E::InvalidEscort(_) => 83,
+        E::InvalidRally(_) => 84,
     }
 }
 
-const ROWS: usize = 84;
+const ROWS: usize = 85;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -508,6 +518,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::DamageStampInTheFuture(UnitId(0)),
         E::PointDefenseOutOfRange(UnitId(0)),
         E::InvalidEscort(UnitId(0)),
+        E::InvalidRally(BuildingId(0)),
     ]
 }
 
@@ -989,6 +1000,26 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 has an invalid cargo delivery",
         ),
         (
+            "a rally onto a unit that left play",
+            |d| d["buildings"][0]["rally"] = json!({"unit": 999}),
+            "rallies to a unit that is gone or not its owner's",
+        ),
+        (
+            "a rally onto another seat's unit",
+            |d| {
+                let owner = d["buildings"][0]["player"].clone();
+                let foreign = d["units"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|u| u["player"] != owner)
+                    .unwrap()["id"]
+                    .clone();
+                d["buildings"][0]["rally"] = json!({"unit": foreign});
+            },
+            "rallies to a unit that is gone or not its owner's",
+        ),
+        (
             "escort duty around an enemy unit",
             |d| {
                 let enemy = d["units"][2]["id"].clone();
@@ -1250,7 +1281,7 @@ fn every_checklist_row_refuses_its_forgery() {
         ),
         (
             "a rally point at the far end of the coordinate space",
-            |d| d["buildings"][0]["rally"] = json!({"x": -i32::MAX, "y": 0}),
+            |d| d["buildings"][0]["rally"] = json!({"tile": {"x": -i32::MAX, "y": 0}}),
             "building b0 names a coordinate outside the envelope",
         ),
         (
@@ -1791,7 +1822,7 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 0,
                 Command::SetRally {
                     building: fabricator,
-                    rally: Some(tile(5, 3)),
+                    rally: Some(oxide_sim::Rally::Tile(tile(5, 3))),
                 },
             )],
         ),

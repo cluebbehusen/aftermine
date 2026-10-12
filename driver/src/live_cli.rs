@@ -279,8 +279,11 @@ pub(crate) enum LiveCmd {
         #[arg(long)]
         building: u32,
         /// Rally tile as "x,y" (omit with --clear).
-        #[arg(long, conflicts_with = "clear")]
+        #[arg(long, conflicts_with_all = ["clear", "unit"])]
         tile: Option<String>,
+        /// An own unit for new units to escort.
+        #[arg(long, conflicts_with = "clear")]
+        unit: Option<u32>,
         /// Clear the rally instead.
         #[arg(long)]
         clear: bool,
@@ -660,12 +663,14 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             player,
             building,
             tile,
+            unit,
             clear,
         } => {
-            let rally = match (tile, clear) {
-                (Some(t), _) => Some(parse_tile(&t)?),
-                (None, true) => None,
-                (None, false) => bail!("pass --tile x,y or --clear"),
+            let rally = match (tile, unit, clear) {
+                (Some(t), _, _) => Some(oxide_sim::Rally::Tile(parse_tile(&t)?)),
+                (None, Some(u), _) => Some(oxide_sim::Rally::Unit(UnitId(u))),
+                (None, None, true) => None,
+                (None, None, false) => bail!("pass --tile x,y, --unit N, or --clear"),
             };
             Request::SendCommand {
                 player: PlayerId(player),

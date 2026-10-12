@@ -248,6 +248,11 @@ against pending commands again. Selecting one factory shows the exact ordered
 queue and its per-slot cancellation controls. Mixed building kinds keep rally
 controls and the first compatible producer's training shortcuts.
 
+A world rally click, from the armed Set rally card or a right-click with only
+buildings selected, picks the own unit under the cursor before the ground: new
+units then escort it, and the rally line follows that unit's drawn position,
+ending in a ring instead of a flag. Minimap rally clicks name ground only.
+
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height

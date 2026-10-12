@@ -224,6 +224,19 @@ pub enum Order {
     },
 }
 
+/// Where a producer's finished units report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rally {
+    /// A tile: harvesters mine a rallied scrap node, combat units hunt there,
+    /// and everyone else walks.
+    Tile(TilePos),
+    /// An own unit, in the world or riding a transport, that every newborn
+    /// escorts. The rally clears when that unit leaves play, so it never
+    /// names one that is gone at a tick boundary.
+    Unit(UnitId),
+}
+
 /// The program an engagement interrupted, taken back once its victim is gone
 /// or out of bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -945,11 +958,9 @@ pub struct Building {
     pub queue: std::collections::VecDeque<UnitKind>,
     /// Construction, upgrade, or service, with that phase's meter.
     pub phase: BuildingPhase,
-    /// Where finished units report: harvesters mine a rallied scrap node,
-    /// combat units hunt there, everyone else walks. `None` means
-    /// stand at the doorstep.
+    /// Where finished units report. `None` means stand at the doorstep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rally: Option<TilePos>,
+    pub rally: Option<Rally>,
     /// A player-designated target this defense prefers while it remains a
     /// live, hostile, truly visible target in the weapon's domain. Range and
     /// cover only decide whether the preference can be fired on now; they do
@@ -2194,8 +2205,19 @@ impl State {
         // The footprint needs no separate check: sizes are single digits,
         // so an anchor inside the envelope keeps `anchor + size` inside it
         // too.
-        if !tile_inside_envelope(*anchor) || !rally.is_none_or(tile_inside_envelope) {
+        if !tile_inside_envelope(*anchor)
+            || matches!(rally, Some(Rally::Tile(tile)) if !tile_inside_envelope(*tile))
+        {
             return Err(E::BuildingOutsideEnvelope(id));
+        }
+        // Unlike an order's reference, a unit rally may not dangle: cleanup
+        // clears it in the tick its unit leaves play.
+        if let Some(Rally::Unit(unit)) = rally
+            && self
+                .escorted(*unit)
+                .is_none_or(|body| body.player != *player)
+        {
+            return Err(E::InvalidRally(id));
         }
         if !salvage_ledger_coherent(b) {
             return Err(E::IncoherentSalvageLedger(id));
@@ -3230,6 +3252,9 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
+    /// A unit rally names a unit that is out of play or another seat's.
+    #[error("building {0} rallies to a unit that is gone or not its owner's")]
+    InvalidRally(BuildingId),
     /// Escort duty names the escort itself or another seat's unit, loops
     /// back through other escorts, or puts a torch in a machine without
     /// harvest gear.

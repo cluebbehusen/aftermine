@@ -239,6 +239,15 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         }
     }
     state.units.retain(|u| u.hp > 0);
+    // A unit rally leaves play with its unit. Units leave play only here,
+    // so no rally names a gone unit at a tick boundary.
+    for index in 0..state.buildings.len() {
+        if let Some(crate::state::Rally::Unit(unit)) = state.buildings[index].rally
+            && state.escorted(unit).is_none()
+        {
+            state.buildings[index].rally = None;
+        }
+    }
 
     let mut queue_refunds: Vec<(crate::ids::PlayerId, u32)> = Vec::new();
     for building in state.buildings.iter().filter(|b| b.hp == 0) {

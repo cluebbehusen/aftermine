@@ -55,6 +55,7 @@ mod surrender;
 mod teams;
 mod transports;
 mod turret_acquisition;
+mod unit_rally;
 mod unreachable_goals;
 mod upgrades;
 mod worker_contact;
