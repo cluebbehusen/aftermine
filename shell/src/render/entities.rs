@@ -2354,6 +2354,106 @@ fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomyS
     }
 }
 
+/// One machine an own Repair Bay is servicing, and how fast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RepairTether {
+    bay: oxide_sim::BuildingId,
+    unit: oxide_sim::UnitId,
+    pace: oxide_sim::state::RepairPace,
+}
+
+/// Every own Repair Bay's current patients, read from the same choice the
+/// aura heals by.
+fn repair_tethers(game: &crate::game::Scene<'_>) -> Vec<RepairTether> {
+    game.state
+        .buildings()
+        .iter()
+        .filter(|bay| {
+            bay.player == game.presentation.human && bay.kind == oxide_sim::BuildingKind::RepairBay
+        })
+        .flat_map(|bay| {
+            game.state
+                .repair_bay_patients(bay.id)
+                .into_iter()
+                .map(move |(unit, pace)| RepairTether {
+                    bay: bay.id,
+                    unit,
+                    pace,
+                })
+        })
+        .collect()
+}
+
+/// Tethers from each own Repair Bay to the machines it is servicing, solid
+/// while one heals fast and dotted while it heals slowly under fire, so the
+/// line's shape rather than its color tells the two apart. A selected Bay
+/// also shows one pip per slot, filled for each patient.
+pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
+    if game.presentation.spectate {
+        return;
+    }
+    let scale = ui_scale();
+    let zoom = game.presentation.camera.zoom;
+    let color = Color {
+        a: 0.85,
+        ..range_color(BuildingRangeKind::Repair)
+    };
+    let alpha = game.presentation.tick_fraction();
+    let tethers = repair_tethers(game);
+    for tether in &tethers {
+        let (Some(bay), Some(unit)) = (
+            game.state.building(tether.bay),
+            game.state.unit(tether.unit),
+        ) else {
+            continue;
+        };
+        let mut at = game
+            .presentation
+            .camera
+            .to_screen(game.presentation.draw_pos(unit.id, unit.pos, alpha));
+        if unit.domain() == oxide_sim::stats::Domain::Air {
+            at.y -= super::air_presentation(unit.kind, zoom).2;
+        }
+        let body = Vec2::splat(unit.kind.stats().radius.to_num::<f32>() * zoom);
+        let Some([from, to]) = footprint_link(
+            building_screen_bounds(game, bay),
+            (at - body, at + body),
+            3.0 * scale,
+        ) else {
+            continue;
+        };
+        let stroke = match tether.pace {
+            oxide_sim::state::RepairPace::Fast => RangeStroke::Solid,
+            oxide_sim::state::RepairPace::Slow => RangeStroke::Dotted,
+        };
+        stroke_patterned_path(&[from, to], stroke, 1.8 * scale, color, scale, &[]);
+    }
+    for &id in &game.presentation.selection.buildings {
+        let Some(bay) = game
+            .state
+            .building(id)
+            .filter(|bay| bay.player == game.presentation.human)
+            .filter(|bay| bay.kind == oxide_sim::BuildingKind::RepairBay)
+        else {
+            continue;
+        };
+        let used = tethers.iter().filter(|tether| tether.bay == id).count();
+        let (min, max) = building_screen_bounds(game, bay);
+        let radius = 3.0 * scale;
+        let gap = 4.0 * radius;
+        let slots = oxide_sim::stats::REPAIR_BAY_PATIENTS;
+        let left = f32::midpoint(min.x, max.x) - gap * (slots as f32 - 1.0) * 0.5;
+        for slot in 0..slots {
+            let centre = vec2(left + gap * slot as f32, min.y - 3.0 * radius);
+            if slot < used {
+                fill_circle(centre, radius, color);
+            } else {
+                stroke_circle(centre, radius, scale, color);
+            }
+        }
+    }
+}
+
 const ECONOMY_SUPPORT_COLOR: Color = Color::new(0.72, 0.63, 0.46, 0.58);
 
 fn building_screen_bounds(

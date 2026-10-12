@@ -294,8 +294,11 @@ Units take picking priority over buildings, as with single clicks.
 Selection panels and tooltips derive their facts from simulation accessors.
 Static capabilities may be shown for foreign selections; current enemy orders,
 loads, and building income remain private. Placement and support previews use
-authoritative queries rather than duplicating game rules. Unknown concealed
-mines cannot alter player-visible picking or placement feedback.
+authoritative queries rather than duplicating game rules. Each own Repair Bay
+draws a tether to every machine `State::repair_bay_patients` picks, solid at the
+fast rate and dotted at the slow rate, and a selected Bay shows one pip per
+patient slot. Unknown concealed mines cannot alter player-visible picking or
+placement feedback.
 
 A unit panel offers only the verbs its selection can use: Run and Hunt need a
 unit that can fight, while Patrol stays for unarmed scouts. Stop is not a card.

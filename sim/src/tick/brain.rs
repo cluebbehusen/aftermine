@@ -323,6 +323,7 @@ fn resolve_hits(
     }
     let mut salvaged = Vec::new();
     let mut incidents = Vec::new();
+    let now = state.current_tick();
     for hit in hits {
         match hit.victim {
             Target::Unit(uid) => {
@@ -333,7 +334,7 @@ fn resolve_hits(
                     if v.hp > 0 && hit.damage > 0 && (relevant_hit || relevant_loss) {
                         incidents.push((v.player, v.tile(), hit));
                     }
-                    super::damage::unit(v, hit.damage, events);
+                    super::damage::unit(v, hit.damage, now, events);
                 }
             }
             Target::Building(bid) => {
@@ -577,12 +578,31 @@ fn resolve_unit_heals(state: &mut State, heals: &[PendingUnitHeal], events: &mut
     }
 }
 
+/// Hp a fast Repair Bay pulse restores to a patient of `max_hp`: its share
+/// of [`crate::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND`], telescoped over
+/// the global pulse index so fractions add up exactly with no state, and
+/// never less than [`crate::stats::REPAIR_BAY_STEP`].
+fn fast_step(max_hp: u32, pulse: u64) -> u32 {
+    use crate::stats::{REPAIR_BAY_FAST_PERMILLE_PER_SECOND, REPAIR_BAY_PERIOD, REPAIR_BAY_STEP};
+    let per_mille = u64::from(max_hp) * REPAIR_BAY_FAST_PERMILLE_PER_SECOND * REPAIR_BAY_PERIOD;
+    let per_pulse = 1000 * u64::from(crate::TICKS_PER_SECOND);
+    let healed = |pulse: u64| per_mille * pulse / per_pulse;
+    // The meter repeats every `per_pulse` pulses, so reducing the index keeps
+    // the product in range on any clock.
+    let pulse = pulse % per_pulse;
+    u32::try_from(healed(pulse + 1) - healed(pulse))
+        .expect("one pulse heals less than a body's health")
+        .max(REPAIR_BAY_STEP)
+}
+
 /// Repair Bay healing. On its pulse cadence every built bay, in building-id
-/// order, offers each own wounded unit and completed structure inside
+/// order, offers each of its patients ([`State::repair_bay_patients`]) a
+/// fast or slow step and each damaged own completed structure inside
 /// [`crate::stats::REPAIR_BAY_RADIUS`] of its footprint one
 /// [`crate::stats::REPAIR_BAY_STEP`] of hp, billed from the owner's bank at
 /// [`crate::stats::REPAIR_COST_PERMILLE`] of the patient's active tier cost.
-/// Reach measures from body to footprint for units and between the nearest
+/// A patient the bank cannot fully pay for heals what it can pay. Reach
+/// measures from body to footprint for units and between the nearest
 /// footprint edges for structures. A Bay cannot heal itself;
 /// another Bay may heal it. Units have first claim on limited scrap, then
 /// structures in building-id order. Everything buffers into the shared hp
@@ -607,6 +627,7 @@ fn repair_bay_aura(
         .map(|b| b.id)
         .collect();
     let radius = crate::stats::REPAIR_BAY_RADIUS;
+    let pulse = state.current_tick() / crate::stats::REPAIR_BAY_PERIOD;
     // Unit steps already queued per patient this pulse. Overlapping auras
     // stack in resolution, so a later bay prices from the hp earlier bays
     // queued; pricing from start-of-tick hp would bill every bay for the
@@ -618,38 +639,37 @@ fn repair_bay_aura(
         };
         let owner = b.player;
         let recovery_reserve = state.recovery_reserve(owner);
-        let patients: Vec<UnitId> = state
-            .units
-            .iter()
-            .filter(|u| {
-                u.player == owner
-                    && u.hp > 0
-                    && u.hp < u.kind.stats().max_hp
-                    && b.closest_point_to(u.pos).dist_sq(u.pos) <= radius * radius
-            })
-            .map(|u| u.id)
-            .collect();
-        for id in patients {
-            let u = state.unit(id).expect("just filtered");
+        for (id, pace) in state.repair_bay_patients(bay) {
+            let u = state.unit(id).expect("a chosen patient lives");
             let stats = u.kind.stats();
             let queued = in_flight.get(&id).copied().unwrap_or(0);
             let healed = (u.hp + queued).min(stats.max_hp);
-            let step = crate::stats::REPAIR_BAY_STEP.min(stats.max_hp - healed);
-            if step == 0 {
-                continue; // earlier bays already carry this one to whole
-            }
+            let offered = match pace {
+                crate::state::RepairPace::Fast => fast_step(stats.max_hp, pulse),
+                crate::state::RepairPace::Slow => crate::stats::REPAIR_BAY_STEP,
+            };
             let millis = |hp: u32| -> u64 {
                 u64::from(hp) * u64::from(stats.cost) * crate::stats::REPAIR_COST_PERMILLE
                     / u64::from(stats.max_hp)
             };
-            let due = millis(healed + step).div_ceil(1000) - millis(healed).div_ceil(1000);
+            let due =
+                |step: u32| millis(healed + step).div_ceil(1000) - millis(healed).div_ceil(1000);
+            // The bank, less any reserve recovery holds, pays for as much of
+            // the step as it covers; the patient keeps its slot either way.
             let bank = state.player(owner).scrap;
-            let Some(due) = u32::try_from(due).ok().filter(|&due| due <= bank) else {
-                continue; // broke for this patient; cheaper coins may still land
+            let spendable = if recovery_reserve > 0 {
+                bank.saturating_sub(recovery_reserve)
+            } else {
+                bank
             };
-            if due > 0 && recovery_reserve > 0 && bank - due < recovery_reserve {
-                continue;
+            let step = (1..=offered.min(stats.max_hp - healed))
+                .rev()
+                .find(|&step| due(step) <= u64::from(spendable))
+                .unwrap_or(0);
+            if step == 0 {
+                continue; // whole already, or nothing this bank can pay
             }
+            let due = u32::try_from(due(step)).expect("a step's bill fits the bank");
             state.player_mut(owner).scrap = bank - due;
             in_flight.insert(id, queued + step);
             heals.push(PendingUnitHeal {
@@ -844,3 +864,5 @@ fn crucible_smelter(state: &mut State) {
 
 #[cfg(test)]
 mod damage_tests;
+#[cfg(test)]
+mod repair_bay_tests;
