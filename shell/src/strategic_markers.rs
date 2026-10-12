@@ -126,6 +126,11 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
                     line((0.0, -2.0), (3.5, 1.5));
                     line((0.0, -2.0), (0.0, 4.0));
                 }
+                crate::look::MarkerRole::PointDefense => {
+                    for y in [-3.0, 0.0, 3.0] {
+                        line((-3.0, y), (3.0, y));
+                    }
+                }
                 crate::look::MarkerRole::Scout => {
                     stroke_circle(center, 3.0, 1.3, ink);
                     fill_circle(center, 1.0, ink);

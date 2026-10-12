@@ -18,6 +18,7 @@ from tools.production_sprite_sources import (
     installed_defenses_final,
     mechanical_extractor,
     mechanical_final,
+    mantle_final,
     quarry_final,
     quarry_rocks,
     skyhook_sapper_crucible_final,
@@ -865,6 +866,30 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 for pixel in report.crop((50, 8, 79, 35)).get_flattened_data()
             )
             self.assertGreater(flashes, 0)
+
+
+class MantleSourceTests(unittest.TestCase):
+    def test_charge_key_poses_preserve_the_approved_art(self):
+        digests = (
+            "e1c1ed2b4cde1c321b433b432c62c0bab7aefaa83df92401010dfe693194436a",
+            "8285ba2d7715488e061e726dc3698298f450c16b70128ba74a64e699590f7140",
+            "2a7aa359330d69c5004982c96993624d94c4d3e1593967265546eeacf81ef693",
+            "9d9a1243ed6da12cffe197f78a969bd59121af2a3ce5afecab84acfcdc3aeba4",
+        )
+        for charges, expected in enumerate(digests):
+            image = mantle_final.render_mantle("base", charges=charges)
+            self.assertEqual(hashlib.sha256(image.tobytes()).hexdigest(), expected)
+
+    def test_serial_recharge_composes_without_changing_the_chassis(self):
+        for frame in range(mantle_final.CHARGE_FRAMES):
+            charges, step = divmod(frame, mantle_final.RECHARGE_STEPS)
+            for move in range(3):
+                actual = mantle_final.render_mantle("base", move)
+                actual.alpha_composite(mantle_final.render_charge_frame(frame))
+                expected = mantle_final.render_mantle(
+                    "base", move, charges, step / mantle_final.RECHARGE_STEPS
+                )
+                self.assertEqual(actual.tobytes(), expected.tobytes(), (frame, move))
 
 
 if __name__ == "__main__":

@@ -106,6 +106,7 @@ pub(crate) enum MarkerRole {
     Gun,
     Siege,
     AntiAir,
+    PointDefense,
     Scout,
     Transport,
     Demolition,
@@ -348,8 +349,14 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
         },
         UnitKind::Mantle => UnitLook {
             scale: HEAVY_SCALE,
-            gait: Gait::Legs,
-            marker: M::AntiAir,
+            gait: Gait::Treads,
+            belts: &[
+                [13., 29., 31., 57.],
+                [97., 29., 115., 57.],
+                [13., 82., 31., 112.],
+                [97., 82., 115., 112.],
+            ],
+            marker: M::PointDefense,
             ..plain
         },
     }

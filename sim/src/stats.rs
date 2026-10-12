@@ -60,7 +60,7 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
-        /// Unarmed point-defense walker: shoots down hostile projectiles
+        /// Unarmed tracked point-defense carrier: shoots down hostile projectiles
         /// aimed near it, while gunfire passes through.
         Mantle,
     }
@@ -617,7 +617,7 @@ impl UnitKind {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
             UnitKind::Mantle => {
-                "Unarmed walker with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
+                "Unarmed tracked carrier with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
             }
         }
     }

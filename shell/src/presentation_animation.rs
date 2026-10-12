@@ -219,6 +219,13 @@ pub(crate) struct WeldingArmState {
     pub(crate) active: bool,
 }
 
+/// Authoritative ready charges and progress toward the next serial recharge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PointDefenseState {
+    pub(crate) charges: u8,
+    pub(crate) recharge: f32,
+}
+
 /// All independent animation channels for one unit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct UnitAnimationState {
@@ -230,6 +237,7 @@ pub(crate) struct UnitAnimationState {
     pub(crate) welding_arm: Option<WeldingArmState>,
     /// Harvest cargo, present for Harvesters and Excavators.
     pub(crate) cargo: Option<CargoState>,
+    pub(crate) point_defense: Option<PointDefenseState>,
     /// Event-driven attack report and recovery.
     pub(crate) attack: Option<AttackPhase>,
     /// Cooldown-driven preparation, one entry per simulation weapon slot.
@@ -255,6 +263,7 @@ pub(crate) struct UnitAnimationFacts {
     carrying: u32,
     demolition_contact: bool,
     cooldowns: [u32; MAX_WEAPONS],
+    point_defense: Option<oxide_sim::state::PointDefense>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,6 +326,7 @@ impl UnitAnimationFacts {
             carrying: unit.carrying(),
             demolition_contact: sapper_at_contact(state, unit),
             cooldowns: unit.cooldowns,
+            point_defense: unit.point_defense,
         }
     }
 
@@ -729,6 +739,18 @@ impl AnimationController {
             locomotion,
             work,
             cargo,
+            point_defense: facts
+                .point_defense
+                .zip(facts.kind.stats().point_defense)
+                .map(|(held, stats)| PointDefenseState {
+                    charges: held.charges,
+                    recharge: if held.charges == stats.charges {
+                        0.0
+                    } else {
+                        (f32::from(held.recharge) + clock.tick_fraction)
+                            / f32::from(stats.recharge_ticks)
+                    },
+                }),
             attack: self.unit_attack(facts.id, facts.kind, clock),
             weapons,
             propulsion,
