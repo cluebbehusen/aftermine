@@ -79,8 +79,17 @@ fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
 use macroquad::prelude::vec2;
 use oxide_sim::{Command, PlayerCommand, Scenario};
 
+/// Skirmish with a Sentinel beside West's start, since the opening fields
+/// no fighter.
 fn game() -> Game {
-    Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 800.0)).expect("skirmish builds")
+    let mut scenario = Scenario::skirmish();
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Sentinel,
+        x: 10,
+        y: 7,
+    });
+    Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds")
 }
 
 fn human_foundry(game: &Game) -> oxide_sim::BuildingId {

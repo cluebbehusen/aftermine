@@ -48,8 +48,22 @@ fn crumbs(game: &Game, unit: &oxide_sim::Unit) -> Vec<(usize, Vec2, macroquad::c
 }
 
 fn headless_game() -> Game {
-    Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
-        .expect("embedded skirmish builds")
+    Game::with_viewport(armed_skirmish(), vec2(1280.0, 800.0)).expect("embedded skirmish builds")
+}
+
+/// Skirmish with a Sentinel beside each start. The opening itself fields no
+/// fighter, and most of these tests need one at hand.
+pub(super) fn armed_skirmish() -> oxide_sim::Scenario {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    for (player, x, y) in [(0, 10, 7), (1, 29, 16)] {
+        scenario.units.push(oxide_sim::scenario::UnitSpec {
+            player,
+            kind: UnitKind::Sentinel,
+            x,
+            y,
+        });
+    }
+    scenario
 }
 
 #[test]
@@ -4840,7 +4854,11 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
             _ => None,
         })
         .collect();
-    assert_eq!(strip.len(), 2, "two kinds, two counted cards: {strip:?}");
+    assert_eq!(
+        strip.len(),
+        3,
+        "three kinds, three counted cards: {strip:?}"
+    );
     assert!(
         panel
             .cards
@@ -6081,14 +6099,16 @@ fn the_tutorial_survives_its_own_literal_instructions() {
     assert!(t.advance(game.demo));
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
-    // Lesson 5 — right-click ground with a fighter selected.
+    // Lesson 5 — right-click ground with a fighter selected: the one the
+    // last lesson trained, once it steps out.
+    await_trained_sentinel(&mut game);
     let sentinel = game
         .state
         .units()
         .iter()
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
         .map(|u| (u.id, u.pos))
-        .expect("the starting sentinel stands");
+        .expect("the trained sentinel stands");
     let p = game.presentation.camera.to_screen(vec2(
         sentinel.1.x.to_num::<f32>(),
         sentinel.1.y.to_num::<f32>(),
@@ -6103,6 +6123,23 @@ fn the_tutorial_survives_its_own_literal_instructions() {
     // stream; its flag flips in `app::screen_flow`.
     game.demo.paused_menu = true;
     assert!(!t.advance(game.demo), "school is out");
+}
+
+/// Plays on until the Sentinel the fighter lesson trained has spawned: the
+/// opening fields no fighter of its own.
+fn await_trained_sentinel(game: &mut Game) {
+    for _ in 0..600 {
+        if game
+            .state
+            .units()
+            .iter()
+            .any(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
+        {
+            return;
+        }
+        game.do_tick();
+    }
+    panic!("the trained sentinel never stepped out");
 }
 
 /// Publishes the live panel's card whose action `pick` accepts at one
@@ -6238,6 +6275,7 @@ fn the_tutorial_survives_its_own_touch_instructions() {
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
     // "Long-press ground with a combat unit selected."
+    await_trained_sentinel(&mut game);
     let (_, at) = own_unit(&game, UnitKind::Sentinel, false);
     tap_world(&mut game, &mut input, at);
     long_press_world(&mut game, &mut input, vec2(12.5, 9.5));
@@ -8181,16 +8219,9 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
     ));
 }
 
-/// Skirmish with a Surveyor beside West's starting Sentinel.
+/// Skirmish's starting Surveyor and a staged Sentinel beside it.
 fn scout_game() -> (Game, oxide_sim::UnitId, oxide_sim::UnitId) {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
-        player: 0,
-        kind: UnitKind::Surveyor,
-        x: 9,
-        y: 8,
-    });
-    let game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("scout fixture builds");
+    let game = headless_game();
     let own = |kind: UnitKind| {
         game.state
             .units()

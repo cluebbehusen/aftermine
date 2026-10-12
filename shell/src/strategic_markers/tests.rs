@@ -86,8 +86,9 @@ fn enemy_mine_marker_stays_hidden_on_visible_ground() {
     scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
         player: 1,
         kind: oxide_sim::BuildingKind::ScuttleCharge,
-        x: 10,
-        y: 4,
+        // In a Harvester's sight, beyond the Surveyor's detection.
+        x: 2,
+        y: 9,
     });
     let game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mine = game
