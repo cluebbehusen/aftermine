@@ -189,7 +189,7 @@ fn checkpoints_compare_the_last_minute_with_the_estimate() {
 
 #[test]
 fn a_seat_out_of_a_team_match_stops_sampling() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/open-quarry.json");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/broad-front.json");
     let mut state = Scenario::load(&path).unwrap().build().unwrap();
     let mut tracker = IncomeTracker::new(&state, vec![true; 4]);
     let surrender = PlayerCommand {

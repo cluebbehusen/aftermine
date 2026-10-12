@@ -25,6 +25,7 @@ fn inputs(host: &str) -> Vec<String> {
         "rust-toolchain.toml",
         "build-support",
         "scenarios",
+        "fixtures",
         "assets",
     ]
     .into_iter()

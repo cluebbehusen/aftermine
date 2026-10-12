@@ -424,11 +424,8 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
             // Quick maps may make the second claim a shared contested center.
             // Every longer format gives each seat a nearby natural beyond all
             // viable opening claims so expansion adds renewable value. A
-            // natural may still be shared by teammates. Skyhook Anchorage's
-            // compact starting islands contain no clear 2x2 footprint in this
-            // band; its second claims are transport-contested remote islands.
-            let compact_island_start = name == "skyhook-anchorage";
-            if pace == "quick" || compact_island_start {
+            // natural may still be shared by teammates.
+            if pace == "quick" {
                 continue;
             }
             assert!(

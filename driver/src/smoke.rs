@@ -146,7 +146,7 @@ fn execute(addr: &str, patient: bool) -> Result<()> {
         // input. Load the smoke fixture through the same public protocol
         // an agent uses, while retaining the shell's driven-clock flag.
         let scenario = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../scenarios/skirmish.json")
+            .join("../fixtures/scenarios/skirmish.json")
             .to_string_lossy()
             .into_owned();
         let reply = client.call(Request::LoadScenario { path: scenario })?;
@@ -401,7 +401,7 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     // must not move. Reset to a fresh skirmish first: the replay checks
     // above left the world hundreds of ticks in, where wandering machines
     // can sit on any tile this block would target.
-    let scenario_path = std::env::current_dir()?.join("scenarios/skirmish.json");
+    let scenario_path = std::env::current_dir()?.join("fixtures/scenarios/skirmish.json");
     client.call(Request::LoadScenario {
         path: scenario_path.to_string_lossy().into_owned(),
     })?;
