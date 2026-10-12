@@ -34,6 +34,7 @@ from tools.production_sprite_sources import (
     mechanical_final,
     skyhook_sapper_crucible_final,
     specialists_final,
+    surveyor_final,
     structures_base,
     tier_one_combat_final,
     turret_family,
@@ -521,3 +522,4 @@ def install_finalized_sprites(registry: Registry, out: Path) -> None:
     specialists_final.install_specialists(registry, out)
     installed_defenses_final.install_defenses(registry, out)
     mechanical_final.install_machines(registry, out)
+    surveyor_final.install_surveyor(registry, out)

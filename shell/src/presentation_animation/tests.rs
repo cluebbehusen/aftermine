@@ -1202,3 +1202,113 @@ fn only_buildings_with_guns_report_and_recover() {
         assert_eq!(building_attack_timing(kind).is_some(), armed, "{kind:?}");
     }
 }
+
+#[test]
+fn parked_scanner_starts_at_home_and_resets_only_when_folded() {
+    let mut controller = AnimationController::default();
+    let options = AnimationOptions::default();
+    let mut facts = unit_facts(UnitKind::Surveyor);
+    facts.radar_unfold = Some((1, 40));
+    controller.observe_radar(facts, 301);
+    assert_eq!(
+        controller
+            .unit_state(facts, AnimationClock::new(301, 0.0), options)
+            .scanner,
+        None
+    );
+    facts.radar_unfold = Some((40, 40));
+    controller.observe_radar(facts, 340);
+    assert_eq!(
+        controller
+            .unit_state(facts, AnimationClock::new(340, 0.0), options)
+            .scanner,
+        Some(0.0)
+    );
+    for tick in 340..=500 {
+        controller.observe_radar(facts, tick);
+        let clock = AnimationClock::new(tick, 0.0);
+        let phase = controller.unit_state(facts, clock, options).scanner;
+        assert_eq!(phase, Some(((tick - 340) % 80) as f32 / 80.0));
+        facts.moved = true;
+        assert_eq!(
+            controller.unit_state(facts, clock, options).scanner,
+            phase,
+            "shoving does not restart the scanner"
+        );
+        assert_eq!(
+            controller
+                .unit_state(
+                    facts,
+                    clock,
+                    AnimationOptions {
+                        reduced_motion: true
+                    }
+                )
+                .scanner,
+            Some(0.0)
+        );
+    }
+    facts.radar_unfold = None;
+    controller.observe_radar(facts, 501);
+    assert!(controller.radar_deployments.is_empty());
+    assert_eq!(
+        controller
+            .unit_state(facts, AnimationClock::new(501, 0.0), options)
+            .scanner,
+        None
+    );
+    facts.radar_unfold = Some((1, 40));
+    controller.observe_radar(facts, 550);
+    facts.radar_unfold = Some((40, 40));
+    assert_eq!(
+        controller
+            .unit_state(facts, AnimationClock::new(589, 0.0), options)
+            .scanner,
+        Some(0.0)
+    );
+    controller.reset_transients();
+    assert!(controller.radar_deployments.is_empty());
+    controller.observe_radar(facts, 1_000);
+    assert_eq!(
+        controller
+            .unit_state(facts, AnimationClock::new(1_000, 0.0), options)
+            .scanner,
+        Some(0.0)
+    );
+}
+
+#[test]
+fn radar_observer_follows_deployment_and_discards_absent_units() {
+    let mut scenario = Scenario::skirmish();
+    scenario.units = vec![UnitSpec {
+        player: 0,
+        kind: UnitKind::Surveyor,
+        x: 4,
+        y: 6,
+    }];
+    let mut state = scenario.build().unwrap();
+    let id = state.units()[0].id;
+    let mut controller = AnimationController::default();
+    controller.radar_deployments.insert(UnitId(u32::MAX), 0);
+    for deployed in 1..=40 {
+        state.tick(&[]);
+        controller.observe_radars(&state);
+        let unit = state.unit(id).unwrap();
+        assert_eq!(unit.radar_deploy, deployed);
+        let animation = controller.unit_state(
+            UnitAnimationFacts::capture(&state, unit, false),
+            AnimationClock::from_state(&state, 0.0),
+            AnimationOptions::default(),
+        );
+        assert_eq!(animation.scanner, (deployed == 40).then_some(0.0));
+        assert_eq!(controller.radar_deployments.len(), 1);
+    }
+    state.tick(&[player_command(Command::Run {
+        units: vec![id],
+        goal: TilePos::new(8, 6),
+        queue: false,
+    })]);
+    controller.observe_radars(&state);
+    assert_eq!(state.unit(id).unwrap().radar_deploy, 0);
+    assert!(controller.radar_deployments.is_empty());
+}

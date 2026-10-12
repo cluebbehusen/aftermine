@@ -236,7 +236,7 @@ pub(crate) struct UnitAnimationState {
     pub(crate) weapons: [WeaponCycle; MAX_WEAPONS],
     /// Mechanisms that must run independently of locomotion.
     pub(crate) propulsion: PropulsionState,
-    /// Continuously powered scout scanner, independent of flight or movement.
+    /// Powered scout scanner phase; parked radars begin at deployment completion.
     pub(crate) scanner: Option<f32>,
     /// Event-driven cargo-door and clamp movement.
     pub(crate) transport: Option<TransportActionState>,
@@ -507,6 +507,8 @@ pub(crate) struct AnimationController {
     transport_actions: HashMap<UnitId, TransportActionStamp>,
     airworks_launches: HashMap<BuildingId, u64>,
     welding_arms: HashMap<UnitId, WeldingArmTransition>,
+    // The sim caps radar_deploy, so scan elapsed time needs a presentation epoch.
+    radar_deployments: HashMap<UnitId, u64>,
 }
 
 impl AnimationController {
@@ -583,6 +585,7 @@ impl AnimationController {
         self.transport_actions.clear();
         self.airworks_launches.clear();
         self.welding_arms.clear();
+        self.radar_deployments.clear();
     }
 
     /// Forgets ids no longer present in the current world.
@@ -598,6 +601,32 @@ impl AnimationController {
             state.building(*building).is_some()
                 && state.current_tick().saturating_sub(*completed_tick) < AIRWORKS_LAUNCH_TICKS
         });
+    }
+
+    /// Tracks deployment completion without retaining folded or destroyed radars.
+    pub(crate) fn observe_radars(&mut self, state: &State) {
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Surveyor)
+        {
+            self.observe_radar(
+                UnitAnimationFacts::capture(state, unit, false),
+                state.current_tick(),
+            );
+        }
+        self.radar_deployments
+            .retain(|id, _| state.unit(*id).is_some());
+    }
+
+    fn observe_radar(&mut self, facts: UnitAnimationFacts, tick: u64) {
+        if let Some((deployed, total)) = facts.radar_unfold {
+            self.radar_deployments
+                .entry(facts.id)
+                .or_insert_with(|| tick.saturating_add(u64::from(total.saturating_sub(deployed))));
+        } else {
+            self.radar_deployments.remove(&facts.id);
+        }
     }
 
     /// Captures tool transitions once per completed simulation tick.
@@ -744,8 +773,25 @@ impl AnimationController {
             attack: self.unit_attack(facts.id, facts.kind, clock),
             weapons,
             propulsion,
-            scanner: (facts.kind == UnitKind::Kestrel)
-                .then(|| clock.cycle(facts.id.0, 96, options.reduced_motion)),
+            scanner: if facts.kind == UnitKind::Kestrel {
+                Some(clock.cycle(facts.id.0, 96, options.reduced_motion))
+            } else {
+                facts
+                    .radar_unfold
+                    .filter(|(deployed, total)| deployed >= total)
+                    .map(|_| {
+                        let started = self
+                            .radar_deployments
+                            .get(&facts.id)
+                            .copied()
+                            .unwrap_or(clock.completed_ticks);
+                        AnimationClock::new(
+                            clock.completed_ticks.saturating_sub(started),
+                            clock.tick_fraction,
+                        )
+                        .cycle(0, 80, options.reduced_motion)
+                    })
+            },
             transport: self.transport_action(facts.id, clock),
             demolition_preparation: facts
                 .demolition_contact

@@ -715,9 +715,12 @@ Frame counts come from the atlas: a row family holds as many frames as it ships
 consecutive `_actionN` or `_workN` keys, and every rung of a building's upgrade
 ladder ships its own hull, and mount for a defense. The animation code owns
 timing and which frame each moment shows; tests keep every selected frame below
-the shipped count. A Surveyor's `_actionN` frames show its parking radar
-unfolding from the simulation's deploy count, and the last holds while the radar
-is up; a selected own scout draws its radar ring only while the radar is up.
+the shipped count. A Surveyor's `_actionN` frames unfold its parking radar from
+the simulation's deploy count, then rotate the dish while deployed. The
+presentation controller retains the scan start tick because the simulation caps
+its deploy count; driving folds the radar immediately and clears that clock. A
+selected own scout draws its radar ring only while the radar is up.
+
 Procedural quarry boundaries, pits, peaks, and rock walls derive from map
 geometry with fog-aware visibility. The boundary and peaks are one terrace
 system measured from the open floor: a peak is the wall left standing, stepping

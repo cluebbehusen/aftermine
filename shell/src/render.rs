@@ -1107,14 +1107,11 @@ fn draw_unit_pass(
                 alpha,
             );
         }
-        if let Some(cycle) = animation.scanner
+        if unit.kind == oxide_sim::UnitKind::Kestrel
+            && let Some(cycle) = animation.scanner
             && let Some(source) = sprites.scout_radar()
         {
-            let mount_y = if unit.kind == oxide_sim::UnitKind::Kestrel {
-                47.0
-            } else {
-                44.0
-            };
+            let mount_y = 47.0;
             let offset = (mount_y - 64.0) / 128.0 * body_size.y;
             let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * offset;
             sprites.draw_unit(

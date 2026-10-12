@@ -298,7 +298,13 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Worker,
             ..plain
         },
-        UnitKind::Kestrel | UnitKind::Surveyor => UnitLook {
+        UnitKind::Kestrel => UnitLook {
+            marker: M::Scout,
+            ..plain
+        },
+        UnitKind::Surveyor => UnitLook {
+            scale: 2.0,
+            gait: Gait::Treads,
             marker: M::Scout,
             ..plain
         },
