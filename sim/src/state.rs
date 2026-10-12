@@ -342,6 +342,10 @@ pub struct Unit {
     pub motor: Motor,
     /// Current hit points.
     pub hp: u32,
+    /// The tick it last took damage. A Repair Bay heals a machine fast only
+    /// once this is long enough past.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damaged_at: Option<Tick>,
     /// The harvest gear's load and delivery, for exactly the kinds that
     /// harvest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -447,9 +451,19 @@ impl Motor {
             Self::Ground { .. } => stats.domain == crate::stats::Domain::Ground,
             Self::Braced { .. } => stats.brace.is_some(),
             Self::Airborne { .. } => stats.domain == crate::stats::Domain::Air,
-            Self::Landed => stats.turn_rate > 0,
+            Self::Landed => stats.can_land(),
         }
     }
+}
+
+/// How fast a Repair Bay heals one of its patients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepairPace {
+    /// Undamaged for [`crate::stats::REPAIR_BAY_CALM_TICKS`]: a share of
+    /// max hp per second.
+    Fast,
+    /// Recently damaged: [`crate::stats::REPAIR_BAY_STEP`] per pulse.
+    Slow,
 }
 
 /// A machine riding aboard a transport. Cargo lives OUTSIDE the world's
@@ -476,6 +490,9 @@ pub struct Rider {
     /// Its independent gun bearing, if it had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turret_heading: Option<u8>,
+    /// The tick it last took damage, kept through the ride.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damaged_at: Option<Tick>,
 }
 
 impl Rider {
@@ -486,6 +503,7 @@ impl Rider {
             id,
             kind,
             hp,
+            damaged_at,
             cooldowns,
             heading,
             turret_heading,
@@ -499,6 +517,7 @@ impl Rider {
             cooldowns,
             heading,
             turret_heading,
+            damaged_at,
         }
     }
 
@@ -506,6 +525,7 @@ impl Rider {
     pub(crate) fn disembark(self, player: PlayerId, pos: Vec2Fx) -> Unit {
         let mut unit = Unit {
             hp: self.hp,
+            damaged_at: self.damaged_at,
             cooldowns: self.cooldowns,
             turret_heading: self.turret_heading,
             ..Unit::at_rest(self.id, player, self.kind, pos, self.heading)
@@ -563,6 +583,7 @@ impl Unit {
             pos,
             motor: Motor::at_rest(kind),
             hp: kind.stats().max_hp,
+            damaged_at: None,
             worker: kind.stats().harvest.map(|_| Worker::default()),
             cooldowns: [0; crate::stats::MAX_WEAPONS],
             turret_heading: None,
@@ -1375,6 +1396,70 @@ impl State {
         }
     }
 
+    /// The machines each built, living Repair Bay services this pulse and how
+    /// fast it heals each, Bays in building-id order and patients most
+    /// wounded first: own, wounded and in reach, landed or unable to land,
+    /// not taken by an earlier Bay, at most
+    /// [`crate::stats::REPAIR_BAY_PATIENTS`] per Bay. The aura and
+    /// presentation read the same choice; the aura also slows a patient the
+    /// tick's own volley hits, before that hit stamps it.
+    pub fn repair_bay_patients(&self) -> Vec<(BuildingId, Vec<(UnitId, RepairPace)>)> {
+        use crate::stats::{REPAIR_BAY_CALM_TICKS, REPAIR_BAY_PATIENTS, REPAIR_BAY_RADIUS};
+        let mut taken: Vec<UnitId> = Vec::new();
+        let mut bays = Vec::new();
+        for b in self
+            .buildings
+            .iter()
+            .filter(|b| b.kind == BuildingKind::RepairBay && b.built() && b.hp > 0)
+        {
+            let mut patients: Vec<&Unit> = self
+                .units
+                .iter()
+                .filter(|u| {
+                    let max = u.kind.stats().max_hp;
+                    u.player == b.player
+                        && u.hp > 0
+                        && u.hp < max
+                        && (u.landed() || !u.kind.stats().can_land())
+                        && b.closest_point_to(u.pos).dist_sq(u.pos)
+                            <= REPAIR_BAY_RADIUS * REPAIR_BAY_RADIUS
+                        && !taken.contains(&u.id)
+                })
+                .collect();
+            // Every patient and every Bay that could take it is the owner's,
+            // so id order is the owner-local rank and mirrored seats choose
+            // alike.
+            let missing = |u: &Unit| {
+                let max = u64::from(u.kind.stats().max_hp);
+                (max - u64::from(u.hp), max)
+            };
+            patients.sort_by(|a, b| {
+                let ((a_missing, a_max), (b_missing, b_max)) = (missing(a), missing(b));
+                (b_missing * a_max)
+                    .cmp(&(a_missing * b_max))
+                    .then(a.id.cmp(&b.id))
+            });
+            patients.truncate(REPAIR_BAY_PATIENTS);
+            taken.extend(patients.iter().map(|u| u.id));
+            let chosen = patients
+                .into_iter()
+                .map(|u| {
+                    let calm = u
+                        .damaged_at
+                        .is_none_or(|at| self.tick.saturating_sub(at) >= REPAIR_BAY_CALM_TICKS);
+                    let pace = if calm {
+                        RepairPace::Fast
+                    } else {
+                        RepairPace::Slow
+                    };
+                    (u.id, pace)
+                })
+                .collect();
+            bays.push((b.id, chosen));
+        }
+        bays
+    }
+
     /// Whether one completed own Foundry currently supports an Extractor.
     ///
     /// This endpoint query lets presentation and diagnostics show the same
@@ -1653,6 +1738,7 @@ impl State {
             pos,
             motor,
             hp,
+            damaged_at,
             worker,
             cooldowns,
             progress,
@@ -1676,6 +1762,11 @@ impl State {
         }
         if *hp == 0 || *hp > stats.max_hp {
             return Err(E::UnitHpOutOfRange(id));
+        }
+        // Damage lands while a tick runs and the clock then advances, so a
+        // stamp is always behind the clock.
+        if damaged_at.is_some_and(|at| at >= self.tick) {
+            return Err(E::DamageStampInTheFuture(id));
         }
         if worker.is_some() != stats.harvest.is_some()
             || !motor.fits(*kind)
@@ -1835,8 +1926,12 @@ impl State {
             cooldowns,
             heading: _,
             turret_heading,
+            damaged_at,
         } = rider;
         let rstats = kind.stats();
+        if damaged_at.is_some_and(|at| at >= self.tick) {
+            return Err(E::DamageStampInTheFuture(*id));
+        }
         if rstats.transport_size == 0 {
             return Err(E::UncarriableCargo(carrier.id));
         }
@@ -2910,6 +3005,9 @@ pub enum StateIntegrityError {
     /// held by a unit that never harvests.
     #[error("unit {0} carries an invalid danger retry")]
     InvalidDangerRetry(UnitId),
+    /// A machine stamped as damaged at or after the current tick.
+    #[error("unit {0} was damaged at a tick that has not happened")]
+    DamageStampInTheFuture(UnitId),
     /// A chase allowance or reacquisition cooldown exceeds its legal bound.
     #[error("unit {0} carries an invalid leash clock")]
     InvalidLeashClock(UnitId),

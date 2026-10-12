@@ -194,3 +194,19 @@ fn state_hash_changes_with_content() {
     a.spawn_unit(PlayerId(0), UnitKind::Harvester, Vec2Fx::ZERO);
     assert_ne!(a.hash(), b.hash());
 }
+
+#[test]
+fn a_rider_keeps_its_damage_stamp_through_the_ride() {
+    let mut walker = Unit::at_rest(
+        UnitId(7),
+        PlayerId(0),
+        UnitKind::Sentinel,
+        Vec2Fx::new(Fx::from_num(3), Fx::from_num(3)),
+        0,
+    );
+    walker.damaged_at = Some(41);
+    let rider = Rider::board(&walker);
+    assert_eq!(rider.damaged_at, Some(41));
+    let landed = rider.disembark(PlayerId(0), walker.pos);
+    assert_eq!(landed.damaged_at, Some(41), "a ride is no rest");
+}

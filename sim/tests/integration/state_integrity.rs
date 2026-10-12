@@ -403,10 +403,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidDangerRetry(_) => 55,
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
+        E::DamageStampInTheFuture(_) => 81,
     }
 }
 
-const ROWS: usize = 81;
+const ROWS: usize = 82;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -500,6 +501,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidLeashClock(UnitId(0)),
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
+        E::DamageStampInTheFuture(UnitId(0)),
     ]
 }
 
@@ -904,6 +906,11 @@ fn every_checklist_row_refuses_its_forgery() {
             "a danger retry no failed search could schedule",
             |d| d["units"][0]["worker"]["danger_retry_at"] = json!(u64::MAX),
             "unit u0 carries an invalid danger retry",
+        ),
+        (
+            "a unit damaged at the tick that has yet to run",
+            |d| d["units"][0]["damaged_at"] = d["tick"].clone(),
+            "unit u0 was damaged at a tick that has not happened",
         ),
         (
             "harvest gear on a machine that never harvests",
