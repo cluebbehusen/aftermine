@@ -145,7 +145,7 @@
    "bot_config": {}
   },
   {
-   "name": "East North East",
+   "name": "West South West",
    "scrap": 150,
    "bot": true,
    "bot_config": {}
@@ -157,7 +157,7 @@
    "bot_config": {}
   },
   {
-   "name": "West South West",
+   "name": "East North East",
    "scrap": 150,
    "bot": true,
    "bot_config": {}

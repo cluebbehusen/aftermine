@@ -861,6 +861,66 @@ fn rects_overlap(a: TilePos, a_size: (i32, i32), b: TilePos, b_size: (i32, i32))
 }
 
 #[test]
+fn rotated_seat_partners_carry_opposite_compass_names() {
+    // A seat is named for where it spawns, and the seat its Foundry
+    // rotates onto spawns across the map, so the two names are compass
+    // opposites: North West faces South East. This holds for the metric
+    // class too wherever its seats happen to rotate onto each other; a
+    // seat whose anchor rotates onto no seat has no partner to check.
+    let (fw, fh) = BuildingKind::Foundry.size();
+    let mut mismatched = Vec::new();
+    for (name, scenario) in shipped() {
+        let (map, anchors) =
+            Map::parse(&scenario.map).unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
+        for (seat, at) in &anchors {
+            let image = TilePos {
+                x: map.width() - fw - at.x,
+                y: map.height() - fh - at.y,
+            };
+            let Some((partner, _)) = anchors.iter().find(|(_, a)| *a == image) else {
+                continue;
+            };
+            let mine = &scenario.players[seat.0 as usize].name;
+            let theirs = &scenario.players[partner.0 as usize].name;
+            if *theirs != compass_opposite(mine) {
+                mismatched.push(format!(
+                    "{name}: seat {} ({mine}) rotates onto seat {} ({theirs})",
+                    seat.0, partner.0
+                ));
+            }
+        }
+    }
+    assert!(mismatched.is_empty(), "{mismatched:#?}");
+}
+
+/// A seat name with North and South, and East and West, exchanged,
+/// inside compound words too ("Northwest" becomes "Southeast").
+fn compass_opposite(name: &str) -> String {
+    const SWAPS: [(&str, &str); 8] = [
+        ("North", "South"),
+        ("South", "North"),
+        ("East", "West"),
+        ("West", "East"),
+        ("north", "south"),
+        ("south", "north"),
+        ("east", "west"),
+        ("west", "east"),
+    ];
+    let mut out = String::with_capacity(name.len());
+    let mut rest = name;
+    while let Some(c) = rest.chars().next() {
+        if let Some((from, to)) = SWAPS.iter().find(|(from, _)| rest.starts_with(from)) {
+            out.push_str(to);
+            rest = &rest[from.len()..];
+        } else {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
+}
+
+#[test]
 fn every_map_mirrors_its_paired_seats_entry_by_entry() {
     // The metric class opts out: its fairness is measured, not
     // mirrored (see `metric_fairness`).
