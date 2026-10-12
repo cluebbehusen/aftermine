@@ -67,11 +67,12 @@ enum CommandTag {
     ClearFocus,
     ReturnCargo,
     CancelOrder,
+    Scout,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 24] = [
+const COMMAND_TAGS: [CommandTag; 25] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -96,6 +97,7 @@ const COMMAND_TAGS: [CommandTag; 24] = [
     CommandTag::ClearFocus,
     CommandTag::ReturnCargo,
     CommandTag::CancelOrder,
+    CommandTag::Scout,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -136,6 +138,7 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::ClearFocus => 21,
         CommandTag::ReturnCargo => 22,
         CommandTag::CancelOrder => 23,
+        CommandTag::Scout => 24,
     }
 }
 
@@ -166,6 +169,7 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::ClearFocus { .. } => CommandTag::ClearFocus,
         Command::ReturnCargo { .. } => CommandTag::ReturnCargo,
         Command::CancelOrder { .. } => CommandTag::CancelOrder,
+        Command::Scout { .. } => CommandTag::Scout,
     }
 }
 
@@ -557,6 +561,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             queue: queue(rng),
         },
         CommandTag::CancelOrder => cancel_order(rng, state),
+        CommandTag::Scout => Command::Scout {
+            units: units(rng, state),
+            goal: tile(rng, state),
+            queue: queue(rng),
+        },
     }
 }
 
@@ -583,6 +592,8 @@ struct Reach {
     cancelled: u64,
     cancelled_found: u64,
     cancelled_order: u64,
+    /// Ticks on which some unit was scouting.
+    scouting: u64,
 }
 
 impl Reach {
@@ -603,6 +614,7 @@ impl Reach {
         self.cancelled += other.cancelled;
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
+        self.scouting += other.scouting;
     }
 }
 
@@ -632,11 +644,17 @@ fn arena() -> State {
         player.scrap = 100_000;
     }
     // A bomber per seat, so landing verbs, auto-land, and takeoff run under
-    // the sampled checklist from the first tick.
+    // the sampled checklist from the first tick, and a scout per seat, so
+    // the Scout verb has someone to take it.
     for (player, (x, y)) in [(0u8, (7, 6)), (1u8, (31, 16))] {
         scenario
             .units
             .push(common::unit(player, UnitKind::Condor, x, y));
+    }
+    for (player, (x, y)) in [(0u8, (8, 7)), (1u8, (30, 15))] {
+        scenario
+            .units
+            .push(common::unit(player, UnitKind::Surveyor, x, y));
     }
     scenario.buildings = vec![
         standing(0, BuildingKind::Turret, 12, 3),
@@ -809,11 +827,42 @@ fn exercise_return_cargo_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+fn exercise_scout_reach(state: &mut State) {
+    let scout = state
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Surveyor)
+        .expect("fuzz arena has a seat-0 Surveyor")
+        .id;
+    let goal = state.unit(scout).unwrap().tile().offset(3, 2);
+    let report = state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Scout {
+            units: vec![scout, scout],
+            goal,
+            queue: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "the fuzz reach fixture must land Scout"
+    );
+    assert_eq!(
+        state.unit(scout).unwrap().order,
+        oxide_sim::Order::Scout { tile: goal }
+    );
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
     exercise_cancel_found_reach(&mut state);
     exercise_cancel_order_reach(&mut state);
     exercise_return_cargo_reach(&mut state);
+    exercise_scout_reach(&mut state);
     let mut rng = Pcg32::new(seed, 0xF022);
     let mut reach = Reach {
         cancelled_found: 1,
@@ -893,6 +942,12 @@ fn fuzz_run(seed: u64) -> Run {
                 _ => {}
             }
         }
+        reach.scouting += u64::from(
+            state
+                .units()
+                .iter()
+                .any(|u| matches!(u.order, oxide_sim::Order::Scout { .. })),
+        );
         reach.order_queue = reach.order_queue.max(
             state
                 .units()
@@ -1034,6 +1089,7 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must land an order cancellation drawn from a real program"
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
+    assert!(reach.scouting > 0, "the sweep must put a scout to work");
 }
 
 /// The forcing chain, stated as a test: the draw pool is the whole tag

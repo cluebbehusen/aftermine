@@ -44,6 +44,7 @@ mod return_cargo;
 mod roster;
 mod salvage;
 mod sandbox;
+mod scout;
 mod scuttler_contact;
 mod scuttler_crowd;
 mod shells;

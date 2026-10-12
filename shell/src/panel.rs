@@ -590,7 +590,8 @@ fn order_subject(
         | Order::Advance { .. }
         | Order::Board { .. }
         | Order::Unload { .. }
-        | Order::Land { .. } => None,
+        | Order::Land { .. }
+        | Order::Scout { .. } => None,
     }
 }
 
@@ -680,6 +681,11 @@ fn order_card(
             VerbIcon::Repair,
             "Weld",
             "Repairing a damaged unit; consumes scrap.",
+        ),
+        Order::Scout { .. } => (
+            VerbIcon::Move,
+            "Scout",
+            "Scouting around known enemy reach: stops short where it can still see, or waits.",
         ),
     };
     let subject = if own {
@@ -1117,6 +1123,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     let owner = first.player;
     let has_builder = units.iter().any(|u| u.kind.stats().harvest.is_some());
     let has_fighter = units.iter().any(|u| u.kind.stats().can_fight());
+    let has_scout = units.iter().any(|u| u.kind.stats().scouts);
     let mut panel = Panel {
         info: info::SelectionInfo::default(),
         title: if units.len() == 1 {
@@ -1201,9 +1208,27 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             }
         }
     }
-    // Run and Hunt only differ from a plain move for a machine
-    // that can shoot. Patrol stays for everyone: an unarmed scout patrols.
-    if has_fighter {
+    // A scout's right-click already scouts, so Scout's card is for mixed
+    // selections and Run's for sending a scout anywhere on purpose.
+    if has_scout {
+        panel.cards.push(Card {
+            icon: CardIcon::Verb(VerbIcon::Move),
+            title: "Scout".into(),
+            cost: None,
+            hotkey: chord(bindings, Action::Scout),
+            action: CardAction::Dispatch(Action::Scout),
+            enabled: true,
+            why: None,
+            desc: vec![
+                "See the selected ground from outside known enemy reach.".into(),
+                "Scouts stop short or wait rather than walk into fire.".into(),
+            ],
+            progress: None,
+        });
+    }
+    // Run and Hunt only differ from a plain move for a machine that can
+    // shoot or one that scouts by default. Patrol stays for everyone.
+    if has_fighter || has_scout {
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Run),
             title: "Run".into(),
@@ -1218,6 +1243,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
         });
+    }
+    if has_fighter {
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Hunt),
             title: "Hunt".into(),

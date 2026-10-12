@@ -240,6 +240,22 @@ ring-scanned outward from where the transport stopped, framed by the transport's
 approach when the order was issued, so mirrored drops set riders on mirrored
 tiles.
 
+`Scout` is a scout's own verb: only kinds whose stats say they scout take it,
+and a patrol gives them Scout legs. A Scout leg names its clicked tile and plans
+from its team's knowledge alone, through the snapshot Harvesters steer by:
+visible armed enemies' reach plus a margin, remembered defenses at their
+remembered tier, radar contacts, recent incidents, and known Scuttle Charges.
+Friendly screens do not count. The scout walks to the tile while the tile and
+the way are safe; otherwise it heads for the safe tile nearest the target that
+still has it in sight, ranked in the approach frame. A scout standing in danger
+first retreats to the nearest safe ground it can reach without closing on any
+threat, and with no safe view it stands and periodically reports `DangerHold`.
+Each tick spent retreating, detouring, or waiting counts in `Unit::progress`; at
+`SCOUT_HOLD_TICKS` the leg ends with `NoSafeVantage`, and a leg that ends at a
+view short of its tile reports `SafeVantage`. Patrol laps stay silent. A scout
+on a Scout leg steers only one waypoint ahead, so a straight leg never chords a
+detour back into the reach it bends around.
+
 ## Movement and collision
 
 Ground routes use deterministic eight-direction A* with no diagonal corner
@@ -735,12 +751,12 @@ matching uses only reported movement. Unmatched tracks end immediately, and ids
 are never reused.
 
 Salvage-relevant hostile incidents, such as a hit on any machine that can
-harvest or an allied loss, remember only the victim's tile for a bounded caution
-period, never the attacker's identity or location. Only fire from an attacker
-the victim's team cannot see leaves an incident; a visible attacker is live
-danger that ends when it dies or leaves sight. A worker already inside a
-remembered static firing envelope may retreat laterally or outward, without
-approaching any overlapping gun. This escape rule never makes the source
+harvest or scout or an allied loss, remember only the victim's tile for a
+bounded caution period, never the attacker's identity or location. Only fire
+from an attacker the victim's team cannot see leaves an incident; a visible
+attacker is live danger that ends when it dies or leaves sight. A worker already
+inside a remembered static firing envelope may retreat laterally or outward,
+without approaching any overlapping gun. This escape rule never makes the source
 eligible for work and does not permit crossing mobile or radar pressure.
 
 All allegiance checks route through normalized team ids. Teammates share vision,
@@ -766,6 +782,7 @@ map rather than an exhaustive test inventory.
 | Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
 | Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
+| Scouting                                          | `sim/src/tick/brain/scout.rs`, `sim/src/vision.rs`                                                                                      | `sim/tests/integration/scout.rs`                                                                                                                                                                |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

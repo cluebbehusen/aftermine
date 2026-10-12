@@ -211,6 +211,13 @@ pub enum Order {
         /// Repair this Foundry after delivery if it is still damaged.
         repair: bool,
     },
+    /// Scout a tile with the owner's knowledge alone: go there while it is
+    /// safe, otherwise stop at the safe tile nearest it that still sees it.
+    /// [`Unit::progress`] counts the leg's ticks of caution.
+    Scout {
+        /// The tile to see.
+        tile: TilePos,
+    },
 }
 
 impl Order {
@@ -1799,6 +1806,9 @@ impl State {
         }) {
             return Err(E::InvalidReturnCargo(id));
         }
+        if !stats.scouts && orders().any(|order| matches!(order, Order::Scout { .. })) {
+            return Err(E::InvalidScoutOrder(id));
+        }
         if orders()
             .filter_map(order_reference)
             .any(|target| !self.minted(target))
@@ -2707,6 +2717,7 @@ fn order_inside_envelope(order: &Order) -> bool {
         Order::Land { goal, from } => {
             tile_inside_envelope(*goal) && from.is_none_or(tile_inside_envelope)
         }
+        Order::Scout { tile } => tile_inside_envelope(*tile),
     }
 }
 
@@ -2731,7 +2742,8 @@ fn order_reference(order: &Order) -> Option<Target> {
         | Order::Hunt { .. }
         | Order::Advance { .. }
         | Order::Found { .. }
-        | Order::Land { .. } => None,
+        | Order::Land { .. }
+        | Order::Scout { .. } => None,
         Order::Attack { target, .. } => target.entity(),
         Order::Build { site } => Some(Target::Building(*site)),
         Order::ReturnCargo { foundry, .. } => Some(Target::Building(*foundry)),
@@ -2934,6 +2946,9 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
+    /// Only scouts take the Scout order.
+    #[error("unit {0} scouts without being a scout")]
+    InvalidScoutOrder(UnitId),
     /// A unit's order names an entity id this run never handed out.
     #[error("unit {0} is ordered against an id the run never minted")]
     UnmintedOrderTarget(UnitId),

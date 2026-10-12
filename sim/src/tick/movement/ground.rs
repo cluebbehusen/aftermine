@@ -114,10 +114,18 @@ fn route_target(
         // A friendly body at rest is never steered through: the planned
         // tiles go around it, and a straight leg must too.
         let clear = |tile: TilePos| terrain.open(tile) && !parked.blocks(tile);
+        // A scout's route threads known danger, so it keeps close to its
+        // planned tiles: a straight leg over many waypoints would chord a
+        // detour back into the reach it bends around.
+        let lookahead = if matches!(unit.order, crate::state::Order::Scout { .. }) {
+            1
+        } else {
+            ROUTE_LOOKAHEAD
+        };
         let cursor = path.next as usize;
         let mut target = cursor;
         while !facing
-            && target < cursor + ROUTE_LOOKAHEAD
+            && target < cursor + lookahead
             && let Some(&candidate) = path.waypoints.get(target + 1)
             && clear(candidate)
             && !swept_leg_blocked(unit.pos, path_point(path, target + 1), radius, clear)

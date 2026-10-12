@@ -23,6 +23,7 @@ pub(super) fn dispatch_action(
             action,
             Action::Run
                 | Action::Hunt
+                | Action::Scout
                 | Action::Salvage
                 | Action::RepairUnit
                 | Action::Unload
@@ -301,6 +302,23 @@ pub(super) fn dispatch_action(
                 input.click_verb = Some(ClickVerb::Run);
             } else {
                 game.presentation.toast("No machines selected to run");
+            }
+        }
+        Action::Scout => {
+            if input.armed(ClickVerb::Scout) {
+                input.click_verb = None;
+                return;
+            }
+            let has_own_scout = game.presentation.selection.units.iter().any(|id| {
+                game.state
+                    .unit(*id)
+                    .is_some_and(|u| u.kind.stats().scouts && u.player == game.presentation.human)
+            });
+            if has_own_scout {
+                input.disarm_click_verbs();
+                input.click_verb = Some(ClickVerb::Scout);
+            } else {
+                game.presentation.toast("No scouts selected");
             }
         }
         Action::Hunt => {

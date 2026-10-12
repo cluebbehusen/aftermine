@@ -531,3 +531,70 @@ fn a_remembered_gun_endangers_salvage_out_to_its_remembered_tier() {
     assert_eq!(danger(0), (true, false), "a Turret reaches the near tile");
     assert_eq!(danger(2), (true, true), "a Bulwark reaches further");
 }
+
+#[test]
+fn a_scout_trusts_no_screen() {
+    let (state, source) = screened_source(false);
+    let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+    assert!(!danger.contains(source), "the worker's escort covers it");
+    assert!(
+        danger.scout_contains(source),
+        "a scout keeps out all the same"
+    );
+}
+
+#[test]
+fn a_scout_backs_away_from_mobile_fire_but_never_toward_it() {
+    let mut danger = static_egress_danger();
+    danger.statics.clear();
+    danger.mobile.push(MobileGroundPressure {
+        pos: TilePos::new(10, 4).center(),
+        reach_sq: Fx::from_num(16),
+        strength: 100,
+        hostile: true,
+    });
+    let from = TilePos::new(8, 4);
+    assert!(danger.scout_contains(from));
+    assert!(danger.scout_route_safe_from(from, TilePos::new(7, 4)));
+    assert!(danger.scout_route_safe_from(from, TilePos::new(8, 2)));
+    assert!(!danger.scout_route_safe_from(from, TilePos::new(9, 4)));
+    assert!(
+        !danger.route_safe_from(from, TilePos::new(7, 4)),
+        "a worker still treats mobile fire as a wall"
+    );
+    let outside = TilePos::new(5, 4);
+    assert!(!danger.scout_route_safe_from(outside, TilePos::new(6, 4)));
+    assert!(danger.scout_route_safe_from(outside, TilePos::new(5, 3)));
+}
+
+#[test]
+fn every_scout_step_beside_a_charge_opens_the_distance() {
+    let mut danger = static_egress_danger();
+    danger.statics.clear();
+    danger.charges.push(TilePos::new(10, 4));
+    let near = TilePos::new(9, 4);
+    assert!(danger.scout_contains(TilePos::new(8, 2)));
+    assert!(!danger.scout_contains(TilePos::new(7, 4)));
+    assert!(danger.scout_route_safe_from(near, TilePos::new(8, 4)));
+    assert!(
+        !danger.scout_route_safe_from(TilePos::new(8, 4), TilePos::new(8, 3)),
+        "sliding sideways beside a charge cuts too close"
+    );
+    assert!(danger.scout_route_safe_from(TilePos::new(8, 4), TilePos::new(7, 4)));
+}
+
+#[test]
+fn cached_scout_queries_match_the_snapshot_predicate() {
+    let (state, _) = screened_source(true);
+    let mut danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+    danger.charges.push(TilePos::new(4, 2));
+    danger.incidents.push(TilePos::new(15, 6));
+    for y in -1..=state.map.height() {
+        for x in -1..=state.map.width() {
+            let tile = TilePos::new(x, y);
+            let reference = danger.scout_threatened(tile, None);
+            assert_eq!(danger.scout_contains(tile), reference, "{tile}");
+            assert_eq!(danger.scout_contains(tile), reference, "cached {tile}");
+        }
+    }
+}

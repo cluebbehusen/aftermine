@@ -289,6 +289,9 @@ pub struct UnitStats {
     /// Reveals hostile Scuttle Charges within
     /// [`CHARGE_SCOUT_DETECT_RADIUS`] tiles.
     pub charge_detection: bool,
+    /// Takes the Scout order. Only ground kinds scout, since the caution
+    /// that order applies reads ground threats.
+    pub scouts: bool,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -641,6 +644,7 @@ const HARVESTER: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -693,6 +697,7 @@ const SENTINEL: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -728,6 +733,7 @@ const SCUTTLER: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -765,6 +771,7 @@ const LANCER: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -807,6 +814,7 @@ const BOMBARD: UnitStats = UnitStats {
     }),
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -842,6 +850,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -877,6 +886,7 @@ const BUZZARD: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -912,6 +922,7 @@ const TALON: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -951,6 +962,7 @@ const WARDEN: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -980,6 +992,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -1006,6 +1019,7 @@ const KESTREL: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: true,
+    scouts: false,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1048,6 +1062,7 @@ const CONDOR: UnitStats = UnitStats {
         aligns_to_motion: false,
     }),
     charge_detection: false,
+    scouts: false,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1086,6 +1101,7 @@ const BREAKER: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1127,6 +1143,7 @@ const AVALANCHE: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1157,6 +1174,7 @@ const SKYHOOK: UnitStats = UnitStats {
         aligns_to_motion: true,
     }),
     charge_detection: false,
+    scouts: false,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1188,6 +1206,7 @@ const SAPPER: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: false,
+    scouts: false,
 };
 
 const SURVEYOR: UnitStats = UnitStats {
@@ -1214,6 +1233,7 @@ const SURVEYOR: UnitStats = UnitStats {
     brace: None,
     crash: None,
     charge_detection: true,
+    scouts: true,
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -2069,6 +2089,24 @@ pub const HARVEST_REPLAN_PERIOD: u64 = 4;
 
 /// Ticks between repeated `DangerHold` reports for one waiting worker.
 pub const DANGER_HOLD_REPORT_PERIOD: u64 = 100;
+
+/// Ticks of caution one Scout leg may spend holding, retreating or detouring
+/// around a danger flag before the scout gives that leg up.
+pub const SCOUT_HOLD_TICKS: u32 = 160;
+
+/// Chebyshev tiles around a known hostile charge a Scout route keeps clear
+/// of. One ring is not enough: the ground follower cuts corners within a
+/// tile of the planned path, closer than [`CHARGE_TRIGGER_RADIUS`].
+pub const SCOUT_CHARGE_AVOID_RADIUS: i32 = 2;
+
+/// Chebyshev reach of the search for safe ground when a scout finds itself
+/// in danger. It covers the widest known envelope: an Avalanche's reach plus
+/// [`HARVEST_MOBILE_DANGER_MARGIN`].
+pub const SCOUT_RETREAT_RADIUS: i32 = 18;
+
+/// Searches one Scout plan may let hit the expansion cap before it settles
+/// for holding.
+pub const SCOUT_ROUTE_ATTEMPTS: usize = 4;
 
 /// How many upcoming route waypoints the ground follower may skip per tick
 /// toward the furthest one its hull can reach on a straight, clear leg.

@@ -403,10 +403,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidDangerRetry(_) => 55,
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
+        E::InvalidScoutOrder(_) => 81,
     }
 }
 
-const ROWS: usize = 81;
+const ROWS: usize = 82;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -500,6 +501,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidLeashClock(UnitId(0)),
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
+        E::InvalidScoutOrder(UnitId(0)),
     ]
 }
 
@@ -943,6 +945,13 @@ fn every_checklist_row_refuses_its_forgery() {
                     json!({"order": "return_cargo", "foundry": foreign, "repair": false});
             },
             "unit u0 has an invalid cargo delivery",
+        ),
+        (
+            "a Scout order on a machine that does not scout",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "scout", "tile": {"x": 3, "y": 3}});
+            },
+            "unit u0 scouts without being a scout",
         ),
         (
             "a harvest source outside its anchored work zone",

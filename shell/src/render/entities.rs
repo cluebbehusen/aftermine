@@ -131,6 +131,7 @@ pub(crate) fn breadcrumb_points(
     };
     let verb_color = |order: &oxide_sim::Order| match order {
         oxide_sim::Order::Run { .. } => BONE_FAINT,
+        oxide_sim::Order::Scout { .. } => Color::new(0.55, 0.78, 0.86, 0.55),
         oxide_sim::Order::Advance { .. } => Color::new(0.95, 0.76, 0.28, 0.62),
         // A chase (at a victim) and a fighting march (toward ground)
         // draw in different colors.
@@ -157,6 +158,7 @@ pub(crate) fn breadcrumb_points(
             | oxide_sim::Order::Advance { goal }
             | oxide_sim::Order::Hunt { goal } => tile_center(goal.tile()),
             oxide_sim::Order::Harvest { node, .. } => tile_center(*node),
+            oxide_sim::Order::Scout { tile } => tile_center(*tile),
             oxide_sim::Order::ReturnCargo { foundry, .. } => {
                 world_vec(game.state.building(*foundry)?.center())
             }

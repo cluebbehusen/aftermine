@@ -888,6 +888,7 @@ fn order_kind(order: &Order) -> usize {
         Order::Unload { .. } => 12,
         Order::Land { .. } => 13,
         Order::ReturnCargo { .. } => 14,
+        Order::Scout { .. } => 15,
     }
 }
 
@@ -952,13 +953,14 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Board {
                 transport: harvester,
             },
+            Order::Scout { tile },
         ],
         looping: false,
     };
     let mut kinds: Vec<usize> = program.orders.iter().map(order_kind).collect();
     kinds.sort_unstable();
     kinds.dedup();
-    assert_eq!(kinds, (0..15).collect::<Vec<_>>(), "every order has a chip");
+    assert_eq!(kinds, (0..16).collect::<Vec<_>>(), "every order has a chip");
 
     let view = game.view();
     let actions: Vec<CardAction> = (0..program.orders.len())
@@ -976,11 +978,11 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
         actions,
         [
             CardAction::None,
+            remove(walk, 5),
             remove(walk, 4),
             remove(walk, 3),
             remove(walk, 2),
             remove(walk, 1),
-            remove(walk, 0),
             remove(OrderKey::Land { pad: tile }, 0),
             remove(OrderKey::Attack { objective: contact }, 0),
             remove(OrderKey::Unload { tile }, 0),
@@ -998,6 +1000,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
                 },
                 0
             ),
+            remove(walk, 0),
         ]
     );
 }

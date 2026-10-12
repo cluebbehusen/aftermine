@@ -76,6 +76,8 @@ pub(crate) enum ArmedMode {
     Run,
     /// Fight and pursue along a route.
     Hunt,
+    /// Scout around known enemy reach.
+    Scout,
     /// Collect this many patrol waypoints.
     Patrol(usize),
 }
@@ -90,6 +92,7 @@ impl ArmedMode {
             Self::Weld => "Weld".to_string(),
             Self::Run => "Run".to_string(),
             Self::Hunt => "Hunt".to_string(),
+            Self::Scout => "Scout".to_string(),
             Self::Patrol(0) => "Patrol".to_string(),
             Self::Patrol(count) => format!("Patrol \u{b7} {count}"),
         }
@@ -173,6 +176,9 @@ pub(crate) enum ClickVerb {
     /// The next ground click sends the selection on a fighting march
     /// that chases enemies along its route.
     Hunt,
+    /// The next ground click sends the selected scouts to see it from
+    /// safe ground.
+    Scout,
 }
 
 /// Cross-frame input state (cursor, held keys, drag origin).
@@ -561,6 +567,7 @@ impl InputState {
                     ClickVerb::Weld => ArmedMode::Weld,
                     ClickVerb::Run => ArmedMode::Run,
                     ClickVerb::Hunt => ArmedMode::Hunt,
+                    ClickVerb::Scout => ArmedMode::Scout,
                 })
             })
             .or_else(|| {
@@ -1866,6 +1873,29 @@ fn armed_verb_click(
             });
             game.presentation
                 .ping_order(tile_center(goal), PingKind::Attack, input.queue_held());
+            if !input.queue_held() {
+                input.click_verb = None;
+            }
+        }
+        return true;
+    }
+    if input.armed(ClickVerb::Scout) {
+        // Like Run: the minimap jumps the camera, HUD chrome swallows the
+        // click, and Shift chains legs and keeps the verb armed.
+        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
+            game.presentation.camera.center = world;
+            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+        } else if !click_on_hud(game, p) {
+            let world = game.presentation.camera.to_world(p);
+            let goal = ground_tile(&game.state, world);
+            let units = game.presentation.selection.units.clone();
+            game.issue(Command::Scout {
+                units,
+                goal,
+                queue: input.queue_held(),
+            });
+            game.presentation
+                .ping_order(tile_center(goal), PingKind::Move, input.queue_held());
             if !input.queue_held() {
                 input.click_verb = None;
             }

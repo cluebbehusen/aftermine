@@ -68,7 +68,7 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
         HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd, MenuHome, MenuLeft, MenuPageDown,
         MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft, PanRight, PanUp, Patrol, RecallBookmark,
         RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed, ReplayStart,
-        ReplayStats, ReturnCargo, Run, Salvage, SetBookmark, SetRally, Slot, StopOrScrap,
+        ReplayStats, ReturnCargo, Run, Salvage, Scout, SetBookmark, SetRally, Slot, StopOrScrap,
         ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
     };
     let mut sections = vec![
@@ -90,6 +90,7 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
                 StopOrScrap,
                 Run,
                 Hunt,
+                Scout,
                 Patrol,
                 Salvage,
                 RepairUnit,

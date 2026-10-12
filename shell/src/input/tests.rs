@@ -8180,3 +8180,83 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
         } if memory.anchor == TilePos::new(30, 24)
     ));
 }
+
+/// Skirmish with a Surveyor beside West's starting Sentinel.
+fn scout_game() -> (Game, oxide_sim::UnitId, oxide_sim::UnitId) {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Surveyor,
+        x: 9,
+        y: 8,
+    });
+    let game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("scout fixture builds");
+    let own = |kind: UnitKind| {
+        game.state
+            .units()
+            .iter()
+            .find(|u| u.player == game.presentation.human && u.kind == kind)
+            .expect("staged")
+            .id
+    };
+    let (scout, sentinel) = (own(UnitKind::Surveyor), own(UnitKind::Sentinel));
+    (game, scout, sentinel)
+}
+
+#[test]
+fn a_right_click_scouts_only_when_every_selected_machine_scouts() {
+    let goal = TilePos::new(20, 10);
+    let (mut game, scout, sentinel) = scout_game();
+    let screen = game.presentation.camera.to_screen(off_centre(goal));
+    game.presentation.selection.units = vec![scout];
+    context_order(&mut game, screen, true);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Scout { goal: g, queue: true, .. }, .. }] if *g == goal
+        ),
+        "{:?}",
+        game.pending
+    );
+
+    let (mut game, scout, sentinel_too) = scout_game();
+    assert_eq!(sentinel, sentinel_too);
+    game.presentation.selection.units = vec![scout, sentinel];
+    context_order(&mut game, screen, false);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand {
+                command: Command::Advance { .. },
+                ..
+            }]
+        ),
+        "a mixed selection advances together: {:?}",
+        game.pending
+    );
+}
+
+#[test]
+fn the_armed_scout_verb_sends_only_scouts() {
+    let (mut game, scout, sentinel) = scout_game();
+    let mut input = InputState::new();
+    game.presentation.selection.units = vec![sentinel];
+    apply_events(&mut game, &mut input, &[key_down(Key::K), key_up(Key::K)]);
+    assert!(!input.armed(ClickVerb::Scout), "no scout in hand");
+
+    game.presentation.selection.units = vec![scout, sentinel];
+    apply_events(&mut game, &mut input, &[key_down(Key::K), key_up(Key::K)]);
+    assert!(input.armed(ClickVerb::Scout), "K arms Scout");
+    let goal = TilePos::new(20, 10);
+    let p = game.presentation.camera.to_screen(off_centre(goal));
+    apply_events(&mut game, &mut input, &[left_down(p), left_up(p)]);
+    assert!(
+        game.pending.iter().any(|c| matches!(
+            &c.command,
+            Command::Scout { goal: g, queue: false, .. } if *g == goal
+        )),
+        "{:?}",
+        game.pending
+    );
+    assert!(!input.armed(ClickVerb::Scout), "a plain click stands down");
+}
