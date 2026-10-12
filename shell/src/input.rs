@@ -1106,7 +1106,7 @@ mod tests;
 mod touch;
 
 use dispatch::dispatch_action;
-use orders::{context_order, rally_selected_producers};
+use orders::{context_order, rally_at, rally_producers, rally_selected_producers};
 pub use select::idle_harvesters;
 use select::{
     box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
@@ -1388,7 +1388,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                         game.presentation
                             .ping_order(tile_center(tile), PingKind::Move, queue);
                     } else if units.is_empty() {
-                        rally_selected_producers(game, tile);
+                        rally_selected_producers(game, oxide_sim::Rally::Tile(tile));
                     }
                 }
             } else if !click_on_hud(game, vec2(x, y)) {
@@ -1516,22 +1516,20 @@ fn armed_click(
         return false;
     }
     if !input.rallying.is_empty() {
-        let world = crate::render::minimap_world_at(&game.view(), p)
-            .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
-        if let Some(world) = world {
-            let rally = ground_tile(&game.state, world);
-            for building in crate::building_actions::SelectedBuildings::inspect_ids(
+        // The minimap names ground only; the world names the own unit under
+        // the click, which new units then escort, or else the ground.
+        let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
+            Some(oxide_sim::Rally::Tile(ground_tile(&game.state, world)))
+        } else {
+            (!click_on_hud(game, p)).then(|| rally_at(game, game.presentation.camera.to_world(p)))
+        };
+        if let Some(rally) = rally {
+            let producers = crate::building_actions::SelectedBuildings::inspect_ids(
                 &game.view(),
                 &input.rallying,
             )
-            .producers()
-            {
-                game.issue(Command::SetRally {
-                    building,
-                    rally: Some(rally),
-                });
-            }
-            game.presentation.ping(tile_center(rally), PingKind::Rally);
+            .producers();
+            rally_producers(game, producers, rally);
             input.rallying.clear();
             game.presentation.toast("Rally point set");
         }

@@ -147,9 +147,10 @@ pub struct BuildingView {
     /// Ticks until `queue[0]` finishes (absent when idle).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticks_remaining: Option<u32>,
-    /// Rally tile `[x, y]`, if set.
+    /// Where finished units report, if set: a tile, or an own unit they
+    /// escort.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rally: Option<[i32; 2]>,
+    pub rally: Option<oxide_sim::Rally>,
     /// Player-designated defense target. The fog view exposes this only for
     /// allied buildings; hostile targeting intent is redacted with rally
     /// and production state.
@@ -556,7 +557,7 @@ fn building_view(b: &Building) -> BuildingView {
                 .train_ticks
                 .saturating_sub(b.training_progress())
         }),
-        rally: b.rally.map(|r| [r.x, r.y]),
+        rally: b.rally,
         focus: b.focus,
         built: b.built(),
         provisional: b.provisional(),

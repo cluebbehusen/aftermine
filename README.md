@@ -64,7 +64,7 @@ shortcuts cover the core loop:
 | WASD / arrow keys                        | Pan the camera; both sets work together.                                                                                  |
 | Wheel / middle drag                      | Zoom / pan the camera.                                                                                                    |
 | `U` with a building / transport selected | Upgrade / unload here.                                                                                                    |
-| `Y` / Shift+`Y` with a producer selected | Set / clear rally.                                                                                                        |
+| `Y` / Shift+`Y` with a producer selected | Set / clear rally. Rallying onto an own unit has new units escort it.                                                     |
 | Left click / drag                        | Select a unit, building, or group.                                                                                        |
 | Shift + click / drag                     | Add to or remove from the current selection. Shift-click a kind in the selection panel to drop that kind.                 |
 | Right click                              | Give the contextual order: harvest scrap, attack an enemy, repair an ally, or advance to ground.                          |

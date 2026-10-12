@@ -316,7 +316,7 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::SetRally {
             building: BuildingId(6),
-            rally: Some(TilePos::new(4, 4)),
+            rally: Some(oxide_sim::Rally::Unit(UnitId(3))),
         },
         Command::Surrender,
         Command::RepairUnit {
@@ -576,8 +576,8 @@ fn typos_inside_command_values_are_rejected() {
             "command.anchor",
         ),
         (
-            r#"{"id":13,"method":"send_command","params":{"player":0,"command":{"type":"set_rally","building":2,"rally":{"x":3,"y":4,"radius":2}}}}"#,
-            "command.rally",
+            r#"{"id":13,"method":"send_command","params":{"player":0,"command":{"type":"set_rally","building":2,"rally":{"tile":{"x":3,"y":4,"radius":2}}}}}"#,
+            "command.rally.tile",
         ),
         (
             r#"{"id":14,"method":"send_command","params":{"player":0,"command":{"type":"unload","transport":2,"at":{"x":3,"y":4,"spread":2},"queue":false}}}"#,

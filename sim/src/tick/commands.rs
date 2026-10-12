@@ -1434,12 +1434,20 @@ fn apply_set_rally(
     state: &mut State,
     player: PlayerId,
     building: crate::ids::BuildingId,
-    rally: Option<TilePos>,
+    rally: Option<crate::state::Rally>,
 ) -> Result<(), RejectReason> {
-    if let Some(rally) = rally
-        && !on_map(state, rally)
+    use crate::state::Rally;
+    if let Some(Rally::Tile(tile)) = rally
+        && !on_map(state, tile)
     {
         return Err(RejectReason::OutOfBounds);
+    }
+    if let Some(Rally::Unit(unit)) = rally
+        && state
+            .unit(unit)
+            .is_none_or(|u| u.player != player || u.hp == 0)
+    {
+        return Err(RejectReason::InvalidTarget);
     }
     let b = state
         .building_mut(building)
@@ -1451,7 +1459,8 @@ fn apply_set_rally(
         return Err(RejectReason::InvalidTarget);
     }
     // Any tile on the map is a legal rally: each newborn resolves it like a
-    // move of its own, and a scrap-node rally requests auto-harvest.
+    // move of its own, and a scrap-node rally requests auto-harvest. A unit
+    // rally names an own unit in the world for every newborn to escort.
     b.rally = rally;
     Ok(())
 }

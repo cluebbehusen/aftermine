@@ -234,6 +234,12 @@ share one tile. Every air route snaps a peak goal to open sky with the same
 scan, framed by the flyer's own approach, so mirrored flights snap to mirrored
 sky.
 
+A producer's rally is a tile or an own unit. Every unit born under a unit rally
+escorts that unit with `Accompany`, harvesters and aircraft included. The rally
+follows its unit aboard a transport and clears in cleanup the tick the unit
+leaves play, so the validator, unlike its rule for order references, refuses a
+unit rally that names a unit out of play or another seat's.
+
 When the target lies outside the unit's reachable ground, the unit routes to the
 reachable tile nearest it by squared distance instead, and stores that tile as
 the endpoint. Reachability comes from 4-connected component labels over the same

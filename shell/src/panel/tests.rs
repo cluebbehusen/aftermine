@@ -456,7 +456,7 @@ fn a_producer_always_exposes_set_reset_and_clear_rally_actions() {
         player: game.presentation.human,
         command: Command::SetRally {
             building: foundry,
-            rally: Some(chassis::grid::TilePos::new(12, 8)),
+            rally: Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(12, 8))),
         },
     }]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
