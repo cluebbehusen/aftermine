@@ -56,6 +56,7 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         | UnitKind::Scuttler
         | UnitKind::Sapper
         | UnitKind::Kestrel
+        | UnitKind::Surveyor
         | UnitKind::Skyhook => None,
     }
 }

@@ -61,7 +61,7 @@ impl Missions {
     /// Keeps a scout looking at each stale place, no two at one place.
     /// Returns how many stale places no scout holds that the scout
     /// production would train could reach, which production trains scouts
-    /// for: an aircraft once an Airworks stands, else a Scuttler. Zero while
+    /// for: an aircraft once an Airworks stands, else a Surveyor. Zero while
     /// no mission could take another.
     pub(crate) fn scout(
         &mut self,
@@ -147,7 +147,7 @@ impl Missions {
             .filter_map(|id| mine(observation, id))
             .filter(|unit| {
                 unit.kind == UnitKind::Kestrel
-                    || (unit.kind == UnitKind::Scuttler && map.component(unit.tile) == home)
+                    || (unit.kind == UnitKind::Surveyor && map.component(unit.tile) == home)
             })
             .collect();
         scouts.sort_by_key(|unit| {

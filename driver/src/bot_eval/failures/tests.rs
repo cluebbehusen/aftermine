@@ -2,8 +2,8 @@ use super::*;
 use oxide_sim::Scenario;
 use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 
-/// The Scuttler, the cheapest unit a Foundry trains.
-const CHEAPEST_FOUNDRY_UNIT: u32 = 40;
+/// The Surveyor, the cheapest unit a Foundry trains.
+const CHEAPEST_FOUNDRY_UNIT: u32 = 30;
 
 fn scenario(buildings: Vec<BuildingSpec>, scrap: u32) -> Scenario {
     let ground = ".".repeat(24);
@@ -249,7 +249,7 @@ fn an_idle_affordable_seat_starves_at_the_window_and_protected_scrap_counts() {
         [FailureIncident {
             tick: FAILURE_WINDOW_TICKS,
             subject: 0,
-            detail: "scuttler".into(),
+            detail: "surveyor".into(),
         }]
     );
     assert_eq!(finished[1].failures.starved_production.incidents, 1);

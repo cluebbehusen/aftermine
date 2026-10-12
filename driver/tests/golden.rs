@@ -262,6 +262,11 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let sentinel_sapper_e = roster.add(1, UnitKind::Sentinel, 41, 20);
     let sentinel_sapper_w = roster.add(0, UnitKind::Sentinel, 42, 20);
     let sapper_e = roster.add(1, UnitKind::Sapper, 43, 20);
+    // The scout pair, nicked the same way; unarmed, they stand it.
+    let surveyor_w = roster.add(0, UnitKind::Surveyor, 40, 22);
+    let sentinel_surveyor_e = roster.add(1, UnitKind::Sentinel, 41, 22);
+    let sentinel_surveyor_w = roster.add(0, UnitKind::Sentinel, 42, 22);
+    let surveyor_e = roster.add(1, UnitKind::Surveyor, 43, 22);
 
     // Seat 0's standing structures: one of every kind the build palette
     // offers, whole. Its Foundry comes from the map anchor.
@@ -350,6 +355,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 flakhound_sling_w,
                 sapper_w,
                 sentinel_sapper_w,
+                surveyor_w,
+                sentinel_surveyor_w,
             ],
             annex_e: vec![
                 condor_e,
@@ -359,6 +366,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 flakhound_sling_e,
                 sapper_e,
                 sentinel_sapper_e,
+                surveyor_e,
+                sentinel_surveyor_e,
             ],
             avalanches: (avalanche_w, avalanche_e),
         },
@@ -501,6 +510,8 @@ fn opening_orders(cast: &Cast) -> Vec<PlayerCommand> {
         attack(1, cast.annex_e[4], cast.annex_w[3]),
         attack(0, cast.annex_w[6], cast.annex_e[5]),
         attack(1, cast.annex_e[6], cast.annex_w[5]),
+        attack(0, cast.annex_w[8], cast.annex_e[7]),
+        attack(1, cast.annex_e[8], cast.annex_w[7]),
     ]);
     commands
 }

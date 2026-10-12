@@ -60,6 +60,9 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
+        /// Ground scout: fast, unarmed, fragile, and far-sighted; it spots
+        /// buried charges like a Kestrel.
+        Surveyor,
     }
 }
 
@@ -105,7 +108,7 @@ chassis::listed_enum! {
         /// nothing else.
         Barricade,
         /// A buried demolition charge and the game's only stealth. Invisible
-        /// to enemies until a scout flies close or an Array's detection ring
+        /// to enemies until a scout comes close or an Array's detection ring
         /// covers it; detonates under hostile ground machines.
         ScuttleCharge,
     }
@@ -283,6 +286,9 @@ pub struct UnitStats {
     pub brace: Option<BraceStats>,
     /// The ground blast a large airframe makes when it crashes.
     pub crash: Option<CrashProfile>,
+    /// Reveals hostile Scuttle Charges within
+    /// [`CHARGE_SCOUT_DETECT_RADIUS`] tiles.
+    pub charge_detection: bool,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -552,6 +558,7 @@ impl UnitKind {
             UnitKind::Avalanche => "avalanche",
             UnitKind::Skyhook => "skyhook",
             UnitKind::Sapper => "sapper",
+            UnitKind::Surveyor => "surveyor",
         }
     }
 
@@ -596,6 +603,9 @@ impl UnitKind {
             UnitKind::Sapper => {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
+            UnitKind::Surveyor => {
+                "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby."
+            }
         }
     }
 }
@@ -630,6 +640,7 @@ const HARVESTER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -681,12 +692,13 @@ const SENTINEL: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
     contact_reach: Some(Fx::lit("0.16")),
     max_hp: 40,
-    speed: Fx::lit("0.16"), // 3.2 tiles/s; the fastest ground unit
+    speed: Fx::lit("0.16"), // 3.2 tiles/s
     radius: Fx::lit("0.28"),
     cost: 40,
     train_ticks: 80, // 4 s
@@ -715,6 +727,7 @@ const SCUTTLER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -751,6 +764,7 @@ const LANCER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -792,6 +806,7 @@ const BOMBARD: UnitStats = UnitStats {
         retract_per_tick: 3,
     }),
     crash: None,
+    charge_detection: false,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -826,6 +841,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -860,6 +876,7 @@ const BUZZARD: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -894,6 +911,7 @@ const TALON: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -932,6 +950,7 @@ const WARDEN: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -960,6 +979,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -985,6 +1005,7 @@ const KESTREL: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: true,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1026,6 +1047,7 @@ const CONDOR: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: false,
     }),
+    charge_detection: false,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1063,6 +1085,7 @@ const BREAKER: UnitStats = UnitStats {
     hull_turn_rate: Some(4),
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1103,6 +1126,7 @@ const AVALANCHE: UnitStats = UnitStats {
     hull_turn_rate: Some(3),
     brace: None,
     crash: None,
+    charge_detection: false,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1132,6 +1156,7 @@ const SKYHOOK: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: true,
     }),
+    charge_detection: false,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1162,6 +1187,33 @@ const SAPPER: UnitStats = UnitStats {
     hull_turn_rate: None,
     brace: None,
     crash: None,
+    charge_detection: false,
+};
+
+const SURVEYOR: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 40,
+    speed: Fx::lit("0.18"), // 3.6 tiles/s; the fastest ground unit
+    radius: Fx::lit("0.25"),
+    cost: 30,
+    train_ticks: 70, // 3.5 s
+    domain: Domain::Ground,
+    weapons: &[],
+    aggro_range: Fx::ZERO,
+    harvest: None,
+    vision: 9,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 1,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: None,
+    brace: None,
+    crash: None,
+    charge_detection: true,
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -1174,6 +1226,7 @@ const FOUNDRY: BuildingStats = BuildingStats {
         UnitKind::Sentinel,
         UnitKind::Scuttler,
         UnitKind::Excavator,
+        UnitKind::Surveyor,
     ],
     weapons: &[],
     // The expansion base and comeback path. Its Fabricator prerequisite
@@ -1540,6 +1593,7 @@ impl UnitKind {
             UnitKind::Avalanche => &AVALANCHE,
             UnitKind::Skyhook => &SKYHOOK,
             UnitKind::Sapper => &SAPPER,
+            UnitKind::Surveyor => &SURVEYOR,
         }
     }
 
@@ -1774,13 +1828,13 @@ pub const CHARGE_DAMAGE: u32 = 60;
 /// The charge's blast ring.
 pub const CHARGE_BLAST_RADIUS: Fx = Fx::lit("1.5");
 
-/// A scout-role flyer within this many tiles reveals buried charges to
-/// its team.
+/// A machine with [`UnitStats::charge_detection`] within this many tiles
+/// reveals buried charges to its team.
 pub const CHARGE_SCOUT_DETECT_RADIUS: i32 = 4;
 
 /// A built base-tier Array reveals buried charges inside this closer
 /// ring (euclidean, like radar contacts). The Deep Array upgrade buys the
-/// wider `CHARGE_ARRAY_DETECT_RADIUS`, and scout flyers remain the mobile
+/// wider `CHARGE_ARRAY_DETECT_RADIUS`, and scouts remain the mobile
 /// detection channel.
 pub const CHARGE_BASE_ARRAY_DETECT_RADIUS: i32 = 12;
 

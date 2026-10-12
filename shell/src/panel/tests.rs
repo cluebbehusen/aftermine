@@ -398,7 +398,7 @@ fn the_foundry_panel_speaks_its_roster() {
     game.presentation.selection.buildings = vec![foundry];
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.title, "Foundry");
-    assert_eq!(panel.cards.len(), 6, "four units plus two rally controls");
+    assert_eq!(panel.cards.len(), 7, "five units plus two rally controls");
     assert_eq!(panel.cards[0].title, "Set rally");
     assert_eq!(panel.cards[0].action, CardAction::ArmRally);
     assert_eq!(panel.cards[2].hotkey, "Q");

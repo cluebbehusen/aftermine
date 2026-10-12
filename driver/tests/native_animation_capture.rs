@@ -35,7 +35,7 @@ static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 
 const MAP_WIDTH: i32 = 32;
 const MAP_HEIGHT: i32 = 22;
-const ALL_UNIT_KINDS: [UnitKind; 16] = UnitKind::ALL;
+const ALL_UNIT_KINDS: [UnitKind; 17] = UnitKind::ALL;
 
 struct NativeCapture {
     shell: Option<ShellGuard>,
@@ -1067,7 +1067,8 @@ fn unit_duel_scenario(attacker: UnitKind) -> Value {
         | UnitKind::Excavator
         | UnitKind::Kestrel
         | UnitKind::Skyhook
-        | UnitKind::Sapper => unreachable!("the combat roster excludes unarmed machines"),
+        | UnitKind::Sapper
+        | UnitKind::Surveyor => unreachable!("the combat roster excludes unarmed machines"),
     };
     let units = vec![
         unit(0, attacker, 15, 10),

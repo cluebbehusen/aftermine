@@ -2457,7 +2457,8 @@ impl State {
     /// and above ordinary tile sight. Retained memory is a separate surface.
     /// True for everything except a completed enemy
     /// [`BuildingKind::is_stealthy`] charge, which must be
-    /// actively detected: an allied scout-role flyer within
+    /// actively detected: an allied machine with
+    /// [`crate::stats::UnitStats::charge_detection`] within
     /// [`crate::stats::CHARGE_SCOUT_DETECT_RADIUS`] tiles, or an allied
     /// built Array whose detection ring covers it —
     /// [`crate::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS`] at base tier,
@@ -2485,7 +2486,7 @@ impl State {
         let scouted = self.units.iter().any(|u| {
             u.hp > 0
                 && !self.hostile(viewer, u.player)
-                && u.kind == crate::stats::UnitKind::Kestrel
+                && u.kind.stats().charge_detection
                 && u.tile().chebyshev(anchor) <= scout_r
         });
         if scouted {

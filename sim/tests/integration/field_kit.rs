@@ -8,7 +8,10 @@ use common::{building, cmd, players, run_until, unit};
 use chassis::grid::TilePos;
 use oxide_sim::command::RejectReason;
 use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS};
+use oxide_sim::stats::{
+    BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS,
+    CHARGE_SCOUT_DETECT_RADIUS,
+};
 use oxide_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitKind};
 
 fn arena(map: Vec<String>, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
@@ -181,6 +184,36 @@ fn a_charge_is_invisible_until_scouted() {
         "a detected mine is a legal target: {:?}",
         report.events
     );
+}
+
+#[test]
+fn every_charge_detecting_scout_reveals_charges_within_its_radius() {
+    // Each scout stands on open ground in plain sight of two charges: one
+    // exactly on its detection radius and one a tile past it.
+    let charge = |dx: i32| TilePos::new(6 + dx, 4);
+    let inside = charge(CHARGE_SCOUT_DETECT_RADIUS);
+    let outside = charge(CHARGE_SCOUT_DETECT_RADIUS + 1);
+    let scouts: Vec<UnitKind> = UnitKind::ALL
+        .into_iter()
+        .filter(|kind| kind.stats().charge_detection)
+        .collect();
+    assert_eq!(scouts, [UnitKind::Kestrel, UnitKind::Surveyor]);
+    for kind in scouts {
+        let mut state = arena(
+            open_map(),
+            vec![unit(0, kind, 6, 4)],
+            vec![
+                building(1, BuildingKind::ScuttleCharge, inside.x, inside.y),
+                building(1, BuildingKind::ScuttleCharge, outside.x, outside.y),
+            ],
+        )
+        .build()
+        .unwrap();
+        state.tick(&[]);
+        assert!(apparent(&state, 0, inside), "{kind:?} sees its radius");
+        assert!(!apparent(&state, 0, outside), "{kind:?} sees no further");
+        assert_eq!(charge_ghosts(&state, 0), [inside], "{kind:?}");
+    }
 }
 
 /// Whether seat `viewer` is allowed to know about the building anchored
