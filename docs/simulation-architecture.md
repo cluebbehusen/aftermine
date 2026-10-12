@@ -567,14 +567,16 @@ air. Each unit carries the tick it last took damage. A patient that has been
 undamaged for `REPAIR_BAY_CALM_TICKS` heals a fixed share of its maximum hp per
 second, metered on the global pulse index so the share needs no stored
 remainder; one hit more recently heals `REPAIR_BAY_STEP` per pulse, which is
-also the floor of the fast step. A step the bank cannot fully pay heals as much
-as it can, and the patient keeps its slot. Structures take the slow step outside
-the unit slots. Units retain first claim on limited aura scrap. A structure with
-an active or queued salvage commitment receives no automatic repair, preserving
-the command layer's mutual exclusion between repair and teardown. Concurrent
-sources are resolved against shared room, excess fully unusable paid work is
-refunded, and no repair source can resurrect a unit or building destroyed by
-that tick's volley.
+also the floor of the fast step. A patient hit by the tick's own volley takes
+the slow step, and a Bay prices its step after any other heals already queued
+for the patient that tick. A step the bank cannot fully pay heals as much as it
+can, and the patient keeps its slot. Structures take the slow step outside the
+unit slots. Units retain first claim on limited aura scrap. A structure with an
+active or queued salvage commitment receives no automatic repair, preserving the
+command layer's mutual exclusion between repair and teardown. Concurrent sources
+are resolved against shared room, excess fully unusable paid work is refunded,
+and no repair source can resurrect a unit or building destroyed by that tick's
+volley.
 
 ## Combat, weapons, and terrain
 

@@ -279,12 +279,13 @@ pub(super) fn run(
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
-    repair_bay_aura(state, &mut heals, &mut builds);
-    crucible_smelter(state);
     // Arrivals join this tick's volley; launches land on later ticks
-    // (flight is at least one tick), so ordering here cannot matter.
+    // (flight is at least one tick), so ordering here cannot matter. The
+    // aura reads the whole volley, so it comes after.
     land_shells(state, &mut hits, events);
     state.shells.extend(launches);
+    repair_bay_aura(state, &hits, &mut heals, &mut builds);
+    crucible_smelter(state);
     let salvaged = resolve_hits(state, &hits, &builds, &heals, &drains, events);
     (logistics_pending, salvaged)
 }
@@ -601,7 +602,10 @@ fn fast_step(max_hp: u32, pulse: u64) -> u32 {
 /// [`crate::stats::REPAIR_BAY_RADIUS`] of its footprint one
 /// [`crate::stats::REPAIR_BAY_STEP`] of hp, billed from the owner's bank at
 /// [`crate::stats::REPAIR_COST_PERMILLE`] of the patient's active tier cost.
-/// A patient the bank cannot fully pay for heals what it can pay. Reach
+/// A patient this tick's volley hits takes the slow step, and a step is
+/// priced from the hp other heals already queued for the patient, so no
+/// payment covers hp the patient cannot take. A patient the bank cannot
+/// fully pay for heals what it can pay. Reach
 /// measures from body to footprint for units and between the nearest
 /// footprint edges for structures. A Bay cannot heal itself;
 /// another Bay may heal it. Units have first claim on limited scrap, then
@@ -610,6 +614,7 @@ fn fast_step(max_hp: u32, pulse: u64) -> u32 {
 /// against the same ceiling.
 fn repair_bay_aura(
     state: &mut State,
+    hits: &[PendingHit],
     heals: &mut Vec<PendingUnitHeal>,
     builds: &mut Vec<PendingHpGain>,
 ) {
@@ -628,13 +633,31 @@ fn repair_bay_aura(
         .collect();
     let radius = crate::stats::REPAIR_BAY_RADIUS;
     let pulse = state.current_tick() / crate::stats::REPAIR_BAY_PERIOD;
+    let struck: Vec<UnitId> = hits
+        .iter()
+        .filter(|hit| hit.damage > 0)
+        .filter_map(|hit| match hit.victim {
+            Target::Unit(id) => Some(id),
+            Target::Building(_) => None,
+        })
+        .collect();
     for (bay, patients) in state.repair_bay_patients() {
         let owner = state.building(bay).expect("a listed Bay stands").player;
         let recovery_reserve = state.recovery_reserve(owner);
         for (id, pace) in patients {
             let u = state.unit(id).expect("a chosen patient lives");
             let stats = u.kind.stats();
-            let hp = u.hp;
+            let queued: u32 = heals
+                .iter()
+                .filter(|heal| heal.unit == id)
+                .map(|heal| heal.step)
+                .sum();
+            let hp = (u.hp + queued).min(stats.max_hp);
+            let pace = if struck.contains(&id) {
+                crate::state::RepairPace::Slow
+            } else {
+                pace
+            };
             let offered = match pace {
                 crate::state::RepairPace::Fast => fast_step(stats.max_hp, pulse),
                 crate::state::RepairPace::Slow => crate::stats::REPAIR_BAY_STEP,

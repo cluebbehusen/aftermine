@@ -1401,7 +1401,8 @@ impl State {
     /// wounded first: own, wounded and in reach, landed or unable to land,
     /// not taken by an earlier Bay, at most
     /// [`crate::stats::REPAIR_BAY_PATIENTS`] per Bay. The aura and
-    /// presentation read the same choice.
+    /// presentation read the same choice; the aura also slows a patient the
+    /// tick's own volley hits, before that hit stamps it.
     pub fn repair_bay_patients(&self) -> Vec<(BuildingId, Vec<(UnitId, RepairPace)>)> {
         use crate::stats::{REPAIR_BAY_CALM_TICKS, REPAIR_BAY_PATIENTS, REPAIR_BAY_RADIUS};
         let mut taken: Vec<UnitId> = Vec::new();
