@@ -151,16 +151,10 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             ("crucible", 4),
             ("repair_bay", 4),
             ("array", 6),
-            ("extractor", 4),
-            # Placeholder: the Deep Bore ships the Extractor's art until its
-            # own is approved.
-            ("extractor_t1", 4),
             ("reclaimer", economy.RECLAIMER_WORK_FRAMES),
             ("reclaimer_t1", economy.RECLAIMER_WORK_FRAMES),
         ):
             render = {
-                "extractor": extractor.render_extractor,
-                "extractor_t1": extractor.render_extractor,
                 "reclaimer": economy.render_reclaimer,
                 "reclaimer_t1": economy.render_refinery,
             }.get(kind)
@@ -171,6 +165,17 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                     f"{kind}{tag}" + (f"_work{phase}" if phase else ""),
                     render(variant, phase),
                 )
+        for kind, count, render in (
+            ("extractor", extractor.EXTRACTOR_WORK_FRAMES, extractor.render_extractor),
+            (
+                "extractor_t1",
+                extractor.DEEP_BORE_WORK_FRAMES,
+                extractor.render_deep_bore,
+            ),
+        ):
+            put(f"{kind}{tag}", render(variant, 0))
+            for frame in range(count):
+                put(f"{kind}{tag}_work{frame + 1}", render(variant, frame * 4 / count))
         for phase in range(7):
             put(
                 f"array_t1{tag}" + (f"_work{phase}" if phase else ""),

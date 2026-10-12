@@ -20,6 +20,7 @@ BUILDING_STEMS = (
     "reclaimer",
     "repair_bay",
     "extractor",
+    "extractor_t1",
     "airworks",
     "crucible",
     "barricade",

@@ -16,6 +16,7 @@ from tools.production_sprite_sources import (
     excavator_final,
     finalized,
     installed_defenses_final,
+    mechanical_extractor,
     mechanical_final,
     quarry_final,
     quarry_rocks,
@@ -91,7 +92,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 517)
+        self.assertEqual(len(frames), 629)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -99,7 +100,58 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "edfcc8556c6fdabe804616e77b678d54ea7a2063cd42d7de1ebc3b053567d544",
+            "94c29027fb67851009bffccdbb831ce143cc7bfa626283de5c84c30fe6ed0c4a",
+        )
+
+    def test_extractor_key_poses_keep_the_approved_art(self) -> None:
+        digest = hashlib.sha256()
+        for render in (
+            mechanical_extractor.render_extractor,
+            mechanical_extractor.render_deep_bore,
+        ):
+            for phase in range(4):
+                digest.update(render("base", phase).tobytes())
+        self.assertEqual(
+            digest.hexdigest(),
+            "7f24e0a962f69e774773d8a5d5b140552632dd79dfd8b6294e68efe253172729",
+        )
+
+    def test_extractor_work_loops_close_without_a_return_jump(self) -> None:
+        for stem, count, render in (
+            ("extractor", 16, mechanical_extractor.render_extractor),
+            ("extractor_t1", 48, mechanical_extractor.render_deep_bore),
+        ):
+            for variant in gen.PALETTES:
+                tag = gen.variant_tag(variant)
+                frames = [
+                    self.registry[f"{stem}{tag}_work{i + 1}"] for i in range(count)
+                ]
+                self.assertEqual(
+                    frames[0].tobytes(), self.registry[f"{stem}{tag}"].tobytes()
+                )
+                self.assertEqual(frames[0].tobytes(), render(variant, 4).tobytes())
+                self.assertEqual(len({frame.tobytes() for frame in frames}), count)
+                steps = [_changed_pixels(a, b) for a, b in pairwise(frames)]
+                self.assertLessEqual(_changed_pixels(frames[-1], frames[0]), max(steps))
+                # Anchors remain planted throughout the machinery cycle.
+                for frame in frames[1:]:
+                    self.assertEqual(
+                        frame.crop((5, 12, 22, 29)).tobytes(),
+                        frames[0].crop((5, 12, 22, 29)).tobytes(),
+                    )
+        frames = [self.registry[f"extractor_t1_work{i + 1}"] for i in range(48)]
+        panel_y = []
+        for frame in frames:
+            positions = [
+                y
+                for y in range(28, 53)
+                if frame.getpixel((64, y))[:3] == gen.PALETTES["base"]["dark"]
+            ]
+            self.assertTrue(positions)
+            panel_y.append(sum(positions) / len(positions))
+        self.assertGreater(max(panel_y) - min(panel_y), 4)
+        self.assertLessEqual(
+            max(abs(a - b) for a, b in pairwise(panel_y + panel_y[:1])), 1
         )
 
     def test_skyhook_rotors_keep_three_distinct_poses_during_actions(self) -> None:
@@ -204,6 +256,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "reclaimer",
                 "repair_bay",
                 "extractor",
+                "extractor_t1",
                 "airworks",
                 "crucible",
                 "barricade",
@@ -250,9 +303,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 self.assertLess(bottom, canvas[1])
                 images.append(image.tobytes())
         self.assertEqual(len(set(images)), len(images))
-        self.assertEqual(
-            list(quarry_rocks.SLAB_RADII), sorted(quarry_rocks.SLAB_RADII)
-        )
+        self.assertEqual(list(quarry_rocks.SLAB_RADII), sorted(quarry_rocks.SLAB_RADII))
 
     def test_metadata_counts_match_every_generated_action_row(self) -> None:
         for stem, frame_set in finalized.UNIT_ACTIONS.items():

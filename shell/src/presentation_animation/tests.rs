@@ -1023,6 +1023,37 @@ fn income_and_scan_buildings_use_continuous_activity_loops() {
 }
 
 #[test]
+fn deep_bore_work_is_slower_and_stops_during_refitting_or_reduced_motion() {
+    let controller = AnimationController::default();
+    for (tier, period) in [(0, 16), (1, 48)] {
+        let mut facts = building_facts(BuildingKind::Extractor);
+        facts.tier = tier;
+        let activity = |facts, tick, reduced_motion| {
+            controller
+                .building_state(
+                    facts,
+                    AnimationClock::new(tick, 0.0),
+                    AnimationOptions { reduced_motion },
+                )
+                .activity
+        };
+        assert_eq!(activity(facts, 0, false), activity(facts, period, false));
+        assert_ne!(
+            activity(facts, 0, false),
+            activity(facts, period / 2, false)
+        );
+        for tick in 0..period {
+            assert_eq!(
+                activity(facts, tick, true),
+                BuildingActivity::Extracting { cycle: 0.0 }
+            );
+        }
+        facts.built = false;
+        assert_eq!(activity(facts, 3, false), BuildingActivity::Idle);
+    }
+}
+
+#[test]
 fn reset_for_seek_drops_reports_but_cooldowns_still_reconstruct() {
     let mut controller = AnimationController::default();
     let report = &unit_attack_report(4, UnitId(7), 0);

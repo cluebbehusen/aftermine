@@ -64,7 +64,7 @@ pub(crate) enum UnitFrame {
 }
 
 /// The atlas rows selected for a building and its optional rotating mount.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BuildingFrame {
     /// Main footprint art.
     pub(crate) body: BuildingBodyFrame,
@@ -73,12 +73,14 @@ pub(crate) struct BuildingFrame {
 }
 
 /// Main footprint art for a building.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum BuildingBodyFrame {
     /// Completed, inactive base art.
     Idle,
     /// Zero-based `_workN` frame.
     Work(usize),
+    /// Normalized loop mapped across every work frame of the installed tier.
+    WorkCycle(f32),
     /// Construction stage and machinery phase.
     Construction { stage: usize, phase: usize },
     /// Zero-based `_actionN` frame. Bastion uses this for its charge rack.
@@ -224,9 +226,7 @@ pub(crate) fn building_frame(kind: BuildingKind, state: BuildingAnimationState) 
             BuildingActivity::ArraySweep { cycle } => {
                 BuildingBodyFrame::Work(cycle_index(cycle, 6))
             }
-            BuildingActivity::Extracting { cycle } => {
-                BuildingBodyFrame::Work(cycle_index(cycle, 4))
-            }
+            BuildingActivity::Extracting { cycle } => BuildingBodyFrame::WorkCycle(cycle),
             BuildingActivity::Reclaiming { cycle } => {
                 BuildingBodyFrame::Work(cycle_index(cycle, 12))
             }

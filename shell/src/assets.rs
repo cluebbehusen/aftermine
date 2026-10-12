@@ -49,7 +49,6 @@ pub struct Sprites {
     wreck_pile: Rect,
     air_shadow: Rect,
     burst: Rect,
-    construction: [[Rect; 2]; SITE_FRAME_COUNT * BUILDING_KIND_COUNT],
     harvester_cargo: [[Rect; 2]; 5],
     harvester_cargo_scoop: [[[Rect; 2]; 2]; 5],
     harvester_cargo_tread: [[[Rect; 2]; 2]; 5],
@@ -395,7 +394,6 @@ const EXCAVATOR_CARGO_LEVELS: usize = 5;
 const SITE_STAGES: usize = 3;
 const SITE_PHASES: usize = 2;
 const SITE_FRAME_COUNT: usize = SITE_STAGES * SITE_PHASES;
-const BUILDING_KIND_COUNT: usize = BuildingKind::ALL.len();
 
 /// One complete Harvester pose at a particular visible cargo level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -616,12 +614,36 @@ fn unit_move_suffixes(kind: UnitKind) -> [&'static str; 2] {
 /// A building's art at one rung of its upgrade ladder.
 struct RungArt {
     hull: [Rect; 2],
+    construction: [[Rect; 2]; SITE_FRAME_COUNT],
     /// Activity frames after the hull.
     work: Vec<[Rect; 2]>,
     /// The hull's charge-rack frames, synchronized with its mount.
     charge: Vec<[Rect; 2]>,
     /// A defense's rotating mount and its firing frames.
     mount: Option<([Rect; 2], Vec<[Rect; 2]>)>,
+}
+
+impl RungArt {
+    fn work_cycle(&self, cycle: f32) -> [Rect; 2] {
+        let count = self.work.len();
+        if count == 0 {
+            return self.hull;
+        }
+        // A normalized tick can land one float rounding error below its frame.
+        let index = numeric::to_usize((cycle.clamp(0.0, 1.0) + f32::EPSILON) * count as f32);
+        self.work[index.min(count - 1)]
+    }
+}
+
+fn construction_stem(kind: BuildingKind, tier: usize) -> String {
+    rung_stem(
+        building_stem(kind),
+        if kind == BuildingKind::Extractor {
+            tier
+        } else {
+            0
+        },
+    )
 }
 
 /// The atlas stem of a building's hull or mount at `tier`: every upgraded
@@ -666,6 +688,7 @@ fn building_art(rects: &Manifest) -> Result<Vec<Vec<RungArt>>> {
                         .transpose()?;
                     Ok(RungArt {
                         hull: variant_row(rects, &hull, "")?,
+                        construction: construction_rows(rects, &construction_stem(kind, tier))?,
                         work: numbered_rows(rects, &hull, "work")?,
                         charge,
                         mount,
@@ -676,19 +699,14 @@ fn building_art(rects: &Manifest) -> Result<Vec<Vec<RungArt>>> {
         .collect()
 }
 
-fn construction_rows(
-    rects: &Manifest,
-) -> Result<[[Rect; 2]; SITE_FRAME_COUNT * BUILDING_KIND_COUNT]> {
+fn construction_rows(rects: &Manifest, stem: &str) -> Result<[[Rect; 2]; SITE_FRAME_COUNT]> {
     let empty = [Rect::new(0.0, 0.0, 0.0, 0.0); 2];
-    let mut out = [empty; SITE_FRAME_COUNT * BUILDING_KIND_COUNT];
-    for kind in BuildingKind::ALL {
-        for stage in 0..SITE_STAGES {
-            for phase in 0..SITE_PHASES {
-                let frame = stage * SITE_PHASES + phase;
-                let suffix = format!("_site{stage}_{phase}");
-                out[kind as usize * SITE_FRAME_COUNT + frame] =
-                    variant_row(rects, building_stem(kind), &suffix)?;
-            }
+    let mut out = [empty; SITE_FRAME_COUNT];
+    for stage in 0..SITE_STAGES {
+        for phase in 0..SITE_PHASES {
+            let frame = stage * SITE_PHASES + phase;
+            let suffix = format!("_site{stage}_{phase}");
+            out[frame] = variant_row(rects, stem, &suffix)?;
         }
     }
     Ok(out)
@@ -801,12 +819,19 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                 }
             }
         }
-        for stage in 0..SITE_STAGES {
-            for phase in 0..SITE_PHASES {
-                keys.extend(variant_keys(
-                    building_stem(kind),
-                    &format!("_site{stage}_{phase}"),
-                ));
+        let site_tiers = if kind == BuildingKind::Extractor {
+            kind.tiers().len()
+        } else {
+            1
+        };
+        for tier in 0..site_tiers {
+            for stage in 0..SITE_STAGES {
+                for phase in 0..SITE_PHASES {
+                    keys.extend(variant_keys(
+                        &construction_stem(kind, tier),
+                        &format!("_site{stage}_{phase}"),
+                    ));
+                }
             }
         }
     }
@@ -921,7 +946,6 @@ impl Sprites {
             wreck_pile,
             air_shadow,
             burst,
-            construction: construction_rows(&rects)?,
             harvester_cargo: harvester_cargo_rows(&rects)?,
             harvester_cargo_scoop: harvester_cargo_motion_rows(&rects, SCOOP_SUFFIXES)?,
             harvester_cargo_tread: harvester_cargo_motion_rows(&rects, TREAD_SUFFIXES)?,
@@ -1248,21 +1272,39 @@ impl Sprites {
         self.building_work_row(kind, tier, frame)[ACCENT]
     }
 
-    fn construction_row(&self, kind: BuildingKind, stage: usize, phase: usize) -> &[Rect; 2] {
+    /// Samples every installed work pose, with matching hull and owner mask.
+    pub fn building_work_cycle(&self, kind: BuildingKind, tier: u8, cycle: f32) -> (Rect, Rect) {
+        let row = self.rung(kind, tier).work_cycle(cycle);
+        (row[BASE], row[ACCENT])
+    }
+
+    fn construction_row(
+        &self,
+        kind: BuildingKind,
+        tier: u8,
+        stage: usize,
+        phase: usize,
+    ) -> &[Rect; 2] {
         let stage = stage.min(SITE_STAGES - 1);
         let phase = phase.min(SITE_PHASES - 1);
-        &self.construction[kind as usize * SITE_FRAME_COUNT + stage * SITE_PHASES + phase]
+        &self.rung(kind, tier).construction[stage * SITE_PHASES + phase]
     }
 
     /// A full construction-site frame authored for the final building's
     /// footprint, progress stage, and machinery phase.
-    pub fn construction(&self, kind: BuildingKind, stage: usize, phase: usize) -> Rect {
-        self.construction_row(kind, stage, phase)[BASE]
+    pub fn construction(&self, kind: BuildingKind, tier: u8, stage: usize, phase: usize) -> Rect {
+        self.construction_row(kind, tier, stage, phase)[BASE]
     }
 
     /// The allegiance mask matched to [`Self::construction`].
-    pub fn construction_accent(&self, kind: BuildingKind, stage: usize, phase: usize) -> Rect {
-        self.construction_row(kind, stage, phase)[ACCENT]
+    pub fn construction_accent(
+        &self,
+        kind: BuildingKind,
+        tier: u8,
+        stage: usize,
+        phase: usize,
+    ) -> Rect {
+        self.construction_row(kind, tier, stage, phase)[ACCENT]
     }
 
     fn harvester_frame_row(&self, cargo: usize, pose: HarvesterPose) -> &[Rect; 2] {

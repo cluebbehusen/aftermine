@@ -26,6 +26,7 @@ const CRUCIBLE_PRODUCTION_PERIOD: u64 = 16;
 const AIRWORKS_PRODUCTION_PERIOD: u64 = 12;
 const ARRAY_SWEEP_PERIOD: u64 = 32;
 const EXTRACTOR_PERIOD: u64 = 16;
+const DEEP_BORE_PERIOD: u64 = 48;
 const RECLAIMER_PERIOD: u64 = 24;
 const BUZZARD_ROTOR_PERIOD: u64 = 6;
 const SKYHOOK_ROTOR_PERIOD: u64 = 9;
@@ -389,7 +390,7 @@ pub(crate) enum BuildingActivity {
     AirworksLaunch { progress: f32 },
     /// A completed Array's continuous full-bearing scan.
     ArraySweep { cycle: f32 },
-    /// A completed Extractor's continuous radial auger cycle.
+    /// A completed Extractor's cutter or Deep Bore's drill cycle.
     Extracting { cycle: f32 },
     /// A completed Reclaimer's continuous grind.
     Reclaiming { cycle: f32 },
@@ -784,7 +785,15 @@ impl AnimationController {
                     cycle: clock.cycle(facts.id.0, ARRAY_SWEEP_PERIOD, options.reduced_motion),
                 },
                 BuildingKind::Extractor => BuildingActivity::Extracting {
-                    cycle: clock.cycle(facts.id.0, EXTRACTOR_PERIOD, options.reduced_motion),
+                    cycle: clock.cycle(
+                        facts.id.0,
+                        if facts.tier == 0 {
+                            EXTRACTOR_PERIOD
+                        } else {
+                            DEEP_BORE_PERIOD
+                        },
+                        options.reduced_motion,
+                    ),
                 },
                 BuildingKind::Reclaimer => BuildingActivity::Reclaiming {
                     cycle: clock.cycle(facts.id.0, RECLAIMER_PERIOD, options.reduced_motion),

@@ -540,7 +540,7 @@ fn building_activity_uses_only_its_authored_row() {
     state.activity = BuildingActivity::Extracting { cycle: 0.99 };
     assert_eq!(
         building_frame(BuildingKind::Extractor, state).body,
-        BuildingBodyFrame::Work(3)
+        BuildingBodyFrame::WorkCycle(0.99)
     );
     state.activity = BuildingActivity::Reclaiming { cycle: 0.99 };
     assert_eq!(
