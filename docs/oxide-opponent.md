@@ -189,15 +189,15 @@ Each behavior is proven by a staged scenario test.
 | Expensive investment wanted          | Save for it while keeping an army share                                                                                                               |
 | Several enemies                      | Choose a target with hysteresis                                                                                                                       |
 
-It also covers scouting, where a point whose scout was lost on the way waits to
-go stale again rather than drawing scouts one after another into the same fire,
-Scuttler raids, harvest-line harassment by air, team relief, escorts, repair,
-harvester evacuation, emergency and voluntary static defense sized to hold off
-the known threat, Extractor restoration, expansion timing, tech prerequisites,
-memory of failed objectives, a response to stalled production, focus fire, and
-pulling wounded units back between fights. It does no other per-unit micro. It
-builds every building kind, reaches every upgrade tier, and trains every unit
-kind.
+It also covers scouting, where a point whose scout was lost on the way or found
+no safe view waits to go stale again rather than drawing scouts one after
+another into the same fire, Scuttler raids, harvest-line harassment by air, team
+relief, escorts, repair, harvester evacuation, emergency and voluntary static
+defense sized to hold off the known threat, Extractor restoration, expansion
+timing, tech prerequisites, memory of failed objectives, a response to stalled
+production, focus fire, and pulling wounded units back between fights. It does
+no other per-unit micro. It builds every building kind, reaches every upgrade
+tier, and trains every unit kind.
 
 ## Difficulty, stance and personality
 
