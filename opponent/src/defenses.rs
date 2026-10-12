@@ -278,6 +278,9 @@ struct Cover {
     size: (i32, i32),
     ground: bool,
     air: bool,
+    /// Fires shells beyond its own sight, so only where something spots
+    /// for it.
+    indirect: bool,
 }
 
 impl Cover {
@@ -293,6 +296,7 @@ impl Cover {
             size: kind.size(),
             ground: false,
             air: false,
+            indirect: false,
         };
         for weapon in stats.weapons {
             let reach = (weapon.range + weapon.range).to_num::<i64>();
@@ -303,6 +307,7 @@ impl Cover {
             cover.minimum = cover.minimum.min(weapon.minimum_range);
             cover.ground |= weapon.targets.ground;
             cover.air |= weapon.targets.air;
+            cover.indirect |= weapon.indirect;
         }
         (cover.ground || cover.air).then_some(cover)
     }
@@ -470,7 +475,9 @@ impl<'a> Guard<'a> {
                     .map(|point| {
                         let covered: u64 = covers
                             .iter()
-                            .filter(|cover: &&Cover| cover.covers(domain, *point))
+                            .filter(|cover: &&Cover| {
+                                cover.covers(domain, *point) && (!cover.indirect || seen(*point))
+                            })
                             .map(|cover| approach.held(cover))
                             .sum();
                         (2_000 * need.saturating_sub(covered))
@@ -535,9 +542,10 @@ impl<'a> Guard<'a> {
 
     /// What a defense of `kind` at `anchor` adds to `asset`'s approach: for a
     /// gun, the army scrap it closes of the shortfall against the threat
-    /// along the way at each sample it covers, at most its strength. A
-    /// Bastion counts only samples its owner's or an ally's buildings see,
-    /// since it fires no further than something spots for it. An Array adds
+    /// along the way at each sample it covers, at most its strength. A gun
+    /// firing indirect shells counts only samples its owner's or an ally's
+    /// buildings see, since it fires no further than something spots for it.
+    /// An Array adds
     /// two thousand for each point further along the way in that nothing
     /// sees yet.
     fn gain(asset: &Asset, kind: BuildingKind, anchor: TilePos, reach: Option<Cover>) -> u64 {
@@ -559,14 +567,13 @@ impl<'a> Guard<'a> {
         let Some(approach) = asset.approach(domain) else {
             return 0;
         };
-        let bastion = kind == BuildingKind::Bastion;
         approach
             .samples
             .iter()
             .zip(&approach.open)
             .zip(&approach.spotted)
             .filter(|((point, _), spotted)| {
-                cover.covers(domain, **point) && (!bastion || **spotted)
+                cover.covers(domain, **point) && (!cover.indirect || **spotted)
             })
             .map(|((_, open), _)| approach.shortfall(*open).min(approach.held(&cover)))
             .sum()
@@ -884,8 +891,15 @@ impl<'a> Guard<'a> {
         kind: BuildingKind,
         guarded: impl Fn(&Asset) -> bool,
     ) -> Option<(TilePos, u64)> {
+        let required = kind
+            .base_stats()
+            .construction
+            .map_or(&[][..], |c| c.requires);
+        if !built_all(self.observation, required) {
+            return None;
+        }
         let reach = Cover::of(kind, 0, TilePos::new(0, 0));
-        let bastion = kind == BuildingKind::Bastion;
+        let indirect = reach.is_some_and(|reach| reach.indirect);
         // Each asset with the most any site beside it could be worth: every
         // sample still open, or every far point nobody sees.
         let mut candidates: Vec<(u64, &Asset, &Approach)> = Vec::new();
@@ -905,7 +919,7 @@ impl<'a> Guard<'a> {
                     .open
                     .iter()
                     .zip(&approach.spotted)
-                    .filter(|(_, spotted)| !bastion || **spotted)
+                    .filter(|(_, spotted)| !indirect || **spotted)
                     .map(|(open, _)| approach.shortfall(*open))
                     .sum()
             };
@@ -1075,12 +1089,7 @@ fn upgrade(guard: &Guard<'_>, building: &BuildingObs, weight: u64) -> Option<(In
         return None;
     }
     let next = building.kind.upgrade_from(building.tier)?;
-    let ready = next.requires.iter().all(|required| {
-        observation
-            .my_buildings
-            .iter()
-            .any(|own| own.kind == *required && own.built)
-    });
+    let ready = built_all(observation, next.requires);
     let reach = stats
         .weapons
         .iter()
@@ -1115,12 +1124,15 @@ fn upgrade(guard: &Guard<'_>, building: &BuildingObs, weight: u64) -> Option<(In
                     .filter_map(|domain| Some((domain, asset.approach(domain)?)))
                     .map(|(domain, approach)| {
                         // The army scrap of the shortfall at the samples the next
-                        // tier covers that it closes beyond the gun today.
+                        // tier covers, and sees where it fires indirect shells,
+                        // that it closes beyond the gun today.
                         let short: u64 = approach
                             .samples
                             .iter()
                             .zip(&approach.open)
-                            .map(|(point, open)| {
+                            .zip(&approach.spotted)
+                            .filter(|(_, spotted)| !next.indirect || **spotted)
+                            .map(|((point, open), _)| {
                                 approach.shortfall(*open).min(raises(
                                     cover,
                                     next,
@@ -2249,6 +2261,16 @@ fn raises(
     } else {
         held(&next)
     }
+}
+
+/// Whether the seat has built every kind in `required`.
+fn built_all(observation: &ObservationData, required: &[BuildingKind]) -> bool {
+    required.iter().all(|kind| {
+        observation
+            .my_buildings
+            .iter()
+            .any(|own| own.kind == *kind && own.built)
+    })
 }
 
 /// What a building costs to place.

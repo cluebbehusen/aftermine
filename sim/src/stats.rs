@@ -78,7 +78,8 @@ chassis::listed_enum! {
         /// Anti-air emplacement: flak bursts that only ever look up.
         FlakTurret,
         /// Artillery emplacement: arcing splash shells beyond its own sight;
-        /// needs a spotter at full reach.
+        /// needs a spotter at full reach. Upgrades to the longer-ranged
+        /// Citadel.
         Bastion,
         /// Radar: a ring of true sight, and a wider ring of blips (contacts
         /// without identity whose contact tracks attacks may target).
@@ -397,7 +398,7 @@ impl BuildingKind {
             BuildingKind::Array => &[&ARRAY, &DEEP_ARRAY],
             BuildingKind::Foundry => &[&FOUNDRY],
             BuildingKind::Fabricator => &[&FABRICATOR],
-            BuildingKind::Bastion => &[&BASTION],
+            BuildingKind::Bastion => &[&BASTION, &CITADEL],
             BuildingKind::RepairBay => &[&REPAIR_BAY],
             BuildingKind::Extractor => &[&EXTRACTOR, &DEEP_BORE],
             BuildingKind::Airworks => &[&AIRWORKS],
@@ -441,6 +442,7 @@ impl BuildingKind {
             (BuildingKind::Reclaimer, 1) => "refinery",
             (BuildingKind::Array, 1) => "deep array",
             (BuildingKind::Extractor, 1) => "deep bore",
+            (BuildingKind::Bastion, 1) => "citadel",
             _ => self.name(),
         }
     }
@@ -1252,10 +1254,10 @@ const BASTION: BuildingStats = BuildingStats {
     weapons: &[WeaponStats {
         damage: 40,
         // A building aims from its center while a gun firing at it measures
-        // to its nearest edge, so a Bombard's 9.5 plus this footprint's
-        // half-diagonal is what it takes to answer one from any side. Full
-        // reach needs a spotter.
-        range: Fx::lit("11"),
+        // to its nearest edge, so a Bombard at its full 9.5 outranges this by
+        // the footprint's half-diagonal: mobile siege beats static siege until
+        // the Citadel. Full reach needs a spotter.
+        range: Fx::lit("9.5"),
         minimum_range: Fx::lit("2.5"),
         cooldown_ticks: 90,
         targets: DomainMask::GROUND,
@@ -1271,7 +1273,7 @@ const BASTION: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 210,
         build_ticks: 500,
-        requires: &[],
+        requires: &[BuildingKind::Fabricator],
     }),
 };
 
@@ -1487,8 +1489,33 @@ const DEEP_ARRAY: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 150,
         build_ticks: 300,
-        // Both deepest rungs (this and the Bulwark) require the Crucible,
-        // which itself requires the Fabricator.
+        // The Crucible itself requires the Fabricator.
+        requires: &[BuildingKind::Crucible],
+    }),
+};
+
+const CITADEL: BuildingStats = BuildingStats {
+    max_hp: 500,
+    vision: 6,
+    produces: &[],
+    weapons: &[WeaponStats {
+        damage: 40,
+        // Clears a Bombard's 9.5 plus the footprint's half-diagonal, so it
+        // answers one from any side, and stays short of the Avalanche's 14.
+        range: Fx::lit("12.5"),
+        minimum_range: Fx::lit("2.5"),
+        cooldown_ticks: 90,
+        targets: DomainMask::GROUND,
+        splash: Some(Fx::lit("1.3")),
+        indirect: true,
+        projectile: Some(ProjectileStats {
+            payload: ProjectileKind::Shell,
+            speed: Fx::lit("0.30"),
+        }),
+    }],
+    construction: Some(ConstructionStats {
+        cost: 250,
+        build_ticks: 400,
         requires: &[BuildingKind::Crucible],
     }),
 };
@@ -1562,7 +1589,7 @@ impl BuildingKind {
             }
             BuildingKind::FlakTurret => "Fixed anti-air defense. Cannot attack ground targets.",
             BuildingKind::Bastion => {
-                "Long-range artillery with explosive shells. Needs a spotter beyond its sight range."
+                "Long-range artillery with explosive shells. Needs a spotter beyond its sight range. Upgrade to a Citadel for more range."
             }
             BuildingKind::Array => {
                 "Extends vision, detects hidden charges, and tracks distant radar contacts that weapons can fire on."

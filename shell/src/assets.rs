@@ -1232,20 +1232,21 @@ impl Sprites {
         self.rung(kind, tier).hull[ACCENT]
     }
 
-    fn building_action_row(&self, kind: BuildingKind, frame: usize) -> &[Rect; 2] {
-        let rung = self.rung(kind, 0);
+    fn building_action_row(&self, kind: BuildingKind, tier: u8, frame: usize) -> &[Rect; 2] {
+        let rung = self.rung(kind, tier);
         rung.charge.get(frame).unwrap_or(&rung.hull)
     }
 
-    /// A building base's zero-based authored action frame. Bastion charge
-    /// cells live here; other building bases and invalid frames stay ready.
-    pub fn building_action(&self, kind: BuildingKind, frame: usize) -> Rect {
-        self.building_action_row(kind, frame)[BASE]
+    /// A building base's zero-based authored action frame at `tier`. Bastion
+    /// charge cells live here; other building bases and invalid frames stay
+    /// ready.
+    pub fn building_action(&self, kind: BuildingKind, tier: u8, frame: usize) -> Rect {
+        self.building_action_row(kind, tier, frame)[BASE]
     }
 
     /// The allegiance mask matched to [`Self::building_action`].
-    pub fn building_action_accent(&self, kind: BuildingKind, frame: usize) -> Rect {
-        self.building_action_row(kind, frame)[ACCENT]
+    pub fn building_action_accent(&self, kind: BuildingKind, tier: u8, frame: usize) -> Rect {
+        self.building_action_row(kind, tier, frame)[ACCENT]
     }
 
     fn building_work_row(&self, kind: BuildingKind, tier: u8, frame: usize) -> &[Rect; 2] {

@@ -611,7 +611,10 @@ fn defense_rows_cover_report_recovery_and_charge_boundaries() {
             .map(|tier| shipped_frames(&rung_stem(look.mount, tier), "action"))
             .collect();
         if look.charge_rack {
-            counts.push(shipped_frames(building_stem(kind), "action"));
+            counts.extend(
+                (0..kind.tiers().len())
+                    .map(|tier| shipped_frames(&rung_stem(building_stem(kind), tier), "action")),
+            );
         }
         let count = counts.into_iter().min().unwrap();
         for progress in [0.0, 0.25, 0.5, 0.75, 1.0] {

@@ -821,6 +821,126 @@
   128,
   128
  ],
+ "bastion_mount_t1": [
+  3566,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent": [
+  3698,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action1": [
+  3830,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action2": [
+  3962,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action3": [
+  2,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action4": [
+  3698,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action5": [
+  3698,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action6": [
+  134,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action7": [
+  266,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action8": [
+  398,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_accent_action9": [
+  3698,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action1": [
+  530,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action2": [
+  662,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action3": [
+  794,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action4": [
+  3566,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action5": [
+  3566,
+  426,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action6": [
+  926,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action7": [
+  1058,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action8": [
+  1190,
+  558,
+  128,
+  128
+ ],
+ "bastion_mount_t1_action9": [
+  3566,
+  426,
+  128,
+  128
+ ],
  "bastion_site0_0": [
   1322,
   558,
@@ -854,6 +974,126 @@
  "bastion_site2_1": [
   1982,
   558,
+  128,
+  128
+ ],
+ "bastion_t1": [
+  1190,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent": [
+  1322,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action1": [
+  1454,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action2": [
+  1586,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action3": [
+  1718,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action4": [
+  1850,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action5": [
+  1322,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action6": [
+  1322,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action7": [
+  1982,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action8": [
+  1982,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_accent_action9": [
+  1982,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action1": [
+  2906,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action2": [
+  3038,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action3": [
+  3170,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action4": [
+  3302,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action5": [
+  1190,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action6": [
+  1190,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action7": [
+  3434,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action8": [
+  3434,
+  426,
+  128,
+  128
+ ],
+ "bastion_t1_action9": [
+  3434,
+  426,
   128,
   128
  ],

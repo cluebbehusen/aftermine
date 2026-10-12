@@ -20,13 +20,23 @@ fn values(kind: BuildingKind, tier: u8, label: &str) -> (String, String) {
 fn every_upgrade_compares_completed_health_and_stops_at_the_top() {
     for kind in BuildingKind::ALL {
         for tier in 0..kind.tiers().len().fit::<u8>() - 1 {
-            assert_eq!(
-                values(kind, tier, "Max health"),
-                (
-                    format!("{} hp", kind.tier_stats(tier).max_hp),
-                    format!("{} hp", kind.tier_stats(tier + 1).max_hp),
-                )
+            let (now, next) = (
+                kind.tier_stats(tier).max_hp,
+                kind.tier_stats(tier + 1).max_hp,
             );
+            let rows = comparison(kind, tier).unwrap().rows;
+            assert!(!rows.is_empty(), "{kind:?} tier {tier} changes something");
+            if now == next {
+                assert!(
+                    rows.iter().all(|row| row.label != "Max health"),
+                    "{kind:?} tier {tier} keeps its health off the preview"
+                );
+            } else {
+                assert_eq!(
+                    values(kind, tier, "Max health"),
+                    (format!("{now} hp"), format!("{next} hp"))
+                );
+            }
         }
         assert!(comparison(kind, kind.tiers().len().fit::<u8>() - 1).is_none());
     }
@@ -53,6 +63,10 @@ fn previews_include_tradeoffs_and_non_weapon_benefits() {
     assert_eq!(
         values(BuildingKind::Array, 0, "Sight"),
         ("9 tiles".into(), "11 tiles".into())
+    );
+    assert_eq!(
+        values(BuildingKind::Bastion, 0, "Ground range"),
+        ("2.5-9.5 tiles".into(), "2.5-12.5 tiles".into())
     );
     assert_eq!(
         values(BuildingKind::Array, 0, "Mine detection"),

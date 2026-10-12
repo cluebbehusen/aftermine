@@ -160,7 +160,8 @@ of the threat, and by personality: fortification for Turrets and Bastions,
 fortification and support for Flak Turrets. A seat under the stance's minimum
 army with no Turret puts one up before any tech, whatever its fortification: one
 gun holds an early rush that a tech building still going up would not. A Bastion
-counts only ground the seat's or an ally's buildings see. When the threat is
+counts only ground the seat's or an ally's buildings see, and is offered only
+once the seat owns a Fabricator; the seat buys none for it. When the threat is
 only a guess from public facts, equal sites go to the one nearest the building;
 otherwise to the one nearest the threat. Sites go only on ground where one of
 the seat's workers stands to build them, and a site the simulation refused is
@@ -194,12 +195,13 @@ A Repair Bay goes up beside a guarded base's building where its aura reaches the
 most missing value among the seat's wounded ground units and damaged buildings
 that no Repair Bay reaches yet, weighted by support.
 
-Defenses upgrade in place (Heavy Turret, Bulwark, Burst Flak, Deep Array) once
-the next tier's prerequisite stands, worth how far the approach they cover still
-falls short of holding, or for an Array the far points it watches, by how sure
-the seat is of its threat and weighted by fortification and greed, and never
-while an enemy in sight could hit it, from its own reach or the defense's, while
-it is down at a fifth of its health.
+Defenses upgrade in place (Heavy Turret, Bulwark, Burst Flak, Citadel, Deep
+Array) once the next tier's prerequisite stands, worth how far the approach they
+cover still falls short of holding, counting for a Citadel only ground something
+sees, or for an Array the far points it watches, by how sure the seat is of its
+threat and weighted by fortification and greed, and never while an enemy in
+sight could hit it, from its own reach or the defense's, while it is down at a
+fifth of its health.
 
 ## Attack
 
