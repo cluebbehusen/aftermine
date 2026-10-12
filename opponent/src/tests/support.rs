@@ -535,6 +535,47 @@ fn a_repair_bay_goes_up_where_the_wounded_gather() {
 }
 
 #[test]
+fn wounded_a_full_repair_bay_cannot_treat_call_for_another() {
+    let anchor = TilePos::new(9, 7);
+    let around = [
+        (8, 6),
+        (9, 6),
+        (10, 6),
+        (11, 6),
+        (8, 9),
+        (9, 9),
+        (10, 9),
+        (11, 9),
+    ];
+    let wanted = |count: usize, moving: bool| {
+        let mut scenario = arena(0);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::RepairBay, anchor.x, anchor.y));
+        for (x, y) in &around[..count] {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        }
+        let state = scenario.build().unwrap();
+        let hurt: Vec<UnitId> = around[..count]
+            .iter()
+            .map(|(x, y)| at(&state, *x, *y))
+            .collect();
+        let mut state = all_wounded(&state, &hurt, 1);
+        if moving {
+            state.tick(&[run(0, hurt, 20, 9)]);
+        }
+        bay(&scenario, &state)
+    };
+    assert_eq!(wanted(4, false), None, "one Bay treats four");
+    assert!(wanted(8, false).is_some(), "four more need a second Bay");
+    assert_eq!(
+        wanted(8, true),
+        None,
+        "wounded passing through call for none"
+    );
+}
+
+#[test]
 fn an_extractor_frame_waits_while_an_armed_enemy_stands_near() {
     let mut scenario = arena(0);
     scenario.map[1].replace_range(6..7, "E");
