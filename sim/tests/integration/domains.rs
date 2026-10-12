@@ -104,6 +104,14 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
                 "{owner} carries an inoperable harvest profile"
             );
         }
+        if let Some(defense) = stats.point_defense {
+            assert!(
+                defense.charges > 0
+                    && defense.radius > chassis::fx::Fx::ZERO
+                    && defense.recharge_ticks > 0,
+                "{owner} carries inoperable point defense"
+            );
+        }
         if stats.transport_capacity > 0 {
             assert_eq!(stats.transport_size, 0, "a carrier cannot carry itself");
         }

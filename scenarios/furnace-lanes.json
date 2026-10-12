@@ -22,7 +22,7 @@
    "bot_config": {}
   },
   {
-   "name": "South East",
+   "name": "North East",
    "scrap": 150,
    "bot": true,
    "team": 1,
@@ -36,7 +36,7 @@
    "bot_config": {}
   },
   {
-   "name": "North East",
+   "name": "South East",
    "scrap": 150,
    "bot": true,
    "team": 1,

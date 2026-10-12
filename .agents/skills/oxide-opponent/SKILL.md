@@ -107,7 +107,7 @@ free-for-all play also plays every seat of those maps at one rung and reads the
 seats:
 
 ```sh
-cargo run --release -p oxide-driver -- bot-eval scenarios/open-quarry.json scenarios/salvage-triangle.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
+cargo run --release -p oxide-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
 cargo run --release -p oxide-driver -- bot-summary <rows.jsonl>
 ```
 
@@ -164,11 +164,12 @@ Each comparison pits a higher rung against a lower one on duel maps, in pairs
 with the rungs swapped between the seats, both seats sharing one personality
 seed. A comparison passes when the higher rung wins at least its gate of decided
 legs over at least the manifest's number of decided pairs; the manifest sets
-both. `ladder.json` covers every duel map and stance over several runs; run it
-for a lever's final numbers. `ladder-smoke.json` is the quick check at handoff
-and while a difficulty lever is in progress. `bot-ladder-report <rows.jsonl>...`
-re-reads published rows, and `bot-ladder --replay-dir` saves a replay of every
-leg with their compact rows in `legs.jsonl`.
+both. `ladder.json` covers nine duel maps across the open, constrained and
+severed families, every stance, over several runs; run it for a lever's final
+numbers. `ladder-smoke.json` is the quick check at handoff and while a
+difficulty lever is in progress. `bot-ladder-report <rows.jsonl>...` re-reads
+published rows, and `bot-ladder --replay-dir` saves a replay of every leg with
+their compact rows in `legs.jsonl`.
 
 ## Failure detectors
 
