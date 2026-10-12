@@ -898,17 +898,19 @@ const WARDEN: UnitStats = UnitStats {
     contact_reach: None,
     // The line brawler can trade into massed rails without replacing
     // the Lancer's role as the more efficient dedicated counter.
-    max_hp: 260,
+    max_hp: 340,
     speed: Fx::lit("0.09"),
     radius: Fx::lit("0.45"),
     cost: 280,
     train_ticks: 400,
     domain: Domain::Ground,
     weapons: &[WeaponStats {
-        damage: 32,
+        // One shot kills a Scuttler and two a Bombard, which is what lets
+        // the middle tank hold against swarms.
+        damage: 40,
         range: Fx::lit("3"),
         minimum_range: Fx::ZERO,
-        cooldown_ticks: 25,
+        cooldown_ticks: 31,
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,

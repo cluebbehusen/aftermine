@@ -268,9 +268,10 @@ fn focused(scenario: &Scenario, state: &State, config: BotConfig) -> AttackTarge
 
 #[test]
 fn standard_focuses_by_health_bar_quarters() {
-    // The Warden shows under half a bar at 78 of 260; the Sentinel shows
-    // two thirds at 40 of 60, though it is nearer to dying.
-    let (scenario, state, [warden, sentinel]) = wounded_raiders(78, 40);
+    // The Warden shows under half a bar at three tenths of its health; the
+    // Sentinel shows two thirds at 40 of 60, though it is nearer to dying.
+    let three_tenths = UnitKind::Warden.stats().max_hp * 3 / 10;
+    let (scenario, state, [warden, sentinel]) = wounded_raiders(three_tenths, 40);
     assert_eq!(
         focused(&scenario, &state, veteran()),
         AttackTarget::Unit(sentinel)
@@ -289,7 +290,8 @@ fn scrapheap_focuses_the_nearest_threat_whatever_its_wounds() {
         assert!(raiders.iter().any(|id| target == AttackTarget::Unit(*id)));
         target
     };
-    assert_eq!(near([20, 60]), near([260, 5]), "wounds do not move it");
+    let whole = UnitKind::Warden.stats().max_hp;
+    assert_eq!(near([20, 60]), near([whole, 5]), "wounds do not move it");
     let (scenario, state, [warden, _]) = wounded_raiders(20, 60);
     assert_eq!(
         focused(&scenario, &state, veteran()),

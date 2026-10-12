@@ -865,8 +865,13 @@ fn an_extractor_destroyed_on_its_payout_tick_is_still_credited_that_payout() {
     // The simulation pays Extractors before the tick's combat, so one that
     // falls on a payout tick has already paid.
     let mut on_payout = false;
-    // Five Wardens at x 18 fell it on tick 79, a payout tick.
-    for (attackers, x) in [(1, 17), (3, 17), (5, 18)] {
+    // Wardens of each count and start fell it on different ticks; stop at the
+    // first layout that lands on a payout tick.
+    let layouts = (1..=5).flat_map(|attackers| (16..=19).map(move |x| (attackers, x)));
+    for (attackers, x) in layouts {
+        if on_payout {
+            break;
+        }
         let mut scenario = field(
             0,
             &(0..attackers)
