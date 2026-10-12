@@ -111,6 +111,12 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         return UnitFrame::Action(cycle_index(progress, 3));
     }
 
+    // A parking radar unfolds only at rest, so its frames hold the body
+    // until it drives off and the radar folds.
+    if let Some(progress) = state.radar_unfold {
+        return UnitFrame::Action(cycle_index(progress, RADAR_UNFOLD_FRAMES));
+    }
+
     if kind == UnitKind::Harvester {
         let cargo = state.cargo.map_or(0, cargo_bucket);
         let pose = match state.work {
@@ -445,6 +451,10 @@ fn defense_attack_frame(kind: BuildingKind, attack: AttackPhase) -> Option<usize
         ) => return None,
     })
 }
+
+/// The `_actionN` frames a parking radar unfolds through; the last holds
+/// while it is up.
+pub(crate) const RADAR_UNFOLD_FRAMES: usize = 4;
 
 fn cycle_index(progress: f32, count: usize) -> usize {
     debug_assert!(count > 0);

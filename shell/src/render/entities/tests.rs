@@ -900,3 +900,54 @@ fn unguided_unit_contacts_never_turn_toward_a_nearby_body() {
     assert!(!on_payload_course(from, to, vec2(7.7, 5.2)));
     assert!(!on_payload_course(from, to, vec2(8.2, 5.)));
 }
+
+#[test]
+fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
+    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+        "name": "Scout radar fixture", "map": ["....................", "....................", "..1.................",
+            "....................", "....................", "....................",
+            "....................", "....................", "....................",
+            "....................", "....................", "...................."],
+        "players": [{"name": "You", "scrap": 0, "bot": false}],
+        "units": [{"player": 0, "kind": "kestrel", "x": 5, "y": 7},
+            {"player": 0, "kind": "surveyor", "x": 12, "y": 7}]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let id = |game: &Game, kind: oxide_sim::UnitKind| {
+        game.state
+            .units()
+            .iter()
+            .find(|unit| unit.kind == kind)
+            .unwrap()
+            .id
+    };
+    let radar_rings = |game: &Game| {
+        let mut radii = Vec::new();
+        visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
+            if indicator.range.kind == BuildingRangeKind::Radar
+                && let BuildingRangeShape::Circle { radius, .. } = indicator.range.shape
+            {
+                radii.push(radius);
+            }
+        });
+        radii
+    };
+    let (kestrel, surveyor) = (
+        id(&game, oxide_sim::UnitKind::Kestrel),
+        id(&game, oxide_sim::UnitKind::Surveyor),
+    );
+    game.presentation.selection.units = vec![kestrel];
+    assert_eq!(radar_rings(&game), [14.0]);
+    game.presentation.selection.units = vec![surveyor];
+    assert!(radar_rings(&game).is_empty(), "folded at the start");
+    let deploy = oxide_sim::UnitKind::Surveyor
+        .stats()
+        .radar
+        .unwrap()
+        .deploy_ticks;
+    for _ in 0..deploy {
+        game.do_tick();
+    }
+    assert_eq!(radar_rings(&game), [12.0]);
+}

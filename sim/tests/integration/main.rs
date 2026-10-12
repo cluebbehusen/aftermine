@@ -37,6 +37,7 @@ mod movement_lab;
 mod peaks;
 mod pits;
 mod provisional_construction;
+mod radar;
 mod repair;
 mod repair_bay;
 mod repair_unit;

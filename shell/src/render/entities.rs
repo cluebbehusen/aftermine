@@ -1932,7 +1932,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
 }
 
 /// Radar blips, drawn above the fog like pings: contacts without identity
-/// from the Array's outer ring.
+/// from allied radar rings.
 pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
     if game.presentation.overlay {
         return; // the omniscient overlay already shows the real machines
@@ -2278,7 +2278,7 @@ fn visit_building_ranges(
             });
         }
     }
-    if kind == oxide_sim::BuildingKind::Array {
+    if let Some(radar) = stats.radar {
         visit(BuildingRange {
             kind: BuildingRangeKind::Vision,
             shape: BuildingRangeShape::Circle {
@@ -2290,7 +2290,7 @@ fn visit_building_ranges(
             kind: BuildingRangeKind::Radar,
             shape: BuildingRangeShape::Circle {
                 center,
-                radius: oxide_sim::stats::RADAR_DETECT_RADIUS as f32,
+                radius: radar as f32,
             },
         });
     }
@@ -2670,6 +2670,28 @@ fn visit_active_ranges(
                 icon: range_icon(kind),
                 color: range_color(kind),
             });
+        }
+        // Radar rings are measured from the tile, like a mast's, and show
+        // only while the radar is up.
+        if let Some(radar) = unit.radar() {
+            let tile = unit.tile();
+            let center = vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5);
+            for (kind, radius) in [
+                (BuildingRangeKind::Vision, stats.vision),
+                (BuildingRangeKind::Radar, radar),
+            ] {
+                visit(RangeIndicator {
+                    range: BuildingRange {
+                        kind,
+                        shape: BuildingRangeShape::Circle {
+                            center,
+                            radius: radius as f32,
+                        },
+                    },
+                    icon: range_icon(kind),
+                    color: range_color(kind),
+                });
+            }
         }
     }
 }

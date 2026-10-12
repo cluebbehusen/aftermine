@@ -89,7 +89,9 @@ Phase order is game behavior. `State::tick` performs:
    buffered damage, construction, salvage, and repair.
 6. Resolve boarding and unloading after every unit has decided.
 7. Evict pathless ground bodies from newly claimed blocking footprints.
-8. Follow paths, then resolve same-domain unit collisions.
+8. Follow paths, then resolve same-domain unit collisions. Parking radars unfold
+   a tick further on machines that did not drive themselves, and fold on any
+   that did.
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
@@ -738,13 +740,17 @@ Enemy buildings remain as last-seen ghosts until their footprint is observed
 again: kind, owner, anchor, hit points, whether construction had finished, and
 upgrade tier, all as last seen. A refit out of sight stays unknown until the
 footprint is seen again. Scrap and wreck amounts likewise freeze at the last
-visible value. Arrays add sorted, deduplicated radar contact tiles outside true
-sight. A hostile unit reports its tile; an apparent hostile building reports the
-one footprint tile nearest a mast, with distance ties ranked in its radial map
-frame and, for a footprint centered on the map, toward its owner's first
-Foundry. A contact carries no owner, type, domain, or concealed entity id, and
-radar fire at a building's contact tile can hit it. Team-shared tracks retain a
-contact id and one second of reported positions. Spatial buckets bound
+visible value. Radar adds sorted, deduplicated contact tiles outside true sight.
+Its sources are allied built masts (Arrays and Deep Arrays) and allied machines
+whose radar is up, each with the ring radius its stats give: a Kestrel's is
+always up, and a Surveyor's unfolds only after it has stood still for its deploy
+time, folding again the moment it drives itself; a collision push does not fold
+it. A hostile unit reports its tile; an apparent hostile building reports the
+one footprint tile nearest a covering source, with distance ties ranked in its
+radial map frame and, for a footprint centered on the map, toward its owner's
+first Foundry. A contact carries no owner, type, domain, or concealed entity id,
+and radar fire at a building's contact tile can hit it. Team-shared tracks
+retain a contact id and one second of reported positions. Spatial buckets bound
 one-to-one matching, ranked by predicted distance, previous distance, contact
 id, and coordinates. Visible identity can link visible observations; radar
 matching uses only reported movement. Unmatched tracks end immediately, and ids

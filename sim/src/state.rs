@@ -391,6 +391,11 @@ pub struct Unit {
     /// Machines riding aboard this transport.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cargo: Vec<Rider>,
+    /// Ticks a machine whose radar unfolds only at rest has stood still,
+    /// up to its kind's deploy time; driving of its own resets it. See
+    /// [`Unit::radar`].
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub radar_deploy: u8,
 }
 
 fn is_zero_motion(motion: &Vec2Fx) -> bool {
@@ -582,6 +587,7 @@ impl Unit {
             settled: 0,
             heading,
             cargo: Vec::new(),
+            radar_deploy: 0,
         }
     }
 
@@ -613,6 +619,14 @@ impl Unit {
         if let Motor::Ground { speed, .. } = &mut self.motor {
             *speed = value;
         }
+    }
+
+    /// The radius of this machine's radar ring while it is up: always for
+    /// a kind whose radar needs no deployment, otherwise once it has stood
+    /// still for the kind's deploy time.
+    pub fn radar(&self) -> Option<i32> {
+        let radar = self.kind.stats().radar?;
+        (self.radar_deploy == radar.deploy_ticks).then_some(radar.radius)
     }
 
     /// Spade deployment, from stowed zero to fully planted.
@@ -1672,6 +1686,7 @@ impl State {
             heading,
             turret_heading,
             cargo,
+            radar_deploy,
         } = u;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -1765,6 +1780,11 @@ impl State {
                 || leash.cooldown > crate::stats::LEASH_REACQUIRE_COOLDOWN
         }) {
             return Err(E::InvalidLeashClock(id));
+        }
+        if *radar_deploy > stats.radar.map_or(0, |radar| radar.deploy_ticks)
+            || (*radar_deploy > 0 && (path.is_some() || u.drive_speed() != Fx::ZERO))
+        {
+            return Err(E::InvalidRadarDeploy(id));
         }
         if !unit_inside_envelope(u) {
             return Err(E::UnitOutsideEnvelope(id));
@@ -2949,6 +2969,10 @@ pub enum StateIntegrityError {
     /// Only scouts take the Scout order.
     #[error("unit {0} scouts without being a scout")]
     InvalidScoutOrder(UnitId),
+    /// A radar unfolds only on a kind that deploys one, up to its deploy
+    /// time, and only while the machine stands still.
+    #[error("unit {0} has an impossible radar deployment")]
+    InvalidRadarDeploy(UnitId),
     /// A unit's order names an entity id this run never handed out.
     #[error("unit {0} is ordered against an id the run never minted")]
     UnmintedOrderTarget(UnitId),

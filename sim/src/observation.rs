@@ -213,7 +213,7 @@ pub struct ObservationData {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub salvage_incidents: Vec<TilePos>,
     /// Radar blips: tiles holding an unidentified hostile contact inside
-    /// an Array's outer ring but out of sight. Always empty under the
+    /// an allied radar ring but out of sight. Always empty under the
     /// omniscient builder. Sorted by (y, x).
     pub blips: Vec<TilePos>,
     /// Hostile buildings every seat knows of regardless of fog, such as

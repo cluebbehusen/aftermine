@@ -260,6 +260,30 @@ pub(super) fn evict_claimed_ground(state: &mut State) {
 /// its route, so its brain plans again from where the body actually is.
 /// `travel`, `refused` and `driven` are this tick's propulsion, motor
 /// refusals and post-propulsion positions, indexed like `state.units`.
+/// Unfolds each parking radar a tick further while its machine stands
+/// still, and folds it the moment the machine drives itself: this tick's own
+/// travel, a refused step, a route to follow, or speed to shed. A collision
+/// push is not driving and leaves the radar up.
+pub(super) fn raise_radars(state: &mut State, travel: &[Vec2Fx], refused: &[bool]) {
+    for (slot, unit) in state.units.iter_mut().enumerate() {
+        let Some(radar) = unit.kind.stats().radar else {
+            continue;
+        };
+        if radar.deploy_ticks == 0 {
+            continue;
+        }
+        let still = travel[slot] == Vec2Fx::ZERO
+            && !refused[slot]
+            && unit.path.is_none()
+            && unit.drive_speed() == Fx::ZERO;
+        unit.radar_deploy = if still {
+            (unit.radar_deploy + 1).min(radar.deploy_ticks)
+        } else {
+            0
+        };
+    }
+}
+
 pub(super) fn note_stalls(
     state: &mut State,
     travel: &[Vec2Fx],

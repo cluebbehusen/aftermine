@@ -404,10 +404,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
         E::InvalidScoutOrder(_) => 81,
+        E::InvalidRadarDeploy(_) => 82,
     }
 }
 
-const ROWS: usize = 82;
+const ROWS: usize = 83;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -502,6 +503,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
         E::InvalidScoutOrder(UnitId(0)),
+        E::InvalidRadarDeploy(UnitId(0)),
     ]
 }
 
@@ -945,6 +947,11 @@ fn every_checklist_row_refuses_its_forgery() {
                     json!({"order": "return_cargo", "foundry": foreign, "repair": false});
             },
             "unit u0 has an invalid cargo delivery",
+        ),
+        (
+            "a radar unfolding on a machine that carries none",
+            |d| d["units"][0]["radar_deploy"] = json!(1),
+            "unit u0 has an impossible radar deployment",
         ),
         (
             "a Scout order on a machine that does not scout",

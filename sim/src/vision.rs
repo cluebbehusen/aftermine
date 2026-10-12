@@ -125,8 +125,7 @@ pub struct Vision {
     /// and the harvest brain approaches them differently.
     remembered_wreck: Grid<u32>,
     /// Radar blips: tiles holding a hostile unit or one tile of a hostile
-    /// building inside an own built Array's outer ring but outside true
-    /// sight. A contact without identity — no kind, no owner, no memory
+    /// building inside an allied radar ring but outside true sight. A contact without identity — no kind, no owner, no memory
     /// (rebuilt every tick).
     contacts: Vec<TilePos>,
     tracking: tracking::Tracking,
@@ -1429,32 +1428,44 @@ pub(crate) fn refresh(state: &mut State) {
             }
         }
 
-        // Radar blips: hostile units and buildings inside any own built
-        // Array's outer ring, on ground this player cannot actually see. A
-        // tile only, with no identity and no memory: a contact that leaves
-        // the ring is gone.
+        // Radar blips: hostile units and buildings inside any allied radar
+        // ring (a built mast's, or a scout's with its radar up), on ground
+        // this player cannot actually see. A tile only, with no identity
+        // and no memory: a contact that leaves every ring is gone.
         view.contacts.clear();
-        let masts: Vec<TilePos> = state
+        let mut masts: Vec<(TilePos, i32)> = state
             .buildings
             .iter()
-            .filter(|b| allied(b.player) && b.built() && b.kind == BuildingKind::Array)
-            .map(|b| b.anchor)
+            .filter(|b| allied(b.player) && b.built())
+            .filter_map(|b| Some((b.anchor, b.stats().radar?)))
+            .chain(
+                sightings
+                    .iter()
+                    .filter(|unit| unit.team == my_team)
+                    .filter_map(|unit| Some((unit.tile, unit.radar?))),
+            )
             .collect();
+        // A wider ring on the same tile contains a narrower one.
+        masts.sort_unstable_by_key(|&(t, r)| (t.y, t.x, std::cmp::Reverse(r)));
+        masts.dedup_by_key(|&mut (t, _)| t);
         if !masts.is_empty() {
-            let r = crate::stats::RADAR_DETECT_RADIUS;
+            let distance = |t: TilePos, m: TilePos| {
+                let (dx, dy) = (t.x - m.x, t.y - m.y);
+                dx * dx + dy * dy
+            };
+            // The squared distance to the nearest mast whose ring covers `t`.
             let ring_distance = |t: TilePos| {
                 masts
                     .iter()
-                    .map(|m| {
-                        let (dx, dy) = (t.x - m.x, t.y - m.y);
-                        dx * dx + dy * dy
+                    .filter_map(|&(m, r)| {
+                        let d = distance(t, m);
+                        (d <= r * r).then_some(d)
                     })
                     .min()
-                    .filter(|&d| d <= r * r)
             };
             for unit in sightings.iter().filter(|unit| unit.team != my_team) {
                 let t = unit.tile;
-                if !view.visible(t) && ring_distance(t).is_some() {
+                if !view.visible(t) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
                     view.contacts.push(t);
                 }
             }
@@ -1491,6 +1502,8 @@ pub(super) struct Sighting {
     pub(super) tile: TilePos,
     pub(super) team: u8,
     vision: i32,
+    /// The unit's radar radius while its ring is up.
+    radar: Option<i32>,
 }
 
 impl Sighting {
@@ -1503,13 +1516,14 @@ impl Sighting {
                 tile: unit.tile(),
                 team: state.players[unit.player.0 as usize].team,
                 vision: unit.kind.stats().vision,
+                radar: unit.radar(),
             })
             .collect()
     }
 }
 
 /// The footprint tile a building's radar return reports: the one nearest a
-/// mast, with distance ties ranked in the footprint's radial map frame. A
+/// mast whose ring covers it, with distance ties ranked in the footprint's radial map frame. A
 /// footprint centered on the map has no radial frame, so its remaining ties
 /// rank toward the owner's first Foundry and then by seat parity, the fallback
 /// order group spreads use. Mirrored seats therefore report mirrored tiles.
