@@ -628,22 +628,13 @@ fn repair_bay_aura(
         .collect();
     let radius = crate::stats::REPAIR_BAY_RADIUS;
     let pulse = state.current_tick() / crate::stats::REPAIR_BAY_PERIOD;
-    // Unit steps already queued per patient this pulse. Overlapping auras
-    // stack in resolution, so a later bay prices from the hp earlier bays
-    // queued; pricing from start-of-tick hp would bill every bay for the
-    // same first interval.
-    let mut in_flight: std::collections::BTreeMap<UnitId, u32> = std::collections::BTreeMap::new();
-    for bay in bays.iter().copied() {
-        let Some(b) = state.building(bay) else {
-            continue;
-        };
-        let owner = b.player;
+    for (bay, patients) in state.repair_bay_patients() {
+        let owner = state.building(bay).expect("a listed Bay stands").player;
         let recovery_reserve = state.recovery_reserve(owner);
-        for (id, pace) in state.repair_bay_patients(bay) {
+        for (id, pace) in patients {
             let u = state.unit(id).expect("a chosen patient lives");
             let stats = u.kind.stats();
-            let queued = in_flight.get(&id).copied().unwrap_or(0);
-            let healed = (u.hp + queued).min(stats.max_hp);
+            let hp = u.hp;
             let offered = match pace {
                 crate::state::RepairPace::Fast => fast_step(stats.max_hp, pulse),
                 crate::state::RepairPace::Slow => crate::stats::REPAIR_BAY_STEP,
@@ -652,8 +643,7 @@ fn repair_bay_aura(
                 u64::from(hp) * u64::from(stats.cost) * crate::stats::REPAIR_COST_PERMILLE
                     / u64::from(stats.max_hp)
             };
-            let due =
-                |step: u32| millis(healed + step).div_ceil(1000) - millis(healed).div_ceil(1000);
+            let due = |step: u32| millis(hp + step).div_ceil(1000) - millis(hp).div_ceil(1000);
             // The bank, less any reserve recovery holds, pays for as much of
             // the step as it covers; the patient keeps its slot either way.
             let bank = state.player(owner).scrap;
@@ -662,7 +652,7 @@ fn repair_bay_aura(
             } else {
                 bank
             };
-            let step = (1..=offered.min(stats.max_hp - healed))
+            let step = (1..=offered.min(stats.max_hp - hp))
                 .rev()
                 .find(|&step| due(step) <= u64::from(spendable))
                 .unwrap_or(0);
@@ -671,7 +661,6 @@ fn repair_bay_aura(
             }
             let due = u32::try_from(due(step)).expect("a step's bill fits the bank");
             state.player_mut(owner).scrap = bank - due;
-            in_flight.insert(id, queued + step);
             heals.push(PendingUnitHeal {
                 unit: id,
                 step,

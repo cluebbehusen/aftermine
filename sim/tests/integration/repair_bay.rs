@@ -293,11 +293,10 @@ fn the_aura_heals_the_ring_to_whole_and_bills_the_welders_exact_price() {
 }
 
 #[test]
-fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
-    // Two bays whose auras both cover the patient's parking spot: the
-    // heals stack (2 hp per pulse) and the bill must telescope across
-    // them as one meter; each bay pricing from start-of-tick hp would
-    // double-charge (or skip) the shared interval.
+fn overlapping_bays_heal_a_shared_patient_once_and_bill_it_exactly() {
+    // Two bays whose auras both cover the patient's parking spot: only the
+    // first-built takes it, so it heals one step per pulse and the bill
+    // telescopes as one meter.
     let mut scenario = arena(
         vec![
             unit(0, UnitKind::Harvester, FAR.x, FAR.y),
@@ -329,8 +328,8 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
     let overlap = TilePos::new(BAY_ANCHOR.0 + 2, BAY_ANCHOR.1 + 3);
     state.tick(&[walk(0, vec![patient], overlap)]);
     // The march grazes single-coverage fringe (auras heal walkers
-    // too), so anchor the stacking measurement to ARRIVAL, then to a
-    // pulse boundary.
+    // too), so anchor the measurement to ARRIVAL, then to a pulse
+    // boundary.
     run_until(&mut state, 2_000, |s, _| {
         s.unit(patient).unwrap().tile() == overlap
             && s.unit(patient).unwrap().order == oxide_sim::Order::Idle
@@ -339,7 +338,7 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
         s.current_tick()
             .is_multiple_of(oxide_sim::stats::REPAIR_BAY_PERIOD)
     });
-    // One full pulse window with both auras engaged heals two steps.
+    // One full pulse window inside both auras heals one Bay's step.
     let h0 = state.unit(patient).unwrap().hp;
     let max = UnitKind::Harvester.stats().max_hp;
     if h0 + 2 * oxide_sim::stats::REPAIR_BAY_STEP <= max {
@@ -348,8 +347,8 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
         }
         assert_eq!(
             state.unit(patient).unwrap().hp,
-            h0 + 2 * oxide_sim::stats::REPAIR_BAY_STEP,
-            "both auras must stack on the shared patient"
+            h0 + oxide_sim::stats::REPAIR_BAY_STEP,
+            "the second aura must not stack on a taken patient"
         );
     }
     run_until(&mut state, 4_000, |s, _| s.unit(patient).unwrap().hp == max);
@@ -494,11 +493,8 @@ fn partial_scrap_heals_the_most_wounded_first_then_starves() {
     };
     state.tick(&[walk(0, vec![a], RING)]);
     state.tick(&[walk(0, vec![b], TilePos::new(RING.x, RING.y + 1))]);
-    run_until(&mut state, 400, |s, _| {
-        s.repair_bay_patients(bay_id(s)).len() == 2
-    });
-    let order: Vec<UnitId> = state
-        .repair_bay_patients(bay_id(&state))
+    run_until(&mut state, 400, |s, _| patients(s, bay_id(s)).len() == 2);
+    let order: Vec<UnitId> = patients(&state, bay_id(&state))
         .into_iter()
         .map(|(id, _)| id)
         .collect();
@@ -1121,6 +1117,16 @@ fn forge_units(state: State, edits: &[(UnitId, u32, Option<u64>)]) -> State {
     serde_json::from_value(json).unwrap()
 }
 
+/// The machines `bay` services this pulse.
+fn patients(state: &State, bay: BuildingId) -> Vec<(UnitId, oxide_sim::state::RepairPace)> {
+    state
+        .repair_bay_patients()
+        .into_iter()
+        .find(|(id, _)| *id == bay)
+        .map(|(_, patients)| patients)
+        .unwrap_or_default()
+}
+
 fn bay_id(state: &State) -> BuildingId {
     building_at(
         state,
@@ -1161,8 +1167,7 @@ fn a_bay_services_its_four_most_wounded_and_the_fifth_waits() {
         .map(|(&id, hp)| (id, hp, None))
         .collect();
     let mut state = forge_units(state, &edits);
-    let chosen: Vec<UnitId> = state
-        .repair_bay_patients(bay_id(&state))
+    let chosen: Vec<UnitId> = patients(&state, bay_id(&state))
         .into_iter()
         .map(|(id, _)| id)
         .collect();
@@ -1199,7 +1204,7 @@ fn a_calm_breaker_heals_fast_and_one_just_hit_waits_out_the_slow_rate() {
     // Inside the calm window: the slow step.
     to_next_pulse(&mut state);
     assert_eq!(
-        state.repair_bay_patients(bay_id(&state)),
+        patients(&state, bay_id(&state)),
         vec![(breaker, oxide_sim::state::RepairPace::Slow)]
     );
     let slow = state.unit(breaker).unwrap().hp - half;
@@ -1250,8 +1255,7 @@ fn a_condor_heals_only_landed_and_a_talon_while_it_hovers() {
     let (condor, talon) = (state.units()[0].id, state.units()[1].id);
     let state = forge_units(state, &[(condor, 100, None), (talon, 40, None)]);
     let chosen = |state: &State| -> Vec<UnitId> {
-        state
-            .repair_bay_patients(bay_id(state))
+        patients(state, bay_id(state))
             .into_iter()
             .map(|(id, _)| id)
             .collect()
@@ -1273,7 +1277,7 @@ fn a_condor_heals_only_landed_and_a_talon_while_it_hovers() {
 }
 
 #[test]
-fn overlapping_bays_each_spend_a_slot_on_the_same_patients() {
+fn overlapping_bays_serve_different_patients() {
     let spots = [(6, 7), (7, 7), (8, 7), (9, 7), (7, 8)];
     let mut scenario = arena(
         spots
@@ -1297,9 +1301,14 @@ fn overlapping_bays_each_spend_a_slot_on_the_same_patients() {
         TilePos::new(9, 4),
         PlayerId(0),
     );
-    let first = state.repair_bay_patients(bay_id(&state));
-    assert_eq!(first.len(), 4);
-    assert_eq!(first, state.repair_bay_patients(second));
+    let first = patients(&state, bay_id(&state));
+    let later = patients(&state, second);
+    assert_eq!(first.len(), 4, "the first-built Bay fills its slots");
+    assert_eq!(later.len(), 1, "the later Bay takes the one left over");
+    assert!(
+        first.iter().all(|patient| !later.contains(patient)),
+        "no machine takes two slots"
+    );
 }
 
 #[test]
@@ -1341,8 +1350,7 @@ fn mirrored_seats_choose_mirrored_patients() {
             TilePos::new(x, y),
             PlayerId(player),
         );
-        state
-            .repair_bay_patients(bay)
+        patients(&state, bay)
             .into_iter()
             .map(|(id, _)| {
                 state

@@ -1396,61 +1396,67 @@ impl State {
         }
     }
 
-    /// The machines a Repair Bay services this pulse and how fast it heals
-    /// each, most wounded first: own, wounded and in reach, landed or unable
-    /// to land, at most [`crate::stats::REPAIR_BAY_PATIENTS`]. Empty unless
-    /// `bay` is a built, living Repair Bay. The aura and presentation read the
-    /// same choice.
-    pub fn repair_bay_patients(&self, bay: BuildingId) -> Vec<(UnitId, RepairPace)> {
+    /// The machines each built, living Repair Bay services this pulse and how
+    /// fast it heals each, Bays in building-id order and patients most
+    /// wounded first: own, wounded and in reach, landed or unable to land,
+    /// not taken by an earlier Bay, at most
+    /// [`crate::stats::REPAIR_BAY_PATIENTS`] per Bay. The aura and
+    /// presentation read the same choice.
+    pub fn repair_bay_patients(&self) -> Vec<(BuildingId, Vec<(UnitId, RepairPace)>)> {
         use crate::stats::{REPAIR_BAY_CALM_TICKS, REPAIR_BAY_PATIENTS, REPAIR_BAY_RADIUS};
-        let Some(b) = self
-            .building(bay)
-            .filter(|b| b.kind == BuildingKind::RepairBay && b.built() && b.hp > 0)
-        else {
-            return Vec::new();
-        };
-        let mut patients: Vec<&Unit> = self
-            .units
+        let mut taken: Vec<UnitId> = Vec::new();
+        let mut bays = Vec::new();
+        for b in self
+            .buildings
             .iter()
-            .filter(|u| {
-                let max = u.kind.stats().max_hp;
-                u.player == b.player
-                    && u.hp > 0
-                    && u.hp < max
-                    && (u.landed() || !u.kind.stats().can_land())
-                    && b.closest_point_to(u.pos).dist_sq(u.pos)
-                        <= REPAIR_BAY_RADIUS * REPAIR_BAY_RADIUS
-            })
-            .collect();
-        // Every patient is the Bay owner's, so id order is the owner-local
-        // rank and mirrored seats choose alike.
-        let missing = |u: &Unit| {
-            let max = u64::from(u.kind.stats().max_hp);
-            (max - u64::from(u.hp), max)
-        };
-        patients.sort_by(|a, b| {
-            let ((a_missing, a_max), (b_missing, b_max)) = (missing(a), missing(b));
-            (b_missing * a_max)
-                .cmp(&(a_missing * b_max))
-                .then(a.id.cmp(&b.id))
-        });
-        patients
-            .into_iter()
-            .take(REPAIR_BAY_PATIENTS)
-            .map(|u| {
-                let calm = u
-                    .damaged_at
-                    .is_none_or(|at| self.tick.saturating_sub(at) >= REPAIR_BAY_CALM_TICKS);
-                (
-                    u.id,
-                    if calm {
+            .filter(|b| b.kind == BuildingKind::RepairBay && b.built() && b.hp > 0)
+        {
+            let mut patients: Vec<&Unit> = self
+                .units
+                .iter()
+                .filter(|u| {
+                    let max = u.kind.stats().max_hp;
+                    u.player == b.player
+                        && u.hp > 0
+                        && u.hp < max
+                        && (u.landed() || !u.kind.stats().can_land())
+                        && b.closest_point_to(u.pos).dist_sq(u.pos)
+                            <= REPAIR_BAY_RADIUS * REPAIR_BAY_RADIUS
+                        && !taken.contains(&u.id)
+                })
+                .collect();
+            // Every patient and every Bay that could take it is the owner's,
+            // so id order is the owner-local rank and mirrored seats choose
+            // alike.
+            let missing = |u: &Unit| {
+                let max = u64::from(u.kind.stats().max_hp);
+                (max - u64::from(u.hp), max)
+            };
+            patients.sort_by(|a, b| {
+                let ((a_missing, a_max), (b_missing, b_max)) = (missing(a), missing(b));
+                (b_missing * a_max)
+                    .cmp(&(a_missing * b_max))
+                    .then(a.id.cmp(&b.id))
+            });
+            patients.truncate(REPAIR_BAY_PATIENTS);
+            taken.extend(patients.iter().map(|u| u.id));
+            let chosen = patients
+                .into_iter()
+                .map(|u| {
+                    let calm = u
+                        .damaged_at
+                        .is_none_or(|at| self.tick.saturating_sub(at) >= REPAIR_BAY_CALM_TICKS);
+                    let pace = if calm {
                         RepairPace::Fast
                     } else {
                         RepairPace::Slow
-                    },
-                )
-            })
-            .collect()
+                    };
+                    (u.id, pace)
+                })
+                .collect();
+            bays.push((b.id, chosen));
+        }
+        bays
     }
 
     /// Whether one completed own Foundry currently supports an Extractor.

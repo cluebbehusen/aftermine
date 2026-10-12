@@ -2366,20 +2366,17 @@ struct RepairTether {
 /// aura heals by.
 fn repair_tethers(game: &crate::game::Scene<'_>) -> Vec<RepairTether> {
     game.state
-        .buildings()
-        .iter()
-        .filter(|bay| {
-            bay.player == game.presentation.human && bay.kind == oxide_sim::BuildingKind::RepairBay
-        })
-        .flat_map(|bay| {
+        .repair_bay_patients()
+        .into_iter()
+        .filter(|(bay, _)| {
             game.state
-                .repair_bay_patients(bay.id)
+                .building(*bay)
+                .is_some_and(|bay| bay.player == game.presentation.human)
+        })
+        .flat_map(|(bay, patients)| {
+            patients
                 .into_iter()
-                .map(move |(unit, pace)| RepairTether {
-                    bay: bay.id,
-                    unit,
-                    pace,
-                })
+                .map(move |(unit, pace)| RepairTether { bay, unit, pace })
         })
         .collect()
 }

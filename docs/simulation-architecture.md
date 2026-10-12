@@ -558,22 +558,23 @@ Bays feed the same unit-heal resolver as field welders and the same
 building-work resolver as repair crews. Their aura heals own wounded units and
 completed structures in range, but a Bay does not heal itself; overlapping Bays
 may repair one another. A Bay services at most `REPAIR_BAY_PATIENTS` units, the
-most damaged by missing fraction first and then by id, which is owner-local
-because every patient belongs to the Bay's owner. A Condor qualifies only while
-landed; aircraft that cannot land qualify in the air. Each unit carries the tick
-it last took damage. A patient that has been undamaged for
-`REPAIR_BAY_CALM_TICKS` heals a fixed share of its maximum hp per second,
-metered on the global pulse index so the share needs no stored remainder; one
-hit more recently heals `REPAIR_BAY_STEP` per pulse, which is also the floor of
-the fast step. A step the bank cannot fully pay heals as much as it can, and the
-patient keeps its slot. Structures take the slow step outside the unit slots.
-Overlapping Bays each spend a slot on a shared patient, and the shared heal
-resolver caps their combined work at the patient's missing hp. Units retain
-first claim on limited aura scrap. A structure with an active or queued salvage
-commitment receives no automatic repair, preserving the command layer's mutual
-exclusion between repair and teardown. Concurrent sources are resolved against
-shared room, excess fully unusable paid work is refunded, and no repair source
-can resurrect a unit or building destroyed by that tick's volley.
+most damaged by missing fraction first and then by id. Bays choose in building
+id order and skip units an earlier Bay took, so overlapping Bays serve more
+units rather than healing the same ones faster. Both orders are owner-local
+because every patient, and every Bay that could take it, belongs to one owner. A
+Condor qualifies only while landed; aircraft that cannot land qualify in the
+air. Each unit carries the tick it last took damage. A patient that has been
+undamaged for `REPAIR_BAY_CALM_TICKS` heals a fixed share of its maximum hp per
+second, metered on the global pulse index so the share needs no stored
+remainder; one hit more recently heals `REPAIR_BAY_STEP` per pulse, which is
+also the floor of the fast step. A step the bank cannot fully pay heals as much
+as it can, and the patient keeps its slot. Structures take the slow step outside
+the unit slots. Units retain first claim on limited aura scrap. A structure with
+an active or queued salvage commitment receives no automatic repair, preserving
+the command layer's mutual exclusion between repair and teardown. Concurrent
+sources are resolved against shared room, excess fully unusable paid work is
+refunded, and no repair source can resurrect a unit or building destroyed by
+that tick's volley.
 
 ## Combat, weapons, and terrain
 

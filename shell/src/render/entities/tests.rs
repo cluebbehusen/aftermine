@@ -976,7 +976,12 @@ fn repair_tethers_follow_each_own_bays_patient_choice() {
             .iter()
             .map(|tether| (tether.unit, tether.pace))
             .collect::<Vec<_>>(),
-        game.state.repair_bay_patients(own),
+        game.state
+            .repair_bay_patients()
+            .into_iter()
+            .find(|(bay, _)| *bay == own)
+            .map(|(_, patients)| patients)
+            .unwrap(),
         "the sim's own choice, four at most"
     );
     assert_eq!(tethers.len(), oxide_sim::stats::REPAIR_BAY_PATIENTS);

@@ -35,10 +35,11 @@ into an army. Destroy every enemy Foundry to win.
 
 Completed Repair Bays automatically spend scrap to heal nearby owned units and
 completed buildings. Each Bay services its four most damaged machines at a time,
-quickly once they have been out of combat for three seconds and slowly while
-under fire. A Condor must land to be repaired; aircraft that cannot land are
-repaired in the air. Units are served first when scrap is limited, and a
-building with active or queued salvage work is left to its wrecking crew.
+and overlapping Bays take different machines. Machines heal quickly once they
+have been out of combat for three seconds and slowly while under fire. A Condor
+must land to be repaired; aircraft that cannot land are repaired in the air.
+Units are served first when scrap is limited, and a building with active or
+queued salvage work is left to its wrecking crew.
 
 The main strategic layers:
 

@@ -47,9 +47,10 @@ Repair and salvage share one damage-first building-work resolver and remain
 mutually exclusive. Completed Repair Bays automatically heal nearby owned units
 before completed buildings, use the ordinary player bank, and skip structures
 with active or queued salvage commitments. Each Bay services at most
-`REPAIR_BAY_PATIENTS` machines, chosen by `State::repair_bay_patients`. A unit
-damaged within `REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an aircraft
-that can land is serviced only on the ground.
+`REPAIR_BAY_PATIENTS` machines, chosen by `State::repair_bay_patients`, and a
+machine an earlier-built Bay took is left to it. A unit damaged within
+`REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an aircraft that can land is
+serviced only on the ground.
 
 Tile routing and most geometric tie rules are also fair under a map half-turn.
 Building contact follows the fixed artwork, so asymmetric outlines can have
