@@ -160,7 +160,7 @@
   },
   {
    "player": 0,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 11,
    "y": 6
   },
@@ -184,7 +184,7 @@
   },
   {
    "player": 1,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 100,
    "y": 6
   },
@@ -208,7 +208,7 @@
   },
   {
    "player": 2,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 10,
    "y": 30
   },
@@ -232,7 +232,7 @@
   },
   {
    "player": 3,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 101,
    "y": 30
   },
@@ -256,7 +256,7 @@
   },
   {
    "player": 4,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 10,
    "y": 49
   },
@@ -280,7 +280,7 @@
   },
   {
    "player": 5,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 101,
    "y": 49
   },
@@ -304,7 +304,7 @@
   },
   {
    "player": 6,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 11,
    "y": 73
   },
@@ -328,7 +328,7 @@
   },
   {
    "player": 7,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 100,
    "y": 73
   }

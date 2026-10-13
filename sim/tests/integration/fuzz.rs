@@ -864,16 +864,17 @@ fn exercise_return_cargo_reach(state: &mut State) {
 }
 
 fn exercise_retire_reach(state: &mut State) {
-    let sentinel = state
+    // Seat 0 holds two Surveyors, so the Scout reach keeps one.
+    let surveyor = state
         .units()
         .iter()
-        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Sentinel)
-        .expect("fuzz arena has a seat-0 Sentinel")
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Surveyor)
+        .expect("fuzz arena has a seat-0 Surveyor")
         .id;
     let report = state.tick(&[PlayerCommand {
         player: PlayerId(0),
         command: Command::Retire {
-            units: vec![sentinel],
+            units: vec![surveyor],
             queue: false,
         },
     }]);
@@ -890,7 +891,7 @@ fn exercise_retire_reach(state: &mut State) {
         retired |= report
             .events
             .iter()
-            .any(|event| matches!(event, Event::UnitRetired { unit, .. } if *unit == sentinel));
+            .any(|event| matches!(event, Event::UnitRetired { unit, .. } if *unit == surveyor));
         if retired {
             break;
         }

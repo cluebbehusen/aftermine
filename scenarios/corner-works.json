@@ -144,7 +144,7 @@
   },
   {
    "player": 0,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 9,
    "y": 10
   },
@@ -168,7 +168,7 @@
   },
   {
    "player": 1,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 85,
    "y": 9
   },
@@ -192,7 +192,7 @@
   },
   {
    "player": 2,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 86,
    "y": 85
   },
@@ -216,7 +216,7 @@
   },
   {
    "player": 3,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 10,
    "y": 86
   }

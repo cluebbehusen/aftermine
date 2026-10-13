@@ -432,7 +432,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 units: state
                     .units()
                     .iter()
-                    .filter(|u| u.player.0 == seat && u.kind.stats().can_fight())
+                    .filter(|u| u.player.0 == seat && u.kind.stats().harvest.is_none())
                     .map(|u| u.id)
                     .collect(),
                 goal: foundry(&state, 1 - seat),
