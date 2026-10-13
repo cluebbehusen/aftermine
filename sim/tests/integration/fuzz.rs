@@ -67,11 +67,13 @@ enum CommandTag {
     ClearFocus,
     ReturnCargo,
     CancelOrder,
+    Accompany,
+    Retire,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 24] = [
+const COMMAND_TAGS: [CommandTag; 26] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -96,6 +98,8 @@ const COMMAND_TAGS: [CommandTag; 24] = [
     CommandTag::ClearFocus,
     CommandTag::ReturnCargo,
     CommandTag::CancelOrder,
+    CommandTag::Accompany,
+    CommandTag::Retire,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -136,6 +140,8 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::ClearFocus => 21,
         CommandTag::ReturnCargo => 22,
         CommandTag::CancelOrder => 23,
+        CommandTag::Accompany => 24,
+        CommandTag::Retire => 25,
     }
 }
 
@@ -166,12 +172,14 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::ClearFocus { .. } => CommandTag::ClearFocus,
         Command::ReturnCargo { .. } => CommandTag::ReturnCargo,
         Command::CancelOrder { .. } => CommandTag::CancelOrder,
+        Command::Accompany { .. } => CommandTag::Accompany,
+        Command::Retire { .. } => CommandTag::Retire,
     }
 }
 
 /// The whole roster — `apply_train` owes every one of them a verdict.
 /// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 17] = [
+const UNIT_KINDS: [UnitKind; 19] = [
     UnitKind::Harvester,
     UnitKind::Sentinel,
     UnitKind::Scuttler,
@@ -188,6 +196,8 @@ const UNIT_KINDS: [UnitKind; 17] = [
     UnitKind::Avalanche,
     UnitKind::Skyhook,
     UnitKind::Sapper,
+    UnitKind::Mantle,
+    UnitKind::Piledriver,
     UnitKind::Surveyor,
 ];
 
@@ -209,7 +219,9 @@ fn unit_kind_index(kind: UnitKind) -> usize {
         UnitKind::Avalanche => 13,
         UnitKind::Skyhook => 14,
         UnitKind::Sapper => 15,
-        UnitKind::Surveyor => 16,
+        UnitKind::Mantle => 16,
+        UnitKind::Piledriver => 17,
+        UnitKind::Surveyor => 18,
     }
 }
 
@@ -524,7 +536,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
         },
         CommandTag::SetRally => Command::SetRally {
             building: building_id(rng, state),
-            rally: (rng.next_below(3) != 0).then(|| tile(rng, state)),
+            rally: match rng.next_below(3) {
+                0 => None,
+                1 => Some(oxide_sim::Rally::Tile(tile(rng, state))),
+                _ => Some(oxide_sim::Rally::Unit(unit_id(rng, state))),
+            },
         },
         CommandTag::Surrender => Command::Surrender,
         CommandTag::RepairUnit => Command::RepairUnit {
@@ -557,6 +573,15 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             queue: queue(rng),
         },
         CommandTag::CancelOrder => cancel_order(rng, state),
+        CommandTag::Accompany => Command::Accompany {
+            units: units(rng, state),
+            target: unit_id(rng, state),
+            queue: queue(rng),
+        },
+        CommandTag::Retire => Command::Retire {
+            units: units(rng, state),
+            queue: queue(rng),
+        },
     }
 }
 
@@ -583,6 +608,11 @@ struct Reach {
     cancelled: u64,
     cancelled_found: u64,
     cancelled_order: u64,
+    /// Most units on escort duty at once.
+    escorts: usize,
+    /// Most producers rallied onto a unit at once.
+    unit_rallies: usize,
+    retired: u64,
 }
 
 impl Reach {
@@ -603,6 +633,9 @@ impl Reach {
         self.cancelled += other.cancelled;
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
+        self.escorts = self.escorts.max(other.escorts);
+        self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
+        self.retired += other.retired;
     }
 }
 
@@ -638,11 +671,14 @@ fn arena() -> State {
             .units
             .push(common::unit(player, UnitKind::Condor, x, y));
     }
+    // A Crucible per seat, so retirements have somewhere to happen.
     scenario.buildings = vec![
         standing(0, BuildingKind::Turret, 12, 3),
         standing(0, BuildingKind::Fabricator, 8, 12),
+        standing(0, BuildingKind::Crucible, 3, 9),
         standing(1, BuildingKind::Turret, 27, 20),
         standing(1, BuildingKind::Fabricator, 30, 10),
+        standing(1, BuildingKind::Crucible, 35, 13),
     ];
     scenario.build().expect("the fuzz arena builds")
 }
@@ -809,14 +845,97 @@ fn exercise_return_cargo_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+fn exercise_retire_reach(state: &mut State) {
+    let sentinel = state
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Sentinel)
+        .expect("fuzz arena has a seat-0 Sentinel")
+        .id;
+    let report = state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Retire {
+            units: vec![sentinel],
+            queue: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "the fuzz reach fixture must land Retire"
+    );
+    let mut retired = false;
+    for _ in 0..600 {
+        let report = state.tick(&[]);
+        retired |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::UnitRetired { unit, .. } if *unit == sentinel));
+        if retired {
+            break;
+        }
+    }
+    assert!(retired, "the fuzz reach fixture must take a unit apart");
+    state.validate_invariants().unwrap();
+}
+
+fn exercise_salvage_reach(state: &mut State) {
+    let worker = state
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Harvester)
+        .expect("fuzz arena has a seat-0 Harvester")
+        .id;
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Turret)
+        .expect("fuzz arena has a seat-0 Turret")
+        .id;
+    let report = state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Salvage {
+            units: vec![worker],
+            building: turret,
+            queue: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "the fuzz reach fixture must land Salvage"
+    );
+    let mut salvaged = false;
+    for _ in 0..2_000 {
+        let report = state.tick(&[]);
+        salvaged |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::BuildingSalvaged { building, .. } if *building == turret));
+        if salvaged {
+            break;
+        }
+    }
+    assert!(salvaged, "the fuzz reach fixture must strip a building");
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
     exercise_cancel_found_reach(&mut state);
     exercise_cancel_order_reach(&mut state);
     exercise_return_cargo_reach(&mut state);
+    exercise_retire_reach(&mut state);
+    exercise_salvage_reach(&mut state);
     let mut rng = Pcg32::new(seed, 0xF022);
     let mut reach = Reach {
         cancelled_found: 1,
+        retired: 1,
+        salvaged: 1,
         ..Reach::default()
     };
     let mut decided: Option<GameResult> = None;
@@ -890,6 +1009,7 @@ fn fuzz_run(seed: u64) -> Run {
                 Event::BuildingCompleted { .. } => reach.completed += 1,
                 Event::BuildingSalvaged { .. } => reach.salvaged += 1,
                 Event::BuildCancelled { .. } => reach.cancelled += 1,
+                Event::UnitRetired { .. } => reach.retired += 1,
                 _ => {}
             }
         }
@@ -900,6 +1020,20 @@ fn fuzz_run(seed: u64) -> Run {
                 .map(|u| u.queue.len())
                 .max()
                 .unwrap_or(0),
+        );
+        reach.escorts = reach.escorts.max(
+            state
+                .units()
+                .iter()
+                .filter(|u| matches!(u.order, oxide_sim::Order::Accompany { .. }))
+                .count(),
+        );
+        reach.unit_rallies = reach.unit_rallies.max(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| matches!(b.rally, Some(oxide_sim::Rally::Unit(_))))
+                .count(),
         );
         reach.train_queue = reach.train_queue.max(
             state
@@ -1034,6 +1168,15 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must land an order cancellation drawn from a real program"
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
+    assert!(
+        reach.escorts > 0,
+        "the sweep must put a unit on escort duty"
+    );
+    assert!(
+        reach.unit_rallies > 0,
+        "the sweep must rally a producer onto a unit"
+    );
+    assert!(reach.retired > 0, "the sweep must take a unit apart");
 }
 
 /// The forcing chain, stated as a test: the draw pool is the whole tag

@@ -90,6 +90,10 @@ pub enum VerbIcon {
     Idle,
     Run,
     Hunt,
+    /// The escort slots around a guarded unit.
+    Accompany,
+    /// A gear melting down to scrap.
+    Retire,
 }
 
 /// What clicking a card does.
@@ -431,6 +435,17 @@ pub fn weapon_lines(kind: UnitKind) -> Vec<String> {
     kind.stats().weapons.iter().map(weapon_line).collect()
 }
 
+/// A kind's point defense on one line, for kinds that carry it.
+pub fn point_defense_line(kind: UnitKind) -> Option<String> {
+    let defense = kind.stats().point_defense?;
+    Some(format!(
+        "Point defense | {} charges | {:.1} tiles | one back every {}",
+        defense.charges,
+        defense.radius.to_num::<f32>(),
+        tick_time_label(u32::from(defense.recharge_ticks))
+    ))
+}
+
 /// A building's weapon lines at `tier`, for the codex page.
 pub fn building_weapon_lines(kind: BuildingKind, tier: u8) -> Vec<String> {
     kind.tier_stats(tier)
@@ -575,6 +590,29 @@ fn order_subject(
                 Some(frac),
             ))
         }
+        // The escorted unit is own by construction; its meter is its hull.
+        // Riding a transport it is out of the world, and the chip goes bare.
+        Order::Accompany { unit, .. } => {
+            let u = game.state.unit(*unit)?;
+            let frac = (u.hp as f32 / u.kind.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
+            Some((
+                OrderSubject::Unit(u.kind, owner_of(u.player)),
+                entity_name(u.kind.name()),
+                false,
+                Some(frac),
+            ))
+        }
+        // The Crucible taking the machine apart. The dismantling meter
+        // draws over the machine itself.
+        Order::Retire { crucible, .. } => {
+            let b = game.state.building(*crucible)?;
+            Some((
+                OrderSubject::Building(b.kind, owner_of(b.player)),
+                entity_name(b.kind.tier_name(b.tier)),
+                false,
+                None,
+            ))
+        }
         // A pending found's subject is the kind it will claim — drawn as
         // a ghost, since nothing stands yet.
         Order::Found { kind, .. } => Some((
@@ -680,6 +718,16 @@ fn order_card(
             VerbIcon::Repair,
             "Weld",
             "Repairing a damaged unit; consumes scrap.",
+        ),
+        Order::Accompany { .. } => (
+            VerbIcon::Accompany,
+            "Accompany",
+            "Escorting a unit: keeping pace, fighting threats near it, and welding its group whenever it stops.",
+        ),
+        Order::Retire { .. } => (
+            VerbIcon::Retire,
+            "Retire",
+            "Going to a Crucible to be dismantled for scrap scaled by remaining health.",
         ),
     };
     let subject = if own {
@@ -1247,6 +1295,20 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         ],
         progress: None,
     });
+    panel.cards.push(Card {
+        icon: CardIcon::Verb(VerbIcon::Accompany),
+        title: "Accompany".into(),
+        cost: None,
+        hotkey: chord(bindings, Action::Accompany),
+        action: CardAction::Dispatch(Action::Accompany),
+        enabled: true,
+        why: None,
+        desc: vec![
+            "Select a friendly unit for the rest to escort. They keep pace,".into(),
+            "fight threats near it, and weld the group whenever it stops.".into(),
+        ],
+        progress: None,
+    });
     if has_builder {
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Salvage),
@@ -1275,6 +1337,28 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             desc: vec![
                 "Select a damaged friendly ground unit to repair it.".into(),
                 "Each restored hit point consumes scrap.".into(),
+            ],
+            progress: None,
+        });
+    }
+    if first.player == game.presentation.human {
+        let crucible = game.state.buildings().iter().any(|b| {
+            b.player == game.presentation.human
+                && b.built()
+                && b.hp > 0
+                && b.kind == oxide_sim::BuildingKind::Crucible
+        });
+        panel.cards.push(Card {
+            icon: CardIcon::Verb(VerbIcon::Retire),
+            title: "Retire".into(),
+            cost: None,
+            hotkey: chord(bindings, Action::Retire),
+            action: CardAction::Dispatch(Action::Retire),
+            enabled: crucible,
+            why: (!crucible).then(|| "needs a completed Crucible".to_string()),
+            desc: vec![
+                "Send the selection to the nearest Crucible to be dismantled.".into(),
+                "Refunds half the cost, scaled by remaining health.".into(),
             ],
             progress: None,
         });

@@ -102,6 +102,7 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
     let b = &state.buildings[slot];
     let (id, owner, center) = (b.id, b.player, b.center());
     let blast_sq = CHARGE_BLAST_RADIUS * CHARGE_BLAST_RADIUS;
+    let now = state.current_tick();
     crate::vision::forget_observed_building(state, id, true);
     state.buildings[slot].hp = 0;
     events.push(Event::ChargeDetonated {
@@ -115,7 +116,7 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
             && u.domain() == Domain::Ground
             && u.pos.dist_sq(center) <= blast_sq
         {
-            super::damage::unit(u, CHARGE_DAMAGE, events);
+            super::damage::unit(u, CHARGE_DAMAGE, now, events);
         }
     }
     for other in &mut state.buildings {

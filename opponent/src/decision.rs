@@ -54,6 +54,8 @@ pub(crate) struct Ledger {
     /// Own units sitting out orders after stalling for want of a route or a
     /// firing position, by id.
     stuck: Vec<UnitId>,
+    /// Wounded own units at or sent to a Repair Bay this decision, by id.
+    docked: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -65,6 +67,7 @@ impl Ledger {
             protected: 0,
             planned: Vec::new(),
             stuck: Vec::new(),
+            docked: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -159,6 +162,19 @@ impl Ledger {
     /// firing position.
     pub(crate) fn stuck(&self, unit: UnitId) -> bool {
         self.stuck.binary_search(&unit).is_ok()
+    }
+
+    /// Keeps `unit` at a Repair Bay for the rest of this decision: no
+    /// mission or welder takes it.
+    pub(crate) fn dock(&mut self, unit: UnitId) {
+        if let Err(index) = self.docked.binary_search(&unit) {
+            self.docked.insert(index, unit);
+        }
+    }
+
+    /// Whether `unit` is at or bound for a Repair Bay this decision.
+    pub(crate) fn docked(&self, unit: UnitId) -> bool {
+        self.docked.binary_search(&unit).is_ok()
     }
 
     /// Unit orders this decision may still issue.
@@ -469,6 +485,9 @@ pub(crate) fn decide(
             &mut ledger,
         );
     }
+    persistent
+        .missions
+        .repair(observation, map, &scratch, &mut ledger);
     let patients = persistent.missions.patients(observation, &ledger);
     workers::run(
         observation,

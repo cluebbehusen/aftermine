@@ -456,7 +456,7 @@ fn a_producer_always_exposes_set_reset_and_clear_rally_actions() {
         player: game.presentation.human,
         command: Command::SetRally {
             building: foundry,
-            rally: Some(chassis::grid::TilePos::new(12, 8)),
+            rally: Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(12, 8))),
         },
     }]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
@@ -673,7 +673,10 @@ fn the_harvester_panel_is_the_same_grammar() {
     // Unarmed, it has no Run or Hunt, and an empty hopper has
     // no cargo to return.
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
-    assert_eq!(titles, ["Patrol", "Salvage", "Weld", "Build"]);
+    assert_eq!(
+        titles,
+        ["Patrol", "Accompany", "Salvage", "Weld", "Retire", "Build"]
+    );
     assert!(
         !panel
             .info
@@ -888,6 +891,8 @@ fn order_kind(order: &Order) -> usize {
         Order::Unload { .. } => 12,
         Order::Land { .. } => 13,
         Order::ReturnCargo { .. } => 14,
+        Order::Accompany { .. } => 15,
+        Order::Retire { .. } => 16,
     }
 }
 
@@ -912,7 +917,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Attack {
                 target: contact,
                 pursue: false,
-                resume: Some(goal),
+                resume: Some(oxide_sim::Resume::Hunt(goal)),
             },
             Order::Land {
                 goal: TilePos::new(3, 3),
@@ -934,7 +939,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Harvest {
                 node: TilePos::new(4, 4),
                 anchor: tile,
-                retiring: false,
+                withdrawing: false,
             },
             Order::ReturnCargo {
                 foundry,
@@ -952,13 +957,21 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Board {
                 transport: harvester,
             },
+            Order::Accompany {
+                unit: harvester,
+                weld: None,
+            },
+            Order::Retire {
+                crucible: foundry,
+                pad: None,
+            },
         ],
         looping: false,
     };
     let mut kinds: Vec<usize> = program.orders.iter().map(order_kind).collect();
     kinds.sort_unstable();
     kinds.dedup();
-    assert_eq!(kinds, (0..15).collect::<Vec<_>>(), "every order has a chip");
+    assert_eq!(kinds, (0..17).collect::<Vec<_>>(), "every order has a chip");
 
     let view = game.view();
     let actions: Vec<CardAction> = (0..program.orders.len())
@@ -998,6 +1011,8 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
                 },
                 0
             ),
+            remove(OrderKey::Accompany { unit: harvester }, 0),
+            remove(OrderKey::Retire { crucible: foundry }, 0),
         ]
     );
 }

@@ -248,6 +248,11 @@ against pending commands again. Selecting one factory shows the exact ordered
 queue and its per-slot cancellation controls. Mixed building kinds keep rally
 controls and the first compatible producer's training shortcuts.
 
+A world rally click, from the armed Set rally card or a right-click with only
+buildings selected, picks the own unit under the cursor before the ground: new
+units then escort it, and the rally line follows that unit's drawn position,
+ending in a ring instead of a flag. Minimap rally clicks name ground only.
+
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
@@ -294,20 +299,25 @@ Units take picking priority over buildings, as with single clicks.
 Selection panels and tooltips derive their facts from simulation accessors.
 Static capabilities may be shown for foreign selections; current enemy orders,
 loads, and building income remain private. Placement and support previews use
-authoritative queries rather than duplicating game rules. Unknown concealed
-mines cannot alter player-visible picking or placement feedback.
+authoritative queries rather than duplicating game rules. Each own Repair Bay
+draws a tether to every machine `State::repair_bay_patients` picks, solid at the
+fast rate and dotted at the slow rate, and a selected Bay shows one pip per
+patient slot. Unknown concealed mines cannot alter player-visible picking or
+placement feedback.
 
 A unit panel offers only the verbs its selection can use: Run and Hunt need a
-unit that can fight, while Patrol stays for unarmed scouts. Stop is not a card.
-`Panel.stop` is a button in its own box above the orders or production dock,
-published as `LayoutModel.queue_stop` and hit-tested with the cards. It stops
-the selection while any selected unit has orders, even when the dock's subject
-is idle, and clears a defense's target preference. Over production it cancels
-every selected producer's queue with full refunds, last job first, so each
-`CancelTrain` index still names its job when it runs. The button takes the chip
-column's width and names itself where the chips do. A single factory's dock is
-headed by the time left on its queue, or "Ready" while a finished head waits for
-an exit.
+unit that can fight, while Patrol and Accompany stay for every unit. Accompany
+(`E` by default) arms a click on any own unit, aircraft included; the rest of
+the selection escorts the picked unit, so picking one of the selection works. It
+is never a right-click meaning. Stop is not a card. `Panel.stop` is a button in
+its own box above the orders or production dock, published as
+`LayoutModel.queue_stop` and hit-tested with the cards. It stops the selection
+while any selected unit has orders, even when the dock's subject is idle, and
+clears a defense's target preference. Over production it cancels every selected
+producer's queue with full refunds, last job first, so each `CancelTrain` index
+still names its job when it runs. The button takes the chip column's width and
+names itself where the chips do. A single factory's dock is headed by the time
+left on its queue, or "Ready" while a finished head waits for an exit.
 
 A unit's orders dock and the selection's waypoint chain show programs with every
 staged command applied. `Presentation` caches that projection for the tick, the
@@ -345,6 +355,11 @@ names, or their cancellation; only Patrol coaches its two-step start.
 `Presentation::toast` and the tooltip's refusal line capitalize the first
 letter, so refusal reasons stay lowercase fragments that also read inside longer
 messages.
+
+An own unit selection offers a Retire card, disabled with a reason until a
+Crucible is complete. It has no default key, so a stray keypress cannot scrap an
+army, and no right-click meaning; Shift queues it. A retiring own machine draws
+a gold dismantling meter under its health bar, as a building under salvage does.
 
 Loaded Harvesters and Excavators expose a Return Cargo card and shortcut (`U` by
 default). Worker selections use Return Cargo, a single selected transport uses
@@ -694,15 +709,16 @@ body-frame selection survives lethal removal. Reported unit strikes stay
 anchored to the hit-tick pose while the target moves. Compact contact regions
 derive from atlas alpha at load time and are shared by all instances. Projectile
 launch history retains recorded flight duration and identified targets through
-arrival. When launch history is absent after checkpoint restoration, payload
-recipients are reconstructed from visible world bodies at the fixed impact
-point; landing reports can also use pre-removal bodies. No historical ticks are
-executed. Unguided unit contacts stay on the original course and require the
-nominal impact to overlap the body; bomb spread and ground misses retain their
-positions. Surface flashes, fragments, dust and scorch marks share the cosmetic
-contact point. Weapon and recipient profiles distinguish rail, orb, mortar,
-shell, rocket and bomb contacts. Cosmetic contact never changes simulation
-targeting, damage, shell arrivals or splash centers.
+arrival, or until point defense shoots the shell down. When launch history is
+absent after checkpoint restoration, payload recipients are reconstructed from
+visible world bodies at the fixed impact point; landing reports can also use
+pre-removal bodies. No historical ticks are executed. Unguided unit contacts
+stay on the original course and require the nominal impact to overlap the body;
+bomb spread and ground misses retain their positions. Surface flashes,
+fragments, dust and scorch marks share the cosmetic contact point. Weapon and
+recipient profiles distinguish rail, orb, mortar, shell, rocket and bomb
+contacts. Cosmetic contact never changes simulation targeting, damage, shell
+arrivals or splash centers.
 
 `assets` loads the generated sprite atlas. Its manifest covers every resolved
 sprite key; the renderer does not load individual sprite textures. Optional rigs

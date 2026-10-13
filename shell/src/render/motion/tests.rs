@@ -126,6 +126,7 @@ fn unit_state() -> UnitAnimationState {
         work_target: None,
         welding_arm: None,
         cargo: None,
+        point_defense: None,
         attack: None,
         weapons: [WeaponCycle::Unavailable; MAX_WEAPONS],
         propulsion: PropulsionState::None,
@@ -652,5 +653,29 @@ fn avalanche_stays_empty_through_most_of_reload_even_while_moving() {
             unit_frame(UnitKind::Avalanche, state),
             UnitFrame::Action(frame)
         );
+    }
+}
+
+#[test]
+fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
+    let mut state = unit_state();
+    for charges in 0..=3 {
+        for progress in [0.0, 0.5, 0.999_9, 1.0] {
+            state.point_defense = Some(crate::presentation_animation::PointDefenseState {
+                charges,
+                recharge: progress,
+            });
+            state.locomotion = LocomotionState::Rest;
+            let idle = super::super::UnitSpriteFrame::capture(UnitKind::Mantle, state);
+            state.locomotion = LocomotionState::Moving { cycle: 0.5 };
+            let moving = super::super::UnitSpriteFrame::capture(UnitKind::Mantle, state);
+            assert_eq!(idle.point_defense, moving.point_defense);
+            let row = usize::from(idle.point_defense.unwrap());
+            assert_eq!(
+                row / crate::assets::MANTLE_RECHARGE_STEPS,
+                usize::from(charges)
+            );
+            assert!(row <= 48);
+        }
     }
 }

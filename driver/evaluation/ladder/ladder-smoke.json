@@ -24,7 +24,7 @@
   "min_decided_pairs": 40,
   "maps": [
     {
-      "path": "../../../scenarios/skirmish.json",
+      "path": "../../../fixtures/scenarios/skirmish.json",
       "family": "open"
     },
     {

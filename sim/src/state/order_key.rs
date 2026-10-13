@@ -1,6 +1,6 @@
 //! Which order of a unit's program a player points at.
 
-use super::{Order, State};
+use super::{Order, Resume, State};
 use crate::ids::{AttackTarget, BuildingId, PlayerId, UnitId};
 use crate::stats::BuildingKind;
 use chassis::grid::TilePos;
@@ -86,6 +86,16 @@ pub enum OrderKey {
         /// The carrier.
         transport: UnitId,
     },
+    /// Escorting this unit, including a fight the escort duty picked.
+    Accompany {
+        /// The escorted unit.
+        unit: UnitId,
+    },
+    /// Being dismantled at this Crucible.
+    Retire {
+        /// The Crucible.
+        crucible: BuildingId,
+    },
 }
 
 impl Order {
@@ -100,8 +110,14 @@ impl Order {
                 OrderKey::Walk { tile: goal.tile() }
             }
             Order::Attack {
-                resume: Some(goal), ..
+                resume: Some(Resume::Hunt(goal)),
+                ..
             } => OrderKey::Walk { tile: goal.tile() },
+            Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            }
+            | Order::Accompany { unit, .. } => OrderKey::Accompany { unit },
             Order::Attack {
                 target,
                 resume: None,
@@ -122,6 +138,7 @@ impl Order {
             Order::Salvage { building } => OrderKey::Salvage { building },
             Order::RepairUnit { unit } => OrderKey::RepairUnit { unit },
             Order::Board { transport } => OrderKey::Board { transport },
+            Order::Retire { crucible, .. } => OrderKey::Retire { crucible },
         })
     }
 }

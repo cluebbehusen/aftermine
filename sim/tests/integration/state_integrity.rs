@@ -301,6 +301,17 @@ fn well_formed_additions_are_accepted() {
         }
     }
     base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
+    let bombard = base["units"][1]["id"].clone();
+    base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
+    let owner = base["buildings"][0]["player"].clone();
+    let own = base["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["player"] == owner)
+        .unwrap()["id"]
+        .clone();
+    base["buildings"][0]["rally"] = json!({"unit": own});
     serde_json::from_value::<State>(base).expect("legal additions stay legal");
 }
 
@@ -403,10 +414,15 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidDangerRetry(_) => 55,
         E::GhostTierBeyondLadder(_) => 79,
         E::GhostHpOutOfRange(_) => 80,
+        E::DamageStampInTheFuture(_) => 81,
+        E::PointDefenseOutOfRange(_) => 82,
+        E::InvalidEscort(_) => 83,
+        E::InvalidRally(_) => 84,
+        E::InvalidRetirement(_) => 85,
     }
 }
 
-const ROWS: usize = 81;
+const ROWS: usize = 86;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -500,6 +516,11 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidLeashClock(UnitId(0)),
         E::GhostTierBeyondLadder(PlayerId(0)),
         E::GhostHpOutOfRange(PlayerId(0)),
+        E::DamageStampInTheFuture(UnitId(0)),
+        E::PointDefenseOutOfRange(UnitId(0)),
+        E::InvalidEscort(UnitId(0)),
+        E::InvalidRally(BuildingId(0)),
+        E::InvalidRetirement(UnitId(0)),
     ]
 }
 
@@ -526,7 +547,7 @@ fn as_rider(unit: &Value) -> Value {
         "cooldowns": unit["cooldowns"],
     });
     // Zero scrap and a zero heading are left out, as a rider serializes them.
-    for key in ["carrying", "heading", "turret_heading"] {
+    for key in ["carrying", "heading", "turret_heading", "point_defense"] {
         if let Some(value) = unit.get(key).filter(|value| **value != json!(0)) {
             rider[key] = value.clone();
         }
@@ -623,6 +644,37 @@ fn scrap_load_is_bounded_for_walking_and_carried_units() {
             }
         }
     }
+}
+
+/// Rewrites units[0] (the working Harvester) into an idle Mantle holding
+/// the given point-defense state.
+fn make_mantle(d: &mut Value, point_defense: Value) {
+    d["units"][0]["kind"] = json!("mantle");
+    d["units"][0]["hp"] = json!(350);
+    d["units"][0]["order"] = json!({"order": "idle"});
+    d["units"][0]["progress"] = json!(0);
+    d["units"][0]["point_defense"] = point_defense;
+    let unit = d["units"][0].as_object_mut().expect("unit is a map");
+    unit.remove("worker");
+    unit.remove("path");
+    unit.remove("leash");
+    unit.remove("queue");
+}
+
+/// A carried Mantle with the given point-defense state aboard a Skyhook.
+fn carry_mantle(d: &mut Value, point_defense: Option<Value>) {
+    let mut rider = well_formed_rider(d);
+    rider["kind"] = json!("mantle");
+    // The Sentinel it is cut from turns a turret the Mantle lacks.
+    rider
+        .as_object_mut()
+        .expect("rider is a map")
+        .remove("turret_heading");
+    if let Some(point_defense) = point_defense {
+        rider["point_defense"] = point_defense;
+    }
+    make_transport(d);
+    d["units"][0]["cargo"] = json!([rider]);
 }
 
 /// Reshapes unit 0 into a Condor parked on a tile center, facing east
@@ -906,6 +958,11 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 carries an invalid danger retry",
         ),
         (
+            "a unit damaged at the tick that has yet to run",
+            |d| d["units"][0]["damaged_at"] = d["tick"].clone(),
+            "unit u0 was damaged at a tick that has not happened",
+        ),
+        (
             "harvest gear on a machine that never harvests",
             |d| d["units"][1]["worker"]["danger_retry_at"] = d["tick"].clone(),
             "unit u1 carries parts that do not match its kind",
@@ -945,6 +1002,109 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 has an invalid cargo delivery",
         ),
         (
+            "a rally onto a unit that left play",
+            |d| d["buildings"][0]["rally"] = json!({"unit": 999}),
+            "rallies to a unit that is gone or not its owner's",
+        ),
+        (
+            "a rally onto another seat's unit",
+            |d| {
+                let owner = d["buildings"][0]["player"].clone();
+                let foreign = d["units"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|u| u["player"] != owner)
+                    .unwrap()["id"]
+                    .clone();
+                d["buildings"][0]["rally"] = json!({"unit": foreign});
+            },
+            "rallies to a unit that is gone or not its owner's",
+        ),
+        (
+            "escort duty around an enemy unit",
+            |d| {
+                let enemy = d["units"][2]["id"].clone();
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": enemy});
+            },
+            "unit u0 has an invalid escort duty",
+        ),
+        (
+            "an escort loop closed through a queued order",
+            |d| {
+                let (harvester, bombard) =
+                    (d["units"][0]["id"].clone(), d["units"][1]["id"].clone());
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": bombard});
+                d["units"][1]["queue"] = json!([{"order": "accompany", "unit": harvester}]);
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "escort duty around itself",
+            |d| {
+                let own = d["units"][0]["id"].clone();
+                d["units"][0]["order"] = json!({"order": "accompany", "unit": own});
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "a torch without harvest gear",
+            |d| {
+                let harvester = d["units"][0]["id"].clone();
+                d["units"][1]["order"] =
+                    json!({"order": "accompany", "unit": harvester, "weld": harvester});
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "an escort's fight resuming duty around an enemy unit",
+            |d| {
+                let enemy = d["units"][2]["id"].clone();
+                d["units"][1]["order"] = json!({
+                    "order": "attack",
+                    "target": {"kind": "unit", "id": enemy},
+                    "resume": {"accompany": enemy},
+                });
+            },
+            "has an invalid escort duty",
+        ),
+        (
+            "escort duty around an unminted unit",
+            |d| d["units"][0]["order"] = json!({"order": "accompany", "unit": 999}),
+            "unit u0 is ordered against an id the run never minted",
+        ),
+        (
+            "a retirement at a building that is no Crucible",
+            |d| {
+                let owner = d["units"][0]["player"].clone();
+                let home = d["buildings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|b| b["player"] == owner && b["kind"] == json!("foundry"))
+                    .unwrap()["id"]
+                    .clone();
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": home});
+            },
+            "unit u0 has an invalid retirement",
+        ),
+        (
+            "a landing pad for an airframe that cannot land",
+            |d| {
+                d["units"][0]["order"] =
+                    json!({"order": "retire", "crucible": 0, "pad": {"x": 4, "y": 4}});
+            },
+            "has an invalid retirement",
+        ),
+        (
+            "a retirement resting on a full meter",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": 0});
+                d["units"][0]["progress"] = json!(oxide_sim::stats::RETIRE_TICKS);
+            },
+            "has an invalid retirement",
+        ),
+        (
             "a harvest source outside its anchored work zone",
             |d| {
                 d["units"][0]["order"]["node"] = json!({"x": 15, "y": 8});
@@ -976,7 +1136,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}},
+                    "resume": {"hunt": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}}},
                 });
             },
             "unit u0 names a coordinate outside the envelope",
@@ -998,7 +1158,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 6, "y": 2, "endpoint": {"x": 6, "y": 2}},
+                    "resume": {"hunt": {"x": 6, "y": 2, "endpoint": {"x": 6, "y": 2}}},
                 });
             },
             "unit u0 stores a slot or endpoint equal to its own goal",
@@ -1020,7 +1180,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["order"] = json!({
                     "order": "attack",
                     "target": {"kind": "unit", "id": victim},
-                    "resume": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}},
+                    "resume": {"hunt": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}}},
                 });
             },
             "unit u0 names a coordinate outside the envelope",
@@ -1154,7 +1314,7 @@ fn every_checklist_row_refuses_its_forgery() {
         ),
         (
             "a rally point at the far end of the coordinate space",
-            |d| d["buildings"][0]["rally"] = json!({"x": -i32::MAX, "y": 0}),
+            |d| d["buildings"][0]["rally"] = json!({"tile": {"x": -i32::MAX, "y": 0}}),
             "building b0 names a coordinate outside the envelope",
         ),
         (
@@ -1225,6 +1385,47 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["cargo"] = json!([rider]);
             },
             "carries a rider with impossible weapon cooldowns",
+        ),
+        (
+            "point-defense charges on a kind without point defense",
+            |d| d["units"][0]["point_defense"] = json!({"charges": 1}),
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a Mantle without its point defense",
+            |d| {
+                make_mantle(d, json!(null));
+                d["units"][0]
+                    .as_object_mut()
+                    .expect("unit is a map")
+                    .remove("point_defense");
+            },
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a point defender holding more charges than its kind",
+            |d| make_mantle(d, json!({"charges": 4})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a full point defender counting toward another charge",
+            |d| make_mantle(d, json!({"charges": 3, "recharge": 1})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a recharge counter at a full recharge",
+            |d| make_mantle(d, json!({"charges": 1, "recharge": 60})),
+            "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "a carried Mantle without its point defense",
+            |d| carry_mantle(d, None),
+            "carries parts that do not match its kind",
+        ),
+        (
+            "a carried point defender holding impossible charges",
+            |d| carry_mantle(d, Some(json!({"charges": 9}))),
+            "holds impossible point-defense charges",
         ),
         (
             "extractor frames out of canonical order",
@@ -1553,6 +1754,12 @@ fn a_full_verb_run_stays_valid_every_tick() {
             y: 6,
         },
     ]);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 15,
+        y: 1,
+    });
     let mut state = scenario.build().unwrap();
     let (harvester, bombard, sentinel, stray, condor, walker) = (
         state.units()[0].id,
@@ -1654,7 +1861,7 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 0,
                 Command::SetRally {
                     building: fabricator,
-                    rally: Some(tile(5, 3)),
+                    rally: Some(oxide_sim::Rally::Tile(tile(5, 3))),
                 },
             )],
         ),
@@ -1680,11 +1887,35 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 },
             )],
         ),
+        (
+            700,
+            vec![cmd(
+                0,
+                Command::Accompany {
+                    units: vec![walker],
+                    target: harvester,
+                    queue: false,
+                },
+            )],
+        ),
+        // The parked bomber lifts off, lands beside the Crucible, and is
+        // taken apart there.
+        (
+            600,
+            vec![cmd(
+                0,
+                Command::Retire {
+                    units: vec![condor],
+                    queue: false,
+                },
+            )],
+        ),
     ];
 
     let (mut saw_shell, mut saw_site, mut saw_strip, mut saw_weld) = (false, false, false, false);
     let (mut saw_haul, mut saw_short) = (false, false);
-    let (mut saw_pending, mut saw_handoff) = (false, false);
+    let (mut saw_pending, mut saw_handoff, mut saw_escort, mut saw_retired) =
+        (false, false, false, false);
     let mut last_hp = state.building(fabricator).map(|b| b.hp);
     for tick in 0..1_200u32 {
         let commands = script
@@ -1712,6 +1943,15 @@ fn a_full_verb_run_stays_valid_every_tick() {
         saw_handoff |= state.unit(condor).is_some_and(
             |u| matches!(u.order, oxide_sim::Order::Land { from, .. } if from == Some(tile(6, 6))),
         );
+        saw_escort |= state.unit(walker).is_some_and(|u| {
+            oxide_sim::Order::Accompany {
+                unit: harvester,
+                weld: None,
+            } == u.order
+        });
+        saw_retired |= report.events.iter().any(
+            |event| matches!(event, oxide_sim::Event::UnitRetired { unit, .. } if *unit == condor),
+        );
         saw_shell |= !state.shells().is_empty();
         saw_haul |= state.units().iter().any(|u| u.carrying() > 0);
         saw_site |= state.buildings().iter().any(|b| !b.built());
@@ -1732,6 +1972,11 @@ fn a_full_verb_run_stays_valid_every_tick() {
         "premise: a walk waited for its click to be seen"
     );
     assert!(saw_handoff, "premise: a flight handed over to a landing");
+    assert!(saw_escort, "premise: a unit escorted another");
+    assert!(
+        saw_retired,
+        "premise: a bomber was taken apart at a Crucible"
+    );
     assert!(
         state
             .building(fabricator)
