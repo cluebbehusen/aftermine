@@ -75,8 +75,8 @@ pub(crate) struct Staffing {
     wrecks: Vec<(TilePos, u32)>,
     crew: usize,
     /// Each ground with a built Foundry: the Harvester slots its worked
-    /// sources want and those its workers, alive or queued there, fill.
-    /// Every ground trains its own workers.
+    /// sources want, at least one for a builder, and those its workers,
+    /// alive or queued there, fill. Every ground trains its own workers.
     local: Vec<(u32, usize, usize)>,
 }
 
@@ -174,11 +174,14 @@ pub(crate) fn staffing(
         .into_iter()
         .map(|component| {
             let on_ground = |tile| map.component(tile) == Some(component);
+            // A base keeps at least a builder for its construction and welds,
+            // whatever is left to mine.
             let wanted = worked
                 .iter()
                 .filter(|(tile, _)| on_ground(*tile))
                 .map(|(_, wanted)| wanted)
-                .sum::<usize>();
+                .sum::<usize>()
+                .max(1);
             let crew = observation
                 .my_units
                 .iter()
@@ -232,6 +235,14 @@ pub(crate) fn train(
     ledger: &mut Ledger,
 ) {
     let mut local = staffing.local.clone();
+    for (component, _, count) in &mut local {
+        *count += foundries
+            .iter()
+            .filter(|foundry| map.component(foundry.building.anchor) == Some(*component))
+            .flat_map(|foundry| ledger.trained_at(foundry.building.id))
+            .map(slots)
+            .sum::<usize>();
+    }
     for foundry in foundries {
         let Some((_, wanted, count)) = local
             .iter_mut()

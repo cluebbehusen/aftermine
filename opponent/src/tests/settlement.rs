@@ -1237,3 +1237,110 @@ fn an_escort_leaves_a_landing_no_known_enemy_threatens() {
         bot.missions()
     );
 }
+
+#[test]
+fn local_guards_train_while_a_lift_waits_for_carriers() {
+    let mut scenario = island();
+    scenario.mode = ScenarioMode::Sandbox;
+    // Sever the starts so a lift is needed, with no carriers yet and too
+    // little scrap for one.
+    for row in scenario.map.iter_mut().take(12).skip(1) {
+        row.replace_range(30..34, "~~~~");
+    }
+    scenario.units.retain(|u| u.kind != UnitKind::Skyhook);
+    for row in &mut scenario.map {
+        *row = row.replace(['S', 'E'], ".");
+    }
+    scenario.players[0].scrap = 200;
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 24,
+        y: 22,
+    });
+    // Near enough for the expansion's guard, too far to call its defense.
+    scenario.units.push(unit(1, UnitKind::Buzzard, 36, 23));
+    let state = scenario.build().unwrap();
+    let mut bot = seat_with(
+        &scenario,
+        0,
+        BotConfig::new(BotDifficulty::Prime, BotStance::Aggressive, 11),
+    );
+    let commands = bot.act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|c| matches!(
+            c.command,
+            Command::Train {
+                kind: UnitKind::Talon,
+                ..
+            }
+        )),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn an_empty_carrier_already_home_is_let_go_where_it_stands() {
+    let mut scenario = island();
+    scenario.units.retain(|u| u.kind != UnitKind::Skyhook);
+    scenario.units.push(unit(0, UnitKind::Skyhook, 6, 7));
+    let state = scenario.build().unwrap();
+    let carrier = state
+        .units()
+        .iter()
+        .find(|u| u.kind == UnitKind::Skyhook)
+        .unwrap()
+        .id;
+    let mut bot = seat(&scenario, 0);
+    let mut checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
+    checkpoint["missions"]["next"] = 1.into();
+    checkpoint["missions"]["list"] = serde_json::json!([
+        {"id":0,"since":0,"units":[carrier.0],"goal":{"x":34,"y":25},"task":{"task":"settle","target":{"foundry":{"site":0,"anchor":{"x":37,"y":28}}},"phase":"recover"}}
+    ]);
+    bot = Opponent::restore(
+        &serde_json::from_value(checkpoint).unwrap(),
+        &scenario,
+        &state,
+        map(&scenario),
+    )
+    .unwrap();
+    let commands = bot.act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().all(|c| match &c.command {
+            Command::Run { units, .. } | Command::Hunt { units, .. } => !units.contains(&carrier),
+            _ => true,
+        }),
+        "{commands:?}"
+    );
+    assert!(
+        bot.missions().iter().all(|m| m.id != 0),
+        "the recovered settlement ends"
+    );
+}
+
+#[test]
+fn a_base_with_nothing_left_to_mine_keeps_a_builder() {
+    let mut scenario = island();
+    for row in &mut scenario.map {
+        *row = row.replace('S', ".");
+    }
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 24,
+        y: 22,
+    });
+    let state = scenario.build().unwrap();
+    let island = own_island_foundry(&state).unwrap().id;
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|c| matches!(
+            c.command,
+            Command::Train {
+                building,
+                kind: UnitKind::Harvester,
+            } if building == island
+        )),
+        "{commands:?}"
+    );
+}

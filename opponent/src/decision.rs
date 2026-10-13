@@ -197,6 +197,17 @@ impl Ledger {
         )
     }
 
+    /// Units this decision queued at `building`.
+    pub(crate) fn trained_at(&self, building: BuildingId) -> impl Iterator<Item = UnitKind> + '_ {
+        self.decision
+            .purchases
+            .iter()
+            .filter_map(move |purchase| match purchase {
+                Purchase::Train { building: at, unit } if *at == building => Some(*unit),
+                _ => None,
+            })
+    }
+
     /// Units of `kind` this decision queued.
     pub(crate) fn queued(&self, kind: UnitKind) -> usize {
         self.decision
@@ -627,6 +638,9 @@ pub(crate) fn decide(
         .copied()
         .filter(|producer| !saved_for(observation, producer, saving))
         .collect();
+    // Local guards rank ahead of lifts, so their gaps train before a lift
+    // holds production for carriers.
+    arm(observation, map, &producers, guard_gaps, &mut ledger);
     let carrying = lift
         && !short
         && train_carriers(
@@ -639,7 +653,6 @@ pub(crate) fn decide(
             &mut ledger,
         );
     if !carrying {
-        arm(observation, map, &producers, guard_gaps, &mut ledger);
         if lacking > 0 {
             train_scout(observation, &free, lacking, &mut ledger);
         }

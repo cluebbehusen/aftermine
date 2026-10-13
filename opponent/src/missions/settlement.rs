@@ -789,10 +789,7 @@ impl Missions {
     /// Flies the settlement's empty carriers to a home pad and lets them go.
     fn return_carriers(&mut self, index: usize, context: &Settlement<'_>, ledger: &mut Ledger) {
         let manifest = lift::Manifest::new(context.observation, &self.list[index].units);
-        let returned =
-            context
-                .delivery()
-                .return_empty(&manifest.carriers, self.list[index].goal, ledger);
+        let returned = context.delivery().return_empty(&manifest.carriers, ledger);
         self.list[index].units.retain(|id| !returned.contains(id));
     }
 }

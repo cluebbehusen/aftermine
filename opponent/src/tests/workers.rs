@@ -796,3 +796,68 @@ fn wreck_whose_route_passes_a_recent_allied_loss_is_not_salvaged() {
     assert!(sent(false), "premise: the wreck draws the Harvester");
     assert!(!sent(true));
 }
+
+#[test]
+fn both_worker_passes_fill_one_open_slot_once() {
+    let mut scenario = fielded((6, 11));
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 3,
+        y: 15,
+    });
+    let state = scenario.build().unwrap();
+    let wanted: usize = crews(&scenario, &state, BotStance::Balanced, 50)
+        .iter()
+        .map(|(_, crew)| crew)
+        .sum();
+    assert!(wanted >= 2, "{wanted}");
+    scenario
+        .units
+        .extend((1..wanted).map(|i| harvester(0, 8, 2 + i32::try_from(i).unwrap())));
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let model = map(&scenario);
+    let frame = HomeFrame::of(&observation, &model).unwrap();
+    let mut profile = ResolvedProfile::resolve(BotConfig::new(
+        BotDifficulty::Standard,
+        BotStance::Balanced,
+        11,
+    ));
+    profile.traits.greed = 50;
+    let foundries: Vec<Producer<'_>> = observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Foundry)
+        .map(|building| Producer {
+            building,
+            ready: true,
+        })
+        .collect();
+    let mut memory = crate::memory::Memory::default();
+    memory.observe(&observation);
+    let scratch = crate::missions::Scratch::new(
+        &observation,
+        &model,
+        frame,
+        &memory,
+        BotStance::Balanced,
+        &crate::missions::Missions::default(),
+    );
+    let staffing =
+        crate::workers::staffing(&observation, &model, frame, &profile, &foundries, &scratch);
+    let mut ledger = crate::decision::Ledger::new(PlayerId(0), 10_000, 10);
+    // An exposed seat trains workers both before and after production.
+    for _ in 0..2 {
+        crate::workers::train(
+            &observation,
+            &model,
+            &foundries,
+            &staffing,
+            50,
+            u64::MAX,
+            &mut ledger,
+        );
+    }
+    assert_eq!(ledger.queued(UnitKind::Harvester), 1);
+}

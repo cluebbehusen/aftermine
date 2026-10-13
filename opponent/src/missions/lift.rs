@@ -295,35 +295,36 @@ impl<'a> Delivery<'a> {
         members
     }
 
-    /// Flies the empty `carriers` from `from` to a home pad, around known
-    /// anti-air, returning those sent.
-    pub(super) fn return_empty(
-        &self,
-        carriers: &[&UnitObs],
-        from: TilePos,
-        ledger: &mut Ledger,
-    ) -> Vec<UnitId> {
-        let empty: Vec<_> = carriers
+    /// Lets the empty `carriers` go: those already beside a home pad as they
+    /// are, the rest once flown to the pad nearest them, around known
+    /// anti-air. Returns those let go.
+    pub(super) fn return_empty(&self, carriers: &[&UnitObs], ledger: &mut Ledger) -> Vec<UnitId> {
+        let (home, away): (Vec<&UnitObs>, Vec<&UnitObs>) = carriers
             .iter()
+            .copied()
             .filter(|u| u.cargo == 0)
-            .map(|u| u.id)
-            .collect();
-        if !empty.is_empty()
-            && let Some(pad) = self.pad(from)
+            .partition(|u| {
+                self.pad(u.tile)
+                    .is_some_and(|pad| u.tile.chebyshev(pad) <= SPREAD)
+            });
+        let mut released = ids(&home);
+        if let Some(first) = away.first()
+            && let Some(pad) = self.pad(first.tile)
         {
             let via = air::route(
                 self.observation,
                 self.scratch.frame,
                 &self.scratch.air,
-                from,
+                first.tile,
                 pad,
             );
             if ledger.room() >= route_orders(via) {
-                fly_to(empty.clone(), via, pad, false, ledger);
-                return empty;
+                let sent = ids(&away);
+                fly_to(sent.clone(), via, pad, false, ledger);
+                released.extend(sent);
             }
         }
-        Vec::new()
+        released
     }
 }
 
