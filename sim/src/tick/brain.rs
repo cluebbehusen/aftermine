@@ -219,14 +219,14 @@ pub(super) fn run(
             Order::Harvest {
                 node,
                 anchor,
-                retiring,
+                withdrawing,
             } => {
                 let player = state.unit(id).expect("just seen").player;
                 let team = state.player(player).team as usize;
                 let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
                     crate::vision::GroundSalvageDanger::capture(state, player)
                 });
-                harvest(state, danger, id, node, anchor, retiring, events);
+                harvest(state, danger, id, node, anchor, withdrawing, events);
             }
             Order::Attack {
                 target,
@@ -278,6 +278,14 @@ pub(super) fn run(
                 weld,
                 &mut field_welds,
             ),
+            Order::Retire { crucible, pad } => retire::retire(
+                state,
+                &mut reach,
+                id,
+                (crucible, pad),
+                &mut logistics_pending,
+                events,
+            ),
         }
         if events[reported..]
             .iter()
@@ -312,6 +320,7 @@ pub(super) mod escort;
 mod locomotion;
 pub(super) mod logistics;
 mod point_defense;
+pub(super) mod retire;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{

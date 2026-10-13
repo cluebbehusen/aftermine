@@ -418,10 +418,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::PointDefenseOutOfRange(_) => 82,
         E::InvalidEscort(_) => 83,
         E::InvalidRally(_) => 84,
+        E::InvalidRetirement(_) => 85,
     }
 }
 
-const ROWS: usize = 85;
+const ROWS: usize = 86;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -519,6 +520,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::PointDefenseOutOfRange(UnitId(0)),
         E::InvalidEscort(UnitId(0)),
         E::InvalidRally(BuildingId(0)),
+        E::InvalidRetirement(UnitId(0)),
     ]
 }
 
@@ -1070,6 +1072,37 @@ fn every_checklist_row_refuses_its_forgery() {
             "escort duty around an unminted unit",
             |d| d["units"][0]["order"] = json!({"order": "accompany", "unit": 999}),
             "unit u0 is ordered against an id the run never minted",
+        ),
+        (
+            "a retirement at a building that is no Crucible",
+            |d| {
+                let owner = d["units"][0]["player"].clone();
+                let home = d["buildings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|b| b["player"] == owner && b["kind"] == json!("foundry"))
+                    .unwrap()["id"]
+                    .clone();
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": home});
+            },
+            "unit u0 has an invalid retirement",
+        ),
+        (
+            "a landing pad for an airframe that cannot land",
+            |d| {
+                d["units"][0]["order"] =
+                    json!({"order": "retire", "crucible": 0, "pad": {"x": 4, "y": 4}});
+            },
+            "has an invalid retirement",
+        ),
+        (
+            "a retirement resting on a full meter",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "retire", "crucible": 0});
+                d["units"][0]["progress"] = json!(oxide_sim::stats::RETIRE_TICKS);
+            },
+            "has an invalid retirement",
         ),
         (
             "a harvest source outside its anchored work zone",
@@ -1721,6 +1754,12 @@ fn a_full_verb_run_stays_valid_every_tick() {
             y: 6,
         },
     ]);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 15,
+        y: 1,
+    });
     let mut state = scenario.build().unwrap();
     let (harvester, bombard, sentinel, stray, condor, walker) = (
         state.units()[0].id,
@@ -1859,11 +1898,24 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 },
             )],
         ),
+        // The parked bomber lifts off, lands beside the Crucible, and is
+        // taken apart there.
+        (
+            600,
+            vec![cmd(
+                0,
+                Command::Retire {
+                    units: vec![condor],
+                    queue: false,
+                },
+            )],
+        ),
     ];
 
     let (mut saw_shell, mut saw_site, mut saw_strip, mut saw_weld) = (false, false, false, false);
     let (mut saw_haul, mut saw_short) = (false, false);
-    let (mut saw_pending, mut saw_handoff, mut saw_escort) = (false, false, false);
+    let (mut saw_pending, mut saw_handoff, mut saw_escort, mut saw_retired) =
+        (false, false, false, false);
     let mut last_hp = state.building(fabricator).map(|b| b.hp);
     for tick in 0..1_200u32 {
         let commands = script
@@ -1897,6 +1949,9 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 weld: None,
             } == u.order
         });
+        saw_retired |= report.events.iter().any(
+            |event| matches!(event, oxide_sim::Event::UnitRetired { unit, .. } if *unit == condor),
+        );
         saw_shell |= !state.shells().is_empty();
         saw_haul |= state.units().iter().any(|u| u.carrying() > 0);
         saw_site |= state.buildings().iter().any(|b| !b.built());
@@ -1918,6 +1973,10 @@ fn a_full_verb_run_stays_valid_every_tick() {
     );
     assert!(saw_handoff, "premise: a flight handed over to a landing");
     assert!(saw_escort, "premise: a unit escorted another");
+    assert!(
+        saw_retired,
+        "premise: a bomber was taken apart at a Crucible"
+    );
     assert!(
         state
             .building(fabricator)

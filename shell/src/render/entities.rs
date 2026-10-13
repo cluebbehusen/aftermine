@@ -148,6 +148,7 @@ pub(crate) fn breadcrumb_points(
         | oxide_sim::Order::Unload { .. }
         | oxide_sim::Order::Land { .. } => BONE_FAINT,
         oxide_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
+        oxide_sim::Order::Retire { .. } => Color::new(0.85, 0.64, 0.25, 0.55),
         oxide_sim::Order::Idle => BONE_FAINT,
     };
     // Building targets draw at their footprint's center, which lies on a
@@ -167,9 +168,11 @@ pub(crate) fn breadcrumb_points(
             oxide_sim::Order::Found { kind, anchor } => {
                 world_vec(oxide_sim::geometry::footprint_center(*anchor, kind.size()))
             }
-            oxide_sim::Order::Repair { building } | oxide_sim::Order::Salvage { building } => {
-                world_vec(game.state.building(*building)?.center())
-            }
+            oxide_sim::Order::Repair { building }
+            | oxide_sim::Order::Salvage { building }
+            | oxide_sim::Order::Retire {
+                crucible: building, ..
+            } => world_vec(game.state.building(*building)?.center()),
             // A repair patient is the viewer's own machine, so it is always seen.
             oxide_sim::Order::RepairUnit { unit } => tile_center(game.state.unit(*unit)?.tile()),
             oxide_sim::Order::Board { transport } => {

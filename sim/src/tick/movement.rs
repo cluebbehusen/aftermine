@@ -449,8 +449,11 @@ fn steer_turn_limited(
     let accept = stats.turn_acceptance();
     let arrive_sq = accept * accept;
     // A landing's final leg is never accepted by the ring: the brain owns
-    // touchdown at the tile center.
-    let landing = matches!(unit.order, Order::Land { .. });
+    // touchdown at the tile center. A retirement's pad is a landing too.
+    let landing = matches!(
+        unit.order,
+        Order::Land { .. } | Order::Retire { pad: Some(_), .. }
+    );
     // Accept every waypoint the arc has already effectively reached. A
     // terrain-routing waypoint is not disposable merely because the wide
     // acceptance ring overlaps it: only skip it when the direct air segment
@@ -666,6 +669,7 @@ fn is_anchored(unit: &crate::state::Unit) -> bool {
                     | Order::RepairUnit { .. }
                     | Order::Accompany { weld: Some(_), .. }
                     | Order::ReturnCargo { .. }
+                    | Order::Retire { .. }
             )
 }
 

@@ -42,6 +42,7 @@ mod provisional_construction;
 mod repair;
 mod repair_bay;
 mod repair_unit;
+mod retire;
 mod return_cargo;
 mod roster;
 mod salvage;

@@ -299,6 +299,17 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         queue: bool,
     },
+    /// Send own units to the nearest own completed Crucible each can reach,
+    /// to be dismantled for a refund scaled by their remaining hp. Refused
+    /// as [`RejectReason::MissingPrerequisite`] without a completed
+    /// Crucible. The sim reads `units` as a sorted set.
+    Retire {
+        /// The units to dismantle.
+        units: Vec<UnitId>,
+        /// Append instead of replace (see [`Command::Run::queue`]).
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        queue: bool,
+    },
 }
 
 /// A command attributed to its issuing player. Ownership checks are made
@@ -347,7 +358,8 @@ pub enum RejectReason {
     /// The production queue is at capacity.
     QueueFull,
     /// The issuer has not completed the tech buildings this kind
-    /// requires — the tree gates humans and bots identically.
+    /// requires — the tree gates humans and bots identically — or, for a
+    /// retirement, holds no completed Crucible.
     MissingPrerequisite,
     /// The upgrade needs a completed own Foundry within
     /// [`EXTRACTOR_SUPPORT_RADIUS`](crate::stats::EXTRACTOR_SUPPORT_RADIUS)

@@ -93,8 +93,9 @@ Phase order is game behavior. `State::tick` performs:
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
-11. Schedule airborne crashes, remove dead entities, deposit eligible wreck
-    salvage, and refund unstarted sites with no surviving worker commitments.
+11. Schedule airborne crashes, remove dead entities, take apart units whose
+    dismantling meter filled, deposit eligible wreck salvage, and refund
+    unstarted sites with no surviving worker commitments.
 12. Apply wreck decay on its global cadence.
 13. Rebuild team-shared visibility and reconcile fog memory. Activate or refund
     newly visible provisional sites. Newly discovered mines cancel unstarted
@@ -491,10 +492,11 @@ Reissuing the same delivery preserves progress. Automatic deliveries can choose
 another Foundry after target loss; explicit deliveries retain their usual
 failure policy. A delivery route ends at any point already within unloading
 reach, then brakes before releasing cargo. Workers without a following order
-leave the contact ring after their final delivery so a retired crew cannot block
-the last loaded workers. Queued work takes precedence over this short departure.
-Reservations and blocked-dock replanning use physical approach points and hull
-clearance instead of tile centers. The following job begins on the next tick.
+leave the contact ring after their final delivery so a finished crew cannot
+block the last loaded workers. Queued work takes precedence over this short
+departure. Reservations and blocked-dock replanning use physical approach points
+and hull clearance instead of tile centers. The following job begins on the next
+tick.
 
 `ReturnCargo` replaces loaded workers' active and queued work with a delivery.
 The command selects an owned, living, completed Foundry before replacing each
@@ -588,6 +590,26 @@ hp. Salvaging is active dismantling of a built own structure other than a
 Foundry; its cumulative refund ledger prevents rounding drift, and a salvaged
 building does not count as a combat loss or create a wreck. Prepaid production
 on a successfully salvaged producer is refunded.
+
+`Retire` sends own units to the nearest own completed Crucible each can reach
+and, for a Condor, land beside. An exact distance tie goes by exact products in
+the unit's heading frame, never by mint order. Without a Crucible the command is
+refused as `MissingPrerequisite`. Walkers and hovering aircraft head for a
+doorstep chosen in their approach's frame and stop within `RETIRE_REACH` of the
+footprint; a Condor lands on open ground beside it. A machine standing still
+there runs a `RETIRE_TICKS` dismantling meter. A loaded transport first sets its
+riders down around itself, as an unload does, and riders that find no open
+ground wait aboard for the next try; a retiring transport takes no riders. If
+its Crucible falls, the machine re-picks the nearest standing one with its meter
+reset, a landed Condor lifting off for it, or the order ends. The brain only
+runs the meter. Cleanup takes a unit apart the tick its meter fills, after every
+damage source of the tick, so a machine zeroed that tick dies and wrecks
+instead. A retired unit leaves no wreck and no death: it emits `UnitRetired`,
+refunds `RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks
+any carried scrap like a delivery; the event reports what the bank actually
+credited. Only credited cargo re-arms a stranded seat's recovery. The refund
+rate stays below the repair rate, so welding a machine up and then retiring it
+always loses scrap, and no repair source mends a retiring machine.
 
 Building repair and Harvester field welding are billed per accepted hp. Repair
 Bays feed the same unit-heal resolver as field welders and the same
@@ -837,6 +859,7 @@ map rather than an exhaustive test inventory.
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
 | Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
+| Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

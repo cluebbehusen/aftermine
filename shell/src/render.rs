@@ -1193,8 +1193,8 @@ fn draw_unit_pass(
             );
         }
         let max_hp = unit.kind.stats().max_hp;
+        let w = zoom * (draw_scale - 0.25).clamp(0.8, 1.4);
         if unit.hp < max_hp {
-            let w = zoom * (draw_scale - 0.25).clamp(0.8, 1.4);
             hp_bar(
                 screen.x - w * 0.5,
                 screen.y - zoom * (draw_scale * 0.5 + 0.095),
@@ -1203,6 +1203,17 @@ fn draw_unit_pass(
                 max_hp,
                 seat_identity_color(game, unit.player),
             );
+        }
+        // The gold dismantling meter, like a building's teardown bar, and
+        // like it shown only for the viewer's own machines.
+        if unit.player == game.presentation.human && unit.retiring() && unit.progress > 0 {
+            let fraction = unit.progress as f32 / oxide_sim::stats::RETIRE_TICKS as f32;
+            let (x, y) = (
+                screen.x - w * 0.5,
+                screen.y + zoom * (draw_scale * 0.5 + 0.05),
+            );
+            draw_rectangle(x, y, w, 3.0, HP_BACK);
+            draw_rectangle(x, y, w * fraction.min(1.0), 3.0, SCRAP_COLOR);
         }
     }
 }

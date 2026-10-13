@@ -137,6 +137,8 @@ pub enum Action {
     DeleteSave,
     ReturnCargo,
     Accompany,
+    /// No default key: one keystroke should not scrap an army.
+    Retire,
 }
 impl Action {
     pub fn label(self) -> String {
@@ -172,6 +174,7 @@ impl Action {
             Self::Unload => "Unload here".into(),
             Self::ReturnCargo => "Return cargo".into(),
             Self::Accompany => "Accompany".into(),
+            Self::Retire => "Retire at a Crucible".into(),
             Self::ReplayPause => "Pause replay".into(),
             Self::ReplayBack => "Seek back 25 seconds".into(),
             Self::ReplayForward => "Seek forward 25 seconds".into(),
@@ -197,7 +200,7 @@ impl Action {
             Self::TrainSlot(_) | Self::SetRally | Self::ClearRally => 8,
             Self::Upgrade => 4 | 8,
             Self::StopOrScrap => UNITS | 4,
-            Self::Patrol | Self::Accompany => UNITS,
+            Self::Patrol | Self::Accompany | Self::Retire => UNITS,
             Self::Salvage | Self::Run | Self::Hunt | Self::RepairUnit => UNITS | 0b1_1111_0000,
             Self::Unload => 2,
             Self::ReturnCargo => 4096 | 0b1_1111_0000,

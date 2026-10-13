@@ -269,7 +269,7 @@ fn rally_order(state: &State, newborn: UnitId, rally: TilePos) -> Order {
         return Order::Harvest {
             node: rally,
             anchor: rally,
-            retiring: false,
+            withdrawing: false,
         };
     }
     let reverse = super::goals::spread_scan_reversed(state, rally, &[newborn]);

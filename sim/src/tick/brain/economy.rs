@@ -333,8 +333,10 @@ pub(super) fn repair_unit(
             && t.hp > 0
             && t.hp < t.kind.stats().max_hp
             && t.domain() == crate::stats::Domain::Ground
+            && !t.retiring()
     }) else {
-        // Healed, dead, taken off, or never a patient: the job is over.
+        // Healed, dead, taken off, retiring, or never a patient: the job is
+        // over.
         state.unit_mut(id).expect("caller checked").advance_queue();
         return;
     };
@@ -399,6 +401,7 @@ pub(super) fn commit_unit_welds(
                     && t.hp > 0
                     && t.hp < t.kind.stats().max_hp
                     && t.domain() == crate::stats::Domain::Ground
+                    && !t.retiring()
             }) else {
                 stationary[slot] = false;
                 continue;
@@ -647,7 +650,7 @@ pub(super) fn harvest(
     id: UnitId,
     node: TilePos,
     anchor: TilePos,
-    retiring: bool,
+    withdrawing: bool,
     events: &mut Vec<Event>,
 ) {
     let unit = state.unit(id).expect("caller checked");
@@ -657,11 +660,11 @@ pub(super) fn harvest(
         return;
     };
     if unit.unloading().is_some() {
-        deliver(state, danger, id, events, retiring);
+        deliver(state, danger, id, events, withdrawing);
         return;
     }
-    if retiring {
-        retire(state, danger, id, events);
+    if withdrawing {
+        withdraw(state, danger, id, events);
         return;
     }
 
@@ -678,11 +681,11 @@ pub(super) fn harvest(
             switch_source(state, id, next.pos, anchor);
             return;
         }
-        begin_retirement(state, id, node, anchor);
+        begin_withdrawal(state, id, node, anchor);
         if carrying > 0 {
             deliver(state, danger, id, events, true);
         } else {
-            retire(state, danger, id, events);
+            withdraw(state, danger, id, events);
         }
         return;
     }
@@ -973,7 +976,7 @@ fn approach_source(
 /// that crosses no known-danger tile except, when unavoidable, the final
 /// work position itself. If even that route is sealed, the ordinary route
 /// remains the explicit command's last resort instead of silently turning
-/// a player's order into retirement.
+/// a player's order into withdrawal.
 fn approach_authoritative_source(
     state: &mut State,
     danger: &GroundSalvageDanger,
@@ -1437,18 +1440,18 @@ fn switch_source(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) 
     unit.order = Order::Harvest {
         node,
         anchor,
-        retiring: false,
+        withdrawing: false,
     };
     unit.path = None;
     unit.progress = 0;
 }
 
-fn begin_retirement(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) {
+fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) {
     let unit = state.unit_mut(id).expect("caller checked");
     unit.order = Order::Harvest {
         node,
         anchor,
-        retiring: true,
+        withdrawing: true,
     };
     unit.path = None;
     unit.progress = 0;
@@ -1467,11 +1470,11 @@ fn source_route_failed(
         return;
     }
     let carrying = state.unit(id).expect("caller checked").carrying();
-    begin_retirement(state, id, node, anchor);
+    begin_withdrawal(state, id, node, anchor);
     if carrying > 0 {
         deliver(state, danger, id, events, true);
     } else {
-        retire(state, danger, id, events);
+        withdraw(state, danger, id, events);
     }
 }
 
@@ -1678,14 +1681,14 @@ pub(super) fn return_cargo(
 }
 
 /// Haul the load to a reachable own Foundry and deposit when adjacent.
-/// A retiring contract advances its queued program only after that safe
+/// A withdrawing contract advances its queued program only after that safe
 /// arrival; a live contract keeps its anchored zone and returns next tick.
 fn deliver(
     state: &mut State,
     danger: &GroundSalvageDanger,
     id: UnitId,
     events: &mut Vec<Event>,
-    retiring: bool,
+    withdrawing: bool,
 ) {
     let unit = state.unit(id).expect("caller checked");
     let drop_offs = drop_offs_by_distance(state, id);
@@ -1708,7 +1711,7 @@ fn deliver(
             unit.end_release();
             return;
         }
-        if unload_cargo(state, id, foundry, events) && retiring {
+        if unload_cargo(state, id, foundry, events) && withdrawing {
             finish_delivery(state, id, foundry);
         }
         return;
@@ -1732,10 +1735,10 @@ fn deliver(
     });
 }
 
-/// Sticky retirement: a dry/unsafe worker reaches a built Foundry before
+/// Sticky withdrawal: a dry/unsafe worker reaches a built Foundry before
 /// becoming idle or starting the next queued order. If no Foundry is
 /// reachable, the queue still advances once instead of being erased.
-fn retire(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &mut Vec<Event>) {
+fn withdraw(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &mut Vec<Event>) {
     if state.unit(id).expect("caller checked").carrying() > 0 {
         deliver(state, danger, id, events, true);
         return;
@@ -1766,7 +1769,7 @@ fn retire(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &
 }
 
 /// The player's completed drop-off structures, nearest first. The one
-/// funnel deliveries and retirement consult — a kind joins the drop-off
+/// funnel deliveries and withdrawal consult — a kind joins the drop-off
 /// network by answering [`crate::stats::BuildingKind::is_drop_off`].
 fn drop_offs_by_distance(state: &State, id: UnitId) -> Vec<BuildingId> {
     let unit = state.unit(id).expect("caller checked");

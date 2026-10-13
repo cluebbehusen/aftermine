@@ -114,10 +114,11 @@ fn command_tag(command: &Command) -> usize {
         Command::ReturnCargo { .. } => 22,
         Command::CancelOrder { .. } => 23,
         Command::Accompany { .. } => 24,
+        Command::Retire { .. } => 25,
     }
 }
 
-const COMMAND_VARIANTS: usize = 25;
+const COMMAND_VARIANTS: usize = 26;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -364,6 +365,10 @@ fn every_command_variant_survives_the_send_command_wire() {
         Command::Accompany {
             units: vec![UnitId(6), UnitId(7)],
             target: UnitId(8),
+            queue: true,
+        },
+        Command::Retire {
+            units: vec![UnitId(6)],
             queue: true,
         },
     ];

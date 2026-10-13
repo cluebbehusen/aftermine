@@ -1716,7 +1716,7 @@ impl BuildingKind {
     }
 
     /// Whether harvesters can deliver their cargo here. The one funnel
-    /// every drop-off decision consults — deliveries, retirement homes,
+    /// every drop-off decision consults — deliveries, withdrawal homes,
     /// and route planning alike.
     pub const fn is_drop_off(self) -> bool {
         matches!(self, BuildingKind::Foundry)
@@ -1912,6 +1912,28 @@ pub fn unit_repair_debit(kind: UnitKind, progress: u32) -> u32 {
 /// (against `max_hp`). A full-health salvage banks cost * permille / 1000.
 pub const SALVAGE_REFUND_PERMILLE: u64 = 800;
 
+/// Per-mille of a unit's cost a retirement at a Crucible refunds at full
+/// health, scaled linearly by remaining hp. Units price like buildings:
+/// below [`REPAIR_COST_PERMILLE`] per hp, so welding a machine up and then
+/// retiring it always loses scrap.
+pub const RETIRE_REFUND_PERMILLE: u64 = 500;
+
+/// Ticks a unit stands at a Crucible being dismantled. Long enough to read,
+/// and to leave fire time to win, so a dying machine cannot cash out.
+pub const RETIRE_TICKS: u32 = 60;
+
+/// How near a Crucible's footprint a retiring unit stands or hovers to be
+/// dismantled, in tiles. A doorstep tile is within it.
+pub const RETIRE_REACH: Fx = Fx::lit("1.5");
+
+/// Scrap a retirement refunds for a `kind` machine at `hp`.
+pub fn retire_refund(kind: UnitKind, hp: u32) -> u32 {
+    let stats = kind.stats();
+    let millis = u64::from(stats.cost) * RETIRE_REFUND_PERMILLE * u64::from(hp.min(stats.max_hp))
+        / u64::from(stats.max_hp);
+    u32::try_from(millis / 1000).expect("a refund never exceeds the unit's cost")
+}
+
 /// Reach of the Repair Bay's aura, in tiles from the nearest point of its
 /// footprint. Shorter than every siege weapon's reach, so the counter to a
 /// healed defense is firing from outside it.
@@ -1988,7 +2010,7 @@ pub const UNLOAD_TICKS: u8 = 10;
 
 /// A radar blip only makes salvage unsafe when it is this close to a
 /// candidate source. Contacts carry no identity or range, so a distant
-/// blip must not retire an otherwise healthy work zone.
+/// blip must not withdraw an otherwise healthy work zone.
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile

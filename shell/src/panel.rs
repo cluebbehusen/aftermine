@@ -92,6 +92,8 @@ pub enum VerbIcon {
     Hunt,
     /// The escort slots around a guarded unit.
     Accompany,
+    /// A gear melting down to scrap.
+    Retire,
 }
 
 /// What clicking a card does.
@@ -600,6 +602,17 @@ fn order_subject(
                 Some(frac),
             ))
         }
+        // The Crucible taking the machine apart. The dismantling meter
+        // draws over the machine itself.
+        Order::Retire { crucible, .. } => {
+            let b = game.state.building(*crucible)?;
+            Some((
+                OrderSubject::Building(b.kind, owner_of(b.player)),
+                entity_name(b.kind.tier_name(b.tier)),
+                false,
+                None,
+            ))
+        }
         // A pending found's subject is the kind it will claim — drawn as
         // a ghost, since nothing stands yet.
         Order::Found { kind, .. } => Some((
@@ -710,6 +723,11 @@ fn order_card(
             VerbIcon::Accompany,
             "Accompany",
             "Escorting a unit: keeping pace, fighting threats near it, and welding its group whenever it stops.",
+        ),
+        Order::Retire { .. } => (
+            VerbIcon::Retire,
+            "Retire",
+            "Going to a Crucible to be dismantled for scrap scaled by remaining health.",
         ),
     };
     let subject = if own {
@@ -1319,6 +1337,28 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             desc: vec![
                 "Select a damaged friendly ground unit to repair it.".into(),
                 "Each restored hit point consumes scrap.".into(),
+            ],
+            progress: None,
+        });
+    }
+    if first.player == game.presentation.human {
+        let crucible = game.state.buildings().iter().any(|b| {
+            b.player == game.presentation.human
+                && b.built()
+                && b.hp > 0
+                && b.kind == oxide_sim::BuildingKind::Crucible
+        });
+        panel.cards.push(Card {
+            icon: CardIcon::Verb(VerbIcon::Retire),
+            title: "Retire".into(),
+            cost: None,
+            hotkey: chord(bindings, Action::Retire),
+            action: CardAction::Dispatch(Action::Retire),
+            enabled: crucible,
+            why: (!crucible).then(|| "needs a completed Crucible".to_string()),
+            desc: vec![
+                "Send the selection to the nearest Crucible to be dismantled.".into(),
+                "Refunds half the cost, scaled by remaining health.".into(),
             ],
             progress: None,
         });
