@@ -150,6 +150,9 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 restored.paste(image.crop(crop), crop[:2])
                 self.assertEqual(image.tobytes(), restored.tobytes())
             tag = gen.variant_tag(variant)
+            self.assertFalse(
+                any(key.startswith(f"piledriver{tag}_action") for key in self.registry)
+            )
             for age in range(piledriver_final.RELOAD_FRAMES):
                 self.assertEqual(
                     self.registry[

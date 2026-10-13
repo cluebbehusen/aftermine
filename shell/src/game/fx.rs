@@ -733,7 +733,6 @@ impl Presentation {
             } = &mut fx.kind
                 && age >= style.life() * 0.6
                 && let Some(sound) = impact_sound.take()
-                && age < style.life()
             {
                 self.sounds_pending.push((sound, Some(*to)));
             }

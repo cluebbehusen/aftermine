@@ -2363,3 +2363,47 @@ fn piledriver_impact_waits_for_visual_contact_and_clears_on_seek() {
         "seek discards queued impacts"
     );
 }
+
+#[test]
+fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
+    for (speed, wall_dt) in [(1.0, 0.3), (16.0, 1.0 / 60.0), (64.0, 1.0 / 60.0)] {
+        let mut game =
+            Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280., 800.)).unwrap();
+        let at = game.state.units()[0].pos;
+        game.presentation.spawn_fx(
+            &game.state,
+            &[Event::AttackHit {
+                attacker: UnitId(999),
+                attacker_kind: UnitKind::Piledriver,
+                weapon: 0,
+                target: None,
+                attacker_pos: at,
+                target_pos: at,
+            }],
+        );
+        game.presentation.sounds_pending.clear();
+        game.clock.paused = false;
+        game.clock.speed = speed;
+        game.advance_wall_clock(wall_dt, None);
+        assert!(game.state.current_tick() >= 5);
+        game.update_fx(wall_dt);
+        let impacts = |game: &Game| {
+            game.presentation
+                .sounds_pending
+                .iter()
+                .filter(|(kind, _)| *kind == SoundKind::PiledriverImpact)
+                .count()
+        };
+        assert_eq!(impacts(&game), 1, "speed={speed}");
+        assert!(!game.presentation.fx.iter().any(|fx| matches!(
+            fx.kind,
+            EffectKind::DirectShot {
+                attacker: Some(UnitId(999)),
+                ..
+            }
+        )));
+        game.presentation.sounds_pending.clear();
+        game.update_fx(wall_dt);
+        assert_eq!(impacts(&game), 0, "a pruned report cannot repeat its sound");
+    }
+}

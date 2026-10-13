@@ -339,13 +339,9 @@ def install_piledriver(registry: dict[str, Image.Image], out: Path) -> None:
             frames[f"piledriver{tag}{suffix}"] = image
             frames[f"rig_piledriver_hull{tag}{suffix}"] = finish(_hull(variant, move))
         frames[f"rig_piledriver_mount{tag}"] = gun.crop(MOUNT_CROP)
-        body = render_body(variant, 1.0)
         for age in range(RELOAD_FRAMES):
             gun = render_gun(variant, age)
             frames[f"rig_piledriver_mount{tag}_action{age + 1}"] = gun.crop(MOUNT_CROP)
-            image = body.copy()
-            image.alpha_composite(gun)
-            frames[f"piledriver{tag}_action{age + 1}"] = image
         for step in range(ANCHOR_STEPS + 1):
             suffix = f"_action{step}" if step else ""
             frames[f"piledriver_anchors{tag}{suffix}"] = render_anchors(
