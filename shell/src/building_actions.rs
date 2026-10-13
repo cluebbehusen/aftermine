@@ -196,7 +196,8 @@ impl SelectedBuildings {
                 why: None,
                 desc: vec![
                     format!("Set one destination for {} producers.", producers.len()),
-                    "A scrap rally sends new Harvesters straight to work.".into(),
+                    "A scrap rally sends new Harvesters straight to work;".into(),
+                    "a friendly unit has every new unit escort it.".into(),
                 ],
                 progress: None,
             });

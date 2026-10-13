@@ -188,6 +188,14 @@
       "paired_animation": null
     },
     {
+      "category": "generic-weapon",
+      "filename": "intercept_zap.wav",
+      "min_gap": 0.08,
+      "mixer_volume": 0.24,
+      "name": "intercept_zap",
+      "paired_animation": null
+    },
+    {
       "category": "signature-weapon",
       "filename": "attack_bombard.wav",
       "min_gap": 0.2,

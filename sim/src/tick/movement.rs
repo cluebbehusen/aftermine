@@ -109,7 +109,11 @@ fn work_aim(state: &State, unit: &crate::state::Unit) -> Option<Vec2Fx> {
         Order::Repair { building } | Order::Salvage { building } => state
             .building(building)
             .map(|b| state.contact_surface(b).closest(unit.pos)),
-        Order::RepairUnit { unit: patient } => state.unit(patient).map(|u| u.pos),
+        Order::RepairUnit { unit: patient }
+        | Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state.unit(patient).map(|u| u.pos),
         _ => None,
     }
 }
@@ -455,8 +459,11 @@ fn steer_turn_limited(
     let accept = stats.turn_acceptance();
     let arrive_sq = accept * accept;
     // A landing's final leg is never accepted by the ring: the brain owns
-    // touchdown at the tile center.
-    let landing = matches!(unit.order, Order::Land { .. });
+    // touchdown at the tile center. A retirement's pad is a landing too.
+    let landing = matches!(
+        unit.order,
+        Order::Land { .. } | Order::Retire { pad: Some(_), .. }
+    );
     // Accept every waypoint the arc has already effectively reached. A
     // terrain-routing waypoint is not disposable merely because the wide
     // acceptance ring overlaps it: only skip it when the direct air segment
@@ -670,7 +677,9 @@ fn is_anchored(unit: &crate::state::Unit) -> bool {
                     | Order::Build { .. }
                     | Order::Salvage { .. }
                     | Order::RepairUnit { .. }
+                    | Order::Accompany { weld: Some(_), .. }
                     | Order::ReturnCargo { .. }
+                    | Order::Retire { .. }
             )
 }
 

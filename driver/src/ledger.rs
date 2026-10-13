@@ -143,12 +143,13 @@ struct Record {
     received: u64,
     passive: u64,
     produced: u64,
+    intercepted: u64,
 }
 
 /// Scrap value of damage dealt, by what was hit and where.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dealt {
-    /// To armed units.
+    /// To armed units and the point defenders that shield them.
     pub army: u64,
     /// To workers.
     pub workers: u64,
@@ -213,6 +214,8 @@ pub struct KindLedger {
     pub deaths: u64,
     /// Ticks the destroyed ones lived, summed.
     pub lifetime: u64,
+    /// Hostile shells shot down in flight.
+    pub intercepted: u64,
 }
 
 impl KindLedger {
@@ -231,6 +234,7 @@ impl KindLedger {
         self.produced += other.produced;
         self.deaths += other.deaths;
         self.lifetime += other.lifetime;
+        self.intercepted += other.intercepted;
     }
 }
 
@@ -251,6 +255,9 @@ pub struct SeatLedger {
     pub spend: BTreeMap<String, [u64; 4]>,
     /// Scrap refunded by cancelled and salvaged buildings.
     pub refunds: u64,
+    /// Scrap refunded by units retired at a Crucible: recycling, neither
+    /// income nor combat value.
+    pub retired: u64,
     /// Net worth every [`WORTH_PERIOD`] ticks after `start`: units, riders
     /// included, and buildings at their worth times their health fraction,
     /// plus the bank.
@@ -373,6 +380,8 @@ struct Sources {
     born: Vec<(Key, UnitKind, u8)>,
     /// Where each unit that died this tick died.
     died: BTreeMap<Key, TilePos>,
+    /// Each unit retired this tick, with its hp as it came apart.
+    retired: BTreeMap<Key, u32>,
 }
 
 /// The ledger.
@@ -384,6 +393,7 @@ pub struct ImpactLedger {
     unattributed: Vec<u64>,
     spend: Vec<BTreeMap<String, [u64; 4]>>,
     refunds: Vec<u64>,
+    retired: Vec<u64>,
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
     /// The Crucibles and wreck in their reach as a smelting tick begins.
@@ -489,7 +499,7 @@ fn class(kind: UnitKind) -> Class {
     let stats = kind.stats();
     if stats.harvest.is_some() {
         Class::Worker
-    } else if stats.can_fight() {
+    } else if stats.can_fight() || stats.point_defense.is_some() {
         Class::Army
     } else {
         Class::Other
@@ -666,6 +676,7 @@ impl ImpactLedger {
             unattributed: vec![0; seats],
             spend: vec![BTreeMap::new(); seats],
             refunds: vec![0; seats],
+            retired: vec![0; seats],
             worth: vec![Vec::new(); seats],
             shells: Vec::new(),
             hearths: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
@@ -816,25 +827,28 @@ impl ImpactLedger {
                     player,
                     amount,
                 } => {
-                    let cargo = self.cargo.remove(unit).unwrap_or_default();
-                    let wreck = cargo.wreck.min(*amount);
-                    for (source, scrap) in [
-                        (IncomeSource::FieldHarvest, *amount - wreck),
-                        (IncomeSource::WreckSalvage, wreck),
-                    ] {
-                        if scrap > 0 {
-                            self.credits.push(Credit {
-                                seat: player.0,
-                                source,
-                                scrap: u64::from(scrap),
-                            });
-                        }
-                    }
-                    if let Some(record) = self.records.get_mut(&Key::Unit(*unit)) {
-                        record.harvested += u64::from(*amount);
-                    }
+                    self.delivered(player.0, *unit, *amount);
                     if let Some(record) = self.records.get_mut(&Key::Building(*foundry)) {
                         record.received += u64::from(*amount);
+                    }
+                }
+                // A retirement is no death: the body leaves without `gone`,
+                // and only the hp it lost before coming apart is damage
+                // taken. The load it carried banks like a delivery.
+                Event::UnitRetired {
+                    unit,
+                    player,
+                    crucible,
+                    hp,
+                    refund,
+                    cargo,
+                    ..
+                } => {
+                    sources.retired.insert(Key::Unit(*unit), *hp);
+                    self.retired[usize::from(player.0)] += u64::from(*refund);
+                    self.delivered(player.0, *unit, *cargo);
+                    if let Some(record) = self.records.get_mut(&Key::Building(*crucible)) {
+                        record.received += u64::from(*cargo);
                     }
                 }
                 Event::UnitRepaired {
@@ -948,6 +962,25 @@ impl ImpactLedger {
                         sources.splash.push((at, radius, shell.source));
                     }
                 }
+                Event::ShellIntercepted {
+                    defender,
+                    player,
+                    impact,
+                    arrival,
+                    ..
+                } => {
+                    let to = TilePos::containing(*impact);
+                    if let Some(index) = self.shells.iter().position(|shell| {
+                        shell.owner == player.0
+                            && shell.to == to
+                            && shell.lands.abs_diff(*arrival) <= SHELL_SLACK
+                    }) {
+                        self.shells.remove(index);
+                    }
+                    if let Some(record) = self.records.get_mut(&Key::Unit(*defender)) {
+                        record.intercepted += 1;
+                    }
+                }
                 Event::AircraftImpacted { crash } => {
                     if let Some(profile) = crash.kind.stats().crash {
                         sources.splash.push((
@@ -1052,6 +1085,28 @@ impl ImpactLedger {
         }
     }
 
+    /// Credits `amount` of `unit`'s cargo to `seat` as harvest income, split
+    /// by how much of the load was wreck.
+    fn delivered(&mut self, seat: u8, unit: UnitId, amount: u32) {
+        let cargo = self.cargo.remove(&unit).unwrap_or_default();
+        let wreck = cargo.wreck.min(amount);
+        for (source, scrap) in [
+            (IncomeSource::FieldHarvest, amount - wreck),
+            (IncomeSource::WreckSalvage, wreck),
+        ] {
+            if scrap > 0 {
+                self.credits.push(Credit {
+                    seat,
+                    source,
+                    scrap: u64::from(scrap),
+                });
+            }
+        }
+        if let Some(record) = self.records.get_mut(&Key::Unit(unit)) {
+            record.harvested += u64::from(amount);
+        }
+    }
+
     fn gone(&mut self, key: Key, now: u64) {
         if let Some(record) = self.records.get_mut(&key) {
             record.gone = Some(now);
@@ -1120,6 +1175,18 @@ impl ImpactLedger {
                 continue;
             }
             let gained = sources.repaired.get(&pre.key).copied().unwrap_or(0);
+            // A retired machine has no body after the tick; what it lost
+            // that tick is the hp between its last body and its retirement.
+            if let Some(&hp) = sources.retired.get(&pre.key) {
+                self.attribute(
+                    &before,
+                    pre,
+                    (pre.hp + gained).saturating_sub(hp),
+                    false,
+                    sources,
+                );
+                continue;
+            }
             let lost = match after.get(cursor) {
                 // An upgrade rebuilds the building; what it loses to that is
                 // no one's damage.
@@ -1383,6 +1450,7 @@ impl ImpactLedger {
                 unattributed: scrap(self.unattributed[seat]),
                 spend: self.spend[seat].clone(),
                 refunds: self.refunds[seat],
+                retired: self.retired[seat],
                 worth: self.worth[seat].clone(),
                 start: self.start,
                 end,
@@ -1414,6 +1482,7 @@ impl ImpactLedger {
             entry.received += record.received;
             entry.passive += record.passive;
             entry.produced += record.produced;
+            entry.intercepted += record.intercepted;
             if let Some(gone) = record.gone {
                 entry.deaths += 1;
                 entry.lifetime += gone.min(end).saturating_sub(record.born);
@@ -1606,7 +1675,7 @@ impl LedgerPool {
         let unit_spend: u64 = self.units.values().map(|totals| totals.paid).sum();
         let _ = writeln!(
             out,
-            "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6}",
+            "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6} {:>7}",
             "unit",
             "built",
             "spend",
@@ -1621,7 +1690,8 @@ impl LedgerPool {
             "enabled",
             "repaired",
             "died",
-            "life s"
+            "life s",
+            "stopped"
         );
         let mut units: Vec<(&String, &KindLedger)> = self.units.iter().collect();
         units.sort_by_key(|(kind, totals)| (std::cmp::Reverse(totals.paid), (*kind).clone()));
@@ -1629,7 +1699,7 @@ impl LedgerPool {
             let dealt = totals.dealt.total();
             let _ = writeln!(
                 out,
-                "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6}",
+                "{indent}{:<12} {:>6} {:>6} {:>6} | {:>5} {:>5} {:>5} {:>5} | {:>5} {:>5} {:>5} | {:>7} {:>8} {:>5} {:>6} {:>7}",
                 kind,
                 totals.built + totals.starting,
                 share(totals.paid, unit_spend),
@@ -1645,6 +1715,7 @@ impl LedgerPool {
                 ratio(totals.repaired, totals.paid),
                 share(totals.deaths, totals.built + totals.starting),
                 life(totals),
+                totals.intercepted,
             );
         }
         let _ = writeln!(

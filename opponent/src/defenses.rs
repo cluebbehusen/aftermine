@@ -17,7 +17,7 @@ use crate::profile::{PersonalityTraits, ResolvedProfile};
 use crate::workers;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData};
+use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::stats::{
     BuildingStats, CHARGE_DAMAGE, Domain, FOUNDRY_REPAIR_PRICE, REPAIR_BAY_RADIUS, WeaponStats,
 };
@@ -750,34 +750,43 @@ impl<'a> Guard<'a> {
     }
 
     /// The best spot for a Repair Bay beside a guarded building: where its
-    /// aura reaches the most missing value among the seat's wounded ground
-    /// units and damaged buildings that no Repair Bay reaches yet, as its
-    /// anchor and that value.
+    /// aura reaches the most missing value among the seat's idle units wounded
+    /// enough to go to a Bay and damaged buildings that no Repair Bay treats
+    /// yet, as its anchor and that value. A Bay treats the buildings it reaches and as many of the
+    /// most wounded units in reach as it has patient slots, after earlier
+    /// Bays took theirs.
     fn bay(&self) -> Option<(TilePos, u64)> {
         let observation = self.observation;
         let size = BuildingKind::RepairBay.size();
-        let bays: Vec<TilePos> = observation
+        let anchors: Vec<TilePos> = observation
             .my_buildings
             .iter()
             .filter(|building| building.kind == BuildingKind::RepairBay)
             .map(|building| building.anchor)
             .collect();
-        let units = observation
+        let bays: Vec<Span> = anchors
+            .iter()
+            .map(|anchor| Span::of(size, *anchor))
+            .collect();
+        // Only units resting with wounds deep enough to send them to a Bay
+        // call for one: a Bay placed by units passing through stands empty
+        // once they move on.
+        let hurt: Vec<&UnitObs> = observation
             .my_units
             .iter()
-            .filter(|unit| unit.kind.stats().domain == Domain::Ground)
-            .map(|unit| {
+            .filter(|unit| {
+                let max = u64::from(unit.kind.stats().max_hp);
+                unit.idle && u64::from(unit.hp) * 1_000 <= max * (1_000 - workers::UNIT_WELD_DAMAGE)
+            })
+            .collect();
+        let treated = crate::missions::treating(&anchors, &hurt);
+        let units = hurt
+            .iter()
+            .zip(&treated)
+            .filter(|(_, treated)| treated.is_none())
+            .map(|(unit, _)| {
                 let stats = unit.kind.stats();
-                let (x, y) = doubled(unit.tile);
-                (
-                    Span {
-                        x: (x, x),
-                        y: (y, y),
-                    },
-                    stats.cost,
-                    unit.hp,
-                    stats.max_hp,
-                )
+                (Span::point(unit.tile), stats.cost, unit.hp, stats.max_hp)
             });
         let buildings = observation
             .my_buildings
@@ -793,7 +802,8 @@ impl<'a> Guard<'a> {
                     .map_or(FOUNDRY_REPAIR_PRICE, |construction| construction.cost);
                 let span = Span::of(building.kind.size(), building.anchor);
                 (span, price, building.hp, stats.max_hp)
-            });
+            })
+            .filter(|(span, _, _, _)| !bays.iter().any(|bay| bay.aura(*span)));
         let wounds: Vec<(Span, u64)> = units
             .chain(buildings)
             .filter(|(_, _, hp, max)| hp < max)
@@ -802,7 +812,6 @@ impl<'a> Guard<'a> {
                 let missing = u64::from(price) * (max - u64::from(hp).min(max)) / max;
                 (span, missing)
             })
-            .filter(|(span, _)| !bays.iter().any(|bay| Span::of(size, *bay).aura(*span)))
             .collect();
         if wounds.iter().map(|(_, missing)| missing).sum::<u64>() < BAY_WOUNDS {
             return None;
@@ -2079,13 +2088,22 @@ fn distance2(a: (i64, i64), b: (i64, i64)) -> i64 {
 
 /// A footprint's extent, or a unit's centre, in doubled coordinates.
 #[derive(Clone, Copy)]
-struct Span {
+pub(crate) struct Span {
     x: (i64, i64),
     y: (i64, i64),
 }
 
 impl Span {
-    fn of(size: (i32, i32), anchor: TilePos) -> Self {
+    /// The centre of `tile`.
+    pub(crate) fn point(tile: TilePos) -> Self {
+        let (x, y) = doubled(tile);
+        Span {
+            x: (x, x),
+            y: (y, y),
+        }
+    }
+
+    pub(crate) fn of(size: (i32, i32), anchor: TilePos) -> Self {
         let (x, y) = (2 * i64::from(anchor.x), 2 * i64::from(anchor.y));
         Span {
             x: (x, x + 2 * i64::from(size.0)),
@@ -2096,7 +2114,7 @@ impl Span {
     /// Whether a Repair Bay over this span heals `other`: as the simulation
     /// measures, the straight distance between their nearest edges is within
     /// the aura's radius.
-    fn aura(self, other: Span) -> bool {
+    pub(crate) fn aura(self, other: Span) -> bool {
         let apart = |a: (i64, i64), b: (i64, i64)| (a.0 - b.1).max(b.0 - a.1).max(0);
         let (dx, dy) = (apart(self.x, other.x), apart(self.y, other.y));
         let reach = (REPAIR_BAY_RADIUS + REPAIR_BAY_RADIUS).to_num::<i64>();

@@ -45,14 +45,23 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
 
     for variant in gen.PALETTES:
         tag = gen.variant_tag(variant)
-        for kind in ("sentinel", "warden", "lancer", "breaker", "avalanche"):
+        for kind in (
+            "sentinel",
+            "warden",
+            "lancer",
+            "breaker",
+            "piledriver",
+            "avalanche",
+        ):
             count = 6 if kind == "lancer" else 4
             for suffix, move, action in [
                 ("", 0, 0),
                 ("_move1", 1, 0),
                 ("_move2", 2, 0),
             ] + [(f"_action{i}", 0, i) for i in range(1, count + 1)]:
-                if kind == "breaker":
+                # Placeholder: the Piledriver ships the Breaker's frames until
+                # its own art is approved.
+                if kind in ("breaker", "piledriver"):
                     image = ground.render_breaker(variant, move, action)
                 elif kind == "avalanche":
                     image = economy.render_avalanche(variant, move, action)

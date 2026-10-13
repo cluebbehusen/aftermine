@@ -342,12 +342,14 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Talon
         | UnitKind::Warden
         | UnitKind::Condor
-        | UnitKind::Breaker => 0,
+        | UnitKind::Breaker
+        | UnitKind::Piledriver => 0,
         UnitKind::Harvester
         | UnitKind::Excavator
         | UnitKind::Kestrel
         | UnitKind::Skyhook
         | UnitKind::Sapper
+        | UnitKind::Mantle
         | UnitKind::Surveyor => 0,
     }
 }
@@ -370,12 +372,14 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Talon
             | UnitKind::Warden
             | UnitKind::Breaker
+            | UnitKind::Piledriver
             | UnitKind::Avalanche => 1,
             UnitKind::Harvester
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook
             | UnitKind::Sapper
+            | UnitKind::Mantle
             | UnitKind::Surveyor => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
@@ -388,12 +392,14 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Talon
             | UnitKind::Warden
             | UnitKind::Condor
-            | UnitKind::Breaker => 2 + cycle_index(progress, 2),
+            | UnitKind::Breaker
+            | UnitKind::Piledriver => 2 + cycle_index(progress, 2),
             UnitKind::Harvester
             | UnitKind::Excavator
             | UnitKind::Kestrel
             | UnitKind::Skyhook
             | UnitKind::Sapper
+            | UnitKind::Mantle
             | UnitKind::Surveyor => 0,
         },
     }

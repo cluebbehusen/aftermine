@@ -224,7 +224,7 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
 fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
     let scratch = Scratch::new();
     let scenario_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../scenarios/skirmish.json")
+        .join("../fixtures/scenarios/skirmish.json")
         .canonicalize()
         .context("locating the skirmish scenario")?
         .to_string_lossy()

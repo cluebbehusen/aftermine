@@ -106,6 +106,7 @@ pub(crate) enum MarkerRole {
     Gun,
     Siege,
     AntiAir,
+    PointDefense,
     Scout,
     Transport,
     Demolition,
@@ -320,6 +321,13 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             weapon: Some(weapon(SoundKind::BreakerFire, ShotStyle::Mortar, 0.625)),
             ..plain
         },
+        UnitKind::Piledriver => UnitLook {
+            scale: LARGE_SCALE,
+            gait: Gait::Treads,
+            belts: &[[23., 42., 38., 107.], [90., 42., 105., 107.]],
+            weapon: Some(weapon(SoundKind::BreakerFire, heavy, 0.625)),
+            ..plain
+        },
         UnitKind::Avalanche => UnitLook {
             scale: LARGE_SCALE,
             gait: Gait::Treads,
@@ -344,6 +352,18 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             gait: Gait::Legs,
             weapon: Some(launcher(SoundKind::DemolitionBoom)),
             marker: M::Demolition,
+            ..plain
+        },
+        UnitKind::Mantle => UnitLook {
+            scale: HEAVY_SCALE,
+            gait: Gait::Treads,
+            belts: &[
+                [13., 29., 31., 57.],
+                [97., 29., 115., 57.],
+                [13., 82., 31., 112.],
+                [97., 82., 115., 112.],
+            ],
+            marker: M::PointDefense,
             ..plain
         },
     }

@@ -67,6 +67,7 @@ pub(super) fn schedule(state: &mut State) {
 }
 
 pub(super) fn land(state: &mut State, events: &mut Vec<Event>) {
+    let now = state.tick;
     let due = state
         .aircraft_crashes
         .partition_point(|crash| crash.arrival <= state.tick);
@@ -87,7 +88,7 @@ pub(super) fn land(state: &mut State, events: &mut Vec<Event>) {
                 && state.players[usize::from(unit.player.0)].team != team
                 && unit.pos.dist_sq(crash.impact) <= radius_sq
             {
-                super::damage::unit(unit, profile.damage, events);
+                super::damage::unit(unit, profile.damage, now, events);
             }
         }
         for building in &mut state.buildings {

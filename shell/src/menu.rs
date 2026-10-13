@@ -913,8 +913,12 @@ fn render_preview(scenario: &Scenario) -> Option<PreviewPixels> {
 pub struct ScenarioEntry {
     /// Display name (from the file's own `name` field).
     pub label: String,
-    /// Seats on the map — the browser's section key (1v1 first).
+    /// Seats on the map — with `teams`, the browser's section key (1v1
+    /// first).
     pub seats: usize,
+    /// Teams the seats form, as [`team_count`] counts them: a
+    /// free-for-all has one per seat.
+    pub teams: usize,
     /// One-line browser blurb from the authored metadata, when present:
     /// hook plus pace/mode/richness badges.
     pub blurb: Option<String>,
@@ -963,6 +967,7 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
                     .unwrap_or_default();
                 entries.push(ScenarioEntry {
                     seats: scenario.players.len(),
+                    teams: team_count(scenario.players.iter().map(|p| p.team)),
                     label: scenario.name,
                     blurb,
                     path: Some(path),
@@ -974,6 +979,7 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
     if entries.is_empty() {
         entries.push(ScenarioEntry {
             seats: 2,
+            teams: 2,
             label: Scenario::skirmish().name,
             blurb: None,
             path: None,
@@ -981,10 +987,27 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
         });
     }
     // Sections: 1v1 first (a first Play+Enter must never launch a team
-    // match), bigger formats after, alphabetical within each. Callers
-    // key the remembered pick by path, so re-sorting can't move it.
-    entries.sort_by_key(|e| (e.seats, e.label.to_lowercase()));
+    // match), bigger formats after with team play ahead of a free-for-all
+    // of the same size, alphabetical within each. Callers key the
+    // remembered pick by path, so re-sorting can't move it.
+    entries.sort_by_key(|e| (e.seats, e.teams, e.label.to_lowercase()));
     entries
+}
+
+/// Teams formed by seats with these team indices: seats sharing an index
+/// count once, and a seat with none is its own team.
+fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
+    let mut shared = std::collections::BTreeSet::new();
+    let mut alone = 0;
+    for team in teams {
+        match team {
+            Some(team) => {
+                shared.insert(team);
+            }
+            None => alone += 1,
+        }
+    }
+    shared.len() + alone
 }
 
 #[cfg(test)]
@@ -998,3 +1021,6 @@ mod empty_tests;
 
 #[cfg(test)]
 mod header_tests;
+
+#[cfg(test)]
+mod entry_tests;

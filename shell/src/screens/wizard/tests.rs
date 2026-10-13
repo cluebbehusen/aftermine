@@ -1362,6 +1362,7 @@ fn grid_entries(n: usize) -> Vec<ScenarioEntry> {
     (0..n)
         .map(|i| ScenarioEntry {
             seats: 2,
+            teams: 2,
             label: format!("m{i}"),
             blurb: None,
             path: Some(PathBuf::from(format!("m{i}.json"))),
