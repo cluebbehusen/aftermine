@@ -779,21 +779,24 @@ weapon's projectile payload, which buildings fight or train, and upgrade
 ladders.
 
 `entity_lod` derives full, half, quarter, and eighth-resolution entity textures
-at startup without changing authored atlas bytes. Regions pack in descending
-size order to avoid wasting full-height rows on small mips. Units with layered
-rigs omit unused complete movement/action poses from this cache while retaining
-idle portraits and the independent layers. Independent regions have extruded
-borders; reduction, linear sampling, level blending, and compositing retain
-premultiplied alpha. Physical destination size, including DPI and both axes,
-selects levels with a fixed negative detail bias. Secondary UVs and blend
-weights travel in vertex data; immutable page materials preserve batching
-without reordering translucent layers. The material also handles ordinary
-straight-alpha 2D draws and remains active until the screen boundary. Terrain
-and unrelated effects keep nearest-neighbor sampling. Panel and roster portraits
-share this bank, frame visible alpha bounds, and align to physical pixels.
-Layered portraits use union bounds to preserve the relative positions of bases
-and mounts. Construction subjects and scaffolds share the authored canvas; verb
-pictograms fill their destination without portrait cropping.
+at startup without changing authored atlas bytes. Each sprite packs only its
+painted area, grown by one eighth-resolution texel of transparency and aligned
+to it, so every level samples the area's edge as it would the whole sprite and
+the quad covers just that area. Regions pack in descending size order to avoid
+wasting full-height rows on small mips. Units with layered rigs omit unused
+complete movement/action poses from this cache while retaining idle portraits
+and the independent layers. Independent regions have extruded borders;
+reduction, linear sampling, level blending, and compositing retain premultiplied
+alpha. Physical destination size, including DPI and both axes, selects levels
+with a fixed negative detail bias. Secondary UVs and blend weights travel in
+vertex data; immutable page materials preserve batching without reordering
+translucent layers. The material also handles ordinary straight-alpha 2D draws
+and remains active until the screen boundary. Terrain and unrelated effects keep
+nearest-neighbor sampling. Panel and roster portraits share this bank, frame
+visible alpha bounds, and align to physical pixels. Layered portraits use union
+bounds to preserve the relative positions of bases and mounts. Construction
+subjects and scaffolds share the authored canvas; verb pictograms fill their
+destination without portrait cropping.
 
 `strategic_markers` supplies role and allegiance cues between two zoom
 thresholds in logical pixels per tile. Buildings retain subdued footprints

@@ -4,19 +4,28 @@ use crate::numeric::Fit;
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 const PAGE: usize = 2048;
 const LEVELS: [usize; 4] = [1, 2, 4, 8];
+/// The coarsest level's reduction factor, in source pixels per texel.
+const COARSEST: u32 = 8;
 type Source = [u32; 4];
 #[derive(Debug, Clone, Copy)]
 struct Region {
     page: usize,
     rect: Rect,
 }
+/// A sprite's packed levels, holding only its [`packed_area`].
+#[derive(Debug, Clone, Copy)]
+struct Packed {
+    levels: [Region; 4],
+    /// The packed area as a fraction of the whole sprite.
+    area: Rect,
+}
 pub(crate) struct EntityLod {
     pages: Vec<Texture2D>,
     materials: Vec<Material>,
-    sprites: HashMap<Source, [Region; 4]>,
+    sprites: HashMap<Source, Packed>,
     bounds: HashMap<Source, Rect>,
     contacts: HashMap<Source, crate::sprite_contact::SpriteContact>,
     mesh: RefCell<Mesh>,
@@ -108,6 +117,32 @@ fn opaque_bounds(image: &Image, source: Source) -> Rect {
         (bottom - top) as f32 / h as f32,
     )
 }
+/// The part of a sprite its levels pack, relative to its corner: the
+/// texels with any alpha, grown by at least one coarsest-level texel and
+/// aligned to that level, within the sprite. Every level then samples
+/// transparent texels at the area's edge just as the whole sprite would,
+/// so drawing the area alone looks the same.
+fn packed_area(image: &Image, source: Source) -> Source {
+    let [x, y, w, h] = source;
+    let (mut left, mut top, mut right, mut bottom) = (w, h, 0, 0);
+    for sy in 0..h {
+        for sx in 0..w {
+            if image.bytes[(((y + sy) * u32::from(image.width) + x + sx) * 4 + 3) as usize] > 0 {
+                left = left.min(sx);
+                top = top.min(sy);
+                right = right.max(sx + 1);
+                bottom = bottom.max(sy + 1);
+            }
+        }
+    }
+    if right == 0 {
+        return [0, 0, COARSEST, COARSEST];
+    }
+    let low = |edge: u32| edge.saturating_sub(COARSEST) / COARSEST * COARSEST;
+    let high = |edge: u32, limit: u32| ((edge + COARSEST).div_ceil(COARSEST) * COARSEST).min(limit);
+    let (left, top) = (low(left), low(top));
+    [left, top, high(right, w) - left, high(bottom, h) - top]
+}
 fn contact_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
     manifest
         .iter()
@@ -162,6 +197,7 @@ impl EntityLod {
         let mut packer = Packer::new();
         let mut sprites = HashMap::new();
         let mut bounds = HashMap::new();
+        let mut areas = BTreeMap::new();
         let contact_sources = contact_sources(manifest);
         let mut contacts = HashMap::new();
         for &key in &sources {
@@ -186,6 +222,7 @@ impl EntityLod {
                 "sprite exceeds source atlas page"
             );
             bounds.insert(key, opaque_bounds(&originals[page], local));
+            areas.insert(key, packed_area(&originals[page], local));
             if contact_sources.contains(&key) {
                 contacts.insert(
                     key,
@@ -193,16 +230,28 @@ impl EntityLod {
                 );
             }
         }
-        for (key, level) in packing_order(&sources) {
+        for (key, level) in packing_order(&areas) {
             let page = key[1] as usize / numeric::to_usize(page_height);
+            let area = areas[&key];
             let local = [
-                key[0],
-                key[1] % numeric::to_u32(page_height),
-                key[2],
-                key[3],
+                key[0] + area[0],
+                key[1] % numeric::to_u32(page_height) + area[1],
+                area[2],
+                area[3],
             ];
             let region = packer.insert(&reduce(&originals[page], local, LEVELS[level]));
-            sprites.entry(key).or_insert([region; 4])[level] = region;
+            sprites
+                .entry(key)
+                .or_insert(Packed {
+                    levels: [region; 4],
+                    area: Rect::new(
+                        area[0] as f32 / key[2] as f32,
+                        area[1] as f32 / key[3] as f32,
+                        area[2] as f32 / key[2] as f32,
+                        area[3] as f32 / key[3] as f32,
+                    ),
+                })
+                .levels[level] = region;
         }
         let pages: Vec<_> = packer
             .images
@@ -249,18 +298,23 @@ impl EntityLod {
         let (Some(source), Some(dest)) = (params.source, params.dest_size) else {
             return false;
         };
-        let Some(levels) = self.sprites.get(&source_key(source)) else {
+        let Some(packed) = self.sprites.get(&source_key(source)) else {
             return false;
         };
         let (low, high, blend) = lod_mix(vec2(source.w, source.h), dest * screen_dpi_scale());
-        let a = levels[low];
-        let b = levels[high];
+        let a = packed.levels[low];
+        let b = packed.levels[high];
         // Keep the compatible material through intervening ordinary 2D draws.
         // The screen boundary restores the default material; per-sprite resets split batches.
         gl_use_material(&self.materials[b.page]);
         let mut mesh = self.mesh.borrow_mut();
         mesh.vertices.copy_from_slice(&sprite_vertices(
-            position, tint, params, a.rect, b.rect, blend,
+            position,
+            tint,
+            params,
+            packed.area,
+            [a.rect, b.rect],
+            blend,
         ));
         mesh.texture = Some(self.pages[a.page].clone());
         draw_mesh(&mesh);
@@ -269,28 +323,33 @@ impl EntityLod {
     }
 }
 // Sort by shelf height first so small mip levels cannot waste full-size rows.
-fn packing_order(sources: &BTreeSet<Source>) -> Vec<(Source, usize)> {
-    let mut entries: Vec<_> = sources
+fn packing_order(areas: &BTreeMap<Source, Source>) -> Vec<(Source, usize)> {
+    let mut entries: Vec<_> = areas
         .iter()
-        .flat_map(|&key| (0..4).map(move |level| (key, level)))
+        .flat_map(|(&key, &area)| (0..4).map(move |level| (key, area, level)))
         .collect();
-    entries.sort_by_key(|&(key, level)| {
+    entries.sort_by_key(|&(key, area, level)| {
         (
-            std::cmp::Reverse(key[3] / LEVELS[level].fit::<u32>()),
-            std::cmp::Reverse(key[2] / LEVELS[level].fit::<u32>()),
+            std::cmp::Reverse(area[3] / LEVELS[level].fit::<u32>()),
+            std::cmp::Reverse(area[2] / LEVELS[level].fit::<u32>()),
             key,
             level,
         )
     });
     entries
+        .into_iter()
+        .map(|(key, _, level)| (key, level))
+        .collect()
 }
 
+/// The quad drawing `area`, a fraction of the whole sprite, sampled from
+/// the two packed levels `[a, b]` that hold it.
 fn sprite_vertices(
     position: Vec2,
     tint: Color,
     params: &DrawTextureParams,
-    a: Rect,
-    b: Rect,
+    area: Rect,
+    [a, b]: [Rect; 2],
     blend: f32,
 ) -> [Vertex; 4] {
     let mut origin = position;
@@ -312,7 +371,7 @@ fn sprite_vertices(
         vec2(0.0, 1.0),
     ]
     .map(|corner| {
-        let offset = origin + corner * size - pivot;
+        let offset = origin + (area.point() + corner * area.size()) * size - pivot;
         let pos = pivot
             + vec2(
                 offset.x * cos - offset.y * sin,
