@@ -335,7 +335,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
             )
         } else {
             format!(
-                "Radar: tracks unseen enemies within {} tiles as anonymous contacts.",
+                "Radar: tracks unseen enemies within {} tiles as air or ground contacts.",
                 radar.radius
             )
         });

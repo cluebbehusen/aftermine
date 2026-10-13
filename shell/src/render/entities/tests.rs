@@ -951,3 +951,17 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
     }
     assert_eq!(radar_rings(&game), [12.0]);
 }
+
+#[test]
+fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
+    use oxide_sim::stats::Domain;
+    let center = vec2(50.0, 50.0);
+    let ground = blip_strokes(center, 10.0, Domain::Ground);
+    let air = blip_strokes(center, 10.0, Domain::Air);
+    assert_eq!(ground.len(), 4, "a closed diamond");
+    assert_eq!(air.len(), 2, "an open peak");
+    for stroke in &air {
+        assert!(ground.contains(stroke));
+        assert!(stroke.0.y <= center.y && stroke.1.y <= center.y);
+    }
+}

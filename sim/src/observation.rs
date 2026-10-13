@@ -212,10 +212,11 @@ pub struct ObservationData {
     /// already bounded and expired by the authoritative vision system.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub salvage_incidents: Vec<TilePos>,
-    /// Radar blips: tiles holding an unidentified hostile contact inside
+    /// Radar blips: unidentified hostile contacts and their domains inside
     /// an allied radar ring but out of sight. Always empty under the
-    /// omniscient builder. Sorted by (y, x).
-    pub blips: Vec<TilePos>,
+    /// omniscient builder. In [`crate::vision::RadarContact::sort_key`]
+    /// order.
+    pub blips: Vec<crate::vision::RadarContact>,
     /// Hostile buildings every seat knows of regardless of fog, such as
     /// Deep Bores. Sorted by (y, x, owner).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -529,7 +530,8 @@ impl ObservationData {
                 obs.known_frames.push(*frame);
             }
         }
-        // Blips carry tiles only, so they pass through unfiltered.
+        // Blips carry a tile and a domain only, so they pass through
+        // unfiltered.
         obs.blips = vision.contacts().to_vec();
         obs.contact_tracks = vision.tracks().to_vec();
         obs.my_shells = state.shells().iter().filter(|s| s.player == me).count();

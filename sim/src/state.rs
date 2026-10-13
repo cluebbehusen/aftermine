@@ -1968,9 +1968,7 @@ impl State {
                 return Err(E::UnmintedBuildingFocus(id));
             }
             let current_domain = match target.entity() {
-                Some(entity) => self
-                    .visible_hostile_target_domain(*player, entity)
-                    .map(Some),
+                Some(entity) => self.visible_hostile_target_domain(*player, entity),
                 None => self.attack_view(*player, target).map(|view| view.domain),
             };
             let live_entity = target.entity().is_some_and(|entity| match entity {
@@ -1980,9 +1978,7 @@ impl State {
             if !b.built()
                 || stats.weapons.is_empty()
                 || ((live_entity || target.entity().is_none()) && current_domain.is_none())
-                || current_domain.is_some_and(|domain| {
-                    domain.is_some_and(|domain| !stats.weapons[0].targets.covers(domain))
-                })
+                || current_domain.is_some_and(|domain| !stats.weapons[0].targets.covers(domain))
             {
                 return Err(E::InvalidBuildingFocus(id));
             }
@@ -2151,14 +2147,14 @@ impl State {
         {
             return Err(E::UnsortedGhosts(seat));
         }
-        if v.contacts().iter().any(|t| !tile_inside_envelope(*t)) {
+        if v.contacts().iter().any(|c| !tile_inside_envelope(c.tile)) {
             return Err(E::ContactOutsideEnvelope(seat));
         }
         // Blips are sorted and deduplicated every refresh.
         if !v
             .contacts()
             .windows(2)
-            .all(|a| (a[0].y, a[0].x) < (a[1].y, a[1].x))
+            .all(|a| a[0].sort_key() < a[1].sort_key())
         {
             return Err(E::UnsortedContacts(seat));
         }
@@ -2290,10 +2286,11 @@ impl State {
                         && self
                             .attack_view(building.player, target)
                             .is_some_and(|view| {
-                                building.stats().weapons.first().is_some_and(|weapon| {
-                                    view.domain
-                                        .is_none_or(|domain| weapon.targets.covers(domain))
-                                })
+                                building
+                                    .stats()
+                                    .weapons
+                                    .first()
+                                    .is_some_and(|weapon| weapon.targets.covers(view.domain))
                             })
                 })
             })
@@ -2308,11 +2305,9 @@ impl State {
                 let unit = &self.units[index];
                 let stats = unit.kind.stats();
                 if self.attack_view(unit.player, target).is_some_and(|view| {
-                    view.domain.is_none_or(|domain| {
-                        stats.can_target(domain)
-                            || (stats.demolition.is_some()
-                                && domain == crate::stats::Domain::Ground)
-                    })
+                    stats.can_target(view.domain)
+                        || (stats.demolition.is_some()
+                            && view.domain == crate::stats::Domain::Ground)
                 }) {
                     break;
                 }
