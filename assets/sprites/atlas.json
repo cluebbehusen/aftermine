@@ -1,7 +1,7 @@
 {
  "air_shadow": [
-  2174,
-  5022,
+  2474,
+  5550,
   64,
   64
  ],
@@ -1320,8 +1320,8 @@
   128
  ],
  "burst": [
-  2242,
-  5022,
+  2542,
+  5550,
   64,
   64
  ],
@@ -1626,44 +1626,44 @@
   128
  ],
  "debris_0": [
-  1002,
-  5208,
+  1274,
+  5736,
   32,
   32
  ],
  "debris_1": [
-  1038,
-  5208,
+  1310,
+  5736,
   32,
   32
  ],
  "debris_2": [
-  1074,
-  5208,
+  1346,
+  5736,
   32,
   32
  ],
  "decal_crack": [
-  2310,
-  5022,
+  2610,
+  5550,
   64,
   64
  ],
  "decal_plate": [
-  2378,
-  5022,
+  2678,
+  5550,
   64,
   64
  ],
  "decal_stain": [
-  2446,
-  5022,
+  2746,
+  5550,
   64,
   64
  ],
  "decal_wreck": [
-  2514,
-  5022,
+  2814,
+  5550,
   64,
   64
  ],
@@ -2856,62 +2856,62 @@
   128
  ],
  "field_debris_abandoned_canisters": [
-  1110,
-  5208,
+  1382,
+  5736,
   32,
   32
  ],
  "field_debris_bent_service_rail": [
-  1146,
-  5208,
+  1418,
+  5736,
   32,
   32
  ],
  "field_debris_braided_cable": [
-  2582,
-  5022,
+  2882,
+  5550,
   64,
   64
  ],
  "field_debris_cable_tray": [
-  2650,
-  5022,
+  2950,
+  5550,
   64,
   64
  ],
  "field_debris_canister_cluster": [
-  2718,
-  5022,
+  3018,
+  5550,
   64,
   64
  ],
  "field_debris_fastener_spill": [
-  2786,
-  5022,
+  3086,
+  5550,
   64,
   64
  ],
  "field_debris_inspection_hatch": [
-  2854,
-  5022,
+  3154,
+  5550,
   64,
   64
  ],
  "field_debris_motor_casing": [
-  2922,
-  5022,
+  3222,
+  5550,
   64,
   64
  ],
  "field_debris_severed_cable": [
-  1182,
-  5208,
+  1454,
+  5736,
   32,
   32
  ],
  "field_debris_sunken_cooling_fan": [
-  2990,
-  5022,
+  3290,
+  5550,
   64,
   64
  ],
@@ -3600,44 +3600,44 @@
   128
  ],
  "ground_0": [
-  3058,
-  5022,
+  3358,
+  5550,
   64,
   64
  ],
  "ground_1": [
-  3126,
-  5022,
+  3426,
+  5550,
   64,
   64
  ],
  "ground_2": [
-  3194,
-  5022,
+  3494,
+  5550,
   64,
   64
  ],
  "ground_3": [
-  3262,
-  5022,
+  3562,
+  5550,
   64,
   64
  ],
  "ground_4": [
-  3330,
-  5022,
+  3630,
+  5550,
   64,
   64
  ],
  "ground_5": [
-  3398,
-  5022,
+  3698,
+  5550,
   64,
   64
  ],
  "ground_blocker_compressor_skid": [
-  3466,
-  5022,
+  3766,
+  5550,
   128,
   64
  ],
@@ -3672,8 +3672,8 @@
   128
  ],
  "ground_blocker_track_assembly": [
-  3598,
-  5022,
+  3898,
+  5550,
   192,
   64
  ],
@@ -3690,74 +3690,74 @@
   128
  ],
  "ground_detail_0": [
-  3794,
-  5022,
+  2,
+  5668,
   64,
   64
  ],
  "ground_detail_1": [
-  3862,
-  5022,
+  70,
+  5668,
   64,
   64
  ],
  "ground_detail_10": [
-  3930,
-  5022,
+  138,
+  5668,
   64,
   64
  ],
  "ground_detail_11": [
-  3998,
-  5022,
+  206,
+  5668,
   64,
   64
  ],
  "ground_detail_2": [
-  2,
-  5140,
+  274,
+  5668,
   64,
   64
  ],
  "ground_detail_3": [
-  70,
-  5140,
+  342,
+  5668,
   64,
   64
  ],
  "ground_detail_4": [
-  138,
-  5140,
+  410,
+  5668,
   64,
   64
  ],
  "ground_detail_5": [
-  206,
-  5140,
+  478,
+  5668,
   64,
   64
  ],
  "ground_detail_6": [
-  274,
-  5140,
+  546,
+  5668,
   64,
   64
  ],
  "ground_detail_7": [
-  342,
-  5140,
+  614,
+  5668,
   64,
   64
  ],
  "ground_detail_8": [
-  410,
-  5140,
+  682,
+  5668,
   64,
   64
  ],
  "ground_detail_9": [
-  478,
-  5140,
+  750,
+  5668,
   64,
   64
  ],
@@ -4122,86 +4122,86 @@
   128
  ],
  "icon_advance": [
-  274,
-  5208,
+  546,
+  5736,
   48,
   48
  ],
  "icon_attack": [
-  326,
-  5208,
+  598,
+  5736,
   48,
   48
  ],
  "icon_build": [
-  378,
-  5208,
+  650,
+  5736,
   48,
   48
  ],
  "icon_cancel": [
-  430,
-  5208,
+  702,
+  5736,
   48,
   48
  ],
  "icon_harvest": [
-  482,
-  5208,
+  754,
+  5736,
   48,
   48
  ],
  "icon_hunt": [
-  534,
-  5208,
+  806,
+  5736,
   48,
   48
  ],
  "icon_idle": [
-  586,
-  5208,
+  858,
+  5736,
   48,
   48
  ],
  "icon_move": [
-  638,
-  5208,
+  910,
+  5736,
   48,
   48
  ],
  "icon_patrol": [
-  690,
-  5208,
+  962,
+  5736,
   48,
   48
  ],
  "icon_rally": [
-  742,
-  5208,
+  1014,
+  5736,
   48,
   48
  ],
  "icon_repair": [
-  794,
-  5208,
+  1066,
+  5736,
   48,
   48
  ],
  "icon_run": [
-  846,
-  5208,
+  1118,
+  5736,
   48,
   48
  ],
  "icon_salvage": [
-  898,
-  5208,
+  1170,
+  5736,
   48,
   48
  ],
  "icon_stop": [
-  950,
-  5208,
+  1222,
+  5736,
   48,
   48
  ],
@@ -4350,74 +4350,74 @@
   128
  ],
  "quarry_dressing_0": [
-  546,
-  5140,
+  818,
+  5668,
   64,
   64
  ],
  "quarry_dressing_1": [
-  614,
-  5140,
+  886,
+  5668,
   64,
   64
  ],
  "quarry_dressing_10": [
-  682,
-  5140,
+  954,
+  5668,
   64,
   64
  ],
  "quarry_dressing_11": [
-  750,
-  5140,
+  1022,
+  5668,
   64,
   64
  ],
  "quarry_dressing_2": [
-  818,
-  5140,
+  1090,
+  5668,
   64,
   64
  ],
  "quarry_dressing_3": [
-  886,
-  5140,
+  1158,
+  5668,
   64,
   64
  ],
  "quarry_dressing_4": [
-  954,
-  5140,
+  1226,
+  5668,
   64,
   64
  ],
  "quarry_dressing_5": [
-  1022,
-  5140,
+  1294,
+  5668,
   64,
   64
  ],
  "quarry_dressing_6": [
-  1090,
-  5140,
+  1362,
+  5668,
   64,
   64
  ],
  "quarry_dressing_7": [
-  1158,
-  5140,
+  1430,
+  5668,
   64,
   64
  ],
  "quarry_dressing_8": [
-  1226,
-  5140,
+  1498,
+  5668,
   64,
   64
  ],
  "quarry_dressing_9": [
-  1294,
-  5140,
+  1566,
+  5668,
   64,
   64
  ],
@@ -5537,249 +5537,1737 @@
   128,
   128
  ],
- "rig_warden_hull": [
+ "rig_surveyor_hull": [
   1586,
   3198,
   128,
   128
  ],
- "rig_warden_hull_accent": [
+ "rig_surveyor_hull_accent": [
   1718,
   3198,
   128,
   128
  ],
- "rig_warden_hull_accent_move1": [
+ "rig_surveyor_hull_accent_move1": [
   1850,
   3198,
   128,
   128
  ],
- "rig_warden_hull_accent_move2": [
+ "rig_surveyor_hull_accent_move2": [
   1982,
   3198,
   128,
   128
  ],
- "rig_warden_hull_move1": [
+ "rig_surveyor_hull_move1": [
   2114,
   3198,
   128,
   128
  ],
- "rig_warden_hull_move2": [
+ "rig_surveyor_hull_move2": [
   2246,
   3198,
   128,
   128
  ],
- "rig_warden_mount": [
+ "rig_surveyor_mount": [
   2378,
   3198,
   128,
   128
  ],
- "rig_warden_mount_accent": [
+ "rig_surveyor_mount_accent": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action1": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action10": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action100": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action101": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action102": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action103": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action104": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action105": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action106": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action107": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action108": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action109": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action11": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action110": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action111": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action112": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action113": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action114": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action115": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action116": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action117": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action118": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action119": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action12": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action120": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action13": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action14": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action15": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action16": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action17": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action18": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action19": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action2": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action20": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action21": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action22": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action23": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action24": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action25": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action26": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action27": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action28": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action29": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action3": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action30": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action31": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action32": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action33": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action34": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action35": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action36": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action37": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action38": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action39": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action4": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action40": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action41": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action42": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action43": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action44": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action45": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action46": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action47": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action48": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action49": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action5": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action50": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action51": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action52": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action53": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action54": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action55": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action56": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action57": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action58": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action59": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action6": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action60": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action61": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action62": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action63": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action64": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action65": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action66": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action67": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action68": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action69": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action7": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action70": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action71": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action72": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action73": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action74": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action75": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action76": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action77": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action78": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action79": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action8": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action80": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action81": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action82": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action83": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action84": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action85": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action86": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action87": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action88": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action89": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action9": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action90": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action91": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action92": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action93": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action94": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action95": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action96": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action97": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action98": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action99": [
+  530,
+  954,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action1": [
   2510,
   3198,
   128,
   128
  ],
- "rig_warden_mount_accent_action1": [
-  2510,
-  3198,
-  128,
-  128
- ],
- "rig_warden_mount_accent_action2": [
+ "rig_surveyor_mount_action10": [
   2642,
   3198,
   128,
   128
  ],
- "rig_warden_mount_accent_action3": [
+ "rig_surveyor_mount_action100": [
   2774,
   3198,
   128,
   128
  ],
- "rig_warden_mount_accent_action4": [
+ "rig_surveyor_mount_action101": [
   2906,
   3198,
   128,
   128
  ],
- "rig_warden_mount_action1": [
-  2378,
-  3198,
-  128,
-  128
- ],
- "rig_warden_mount_action2": [
+ "rig_surveyor_mount_action102": [
   3038,
   3198,
   128,
   128
  ],
- "rig_warden_mount_action3": [
+ "rig_surveyor_mount_action103": [
   3170,
   3198,
   128,
   128
  ],
- "rig_warden_mount_action4": [
+ "rig_surveyor_mount_action104": [
   3302,
   3198,
   128,
   128
  ],
+ "rig_surveyor_mount_action105": [
+  3434,
+  3198,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action106": [
+  3566,
+  3198,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action107": [
+  3698,
+  3198,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action108": [
+  3830,
+  3198,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action109": [
+  3962,
+  3198,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action11": [
+  2,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action110": [
+  134,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action111": [
+  266,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action112": [
+  398,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action113": [
+  530,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action114": [
+  662,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action115": [
+  794,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action116": [
+  926,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action117": [
+  1058,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action118": [
+  1190,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action119": [
+  1322,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action12": [
+  1454,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action120": [
+  1586,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action13": [
+  1718,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action14": [
+  1850,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action15": [
+  1982,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action16": [
+  2114,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action17": [
+  2246,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action18": [
+  2378,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action19": [
+  2510,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action2": [
+  2642,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action20": [
+  2774,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action21": [
+  2906,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action22": [
+  3038,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action23": [
+  3170,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action24": [
+  3302,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action25": [
+  3434,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action26": [
+  3566,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action27": [
+  3698,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action28": [
+  3830,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action29": [
+  3962,
+  3330,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action3": [
+  2,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action30": [
+  134,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action31": [
+  266,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action32": [
+  398,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action33": [
+  530,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action34": [
+  662,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action35": [
+  794,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action36": [
+  926,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action37": [
+  1058,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action38": [
+  1190,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action39": [
+  1322,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action4": [
+  1454,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action40": [
+  1586,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action41": [
+  1586,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action42": [
+  1718,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action43": [
+  1850,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action44": [
+  1982,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action45": [
+  2114,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action46": [
+  2246,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action47": [
+  2378,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action48": [
+  2510,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action49": [
+  2642,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action5": [
+  2774,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action50": [
+  2906,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action51": [
+  3038,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action52": [
+  3170,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action53": [
+  3302,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action54": [
+  3434,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action55": [
+  3566,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action56": [
+  3698,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action57": [
+  3830,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action58": [
+  3962,
+  3462,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action59": [
+  2,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action6": [
+  134,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action60": [
+  266,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action61": [
+  398,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action62": [
+  530,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action63": [
+  662,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action64": [
+  794,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action65": [
+  926,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action66": [
+  1058,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action67": [
+  1190,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action68": [
+  1322,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action69": [
+  1454,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action7": [
+  1586,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action70": [
+  1718,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action71": [
+  1850,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action72": [
+  1982,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action73": [
+  2114,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action74": [
+  2246,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action75": [
+  2378,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action76": [
+  2510,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action77": [
+  2642,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action78": [
+  2774,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action79": [
+  2906,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action8": [
+  3038,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action80": [
+  3170,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action81": [
+  3302,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action82": [
+  3434,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action83": [
+  3566,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action84": [
+  3698,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action85": [
+  3830,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action86": [
+  3962,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action87": [
+  2,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action88": [
+  134,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action89": [
+  266,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action9": [
+  398,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action90": [
+  530,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action91": [
+  662,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action92": [
+  794,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action93": [
+  926,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action94": [
+  1058,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action95": [
+  1190,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action96": [
+  1322,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action97": [
+  1454,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action98": [
+  1586,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action99": [
+  1718,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull": [
+  1850,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent": [
+  1982,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent_move1": [
+  2114,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent_move2": [
+  2246,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull_move1": [
+  2378,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_hull_move2": [
+  2510,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount": [
+  2642,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent": [
+  2774,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action1": [
+  2774,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action2": [
+  2906,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action3": [
+  3038,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action4": [
+  3170,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_action1": [
+  2642,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_action2": [
+  3302,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_action3": [
+  3434,
+  3726,
+  128,
+  128
+ ],
+ "rig_warden_mount_action4": [
+  3566,
+  3726,
+  128,
+  128
+ ],
  "rock_skirt": [
-  1362,
-  5140,
+  1634,
+  5668,
   64,
   64
  ],
  "rock_slab_0_0": [
-  1682,
-  5022,
+  1982,
+  5550,
   78,
   68
  ],
  "rock_slab_0_1": [
-  1764,
-  5022,
+  2064,
+  5550,
   78,
   68
  ],
  "rock_slab_0_2": [
-  1846,
-  5022,
+  2146,
+  5550,
   78,
   68
  ],
  "rock_slab_0_3": [
-  1928,
-  5022,
+  2228,
+  5550,
   78,
   68
  ],
  "rock_slab_0_4": [
-  2010,
-  5022,
+  2310,
+  5550,
   78,
   68
  ],
  "rock_slab_0_5": [
-  2092,
-  5022,
+  2392,
+  5550,
   78,
   68
  ],
  "rock_slab_1_0": [
-  1058,
-  5022,
+  1358,
+  5550,
   100,
   82
  ],
  "rock_slab_1_1": [
-  1162,
-  5022,
+  1462,
+  5550,
   100,
   82
  ],
  "rock_slab_1_2": [
-  1266,
-  5022,
+  1566,
+  5550,
   100,
   82
  ],
  "rock_slab_1_3": [
-  1370,
-  5022,
+  1670,
+  5550,
   100,
   82
  ],
  "rock_slab_1_4": [
-  1474,
-  5022,
+  1774,
+  5550,
   100,
   82
  ],
  "rock_slab_1_5": [
-  1578,
-  5022,
+  1878,
+  5550,
   100,
   82
  ],
  "rock_slab_2_0": [
-  302,
-  5022,
+  602,
+  5550,
   122,
   98
  ],
  "rock_slab_2_1": [
-  428,
-  5022,
+  728,
+  5550,
   122,
   98
  ],
  "rock_slab_2_2": [
-  554,
-  5022,
+  854,
+  5550,
   122,
   98
  ],
  "rock_slab_2_3": [
-  680,
-  5022,
+  980,
+  5550,
   122,
   98
  ],
  "rock_slab_2_4": [
-  806,
-  5022,
+  1106,
+  5550,
   122,
   98
  ],
  "rock_slab_2_5": [
-  932,
-  5022,
+  1232,
+  5550,
   122,
   98
  ],
  "rock_slab_3_0": [
-  3434,
-  4890,
+  3698,
+  5418,
   146,
   114
  ],
  "rock_slab_3_1": [
-  3584,
-  4890,
+  3848,
+  5418,
   146,
   114
  ],
  "rock_slab_3_2": [
-  3734,
-  4890,
+  2,
+  5550,
   146,
   114
  ],
  "rock_slab_3_3": [
-  3884,
-  4890,
+  152,
+  5550,
   146,
   114
  ],
  "rock_slab_3_4": [
-  2,
-  5022,
+  302,
+  5550,
   146,
   114
  ],
  "rock_slab_3_5": [
-  152,
-  5022,
+  452,
+  5550,
   146,
   114
  ],
@@ -5856,2612 +7344,2612 @@
   156
  ],
  "sapper": [
-  3434,
-  3198,
+  3698,
+  3726,
   128,
   128
  ],
  "sapper_accent": [
-  3566,
-  3198,
+  3830,
+  3726,
   128,
   128
  ],
  "sapper_accent_action1": [
-  3698,
-  3198,
+  3962,
+  3726,
   128,
   128
  ],
  "sapper_accent_action2": [
-  3830,
-  3198,
+  2,
+  3858,
   128,
   128
  ],
  "sapper_accent_action3": [
-  3962,
-  3198,
+  134,
+  3858,
   128,
   128
  ],
  "sapper_accent_move1": [
-  2,
-  3330,
+  266,
+  3858,
   128,
   128
  ],
  "sapper_accent_move2": [
-  134,
-  3330,
+  398,
+  3858,
   128,
   128
  ],
  "sapper_action1": [
-  266,
-  3330,
+  530,
+  3858,
   128,
   128
  ],
  "sapper_action2": [
-  398,
-  3330,
+  662,
+  3858,
   128,
   128
  ],
  "sapper_action3": [
-  530,
-  3330,
+  794,
+  3858,
   128,
   128
  ],
  "sapper_move1": [
-  662,
-  3330,
+  926,
+  3858,
   128,
   128
  ],
  "sapper_move2": [
-  794,
-  3330,
+  1058,
+  3858,
   128,
   128
  ],
  "scaffold_dense": [
-  1430,
-  5140,
+  1702,
+  5668,
   64,
   64
  ],
  "scaffold_sparse": [
-  1498,
-  5140,
+  1770,
+  5668,
   64,
   64
  ],
  "scorch": [
-  926,
-  3330,
+  1190,
+  3858,
   128,
   128
  ],
  "scout_radar": [
-  1058,
-  3330,
+  1322,
+  3858,
   128,
   128
  ],
  "scrap_full": [
-  1566,
-  5140,
+  1838,
+  5668,
   64,
   64
  ],
  "scrap_low": [
-  1634,
-  5140,
+  1906,
+  5668,
   64,
   64
  ],
  "scrap_mid": [
-  1702,
-  5140,
+  1974,
+  5668,
   64,
   64
  ],
  "scrap_rich": [
-  1770,
-  5140,
+  2042,
+  5668,
   64,
   64
  ],
  "scuttle_charge": [
-  1190,
-  3330,
+  1454,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent": [
-  1322,
-  3330,
+  1586,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site0_0": [
-  1454,
-  3330,
+  1718,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site0_1": [
-  1586,
-  3330,
+  1850,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site1_0": [
-  1718,
-  3330,
+  1982,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site1_1": [
-  1850,
-  3330,
+  2114,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site2_0": [
-  1982,
-  3330,
+  2246,
+  3858,
   128,
   128
  ],
  "scuttle_charge_accent_site2_1": [
-  2114,
-  3330,
+  2378,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site0_0": [
-  2246,
-  3330,
+  2510,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site0_1": [
-  2378,
-  3330,
+  2642,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site1_0": [
-  2510,
-  3330,
+  2774,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site1_1": [
-  2642,
-  3330,
+  2906,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site2_0": [
-  2774,
-  3330,
+  3038,
+  3858,
   128,
   128
  ],
  "scuttle_charge_site2_1": [
-  2906,
-  3330,
+  3170,
+  3858,
   128,
   128
  ],
  "scuttler": [
-  3038,
-  3330,
+  3302,
+  3858,
   128,
   128
  ],
  "scuttler_accent": [
-  3170,
-  3330,
+  3434,
+  3858,
   128,
   128
  ],
  "scuttler_accent_action1": [
-  3302,
-  3330,
+  3566,
+  3858,
   128,
   128
  ],
  "scuttler_accent_action2": [
-  3434,
-  3330,
+  3698,
+  3858,
   128,
   128
  ],
  "scuttler_accent_action3": [
-  3566,
-  3330,
+  3830,
+  3858,
   128,
   128
  ],
  "scuttler_accent_action4": [
-  3170,
-  3330,
+  3434,
+  3858,
   128,
   128
  ],
  "scuttler_accent_move1": [
-  3698,
-  3330,
+  3962,
+  3858,
   128,
   128
  ],
  "scuttler_accent_move2": [
-  3830,
-  3330,
+  2,
+  4098,
   128,
   128
  ],
  "scuttler_action1": [
-  3962,
-  3330,
+  134,
+  4098,
   128,
   128
  ],
  "scuttler_action2": [
-  2,
-  3462,
+  266,
+  4098,
   128,
   128
  ],
  "scuttler_action3": [
-  134,
-  3462,
+  398,
+  4098,
   128,
   128
  ],
  "scuttler_action4": [
-  3038,
-  3330,
+  3302,
+  3858,
   128,
   128
  ],
  "scuttler_move1": [
-  266,
-  3462,
+  530,
+  4098,
   128,
   128
  ],
  "scuttler_move2": [
-  398,
-  3462,
+  662,
+  4098,
   128,
   128
  ],
  "sentinel": [
-  530,
-  3462,
+  794,
+  4098,
   128,
   128
  ],
  "sentinel_accent": [
-  662,
-  3462,
+  926,
+  4098,
   128,
   128
  ],
  "sentinel_accent_action1": [
-  662,
-  3462,
+  926,
+  4098,
   128,
   128
  ],
  "sentinel_accent_action2": [
-  794,
-  3462,
+  1058,
+  4098,
   128,
   128
  ],
  "sentinel_accent_action3": [
-  926,
-  3462,
+  1190,
+  4098,
   128,
   128
  ],
  "sentinel_accent_action4": [
-  1058,
-  3462,
+  1322,
+  4098,
   128,
   128
  ],
  "sentinel_accent_move1": [
-  1190,
-  3462,
+  1454,
+  4098,
   128,
   128
  ],
  "sentinel_accent_move2": [
-  1322,
-  3462,
+  1586,
+  4098,
   128,
   128
  ],
  "sentinel_action1": [
-  530,
-  3462,
+  794,
+  4098,
   128,
   128
  ],
  "sentinel_action2": [
-  1454,
-  3462,
+  1718,
+  4098,
   128,
   128
  ],
  "sentinel_action3": [
-  1586,
-  3462,
+  1850,
+  4098,
   128,
   128
  ],
  "sentinel_action4": [
-  1718,
-  3462,
+  1982,
+  4098,
   128,
   128
  ],
  "sentinel_move1": [
-  1850,
-  3462,
+  2114,
+  4098,
   128,
   128
  ],
  "sentinel_move2": [
-  1982,
-  3462,
+  2246,
+  4098,
   128,
   128
  ],
  "skyhook": [
-  2114,
-  3462,
+  2378,
+  4098,
   128,
   128
  ],
  "skyhook_accent": [
-  2246,
-  3462,
+  2510,
+  4098,
   128,
   128
  ],
  "skyhook_accent_action1": [
-  2378,
-  3462,
+  2642,
+  4098,
   128,
   128
  ],
  "skyhook_accent_action2": [
-  2510,
-  3462,
+  2774,
+  4098,
   128,
   128
  ],
  "skyhook_accent_action3": [
-  2642,
-  3462,
+  2906,
+  4098,
   128,
   128
  ],
  "skyhook_accent_action4": [
-  2246,
-  3462,
+  2510,
+  4098,
   128,
   128
  ],
  "skyhook_accent_move1": [
-  2774,
-  3462,
+  3038,
+  4098,
   128,
   128
  ],
  "skyhook_accent_move2": [
-  2906,
-  3462,
+  3170,
+  4098,
   128,
   128
  ],
  "skyhook_action1": [
-  3038,
-  3462,
+  3302,
+  4098,
   128,
   128
  ],
  "skyhook_action2": [
-  3170,
-  3462,
+  3434,
+  4098,
   128,
   128
  ],
  "skyhook_action3": [
-  3302,
-  3462,
+  3566,
+  4098,
   128,
   128
  ],
  "skyhook_action4": [
-  2114,
-  3462,
+  2378,
+  4098,
   128,
   128
  ],
  "skyhook_move1": [
-  3434,
-  3462,
+  3698,
+  4098,
   128,
   128
  ],
  "skyhook_move2": [
-  3566,
-  3462,
+  3830,
+  4098,
   128,
   128
  ],
  "surveyor": [
-  3698,
-  3462,
+  3962,
+  4098,
   128,
   128
  ],
  "surveyor_accent": [
-  3830,
-  3462,
+  2,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action1": [
-  3962,
-  3462,
+  134,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action10": [
-  2,
-  3594,
+  266,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action100": [
-  134,
-  3594,
+  398,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action101": [
-  266,
-  3594,
+  530,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action102": [
-  398,
-  3594,
+  662,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action103": [
-  530,
-  3594,
+  794,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action104": [
-  662,
-  3594,
+  926,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action105": [
-  794,
-  3594,
+  1058,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action106": [
-  926,
-  3594,
+  1190,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action107": [
-  1058,
-  3594,
+  1322,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action108": [
-  1190,
-  3594,
+  1454,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action109": [
-  1322,
-  3594,
+  1586,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action11": [
-  1454,
-  3594,
+  1718,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action110": [
-  1586,
-  3594,
+  1850,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action111": [
-  1718,
-  3594,
+  1982,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action112": [
-  1850,
-  3594,
+  2114,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action113": [
-  1982,
-  3594,
+  2246,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action114": [
-  2114,
-  3594,
+  2378,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action115": [
-  2246,
-  3594,
+  2510,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action116": [
-  2378,
-  3594,
+  2642,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action117": [
-  2510,
-  3594,
+  2774,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action118": [
-  2642,
-  3594,
+  2906,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action119": [
-  2774,
-  3594,
+  3038,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action12": [
-  2906,
-  3594,
+  3170,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action120": [
-  3038,
-  3594,
+  3302,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action13": [
-  3170,
-  3594,
+  3434,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action14": [
-  3302,
-  3594,
+  3566,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action15": [
-  3434,
-  3594,
+  3698,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action16": [
-  3566,
-  3594,
+  3830,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action17": [
-  3698,
-  3594,
+  3962,
+  4230,
   128,
   128
  ],
  "surveyor_accent_action18": [
-  3830,
-  3594,
+  2,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action19": [
-  3962,
-  3594,
+  134,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action2": [
-  2,
-  3726,
+  266,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action20": [
-  134,
-  3726,
+  398,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action21": [
-  266,
-  3726,
+  530,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action22": [
-  398,
-  3726,
+  662,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action23": [
-  530,
-  3726,
+  794,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action24": [
-  662,
-  3726,
+  926,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action25": [
-  794,
-  3726,
+  1058,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action26": [
-  926,
-  3726,
+  1190,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action27": [
-  1058,
-  3726,
+  1322,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action28": [
-  1190,
-  3726,
+  1454,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action29": [
-  1322,
-  3726,
+  1586,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action3": [
-  1454,
-  3726,
+  1718,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action30": [
-  1586,
-  3726,
+  1850,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action31": [
-  1718,
-  3726,
+  1982,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action32": [
-  1850,
-  3726,
+  2114,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action33": [
-  1982,
-  3726,
+  2246,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action34": [
-  2114,
-  3726,
+  2378,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action35": [
-  2246,
-  3726,
+  2510,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action36": [
-  2378,
-  3726,
+  2642,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action37": [
-  2510,
-  3726,
+  2774,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action38": [
-  2642,
-  3726,
+  2906,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action39": [
-  2774,
-  3726,
+  3038,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action4": [
-  2906,
-  3726,
+  3170,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action40": [
-  3038,
-  3726,
+  3302,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action41": [
-  3038,
-  3726,
+  3302,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action42": [
-  3170,
-  3726,
+  3434,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action43": [
-  3302,
-  3726,
+  3566,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action44": [
-  3434,
-  3726,
+  3698,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action45": [
-  3566,
-  3726,
+  3830,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action46": [
-  3698,
-  3726,
+  3962,
+  4362,
   128,
   128
  ],
  "surveyor_accent_action47": [
-  3830,
-  3726,
+  2,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action48": [
-  3962,
-  3726,
+  134,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action49": [
-  2,
-  3858,
+  266,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action5": [
-  134,
-  3858,
+  398,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action50": [
-  266,
-  3858,
+  530,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action51": [
-  398,
-  3858,
+  662,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action52": [
-  530,
-  3858,
+  794,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action53": [
-  662,
-  3858,
+  926,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action54": [
-  794,
-  3858,
+  1058,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action55": [
-  926,
-  3858,
+  1190,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action56": [
-  1058,
-  3858,
+  1322,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action57": [
-  1190,
-  3858,
+  1454,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action58": [
-  1322,
-  3858,
+  1586,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action59": [
-  1454,
-  3858,
+  1718,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action6": [
-  1586,
-  3858,
+  1850,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action60": [
-  1718,
-  3858,
+  1982,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action61": [
-  1850,
-  3858,
+  2114,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action62": [
-  1982,
-  3858,
+  2246,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action63": [
-  2114,
-  3858,
+  2378,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action64": [
-  2246,
-  3858,
+  2510,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action65": [
-  2378,
-  3858,
+  2642,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action66": [
-  2510,
-  3858,
+  2774,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action67": [
-  2642,
-  3858,
+  2906,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action68": [
-  2774,
-  3858,
+  3038,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action69": [
-  2906,
-  3858,
+  3170,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action7": [
-  3038,
-  3858,
+  3302,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action70": [
-  3170,
-  3858,
+  3434,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action71": [
-  3302,
-  3858,
+  3566,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action72": [
-  3434,
-  3858,
+  3698,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action73": [
-  3566,
-  3858,
+  3830,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action74": [
-  3698,
-  3858,
+  3962,
+  4494,
   128,
   128
  ],
  "surveyor_accent_action75": [
-  3830,
-  3858,
+  2,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action76": [
-  3962,
-  3858,
+  134,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action77": [
-  2,
-  4098,
+  266,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action78": [
-  134,
-  4098,
+  398,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action79": [
-  266,
-  4098,
+  530,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action8": [
-  398,
-  4098,
+  662,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action80": [
-  530,
-  4098,
+  794,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action81": [
-  662,
-  4098,
+  926,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action82": [
-  794,
-  4098,
+  1058,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action83": [
-  926,
-  4098,
+  1190,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action84": [
-  1058,
-  4098,
+  1322,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action85": [
-  1190,
-  4098,
+  1454,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action86": [
-  1322,
-  4098,
+  1586,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action87": [
-  1454,
-  4098,
+  1718,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action88": [
-  1586,
-  4098,
+  1850,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action89": [
-  1718,
-  4098,
+  1982,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action9": [
-  1850,
-  4098,
+  2114,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action90": [
-  1982,
-  4098,
+  2246,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action91": [
-  2114,
-  4098,
+  2378,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action92": [
-  2246,
-  4098,
+  2510,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action93": [
-  2378,
-  4098,
+  2642,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action94": [
-  2510,
-  4098,
+  2774,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action95": [
-  2642,
-  4098,
+  2906,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action96": [
-  2774,
-  4098,
+  3038,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action97": [
-  2906,
-  4098,
+  3170,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action98": [
-  3038,
-  4098,
+  3302,
+  4626,
   128,
   128
  ],
  "surveyor_accent_action99": [
-  3170,
-  4098,
+  3434,
+  4626,
   128,
   128
  ],
  "surveyor_accent_move1": [
-  3302,
-  4098,
+  3566,
+  4626,
   128,
   128
  ],
  "surveyor_accent_move2": [
-  3434,
-  4098,
+  3698,
+  4626,
   128,
   128
  ],
  "surveyor_action1": [
-  3566,
-  4098,
+  3830,
+  4626,
   128,
   128
  ],
  "surveyor_action10": [
-  3698,
-  4098,
+  3962,
+  4626,
   128,
   128
  ],
  "surveyor_action100": [
-  3830,
-  4098,
+  2,
+  4758,
   128,
   128
  ],
  "surveyor_action101": [
-  3962,
-  4098,
+  134,
+  4758,
   128,
   128
  ],
  "surveyor_action102": [
-  2,
-  4230,
+  266,
+  4758,
   128,
   128
  ],
  "surveyor_action103": [
-  134,
-  4230,
+  398,
+  4758,
   128,
   128
  ],
  "surveyor_action104": [
-  266,
-  4230,
+  530,
+  4758,
   128,
   128
  ],
  "surveyor_action105": [
-  398,
-  4230,
+  662,
+  4758,
   128,
   128
  ],
  "surveyor_action106": [
-  530,
-  4230,
+  794,
+  4758,
   128,
   128
  ],
  "surveyor_action107": [
-  662,
-  4230,
+  926,
+  4758,
   128,
   128
  ],
  "surveyor_action108": [
-  794,
-  4230,
+  1058,
+  4758,
   128,
   128
  ],
  "surveyor_action109": [
-  926,
-  4230,
+  1190,
+  4758,
   128,
   128
  ],
  "surveyor_action11": [
-  1058,
-  4230,
+  1322,
+  4758,
   128,
   128
  ],
  "surveyor_action110": [
-  1190,
-  4230,
+  1454,
+  4758,
   128,
   128
  ],
  "surveyor_action111": [
-  1322,
-  4230,
+  1586,
+  4758,
   128,
   128
  ],
  "surveyor_action112": [
-  1454,
-  4230,
+  1718,
+  4758,
   128,
   128
  ],
  "surveyor_action113": [
-  1586,
-  4230,
+  1850,
+  4758,
   128,
   128
  ],
  "surveyor_action114": [
-  1718,
-  4230,
+  1982,
+  4758,
   128,
   128
  ],
  "surveyor_action115": [
-  1850,
-  4230,
+  2114,
+  4758,
   128,
   128
  ],
  "surveyor_action116": [
-  1982,
-  4230,
+  2246,
+  4758,
   128,
   128
  ],
  "surveyor_action117": [
-  2114,
-  4230,
+  2378,
+  4758,
   128,
   128
  ],
  "surveyor_action118": [
-  2246,
-  4230,
+  2510,
+  4758,
   128,
   128
  ],
  "surveyor_action119": [
-  2378,
-  4230,
+  2642,
+  4758,
   128,
   128
  ],
  "surveyor_action12": [
-  2510,
-  4230,
+  2774,
+  4758,
   128,
   128
  ],
  "surveyor_action120": [
-  2642,
-  4230,
+  2906,
+  4758,
   128,
   128
  ],
  "surveyor_action13": [
-  2774,
-  4230,
+  3038,
+  4758,
   128,
   128
  ],
  "surveyor_action14": [
-  2906,
-  4230,
+  3170,
+  4758,
   128,
   128
  ],
  "surveyor_action15": [
-  3038,
-  4230,
+  3302,
+  4758,
   128,
   128
  ],
  "surveyor_action16": [
-  3170,
-  4230,
+  3434,
+  4758,
   128,
   128
  ],
  "surveyor_action17": [
-  3302,
-  4230,
+  3566,
+  4758,
   128,
   128
  ],
  "surveyor_action18": [
-  3434,
-  4230,
+  3698,
+  4758,
   128,
   128
  ],
  "surveyor_action19": [
-  3566,
-  4230,
+  3830,
+  4758,
   128,
   128
  ],
  "surveyor_action2": [
-  3698,
-  4230,
+  3962,
+  4758,
   128,
   128
  ],
  "surveyor_action20": [
-  3830,
-  4230,
+  2,
+  4890,
   128,
   128
  ],
  "surveyor_action21": [
-  3962,
-  4230,
+  134,
+  4890,
   128,
   128
  ],
  "surveyor_action22": [
-  2,
-  4362,
+  266,
+  4890,
   128,
   128
  ],
  "surveyor_action23": [
-  134,
-  4362,
+  398,
+  4890,
   128,
   128
  ],
  "surveyor_action24": [
-  266,
-  4362,
+  530,
+  4890,
   128,
   128
  ],
  "surveyor_action25": [
-  398,
-  4362,
+  662,
+  4890,
   128,
   128
  ],
  "surveyor_action26": [
-  530,
-  4362,
+  794,
+  4890,
   128,
   128
  ],
  "surveyor_action27": [
-  662,
-  4362,
+  926,
+  4890,
   128,
   128
  ],
  "surveyor_action28": [
-  794,
-  4362,
+  1058,
+  4890,
   128,
   128
  ],
  "surveyor_action29": [
-  926,
-  4362,
+  1190,
+  4890,
   128,
   128
  ],
  "surveyor_action3": [
-  1058,
-  4362,
+  1322,
+  4890,
   128,
   128
  ],
  "surveyor_action30": [
-  1190,
-  4362,
+  1454,
+  4890,
   128,
   128
  ],
  "surveyor_action31": [
-  1322,
-  4362,
+  1586,
+  4890,
   128,
   128
  ],
  "surveyor_action32": [
-  1454,
-  4362,
+  1718,
+  4890,
   128,
   128
  ],
  "surveyor_action33": [
-  1586,
-  4362,
+  1850,
+  4890,
   128,
   128
  ],
  "surveyor_action34": [
-  1718,
-  4362,
+  1982,
+  4890,
   128,
   128
  ],
  "surveyor_action35": [
-  1850,
-  4362,
+  2114,
+  4890,
   128,
   128
  ],
  "surveyor_action36": [
-  1982,
-  4362,
+  2246,
+  4890,
   128,
   128
  ],
  "surveyor_action37": [
-  2114,
-  4362,
+  2378,
+  4890,
   128,
   128
  ],
  "surveyor_action38": [
-  2246,
-  4362,
+  2510,
+  4890,
   128,
   128
  ],
  "surveyor_action39": [
-  2378,
-  4362,
+  2642,
+  4890,
   128,
   128
  ],
  "surveyor_action4": [
-  2510,
-  4362,
+  2774,
+  4890,
   128,
   128
  ],
  "surveyor_action40": [
-  2642,
-  4362,
+  2906,
+  4890,
   128,
   128
  ],
  "surveyor_action41": [
-  2642,
-  4362,
+  2906,
+  4890,
   128,
   128
  ],
  "surveyor_action42": [
-  2774,
-  4362,
+  3038,
+  4890,
   128,
   128
  ],
  "surveyor_action43": [
-  2906,
-  4362,
+  3170,
+  4890,
   128,
   128
  ],
  "surveyor_action44": [
-  3038,
-  4362,
+  3302,
+  4890,
   128,
   128
  ],
  "surveyor_action45": [
-  3170,
-  4362,
+  3434,
+  4890,
   128,
   128
  ],
  "surveyor_action46": [
-  3302,
-  4362,
+  3566,
+  4890,
   128,
   128
  ],
  "surveyor_action47": [
-  3434,
-  4362,
+  3698,
+  4890,
   128,
   128
  ],
  "surveyor_action48": [
-  3566,
-  4362,
+  3830,
+  4890,
   128,
   128
  ],
  "surveyor_action49": [
-  3698,
-  4362,
+  3962,
+  4890,
   128,
   128
  ],
  "surveyor_action5": [
-  3830,
-  4362,
+  2,
+  5022,
   128,
   128
  ],
  "surveyor_action50": [
-  3962,
-  4362,
+  134,
+  5022,
   128,
   128
  ],
  "surveyor_action51": [
-  2,
-  4494,
+  266,
+  5022,
   128,
   128
  ],
  "surveyor_action52": [
-  134,
-  4494,
+  398,
+  5022,
   128,
   128
  ],
  "surveyor_action53": [
-  266,
-  4494,
+  530,
+  5022,
   128,
   128
  ],
  "surveyor_action54": [
-  398,
-  4494,
+  662,
+  5022,
   128,
   128
  ],
  "surveyor_action55": [
-  530,
-  4494,
+  794,
+  5022,
   128,
   128
  ],
  "surveyor_action56": [
-  662,
-  4494,
+  926,
+  5022,
   128,
   128
  ],
  "surveyor_action57": [
-  794,
-  4494,
+  1058,
+  5022,
   128,
   128
  ],
  "surveyor_action58": [
-  926,
-  4494,
+  1190,
+  5022,
   128,
   128
  ],
  "surveyor_action59": [
-  1058,
-  4494,
+  1322,
+  5022,
   128,
   128
  ],
  "surveyor_action6": [
-  1190,
-  4494,
+  1454,
+  5022,
   128,
   128
  ],
  "surveyor_action60": [
-  1322,
-  4494,
+  1586,
+  5022,
   128,
   128
  ],
  "surveyor_action61": [
-  1454,
-  4494,
+  1718,
+  5022,
   128,
   128
  ],
  "surveyor_action62": [
-  1586,
-  4494,
+  1850,
+  5022,
   128,
   128
  ],
  "surveyor_action63": [
-  1718,
-  4494,
+  1982,
+  5022,
   128,
   128
  ],
  "surveyor_action64": [
-  1850,
-  4494,
+  2114,
+  5022,
   128,
   128
  ],
  "surveyor_action65": [
-  1982,
-  4494,
+  2246,
+  5022,
   128,
   128
  ],
  "surveyor_action66": [
-  2114,
-  4494,
+  2378,
+  5022,
   128,
   128
  ],
  "surveyor_action67": [
-  2246,
-  4494,
+  2510,
+  5022,
   128,
   128
  ],
  "surveyor_action68": [
-  2378,
-  4494,
+  2642,
+  5022,
   128,
   128
  ],
  "surveyor_action69": [
-  2510,
-  4494,
+  2774,
+  5022,
   128,
   128
  ],
  "surveyor_action7": [
-  2642,
-  4494,
+  2906,
+  5022,
   128,
   128
  ],
  "surveyor_action70": [
-  2774,
-  4494,
+  3038,
+  5022,
   128,
   128
  ],
  "surveyor_action71": [
-  2906,
-  4494,
+  3170,
+  5022,
   128,
   128
  ],
  "surveyor_action72": [
-  3038,
-  4494,
+  3302,
+  5022,
   128,
   128
  ],
  "surveyor_action73": [
-  3170,
-  4494,
+  3434,
+  5022,
   128,
   128
  ],
  "surveyor_action74": [
-  3302,
-  4494,
+  3566,
+  5022,
   128,
   128
  ],
  "surveyor_action75": [
-  3434,
-  4494,
+  3698,
+  5022,
   128,
   128
  ],
  "surveyor_action76": [
-  3566,
-  4494,
+  3830,
+  5022,
   128,
   128
  ],
  "surveyor_action77": [
-  3698,
-  4494,
+  3962,
+  5022,
   128,
   128
  ],
  "surveyor_action78": [
-  3830,
-  4494,
+  2,
+  5154,
   128,
   128
  ],
  "surveyor_action79": [
-  3962,
-  4494,
+  134,
+  5154,
   128,
   128
  ],
  "surveyor_action8": [
-  2,
-  4626,
+  266,
+  5154,
   128,
   128
  ],
  "surveyor_action80": [
-  134,
-  4626,
+  398,
+  5154,
   128,
   128
  ],
  "surveyor_action81": [
-  266,
-  4626,
+  530,
+  5154,
   128,
   128
  ],
  "surveyor_action82": [
-  398,
-  4626,
+  662,
+  5154,
   128,
   128
  ],
  "surveyor_action83": [
-  530,
-  4626,
+  794,
+  5154,
   128,
   128
  ],
  "surveyor_action84": [
-  662,
-  4626,
+  926,
+  5154,
   128,
   128
  ],
  "surveyor_action85": [
-  794,
-  4626,
+  1058,
+  5154,
   128,
   128
  ],
  "surveyor_action86": [
-  926,
-  4626,
+  1190,
+  5154,
   128,
   128
  ],
  "surveyor_action87": [
-  1058,
-  4626,
+  1322,
+  5154,
   128,
   128
  ],
  "surveyor_action88": [
-  1190,
-  4626,
+  1454,
+  5154,
   128,
   128
  ],
  "surveyor_action89": [
-  1322,
-  4626,
+  1586,
+  5154,
   128,
   128
  ],
  "surveyor_action9": [
-  1454,
-  4626,
+  1718,
+  5154,
   128,
   128
  ],
  "surveyor_action90": [
-  1586,
-  4626,
+  1850,
+  5154,
   128,
   128
  ],
  "surveyor_action91": [
-  1718,
-  4626,
+  1982,
+  5154,
   128,
   128
  ],
  "surveyor_action92": [
-  1850,
-  4626,
+  2114,
+  5154,
   128,
   128
  ],
  "surveyor_action93": [
-  1982,
-  4626,
+  2246,
+  5154,
   128,
   128
  ],
  "surveyor_action94": [
-  2114,
-  4626,
+  2378,
+  5154,
   128,
   128
  ],
  "surveyor_action95": [
-  2246,
-  4626,
+  2510,
+  5154,
   128,
   128
  ],
  "surveyor_action96": [
-  2378,
-  4626,
+  2642,
+  5154,
   128,
   128
  ],
  "surveyor_action97": [
-  2510,
-  4626,
+  2774,
+  5154,
   128,
   128
  ],
  "surveyor_action98": [
-  2642,
-  4626,
+  2906,
+  5154,
   128,
   128
  ],
  "surveyor_action99": [
-  2774,
-  4626,
+  3038,
+  5154,
   128,
   128
  ],
  "surveyor_move1": [
-  2906,
-  4626,
+  3170,
+  5154,
   128,
   128
  ],
  "surveyor_move2": [
-  3038,
-  4626,
+  3302,
+  5154,
   128,
   128
  ],
  "talon": [
-  3170,
-  4626,
+  3434,
+  5154,
   128,
   128
  ],
  "talon_accent": [
-  3302,
-  4626,
+  3566,
+  5154,
   128,
   128
  ],
  "talon_accent_action1": [
-  3434,
-  4626,
+  3698,
+  5154,
   128,
   128
  ],
  "talon_accent_action2": [
-  3566,
-  4626,
+  3830,
+  5154,
   128,
   128
  ],
  "talon_accent_action3": [
-  3698,
-  4626,
+  3962,
+  5154,
   128,
   128
  ],
  "talon_accent_action4": [
-  3302,
-  4626,
+  3566,
+  5154,
   128,
   128
  ],
  "talon_accent_move1": [
-  3830,
-  4626,
+  2,
+  5286,
   128,
   128
  ],
  "talon_accent_move2": [
-  3302,
-  4626,
+  3566,
+  5154,
   128,
   128
  ],
  "talon_action1": [
-  3962,
-  4626,
+  134,
+  5286,
   128,
   128
  ],
  "talon_action2": [
-  2,
-  4758,
+  266,
+  5286,
   128,
   128
  ],
  "talon_action3": [
-  134,
-  4758,
+  398,
+  5286,
   128,
   128
  ],
  "talon_action4": [
-  3170,
-  4626,
+  3434,
+  5154,
   128,
   128
  ],
  "talon_move1": [
-  266,
-  4758,
+  530,
+  5286,
   128,
   128
  ],
  "talon_move2": [
-  3170,
-  4626,
+  3434,
+  5154,
   128,
   128
  ],
  "theme_basalt_0": [
-  1838,
-  5140,
+  2110,
+  5668,
   64,
   64
  ],
  "theme_basalt_1": [
-  1906,
-  5140,
+  2178,
+  5668,
   64,
   64
  ],
  "theme_basalt_2": [
-  1974,
-  5140,
+  2246,
+  5668,
   64,
   64
  ],
  "theme_basalt_3": [
-  2042,
-  5140,
+  2314,
+  5668,
   64,
   64
  ],
  "theme_basalt_4": [
-  2110,
-  5140,
+  2382,
+  5668,
   64,
   64
  ],
  "theme_basalt_5": [
-  2178,
-  5140,
+  2450,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_0": [
-  2246,
-  5140,
+  2518,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_1": [
-  2314,
-  5140,
+  2586,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_2": [
-  2382,
-  5140,
+  2654,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_3": [
-  2450,
-  5140,
+  2722,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_4": [
-  2518,
-  5140,
+  2790,
+  5668,
   64,
   64
  ],
  "theme_cold_circuitry_5": [
-  2586,
-  5140,
+  2858,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_0": [
-  2654,
-  5140,
+  2926,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_1": [
-  2722,
-  5140,
+  2994,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_2": [
-  2790,
-  5140,
+  3062,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_3": [
-  2858,
-  5140,
+  3130,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_4": [
-  2926,
-  5140,
+  3198,
+  5668,
   64,
   64
  ],
  "theme_quarry_dust_5": [
-  2994,
-  5140,
+  3266,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_0": [
-  3062,
-  5140,
+  3334,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_1": [
-  3130,
-  5140,
+  3402,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_2": [
-  3198,
-  5140,
+  3470,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_3": [
-  3266,
-  5140,
+  3538,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_4": [
-  3334,
-  5140,
+  3606,
+  5668,
   64,
   64
  ],
  "theme_rusted_yard_5": [
-  3402,
-  5140,
+  3674,
+  5668,
   64,
   64
  ],
  "theme_slag_0": [
-  3470,
-  5140,
+  3742,
+  5668,
   64,
   64
  ],
  "theme_slag_1": [
-  3538,
-  5140,
+  3810,
+  5668,
   64,
   64
  ],
  "theme_slag_2": [
-  3606,
-  5140,
+  3878,
+  5668,
   64,
   64
  ],
  "theme_slag_3": [
-  3674,
-  5140,
+  3946,
+  5668,
   64,
   64
  ],
  "theme_slag_4": [
-  3742,
-  5140,
+  4014,
+  5668,
   64,
   64
  ],
  "theme_slag_5": [
-  3810,
-  5140,
+  2,
+  5736,
   64,
   64
  ],
  "theme_verdigris_0": [
-  3878,
-  5140,
+  70,
+  5736,
   64,
   64
  ],
  "theme_verdigris_1": [
-  3946,
-  5140,
+  138,
+  5736,
   64,
   64
  ],
  "theme_verdigris_2": [
-  4014,
-  5140,
+  206,
+  5736,
   64,
   64
  ],
  "theme_verdigris_3": [
-  2,
-  5208,
+  274,
+  5736,
   64,
   64
  ],
  "theme_verdigris_4": [
-  70,
-  5208,
+  342,
+  5736,
   64,
   64
  ],
  "theme_verdigris_5": [
-  138,
-  5208,
+  410,
+  5736,
   64,
   64
  ],
  "turret": [
-  398,
-  4758,
+  662,
+  5286,
   128,
   128
  ],
  "turret_accent": [
-  530,
-  4758,
+  794,
+  5286,
   128,
   128
  ],
  "turret_accent_site0_0": [
-  662,
-  4758,
+  926,
+  5286,
   128,
   128
  ],
  "turret_accent_site0_1": [
-  794,
-  4758,
+  1058,
+  5286,
   128,
   128
  ],
  "turret_accent_site1_0": [
-  926,
-  4758,
+  1190,
+  5286,
   128,
   128
  ],
  "turret_accent_site1_1": [
-  1058,
-  4758,
+  1322,
+  5286,
   128,
   128
  ],
  "turret_accent_site2_0": [
-  1190,
-  4758,
+  1454,
+  5286,
   128,
   128
  ],
  "turret_accent_site2_1": [
-  1322,
-  4758,
+  1586,
+  5286,
   128,
   128
  ],
  "turret_barrel": [
-  1454,
-  4758,
+  1718,
+  5286,
   128,
   128
  ],
  "turret_barrel_accent": [
-  1586,
-  4758,
+  1850,
+  5286,
   128,
   128
  ],
  "turret_barrel_accent_action1": [
-  1718,
-  4758,
+  1982,
+  5286,
   128,
   128
  ],
  "turret_barrel_accent_action2": [
-  1850,
-  4758,
+  2114,
+  5286,
   128,
   128
  ],
  "turret_barrel_accent_action3": [
-  1982,
-  4758,
+  2246,
+  5286,
   128,
   128
  ],
  "turret_barrel_accent_action4": [
-  1586,
-  4758,
+  1850,
+  5286,
   128,
   128
  ],
  "turret_barrel_action1": [
-  2114,
-  4758,
+  2378,
+  5286,
   128,
   128
  ],
  "turret_barrel_action2": [
-  2246,
-  4758,
+  2510,
+  5286,
   128,
   128
  ],
  "turret_barrel_action3": [
-  2378,
-  4758,
+  2642,
+  5286,
   128,
   128
  ],
  "turret_barrel_action4": [
-  1454,
-  4758,
+  1718,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1": [
-  2510,
-  4758,
+  2774,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_accent": [
-  2642,
-  4758,
+  2906,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_accent_action1": [
-  2774,
-  4758,
+  3038,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_accent_action2": [
-  2906,
-  4758,
+  3170,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_accent_action3": [
-  3038,
-  4758,
+  3302,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_accent_action4": [
-  2642,
-  4758,
+  2906,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_action1": [
-  3170,
-  4758,
+  3434,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_action2": [
-  3302,
-  4758,
+  3566,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_action3": [
-  3434,
-  4758,
+  3698,
+  5286,
   128,
   128
  ],
  "turret_barrel_t1_action4": [
-  2510,
-  4758,
+  2774,
+  5286,
   128,
   128
  ],
  "turret_barrel_t2": [
-  3566,
-  4758,
+  3830,
+  5286,
   128,
   128
  ],
  "turret_barrel_t2_accent": [
-  3698,
-  4758,
+  3962,
+  5286,
   128,
   128
  ],
  "turret_barrel_t2_accent_action1": [
-  3830,
-  4758,
+  2,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_accent_action2": [
-  3962,
-  4758,
+  134,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_accent_action3": [
-  2,
-  4890,
+  266,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_accent_action4": [
-  3698,
-  4758,
+  3962,
+  5286,
   128,
   128
  ],
  "turret_barrel_t2_action1": [
-  134,
-  4890,
+  398,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_action2": [
-  266,
-  4890,
+  530,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_action3": [
-  398,
-  4890,
+  662,
+  5418,
   128,
   128
  ],
  "turret_barrel_t2_action4": [
-  3566,
-  4758,
+  3830,
+  5286,
   128,
   128
  ],
  "turret_site0_0": [
-  530,
-  4890,
+  794,
+  5418,
   128,
   128
  ],
  "turret_site0_1": [
-  662,
-  4890,
+  926,
+  5418,
   128,
   128
  ],
  "turret_site1_0": [
-  794,
-  4890,
+  1058,
+  5418,
   128,
   128
  ],
  "turret_site1_1": [
-  926,
-  4890,
+  1190,
+  5418,
   128,
   128
  ],
  "turret_site2_0": [
-  1058,
-  4890,
+  1322,
+  5418,
   128,
   128
  ],
  "turret_site2_1": [
-  1190,
-  4890,
+  1454,
+  5418,
   128,
   128
  ],
  "turret_t1": [
-  1322,
-  4890,
+  1586,
+  5418,
   128,
   128
  ],
  "turret_t1_accent": [
-  1454,
-  4890,
+  1718,
+  5418,
   128,
   128
  ],
  "turret_t2": [
-  1586,
-  4890,
+  1850,
+  5418,
   128,
   128
  ],
  "turret_t2_accent": [
-  1718,
-  4890,
+  1982,
+  5418,
   128,
   128
  ],
  "warden": [
-  1850,
-  4890,
+  2114,
+  5418,
   128,
   128
  ],
  "warden_accent": [
-  1982,
-  4890,
+  2246,
+  5418,
   128,
   128
  ],
  "warden_accent_action1": [
-  1982,
-  4890,
+  2246,
+  5418,
   128,
   128
  ],
  "warden_accent_action2": [
-  2114,
-  4890,
+  2378,
+  5418,
   128,
   128
  ],
  "warden_accent_action3": [
-  2246,
-  4890,
+  2510,
+  5418,
   128,
   128
  ],
  "warden_accent_action4": [
-  2378,
-  4890,
+  2642,
+  5418,
   128,
   128
  ],
  "warden_accent_move1": [
-  2510,
-  4890,
+  2774,
+  5418,
   128,
   128
  ],
  "warden_accent_move2": [
-  2642,
-  4890,
+  2906,
+  5418,
   128,
   128
  ],
  "warden_action1": [
-  1850,
-  4890,
+  2114,
+  5418,
   128,
   128
  ],
  "warden_action2": [
-  2774,
-  4890,
+  3038,
+  5418,
   128,
   128
  ],
  "warden_action3": [
-  2906,
-  4890,
+  3170,
+  5418,
   128,
   128
  ],
  "warden_action4": [
-  3038,
-  4890,
+  3302,
+  5418,
   128,
   128
  ],
  "warden_move1": [
-  3170,
-  4890,
+  3434,
+  5418,
   128,
   128
  ],
  "warden_move2": [
-  3302,
-  4890,
+  3566,
+  5418,
   128,
   128
  ],
  "wreck_pile": [
-  206,
-  5208,
+  478,
+  5736,
   64,
   64
  ]

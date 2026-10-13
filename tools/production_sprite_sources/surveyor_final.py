@@ -3,7 +3,7 @@
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from tools import gen_sprites as gen
 from tools.production_sprite_sources.installed_defenses_final import bolt
@@ -54,87 +54,120 @@ def hull(d, pts, paint):
     panel(d, inner, paint)
 
 
-def render_surveyor(
-    variant: str, move: int = 0, deploy: float = 0.0, sweep: int = 0
-) -> Image.Image:
+def _chassis(variant: str, move: int) -> Image.Image:
     paint = PAINT[variant]
     im, d = canvas()
-    phase = move % 3
-    deploy = smooth(deploy)
     for bounds in ((24, 45, 40, 100), (88, 45, 104, 100), (55, 24, 73, 48)):
-        track(d, bounds, phase, paint)
+        track(d, bounds, move % 3, paint)
     hull(d, [(49, 30), (79, 30), (88, 92), (72, 103), (56, 103), (40, 92)], paint)
     vent(d, 54, 81, 20)
     for x in (47, 81):
         bolt(d, x, 73)
     disk(d, 64, 65, 12, VOID)
     disk(d, 64, 65, 9, IRON)
-    yy = 72 - 24 * deploy
-    brace(d, (64, 70), (64, yy), 7)
-    rotor = Image.new("RGBA", im.size)
-    rd = ImageDraw.Draw(rotor)
-    spread = 0.19 + 0.81 * deploy
-    radius = 30
-    depth = 14
-    # Reflector leaves open from the central hinge.
+    brace(d, (64, 70), (64, 48), 7)
+    return im
+
+
+def _hinge(points, pivot, angle):
+    if angle == 0:
+        return points
+    c, s = math.cos(angle), math.sin(angle)
+    x, y = pivot
+    return [
+        (x + (px - x) * c - (py - y) * s, y + (px - x) * s + (py - y) * c)
+        for px, py in points
+    ]
+
+
+def _reflector(deploy: float, sweep: int) -> Image.Image:
+    rotor, rd = canvas()
+    yy, radius, depth = 48, 30, 14
     for sign in (-1, 1):
+        opening = smooth((deploy - (0.10 if sign == 1 else 0.0)) / 0.85)
+        angle = sign * (1.0 - opening) * math.pi / 2
+        pivot = (64 + sign * 2, yy)
+
+        def leaf(points, pivot=pivot, angle=angle):
+            return _hinge(points, pivot, angle)
+
         outer = [
-            (64 + sign * radius * math.sin(a) * spread, yy + depth * math.cos(a))
+            (64 + sign * radius * math.sin(a), yy + depth * math.cos(a))
             for a in [i * math.pi / 16 for i in range(17)]
         ]
-        poly(rd, outer, VOID)
+        poly(rd, leaf(outer), VOID)
         inner = [
-            (
-                64 + sign * (radius - 3) * math.sin(a) * spread,
-                yy + (depth - 3) * math.cos(a),
-            )
+            (64 + sign * (radius - 3) * math.sin(a), yy + (depth - 3) * math.cos(a))
             for a in [i * math.pi / 16 for i in range(17)]
         ]
-        poly(rd, inner, IRON)
+        poly(rd, leaf(inner), IRON)
         bowl = [
-            (
-                64 + sign * (radius - 8) * math.sin(a) * spread,
-                yy + (depth - 7) * math.cos(a) + 2,
-            )
+            (64 + sign * (radius - 8) * math.sin(a), yy + (depth - 7) * math.cos(a) + 2)
             for a in [i * math.pi / 16 for i in range(17)]
         ]
-        poly(rd, bowl, DARK)
-        line(rd, outer[1:9], EDGE, 1.5)
+        poly(rd, leaf(bowl), DARK)
+        line(rd, leaf(outer[1:9]), EDGE, 1.5)
         for a in (0.5, 1.05, 1.65, 2.25, 2.7):
             edge = (
-                64 + sign * (radius - 4) * math.sin(a) * spread,
+                64 + sign * (radius - 4) * math.sin(a),
                 yy + (depth - 4) * math.cos(a),
             )
-            line(rd, [(64 + sign * 2, yy + 3), edge], EDGE, 1)
+            line(rd, leaf([(64 + sign * 2, yy + 3), edge]), EDGE, 1)
         hinge = 64 + sign * 2
-        box(rd, (hinge - 1, yy - depth + 4, hinge + 1, yy + depth - 4), IRON, 1)
-    brace(rd, (64, yy + depth - 5), (64, yy - 4), 2)
-    disk(rd, 64, yy - 4, 3, BRASS)
-    disk(rd, 64, yy - 4, 1, LIGHT)
+        if angle == 0:
+            box(rd, (hinge - 1, yy - depth + 4, hinge + 1, yy + depth - 4), IRON, 1)
+        else:
+            poly(
+                rd,
+                leaf(
+                    [
+                        (hinge - 1, yy - depth + 4),
+                        (hinge + 1, yy - depth + 4),
+                        (hinge + 1, yy + depth - 4),
+                        (hinge - 1, yy + depth - 4),
+                    ]
+                ),
+                IRON,
+            )
+    feed_angle = (1.0 - smooth((deploy - 0.65) / 0.35)) * math.pi * 0.85
+    feed_start, feed_end = _hinge([(64, 57), (64, 44)], (64, 57), feed_angle)
+    brace(rd, feed_start, feed_end, 2)
+    disk(rd, *feed_end, 3, BRASS)
+    disk(rd, *feed_end, 1, LIGHT)
     angle = (sweep % RADAR_SCAN_FRAMES) * math.tau / RADAR_SCAN_FRAMES
-    rotor = rotor.rotate(
+    return rotor.rotate(
         -math.degrees(angle), Image.Resampling.BICUBIC, center=(256, yy * 4)
     )
-    if deploy < 1:
-        scale = 0.3 + 0.7 * deploy
-        flat = rotor.resize((512, round(512 * scale)), Image.Resampling.BICUBIC)
-        rotor = Image.new("RGBA", im.size)
-        rotor.alpha_composite(flat, (0, round(yy * 4 * (1 - scale))))
-    im.alpha_composite(rotor)
-    im = finish(im)
-    small = im.resize((72, 72), Image.Resampling.LANCZOS)
+
+
+def _pack(image: Image.Image, rim: bool = True) -> Image.Image:
+    small = finish(image, rim=rim).resize((72, 72), Image.Resampling.LANCZOS)
     out = Image.new("RGBA", (128, 128))
     out.alpha_composite(small, (28, 28))
     return out
+
+
+def render_surveyor(
+    variant: str, move: int = 0, deploy: float = 0.0, sweep: int = 0
+) -> Image.Image:
+    image = _chassis(variant, move)
+    image.alpha_composite(_reflector(deploy, sweep))
+    return _pack(image)
 
 
 def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
     """Install the folded drive loop, unfold, and four-second dish rotation."""
     for variant in gen.PALETTES:
         stem = f"surveyor{gen.variant_tag(variant)}"
-        frames = {stem: render_surveyor(variant)}
+        rig = "rig_surveyor"
+        tag = gen.variant_tag(variant)
+        frames = {
+            stem: render_surveyor(variant),
+            f"{rig}_hull{tag}": _pack(_chassis(variant, 0)),
+        }
         for move in (1, 2):
             frames[f"{stem}_move{move}"] = render_surveyor(variant, move=move)
+            frames[f"{rig}_hull{tag}_move{move}"] = _pack(_chassis(variant, move))
         for frame in range(1, RADAR_UNFOLD_FRAMES + 1):
             frames[f"{stem}_action{frame}"] = render_surveyor(
                 variant, deploy=frame / RADAR_UNFOLD_FRAMES
@@ -146,3 +179,19 @@ def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
         for key, image in frames.items():
             gen.save_sprite(image, out, key)
             registry[key] = image
+
+    mounts = {"": _pack(_reflector(0, 0), rim=False)}
+    for frame in range(1, RADAR_UNFOLD_FRAMES + 1):
+        mounts[f"_action{frame}"] = _pack(
+            _reflector(frame / RADAR_UNFOLD_FRAMES, 0), rim=False
+        )
+    for frame in range(RADAR_SCAN_FRAMES):
+        mounts[f"_action{RADAR_UNFOLD_FRAMES + frame + 1}"] = _pack(
+            _reflector(1.0, frame), rim=False
+        )
+    # The reflector is bare metal; only the chassis carries allegiance paint.
+    for suffix, image in mounts.items():
+        for tag, layer in (("", image), ("_accent", Image.new("RGBA", image.size))):
+            key = f"rig_surveyor_mount{tag}{suffix}"
+            gen.save_sprite(layer, out, key)
+            registry[key] = layer

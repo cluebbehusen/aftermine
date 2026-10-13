@@ -1250,16 +1250,24 @@ fn parked_scanner_starts_at_home_and_resets_only_when_folded() {
     }
     facts.radar_unfold = None;
     controller.observe_radar(facts, 501);
-    assert!(controller.radar_deployments.is_empty());
-    assert_eq!(
+    assert!(
         controller
             .unit_state(facts, AnimationClock::new(501, 0.0), options)
-            .scanner,
-        None
+            .radar_unfold
+            .is_some()
+    );
+    controller.observe_radar(facts, 521);
+    assert!(controller.radars.is_empty());
+    assert!(
+        controller
+            .unit_state(facts, AnimationClock::new(521, 0.0), options)
+            .radar_unfold
+            .is_none()
     );
     facts.radar_unfold = Some((1, 40));
     controller.observe_radar(facts, 550);
     facts.radar_unfold = Some((40, 40));
+    controller.observe_radar(facts, 589);
     assert_eq!(
         controller
             .unit_state(facts, AnimationClock::new(589, 0.0), options)
@@ -1267,7 +1275,7 @@ fn parked_scanner_starts_at_home_and_resets_only_when_folded() {
         Some(0.0)
     );
     controller.reset_transients();
-    assert!(controller.radar_deployments.is_empty());
+    assert!(controller.radars.is_empty());
     controller.observe_radar(facts, 1_000);
     assert_eq!(
         controller
@@ -1289,7 +1297,9 @@ fn radar_observer_follows_deployment_and_discards_absent_units() {
     let mut state = scenario.build().unwrap();
     let id = state.units()[0].id;
     let mut controller = AnimationController::default();
-    controller.radar_deployments.insert(UnitId(u32::MAX), 0);
+    controller
+        .radars
+        .insert(UnitId(u32::MAX), RadarTransition::Scanning { started: 0 });
     for deployed in 1..=40 {
         state.tick(&[]);
         controller.observe_radars(&state);
@@ -1301,7 +1311,7 @@ fn radar_observer_follows_deployment_and_discards_absent_units() {
             AnimationOptions::default(),
         );
         assert_eq!(animation.scanner, (deployed == 40).then_some(0.0));
-        assert_eq!(controller.radar_deployments.len(), 1);
+        assert_eq!(controller.radars.len(), 1);
     }
     state.tick(&[player_command(Command::Run {
         units: vec![id],
@@ -1310,5 +1320,63 @@ fn radar_observer_follows_deployment_and_discards_absent_units() {
     })]);
     controller.observe_radars(&state);
     assert_eq!(state.unit(id).unwrap().radar_deploy, 0);
-    assert!(controller.radar_deployments.is_empty());
+    assert!(state.unit(id).unwrap().radar().is_none());
+    let start = state.unit(id).unwrap().pos;
+    assert_eq!(
+        controller.radars.len(),
+        1,
+        "the disabled radar still folds visually"
+    );
+    for _ in 0..20 {
+        state.tick(&[]);
+        controller.observe_radars(&state);
+    }
+    assert_ne!(
+        state.unit(id).unwrap().pos,
+        start,
+        "folding does not delay driving"
+    );
+    assert!(controller.radars.is_empty());
+}
+
+#[test]
+fn radar_hinges_reverse_from_the_visible_pose() {
+    let mut controller = AnimationController::default();
+    let mut facts = unit_facts(UnitKind::Surveyor);
+    facts.radar_unfold = Some((20, 40));
+    controller.observe_radar(facts, 20);
+    let at = |controller: &AnimationController, tick| {
+        controller.radars[&facts.id].pose(AnimationClock::new(tick, 0.0))
+    };
+    assert_eq!(at(&controller, 20).deployment, 0.5);
+    facts.radar_unfold = None;
+    controller.observe_radar(facts, 20);
+    assert_eq!(at(&controller, 20).deployment, 0.5);
+    assert_eq!(at(&controller, 25).deployment, 0.375);
+    facts.radar_unfold = Some((1, 40));
+    controller.observe_radar(facts, 25);
+    assert_eq!(at(&controller, 25).deployment, 0.375);
+    facts.radar_unfold = Some((40, 40));
+    controller.observe_radar(facts, 64);
+    assert_eq!(at(&controller, 64).deployment, 1.0);
+    assert_eq!(at(&controller, 64).bearing, Some(0.0));
+    assert_eq!(at(&controller, 84).bearing, Some(0.25));
+    facts.radar_unfold = None;
+    controller.observe_radar(facts, 84);
+    assert_eq!(at(&controller, 84).bearing, Some(0.25));
+    assert_eq!(at(&controller, 86).bearing, Some(0.125));
+    facts.radar_unfold = Some((1, 40));
+    controller.observe_radar(facts, 86);
+    assert_eq!(
+        at(&controller, 86).bearing,
+        Some(0.125),
+        "interrupting homing keeps its bearing"
+    );
+    assert_eq!(at(&controller, 90).deployment, 1.0);
+    assert_eq!(at(&controller, 90).bearing, None);
+    assert_eq!(
+        home_bearing(0.75, 2.0),
+        0.875,
+        "homing takes the short path across wrap"
+    );
 }

@@ -27,7 +27,7 @@ pub(crate) struct UnitLook {
     pub(crate) move_rows: MoveRows,
     /// Exposed belt runs inside the track casings, in 128-px sprite space.
     pub(crate) belts: &'static [[f32; 4]],
-    /// A separate weapon or rotor mount drawn over the hull.
+    /// A separate weapon, rotor, or sensor mechanism drawn over the hull.
     pub(crate) rig: bool,
     /// The work body a worker draws instead of its plain sprite.
     pub(crate) tool: Option<WorkerTool>,
@@ -303,6 +303,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             ..plain
         },
         UnitKind::Surveyor => UnitLook {
+            rig: true,
             scale: 2.0,
             gait: Gait::Treads,
             marker: M::Scout,

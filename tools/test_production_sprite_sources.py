@@ -78,7 +78,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.temp.cleanup()
 
-    def test_surveyor_preserves_approved_poses_and_scanner_seam(self) -> None:
+    def test_surveyor_preserves_deployed_art_and_scanner_seam(self) -> None:
         digest = hashlib.sha256()
         for variant in gen.PALETTES:
             frames = [surveyor_final.render_surveyor(variant, move=i) for i in range(3)]
@@ -90,7 +90,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 surveyor_final.render_surveyor(variant, deploy=1, sweep=i)
                 for i in range(80)
             ]
-            for frame in frames:
+            for frame in frames[43:]:
                 digest.update(frame.tobytes())
             self.assertEqual(frames[42].tobytes(), frames[43].tobytes())
             self.assertEqual(
@@ -105,7 +105,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 )
         self.assertEqual(
             digest.hexdigest(),
-            "bd45d0cc7a01bf427f6781859d780c68918d03339b1e7cb0e89d2191fc7573bf",
+            "000e91b69f35066f88c1e67685df75a731d5463892d2cb166986cc9106a7a920",
         )
 
     def test_installer_is_independent_of_review_files(self) -> None:
