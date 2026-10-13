@@ -649,3 +649,37 @@ fn no_surveyor_is_trained_for_a_point_across_a_chasm() {
         "another could not go either: {commands:?}"
     );
 }
+
+#[test]
+fn a_heavy_first_gun_keeps_its_own_aim_out_of_the_weakest_focus() {
+    let (mut scenario, _, _) = skirmish([(8, 5), (8, 6)], 20);
+    // In reach of the raiders, it would join a focus it could fire on; two
+    // more raiders make the defense take every West gun.
+    scenario.units.extend([
+        unit(0, UnitKind::Piledriver, 6, 4),
+        unit(1, UnitKind::Sentinel, 11, 5),
+        unit(1, UnitKind::Sentinel, 11, 6),
+    ]);
+    let state = scenario.build().unwrap();
+    let weakest = at(&state, 10, 5);
+    let state = wounded(&state, weakest, 20);
+    let gun = at(&state, 6, 4);
+    let commands = seat_with(&scenario, 0, veteran()).act(&state, &mut OwnEvents::default());
+    let focus = attacks(&commands);
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&gun)),
+        "premise: the Piledriver defends: {commands:?}"
+    );
+    assert!(
+        focus
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(weakest)),
+        "premise: its fellow defenders focus: {commands:?}"
+    );
+    assert!(
+        focus.iter().all(|(units, _)| !units.contains(&gun)),
+        "the Piledriver picks its own: {commands:?}"
+    );
+}

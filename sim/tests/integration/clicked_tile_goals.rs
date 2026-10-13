@@ -249,7 +249,7 @@ fn rally_newborn(state: &mut State, rally: TilePos) -> UnitId {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(rally),
+                rally: Some(oxide_sim::Rally::Tile(rally)),
             },
         ),
         cmd(
@@ -311,7 +311,7 @@ fn a_rally_on_explored_rock_resolves_at_birth_and_an_unexplored_one_on_exposure(
 fn an_off_map_rally_from_an_old_record_is_clamped_onto_the_map() {
     let mut state = rally_field();
     let mut doc = serde_json::to_value(&state).unwrap();
-    doc["buildings"][0]["rally"] = serde_json::json!({"x": -2, "y": 5});
+    doc["buildings"][0]["rally"] = serde_json::json!({"tile": {"x": -2, "y": 5}});
     state = serde_json::from_value(doc).expect("the envelope admits it");
     let foundry = state.buildings()[0].id;
     state.tick(&[cmd(
@@ -554,7 +554,9 @@ fn an_engagement_resumes_toward_the_same_slot() {
         unreachable!();
     };
     assert_eq!(
-        resume.map(|goal| (goal.tile(), goal.aim)),
+        resume
+            .and_then(|resume| resume.goal())
+            .map(|goal| (goal.tile(), goal.aim)),
         Some((click, march.aim))
     );
     run_until(&mut state, 600, |state, _| {
@@ -713,7 +715,7 @@ fn off_map_tile_goals_are_refused_without_a_trace() {
             },
             Command::SetRally {
                 building: foundry,
-                rally: Some(tile),
+                rally: Some(oxide_sim::Rally::Tile(tile)),
             },
         ];
         for command in commands {

@@ -293,11 +293,10 @@ fn the_aura_heals_the_ring_to_whole_and_bills_the_welders_exact_price() {
 }
 
 #[test]
-fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
-    // Two bays whose auras both cover the patient's parking spot: the
-    // heals stack (2 hp per pulse) and the bill must telescope across
-    // them as one meter; each bay pricing from start-of-tick hp would
-    // double-charge (or skip) the shared interval.
+fn overlapping_bays_heal_a_shared_patient_once_and_bill_it_exactly() {
+    // Two bays whose auras both cover the patient's parking spot: only the
+    // first-built takes it, so it heals one step per pulse and the bill
+    // telescopes as one meter.
     let mut scenario = arena(
         vec![
             unit(0, UnitKind::Harvester, FAR.x, FAR.y),
@@ -329,8 +328,8 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
     let overlap = TilePos::new(BAY_ANCHOR.0 + 2, BAY_ANCHOR.1 + 3);
     state.tick(&[walk(0, vec![patient], overlap)]);
     // The march grazes single-coverage fringe (auras heal walkers
-    // too), so anchor the stacking measurement to ARRIVAL, then to a
-    // pulse boundary.
+    // too), so anchor the measurement to ARRIVAL, then to a pulse
+    // boundary.
     run_until(&mut state, 2_000, |s, _| {
         s.unit(patient).unwrap().tile() == overlap
             && s.unit(patient).unwrap().order == oxide_sim::Order::Idle
@@ -339,7 +338,7 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
         s.current_tick()
             .is_multiple_of(oxide_sim::stats::REPAIR_BAY_PERIOD)
     });
-    // One full pulse window with both auras engaged heals two steps.
+    // One full pulse window inside both auras heals one Bay's step.
     let h0 = state.unit(patient).unwrap().hp;
     let max = UnitKind::Harvester.stats().max_hp;
     if h0 + 2 * oxide_sim::stats::REPAIR_BAY_STEP <= max {
@@ -348,8 +347,8 @@ fn overlapping_bays_stack_the_heal_and_telescope_the_bill_once() {
         }
         assert_eq!(
             state.unit(patient).unwrap().hp,
-            h0 + 2 * oxide_sim::stats::REPAIR_BAY_STEP,
-            "both auras must stack on the shared patient"
+            h0 + oxide_sim::stats::REPAIR_BAY_STEP,
+            "the second aura must not stack on a taken patient"
         );
     }
     run_until(&mut state, 4_000, |s, _| s.unit(patient).unwrap().hp == max);
@@ -468,10 +467,10 @@ fn overlapping_bays_recheck_the_reserve_after_each_charge() {
 }
 
 #[test]
-fn partial_scrap_heals_the_earliest_id_first_then_starves() {
+fn partial_scrap_heals_the_most_wounded_first_then_starves() {
     let units = vec![
-        unit(0, UnitKind::Harvester, FAR.x, FAR.y), // first patient
-        unit(0, UnitKind::Harvester, FAR.x, FAR.y + 2), // second patient
+        unit(0, UnitKind::Harvester, FAR.x, FAR.y), // lighter wound
+        unit(0, UnitKind::Harvester, FAR.x, FAR.y + 2), // heavier wound
         // Parked beyond its own aggro reach of both patients' walk to the ring,
         // so the raider never picks the chase back up.
         unit(1, UnitKind::Scuttler, 18, 10),
@@ -482,10 +481,10 @@ fn partial_scrap_heals_the_earliest_id_first_then_starves() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    let hurt_a = wound(&mut state, a, raider, 20);
+    let hurt_a = wound(&mut state, a, raider, 40);
     let hurt_b = {
         state.tick(&[walk(1, vec![raider], TilePos::new(FAR.x, FAR.y + 4))]);
-        run_until(&mut state, 3_000, |s, _| s.unit(b).unwrap().hp <= 20);
+        run_until(&mut state, 3_000, |s, _| s.unit(b).unwrap().hp <= 15);
         state.tick(&[walk(1, vec![raider], TilePos::new(18, 10))]);
         run_until(&mut state, 800, |s, _| {
             s.unit(raider).unwrap().tile() == TilePos::new(18, 10)
@@ -494,20 +493,22 @@ fn partial_scrap_heals_the_earliest_id_first_then_starves() {
     };
     state.tick(&[walk(0, vec![a], RING)]);
     state.tick(&[walk(0, vec![b], TilePos::new(RING.x, RING.y + 1))]);
-    // Five scrap buys a handful of pulses split in id order, then the
-    // bank is dry and every whole-coin step skips its patient.
+    run_until(&mut state, 400, |s, _| patients(s, bay_id(s)).len() == 2);
+    let order: Vec<UnitId> = patients(&state, bay_id(&state))
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(order, vec![b, a], "the worse wound comes first");
+    // Five scrap buys a handful of pulses, then the bank is dry.
     run_until(&mut state, 2_000, |s, _| s.player(PlayerId(0)).scrap == 0);
     for _ in 0..200 {
         state.tick(&[]);
     }
     let (hp_a, hp_b) = (state.unit(a).unwrap().hp, state.unit(b).unwrap().hp);
     let max = UnitKind::Harvester.stats().max_hp;
-    assert!(hp_a > hurt_a, "the first coins reach the earliest id");
+    assert!(hurt_b < hurt_a, "premise: the later id is the worse wound");
+    assert!(hp_a > hurt_a && hp_b > hurt_b, "both heal while coins last");
     assert!(hp_a < max && hp_b < max, "five scrap fully heals nobody");
-    assert!(
-        hp_a - hurt_a >= hp_b - hurt_b,
-        "id order spends the last coins on the earlier patient (a: {hurt_a}->{hp_a}, b: {hurt_b}->{hp_b})"
-    );
 }
 
 #[test]
@@ -1073,7 +1074,7 @@ fn fire_wins_the_tick_and_the_dead_forfeit_the_aura() {
     state.tick(&[walk(0, vec![patient], RING)]);
     run_until(&mut state, 400, |s, _| s.unit(patient).unwrap().hp > hurt);
     // Two gnawing scuttlers (20 hp/s) walk into the ring and out-pace
-    // the aura (2.5 hp/s): buffered heals land only on machines the
+    // the aura's slow rate under fire: buffered heals land only on machines the
     // volley left standing, so the ring never outbids the guns on the
     // tick they win.
     for raider in [r1, r2] {
@@ -1096,4 +1097,298 @@ fn fire_wins_the_tick_and_the_dead_forfeit_the_aura() {
         bank,
         "the aura bills no dead patient"
     );
+}
+
+/// `state` with each `(unit, hp, damaged_at)` forged in.
+fn forge_units(state: State, edits: &[(UnitId, u32, Option<u64>)]) -> State {
+    let mut json = serde_json::to_value(state).unwrap();
+    for (id, hp, damaged_at) in edits {
+        let unit = json["units"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|unit| unit["id"] == serde_json::json!(id))
+            .expect("unit id survives serialization");
+        unit["hp"] = serde_json::json!(hp);
+        if let Some(at) = damaged_at {
+            unit["damaged_at"] = serde_json::json!(at);
+        }
+    }
+    serde_json::from_value(json).unwrap()
+}
+
+/// The machines `bay` services this pulse.
+fn patients(state: &State, bay: BuildingId) -> Vec<(UnitId, oxide_sim::state::RepairPace)> {
+    state
+        .repair_bay_patients()
+        .into_iter()
+        .find(|(id, _)| *id == bay)
+        .map(|(_, patients)| patients)
+        .unwrap_or_default()
+}
+
+fn bay_id(state: &State) -> BuildingId {
+    building_at(
+        state,
+        BuildingKind::RepairBay,
+        TilePos::new(BAY_ANCHOR.0, BAY_ANCHOR.1),
+        PlayerId(0),
+    )
+}
+
+/// Ticks until the next aura pulse fires, plus that pulse.
+fn to_next_pulse(state: &mut State) {
+    state.tick(&[]);
+    while !state
+        .current_tick()
+        .is_multiple_of(oxide_sim::stats::REPAIR_BAY_PERIOD)
+    {
+        state.tick(&[]);
+    }
+    state.tick(&[]);
+}
+
+#[test]
+fn a_bay_services_its_four_most_wounded_and_the_fifth_waits() {
+    // Five Sentinels around the bay, each missing a different share.
+    let spots = [(7, 4), (7, 5), (4, 7), (5, 7), (2, 4)];
+    let units = spots
+        .iter()
+        .map(|&(x, y)| unit(0, UnitKind::Sentinel, x, y))
+        .chain([unit(0, UnitKind::Harvester, 2, 9)])
+        .collect();
+    let state = arena(units, 500, true).build().unwrap();
+    let ids: Vec<UnitId> = state.units()[..5].iter().map(|unit| unit.id).collect();
+    // The first spawned is the least wounded, so id order alone would pick it.
+    let hps = [50, 10, 20, 30, 40];
+    let edits: Vec<_> = ids
+        .iter()
+        .zip(hps)
+        .map(|(&id, hp)| (id, hp, None))
+        .collect();
+    let mut state = forge_units(state, &edits);
+    let chosen: Vec<UnitId> = patients(&state, bay_id(&state))
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        chosen,
+        vec![ids[1], ids[2], ids[3], ids[4]],
+        "most missing first, four at most"
+    );
+    to_next_pulse(&mut state);
+    let hp = |id| state.unit(id).unwrap().hp;
+    assert_eq!(hp(ids[0]), 50, "the least wounded waits for a slot");
+    for (&id, before) in ids[1..].iter().zip(&hps[1..]) {
+        assert!(
+            hp(id) > *before,
+            "a calm patient this light still gains the slow step at least"
+        );
+    }
+}
+
+#[test]
+fn a_calm_breaker_heals_fast_and_one_just_hit_waits_out_the_slow_rate() {
+    let units = vec![
+        unit(0, UnitKind::Breaker, RING.x, RING.y),
+        unit(0, UnitKind::Harvester, 2, 9),
+    ];
+    let mut state = arena(units, 5_000, true).build().unwrap();
+    state.tick(&[]);
+    let breaker = state.units()[0].id;
+    let max = UnitKind::Breaker.stats().max_hp;
+    let half = max / 2;
+    // Hit on the tick just run.
+    let hit_at = state.current_tick() - 1;
+    let mut state = forge_units(state, &[(breaker, half, Some(hit_at))]);
+    // Inside the calm window: the slow step.
+    to_next_pulse(&mut state);
+    assert_eq!(
+        patients(&state, bay_id(&state)),
+        vec![(breaker, oxide_sim::state::RepairPace::Slow)]
+    );
+    let slow = state.unit(breaker).unwrap().hp - half;
+    assert_eq!(slow, oxide_sim::stats::REPAIR_BAY_STEP);
+    // Half a Breaker back in about 20 s, the calm wait included.
+    let deadline = hit_at + 20 * u64::from(oxide_sim::TICKS_PER_SECOND);
+    run_until(&mut state, 600, |s, _| s.unit(breaker).unwrap().hp == max);
+    assert!(
+        state.current_tick() <= deadline,
+        "whole at tick {} against a deadline of {deadline}",
+        state.current_tick()
+    );
+    assert!(
+        state.current_tick() >= hit_at + oxide_sim::stats::REPAIR_BAY_CALM_TICKS,
+        "the calm wait came first"
+    );
+}
+
+#[test]
+fn a_patient_the_bank_cannot_fully_pay_for_heals_what_it_can() {
+    let units = vec![
+        unit(0, UnitKind::Breaker, RING.x, RING.y),
+        unit(0, UnitKind::Harvester, 2, 9),
+    ];
+    let state = arena(units, 3, true).build().unwrap();
+    let breaker = state.units()[0].id;
+    let half = UnitKind::Breaker.stats().max_hp / 2;
+    let mut state = forge_units(state, &[(breaker, half, None)]);
+    to_next_pulse(&mut state);
+    let healed = state.unit(breaker).unwrap().hp - half;
+    assert!(healed > 0, "three scrap buys part of the step");
+    assert_eq!(
+        aura_bill(UnitKind::Breaker, half, half + healed),
+        3,
+        "and spends exactly what the bank held"
+    );
+    assert_eq!(state.player(PlayerId(0)).scrap, 0);
+}
+
+#[test]
+fn a_condor_heals_only_landed_and_a_talon_while_it_hovers() {
+    let units = vec![
+        unit(0, UnitKind::Condor, RING.x, RING.y),
+        unit(0, UnitKind::Talon, RING.x, RING.y + 2),
+        unit(0, UnitKind::Harvester, 2, 9),
+    ];
+    let state = arena(units, 500, true).build().unwrap();
+    let (condor, talon) = (state.units()[0].id, state.units()[1].id);
+    let state = forge_units(state, &[(condor, 100, None), (talon, 40, None)]);
+    let chosen = |state: &State| -> Vec<UnitId> {
+        patients(state, bay_id(state))
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    };
+    assert!(!state.unit(condor).unwrap().landed(), "premise: aloft");
+    assert_eq!(
+        chosen(&state),
+        vec![talon],
+        "a flying Condor is passed over"
+    );
+    let mut json = serde_json::to_value(&state).unwrap();
+    json["units"][0]["motor"] = serde_json::json!({"motor": "landed"});
+    let state: State = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        chosen(&state),
+        vec![condor, talon],
+        "a landed one is served"
+    );
+}
+
+#[test]
+fn overlapping_bays_serve_different_patients() {
+    let spots = [(6, 7), (7, 7), (8, 7), (9, 7), (7, 8)];
+    let mut scenario = arena(
+        spots
+            .iter()
+            .map(|&(x, y)| unit(0, UnitKind::Sentinel, x, y))
+            .chain([unit(0, UnitKind::Harvester, 2, 9)])
+            .collect(),
+        500,
+        true,
+    );
+    scenario
+        .buildings
+        .push(structure(0, BuildingKind::RepairBay, 9, 4));
+    let state = scenario.build().unwrap();
+    let ids: Vec<UnitId> = state.units()[..5].iter().map(|unit| unit.id).collect();
+    let edits: Vec<_> = ids.iter().map(|&id| (id, 30, None)).collect();
+    let state = forge_units(state, &edits);
+    let second = building_at(
+        &state,
+        BuildingKind::RepairBay,
+        TilePos::new(9, 4),
+        PlayerId(0),
+    );
+    let first = patients(&state, bay_id(&state));
+    let later = patients(&state, second);
+    assert_eq!(first.len(), 4, "the first-built Bay fills its slots");
+    assert_eq!(later.len(), 1, "the later Bay takes the one left over");
+    assert!(
+        first.iter().all(|patient| !later.contains(patient)),
+        "no machine takes two slots"
+    );
+}
+
+#[test]
+fn mirrored_seats_choose_mirrored_patients() {
+    // Both seats own a Bay and the same wounded crew, a half-turn apart.
+    let map: Vec<String> = arena(vec![], 0, false).map;
+    let (w, h) = (
+        i32::try_from(map[0].len()).unwrap(),
+        i32::try_from(map.len()).unwrap(),
+    );
+    let mirror = |x: i32, y: i32| (w - 1 - x, h - 1 - y);
+    let spots = [(7, 4), (7, 5), (4, 7), (5, 7), (2, 4)];
+    let mut units = Vec::new();
+    for player in [0, 1] {
+        for &(x, y) in &spots {
+            let (x, y) = if player == 0 { (x, y) } else { mirror(x, y) };
+            units.push(unit(player, UnitKind::Sentinel, x, y));
+        }
+    }
+    let mut scenario = arena(units, 500, false);
+    let (bx, by) = mirror(BAY_ANCHOR.0 + 1, BAY_ANCHOR.1 + 1);
+    scenario.buildings = vec![
+        structure(0, BuildingKind::RepairBay, BAY_ANCHOR.0, BAY_ANCHOR.1),
+        structure(1, BuildingKind::RepairBay, bx, by),
+    ];
+    let state = scenario.build().unwrap();
+    let hps = [30, 30, 20, 20, 40];
+    let edits: Vec<_> = state
+        .units()
+        .iter()
+        .enumerate()
+        .map(|(i, unit)| (unit.id, hps[i % 5], None))
+        .collect();
+    let state = forge_units(state, &edits);
+    let chosen = |player: u8, x, y| -> Vec<usize> {
+        let bay = building_at(
+            &state,
+            BuildingKind::RepairBay,
+            TilePos::new(x, y),
+            PlayerId(player),
+        );
+        patients(&state, bay)
+            .into_iter()
+            .map(|(id, _)| {
+                state
+                    .units()
+                    .iter()
+                    .filter(|unit| unit.player == PlayerId(player))
+                    .position(|unit| unit.id == id)
+                    .unwrap()
+            })
+            .collect()
+    };
+    assert_eq!(
+        chosen(0, BAY_ANCHOR.0, BAY_ANCHOR.1),
+        chosen(1, bx, by),
+        "each seat picks the same spots of its crew"
+    );
+}
+
+#[test]
+fn a_hit_stamps_its_victim_with_the_tick_it_landed() {
+    let units = vec![
+        unit(0, UnitKind::Sentinel, FAR.x, FAR.y),
+        unit(1, UnitKind::Scuttler, FAR.x + 1, FAR.y),
+    ];
+    let mut state = arena(units, 0, false).build().unwrap();
+    let victim = state.units()[0].id;
+    assert_eq!(state.unit(victim).unwrap().damaged_at, None);
+    let mut hit = None;
+    for _ in 0..200 {
+        let tick = state.current_tick();
+        let report = state.tick(&[]);
+        if report.events.iter().any(
+            |event| matches!(event, Event::DamageTaken { player, .. } if *player == PlayerId(0)),
+        ) {
+            hit = Some(tick);
+            break;
+        }
+    }
+    let hit = hit.expect("premise: the Scuttler bites");
+    assert_eq!(state.unit(victim).unwrap().damaged_at, Some(hit));
 }

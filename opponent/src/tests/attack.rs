@@ -14,7 +14,7 @@ const WEST: [(i32, i32); 8] = [
 
 /// The field with West's garrison, `west` West Sentinels and the given East
 /// units.
-fn armed(west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
+pub(super) fn armed(west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
     let mut scenario = field();
     for (x, y) in GARRISON.iter().chain(&WEST[..west]) {
         scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
@@ -1201,4 +1201,99 @@ fn an_attack_pulling_back_sends_no_reinforcements_after_it() {
         "{commands:?}"
     );
     assert_eq!(mission.units as usize, members.len());
+}
+
+#[test]
+fn a_point_defender_goes_along_with_an_attack() {
+    let mut scenario = armed(8, &[]);
+    scenario.units.push(unit(0, UnitKind::Mantle, 10, 11));
+    let state = scenario.build().unwrap();
+    let mantle = at(&state, 10, 11);
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    let mission = attack(&trace.unwrap().missions).expect("premise: an attack forms");
+    let [(sent, _)] = &hunts(&commands)[..] else {
+        panic!("{commands:?}");
+    };
+    assert!(sent.contains(&mantle), "{sent:?}");
+    assert_eq!(sent.len(), mission.units as usize);
+}
+
+#[test]
+fn a_point_defender_that_drifts_is_sent_back_over_the_army() {
+    let mut scenario = armed(8, &[]);
+    scenario.units.push(unit(0, UnitKind::Mantle, 10, 11));
+    let mut state = scenario.build().unwrap();
+    let mantle = at(&state, 10, 11);
+    let mut opponent = seat(&scenario, 0);
+    for _ in 0..3_000 {
+        let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
+        if let Some((_, goal)) = runs(&commands)
+            .into_iter()
+            .find(|(units, _)| units == &vec![mantle])
+        {
+            assert!(
+                state
+                    .units()
+                    .iter()
+                    .any(|unit| unit.kind == UnitKind::Sentinel && unit.tile() == goal),
+                "sent to a fighting member's tile, not {goal:?}"
+            );
+            return;
+        }
+        state.tick(&commands);
+    }
+    panic!("the Mantle was never brought back over the army");
+}
+
+#[test]
+fn point_defenders_go_home_once_their_attack_has_no_guns() {
+    let mut scenario = armed(8, &[]);
+    scenario.units.push(unit(0, UnitKind::Mantle, 10, 11));
+    let mut state = scenario.build().unwrap();
+    let mantle = at(&state, 10, 11);
+    let mut opponent = seat(&scenario, 0);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(attack(&trace.unwrap().missions).is_some());
+    let [(sent, _)] = &hunts(&commands)[..] else {
+        panic!("{commands:?}");
+    };
+    state.tick(&commands);
+    // Every gun the attack took falls at once.
+    let mut doc = serde_json::to_value(&state).unwrap();
+    doc["units"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| entry["id"] == mantle.0 || !sent.iter().any(|id| entry["id"] == id.0));
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    for _ in 0..200 {
+        state.tick(&[]);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        if let Some(trace) = trace {
+            let home = runs(&commands)
+                .into_iter()
+                .any(|(units, _)| units.contains(&mantle));
+            assert!(home, "{commands:?}");
+            assert!(
+                attack(&trace.missions).is_none_or(|mission| mission.units == 0),
+                "the attack ends with its guns"
+            );
+            return;
+        }
+    }
+    panic!("no decision followed");
+}
+
+#[test]
+fn anti_heavy_units_join_an_attack() {
+    let mut scenario = armed(8, &[]);
+    scenario.units.extend([
+        unit(0, UnitKind::Piledriver, 6, 11),
+        unit(0, UnitKind::Piledriver, 8, 11),
+    ]);
+    let state = scenario.build().unwrap();
+    let guns = [at(&state, 6, 11), at(&state, 8, 11)];
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let sent = hunts(&commands);
+    assert_eq!(sent.len(), 1, "{commands:?}");
+    assert!(guns.iter().all(|gun| sent[0].0.contains(gun)), "{sent:?}");
 }

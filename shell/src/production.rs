@@ -4,7 +4,9 @@ use crate::action::{Action, BindingMap};
 use crate::building_actions::SelectedBuildings;
 use crate::game::{Game, Scene};
 use crate::numeric::Fit;
-use crate::panel::{Card, CardAction, CardIcon, unit_flavor, unit_stat_line, weapon_lines};
+use crate::panel::{
+    Card, CardAction, CardIcon, point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
+};
 use crate::typography::entity_name;
 use oxide_sim::{Building, BuildingId, Command, UnitKind};
 
@@ -149,6 +151,7 @@ impl Production {
                 let count = batch.recipients.len();
                 let mut desc = vec![unit_flavor(kind).into(), unit_stat_line(kind)];
                 desc.extend(weapon_lines(kind));
+                desc.extend(point_defense_line(kind));
                 if batch.total > 1 {
                     desc.push(format!(
                         "One per factory: {count} of {} can queue now.",

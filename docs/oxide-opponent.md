@@ -49,14 +49,16 @@ selects actions in precedence order:
 
 1. emergency defense and recovery;
 2. the saving target, when it is affordable and can be placed;
-3. workers, to keep harvesting saturated: every known node or wreck whose trip
+3. free wounded units to a calm Repair Bay with room, where they sit out
+   missions and welding while they heal;
+4. workers, to keep harvesting saturated: every known node or wreck whose trip
    repays a Harvester within a stance and greed horizon, filled as stance and
    greed choose, with workers left without a place salvaging other known wreck;
    until the army reaches the stance minimum, workers that would cost more than
    the army wait for army production, and a seat that exposed puts up a Turret
    before any tech;
-4. missions, advancing their phases and recruiting as needed;
-5. production toward composition needs, from scrap not protected for saving.
+5. missions, advancing their phases and recruiting as needed;
+6. production toward composition needs, from scrap not protected for saving.
 
 Spending and ownership are coordinated through one running total that lives
 inside the decision and never outlives it as a type. Difficulty limits unit
@@ -97,9 +99,10 @@ the running total and mission state.
   sends.
 - Missions recruit from available units in a fixed order (defend, lift, attack,
   clearance, strike, raid), and each takes only the roles it uses: attack takes
-  line, siege and anti-air units, with Sappers in support; raid takes Scuttlers,
-  Sappers, or ground-attack aircraft too few for a strike; lift takes carriers
-  and a payload; a clearance takes splash bombers while ground reaches no enemy.
+  line, siege, anti-air and anti-heavy units, with Sappers and point defenders
+  in support; raid takes Scuttlers, Sappers, or ground-attack aircraft too few
+  for a strike; lift takes carriers and a payload; a clearance takes splash
+  bombers while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at
@@ -174,6 +177,7 @@ Each behavior is proven by a staged scenario test.
 | Situation                            | Required response                                                                                                                                     |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enemy air seen                       | Anti-air proportional to seen enemy air                                                                                                               |
+| Enemy heavies seen                   | Anti-heavy units proportional to seen enemy heavies                                                                                                   |
 | Enemy Airworks seen                  | Raise the anti-air need before enemy air arrives                                                                                                      |
 | Ground threat at base or expansion   | Defend                                                                                                                                                |
 | Air raid on base or expansion        | Defend with anti-air or fighters                                                                                                                      |
@@ -186,8 +190,10 @@ Each behavior is proven by a staged scenario test.
 | Enemy artillery shelling assets      | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                  |
 | Assets under indirect fire           | Target visible likely spotters                                                                                                                        |
 | Enemy unit mix                       | Choose units by coarse suitability against seen enemies                                                                                               |
+| Enemy shellfire known                | Point defenders in proportion to the heavy shots it fires, kept over the army                                                                         |
 | Expensive investment wanted          | Save for it while keeping an army share                                                                                                               |
 | Several enemies                      | Choose a target with hysteresis                                                                                                                       |
+| Wounded units and a calm Repair Bay  | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                           |
 
 It also covers scouting, where a point whose scout was lost on the way waits to
 go stale again rather than drawing scouts one after another into the same fire,
@@ -195,9 +201,9 @@ Scuttler raids, harvest-line harassment by air, team relief, escorts, repair,
 harvester evacuation, emergency and voluntary static defense sized to hold off
 the known threat, Extractor restoration, expansion timing, tech prerequisites,
 memory of failed objectives, a response to stalled production, focus fire, and
-pulling wounded units back between fights. It does no other per-unit micro. It
-builds every building kind, reaches every upgrade tier, and trains every unit
-kind.
+pulling wounded units back between fights. It does no other per-unit micro,
+except keeping point defenders over the army they travel with. It builds every
+building kind, reaches every upgrade tier, and trains every unit kind.
 
 ## Difficulty, stance and personality
 

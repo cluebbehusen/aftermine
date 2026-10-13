@@ -5,6 +5,7 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+mod accompany;
 mod aircraft_turning;
 mod bastion_acquisition;
 mod behavior_combat;
@@ -35,11 +36,14 @@ mod harvest_zones;
 mod landing;
 mod movement_lab;
 mod peaks;
+mod piledriver;
 mod pits;
+mod point_defense;
 mod provisional_construction;
 mod repair;
 mod repair_bay;
 mod repair_unit;
+mod retire;
 mod return_cargo;
 mod roster;
 mod salvage;
@@ -54,6 +58,7 @@ mod surrender;
 mod teams;
 mod transports;
 mod turret_acquisition;
+mod unit_rally;
 mod unreachable_goals;
 mod upgrades;
 mod worker_contact;

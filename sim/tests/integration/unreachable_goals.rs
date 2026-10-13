@@ -434,7 +434,7 @@ fn newborns_rallied_onto_unreachable_ground_all_settle() {
                 0,
                 Command::SetRally {
                     building,
-                    rally: Some(ISLAND),
+                    rally: Some(oxide_sim::Rally::Tile(ISLAND)),
                 },
             )
         })

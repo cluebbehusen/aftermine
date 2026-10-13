@@ -24,11 +24,11 @@
   "min_decided_pairs": 40,
   "maps": [
     {
-      "path": "../../../scenarios/skirmish.json",
+      "path": "../../../fixtures/scenarios/skirmish.json",
       "family": "open"
     },
     {
-      "path": "../../../scenarios/cinder-steppe.json",
+      "path": "../../../scenarios/slag-fields.json",
       "family": "open"
     },
     {
@@ -56,7 +56,7 @@
       "family": "severed"
     },
     {
-      "path": "../../../scenarios/the-scattering.json",
+      "path": "../../../scenarios/stepping-stones.json",
       "family": "severed"
     }
   ]

@@ -11,7 +11,7 @@ use crate::numeric;
 use crate::numeric::Fit;
 use crate::panel::{
     building_economy_lines, building_flavor, building_stat_line, building_weapon_lines,
-    unit_flavor, unit_stat_line, weapon_lines,
+    point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
 };
 use crate::render;
 use crate::theme::{
@@ -211,7 +211,10 @@ impl CodexScreen {
                 para(unit_flavor(kind), TEXT_BODY, &mut lines);
                 lines.push((String::new(), TEXT_BODY));
                 lines.push((unit_stat_line(kind), TEXT_PRIMARY));
-                for line in weapon_lines(kind) {
+                for line in weapon_lines(kind)
+                    .into_iter()
+                    .chain(point_defense_line(kind))
+                {
                     lines.push((line, TEXT_SECONDARY));
                 }
                 for line in unit_notes(kind) {
@@ -326,6 +329,12 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
     if stats.demolition.is_some() {
         notes.push("Detonates on its target; always fatal to itself.".to_string());
     }
+    if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
+        notes.push(
+            "Left to itself, picks the machine in reach with the most full health, then the nearest."
+                .to_string(),
+        );
+    }
     if !stats.requires.is_empty() {
         let names: Vec<String> = stats
             .requires
@@ -355,7 +364,10 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
     let mut notes = building_economy_lines(kind);
     if kind == BuildingKind::RepairBay {
         notes.push(format!(
-            "Repairs each nearby target at {:.1} hp/s.",
+            "Repairs its {} most damaged machines nearby at {:.0}% of max hp per second once they have been out of combat for {:.0} s, or {:.1} hp/s under fire. Buildings repair at the slower rate.",
+            oxide_sim::stats::REPAIR_BAY_PATIENTS,
+            oxide_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0,
+            oxide_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / oxide_sim::TICKS_PER_SECOND as f32,
             oxide_sim::stats::REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
                 / oxide_sim::stats::REPAIR_BAY_PERIOD as f32
         ));

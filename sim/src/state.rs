@@ -112,7 +112,7 @@ pub enum Order {
         /// Harvester deposits its cargo, reaches a built Foundry, and
         /// advances its queued program.
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
-        retiring: bool,
+        withdrawing: bool,
     },
     /// Chase and attack one target until it is gone.
     Attack {
@@ -122,10 +122,10 @@ pub enum Order {
         /// engagements may only fire while radar remains in reach.
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         pursue: bool,
-        /// Where to resume hunting once the victim is gone. `None` for a
-        /// plain attack order.
+        /// The program the engagement interrupted, taken back once the
+        /// victim is gone. `None` for a plain attack order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        resume: Option<Goal>,
+        resume: Option<Resume>,
     },
     /// Walk to an unfinished own site and stand it up (harvesters only).
     Build {
@@ -211,6 +211,28 @@ pub enum Order {
         /// Repair this Foundry after delivery if it is still damaged.
         repair: bool,
     },
+    /// Hold a slot around an own unit at this machine's own top speed,
+    /// fighting threats near it and, for welders, mending it and its other
+    /// escorts whenever it stops. Ends when the escorted unit leaves play.
+    Accompany {
+        /// The escorted unit.
+        unit: UnitId,
+        /// The wounded escort-party member a welder is mending, which owns
+        /// the welder's billing meter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weld: Option<UnitId>,
+    },
+    /// Go to an own completed Crucible and stand, hover, or, for a
+    /// turn-limited airframe, land beside it while it is dismantled for a
+    /// refund. A transport first sets its riders down there.
+    Retire {
+        /// The Crucible chosen when the order was issued, or the nearest
+        /// one since that one fell.
+        crucible: BuildingId,
+        /// The tile a turn-limited airframe lands on, once it has one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pad: Option<TilePos>,
+    },
     /// Scout a tile with the owner's knowledge alone: go there while it is
     /// safe, otherwise stop at the safe tile nearest it that still sees it.
     /// [`Unit::progress`] counts the leg's ticks of caution.
@@ -220,7 +242,70 @@ pub enum Order {
     },
 }
 
+/// Where a producer's finished units report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rally {
+    /// A tile: harvesters mine a rallied scrap node, combat units hunt there,
+    /// and everyone else walks.
+    Tile(TilePos),
+    /// An own unit, in the world or riding a transport, that every newborn
+    /// escorts. The rally clears when that unit leaves play, so it never
+    /// names one that is gone at a tick boundary.
+    Unit(UnitId),
+}
+
+/// The program an engagement interrupted, taken back once its victim is gone
+/// or out of bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Resume {
+    /// The march toward this goal: a hunt or a patrol leg.
+    Hunt(Goal),
+    /// Escort duty around this unit.
+    Accompany(UnitId),
+}
+
+impl Resume {
+    /// The march this engagement resumes, if it resumes one.
+    pub fn goal(&self) -> Option<Goal> {
+        match *self {
+            Resume::Hunt(goal) => Some(goal),
+            Resume::Accompany(_) => None,
+        }
+    }
+
+    /// [`Resume::goal`], for resolving a pending slot or endpoint.
+    pub(crate) fn goal_mut(&mut self) -> Option<&mut Goal> {
+        match self {
+            Resume::Hunt(goal) => Some(goal),
+            Resume::Accompany(_) => None,
+        }
+    }
+
+    /// The order that takes over once the engagement ends.
+    fn order(self) -> Order {
+        match self {
+            Resume::Hunt(goal) => Order::Hunt { goal },
+            Resume::Accompany(unit) => Order::Accompany { unit, weld: None },
+        }
+    }
+}
+
 impl Order {
+    /// The unit this order escorts: escort duty itself, or a fight escort
+    /// duty picked.
+    pub fn escorted(&self) -> Option<UnitId> {
+        match *self {
+            Order::Accompany { unit, .. }
+            | Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            } => Some(unit),
+            _ => None,
+        }
+    }
+
     /// The goal of a walking order: Run, Hunt, Advance, or Unload.
     pub(crate) fn walk_goal(&self) -> Option<Goal> {
         match *self {
@@ -242,13 +327,15 @@ impl Order {
     /// Whether issuing `other` to a unit already running `self` continues
     /// the same order rather than starting a new one. A walking order
     /// matches on its variant and clicked tile, and [`Order::reissue`] then
-    /// takes the new aim; every other order must match exactly.
+    /// takes the new aim. An escort matches on its escorted unit and keeps
+    /// its weld. Every other order must match exactly.
     pub(crate) fn reissue_matches(&self, other: &Order) -> bool {
         match (self, other) {
             (Order::Run { goal: a }, Order::Run { goal: b })
             | (Order::Hunt { goal: a }, Order::Hunt { goal: b })
             | (Order::Advance { goal: a }, Order::Advance { goal: b })
             | (Order::Unload { at: a, .. }, Order::Unload { at: b, .. }) => a.tile() == b.tile(),
+            (Order::Accompany { unit: a, .. }, Order::Accompany { unit: b, .. }) => a == b,
             _ => self == other,
         }
     }
@@ -308,6 +395,26 @@ pub struct PathFollow {
     pub next: u32,
 }
 
+/// A point defender's ready charges and its progress toward the next one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointDefense {
+    /// Charges ready to fire.
+    pub charges: u8,
+    /// Ticks spent restoring the next charge; held at zero while full.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub recharge: u16,
+}
+
+impl PointDefense {
+    fn full(stats: crate::stats::PointDefenseStats) -> Self {
+        Self {
+            charges: stats.charges,
+            recharge: 0,
+        }
+    }
+}
+
 /// What a harvesting machine has aboard and how its delivery stands.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -349,6 +456,10 @@ pub struct Unit {
     pub motor: Motor,
     /// Current hit points.
     pub hp: u32,
+    /// The tick it last took damage. A Repair Bay heals a machine fast only
+    /// once this is long enough past.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damaged_at: Option<Tick>,
     /// The harvest gear's load and delivery, for exactly the kinds that
     /// harvest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -391,6 +502,10 @@ pub struct Unit {
     /// Machines riding aboard this transport.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cargo: Vec<Rider>,
+    /// Point-defense charges, for exactly the kinds that carry point
+    /// defense.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_defense: Option<PointDefense>,
 }
 
 fn is_zero_motion(motion: &Vec2Fx) -> bool {
@@ -454,9 +569,19 @@ impl Motor {
             Self::Ground { .. } => stats.domain == crate::stats::Domain::Ground,
             Self::Braced { .. } => stats.brace.is_some(),
             Self::Airborne { .. } => stats.domain == crate::stats::Domain::Air,
-            Self::Landed => stats.turn_rate > 0,
+            Self::Landed => stats.can_land(),
         }
     }
+}
+
+/// How fast a Repair Bay heals one of its patients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepairPace {
+    /// Undamaged for [`crate::stats::REPAIR_BAY_CALM_TICKS`]: a share of
+    /// max hp per second.
+    Fast,
+    /// Recently damaged: [`crate::stats::REPAIR_BAY_STEP`] per pulse.
+    Slow,
 }
 
 /// A machine riding aboard a transport. Cargo lives OUTSIDE the world's
@@ -483,6 +608,12 @@ pub struct Rider {
     /// Its independent gun bearing, if it had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turret_heading: Option<u8>,
+    /// Point-defense charges and recharge, frozen while carried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_defense: Option<PointDefense>,
+    /// The tick it last took damage, kept through the ride.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damaged_at: Option<Tick>,
 }
 
 impl Rider {
@@ -493,9 +624,11 @@ impl Rider {
             id,
             kind,
             hp,
+            damaged_at,
             cooldowns,
             heading,
             turret_heading,
+            point_defense,
             ..
         } = *unit;
         Self {
@@ -506,6 +639,8 @@ impl Rider {
             cooldowns,
             heading,
             turret_heading,
+            point_defense,
+            damaged_at,
         }
     }
 
@@ -513,8 +648,10 @@ impl Rider {
     pub(crate) fn disembark(self, player: PlayerId, pos: Vec2Fx) -> Unit {
         let mut unit = Unit {
             hp: self.hp,
+            damaged_at: self.damaged_at,
             cooldowns: self.cooldowns,
             turret_heading: self.turret_heading,
+            point_defense: self.point_defense,
             ..Unit::at_rest(self.id, player, self.kind, pos, self.heading)
         };
         if let Some(worker) = &mut unit.worker {
@@ -570,6 +707,7 @@ impl Unit {
             pos,
             motor: Motor::at_rest(kind),
             hp: kind.stats().max_hp,
+            damaged_at: None,
             worker: kind.stats().harvest.map(|_| Worker::default()),
             cooldowns: [0; crate::stats::MAX_WEAPONS],
             turret_heading: None,
@@ -582,6 +720,7 @@ impl Unit {
             settled: 0,
             heading,
             cargo: Vec::new(),
+            point_defense: kind.stats().point_defense.map(PointDefense::full),
         }
     }
 
@@ -721,9 +860,19 @@ impl Unit {
     pub(crate) fn stays_parked(&self) -> bool {
         match self.order {
             Order::Idle => true,
-            Order::Land { goal, .. } => goal == self.tile(),
+            Order::Land { goal, .. }
+            | Order::Retire {
+                pad: Some(goal), ..
+            } => goal == self.tile(),
             _ => false,
         }
+    }
+
+    /// Whether this machine is on its way to, or at, a Crucible to be
+    /// dismantled. No repair source mends it: welding it up would only
+    /// spend scrap the retirement refunds at a lower rate.
+    pub fn retiring(&self) -> bool {
+        matches!(self.order, Order::Retire { .. })
     }
 
     /// Ends the active order cleanly: a looping program rotates it to the
@@ -759,9 +908,9 @@ impl Unit {
     }
 
     /// Completes an engagement without recycling its target into a patrol.
-    pub(crate) fn complete_attack(&mut self, resume: Option<Goal>) {
-        self.order = if let Some(goal) = resume {
-            Order::Hunt { goal }
+    pub(crate) fn complete_attack(&mut self, resume: Option<Resume>) {
+        self.order = if let Some(resume) = resume {
+            resume.order()
         } else {
             if self.leash.take().is_some() {
                 self.settled = crate::stats::LEASH_STATION_TICKS;
@@ -837,11 +986,9 @@ pub struct Building {
     pub queue: std::collections::VecDeque<UnitKind>,
     /// Construction, upgrade, or service, with that phase's meter.
     pub phase: BuildingPhase,
-    /// Where finished units report: harvesters mine a rallied scrap node,
-    /// combat units hunt there, everyone else walks. `None` means
-    /// stand at the doorstep.
+    /// Where finished units report. `None` means stand at the doorstep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rally: Option<TilePos>,
+    pub rally: Option<Rally>,
     /// A player-designated target this defense prefers while it remains a
     /// live, hostile, truly visible target in the weapon's domain. Range and
     /// cover only decide whether the preference can be fired on now; they do
@@ -1382,6 +1529,71 @@ impl State {
         }
     }
 
+    /// The machines each built, living Repair Bay services this pulse and how
+    /// fast it heals each, Bays in building-id order and patients most
+    /// wounded first: own, wounded and in reach, not retiring, landed or
+    /// unable to land, not taken by an earlier Bay, at most
+    /// [`crate::stats::REPAIR_BAY_PATIENTS`] per Bay. The aura and
+    /// presentation read the same choice; the aura also slows a patient the
+    /// tick's own volley hits, before that hit stamps it.
+    pub fn repair_bay_patients(&self) -> Vec<(BuildingId, Vec<(UnitId, RepairPace)>)> {
+        use crate::stats::{REPAIR_BAY_CALM_TICKS, REPAIR_BAY_PATIENTS, REPAIR_BAY_RADIUS};
+        let mut taken: Vec<UnitId> = Vec::new();
+        let mut bays = Vec::new();
+        for b in self
+            .buildings
+            .iter()
+            .filter(|b| b.kind == BuildingKind::RepairBay && b.built() && b.hp > 0)
+        {
+            let mut patients: Vec<&Unit> = self
+                .units
+                .iter()
+                .filter(|u| {
+                    let max = u.kind.stats().max_hp;
+                    u.player == b.player
+                        && u.hp > 0
+                        && u.hp < max
+                        && !u.retiring()
+                        && (u.landed() || !u.kind.stats().can_land())
+                        && b.closest_point_to(u.pos).dist_sq(u.pos)
+                            <= REPAIR_BAY_RADIUS * REPAIR_BAY_RADIUS
+                        && !taken.contains(&u.id)
+                })
+                .collect();
+            // Every patient and every Bay that could take it is the owner's,
+            // so id order is the owner-local rank and mirrored seats choose
+            // alike.
+            let missing = |u: &Unit| {
+                let max = u64::from(u.kind.stats().max_hp);
+                (max - u64::from(u.hp), max)
+            };
+            patients.sort_by(|a, b| {
+                let ((a_missing, a_max), (b_missing, b_max)) = (missing(a), missing(b));
+                (b_missing * a_max)
+                    .cmp(&(a_missing * b_max))
+                    .then(a.id.cmp(&b.id))
+            });
+            patients.truncate(REPAIR_BAY_PATIENTS);
+            taken.extend(patients.iter().map(|u| u.id));
+            let chosen = patients
+                .into_iter()
+                .map(|u| {
+                    let calm = u
+                        .damaged_at
+                        .is_none_or(|at| self.tick.saturating_sub(at) >= REPAIR_BAY_CALM_TICKS);
+                    let pace = if calm {
+                        RepairPace::Fast
+                    } else {
+                        RepairPace::Slow
+                    };
+                    (u.id, pace)
+                })
+                .collect();
+            bays.push((b.id, chosen));
+        }
+        bays
+    }
+
     /// Whether one completed own Foundry currently supports an Extractor.
     ///
     /// This endpoint query lets presentation and diagnostics show the same
@@ -1551,6 +1763,9 @@ impl State {
                 self.validate_rider(u, rider)?;
             }
         }
+        if let Some(id) = self.escort_loop() {
+            return Err(E::InvalidEscort(id));
+        }
         // Two parked bodies inside their combined radius could never have
         // met: a touchdown needs that clearance and nothing moves a parked
         // body afterwards.
@@ -1660,6 +1875,7 @@ impl State {
             pos,
             motor,
             hp,
+            damaged_at,
             worker,
             cooldowns,
             progress,
@@ -1672,6 +1888,7 @@ impl State {
             heading,
             turret_heading,
             cargo,
+            point_defense,
         } = u;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -1684,12 +1901,21 @@ impl State {
         if *hp == 0 || *hp > stats.max_hp {
             return Err(E::UnitHpOutOfRange(id));
         }
+        // Damage lands while a tick runs and the clock then advances, so a
+        // stamp is always behind the clock.
+        if damaged_at.is_some_and(|at| at >= self.tick) {
+            return Err(E::DamageStampInTheFuture(id));
+        }
         if worker.is_some() != stats.harvest.is_some()
+            || point_defense.is_some() != stats.point_defense.is_some()
             || !motor.fits(*kind)
             || (turret_heading.is_some() && !kind.has_ground_turret())
             || (!cargo.is_empty() && stats.transport_capacity == 0)
         {
             return Err(E::UnitPartMismatch(id));
+        }
+        if !point_defense_in_range(*point_defense, stats) {
+            return Err(E::PointDefenseOutOfRange(id));
         }
         let Worker {
             carrying,
@@ -1806,11 +2032,44 @@ impl State {
         }) {
             return Err(E::InvalidReturnCargo(id));
         }
+        // An escort follows another own unit, and only harvest gear holds a
+        // torch. A foreign escort would track an enemy body through fog.
+        let own_other = |unit: UnitId| {
+            unit != id
+                && self
+                    .escorted(unit)
+                    .is_none_or(|body| body.player == *player)
+        };
+        if orders().any(|order| match *order {
+            Order::Accompany { unit, weld } => {
+                !own_other(unit)
+                    || weld.is_some_and(|patient| stats.harvest.is_none() || !own_other(patient))
+            }
+            Order::Attack {
+                resume: Some(Resume::Accompany(unit)),
+                ..
+            } => !own_other(unit),
+            _ => false,
+        }) {
+            return Err(E::InvalidEscort(id));
+        }
+        // A retirement names an own Crucible while it stands, lands only a
+        // turn-limited airframe, and never rests on a full meter: cleanup
+        // takes a unit apart the tick its meter fills.
+        if orders().any(|order| {
+            matches!(order, Order::Retire { crucible, pad } if
+                (pad.is_some() && stats.turn_rate == 0)
+                || self.building(*crucible).is_some_and(|building|
+                    building.player != *player || building.kind != BuildingKind::Crucible))
+        }) || (u.retiring() && *progress >= crate::stats::RETIRE_TICKS)
+        {
+            return Err(E::InvalidRetirement(id));
+        }
         if !stats.scouts && orders().any(|order| matches!(order, Order::Scout { .. })) {
             return Err(E::InvalidScoutOrder(id));
         }
         if orders()
-            .filter_map(order_reference)
+            .flat_map(order_references)
             .any(|target| !self.minted(target))
         {
             return Err(E::UnmintedOrderTarget(id));
@@ -1845,8 +2104,13 @@ impl State {
             cooldowns,
             heading: _,
             turret_heading,
+            point_defense,
+            damaged_at,
         } = rider;
         let rstats = kind.stats();
+        if damaged_at.is_some_and(|at| at >= self.tick) {
+            return Err(E::DamageStampInTheFuture(*id));
+        }
         if rstats.transport_size == 0 {
             return Err(E::UncarriableCargo(carrier.id));
         }
@@ -1856,8 +2120,13 @@ impl State {
         if *carrying > rstats.harvest.map_or(0, |harvest| harvest.capacity) {
             return Err(E::ScrapBeyondCapacity(*id));
         }
-        if turret_heading.is_some() && !kind.has_ground_turret() {
+        if (turret_heading.is_some() && !kind.has_ground_turret())
+            || point_defense.is_some() != rstats.point_defense.is_some()
+        {
             return Err(E::UnitPartMismatch(*id));
+        }
+        if !point_defense_in_range(*point_defense, rstats) {
+            return Err(E::PointDefenseOutOfRange(*id));
         }
         // Cooldowns are the one scalar boarding does NOT reset — a machine
         // slung mid-cooldown keeps it frozen — so the bound is the walking
@@ -1980,8 +2249,19 @@ impl State {
         // The footprint needs no separate check: sizes are single digits,
         // so an anchor inside the envelope keeps `anchor + size` inside it
         // too.
-        if !tile_inside_envelope(*anchor) || !rally.is_none_or(tile_inside_envelope) {
+        if !tile_inside_envelope(*anchor)
+            || matches!(rally, Some(Rally::Tile(tile)) if !tile_inside_envelope(*tile))
+        {
             return Err(E::BuildingOutsideEnvelope(id));
+        }
+        // Unlike an order's reference, a unit rally may not dangle: cleanup
+        // clears it in the tick its unit leaves play.
+        if let Some(Rally::Unit(unit)) = rally
+            && self
+                .escorted(*unit)
+                .is_none_or(|body| body.player != *player)
+        {
+            return Err(E::InvalidRally(id));
         }
         if !salvage_ledger_coherent(b) {
             return Err(E::IncoherentSalvageLedger(id));
@@ -2328,6 +2608,59 @@ impl State {
             .binary_search_by_key(&id, |u| u.id)
             .ok()
             .map(|i| &self.units[i])
+    }
+
+    /// The body escorts of unit `id` follow: the unit itself while it is in
+    /// the world, or the transport carrying it. `None` once it has left play.
+    pub fn escorted(&self, id: UnitId) -> Option<&Unit> {
+        self.unit(id).or_else(|| {
+            self.units
+                .iter()
+                .find(|carrier| carrier.cargo.iter().any(|rider| rider.id == id))
+        })
+    }
+
+    /// A unit that escorts itself through a chain of escorts, counting every
+    /// escort duty in every program, active and queued. Dispatch never
+    /// closes such a loop, so only a forged state holds one.
+    fn escort_loop(&self) -> Option<UnitId> {
+        let index = |id: UnitId| self.units.binary_search_by_key(&id, |u| u.id).ok();
+        let escorted = |slot: usize| -> Vec<usize> {
+            let unit = &self.units[slot];
+            std::iter::once(&unit.order)
+                .chain(&unit.queue)
+                .filter_map(Order::escorted)
+                .filter_map(index)
+                .collect()
+        };
+        // Depth-first over the escort graph: 1 marks a unit on the current
+        // chain, 2 one whose chains are all known to end.
+        let mut mark = vec![0u8; self.units.len()];
+        for start in 0..self.units.len() {
+            if mark[start] != 0 {
+                continue;
+            }
+            mark[start] = 1;
+            let mut chain = vec![(start, escorted(start), 0usize)];
+            while let Some(top) = chain.len().checked_sub(1) {
+                let (slot, next) = (chain[top].0, chain[top].2);
+                let Some(&target) = chain[top].1.get(next) else {
+                    mark[slot] = 2;
+                    chain.pop();
+                    continue;
+                };
+                chain[top].2 += 1;
+                match mark[target] {
+                    0 => {
+                        mark[target] = 1;
+                        chain.push((target, escorted(target), 0));
+                    }
+                    1 => return Some(self.units[target].id),
+                    _ => {}
+                }
+            }
+        }
+        None
     }
 
     /// Mutable lookup of a living unit.
@@ -2688,7 +3021,9 @@ fn order_goals_canonical(order: &Order) -> bool {
     match order {
         Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => goal.canonical(),
         Order::Unload { at, .. } => at.canonical(),
-        Order::Attack { resume, .. } => resume.as_ref().is_none_or(Goal::canonical),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_none_or(|goal| goal.canonical()),
         _ => true,
     }
 }
@@ -2703,14 +3038,17 @@ fn order_inside_envelope(order: &Order) -> bool {
         | Order::Build { .. }
         | Order::Repair { .. }
         | Order::Salvage { .. }
-        | Order::RepairUnit { .. } => true,
+        | Order::RepairUnit { .. }
+        | Order::Accompany { .. } => true,
         Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => {
             goal_inside_envelope(goal)
         }
         Order::Harvest { node, anchor, .. } => {
             tile_inside_envelope(*node) && tile_inside_envelope(*anchor)
         }
-        Order::Attack { resume, .. } => resume.as_ref().is_none_or(goal_inside_envelope),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_none_or(|goal| goal_inside_envelope(&goal)),
         Order::Found { anchor, .. } => tile_inside_envelope(*anchor),
         Order::Board { .. } => true,
         Order::Unload { at, .. } => goal_inside_envelope(at),
@@ -2718,6 +3056,7 @@ fn order_inside_envelope(order: &Order) -> bool {
             tile_inside_envelope(*goal) && from.is_none_or(tile_inside_envelope)
         }
         Order::Scout { tile } => tile_inside_envelope(*tile),
+        Order::Retire { pad, .. } => pad.is_none_or(tile_inside_envelope),
     }
 }
 
@@ -2732,10 +3071,11 @@ fn harvest_order_inside_zone(order: &Order) -> bool {
     }
 }
 
-/// The entity an order names, if any — exhaustive for the same reason as
+/// The entities an order names — exhaustive for the same reason as
 /// [`order_inside_envelope`].
-fn order_reference(order: &Order) -> Option<Target> {
-    match order {
+fn order_references(order: &Order) -> impl Iterator<Item = Target> {
+    let unit = |id: UnitId| Some(Target::Unit(id));
+    let names: [Option<Target>; 2] = match *order {
         Order::Idle
         | Order::Run { .. }
         | Order::Harvest { .. }
@@ -2743,17 +3083,29 @@ fn order_reference(order: &Order) -> Option<Target> {
         | Order::Advance { .. }
         | Order::Found { .. }
         | Order::Land { .. }
-        | Order::Scout { .. } => None,
-        Order::Attack { target, .. } => target.entity(),
-        Order::Build { site } => Some(Target::Building(*site)),
-        Order::ReturnCargo { foundry, .. } => Some(Target::Building(*foundry)),
+        | Order::Unload { .. }
+        | Order::Scout { .. } => [None, None],
+        Order::Attack { target, resume, .. } => [
+            target.entity(),
+            match resume {
+                Some(Resume::Accompany(escorted)) => unit(escorted),
+                Some(Resume::Hunt(_)) | None => None,
+            },
+        ],
+        Order::Build { site } => [Some(Target::Building(site)), None],
+        Order::ReturnCargo { foundry, .. } => [Some(Target::Building(foundry)), None],
         Order::Repair { building } | Order::Salvage { building } => {
-            Some(Target::Building(*building))
+            [Some(Target::Building(building)), None]
         }
-        Order::RepairUnit { unit } => Some(Target::Unit(*unit)),
-        Order::Board { transport } => Some(Target::Unit(*transport)),
-        Order::Unload { .. } => None,
-    }
+        Order::RepairUnit { unit: patient } => [unit(patient), None],
+        Order::Board { transport } => [unit(transport), None],
+        Order::Accompany {
+            unit: escorted,
+            weld,
+        } => [unit(escorted), weld.and_then(unit)],
+        Order::Retire { crucible, .. } => [Some(Target::Building(crucible)), None],
+    };
+    names.into_iter().flatten()
 }
 
 /// Whether every coordinate a unit carries — body, orders, walk, tether —
@@ -2923,6 +3275,9 @@ pub enum StateIntegrityError {
     /// held by a unit that never harvests.
     #[error("unit {0} carries an invalid danger retry")]
     InvalidDangerRetry(UnitId),
+    /// A machine stamped as damaged at or after the current tick.
+    #[error("unit {0} was damaged at a tick that has not happened")]
+    DamageStampInTheFuture(UnitId),
     /// A chase allowance or reacquisition cooldown exceeds its legal bound.
     #[error("unit {0} carries an invalid leash clock")]
     InvalidLeashClock(UnitId),
@@ -2946,6 +3301,18 @@ pub enum StateIntegrityError {
     /// Cargo delivery requires a worker and an own drop-off target.
     #[error("unit {0} has an invalid cargo delivery")]
     InvalidReturnCargo(UnitId),
+    /// A unit rally names a unit that is out of play or another seat's.
+    #[error("building {0} rallies to a unit that is gone or not its owner's")]
+    InvalidRally(BuildingId),
+    /// Escort duty names the escort itself or another seat's unit, loops
+    /// back through other escorts, or puts a torch in a machine without
+    /// harvest gear.
+    #[error("unit {0} has an invalid escort duty")]
+    InvalidEscort(UnitId),
+    /// A retirement names a foreign building or one that is no Crucible,
+    /// gives a pad to an airframe that cannot land, or holds a full meter.
+    #[error("unit {0} has an invalid retirement")]
+    InvalidRetirement(UnitId),
     /// Only scouts take the Scout order.
     #[error("unit {0} scouts without being a scout")]
     InvalidScoutOrder(UnitId),
@@ -3013,6 +3380,11 @@ pub enum StateIntegrityError {
     /// A rider whose weapon cooldowns exceed its own weapon table.
     #[error("unit {0} carries a rider with impossible weapon cooldowns")]
     CargoCooldownOutOfRange(UnitId),
+    /// A point defender, walking or carried, holding more charges than its
+    /// kind, a recharge counter at or past a full recharge, or a running
+    /// counter while full.
+    #[error("unit {0} holds impossible point-defense charges")]
+    PointDefenseOutOfRange(UnitId),
     /// A landed airframe resting farther from its tile center than a
     /// touchdown allows.
     #[error("unit {0} is landed off its tile center")]
@@ -3106,6 +3478,21 @@ fn cooldowns_out_of_range(
     })
 }
 
+/// Whether held charges and the recharge counter are reachable for a kind
+/// with point defense: recharge counts only below full and resets on each
+/// restored charge. Presence against the kind is checked separately.
+fn point_defense_in_range(
+    point_defense: Option<PointDefense>,
+    stats: &crate::stats::UnitStats,
+) -> bool {
+    let (Some(held), Some(stats)) = (point_defense, stats.point_defense) else {
+        return true;
+    };
+    held.charges <= stats.charges
+        && held.recharge < stats.recharge_ticks
+        && (held.charges < stats.charges || held.recharge == 0)
+}
+
 fn valid_air_motion(unit: &Unit) -> bool {
     let motion = unit.air_motion();
     let speed = unit.kind.stats().speed;
@@ -3167,6 +3554,24 @@ pub struct Shell {
     pub targets: crate::stats::DomainMask,
     /// Splash radius, if the weapon splashes.
     pub splash: Option<chassis::fx::Fx>,
+}
+
+impl Shell {
+    /// Where the shell is over the ground on tick `now`: the straight track
+    /// from launch to impact, standing at impact from its arrival tick on.
+    /// Deserialized shells may carry any ticks with `launched_at <=
+    /// arrival`, so the progress is computed in wide integers instead of
+    /// trusting the span to fit a fixed-point value.
+    pub fn flight_position(&self, now: Tick) -> Vec2Fx {
+        let span = self.arrival.saturating_sub(self.launched_at);
+        let elapsed = now.saturating_sub(self.launched_at);
+        if elapsed >= span {
+            return self.impact;
+        }
+        let progress = (u128::from(elapsed) << 32) / u128::from(span);
+        let progress = Fx::from_bits(i64::try_from(progress).expect("progress below one fits"));
+        self.launch + (self.impact - self.launch) * progress
+    }
 }
 
 /// The wire shape of [`State`]: a private mirror that derives the actual
