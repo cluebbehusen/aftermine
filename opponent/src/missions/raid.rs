@@ -71,7 +71,9 @@ fn raider(kind: UnitKind) -> Option<Raider> {
         | UnitKind::Talon
         | UnitKind::Kestrel
         | UnitKind::Surveyor
-        | UnitKind::Skyhook => None,
+        | UnitKind::Skyhook
+        | UnitKind::Mantle
+        | UnitKind::Piledriver => None,
     }
 }
 

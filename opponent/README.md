@@ -6,15 +6,15 @@
 working rules.
 
 Each decision spends through one running total in a fixed precedence: defense
-and other emergencies, then an affordable saving target, then workers, then
-lifts, attacks, clearances, strikes and raids, focus fire, tending and scouting,
-then production. Missions command only units that exist: production keeps the
-stocks they draw on, such as scouts and carriers, but never trains for a
-particular mission. A producer is ready when its queue would run out before the
-next decision, so it queues its next unit as the last one finishes rather than
-after it stands empty; every ready producer left free trains toward the army's
-needs. Difficulty caps the unit orders one decision issues; purchases do not
-count against that allowance.
+and other emergencies, then an affordable saving target, then the wounded to
+Repair Bays, then workers, then lifts, attacks, clearances, strikes and raids,
+focus fire and scouting, then production. Missions command only units that
+exist: production keeps the stocks they draw on, such as scouts and carriers,
+but never trains for a particular mission. A producer is ready when its queue
+would run out before the next decision, so it queues its next unit as the last
+one finishes rather than after it stands empty; every ready producer left free
+trains toward the army's needs. Difficulty caps the unit orders one decision
+issues; purchases do not count against that allowance.
 
 Public enemy buildings, the Deep Bores every seat knows of, join the seat's
 known enemy buildings each decision as memories of unknown condition: built and
@@ -62,6 +62,23 @@ never one inside the reach of known enemy weapons. A worker harvesting a node or
 wreck whose route has turned dangerous is sent elsewhere the same way, or home.
 A worker left with nowhere to go first delivers any scrap it carries to a
 Foundry on its ground.
+
+## Repair Bays
+
+After defense, free wounded armed units go to a built Repair Bay with no armed
+enemy in sight near it and no known enemy fire reaching it: fire against ground
+for units that heal on the ground, fire against aircraft for those that fly in,
+and both for a Condor. The bot counts each Bay's slots as the simulation fills
+them: Bays in building order, each taking up to four of the most wounded units
+in its reach that an earlier Bay did not take. A unit missing at least a tenth
+of its health that a calm Bay already treats stays there; an idle one goes to
+the nearest calm Bay with a free slot, most missing value first, ground units on
+the Bay's ground to the open tile beside it nearest them and aircraft over it,
+each around the known anti-air on its own way, where an idle Condor sets down on
+its own. Missions and welders leave those units alone for the rest of the
+decision, and since missions take only units at least half healthy, one badly
+hurt on its way is not drawn off before it arrives. The Bay bills its heals as
+income arrives, so no scrap is set aside for them.
 
 ## Defense
 
@@ -192,8 +209,11 @@ an army of Sentinels at the stance's minimum. Fortification weighs Barricades;
 fortification and guile weigh Arrays and charges.
 
 A Repair Bay goes up beside a guarded base's building where its aura reaches the
-most missing value among the seat's wounded ground units and damaged buildings
-that no Repair Bay reaches yet, weighted by support.
+most missing value among the seat's resting units missing at least a tenth of
+their health and its damaged buildings that no Repair Bay treats yet, weighted
+by support. A Bay, standing or planned, treats the buildings it reaches and as
+many units in reach as its slots hold after earlier Bays took theirs, so wounded
+a full Bay cannot take can justify another beside it.
 
 Defenses upgrade in place (Heavy Turret, Bulwark, Burst Flak, Citadel, Deep
 Array) once the next tier's prerequisite stands, worth how far the approach they
@@ -213,32 +233,39 @@ a time and take every free unit they can use: one army that wins what it meets
 beats several that each meet the enemy alone. Missions of different kinds may
 still go after one target.
 
-An attack forms, when none is under way, from the free, healthy line, siege and
-anti-air units beyond the home reserve, and takes all of them, when those that
-can hit ground are worth at least the stance's minimum army and outweigh the
-known army it would meet by a margin set by difficulty; anti-air units recruited
-along the way escort the army but do not count toward that. The army it would
-meet is every armed enemy the seat remembers that hits ground, on the target's
-ground or in the air, and the known enemy buildings guarding the target.
-Remembered units count by confidence, except that a ground unit on ground the
-seat's own does not reach counts in full; buildings that fire on ground count at
-their price with every upgrade they reached, discounted by missing health, and a
-building's weapons reach as far as its current tier's do. The target is the most
-valuable known enemy building for its distance by ground, or a hostile start
-when none is known; a better one replaces it only while the army gathers or
-recovers, and only when clearly better. The army gathers at a rally near home
-toward the target's owner, where free units join it while it gathers or
-recovers, travels, and fights; recruits still on their way go along once the
-time to regroup is up. It withdraws to the rally when the enemies it knows of
-around it, remembered or seen, outweigh what it has left, and recovers there to
-go again or disband. Having taken its target it pushes on to the next only while
-strong enough for it. A target it withdrew from, could not reach, lost its army
-to, or stood idle beside is skipped for a while. With several enemies, attacks
-and strikes go after one rival's buildings first: the enemy pressing the seat
-hardest, then the nearest, less the army it shows, with guile favoring a small
-economy and a bonus for the owner of the oldest attack or strike's target so the
-seat does not flip between enemies. The rival is chosen once per decision, after
-defense.
+An attack forms, when none is under way, from the free, healthy line, siege,
+anti-air and anti-heavy units beyond the home reserve, and takes all of them,
+when those that can hit ground are worth at least the stance's minimum army and
+outweigh the known army it would meet by a margin set by difficulty; anti-air
+units recruited along the way escort the army but do not count toward that. The
+army it would meet is every armed enemy the seat remembers that hits ground, on
+the target's ground or in the air, and the known enemy buildings guarding the
+target. Remembered units count by confidence, except that a ground unit on
+ground the seat's own does not reach counts in full; buildings that fire on
+ground count at their price with every upgrade they reached, discounted by
+missing health, and a building's weapons reach as far as its current tier's do.
+The target is the most valuable known enemy building for its distance by ground,
+or a hostile start when none is known; a better one replaces it only while the
+army gathers or recovers, and only when clearly better. The army gathers at a
+rally near home toward the target's owner, where free units join it while it
+gathers or recovers, travels, and fights; recruits still on their way go along
+once the time to regroup is up. It withdraws to the rally when the enemies it
+knows of around it, remembered or seen, outweigh what it has left, and recovers
+there to go again or disband. Having taken its target it pushes on to the next
+only while strong enough for it. A target it withdrew from, could not reach,
+lost its army to, or stood idle beside is skipped for a while. With several
+enemies, attacks and strikes go after one rival's buildings first: the enemy
+pressing the seat hardest, then the nearest, less the army it shows, with guile
+favoring a small economy and a bonus for the owner of the oldest attack or
+strike's target so the seat does not flip between enemies. The rival is chosen
+once per decision, after defense.
+
+Free, healthy point defenders on the target's ground go along with an attack
+when it forms and join it wherever free units do. They never count toward its
+strength, its readiness, its arrival or contact, or the opposition it meets.
+While it travels or fights, a defender farther than half its reach from the
+fighting member nearest the army's middle runs back to that member's tile. An
+attack left with no fighting member sends its defenders home and ends.
 
 Badly wounded members leave between fights and run to the rally, and a defense
 may take the attack's units in any phase but a fight. While a free army that
@@ -265,6 +292,9 @@ Prime pick the enemy with the least health, Standard the one whose health bar
 shows the lowest quarter, and Scrapheap the one nearest the mission's goal
 whatever its wounds; ties go to the nearest. Nobody chases a focus or seeks a
 way round to it, and a member out of reach leaves the mission's fire unfocused.
+A member whose kind picks its own targets heaviest first, such as a Piledriver,
+keeps its own aim and takes no part in the focus: the weakest enemy would waste
+its single heavy shot.
 
 ## Lift
 
@@ -278,22 +308,23 @@ other production waits too, unless a defense is short.
 
 One lift runs at a time. It forms only from carriers and passengers that exist:
 free carriers that are idle, empty and over open home ground, and free, healthy
-line and siege units on home ground beyond the home reserve, packed into them
-most value per transport slot first. It needs those that can hit ground to be
-worth the stance's minimum and to outweigh by the attack margin the known army
-it would meet, counted as for an attack with the guns guarding both its landing
-and its target, since riders set down out of range still walk into the target's.
-At Veteran and Prime, the bombers out clearing the anti-air around its target
-count toward that need. Except at Scrapheap, a lift also waits for a recent look
-at its target: the scouting point nearest the target on its island must have
-been in sight recently enough that the enemy units seen there are still
-remembered. Every free carrier and rider is loaded as the decision's orders
-allow, and more board on later decisions while boarding lasts. The target is the
-most valuable known enemy building, or hostile start not seen cleared, for its
-distance that no ground route reaches and that has a landing: open ground on the
-target's island near it, as far as the seat knows, out of reach of known fire
-where any is, and then a few tiles from it, so riders set down out of range walk
-in, where every tile unloading could set a rider on belongs to that island.
+line, siege and anti-heavy units on home ground beyond the home reserve, packed
+into them most value per transport slot first. It needs those that can hit
+ground to be worth the stance's minimum and to outweigh by the attack margin the
+known army it would meet, counted as for an attack with the guns guarding both
+its landing and its target, since riders set down out of range still walk into
+the target's. At Veteran and Prime, the bombers out clearing the anti-air around
+its target count toward that need. Except at Scrapheap, a lift also waits for a
+recent look at its target: the scouting point nearest the target on its island
+must have been in sight recently enough that the enemy units seen there are
+still remembered. Every free carrier and rider is loaded as the decision's
+orders allow, and more board on later decisions while boarding lasts. The target
+is the most valuable known enemy building, or hostile start not seen cleared,
+for its distance that no ground route reaches and that has a landing: open
+ground on the target's island near it, as far as the seat knows, out of reach of
+known fire where any is, and then a few tiles from it, so riders set down out of
+range walk in, where every tile unloading could set a rider on belongs to that
+island.
 
 A free carrier hovering where no rider could reach it, such as over the Airworks
 that trained it, first moves to open ground. Riders walk to their carriers and
@@ -398,9 +429,25 @@ proportion to its own, siege for known enemy defenses and, unless the army goes
 only by lift, for a share of its own army behind that line that the stance sets
 and siege preference moves (Aggressive seats, which attack early with small
 armies, keep the least), anti-air against the enemy air it has seen (a seen
-enemy Airworks counts as air), and air strikes by preference once it has an
-Airworks. Ground units count only while they can reach an enemy, by ground or by
-lift once an Airworks stands; before then, known enemy ground units on the
+enemy Airworks counts as air), anti-heavy units against the enemy heavies it has
+seen, air strikes by preference once it has an Airworks, and point defenders
+against the enemy shellfire it knows of while its ground army can walk to an
+enemy. That last counts whole defenders: each known gun that fires shells,
+rockets or bombs adds the shots it fires in one defender's recharge, weighed by
+its shot's damage against the heaviest projectile's, so a few heavy launchers
+call for one and a stray light gun does not. Personality's support preference
+caps the defenders at a share of the armed army, to the nearest whole defender,
+and they never add to that army's size. The deficit counts the worth of the
+known guns whose fire no defender answers yet, as anti-air's counts the enemy
+air, so a screen against costly launchers can come before a line deficit of the
+same worth. A point defender has no cheaper stand-in, so the seat saves for one
+as it does for a premium unit. A heavy is an armed ground machine whose full
+health takes at least two of an anti-heavy unit's single shots whole; once the
+seat can train anti-heavy units they answer the heavies and line units the rest
+of the enemy's ground army, and until then line units answer all of it.
+Anti-heavy units are bought only for that need, never by producers left with
+nothing wanted. Ground units count only while they can reach an enemy, by ground
+or by lift once an Airworks stands; before then, known enemy ground units on the
 seat's own ground still call for line units. While ground reaches no enemy, air
 strikes are wanted with or without an Airworks, at least what a strike needs
 against the easiest known target the seat has not given up on, or what bombers
@@ -413,19 +460,19 @@ another producer serves a wanted role: the scrap then waits for that producer.
 While the seat saves for a unit, the producers that train it wait for it and no
 other producer trains a cheaper unit of its role. Each chooses the unit it can
 afford now by coarse suitability: reach against the enemy's usual reach, what
-its role is for at the price (firepower for siege, durability for the rest),
-covering both enemy domains, splash against clustered enemies, affordability at
-the seat's income, variety (a kind that already makes up most of its role counts
-for less, so every kind of a role gets its turn), and personality. While ground
-reaches no enemy, a strike aircraft's splash is worth instead the targets one
-blast takes in the densest known clump of enemy ground units; the seat then
-saves for a splash bomber the more, within a cap, the more targets its blast
-takes than the cheaper strike aircraft, and pulls toward the tech building such
-a bomber requires. Scouts, carriers, Scuttlers and Sappers are bought only as
-the sections above describe. A role it needs but cannot train at all adds to the
-investment score of the cheapest building that would let it, and a role it can
-train adds to a producer it lacks whose unit would suit it better, as much as
-saving for that unit is worth.
+its role is for at the price (firepower for siege and anti-heavy, durability for
+the rest), covering both enemy domains, splash against clustered enemies,
+affordability at the seat's income, variety (a kind that already makes up most
+of its role counts for less, so every kind of a role gets its turn), and
+personality. While ground reaches no enemy, a strike aircraft's splash is worth
+instead the targets one blast takes in the densest known clump of enemy ground
+units; the seat then saves for a splash bomber the more, within a cap, the more
+targets its blast takes than the cheaper strike aircraft, and pulls toward the
+tech building such a bomber requires. Scouts, carriers, Scuttlers and Sappers
+are bought only as the sections above describe. A role it needs but cannot train
+at all adds to the investment score of the cheapest building that would let it,
+and a role it can train adds to a producer it lacks whose unit would suit it
+better, as much as saving for that unit is worth.
 
 ## Investments and saving
 

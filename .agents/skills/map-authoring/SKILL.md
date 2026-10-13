@@ -140,6 +140,9 @@ symmetric, decisive map can still be dull or confusing.
 Draft in `map-drafts/`, never directly in `scenarios/`. The shipped-map sweep
 and hash blessing read the entire scenarios directory.
 
+A map retired from the pool that tests, benchmarks, or the built-in skirmish
+still load moves to `fixtures/scenarios/`. The game never lists those maps.
+
 Generate the local review page with:
 
 ```sh

@@ -219,6 +219,13 @@ pub(crate) struct WeldingArmState {
     pub(crate) active: bool,
 }
 
+/// Authoritative ready charges and progress toward the next serial recharge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PointDefenseState {
+    pub(crate) charges: u8,
+    pub(crate) recharge: f32,
+}
+
 /// All independent animation channels for one unit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct UnitAnimationState {
@@ -230,6 +237,7 @@ pub(crate) struct UnitAnimationState {
     pub(crate) welding_arm: Option<WeldingArmState>,
     /// Harvest cargo, present for Harvesters and Excavators.
     pub(crate) cargo: Option<CargoState>,
+    pub(crate) point_defense: Option<PointDefenseState>,
     /// Event-driven attack report and recovery.
     pub(crate) attack: Option<AttackPhase>,
     /// Cooldown-driven preparation, one entry per simulation weapon slot.
@@ -255,6 +263,7 @@ pub(crate) struct UnitAnimationFacts {
     carrying: u32,
     demolition_contact: bool,
     cooldowns: [u32; MAX_WEAPONS],
+    point_defense: Option<oxide_sim::state::PointDefense>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -304,7 +313,10 @@ impl UnitAnimationFacts {
                 Order::Repair { building } | Order::Salvage { building } => {
                     Some(WorkTarget::Building(building))
                 }
-                Order::RepairUnit { unit } => Some(WorkTarget::Unit(unit)),
+                Order::RepairUnit { unit }
+                | Order::Accompany {
+                    weld: Some(unit), ..
+                } => Some(WorkTarget::Unit(unit)),
                 _ => None,
             }
         };
@@ -317,6 +329,7 @@ impl UnitAnimationFacts {
             carrying: unit.carrying(),
             demolition_contact: sapper_at_contact(state, unit),
             cooldowns: unit.cooldowns,
+            point_defense: unit.point_defense,
         }
     }
 
@@ -729,6 +742,18 @@ impl AnimationController {
             locomotion,
             work,
             cargo,
+            point_defense: facts
+                .point_defense
+                .zip(facts.kind.stats().point_defense)
+                .map(|(held, stats)| PointDefenseState {
+                    charges: held.charges,
+                    recharge: if held.charges == stats.charges {
+                        0.0
+                    } else {
+                        (f32::from(held.recharge) + clock.tick_fraction)
+                            / f32::from(stats.recharge_ticks)
+                    },
+                }),
             attack: self.unit_attack(facts.id, facts.kind, clock),
             weapons,
             propulsion,
@@ -963,7 +988,7 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 5.0,
         },
-        UnitKind::Breaker | UnitKind::Avalanche => AttackTiming {
+        UnitKind::Breaker | UnitKind::Piledriver | UnitKind::Avalanche => AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 6.0,
         },
@@ -971,6 +996,7 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
         | UnitKind::Kestrel
         | UnitKind::Skyhook
         | UnitKind::Sapper
+        | UnitKind::Mantle
         | UnitKind::Surveyor => AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
@@ -1062,6 +1088,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Breaker
         | UnitKind::Avalanche
         | UnitKind::Sapper
+        | UnitKind::Mantle
+        | UnitKind::Piledriver
         | UnitKind::Surveyor => None,
     }
 }
@@ -1094,7 +1122,7 @@ fn active_harvesting(state: &State, unit: &Unit) -> Option<Vec2Fx> {
     let harvest = unit.kind.stats().harvest?;
     let Order::Harvest {
         node,
-        retiring: false,
+        withdrawing: false,
         ..
     } = unit.order
     else {
@@ -1137,7 +1165,11 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
                 && state.in_building_work_reach(unit, patient.id))
             .then_some(patient.center())
         }),
-        Order::RepairUnit { unit: patient } => state.unit(patient).and_then(|patient| {
+        Order::RepairUnit { unit: patient }
+        | Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state.unit(patient).and_then(|patient| {
             (patient.id != unit.id
                 && patient.player == unit.player
                 && patient.hp > 0

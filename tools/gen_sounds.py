@@ -136,6 +136,7 @@ SFX_METADATA = (
     ("bomb_release", "signature-weapon", 0.45, 0.20, None),
     ("demolition_boom", "destruction", 0.65, 0.20, None),
     ("upgrade_done", "economy", 0.35, 0.30, None),
+    ("intercept_zap", "generic-weapon", 0.24, 0.08, None),
     (
         "attack_bombard",
         "signature-weapon",
@@ -205,6 +206,7 @@ EXPECTED_SFX_SHA256 = {
     "train_done.wav": "6a5c193c7c749915cb7356aa3b2b426db50ffd3a017af2466a93dd17c1937827",
     "unit_death.wav": "b875ac45ad46385a8c5acc3f29f150496fb39071dc2c2bcb036b5d28b0538fec",
     "victory.wav": "ce13a0edb4afb7ad38fcbdf2d33d6afdf4f52ae6f9f3108fe37c8e4291e22ff2",
+    "intercept_zap.wav": "4bedf27c34fe11970a0109a9ff81a627eb2c67569eca1b35cc2f623e6269b18a",
 }
 SFX_ROUNDED_PCM = {"avalanche_launch", "avalanche_motor", "rocket_impact"}
 SFX_LOOP_NAMES = {"avalanche_motor"}
@@ -1329,6 +1331,26 @@ def sfx_upgrade_done() -> np.ndarray:
     )
 
 
+def sfx_intercept_zap() -> np.ndarray:
+    # A point defender's shot: a thin, fast Lancer-family needle with no
+    # thump, so it reads as a light beam beside the Lancer's discharge.
+    result = sfx_crush(
+        sfx_zap(
+            1102,
+            2800.0,
+            900.0,
+            0.085,
+            thump=0.0,
+            snap=0.45,
+            sync_gain=0.6,
+            sharp=6.5,
+        ),
+        11,
+        2,
+    )
+    return sfx_finish(result, highpass=260, peak=0.78)
+
+
 SFX_BUILDERS = {
     "click": sfx_click,
     "ack": sfx_ack,
@@ -1353,6 +1375,7 @@ SFX_BUILDERS = {
     "bomb_release": sfx_bomb_release,
     "demolition_boom": sfx_demolition_boom,
     "upgrade_done": sfx_upgrade_done,
+    "intercept_zap": sfx_intercept_zap,
     "attack_bombard": sfx_bombard,
     "attack_bastion": sfx_bastion,
     "artillery_launch": sfx_artillery_launch,

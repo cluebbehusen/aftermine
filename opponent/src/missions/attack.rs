@@ -106,6 +106,8 @@ struct Plan<'a> {
     misjudge: u64,
     /// Idle free Sappers.
     sappers: Vec<&'a UnitObs>,
+    /// Free point defenders fit to walk with an army.
+    screens: Vec<&'a UnitObs>,
     /// The enemy to go after first, when there are several.
     rival: Option<PlayerId>,
     /// Targets another attack holds or this decision gave up on.
@@ -158,6 +160,7 @@ impl Missions {
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
+            screens: Vec::new(),
             rival: scratch.rival,
             held: Vec::new(),
         };
@@ -170,6 +173,14 @@ impl Missions {
             plan.held = self.held(attacking, Some(id), &given_up);
             if let Some(failed) = self.advance(index, &plan, &fit, ledger) {
                 given_up.push(failed);
+            }
+            if let Some(mission) = self.list.iter().find(|mission| mission.id == id)
+                && let Task::Attack {
+                    phase: AttackPhase::Travel | AttackPhase::Engage { .. },
+                    ..
+                } = mission.task
+            {
+                keep_screens(&plan, mission, ledger);
             }
         }
 
@@ -230,6 +241,7 @@ impl Missions {
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
+            screens: Vec::new(),
             rival: scratch.rival,
             held: held.clone(),
         };
@@ -250,8 +262,8 @@ impl Missions {
     }
 
     /// The free army beyond the home reserve fit to fight, farthest from home
-    /// first, and the idle free Sappers into `plan`, as earlier missions of
-    /// this decision left them.
+    /// first, and the idle free Sappers and fit point defenders into `plan`,
+    /// as earlier missions of this decision left them.
     fn refresh<'a>(
         &self,
         plan: &mut Plan<'a>,
@@ -268,6 +280,11 @@ impl Missions {
             .iter()
             .copied()
             .filter(|unit| unit.kind == UnitKind::Sapper && unit.idle)
+            .collect();
+        plan.screens = free
+            .iter()
+            .copied()
+            .filter(|unit| screens(unit) && healthy(unit, FIT))
             .collect();
         let fit: Vec<&UnitObs> = free
             .iter()
@@ -310,8 +327,12 @@ impl Missions {
             return false;
         }
         let taken = if concentrated { u64::MAX } else { need };
-        let recruits = recruit(plan.frame, &fit, rally, taken, UNIT_CAP);
-        if recruits.is_empty() || !ledger.order(hunt(recruits.clone(), rally)) {
+        let mut recruits = recruit(plan.frame, &fit, rally, taken, UNIT_CAP);
+        if recruits.is_empty() {
+            return false;
+        }
+        recruits = plan.with_screens(recruits, rally, component, UNIT_CAP);
+        if !ledger.order(hunt(recruits.clone(), rally)) {
             return false;
         }
         ledger.launched(super::Launch {
@@ -421,11 +442,13 @@ impl Missions {
             target: target.objective(),
             phase,
         };
-        let members: Vec<&UnitObs> = mission
-            .units
-            .iter()
-            .filter_map(|id| mine(observation, *id))
-            .collect();
+        let (members, stranded) = fighters(observation, &mission.units);
+        if stranded {
+            if ledger.order(run(mission.units.clone(), rally)) {
+                self.list.remove(index);
+            }
+            return None;
+        }
         let all_idle = members
             .iter()
             .filter(|unit| unit.kind != UnitKind::Sapper)
@@ -455,13 +478,14 @@ impl Missions {
                         need.saturating_sub(striking_strength)
                     };
                     let recruits = recruit(plan.frame, &fit, rally, taken, room);
-                    let recruited =
-                        !recruits.is_empty() && ledger.order(hunt(recruits.clone(), rally));
-                    if recruited {
-                        for id in &recruits {
+                    let joining = plan.with_screens(recruits.clone(), rally, component, room);
+                    let ordered = !joining.is_empty() && ledger.order(hunt(joining.clone(), rally));
+                    if ordered {
+                        for id in &joining {
                             insert(&mut mission.units, *id);
                         }
                     }
+                    let recruited = ordered && !recruits.is_empty();
                     let sapping = members
                         .iter()
                         .filter(|unit| unit.kind == UnitKind::Sapper)
@@ -604,7 +628,12 @@ impl Missions {
                 .filter(|unit| reaches(plan.map, unit, component))
                 .collect();
             let room = UNIT_CAP - mission.units.len();
-            let recruits = recruit(plan.frame, &fit, target.approach, u64::MAX, room);
+            let recruits = plan.with_screens(
+                recruit(plan.frame, &fit, target.approach, u64::MAX, room),
+                target.approach,
+                component,
+                room,
+            );
             if !recruits.is_empty() && ledger.order(hunt(recruits.clone(), target.approach)) {
                 for id in recruits {
                     insert(&mut mission.units, id);
@@ -615,7 +644,84 @@ impl Missions {
     }
 }
 
+/// Sends the attack's point defenders that have drifted from its army back
+/// over it: to the fighting member nearest the army's middle, once a
+/// defender stands farther from that member than half its reach, so the
+/// middle of the army stays covered. The only per-unit movement the attack
+/// gives beyond its phase orders.
+fn keep_screens(plan: &Plan<'_>, mission: &Mission, ledger: &mut Ledger) {
+    let members: Vec<&UnitObs> = mission
+        .units
+        .iter()
+        .filter_map(|id| mine(plan.observation, *id))
+        .collect();
+    let fighting: Vec<&UnitObs> = members
+        .iter()
+        .copied()
+        .filter(|unit| !screens(unit) && unit.kind != UnitKind::Sapper)
+        .collect();
+    let count = i64::try_from(fighting.len()).unwrap_or(i64::MAX);
+    let (sum_x, sum_y) = fighting.iter().fold((0_i64, 0_i64), |(x, y), unit| {
+        (x + i64::from(unit.tile.x), y + i64::from(unit.tile.y))
+    });
+    // Distances to the middle are compared scaled by the member count, so
+    // the middle never rounds onto one side of a mirrored army.
+    let Some(middle) = fighting.iter().min_by_key(|unit| {
+        let dx = i64::from(unit.tile.x) * count - sum_x;
+        let dy = i64::from(unit.tile.y) * count - sum_y;
+        (
+            dx * dx + dy * dy,
+            plan.frame.rank(doubled(mission.goal), doubled(unit.tile)),
+            unit.id,
+        )
+    }) else {
+        return;
+    };
+    let drifted: Vec<UnitId> = members
+        .iter()
+        .filter(|unit| screens(unit))
+        .filter(|unit| {
+            let half = unit
+                .kind
+                .stats()
+                .point_defense
+                .map_or(Fx::ZERO, |defense| defense.radius / 2);
+            let dx = Fx::from_num(unit.tile.x - middle.tile.x);
+            let dy = Fx::from_num(unit.tile.y - middle.tile.y);
+            dx * dx + dy * dy > half * half
+        })
+        .map(|unit| unit.id)
+        .collect();
+    if !drifted.is_empty() {
+        ledger.order(run(drifted, middle.tile));
+    }
+}
+
 impl<'a> Plan<'a> {
+    /// `units` joined by the free point defenders nearest `rally` that can
+    /// walk to a target whose approach lies in `component`, `room` units in
+    /// all at most. The seat trains them in proportion to the enemy's known
+    /// shellfire, so an attack takes every one it can.
+    fn with_screens(
+        &self,
+        mut units: Vec<UnitId>,
+        rally: TilePos,
+        component: Option<u32>,
+        room: usize,
+    ) -> Vec<UnitId> {
+        let mut screens: Vec<&UnitObs> = self
+            .screens
+            .iter()
+            .copied()
+            .filter(|unit| reaches(self.map, unit, component))
+            .collect();
+        screens.sort_by_key(|unit| (self.frame.rank(doubled(rally), doubled(unit.tile)), unit.id));
+        for screen in screens.iter().take(room.saturating_sub(units.len())) {
+            insert(&mut units, screen.id);
+        }
+        units
+    }
+
     /// Idle free Sappers nearest `rally`, at most `room`, that can get to a
     /// target whose approach lies in `component`, when known enemy defenses
     /// that can hit ground stand around `target`.
@@ -1000,16 +1106,38 @@ pub(super) fn striking(unit: &UnitObs) -> u64 {
     }
 }
 
-/// A line, siege or anti-air unit at `health` per mille or better.
+/// A line, siege, anti-air or anti-heavy unit at `health` per mille or better.
 fn eligible(unit: &UnitObs, health: u32) -> bool {
     matches!(
         composition::role(unit.kind),
-        Some(Role::Line | Role::Siege | Role::AntiAir)
+        Some(Role::Line | Role::Siege | Role::AntiAir | Role::AntiHeavy)
     ) && healthy(unit, health)
 }
 
 pub(super) fn healthy(unit: &UnitObs, health: u32) -> bool {
     u64::from(unit.hp) * 1_000 >= u64::from(unit.kind.stats().max_hp) * u64::from(health)
+}
+
+/// The members of `units` that fight, and whether only point defenders are
+/// left. Point defenders follow an army; they never decide where it is or
+/// what it meets.
+fn fighters<'a>(observation: &'a ObservationData, units: &[UnitId]) -> (Vec<&'a UnitObs>, bool) {
+    let everyone: Vec<&UnitObs> = units
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .collect();
+    let fighting: Vec<&UnitObs> = everyone
+        .iter()
+        .copied()
+        .filter(|unit| !screens(unit))
+        .collect();
+    let stranded = fighting.is_empty() && !everyone.is_empty();
+    (fighting, stranded)
+}
+
+/// Whether `unit` shields an army from shells rather than fighting in it.
+fn screens(unit: &UnitObs) -> bool {
+    composition::role(unit.kind) == Some(Role::Screen)
 }
 
 /// Whether `unit` can get to a target whose approach lies in `component`.

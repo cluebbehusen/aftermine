@@ -761,20 +761,9 @@ impl<'a> Lifting<'a> {
             .find(|tile| self.open(*tile, island) && spread_ok(*tile))
     }
 
-    /// Whether a ground unit could stand on `tile` of `island` as far as the
-    /// seat knows: no known building, its own, an ally's or an enemy's, and
-    /// no rock or scrap covers it.
+    /// Whether a ground unit could stand on `tile` of `island`, by [`open`].
     fn open(&self, tile: TilePos, island: u32) -> bool {
-        let observation = self.observation;
-        self.map.component(tile) == Some(island)
-            && !observation.known_scrap_at(tile)
-            && !observation.known_rock_at(tile)
-            && !observation
-                .enemy_buildings
-                .iter()
-                .chain(&observation.my_buildings)
-                .chain(&observation.ally_buildings)
-                .any(|building| gap(building.anchor, building.kind.size(), tile, (1, 1)) < 0)
+        open(self.observation, self.map, tile, island)
     }
 
     /// The open home tile nearest `carrier`, away from other aircraft, where
@@ -857,13 +846,38 @@ fn send(
 }
 
 /// Orders [`fly_to`] issues.
-fn route_orders(via: Option<TilePos>) -> u32 {
+pub(super) fn route_orders(via: Option<TilePos>) -> u32 {
     1 + u32::from(via.is_some())
+}
+
+/// Whether a ground unit could stand on `tile` of `island` as far as the seat
+/// knows: no known building, its own, an ally's or an enemy's, and no rock or
+/// scrap covers it.
+pub(super) fn open(
+    observation: &ObservationData,
+    map: &MapModel,
+    tile: TilePos,
+    island: u32,
+) -> bool {
+    map.component(tile) == Some(island)
+        && !observation.known_scrap_at(tile)
+        && !observation.known_rock_at(tile)
+        && !observation
+            .enemy_buildings
+            .iter()
+            .chain(&observation.my_buildings)
+            .chain(&observation.ally_buildings)
+            .any(|building| gap(building.anchor, building.kind.size(), tile, (1, 1)) < 0)
 }
 
 /// Sends `carriers` to `goal` in one group order, or around known anti-air by
 /// `via` first in two.
-fn fly_to(carriers: Vec<UnitId>, via: Option<TilePos>, goal: TilePos, ledger: &mut Ledger) {
+pub(super) fn fly_to(
+    carriers: Vec<UnitId>,
+    via: Option<TilePos>,
+    goal: TilePos,
+    ledger: &mut Ledger,
+) {
     match via {
         Some(via) => {
             ledger.order(run(carriers.clone(), via));
@@ -975,10 +989,12 @@ pub(crate) fn payload(observation: &ObservationData, map: &MapModel) -> u64 {
         .sum()
 }
 
-/// Whether `kind` is a line or siege unit a carrier can take.
+/// Whether `kind` is a line, siege or anti-heavy unit a carrier can take.
 fn rides(kind: UnitKind) -> bool {
-    matches!(composition::role(kind), Some(Role::Line | Role::Siege))
-        && kind.stats().transport_size > 0
+    matches!(
+        composition::role(kind),
+        Some(Role::Line | Role::Siege | Role::AntiHeavy)
+    ) && kind.stats().transport_size > 0
 }
 
 fn ids(units: &[&UnitObs]) -> Vec<UnitId> {

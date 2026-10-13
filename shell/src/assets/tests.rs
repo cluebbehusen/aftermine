@@ -1,6 +1,6 @@
 use super::*;
 
-const SOUND_NAMES: [&str; 37] = [
+const SOUND_NAMES: [&str; 38] = [
     "ack",
     "alert",
     "artillery_boom",
@@ -25,6 +25,7 @@ const SOUND_NAMES: [&str; 37] = [
     "demolition_boom",
     "denied",
     "deposit",
+    "intercept_zap",
     "laser",
     "laser2",
     "music_calm",
@@ -307,8 +308,19 @@ fn the_shell_and_the_atlas_name_the_same_sprites() {
 
 #[test]
 fn the_building_loader_finds_every_kind_in_the_shipped_atlas() {
-    let art = building_art(&manifest()).expect("every building bank is in the atlas");
+    let atlas = manifest();
+    let art = building_art(&atlas).expect("every building bank is in the atlas");
     assert_eq!(art.len(), BuildingKind::ALL.len());
+    let citadel = &art[BuildingKind::Bastion as usize][1];
+    assert_ne!(citadel.hull, art[BuildingKind::Bastion as usize][0].hull);
+    for stage in 0..SITE_STAGES {
+        for phase in 0..SITE_PHASES {
+            assert_eq!(
+                citadel.construction[stage * SITE_PHASES + phase],
+                variant_row(&atlas, "bastion_t1", &format!("_site{stage}_{phase}")).unwrap()
+            );
+        }
+    }
 }
 
 #[test]

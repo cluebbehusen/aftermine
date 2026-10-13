@@ -35,6 +35,9 @@ pub struct PlayerStats {
     /// Buildings deliberately taken apart by their own crew; never counted
     /// among losses.
     pub buildings_salvaged: u32,
+    /// Units dismantled at their owner's Crucible; never counted among
+    /// losses.
+    pub units_retired: u32,
 }
 
 /// The whole report.
@@ -199,6 +202,7 @@ fn blank_players(seats: usize) -> Vec<PlayerStats> {
             units_lost: 0,
             buildings_lost: 0,
             buildings_salvaged: 0,
+            units_retired: 0,
         })
         .collect()
 }
@@ -251,6 +255,12 @@ fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
             Event::BuildingSalvaged { player, .. } => {
                 let counter = &mut stats[player.0 as usize].buildings_salvaged;
                 *counter = counter.saturating_add(1);
+            }
+            // A retired Harvester's load reached the bank like a delivery.
+            Event::UnitRetired { player, cargo, .. } => {
+                let seat = &mut stats[player.0 as usize];
+                seat.units_retired = seat.units_retired.saturating_add(1);
+                seat.scrap_collected = seat.scrap_collected.saturating_add(*cargo);
             }
             _ => {}
         }

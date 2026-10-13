@@ -70,3 +70,18 @@ fn hostile_inspection_does_not_expose_current_load_or_orders() {
         assert!(!load.value.contains('/'));
     }
 }
+
+#[test]
+fn point_defense_charges_read_the_same_for_owner_and_enemy() {
+    for foreign in [false, true] {
+        let panel = selected(UnitKind::Mantle, foreign);
+        assert!(
+            panel
+                .info
+                .rows
+                .iter()
+                .any(|r| r.label == "Charges" && r.value == "3/3"),
+            "foreign: {foreign}"
+        );
+    }
+}

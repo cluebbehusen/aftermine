@@ -2,7 +2,8 @@
 //! enemy shoot one such enemy together, the one each rung judges weakest.
 //! Nobody chases, so focusing never pulls a member out of position or sends
 //! it after an enemy it cannot walk to. A defense sent at artillery keeps
-//! after it.
+//! after it. Members that pick their own targets heaviest first keep their
+//! own aim: the weakest enemy would waste their single heavy shot.
 
 use super::{Missions, Task, hunt, mine, walking_gun};
 use crate::decision::Ledger;
@@ -12,7 +13,7 @@ use chassis::fx::Fx;
 use chassis::path::line_blocked;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::Domain;
+use oxide_sim::stats::{Domain, TargetPriority};
 use oxide_sim::{AttackTarget, Command, UnitId};
 
 /// Tiles from a member inside which an enemy can be focused.
@@ -34,6 +35,7 @@ impl Missions {
                 .units
                 .iter()
                 .filter_map(|id| mine(observation, *id))
+                .filter(|unit| unit.kind.stats().target_priority == TargetPriority::Nearest)
                 .collect();
             let defending = matches!(mission.task, Task::Defend { .. });
             let Some(focus) = mission.task.focus() else {
@@ -75,7 +77,10 @@ impl Missions {
                     }
                 }
                 None if focus.is_some()
-                    && ledger.order(hunt(mission.units.clone(), mission.goal)) =>
+                    && ledger.order(hunt(
+                        members.iter().map(|unit| unit.id).collect(),
+                        mission.goal,
+                    )) =>
                 {
                     *focus = None;
                 }
@@ -114,20 +119,12 @@ fn threatens(enemy: &UnitObs, members: &[&UnitObs]) -> bool {
 /// The members that can hit `enemy`, by id, if every one of them armed
 /// against it already reaches it in a straight line between tile centres
 /// that terrain does not stop, as the simulation measures a shot, and every
-/// ground member stands on the enemy's ground, so one a little short steps
+/// armed ground member stands on the enemy's ground, so one a little short steps
 /// closer rather than seeking a way round; otherwise none.
 fn shooters(map: &MapModel, members: &[&UnitObs], enemy: &UnitObs) -> Vec<UnitId> {
     let domain = enemy.body_domain();
     let mut shooters = Vec::new();
     for unit in members {
-        let walks = unit.kind.stats().domain == Domain::Ground;
-        let ground = map.component(unit.tile);
-        if walks && (ground.is_none() || map.component(enemy.tile) != ground) {
-            return Vec::new();
-        }
-        let dx = Fx::from_num(unit.tile.x - enemy.tile.x);
-        let dy = Fx::from_num(unit.tile.y - enemy.tile.y);
-        let distance_sq = dx * dx + dy * dy;
         let mut weapons = unit
             .kind
             .stats()
@@ -138,6 +135,14 @@ fn shooters(map: &MapModel, members: &[&UnitObs], enemy: &UnitObs) -> Vec<UnitId
         if weapons.peek().is_none() {
             continue;
         }
+        let walks = unit.kind.stats().domain == Domain::Ground;
+        let ground = map.component(unit.tile);
+        if walks && (ground.is_none() || map.component(enemy.tile) != ground) {
+            return Vec::new();
+        }
+        let dx = Fx::from_num(unit.tile.x - enemy.tile.x);
+        let dy = Fx::from_num(unit.tile.y - enemy.tile.y);
+        let distance_sq = dx * dx + dy * dy;
         let reaches = weapons.any(|weapon| {
             let direct = !weapon.indirect && walks && domain == Domain::Ground;
             distance_sq <= weapon.range * weapon.range

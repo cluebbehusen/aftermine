@@ -1,13 +1,15 @@
 //! HP loss and owner-only notification shared by combat phases.
 
+use crate::Tick;
 use crate::event::Event;
 use crate::state::{Building, Unit};
 
-pub(super) fn unit(victim: &mut Unit, amount: u32, events: &mut Vec<Event>) {
+pub(super) fn unit(victim: &mut Unit, amount: u32, now: Tick, events: &mut Vec<Event>) {
     if victim.hp == 0 || amount == 0 {
         return;
     }
     victim.hp = victim.hp.saturating_sub(amount);
+    victim.damaged_at = Some(now);
     events.push(Event::DamageTaken {
         player: victim.player,
         pos: victim.pos,

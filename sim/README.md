@@ -46,17 +46,21 @@ an empty bank, or a full sling still ends the whole program.
 Repair and salvage share one damage-first building-work resolver and remain
 mutually exclusive. Completed Repair Bays automatically heal nearby owned units
 before completed buildings, use the ordinary player bank, and skip structures
-with active or queued salvage commitments.
+with active or queued salvage commitments. Each Bay services at most
+`REPAIR_BAY_PATIENTS` machines, chosen by `State::repair_bay_patients`, and a
+machine an earlier-built Bay took is left to it. A unit damaged within
+`REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an aircraft that can land is
+serviced only on the ground.
 
 Tile routing and most geometric tie rules are also fair under a map half-turn.
 Building contact follows the fixed artwork, so asymmetric outlines can have
 different frontage after a map half-turn. Fixed-point vector scaling, equal-cost
 paths, group-goal snapping and spreading, footprint doorsteps, ground-production
-spawns, autonomous harvest replacement, and perfectly stacked collision
-separation use owner-local ranks and query-, footprint-, or map-relative frames
-instead of global entity ids or an absolute screen corner. Airworks aircraft
-spawn at the authoritative center of the open roof bay, then obey their ordinary
-orders from there.
+spawns, autonomous harvest replacement, Repair Bay patient choice, and perfectly
+stacked collision separation use owner-local ranks and query-, footprint-, or
+map-relative frames instead of global entity ids or an absolute screen corner.
+Airworks aircraft spawn at the authoritative center of the open roof bay, then
+obey their ordinary orders from there.
 
 ## Development
 

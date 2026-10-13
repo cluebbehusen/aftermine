@@ -620,10 +620,11 @@ impl Presentation {
         events: &[Event],
         movement: &[oxide_sim::GroundMotion],
     ) {
-        self.projectile_releases.observe(state, events);
         self.animations.observe_events(state.current_tick(), events);
         self.animations.observe_workers(state);
         self.spawn_fx(state, events);
+        // Effects retain the intercepted flight before its launch record is removed.
+        self.projectile_releases.observe(state, events);
         self.refresh_facing(state, movement);
 
         self.facing
