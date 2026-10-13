@@ -1106,11 +1106,11 @@ pub(super) fn striking(unit: &UnitObs) -> u64 {
     }
 }
 
-/// A line, siege or anti-air unit at `health` per mille or better.
+/// A line, siege, anti-air or anti-heavy unit at `health` per mille or better.
 fn eligible(unit: &UnitObs, health: u32) -> bool {
     matches!(
         composition::role(unit.kind),
-        Some(Role::Line | Role::Siege | Role::AntiAir)
+        Some(Role::Line | Role::Siege | Role::AntiAir | Role::AntiHeavy)
     ) && healthy(unit, health)
 }
 

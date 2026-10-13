@@ -989,10 +989,12 @@ pub(crate) fn payload(observation: &ObservationData, map: &MapModel) -> u64 {
         .sum()
 }
 
-/// Whether `kind` is a line or siege unit a carrier can take.
+/// Whether `kind` is a line, siege or anti-heavy unit a carrier can take.
 fn rides(kind: UnitKind) -> bool {
-    matches!(composition::role(kind), Some(Role::Line | Role::Siege))
-        && kind.stats().transport_size > 0
+    matches!(
+        composition::role(kind),
+        Some(Role::Line | Role::Siege | Role::AntiHeavy)
+    ) && kind.stats().transport_size > 0
 }
 
 fn ids(units: &[&UnitObs]) -> Vec<UnitId> {

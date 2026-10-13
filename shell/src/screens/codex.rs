@@ -329,6 +329,12 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
     if stats.demolition.is_some() {
         notes.push("Detonates on its target; always fatal to itself.".to_string());
     }
+    if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
+        notes.push(
+            "Left to itself, picks the machine in reach with the most full health, then the nearest."
+                .to_string(),
+        );
+    }
     if !stats.requires.is_empty() {
         let names: Vec<String> = stats
             .requires

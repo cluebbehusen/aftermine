@@ -25,14 +25,18 @@ pub(crate) enum Role {
     AirStrike,
     /// Unarmed point defenders that shoot down shells aimed at the army.
     Screen,
+    /// Heavy single shots, for enemy ground machines whose health takes one
+    /// whole.
+    AntiHeavy,
 }
 
-const ROLES: [Role; 5] = [
+const ROLES: [Role; 6] = [
     Role::Line,
     Role::Siege,
     Role::AntiAir,
     Role::AirStrike,
     Role::Screen,
+    Role::AntiHeavy,
 ];
 
 /// What a needed but untrainable role adds to its cheapest building's score.
@@ -60,6 +64,7 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         UnitKind::Flakhound | UnitKind::Talon => Some(Role::AntiAir),
         UnitKind::Buzzard | UnitKind::Condor => Some(Role::AirStrike),
         UnitKind::Mantle => Some(Role::Screen),
+        UnitKind::Piledriver => Some(Role::AntiHeavy),
         UnitKind::Harvester
         | UnitKind::Excavator
         | UnitKind::Scuttler
@@ -67,6 +72,28 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         | UnitKind::Kestrel
         | UnitKind::Skyhook => None,
     }
+}
+
+/// The largest single shot against ground among the anti-heavy role's kinds,
+/// or none when the role has no kind.
+fn heavy_shot() -> Option<u32> {
+    UnitKind::ALL
+        .into_iter()
+        .filter(|kind| role(*kind) == Some(Role::AntiHeavy))
+        .flat_map(|kind| kind.stats().weapons.iter())
+        .filter(|weapon| weapon.targets.ground && weapon.splash.is_none())
+        .map(|weapon| weapon.damage)
+        .max()
+}
+
+/// Whether `kind` is a heavy machine: an armed ground unit whose full health
+/// takes at least two anti-heavy shots whole. One that a single shot nearly
+/// kills wastes much of the next, and is cheap enough to come in numbers.
+pub(crate) fn heavy(kind: UnitKind) -> bool {
+    let stats = kind.stats();
+    stats.domain == Domain::Ground
+        && stats.can_fight()
+        && heavy_shot().is_some_and(|shot| stats.max_hp >= 2 * shot)
 }
 
 /// How far a unit's longest weapon reaches: under three tiles, up to five,
@@ -98,6 +125,8 @@ fn reach(kind: UnitKind) -> Option<Reach> {
 struct Enemy {
     air: u64,
     ground: u64,
+    /// The part of `ground` that is heavy machines.
+    heavy: u64,
     defenses: u64,
     /// Per mille of one point defender: the known projectile fire its
     /// recharge would answer (see [`shells_per_recharge`]).
@@ -121,6 +150,7 @@ impl Enemy {
         let mut enemy = Self {
             air: 0,
             ground: 0,
+            heavy: 0,
             defenses: 0,
             shells: 0,
             shelling: 0,
@@ -144,6 +174,9 @@ impl Enemy {
                 enemy.air += value;
             } else if unit.kind.stats().can_fight() {
                 enemy.ground += value;
+                if heavy(unit.kind) {
+                    enemy.heavy += value;
+                }
             }
             if let Some(reach) = reach(unit.kind) {
                 reaches[reach as usize] += value;
@@ -302,8 +335,8 @@ const SCREEN_SHARE_PER_TRAIT: i64 = 2;
 /// point defender answers yet, as anti-air's is a share of the enemy air it
 /// has seen.
 pub(crate) struct Needs {
-    need: [i64; 5],
-    weight: [u64; 5],
+    need: [i64; ROLES.len()],
+    weight: [u64; ROLES.len()],
     /// What the known enemy guns whose fire one point defender answers are
     /// worth.
     answered: i64,
@@ -375,7 +408,7 @@ pub(crate) fn needs(
     outlet: Outlet,
 ) -> Needs {
     let enemy = Enemy::of(observation, memory);
-    let mut own = [0_i64; 5];
+    let mut own = [0_i64; ROLES.len()];
     let mut kinds = [0_u32; UnitKind::ALL.len()];
     let owned = observation
         .my_units
@@ -393,12 +426,20 @@ pub(crate) fn needs(
     let army: i64 = own[..Role::Screen as usize].iter().sum();
     let air = i64::try_from(enemy.air).unwrap_or(i64::MAX);
     let ground = i64::try_from(enemy.ground).unwrap_or(i64::MAX);
+    let heavy = i64::try_from(enemy.heavy).unwrap_or(i64::MAX);
     let defenses = i64::try_from(enemy.defenses).unwrap_or(i64::MAX);
-    let mut need = [0_i64; 5];
+    let mut need = [0_i64; ROLES.len()];
     let answered =
         i64::try_from(enemy.shelling * 1_000 / enemy.shells.max(1_000)).unwrap_or(i64::MAX);
     if outlet.ground {
-        need[Role::Line as usize] = (3 * ground / 4).max(2 * army / 5) - own[Role::Line as usize];
+        // Once the seat can train anti-heavy units they answer the heavies
+        // and the line the rest; until then the line answers everything.
+        let fought = if trainable(observation, Role::AntiHeavy) {
+            ground - heavy
+        } else {
+            ground
+        };
+        need[Role::Line as usize] = (3 * fought / 4).max(2 * army / 5) - own[Role::Line as usize];
         let share = if outlet.lifted {
             0
         } else {
@@ -406,6 +447,7 @@ pub(crate) fn needs(
         };
         need[Role::Siege as usize] =
             defenses / 2 + army * share / 1_000 - own[Role::Siege as usize];
+        need[Role::AntiHeavy as usize] = 3 * heavy / 4 - own[Role::AntiHeavy as usize];
         // Defenders walk with the army, which a lifted army leaves behind.
         if !outlet.lifted
             && let Some((cost, _)) = defender()
@@ -444,6 +486,7 @@ pub(crate) fn needs(
             weight(traits.fortification),
             weight(traits.air),
             weight(traits.support),
+            1_000,
         ],
         answered,
         enemy,
@@ -728,7 +771,7 @@ impl Needs {
             _ => 1_000,
         };
         let worth = match role {
-            Role::Siege => firepower(kind),
+            Role::Siege | Role::AntiHeavy => firepower(kind),
             Role::Line | Role::AntiAir | Role::AirStrike | Role::Screen => (750
                 + 5 * (i64::from(stats.max_hp) * 100 / i64::from(stats.cost) - 50))
                 .clamp(750, 1_250)
@@ -758,7 +801,7 @@ impl Needs {
         let price = u64::from(stats.cost);
         let affordable = (500 * u64::from(self.income) / price).clamp(500, 1_000);
         let preference = match role {
-            Role::Line => 1_000,
+            Role::Line | Role::AntiHeavy => 1_000,
             Role::Siege => weight(self.traits.siege),
             Role::AntiAir => weight(self.traits.fortification),
             Role::AirStrike => weight(self.traits.air),

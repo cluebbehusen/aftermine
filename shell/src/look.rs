@@ -321,6 +321,13 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             weapon: Some(weapon(SoundKind::BreakerFire, ShotStyle::Mortar, 0.625)),
             ..plain
         },
+        UnitKind::Piledriver => UnitLook {
+            scale: LARGE_SCALE,
+            gait: Gait::Treads,
+            belts: &[[23., 42., 38., 107.], [90., 42., 105., 107.]],
+            weapon: Some(weapon(SoundKind::BreakerFire, heavy, 0.625)),
+            ..plain
+        },
         UnitKind::Avalanche => UnitLook {
             scale: LARGE_SCALE,
             gait: Gait::Treads,

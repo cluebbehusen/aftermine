@@ -988,7 +988,7 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 5.0,
         },
-        UnitKind::Breaker | UnitKind::Avalanche => AttackTiming {
+        UnitKind::Breaker | UnitKind::Piledriver | UnitKind::Avalanche => AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 6.0,
         },
@@ -1087,7 +1087,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Breaker
         | UnitKind::Avalanche
         | UnitKind::Sapper
-        | UnitKind::Mantle => None,
+        | UnitKind::Mantle
+        | UnitKind::Piledriver => None,
     }
 }
 

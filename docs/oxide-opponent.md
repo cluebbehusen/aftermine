@@ -99,10 +99,10 @@ the running total and mission state.
   sends.
 - Missions recruit from available units in a fixed order (defend, lift, attack,
   clearance, strike, raid), and each takes only the roles it uses: attack takes
-  line, siege and anti-air units, with Sappers and point defenders in support;
-  raid takes Scuttlers, Sappers, or ground-attack aircraft too few for a strike;
-  lift takes carriers and a payload; a clearance takes splash bombers while
-  ground reaches no enemy.
+  line, siege, anti-air and anti-heavy units, with Sappers and point defenders
+  in support; raid takes Scuttlers, Sappers, or ground-attack aircraft too few
+  for a strike; lift takes carriers and a payload; a clearance takes splash
+  bombers while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at
@@ -177,6 +177,7 @@ Each behavior is proven by a staged scenario test.
 | Situation                            | Required response                                                                                                                                     |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enemy air seen                       | Anti-air proportional to seen enemy air                                                                                                               |
+| Enemy heavies seen                   | Anti-heavy units proportional to seen enemy heavies                                                                                                   |
 | Enemy Airworks seen                  | Raise the anti-air need before enemy air arrives                                                                                                      |
 | Ground threat at base or expansion   | Defend                                                                                                                                                |
 | Air raid on base or expansion        | Defend with anti-air or fighters                                                                                                                      |

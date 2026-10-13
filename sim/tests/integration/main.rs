@@ -36,6 +36,7 @@ mod harvest_zones;
 mod landing;
 mod movement_lab;
 mod peaks;
+mod piledriver;
 mod pits;
 mod point_defense;
 mod provisional_construction;

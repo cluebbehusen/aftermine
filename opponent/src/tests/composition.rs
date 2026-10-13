@@ -568,3 +568,150 @@ fn a_short_bank_saves_for_point_defense_against_heavy_shellfire() {
         Some(Investment::Unit(UnitKind::Mantle))
     );
 }
+
+/// `player`'s seat at its first decision, remembering `seen` enemy units on
+/// the given tiles.
+fn recalling(
+    scenario: &Scenario,
+    state: &State,
+    player: u8,
+    seen: &[(UnitKind, TilePos)],
+) -> Opponent {
+    let mut json = serde_json::to_value(seat(scenario, player).checkpoint()).unwrap();
+    json["memory"]["units"] = seen
+        .iter()
+        .zip(0_u32..)
+        .map(|((kind, tile), index)| {
+            serde_json::json!({
+                "id": 1_000 + index,
+                "kind": kind,
+                "tile": tile,
+                "seen": state.current_tick(),
+            })
+        })
+        .collect();
+    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+    Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap()
+}
+
+/// The West seat at its first decision, remembering `seen` East units over
+/// the East base, which is out of its sight.
+fn remembering(scenario: &Scenario, state: &State, seen: &[UnitKind]) -> Opponent {
+    let spots: Vec<(UnitKind, TilePos)> = seen
+        .iter()
+        .zip(0_i32..)
+        .map(|(kind, index)| (*kind, TilePos::new(20, 1 + index % 10)))
+        .collect();
+    recalling(scenario, state, 0, &spots)
+}
+
+/// The arena with a built West Crucible beside the Fabricator.
+fn foundry_of_heavies() -> Scenario {
+    let mut scenario = armed(&[], &[]);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 12,
+        y: 8,
+    });
+    scenario
+}
+
+/// What the West Crucible queues on its first decision, remembering `seen`.
+fn crucible_trains(scenario: &Scenario, seen: &[UnitKind]) -> Vec<UnitKind> {
+    let state = scenario.build().unwrap();
+    let at = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Crucible)
+        .unwrap()
+        .id;
+    trains(&remembering(scenario, &state, seen).act(&state, &mut OwnEvents::default()))
+        .into_iter()
+        .filter(|(building, _)| *building == at)
+        .map(|(_, kind)| kind)
+        .collect()
+}
+
+#[test]
+fn seen_enemy_heavies_bring_piledrivers_in_proportion() {
+    let scenario = foundry_of_heavies();
+    let breakers = [UnitKind::Breaker; 2];
+    assert!(crucible_trains(&scenario, &breakers).contains(&UnitKind::Piledriver));
+    // As much value in light machines wants no anti-heavy shot.
+    let sentinels = [UnitKind::Sentinel; 20];
+    assert_eq!(
+        UnitKind::Sentinel.stats().cost * 20,
+        UnitKind::Breaker.stats().cost * 2,
+        "premise: equal value"
+    );
+    assert!(!crucible_trains(&scenario, &sentinels).contains(&UnitKind::Piledriver));
+    assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
+
+    // Enough Piledrivers already answer three quarters of two Breakers.
+    let answer = 3 * 2 * UnitKind::Breaker.stats().cost / 4;
+    let enough = answer.div_ceil(UnitKind::Piledriver.stats().cost);
+    let mut covered = foundry_of_heavies();
+    covered.units.extend(
+        (0..i32::try_from(enough).unwrap())
+            .map(|index| unit(0, UnitKind::Piledriver, 2 + index, 10)),
+    );
+    assert!(!crucible_trains(&covered, &breakers).contains(&UnitKind::Piledriver));
+}
+
+#[test]
+fn an_enemy_heavy_out_of_sight_and_memory_brings_no_piledriver() {
+    let mut scenario = foundry_of_heavies();
+    scenario.units.push(unit(1, UnitKind::Breaker, 20, 2));
+    let state = scenario.build().unwrap();
+    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .enemy_units
+            .iter()
+            .all(|unit| unit.kind != UnitKind::Breaker),
+        "premise: the Breaker is out of sight"
+    );
+    assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
+}
+
+#[test]
+fn mirrored_seats_answer_heavies_alike() {
+    let mut scenario = arena(2_000);
+    let (width, height) = (24, 12);
+    for (kind, x, y) in [
+        (BuildingKind::Fabricator, 8, 8),
+        (BuildingKind::Crucible, 12, 8),
+    ] {
+        scenario.buildings.push(BuildingSpec {
+            player: 0,
+            kind,
+            x,
+            y,
+        });
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind,
+            x: width - 2 - x,
+            y: height - 2 - y,
+        });
+    }
+    let state = scenario.build().unwrap();
+    let west_saw = [
+        (UnitKind::Breaker, TilePos::new(20, 2)),
+        (UnitKind::Breaker, TilePos::new(20, 3)),
+    ];
+    let east_saw: Vec<(UnitKind, TilePos)> = west_saw
+        .iter()
+        .map(|(kind, tile)| (*kind, TilePos::new(width - 1 - tile.x, height - 1 - tile.y)))
+        .collect();
+    let west = recalling(&scenario, &state, 0, &west_saw).act(&state, &mut OwnEvents::default());
+    let east = recalling(&scenario, &state, 1, &east_saw).act(&state, &mut OwnEvents::default());
+    assert!(
+        trains(&west)
+            .iter()
+            .any(|(_, kind)| *kind == UnitKind::Piledriver),
+        "premise: {west:?}"
+    );
+    assert_eq!(mirror(&state, west), east);
+}

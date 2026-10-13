@@ -93,7 +93,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 629)
+        self.assertEqual(len(frames), 643)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -101,7 +101,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "94c29027fb67851009bffccdbb831ce143cc7bfa626283de5c84c30fe6ed0c4a",
+            "eb0f2d8263ca6d49478cc352ceff8422f91f8d96d90b60c79bf306d99bcf2298",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:

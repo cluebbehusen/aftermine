@@ -2,14 +2,15 @@ use super::*;
 
 fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
     Needs {
-        need: [0; 5],
-        weight: [1_000; 5],
+        need: [0; ROLES.len()],
+        weight: [1_000; ROLES.len()],
         answered: 0,
         ground: true,
         lifted: false,
         enemy: Enemy {
             air: 0,
             ground: 1_000,
+            heavy: 0,
             defenses: 0,
             shells: 0,
             shelling: 0,
@@ -344,4 +345,93 @@ fn every_army_unit_gets_its_turn() {
         .filter(|kind| !trained.contains(kind))
         .collect();
     assert!(missing.is_empty(), "never trains {missing:?}");
+}
+
+#[test]
+fn heavies_are_the_armed_ground_machines_a_slug_does_not_overkill() {
+    let heavies: Vec<UnitKind> = UnitKind::ALL
+        .into_iter()
+        .filter(|kind| heavy(*kind))
+        .collect();
+    assert_eq!(
+        heavies,
+        [UnitKind::Breaker],
+        "every other kind is light, unarmed or flies"
+    );
+    assert!(
+        !heavy(UnitKind::Piledriver),
+        "a Piledriver's own hull stays under its slug"
+    );
+}
+
+#[test]
+fn an_anti_heavy_need_pulls_toward_a_crucible() {
+    use oxide_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let mut needs = needs(None, false);
+    let crucible = |pull: &[(BuildingKind, u32)]| {
+        pull.iter()
+            .find(|(building, _)| *building == BuildingKind::Crucible)
+            .map(|(_, score)| *score)
+    };
+    assert_eq!(crucible(&needs.pull(&observation)), None, "not wanted");
+    needs.need[Role::AntiHeavy as usize] = 1_000;
+    assert_eq!(
+        crucible(&needs.pull(&observation)),
+        Some(PULL),
+        "the only building that trains it"
+    );
+}
+
+#[test]
+fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
+    use oxide_sim::observation::BuildingObs;
+    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let memory: Memory = serde_json::from_value(serde_json::json!({
+        "units": [
+            {"id": 1_000, "kind": "breaker", "tile": {"x": 40, "y": 2}, "seen": observation.tick},
+            {"id": 1_001, "kind": "breaker", "tile": {"x": 40, "y": 3}, "seen": observation.tick},
+        ],
+        "failures": [],
+        "abandoned": [],
+        "scouted": [],
+    }))
+    .unwrap();
+    let outlet = Outlet {
+        ground: true,
+        lifted: false,
+        invaders: 0,
+        air_strikes: false,
+        strike: 0,
+    };
+    let traits = needs(None, false).traits;
+    let measure = |observation: &ObservationData| {
+        let needs = super::needs(
+            observation,
+            &memory,
+            traits,
+            BotStance::Balanced,
+            1_000,
+            outlet,
+        );
+        (
+            needs.need[Role::Line as usize],
+            needs.need[Role::AntiHeavy as usize],
+        )
+    };
+    let (line_before, anti_heavy_before) = measure(&observation);
+    assert!(anti_heavy_before > 0, "premise: the Breakers call for it");
+    let template = observation.my_buildings[0].clone();
+    observation.my_buildings.push(BuildingObs {
+        id: BuildingId(900),
+        kind: BuildingKind::Crucible,
+        built: true,
+        ..template
+    });
+    let (line_after, anti_heavy_after) = measure(&observation);
+    assert!(line_after < line_before, "{line_after} < {line_before}");
+    assert_eq!(anti_heavy_after, anti_heavy_before);
 }

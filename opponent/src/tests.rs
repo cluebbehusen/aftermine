@@ -341,7 +341,7 @@ fn wounded(state: &State, unit: UnitId, hp: u32) -> State {
 
 /// The east seat's counterpart of west `commands` on a half-turn-symmetric
 /// staging: units by their rank among the seat's units, buildings by rank
-/// among its Foundries, and tiles rotated.
+/// among its buildings of the same kind, and tiles rotated.
 fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
     let sorted = |player: u8| {
         let mut units = seat_units(state, PlayerId(player));
@@ -455,10 +455,18 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                     queue,
                 },
                 Command::Train { building, kind } => {
-                    let west = foundries(state, PlayerId(0));
-                    let index = west.iter().position(|id| *id == building).unwrap();
+                    let producer = state.building(building).unwrap().kind;
+                    let of = |player: u8| -> Vec<BuildingId> {
+                        state
+                            .buildings()
+                            .iter()
+                            .filter(|b| b.player == PlayerId(player) && b.kind == producer)
+                            .map(|b| b.id)
+                            .collect()
+                    };
+                    let index = of(0).iter().position(|id| *id == building).unwrap();
                     Command::Train {
-                        building: foundries(state, PlayerId(1))[index],
+                        building: of(1)[index],
                         kind,
                     }
                 }
