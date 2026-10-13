@@ -58,6 +58,7 @@ SFX_CATEGORY_BUDGETS = {
 }
 SFX_ATTACK_AUDIBILITY_NAMES = {
     "attack_breaker",
+    "attack_piledriver",
     "demolition_boom",
     "attack_flakhound",
     "attack_flak_turret",
@@ -130,6 +131,10 @@ SFX_METADATA = (
     ),
     ("attack_warden", "generic-weapon", 0.30, 0.10, None),
     ("attack_breaker", "signature-weapon", 0.55, 0.20, None),
+    ("attack_piledriver", "signature-weapon", 0.55, 0.20, None),
+    ("piledriver_impact", "signature-weapon", 0.26, 0.20, None),
+    ("piledriver_deploy", "signature-weapon", 0.19 * 10 ** (-18 / 20), 0.15, None),
+    ("piledriver_fold", "signature-weapon", 0.18 * 10 ** (-18 / 20), 0.15, None),
     ("avalanche_launch", "signature-weapon", 0.50, 0.20, None),
     ("avalanche_motor", "propulsion-loop", 0.35, 0.20, None),
     ("rocket_impact", "signature-weapon", 0.50, 0.20, None),
@@ -175,6 +180,10 @@ SFX_METADATA = (
 # after synthesis so a library or recipe change cannot silently replace clips
 # already accepted by ear.
 EXPECTED_SFX_SHA256 = {
+    "piledriver_fold.wav": "72a6539c1588ef3cec75f449920522d207a65a2f72c48ed44a25702f7edcfd20",
+    "piledriver_deploy.wav": "4a4dbc55cb8d23a0cb745d0c99a470e6e87da34203ec359b93e0642b6297b6b3",
+    "piledriver_impact.wav": "2cde65203180fbbad6eb2ef0e1d118a374546af586c8ef3fb22412a2fa1a585c",
+    "attack_piledriver.wav": "f7a310f69b77e60c64a510245098e916294edb35df253147f515f58e5444740e",
     "avalanche_motor.wav": "aa1944a1dba7a0746973873bcffdbf03bf2c09355eef8f1a046028c83fe8a4bd",
     "rocket_impact.wav": "037944ae136afdb1c69d34f2f72c6642d1a775663f7ab26fa1c75358af566d0e",
     "ack.wav": "0450d0bb65444c92d60082978685f135c910979446425aa71c75d97842a1081f",
@@ -1191,6 +1200,66 @@ def sfx_breaker() -> np.ndarray:
     return sfx_finish(result, highpass=52, peak=0.9)
 
 
+def piledriver_finish(samples: np.ndarray, peak: float = 0.87) -> np.ndarray:
+    return sfx_finish(sfx_crush(sfx_drive(samples, 1.8), 11, 2), highpass=90, peak=peak)
+
+
+def sfx_piledriver() -> np.ndarray:
+    duration = 0.39
+    n = int(duration * SFX_RATE)
+    frequencies = sfx_glide(n, 196, 73.41619198)
+    phase = 2 * np.pi * np.cumsum(frequencies) / SFX_RATE
+    body = (
+        0.12 * np.sin(phase)
+        + 0.8 * np.sin(phase * 2)
+        + 0.75 * np.sin(phase * 3)
+        + 0.42 * np.sin(phase * 4)
+    ) / 2.09
+    noise = sfx_bandpass(sfx_noise(n, 9202), 220, 2700)
+    pressure = sfx_swept_lowres(noise, 1800, 280, resonance=2.7)
+    voice = body * 0.72 + pressure * 1.8
+    canvas = SfxCanvas(duration).add(voice * sfx_decay(n, 8))
+    canvas.add(sfx_crack(9302, noise_gain=0.35), 0, 0.34)
+    return piledriver_finish(canvas.output())
+
+
+def sfx_piledriver_impact() -> np.ndarray:
+    n = round(0.30 * SFX_RATE)
+    phase = 2 * np.pi * np.cumsum(sfx_glide(n, 440, 146.832)) / SFX_RATE
+    core = np.sin(phase + 1.6 * np.sin(phase * 2.3600000000000003))
+    fused = sfx_bandpass(sfx_noise(n, 9502), 350, 2100)
+    return piledriver_finish((core * 0.7 + fused * 0.48) * sfx_decay(n, 7), 0.8)
+
+
+def piledriver_motor(duration: float, frequency: float) -> np.ndarray:
+    n = int(duration * SFX_RATE)
+    phase = 2 * np.pi * max(93, frequency * 0.92) * sfx_axis(n)
+    core = np.sin(phase * 2 + 0.9 * np.sin(phase * 3.1)) + 0.35 * np.sin(phase * 4)
+    texture = sfx_bandpass(sfx_noise(n, 9402 + round(duration * 100)), 250, 1400)
+    envelope = np.sin(np.pi * np.linspace(0, 1, n)) ** 0.6
+    motor = sfx_lowpass(core * 0.55 + texture * 0.18, 1900) * envelope
+    return piledriver_finish(motor, 0.48)
+
+
+def piledriver_latch(pitch: float) -> np.ndarray:
+    n = round(0.11 * SFX_RATE)
+    phase = 2 * np.pi * pitch * sfx_axis(n)
+    tone = np.sin(phase + 1.7 * np.sin(phase * 2.96))
+    return piledriver_finish(tone * sfx_decay(n, 8), 0.56)
+
+
+def sfx_piledriver_deploy() -> np.ndarray:
+    canvas = SfxCanvas(0.82).add(piledriver_motor(0.65, 110), 0)
+    canvas.add(piledriver_latch(220), 0.70, 0.75)
+    return sfx_finish(canvas.output(), highpass=100, peak=0.58)
+
+
+def sfx_piledriver_fold() -> np.ndarray:
+    canvas = SfxCanvas(0.50).add(piledriver_motor(0.36, 98), 0.08)
+    canvas.add(piledriver_latch(246.94), 0.38, 0.7)
+    return sfx_finish(canvas.output(), highpass=100, peak=0.54)
+
+
 def rocket_noise(seconds: float, seed: int, low: float, high: float) -> np.ndarray:
     """Periodic, smoothly band-limited turbulence without a loop splice."""
     count = round(seconds * SFX_RATE)
@@ -1352,6 +1421,10 @@ def sfx_intercept_zap() -> np.ndarray:
 
 
 SFX_BUILDERS = {
+    "piledriver_fold": sfx_piledriver_fold,
+    "piledriver_deploy": sfx_piledriver_deploy,
+    "piledriver_impact": sfx_piledriver_impact,
+    "attack_piledriver": sfx_piledriver,
     "click": sfx_click,
     "ack": sfx_ack,
     "denied": sfx_denied,

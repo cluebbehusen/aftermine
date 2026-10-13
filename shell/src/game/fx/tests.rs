@@ -1240,6 +1240,7 @@ fn direct_reports_age_on_sim_time_instead_of_wall_time() {
             completed_tick: 100,
             surface: None,
             attacker: None,
+            impact_sound: None,
         },
         age: 0.0,
     };
@@ -1361,6 +1362,7 @@ fn final_volley_drains_after_the_simulation_stops() {
             completed_tick,
             surface: None,
             attacker: None,
+            impact_sound: None,
         },
         age: 0.0,
     });
@@ -2252,4 +2254,112 @@ fn mantle_emitter_origins_rotate_with_the_chassis() {
         assert!((north + south).length() < 0.0001);
         assert!(north.y < 0.0);
     }
+}
+
+#[test]
+fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
+    for visible in [true, false] {
+        let scenario = serde_json::from_value(serde_json::json!({
+            "name": "Piledriver audio", "mode": "sandbox", "map": vec!["........................................"; 28],
+            "players": [
+                {"name": "Local", "scrap": 0, "bot": false},
+                {"name": "Target", "scrap": 0, "bot": false},
+                {"name": "Distant observer", "scrap": 0, "bot": false}
+            ],
+            "units": [
+                {"player": 0, "kind": "piledriver", "x": 12, "y": 14},
+                {"player": 1, "kind": "breaker", "x": 19, "y": 14}
+            ]
+        })).unwrap();
+        let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
+        if !visible {
+            game.presentation.human = oxide_sim::PlayerId(2);
+        }
+        let kinds = [
+            SoundKind::PiledriverDeploy,
+            SoundKind::PiledriverFire,
+            SoundKind::PiledriverImpact,
+            SoundKind::PiledriverFold,
+        ];
+        let mut counts = [0; 4];
+        for tick in 0..160 {
+            if tick == 115 {
+                game.stage(oxide_sim::PlayerCommand {
+                    player: oxide_sim::PlayerId(0),
+                    command: oxide_sim::Command::Run {
+                        units: vec![UnitId(0)],
+                        goal: chassis::grid::TilePos::new(13, 17),
+                        queue: false,
+                    },
+                });
+            }
+            game.do_tick();
+            game.update_fx(crate::game::TICK_DT);
+            for (kind, _) in game.presentation.sounds_pending.drain(..) {
+                if let Some(index) = kinds.iter().position(|candidate| *candidate == kind) {
+                    counts[index] += 1;
+                }
+            }
+        }
+        assert_eq!(
+            counts,
+            if visible { [1; 4] } else { [0; 4] },
+            "visible={visible}"
+        );
+    }
+}
+
+#[test]
+fn piledriver_impact_waits_for_visual_contact_and_clears_on_seek() {
+    let mut game =
+        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280., 800.)).unwrap();
+    let at = game.state.units()[0].pos;
+    let event = Event::AttackHit {
+        attacker: UnitId(999),
+        attacker_kind: UnitKind::Piledriver,
+        weapon: 0,
+        target: None,
+        attacker_pos: at,
+        target_pos: at,
+    };
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&event));
+    assert_eq!(
+        game.presentation.sounds_pending,
+        vec![(SoundKind::PiledriverFire, Some(world_vec(at)))]
+    );
+    game.presentation.sounds_pending.clear();
+    game.update_fx(1.0);
+    assert!(
+        game.presentation.sounds_pending.is_empty(),
+        "pause must not advance impact audio"
+    );
+    for _ in 0..2 {
+        game.state.tick(&[]);
+    }
+    game.presentation.set_tick_fraction(0.8);
+    game.update_fx(0.0);
+    assert!(game.presentation.sounds_pending.is_empty());
+    game.presentation.set_tick_fraction(0.9);
+    game.update_fx(0.0);
+    assert_eq!(
+        game.presentation.sounds_pending,
+        vec![(SoundKind::PiledriverImpact, Some(world_vec(at)))]
+    );
+    game.presentation.sounds_pending.clear();
+    game.update_fx(0.0);
+    assert!(
+        game.presentation.sounds_pending.is_empty(),
+        "one impact per shot"
+    );
+    game.presentation.spawn_fx(&game.state, &[event]);
+    game.presentation.reset_after_jump(&game.state);
+    for _ in 0..4 {
+        game.state.tick(&[]);
+    }
+    game.update_fx(0.0);
+    assert!(
+        game.presentation.sounds_pending.is_empty(),
+        "seek discards queued impacts"
+    );
 }

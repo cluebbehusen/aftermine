@@ -18,6 +18,7 @@ from tools.production_sprite_sources import (
     installed_defenses_final,
     mechanical_extractor,
     mechanical_final,
+    piledriver_final,
     mantle_final,
     quarry_final,
     quarry_rocks,
@@ -100,7 +101,9 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             )
             tag = gen.variant_tag(variant)
             self.assertNotIn(f"surveyor{tag}_action1", self.registry)
-        mounts = [key for key in self.registry if key.startswith("rig_surveyor_mount_action")]
+        mounts = [
+            key for key in self.registry if key.startswith("rig_surveyor_mount_action")
+        ]
         self.assertEqual(len(mounts), 120)
         self.assertEqual(
             digest.hexdigest(),
@@ -118,11 +121,54 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         self.assertNotIn("gen._review", production_sources)
         self.assertNotIn("gen.REVIEW_ROUTE", production_sources)
 
+    def test_piledriver_preserves_approved_body_and_reload_closes(self) -> None:
+        digest = hashlib.sha256()
+        for variant in gen.PALETTES:
+            for deployment in (0, 0.25, 0.5, 0.75, 1):
+                digest.update(
+                    piledriver_final.render_body(variant, deployment).tobytes()
+                )
+            self.assertEqual(
+                piledriver_final.render_gun(variant).tobytes(),
+                piledriver_final.render_gun(variant, 99).tobytes(),
+                "the loader finishes at its ready pose",
+            )
+            layers = [
+                (piledriver_final.render_gun(variant, age), piledriver_final.MOUNT_CROP)
+                for age in range(piledriver_final.RELOAD_FRAMES)
+            ] + [
+                (
+                    piledriver_final.render_anchors(
+                        variant, step / piledriver_final.ANCHOR_STEPS
+                    ),
+                    piledriver_final.ANCHOR_CROP,
+                )
+                for step in range(piledriver_final.ANCHOR_STEPS + 1)
+            ]
+            for image, crop in layers:
+                restored = Image.new("RGBA", image.size)
+                restored.paste(image.crop(crop), crop[:2])
+                self.assertEqual(image.tobytes(), restored.tobytes())
+            tag = gen.variant_tag(variant)
+            for age in range(piledriver_final.RELOAD_FRAMES):
+                self.assertEqual(
+                    self.registry[
+                        f"rig_piledriver_mount{tag}_action{age + 1}"
+                    ].tobytes(),
+                    piledriver_final.render_gun(variant, age)
+                    .crop(piledriver_final.MOUNT_CROP)
+                    .tobytes(),
+                )
+        self.assertEqual(
+            digest.hexdigest(),
+            "903d5284ca950be6a890bf91865f603e5e4c3176206765f956060ddee1cdffb8",
+        )
+
     def test_articulated_machine_bank_matches_approved_pixels(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 643)
+        self.assertEqual(len(frames), 629)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -130,7 +176,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "eb0f2d8263ca6d49478cc352ceff8422f91f8d96d90b60c79bf306d99bcf2298",
+            "94c29027fb67851009bffccdbb831ce143cc7bfa626283de5c84c30fe6ed0c4a",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:
