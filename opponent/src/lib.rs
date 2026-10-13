@@ -68,6 +68,11 @@ impl Opponent {
         self.persistent.missions.statuses()
     }
 
+    /// Actual units retained for ordinary local defense during quiet periods.
+    pub fn guarded_units(&self) -> Vec<oxide_sim::UnitId> {
+        self.persistent.missions.guarded_units()
+    }
+
     /// The attacks the seat's last decision launched, with what it believed
     /// of each when it did. Diagnostics for hosts: never saved, and no
     /// decision reads them.

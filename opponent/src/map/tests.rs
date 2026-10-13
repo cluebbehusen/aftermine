@@ -485,3 +485,20 @@ const ARENA_ROWS: [&str; 12] = [
     "#......................#",
     "########################",
 ];
+
+#[test]
+fn working_base_distance_fields_extend_the_start_field_exactly() {
+    let model = model(&ARENA_ROWS);
+    let home = model.start(PlayerId(0)).unwrap();
+    for extra in [TilePos::new(12, 5), TilePos::new(18, 8)] {
+        let starts = [home, extra];
+        let extended = model.distances_from(starts.into_iter());
+        let rebuilt = distance_fields(&model.components, &starts);
+        for y in 0..12 {
+            for x in 0..24 {
+                let tile = TilePos::new(x, y);
+                assert_eq!(extended.get(tile), rebuilt.get(tile), "{tile:?}");
+            }
+        }
+    }
+}

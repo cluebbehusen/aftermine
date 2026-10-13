@@ -450,7 +450,7 @@ fn mission(id: u64, owner: u8, phase: Phase, units: u32) -> MissionStatus {
         },
         phase,
         since: 0,
-        timeout: 600,
+        timeout: Some(600),
         units,
         goal: TilePos::new(18, 2),
     }

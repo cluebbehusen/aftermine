@@ -265,7 +265,11 @@ fn foundries_of(state: &State, kind: BuildingKind) -> usize {
 fn targets_switch_only_for_a_clearly_better_investment() {
     let state = saturated(200).build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    let candidate = |investment, score| Candidate { investment, score };
+    let candidate = |investment, score| Candidate {
+        investment,
+        score,
+        next: investments::step(&observation, investment),
+    };
     let fabricator = Investment::Tech(BuildingKind::Fabricator);
     let mut memory = Memory::default();
     let mut saving = Saving::default();
@@ -678,6 +682,7 @@ fn a_scaffold_stays_pending_until_its_ground_is_confirmed() {
     let candidates = [Candidate {
         investment: fabricator,
         score: 400,
+        next: investments::step(&observation, fabricator),
     }];
     let mut memory = Memory::default();
     let mut saving = Saving::default();

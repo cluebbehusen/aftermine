@@ -102,7 +102,12 @@ impl Saving {
         }
         let Some((_, price)) = self
             .target
-            .and_then(|target| investments::step(observation, target.investment))
+            .and_then(|target| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.investment == target.investment)
+            })
+            .and_then(|candidate| candidate.next)
         else {
             self.protected = self.protected.min(bank);
             return;

@@ -20,6 +20,7 @@ mod placement;
 mod raid;
 mod saving;
 mod scouting;
+mod settlement;
 mod strike;
 mod support;
 mod teams;

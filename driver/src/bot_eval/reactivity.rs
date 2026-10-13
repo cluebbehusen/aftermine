@@ -470,6 +470,7 @@ impl ReactivityDetectors {
                 | MissionKind::Raid { owner, .. }
                 | MissionKind::Lift { owner, .. } => Some(owner),
                 MissionKind::Defend { .. }
+                | MissionKind::Settle { .. }
                 | MissionKind::Scout { .. }
                 | MissionKind::Clear { .. } => None,
             };
@@ -768,6 +769,7 @@ fn kind_name(kind: MissionKind) -> &'static str {
         MissionKind::Raid { .. } => "raid",
         MissionKind::Lift { .. } => "lift",
         MissionKind::Defend { .. } => "defend",
+        MissionKind::Settle { .. } => "settle",
         MissionKind::Scout { .. } => "scout",
         MissionKind::Clear { .. } => "clear",
     }

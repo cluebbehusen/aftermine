@@ -95,11 +95,12 @@ the running total and mission state.
   need it can state from what it knows; a constant may bound computation or
   model a difficulty, stance or personality limit, never what the bot owns or
   sends.
-- Missions recruit from available units in a fixed order (defend, lift, attack,
-  clearance, strike, raid), and each takes only the roles it uses: attack takes
-  line, siege and anti-air units, with Sappers in support; raid takes Scuttlers,
-  Sappers, or ground-attack aircraft too few for a strike; lift takes carriers
-  and a payload; a clearance takes splash bombers while ground reaches no enemy.
+- Missions recruit from available units in a fixed order (defend, local guard,
+  settlement, lift, attack, clearance, strike, raid), and each takes only the
+  roles it uses: attack takes line, siege and anti-air units, with Sappers in
+  support; raid takes Scuttlers, Sappers, or ground-attack aircraft too few for
+  a strike; lift takes carriers and a payload; a clearance takes splash bombers
+  while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at
@@ -116,6 +117,17 @@ the running total and mission state.
 - Capability needs, such as "this objective requires lift" or "enemy air
   requires anti-air", raise production and investment priorities. They reserve
   nothing and promise nothing to a mission.
+
+An island settlement lifts one builder to a site no own worker can walk to, with
+an escort while known enemies stand near it, using ordinary lift commands. It
+only delivers: once the builder lands, the site is an ordinary build the funded
+investment pays for. A missing Airworks or carrier is that investment's next
+purchase, and the escort's shortfall raises production needs; no future units
+are promised. The escort is sized as the site's local guard will be and joins
+that guard once the building is placed. Expansion guards follow nearby known
+threats, without a quiet minimum, and completed guns release mobile defenders. A
+late delivery turns its passengers home; a builder already on the island builds
+there on the next attempt.
 
 ## Persistent state
 

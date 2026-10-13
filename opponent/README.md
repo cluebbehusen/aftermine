@@ -6,15 +6,16 @@
 working rules.
 
 Each decision spends through one running total in a fixed precedence: defense
-and other emergencies, then an affordable saving target, then workers, then
-lifts, attacks, clearances, strikes and raids, focus fire, tending and scouting,
-then production. Missions command only units that exist: production keeps the
-stocks they draw on, such as scouts and carriers, but never trains for a
-particular mission. A producer is ready when its queue would run out before the
-next decision, so it queues its next unit as the last one finishes rather than
-after it stands empty; every ready producer left free trains toward the army's
-needs. Difficulty caps the unit orders one decision issues; purchases do not
-count against that allowance.
+and other emergencies, then local guards and island settlements, then an
+affordable saving target, then workers, then lifts, attacks, clearances, strikes
+and raids, focus fire, tending and scouting, then production. Missions command
+only units that exist: production keeps the stocks and capabilities they draw
+on, such as scouts, carriers and local defense, without promising future units
+to a mission. A producer is ready when its queue would run out before the next
+decision, so it queues its next unit as the last one finishes rather than after
+it stands empty; every ready producer left free trains toward the army's needs.
+Difficulty caps the unit orders one decision issues; purchases do not count
+against that allowance.
 
 Public enemy buildings, the Deep Bores every seat knows of, join the seat's
 known enemy buildings each decision as memories of unknown condition: built and
@@ -25,19 +26,19 @@ saw like one it remembers, and it is ordered on by its remembered footprint.
 
 A seat with no worker alive, carried or queued queues a Harvester even behind
 other work, from protected scrap if it must. A live known scrap node's or
-wreck's route is the shortest ground route from the seat's start, followed back
-until it comes home to one of the seat's Foundries; it is clear while it crosses
-neither the reach of known enemy weapons (a site in sight cannot fire yet) nor
-the surroundings of an enemy Foundry, known or presumed. A wreck near a recent
-allied loss, or whose route passes one, waits until the warning expires, as the
-simulation's own salvage does. Each node or wreck with a clear route belongs to
-the nearest built Foundry whose ground reaches it, and is worked when a
-Harvester hauling from there repays its price within a horizon that is longer
-the more the stance invests at home and stretched by greed. A worked source
-wants as many Harvesters as free tiles beside it hold and its remaining scrap or
-salvage repays, filled to a share that falls from Turtle to Aggressive and rises
-with greed, and ready Foundries train workers until every worked source has its
-crew. Until the army reaches the stance's minimum, workers that would cost more
+wreck's route follows ground distance from a completed own Foundry; it is clear
+while it crosses neither the reach of known enemy weapons (a site in sight
+cannot fire yet) nor the surroundings of an enemy Foundry, known or presumed. A
+wreck near a recent allied loss, or whose route passes one, waits until the
+warning expires, as the simulation's own salvage does. Each node or wreck with a
+clear route belongs to the nearest built Foundry whose ground reaches it, and is
+worked when a Harvester hauling from there repays its price within a horizon
+that is longer the more the stance invests at home and stretched by greed. A
+worked source wants as many Harvesters as free tiles beside it hold and its
+remaining scrap or salvage repays, filled to a share that falls from Turtle to
+Aggressive and rises with greed, and ready Foundries train workers until every
+worked source has its crew; workers and queues count only on the ground they can
+serve. Until the army reaches the stance's minimum, workers that would cost more
 than the army wait for army production and take only the Foundries it leaves.
 Once a Fabricator stands, an Excavator, worth two Harvesters, fills two open
 places when the seat can pay for it with scrap to spare, less the greedier it
@@ -122,11 +123,19 @@ ground and against aircraft for what could come. Against each, the reserve is
 nothing while no enemy could reach home that way. Otherwise it is the stance's
 floor or its share of the known enemy army that could, whichever is more, less
 the built static defenses on the start's ground that cover it and the units
-already out defending; Turtle keeps the most and Aggressive the least. Ground
+already out defending it; Turtle keeps the most and Aggressive the least. Ground
 reaches home from a hostile start connected by ground, or once an enemy carrier
 or Airworks is seen; aircraft once enemy armed aircraft or an Airworks is seen.
 Offense takes only units beyond the reserve, leaving those nearest home; a lift
 leaves its weakest riders. Defense takes every unit regardless.
+
+Every other base, and each Extractor no completed Foundry supports, keeps a
+local guard: the stance's share of the known enemies near it, against ground and
+against aircraft, less the completed guns whose range reaches it. A quiet base
+keeps none. The guard takes the nearest free units that can reach it, never what
+the home reserve keeps, and ready producers on its ground train toward what it
+still lacks. A defense answering an attack on the base takes its guards along,
+and the guard forms again once that defense has recovered.
 
 ## Static defense
 
@@ -265,6 +274,19 @@ Prime pick the enemy with the least health, Standard the one whose health bar
 shows the lowest quarter, and Scrapheap the one nearest the mission's goal
 whatever its wounds; ties go to the nearest. Nobody chases a focus or seeks a
 way round to it, and a member out of reach leaves the mission's fire unfocused.
+
+A site on ground no own worker stands on needs a settlement: one builder lifted
+from the nearest Foundry, with ground escorts aboard and air escorts flying
+beside while known enemies stand near the site. The expansion's next purchase is
+an Airworks, then a Skyhook, until carriers can take the builder and its ground
+escort. The settlement only delivers: once the builder lands it goes back to
+ordinary work, and the expansion is an ordinary build that worker raises. The
+escort holds the landing until the building is placed and then joins the site's
+local guard, which it was sized to be. A flight that runs late turns home; a
+builder stranded on the island builds there on the next attempt. Settlements and
+combat lifts run side by side with separate members. Settlements move before
+guards each decision, so a released escort is guarded at once, and new ones
+recruit after guards.
 
 ## Lift
 
@@ -435,29 +457,30 @@ kind is working and either a unit the seat has saved enough for waits on it, or
 an army role it trains is still wanted and the income the working producers
 leave unspent could keep one more as busy (carriers, Scuttlers and Sappers never
 call for one), an expansion Foundry at a scrap field away from every start, an
-Extractor on a free frame on its home ground, more Reclaimers (worth more with
-no expansion left, and each one owned weighing less against the next as the
-scrap around home runs out), static defenses, Repair Bays, upgrades, and the
-unit a wanted role suits best when it costs more than the scrap on hand and the
-role has a cheaper unit production would buy instead, worth more the more of two
-of it the role lacks. Saturated harvesting, time, income, home depletion, army
-needs, a needed lift and personality set the scores.
+Extractor on a free frame, more Reclaimers (worth more with no expansion left,
+and each one owned weighing less against the next as the scrap around home runs
+out), static defenses, Repair Bays, upgrades, and the unit a wanted role suits
+best when it costs more than the scrap on hand and the role has a cheaper unit
+production would buy instead, worth more the more of two of it the role lacks.
+Saturated harvesting, time, income, home depletion, army needs, a needed lift
+and personality set the scores.
 
 An expansion site's value weighs the scrap it still holds and its free frames,
 up with greed, against its ground distance from home, how much nearer a hostile
 start it lies, and the danger the seat knows around it, down with greed; home
-depletion raises every expansion. Sites off the seat's home ground, near another
-seat's building or its own Foundry, or failed at every anchor are skipped. An
-Extractor is worth more beside one of the seat's Foundries and less where it has
-seen danger, and none is bought on a frame while an armed enemy in sight stands
-near it. Once a Crucible stands, the supported Extractor nearest home is offered
-a Deep Bore upgrade, which needs that Foundry support to start, and an expansion
-site is also worth a frame for each own remote Extractor a Foundry there would
-support. A Deep Bore is guarded as worth more than a Crucible. The seat saves
-for one target at a time. It starts saving only for an investment that scores
-well and could stand somewhere it knows of or could look, keeps it while it
-still scores, and switches only for one that scores clearly higher.
-Prerequisites come first: saving for Airworks buys a Fabricator.
+depletion raises every expansion. Disconnected sites use flight distance and
+include frame-only fields. Sites near another seat's building or its own
+Foundry, or failed at every anchor are skipped. An Extractor is worth more
+beside one of the seat's Foundries and less where it has seen danger, and none
+is bought on a frame while an armed enemy in sight stands near it. Once a
+Crucible stands, the supported Extractor nearest home is offered a Deep Bore
+upgrade, which needs that Foundry support to start, and an expansion site is
+also worth a frame for each own remote Extractor a Foundry there would support.
+A Deep Bore is guarded as worth more than a Crucible. The seat saves for one
+target at a time. It starts saving only for an investment that scores well and
+could stand somewhere it knows of or could look, keeps it while it still scores,
+and switches only for one that scores clearly higher. Prerequisites come first:
+saving for Airworks buys a Fabricator.
 
 When it adopts a target a share of its bank is protected from ordinary spending,
 and while it saves a share of its estimated income is added, up to the next

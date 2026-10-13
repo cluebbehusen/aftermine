@@ -356,6 +356,14 @@ fn index(kind: UnitKind) -> usize {
 }
 
 impl Needs {
+    pub(crate) fn coverage(&mut self, gap: [u64; 2], by_air: bool) {
+        let ground = if by_air { Role::AirStrike } else { Role::Line };
+        for (role, value) in [(ground, gap[0]), (Role::AntiAir, gap[1])] {
+            self.need[role as usize] =
+                self.need[role as usize].max(i64::try_from(value).unwrap_or(i64::MAX));
+        }
+    }
+
     /// Roles with a deficit, most wanted first.
     pub(crate) fn wanted(&self) -> Vec<Role> {
         let mut wanted: Vec<Role> = ROLES

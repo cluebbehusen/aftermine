@@ -672,15 +672,11 @@ fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does()
             .collect();
         let alone: Vec<bool> = tiles
             .iter()
-            .map(|tile| {
-                crate::workers::Routes::new(&observation, &model, frame, &scratch, &homes)
-                    .clear(*tile)
-            })
+            .map(|tile| crate::workers::Routes::new(&model, frame, &scratch, &homes).clear(*tile))
             .collect();
         assert!(alone.contains(&false), "premise: some routes cross danger");
         for order in [tiles.clone(), tiles.iter().rev().copied().collect()] {
-            let mut shared =
-                crate::workers::Routes::new(&observation, &model, frame, &scratch, &homes);
+            let mut shared = crate::workers::Routes::new(&model, frame, &scratch, &homes);
             let mut results = std::collections::BTreeMap::new();
             for tile in &order {
                 results.insert((tile.y, tile.x), shared.clear(*tile));

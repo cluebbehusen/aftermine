@@ -4,7 +4,7 @@
 
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
-use crate::map::MapModel;
+use crate::map::{MapModel, UNREACHABLE};
 use crate::missions::{Hazard, Scratch};
 use crate::profile::ResolvedProfile;
 use chassis::fx::Fx;
@@ -14,7 +14,8 @@ use oxide_sim::ids::Target;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::BotStance;
 use oxide_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
-use oxide_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
+use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
+use std::borrow::Cow;
 use std::cmp::Reverse;
 
 /// Per mille of its health a building must miss before workers weld it.
@@ -72,6 +73,10 @@ pub(crate) struct Staffing {
     /// with its salvage, in `known_wrecks` order.
     wrecks: Vec<(TilePos, u32)>,
     crew: usize,
+    /// Each ground with a built Foundry: the Harvester slots its worked
+    /// sources want and those its workers, alive or queued there, fill.
+    /// Every ground trains its own workers.
+    local: Vec<(u32, usize, usize)>,
 }
 
 impl Staffing {
@@ -122,7 +127,7 @@ pub(crate) fn staffing(
     scratch: &Scratch,
 ) -> Staffing {
     let homes: Vec<&BuildingObs> = foundries.iter().map(|foundry| foundry.building).collect();
-    let mut routes = Routes::new(observation, map, frame, scratch, &homes);
+    let mut routes = Routes::new(map, frame, scratch, &homes);
     let reachable: Vec<TilePos> = observation
         .known_scrap
         .iter()
@@ -149,19 +154,53 @@ pub(crate) fn staffing(
         .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()
         .collect();
+    let worked = worked_nodes(
+        observation,
+        map,
+        frame,
+        profile,
+        foundries,
+        &reachable,
+        &wrecks,
+    );
+    let mut components: Vec<_> = foundries
+        .iter()
+        .filter_map(|foundry| map.component(foundry.building.anchor))
+        .collect();
+    components.sort_unstable();
+    components.dedup();
+    let local: Vec<_> = components
+        .into_iter()
+        .map(|component| {
+            let on_ground = |tile| map.component(tile) == Some(component);
+            let wanted = worked
+                .iter()
+                .filter(|(tile, _)| on_ground(*tile))
+                .map(|(_, wanted)| wanted)
+                .sum::<usize>();
+            let crew = observation
+                .my_units
+                .iter()
+                .filter(|u| on_ground(u.tile))
+                .map(|u| slots(u.kind))
+                .sum::<usize>()
+                + observation
+                    .my_buildings
+                    .iter()
+                    .zip(&observation.my_queues)
+                    .filter(|(b, _)| on_ground(b.anchor))
+                    .flat_map(|(_, q)| q)
+                    .map(|kind| slots(*kind))
+                    .sum::<usize>();
+            (component, wanted, crew)
+        })
+        .collect();
     Staffing {
-        worked: worked_nodes(
-            observation,
-            map,
-            frame,
-            profile,
-            foundries,
-            &reachable,
-            &wrecks,
-        ),
+        worked,
         reachable,
         wrecks,
-        crew: crew(observation),
+        crew: local.iter().map(|(_, wanted, crew)| crew.min(wanted)).sum(),
+        local,
     }
 }
 
@@ -184,23 +223,29 @@ pub(crate) fn recover(
 /// counting those alive and queued, spending at most `budget` on them.
 pub(crate) fn train(
     observation: &ObservationData,
+    map: &MapModel,
     foundries: &[Producer<'_>],
     staffing: &Staffing,
     greed: u8,
     mut budget: u64,
     ledger: &mut Ledger,
 ) {
-    let mut count = staffing.crew
-        + ledger.queued(UnitKind::Harvester)
-        + slots(UnitKind::Excavator) * ledger.queued(UnitKind::Excavator);
+    let mut local = staffing.local.clone();
     for foundry in foundries {
-        if count >= staffing.wanted() {
-            break;
+        let Some((_, wanted, count)) = local
+            .iter_mut()
+            .find(|(component, _, _)| map.component(foundry.building.anchor) == Some(*component))
+        else {
+            continue;
+        };
+        let open = wanted.saturating_sub(*count);
+        if open == 0 {
+            continue;
         }
         if !foundry.ready || ledger.queued_at(foundry.building.id) {
             continue;
         }
-        let kind = if excavate(observation, staffing.wanted() - count, greed, ledger) {
+        let kind = if excavate(observation, open, greed, ledger) {
             UnitKind::Excavator
         } else {
             UnitKind::Harvester
@@ -210,7 +255,7 @@ pub(crate) fn train(
             break;
         }
         if ledger.train(foundry.building.id, kind) {
-            count += slots(kind);
+            *count += slots(kind);
             budget -= cost;
         }
     }
@@ -717,36 +762,46 @@ fn danger(map: &MapModel, scratch: &Scratch) -> Grid<bool> {
 /// it did, so a decision traces each tile once however many sources share it.
 pub(crate) struct Routes<'a> {
     map: &'a MapModel,
-    me: PlayerId,
     frame: HomeFrame,
     homes: &'a [&'a BuildingObs],
     danger: Grid<bool>,
     /// Whether the route on from each tile already traced is clear.
     traced: Grid<Option<bool>>,
+    distances: Cow<'a, Grid<u16>>,
 }
 
 impl<'a> Routes<'a> {
     pub(crate) fn new(
-        observation: &ObservationData,
         map: &'a MapModel,
         frame: HomeFrame,
         scratch: &Scratch,
         homes: &'a [&'a BuildingObs],
     ) -> Self {
         let (width, height) = map.size();
+        let home = homes
+            .iter()
+            .find(|base| footprint_centre(base.kind, base.anchor) == frame.home);
+        let origins = homes
+            .iter()
+            .filter(|base| {
+                home.is_none_or(|home| {
+                    base.id == home.id || map.component(base.anchor) != map.component(home.anchor)
+                })
+            })
+            .map(|base| base.anchor);
         Self {
             map,
-            me: observation.me,
             frame,
             homes,
             danger: danger(map, scratch),
             traced: Grid::new(width, height, None),
+            distances: map.distances_from(origins),
         }
     }
 
     /// These routes with the ground around each recent allied loss in
     /// `incidents` counted as danger too.
-    pub(crate) fn around_incidents(&self, incidents: &[TilePos]) -> Self {
+    pub(crate) fn around_incidents(&self, incidents: &[TilePos]) -> Routes<'_> {
         let mut danger = self.danger.clone();
         let radius = HARVEST_INCIDENT_DANGER_RADIUS;
         for incident in incidents {
@@ -759,22 +814,22 @@ impl<'a> Routes<'a> {
             }
         }
         let (width, height) = self.map.size();
-        Self {
+        Routes {
             map: self.map,
-            me: self.me,
             frame: self.frame,
             homes: self.homes,
             danger,
             traced: Grid::new(width, height, None),
+            distances: Cow::Borrowed(self.distances.as_ref()),
         }
     }
 
     /// Whether the route from home to `source` is clear.
     pub(crate) fn clear(&mut self, source: TilePos) -> bool {
-        let (map, me) = (self.map, self.me);
+        let map = self.map;
         let size = BuildingKind::Foundry.size();
         let mut tile = source;
-        let mut distance = map.distance(me, tile);
+        let mut distance = self.distances.get(tile).copied().unwrap_or(UNREACHABLE);
         let mut walked = Vec::new();
         let clear = loop {
             // The source's own first step may cut a corner, so only the
@@ -809,7 +864,12 @@ impl<'a> Routes<'a> {
             };
             let next = ring(tile, (1, 1))
                 .filter(legal)
-                .map(|next| (map.distance(me, next), next))
+                .map(|next| {
+                    (
+                        self.distances.get(next).copied().unwrap_or(UNREACHABLE),
+                        next,
+                    )
+                })
                 .filter(|(closer, _)| *closer < distance)
                 .min_by_key(|(closer, next)| (*closer, self.frame.rank(from, doubled(*next))));
             let Some((closer, next)) = next else {
