@@ -33,15 +33,18 @@ pub(super) fn scout(
     let unit = state.unit(id).expect("caller checked");
     let (tile, player, heading) = (unit.tile(), unit.player, unit.heading);
     let vision = unit.kind.stats().vision;
+    let endangered = danger.scout_contains(tile);
     // A crowd of scouts sent to one tile cannot all stand on it; one that
     // sees it and touches the crowd already there has arrived with them.
-    if tile == target
-        || (sees(tile, target, vision) && reach.crowd_touches(state, index, id, target))
+    // Danger outranks arrival: a scout that reaches its tile as a threat
+    // closes in backs off rather than idling under fire.
+    if !endangered
+        && (tile == target
+            || (sees(tile, target, vision) && reach.crowd_touches(state, index, id, target)))
     {
         finish(state, id, None, events);
         return;
     }
-    let endangered = danger.scout_contains(tile);
     let eligible = |at: TilePos| {
         known_ground_passable(state, danger, player, at) && !danger.scout_contains(at)
     };
