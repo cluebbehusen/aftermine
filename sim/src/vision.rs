@@ -663,10 +663,19 @@ impl GroundSalvageDanger {
                 )
             }),
         );
+        let near = crate::stats::SCOUT_CHARGE_AVOID_RADIUS;
+        let charges = CellLists::build(
+            columns,
+            rows,
+            self.charges
+                .iter()
+                .map(|&charge| (charge.offset(-near, -near), charge.offset(near, near))),
+        );
         ThreatCells {
             contacts,
             mobile,
             statics,
+            charges,
         }
     }
 
@@ -1003,8 +1012,11 @@ impl GroundSalvageDanger {
         let approaches = |next: i64, origin: Option<i64>| origin.is_none_or(|was| next < was);
         let point = tile.center();
         let from_point = from.map(TilePos::center);
+        let cell = self.cell_of(tile);
+        let cells = self.threat_cells();
         let charge_radius = crate::stats::SCOUT_CHARGE_AVOID_RADIUS;
-        if self.charges.iter().any(|charge| {
+        if cells.charges.at(cell).iter().any(|&i| {
+            let charge = self.charges[i as usize];
             let next = charge.chebyshev(tile);
             next <= charge_radius && from.is_none_or(|from| next <= charge.chebyshev(from))
         }) {
@@ -1021,8 +1033,6 @@ impl GroundSalvageDanger {
         }) {
             return true;
         }
-        let cell = self.cell_of(tile);
-        let cells = self.threat_cells();
         let radar = crate::stats::HARVEST_RADAR_DANGER_RADIUS;
         if cells.contacts.at(cell).iter().any(|&i| {
             let contact = self.contacts[i as usize];
@@ -1144,6 +1154,7 @@ struct ThreatCells {
     contacts: CellLists,
     mobile: CellLists,
     statics: CellLists,
+    charges: CellLists,
 }
 
 /// Record indices filed per coarse cell, ascending within each cell.
