@@ -28,10 +28,6 @@ const LOAD_TICKS: u64 = 1_200;
 /// on an attempt that cannot land, the combat lift's own window.
 const FLY_TICKS: u64 = 2_400;
 
-/// Ticks an escort holds a landing for its building to be placed: a
-/// computation bound on a site the seat cannot yet pay for.
-const FOUND_TICKS: u64 = 3_600;
-
 /// The building a settlement delivers a builder for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -88,11 +84,14 @@ impl SettlePhase {
         }
     }
 
-    pub(super) fn timeout(self) -> u64 {
+    /// Ticks the phase should end within. Boarding and flight give up at
+    /// theirs; a flight home only reports it. A held landing has none: it
+    /// ends once the building is placed or no known enemy is near.
+    pub(super) fn timeout(self) -> Option<u64> {
         match self {
-            Self::Load => LOAD_TICKS,
-            Self::Fly | Self::Recover => FLY_TICKS,
-            Self::Found => FOUND_TICKS,
+            Self::Load => Some(LOAD_TICKS),
+            Self::Fly | Self::Recover => Some(FLY_TICKS),
+            Self::Found => None,
         }
     }
 }
@@ -146,13 +145,15 @@ impl<'a> Settlement<'a> {
             Investment::Extractor(anchor) => Target::Extractor { anchor },
             _ => return None,
         };
-        let ground = self.map.component(target.anchor());
-        let manned = self
-            .observation
+        (!self.manned(self.map.component(target.anchor()))).then_some(target)
+    }
+
+    /// Whether an own worker stands on `ground`.
+    fn manned(&self, ground: Option<u32>) -> bool {
+        self.observation
             .my_units
             .iter()
-            .any(|u| workers::worker(u.kind) && self.map.component(u.tile) == ground);
-        (!manned).then_some(target)
+            .any(|u| workers::worker(u.kind) && self.map.component(u.tile) == ground)
     }
 
     /// Where a building of `kind` toward `investment` would stand, as far as
@@ -169,8 +170,9 @@ impl<'a> Settlement<'a> {
         )
     }
 
-    /// The built Foundry a settlement for `target` starts from: one on the
-    /// target's ground first, else the nearest.
+    /// The built Foundry a settlement for `target` starts from: one on ground
+    /// a worker stands on first, then one on the target's ground, else the
+    /// nearest.
     fn source(&self, target: Target) -> Option<TilePos> {
         let centre = footprint_centre(target.kind(), target.anchor());
         self.observation
@@ -179,6 +181,7 @@ impl<'a> Settlement<'a> {
             .filter(|b| b.kind == BuildingKind::Foundry && b.built)
             .min_by_key(|b| {
                 (
+                    !self.manned(self.map.component(b.anchor)),
                     self.map.component(b.anchor) != self.map.component(target.anchor()),
                     self.scratch
                         .frame
@@ -193,10 +196,11 @@ impl<'a> Settlement<'a> {
         self.map.component(source) != self.map.component(target.anchor())
     }
 
-    /// The next purchase toward `investment`. A site a builder must be
-    /// lifted to first needs an Airworks and enough carriers for the builder
-    /// and its ground escort; while a settlement flies, the building itself
-    /// stays next so the saving keeps its scrap.
+    /// The next purchase toward `investment`. A site no worker can reach
+    /// first needs a worker at a Foundry, then, to lift one, an Airworks and
+    /// enough carriers for the builder and its ground escort; while a
+    /// settlement flies, the building itself stays next so the saving keeps
+    /// its scrap.
     pub(crate) fn next(&self, missions: &Missions, investment: Investment) -> Option<(Step, u32)> {
         let basic = investments::step(self.observation, investment)?;
         let Some(target) = self.target(missions, investment) else {
@@ -205,9 +209,19 @@ impl<'a> Settlement<'a> {
         if basic.0 != Step::Build(target.kind()) || missions.settling(investment).is_some() {
             return Some(basic);
         }
-        let Some(source) = self.source(target).filter(|s| self.by_air(*s, target)) else {
+        let Some(source) = self.source(target) else {
             return Some(basic);
         };
+        if !self.manned(self.map.component(source)) {
+            let queued = self.observation.my_queues.iter().flatten();
+            return (!queued.copied().any(workers::worker)).then_some((
+                Step::Train(UnitKind::Harvester),
+                UnitKind::Harvester.stats().cost,
+            ));
+        }
+        if !self.by_air(source, target) {
+            return Some(basic);
+        }
         if !self
             .observation
             .my_buildings
@@ -225,7 +239,7 @@ impl<'a> Settlement<'a> {
             })
             .map(|u| usize::from(u.kind.stats().transport_size))
             .max()
-            .unwrap_or(0);
+            .expect("the source's ground is manned");
         let escort: usize = self
             .escorts(missions, target, source)
             .into_iter()
@@ -544,12 +558,12 @@ impl Missions {
         };
         let goal = self.list[index].goal;
         let age = observation.tick - self.list[index].since;
-        if phase != SettlePhase::Recover && age >= phase.timeout() {
+        if matches!(phase, SettlePhase::Load | SettlePhase::Fly)
+            && phase.timeout().is_some_and(|ticks| age >= ticks)
+        {
             self.settle_phase(index, SettlePhase::Recover, observation.tick);
             self.recall(index, context, ledger);
-            // A landing waiting on the bank is no failure of its site: its
-            // builder is there to try again.
-            return (phase != SettlePhase::Found).then_some(target);
+            return Some(target);
         }
         let members = self.list[index].units.clone();
         let manifest = lift::Manifest::new(observation, &members);
@@ -588,8 +602,9 @@ impl Missions {
     }
 
     /// Holds the escort at the landing until the landed builder has placed
-    /// the building somewhere on that ground, then lets every unit go: the
-    /// site's local guard takes the escorts it needs in the same decision.
+    /// the building somewhere on that ground, or no known enemy is near it,
+    /// then lets every unit go: the site's local guard takes the escorts it
+    /// needs in the same decision.
     fn found(&mut self, index: usize, context: &Settlement<'_>, ledger: &mut Ledger) {
         let Task::Settle { target, .. } = self.list[index].task else {
             unreachable!("a settlement's task");
@@ -601,7 +616,7 @@ impl Missions {
             .my_buildings
             .iter()
             .any(|b| b.kind == target.kind() && context.map.component(b.anchor) == ground);
-        if placed || self.list[index].units.is_empty() {
+        if placed || self.list[index].units.is_empty() || context.need(target) == [0, 0] {
             self.list.remove(index);
             return;
         }

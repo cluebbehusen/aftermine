@@ -113,10 +113,20 @@ impl Missions {
     ) -> Vec<Shortfall> {
         let frame = scratch.frame;
         let mut gaps = Vec::new();
-        for asset in assets(observation, map, frame)
+        let assets: Vec<_> = assets(observation, map, frame)
             .into_iter()
             .filter(|asset| map.start(observation.me) != Some(asset.anchor))
-        {
+            .collect();
+        // A base's guard follows the building that now stands for it, such
+        // as a nearer Foundry founded beside it.
+        self.list.retain(|m| match m.task {
+            Task::Defend {
+                asset,
+                phase: DefendPhase::Guard,
+            } => assets.iter().any(|a| a.id == asset),
+            _ => true,
+        });
+        for asset in assets {
             let index = self
                 .list
                 .iter()

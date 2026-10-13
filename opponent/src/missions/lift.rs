@@ -208,8 +208,10 @@ impl<'a> Delivery<'a> {
             })
     }
 
-    /// The open tile beside a built own Foundry, clear of known anti-air,
-    /// nearest `from`: where carriers coming home wait or set down.
+    /// The open tile beside a built own Foundry nearest `from`, clear of
+    /// known anti-air if any is: where carriers coming home wait or set
+    /// down. Carriers with nowhere safer still come down under fire rather
+    /// than hold their passengers aloft.
     pub(super) fn pad(&self, from: TilePos) -> Option<TilePos> {
         self.observation
             .my_buildings
@@ -217,8 +219,12 @@ impl<'a> Delivery<'a> {
             .filter(|b| b.kind == BuildingKind::Foundry && b.built)
             .flat_map(|b| ring(b.anchor, b.kind.size()))
             .filter(|tile| self.open(*tile, self.map.component(*tile)))
-            .filter(|tile| !self.scratch.air.iter().any(|h| h.covers(doubled(*tile))))
-            .min_by_key(|tile| self.scratch.frame.rank(doubled(from), doubled(*tile)))
+            .min_by_key(|tile| {
+                (
+                    self.scratch.air.iter().any(|h| h.covers(doubled(*tile))),
+                    self.scratch.frame.rank(doubled(from), doubled(*tile)),
+                )
+            })
     }
 
     /// Loads `riders` at `source` into the idle empty `transports` on open

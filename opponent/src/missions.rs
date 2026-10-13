@@ -430,7 +430,7 @@ impl Task {
     /// Ticks the current phase should end within.
     fn timeout(self) -> Option<u64> {
         Some(match self {
-            Self::Settle { phase, .. } => phase.timeout(),
+            Self::Settle { phase, .. } => return phase.timeout(),
             Self::Defend { phase, .. } => return defense::timeout(phase),
             Self::Attack { phase, .. } => attack::timeout(phase),
             Self::Scout { .. } => scouting::TRAVEL_TICKS,

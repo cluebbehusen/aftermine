@@ -279,8 +279,26 @@ fn settlement_checkpoints_keep_exact_ownership_during_delivery() {
 
 #[test]
 fn a_flight_that_runs_late_turns_its_builder_home() {
+    for covered in [false, true] {
+        a_late_flight_turns_home(covered);
+    }
+}
+
+/// With `covered`, known anti-air reaches every tile beside the home
+/// Foundry, so the carriers have no safe pad to come down on.
+fn a_late_flight_turns_home(covered: bool) {
     let mut scenario = island();
     scenario.mode = ScenarioMode::Sandbox;
+    if covered {
+        scenario
+            .buildings
+            .extend([(8, 5), (4, 9), (1, 3)].map(|(x, y)| BuildingSpec {
+                player: 1,
+                kind: BuildingKind::FlakTurret,
+                x,
+                y,
+            }));
+    }
     let mut state = scenario.build().unwrap();
     let id = |kind| state.units().iter().find(|u| u.kind == kind).unwrap().id;
     let (worker, carrier) = (id(UnitKind::Harvester), id(UnitKind::Skyhook));
@@ -330,7 +348,10 @@ fn a_flight_that_runs_late_turns_its_builder_home() {
         }
         events.record(PlayerId(0), &state.tick(&commands).events);
     }
-    panic!("the late flight kept going: {:?}", bot.missions());
+    panic!(
+        "the late flight kept going (covered {covered}): {:?}",
+        bot.missions()
+    );
 }
 
 #[test]
@@ -522,9 +543,8 @@ fn escorts_join_the_local_guard_once_the_site_is_placed() {
         bot.act(&state, &mut OwnEvents::default());
         let missions = bot.missions();
         assert!(
-            missions
-                .iter()
-                .all(|m| !matches!(m.kind, MissionKind::Settle { .. }))
+            missions.iter().all(|m| m.id != 1),
+            "the held landing ends once its site is placed"
         );
         assert_eq!(
             missions
@@ -1080,4 +1100,140 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
             );
         }
     }
+}
+
+#[test]
+fn a_seat_without_a_worker_at_any_foundry_trains_one_before_settling() {
+    let mut scenario = island();
+    scenario.mode = ScenarioMode::Sandbox;
+    for y in 28..32 {
+        scenario.map[y].replace_range(50..56, "......");
+    }
+    scenario.units.retain(|u| u.kind != UnitKind::Harvester);
+    scenario.units.push(harvester(0, 52, 29));
+    let mut state = scenario.build().unwrap();
+    let mut bot = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    while state.current_tick() < 1_200 {
+        let (commands, trace) = bot.act_traced(&state, &mut events);
+        let wanted = trace.and_then(|trace| trace.target).is_some_and(|target| {
+            matches!(target.investment, Investment::Expansion(_))
+                && target
+                    .next
+                    .is_some_and(|next| next.step == Step::Train(UnitKind::Harvester))
+        });
+        if wanted
+            && commands.iter().any(|c| {
+                matches!(
+                    c.command,
+                    Command::Train {
+                        kind: UnitKind::Harvester,
+                        ..
+                    }
+                )
+            })
+        {
+            return;
+        }
+        events.record(PlayerId(0), &state.tick(&commands).events);
+    }
+    panic!("no builder was trained: {:?}", bot.missions());
+}
+
+#[test]
+fn a_guard_follows_its_base_to_a_nearer_foundry() {
+    let mut scenario = island();
+    scenario
+        .buildings
+        .extend([(24, 22), (30, 22)].map(|(x, y)| BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Foundry,
+            x,
+            y,
+        }));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 33, 32));
+    scenario
+        .units
+        .extend((23..43).map(|x| unit(0, UnitKind::Sentinel, x, 30)));
+    let state = scenario.build().unwrap();
+    let foundry = |x| {
+        state
+            .buildings()
+            .iter()
+            .find(|b| b.kind == BuildingKind::Foundry && b.anchor == TilePos::new(x, 22))
+            .unwrap()
+            .id
+    };
+    let (near, far) = (foundry(24), foundry(30));
+    let guards: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == PlayerId(0) && u.kind == UnitKind::Sentinel && u.tile().y >= 18)
+        .take(3)
+        .map(|u| u.id.0)
+        .collect();
+    let mut bot = seat_with(
+        &scenario,
+        0,
+        BotConfig::new(BotDifficulty::Prime, BotStance::Turtle, 11),
+    );
+    let mut checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
+    checkpoint["missions"]["next"] = 1.into();
+    checkpoint["missions"]["list"] = serde_json::json!([
+        {"id":0,"since":0,"units":guards,"goal":{"x":32,"y":24},"task":{"task":"defend","asset":far.0,"phase":"guard"}}
+    ]);
+    bot = Opponent::restore(
+        &serde_json::from_value(checkpoint).unwrap(),
+        &scenario,
+        &state,
+        map(&scenario),
+    )
+    .unwrap();
+    bot.act(&state, &mut OwnEvents::default());
+    let defends: Vec<_> = bot
+        .missions()
+        .iter()
+        .filter_map(|m| match m.kind {
+            MissionKind::Defend { asset } => Some(asset),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(defends, [near], "one guard, for the Foundry nearer home");
+}
+
+#[test]
+fn an_escort_leaves_a_landing_no_known_enemy_threatens() {
+    let mut scenario = island();
+    scenario.units.push(harvester(0, 34, 25));
+    scenario
+        .units
+        .extend((30..34).map(|x| unit(0, UnitKind::Sentinel, x, 26)));
+    let state = scenario.build().unwrap();
+    let escorts: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == PlayerId(0) && u.kind == UnitKind::Sentinel && u.tile().y >= 18)
+        .map(|u| u.id.0)
+        .collect();
+    let mut bot = seat(&scenario, 0);
+    let mut checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
+    checkpoint["missions"]["next"] = 1.into();
+    checkpoint["missions"]["list"] = serde_json::json!([
+        {"id":0,"since":0,"units":escorts,"goal":{"x":34,"y":25},"task":{"task":"settle","target":{"foundry":{"site":0,"anchor":{"x":37,"y":28}}},"phase":"found"}}
+    ]);
+    bot = Opponent::restore(
+        &serde_json::from_value(checkpoint).unwrap(),
+        &scenario,
+        &state,
+        map(&scenario),
+    )
+    .unwrap();
+    bot.act(&state, &mut OwnEvents::default());
+    assert!(
+        bot.missions()
+            .iter()
+            .all(|m| !matches!(m.kind, MissionKind::Settle { .. })),
+        "{:?}",
+        bot.missions()
+    );
 }

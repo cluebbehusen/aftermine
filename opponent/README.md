@@ -26,7 +26,9 @@ saw like one it remembers, and it is ordered on by its remembered footprint.
 
 A seat with no worker alive, carried or queued queues a Harvester even behind
 other work, from protected scrap if it must. A live known scrap node's or
-wreck's route follows ground distance from a completed own Foundry; it is clear
+wreck's route is the shortest ground route from the seat's start, or on ground
+the start does not reach from the nearest of the seat's Foundries there,
+followed back until it comes home to one of the seat's Foundries; it is clear
 while it crosses neither the reach of known enemy weapons (a site in sight
 cannot fire yet) nor the surroundings of an enemy Foundry, known or presumed. A
 wreck near a recent allied loss, or whose route passes one, waits until the
@@ -306,17 +308,18 @@ keeps its own aim and takes no part in the focus: the weakest enemy would waste
 its single heavy shot.
 
 A site on ground no own worker stands on needs a settlement: one builder lifted
-from the nearest Foundry, with ground escorts aboard and air escorts flying
-beside while known enemies stand near the site. The expansion's next purchase is
-an Airworks, then a Skyhook, until carriers can take the builder and its ground
-escort. The settlement only delivers: once the builder lands it goes back to
-ordinary work, and the expansion is an ordinary build that worker raises. The
-escort holds the landing until the building is placed and then joins the site's
-local guard, which it was sized to be. A flight that runs late turns home; a
-builder stranded on the island builds there on the next attempt. Settlements and
-combat lifts run side by side with separate members. Settlements move before
-guards each decision, so a released escort is guarded at once, and new ones
-recruit after guards.
+from the nearest Foundry whose ground a worker stands on, with ground escorts
+aboard and air escorts flying beside while known enemies stand near the site.
+The expansion's next purchase is a Harvester while no Foundry's ground has a
+worker, then an Airworks, then a Skyhook, until carriers can take the builder
+and its ground escort. The settlement only delivers: once the builder lands it
+goes back to ordinary work, and the expansion is an ordinary build that worker
+raises. The escort holds the landing until the building is placed, or until no
+known enemy stands near, then joins the site's local guard, which it was sized
+to be. A flight that runs late turns home; a builder stranded on the island
+builds there on the next attempt. Settlements and combat lifts run side by side
+with separate members. Settlements move before guards each decision, so a
+released escort is guarded at once, and new ones recruit after guards.
 
 ## Lift
 

@@ -1133,6 +1133,9 @@ fn frame_sites(
     sites: &mut Vec<Site>,
 ) {
     for frame in map.extractor_frames() {
+        if sites.len() == SITE_CAP {
+            break;
+        }
         let component = components.get(*frame);
         if sites.iter().any(|site| {
             site.frames.contains(frame)

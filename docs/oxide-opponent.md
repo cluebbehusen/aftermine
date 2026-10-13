@@ -125,11 +125,12 @@ an escort while known enemies stand near it, using ordinary lift commands. It
 only delivers: once the builder lands, the site is an ordinary build the funded
 investment pays for. A missing Airworks or carrier is that investment's next
 purchase, and the escort's shortfall raises production needs; no future units
-are promised. The escort is sized as the site's local guard will be and joins
-that guard once the building is placed. Expansion guards follow nearby known
-threats, without a quiet minimum, and completed guns release mobile defenders. A
-late delivery turns its passengers home; a builder already on the island builds
-there on the next attempt.
+are promised. The escort is sized as the site's local guard will be, holds the
+landing while known enemies stand near, and joins that guard once the building
+is placed. Expansion guards follow nearby known threats, without a quiet
+minimum, and completed guns release mobile defenders. A late delivery turns its
+passengers home; a builder already on the island builds there on the next
+attempt.
 
 ## Persistent state
 
