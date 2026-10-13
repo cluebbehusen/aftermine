@@ -212,6 +212,8 @@ pub enum CapabilityIcon {
     Repair,
     /// Economic support shared by Foundries and Extractors.
     EconomySupport,
+    /// Rounds a magazine holds and the ring a battery defends.
+    Intercept,
 }
 
 /// The panel for the current selection.

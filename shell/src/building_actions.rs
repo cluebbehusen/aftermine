@@ -10,7 +10,8 @@ use oxide_sim::{Building, BuildingId, BuildingKind, Command};
 #[derive(Clone)]
 pub(crate) struct SelectedBuildings {
     pub buildings: Vec<Building>,
-    pub tech: Vec<BuildingKind>,
+    /// The viewer's completed buildings, by kind and tier.
+    pub tech: Vec<(BuildingKind, u8)>,
     /// Anchors of the viewer's completed, living Foundries, for upgrades
     /// that need one in reach.
     pub foundries: Vec<TilePos>,
@@ -38,6 +39,13 @@ impl SelectedBuildings {
         Self::inspect_ids(game, &game.presentation.selection.buildings)
     }
 
+    /// Whether the viewer has a completed building that answers `need`.
+    pub fn meets(&self, need: oxide_sim::stats::Prerequisite) -> bool {
+        self.tech
+            .iter()
+            .any(|(kind, tier)| *kind == need.kind && *tier >= need.tier)
+    }
+
     pub fn inspect_ids(game: &Scene<'_>, ids: &[BuildingId]) -> Self {
         let snapshot = |buildings: &[Building], scrap, accepts| Self {
             buildings: buildings
@@ -48,7 +56,7 @@ impl SelectedBuildings {
             tech: buildings
                 .iter()
                 .filter(|b| b.player == game.presentation.human && b.built())
-                .map(|b| b.kind)
+                .map(|b| (b.kind, b.tier))
                 .collect(),
             foundries: buildings
                 .iter()
@@ -109,6 +117,154 @@ impl SelectedBuildings {
             .collect()
     }
 
+    /// Selected built magazine buildings, all of one kind, in id order.
+    fn magazines(&self) -> Vec<&Building> {
+        if !self.accepts || !self.homogeneous() {
+            return Vec::new();
+        }
+        self.buildings
+            .iter()
+            .filter(|b| b.built() && b.magazine.is_some())
+            .collect()
+    }
+
+    /// Selected Spires holding a warhead.
+    pub fn loaded_silos(&self) -> Vec<BuildingId> {
+        self.magazines()
+            .into_iter()
+            .filter(|b| b.launcher.is_some() && b.magazine.is_some_and(|m| m.loaded > 0))
+            .map(|b| b.id)
+            .collect()
+    }
+
+    /// Selected Spires turning toward an ordered strike.
+    fn armed_silos(&self) -> Vec<BuildingId> {
+        self.magazines()
+            .into_iter()
+            .filter(|b| b.launcher.is_some_and(|launcher| launcher.target.is_some()))
+            .map(|b| b.id)
+            .collect()
+    }
+
+    /// The selected magazine an order fills: the one with the most room,
+    /// then the lowest id.
+    pub fn round_recipient(&self) -> Option<BuildingId> {
+        self.magazines()
+            .into_iter()
+            .filter_map(|b| {
+                let magazine = b.magazine?;
+                let room = b.kind.magazine()?.capacity - magazine.loaded - magazine.ordered;
+                (room > 0).then_some((std::cmp::Reverse(room), b.id))
+            })
+            .min()
+            .map(|(_, id)| id)
+    }
+
+    /// The selected magazine whose latest paid round a cancel refunds.
+    pub fn round_to_cancel(&self) -> Option<BuildingId> {
+        self.magazines()
+            .into_iter()
+            .filter(|b| b.magazine.is_some_and(|m| m.ordered > 0))
+            .max_by_key(|b| (b.magazine.map_or(0, |m| m.ordered), std::cmp::Reverse(b.id)))
+            .map(|b| b.id)
+    }
+
+    /// The autofill command the toggle issues: on unless every selected
+    /// magazine already has it on.
+    pub fn autofill_toggle(&self) -> Option<Command> {
+        let magazines = self.magazines();
+        if magazines.is_empty() {
+            return None;
+        }
+        let all_on = magazines
+            .iter()
+            .all(|b| b.magazine.is_some_and(|m| m.autofill));
+        Some(Command::SetAutofill {
+            buildings: magazines.iter().map(|b| b.id).collect(),
+            enabled: !all_on,
+        })
+    }
+
+    fn magazine_cards(&self, bindings: &BindingMap, cards: &mut Vec<Card>) {
+        let magazines = self.magazines();
+        let Some(first) = magazines.first() else {
+            return;
+        };
+        let Some(stats) = first.kind.magazine() else {
+            return;
+        };
+        let silo = first.kind == BuildingKind::Spire;
+        let noun = if silo { "warhead" } else { "interceptor" };
+        if silo {
+            let loaded = self.loaded_silos();
+            cards.push(Card {
+                icon: CardIcon::Verb(VerbIcon::Attack),
+                title: "Launch".into(),
+                cost: None,
+                hotkey: bindings.labels(Action::Launch),
+                action: CardAction::Dispatch(Action::Launch),
+                enabled: !loaded.is_empty(),
+                why: loaded.is_empty().then(|| "no warhead loaded".into()),
+                desc: vec![
+                    "Pick any tile, seen or not. The deck turns to face it, then fires.".into(),
+                    "Stop calls off a strike that has not launched.".into(),
+                ],
+                progress: None,
+            });
+        }
+        let recipient = self.round_recipient();
+        let ordering = magazines
+            .iter()
+            .filter_map(|b| b.magazine)
+            .find(|m| m.ordered > 0);
+        cards.push(Card {
+            icon: CardIcon::Building(first.kind, 0),
+            title: format!("Order {noun}"),
+            cost: Some(stats.round_cost),
+            hotkey: bindings.labels(Action::OrderRound),
+            action: CardAction::Dispatch(Action::OrderRound),
+            enabled: recipient.is_some(),
+            why: recipient.is_none().then(|| "magazine is full".into()),
+            desc: vec![format!(
+                "Paid now; built one at a time in {}.",
+                tick_time_label(stats.round_ticks)
+            )],
+            progress: ordering
+                .map(|m| (m.progress as f32 / stats.round_ticks.max(1) as f32).clamp(0.0, 1.0)),
+        });
+        let cancel = self.round_to_cancel();
+        cards.push(Card {
+            icon: CardIcon::Verb(VerbIcon::Cancel),
+            title: format!("Cancel {noun}"),
+            cost: None,
+            hotkey: bindings.labels(Action::CancelRound),
+            action: CardAction::Dispatch(Action::CancelRound),
+            enabled: cancel.is_some(),
+            why: cancel.is_none().then(|| format!("no {noun} on order")),
+            desc: vec![
+                "Refunds the latest paid round in full.".into(),
+                "Also turns autofill off, so it is not bought again.".into(),
+            ],
+            progress: None,
+        });
+        let on = magazines
+            .iter()
+            .all(|b| b.magazine.is_some_and(|m| m.autofill));
+        cards.push(Card {
+            icon: CardIcon::Verb(VerbIcon::Patrol),
+            title: format!("Autofill: {}", if on { "on" } else { "off" }),
+            cost: None,
+            hotkey: bindings.labels(Action::ToggleAutofill),
+            action: CardAction::Dispatch(Action::ToggleAutofill),
+            enabled: true,
+            why: None,
+            desc: vec![format!(
+                "While on, orders the next {noun} whenever there is room and scrap."
+            )],
+            progress: None,
+        });
+    }
+
     pub fn sites(&self) -> Vec<BuildingId> {
         if !self.accepts || !self.homogeneous() {
             return Vec::new();
@@ -144,7 +300,7 @@ impl SelectedBuildings {
             let reason = if !b.built() {
                 Some("offline".into())
             } else if let Some(upgrade) = b.kind.upgrade_from(b.tier) {
-                if let Some(req) = upgrade.requires.iter().find(|req| !self.tech.contains(req)) {
+                if let Some(req) = upgrade.requires.iter().find(|req| !self.meets(**req)) {
                     Some(format!("needs a standing {}", entity_name(req.name())))
                 } else if b.kind.upgrade_needs_foundry_support(b.tier)
                     && !self
@@ -213,6 +369,7 @@ impl SelectedBuildings {
                 progress: None,
             });
         }
+        self.magazine_cards(bindings, &mut cards);
         let defenses = self.defenses(None);
         let sites = self.sites();
         if !sites.is_empty() {
@@ -355,7 +512,8 @@ pub(crate) fn scrap_sites(game: &mut Game) {
 
 pub(crate) fn stop_or_scrap(game: &mut Game) {
     let selected = SelectedBuildings::inspect(&game.view());
-    let buildings = selected.defenses(None);
+    let mut buildings = selected.defenses(None);
+    buildings.extend(selected.armed_silos());
     if !buildings.is_empty() {
         game.issue(Command::ClearFocus { buildings });
     } else if !selected.sites().is_empty() {

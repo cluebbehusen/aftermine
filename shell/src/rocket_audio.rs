@@ -12,7 +12,7 @@ use crate::game::{Scene, SoundKind, world_vec};
 pub(crate) const MOTOR_VOICES: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct RocketKey {
+pub(crate) struct RocketKey {
     shooter: Target,
     launch: Vec2Fx,
     impact: Vec2Fx,
@@ -20,10 +20,11 @@ struct RocketKey {
     occurrence: usize,
 }
 
+/// One loop the frame wants sounding, keyed by what it follows.
 #[derive(Clone, Copy, Debug)]
-struct Motor {
-    key: RocketKey,
-    gain: f32,
+pub(crate) struct Motor<K> {
+    pub(crate) key: K,
+    pub(crate) gain: f32,
 }
 
 fn motor_envelope(elapsed: f32, total: f32) -> f32 {
@@ -35,7 +36,41 @@ fn motor_envelope(elapsed: f32, total: f32) -> f32 {
     (powered / 0.4).clamp(0.0, 1.0) * ((total - elapsed) / 0.4).clamp(0.0, 1.0)
 }
 
-fn audible_motors(game: &Scene<'_>) -> Vec<Motor> {
+/// A loop's gain at `at` for the current camera: the one-shot mix's
+/// weighting, falling away fully outside the viewport instead of leaving
+/// that mix's minimum gain as a permanent offscreen noise floor.
+pub(crate) fn camera_gain(game: &Scene<'_>, kind: SoundKind, at: Vec2) -> f32 {
+    let half_extents = game.presentation.camera.viewport() / game.presentation.camera.zoom * 0.5;
+    let mixed = crate::audio_mix::frame_mix(
+        [(kind, Some(at))],
+        game.presentation.camera.center,
+        half_extents,
+        game.presentation.camera.zoom,
+    );
+    let Some(sound) = mixed.first() else {
+        return 0.0;
+    };
+    let outside = ((at - game.presentation.camera.center).abs() - half_extents)
+        .max(Vec2::ZERO)
+        .length();
+    let falloff = (1.0 - outside / half_extents.length().max(1.0)).clamp(0.0, 1.0);
+    sound.gain * falloff
+}
+
+/// The loudest `voices` of `motors`, scaled so loops started together,
+/// which play the same clip in phase, do not sum past one coherent voice.
+pub(crate) fn densest<K>(mut motors: Vec<Motor<K>>, voices: usize) -> Vec<Motor<K>> {
+    motors.sort_by(|left, right| right.gain.total_cmp(&left.gain));
+    motors.truncate(voices);
+    let count = motors.len().max(1) as f32;
+    let density = count.sqrt().recip().min(1.5 / count);
+    for motor in &mut motors {
+        motor.gain *= density;
+    }
+    motors
+}
+
+fn audible_motors(game: &Scene<'_>) -> Vec<Motor<RocketKey>> {
     let now = game.state.current_tick() as f32 + game.presentation.tick_fraction();
     let shells = game.state.shells();
     let mut motors = Vec::new();
@@ -65,21 +100,6 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor> {
         {
             continue;
         }
-        let half_extents =
-            game.presentation.camera.viewport() / game.presentation.camera.zoom * 0.5;
-        let camera_gain = crate::audio_mix::frame_mix(
-            [(SoundKind::RocketMotor, Some(at))],
-            game.presentation.camera.center,
-            half_extents,
-            game.presentation.camera.zoom,
-        )[0]
-        .gain;
-        // Motors outside the viewport fall away fully instead of leaving the
-        // one-shot mix's minimum gain as a permanent offscreen noise floor.
-        let outside = ((at - game.presentation.camera.center).abs() - half_extents)
-            .max(Vec2::ZERO)
-            .length();
-        let falloff = (1.0 - outside / half_extents.length().max(1.0)).clamp(0.0, 1.0);
         let occurrence = shells[..index]
             .iter()
             .filter(|earlier| {
@@ -90,7 +110,7 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor> {
                     && earlier.arrival == shell.arrival
             })
             .count();
-        let gain = camera_gain * falloff * envelope;
+        let gain = camera_gain(game, SoundKind::RocketMotor, at) * envelope;
         if gain > 0.0 {
             motors.push(Motor {
                 key: RocketKey {
@@ -104,16 +124,7 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor> {
             });
         }
     }
-    motors.sort_by(|left, right| right.gain.total_cmp(&left.gain));
-    motors.truncate(MOTOR_VOICES);
-    // Simultaneous launches can play the same loop in phase, so also cap
-    // the coherent sum rather than assuming independent noise sources.
-    let count = motors.len().max(1) as f32;
-    let density = count.sqrt().recip().min(1.5 / count);
-    for motor in &mut motors {
-        motor.gain *= density;
-    }
-    motors
+    densest(motors, MOTOR_VOICES)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -123,13 +134,24 @@ enum Change {
     Stop(usize),
 }
 
-#[derive(Default)]
-pub(crate) struct RocketLoops {
-    slots: [Option<RocketKey>; MOTOR_VOICES],
+/// `N` looping voices, each its own clip instance, kept in step with the
+/// loops a frame wants: a loop keeps its voice while it lasts and frees it
+/// when it ends.
+pub(crate) struct LoopBank<K, const N: usize> {
+    slots: [Option<K>; N],
 }
 
-impl RocketLoops {
-    fn reconcile(&mut self, desired: &[Motor]) -> Vec<Change> {
+impl<K: Copy, const N: usize> Default for LoopBank<K, N> {
+    fn default() -> Self {
+        Self { slots: [None; N] }
+    }
+}
+
+/// The Avalanche motors.
+pub(crate) type RocketLoops = LoopBank<RocketKey, MOTOR_VOICES>;
+
+impl<K: Copy + PartialEq, const N: usize> LoopBank<K, N> {
+    fn reconcile(&mut self, desired: &[Motor<K>]) -> Vec<Change> {
         let mut changes = Vec::new();
         for (index, slot) in self.slots.iter_mut().enumerate() {
             if slot.is_some_and(|key| !desired.iter().any(|motor| motor.key == key)) {
@@ -148,13 +170,14 @@ impl RocketLoops {
         changes
     }
 
-    pub(crate) fn update(&mut self, game: &Scene<'_>, running: bool, clips: &[Sound], volume: f32) {
-        let desired = if running && clips.len() == MOTOR_VOICES && volume > 0.0 {
-            audible_motors(game)
+    /// Starts, steers, and stops the bank's voices toward `desired`.
+    pub(crate) fn play(&mut self, desired: &[Motor<K>], clips: &[Sound], volume: f32) {
+        let desired = if clips.len() == N && volume > 0.0 {
+            desired
         } else {
-            Vec::new()
+            &[]
         };
-        for change in self.reconcile(&desired) {
+        for change in self.reconcile(desired) {
             match change {
                 Change::Start(slot, gain) => play_sound(
                     &clips[slot],
@@ -167,6 +190,17 @@ impl RocketLoops {
                 Change::Stop(slot) => stop_sound(&clips[slot]),
             }
         }
+    }
+}
+
+impl RocketLoops {
+    pub(crate) fn update(&mut self, game: &Scene<'_>, running: bool, clips: &[Sound], volume: f32) {
+        let desired = if running {
+            audible_motors(game)
+        } else {
+            Vec::new()
+        };
+        self.play(&desired, clips, volume);
     }
 }
 

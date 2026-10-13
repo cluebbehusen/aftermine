@@ -2249,3 +2249,149 @@ fn mantle_emitter_origins_rotate_with_the_chassis() {
         assert!(north.y < 0.0);
     }
 }
+
+/// `game` advanced `ticks` with no commands.
+fn advance(game: &mut Game, ticks: u32) {
+    let mut state = (*game.state.0).clone();
+    for _ in 0..ticks {
+        state.tick(&[]);
+    }
+    game.state.0 = std::sync::Arc::new(state);
+}
+
+#[test]
+fn an_interception_sounds_when_the_interceptor_reaches_the_warhead() {
+    let mut game = mantle_interception_game();
+    advance(&mut game, 20);
+    let at = chassis::grid::TilePos::new(10, 10).center();
+    let event = Event::WarheadIntercepted {
+        warhead: oxide_sim::WarheadId(0),
+        player: oxide_sim::PlayerId(1),
+        battery: BuildingId(99),
+        battery_player: oxide_sim::PlayerId(0),
+        pod: 1,
+        at,
+        impact: at,
+    };
+    game.presentation.spawn_fx(&game.state, &[event]);
+    let heard = |game: &Game| {
+        game.presentation
+            .sounds_pending
+            .iter()
+            .filter(|(sound, _)| *sound == SoundKind::Interception)
+            .count()
+    };
+    assert_eq!(heard(&game), 0, "silent until the meeting in the sky");
+    game.presentation.update_fx(&game.state, 0.0);
+    assert_eq!(heard(&game), 0);
+    advance(&mut game, 9);
+    game.presentation.update_fx(&game.state, 0.0);
+    assert_eq!(
+        heard(&game),
+        1,
+        "the burst sounds once the interceptor arrives"
+    );
+    game.presentation.update_fx(&game.state, 0.0);
+    assert_eq!(heard(&game), 1, "and only once");
+    assert!(
+        game.presentation
+            .sounds_pending
+            .iter()
+            .any(|(sound, pos)| *sound == SoundKind::Interception && *pos == Some(world_vec(at)))
+    );
+}
+
+#[test]
+fn a_hostile_warhead_warns_once_with_its_own_protected_cue() {
+    let mut game = mantle_interception_game();
+    game.presentation.raise_warhead_alert(Vec2::new(10.0, 10.0));
+    game.presentation.raise_warhead_alert(Vec2::new(10.5, 10.5));
+    let cues: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .map(|(sound, _)| *sound)
+        .collect();
+    assert_eq!(
+        cues,
+        [SoundKind::IncomingWarning, SoundKind::IncomingWarning],
+        "each warhead warns, past the under-attack gate, never as the plain alert"
+    );
+    assert_eq!(game.presentation.alerts.len(), 2);
+}
+
+#[test]
+fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name": "Early interceptor", "mode": "sandbox", "map": vec![".".repeat(70); 20],
+        "players": [
+            {"name": "West", "scrap": 0, "bot": false},
+            {"name": "East", "scrap": 0, "bot": false}
+        ],
+        "units": [],
+        "buildings": [
+            {"player": 0, "kind": "spire", "x": 4, "y": 8},
+            {"player": 1, "kind": "lattice", "x": 50, "y": 8},
+            {"player": 1, "kind": "array", "x": 30, "y": 2}
+        ]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    for b in wire["buildings"].as_array_mut().unwrap() {
+        match b["kind"].as_str() {
+            Some("spire") => b["magazine"] = serde_json::json!({"loaded": 1, "autofill": false}),
+            Some("lattice") => b["magazine"] = serde_json::json!({"loaded": 2, "autofill": true}),
+            _ => {}
+        }
+    }
+    let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
+    game.replace_state_after_jump(&state);
+    let spire = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == oxide_sim::BuildingKind::Spire)
+        .unwrap()
+        .id;
+    game.issue(oxide_sim::Command::Launch {
+        building: spire,
+        target: chassis::grid::TilePos::new(56, 9),
+    });
+    let mut stop = None;
+    for _ in 0..400 {
+        game.do_tick();
+        if let Some(launch) = game.presentation.prelaunches.first() {
+            stop.get_or_insert(launch.stop);
+        }
+        if game
+            .presentation
+            .fx
+            .iter()
+            .any(|fx| matches!(fx.kind, EffectKind::Interception { .. }))
+        {
+            break;
+        }
+    }
+    let stop = stop.expect("the interceptor left ahead of the stop");
+    assert_eq!(
+        (game.state.current_tick() - 1) as f32,
+        stop,
+        "it met on the forecast tick"
+    );
+    assert!(game.presentation.prelaunches.is_empty());
+    let fx = game
+        .presentation
+        .fx
+        .iter()
+        .find(|fx| matches!(fx.kind, EffectKind::Interception { .. }))
+        .unwrap();
+    assert!(matches!(
+        fx.kind,
+        EffectKind::Interception { early: true, .. }
+    ));
+    assert!(
+        fx.age >= INTERCEPT_MEET,
+        "the burst comes at the stop itself"
+    );
+}

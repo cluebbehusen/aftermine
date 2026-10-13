@@ -23,6 +23,7 @@ pub struct Sprites {
     bombard_spades: Option<[Rect; 5]>,
     scout_radar: Option<Rect>,
     array_rig: Option<ArrayRig>,
+    strategic_rigs: Option<StrategicRigs>,
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
     verb_icons: [Rect; 16],
@@ -86,6 +87,118 @@ impl ArrayRig {
         let tier = usize::from(tier.min(1));
         [self.base[tier], self.rotor[tier]].map(|row| (row[BASE], row[ACCENT]))
     }
+}
+
+/// The Spire's runtime layers. The foundation stays put; everything else
+/// turns with the deck about the footprint centre.
+pub(crate) struct SpireRig {
+    pub foundation: [Rect; 2],
+    pub deck: [Rect; 2],
+    /// One to four seated sections, untinted.
+    pub stacks: Vec<Rect>,
+    /// The finished warhead on the deck.
+    pub round: [Rect; 2],
+    /// The painted nose while the gantry carries it.
+    pub noses: Vec<[Rect; 2]>,
+    pub gantry_parked: Rect,
+    /// The hook's carry and return poses.
+    pub gantry: Vec<Rect>,
+    pub cover: [Rect; 2],
+    /// Open, then closing steps to shut.
+    pub lock_lower: Vec<Rect>,
+    pub lock_upper: Vec<Rect>,
+    /// The warhead in flight: coasting, then with its plume flickering.
+    pub warhead: Vec<[Rect; 2]>,
+}
+
+/// The Lattice's runtime layers: a fixed base, two pods each turning
+/// about its own pivot, the shared reload arm, and the cover plate.
+pub(crate) struct LatticeRig {
+    pub base: Rect,
+    pub cover: Rect,
+    pub pod: [Rect; 2],
+    pub interceptor: [Rect; 2],
+    /// One or two seated parts, untinted.
+    pub stacks: Vec<Rect>,
+    /// Open, then closing steps to shut.
+    pub clamp: Vec<Rect>,
+    /// The arm's carry and return poses toward the left and right pod.
+    pub arms: [Vec<Rect>; 2],
+    /// The painted nose while the arm carries it, per side.
+    pub noses: [Vec<[Rect; 2]>; 2],
+    /// The interceptor's launch: coasting, then with its plume.
+    pub launch: Vec<[Rect; 2]>,
+}
+
+pub(crate) struct StrategicRigs {
+    pub spire: SpireRig,
+    pub lattice: LatticeRig,
+}
+
+/// The untinted `{stem}_1`, `{stem}_2`, ... frames the atlas ships.
+fn plain_numbered(rects: &Manifest, stem: &str) -> Result<Vec<Rect>> {
+    let mut out = Vec::new();
+    for frame in 1.. {
+        let key = format!("{stem}_{frame}");
+        if !rects.contains_key(&key) {
+            break;
+        }
+        out.push(lookup(rects, &key)?);
+    }
+    anyhow::ensure!(!out.is_empty(), "{stem} ships no frames");
+    Ok(out)
+}
+
+/// A base key followed by its numbered steps, untinted.
+fn plain_sequence(rects: &Manifest, stem: &str) -> Result<Vec<Rect>> {
+    let mut out = vec![lookup(rects, stem)?];
+    out.extend(plain_numbered(rects, stem)?);
+    Ok(out)
+}
+
+/// A tinted base row followed by its numbered rows.
+fn tinted_sequence(rects: &Manifest, stem: &str) -> Result<Vec<[Rect; 2]>> {
+    let mut out = vec![variant_row(rects, stem, "")?];
+    out.extend(numbered_rows(rects, stem, "")?);
+    Ok(out)
+}
+
+fn strategic_rigs(rects: &Manifest) -> Result<Option<StrategicRigs>> {
+    if !rects.contains_key("rig_spire_foundation") {
+        return Ok(None);
+    }
+    Ok(Some(StrategicRigs {
+        spire: SpireRig {
+            foundation: variant_row(rects, "rig_spire_foundation", "")?,
+            deck: variant_row(rects, "rig_spire_deck", "")?,
+            stacks: plain_numbered(rects, "rig_spire_stack")?,
+            round: variant_row(rects, "rig_spire_round", "")?,
+            noses: numbered_rows(rects, "rig_spire_nose", "")?,
+            gantry_parked: lookup(rects, "rig_spire_gantry")?,
+            gantry: plain_numbered(rects, "rig_spire_gantry")?,
+            cover: variant_row(rects, "rig_spire_cover", "")?,
+            lock_lower: plain_sequence(rects, "rig_spire_lock_lower")?,
+            lock_upper: plain_sequence(rects, "rig_spire_lock_upper")?,
+            warhead: tinted_sequence(rects, "rig_spire_warhead")?,
+        },
+        lattice: LatticeRig {
+            base: lookup(rects, "rig_lattice_base")?,
+            cover: lookup(rects, "rig_lattice_cover")?,
+            pod: variant_row(rects, "rig_lattice_pod", "")?,
+            interceptor: variant_row(rects, "rig_lattice_interceptor", "")?,
+            stacks: plain_numbered(rects, "rig_lattice_stack")?,
+            clamp: plain_sequence(rects, "rig_lattice_clamp")?,
+            arms: [
+                plain_numbered(rects, "rig_lattice_arm_left")?,
+                plain_numbered(rects, "rig_lattice_arm_right")?,
+            ],
+            noses: [
+                numbered_rows(rects, "rig_lattice_nose_left", "")?,
+                numbered_rows(rects, "rig_lattice_nose_right", "")?,
+            ],
+            launch: tinted_sequence(rects, "rig_lattice_launch")?,
+        },
+    }))
 }
 
 fn array_rig(rects: &Manifest) -> Result<Option<ArrayRig>> {
@@ -457,6 +570,8 @@ pub(crate) fn building_stem(kind: BuildingKind) -> &'static str {
         BuildingKind::Crucible => "crucible",
         BuildingKind::Barricade => "barricade",
         BuildingKind::ScuttleCharge => "scuttle_charge",
+        BuildingKind::Spire => "spire",
+        BuildingKind::Lattice => "lattice",
     }
 }
 
@@ -790,6 +905,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
             keys.extend(variant_keys(&format!("rig_array_t{tier}_{part}"), ""));
         }
     }
+    keys.extend(strategic_rig_keys(atlas));
 
     for kind in UnitKind::ALL {
         let stem = unit_stem(kind);
@@ -851,6 +967,69 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                 }
             }
         }
+    }
+    keys
+}
+
+/// The Spire's and Lattice's composition layers. Rows that carry paint
+/// ship an allegiance mask; the hook, plain sections, locks, clamps, arm,
+/// base and cover are untinted single rows.
+#[cfg(test)]
+fn strategic_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let numbered = |stem: &str| -> Vec<String> {
+        let mut keys = Vec::new();
+        while let key = format!("{stem}_{}", keys.len() + 1)
+            && atlas.contains_key(&key)
+        {
+            keys.push(key);
+        }
+        keys
+    };
+    let mut keys = Vec::new();
+    for stem in [
+        "rig_spire_foundation",
+        "rig_spire_deck",
+        "rig_spire_cover",
+        "rig_spire_round",
+        "rig_spire_warhead",
+        "rig_lattice_pod",
+        "rig_lattice_interceptor",
+        "rig_lattice_launch",
+    ] {
+        keys.extend(variant_keys(stem, ""));
+    }
+    for stem in [
+        "rig_spire_nose",
+        "rig_spire_warhead",
+        "rig_lattice_launch",
+        "rig_lattice_nose_left",
+        "rig_lattice_nose_right",
+    ] {
+        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
+            keys.extend(variant_keys(stem, &suffix));
+        }
+    }
+    for stem in [
+        "rig_spire_gantry",
+        "rig_spire_lock_lower",
+        "rig_spire_lock_upper",
+        "rig_lattice_base",
+        "rig_lattice_cover",
+        "rig_lattice_clamp",
+    ] {
+        keys.push(stem.to_owned());
+    }
+    for stem in [
+        "rig_spire_stack",
+        "rig_spire_gantry",
+        "rig_spire_lock_lower",
+        "rig_spire_lock_upper",
+        "rig_lattice_stack",
+        "rig_lattice_clamp",
+        "rig_lattice_arm_left",
+        "rig_lattice_arm_right",
+    ] {
+        keys.extend(numbered(stem));
     }
     keys
 }
@@ -935,6 +1114,7 @@ impl Sprites {
             unit_rigs: unit_rigs(&rects)?,
             bombard_spades: bombard_spade_rows(&rects)?,
             array_rig: array_rig(&rects)?,
+            strategic_rigs: strategic_rigs(&rects)?,
             scout_radar: rects
                 .get("scout_radar")
                 .map(|&[x, y, w, h]| Rect::new(x, y, w, h)),
@@ -1442,6 +1622,10 @@ impl Sprites {
         self.array_rig.as_ref()
     }
 
+    pub(crate) fn strategic_rigs(&self) -> Option<&StrategicRigs> {
+        self.strategic_rigs.as_ref()
+    }
+
     /// The spade row for a Bombard's deployment, from stowed (row 0) to
     /// fully braced (row 4).
     pub(crate) fn bombard_spades(&self, brace_ticks: u8) -> Option<Rect> {
@@ -1468,6 +1652,10 @@ pub struct Sounds {
     pub laser2: Sound,
     /// Independently loaded buffers, because the backend stops by sound id.
     pub rocket_motors: Vec<Sound>,
+    /// The same, one per warhead motor voice.
+    pub warhead_motors: Vec<Sound>,
+    /// The same, one per interceptor motor voice.
+    pub interceptor_motors: Vec<Sound>,
     /// Front-end industrial ambience.
     pub music_menu: Sound,
     /// The calm match bed.
@@ -1502,9 +1690,20 @@ impl Sounds {
         for _ in 0..crate::rocket_audio::MOTOR_VOICES {
             rocket_motors.push(clip("avalanche_motor").await?);
         }
+        let mut warhead_motors = Vec::with_capacity(crate::strike_audio::WARHEAD_VOICES);
+        for _ in 0..crate::strike_audio::WARHEAD_VOICES {
+            warhead_motors.push(clip("warhead_flight").await?);
+        }
+        let mut interceptor_motors = Vec::with_capacity(crate::strike_audio::INTERCEPTOR_VOICES);
+        for _ in 0..crate::strike_audio::INTERCEPTOR_VOICES {
+            interceptor_motors.push(clip("interceptor_flight").await?);
+        }
         let mut effects = std::collections::HashMap::new();
         for kind in SoundKind::ALL {
-            if kind != SoundKind::RocketMotor {
+            if !matches!(
+                kind,
+                SoundKind::RocketMotor | SoundKind::WarheadMotor | SoundKind::InterceptorMotor
+            ) {
                 effects.insert(kind, clip(crate::mixer::spec(kind).clip).await?);
             }
         }
@@ -1512,6 +1711,8 @@ impl Sounds {
             effects,
             laser2: clip("laser2").await?,
             rocket_motors,
+            warhead_motors,
+            interceptor_motors,
             music_menu: clip("music_menu").await?,
             music_calm: clip("music_calm").await?,
             music_combat: clip("music_combat").await?,
@@ -1525,6 +1726,8 @@ impl Sounds {
     pub fn effect(&self, kind: SoundKind) -> &Sound {
         match kind {
             SoundKind::RocketMotor => &self.rocket_motors[0],
+            SoundKind::WarheadMotor => &self.warhead_motors[0],
+            SoundKind::InterceptorMotor => &self.interceptor_motors[0],
             _ => &self.effects[&kind],
         }
     }

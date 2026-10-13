@@ -75,6 +75,8 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
                 BuildingKind::Reclaimer,
                 BuildingKind::Array,
                 BuildingKind::RepairBay,
+                BuildingKind::Spire,
+                BuildingKind::Lattice,
             ]
             .into_iter()
             .map(Entry::Building)
@@ -370,6 +372,39 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             oxide_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / oxide_sim::TICKS_PER_SECOND as f32,
             oxide_sim::stats::REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
                 / oxide_sim::stats::REPAIR_BAY_PERIOD as f32
+        ));
+    }
+    if let Some(magazine) = kind.magazine() {
+        let seconds = |ticks: u32| ticks as f32 / oxide_sim::TICKS_PER_SECOND as f32;
+        let round = if kind == BuildingKind::Spire {
+            "warhead"
+        } else {
+            "interceptor"
+        };
+        notes.push(format!(
+            "Holds {} {round}{}. Each is ordered and paid for like a unit, {} scrap and {:.0} s, built one at a time. Autofill, {} by default, orders the next whenever there is room and scrap.",
+            magazine.capacity,
+            if magazine.capacity == 1 { "" } else { "s" },
+            magazine.round_cost,
+            seconds(magazine.round_ticks),
+            if magazine.autofill { "on" } else { "off" },
+        ));
+    }
+    if kind == BuildingKind::Spire {
+        let warhead = oxide_sim::stats::WARHEAD;
+        notes.push(format!(
+            "Launches at any tile, seen or not, once its deck has turned to face it. The warhead flies {:.0} tiles/s and deals {} damage within {:.1} tiles, fading to nothing at {:.1}. Foundries take half.",
+            warhead.speed.to_num::<f32>() * oxide_sim::TICKS_PER_SECOND as f32,
+            warhead.peak_damage,
+            warhead.full_radius.to_num::<f32>(),
+            warhead.outer_radius.to_num::<f32>(),
+        ));
+    }
+    if let Some(battery) = kind.battery() {
+        notes.push(format!(
+            "Stops enemy warheads that will land within {:.0} tiles, once sight or radar has held them for {:.1} s.",
+            battery.ring.to_num::<f32>(),
+            f32::from(oxide_sim::stats::WARHEAD_TRACK_TICKS) / oxide_sim::TICKS_PER_SECOND as f32,
         ));
     }
     if let Some(c) = base.construction

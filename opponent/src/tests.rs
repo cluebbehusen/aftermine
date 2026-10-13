@@ -24,6 +24,7 @@ mod scouting;
 mod strike;
 mod support;
 mod teams;
+mod warheads;
 mod workers;
 
 /// A half-turn-symmetric arena. Each seat's Harvesters stand equally far from
@@ -359,6 +360,20 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
     };
     let (width, height) = (state.map().width(), state.map().height());
     let rotate = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    // A building's counterpart: the east building of its kind at its rank.
+    let counterpart = |building: BuildingId| {
+        let kind = state.building(building).unwrap().kind;
+        let of = |player: u8| -> Vec<BuildingId> {
+            state
+                .buildings()
+                .iter()
+                .filter(|b| b.player == PlayerId(player) && b.kind == kind)
+                .map(|b| b.id)
+                .collect()
+        };
+        let index = of(0).iter().position(|id| *id == building).unwrap();
+        of(1)[index]
+    };
     commands
         .into_iter()
         .map(|command| PlayerCommand {
@@ -454,22 +469,17 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                     target: units(vec![target])[0],
                     queue,
                 },
-                Command::Train { building, kind } => {
-                    let producer = state.building(building).unwrap().kind;
-                    let of = |player: u8| -> Vec<BuildingId> {
-                        state
-                            .buildings()
-                            .iter()
-                            .filter(|b| b.player == PlayerId(player) && b.kind == producer)
-                            .map(|b| b.id)
-                            .collect()
-                    };
-                    let index = of(0).iter().position(|id| *id == building).unwrap();
-                    Command::Train {
-                        building: of(1)[index],
-                        kind,
-                    }
-                }
+                Command::Train { building, kind } => Command::Train {
+                    building: counterpart(building),
+                    kind,
+                },
+                Command::Launch { building, target } => Command::Launch {
+                    building: counterpart(building),
+                    target: rotate(target),
+                },
+                Command::OrderRound { building } => Command::OrderRound {
+                    building: counterpart(building),
+                },
                 other => panic!("this staging never issues {other:?}"),
             },
         })

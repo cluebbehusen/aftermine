@@ -681,8 +681,8 @@ impl Needs {
                     .stats()
                     .requires
                     .iter()
-                    .copied()
-                    .filter(|required| !built(*required))
+                    .filter(|need| !crate::investments::met(observation, **need))
+                    .map(|need| need.kind)
                     .collect();
                 let first = *missing.first()?;
                 (!missing.iter().any(|required| owned(*required)))
@@ -900,12 +900,10 @@ pub(crate) fn producible(
         .iter()
         .copied()
         .filter(move |kind| {
-            kind.stats().requires.iter().all(|required| {
-                observation
-                    .my_buildings
-                    .iter()
-                    .any(|building| building.kind == *required && building.built)
-            })
+            kind.stats()
+                .requires
+                .iter()
+                .all(|need| crate::investments::met(observation, *need))
         })
 }
 

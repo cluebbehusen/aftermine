@@ -144,6 +144,8 @@ struct Record {
     passive: u64,
     produced: u64,
     intercepted: u64,
+    fired: u64,
+    landed: u64,
 }
 
 /// Scrap value of damage dealt, by what was hit and where.
@@ -214,8 +216,12 @@ pub struct KindLedger {
     pub deaths: u64,
     /// Ticks the destroyed ones lived, summed.
     pub lifetime: u64,
-    /// Hostile shells shot down in flight.
+    /// Hostile shells and warheads shot down in flight.
     pub intercepted: u64,
+    /// Warheads launched.
+    pub fired: u64,
+    /// Warheads launched that burst rather than being shot down.
+    pub landed: u64,
 }
 
 impl KindLedger {
@@ -235,6 +241,8 @@ impl KindLedger {
         self.deaths += other.deaths;
         self.lifetime += other.lifetime;
         self.intercepted += other.intercepted;
+        self.fired += other.fired;
+        self.landed += other.landed;
     }
 }
 
@@ -396,6 +404,8 @@ pub struct ImpactLedger {
     retired: Vec<u64>,
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
+    /// Warheads in flight, with the Spire that launched each.
+    warheads: BTreeMap<oxide_sim::WarheadId, Source>,
     /// The Crucibles and wreck in their reach as a smelting tick begins.
     hearths: Hearths,
     /// Extractor payouts as the coming tick begins.
@@ -679,6 +689,7 @@ impl ImpactLedger {
             retired: vec![0; seats],
             worth: vec![Vec::new(); seats],
             shells: Vec::new(),
+            warheads: BTreeMap::new(),
             hearths: if start.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
                 hearths(state)
             } else {
@@ -770,6 +781,66 @@ impl ImpactLedger {
             .binary_search_by_key(&key, |body| body.key)
             .ok()
             .map(|index| &self.bodies[index])
+    }
+
+    /// A Spire's warheads and the rounds a magazine finished: what a burst
+    /// landing owes its Spire, which battery stopped one, and what each
+    /// round cost.
+    fn strike(&mut self, event: &Event, sources: &mut Sources, now: u64) {
+        match event {
+            Event::WarheadLaunched {
+                warhead,
+                silo,
+                from,
+                ..
+            } => {
+                if let Some(source) =
+                    self.source(Key::Building(*silo), Some(TilePos::containing(*from)))
+                {
+                    self.warheads.insert(*warhead, source);
+                }
+                if let Some(record) = self.records.get_mut(&Key::Building(*silo)) {
+                    record.fired += 1;
+                }
+            }
+            Event::WarheadLanded { warhead, at, .. } => {
+                if let Some(source) = self.warheads.remove(warhead) {
+                    if let Some(record) = self.records.get_mut(&source.key) {
+                        record.landed += 1;
+                    }
+                    sources.splash.push((
+                        TilePos::containing(*at),
+                        tiles(oxide_sim::stats::WARHEAD.outer_radius),
+                        source,
+                    ));
+                }
+            }
+            Event::WarheadIntercepted {
+                warhead, battery, ..
+            } => {
+                self.warheads.remove(warhead);
+                if let Some(record) = self.records.get_mut(&Key::Building(*battery)) {
+                    record.intercepted += 1;
+                }
+            }
+            Event::RoundAssembled {
+                building,
+                player,
+                kind,
+                ..
+            } => {
+                // A round is paid when ordered and refunded if cancelled,
+                // so the rounds a magazine finished are what it cost.
+                let cost = kind
+                    .magazine()
+                    .map_or(0, |stats| u64::from(stats.round_cost));
+                if let Some(record) = self.records.get_mut(&Key::Building(*building)) {
+                    record.paid += cost;
+                }
+                self.spent(player.0, format!("round:{}", kind.name()), now, cost);
+            }
+            _ => {}
+        }
     }
 
     /// Records births, deaths, deliveries and repairs, and gathers this
@@ -981,6 +1052,10 @@ impl ImpactLedger {
                         record.intercepted += 1;
                     }
                 }
+                Event::WarheadLaunched { .. }
+                | Event::WarheadLanded { .. }
+                | Event::WarheadIntercepted { .. }
+                | Event::RoundAssembled { .. } => self.strike(event, &mut sources, now),
                 Event::AircraftImpacted { crash } => {
                     if let Some(profile) = crash.kind.stats().crash {
                         sources.splash.push((
@@ -1483,6 +1558,8 @@ impl ImpactLedger {
             entry.passive += record.passive;
             entry.produced += record.produced;
             entry.intercepted += record.intercepted;
+            entry.fired += record.fired;
+            entry.landed += record.landed;
             if let Some(gone) = record.gone {
                 entry.deaths += 1;
                 entry.lifetime += gone.min(end).saturating_sub(record.born);
@@ -1720,7 +1797,7 @@ impl LedgerPool {
         }
         let _ = writeln!(
             out,
-            "{indent}{:<14} {:>6} {:>8} {:>6} {:>7} {:>8} {:>8} {:>8} {:>9}",
+            "{indent}{:<14} {:>6} {:>8} {:>6} {:>7} {:>8} {:>8} {:>8} {:>9} {:>11}",
             "building",
             "built",
             "paid",
@@ -1729,14 +1806,15 @@ impl LedgerPool {
             "produced",
             "enabled",
             "repaired",
-            "destroyed"
+            "destroyed",
+            "intercepted"
         );
         let mut buildings: Vec<(&String, &KindLedger)> = self.buildings.iter().collect();
         buildings.sort_by_key(|(kind, totals)| (std::cmp::Reverse(totals.paid), (*kind).clone()));
         for (kind, totals) in buildings.into_iter().take(limit) {
             let _ = writeln!(
                 out,
-                "{indent}{:<14} {:>6} {:>8} {:>6} {:>7} {:>8} {:>8} {:>8} {:>9}",
+                "{indent}{:<14} {:>6} {:>8} {:>6} {:>7} {:>8} {:>8} {:>8} {:>9} {:>11}",
                 kind,
                 totals.built + totals.starting,
                 totals.paid,
@@ -1746,6 +1824,15 @@ impl LedgerPool {
                 ratio(totals.enabled, totals.paid),
                 ratio(totals.repaired, totals.paid),
                 share(totals.deaths, totals.built + totals.starting),
+                totals.intercepted,
+            );
+        }
+        let fired: u64 = self.buildings.values().map(|totals| totals.fired).sum();
+        if fired > 0 {
+            let landed: u64 = self.buildings.values().map(|totals| totals.landed).sum();
+            let _ = writeln!(
+                out,
+                "{indent}warheads fired {fired}, landed {landed}; the rest were shot down or still flying at the end"
             );
         }
         let income = self.income();

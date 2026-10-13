@@ -187,8 +187,9 @@ fn a_building_upgraded_on_the_tick_it_falls_reports_the_new_tier() {
     let kind = BuildingKind::ALL
         .into_iter()
         .find(|kind| {
-            kind.upgrade_from(0)
-                .is_some_and(|up| up.requires == [BuildingKind::Fabricator])
+            kind.upgrade_from(0).is_some_and(|up| {
+                up.requires == [crate::stats::Prerequisite::built(BuildingKind::Fabricator)]
+            })
         })
         .expect("some building upgrades once a Fabricator stands");
     let mut scenario = calibration_open();

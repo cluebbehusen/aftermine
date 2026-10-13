@@ -67,7 +67,7 @@ pub(crate) fn frame_mix(
 ) -> Vec<FrameSound> {
     let mut mixed: Vec<FrameSound> = Vec::new();
     for (kind, world) in queued {
-        let protected = matches!(kind, SoundKind::Alert);
+        let protected = crate::mixer::spec(kind).weight == Weight::Protected;
         let positioned = world.is_some() && !protected;
         let gain = if protected {
             1.0

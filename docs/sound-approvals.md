@@ -38,3 +38,50 @@ shows it as a puff of smoke.
 
 The zap plays at the emitter only where the viewer sees the defender, once for
 each shell it stops.
+
+## Spire and Lattice
+
+Approved by Connor by ear on 2026-10-13 from an audition of six options per
+voice. The Spire's launch unlatches its deck locks into a pressure blast and a
+receding roar, the Avalanche's rocket language at strategic scale. A hostile
+warhead's first sighting plays the under-attack alert's falling tritone, doubled
+an octave down and repeated, and is protected like that alert. The detonation is
+the rocket impact grown to strategic size. A Lattice pod's launch is a tight
+pressure pop into a rising hiss. The interception, warhead flight and
+interceptor flight followed in a second round (below).
+
+| Production clip          | Duration | Mixer gain | SHA-256                                                            |
+| ------------------------ | -------- | ---------- | ------------------------------------------------------------------ |
+| `spire_launch.wav`       | 2.20 s   | 0.50       | `8738e26f6daec50f38ff9d381682a42a143521b09de4ac96b9e153cd7c18039c` |
+| `incoming_warning.wav`   | 0.95 s   | 0.40       | `4abc0168ecd66353cbec9a9e2316964f2a696e769671c54370b0807b37cc934d` |
+| `warhead_detonation.wav` | 2.60 s   | 0.65       | `061059717a4a7b43abf92c4150674d603f97a2f0603cb6a2332faa3a679c4040` |
+| `interceptor_launch.wav` | 0.50 s   | 0.35       | `5d3c7e6a91c406c81762be260bb38b3169d3d584cc2ff82951c1df543b3c56d6` |
+
+The launch, warning and detonation sit in a `strategic` category capped at 3 s:
+a silo fires at most once a minute, so its cues may outlast a weapon report
+without crowding the mix. All four clips round when quantizing to PCM, like the
+Avalanche sequence.
+
+### Second round
+
+Approved by Connor by ear on 2026-10-13 from a second audition: six
+interceptions, five warhead motors and five interceptor motors. The interception
+is the detonation's small sibling in the sky, its loudness set between the
+rocket impact and the artillery boom. The warhead's motor carries the launch's
+roar band on as a throbbing loop; the interceptor's is a thin, bright needle
+hiss. Both loops keep the Avalanche motor's four-second periodic contract and
+compact level. The Spire assembly sound was dropped.
+
+| Production clip          | Duration | Mixer gain | SHA-256                                                            |
+| ------------------------ | -------- | ---------- | ------------------------------------------------------------------ |
+| `interception.wav`       | 1.00 s   | 0.68       | `d2c2412d0567d65108ce1096880ef576fde7029706ee36fd65ec7e77cb350293` |
+| `warhead_flight.wav`     | 4 s loop | 0.35       | `b85c23aae2abfb1fc247c7e7e6998dcef0d4b71575057333b604aa7f6334f9c2` |
+| `interceptor_flight.wav` | 4 s loop | 0.30       | `077aab9f1523779c6ae787fef587eef67dc7dff11da3ca168eef4528f5d2f1c1` |
+
+The interception sounds when the interceptor reaches the warhead in the sky, 0.4
+s after the simulation stops it, on the same clock the burst draws on. The
+warhead motor loops for every warhead the viewer may know of, as drawn: it fades
+in over the launch's receding roar and out as the warhead stops burning for its
+dive, and carries on through the flight that runs on after an interception until
+the burst. The interceptor motor loops through the interceptor's visible climb
+from its pod.

@@ -656,7 +656,7 @@ fn legal_units<'a>(
         kind.stats()
             .requires
             .iter()
-            .all(|required| completed.contains(required))
+            .all(|need| completed.contains(&need.kind))
     })
 }
 

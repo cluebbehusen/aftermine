@@ -95,7 +95,7 @@ impl Production {
             .stats()
             .requires
             .iter()
-            .find(|req| !self.selected.tech.contains(req))
+            .find(|req| !self.selected.meets(**req))
         {
             batch.reason = Some(format!("needs a standing {}", entity_name(req.name())));
             return Some(batch);

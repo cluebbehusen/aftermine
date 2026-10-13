@@ -160,24 +160,23 @@ fn wide_mix_bounds_distinct_minor_voices_but_keeps_heavy_threats() {
 }
 
 #[test]
-fn attack_alert_bypasses_position_zoom_and_voice_budget() {
-    let mut queued = vec![(SoundKind::Alert, Some(vec2(10_000.0, 10_000.0)))];
-    queued.extend([
-        (SoundKind::Laser, Some(Vec2::ZERO)),
-        (SoundKind::ScuttlerFire, Some(Vec2::ZERO)),
-        (SoundKind::SentinelFire, Some(Vec2::ZERO)),
-        (SoundKind::WardenFire, Some(Vec2::ZERO)),
-        (SoundKind::LancerFire, Some(Vec2::ZERO)),
-        (SoundKind::TalonFire, Some(Vec2::ZERO)),
-    ]);
-    let mixed = frame_mix(queued, Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
-    let alert = mixed
-        .iter()
-        .find(|event| event.kind == SoundKind::Alert)
-        .unwrap();
+fn protected_alerts_bypass_position_zoom_and_voice_budget() {
+    for protected in [SoundKind::Alert, SoundKind::IncomingWarning] {
+        let mut queued = vec![(protected, Some(vec2(10_000.0, 10_000.0)))];
+        queued.extend([
+            (SoundKind::Laser, Some(Vec2::ZERO)),
+            (SoundKind::ScuttlerFire, Some(Vec2::ZERO)),
+            (SoundKind::SentinelFire, Some(Vec2::ZERO)),
+            (SoundKind::WardenFire, Some(Vec2::ZERO)),
+            (SoundKind::LancerFire, Some(Vec2::ZERO)),
+            (SoundKind::TalonFire, Some(Vec2::ZERO)),
+        ]);
+        let mixed = frame_mix(queued, Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
+        let alert = mixed.iter().find(|event| event.kind == protected).unwrap();
 
-    assert_eq!(alert.gain, 1.0);
-    assert!(!alert.positioned);
+        assert_eq!(alert.gain, 1.0, "{protected:?}");
+        assert!(!alert.positioned, "{protected:?}");
+    }
 }
 
 #[test]

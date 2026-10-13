@@ -36,6 +36,14 @@ pub struct Presentation {
     /// The live victims defense mounts follow between reports. The last
     /// legal angle remains in `aim_buildings` after a target disappears.
     pub(crate) aim_building_targets: HashMap<u32, Target>,
+    /// The Lattice pods that fired: (battery id, pod) -> (angle, fx-clock
+    /// stamp). A pod holds its shot's bearing briefly, then swings back
+    /// north to reload. Presentation only.
+    pub(crate) pod_shots: HashMap<(u32, u8), (f32, f32)>,
+    /// Hostile warheads already announced, so each warns once.
+    pub(crate) warned_warheads: std::collections::HashSet<oxide_sim::WarheadId>,
+    /// Interceptors in flight ahead of their forecast stops.
+    pub(crate) prelaunches: Vec<super::fx::Prelaunch>,
     /// Action-driven authored sprite state. This remembers only transient
     /// output events; clearing it never changes simulation truth.
     pub(crate) animations: crate::presentation_animation::AnimationController,
@@ -57,7 +65,8 @@ pub struct Presentation {
     /// host's pause, pinned while it holds.
     pub net_notice: Option<String>,
     /// Scorch decals where buildings died: (world pos, seconds old).
-    pub scorches: Vec<(Vec2, f32)>,
+    /// Scorch decals: where, age in seconds, and width in tiles.
+    pub scorches: Vec<(Vec2, f32, f32)>,
     /// Live under-attack alerts: world position and seconds of age.
     /// Pulsed on the minimap, jumpable, aged out by `update_fx`.
     pub alerts: Vec<(Vec2, f32)>,
@@ -267,6 +276,9 @@ impl Presentation {
             aim_unit_targets: HashMap::new(),
             aim_buildings: HashMap::new(),
             aim_building_targets: HashMap::new(),
+            pod_shots: HashMap::new(),
+            warned_warheads: std::collections::HashSet::new(),
+            prelaunches: Vec::new(),
             animations: crate::presentation_animation::AnimationController::default(),
             track_motion: HashMap::new(),
             slide_motion: HashMap::new(),
@@ -365,6 +377,15 @@ impl Presentation {
         self.sounds_pending.push((SoundKind::Alert, None));
     }
 
+    /// Marks an incoming hostile warhead on the minimap and plays its
+    /// warning. It bypasses the under-attack gate: each warhead warns once,
+    /// even into a region already under attack.
+    pub(super) fn raise_warhead_alert(&mut self, world: Vec2) {
+        self.alerts.push((world, 0.0));
+        self.last_alert = Some(world);
+        self.sounds_pending.push((SoundKind::IncomingWarning, None));
+    }
+
     /// Interpolated draw position for a unit, trailing a collision slide by
     /// its eased lag.
     pub fn draw_pos(&self, id: UnitId, current: chassis::fx::Vec2Fx, alpha: f32) -> Vec2 {
@@ -428,6 +449,9 @@ impl Presentation {
         self.hull_heading.clear();
         self.aim_buildings.clear();
         self.aim_building_targets.clear();
+        self.pod_shots.clear();
+        self.warned_warheads.clear();
+        self.prelaunches.clear();
         self.animations.reset_transients();
         self.animations.reset_workers(state);
         self.audio_timeline.clear();

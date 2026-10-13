@@ -9,6 +9,7 @@ use crate::game::SoundKind;
 use crate::menu::{Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
+use crate::numeric::Fit;
 use crate::render;
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
@@ -64,12 +65,13 @@ pub struct Update {
 /// Every keyboard action is exposed, including contextual cards and navigation.
 fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
     use Action::{
-        Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm, CycleIdleWorker,
-        DeleteSave, HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd, MenuHome, MenuLeft,
-        MenuPageDown, MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft, PanRight, PanUp, Patrol,
-        RecallBookmark, RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
-        ReplayStart, ReplayStats, Retire, ReturnCargo, Run, Salvage, SetBookmark, SetRally, Slot,
-        StopOrScrap, ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
+        Accompany, AssignGroup, Back, Build, BuildCategory, CancelRound, ClearRally, Confirm,
+        CycleIdleWorker, DeleteSave, HomeCamera, Hunt, JumpToLastAlert, Launch, MenuDown, MenuEnd,
+        MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, OrderRound, PanDown,
+        PanLeft, PanRight, PanUp, Patrol, RecallBookmark, RepairUnit, ReplayBack, ReplayEnd,
+        ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats, Retire, ReturnCargo,
+        Run, Salvage, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette,
+        ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
     };
     let mut sections = vec![
         (
@@ -104,12 +106,18 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
             vec![ToggleBuildPalette, Upgrade, SetRally, ClearRally],
         ),
         (
+            "Strategic",
+            vec![Launch, OrderRound, CancelRound, ToggleAutofill],
+        ),
+        (
             "Production",
             (0..crate::action::TRAIN_SLOTS).map(TrainSlot).collect(),
         ),
         (
             "Construction categories",
-            (0..4).map(BuildCategory).collect(),
+            (0..crate::action::BUILD_CATEGORIES.len())
+                .map(|n| BuildCategory(n.fit::<u8>()))
+                .collect(),
         ),
     ];
     for (name, kinds) in crate::action::BUILD_CATEGORIES {

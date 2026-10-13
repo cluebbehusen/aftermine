@@ -69,13 +69,10 @@ pub(crate) fn check(
         .construction
         .as_ref()
         .map_or(&[][..], |construction| construction.requires);
-    let built = |required: &BuildingKind| {
-        observation
-            .my_buildings
-            .iter()
-            .any(|building| building.kind == *required && building.built)
-    };
-    if !requires.iter().all(built) {
+    if !requires
+        .iter()
+        .all(|need| crate::investments::met(observation, *need))
+    {
         return Err(Refusal::Prerequisite);
     }
     let footprint = Footprint::of(kind, anchor);

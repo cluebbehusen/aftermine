@@ -205,9 +205,10 @@ pub enum Command {
         /// The visible enemy, remembered building, or radar contact to prefer.
         target: AttackTarget,
     },
-    /// Clear owned defenses' targeting preferences and resume automatic fire.
+    /// Clear owned defenses' targeting preferences and resume automatic
+    /// fire, and call off a Spire's strike that has not launched.
     ClearFocus {
-        /// Owned completed armed buildings.
+        /// Owned completed armed buildings or Spires.
         buildings: Vec<BuildingId>,
     },
     /// Cancel an own construction site by kind and anchor, clearing every
@@ -310,6 +311,37 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         queue: bool,
     },
+    /// Order one round for a completed magazine building, paid now.
+    /// Rounds assemble one at a time; refused once loaded and ordered
+    /// rounds fill the magazine.
+    OrderRound {
+        /// The Spire or Lattice.
+        building: BuildingId,
+    },
+    /// Cancel the latest ordered round for a full refund. It also turns the
+    /// magazine's autofill off, which would otherwise order the round again.
+    CancelRound {
+        /// The Spire or Lattice.
+        building: BuildingId,
+    },
+    /// Turn automatic round ordering on or off. The sim reads `buildings`
+    /// as a sorted set, and refuses the whole command if any is not the
+    /// issuer's magazine building.
+    SetAutofill {
+        /// The magazine buildings.
+        buildings: Vec<BuildingId>,
+        /// Whether they order rounds on their own.
+        enabled: bool,
+    },
+    /// Order a loaded Spire to strike a tile, seen or not: its deck comes
+    /// about, then the warhead launches. Replaces a strike not yet
+    /// launched; [`Command::ClearFocus`] calls it off.
+    Launch {
+        /// The Spire.
+        building: BuildingId,
+        /// The tile to strike.
+        target: TilePos,
+    },
 }
 
 /// A command attributed to its issuing player. Ownership checks are made
@@ -365,4 +397,6 @@ pub enum RejectReason {
     /// [`EXTRACTOR_SUPPORT_RADIUS`](crate::stats::EXTRACTOR_SUPPORT_RADIUS)
     /// footprint tiles when it starts.
     MissingFoundrySupport,
+    /// The silo holds no warhead to launch.
+    NothingLoaded,
 }

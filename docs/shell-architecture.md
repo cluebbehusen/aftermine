@@ -253,6 +253,12 @@ buildings selected, picks the own unit under the cursor before the ground: new
 units then escort it, and the rally line follows that unit's drawn position,
 ending in a ring instead of a flag. Minimap rally clicks name ground only.
 
+A Spire or Lattice selection shows its magazine cards: Order, Cancel, and the
+Autofill toggle, and on a Spire the armed Launch card. A Launch click on the
+world or the minimap names any tile, seen or not, for every selected loaded
+Spire; while armed, and for a selected own Spire's held strike, the blast's two
+radii draw at the tile with a line from the silo. Stop calls a held strike off.
+
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
@@ -427,13 +433,13 @@ Gameplay touch lives in `input::touch`. Each finger records where it landed
 (`TouchBorn`: world, minimap, other chrome, or the placement ghost), and that
 decides what it may drive for its whole life. A minimap finger steers the camera
 through `render::minimap_world_clamped`, the same clamp the mouse uses, except
-while rally or patrol take minimap taps as targets. A two-finger `Pair` starts
-undecided: a spread past `PAIR_PINCH_PX` zooms, and a pair that rests for
-`BOX_REST_MS` claims a box whose corners follow the fingers. The box appears
-only when claimed, so any box on screen can be dragged and selects when a finger
-lifts; an undecided pair shows nothing and its lift selects nothing. A pair with
-a non-world finger, formed mid-pan, or formed while a mode is armed does
-neither.
+while rally, a strike, or patrol take minimap taps as targets. A two-finger
+`Pair` starts undecided: a spread past `PAIR_PINCH_PX` zooms, and a pair that
+rests for `BOX_REST_MS` claims a box whose corners follow the fingers. The box
+appears only when claimed, so any box on screen can be dragged and selects when
+a finger lifts; an undecided pair shows nothing and its lift selects nothing. A
+pair with a non-world finger, formed mid-pan, or formed while a mode is armed
+does neither.
 
 Touch placement drops a `PlacementGhost` centered under the finger instead of
 placing on the tap. Dragging the ghost moves it by whole tiles, and a still tap
@@ -785,6 +791,24 @@ at, or at a public building's tier when every seat knows it. A public enemy Deep
 Bore out of sight draws above the fog as corner brackets and a drill glyph in
 its owner's color, and as an outlined footprint on the minimap. Markers do not
 change entity positions, selection, picking, or simulation.
+
+Missiles show true to fog for everyone, whoever owns them: a warhead or
+interceptor draws, and its motor loop plays, only while the viewer sees the tile
+under it (`render::sky::missile_seen`). What a seat knows of a warhead from
+`State::known_warheads` draws above the fog regardless: the strike rings of its
+own and tracked hostile warheads, and a contact marker where a known warhead
+flies out of sight, its ring filling toward lock while untracked. In sight, a
+warhead flies its line with a presentation-only altitude: a steep climb, a high
+cruise and a steep dive, lifted above its ground shadow and growing with height,
+with a smoke trail along the arc. Interceptors launch from
+`State::interception_forecast` the meeting time ahead of their stop, so they
+meet the warhead where the simulation stops it; a stop forecast too late flies
+the warhead on to meet its interceptor instead. The Spire deck draws at its
+simulation heading with the round's assembly on it; each Lattice pod turns on
+its own in presentation, toward the warhead its team's forecast assigns, holding
+its shot's bearing and swinging back north to reload. The first time a seat
+knows of a hostile warhead it gets an alert at the impact once known, or where
+the warhead flies.
 
 Settings persists marker timing presets (Standard, Earlier, Later) and size in
 `Config::markers`, applying changes immediately. A config without marker

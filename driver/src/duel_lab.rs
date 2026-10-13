@@ -172,7 +172,7 @@ impl Defense {
     fn prerequisites(self) -> Vec<BuildingKind> {
         let mut kinds: Vec<BuildingKind> = (1..=self.tier)
             .filter_map(|tier| self.kind.tier_stats(tier).construction)
-            .flat_map(|c| c.requires.iter().copied())
+            .flat_map(|c| c.requires.iter().map(|need| need.kind))
             .collect();
         kinds.sort_by_key(|kind| BuildingKind::ALL.iter().position(|k| k == kind));
         kinds.dedup();
@@ -1137,7 +1137,11 @@ pub fn tier(kind: UnitKind) -> u8 {
         .copied()
         .find(|b| b.base_stats().produces.contains(&kind));
     if producer == Some(BuildingKind::Crucible)
-        || kind.stats().requires.contains(&BuildingKind::Crucible)
+        || kind
+            .stats()
+            .requires
+            .iter()
+            .any(|need| need.kind == BuildingKind::Crucible)
     {
         3
     } else if producer == Some(BuildingKind::Foundry) {

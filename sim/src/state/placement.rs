@@ -122,20 +122,28 @@ impl State {
                 }))
     }
 
-    /// Whether `player` owns a completed building of every kind that
-    /// `kind`'s construction requires — the tech tree's construction
-    /// gate, shared verbatim by command validation, the armed placement
-    /// ghost, and every bot. An unconstructible kind trivially passes
-    /// (its own refusal arm answers first).
+    /// Whether `player` meets every prerequisite `kind`'s construction
+    /// names — the tech tree's construction gate, shared verbatim by
+    /// command validation, the armed placement ghost, and every bot. An
+    /// unconstructible kind trivially passes (its own refusal arm answers
+    /// first).
     pub fn prerequisites_met(&self, player: PlayerId, kind: BuildingKind) -> bool {
-        kind.base_stats().construction.is_none_or(|construction| {
-            construction.requires.iter().all(|required| {
-                self.buildings.iter().any(|building| {
-                    building.player == player
-                        && building.hp > 0
-                        && building.built()
-                        && building.kind == *required
-                })
+        kind.base_stats()
+            .construction
+            .is_none_or(|construction| self.requirements_met(player, construction.requires))
+    }
+
+    /// Whether `player` has, for each of `needs`, a completed own building
+    /// of its kind at its tier or above: the one tech gate for
+    /// construction, training and upgrades, for every command source.
+    pub fn requirements_met(&self, player: PlayerId, needs: &[crate::stats::Prerequisite]) -> bool {
+        needs.iter().all(|need| {
+            self.buildings.iter().any(|building| {
+                building.player == player
+                    && building.hp > 0
+                    && building.built()
+                    && building.kind == need.kind
+                    && building.tier >= need.tier
             })
         })
     }

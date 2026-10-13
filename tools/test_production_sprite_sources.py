@@ -16,6 +16,7 @@ from tools.production_sprite_sources import (
     excavator_final,
     finalized,
     installed_defenses_final,
+    lattice_final,
     mechanical_extractor,
     mechanical_final,
     mantle_final,
@@ -23,6 +24,7 @@ from tools.production_sprite_sources import (
     quarry_rocks,
     skyhook_sapper_crucible_final,
     specialists_final,
+    spire_final,
     tier_one_combat_final,
 )
 
@@ -274,6 +276,8 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "crucible",
                 "barricade",
                 "scuttle_charge",
+                "spire",
+                "lattice",
             ),
         )
 
@@ -909,6 +913,189 @@ class MantleSourceTests(unittest.TestCase):
                     "base", move, charges, step / mantle_final.RECHARGE_STEPS
                 )
                 self.assertEqual(actual.tobytes(), expected.tobytes(), (frame, move))
+
+
+def _strongly_changed_pixels(left: Image.Image, right: Image.Image) -> int:
+    difference = ImageChops.difference(left, right)
+    return sum(max(pixel) > 40 for pixel in difference.get_flattened_data())
+
+
+def _place_on_pivot(image: Image.Image, layer: Image.Image, slot: int) -> None:
+    x, y = lattice_final.POD_PIVOTS[slot]
+    half = layer.width // 2
+    image.alpha_composite(layer, (x - half, y - half))
+
+
+class StrategicSourceTests(unittest.TestCase):
+    def test_spire_key_poses_preserve_the_approved_art(self):
+        poses = (
+            (
+                (0.0, 0, 0, 0.0, 0.0),
+                "dbc7e9ed443a2bd2e769377ca0be7995c70047e616f9650ac20da1e100166b3b",
+            ),
+            (
+                (0.0, 2, 21, 1.0, 0.0),
+                "a31ea324eeb25080b90b4492250b40f3cff525f2370d3faa4dd86fba5dbdbe15",
+            ),
+            (
+                (0.0, 4, 38, 1.0, 1.0),
+                "2f78ddd17bede9d465ae7377fb91404d1d087804e56d24c7bf583322b53ed7e6",
+            ),
+            (
+                (0.0, 5, 0, 1.0, 1.0),
+                "747bf87b3487986dbe2b70f7673535ad721a628d85057586a097e2c232a0976d",
+            ),
+            (
+                (135.0, 5, 0, 1.0, 1.0),
+                "3a766ac9dff0d76c7babf2a22d1a6112405fdb0f4f1f929f258c4772b51ca70e",
+            ),
+        )
+        for pose, expected in poses:
+            image = spire_final.render_spire("base", *pose)
+            self.assertEqual(
+                hashlib.sha256(image.tobytes()).hexdigest(), expected, pose
+            )
+
+    def test_lattice_key_poses_preserve_the_approved_art(self):
+        poses = (
+            ({}, "c8cc10b86f1f84904a12fdc19d679f84feefe9239c7f17703a5533d6389bae77"),
+            (
+                {"loads": ("loaded", "loaded"), "clamps": (1.0, 1.0)},
+                "5bb47d9f39acaea888643b7f3d8bd613064bef05360d7688daac9d21a0865f14",
+            ),
+            (
+                {"loads": ("partial", "empty"), "seated": (1, 0), "arm": (0, 7)},
+                "c0ec7c6c9633cb822dd80829e8906d919fd46df7b4fb2b2857dc260b142116ce",
+            ),
+            (
+                {
+                    "headings": (-90.0, 90.0),
+                    "loads": ("loaded", "loaded"),
+                    "clamps": (1.0, 1.0),
+                },
+                "cc65c76c87e205e047be1889c94bf60e7355003b65d73f181ae2f96179758c2a",
+            ),
+        )
+        for pose, expected in poses:
+            image = lattice_final.render_lattice("base", **pose)
+            self.assertEqual(
+                hashlib.sha256(image.tobytes()).hexdigest(), expected, pose
+            )
+
+    def test_spire_layers_stack_onto_the_single_pass_art(self):
+        steps = spire_final.LOCK_STEPS
+        for stack, frame, lower, upper in (
+            (0, 0, 0, 0),
+            (2, 21, steps, 0),
+            *((4, frame, steps, steps) for frame in spire_final.NOSE_FRAMES),
+            (5, 0, steps, steps),
+            (5, spire_final.GANTRY_FRAMES, steps, steps),
+        ):
+            layered = spire_final.render_foundation("base")
+            layered.alpha_composite(spire_final.render_deck("base"))
+            if stack == spire_final.SECTIONS:
+                layered.alpha_composite(spire_final.render_round("base"))
+            elif stack:
+                layered.alpha_composite(spire_final.render_stack("base", stack))
+            if frame in spire_final.NOSE_FRAMES:
+                layered.alpha_composite(spire_final.render_nose("base", frame))
+            layered.alpha_composite(spire_final.render_gantry(frame))
+            layered.alpha_composite(spire_final.render_cover("base"))
+            layered.alpha_composite(
+                spire_final.render_lock(spire_final.LOWER_LOCK_Y, lower)
+            )
+            layered.alpha_composite(
+                spire_final.render_lock(spire_final.UPPER_LOCK_Y, upper)
+            )
+            whole = spire_final.render_spire(
+                "base", 0.0, stack, frame, lower / steps, upper / steps
+            )
+            # Separately filtered layers differ only faintly along shared
+            # edges; a layer one pixel off its registration changes dozens.
+            self.assertLessEqual(_strongly_changed_pixels(layered, whole), 2, frame)
+
+    def test_lattice_layers_stack_onto_the_single_pass_art(self):
+        steps = lattice_final.CLAMP_STEPS
+        for loads, seated, clamps, arm in (
+            (("empty", "empty"), (0, 0), (0, 0), None),
+            (("loaded", "loaded"), (0, 0), (steps, steps), None),
+            (("partial", "empty"), (1, 0), (0, 0), (0, 7)),
+            (
+                ("loaded", "partial"),
+                (0, 2),
+                (steps, 0),
+                (1, lattice_final.NOSE_FRAMES[1]),
+            ),
+        ):
+            layered = lattice_final.render_base()
+            for slot in range(2):
+                _place_on_pivot(layered, lattice_final.render_pod("base"), slot)
+                if loads[slot] == "loaded":
+                    _place_on_pivot(
+                        layered, lattice_final.render_interceptor("base"), slot
+                    )
+                elif seated[slot]:
+                    _place_on_pivot(
+                        layered, lattice_final.render_stack(seated[slot]), slot
+                    )
+                _place_on_pivot(layered, lattice_final.render_clamp(clamps[slot]), slot)
+            if arm is not None:
+                if arm[1] in lattice_final.NOSE_FRAMES:
+                    layered.alpha_composite(lattice_final.render_nose("base", *arm))
+                layered.alpha_composite(lattice_final.render_arm(*arm))
+            layered.alpha_composite(lattice_final.render_cover())
+            whole = lattice_final.render_lattice(
+                "base", (0.0, 0.0), loads, seated, tuple(c / steps for c in clamps), arm
+            )
+            self.assertLessEqual(_strongly_changed_pixels(layered, whole), 2, loads)
+
+    def test_the_gantry_seats_sections_in_order_and_carries_the_nose_last(self):
+        stacks = [
+            spire_final.gantry_stack(f) for f in range(spire_final.GANTRY_FRAMES + 1)
+        ]
+        self.assertEqual(stacks, sorted(stacks))
+        self.assertEqual(stacks[-1], spire_final.SECTIONS)
+        nose_section = spire_final.SECTIONS - 1
+        self.assertTrue(
+            all(
+                spire_final.gantry_stack(f) == nose_section
+                for f in spire_final.NOSE_FRAMES
+            )
+        )
+        for slot in range(2):
+            seated = [
+                lattice_final.arm_pose(slot, f)["seated"]
+                for f in range(1, lattice_final.ARM_FRAMES + 1)
+            ]
+            self.assertEqual(seated, sorted(seated))
+            self.assertEqual(seated[-1], lattice_final.PARTS)
+            for frame in lattice_final.NOSE_FRAMES:
+                self.assertEqual(
+                    lattice_final.arm_pose(slot, frame)["seated"],
+                    lattice_final.PARTS - 1,
+                )
+
+    def test_rotating_layers_center_on_their_pivots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry: dict[str, Image.Image] = {}
+            spire_final.install_spire(registry, Path(directory))
+            lattice_final.install_lattice(registry, Path(directory))
+        for key, image in registry.items():
+            if key.startswith("rig_spire_warhead"):
+                size = spire_final.WARHEAD_SIZE
+            elif key.startswith(("rig_lattice_pod", "rig_lattice_interceptor")):
+                size = lattice_final.POD_SIZE
+            elif key.startswith(("rig_lattice_stack", "rig_lattice_clamp")):
+                size = lattice_final.POD_SIZE
+            elif key.startswith("rig_lattice_launch"):
+                size = lattice_final.LAUNCH_SIZE
+            else:
+                size = specialists_final.SIZE
+            self.assertEqual(image.size, (size, size), key)
+        # A pod layer's bounds straddle its center, the pivot it turns on.
+        left, top, right, bottom = registry["rig_lattice_pod"].getbbox()
+        self.assertLess(abs((left + right) / 2 - lattice_final.POD_SIZE / 2), 1)
+        self.assertLess(top, lattice_final.POD_SIZE / 2 < bottom)
 
 
 if __name__ == "__main__":

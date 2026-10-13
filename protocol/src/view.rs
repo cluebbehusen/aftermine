@@ -223,6 +223,15 @@ pub struct FogView {
     /// Bores, sorted by (y, x, owner). They carry no condition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_buildings: Vec<PublicBuildingView>,
+    /// Magazines the seat may know of, in building-id order: its team's in
+    /// full, hostile loaded rounds and silo decks only while in sight.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub magazines: Vec<oxide_sim::strike::KnownMagazine>,
+    /// Warheads in flight the seat may know of, in id order: its team's in
+    /// full, hostile ones while held in sight or radar, their line once
+    /// tracked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warheads: Vec<oxide_sim::strike::KnownWarhead>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -364,6 +373,8 @@ impl FogView {
                     anchor: [public.anchor.x, public.anchor.y],
                 })
                 .collect(),
+            magazines: state.known_magazines(player),
+            warheads: state.known_warheads(player),
         }
     }
 }

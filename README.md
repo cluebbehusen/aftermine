@@ -49,6 +49,8 @@ The main strategic layers:
 - buildable expansions, renewable Extractor claims strengthened by nearby
   Foundries, upgrades, and late-game recovery income;
 - persistent wreck salvage, so holding a battlefield has economic value;
+- strategic missiles: a Spire's warhead strikes any tile, and only a
+  radar-backed Lattice that has tracked it can stop it;
 - free-for-all and team maps as well as conventional duels.
 
 The in-game Roster is the best reference for exact units, buildings, costs,
@@ -74,7 +76,8 @@ shortcuts cover the core loop:
 | `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.         |
 | `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                    |
 | `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                    |
-| `B`, then Q/E/R/T, then Q/E/R/T          | Choose a construction category, then a building.                                                                          |
+| `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                          |
+| `M`, then any tile, with a Spire         | Launch its warhead; the deck turns to face the tile first. `O` orders a round; Shift+`O` toggles autofill.                |
 | `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                   |
 | `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                  |
 | `X`                                      | Stop selected units, or cancel a selected new construction site.                                                          |

@@ -298,14 +298,20 @@ pub(super) fn run(
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
+    let mut warhead_launches = Vec::new();
+    warheads::aim_and_launch(state, &mut warhead_launches, events);
     // Interception sees the shells still in flight before any arrive, so a
     // shell is stoppable on its arrival tick. Arrivals join this tick's
     // volley; launches land on later ticks (flight is at least one tick), so
     // ordering here cannot matter. The aura reads the whole volley, so it
-    // comes after.
+    // comes after. Warheads follow the same rule, and point defense never
+    // sees them.
     point_defense::run(state, events);
+    warheads::intercept(state, events);
     land_shells(state, &mut hits, events);
+    warheads::land(state, &mut hits, events);
     state.shells.extend(launches);
+    state.warheads.extend(warhead_launches);
     repair_bay_aura(state, &hits, &mut heals, &mut builds);
     crucible_smelter(state);
     let salvaged = resolve_hits(state, &hits, &builds, &heals, &drains, events);
@@ -321,6 +327,7 @@ mod locomotion;
 pub(super) mod logistics;
 mod point_defense;
 pub(super) mod retire;
+mod warheads;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{

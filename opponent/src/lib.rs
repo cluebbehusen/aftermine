@@ -19,6 +19,7 @@ mod profile;
 mod public;
 mod saving;
 mod trace;
+mod warheads;
 mod workers;
 
 pub use checkpoint::Checkpoint;

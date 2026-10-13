@@ -58,6 +58,11 @@ pub enum Purchase {
         /// The upgraded building.
         building: BuildingId,
     },
+    /// A round ordered for a magazine building.
+    Round {
+        /// The Spire or Lattice.
+        building: BuildingId,
+    },
 }
 
 /// A saving target as one decision saw it.

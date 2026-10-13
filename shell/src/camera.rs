@@ -29,7 +29,14 @@ pub struct Camera {
     zoom_max: f32,
     viewport: Vec2,
     map_size: Vec2,
+    /// A decaying jolt, in logical pixels, from a nearby heavy blast. It
+    /// moves the whole view, so screen and world points stay paired.
+    shake: f32,
+    shake_time: f32,
 }
+
+/// How fast a jolt dies away, per second.
+const SHAKE_DECAY: f32 = 7.0;
 
 impl Camera {
     /// A camera looking at `focus` on a `width`×`height`-tile map,
@@ -44,6 +51,8 @@ impl Camera {
             zoom_max: ZOOM_MAX,
             viewport,
             map_size: vec2(width as f32, height as f32),
+            shake: 0.0,
+            shake_time: 0.0,
         };
         camera.clamp();
         camera
@@ -65,12 +74,28 @@ impl Camera {
 
     /// Screen pixels for a world point.
     pub fn to_screen(&self, world: Vec2) -> Vec2 {
-        (world - self.center) * self.zoom + self.viewport * 0.5
+        (world - self.center) * self.zoom + self.viewport * 0.5 + self.shake_offset()
     }
 
     /// World point under a screen pixel.
     pub fn to_world(&self, screen: Vec2) -> Vec2 {
-        (screen - self.viewport * 0.5) / self.zoom + self.center
+        (screen - self.viewport * 0.5 - self.shake_offset()) / self.zoom + self.center
+    }
+
+    /// Jolts the view by up to `pixels`, keeping a stronger jolt underway.
+    pub fn kick(&mut self, pixels: f32) {
+        self.shake = self.shake.max(pixels);
+    }
+
+    fn shake_offset(&self) -> Vec2 {
+        if self.shake <= 0.0 {
+            return Vec2::ZERO;
+        }
+        // Two incommensurate rates read as a rattle, not a sway.
+        vec2(
+            (self.shake_time * 73.0).sin(),
+            (self.shake_time * 59.0).cos(),
+        ) * self.shake
     }
 
     /// Pans by a world-space delta.
@@ -91,6 +116,14 @@ impl Camera {
 
     /// Advances the zoom glide. Call once per frame.
     pub fn update(&mut self, dt: f32) {
+        if self.shake > 0.0 {
+            self.shake_time += dt;
+            self.shake *= (-SHAKE_DECAY * dt).exp();
+            if self.shake < 0.25 {
+                self.shake = 0.0;
+                self.shake_time = 0.0;
+            }
+        }
         if self.zoom == self.target_zoom {
             self.zoom_anchor = None;
             return;

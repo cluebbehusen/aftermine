@@ -272,6 +272,7 @@ fn targets_switch_only_for_a_clearly_better_investment() {
 
     saving.settle(
         &observation,
+        &map(&saturated(0)),
         &[candidate(fabricator, 400)],
         500,
         0,
@@ -284,7 +285,14 @@ fn targets_switch_only_for_a_clearly_better_investment() {
         candidate(Investment::Reclaimer, 549),
         candidate(fabricator, 400),
     ];
-    saving.settle(&observation, &near, 500, 20, &mut memory);
+    saving.settle(
+        &observation,
+        &map(&saturated(0)),
+        &near,
+        500,
+        20,
+        &mut memory,
+    );
     assert_eq!(saving.investment(), Some(fabricator), "a near tie holds");
     assert_eq!(saving.protected(), 110, "half of the earnings join it");
 
@@ -292,12 +300,20 @@ fn targets_switch_only_for_a_clearly_better_investment() {
         candidate(Investment::Reclaimer, 550),
         candidate(fabricator, 400),
     ];
-    saving.settle(&observation, &clear, 500, 0, &mut memory);
+    saving.settle(
+        &observation,
+        &map(&saturated(0)),
+        &clear,
+        500,
+        0,
+        &mut memory,
+    );
     assert_eq!(saving.investment(), Some(Investment::Reclaimer));
     assert_eq!(saving.protected(), 110, "protected scrap carries over");
 
     saving.settle(
         &observation,
+        &map(&saturated(0)),
         &[candidate(fabricator, 100)],
         500,
         0,
@@ -362,6 +378,7 @@ fn reclaimers_wait_for_the_drip_and_refineries_need_a_fabricator() {
     assert_eq!(
         investments::step(
             &observation,
+            &model,
             Investment::Upgrade {
                 building: reclaimer,
                 tier: 1
@@ -681,7 +698,14 @@ fn a_scaffold_stays_pending_until_its_ground_is_confirmed() {
     }];
     let mut memory = Memory::default();
     let mut saving = Saving::default();
-    saving.settle(&observation, &candidates, 500, 0, &mut memory);
+    saving.settle(
+        &observation,
+        &map(&saturated(0)),
+        &candidates,
+        500,
+        0,
+        &mut memory,
+    );
     let anchor = TilePos::new(9, 8);
     saving.attempted(Step::Build(BuildingKind::Fabricator), anchor);
 
@@ -693,13 +717,27 @@ fn a_scaffold_stays_pending_until_its_ground_is_confirmed() {
     scaffold.provisional = true;
     observation.my_buildings.push(scaffold);
     observation.tick = 12;
-    saving.settle(&observation, &candidates, 500, 0, &mut memory);
+    saving.settle(
+        &observation,
+        &map(&saturated(0)),
+        &candidates,
+        500,
+        0,
+        &mut memory,
+    );
     assert!(saving.pending(), "a scaffold is not yet a site");
     assert_eq!(saving.investment(), Some(fabricator));
 
     observation.my_buildings.pop();
     observation.tick = 24;
-    saving.settle(&observation, &candidates, 500, 0, &mut memory);
+    saving.settle(
+        &observation,
+        &map(&saturated(0)),
+        &candidates,
+        500,
+        0,
+        &mut memory,
+    );
     assert!(!saving.pending());
     assert!(
         memory.failed(BuildingKind::Fabricator, anchor, 24),

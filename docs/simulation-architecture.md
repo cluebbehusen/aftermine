@@ -82,11 +82,13 @@ Phase order is game behavior. `State::tick` performs:
    provisional sites whose full footprints are visible.
 2. Validate and apply this tick's commands in their recorded order, refunding
    unstarted sites after their last worker commitment is replaced.
-3. Apply recurring income, advance production queues, and spawn completed units.
+3. Apply recurring income, let autofilling magazines buy a round, assemble
+   ordered rounds, advance production queues, and spawn completed units.
 4. Cancel unstarted construction over known mines, then decay unclaimed
    tier-zero construction sites on their global cadence.
-5. Run unit brains and building behavior, land arriving shells, and resolve
-   buffered damage, construction, salvage, and repair.
+5. Run unit brains and building behavior, turn silo decks and launch aligned
+   strikes, intercept shells and tracked warheads, land arriving shells and
+   warheads, and resolve buffered damage, construction, salvage, and repair.
 6. Resolve boarding and unloading after every unit has decided.
 7. Evict pathless ground bodies from newly claimed blocking footprints.
 8. Follow paths, then resolve same-domain unit collisions.
@@ -97,13 +99,15 @@ Phase order is game behavior. `State::tick` performs:
     dismantling meter filled, deposit eligible wreck salvage, and refund
     unstarted sites with no surviving worker commitments.
 12. Apply wreck decay on its global cadence.
-13. Rebuild team-shared visibility and reconcile fog memory. Activate or refund
-    newly visible provisional sites. Newly discovered mines cancel unstarted
-    sites before the next command. Tile goals whose clicked tile the owner's
-    team has now explored take their spread slots, and units left without a
-    route drop their stall counts.
+13. Rebuild team-shared visibility and reconcile fog memory, including each
+    team's hold on hostile warheads in flight. Activate or refund newly visible
+    provisional sites. Newly discovered mines cancel unstarted sites before the
+    next command. Tile goals whose clicked tile the owner's team has now
+    explored take their spread slots, and units left without a route drop their
+    stall counts.
 14. Determine victory or draw from surviving, non-resigned teams and discard any
-    remaining pending crashes when the match ends.
+    remaining pending crashes, warheads in flight and warhead holds when the
+    match ends.
 
 Shots and hp work are buffered while actors decide against stable positions, hp,
 and live entity tables. Orders, paths, harvesting, and billing may still change
@@ -779,6 +783,58 @@ state exactly on kinds with point defense, charges within the kind's, a counter
 short of a full recharge, and a resting counter while full. Both fog projections
 report a visible unit's charges.
 
+Point defense never sees a warhead; only a Lattice stops one.
+
+## Warheads
+
+A Spire and a Lattice each keep a magazine of prepaid rounds: loaded rounds,
+paid rounds not yet assembled, the assembly meter, and an autofill flag. Rounds
+are ordered like training, paid at order time and refunded in full when
+cancelled or when the building is salvaged; loaded rounds and destroyed
+buildings refund nothing. They assemble one at a time. With autofill on, a
+magazine with room and nothing ordered buys its next round in the production
+phase, in building-id order, whenever the bank covers it without spending a
+stranded seat's recovery package. Cancelling a round also turns autofill off, so
+the round is not bought again the same tick. Autofill starts on for the Lattice
+and off for the Spire.
+
+A Spire's launch deck has a heading that starts toward the map centre. `Launch`
+holds a strike on any tile, seen or not, while a warhead is loaded; each tick
+the deck turns toward it at the silo's rate and launches once aligned.
+`ClearFocus` calls a held strike off. The warhead flies the straight line from
+the silo's centre to the tile centre at a fixed speed, unguided, and is stored
+with an id, its owner and silo, both ends, and its launch and arrival ticks.
+Validation requires the flight time to match its line.
+
+On arrival it bursts with one falloff splash for every hostile target: full
+damage within an inner radius, fading linearly to nothing at an outer radius,
+measured to a building's footprint and a unit's position, airborne units
+included. The only target-specific rule is a building kind's warhead resistance,
+which today only the Foundry has. Hits join the tick's buffered volley, so fire
+wins and retaliation behave as for any other shot.
+
+Each team holds, per hostile warhead it has seen, the ticks it has kept the
+warhead's current tile in true sight or within an allied Array's radar ring; the
+hold need not be continuous and is shared by teammates. A warhead is tracked
+once the hold reaches its threshold, and completing a track gives the silo away:
+the line starts at its centre, so the team remembers a Spire there, intact for
+all it knows, like any remembered building. Each tick, before arrivals land, a
+built, loaded Lattice stops a hostile warhead its team has tracked when both the
+warhead's impact point and its current position lie inside its ring. The flight
+ends inside a convex disc, so this happens on the ring crossing or on the tick
+tracking completes inside, never on the launch tick. Pairs are assigned
+greedily: earliest ring entry, then arrival, then the distances from the
+battery's centre to the warhead and to its impact, then which side of the flight
+line the battery stands on, and list order only for exact coincidences. One
+interceptor stops one warhead, and a battery may spend both in one tick.
+
+`State::known_magazines` and `State::known_warheads` decide what a seat knows:
+its team's magazines and warheads in full; a hostile magazine's loaded rounds
+and deck facing while in sight; a hostile warhead while its team holds it in
+sight or radar, with its line once tracked, its owner only in true sight, and
+the viewer team's predicted interceptor. Both fog projections carry exactly
+these.
+
 ## Fog, memory, radar, and teams
 
 Each seat has `visible` and `explored` grids. Visibility is rebuilt every tick
@@ -863,5 +919,6 @@ map rather than an exhaustive test inventory.
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
+| Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                             |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

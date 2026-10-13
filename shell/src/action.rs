@@ -31,7 +31,8 @@ impl Context {
             Self::Buildings => 4,
             Self::Production => 8,
             Self::Construction => 16,
-            Self::BuildCategory(n) => 32 << n.min(3),
+            Self::BuildCategory(n @ 0..=3) => 32 << n,
+            Self::BuildCategory(_) => 8192,
             Self::Playback => 512,
             Self::FinalMap => 1024,
             Self::Menu => 2048,
@@ -39,7 +40,9 @@ impl Context {
     }
 }
 const UNITS: u16 = 2 | 4096;
-const LIVE: u16 = 511 | 4096;
+/// Every build category's context bit, Construction's included.
+const CATEGORIES: u16 = 0b1_1111_0000 | 8192;
+const LIVE: u16 = 511 | 4096 | 8192;
 const WORLD: u16 = LIVE | 512 | 1024;
 
 /// Production hotkey slots a selected factory exposes; no factory may
@@ -47,7 +50,7 @@ const WORLD: u16 = LIVE | 512 | 1024;
 pub const TRAIN_SLOTS: u8 = 6;
 
 /// Categories and card order are shared by rendering and keyboard dispatch.
-pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 4] = [
+pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 5] = [
     (
         "Economy",
         &[BuildingKind::Reclaimer, BuildingKind::Extractor],
@@ -78,6 +81,7 @@ pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 4] = [
             BuildingKind::ScuttleCharge,
         ],
     ),
+    ("Strategic", &[BuildingKind::Spire, BuildingKind::Lattice]),
 ];
 pub fn building_category(kind: BuildingKind) -> u8 {
     (BUILD_CATEGORIES
@@ -139,6 +143,14 @@ pub enum Action {
     Accompany,
     /// No default key: one keystroke should not scrap an army.
     Retire,
+    /// Arm the next world or minimap click as the selected Spires' strike.
+    Launch,
+    /// Order a round for the selected Spire or Lattice.
+    OrderRound,
+    /// No default key: refund the latest paid round.
+    CancelRound,
+    /// Turn the selected magazines' autofill on or off.
+    ToggleAutofill,
 }
 impl Action {
     pub fn label(self) -> String {
@@ -175,6 +187,10 @@ impl Action {
             Self::ReturnCargo => "Return cargo".into(),
             Self::Accompany => "Accompany".into(),
             Self::Retire => "Retire at a Crucible".into(),
+            Self::Launch => "Launch warhead".into(),
+            Self::OrderRound => "Order round".into(),
+            Self::CancelRound => "Cancel round".into(),
+            Self::ToggleAutofill => "Toggle autofill".into(),
             Self::ReplayPause => "Pause replay".into(),
             Self::ReplayBack => "Seek back 25 seconds".into(),
             Self::ReplayForward => "Seek forward 25 seconds".into(),
@@ -198,12 +214,16 @@ impl Action {
             Self::PanLeft | Self::PanRight | Self::PanUp | Self::PanDown => WORLD,
             Self::Back => WORLD | 2048,
             Self::TrainSlot(_) | Self::SetRally | Self::ClearRally => 8,
-            Self::Upgrade => 4 | 8,
+            Self::Upgrade
+            | Self::Launch
+            | Self::OrderRound
+            | Self::CancelRound
+            | Self::ToggleAutofill => 4 | 8,
             Self::StopOrScrap => UNITS | 4,
             Self::Patrol | Self::Accompany | Self::Retire => UNITS,
-            Self::Salvage | Self::Run | Self::Hunt | Self::RepairUnit => UNITS | 0b1_1111_0000,
+            Self::Salvage | Self::Run | Self::Hunt | Self::RepairUnit => UNITS | CATEGORIES,
             Self::Unload => 2,
-            Self::ReturnCargo => 4096 | 0b1_1111_0000,
+            Self::ReturnCargo => 4096 | CATEGORIES,
             Self::BuildCategory(_) => 16,
             Self::Build(kind) => Context::BuildCategory(building_category(kind)).bit(),
             Self::ReplayPause
@@ -236,7 +256,8 @@ impl Action {
         match self {
             Self::Slot(n) | Self::AssignGroup(n) => (1..=5).contains(&n),
             Self::TrainSlot(n) => n < TRAIN_SLOTS,
-            Self::SetBookmark(n) | Self::RecallBookmark(n) | Self::BuildCategory(n) => n < 4,
+            Self::SetBookmark(n) | Self::RecallBookmark(n) => n < 4,
+            Self::BuildCategory(n) => usize::from(n) < BUILD_CATEGORIES.len(),
             Self::ReplaySpeed(n) => n < 8,
             Self::Build(kind) => BUILD_CATEGORIES
                 .iter()
@@ -284,12 +305,12 @@ impl BindingMap {
     pub fn classic() -> Self {
         use Action::{
             Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm,
-            CycleIdleWorker, DeleteSave, HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd,
-            MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft,
-            PanRight, PanUp, Patrol, RecallBookmark, RepairUnit, ReplayBack, ReplayEnd,
-            ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats, ReturnCargo, Run,
-            Salvage, SetBookmark, SetRally, Slot, StopOrScrap, ToggleBuildPalette, ToggleOverlay,
-            TogglePause, TrainSlot, Unload, Upgrade,
+            CycleIdleWorker, DeleteSave, HomeCamera, Hunt, JumpToLastAlert, Launch, MenuDown,
+            MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, OrderRound,
+            PanDown, PanLeft, PanRight, PanUp, Patrol, RecallBookmark, RepairUnit, ReplayBack,
+            ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats,
+            ReturnCargo, Run, Salvage, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
+            ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
         };
         let mut map = Self {
             bindings: Vec::new(),
@@ -319,6 +340,8 @@ impl BindingMap {
             (Unload, Key::U),
             (ReturnCargo, Key::U),
             (Accompany, Key::E),
+            (Launch, Key::M),
+            (OrderRound, Key::O),
             (ReplayPause, Key::Space),
             (ReplayBack, Key::PageUp),
             (ReplayForward, Key::PageDown),
@@ -346,6 +369,14 @@ impl BindingMap {
                 shift: true
             }
         ));
+        assert!(map.rebind(
+            ToggleAutofill,
+            Chord {
+                key: Key::O,
+                ctrl: false,
+                shift: true
+            }
+        ));
         for (action, key) in [
             (PanUp, Key::Up),
             (PanLeft, Key::Left),
@@ -359,7 +390,7 @@ impl BindingMap {
             .enumerate()
         {
             assert!(map.rebind(TrainSlot(n.fit::<u8>()), Chord::bare(key)));
-            if n < 4 {
+            if n < BUILD_CATEGORIES.len() {
                 assert!(map.rebind(BuildCategory(n.fit::<u8>()), Chord::bare(key)));
                 for (_, kinds) in BUILD_CATEGORIES {
                     if let Some(kind) = kinds.get(n) {

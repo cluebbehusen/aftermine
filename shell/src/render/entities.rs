@@ -815,29 +815,46 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             .then(|| sprites.array_rig())
             .flatten()
             .map(|rig| rig.layers(building.tier));
-        let (source, accent_source) =
-            building_body_sources(sprites, building.kind, building.tier, frame.body);
-        draw(
-            screen.x,
-            screen.y,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(dest),
-                source: Some(source),
-                ..Default::default()
-            },
-        );
         let accent_tint = seat_identity_color(game, building.player);
-        draw(
-            screen.x,
-            screen.y,
-            accent_tint,
-            DrawTextureParams {
-                dest_size: Some(dest),
-                source: Some(accent_source),
-                ..Default::default()
-            },
-        );
+        let rigged = building.built()
+            && match building.kind {
+                oxide_sim::BuildingKind::Spire => {
+                    super::strategic::draw_spire(game, sprites, building, screen, dest, accent_tint)
+                }
+                oxide_sim::BuildingKind::Lattice => super::strategic::draw_lattice(
+                    game,
+                    sprites,
+                    building,
+                    screen,
+                    dest,
+                    accent_tint,
+                ),
+                _ => false,
+            };
+        if !rigged {
+            let (source, accent_source) =
+                building_body_sources(sprites, building.kind, building.tier, frame.body);
+            draw(
+                screen.x,
+                screen.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(dest),
+                    source: Some(source),
+                    ..Default::default()
+                },
+            );
+            draw(
+                screen.x,
+                screen.y,
+                accent_tint,
+                DrawTextureParams {
+                    dest_size: Some(dest),
+                    source: Some(accent_source),
+                    ..Default::default()
+                },
+            );
+        }
         if let Some(layers) = array_layers {
             let cycle = match animation.activity {
                 crate::presentation_animation::BuildingActivity::ArraySweep { cycle } => cycle,
@@ -1623,6 +1640,10 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             // Falling fragments and airframes apply fog at their moving positions.
             EffectKind::Falling { .. } => true,
             EffectKind::Burst { at, .. } => sees(at),
+            // Spawned only where the battery or the warhead was legitimately
+            // known; drawn above the fog with the warheads.
+            EffectKind::Interception { .. } => true,
+            EffectKind::WarheadBurst { witnessed, .. } => witnessed,
             EffectKind::Debris { at, .. } => sees(at),
             // Own-order acknowledgments always show: each marks the
             // player's own click or a target the player already knows.
@@ -2034,6 +2055,16 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     oxide_sim::ProjectileKind::Shell,
                 );
             }
+            EffectKind::Interception { .. } => {}
+            EffectKind::WarheadBurst { at, seed, .. } => {
+                super::strategic::draw_warhead_burst(
+                    game,
+                    sprites,
+                    at,
+                    seed,
+                    fx.age_at(game.state.current_tick(), game.presentation.tick_fraction()),
+                );
+            }
             EffectKind::Burst { at, radius } => {
                 let center = game.presentation.camera.to_screen(at);
                 let progress = (fx.age / 0.35).clamp(0.0, 1.0);
@@ -2142,6 +2173,7 @@ enum BuildingRangeKind {
     Radar,
     Repair,
     EconomySupport,
+    Intercept,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2205,7 +2237,7 @@ fn range_stroke(kind: BuildingRangeKind) -> RangeStroke {
         BuildingRangeKind::Vision => RangeStroke::LongDash,
         BuildingRangeKind::Radar => RangeStroke::Dotted,
         BuildingRangeKind::Repair => RangeStroke::DashDot,
-        BuildingRangeKind::EconomySupport => RangeStroke::Solid,
+        BuildingRangeKind::EconomySupport | BuildingRangeKind::Intercept => RangeStroke::Solid,
     }
 }
 
@@ -2219,6 +2251,7 @@ fn range_icon(kind: BuildingRangeKind) -> crate::panel::CapabilityIcon {
         BuildingRangeKind::Radar => CapabilityIcon::Radar,
         BuildingRangeKind::Repair => CapabilityIcon::Repair,
         BuildingRangeKind::EconomySupport => CapabilityIcon::EconomySupport,
+        BuildingRangeKind::Intercept => CapabilityIcon::Intercept,
     }
 }
 
@@ -2411,6 +2444,15 @@ fn visit_building_ranges(
             shape: BuildingRangeShape::Circle {
                 center,
                 radius: oxide_sim::stats::RADAR_DETECT_RADIUS as f32,
+            },
+        });
+    }
+    if let Some(battery) = kind.battery() {
+        visit(BuildingRange {
+            kind: BuildingRangeKind::Intercept,
+            shape: BuildingRangeShape::Circle {
+                center,
+                radius: battery.ring.to_num::<f32>(),
             },
         });
     }
@@ -2833,6 +2875,7 @@ fn range_color(kind: BuildingRangeKind) -> Color {
         BuildingRangeKind::Radar => Color::new(0.43, 0.67, 0.63, 0.58),
         BuildingRangeKind::Repair => Color::new(0.55, 0.69, 0.49, 0.58),
         BuildingRangeKind::EconomySupport => ECONOMY_SUPPORT_COLOR,
+        BuildingRangeKind::Intercept => Color::new(0.62, 0.60, 0.96, 0.60),
     }
 }
 

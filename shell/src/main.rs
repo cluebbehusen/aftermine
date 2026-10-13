@@ -50,6 +50,7 @@ mod slide_motion;
 mod soundtrack;
 mod sprite_contact;
 mod strategic_markers;
+mod strike_audio;
 mod text_field;
 mod theme;
 mod track_motion;

@@ -318,9 +318,9 @@ fn command_bytes(command: &Command) -> usize {
         | Command::Retire { units, .. } => (units.len(), 0),
         Command::Patrol { units, waypoints } => (units.len(), waypoints.len()),
         Command::CancelOrder { units, .. } => (units.len() + 1, 0),
-        Command::FocusFire { buildings, .. } | Command::ClearFocus { buildings } => {
-            (buildings.len(), 0)
-        }
+        Command::FocusFire { buildings, .. }
+        | Command::ClearFocus { buildings }
+        | Command::SetAutofill { buildings, .. } => (buildings.len(), 0),
         Command::Train { .. }
         | Command::Cancel { .. }
         | Command::CancelTrain { .. }
@@ -328,7 +328,10 @@ fn command_bytes(command: &Command) -> usize {
         | Command::Surrender
         | Command::CancelFound { .. }
         | Command::UpgradeBuilding { .. }
-        | Command::Unload { .. } => (0, 0),
+        | Command::Unload { .. }
+        | Command::OrderRound { .. }
+        | Command::CancelRound { .. }
+        | Command::Launch { .. } => (0, 0),
     };
     1024usize
         .saturating_add(ids.saturating_mul(32))

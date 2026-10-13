@@ -26,6 +26,8 @@ BUILDING_STEMS = (
     "crucible",
     "barricade",
     "scuttle_charge",
+    "spire",
+    "lattice",
 )
 
 DEFENSE_MOUNTS = {

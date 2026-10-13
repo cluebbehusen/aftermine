@@ -7157,10 +7157,10 @@ fn construction_menu_shows_every_building_and_shortcuts_arm_the_visible_card() {
     use crate::action::{BUILD_CATEGORIES, building_category};
     let mut game = headless_game();
     let mut input = InputState::new();
-    let keys = [Key::Q, Key::E, Key::R, Key::T];
+    let keys = [Key::Q, Key::E, Key::R, Key::T, Key::Z];
     dispatch_action(&mut game, &mut input, Action::ToggleBuildPalette);
     let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
-    assert_eq!(panel.cards.len(), 14);
+    assert_eq!(panel.cards.len(), 16);
     let (back, buildings) = panel.cards.split_last().expect("cards");
     assert_eq!(back.action, crate::panel::CardAction::ClosePalette);
     for card in buildings {
@@ -7660,7 +7660,7 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
     for (category, (_, kinds)) in BUILD_CATEGORIES.into_iter().enumerate() {
         assert!(bindings.rebind(
             Action::BuildCategory(category.fit::<u8>()),
-            Chord::ctrl([Key::J, Key::K, Key::L, Key::O][category])
+            Chord::ctrl([Key::J, Key::K, Key::L, Key::O, Key::I][category])
         ));
         for kind in kinds {
             let action = Action::Build(*kind);
@@ -7678,7 +7678,7 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
                 &mut game,
                 &mut input,
                 &bindings,
-                [Key::J, Key::K, Key::L, Key::O][category],
+                [Key::J, Key::K, Key::L, Key::O, Key::I][category],
             );
             let panel = crate::panel::build_for_input(&game.view(), &bindings, &input).unwrap();
             let card = panel
@@ -7686,10 +7686,12 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
                 .iter()
                 .find(|c| c.action == crate::panel::CardAction::ArmBuild(*kind))
                 .unwrap();
-            assert!(card.enabled, "{}: {:?}", card.title, card.why);
+            // A Spire also needs a Crucible and a Deep Bore this arena lacks.
+            let enabled = *kind != oxide_sim::BuildingKind::Spire;
+            assert_eq!(card.enabled, enabled, "{}: {:?}", card.title, card.why);
             assert!(card.hotkey.contains("Ctrl+"));
             controls_key_with(&mut game, &mut input, &bindings, old.key);
-            assert_eq!(input.placing, Some(*kind));
+            assert_eq!(input.placing, enabled.then_some(*kind));
             apply_events_with(
                 &mut game,
                 &mut input,
@@ -8307,4 +8309,39 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
             ..
         } if memory.anchor == TilePos::new(30, 24)
     ));
+}
+
+#[test]
+fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
+    let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
+    let mut input = InputState::new();
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    assert!(input.striking.is_empty(), "an empty Spire arms nothing");
+    let spire = game.presentation.selection.buildings[0];
+    let mut json = serde_json::to_value(&*game.state).unwrap();
+    for b in json["buildings"].as_array_mut().unwrap() {
+        if b["id"] == serde_json::json!(spire) {
+            b["magazine"]["loaded"] = 1.into();
+        }
+    }
+    *game.state = serde_json::from_value(json).unwrap();
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    assert_eq!(input.striking, vec![spire]);
+    assert_eq!(input.armed_mode(), Some(ArmedMode::Strike));
+    let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    assert!(input.striking.is_empty());
+    assert!(
+        game.pending.iter().any(|c| matches!(
+            c.command,
+            Command::Launch { building, target }
+                if building == spire && target == chassis::grid::TilePos::new(20, 6)
+        )),
+        "{:?}",
+        game.pending
+    );
+    // Back stands an armed strike down without striking.
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    dispatch_action(&mut game, &mut input, Action::Back);
+    assert!(input.striking.is_empty());
 }

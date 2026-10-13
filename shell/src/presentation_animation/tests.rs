@@ -714,6 +714,8 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         cooldown: 0,
         salvage_drained: 0,
         salvage_credited: 0,
+        magazine: None,
+        launcher: None,
     };
     let mut builder = Unit {
         motor: oxide_sim::Motor::Ground {

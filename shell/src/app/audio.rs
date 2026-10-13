@@ -34,6 +34,18 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
             * app.config.volumes.effects
             * crate::mixer::Mixer::base_volume(SoundKind::RocketMotor),
     );
+    let effects = app.config.volumes.master * app.config.volumes.effects;
+    crate::strike_audio::update(
+        &mut app.mixer.warhead_loops,
+        &mut app.mixer.interceptor_loops,
+        &motor_game,
+        motor_running,
+        (&app.sounds.warhead_motors, &app.sounds.interceptor_motors),
+        (
+            effects * crate::mixer::Mixer::base_volume(SoundKind::WarheadMotor),
+            effects * crate::mixer::Mixer::base_volume(SoundKind::InterceptorMotor),
+        ),
+    );
     let mixed = crate::audio_mix::frame_mix(queued, cam_center, cam_half_extents, cam_zoom);
     let combat_impulse = mixed
         .iter()

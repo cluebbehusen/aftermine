@@ -118,6 +118,13 @@ chassis::listed_enum! {
         /// to enemies until a scout comes close or an Array's detection ring
         /// covers it; detonates under hostile ground machines.
         ScuttleCharge,
+        /// Strategic missile silo: assembles one warhead at a time, turns
+        /// its launch deck toward an ordered tile, and fires it anywhere on
+        /// the map.
+        Spire,
+        /// Interceptor battery: two pods that stop hostile warheads their
+        /// team has tracked once those enter its ring.
+        Lattice,
     }
 }
 
@@ -255,10 +262,10 @@ pub struct UnitStats {
     pub harvest: Option<HarvestStats>,
     /// Fog-of-war reveal radius, in tiles.
     pub vision: i32,
-    /// Building kinds the owner must have completed before training this
-    /// unit; identical for humans and bots. Empty means the producer alone
+    /// Completed own buildings the owner needs before training this unit;
+    /// identical for humans and bots. Empty means the producer alone
     /// decides.
-    pub requires: &'static [BuildingKind],
+    pub requires: &'static [Prerequisite],
     /// Construction work applied per adjacent tick (1 for everyone but
     /// the Excavator).
     pub build_rate: u32,
@@ -433,7 +440,9 @@ impl BuildingKind {
             | BuildingKind::RepairBay
             | BuildingKind::Airworks
             | BuildingKind::Crucible
-            | BuildingKind::Extractor => (2, 2),
+            | BuildingKind::Extractor
+            | BuildingKind::Spire
+            | BuildingKind::Lattice => (2, 2),
         }
     }
 
@@ -454,6 +463,8 @@ impl BuildingKind {
             BuildingKind::Crucible => &[&CRUCIBLE],
             BuildingKind::Barricade => &[&BARRICADE],
             BuildingKind::ScuttleCharge => &[&SCUTTLE_CHARGE],
+            BuildingKind::Spire => &[&SPIRE],
+            BuildingKind::Lattice => &[&LATTICE],
         }
     }
 
@@ -502,7 +513,147 @@ impl BuildingKind {
     pub const fn upgrade_needs_foundry_support(self, tier: u8) -> bool {
         matches!(self, BuildingKind::Extractor) && tier == 0
     }
+
+    /// The rounds this kind stores and what it does with them, if any.
+    pub const fn ordnance(self) -> Option<&'static Ordnance> {
+        match self {
+            BuildingKind::Spire => Some(&SPIRE_ORDNANCE),
+            BuildingKind::Lattice => Some(&LATTICE_ORDNANCE),
+            _ => None,
+        }
+    }
+
+    /// Its magazine, if this kind stores rounds.
+    pub const fn magazine(self) -> Option<&'static MagazineStats> {
+        match self.ordnance() {
+            Some(ordnance) => Some(ordnance.magazine()),
+            None => None,
+        }
+    }
+
+    /// The silo stats, if this kind launches warheads.
+    pub const fn silo(self) -> Option<&'static SiloStats> {
+        match self.ordnance() {
+            Some(Ordnance::Silo(silo)) => Some(silo),
+            _ => None,
+        }
+    }
+
+    /// The battery stats, if this kind intercepts warheads.
+    pub const fn battery(self) -> Option<&'static BatteryStats> {
+        match self.ordnance() {
+            Some(Ordnance::Battery(battery)) => Some(battery),
+            _ => None,
+        }
+    }
+
+    /// The share of warhead damage, in permille, this kind shrugs off.
+    /// Only the Foundry is hardened, so a strike cannot end a match alone.
+    pub const fn warhead_resistance_permille(self) -> u32 {
+        match self {
+            BuildingKind::Foundry => 500,
+            _ => 0,
+        }
+    }
+
+    /// Warhead damage a building of this kind takes from `damage`.
+    pub fn warhead_taken(self, damage: u32) -> u32 {
+        let kept = 1000 - self.warhead_resistance_permille();
+        // Widened so a large damage value cannot overflow the product.
+        u32::try_from(u64::from(damage) * u64::from(kept) / 1000)
+            .expect("resistance never raises damage")
+    }
 }
+
+/// What a magazine building does with its rounds.
+#[derive(Debug, Clone, Copy)]
+pub enum Ordnance {
+    /// Launches warheads at ordered tiles.
+    Silo(SiloStats),
+    /// Spends interceptors on tracked hostile warheads in its ring.
+    Battery(BatteryStats),
+}
+
+impl Ordnance {
+    /// The magazine either kind keeps.
+    pub const fn magazine(&self) -> &MagazineStats {
+        match self {
+            Ordnance::Silo(silo) => &silo.magazine,
+            Ordnance::Battery(battery) => &battery.magazine,
+        }
+    }
+}
+
+/// A building's store of prepaid rounds, assembled one at a time.
+#[derive(Debug, Clone, Copy)]
+pub struct MagazineStats {
+    /// Rounds it holds when full.
+    pub capacity: u8,
+    /// Scrap paid when a round is ordered; cancelling refunds it whole.
+    pub round_cost: u32,
+    /// Ticks to assemble one round.
+    pub round_ticks: u32,
+    /// Whether a new building orders rounds on its own while it can pay.
+    pub autofill: bool,
+}
+
+/// A missile silo.
+#[derive(Debug, Clone, Copy)]
+pub struct SiloStats {
+    /// Its stored warheads.
+    pub magazine: MagazineStats,
+    /// Heading steps per tick the launch deck turns; it fires once aligned.
+    pub turn_rate: u8,
+}
+
+/// An interceptor battery.
+#[derive(Debug, Clone, Copy)]
+pub struct BatteryStats {
+    /// Its stored interceptors.
+    pub magazine: MagazineStats,
+    /// Radius around the battery's centre it defends: a warhead whose
+    /// impact and current position both lie inside may be stopped.
+    pub ring: Fx,
+}
+
+/// A strategic warhead: unguided from launch, one falloff splash on
+/// impact for units and buildings alike.
+#[derive(Debug, Clone, Copy)]
+pub struct WarheadStats {
+    /// Tiles per tick over the ground.
+    pub speed: Fx,
+    /// Damage at or inside `full_radius`.
+    pub peak_damage: u32,
+    /// Radius of full damage around the impact point.
+    pub full_radius: Fx,
+    /// Radius where damage has fallen linearly to nothing.
+    pub outer_radius: Fx,
+}
+
+impl WarheadStats {
+    /// Flight length in ticks (at least one) from `from` to `to`.
+    pub fn flight_ticks(&self, from: chassis::fx::Vec2Fx, to: chassis::fx::Vec2Fx) -> u64 {
+        (from.dist(to) / self.speed).ceil().to_num::<u64>().max(1)
+    }
+
+    /// Damage at `distance` from the impact point, before resistance.
+    pub fn damage_at(&self, distance: Fx) -> u32 {
+        if distance <= self.full_radius {
+            return self.peak_damage;
+        }
+        if distance >= self.outer_radius {
+            return 0;
+        }
+        let fade = (self.outer_radius - distance) / (self.outer_radius - self.full_radius);
+        (Fx::from_num(self.peak_damage) * fade)
+            .floor()
+            .to_num::<u32>()
+    }
+}
+
+/// Ticks, not necessarily consecutive, a team must hold a hostile warhead
+/// in sight or radar before its batteries can stop it.
+pub const WARHEAD_TRACK_TICKS: u8 = 30;
 
 impl BuildingStats {
     /// Whether this kind fires on its own.
@@ -519,9 +670,36 @@ pub struct ConstructionStats {
     pub cost: u32,
     /// Builder-adjacent ticks from site to standing building.
     pub build_ticks: u32,
-    /// Building kinds the owner must have completed before placing this
-    /// one; identical for humans and bots. Empty means always available.
-    pub requires: &'static [BuildingKind],
+    /// Completed own buildings the owner needs before placing this one;
+    /// identical for humans and bots. Empty means always available.
+    pub requires: &'static [Prerequisite],
+}
+
+/// A completed own building that training, construction or an upgrade
+/// needs: one of `kind` at `tier` or above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Prerequisite {
+    /// The building kind.
+    pub kind: BuildingKind,
+    /// The lowest tier that counts.
+    pub tier: u8,
+}
+
+impl Prerequisite {
+    /// Any completed building of `kind`.
+    pub const fn built(kind: BuildingKind) -> Self {
+        Self { kind, tier: 0 }
+    }
+
+    /// A completed building of `kind` upgraded to `tier` or above.
+    pub const fn upgraded(kind: BuildingKind, tier: u8) -> Self {
+        Self { kind, tier }
+    }
+
+    /// What players call it: the tier's own name for an upgrade.
+    pub const fn name(self) -> &'static str {
+        self.kind.tier_name(self.tier)
+    }
 }
 
 /// Time between an airborne casualty and its ground impact.
@@ -1037,7 +1215,7 @@ const EXCAVATOR: UnitStats = UnitStats {
         ticks_per_scrap: 5,
     }),
     vision: 6,
-    requires: &[BuildingKind::Fabricator],
+    requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     build_rate: 2,
     demolition: None,
     transport_size: 2,
@@ -1105,7 +1283,7 @@ const CONDOR: UnitStats = UnitStats {
     aggro_range: Fx::lit("5"),
     harvest: None,
     vision: 6,
-    requires: &[BuildingKind::Crucible],
+    requires: &[Prerequisite::built(BuildingKind::Crucible)],
     build_rate: 1,
     demolition: None,
     transport_size: 0,
@@ -1397,7 +1575,7 @@ const FOUNDRY: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 600,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1488,7 +1666,7 @@ const BASTION: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 210,
         build_ticks: 500,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1544,7 +1722,7 @@ const AIRWORKS: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 200,
         build_ticks: 350,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1564,7 +1742,7 @@ const CRUCIBLE: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 400,
         build_ticks: 550,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1588,9 +1766,64 @@ const SCUTTLE_CHARGE: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 30,
         build_ticks: 60,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
+
+const SPIRE: BuildingStats = BuildingStats {
+    max_hp: 800,
+    vision: 5,
+    produces: &[],
+    weapons: &[],
+    construction: Some(ConstructionStats {
+        cost: 500,
+        build_ticks: 900,
+        requires: &[
+            Prerequisite::built(BuildingKind::Crucible),
+            Prerequisite::upgraded(BuildingKind::Extractor, 1),
+        ],
+    }),
+};
+
+const SPIRE_ORDNANCE: Ordnance = Ordnance::Silo(SiloStats {
+    magazine: MagazineStats {
+        capacity: 1,
+        round_cost: 600,
+        round_ticks: 1200,
+        autofill: false,
+    },
+    turn_rate: 2,
+});
+
+/// The one warhead every silo fires.
+pub const WARHEAD: WarheadStats = WarheadStats {
+    speed: Fx::lit("0.2"),
+    peak_damage: 800,
+    full_radius: Fx::lit("1.5"),
+    outer_radius: Fx::lit("4.0"),
+};
+
+const LATTICE: BuildingStats = BuildingStats {
+    max_hp: 500,
+    vision: 4,
+    produces: &[],
+    weapons: &[],
+    construction: Some(ConstructionStats {
+        cost: 250,
+        build_ticks: 450,
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
+    }),
+};
+
+const LATTICE_ORDNANCE: Ordnance = Ordnance::Battery(BatteryStats {
+    magazine: MagazineStats {
+        capacity: 2,
+        round_cost: 150,
+        round_ticks: 500,
+        autofill: true,
+    },
+    ring: Fx::lit("15"),
+});
 
 const EXTRACTOR: BuildingStats = BuildingStats {
     max_hp: 600,
@@ -1631,7 +1864,7 @@ const HEAVY_TURRET: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 150,
         build_ticks: 300,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1652,7 +1885,7 @@ const BULWARK: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 500,
-        requires: &[BuildingKind::Crucible],
+        requires: &[Prerequisite::built(BuildingKind::Crucible)],
     }),
 };
 
@@ -1673,7 +1906,7 @@ const BURST_FLAK: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 120,
         build_ticks: 250,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1685,7 +1918,7 @@ const REFINERY: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 600,
-        requires: &[BuildingKind::Fabricator],
+        requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
 };
 
@@ -1697,7 +1930,7 @@ const DEEP_BORE: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 350,
         build_ticks: 600,
-        requires: &[BuildingKind::Crucible],
+        requires: &[Prerequisite::built(BuildingKind::Crucible)],
     }),
 };
 
@@ -1710,7 +1943,7 @@ const DEEP_ARRAY: BuildingStats = BuildingStats {
         cost: 150,
         build_ticks: 300,
         // The Crucible itself requires the Fabricator.
-        requires: &[BuildingKind::Crucible],
+        requires: &[Prerequisite::built(BuildingKind::Crucible)],
     }),
 };
 
@@ -1736,7 +1969,7 @@ const CITADEL: BuildingStats = BuildingStats {
     construction: Some(ConstructionStats {
         cost: 250,
         build_ticks: 400,
-        requires: &[BuildingKind::Crucible],
+        requires: &[Prerequisite::built(BuildingKind::Crucible)],
     }),
 };
 
@@ -1795,6 +2028,8 @@ impl BuildingKind {
             BuildingKind::Crucible => "crucible",
             BuildingKind::Barricade => "barricade",
             BuildingKind::ScuttleCharge => "scuttle charge",
+            BuildingKind::Spire => "spire",
+            BuildingKind::Lattice => "lattice",
         }
     }
 
@@ -1836,6 +2071,12 @@ impl BuildingKind {
             BuildingKind::ScuttleCharge => {
                 "Visible while building, concealed when armed. Triggered by hostile ground units or construction. Revealed by scouts or an Array."
             }
+            BuildingKind::Spire => {
+                "Missile silo. Order a warhead, then launch it at any tile: it damages everything near the impact, heavily at the center. Foundries resist it. Only a Lattice can stop it."
+            }
+            BuildingKind::Lattice => {
+                "Holds two interceptors that stop enemy warheads landing in its ring, once sight or radar has tracked them. Reloads on its own."
+            }
         }
     }
 
@@ -1858,6 +2099,8 @@ impl BuildingKind {
             BuildingKind::Crucible => &CRUCIBLE,
             BuildingKind::Barricade => &BARRICADE,
             BuildingKind::ScuttleCharge => &SCUTTLE_CHARGE,
+            BuildingKind::Spire => &SPIRE,
+            BuildingKind::Lattice => &LATTICE,
         }
     }
 

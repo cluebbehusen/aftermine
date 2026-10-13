@@ -2,6 +2,7 @@
 //! for, and how much of its bank is protected from ordinary spending.
 
 use crate::investments::{self, ADOPT, Candidate, Investment, Step};
+use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::grid::TilePos;
 use oxide_sim::observation::ObservationData;
@@ -51,6 +52,7 @@ impl Saving {
     pub(crate) fn settle(
         &mut self,
         observation: &ObservationData,
+        map: &MapModel,
         candidates: &[Candidate],
         share: u32,
         earned: u32,
@@ -102,7 +104,7 @@ impl Saving {
         }
         let Some((_, price)) = self
             .target
-            .and_then(|target| investments::step(observation, target.investment))
+            .and_then(|target| investments::step(observation, map, target.investment))
         else {
             self.protected = self.protected.min(bank);
             return;
@@ -196,6 +198,18 @@ fn outcome(observation: &ObservationData, investment: Investment, attempt: Attem
                     building.anchor == attempt.anchor && queue.contains(&kind)
                 });
             if queued {
+                Outcome::Placed
+            } else {
+                Outcome::Missing
+            }
+        }
+        Step::Round(id) => {
+            let ordered = observation.magazines.iter().any(|magazine| {
+                magazine.building == id
+                    && (magazine.loaded > 0
+                        || magazine.detail.is_some_and(|detail| detail.ordered > 0))
+            });
+            if ordered {
                 Outcome::Placed
             } else {
                 Outcome::Missing

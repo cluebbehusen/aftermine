@@ -273,7 +273,9 @@ pub(crate) fn production_frames(kind: BuildingKind) -> Option<usize> {
         | BuildingKind::RepairBay
         | BuildingKind::Extractor
         | BuildingKind::Barricade
-        | BuildingKind::ScuttleCharge => None,
+        | BuildingKind::ScuttleCharge
+        | BuildingKind::Spire
+        | BuildingKind::Lattice => None,
     }
 }
 
@@ -421,7 +423,9 @@ fn defense_preparation_frame(kind: BuildingKind, progress: f32) -> Option<usize>
         | BuildingKind::Airworks
         | BuildingKind::Crucible
         | BuildingKind::Barricade
-        | BuildingKind::ScuttleCharge => None,
+        | BuildingKind::ScuttleCharge
+        | BuildingKind::Spire
+        | BuildingKind::Lattice => None,
     }
 }
 
@@ -446,7 +450,9 @@ fn defense_attack_frame(kind: BuildingKind, attack: AttackPhase) -> Option<usize
             | BuildingKind::Airworks
             | BuildingKind::Crucible
             | BuildingKind::Barricade
-            | BuildingKind::ScuttleCharge,
+            | BuildingKind::ScuttleCharge
+            | BuildingKind::Spire
+            | BuildingKind::Lattice,
             _,
         ) => return None,
     })

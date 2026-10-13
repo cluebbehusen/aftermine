@@ -6,7 +6,7 @@
 //! state hash.
 
 use crate::command::RejectReason;
-use crate::ids::{BuildingId, PlayerId, Target, UnitId};
+use crate::ids::{BuildingId, PlayerId, Target, UnitId, WarheadId};
 use crate::state::GameResult;
 use crate::stats::UnitKind;
 use chassis::Tick;
@@ -335,6 +335,70 @@ pub enum Event {
     PlayerResigned {
         /// The seat that gave up.
         player: PlayerId,
+    },
+    /// An autofilling magazine bought its next round.
+    RoundAutofilled {
+        /// The magazine building.
+        building: BuildingId,
+        /// Its owner, who paid.
+        player: PlayerId,
+        /// Its kind.
+        kind: crate::stats::BuildingKind,
+        /// Scrap paid.
+        cost: u32,
+    },
+    /// A magazine finished assembling a round.
+    RoundAssembled {
+        /// The magazine building.
+        building: BuildingId,
+        /// Its owner.
+        player: PlayerId,
+        /// Its kind.
+        kind: crate::stats::BuildingKind,
+        /// Rounds now loaded.
+        loaded: u8,
+    },
+    /// A silo launched a warhead.
+    WarheadLaunched {
+        /// The new warhead.
+        warhead: WarheadId,
+        /// The silo.
+        silo: BuildingId,
+        /// The launching seat.
+        player: PlayerId,
+        /// Where it launched.
+        from: Vec2Fx,
+        /// Where it will land.
+        to: Vec2Fx,
+        /// The tick it lands on.
+        arrival: Tick,
+    },
+    /// A battery spent an interceptor on a hostile warhead, which left the
+    /// world without landing.
+    WarheadIntercepted {
+        /// The warhead stopped.
+        warhead: WarheadId,
+        /// The seat that launched it.
+        player: PlayerId,
+        /// The battery.
+        battery: BuildingId,
+        /// The battery's owner.
+        battery_player: PlayerId,
+        /// Which pod fired: the loaded count left after the shot.
+        pod: u8,
+        /// Where the warhead was stopped.
+        at: Vec2Fx,
+        /// Where it would have landed.
+        impact: Vec2Fx,
+    },
+    /// A warhead reached its target and burst.
+    WarheadLanded {
+        /// The warhead.
+        warhead: WarheadId,
+        /// The seat that launched it.
+        player: PlayerId,
+        /// Impact point.
+        at: Vec2Fx,
     },
 }
 

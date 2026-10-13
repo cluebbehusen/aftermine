@@ -1005,6 +1005,79 @@ pub struct Building {
     /// Scrap already credited against `salvage_drained`'s target.
     #[serde(default, skip_serializing_if = "crate::is_default")]
     pub salvage_credited: u32,
+    /// Stored and ordered rounds, on exactly the kinds with a magazine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub magazine: Option<Magazine>,
+    /// The launch deck, on exactly the kinds that launch warheads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launcher: Option<Launcher>,
+}
+
+/// A building's prepaid rounds. Ordered rounds assemble one at a time,
+/// front first; `loaded + ordered` never exceeds the kind's capacity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Magazine {
+    /// Rounds ready to spend.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub loaded: u8,
+    /// Paid rounds not yet assembled.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub ordered: u8,
+    /// Ticks of work on the round being assembled.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub progress: u32,
+    /// Whether the magazine orders a round on its own whenever it has room,
+    /// nothing ordered, and a bank that can pay.
+    pub autofill: bool,
+}
+
+/// A silo's turning launch deck and the tile it was ordered to strike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Launcher {
+    /// The deck's facing, in compass steps; it fires once aligned.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub heading: u8,
+    /// The ordered strike, held until the deck comes about and fires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TilePos>,
+}
+
+/// Whether `magazine` is what a `kind` building can hold: present exactly
+/// on magazine kinds, within capacity, its meter only on an ordered round,
+/// and empty until the building stands.
+fn magazine_fits(kind: BuildingKind, built: bool, magazine: Option<Magazine>) -> bool {
+    match (kind.magazine(), magazine) {
+        (None, None) => true,
+        (Some(stats), Some(magazine)) => {
+            u16::from(magazine.loaded) + u16::from(magazine.ordered) <= u16::from(stats.capacity)
+                && magazine.progress < stats.round_ticks
+                && (magazine.ordered > 0 || magazine.progress == 0)
+                && (built || (magazine.loaded == 0 && magazine.ordered == 0))
+        }
+        _ => false,
+    }
+}
+
+/// Whether `launcher` is what a `kind` building can hold: present exactly
+/// on silos, with a strike only on the map, once built, and while loaded.
+fn launcher_fits(
+    state: &State,
+    kind: BuildingKind,
+    built: bool,
+    magazine: Option<Magazine>,
+    launcher: Option<Launcher>,
+) -> bool {
+    match (kind.silo(), launcher) {
+        (None, None) => true,
+        (Some(_), Some(launcher)) => launcher.target.is_none_or(|target| {
+            state.map.tile(target).is_some()
+                && built
+                && magazine.is_some_and(|magazine| magazine.loaded > 0)
+        }),
+        _ => false,
+    }
 }
 
 /// Whether a completed own Foundry lies inside an Extractor's support radius.
@@ -1217,9 +1290,14 @@ pub struct State {
     pub(crate) shells: Vec<Shell>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) aircraft_crashes: Vec<AircraftCrash>,
+    /// Warheads in flight, sorted by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) warheads: Vec<Warhead>,
     pub(crate) result: Option<GameResult>,
     next_unit_id: u32,
     next_building_id: u32,
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    next_warhead_id: u32,
     /// Derived: one flag per tile, set while a non-stealthy building
     /// covers it. Never serialized or hashed; rebuilt on assembly and load,
     /// and maintained at the placement and removal funnels. Route searches
@@ -1350,9 +1428,11 @@ impl State {
             buildings: Vec::new(),
             shells: Vec::new(),
             aircraft_crashes: Vec::new(),
+            warheads: Vec::new(),
             result: None,
             next_unit_id: 0,
             next_building_id: 0,
+            next_warhead_id: 0,
             building_occupancy: vec![0; cell_count(map_width, map_height)],
         }
     }
@@ -1695,9 +1775,11 @@ impl State {
             buildings,
             shells,
             aircraft_crashes,
-            result: _,
+            warheads,
+            result,
             next_unit_id,
             next_building_id,
+            next_warhead_id,
             building_occupancy: _,
         } = self;
 
@@ -1740,13 +1822,24 @@ impl State {
         {
             return Err(E::StaleBuildingCounter);
         }
+        if !warheads.windows(2).all(|a| a[0].id < a[1].id) {
+            return Err(E::UnsortedWarheads);
+        }
+        if let Some(w) = warheads.last()
+            && w.id.0 >= *next_warhead_id
+        {
+            return Err(E::StaleWarheadCounter);
+        }
         // The counters and the clock increment unchecked in the tick
         // pipeline; a forged extreme is a next-step panic (debug) or a
         // wrap that aliases live ids (release).
         if *tick > TICK_ENVELOPE {
             return Err(E::TickBeyondEnvelope);
         }
-        if *next_unit_id > ID_COUNTER_ENVELOPE || *next_building_id > ID_COUNTER_ENVELOPE {
+        if *next_unit_id > ID_COUNTER_ENVELOPE
+            || *next_building_id > ID_COUNTER_ENVELOPE
+            || *next_warhead_id > ID_COUNTER_ENVELOPE
+        {
             return Err(E::IdCounterBeyondEnvelope);
         }
 
@@ -1792,6 +1885,9 @@ impl State {
         }
         for (i, shell) in shells.iter().enumerate() {
             self.validate_shell(i, shell)?;
+        }
+        for (i, warhead) in warheads.iter().enumerate() {
+            self.validate_warhead(i, warhead, result.is_some())?;
         }
         for (i, view) in vision.iter().enumerate() {
             self.validate_vision(PlayerId::from_index(i), view)?;
@@ -2147,6 +2243,8 @@ impl State {
             cooldown,
             salvage_drained,
             salvage_credited,
+            magazine,
+            launcher,
         } = b;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -2182,6 +2280,12 @@ impl State {
         }
         if *hp == 0 || *hp > stats.max_hp {
             return Err(E::BuildingHpOutOfRange(id));
+        }
+        if !magazine_fits(*kind, b.built(), *magazine) {
+            return Err(E::InvalidMagazine(id));
+        }
+        if !launcher_fits(self, *kind, b.built(), *magazine, *launcher) {
+            return Err(E::InvalidLauncher(id));
         }
         let meter_overrun = match *phase {
             BuildingPhase::Provisional => false,
@@ -2363,6 +2467,47 @@ impl State {
         Ok(())
     }
 
+    fn validate_warhead(
+        &self,
+        i: usize,
+        w: &Warhead,
+        decided: bool,
+    ) -> Result<(), StateIntegrityError> {
+        use StateIntegrityError as E;
+        let Warhead {
+            id: _,
+            player,
+            silo,
+            launch,
+            impact,
+            launched_at,
+            arrival,
+        } = w;
+        if usize::from(player.0) >= self.players.len() {
+            return Err(E::ForeignWarheadOwner(i));
+        }
+        // Landing compares positions against footprints and bodies, and
+        // the flight is always the silo-to-impact line at warhead speed;
+        // a decided match carries no warheads.
+        let on_map = |p: Vec2Fx| {
+            p.x >= Fx::ZERO
+                && p.y >= Fx::ZERO
+                && p.x <= Fx::from_num(self.map.width())
+                && p.y <= Fx::from_num(self.map.height())
+        };
+        if decided
+            || !on_map(*launch)
+            || !on_map(*impact)
+            || *launched_at >= self.tick
+            || *arrival < self.tick
+            || arrival - launched_at != crate::stats::WARHEAD.flight_ticks(*launch, *impact)
+            || silo.0 >= self.next_building_id
+        {
+            return Err(E::InvalidWarheadFlight(i));
+        }
+        Ok(())
+    }
+
     fn validate_vision(
         &self,
         seat: PlayerId,
@@ -2452,6 +2597,21 @@ impl State {
         {
             return Err(E::InvalidContactTracking(seat));
         }
+        if !v.warheads().windows(2).all(|a| a[0].id < a[1].id)
+            || v.warheads().iter().any(|track| {
+                track.exposure == 0
+                    || track.exposure > crate::stats::WARHEAD_TRACK_TICKS
+                    || self
+                        .warheads
+                        .binary_search_by_key(&track.id, |w| w.id)
+                        .map_or(true, |at| !self.hostile(seat, self.warheads[at].player))
+            })
+            || (0..i)
+                .find(|&j| self.players[j].team == self.players[i].team)
+                .is_some_and(|other| self.vision[other].warheads() != v.warheads())
+        {
+            return Err(E::InvalidWarheadTracking(seat));
+        }
         Ok(())
     }
 
@@ -2509,6 +2669,19 @@ impl State {
     /// Falling aircraft awaiting their authoritative ground impact.
     pub fn aircraft_crashes(&self) -> &[AircraftCrash] {
         &self.aircraft_crashes
+    }
+
+    /// Every warhead in flight, omnisciently. Fog-honest readers use
+    /// [`State::known_warheads`].
+    pub fn warheads(&self) -> &[Warhead] {
+        &self.warheads
+    }
+
+    /// The next warhead id, never reused.
+    pub(crate) fn mint_warhead_id(&mut self) -> crate::ids::WarheadId {
+        let id = crate::ids::WarheadId(self.next_warhead_id);
+        self.next_warhead_id += 1;
+        id
     }
 
     /// The seats on the winning team, in id order — empty until a
@@ -2889,6 +3062,23 @@ impl State {
             cooldown: 0,
             salvage_drained: 0,
             salvage_credited: 0,
+            magazine: kind.magazine().map(|stats| Magazine {
+                loaded: 0,
+                ordered: 0,
+                progress: 0,
+                autofill: stats.autofill,
+            }),
+            launcher: kind.silo().map(|_| Launcher {
+                // Toward the map centre, as units face on spawn, so
+                // mirrored silos come about in mirrored time.
+                heading: chassis::compass::heading_of(
+                    Vec2Fx::new(
+                        Fx::from_num(self.map.width()) / 2,
+                        Fx::from_num(self.map.height()) / 2,
+                    ) - crate::geometry::footprint_center(anchor, kind.size()),
+                ),
+                target: None,
+            }),
         }
     }
 
@@ -3447,6 +3637,35 @@ pub enum StateIntegrityError {
     /// Recent allied impact sites are not sorted and deduplicated.
     #[error("player {0} holds salvage incidents out of canonical order")]
     UnsortedSalvageIncidents(PlayerId),
+    /// A magazine on a kind without one, missing from a kind with one,
+    /// past its capacity, with a meter out of range, or stocked before the
+    /// building stands.
+    #[error("building {0} carries an invalid magazine")]
+    InvalidMagazine(BuildingId),
+    /// A launch deck on a kind that launches nothing, missing from a silo,
+    /// or holding a strike off the map, before the silo stands, or with
+    /// nothing loaded.
+    #[error("building {0} carries an invalid launch deck")]
+    InvalidLauncher(BuildingId),
+    /// Warheads are not strictly ordered by id.
+    #[error("warheads are out of id order")]
+    UnsortedWarheads,
+    /// A warhead id at or past the next id the run would hand out.
+    #[error("a warhead id is at or past the warhead counter")]
+    StaleWarheadCounter,
+    /// A warhead in flight is owned by a player outside the table.
+    #[error("warhead {0} is owned by a player outside the table")]
+    ForeignWarheadOwner(usize),
+    /// A warhead launches or lands off the map, flies for a time its
+    /// line does not take, names a silo id never minted, or outlives the
+    /// match.
+    #[error("warhead {0} has an impossible flight")]
+    InvalidWarheadFlight(usize),
+    /// A team's warhead holds are out of order, name a warhead not in
+    /// flight or not hostile, carry an impossible exposure, or differ
+    /// between teammates.
+    #[error("player {0} holds impossible warhead tracks")]
+    InvalidWarheadTracking(PlayerId),
 }
 
 /// Slot i belongs to weapon i; slots past the roster stay zero for the
@@ -3548,14 +3767,70 @@ impl Shell {
     /// arrival`, so the progress is computed in wide integers instead of
     /// trusting the span to fit a fixed-point value.
     pub fn flight_position(&self, now: Tick) -> Vec2Fx {
-        let span = self.arrival.saturating_sub(self.launched_at);
-        let elapsed = now.saturating_sub(self.launched_at);
-        if elapsed >= span {
-            return self.impact;
-        }
-        let progress = (u128::from(elapsed) << 32) / u128::from(span);
-        let progress = Fx::from_bits(i64::try_from(progress).expect("progress below one fits"));
-        self.launch + (self.impact - self.launch) * progress
+        flight_point(
+            self.launch,
+            self.impact,
+            self.launched_at,
+            self.arrival,
+            now,
+        )
+    }
+}
+
+/// Where a straight flight from `launch` (at `launched_at`) to `impact`
+/// (at `arrival`) stands on tick `now`, standing at impact from its arrival
+/// on. Deserialized flights may carry any ticks with `launched_at <=
+/// arrival`, so the progress is computed in wide integers instead of
+/// trusting the span to fit a fixed-point value.
+fn flight_point(
+    launch: Vec2Fx,
+    impact: Vec2Fx,
+    launched_at: Tick,
+    arrival: Tick,
+    now: Tick,
+) -> Vec2Fx {
+    let span = arrival.saturating_sub(launched_at);
+    let elapsed = now.saturating_sub(launched_at);
+    if elapsed >= span {
+        return impact;
+    }
+    let progress = (u128::from(elapsed) << 32) / u128::from(span);
+    let progress = Fx::from_bits(i64::try_from(progress).expect("progress below one fits"));
+    launch + (impact - launch) * progress
+}
+
+/// A strategic warhead flying from a silo to a fixed impact point,
+/// unguided from launch. Point defense never sees it; only a battery
+/// whose team has tracked it can stop it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Warhead {
+    /// Stable id; `warheads` is sorted by it.
+    pub id: crate::ids::WarheadId,
+    /// The launching seat.
+    pub player: PlayerId,
+    /// The silo that fired it, which may be gone by now.
+    pub silo: BuildingId,
+    /// The silo's centre at launch.
+    pub launch: Vec2Fx,
+    /// Where it lands.
+    pub impact: Vec2Fx,
+    /// The tick it launched on.
+    pub launched_at: Tick,
+    /// The tick it lands on.
+    pub arrival: Tick,
+}
+
+impl Warhead {
+    /// Where the warhead is over the ground on tick `now`.
+    pub fn position(&self, now: Tick) -> Vec2Fx {
+        flight_point(
+            self.launch,
+            self.impact,
+            self.launched_at,
+            self.arrival,
+            now,
+        )
     }
 }
 
@@ -3579,9 +3854,13 @@ struct StateWire {
     shells: Vec<Shell>,
     #[serde(default)]
     aircraft_crashes: Vec<AircraftCrash>,
+    #[serde(default)]
+    warheads: Vec<Warhead>,
     result: Option<GameResult>,
     next_unit_id: u32,
     next_building_id: u32,
+    #[serde(default)]
+    next_warhead_id: u32,
 }
 
 impl From<StateWire> for State {
@@ -3597,9 +3876,11 @@ impl From<StateWire> for State {
             buildings,
             shells,
             aircraft_crashes,
+            warheads,
             result,
             next_unit_id,
             next_building_id,
+            next_warhead_id,
         } = w;
         State {
             mode,
@@ -3612,9 +3893,11 @@ impl From<StateWire> for State {
             buildings,
             shells,
             aircraft_crashes,
+            warheads,
             result,
             next_unit_id,
             next_building_id,
+            next_warhead_id,
         }
     }
 }

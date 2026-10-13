@@ -68,6 +68,8 @@ pub(crate) enum ArmedMode {
     Build(oxide_sim::BuildingKind),
     /// Set a producer's rally point.
     Rally,
+    /// Pick the selected Spires' strike tile.
+    Strike,
     /// Strip an own structure.
     Salvage,
     /// Weld a damaged own ground unit.
@@ -88,6 +90,7 @@ impl ArmedMode {
         match self {
             Self::Build(kind) => crate::typography::entity_name(kind.name()),
             Self::Rally => "Set rally".to_string(),
+            Self::Strike => "Launch".to_string(),
             Self::Salvage => "Salvage".to_string(),
             Self::Weld => "Weld".to_string(),
             Self::Accompany => "Accompany".to_string(),
@@ -223,6 +226,8 @@ pub struct InputState {
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
     pub(crate) rallying: Vec<oxide_sim::BuildingId>,
+    /// Spires whose next world or minimap click names their strike.
+    pub(crate) striking: Vec<oxide_sim::BuildingId>,
     /// Whether the build palette is open (`B`; digits pick a structure).
     pub(crate) build_menu: bool,
     pub(crate) build_category: Option<u8>,
@@ -462,6 +467,7 @@ impl InputState {
             keys_seen: crate::platform::Hands::BUILD.keys,
             click_verb: None,
             rallying: Vec::new(),
+            striking: Vec::new(),
             build_menu: false,
             build_category: None,
             ui: 1.0,
@@ -535,6 +541,7 @@ impl InputState {
         self.patrol_route = None;
         self.click_verb = None;
         self.rallying.clear();
+        self.striking.clear();
     }
 
     /// Drops placement: the armed kind, its stroke, and its ghost. The
@@ -558,8 +565,9 @@ impl InputState {
     /// Current persistent mode, in the same priority order the world
     /// click resolver uses.
     pub(crate) fn armed_mode(&self) -> Option<ArmedMode> {
-        (!self.rallying.is_empty())
-            .then_some(ArmedMode::Rally)
+        (!self.striking.is_empty())
+            .then_some(ArmedMode::Strike)
+            .or_else(|| (!self.rallying.is_empty()).then_some(ArmedMode::Rally))
             .or_else(|| self.placing.map(ArmedMode::Build))
             .or_else(|| {
                 self.click_verb.map(|verb| match verb {
@@ -599,6 +607,7 @@ impl InputState {
         self.stop_placing();
         self.click_verb = None;
         self.rallying.clear();
+        self.striking.clear();
         self.build_menu = false;
         self.build_category = None;
         self.touches.clear();
@@ -1131,6 +1140,7 @@ pub fn desired_cursor(game: &Game, input: &InputState) -> macroquad::miniquad::C
         || input.patrol_route.is_some()
         || input.click_verb.is_some()
         || !input.rallying.is_empty()
+        || !input.striking.is_empty()
     {
         return CursorIcon::Crosshair;
     }
@@ -1514,6 +1524,20 @@ fn armed_click(
 ) -> bool {
     if click_on_hud(game, p) && crate::render::minimap_world_at(&game.view(), p).is_none() {
         return false;
+    }
+    if !input.striking.is_empty() {
+        // Any tile on the map may be struck, seen or not; the minimap
+        // names one as well as the world.
+        let world = crate::render::minimap_world_at(&game.view(), p)
+            .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
+        if let Some(world) = world {
+            let target = ground_tile(&game.state, world);
+            for building in std::mem::take(&mut input.striking) {
+                game.issue(Command::Launch { building, target });
+            }
+            game.presentation.toast("Strike ordered");
+        }
+        return true;
     }
     if !input.rallying.is_empty() {
         // The minimap names ground only; the world names the own unit under

@@ -14,6 +14,10 @@ pub struct UnitId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct BuildingId(pub u32);
 
+/// Identifies a warhead in flight. Never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct WarheadId(pub u32);
+
 /// Index into [`crate::State::players`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PlayerId(pub u8);
@@ -131,6 +135,12 @@ impl core::fmt::Display for UnitId {
 impl core::fmt::Display for BuildingId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "b{}", self.0)
+    }
+}
+
+impl core::fmt::Display for WarheadId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "w{}", self.0)
     }
 }
 

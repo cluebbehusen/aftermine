@@ -748,9 +748,9 @@ pub(crate) fn draw_extractor_frames(game: &crate::game::Scene<'_>, sprites: &Spr
 /// Battle scars: scorch decals where buildings died, fading over ~20s.
 pub(crate) fn draw_scorches(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     let zoom = game.presentation.camera.zoom;
-    for (at, age) in &game.presentation.scorches {
+    for (at, age, width) in &game.presentation.scorches {
         let alpha = (1.0 - age / 20.0).clamp(0.0, 1.0) * 0.85;
-        let size = zoom * 2.4;
+        let size = zoom * width;
         let screen = game.presentation.camera.to_screen(*at);
         sprites.draw(
             screen.x - size * 0.5,

@@ -135,6 +135,9 @@ pub(super) struct PreviousEffects {
         crate::render::UnitSpriteFrame,
     )>,
     visible_crash_contacts: Vec<oxide_sim::UnitId>,
+    /// The warheads this seat knew of, so a stopped one can fly on as a
+    /// ghost after the simulation removes it.
+    warheads: Vec<oxide_sim::strike::KnownWarhead>,
 }
 
 impl PreviousEffects {
@@ -177,6 +180,11 @@ impl PreviousEffects {
                 })
                 .collect(),
             shells: state.shells().to_vec(),
+            warheads: if game.all_seeing() {
+                state.omniscient_warheads(game.human)
+            } else {
+                state.known_warheads(game.human)
+            },
             units: state
                 .units()
                 .iter()
@@ -219,7 +227,9 @@ impl Effect {
             EffectKind::Intercept { completed_tick, .. }
             | EffectKind::DirectShot { completed_tick, .. }
             | EffectKind::SapperDetonation { completed_tick, .. }
-            | EffectKind::Impact { completed_tick, .. } => {
+            | EffectKind::Impact { completed_tick, .. }
+            | EffectKind::Interception { completed_tick, .. }
+            | EffectKind::WarheadBurst { completed_tick, .. } => {
                 let whole = completed_ticks.saturating_sub(completed_tick) as f32;
                 (whole + tick_fraction.clamp(0.0, 1.0)) * super::TICK_DT + self.age
             }
@@ -300,6 +310,21 @@ chassis::listed_enum! {
         UpgradeDone,
         /// A point defender's emitter firing at a shell.
         InterceptZap,
+        /// A Spire unlatching and launching its warhead.
+        SpireLaunch,
+        /// A hostile warhead first known to this seat: protected like the
+        /// under-attack alert.
+        IncomingWarning,
+        /// A warhead bursting on the ground.
+        WarheadDetonation,
+        /// An interceptor leaving its Lattice pod.
+        InterceptorLaunch,
+        /// An interceptor meeting its warhead in the sky.
+        Interception,
+        /// A warhead's motor while it burns.
+        WarheadMotor,
+        /// An interceptor's motor while it climbs.
+        InterceptorMotor,
     }
 }
 
@@ -478,6 +503,55 @@ pub(crate) fn mantle_emitter(center: Vec2, rotation: f32, slot: u8) -> Vec2 {
     center + Vec2::from_angle(rotation).rotate(local)
 }
 
+/// Seconds a stopped warhead flies on as a ghost while its interceptor
+/// climbs to meet it in the sky.
+pub(crate) const INTERCEPT_MEET: f32 = 0.4;
+
+/// An interceptor in flight ahead of a forecast stop, from its pod to
+/// where the simulation will stop the warhead.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Prelaunch {
+    /// The warhead it will stop.
+    pub warhead: oxide_sim::WarheadId,
+    /// The battery's owner, for the interceptor's identity tint.
+    pub battery_player: oxide_sim::PlayerId,
+    /// The pod's pivot, world coords.
+    pub from: Vec2,
+    /// The warhead's ground point at the stop, world coords.
+    pub at: Vec2,
+    /// The warhead's whole flight.
+    pub line: oxide_sim::strike::WarheadLine,
+    /// The presentation tick it left the pod.
+    pub launched: f32,
+    /// The tick the simulation stops the warhead on.
+    pub stop: f32,
+}
+
+impl Prelaunch {
+    /// How far along its climb it is at presentation `tick`.
+    pub(crate) fn climbed(&self, tick: f32) -> f32 {
+        ((tick - self.launched) / (self.stop - self.launched).max(1.0)).clamp(0.0, 1.0)
+    }
+}
+
+/// The least lead, in ticks, worth launching an interceptor ahead of its
+/// stop; a later forecast leaves the warhead flying on to meet it.
+const PRELAUNCH_MIN_TICKS: f32 = 2.0;
+
+/// Seconds the sky burst and its falling fragments last after the meeting.
+const INTERCEPT_AFTERMATH: f32 = 1.3;
+
+/// Seconds a warhead's ground burst lasts, smoke column included.
+pub(crate) const WARHEAD_BURST: f32 = 3.2;
+
+/// Width, in tiles, of the scorch a destroyed building leaves.
+const BUILDING_SCORCH: f32 = 2.4;
+
+/// The largest jolt, in logical pixels, a warhead landing at the centre of
+/// the view gives the camera; it fades to nothing this many tiles away.
+const STRIKE_SHAKE: f32 = 9.0;
+const STRIKE_SHAKE_REACH: f32 = 36.0;
+
 /// Effect shapes.
 pub enum EffectKind {
     /// A spent point-defense emitter and the interrupted projectile.
@@ -566,6 +640,46 @@ pub enum EffectKind {
         at: Vec2,
         /// Splash radius, tiles.
         radius: f32,
+    },
+    /// A stopped warhead flying on as a ghost while an interceptor climbs
+    /// out of its pod to meet it in the sky, then the sky burst and its
+    /// falling fragments. The simulation removed the warhead when this
+    /// began; everything here is presentation.
+    Interception {
+        /// The warhead's whole flight, when this seat knew it.
+        line: Option<oxide_sim::strike::WarheadLine>,
+        /// The warhead's owner when this seat knew it, and whether hostile.
+        warhead_player: Option<oxide_sim::PlayerId>,
+        warhead_hostile: bool,
+        /// The firing pod's pivot, when this seat sees the battery.
+        pod: Option<Vec2>,
+        /// The battery's owner, for the interceptor's identity tint.
+        battery_player: oxide_sim::PlayerId,
+        /// Where the simulation stopped the warhead, world coords.
+        at: Vec2,
+        /// Fragment scatter seed (the warhead's id).
+        seed: u32,
+        /// Simulation tick immediately after the stop was reported.
+        completed_tick: u64,
+        /// Whether the sky burst has been heard; it sounds when the
+        /// interceptor reaches the warhead, not when the stop is reported.
+        burst_heard: bool,
+        /// Whether the interceptor launched ahead of the stop, from the
+        /// forecast, and met the warhead where the simulation stopped it;
+        /// otherwise the warhead flies on to meet it.
+        early: bool,
+    },
+    /// A warhead's ground burst: flash, shockwave, fireball, smoke column.
+    WarheadBurst {
+        /// Impact centre, world coords.
+        at: Vec2,
+        /// Smoke scatter seed (the warhead's id).
+        seed: u32,
+        /// Whether this seat legitimately knows the burst: its team's
+        /// warhead, or ground it sees.
+        witnessed: bool,
+        /// Simulation tick immediately after the landing was reported.
+        completed_tick: u64,
     },
     /// A ruptured ground chassis and rigid fragments settling on the floor.
     Debris {
@@ -697,6 +811,8 @@ impl Presentation {
                 | EffectKind::DirectShot { .. }
                 | EffectKind::SapperDetonation { .. }
                 | EffectKind::Impact { .. }
+                | EffectKind::Interception { .. }
+                | EffectKind::WarheadBurst { .. }
                 | EffectKind::Falling { crash: Some(_), .. }
                     if terminal =>
                 {
@@ -706,12 +822,29 @@ impl Presentation {
                 | EffectKind::DirectShot { .. }
                 | EffectKind::SapperDetonation { .. }
                 | EffectKind::Impact { .. }
+                | EffectKind::Interception { .. }
+                | EffectKind::WarheadBurst { .. }
                 | EffectKind::Falling { crash: Some(_), .. } => {}
                 _ => fx.age += dt,
             }
         }
         let completed_ticks = state.current_tick();
         let tick_fraction = self.tick_fraction();
+        // The sky burst sounds as the interceptor reaches its warhead, on
+        // the same simulation clock the burst draws on.
+        for fx in &mut self.fx {
+            let age = fx.age_at(completed_ticks, tick_fraction);
+            if let EffectKind::Interception {
+                at, burst_heard, ..
+            } = &mut fx.kind
+                && !*burst_heard
+                && age >= INTERCEPT_MEET
+            {
+                *burst_heard = true;
+                self.sounds_pending
+                    .push((SoundKind::Interception, Some(*at)));
+            }
+        }
         self.fx.retain(|fx| {
             fx.age_at(completed_ticks, tick_fraction)
                 < match fx.kind {
@@ -724,6 +857,8 @@ impl Presentation {
                     EffectKind::Falling { .. } => 4.0,
                     EffectKind::Ping { .. } => 0.5,
                     EffectKind::Burst { .. } => 0.35,
+                    EffectKind::Interception { .. } => INTERCEPT_MEET + INTERCEPT_AFTERMATH,
+                    EffectKind::WarheadBurst { .. } => WARHEAD_BURST,
                     EffectKind::Debris { .. } => 3.0,
                 }
         });
@@ -731,10 +866,10 @@ impl Presentation {
             toast.age += dt;
         }
         self.toasts.retain(|t| t.age < 2.5);
-        for (_, age) in &mut self.scorches {
+        for (_, age, _) in &mut self.scorches {
             *age += dt;
         }
-        self.scorches.retain(|(_, age)| *age < 20.0);
+        self.scorches.retain(|(_, age, _)| *age < 20.0);
     }
 
     fn building_hit(
@@ -1242,7 +1377,7 @@ impl Presentation {
                         age: 0.0,
                     });
                     // A fading scorch decal; capped, oldest dropped first.
-                    self.scorches.push((world_vec(*pos), 0.0));
+                    self.scorches.push((world_vec(*pos), 0.0, BUILDING_SCORCH));
                     if self.scorches.len() > 16 {
                         self.scorches.remove(0);
                     }
@@ -1295,6 +1430,9 @@ impl Presentation {
                         oxide_sim::command::RejectReason::Eliminated => "You are eliminated".into(),
                         oxide_sim::command::RejectReason::MissingPrerequisite => {
                             "Needs its tech building first".into()
+                        }
+                        oxide_sim::command::RejectReason::NothingLoaded => {
+                            "No warhead loaded".into()
                         }
                     };
                     self.toast(why);
@@ -1578,6 +1716,114 @@ impl Presentation {
                         age: 0.0,
                     });
                 }
+                Event::WarheadLaunched { player, from, .. } => {
+                    if self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *from)
+                    {
+                        let from = world_vec(*from);
+                        self.sounds_pending
+                            .push((SoundKind::SpireLaunch, Some(from)));
+                        self.fx.push(Effect {
+                            kind: EffectKind::Puff { at: from },
+                            age: 0.0,
+                        });
+                    }
+                }
+                Event::WarheadIntercepted {
+                    warhead,
+                    player,
+                    battery,
+                    battery_player,
+                    pod,
+                    at,
+                    ..
+                } => {
+                    let early = self
+                        .prelaunches
+                        .iter()
+                        .position(|launch| launch.warhead == *warhead)
+                        .map(|index| self.prelaunches.remove(index));
+                    // The interceptor is drawn wherever it flies over
+                    // ground this seat sees, so its pod is always kept.
+                    let pod = early.map(|launch| launch.from).or_else(|| {
+                        state.building(*battery).map(|b| {
+                            let from = crate::render::lattice_pod_pivot(b, *pod);
+                            let d = world_vec(*at) - from;
+                            let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
+                            self.pod_shots
+                                .insert((battery.0, *pod), (angle, self.fx_clock));
+                            if crate::render::missile_seen_by(self, state, from) {
+                                self.sounds_pending
+                                    .push((SoundKind::InterceptorLaunch, Some(from)));
+                            }
+                            from
+                        })
+                    });
+                    let known = self
+                        .fx_previous
+                        .warheads
+                        .iter()
+                        .find(|known| known.id == *warhead)
+                        .copied();
+                    let at = world_vec(*at);
+                    self.fx.push(Effect {
+                        kind: EffectKind::Interception {
+                            line: known
+                                .and_then(|known| known.line)
+                                .or(early.map(|launch| launch.line)),
+                            warhead_player: known.and_then(|known| known.player).or_else(|| {
+                                (!state.hostile(self.human, *player)).then_some(*player)
+                            }),
+                            warhead_hostile: state.hostile(self.human, *player),
+                            pod,
+                            battery_player: *battery_player,
+                            at,
+                            seed: warhead.0,
+                            completed_tick: state.current_tick(),
+                            burst_heard: false,
+                            early: early.is_some(),
+                        },
+                        // Launched ahead, the interceptor is already there.
+                        age: if early.is_some() { INTERCEPT_MEET } else { 0.0 },
+                    });
+                }
+                Event::WarheadLanded {
+                    warhead,
+                    player,
+                    at,
+                } => {
+                    let witnessed =
+                        self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *at);
+                    let at = world_vec(*at);
+                    self.sounds_pending
+                        .push((SoundKind::WarheadDetonation, Some(at)));
+                    self.fx.push(Effect {
+                        kind: EffectKind::WarheadBurst {
+                            at,
+                            seed: warhead.0,
+                            witnessed,
+                            completed_tick: state.current_tick(),
+                        },
+                        age: 0.0,
+                    });
+                    if !witnessed {
+                        continue;
+                    }
+                    // The crater a seat saw form, as wide as full damage.
+                    self.scorches.push((
+                        at,
+                        0.0,
+                        2.0 * oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
+                    ));
+                    if self.scorches.len() > 16 {
+                        self.scorches.remove(0);
+                    }
+                    if !crate::render::reduced_motion() {
+                        let near = 1.0 - at.distance(self.camera.center) / STRIKE_SHAKE_REACH;
+                        if near > 0.0 {
+                            self.camera.kick(STRIKE_SHAKE * near * near);
+                        }
+                    }
+                }
                 Event::GameOver { result } => {
                     let won = matches!(
                         result,
@@ -1596,7 +1842,79 @@ impl Presentation {
                 _ => {}
             }
         }
+        self.warn_of_warheads(state);
+        self.launch_interceptors(state);
         self.refresh_defense_aim(state);
+    }
+
+    /// Launches each forecast interceptor the meeting time ahead of its
+    /// stop, so it reaches the warhead where the simulation stops it, and
+    /// drops any whose forecast no longer holds. Presentation only: whoever
+    /// sees it is decided where it is drawn.
+    fn launch_interceptors(&mut self, state: &State) {
+        let forecast = state.interception_forecast();
+        self.prelaunches
+            .retain(|launch| forecast.iter().any(|stop| stop.warhead == launch.warhead));
+        let present = state.current_tick().saturating_sub(1) as f32;
+        let lead = INTERCEPT_MEET / super::TICK_DT;
+        for stop in forecast {
+            let due = stop.tick as f32;
+            if due - present > lead
+                || due - present < PRELAUNCH_MIN_TICKS
+                || self
+                    .prelaunches
+                    .iter()
+                    .any(|launch| launch.warhead == stop.warhead)
+            {
+                continue;
+            }
+            let (Some(battery), Some(warhead)) = (
+                state.building(stop.battery),
+                state.warheads().iter().find(|w| w.id == stop.warhead),
+            ) else {
+                continue;
+            };
+            let from = crate::render::lattice_pod_pivot(battery, stop.pod);
+            let at = world_vec(stop.at);
+            let d = at - from;
+            let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
+            self.pod_shots
+                .insert((battery.id.0, stop.pod), (angle, self.fx_clock));
+            if crate::render::missile_seen_by(self, state, from) {
+                self.sounds_pending
+                    .push((SoundKind::InterceptorLaunch, Some(from)));
+            }
+            self.prelaunches.push(Prelaunch {
+                warhead: stop.warhead,
+                battery_player: battery.player,
+                from,
+                at,
+                line: oxide_sim::strike::WarheadLine {
+                    launch: warhead.launch,
+                    impact: warhead.impact,
+                    arrival: warhead.arrival,
+                },
+                launched: present.max(due - lead),
+                stop: due,
+            });
+        }
+    }
+
+    /// Announces each hostile warhead once, when this seat first knows of
+    /// it: an alert where it will land once tracked, else where it flies.
+    fn warn_of_warheads(&mut self, state: &State) {
+        if self.all_seeing() {
+            return;
+        }
+        for warhead in state.known_warheads(self.human) {
+            if warhead.hostile && self.warned_warheads.insert(warhead.id) {
+                let at = warhead.line.map_or(warhead.position, |line| line.impact);
+                self.raise_warhead_alert(world_vec(at));
+                self.toast("Incoming warhead");
+            }
+        }
+        self.warned_warheads
+            .retain(|id| state.warheads().iter().any(|w| w.id == *id));
     }
 
     fn refresh_defense_aim(&mut self, state: &State) {

@@ -92,7 +92,8 @@ class SfxPcmTests(unittest.TestCase):
             self.assertGreater(entry["mixer_volume"], 0.0)
             self.assertGreater(entry["min_gap"], 0.0)
             self.assertEqual(
-                entry.get("looped", False), entry["name"] == "avalanche_motor"
+                entry.get("looped", False),
+                entry["name"] in gen_sounds.SFX_LOOP_NAMES,
             )
 
     def test_sfx_validator_rejects_wrong_rate(self) -> None:

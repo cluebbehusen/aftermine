@@ -180,6 +180,8 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
         }
     }
 
+    super::ordnance::assemble(state, events);
+
     let ids: Vec<_> = state.buildings.iter().map(|b| b.id).collect();
     for id in ids {
         let Some(b) = state.building_mut(id) else {

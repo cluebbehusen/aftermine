@@ -60,7 +60,7 @@ fn steer_heading(unit: &mut crate::state::Unit, direction: Vec2Fx, rate: u8) -> 
     steer_bearing(&mut unit.heading, direction, rate)
 }
 
-fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: u8) -> bool {
+pub(in crate::tick) fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: u8) -> bool {
     if rate == 0 || direction == Vec2Fx::ZERO {
         return true;
     }
