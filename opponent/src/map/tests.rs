@@ -485,3 +485,45 @@ const ARENA_ROWS: [&str; 12] = [
     "#......................#",
     "########################",
 ];
+
+#[test]
+fn working_base_distance_fields_extend_the_start_field_exactly() {
+    let model = model(&ARENA_ROWS);
+    let home = model.start(PlayerId(0)).unwrap();
+    for extra in [TilePos::new(12, 5), TilePos::new(18, 8)] {
+        let starts = [home, extra];
+        let extended = model.distances_from(starts.into_iter());
+        let rebuilt = distance_fields(&model.components, &starts);
+        for y in 0..12 {
+            for x in 0..24 {
+                let tile = TilePos::new(x, y);
+                assert_eq!(extended.get(tile), rebuilt.get(tile), "{tile:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn frame_only_sites_stop_at_the_site_cap() {
+    // A field of small islands, each holding one Extractor frame, makes far
+    // more frame-only sites than the cap.
+    let mut rows = vec![vec![b'~'; 120]; 120];
+    for top in (0..120).step_by(10) {
+        for left in (0..120).step_by(10) {
+            for row in rows.iter_mut().skip(top + 1).take(8) {
+                row[left + 1..left + 9].fill(b'.');
+            }
+            rows[top + 4][left + 4] = b'E';
+        }
+    }
+    rows[2][2] = b'1';
+    rows[112][112] = b'2';
+    let rows: Vec<String> = rows
+        .into_iter()
+        .map(|row| String::from_utf8(row).unwrap())
+        .collect();
+    let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+    let model = model(&rows);
+    assert!(model.sites().iter().all(|site| site.nodes.is_empty()));
+    assert_eq!(model.sites().len(), SITE_CAP);
+}

@@ -669,6 +669,7 @@ fn evaluate_plan_artifact_impl(
                 protected[usize::from(bot.player().0)] = bot.protected_scrap();
                 if state.accepts_commands(bot.player()) {
                     let missions = bot.opponent().missions();
+                    failures.record_guards(bot.player().0, &bot.opponent().guarded_units());
                     failures.check_missions(bot.player().0, tick, &missions);
                     reactions.check_missions(bot.player().0, tick, &missions);
                     attacks.follow(bot.player().0, tick, &missions, &ledger);

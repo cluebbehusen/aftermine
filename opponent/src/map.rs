@@ -7,6 +7,7 @@ use chassis::grid::{Grid, TilePos};
 use oxide_sim::map::Map;
 use oxide_sim::scenario::ScenarioError;
 use oxide_sim::{BuildingKind, PlayerId, Scenario};
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -31,7 +32,7 @@ const HOME_REACH: i32 = 12;
 /// expansion.
 const SITE_CLEARANCE: i32 = 8;
 
-/// Expansion sites kept per map.
+/// Computation bound on expansion sites retained per map.
 const SITE_CAP: usize = 64;
 
 /// Foundry anchors kept per site.
@@ -173,6 +174,29 @@ pub(crate) struct Site {
 }
 
 impl MapModel {
+    /// Ground distance to the nearest supplied Foundry footprint.
+    pub(crate) fn distances_from(
+        &self,
+        starts: impl Iterator<Item = TilePos>,
+    ) -> Cow<'_, Grid<u16>> {
+        let starts: Vec<_> = starts.collect();
+        if let [start] = starts.as_slice()
+            && let Some(seat) = self.starts.iter().position(|own| *own == Some(*start))
+            && let Some(field) = &self.distances[seat]
+        {
+            return Cow::Borrowed(field);
+        }
+        let initial = starts
+            .iter()
+            .find_map(|start| {
+                self.starts
+                    .iter()
+                    .position(|own| *own == Some(*start))
+                    .and_then(|seat| self.distances[seat].as_ref())
+            })
+            .cloned();
+        Cow::Owned(extend_distances(&self.components, &starts, initial))
+    }
     /// Builds the model from the scenario's authored map.
     pub fn from_scenario(scenario: &Scenario) -> Result<Self, ScenarioError> {
         let (map, anchors) = scenario.parse_map_and_anchors()?;
@@ -210,7 +234,8 @@ impl MapModel {
                 .collect();
             distances[seat] = Some(distance_field(&components, *anchor));
         }
-        let sites = sites(map, &components, anchors);
+        let mut sites = sites(map, &components, anchors);
+        frame_sites(map, &components, anchors, &mut sites);
         let spot = spot_grid(map, &components, 2);
         let tile_spot = spot_grid(map, &components, 1);
         let extents = extents(&components);
@@ -220,11 +245,16 @@ impl MapModel {
             .iter()
             .filter(|(tile, _)| map.tile_in_extractor_frame(*tile))
             .map(|(tile, _)| tile)
-            .chain(sites.iter().flat_map(|site| {
-                site.anchors.iter().flat_map(|anchor| {
-                    (0..2).flat_map(move |dy| (0..2).map(move |dx| anchor.offset(dx, dy)))
-                })
-            }))
+            .chain(
+                sites
+                    .iter()
+                    .filter(|site| !site.nodes.is_empty())
+                    .flat_map(|site| {
+                        site.anchors.iter().flat_map(|anchor| {
+                            (0..2).flat_map(move |dy| (0..2).map(move |dx| anchor.offset(dx, dy)))
+                        })
+                    }),
+            )
             .collect();
         fixed.sort_unstable();
         fixed.dedup();
@@ -897,11 +927,26 @@ fn chebyshev(a: TilePos, b: TilePos) -> i32 {
 /// diagonal steps that never cut a corner. Integer costs keep mirrored starts'
 /// fields mirrored exactly.
 fn distance_field(components: &Grid<u32>, start: TilePos) -> Grid<u16> {
+    distance_fields(components, &[start])
+}
+
+fn distance_fields(components: &Grid<u32>, starts: &[TilePos]) -> Grid<u16> {
+    extend_distances(components, starts, None)
+}
+
+fn extend_distances(
+    components: &Grid<u32>,
+    starts: &[TilePos],
+    initial: Option<Grid<u16>>,
+) -> Grid<u16> {
     let (width, height) = (components.width(), components.height());
-    let mut field = Grid::new(width, height, UNREACHABLE);
+    let mut field = initial.unwrap_or_else(|| Grid::new(width, height, UNREACHABLE));
     let mut queue = BinaryHeap::new();
     let open = |tile: TilePos| components.get(tile).is_some_and(|label| *label != 0);
-    for tile in (0..2).flat_map(|dy| (0..2).map(move |dx| start.offset(dx, dy))) {
+    for tile in starts
+        .iter()
+        .flat_map(|start| (0..2).flat_map(move |dy| (0..2).map(move |dx| start.offset(dx, dy))))
+    {
         if open(tile)
             && let Some(cell) = field.get_mut(tile)
         {
@@ -977,6 +1022,7 @@ fn sites(map: &Map, components: &Grid<u32>, anchors: &[(PlayerId, TilePos)]) -> 
             ] {
                 let next = tile.offset(dx, dy);
                 if map.scrap_at(next) > 0
+                    && components.get(next) == components.get(seed)
                     && let Some(mark) = seen.get_mut(next).filter(|mark| !**mark)
                 {
                     *mark = true;
@@ -986,9 +1032,10 @@ fn sites(map: &Map, components: &Grid<u32>, anchors: &[(PlayerId, TilePos)]) -> 
         }
         nodes.sort_by_key(|(tile, _)| (tile.y, tile.x));
         let near_start = anchors.iter().any(|(_, start)| {
-            nodes
-                .iter()
-                .any(|(node, _)| gap(*start, (2, 2), *node, (1, 1)) < SITE_CLEARANCE)
+            components.get(*start) == components.get(seed)
+                && nodes
+                    .iter()
+                    .any(|(node, _)| gap(*start, (2, 2), *node, (1, 1)) < SITE_CLEARANCE)
         });
         if near_start {
             continue;
@@ -1001,6 +1048,7 @@ fn sites(map: &Map, components: &Grid<u32>, anchors: &[(PlayerId, TilePos)]) -> 
             .extractor_frames()
             .iter()
             .copied()
+            .filter(|frame| components.get(*frame) == components.get(best))
             .filter(|frame| gap(best, (2, 2), *frame, (2, 2)) < FRAME_REACH)
             .collect();
         sites.push(Site {
@@ -1053,7 +1101,7 @@ fn site_anchors(map: &Map, components: &Grid<u32>, nodes: &[(TilePos, u32)]) -> 
             };
             let open = footprint.iter().all(|tile| {
                 components.get(*tile) == Some(&component) && !map.tile_in_extractor_frame(*tile)
-            });
+            }) && components.get(nodes[0].0) == Some(&component);
             let clear =
                 (-1..=2).all(|dy| (-1..=2).all(|dx| map.scrap_at(anchor.offset(dx, dy)) == 0));
             let gap = nodes
@@ -1076,6 +1124,57 @@ fn site_anchors(map: &Map, components: &Grid<u32>, nodes: &[(TilePos, u32)]) -> 
     });
     anchors.truncate(SITE_ANCHORS);
     anchors
+}
+
+fn frame_sites(
+    map: &Map,
+    components: &Grid<u32>,
+    starts: &[(PlayerId, TilePos)],
+    sites: &mut Vec<Site>,
+) {
+    for frame in map.extractor_frames() {
+        if sites.len() == SITE_CAP {
+            break;
+        }
+        let component = components.get(*frame);
+        if sites.iter().any(|site| {
+            site.frames.contains(frame)
+                && site
+                    .anchors
+                    .iter()
+                    .any(|anchor| components.get(*anchor) == component)
+        }) || starts.iter().any(|(_, start)| {
+            components.get(*start) == component
+                && oxide_sim::geometry::foundry_supports(*start, *frame)
+        }) {
+            continue;
+        }
+        let nodes = [(*frame, 0), (frame.offset(1, 1), 0)];
+        let anchors = site_anchors(map, components, &nodes)
+            .into_iter()
+            .filter(|anchor| components.get(*anchor) == component)
+            .filter(|anchor| oxide_sim::geometry::foundry_supports(*anchor, *frame))
+            .collect::<Vec<_>>();
+        if anchors.is_empty() {
+            continue;
+        }
+        let frames = map
+            .extractor_frames()
+            .iter()
+            .copied()
+            .filter(|other| {
+                components.get(*other) == component
+                    && anchors
+                        .iter()
+                        .any(|anchor| oxide_sim::geometry::foundry_supports(*anchor, *other))
+            })
+            .collect();
+        sites.push(Site {
+            nodes: Vec::new(),
+            anchors,
+            frames,
+        });
+    }
 }
 
 /// Labels 4-connected ground. Diagonal steps never cut corners, so this is

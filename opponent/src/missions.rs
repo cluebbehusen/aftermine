@@ -16,7 +16,7 @@ use chassis::grid::TilePos;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::scenario::BotStance;
 use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId};
+use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
 mod air;
@@ -24,12 +24,14 @@ mod attack;
 mod clear;
 mod defense;
 mod focus;
+mod guarding;
 mod lift;
 mod raid;
 mod repair;
 mod reserve;
 mod rival;
 mod scouting;
+mod settlement;
 mod strike;
 
 pub(crate) use air::{Hazard, hazards};
@@ -38,6 +40,7 @@ pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
 pub(crate) use repair::treating;
 pub(crate) use scouting::{look, points};
+pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;
 
 /// Missions the seat runs at once: a computation bound on the missions each
@@ -93,6 +96,10 @@ enum Task {
         target: Objective,
         phase: LiftPhase,
     },
+    Settle {
+        target: settlement::Target,
+        phase: settlement::SettlePhase,
+    },
     Strike {
         target: Objective,
         phase: StrikePhase,
@@ -115,7 +122,9 @@ impl Task {
             | Task::Lift { target, .. }
             | Task::Strike { target, .. }
             | Task::Raid { target, .. } => Some(target),
-            Task::Defend { .. } | Task::Scout { .. } | Task::Clear { .. } => None,
+            Task::Defend { .. } | Task::Scout { .. } | Task::Clear { .. } | Task::Settle { .. } => {
+                None
+            }
         }
     }
 }
@@ -148,7 +157,14 @@ enum LiftPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 enum DefendPhase {
+    /// A quiet local guard, kept by the guard pass at what known threats near
+    /// its building call for. A defense that answers an attack there turns
+    /// it to Engage with its guards aboard.
+    Guard,
+    /// Answering enemies at the building, owned by the defense pass.
     Engage { focus: Option<UnitId> },
+    /// Holding briefly after the threat left, owned by the defense pass until
+    /// it ends and the guard pass may form a guard again.
     Recover,
 }
 
@@ -175,6 +191,14 @@ struct Objective {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "mission", rename_all = "snake_case")]
 pub enum MissionKind {
+    /// Lifts a builder, and an escort while known enemies stand near, to a
+    /// resource site no own worker stands on.
+    Settle {
+        /// The building being established.
+        building: BuildingKind,
+        /// Its chosen footprint.
+        anchor: TilePos,
+    },
     /// Answers enemies threatening the seat's buildings around a Foundry.
     Defend {
         /// The Foundry the threats are nearest.
@@ -234,6 +258,10 @@ pub enum MissionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
+    /// Keeps the local force needed for a base's protection.
+    Guard,
+    /// Holding a landing until the builder places its building.
+    Found,
     /// Assembling at a rally point.
     Gather,
     /// On the way to its target.
@@ -287,9 +315,10 @@ pub struct MissionStatus {
     pub phase: Phase,
     /// Tick the phase began.
     pub since: u64,
-    /// Ticks the phase should end within. A phase much older than this is a
-    /// mission that failed to recover.
-    pub timeout: u64,
+    /// Ticks the phase should end within, if it has a deadline. A phase much
+    /// older than this is a mission that failed to recover; a quiet guard
+    /// has none.
+    pub timeout: Option<u64>,
     /// Units it holds.
     pub units: u32,
     /// Where its units were last sent.
@@ -300,6 +329,7 @@ impl MissionKind {
     /// A short name for reports.
     pub fn name(self) -> &'static str {
         match self {
+            Self::Settle { .. } => "settle",
             Self::Defend { .. } => "defend",
             Self::Attack { .. } => "attack",
             Self::Scout { .. } => "scout",
@@ -315,6 +345,8 @@ impl Phase {
     /// A short name for reports.
     pub fn name(self) -> &'static str {
         match self {
+            Self::Guard => "guard",
+            Self::Found => "found",
             Self::Gather => "gather",
             Self::Travel => "travel",
             Self::Engage => "engage",
@@ -330,6 +362,10 @@ impl Phase {
 impl Task {
     fn kind(self) -> MissionKind {
         match self {
+            Self::Settle { target, .. } => MissionKind::Settle {
+                building: target.kind(),
+                anchor: target.anchor(),
+            },
             Self::Defend { asset, .. } => MissionKind::Defend { asset },
             Self::Attack { target, .. } => MissionKind::Attack {
                 owner: target.owner,
@@ -359,6 +395,7 @@ impl Task {
     fn phase(self) -> Phase {
         match self {
             Self::Defend { phase, .. } => match phase {
+                DefendPhase::Guard => Phase::Guard,
                 DefendPhase::Engage { .. } => Phase::Engage,
                 DefendPhase::Recover => Phase::Recover,
             },
@@ -370,6 +407,7 @@ impl Task {
                 AttackPhase::Recover => Phase::Recover,
             },
             Self::Scout { .. } => Phase::Travel,
+            Self::Settle { phase, .. } => phase.phase(),
             Self::Lift { phase, .. } => match phase {
                 LiftPhase::Load => Phase::Load,
                 LiftPhase::Fly => Phase::Fly,
@@ -390,16 +428,17 @@ impl Task {
     }
 
     /// Ticks the current phase should end within.
-    fn timeout(self) -> u64 {
-        match self {
-            Self::Defend { phase, .. } => defense::timeout(phase),
+    fn timeout(self) -> Option<u64> {
+        Some(match self {
+            Self::Settle { phase, .. } => return phase.timeout(),
+            Self::Defend { phase, .. } => return defense::timeout(phase),
             Self::Attack { phase, .. } => attack::timeout(phase),
             Self::Scout { .. } => scouting::TRAVEL_TICKS,
             Self::Lift { phase, .. } => lift::timeout(phase),
             Self::Strike { phase, .. } => strike::timeout(phase),
             Self::Raid { phase, .. } => raid::timeout(phase),
             Self::Clear { phase, .. } => clear::timeout(phase),
-        }
+        })
     }
 
     /// The enemy an engaged mission focuses, if it is engaged.
@@ -432,17 +471,17 @@ impl Task {
 
 impl Mission {
     /// Whether the mission keeps its units from a defense. A defense keeps
-    /// them unless it is recovering or guards an ally's building. An attack
+    /// them while it fights for one of the seat's own buildings. An attack
     /// keeps them once it is fighting, or while travelling in contact, since
     /// it may have met the enemy since the last decision. A scout keeps its
-    /// scout, a lift its units once it has left the ground, and a strike,
-    /// clear or raid its units once they have set out and until they turn
-    /// back.
+    /// scout, a lift its units once it has left the ground, a settlement
+    /// its units while they fly, and a strike, clear or raid its units once
+    /// they have set out and until they turn back.
     fn holds(&self, observation: &ObservationData) -> bool {
         match self.task {
             // An ally's defense lends its units back to the seat's own.
             Task::Defend { asset, phase } => {
-                phase != DefendPhase::Recover
+                matches!(phase, DefendPhase::Engage { .. })
                     && observation
                         .my_buildings
                         .iter()
@@ -462,6 +501,7 @@ impl Mission {
             },
             Task::Scout { .. } => true,
             Task::Lift { phase, .. } => phase != LiftPhase::Load,
+            Task::Settle { phase, .. } => phase == settlement::SettlePhase::Fly,
             Task::Strike { phase, .. } | Task::Clear { phase, .. } => {
                 matches!(phase, StrikePhase::Travel | StrikePhase::Engage { .. })
             }
@@ -492,6 +532,7 @@ impl Mission {
                 phase: RaidPhase::Travel | RaidPhase::Strike,
             } => memory.raid(target.building, target.anchor, now),
             Task::Scout { point } => memory.saw(usize::from(point), now),
+            Task::Settle { target, .. } => memory.fail(target.kind(), target.anchor(), now),
             _ => {}
         }
     }
@@ -548,6 +589,7 @@ impl Missions {
                     Task::Attack { .. }
                     | Task::Scout { .. }
                     | Task::Lift { .. }
+                    | Task::Settle { .. }
                     | Task::Strike { .. }
                     | Task::Raid { .. }
                     | Task::Clear { .. } => true,
@@ -689,6 +731,7 @@ impl Missions {
                 return Err("checkpoint mission units are malformed".into());
             }
             let target_on_map = match mission.task {
+                Task::Settle { target, .. } => on_map(target.anchor()),
                 Task::Scout { point } => usize::from(point) < points,
                 Task::Clear { aim, .. } => on_map(aim),
                 ref task => task.target().is_none_or(|target| on_map(target.anchor)),
@@ -751,6 +794,45 @@ fn remembered(unit: &crate::memory::SeenUnit, map: &MapModel, home: Option<u32>,
 fn value(unit: &UnitObs) -> u64 {
     let stats = unit.kind.stats();
     u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
+}
+
+/// A unit of `kind` at `hp`, valued by cost and health like [`value`],
+/// against ground and against air: nothing against a domain it cannot hit.
+fn force(kind: UnitKind, hp: u32) -> [u64; 2] {
+    let stats = kind.stats();
+    let worth = u64::from(stats.cost) * u64::from(hp) / u64::from(stats.max_hp.max(1));
+    [Domain::Ground, Domain::Air].map(|domain| {
+        if stats
+            .weapons
+            .iter()
+            .any(|weapon| weapon.targets.covers(domain))
+        {
+            worth
+        } else {
+            0
+        }
+    })
+}
+
+/// The summed [`force`] of the seat's units among `ids`, aboard carriers or
+/// not, each counted once.
+fn strength(observation: &ObservationData, ids: impl IntoIterator<Item = UnitId>) -> [u64; 2] {
+    let mut ids: Vec<_> = ids.into_iter().collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.into_iter()
+        .filter_map(|id| {
+            mine(observation, id)
+                .map(|u| force(u.kind, u.hp))
+                .or_else(|| {
+                    observation
+                        .my_carried_units
+                        .iter()
+                        .find(|u| u.id == id)
+                        .map(|u| force(u.kind, u.hp))
+                })
+        })
+        .fold([0; 2], |sum, value| [sum[0] + value[0], sum[1] + value[1]])
 }
 
 fn mine(observation: &ObservationData, id: UnitId) -> Option<&UnitObs> {

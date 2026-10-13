@@ -19,7 +19,7 @@ use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use chassis::grid::TilePos;
-use oxide_sim::observation::{ObservationData, UnitObs};
+use oxide_sim::observation::{CarriedUnitObs, ObservationData, UnitObs};
 use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
@@ -54,6 +54,292 @@ pub(super) fn timeout(phase: LiftPhase) -> u64 {
     }
 }
 
+/// A delivery mission's members, as the observation shows them.
+pub(super) struct Manifest<'a> {
+    /// Its carriers, empty or loaded.
+    pub(super) carriers: Vec<&'a UnitObs>,
+    /// Its ground units not aboard a carrier.
+    pub(super) riders: Vec<&'a UnitObs>,
+    /// Its members other than carriers and workers.
+    pub(super) escorts: Vec<&'a UnitObs>,
+    /// Its workers not aboard a carrier.
+    pub(super) workers: Vec<&'a UnitObs>,
+    /// Its members aboard a carrier, or riding one of its carriers.
+    pub(super) aboard: Vec<&'a CarriedUnitObs>,
+}
+
+impl<'a> Manifest<'a> {
+    pub(super) fn new(observation: &'a ObservationData, members: &[UnitId]) -> Self {
+        let live: Vec<_> = members
+            .iter()
+            .filter_map(|id| mine(observation, *id))
+            .collect();
+        Self {
+            carriers: live.iter().copied().filter(|u| carrier(u.kind)).collect(),
+            riders: live
+                .iter()
+                .copied()
+                .filter(|u| u.kind.stats().domain == Domain::Ground)
+                .collect(),
+            escorts: live
+                .iter()
+                .copied()
+                .filter(|u| !carrier(u.kind) && !crate::workers::worker(u.kind))
+                .collect(),
+            workers: live
+                .iter()
+                .copied()
+                .filter(|u| crate::workers::worker(u.kind))
+                .collect(),
+            aboard: observation
+                .my_carried_units
+                .iter()
+                .filter(|u| {
+                    members.binary_search(&u.id).is_ok()
+                        || members.binary_search(&u.carrier).is_ok()
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Where carriers load, land and wait, shared by the combat lift and
+/// settlements.
+pub(super) struct Delivery<'a> {
+    observation: &'a ObservationData,
+    map: &'a MapModel,
+    scratch: &'a Scratch,
+}
+
+impl<'a> Delivery<'a> {
+    pub(super) fn new(
+        observation: &'a ObservationData,
+        map: &'a MapModel,
+        scratch: &'a Scratch,
+    ) -> Self {
+        Self {
+            observation,
+            map,
+            scratch,
+        }
+    }
+
+    /// Whether a ground unit could stand on `tile` of `component`, by
+    /// [`open`].
+    pub(super) fn open(&self, tile: TilePos, component: Option<u32>) -> bool {
+        component.is_some_and(|island| open(self.observation, self.map, tile, island))
+    }
+
+    /// Where riders bound for the building of `size` at `anchor` set down:
+    /// open ground on its island least exposed to known fire, nearest
+    /// `preferred_gap` empty tiles from it, with nothing but that island
+    /// within a carrier's spread, so none land across a chasm. Ranking every
+    /// tile in reach first leaves the costlier checks of open ground for the
+    /// few tiles tried.
+    pub(super) fn landing(
+        &self,
+        anchor: TilePos,
+        size: (i32, i32),
+        preferred_gap: i32,
+    ) -> Option<TilePos> {
+        let component = self.map.component(anchor)?;
+        let mut ranked: Vec<_> = (-LANDING_REACH..size.1 + LANDING_REACH)
+            .flat_map(|dy| {
+                (-LANDING_REACH..size.0 + LANDING_REACH).map(move |dx| anchor.offset(dx, dy))
+            })
+            .filter(|tile| self.map.component(*tile) == Some(component))
+            .filter_map(|tile| {
+                let gap = gap(anchor, size, tile, (1, 1));
+                (gap >= 1).then(|| {
+                    let point = doubled(tile);
+                    let exposure: u64 = self
+                        .scratch
+                        .air
+                        .iter()
+                        .chain(&self.scratch.ground)
+                        .filter(|h| h.covers(point))
+                        .map(|h| h.value)
+                        .sum();
+                    (
+                        (
+                            exposure,
+                            (gap - preferred_gap).abs(),
+                            self.scratch.frame.rank(self.scratch.frame.home, point),
+                        ),
+                        tile,
+                    )
+                })
+            })
+            .collect();
+        ranked.sort_unstable_by_key(|(key, _)| *key);
+        ranked.into_iter().map(|(_, tile)| tile).find(|tile| {
+            self.open(*tile, Some(component))
+                && (-SPREAD..=SPREAD).all(|dy| {
+                    (-SPREAD..=SPREAD).all(|dx| {
+                        self.map
+                            .component(tile.offset(dx, dy))
+                            .is_none_or(|c| c == component)
+                    })
+                })
+        })
+    }
+
+    /// The open tile of `source`'s ground nearest it, away from other
+    /// aircraft, where riders can reach `carrier` when it hovers over a
+    /// building or other ground they cannot stand on.
+    pub(super) fn clearing(&self, carrier: &UnitObs, source: TilePos) -> Option<TilePos> {
+        (-CLEARING..=CLEARING)
+            .flat_map(|dy| (-CLEARING..=CLEARING).map(move |dx| source.offset(dx, dy)))
+            .filter(|tile| self.open(*tile, self.map.component(source)))
+            .filter(|tile| {
+                self.observation.my_units.iter().all(|u| {
+                    u.id == carrier.id
+                        || u.kind.stats().domain != Domain::Air
+                        || u.tile.chebyshev(*tile) > AIRSPACE
+                })
+            })
+            .min_by_key(|tile| {
+                (
+                    tile.chebyshev(source),
+                    self.scratch
+                        .frame
+                        .rank(self.scratch.frame.home, doubled(*tile)),
+                )
+            })
+    }
+
+    /// The open tile beside a built own Foundry nearest `from`, clear of
+    /// known anti-air if any is: where carriers coming home wait or set
+    /// down. Carriers with nowhere safer still come down under fire rather
+    /// than hold their passengers aloft.
+    pub(super) fn pad(&self, from: TilePos) -> Option<TilePos> {
+        self.observation
+            .my_buildings
+            .iter()
+            .filter(|b| b.kind == BuildingKind::Foundry && b.built)
+            .flat_map(|b| ring(b.anchor, b.kind.size()))
+            .filter(|tile| self.open(*tile, self.map.component(*tile)))
+            .min_by_key(|tile| {
+                (
+                    self.scratch.air.iter().any(|h| h.covers(doubled(*tile))),
+                    self.scratch.frame.rank(doubled(from), doubled(*tile)),
+                )
+            })
+    }
+
+    /// Loads `riders` at `source` into the idle empty `transports` on open
+    /// ground there, first fit, while the decision has orders and `room`
+    /// mission members, and calls idle carriers elsewhere to a clearing at
+    /// `source` while those under way fall short. Returns the carriers and
+    /// riders sent.
+    pub(super) fn load(
+        &self,
+        source: TilePos,
+        transports: &[&UnitObs],
+        riders: &[&UnitObs],
+        room: usize,
+        ledger: &mut Ledger,
+    ) -> Vec<UnitId> {
+        let component = self.map.component(source);
+        let required: usize = riders
+            .iter()
+            .map(|u| usize::from(u.kind.stats().transport_size))
+            .sum();
+        let mut capacity: usize = transports
+            .iter()
+            .filter(|u| u.cargo == 0 && !u.idle && self.map.component(u.tile) != component)
+            .map(|u| usize::from(u.kind.stats().transport_capacity))
+            .sum();
+        let mut ready = Vec::new();
+        let mut members = Vec::new();
+        for transport in transports.iter().filter(|u| u.idle && u.cargo == 0) {
+            if self.map.component(transport.tile) != component
+                || !self.open(transport.tile, component)
+            {
+                if capacity >= required {
+                    continue;
+                }
+                let from = if self.map.component(transport.tile) == component {
+                    transport.tile
+                } else {
+                    source
+                };
+                if let Some(pad) = self.clearing(transport, from)
+                    && ledger.order(run(vec![transport.id], pad))
+                    && self.map.component(transport.tile) != component
+                {
+                    members.push(transport.id);
+                    capacity += usize::from(transport.kind.stats().transport_capacity);
+                }
+                continue;
+            }
+            ready.push((transport.id, transport.kind.stats().transport_capacity));
+            capacity += usize::from(transport.kind.stats().transport_capacity);
+        }
+        for (transport, riders) in pack(&ready, riders) {
+            if members.len() + 1 + riders.len() > room {
+                break;
+            }
+            let mut ids = ids(&riders);
+            ids.sort_unstable();
+            if !ledger.order(Command::Load {
+                units: ids.clone(),
+                transport,
+                queue: false,
+            }) {
+                break;
+            }
+            members.push(transport);
+            members.extend(ids);
+        }
+        members
+    }
+
+    /// Lets the empty `carriers` go: those already beside a home pad as they
+    /// are, the rest once flown to the pad nearest them, around known
+    /// anti-air. Returns those let go.
+    pub(super) fn return_empty(&self, carriers: &[&UnitObs], ledger: &mut Ledger) -> Vec<UnitId> {
+        let (home, away): (Vec<&UnitObs>, Vec<&UnitObs>) = carriers
+            .iter()
+            .copied()
+            .filter(|u| u.cargo == 0)
+            .partition(|u| {
+                self.pad(u.tile)
+                    .is_some_and(|pad| u.tile.chebyshev(pad) <= SPREAD)
+            });
+        let mut released = ids(&home);
+        if let Some(first) = away.first()
+            && let Some(pad) = self.pad(first.tile)
+        {
+            let via = air::route(
+                self.observation,
+                self.scratch.frame,
+                &self.scratch.air,
+                first.tile,
+                pad,
+            );
+            if ledger.room() >= route_orders(via) {
+                let sent = ids(&away);
+                fly_to(sent.clone(), via, pad, false, ledger);
+                released.extend(sent);
+            }
+        }
+        released
+    }
+}
+
+/// Sets down the idle loaded `carriers` at `at`, or sends those not yet
+/// within a carrier's spread of it there.
+pub(super) fn land(carriers: &[&UnitObs], at: TilePos, ledger: &mut Ledger) {
+    for carrier in carriers.iter().filter(|u| u.cargo > 0 && u.idle) {
+        ledger.order(if carrier.tile.chebyshev(at) <= SPREAD {
+            unload(carrier.id, at, false)
+        } else {
+            run(vec![carrier.id], at)
+        });
+    }
+}
+
 /// A place to fly a payload to.
 #[derive(Clone, Copy)]
 struct Drop {
@@ -81,13 +367,12 @@ struct Lifting<'a> {
     observation: &'a ObservationData,
     map: &'a MapModel,
     frame: HomeFrame,
+    delivery: Delivery<'a>,
     memory: &'a Memory,
     profile: &'a ResolvedProfile,
     home: u32,
     /// Known fire against aircraft, which carriers must avoid.
     air: &'a [Hazard],
-    /// Known fire against ground, which a landing avoids.
-    ground: &'a [Hazard],
     objectives: &'a [Objective],
     severed: bool,
     /// What offense leaves at home.
@@ -195,7 +480,7 @@ impl Missions {
         if value + cover < need || !lifting.looked(drop.target) {
             return false;
         }
-        let (mut units, _) = send(loads, u64::MAX, UNIT_CAP, ledger);
+        let mut units = lifting.load(&loads, UNIT_CAP, ledger);
         if units.is_empty() {
             return false;
         }
@@ -313,35 +598,19 @@ impl Missions {
         let Task::Lift { target, phase } = mission.task else {
             unreachable!("the lift mission's task");
         };
-        let members: Vec<&UnitObs> = mission
-            .units
-            .iter()
-            .filter_map(|id| mine(observation, *id))
-            .collect();
-        let (carriers, grounded) = members.into_iter().partition(|unit| carrier(unit.kind));
-        let aboard: Vec<_> = observation
-            .my_carried_units
-            .iter()
-            .filter(|rider| mission.units.binary_search(&rider.carrier).is_ok())
-            .collect();
+        let manifest = Manifest::new(observation, &mission.units);
         let flight = Flight {
             index,
             target,
             landing: mission.goal,
             age: observation.tick - mission.since,
-            carriers,
-            grounded,
-            aboard: aboard.len(),
-            loaded: aboard
+            carriers: manifest.carriers,
+            grounded: manifest.riders,
+            aboard: manifest.aboard.len(),
+            loaded: manifest
+                .aboard
                 .iter()
-                .map(|rider| {
-                    let stats = rider.kind.stats();
-                    if stats.weapons.iter().any(|weapon| weapon.targets.ground) {
-                        u64::from(stats.cost) * u64::from(rider.hp) / u64::from(stats.max_hp.max(1))
-                    } else {
-                        0
-                    }
-                })
+                .map(|u| super::force(u.kind, u.hp)[0])
                 .sum(),
         };
         match phase {
@@ -369,7 +638,7 @@ impl Missions {
         if flight.age < LOAD_TICKS {
             let loads = self.loads(lifting, ledger);
             let room = UNIT_CAP.saturating_sub(self.list[flight.index].units.len());
-            let (sent, _) = send(loads, u64::MAX, room, ledger);
+            let sent = lifting.load(&loads, room, ledger);
             if !sent.is_empty() {
                 let units = &mut self.list[flight.index].units;
                 units.extend(sent);
@@ -421,7 +690,7 @@ impl Missions {
         if ledger.room() < route_orders(via) {
             return;
         }
-        fly_to(loaded, via, landing, ledger);
+        fly_to(loaded, via, landing, false, ledger);
         if !flight.grounded.is_empty() && ledger.room() > 0 {
             ledger.order(Command::Stop {
                 units: ids(&flight.grounded),
@@ -452,16 +721,14 @@ impl Missions {
         let (loaded, empty): (Vec<&UnitObs>, Vec<&UnitObs>) =
             flight.carriers.iter().partition(|unit| unit.cargo > 0);
         let late = flight.age >= FLY_TICKS;
-        for carrier in loaded.iter().filter(|unit| unit.idle) {
-            if map.component(carrier.tile) == Some(lifting.home) {
-                ledger.order(unload(carrier.id, carrier.tile, false));
-            } else if !late {
-                if carrier.tile.chebyshev(flight.landing) <= SPREAD {
-                    ledger.order(unload(carrier.id, flight.landing, false));
-                } else {
-                    ledger.order(run(vec![carrier.id], flight.landing));
-                }
-            }
+        let (home, away): (Vec<&UnitObs>, Vec<&UnitObs>) = loaded
+            .iter()
+            .partition(|u| map.component(u.tile) == Some(lifting.home));
+        for carrier in home.iter().filter(|u| u.idle) {
+            ledger.order(unload(carrier.id, carrier.tile, false));
+        }
+        if !late {
+            land(&away, flight.landing, ledger);
         }
         let away: Vec<UnitId> = loaded
             .iter()
@@ -488,7 +755,7 @@ impl Missions {
                 let via = lifting.route(flight.landing, pad);
                 let sent = ledger.room() >= route_orders(via);
                 if sent {
-                    fly_to(ids(&away), via, pad, ledger);
+                    fly_to(ids(&away), via, pad, false, ledger);
                     going.extend(ids(&away));
                 }
                 sent
@@ -631,11 +898,11 @@ impl<'a> Lifting<'a> {
             observation,
             map,
             frame: scratch.frame,
+            delivery: Delivery::new(observation, map, scratch),
             memory,
             profile,
             home,
             air: &scratch.air,
-            ground: &scratch.ground,
             objectives: &scratch.objectives,
             severed: scratch.severed,
             reserve: scratch.reserve,
@@ -715,50 +982,8 @@ impl<'a> Lifting<'a> {
     /// down out of range walk in. Every ground tile riders could be set down
     /// on lies on the target's island, so none land across a chasm.
     fn landing(&self, target: Objective) -> Option<TilePos> {
-        let map = self.map;
-        let size = target.building.size();
-        let island = map.component(target.anchor)?;
-        let spread_ok = |tile: TilePos| {
-            (-SPREAD..=SPREAD).all(|dy| {
-                (-SPREAD..=SPREAD).all(|dx| {
-                    map.component(tile.offset(dx, dy))
-                        .is_none_or(|component| component == island)
-                })
-            })
-        };
-        // Ranking every tile in reach first leaves the costlier checks of
-        // open ground for the few tiles tried.
-        let mut ranked: Vec<_> = (-LANDING_REACH..size.1 + LANDING_REACH)
-            .flat_map(|dy| {
-                (-LANDING_REACH..size.0 + LANDING_REACH).map(move |dx| target.anchor.offset(dx, dy))
-            })
-            .filter(|tile| map.component(*tile) == Some(island))
-            .filter_map(|tile| {
-                let gap = gap(target.anchor, size, tile, (1, 1));
-                if gap < 1 {
-                    return None;
-                }
-                let point = doubled(tile);
-                let exposure: u64 = self
-                    .air
-                    .iter()
-                    .chain(self.ground)
-                    .filter(|hazard| hazard.covers(point))
-                    .map(|hazard| hazard.value)
-                    .sum();
-                let key = (
-                    exposure,
-                    (gap - LANDING_GAP).abs(),
-                    self.frame.rank(self.frame.home, point),
-                );
-                Some((key, tile))
-            })
-            .collect();
-        ranked.sort_unstable_by_key(|(key, _)| *key);
-        ranked
-            .into_iter()
-            .map(|(_, tile)| tile)
-            .find(|tile| self.open(*tile, island) && spread_ok(*tile))
+        self.delivery
+            .landing(target.anchor, target.building.size(), LANDING_GAP)
     }
 
     /// Whether a ground unit could stand on `tile` of `island`, by [`open`].
@@ -766,32 +991,31 @@ impl<'a> Lifting<'a> {
         open(self.observation, self.map, tile, island)
     }
 
-    /// The open home tile nearest `carrier`, away from other aircraft, where
-    /// riders can reach a carrier now hovering over a building or other
-    /// ground they cannot stand on.
     fn clearing(&self, carrier: &UnitObs) -> Option<TilePos> {
-        let tile = carrier.tile;
-        let aircraft: Vec<TilePos> = self
-            .observation
-            .my_units
+        self.delivery.clearing(carrier, carrier.tile)
+    }
+
+    fn load(
+        &self,
+        loads: &[(UnitId, Vec<UnitId>, u64)],
+        room: usize,
+        ledger: &mut Ledger,
+    ) -> Vec<UnitId> {
+        let transports: Vec<_> = loads
             .iter()
-            .filter(|unit| unit.id != carrier.id && unit.kind.stats().domain == Domain::Air)
-            .map(|unit| unit.tile)
+            .filter_map(|(id, _, _)| mine(self.observation, *id))
             .collect();
-        (-CLEARING..=CLEARING)
-            .flat_map(|dy| (-CLEARING..=CLEARING).map(move |dx| tile.offset(dx, dy)))
-            .filter(|near| self.open(*near, self.home))
-            .filter(|near| {
-                aircraft
-                    .iter()
-                    .all(|other| other.chebyshev(*near) > AIRSPACE)
-            })
-            .min_by_key(|near| {
-                (
-                    near.chebyshev(tile),
-                    self.frame.rank(self.frame.home, doubled(*near)),
-                )
-            })
+        let riders: Vec<_> = loads
+            .iter()
+            .flat_map(|(_, riders, _)| riders)
+            .filter_map(|id| mine(self.observation, *id))
+            .collect();
+        let source = self
+            .map
+            .start(self.observation.me)
+            .expect("lifting has a home");
+        self.delivery
+            .load(source, &transports, &riders, room, ledger)
     }
 
     fn pad(&self, landing: TilePos) -> Option<TilePos> {
@@ -814,35 +1038,6 @@ impl<'a> Lifting<'a> {
                 )
             })
     }
-}
-
-/// Issues `loads` in order while the decision has orders, those sent so far
-/// fall short of `need` and they fit in `room` mission members, returning
-/// the carriers and riders sent and their value.
-fn send(
-    loads: Vec<(UnitId, Vec<UnitId>, u64)>,
-    need: u64,
-    room: usize,
-    ledger: &mut Ledger,
-) -> (Vec<UnitId>, u64) {
-    let mut units = Vec::new();
-    let mut value = 0;
-    for (carrier, riders, worth) in loads {
-        if value >= need
-            || units.len() + 1 + riders.len() > room
-            || !ledger.order(Command::Load {
-                units: riders.clone(),
-                transport: carrier,
-                queue: false,
-            })
-        {
-            break;
-        }
-        units.push(carrier);
-        units.extend(riders);
-        value += worth;
-    }
-    (units, value)
 }
 
 /// Orders [`fly_to`] issues.
@@ -876,19 +1071,23 @@ pub(super) fn fly_to(
     carriers: Vec<UnitId>,
     via: Option<TilePos>,
     goal: TilePos,
+    engage: bool,
     ledger: &mut Ledger,
 ) {
+    let movement = |units, goal, queue| {
+        if engage {
+            Command::Hunt { units, goal, queue }
+        } else {
+            Command::Run { units, goal, queue }
+        }
+    };
     match via {
         Some(via) => {
-            ledger.order(run(carriers.clone(), via));
-            ledger.order(Command::Run {
-                units: carriers,
-                goal,
-                queue: true,
-            });
+            ledger.order(movement(carriers.clone(), via, false));
+            ledger.order(movement(carriers, goal, true));
         }
         None => {
-            ledger.order(run(carriers, goal));
+            ledger.order(movement(carriers, goal, false));
         }
     }
 }
@@ -943,7 +1142,10 @@ fn targets(
 
 /// Assigns `riders` in order to the first carrier with room, each carrier
 /// given as its id and remaining room. Carriers left empty are omitted.
-fn pack<'a>(carriers: &[(UnitId, u8)], riders: &[&'a UnitObs]) -> Vec<(UnitId, Vec<&'a UnitObs>)> {
+pub(super) fn pack<'a>(
+    carriers: &[(UnitId, u8)],
+    riders: &[&'a UnitObs],
+) -> Vec<(UnitId, Vec<&'a UnitObs>)> {
     let mut rooms: Vec<(UnitId, u8, Vec<&UnitObs>)> = carriers
         .iter()
         .map(|(id, room)| (*id, *room, Vec::new()))

@@ -34,11 +34,13 @@ const ENGAGE_TICKS: u64 = 3_600;
 /// Tiles a threat may move before its defenders are sent after it again.
 const RETARGET_TILES: i32 = 3;
 
-/// Ticks a defense's `phase` should end within.
-pub(super) fn timeout(phase: DefendPhase) -> u64 {
+/// Ticks a defense's `phase` should end within; a quiet guard has no
+/// deadline.
+pub(super) fn timeout(phase: DefendPhase) -> Option<u64> {
     match phase {
-        DefendPhase::Engage { .. } => ENGAGE_TICKS,
-        DefendPhase::Recover => QUIET_TICKS,
+        DefendPhase::Guard => None,
+        DefendPhase::Engage { .. } => Some(ENGAGE_TICKS),
+        DefendPhase::Recover => Some(QUIET_TICKS),
     }
 }
 
@@ -271,10 +273,10 @@ impl Missions {
             let Task::Defend { phase, .. } = &mut mission.task else {
                 unreachable!("a defend mission's task");
             };
-            let recovering = *phase == DefendPhase::Recover;
+            let recovering = matches!(*phase, DefendPhase::Recover | DefendPhase::Guard);
             let focus = match *phase {
                 DefendPhase::Engage { focus } => focus,
-                DefendPhase::Recover => None,
+                DefendPhase::Recover | DefendPhase::Guard => None,
             };
             let lost = lost(observation, gun, focus);
             // Chasing a threat off the Foundry's ground, such as a flyer over a

@@ -186,6 +186,7 @@ struct SeatDetector {
     rests: BTreeMap<u32, Rest>,
     pending: BTreeMap<u32, Pending>,
     deliveries: Deliveries,
+    guards: BTreeSet<u32>,
 }
 
 impl SeatDetector {
@@ -247,6 +248,11 @@ pub(super) struct FailureDetectors {
 }
 
 impl FailureDetectors {
+    pub(super) fn record_guards(&mut self, seat: u8, units: &[UnitId]) {
+        if let Some(Some(detector)) = self.seats.get_mut(usize::from(seat)) {
+            detector.guards = units.iter().map(|id| id.0).collect();
+        }
+    }
     pub(super) fn new(watched: impl IntoIterator<Item = bool>) -> Self {
         Self {
             seats: watched
@@ -455,7 +461,12 @@ impl FailureDetectors {
                 .any(|mission| (mission.id, mission.since) == (*id, *since))
         });
         for mission in missions {
-            let overdue = now >= mission.since + mission.timeout + FAILURE_WINDOW_TICKS;
+            let overdue = mission.timeout.is_some_and(|timeout| {
+                now >= mission
+                    .since
+                    .saturating_add(timeout)
+                    .saturating_add(FAILURE_WINDOW_TICKS)
+            });
             if overdue && detector.stuck.insert((mission.id, mission.since)) {
                 detector.failures.stuck_missions.record(
                     now,
@@ -544,6 +555,9 @@ fn check_idle_army(detector: &mut SeatDetector, state: &State, player: PlayerId,
     let mut idle = 0_u64;
     let mut present = BTreeSet::new();
     for unit in state.units().iter().filter(|unit| unit.player == player) {
+        if detector.guards.contains(&unit.id.0) {
+            continue;
+        }
         let stats = unit.kind.stats();
         if !stats.can_fight() {
             continue;

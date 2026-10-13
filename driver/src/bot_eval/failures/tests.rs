@@ -343,7 +343,7 @@ fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
         },
         phase: Phase::Engage,
         since,
-        timeout: 600,
+        timeout: Some(600),
         units: 2,
         goal: chassis::grid::TilePos::new(4, 4),
     };
@@ -372,6 +372,26 @@ fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
         SeatFailures::default(),
         "an unwatched seat"
     );
+}
+
+#[test]
+fn a_quiet_guard_has_no_stuck_deadline() {
+    let status = MissionStatus {
+        id: 1,
+        kind: oxide_opponent::MissionKind::Defend {
+            asset: oxide_sim::BuildingId(1),
+        },
+        phase: oxide_opponent::Phase::Guard,
+        since: 0,
+        timeout: None,
+        units: 10,
+        goal: chassis::grid::TilePos::new(4, 4),
+    };
+    let mut detectors = FailureDetectors::new([true]);
+    for now in [0, 6_000, 60_000] {
+        detectors.check_missions(0, now, &[status]);
+    }
+    assert_eq!(detectors.finish()[0].failures.stuck_missions.incidents, 0);
 }
 
 #[test]
@@ -454,6 +474,25 @@ fn an_army_resting_at_home_is_idle_after_its_rest_and_the_window() {
         0,
         "a seat without an army is never idle"
     );
+}
+
+#[test]
+fn assigned_guards_are_busy_but_idle_surplus_is_still_reported() {
+    let state = army(2 * large(), 4, 6, &[]).build().unwrap();
+    let armed: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.kind == UnitKind::Sentinel)
+        .map(|u| u.id)
+        .collect();
+    let mut all = FailureDetectors::new([true, false]);
+    all.record_guards(0, &armed);
+    run(&mut all, &state, 0..3 * IDLE_TICKS);
+    assert_eq!(idle_army(all), 0);
+    let mut surplus = FailureDetectors::new([true, false]);
+    surplus.record_guards(0, &armed[..large() as usize]);
+    run(&mut surplus, &state, 0..3 * IDLE_TICKS);
+    assert_eq!(idle_army(surplus), 1);
 }
 
 #[test]
