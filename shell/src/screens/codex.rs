@@ -329,6 +329,20 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
     if stats.demolition.is_some() {
         notes.push("Detonates on its target; always fatal to itself.".to_string());
     }
+    if let Some(radar) = stats.radar {
+        notes.push(if radar.deploy_ticks > 0 {
+            format!(
+                "Radar: after standing still {:.0} s, unfolds an antenna that tracks unseen enemies within {} tiles; moving folds it.",
+                f32::from(radar.deploy_ticks) / oxide_sim::TICKS_PER_SECOND as f32,
+                radar.radius
+            )
+        } else {
+            format!(
+                "Radar: tracks unseen enemies within {} tiles as air or ground contacts.",
+                radar.radius
+            )
+        });
+    }
     if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
         notes.push(
             "Left to itself, picks the machine in reach with the most full health, then the nearest."

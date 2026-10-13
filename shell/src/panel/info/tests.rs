@@ -72,6 +72,51 @@ fn hostile_inspection_does_not_expose_current_load_or_orders() {
 }
 
 #[test]
+fn scouts_list_their_radar_and_a_surveyor_reports_it_unfolding() {
+    let radar = |panel: &Panel| {
+        panel
+            .info
+            .rows
+            .iter()
+            .find(|r| r.label == "Radar")
+            .map(|r| r.value.clone())
+    };
+    assert_eq!(
+        radar(&selected(UnitKind::Kestrel, false)),
+        Some("14 tiles".into())
+    );
+    assert_eq!(
+        radar(&selected(UnitKind::Surveyor, false)),
+        Some("12 tiles (parked)".into())
+    );
+    assert_eq!(radar(&selected(UnitKind::Sentinel, false)), None);
+
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Surveyor,
+        x: 6,
+        y: 5,
+    }];
+    let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(640.0, 400.0)).unwrap();
+    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    let status = |game: &Game| {
+        build_for_palette(&game.view(), &BindingMap::classic(), false)
+            .unwrap()
+            .info
+            .status
+    };
+    assert!(status(&game).is_empty(), "folded at the start");
+    game.do_tick();
+    assert_eq!(status(&game), ["Unfolding radar"]);
+    let deploy = UnitKind::Surveyor.stats().radar.unwrap().deploy_ticks;
+    for _ in 1..deploy {
+        game.do_tick();
+    }
+    assert_eq!(status(&game), ["Radar up"]);
+}
+
+#[test]
 fn point_defense_charges_read_the_same_for_owner_and_enemy() {
     for foreign in [false, true] {
         let panel = selected(UnitKind::Mantle, foreign);

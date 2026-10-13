@@ -250,6 +250,9 @@ pub(crate) struct UnitAnimationState {
     pub(crate) transport: Option<TransportActionState>,
     /// A Sapper has physically reached contact and will detonate next tick.
     pub(crate) demolition_preparation: Option<f32>,
+    /// How far a parking radar has unfolded, from just begun to fully up;
+    /// none while it is folded.
+    pub(crate) radar_unfold: Option<f32>,
 }
 
 /// Facts about a unit that can be captured without mutating the simulation.
@@ -263,6 +266,9 @@ pub(crate) struct UnitAnimationFacts {
     carrying: u32,
     demolition_contact: bool,
     cooldowns: [u32; MAX_WEAPONS],
+    /// A parking radar's deployed ticks and deploy time, while unfolding
+    /// or up.
+    radar_unfold: Option<(u8, u8)>,
     point_defense: Option<oxide_sim::state::PointDefense>,
 }
 
@@ -329,6 +335,12 @@ impl UnitAnimationFacts {
             carrying: unit.carrying(),
             demolition_contact: sapper_at_contact(state, unit),
             cooldowns: unit.cooldowns,
+            radar_unfold: unit
+                .kind
+                .stats()
+                .radar
+                .filter(|radar| radar.deploy_ticks > 0 && unit.radar_deploy > 0)
+                .map(|radar| (unit.radar_deploy, radar.deploy_ticks)),
             point_defense: unit.point_defense,
         }
     }
@@ -767,6 +779,9 @@ impl AnimationController {
                 } else {
                     clock.tick_fraction
                 }),
+            radar_unfold: facts
+                .radar_unfold
+                .map(|(deployed, deploy)| ratio(u32::from(deployed), u32::from(deploy))),
         }
     }
 

@@ -18,6 +18,7 @@ fn unit_facts(kind: UnitKind) -> UnitAnimationFacts {
         carrying: 0,
         demolition_contact: false,
         cooldowns: [0; MAX_WEAPONS],
+        radar_unfold: None,
         point_defense: None,
     }
 }
@@ -744,6 +745,7 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         settled: 0,
         heading: 0,
         cargo: Vec::new(),
+        radar_deploy: 0,
     };
     assert!(builder.in_work_reach(site.anchor, site.kind.size()));
     assert!(matches!(builder.order, Order::Build { site: id } if id == site.id));

@@ -759,16 +759,16 @@ fn order_card(
         }
         None => (
             CardIcon::Verb(icon),
-            if matches!(
-                order,
+            match order {
                 Order::Attack {
-                    target: oxide_sim::AttackTarget::Contact(_),
+                    target: oxide_sim::AttackTarget::Contact(id),
                     ..
-                }
-            ) {
-                "Attack - Radar contact".into()
-            } else {
-                title.to_string()
+                } => match game.my_vision().track(*id).map(|track| track.domain) {
+                    Some(oxide_sim::stats::Domain::Air) => "Attack - Air contact".into(),
+                    Some(oxide_sim::stats::Domain::Ground) => "Attack - Ground contact".into(),
+                    None => "Attack - Radar contact".into(),
+                },
+                _ => title.to_string(),
             },
             None,
         ),

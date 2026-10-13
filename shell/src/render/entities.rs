@@ -2054,31 +2054,42 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
 }
 
 /// Radar blips, drawn above the fog like pings: contacts without identity
-/// from the Array's outer ring.
+/// from allied radar rings.
 pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
     if game.presentation.overlay {
         return; // the omniscient overlay already shows the real machines
     }
     let zoom = game.presentation.camera.zoom;
-    for &tile in game.my_vision().contacts() {
+    for contact in game.my_vision().contacts() {
+        let tile = contact.tile;
         let center = game
             .presentation
             .camera
             .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
-        let r = zoom * 0.3;
-        // A hollow diamond in no faction's shape or color.
-        let pts = [
-            vec2(center.x, center.y - r),
-            vec2(center.x + r, center.y),
-            vec2(center.x, center.y + r),
-            vec2(center.x - r, center.y),
-        ];
-        for i in 0..4 {
-            let a = pts[i];
-            let b = pts[(i + 1) % 4];
+        for (a, b) in blip_strokes(center, zoom * 0.3, contact.domain) {
             line_between(a, b, 2.0, BONE_FAINT);
         }
         fill_circle(center, 2.0, BONE_FAINT);
+    }
+}
+
+/// A blip's outline in no faction's shape or color, told apart by shape
+/// alone: a closed diamond on the ground, and only the diamond's upper
+/// half, a peak over the dot, in the air.
+pub(crate) fn blip_strokes(
+    center: Vec2,
+    r: f32,
+    domain: oxide_sim::stats::Domain,
+) -> Vec<(Vec2, Vec2)> {
+    let top = vec2(center.x, center.y - r);
+    let right = vec2(center.x + r, center.y);
+    let bottom = vec2(center.x, center.y + r);
+    let left = vec2(center.x - r, center.y);
+    match domain {
+        oxide_sim::stats::Domain::Ground => {
+            vec![(top, right), (right, bottom), (bottom, left), (left, top)]
+        }
+        oxide_sim::stats::Domain::Air => vec![(left, top), (top, right)],
     }
 }
 
@@ -2400,7 +2411,7 @@ fn visit_building_ranges(
             });
         }
     }
-    if kind == oxide_sim::BuildingKind::Array {
+    if let Some(radar) = stats.radar {
         visit(BuildingRange {
             kind: BuildingRangeKind::Vision,
             shape: BuildingRangeShape::Circle {
@@ -2412,7 +2423,7 @@ fn visit_building_ranges(
             kind: BuildingRangeKind::Radar,
             shape: BuildingRangeShape::Circle {
                 center,
-                radius: oxide_sim::stats::RADAR_DETECT_RADIUS as f32,
+                radius: radar as f32,
             },
         });
     }
@@ -2889,6 +2900,28 @@ fn visit_active_ranges(
                 icon: range_icon(kind),
                 color: range_color(kind),
             });
+        }
+        // Radar rings are measured from the tile, like a mast's, and show
+        // only while the radar is up.
+        if let Some(radar) = unit.radar() {
+            let tile = unit.tile();
+            let center = vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5);
+            for (kind, radius) in [
+                (BuildingRangeKind::Vision, stats.vision),
+                (BuildingRangeKind::Radar, radar),
+            ] {
+                visit(RangeIndicator {
+                    range: BuildingRange {
+                        kind,
+                        shape: BuildingRangeShape::Circle {
+                            center,
+                            radius: radius as f32,
+                        },
+                    },
+                    icon: range_icon(kind),
+                    color: range_color(kind),
+                });
+            }
         }
     }
 }

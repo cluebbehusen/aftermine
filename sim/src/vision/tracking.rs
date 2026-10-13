@@ -1,6 +1,7 @@
 //! Continuous association of observations, never of concealed entities.
 
-use super::{Sighting, Vision};
+use super::{RadarContact, Sighting, Vision};
+use crate::stats::Domain;
 use crate::{ContactId, PlayerId, State, Tick, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -22,6 +23,9 @@ pub struct ContactTrack {
     pub id: ContactId,
     /// Current reported tile.
     pub tile: TilePos,
+    /// Whether the contact flies. Radar tells air from ground, so a track
+    /// never continues across a change of domain unless it is identified.
+    pub domain: Domain,
     /// Identified unit, present only while currently visible.
     pub visible_unit: Option<UnitId>,
     /// At most one second of consecutive observations, oldest first.
@@ -75,24 +79,23 @@ impl Tracking {
         sightings: &[Sighting],
     ) {
         let team = state.player(player).team;
-        let mut observations: Vec<(TilePos, Option<UnitId>)> = view
+        let mut observations: Vec<(TilePos, Domain, Option<UnitId>)> = view
             .contacts
             .iter()
-            .copied()
-            .map(|tile| (tile, None))
+            .map(|contact| (contact.tile, contact.domain, None))
             .collect();
         observations.extend(
             sightings
                 .iter()
                 .filter(|unit| unit.team != team && view.visible(unit.tile))
-                .map(|unit| (unit.tile, Some(unit.id))),
+                .map(|unit| (unit.tile, unit.domain, Some(unit.id))),
         );
-        observations.sort_unstable_by_key(|(tile, unit)| (tile.y, tile.x, *unit));
+        observations.sort_unstable_by_key(|(tile, domain, unit)| (tile.y, tile.x, *domain, *unit));
         // Sorted by tile, so a row's observations from `x0` through `x1` are
         // one contiguous run.
         let span = |y: i32, x0: i32, x1: i32| {
-            let start = observations.partition_point(|(t, _)| (t.y, t.x) < (y, x0));
-            let len = observations[start..].partition_point(|(t, _)| (t.y, t.x) <= (y, x1));
+            let start = observations.partition_point(|(t, _, _)| (t.y, t.x) < (y, x0));
+            let len = observations[start..].partition_point(|(t, _, _)| (t.y, t.x) <= (y, x1));
             start..start + len
         };
         let live = |track: &ContactTrack| {
@@ -110,7 +113,7 @@ impl Tracking {
         let mut seen: Vec<(UnitId, usize)> = observations
             .iter()
             .enumerate()
-            .filter_map(|(new, &(_, unit))| unit.map(|unit| (unit, new)))
+            .filter_map(|(new, &(_, _, unit))| unit.map(|unit| (unit, new)))
             .collect();
         seen.sort_unstable();
         for (old, track) in self.tracks.iter().enumerate() {
@@ -136,11 +139,14 @@ impl Tracking {
                     if matches[new].is_some() {
                         continue;
                     }
-                    let (tile, visible) = observations[new];
+                    let (tile, domain, visible) = observations[new];
                     if track.visible_unit.zip(visible).is_some_and(|(a, b)| a != b) {
                         continue;
                     }
                     let identified = track.visible_unit.is_some() && track.visible_unit == visible;
+                    if !identified && track.domain != domain {
+                        continue;
+                    }
                     candidates.push((
                         !identified,
                         predicted.dist_sq(tile.center()),
@@ -167,7 +173,7 @@ impl Tracking {
             .map(Some)
             .collect();
         let mut tracks = Vec::with_capacity(observations.len());
-        for (new, (tile, visible_unit)) in observations.into_iter().enumerate() {
+        for (new, (tile, domain, visible_unit)) in observations.into_iter().enumerate() {
             let mut track = if let Some(old) = matches[new] {
                 previous[old].take().expect("a track matches at most once")
             } else {
@@ -176,11 +182,13 @@ impl Tracking {
                 ContactTrack {
                     id,
                     tile,
+                    domain,
                     visible_unit,
                     history: Vec::new(),
                 }
             };
             track.tile = tile;
+            track.domain = domain;
             track.visible_unit = visible_unit;
             // Samples are consecutive ticks, oldest first, so the ones kept
             // form one run. Refresh may run more than once at a scenario's
@@ -243,6 +251,7 @@ impl Tracking {
                     state.hostile(player, u.player)
                         && view.visible(u.tile())
                         && u.tile() == track.tile
+                        && u.domain() == track.domain
                 }) {
                     return false;
                 }
@@ -251,10 +260,13 @@ impl Tracking {
                 if view.visible(track.tile) {
                     return false;
                 }
-                reported.push(track.tile);
+                reported.push(RadarContact {
+                    tile: track.tile,
+                    domain: track.domain,
+                });
             }
         }
-        reported.sort_unstable_by_key(|tile| (tile.y, tile.x));
+        reported.sort_unstable_by_key(RadarContact::sort_key);
         visible.sort_unstable();
         // Empty tracking is accepted; the next refresh initializes it.
         self.tracks.is_empty() && self.next_id == 0

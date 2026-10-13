@@ -40,6 +40,7 @@ mod piledriver;
 mod pits;
 mod point_defense;
 mod provisional_construction;
+mod radar;
 mod repair;
 mod repair_bay;
 mod repair_unit;

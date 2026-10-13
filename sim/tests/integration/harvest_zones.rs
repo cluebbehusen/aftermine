@@ -13,7 +13,7 @@ use oxide_sim::stats::{
 use oxide_sim::{Command, Event, Order, PlayerId, State, Target, UnitKind};
 use serde_json::json;
 
-use common::{cmd, open_arena_with, run_until, unit};
+use common::{cmd, ground_blip, open_arena_with, run_until, unit};
 
 #[test]
 fn a_loaded_worker_inside_static_pressure_leaves_and_deposits() {
@@ -974,7 +974,10 @@ fn a_far_radar_contact_does_not_withdraw_an_unrelated_zone() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     state.tick(&[cmd(
         0,
         Command::Harvest {
@@ -1020,7 +1023,10 @@ fn an_explicit_anchor_remains_authoritative_inside_a_local_radar_contact() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(contact));
 
     state.tick(&[cmd(
@@ -1079,7 +1085,10 @@ fn an_explicit_source_avoids_unrelated_known_danger_on_the_way() {
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(contact));
     assert!(!state.vision(PlayerId(0)).visible(source));
 
@@ -1143,7 +1152,10 @@ fn an_explicit_source_prefers_a_safe_doorstep_before_a_dangerous_fallback() {
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(source));
 
     state.tick(&[cmd(
@@ -1192,7 +1204,10 @@ fn a_loaded_delivery_routes_around_known_danger() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     state.tick(&[cmd(
         0,
         Command::Harvest {

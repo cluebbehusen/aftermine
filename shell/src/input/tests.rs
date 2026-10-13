@@ -7357,11 +7357,13 @@ fn knowledge_attack_game() -> Game {
             x: 12,
             y: 14,
         },
+        // A ground contact the Bastion can focus, inside the Array's
+        // radar but beyond every gun's reach.
         UnitSpec {
             player: 1,
-            kind: UnitKind::Kestrel,
-            x: 14,
-            y: 8,
+            kind: UnitKind::Harvester,
+            x: 20,
+            y: 10,
         },
     ];
     scenario.buildings = vec![
@@ -7476,6 +7478,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
 fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
     let mut scenario = knowledge_attack_game().scenario.clone();
     scenario.units[0].kind = UnitKind::Talon;
+    scenario.units[2].kind = UnitKind::Kestrel;
     scenario.units[2].x = 16;
     scenario.units[2].y = 16;
     scenario.buildings[1].kind = oxide_sim::BuildingKind::FlakTurret;

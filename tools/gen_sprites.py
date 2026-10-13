@@ -1764,9 +1764,10 @@ def sapper(variant: str, move: int = 0) -> None:
     finish(img, px, f"sapper{variant_tag(variant)}{suffix}")
 
 
-def surveyor(variant: str, move: int = 0) -> None:
-    """Placeholder ground scout: a slim four-wheeled crawler under a tall
-    sensor mast, unarmed and built to run."""
+def surveyor(variant: str, move: int = 0, action: int = 0) -> None:
+    """Placeholder ground scout: a slim four-wheeled crawler whose sensor
+    mast lies folded while it drives and rises over four action frames as
+    its radar unfolds at rest."""
     px = 64
     pal = PALETTES[variant]
     img, d = canvas(px)
@@ -1786,10 +1787,18 @@ def surveyor(variant: str, move: int = 0) -> None:
     d.rounded_rectangle(
         [s(23), s(26 + dy), s(41), s(54 + dy)], radius=s(5), fill=(*pal["base"], 255)
     )
-    d.rectangle([s(30), s(10 + dy), s(34), s(36 + dy)], fill=(*IRON_LIGHT, 255))
-    d.ellipse([s(22), s(2 + dy), s(42), s(18 + dy)], fill=(*pal["dark"], 255))
-    d.ellipse([s(27), s(6 + dy), s(37), s(14 + dy)], fill=(*pal["light"], 255))
-    suffix = "" if move == 0 else f"_move{move}"
+    top = 30 - 5 * action + dy
+    reach = 4 + 1.5 * action
+    d.rectangle([s(30), s(top), s(34), s(36 + dy)], fill=(*IRON_LIGHT, 255))
+    d.ellipse(
+        [s(32 - reach), s(top - reach * 0.6), s(32 + reach), s(top + reach * 0.6)],
+        fill=(*pal["dark"], 255),
+    )
+    d.ellipse(
+        [s(32 - reach / 2), s(top - reach * 0.3), s(32 + reach / 2), s(top + reach * 0.3)],
+        fill=(*pal["light"], 255),
+    )
+    suffix = f"_action{action}" if action else ("" if move == 0 else f"_move{move}")
     finish(img, px, f"surveyor{variant_tag(variant)}{suffix}")
 
 
@@ -3265,6 +3274,8 @@ def generate(output: Path) -> None:
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
+        for action in range(1, 5):
+            surveyor(variant, 0, action)
         airworks(variant)
         for work in range(1, 4):
             airworks(variant, work)

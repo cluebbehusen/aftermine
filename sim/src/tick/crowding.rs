@@ -265,7 +265,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                 };
                 unit.kind.stats().weapons.iter().any(|w| {
                     let full = unit.domain() == crate::stats::Domain::Ground
-                        && view.domain == Some(crate::stats::Domain::Ground)
+                        && view.domain == crate::stats::Domain::Ground
                         && !w.indirect;
                     let clear = |tile| {
                         state.map().tile(tile).is_some_and(|t| {
@@ -283,7 +283,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                         w.range
                             .min(unit.kind.stats().radius + target_radius + reach)
                     });
-                    view.domain.is_some_and(|d| w.targets.covers(d))
+                    w.targets.covers(view.domain)
                         && unit.pos.dist_sq(aim) <= range * range
                         && unit.pos.dist_sq(aim) >= w.minimum_range * w.minimum_range
                         && clear(chassis::grid::TilePos::containing(aim))

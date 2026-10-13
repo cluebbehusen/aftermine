@@ -686,9 +686,9 @@ use `State::hash` for deterministic identity. `FogView::capture` is the
 player-knowledge view for players and agents; bots read the equivalent
 `ObservationData`, and a parity test keeps the two in agreement. It hides
 hostile intent and economy, exposes enemies under current sight, and otherwise
-supplies only recorded ghosts, remembered salvage, anonymous radar contacts, and
-public buildings such as Deep Bores. Player-facing commands and effects must
-respect that knowledge boundary.
+supplies only recorded ghosts, remembered salvage, radar contacts that name only
+air or ground, and public buildings such as Deep Bores. Player-facing commands
+and effects must respect that knowledge boundary.
 
 ## Rendering and audio
 
@@ -732,19 +732,24 @@ Frame counts come from the atlas: a row family holds as many frames as it ships
 consecutive `_actionN` or `_workN` keys, and every rung of a building's upgrade
 ladder ships its own hull, and mount for a defense. The animation code owns
 timing and which frame each moment shows; tests keep every selected frame below
-the shipped count. Procedural quarry boundaries, pits, peaks, and rock walls
-derive from map geometry with fog-aware visibility. The boundary and peaks are
-one terrace system measured from the open floor: a peak is the wall left
-standing, stepping up once it is about five tiles thick, and a peak meeting the
-map edge is a spur whose levels join the wall's. The wall's field reads
-unexplored tiles as floor and each peak's as more peak, so neither discloses
-hidden terrain; both fields are cached until the exploration they read changes.
-Rock walls draw layered slabs from the generated library, sized by local rock
-thickness with unexplored tiles counted as more rock, and machinery blockers
-stay off the edge ring the boundary covers. The shell extends allied unit sight
-discs and completed-building footprint sight into a bounded off-map quarry
-margin. Its presentation-only exploration cache updates on every tick, including
-bulk advances, and rebuilds during explicit command-log reconstruction. Player
+the shipped count. A Surveyor's `_actionN` frames show its parking radar
+unfolding from the simulation's deploy count, and the last holds while the radar
+is up; a selected own scout draws its radar ring only while the radar is up.
+Radar blips draw above the fog in no faction's color, told apart by shape: a
+hollow diamond for a ground contact and only its upper half for an air contact.
+Procedural quarry boundaries, pits, peaks, and rock walls derive from map
+geometry with fog-aware visibility. The boundary and peaks are one terrace
+system measured from the open floor: a peak is the wall left standing, stepping
+up once it is about five tiles thick, and a peak meeting the map edge is a spur
+whose levels join the wall's. The wall's field reads unexplored tiles as floor
+and each peak's as more peak, so neither discloses hidden terrain; both fields
+are cached until the exploration they read changes. Rock walls draw layered
+slabs from the generated library, sized by local rock thickness with unexplored
+tiles counted as more rock, and machinery blockers stay off the edge ring the
+boundary covers. The shell extends allied unit sight discs and
+completed-building footprint sight into a bounded off-map quarry margin. Its
+presentation-only exploration cache updates on every tick, including bulk
+advances, and rebuilds during explicit command-log reconstruction. Player
 checkpoints retain that cache directly. Map tiles show authoritative simulation
 fog; the replay viewer is fog-free. Animation, heading, and weapon effects use
 the relevant simulation state rather than inventing movement or firing delays.

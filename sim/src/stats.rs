@@ -124,7 +124,10 @@ chassis::listed_enum! {
 /// A movement medium. Ground units path and collide on the terrain grid;
 /// air units fly over everything but peaks and collide only with each
 /// other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum Domain {
     /// Bound to passable terrain.
     Ground,
@@ -301,6 +304,8 @@ pub struct UnitStats {
     /// Takes the Scout order. Only ground kinds scout, since the caution
     /// that order applies reads ground threats.
     pub scouts: bool,
+    /// The machine's radar, if it carries one.
+    pub radar: Option<RadarStats>,
     /// Charges that shoot down hostile projectiles aimed near the machine.
     pub point_defense: Option<PointDefenseStats>,
 }
@@ -327,6 +332,17 @@ pub struct BraceStats {
     pub recoil_ticks: u32,
     /// Deployment lost per tick while retracting.
     pub retract_per_tick: u8,
+}
+
+/// A machine's radar: hostile units and buildings inside its ring but out
+/// of true sight appear to its team as contacts (a tile, no kind, no owner).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RadarStats {
+    /// Ring radius in tiles, measured from the machine's tile.
+    pub radius: i32,
+    /// Ticks the machine must stand still before the ring comes up; any
+    /// driving of its own folds it again. 0 keeps it up at all times.
+    pub deploy_ticks: u8,
 }
 
 /// Point defense: each charge destroys one hostile projectile in flight
@@ -417,6 +433,10 @@ pub struct BuildingStats {
     /// Price, build time, and prerequisites for placing this kind. Every
     /// current kind has one; for an upgrade tier it prices the upgrade.
     pub construction: Option<ConstructionStats>,
+    /// Radar ring radius in tiles, measured from the anchor tile, for a
+    /// built mast: hostile units and buildings inside it but out of true
+    /// sight appear as contacts (a tile, no kind, no owner).
+    pub radar: Option<i32>,
 }
 
 impl BuildingKind {
@@ -637,7 +657,7 @@ impl UnitKind {
             UnitKind::Excavator => {
                 "Heavy harvester with faster mining, more cargo space, and faster construction."
             }
-            UnitKind::Kestrel => "Unarmed scout aircraft with long sight range.",
+            UnitKind::Kestrel => "Unarmed scout aircraft with long sight range and radar.",
             UnitKind::Condor => {
                 "Heavy bomber. Drops one large bomb per attack run and turns for another pass."
             }
@@ -658,7 +678,7 @@ impl UnitKind {
                 "Slow, enormous shots that break heavy machines; wasted on small ones. Must brace before firing."
             }
             UnitKind::Surveyor => {
-                "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby."
+                "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby, and unfolds a radar when parked."
             }
         }
     }
@@ -697,6 +717,7 @@ const HARVESTER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -752,6 +773,7 @@ const SENTINEL: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -790,6 +812,7 @@ const SCUTTLER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -830,6 +853,7 @@ const LANCER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -875,6 +899,7 @@ const BOMBARD: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -913,6 +938,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -951,6 +977,7 @@ const BUZZARD: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -989,6 +1016,7 @@ const TALON: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1031,6 +1059,7 @@ const WARDEN: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1063,6 +1092,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1092,6 +1122,10 @@ const KESTREL: UnitStats = UnitStats {
     crash: None,
     charge_detection: true,
     scouts: false,
+    radar: Some(RadarStats {
+        radius: 14,
+        deploy_ticks: 0,
+    }),
     point_defense: None,
 };
 
@@ -1137,6 +1171,7 @@ const CONDOR: UnitStats = UnitStats {
     }),
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1178,6 +1213,7 @@ const BREAKER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1223,6 +1259,7 @@ const PILEDRIVER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1267,6 +1304,7 @@ const AVALANCHE: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1300,6 +1338,7 @@ const SKYHOOK: UnitStats = UnitStats {
     }),
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1334,6 +1373,7 @@ const SAPPER: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: None,
 };
 
@@ -1364,6 +1404,7 @@ const MANTLE: UnitStats = UnitStats {
     crash: None,
     charge_detection: false,
     scouts: false,
+    radar: None,
     point_defense: Some(PointDefenseStats {
         charges: 3,
         radius: Fx::lit("4.5"),
@@ -1397,6 +1438,10 @@ const SURVEYOR: UnitStats = UnitStats {
     crash: None,
     charge_detection: true,
     scouts: true,
+    radar: Some(RadarStats {
+        radius: 12,
+        deploy_ticks: 40, // 2 s
+    }),
     point_defense: None,
 };
 
@@ -1421,6 +1466,7 @@ const FOUNDRY: BuildingStats = BuildingStats {
         build_ticks: 600,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const TURRET: BuildingStats = BuildingStats {
@@ -1442,6 +1488,7 @@ const TURRET: BuildingStats = BuildingStats {
         build_ticks: 300, // 15 s of builder attention
         requires: &[],
     }),
+    radar: None,
 };
 
 const FABRICATOR: BuildingStats = BuildingStats {
@@ -1461,6 +1508,7 @@ const FABRICATOR: BuildingStats = BuildingStats {
         build_ticks: 280, // 14 s — the tech window must fit inside the rush window
         requires: &[],
     }),
+    radar: None,
 };
 
 const FLAK_TURRET: BuildingStats = BuildingStats {
@@ -1482,6 +1530,7 @@ const FLAK_TURRET: BuildingStats = BuildingStats {
         build_ticks: 250,
         requires: &[],
     }),
+    radar: None,
 };
 
 const BASTION: BuildingStats = BuildingStats {
@@ -1512,11 +1561,12 @@ const BASTION: BuildingStats = BuildingStats {
         build_ticks: 500,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const ARRAY: BuildingStats = BuildingStats {
-    // A permanent early-warning sentry. Unlike a scout aircraft it does
-    // not need attention, but it cannot move or identify radar contacts.
+    // A permanent early-warning sentry with the widest radar ring. Unlike
+    // a scout it needs no attention, but it cannot move.
     max_hp: 250,
     vision: 9, // the inner ring: true sight
     produces: &[],
@@ -1526,6 +1576,7 @@ const ARRAY: BuildingStats = BuildingStats {
         build_ticks: 300,
         requires: &[],
     }),
+    radar: Some(20),
 };
 
 const RECLAIMER: BuildingStats = BuildingStats {
@@ -1538,6 +1589,7 @@ const RECLAIMER: BuildingStats = BuildingStats {
         build_ticks: 350,
         requires: &[],
     }),
+    radar: None,
 };
 
 const REPAIR_BAY: BuildingStats = BuildingStats {
@@ -1550,6 +1602,7 @@ const REPAIR_BAY: BuildingStats = BuildingStats {
         build_ticks: 350,
         requires: &[],
     }),
+    radar: None,
 };
 
 const AIRWORKS: BuildingStats = BuildingStats {
@@ -1568,6 +1621,7 @@ const AIRWORKS: BuildingStats = BuildingStats {
         build_ticks: 350,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const CRUCIBLE: BuildingStats = BuildingStats {
@@ -1588,6 +1642,7 @@ const CRUCIBLE: BuildingStats = BuildingStats {
         build_ticks: 550,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const BARRICADE: BuildingStats = BuildingStats {
@@ -1600,6 +1655,7 @@ const BARRICADE: BuildingStats = BuildingStats {
         build_ticks: 120,
         requires: &[],
     }),
+    radar: None,
 };
 
 const SCUTTLE_CHARGE: BuildingStats = BuildingStats {
@@ -1612,6 +1668,7 @@ const SCUTTLE_CHARGE: BuildingStats = BuildingStats {
         build_ticks: 60,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const EXTRACTOR: BuildingStats = BuildingStats {
@@ -1626,6 +1683,7 @@ const EXTRACTOR: BuildingStats = BuildingStats {
         build_ticks: 300,
         requires: &[],
     }),
+    radar: None,
 };
 
 // ---- Upgrade tiers ----------------------------------------------------
@@ -1655,6 +1713,7 @@ const HEAVY_TURRET: BuildingStats = BuildingStats {
         build_ticks: 300,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const BULWARK: BuildingStats = BuildingStats {
@@ -1676,6 +1735,7 @@ const BULWARK: BuildingStats = BuildingStats {
         build_ticks: 500,
         requires: &[BuildingKind::Crucible],
     }),
+    radar: None,
 };
 
 const BURST_FLAK: BuildingStats = BuildingStats {
@@ -1697,6 +1757,7 @@ const BURST_FLAK: BuildingStats = BuildingStats {
         build_ticks: 250,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const REFINERY: BuildingStats = BuildingStats {
@@ -1709,6 +1770,7 @@ const REFINERY: BuildingStats = BuildingStats {
         build_ticks: 600,
         requires: &[BuildingKind::Fabricator],
     }),
+    radar: None,
 };
 
 const DEEP_BORE: BuildingStats = BuildingStats {
@@ -1721,6 +1783,7 @@ const DEEP_BORE: BuildingStats = BuildingStats {
         build_ticks: 600,
         requires: &[BuildingKind::Crucible],
     }),
+    radar: None,
 };
 
 const DEEP_ARRAY: BuildingStats = BuildingStats {
@@ -1734,6 +1797,7 @@ const DEEP_ARRAY: BuildingStats = BuildingStats {
         // The Crucible itself requires the Fabricator.
         requires: &[BuildingKind::Crucible],
     }),
+    radar: Some(20),
 };
 
 const CITADEL: BuildingStats = BuildingStats {
@@ -1760,6 +1824,7 @@ const CITADEL: BuildingStats = BuildingStats {
         build_ticks: 400,
         requires: &[BuildingKind::Crucible],
     }),
+    radar: None,
 };
 
 impl UnitKind {
@@ -1922,11 +1987,6 @@ pub const FOUNDRY_WRECK_VALUE: u32 = 300;
 /// salvage per step). Battlefield scrap outlasts the battle by minutes but
 /// is never a permanent bank.
 pub const WRECK_DECAY_TICKS: u64 = 300;
-
-/// Outer detection ring of the Array, in tiles: hostile units and buildings
-/// inside it but out of true sight appear as blips (a tile, no kind, no
-/// owner). Each blip feeds a contact track that attacks may target.
-pub const RADAR_DETECT_RADIUS: i32 = 20;
 
 /// Ticks per scrap credited by each built Reclaimer. Slow enough to serve as
 /// insurance and a stalemate valve rather than an opening.

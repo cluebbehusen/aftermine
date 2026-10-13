@@ -619,6 +619,10 @@ struct Reach {
     cancelled_order: u64,
     /// Ticks on which some unit was scouting.
     scouting: u64,
+    /// Ticks on which some parking radar was unfolding, and on which one
+    /// was up.
+    radar_unfolding: u64,
+    radar_up: u64,
     /// Most units on escort duty at once.
     escorts: usize,
     /// Most producers rallied onto a unit at once.
@@ -645,6 +649,8 @@ impl Reach {
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
         self.scouting += other.scouting;
+        self.radar_unfolding += other.radar_unfolding;
+        self.radar_up += other.radar_up;
         self.escorts = self.escorts.max(other.escorts);
         self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
@@ -1069,6 +1075,26 @@ fn fuzz_run(seed: u64) -> Run {
                 .iter()
                 .any(|u| matches!(u.order, oxide_sim::Order::Scout { .. })),
         );
+        let parking = |u: &&oxide_sim::Unit| {
+            u.kind
+                .stats()
+                .radar
+                .is_some_and(|radar| radar.deploy_ticks > 0)
+        };
+        reach.radar_unfolding += u64::from(
+            state
+                .units()
+                .iter()
+                .filter(parking)
+                .any(|u| u.radar_deploy > 0 && u.radar().is_none()),
+        );
+        reach.radar_up += u64::from(
+            state
+                .units()
+                .iter()
+                .filter(parking)
+                .any(|u| u.radar().is_some()),
+        );
         reach.order_queue = reach.order_queue.max(
             state
                 .units()
@@ -1225,6 +1251,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
     assert!(reach.scouting > 0, "the sweep must put a scout to work");
+    assert!(
+        reach.radar_unfolding > 0 && reach.radar_up > 0,
+        "the sweep must unfold a parking radar"
+    );
     assert!(
         reach.escorts > 0,
         "the sweep must put a unit on escort duty"

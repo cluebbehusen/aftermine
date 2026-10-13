@@ -15,13 +15,20 @@ pub struct AttackView {
     pub position: Vec2Fx,
     /// Remembered building rectangle, when this is a static objective.
     pub footprint: Option<(TilePos, (i32, i32))>,
-    /// Known domain. Radar contacts deliberately leave it absent.
-    pub domain: Option<Domain>,
+    /// The victim's domain: radar tells air from ground even while it
+    /// names nothing else.
+    pub domain: Domain,
     /// Motion estimated from radar observations.
     pub velocity: Vec2Fx,
 }
 
 impl AttackView {
+    /// Whether this is a radar blip: neither an identified victim nor a
+    /// building's known footprint.
+    pub fn is_blip(self) -> bool {
+        self.entity.is_none() && self.footprint.is_none()
+    }
+
     /// Closest point on a known footprint, or the reported contact position.
     pub fn aim_from(self, from: Vec2Fx) -> Vec2Fx {
         match self.footprint {
@@ -82,7 +89,7 @@ impl State {
                         entity: Some(Target::Unit(id)),
                         position: u.pos,
                         footprint: None,
-                        domain: Some(domain),
+                        domain,
                         velocity: track.velocity(),
                     })
                 } else {
@@ -90,7 +97,7 @@ impl State {
                         entity: None,
                         position: track.tile.center(),
                         footprint: None,
-                        domain: None,
+                        domain: track.domain,
                         velocity: track.velocity(),
                     })
                 }
@@ -113,7 +120,7 @@ impl State {
                     entity,
                     position: crate::geometry::footprint_center(memory.anchor, size),
                     footprint: Some((memory.anchor, size)),
-                    domain: Some(Domain::Ground),
+                    domain: Domain::Ground,
                     velocity: Vec2Fx::ZERO,
                 })
             }

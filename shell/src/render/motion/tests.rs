@@ -133,7 +133,29 @@ fn unit_state() -> UnitAnimationState {
         scanner: None,
         transport: None,
         demolition_preparation: None,
+        radar_unfold: None,
     }
+}
+
+#[test]
+fn a_parking_radar_unfolds_over_its_frames_and_holds_the_last() {
+    let at = |progress: f32| {
+        unit_frame(
+            UnitKind::Surveyor,
+            UnitAnimationState {
+                radar_unfold: Some(progress),
+                ..unit_state()
+            },
+        )
+    };
+    assert_eq!(at(0.01), UnitFrame::Action(0));
+    assert_eq!(at(0.5), UnitFrame::Action(RADAR_UNFOLD_FRAMES / 2));
+    assert_eq!(at(1.0), UnitFrame::Action(RADAR_UNFOLD_FRAMES - 1));
+    assert_eq!(
+        unit_frame(UnitKind::Surveyor, unit_state()),
+        UnitFrame::Idle,
+        "a folded radar shows the plain body"
+    );
 }
 
 fn building_state() -> BuildingAnimationState {

@@ -494,7 +494,7 @@ pub(super) fn turret_fire(
         );
         let focused = focus
             .and_then(|target| state.attack_view(me, target))
-            .filter(|view| view.domain.is_none_or(|domain| atk.targets.covers(domain)));
+            .filter(|view| atk.targets.covers(view.domain));
         if focus.is_some() && focused.is_none() {
             state.building_mut(id).expect("just seen").focus = None;
         }

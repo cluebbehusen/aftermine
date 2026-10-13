@@ -477,7 +477,9 @@ fn fog() -> BTreeMap<String, String> {
         "fog",
         vec![
             unit(0, UnitKind::Kestrel, 16, 6),
-            unit(1, UnitKind::Kestrel, 14, 8),
+            // A ground contact for the Bastion, durable enough to outlast
+            // its automatic shells until the focused one.
+            unit(1, UnitKind::Breaker, 14, 8),
         ],
     );
     scenario.buildings = vec![
@@ -550,19 +552,22 @@ fn fog() -> BTreeMap<String, String> {
             buildings: vec![gun],
         },
     );
-    p.until("anonymous radar track", 1000, |p| {
+    // The scout's own radar also tracks the Reclaimer, out of the
+    // Bastion's reach; the shot needs the enemy Breaker's track beside it.
+    let in_reach = |tile: TilePos| tile.chebyshev(TilePos::new(6, 7)) <= 9;
+    p.until("anonymous radar track in reach", 1000, |p| {
         p.state
             .vision(PlayerId(0))
             .tracks()
             .iter()
-            .any(|t| t.visible_unit.is_none())
+            .any(|t| t.visible_unit.is_none() && in_reach(t.tile))
     });
     let contact = p
         .state
         .vision(PlayerId(0))
         .tracks()
         .iter()
-        .find(|t| t.visible_unit.is_none())
+        .find(|t| t.visible_unit.is_none() && in_reach(t.tile))
         .unwrap()
         .id;
     let before_focus = p.events.len();
@@ -642,11 +647,63 @@ fn teams() -> BTreeMap<String, String> {
     p.finish()
 }
 
+fn radar() -> BTreeMap<String, String> {
+    let mut p = Probe::new(arena(
+        "radar",
+        vec![
+            unit(0, UnitKind::Surveyor, 10, 10),
+            unit(1, UnitKind::Harvester, 21, 10),
+            unit(1, UnitKind::Kestrel, 21, 13),
+        ],
+    ));
+    let scout = p.unit(0, UnitKind::Surveyor);
+    p.until("radar unfolding", 10, |p| {
+        p.state.unit(scout).unwrap().radar_deploy > 0
+    });
+    p.mark("unfolding");
+    p.until("radar up", 100, |p| {
+        p.state.unit(scout).unwrap().radar().is_some()
+    });
+    let blip = |x, y, domain| oxide_sim::RadarContact {
+        tile: TilePos::new(x, y),
+        domain,
+    };
+    assert_eq!(
+        p.state.vision(PlayerId(0)).contacts(),
+        [
+            blip(21, 10, oxide_sim::stats::Domain::Ground),
+            blip(21, 13, oxide_sim::stats::Domain::Air)
+        ],
+        "the parked radar tracks the hidden Harvester and Kestrel"
+    );
+    p.mark("parked");
+    p.command(
+        0,
+        Command::Run {
+            units: vec![scout],
+            goal: TilePos::new(10, 14),
+            queue: false,
+        },
+    );
+    assert_eq!(p.state.unit(scout).unwrap().radar_deploy, 0);
+    assert!(p.state.vision(PlayerId(0)).contacts().is_empty());
+    p.mark("folded");
+    p.finish()
+}
+
 pub fn compute_hashes() -> BTreeMap<String, String> {
-    [economy(), construction(), ground(), air(), fog(), teams()]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        economy(),
+        construction(),
+        ground(),
+        air(),
+        fog(),
+        teams(),
+        radar(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 #[test]

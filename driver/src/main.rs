@@ -428,6 +428,10 @@ enum Cmd {
         /// Write the full report, every leg included, as JSON.
         #[arg(long)]
         json: Option<PathBuf>,
+        /// Spot for an army whose guns outrange its sight with a Surveyor
+        /// parked outside the enemy's reach, radar up, instead of a Kestrel.
+        #[arg(long)]
+        surveyor_spotter: bool,
     },
     /// Search mixes of up to three unit kinds at equal scrap for a
     /// composition nobody beats: grows a pool of strong mixes and the blend
@@ -1265,6 +1269,7 @@ fn main() -> Result<()> {
             ticks,
             jobs,
             json,
+            surveyor_spotter,
         } => {
             use oxide_driver::duel_lab;
             let usable: Vec<_> = if defenses {
@@ -1296,6 +1301,7 @@ fn main() -> Result<()> {
                     Vec::new()
                 },
                 tick_limit: ticks,
+                surveyor_spotter,
             };
             let start = std::time::Instant::now();
             let outcomes = duel_lab::run_plan(&plan, jobs)?;

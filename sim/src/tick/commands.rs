@@ -444,9 +444,8 @@ fn apply_attack(
     // A demolition machine carries no gun, but its charge covers ground the
     // same way a weapon would.
     let covers = |stats: &crate::stats::UnitStats| {
-        victim_domain.map_or(stats.can_fight(), |domain| {
-            stats.can_target(domain) || (stats.demolition.is_some() && domain == Domain::Ground)
-        })
+        stats.can_target(victim_domain)
+            || (stats.demolition.is_some() && victim_domain == Domain::Ground)
     };
     // Machines that cannot hit the target walk to its tile instead, each
     // movement domain sharing the one tile its first slot names.
@@ -1601,9 +1600,9 @@ fn apply_focus_fire(
     let view = state
         .attack_view(player, target)
         .ok_or(RejectReason::InvalidTarget)?;
-    if view
-        .domain
-        .is_some_and(|domain| weapons.iter().any(|weapon| !weapon.targets.covers(domain)))
+    if weapons
+        .iter()
+        .any(|weapon| !weapon.targets.covers(view.domain))
     {
         return Err(RejectReason::InvalidTarget);
     }
