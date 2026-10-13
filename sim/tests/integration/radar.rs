@@ -2,12 +2,12 @@
 //! unfolds only after it has stood still for its deploy time.
 
 use crate::common;
-use common::{building, cmd, open_arena, unit};
+use common::{air_blip, building, cmd, ground_blip, open_arena, unit};
 
 use chassis::grid::TilePos;
 use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::stats::{BuildingKind, HARVEST_RADAR_DANGER_RADIUS, UnitKind};
-use oxide_sim::{Command, Order, PlayerId, State, UnitId};
+use oxide_sim::stats::{BuildingKind, Domain, HARVEST_RADAR_DANGER_RADIUS, UnitKind};
+use oxide_sim::{Command, Order, PlayerId, RadarContact, State, UnitId};
 
 fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
     let mut scenario = open_arena(48, 24, units);
@@ -15,7 +15,7 @@ fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
     scenario.build().unwrap()
 }
 
-fn contacts(state: &State) -> Vec<TilePos> {
+fn contacts(state: &State) -> Vec<RadarContact> {
     state.vision(PlayerId(0)).contacts().to_vec()
 }
 
@@ -44,7 +44,7 @@ fn a_kestrels_ring_reaches_exactly_its_radius() {
         state.tick(&[]);
         contacts(&state)
     };
-    assert_eq!(ring(radius), [TilePos::new(10 + radius, 10)]);
+    assert_eq!(ring(radius), [ground_blip(TilePos::new(10 + radius, 10))]);
     assert!(ring(radius + 1).is_empty());
 }
 
@@ -63,10 +63,10 @@ fn a_surveyor_unfolds_its_radar_after_standing_still_and_folds_to_drive() {
     assert!(contacts(&state).is_empty(), "still unfolding");
     assert!(state.unit(scout).unwrap().radar().is_none());
     idle(&mut state, 1);
-    assert_eq!(contacts(&state), [hidden], "the ring is up");
+    assert_eq!(contacts(&state), [ground_blip(hidden)], "the ring is up");
     for contact in contacts(&state) {
         assert!(
-            contact.chebyshev(state.unit(scout).unwrap().tile()) > HARVEST_RADAR_DANGER_RADIUS,
+            contact.tile.chebyshev(state.unit(scout).unwrap().tile()) > HARVEST_RADAR_DANGER_RADIUS,
             "a scout's own contacts lie beyond its danger ring"
         );
     }
@@ -93,7 +93,7 @@ fn a_surveyor_unfolds_its_radar_after_standing_still_and_folds_to_drive() {
         assert!(ticks < 200, "the radar comes back up after the walk");
     }
     assert_eq!(state.unit(scout).unwrap().tile(), TilePos::new(10, 14));
-    assert_eq!(contacts(&state), [hidden]);
+    assert_eq!(contacts(&state), [ground_blip(hidden)]);
 }
 
 #[test]
@@ -140,7 +140,11 @@ fn scout_radar_never_reveals_a_buried_charge() {
     idle(&mut state, deploy_ticks());
     let scout = state.units()[0].id;
     assert!(state.unit(scout).unwrap().radar().is_some());
-    assert!(!contacts(&state).contains(&charge));
+    assert!(
+        !contacts(&state)
+            .iter()
+            .any(|contact| contact.tile == charge)
+    );
     assert!(state.vision(PlayerId(0)).ghosts().is_empty());
 }
 
@@ -236,4 +240,55 @@ fn a_saved_unfolding_radar_round_trips_and_forgeries_are_refused() {
         .contains("impossible radar deployment"),
         "a radar unfolds only at rest"
     );
+}
+
+#[test]
+fn radar_tells_a_flyer_from_a_ground_machine_on_one_tile() {
+    let tile = TilePos::new(21, 10);
+    let mut state = field(
+        vec![
+            unit(0, UnitKind::Kestrel, 10, 10),
+            unit(1, UnitKind::Harvester, tile.x, tile.y),
+            unit(1, UnitKind::Kestrel, tile.x, tile.y),
+        ],
+        Vec::new(),
+    );
+    let harvester = state.units()[1].id;
+    state.tick(&[]);
+    assert_eq!(contacts(&state), [ground_blip(tile), air_blip(tile)]);
+    let tracks = |state: &State| {
+        let mut tracks: Vec<_> = state
+            .vision(PlayerId(0))
+            .tracks()
+            .iter()
+            .map(|track| (track.domain, track.id, track.tile))
+            .collect();
+        tracks.sort_unstable();
+        tracks
+    };
+    let before = tracks(&state);
+    assert_eq!(
+        before
+            .iter()
+            .map(|&(domain, ..)| domain)
+            .collect::<Vec<_>>(),
+        [Domain::Ground, Domain::Air]
+    );
+
+    // The Harvester drives off; each blip keeps its own track rather than
+    // the nearer one of the other domain.
+    state.tick(&[cmd(
+        1,
+        Command::Run {
+            units: vec![harvester],
+            goal: TilePos::new(21, 13),
+            queue: false,
+        },
+    )]);
+    idle(&mut state, 60);
+    let after = tracks(&state);
+    assert_eq!(after[0].1, before[0].1, "{before:?} -> {after:?}");
+    assert_eq!(after[1].1, before[1].1, "{before:?} -> {after:?}");
+    assert_eq!(after[0].2, TilePos::new(21, 13));
+    assert_eq!(after[1].2, tile);
 }

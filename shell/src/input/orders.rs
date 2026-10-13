@@ -85,13 +85,9 @@ fn known_hostile_target_at(
     game: &Game,
     world: Vec2,
     tile: TilePos,
-) -> Option<(
-    oxide_sim::AttackTarget,
-    Vec2,
-    Option<oxide_sim::stats::Domain>,
-)> {
+) -> Option<(oxide_sim::AttackTarget, Vec2, oxide_sim::stats::Domain)> {
     if let Some((target, at, domain)) = visible_hostile_target_at(game, world, tile) {
-        return Some((target.into(), at, Some(domain)));
+        return Some((target.into(), at, domain));
     }
     if let Some(track) = game
         .my_vision()
@@ -102,7 +98,7 @@ fn known_hostile_target_at(
         return Some((
             oxide_sim::AttackTarget::Contact(track.id),
             vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5),
-            None,
+            track.domain,
         ));
     }
     if let Some(ghost) = game.my_vision().ghosts().iter().find(|ghost| {
@@ -119,7 +115,7 @@ fn known_hostile_target_at(
                 anchor: ghost.anchor,
             }),
             world,
-            Some(oxide_sim::stats::Domain::Ground),
+            oxide_sim::stats::Domain::Ground,
         ));
     }
     if let Some(public) =
@@ -130,7 +126,7 @@ fn known_hostile_target_at(
         return Some((
             oxide_sim::AttackTarget::RememberedBuilding(public.target()),
             world,
-            Some(oxide_sim::stats::Domain::Ground),
+            oxide_sim::stats::Domain::Ground,
         ));
     }
     None
@@ -189,8 +185,8 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
     let tile = numeric::tile_at(world);
     if game.presentation.selection.units.is_empty() {
         if let Some((target, at, domain)) = known_hostile_target_at(game, world, tile) {
-            let defenses =
-                crate::building_actions::SelectedBuildings::inspect(&game.view()).defenses(domain);
+            let defenses = crate::building_actions::SelectedBuildings::inspect(&game.view())
+                .defenses(Some(domain));
             if !defenses.is_empty() {
                 game.issue(Command::FocusFire {
                     buildings: defenses,

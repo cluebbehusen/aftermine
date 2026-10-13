@@ -32,7 +32,10 @@ fn radar_scene(
         state
             .vision(PlayerId(0))
             .contacts()
-            .contains(&TilePos::new(14, 8))
+            .contains(&oxide_sim::RadarContact {
+                tile: TilePos::new(14, 8),
+                domain: enemy.stats().domain,
+            })
     );
     state
 }
@@ -50,27 +53,105 @@ fn blip(state: &oxide_sim::State) -> AttackTarget {
 }
 
 #[test]
-fn bastion_expends_a_blind_shot_on_an_air_contact() {
+fn ground_guns_hold_fire_on_an_air_contact() {
+    // Radar tells a flyer from a ground machine, so no ground-only gun
+    // spends a shell on a Kestrel blip, and none can be ordered onto one.
     let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Kestrel);
-    let enemy = state.units()[0].id;
-    let hp = state.unit(enemy).unwrap().hp;
-    let report = state.tick(&[]);
+    let bastion = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Bastion)
+        .unwrap()
+        .id;
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        [air_blip(TilePos::new(14, 8))]
+    );
+    let report = state.tick(&[cmd(
+        0,
+        Command::FocusFire {
+            buildings: vec![bastion],
+            target: blip(&state),
+        },
+    )]);
     assert!(
         report
             .events
             .iter()
-            .any(|e| matches!(e, Event::ShellLaunched { target: None, .. }))
+            .any(|e| matches!(e, Event::CommandRejected { .. }))
     );
-    for _ in 0..60 {
-        state.tick(&[]);
+    for _ in 0..120 {
+        let report = state.tick(&[]);
         state.validate_invariants().unwrap();
+        assert!(
+            !report
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::ShellLaunched { .. }))
+        );
     }
-    assert_eq!(state.unit(enemy).unwrap().hp, hp);
+
+    let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Kestrel);
+    let gun = state.units()[1].id;
+    for _ in 0..120 {
+        let report = state.tick(&[]);
+        assert!(
+            !report
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::ShellLaunched { .. }))
+        );
+    }
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![gun],
+            target: blip(&state),
+            queue: false,
+        },
+    )]);
+    assert!(
+        matches!(state.unit(gun).unwrap().order, Order::Run { .. }),
+        "a gun that cannot hit the contact walks to it instead"
+    );
+}
+
+#[test]
+fn hunting_artillery_shells_a_ground_contact_but_walks_past_an_air_one() {
+    let hunt = |enemy| {
+        let mut state = radar_scene(Some(UnitKind::Avalanche), None, enemy);
+        let gun = state.units()[1].id;
+        let start = state.unit(gun).unwrap().pos;
+        state.tick(&[cmd(
+            0,
+            Command::Hunt {
+                units: vec![gun],
+                goal: TilePos::new(5, 25),
+                queue: false,
+            },
+        )]);
+        let mut fired = false;
+        for _ in 0..300 {
+            fired |= state.tick(&[]).events.iter().any(|e| {
+                matches!(e, Event::ShellLaunched { shooter: Target::Unit(id), .. } if *id == gun)
+            });
+            state.validate_invariants().unwrap();
+        }
+        (fired, state.unit(gun).unwrap().pos.dist_sq(start))
+    };
+    let (fired, _) = hunt(UnitKind::Excavator);
+    assert!(fired, "a ground blip in reach is worth a shell");
+    let (fired, travelled) = hunt(UnitKind::Kestrel);
+    assert!(!fired, "an air blip is not");
+    assert!(
+        travelled > chassis::fx::Fx::from_num(9),
+        "and the hunt carries on past it: {travelled}"
+    );
 }
 
 #[test]
 fn explicit_contact_is_retained_and_stop_clears_defense_focus() {
-    let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Kestrel);
+    let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Harvester);
     let id = state
         .buildings()
         .iter()
@@ -97,7 +178,8 @@ fn explicit_contact_is_retained_and_stop_clears_defense_focus() {
 
 #[test]
 fn automatic_avalanche_fires_without_pursuing_but_explicit_attack_pursues() {
-    let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Kestrel);
+    // The Excavator outlasts the one shell this window allows.
+    let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Excavator);
     let gun = state
         .units()
         .iter()
@@ -553,7 +635,7 @@ fn concealed_identity_domain_health_and_position_do_not_change_firing_decisions(
 
 #[test]
 fn expired_queued_contact_cannot_bind_to_its_reappearance() {
-    let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Kestrel);
+    let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Harvester);
     let enemy = state.units()[0].id;
     let gun = state.units()[1].id;
     let old = blip(&state);
@@ -685,11 +767,12 @@ fn removing_the_array_ends_its_contacts_and_defense_preference() {
 
 #[test]
 fn explicit_radar_attack_routes_to_a_firing_stand_beside_impassable_ground() {
+    // Only a flyer can hover over rock, so the gun is an anti-air one.
     let mut scenario = open_arena_with(
         40,
         30,
         vec![
-            unit(0, UnitKind::Avalanche, 2, 27),
+            unit(0, UnitKind::Flakhound, 2, 27),
             unit(1, UnitKind::Kestrel, 14, 8),
         ],
         |rows| rows[8][14] = '#',
@@ -720,7 +803,10 @@ fn explicit_radar_attack_routes_to_a_firing_stand_beside_impassable_ground() {
     for _ in 0..800 {
         let report = state.tick(&[]);
         state.validate_invariants().unwrap();
-        if report.events.iter().any(|e| matches!(e, Event::ShellLaunched { shooter: Target::Unit(id), target: None, .. } if *id == gun)) {
+        if report.events.iter().any(|e| {
+            matches!(e, Event::ShellLaunched { shooter: Target::Unit(id), .. } if *id == gun)
+                || matches!(e, Event::AttackHit { attacker, .. } if *attacker == gun)
+        }) {
             fired = true;
             break;
         }
@@ -763,7 +849,7 @@ fn unreachable_blind_attacks_stall_once_and_clear_the_program() {
                     .buildings
                     .push(common::building(1, BuildingKind::Reclaimer, 22, 10));
             } else {
-                scenario.units.push(unit(1, UnitKind::Kestrel, 22, 10));
+                scenario.units.push(unit(1, UnitKind::Harvester, 22, 10));
             }
             let mut state = scenario.build().unwrap();
             let gun = state.units()[0].id;
@@ -931,7 +1017,13 @@ fn radar_reports_one_mirrored_blip_per_apparent_hostile_building() {
     // the south-east mast's ring, its tile nearest that mast. The buried
     // charge returns nothing.
     let contacts = state.vision(viewer).contacts().to_vec();
-    assert_eq!(contacts, [TilePos::new(18, 14), TilePos::new(37, 27)]);
+    assert_eq!(
+        contacts,
+        [
+            ground_blip(TilePos::new(18, 14)),
+            ground_blip(TilePos::new(37, 27))
+        ]
+    );
     assert_eq!(
         state
             .vision(viewer)
@@ -948,12 +1040,15 @@ fn radar_reports_one_mirrored_blip_per_apparent_hostile_building() {
     );
 }
 
-fn mirror(tiles: &[TilePos]) -> Vec<TilePos> {
-    let mut mirrored: Vec<_> = tiles
+fn mirror(contacts: &[oxide_sim::RadarContact]) -> Vec<oxide_sim::RadarContact> {
+    let mut mirrored: Vec<_> = contacts
         .iter()
-        .map(|t| TilePos::new(39 - t.x, 29 - t.y))
+        .map(|c| oxide_sim::RadarContact {
+            tile: TilePos::new(39 - c.tile.x, 29 - c.tile.y),
+            domain: c.domain,
+        })
         .collect();
-    mirrored.sort_unstable_by_key(|t| (t.y, t.x));
+    mirrored.sort_unstable_by_key(oxide_sim::RadarContact::sort_key);
     mirrored
 }
 
@@ -964,7 +1059,13 @@ fn a_map_centered_building_ties_toward_its_owner_foundry() {
     // toward the owner's Foundry, which the half turn also mirrors.
     let scene = |rotated| building_radar_scene(rotated, [(9, 14), (30, 15)], (19, 14));
     let contacts = scene(false).vision(PlayerId(0)).contacts().to_vec();
-    assert_eq!(contacts, [TilePos::new(20, 15), TilePos::new(37, 27)]);
+    assert_eq!(
+        contacts,
+        [
+            ground_blip(TilePos::new(20, 15)),
+            ground_blip(TilePos::new(37, 27))
+        ]
+    );
     assert_eq!(
         scene(true).vision(PlayerId(1)).contacts(),
         mirror(&contacts)
@@ -1003,7 +1104,11 @@ fn defenses_fire_on_a_building_known_only_by_radar() {
             .id;
         let hp = state.building(victim).unwrap().hp;
         let blip = TilePos::new(target.0, target.1);
-        assert_eq!(state.vision(PlayerId(0)).contacts(), [blip], "{kind:?}");
+        assert_eq!(
+            state.vision(PlayerId(0)).contacts(),
+            [ground_blip(blip)],
+            "{kind:?}"
+        );
         let mut fired = false;
         for _ in 0..120 {
             fired |= state.tick(&[]).events.iter().any(|e| {

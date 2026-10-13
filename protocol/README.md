@@ -29,9 +29,10 @@ misspelled harness instruction cannot appear to succeed.
 Attack and focus commands target units, buildings, remembered buildings
 (`owner`, `building_kind`, `anchor`), or contact ids from the issuing seat's fog
 view, including the public buildings every seat knows of. `clear_focus` clears
-armed defenses' target preferences. Fog views carry tile-based radar blips,
-continuous contact tracks, and public buildings; anonymous tracks expose neither
-entity identity nor domain, and public buildings carry no condition.
+armed defenses' target preferences. Fog views carry radar blips, continuous
+contact tracks, and public buildings. Blips and anonymous tracks give a tile and
+whether the contact flies, never entity identity, and public buildings carry no
+condition.
 
 ## Development
 

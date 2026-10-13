@@ -8,7 +8,8 @@
 //!
 //! Fog is both a presentation surface and the knowledge boundary for built-in
 //! opponents. Fog-honest views expose current sight, explored terrain, ghosts,
-//! remembered salvage, anonymous radar contacts, and the public buildings every
+//! remembered salvage, radar contacts that tell air from ground but name nothing
+//! else, and the public buildings every
 //! seat knows of. A targeted attack needs current team sight, a remembered or
 //! public building, or a live contact track.
 
@@ -23,6 +24,24 @@ use std::cell::{Cell, OnceCell, RefCell};
 
 mod tracking;
 pub use tracking::{ContactSample, ContactTrack};
+
+/// A radar blip: a tile holding an unseen hostile machine or one tile of an
+/// unseen hostile building, and whether the return is airborne. Radar names
+/// no kind, owner or condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RadarContact {
+    /// The reported tile.
+    pub tile: TilePos,
+    /// Air for a flying machine; ground for a landed one or a building.
+    pub domain: Domain,
+}
+
+impl RadarContact {
+    /// The canonical blip order: by tile, then ground before air.
+    pub fn sort_key(&self) -> (i32, i32, Domain) {
+        (self.tile.y, self.tile.x, self.domain)
+    }
+}
 
 /// A building every seat knows of regardless of fog: where it stands, what it
 /// is and whose it is, never its condition.
@@ -124,10 +143,10 @@ pub struct Vision {
     /// apart from scrap memory because renderers draw them differently
     /// and the harvest brain approaches them differently.
     remembered_wreck: Grid<u32>,
-    /// Radar blips: tiles holding a hostile unit or one tile of a hostile
-    /// building inside an allied radar ring but outside true sight. A contact without identity — no kind, no owner, no memory
-    /// (rebuilt every tick).
-    contacts: Vec<TilePos>,
+    /// Radar blips: hostile units and one tile of each hostile building
+    /// inside an allied radar ring but outside true sight. A contact carries
+    /// its domain but no kind, owner or memory (rebuilt every tick).
+    contacts: Vec<RadarContact>,
     tracking: tracking::Tracking,
     /// Recent tiles where this team saw one of its own assets take damage.
     /// Sorted and deduplicated by (y, x).
@@ -203,8 +222,9 @@ impl Vision {
         self.remembered_wreck.get(pos).copied().unwrap_or(0)
     }
 
-    /// Radar blips: sorted (y, x), deduplicated, rebuilt every tick.
-    pub fn contacts(&self) -> &[TilePos] {
+    /// Radar blips in [`RadarContact::sort_key`] order, deduplicated,
+    /// rebuilt every tick. One tile can hold an air and a ground blip.
+    pub fn contacts(&self) -> &[RadarContact] {
         &self.contacts
     }
 
@@ -605,7 +625,15 @@ impl GroundSalvageDanger {
         Self {
             width,
             height,
-            contacts: vision.contacts().to_vec(),
+            contacts: {
+                let mut tiles: Vec<TilePos> = vision
+                    .contacts()
+                    .iter()
+                    .map(|contact| contact.tile)
+                    .collect();
+                tiles.dedup();
+                tiles
+            },
             incidents,
             charges,
             mobile,
@@ -1430,8 +1458,8 @@ pub(crate) fn refresh(state: &mut State) {
 
         // Radar blips: hostile units and buildings inside any allied radar
         // ring (a built mast's, or a scout's with its radar up), on ground
-        // this player cannot actually see. A tile only, with no identity
-        // and no memory: a contact that leaves every ring is gone.
+        // this player cannot actually see. A tile and a domain, with no
+        // identity and no memory: a contact that leaves every ring is gone.
         view.contacts.clear();
         let mut masts: Vec<(TilePos, i32)> = state
             .buildings
@@ -1466,7 +1494,10 @@ pub(crate) fn refresh(state: &mut State) {
             for unit in sightings.iter().filter(|unit| unit.team != my_team) {
                 let t = unit.tile;
                 if !view.visible(t) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
-                    view.contacts.push(t);
+                    view.contacts.push(RadarContact {
+                        tile: t,
+                        domain: unit.domain,
+                    });
                 }
             }
             // A building returns one blip, like a unit of any size. An
@@ -1481,11 +1512,14 @@ pub(crate) fn refresh(state: &mut State) {
                 if b.tiles().any(|t| view.visible(t)) {
                     continue;
                 }
-                if let Some(t) = radar_return(state, b, ring_distance) {
-                    view.contacts.push(t);
+                if let Some(tile) = radar_return(state, b, ring_distance) {
+                    view.contacts.push(RadarContact {
+                        tile,
+                        domain: Domain::Ground,
+                    });
                 }
             }
-            view.contacts.sort_unstable_by_key(|t| (t.y, t.x));
+            view.contacts.sort_unstable_by_key(RadarContact::sort_key);
             view.contacts.dedup();
         }
         let mut tracking = std::mem::take(&mut view.tracking);
@@ -1501,6 +1535,8 @@ pub(super) struct Sighting {
     pub(super) id: crate::UnitId,
     pub(super) tile: TilePos,
     pub(super) team: u8,
+    /// Where the unit is now: a landed flyer is on the ground.
+    pub(super) domain: Domain,
     vision: i32,
     /// The unit's radar radius while its ring is up.
     radar: Option<i32>,
@@ -1515,6 +1551,7 @@ impl Sighting {
                 id: unit.id,
                 tile: unit.tile(),
                 team: state.players[unit.player.0 as usize].team,
+                domain: unit.domain(),
                 vision: unit.kind.stats().vision,
                 radar: unit.radar(),
             })

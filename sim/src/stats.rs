@@ -117,7 +117,10 @@ chassis::listed_enum! {
 /// A movement medium. Ground units path and collide on the terrain grid;
 /// air units fly over everything but peaks and collide only with each
 /// other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum Domain {
     /// Bound to passable terrain.
     Ground,

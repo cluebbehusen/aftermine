@@ -203,7 +203,7 @@ fn blind_hitscan_selects_one_eligible_occupant_and_splash_never_duplicates_it() 
         entity: None,
         position: center,
         footprint: None,
-        domain: None,
+        domain: Domain::Ground,
         velocity: Vec2Fx::ZERO,
     };
     let mut hits = Vec::new();

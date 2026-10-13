@@ -670,9 +670,9 @@ use `State::hash` for deterministic identity. `FogView::capture` is the
 player-knowledge view for players and agents; bots read the equivalent
 `ObservationData`, and a parity test keeps the two in agreement. It hides
 hostile intent and economy, exposes enemies under current sight, and otherwise
-supplies only recorded ghosts, remembered salvage, anonymous radar contacts, and
-public buildings such as Deep Bores. Player-facing commands and effects must
-respect that knowledge boundary.
+supplies only recorded ghosts, remembered salvage, radar contacts that name only
+air or ground, and public buildings such as Deep Bores. Player-facing commands
+and effects must respect that knowledge boundary.
 
 ## Rendering and audio
 
@@ -718,6 +718,8 @@ timing and which frame each moment shows; tests keep every selected frame below
 the shipped count. A Surveyor's `_actionN` frames show its parking radar
 unfolding from the simulation's deploy count, and the last holds while the radar
 is up; a selected own scout draws its radar ring only while the radar is up.
+Radar blips draw above the fog in no faction's color, told apart by shape: a
+hollow diamond for a ground contact and only its upper half for an air contact.
 Procedural quarry boundaries, pits, peaks, and rock walls derive from map
 geometry with fog-aware visibility. The boundary and peaks are one terrace
 system measured from the open floor: a peak is the wall left standing, stepping

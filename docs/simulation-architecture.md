@@ -665,8 +665,9 @@ weapon range without requiring sight. Building attacks end when observation
 clears the memory. An automatic engagement also ends rather than fire on a
 building out of current sight: one destroyed out of sight leaves its memory
 standing, and only an explicit order may shell that memory. Contact attacks end
-when sight and radar are both lost, or identification reveals an incompatible
-domain. Contact loss also clears defense focus and advances queued orders.
+when sight and radar are both lost, or when the contact's domain becomes one the
+attacker cannot hit, as when a flyer lands. Contact loss also clears defense
+focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Automatic radar fire may stop Idle, Hunt, or
@@ -684,12 +685,12 @@ never acquire buildings.
 
 Direct ground-to-ground fire traces terrain: rocks provide cover, while
 buildings and scrap do not. Fire involving aircraft and indirect weapons ignores
-ordinary rock cover. For anonymous contacts, ground-capable direct fire uses
-ground cover and air-only fire uses air rules. Peaks block both. Blind hitscan
-spends a shot and selects one eligible hostile in the reported tile by distance
-to its center, then id. Remembered-building hitscan resolves against a footprint
-at the aim point. Both apply normal splash rules and report firing coordinates
-without a victim id, including on misses.
+ordinary rock cover. Radar contacts carry their domain, so blind fire follows
+the same cover rules and never aims a weapon at a domain it cannot hit. Peaks
+block both. Blind hitscan spends a shot and selects one eligible hostile in the
+reported tile by distance to its center, then id. Remembered-building hitscan
+resolves against a footprint at the aim point. Both apply normal splash rules
+and report firing coordinates without a victim id, including on misses.
 
 Hitscan attacks buffer damage for same-tick resolution. Projectile weapons
 launch a serialized `Shell` toward a fixed fire-time aim point. Predictive aim
@@ -740,21 +741,23 @@ Enemy buildings remain as last-seen ghosts until their footprint is observed
 again: kind, owner, anchor, hit points, whether construction had finished, and
 upgrade tier, all as last seen. A refit out of sight stays unknown until the
 footprint is seen again. Scrap and wreck amounts likewise freeze at the last
-visible value. Radar adds sorted, deduplicated contact tiles outside true sight.
-Its sources are allied built masts (Arrays and Deep Arrays) and allied machines
+visible value. Radar adds sorted, deduplicated contacts outside true sight. Its
+sources are allied built masts (Arrays and Deep Arrays) and allied machines
 whose radar is up, each with the ring radius its stats give: a Kestrel's is
 always up, and a Surveyor's unfolds only after it has stood still for its deploy
 time, folding again the moment it drives itself; a collision push does not fold
 it. A hostile unit reports its tile; an apparent hostile building reports the
 one footprint tile nearest a covering source, with distance ties ranked in its
 radial map frame and, for a footprint centered on the map, toward its owner's
-first Foundry. A contact carries no owner, type, domain, or concealed entity id,
-and radar fire at a building's contact tile can hit it. Team-shared tracks
-retain a contact id and one second of reported positions. Spatial buckets bound
-one-to-one matching, ranked by predicted distance, previous distance, contact
-id, and coordinates. Visible identity can link visible observations; radar
-matching uses only reported movement. Unmatched tracks end immediately, and ids
-are never reused.
+first Foundry. A contact carries its domain, air for a flying machine and ground
+for a landed one or a building, but no owner, type, or concealed entity id, so
+one tile can hold an air and a ground contact. Radar fire at a building's
+contact tile can hit it. Team-shared tracks retain a contact id and one second
+of reported positions. Spatial buckets bound one-to-one matching, ranked by
+predicted distance, previous distance, contact id, and coordinates. Visible
+identity can link visible observations; radar matching uses only reported
+movement and never pairs contacts of different domains. Unmatched tracks end
+immediately, and ids are never reused.
 
 Salvage-relevant hostile incidents, such as a hit on any machine that can
 harvest or scout or an allied loss, remember only the victim's tile for a

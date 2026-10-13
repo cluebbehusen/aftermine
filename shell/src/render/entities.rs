@@ -1938,25 +1938,36 @@ pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
         return; // the omniscient overlay already shows the real machines
     }
     let zoom = game.presentation.camera.zoom;
-    for &tile in game.my_vision().contacts() {
+    for contact in game.my_vision().contacts() {
+        let tile = contact.tile;
         let center = game
             .presentation
             .camera
             .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
-        let r = zoom * 0.3;
-        // A hollow diamond in no faction's shape or color.
-        let pts = [
-            vec2(center.x, center.y - r),
-            vec2(center.x + r, center.y),
-            vec2(center.x, center.y + r),
-            vec2(center.x - r, center.y),
-        ];
-        for i in 0..4 {
-            let a = pts[i];
-            let b = pts[(i + 1) % 4];
+        for (a, b) in blip_strokes(center, zoom * 0.3, contact.domain) {
             line_between(a, b, 2.0, BONE_FAINT);
         }
         fill_circle(center, 2.0, BONE_FAINT);
+    }
+}
+
+/// A blip's outline in no faction's shape or color, told apart by shape
+/// alone: a closed diamond on the ground, and only the diamond's upper
+/// half, a peak over the dot, in the air.
+pub(crate) fn blip_strokes(
+    center: Vec2,
+    r: f32,
+    domain: oxide_sim::stats::Domain,
+) -> Vec<(Vec2, Vec2)> {
+    let top = vec2(center.x, center.y - r);
+    let right = vec2(center.x + r, center.y);
+    let bottom = vec2(center.x, center.y + r);
+    let left = vec2(center.x - r, center.y);
+    match domain {
+        oxide_sim::stats::Domain::Ground => {
+            vec![(top, right), (right, bottom), (bottom, left), (left, top)]
+        }
+        oxide_sim::stats::Domain::Air => vec![(left, top), (top, right)],
     }
 }
 

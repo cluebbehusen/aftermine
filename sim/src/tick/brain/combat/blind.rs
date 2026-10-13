@@ -18,16 +18,13 @@ pub(super) fn solution(
     weapon: &WeaponStats,
 ) -> bool {
     let aim = view.aim_from(from);
-    view.domain.is_none_or(|d| weapon.targets.covers(d))
+    weapon.targets.covers(view.domain)
         && within_weapon_reach(weapon, from.dist_sq(aim))
         && predicted_impact_open(state, from, aim, terrain_cover(view, weapon, shooter))
 }
 
 fn terrain_cover(view: AttackView, weapon: &WeaponStats, shooter: Domain) -> bool {
-    view.domain
-        .map_or(!weapon.indirect && weapon.targets.ground, |domain| {
-            traces_terrain(weapon, shooter, domain)
-        })
+    traces_terrain(weapon, shooter, view.domain)
 }
 
 pub(super) fn radar_in_range(
@@ -415,7 +412,7 @@ pub(in crate::tick::brain) fn attack_known(
         pursue,
     };
     if !pursue
-        && view.domain.is_none()
+        && view.is_blip()
         && let Some(visible) = acquire_target(state, index, id)
     {
         state.unit_mut(id).expect("live unit").order = Order::Attack {
@@ -440,7 +437,7 @@ pub(in crate::tick::brain) fn attack_known(
     let primary = stats
         .weapons
         .iter()
-        .position(|weapon| view.domain.is_none_or(|d| weapon.targets.covers(d)));
+        .position(|weapon| weapon.targets.covers(view.domain));
     if let Some(primary) = primary {
         let weapon = &stats.weapons[primary];
         if kind.stats().contact_reach.is_none() && solution(state, pos, stats.domain, view, weapon)

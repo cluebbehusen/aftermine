@@ -1356,13 +1356,36 @@ fn every_checklist_row_refuses_its_forgery() {
         ),
         (
             "a radar blip at the far end of the coordinate space",
-            |d| d["vision"][0]["contacts"] = json!([{"x": i32::MIN, "y": 0}]),
+            |d| {
+                d["vision"][0]["contacts"] =
+                    json!([{"tile": {"x": i32::MIN, "y": 0}, "domain": "ground"}]);
+            },
             "player p0 holds a radar contact outside the envelope",
         ),
         (
             "radar blips out of canonical order",
-            |d| d["vision"][0]["contacts"] = json!([{"x": 1, "y": 4}, {"x": 3, "y": 3}]),
+            |d| {
+                d["vision"][0]["contacts"] = json!([
+                    {"tile": {"x": 1, "y": 4}, "domain": "ground"},
+                    {"tile": {"x": 3, "y": 3}, "domain": "ground"},
+                ]);
+            },
             "player p0 holds radar contacts out of canonical order",
+        ),
+        (
+            "an air blip listed before the ground blip on its tile",
+            |d| {
+                d["vision"][0]["contacts"] = json!([
+                    {"tile": {"x": 3, "y": 3}, "domain": "air"},
+                    {"tile": {"x": 3, "y": 3}, "domain": "ground"},
+                ]);
+            },
+            "player p0 holds radar contacts out of canonical order",
+        ),
+        (
+            "a track of a ground machine that claims to fly",
+            |d| d["vision"][0]["tracking"]["tracks"][0]["domain"] = json!("air"),
+            "player p0 has invalid contact tracking",
         ),
         (
             "more recent impact sites than the bounded memory permits",
