@@ -566,11 +566,26 @@ fn no_repair_source_mends_a_retiring_machine() {
         },
     )]);
     assert_eq!(rejected(&report.events), [RejectReason::InvalidTarget]);
+    state.tick(&[cmd(
+        0,
+        Command::Accompany {
+            units: vec![welder],
+            target: patient,
+            queue: false,
+        },
+    )]);
     let bank = state.player(PlayerId(0)).scrap;
     let events = run_until(&mut state, 400, |s, events| {
         if let Some(u) = s.unit(patient) {
             assert_eq!(u.hp, 20, "the aura passes it over");
         }
+        assert!(
+            !matches!(
+                s.unit(welder).unwrap().order,
+                Order::Accompany { weld: Some(_), .. }
+            ),
+            "an escort's torch passes it over"
+        );
         retired(events, patient).is_some()
     });
     assert_eq!(

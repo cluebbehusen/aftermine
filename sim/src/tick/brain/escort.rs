@@ -209,8 +209,8 @@ fn mend(
     approach_patient(state, id, patient)
 }
 
-/// The party member `id` should weld, if any is wounded, on the ground, and
-/// within [`ESCORT_ENGAGE_RADIUS`] of the followed body.
+/// The party member `id` should weld, if any is wounded, on the ground, not
+/// retiring, and within [`ESCORT_ENGAGE_RADIUS`] of the followed body.
 fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option<UnitId> {
     let welder = state.unit(id).expect("caller checked");
     let reach_sq = ESCORT_ENGAGE_RADIUS * ESCORT_ENGAGE_RADIUS;
@@ -221,6 +221,7 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
                 && u.hp > 0
                 && u.hp < u.kind.stats().max_hp
                 && u.domain() == Domain::Ground
+                && !u.retiring()
                 && u.pos.dist_sq(party.pos) <= reach_sq
         })
     };
