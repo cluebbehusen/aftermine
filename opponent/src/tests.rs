@@ -391,6 +391,15 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                     goal: rotate(goal),
                     queue,
                 },
+                Command::Scout {
+                    units: sent,
+                    goal,
+                    queue,
+                } => Command::Scout {
+                    units: units(sent),
+                    goal: rotate(goal),
+                    queue,
+                },
                 Command::Advance {
                     units: sent,
                     goal,

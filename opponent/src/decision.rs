@@ -552,6 +552,9 @@ pub(crate) fn decide(
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
+    persistent
+        .missions
+        .scouts_stopped(events, &mut persistent.memory, tick);
     let lacking = persistent.missions.scout(
         observation,
         map,
