@@ -359,6 +359,9 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             );
         }
         info.weapons(stats.weapons);
+        if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
+            info.row("Targets", "Heaviest first".into(), None);
+        }
     } else {
         if !panel.summary.is_empty() {
             info.status.push(panel.summary.clone());

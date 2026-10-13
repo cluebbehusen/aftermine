@@ -51,6 +51,7 @@ const LOUD_BUILDINGS: &[BuildingKind] = &[BuildingKind::Airworks, BuildingKind::
 /// Tier-3 breakthroughs and the transport — see [`LOUD_BUILDINGS`].
 const LOUD_UNITS: &[UnitKind] = &[
     UnitKind::Breaker,
+    UnitKind::Piledriver,
     UnitKind::Avalanche,
     UnitKind::Condor,
     UnitKind::Skyhook,

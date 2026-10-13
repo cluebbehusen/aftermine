@@ -644,16 +644,16 @@ traversing toward its ordinary opportunistic target; cooldown starts only once
 the turret aligns. Hidden structures cannot attract an advancing weapon or
 reveal themselves through turret tracking.
 
-A unit whose stats carry a brace, today the Bombard, stands on a braced motor
-while its spades are out, counting deployment ticks up to the brace's
-deployment. It turns with the spades stowed, then deploys over that many aligned
-ticks; its heading stays fixed inside the firing tolerance while planted. After
-a shot, a short recoil window precedes retraction, which runs faster than
-deployment. A new aim, lost firing solution, or movement order retracts the
-spades before further turning or translation. Reloading at an unchanged firing
-stance keeps them planted. A braced gun never fires potshots on Advance.
-Deserialization bounds the deployment counter and rejects a braced motor on
-kinds without a brace; a transported rider keeps no motor at all.
+A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
+braced motor while its spades are out, counting deployment ticks up to the
+brace's deployment. It turns with the spades stowed, then deploys over that many
+aligned ticks; its heading stays fixed inside the firing tolerance while
+planted. After a shot, a short recoil window precedes retraction, which runs
+faster than deployment. A new aim, lost firing solution, or movement order
+retracts the spades before further turning or translation. Reloading at an
+unchanged firing stance keeps them planted. A braced gun never fires potshots on
+Advance. Deserialization bounds the deployment counter and rejects a braced
+motor on kinds without a brace; a transported rider keeps no motor at all.
 
 `AttackTarget` resolves through team knowledge to a visible entity, remembered
 or public building footprint, or mobile contact. Explicit attacks approach
@@ -665,11 +665,13 @@ when sight and radar are both lost, or identification reveals an incompatible
 domain. Contact loss also clears defense focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
-does not acquire building ghosts. Automatic radar fire may stop Idle, Hunt, or
-Patrol to aim, but cannot pursue, retreat, or start a bomber run. It does not
-change Run or Advance. A fireable explicit target takes priority. Defenses
-retain blocked or out-of-range focus while firing at fallback targets; Stop
-clears focus.
+does not acquire building ghosts. Among visible machines in reach a unit takes
+the nearest, unless its stats rank targets heaviest first, as the Piledriver's
+do: the most full health, then the nearest. Anonymous radar contacts are always
+taken nearest first. Automatic radar fire may stop Idle, Hunt, or Patrol to aim,
+but cannot pursue, retreat, or start a bomber run. It does not change Run or
+Advance. A fireable explicit target takes priority. Defenses retain blocked or
+out-of-range focus while firing at fallback targets; Stop clears focus.
 
 Ground-capable defenses automatically acquire visible hostile buildings when no
 eligible visible unit is in firing range with a clear shot. Building acquisition

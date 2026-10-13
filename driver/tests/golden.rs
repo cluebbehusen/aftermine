@@ -169,6 +169,9 @@ struct Cast {
     annex_e: Vec<UnitId>,
     /// The Avalanche pair, trading one volley across their blind rings.
     avalanches: (UnitId, UnitId),
+    /// Seat 0's Piledriver, staged wounded out of every enemy's reach: one
+    /// slug at anything near would rewrite the bounded wounds around it.
+    piledriver: UnitId,
 }
 
 fn showcase_scenario() -> (Scenario, Cast) {
@@ -262,6 +265,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let sentinel_sapper_e = roster.add(1, UnitKind::Sentinel, 41, 20);
     let sentinel_sapper_w = roster.add(0, UnitKind::Sentinel, 42, 20);
     let sapper_e = roster.add(1, UnitKind::Sapper, 43, 20);
+    // Over eight tiles from every enemy, in no enemy's reach.
+    let piledriver = roster.add(0, UnitKind::Piledriver, 32, 4);
 
     // Seat 0's standing structures: one of every kind the build palette
     // offers, whole. Its Foundry comes from the map anchor.
@@ -361,6 +366,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 sentinel_sapper_e,
             ],
             avalanches: (avalanche_w, avalanche_e),
+            piledriver,
         },
     )
 }
@@ -557,6 +563,13 @@ fn showcase_state() -> State {
             }
         }
     }
+    let row = staged["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(cast.piledriver))
+        .unwrap();
+    row["hp"] = serde_json::json!(UnitKind::Piledriver.stats().max_hp * 2 / 3);
     state = serde_json::from_value(staged).unwrap();
     let mut avalanches_withdrew = false;
     let mut bombards_withdrew = false;

@@ -1202,3 +1202,18 @@ fn an_attack_pulling_back_sends_no_reinforcements_after_it() {
     );
     assert_eq!(mission.units as usize, members.len());
 }
+
+#[test]
+fn anti_heavy_units_join_an_attack() {
+    let mut scenario = armed(8, &[]);
+    scenario.units.extend([
+        unit(0, UnitKind::Piledriver, 6, 11),
+        unit(0, UnitKind::Piledriver, 8, 11),
+    ]);
+    let state = scenario.build().unwrap();
+    let guns = [at(&state, 6, 11), at(&state, 8, 11)];
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let sent = hunts(&commands);
+    assert_eq!(sent.len(), 1, "{commands:?}");
+    assert!(guns.iter().all(|gun| sent[0].0.contains(gun)), "{sent:?}");
+}

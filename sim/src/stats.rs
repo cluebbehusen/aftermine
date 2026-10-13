@@ -60,6 +60,10 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
+        /// Tier-three anti-heavy gun: braces, then fires one enormous
+        /// instant slug that breaks heavy machines and is wasted on light
+        /// ones.
+        Piledriver,
     }
 }
 
@@ -281,8 +285,22 @@ pub struct UnitStats {
     /// Recoil spades the gun must deploy, stationary and aligned, before
     /// it fires.
     pub brace: Option<BraceStats>,
+    /// Which enemy machine it picks when it chooses its own target.
+    pub target_priority: TargetPriority,
     /// The ground blast a large airframe makes when it crashes.
     pub crash: Option<CrashProfile>,
+}
+
+/// How a unit picks an enemy machine when nobody ordered a target. It ranks
+/// only machines it could engage now, so a unit with nothing better in reach
+/// still answers what it can.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetPriority {
+    /// The nearest.
+    Nearest,
+    /// The one with the most full health, then the nearest: a gun whose one
+    /// slug a light machine would mostly waste.
+    Heaviest,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -558,6 +576,7 @@ impl UnitKind {
             UnitKind::Avalanche => "avalanche",
             UnitKind::Skyhook => "skyhook",
             UnitKind::Sapper => "sapper",
+            UnitKind::Piledriver => "piledriver",
         }
     }
 
@@ -602,6 +621,9 @@ impl UnitKind {
             UnitKind::Sapper => {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
+            UnitKind::Piledriver => {
+                "Slow, enormous shots that break heavy machines; wasted on small ones. Must brace before firing."
+            }
         }
     }
 }
@@ -635,6 +657,7 @@ const HARVESTER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -686,6 +709,7 @@ const SENTINEL: UnitStats = UnitStats {
     turret_turn_rate: 8,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -720,6 +744,7 @@ const SCUTTLER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -756,6 +781,7 @@ const LANCER: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -797,6 +823,7 @@ const BOMBARD: UnitStats = UnitStats {
         recoil_ticks: 8,
         retract_per_tick: 3,
     }),
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -831,6 +858,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -865,6 +893,7 @@ const BUZZARD: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -899,6 +928,7 @@ const TALON: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -937,6 +967,7 @@ const WARDEN: UnitStats = UnitStats {
     turret_turn_rate: 5,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -965,6 +996,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -990,6 +1022,7 @@ const KESTREL: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -1027,6 +1060,7 @@ const CONDOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: Some(CrashProfile {
         damage: 50,
         radius: Fx::lit("2"),
@@ -1068,6 +1102,49 @@ const BREAKER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(4),
     brace: None,
+    target_priority: TargetPriority::Nearest,
+    crash: None,
+};
+
+const PILEDRIVER: UnitStats = UnitStats {
+    contact_reach: None,
+    // A Breaker takes four slugs; light machines waste most of one, so a
+    // swarm outlasts it. Its own hp stays well under two slugs, so it never
+    // counts as the heavy machine it hunts.
+    max_hp: 240,
+    speed: Fx::lit("0.06"), // 1.2 tiles/s
+    radius: Fx::lit("0.5"),
+    cost: 400,
+    train_ticks: 600, // 30 s
+    domain: Domain::Ground,
+    weapons: &[WeaponStats {
+        damage: 280,
+        range: Fx::lit("8"), // past the Bulwark, short of the Bastion
+        minimum_range: Fx::ZERO,
+        cooldown_ticks: 100, // one slug per 5 s
+        targets: DomainMask::GROUND,
+        splash: None,
+        indirect: false,
+        projectile: None, // instant, so point defense cannot stop it
+    }],
+    aggro_range: Fx::lit("8"),
+    harvest: None,
+    vision: 8,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 3,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: Some(3),
+    brace: Some(BraceStats {
+        deploy_ticks: 12,
+        recoil_ticks: 8,
+        retract_per_tick: 3,
+    }),
+    target_priority: TargetPriority::Heaviest,
     crash: None,
 };
 
@@ -1108,6 +1185,7 @@ const AVALANCHE: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(3),
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -1133,6 +1211,7 @@ const SKYHOOK: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: Some(CrashProfile {
         damage: 40,
         radius: Fx::lit("2"),
@@ -1167,6 +1246,7 @@ const SAPPER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
 };
 
@@ -1342,7 +1422,7 @@ const AIRWORKS: BuildingStats = BuildingStats {
 const CRUCIBLE: BuildingStats = BuildingStats {
     max_hp: 900,
     vision: 6,
-    produces: &[UnitKind::Breaker, UnitKind::Avalanche],
+    produces: &[UnitKind::Breaker, UnitKind::Piledriver, UnitKind::Avalanche],
     weapons: &[],
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
@@ -1546,6 +1626,7 @@ impl UnitKind {
             UnitKind::Avalanche => &AVALANCHE,
             UnitKind::Skyhook => &SKYHOOK,
             UnitKind::Sapper => &SAPPER,
+            UnitKind::Piledriver => &PILEDRIVER,
         }
     }
 

@@ -806,7 +806,13 @@ pub(super) fn acquire_target_from(
     let home = TilePos::containing(pos);
     let reach = acquisition_range.floor().to_num::<i32>() + 1;
     let team = state.player(me).team;
-    let mut unit_target: Option<(chassis::fx::Fx, UnitId)> = None;
+    // Lower ranks first: the nearest, or for a heavy-first gun the most
+    // full health and then the nearest.
+    let heft = |kind: crate::stats::UnitKind| match stats.target_priority {
+        crate::stats::TargetPriority::Nearest => 0,
+        crate::stats::TargetPriority::Heaviest => u32::MAX - kind.stats().max_hp,
+    };
+    let mut unit_target: Option<(u32, chassis::fx::Fx, UnitId)> = None;
     // A building in acquisition range covers a tile within `reach` of the
     // unit's tile, or the next one where its closest point sits on an edge.
     let hostiles = index.hostiles_near(team, home, reach + 1);
@@ -828,9 +834,10 @@ pub(super) fn acquire_target_from(
                     weapon.targets.covers(u.domain())
                         && d >= weapon.minimum_range * weapon.minimum_range
                 });
+                let rank = (heft(u.kind), d, u.id);
                 if !(d <= aggro_sq
                     && outside_dead_zone
-                    && unit_target.is_none_or(|best| (d, u.id) < best))
+                    && unit_target.is_none_or(|best| rank < best))
                 {
                     continue;
                 }
@@ -851,11 +858,11 @@ pub(super) fn acquire_target_from(
                         continue;
                     }
                 }
-                unit_target = Some((d, u.id));
+                unit_target = Some(rank);
             }
         }
     }
-    if let Some((_, uid)) = unit_target {
+    if let Some((_, _, uid)) = unit_target {
         return Some(Target::Unit(uid));
     }
     if !stats.can_target(Domain::Ground) {

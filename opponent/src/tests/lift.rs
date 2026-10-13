@@ -1572,3 +1572,17 @@ fn a_lift_counts_the_guns_at_its_target_however_far_off_it_lands() {
         "two Bastions guarding the start outweigh the lift, though it would land beyond their reach"
     );
 }
+
+#[test]
+fn anti_heavy_units_ride_a_lift() {
+    let payload = |extra: &[(UnitKind, i32, i32)]| {
+        let mut scenario = strait();
+        scenario
+            .units
+            .extend(extra.iter().map(|&(kind, x, y)| unit(0, kind, x, y)));
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        crate::missions::payload(&observation, &map(&scenario))
+    };
+    assert!(payload(&[(UnitKind::Piledriver, 5, 12)]) > payload(&[]));
+}

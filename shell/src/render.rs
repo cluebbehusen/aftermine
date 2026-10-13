@@ -1035,7 +1035,7 @@ fn draw_unit_pass(
             }
         }
         let body_size = vec2(dest, dest);
-        if unit.kind.stats().brace.is_some()
+        if unit.kind == oxide_sim::UnitKind::Bombard
             && let Some(source) = sprites.bombard_spades(unit.braces())
         {
             sprites.draw_unit(
