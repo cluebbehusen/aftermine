@@ -466,3 +466,32 @@ fn a_queued_scout_leg_cancels_like_a_walk() {
     assert_eq!(unit.order, Order::Scout { tile: first });
     assert!(unit.queue.is_empty());
 }
+
+#[test]
+fn a_scout_that_arrives_in_danger_backs_off_instead_of_finishing() {
+    // The scout already stands on its goal, two tiles from a charge it
+    // detects: inside the berth a scout keeps, outside the trigger.
+    let charge = TilePos::new(12, 10);
+    let mut state = field(
+        vec![unit(0, UnitKind::Surveyor, 10, 10)],
+        vec![building(1, BuildingKind::ScuttleCharge, charge.x, charge.y)],
+    )
+    .build()
+    .unwrap();
+    let scout = state.units()[0].id;
+    let goal = state.unit(scout).unwrap().tile();
+    let events = scout_until_idle(&mut state, scout, goal, 400);
+    let unit = state.unit(scout).unwrap();
+    assert!(
+        unit.tile().chebyshev(charge) > oxide_sim::stats::SCOUT_CHARGE_AVOID_RADIUS,
+        "it left the dangerous goal: {:?}",
+        unit.tile()
+    );
+    assert!(sees(unit.tile(), goal), "and still watches it");
+    assert_eq!(stalls(&events), [StallReason::SafeVantage]);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Event::ChargeDetonated { .. }))
+    );
+}

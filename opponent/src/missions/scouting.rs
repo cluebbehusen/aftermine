@@ -293,22 +293,22 @@ struct Goals<'a> {
 
 impl Goals<'_> {
     /// Each point's goal for a scout, an aircraft when `air`, `None` where it
-    /// cannot go.
+    /// cannot go: the point's footprint tile nearest home, since a Scout
+    /// order that stops short guarantees a view of its goal tile alone.
     fn of(&self, air: bool) -> &[Option<TilePos>] {
         let frame = self.frame;
+        let (width, height) = BuildingKind::Foundry.size();
+        let nearest = move |point: &Point| {
+            (0..height)
+                .flat_map(|dy| (0..width).map(move |dx| point.anchor.offset(dx, dy)))
+                .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
+        };
         if air {
-            self.air.get_or_init(|| {
-                let (width, height) = BuildingKind::Foundry.size();
-                self.points
-                    .iter()
-                    .map(|point| {
-                        (0..height)
-                            .flat_map(|dy| (0..width).map(move |dx| point.anchor.offset(dx, dy)))
-                            .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
-                    })
-                    .collect()
-            })
+            self.air
+                .get_or_init(|| self.points.iter().map(nearest).collect())
         } else {
+            // A ground scout reaches a point when a tile beside it is open
+            // to it on foot.
             self.ground.get_or_init(|| {
                 self.points
                     .iter()
@@ -320,6 +320,7 @@ impl Goals<'_> {
                             BuildingKind::Foundry,
                             point.anchor,
                         )
+                        .and_then(|_| nearest(point))
                     })
                     .collect()
             })

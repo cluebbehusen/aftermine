@@ -42,10 +42,11 @@ fn a_stale_hostile_start_draws_the_scout() {
     };
     assert_eq!(mission.kind, MissionKind::Scout { point: 0 });
     assert_eq!(looks(&commands), [(vec![surveyor], mission.goal)]);
-    assert_eq!(
-        gap(TilePos::new(43, 11), (2, 2), mission.goal, (1, 1)),
-        0,
-        "the scout goes beside the East start"
+    let (width, height) = BuildingKind::Foundry.size();
+    assert!(
+        (43..43 + width).contains(&mission.goal.x) && (11..11 + height).contains(&mission.goal.y),
+        "the scout looks at the East start itself: {:?}",
+        mission.goal
     );
 }
 
@@ -458,33 +459,53 @@ fn an_air_scout_replaces_a_surveyor_that_cannot_reach() {
 }
 
 #[test]
-fn a_scout_that_stops_short_moves_on() {
-    for reason in [StallReason::SafeVantage, StallReason::NoSafeVantage] {
-        let (scenario, mut state) = scouting(STALE);
-        let surveyor = at(&state, 6, 9);
-        let mut opponent = seat(&scenario, 0);
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-        assert_eq!(scouts(&trace.unwrap().missions).len(), 1, "premise");
-        while !opponent.decision_due(&state) {
-            state.tick(&[]);
-        }
-        let mut events = OwnEvents::default();
-        events.record(
-            PlayerId(0),
-            &[Event::OrderStalled {
-                unit: surveyor,
-                player: PlayerId(0),
-                pos: state.unit(surveyor).unwrap().pos,
-                reason,
-            }],
-        );
-        let (commands, trace) = opponent.act_traced(&state, &mut events);
-        assert!(
-            scouts(&trace.unwrap().missions).is_empty(),
-            "{reason:?}: the one point counts as seen"
-        );
-        assert!(looks(&commands).is_empty(), "{reason:?}: {commands:?}");
+fn a_scout_kept_off_a_guarded_point_still_sees_it_and_moves_on() {
+    // A Turret behind the East start covers it, so the Surveyor can only
+    // look on from outside the Turret's reach.
+    let mut scenario = field();
+    scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Turret,
+        x: 46,
+        y: 12,
+    });
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, STALE, &[]);
+    let surveyor = at(&state, 6, 9);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let mut stalled = None;
+    while stalled.is_none() && state.current_tick() < STALE + 3_000 {
+        let commands = opponent.act(&state, &mut events);
+        let report = state.tick(&commands);
+        stalled = report.events.iter().find_map(|event| match event {
+            Event::OrderStalled { unit, reason, .. } if *unit == surveyor => Some(*reason),
+            _ => None,
+        });
+        events.record(PlayerId(0), &report.events);
     }
+    assert_eq!(stalled, Some(StallReason::SafeVantage));
+    let (width, height) = BuildingKind::Foundry.size();
+    assert!(
+        (0..height).any(|dy| (0..width).any(|dx| state
+            .vision(PlayerId(0))
+            .visible(TilePos::new(43 + dx, 11 + dy)))),
+        "the scout stopped where it sees the start itself"
+    );
+    assert_eq!(
+        state.unit(surveyor).unwrap().hp,
+        UnitKind::Surveyor.stats().max_hp
+    );
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    let (commands, trace) = opponent.act_traced(&state, &mut events);
+    assert!(
+        scouts(&trace.unwrap().missions).is_empty(),
+        "the one point counts as seen"
+    );
+    assert!(looks(&commands).is_empty(), "{commands:?}");
 }
 
 #[test]

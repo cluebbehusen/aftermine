@@ -289,11 +289,13 @@ the way are safe; otherwise it heads for the safe tile nearest the target that
 still has it in sight, ranked in the approach frame. A scout standing in danger
 first retreats to the nearest safe ground it can reach without closing on any
 threat, and with no safe view it stands and periodically reports `DangerHold`.
-Each tick spent retreating, detouring, or waiting counts in `Unit::progress`; at
-`SCOUT_HOLD_TICKS` the leg ends with `NoSafeVantage`, and a leg that ends at a
-view short of its tile reports `SafeVantage`. Patrol laps stay silent. A scout
-on a Scout leg steers only one waypoint ahead, so a straight leg never chords a
-detour back into the reach it bends around.
+Each tick spent retreating, detouring around danger flagged on its planned
+route, or waiting counts in `Unit::progress`; a route planned safe from the
+start costs nothing, however long. At `SCOUT_HOLD_TICKS` the leg ends with
+`NoSafeVantage`, and a leg that ends at a view short of its tile reports
+`SafeVantage`. Patrol laps stay silent. A scout on a Scout leg steers only one
+waypoint ahead, so a straight leg never chords a detour back into the reach it
+bends around.
 
 ## Movement and collision
 
