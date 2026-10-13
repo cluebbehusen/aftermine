@@ -598,3 +598,40 @@ fn cached_scout_queries_match_the_snapshot_predicate() {
         }
     }
 }
+
+#[test]
+fn indexed_charges_agree_with_a_walk_over_every_charge() {
+    let mut danger = static_egress_danger();
+    danger.statics.clear();
+    danger.contacts.clear();
+    danger.incidents.clear();
+    let (width, height) = (danger.width, danger.height);
+    let mut rng = chassis::rng::Pcg32::new(23, 5);
+    let mut coordinate =
+        |span: i32| i32::try_from(rng.next_u32() % u32::try_from(span + 8).unwrap()).unwrap() - 4;
+    for _ in 0..12 {
+        let (x, y) = (coordinate(width), coordinate(height));
+        danger.charges.push(TilePos::new(x, y));
+    }
+    let radius = crate::stats::SCOUT_CHARGE_AVOID_RADIUS;
+    let froms = [TilePos::new(0, 0), TilePos::new(width / 2, height / 2)];
+    for y in -2..=height + 1 {
+        for x in -2..=width + 1 {
+            let tile = TilePos::new(x, y);
+            let near = |from: Option<TilePos>| {
+                danger.charges.iter().any(|charge| {
+                    let next = charge.chebyshev(tile);
+                    next <= radius && from.is_none_or(|from| next <= charge.chebyshev(from))
+                })
+            };
+            assert_eq!(danger.scout_threatened(tile, None), near(None), "{tile}");
+            for from in froms {
+                assert_eq!(
+                    danger.scout_threatened(tile, Some(from)),
+                    near(Some(from)),
+                    "{from} -> {tile}"
+                );
+            }
+        }
+    }
+}

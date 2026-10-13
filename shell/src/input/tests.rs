@@ -6225,11 +6225,13 @@ fn the_tutorial_survives_its_own_literal_instructions() {
     controls_key(&mut game, &mut input, Key::E);
     game.do_tick();
     assert!(t.advance(game.demo));
+    assert_eq!(t.step, 3, "an accepted order is no fighter yet");
+    await_trained_sentinel(&mut game);
+    assert!(t.advance(game.demo));
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
     // Lesson 5 — right-click ground with a fighter selected: the one the
-    // last lesson trained, once it steps out.
-    await_trained_sentinel(&mut game);
+    // last lesson trained.
     let sentinel = game
         .state
         .units()
@@ -6254,7 +6256,7 @@ fn the_tutorial_survives_its_own_literal_instructions() {
 }
 
 /// Plays on until the Sentinel the fighter lesson trained has spawned: the
-/// opening fields no fighter of its own.
+/// opening fields no fighter of its own, and the lesson waits for this one.
 fn await_trained_sentinel(game: &mut Game) {
     for _ in 0..600 {
         if game
@@ -6399,11 +6401,11 @@ fn the_tutorial_survives_its_own_touch_instructions() {
     tap_world(&mut game, &mut input, world);
     tap_panel_card(&mut game, &mut input, |card| card.title == "Sentinel");
     game.do_tick();
+    await_trained_sentinel(&mut game);
     assert!(t.advance(game.demo));
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
     // "Long-press ground with a combat unit selected."
-    await_trained_sentinel(&mut game);
     let (_, at) = own_unit(&game, UnitKind::Sentinel, false);
     tap_world(&mut game, &mut input, at);
     long_press_world(&mut game, &mut input, vec2(12.5, 9.5));

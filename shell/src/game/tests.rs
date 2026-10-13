@@ -536,7 +536,16 @@ fn demo_flags_read_only_the_humans_commands() {
         kind: UnitKind::Sentinel,
     });
     game.do_tick();
-    assert!(game.demo.trained_fighter);
+    assert!(
+        !game.demo.trained_fighter,
+        "an accepted order is not yet a fighter to select"
+    );
+    let mut ticks = 0;
+    while !game.demo.trained_fighter {
+        game.do_tick();
+        ticks += 1;
+        assert!(ticks < 1_000, "the Sentinel rolls out");
+    }
     // Further ticks without human commands leave the unrelated flags
     // unset: only the human's own commands grade the tutorial.
     for _ in 0..20 {
