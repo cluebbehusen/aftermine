@@ -27,6 +27,7 @@
       {"chord": {"key": "y", "ctrl": false, "shift": false}, "action": "SetRally"},
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "Unload"},
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "ReturnCargo"},
+      {"chord": {"key": "e", "ctrl": false, "shift": false}, "action": "Accompany"},
       {"chord": {"key": "space", "ctrl": false, "shift": false}, "action": "ReplayPause"},
       {"chord": {"key": "page_up", "ctrl": false, "shift": false}, "action": "ReplayBack"},
       {"chord": {"key": "page_down", "ctrl": false, "shift": false}, "action": "ReplayForward"},

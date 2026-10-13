@@ -176,6 +176,96 @@ def bastion_mount(variant, phase=0):
     return finish(im, False)
 
 
+CITADEL_CHARGE = (185, 151, 89)
+
+
+def _citadel_armor(d, b, p, cut=5):
+    x, y, r, z = b
+    plate(d, b, DARK, cut)
+    plate(d, (x + 3, y + 3, r - 3, z - 4), IRON, max(2, cut - 2))
+    box(d, (x + 6, y + 6, r - 6, y + 10), p, 1)
+    for xx, yy in ((x + 5, z - 8), (r - 5, z - 8)):
+        bolt(d, xx, yy)
+
+
+def _citadel_charge_rack(d, x, y, phase):
+    count = (5, 1, 2, 3, 4, 5, 5, 0, 0, 0)[phase]
+    plate(d, (x - 4, y - 4, x + 13, y + 51), DARK, 3)
+    for i in range(5):
+        xx = x
+        yy = y + i * 10
+        box(d, (xx, yy, xx + 7, yy + 7), CITADEL_CHARGE if i < count else DEEP, 1)
+        if i < count:
+            line(d, [(xx + 1, yy + 1), (xx + 5, yy + 1)], gen.SCRAP_LIGHT)
+
+
+def _citadel_bearing(d, r=27):
+    circle(d, (64 - r, 67 - r, 64 + r, 67 + r), VOID)
+    circle(d, (67 - r, 70 - r, 61 + r, 64 + r), IRON)
+    circle(d, (72 - r, 75 - r, 56 + r, 59 + r), DARK)
+    for a in (20, 110, 200, 290):
+        t = math.radians(a)
+        bolt(d, 64 + (r - 4) * math.cos(t), 67 + (r - 4) * math.sin(t))
+
+
+def citadel_base(variant, phase=0):
+    im, d = canvas()
+    p = gen.PALETTES[variant]["dark"]
+    plate(d, (6, 20, 122, 121), DEEP, 12)
+    _citadel_bearing(d, 29)
+    for b in [(7, 21, 41, 49), (87, 21, 121, 49), (7, 86, 41, 120), (87, 86, 121, 120)]:
+        _citadel_armor(d, b, p, 6)
+    for x in (12, 111):
+        plate(d, (x - 5, 47, x + 5, 88), IRON, 3)
+        line(d, [(x, 52), (x, 83)], EDGE)
+    _citadel_charge_rack(d, 25, 56, phase)
+    plate(d, (92, 56, 109, 82), DARK, 3)
+    vent(d, 94, 60, 12)
+    plate(d, (42, 107, 86, 120), DARK, 3)
+    box(d, (49, 112, 78, 116), p, 1)
+    return finish(im)
+
+
+def citadel_mount(variant, phase=0):
+    im, d = canvas()
+    p = gen.PALETTES[variant]["dark"]
+    recoil = {6: 2, 7: 7, 8: 3}.get(phase, 0)
+    width = 16
+    top = 5
+    span = 24
+    plate(d, (64 - span, 48, 64 + span, 92), DARK, 6)
+    for x in (64 - span + 4, 64 + span - 4):
+        box(d, (x - 4, 37, x + 4, 99), VOID, 2)
+        box(d, (x - 2, 40, x + 2, 79 + recoil), STEEL, 1)
+        plate(d, (x - 6, 76 + recoil, x + 6, 102), IRON, 3)
+        bolt(d, x, 95)
+    barrel(d, 64, top + recoil, 72 + recoil, width)
+    for y in (top + 14, top + 30):
+        box(
+            d,
+            (64 - width / 2 - 2, y + recoil, 64 + width / 2 + 2, y + 5 + recoil),
+            DARK,
+            1,
+        )
+        line(
+            d,
+            [(65 - width / 2, y + 1 + recoil), (63 + width / 2, y + 1 + recoil)],
+            EDGE,
+        )
+    plate(d, (42, 57 + recoil, 86, 88 + recoil), p, 6)
+    plate(d, (49, 62 + recoil, 79, 81 + recoil), DARK, 3)
+    plate(d, (53, 92, 75, 117), DEEP, 3)
+    if phase in (1, 2, 3, 4, 5):
+        y = 111 - min(phase - 1, 3) * 3
+        box(d, (60, y - 5, 68, y + 4), BRASS, 1)
+        line(d, [(64, y + 4), (64, 115)], IRON, 3)
+    else:
+        box(d, (60, 101, 68, 114), IRON, 1)
+    if phase == 6:
+        flash(d, 64, top + recoil, 10)
+    return finish(im, False)
+
+
 def turret_base(variant, tier=0):
     if tier == 2:
         return bulwark_base(variant)
@@ -360,15 +450,16 @@ def source_frames():
     """Yield the complete installed-defense rows before masks and construction."""
     for variant in gen.PALETTES:
         tag = gen.variant_tag(variant)
-        # Placeholder: the Citadel ships the Bastion's art until its own is
-        # approved.
-        for tier_suffix in ("", "_t1"):
+        for tier_suffix, base, mount in (
+            ("", bastion_base, bastion_mount),
+            ("_t1", citadel_base, citadel_mount),
+        ):
             for phase in range(10):
                 suffix = f"_action{phase}" if phase else ""
-                yield f"bastion{tier_suffix}{tag}{suffix}", bastion_base(variant, phase)
+                yield f"bastion{tier_suffix}{tag}{suffix}", base(variant, phase)
                 yield (
                     f"bastion_mount{tier_suffix}{tag}{suffix}",
-                    bastion_mount(variant, phase),
+                    mount(variant, phase),
                 )
         for tier in range(3):
             tier_suffix = f"_t{tier}" if tier else ""

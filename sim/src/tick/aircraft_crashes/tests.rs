@@ -113,6 +113,11 @@ fn crash_blast_uses_current_ground_targets_and_building_footprints() {
         state.unit(entered).unwrap().hp,
         UnitKind::Harvester.stats().max_hp.saturating_sub(50)
     );
+    assert_eq!(
+        state.unit(entered).unwrap().damaged_at,
+        Some(AIRCRAFT_CRASH_TICKS)
+    );
+    assert_eq!(state.unit(dodged).unwrap().damaged_at, None);
     assert_eq!(state.building(building).unwrap().hp, building_hp - 50);
     assert_eq!(state.building(ally_building).unwrap().hp, ally_hp);
 }

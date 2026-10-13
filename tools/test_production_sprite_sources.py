@@ -18,6 +18,7 @@ from tools.production_sprite_sources import (
     installed_defenses_final,
     mechanical_extractor,
     mechanical_final,
+    mantle_final,
     quarry_final,
     quarry_rocks,
     skyhook_sapper_crucible_final,
@@ -123,7 +124,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 629)
+        self.assertEqual(len(frames), 643)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -131,7 +132,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "94c29027fb67851009bffccdbb831ce143cc7bfa626283de5c84c30fe6ed0c4a",
+            "eb0f2d8263ca6d49478cc352ceff8422f91f8d96d90b60c79bf306d99bcf2298",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:
@@ -271,7 +272,18 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "2ea890e0c62346d8c5ab62c095be51621177380b63d013bbac6613e6cf90c570",
+            "8e53ee55b230caaa338de50c5e6d2316a58beb15653ba5b5dacea82bee554f9c",
+        )
+
+    def test_citadel_preserves_the_approved_redoubt_sequence(self) -> None:
+        digest = hashlib.sha256()
+        for phase in range(10):
+            suffix = f"_action{phase}" if phase else ""
+            for stem in ("bastion_t1", "bastion_mount_t1"):
+                digest.update(self.registry[f"{stem}{suffix}"].tobytes())
+        self.assertEqual(
+            digest.hexdigest(),
+            "363e295803d2317d8723ea3f61b6dc4f129a1509f8377005cc468fbc55fcb81a",
         )
 
     def test_construction_bank_covers_every_building(self) -> None:
@@ -283,6 +295,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "fabricator",
                 "flak_turret",
                 "bastion",
+                "bastion_t1",
                 "array",
                 "reclaimer",
                 "repair_bay",
@@ -821,36 +834,43 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             "_action8": 0,
             "_action9": 0,
         }
-        for variant in gen.PALETTES:
-            for suffix, count in expected.items():
-                image = self.registry[f"bastion{gen.variant_tag(variant)}{suffix}"]
-                lit = sum(
-                    sum(
-                        (a - b) ** 2
-                        for a, b in zip(
-                            image.getpixel(center)[:3], installed_defenses_final.BRASS
+        for stem, centers, color in (
+            ("bastion", centers, installed_defenses_final.BRASS),
+            (
+                "bastion_t1",
+                [(28, 59 + i * 10) for i in range(5)],
+                installed_defenses_final.CITADEL_CHARGE,
+            ),
+        ):
+            for variant in gen.PALETTES:
+                for suffix, count in expected.items():
+                    image = self.registry[f"{stem}{gen.variant_tag(variant)}{suffix}"]
+                    lit = sum(
+                        sum(
+                            (a - b) ** 2
+                            for a, b in zip(image.getpixel(center)[:3], color)
                         )
+                        < 100
+                        for center in centers
                     )
-                    < 100
-                    for center in centers
-                )
-                with self.subTest(variant=variant, suffix=suffix):
-                    self.assertEqual(lit, count)
+                    with self.subTest(variant=variant, suffix=suffix):
+                        self.assertEqual(lit, count)
 
     def test_bastion_recoils_after_report_then_returns_quickly(self) -> None:
-        for variant in gen.PALETTES:
-            muzzle_tops = [
-                self.registry[f"bastion_mount{gen.variant_tag(variant)}{suffix}"]
-                .crop((55, 0, 73, 40))
-                .getchannel("A")
-                .getbbox()[1]
-                for suffix in ("_action5", "_action7", "_action8", "_action9")
-            ]
-            with self.subTest(variant=variant):
-                ready, recoil, settling, returned = muzzle_tops
-                self.assertEqual(recoil - ready, 7)
-                self.assertEqual(settling - ready, 3)
-                self.assertEqual(returned, ready)
+        for stem in ("bastion_mount", "bastion_mount_t1"):
+            for variant in gen.PALETTES:
+                muzzle_tops = [
+                    self.registry[f"{stem}{gen.variant_tag(variant)}{suffix}"]
+                    .crop((55, 0, 73, 40))
+                    .getchannel("A")
+                    .getbbox()[1]
+                    for suffix in ("_action5", "_action7", "_action8", "_action9")
+                ]
+                with self.subTest(variant=variant):
+                    ready, recoil, settling, returned = muzzle_tops
+                    self.assertEqual(recoil - ready, 7)
+                    self.assertEqual(settling - ready, 3)
+                    self.assertEqual(returned, ready)
 
     def test_flakhound_magazines_fill_during_reload(self) -> None:
         expected = {
@@ -896,6 +916,30 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 for pixel in report.crop((50, 8, 79, 35)).get_flattened_data()
             )
             self.assertGreater(flashes, 0)
+
+
+class MantleSourceTests(unittest.TestCase):
+    def test_charge_key_poses_preserve_the_approved_art(self):
+        digests = (
+            "e1c1ed2b4cde1c321b433b432c62c0bab7aefaa83df92401010dfe693194436a",
+            "8285ba2d7715488e061e726dc3698298f450c16b70128ba74a64e699590f7140",
+            "2a7aa359330d69c5004982c96993624d94c4d3e1593967265546eeacf81ef693",
+            "9d9a1243ed6da12cffe197f78a969bd59121af2a3ce5afecab84acfcdc3aeba4",
+        )
+        for charges, expected in enumerate(digests):
+            image = mantle_final.render_mantle("base", charges=charges)
+            self.assertEqual(hashlib.sha256(image.tobytes()).hexdigest(), expected)
+
+    def test_serial_recharge_composes_without_changing_the_chassis(self):
+        for frame in range(mantle_final.CHARGE_FRAMES):
+            charges, step = divmod(frame, mantle_final.RECHARGE_STEPS)
+            for move in range(3):
+                actual = mantle_final.render_mantle("base", move)
+                actual.alpha_composite(mantle_final.render_charge_frame(frame))
+                expected = mantle_final.render_mantle(
+                    "base", move, charges, step / mantle_final.RECHARGE_STEPS
+                )
+                self.assertEqual(actual.tobytes(), expected.tobytes(), (frame, move))
 
 
 if __name__ == "__main__":

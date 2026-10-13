@@ -32,6 +32,7 @@ from tools.production_sprite_sources import (
     heavy_structures,
     installed_defenses_final,
     mechanical_final,
+    mantle_final,
     skyhook_sapper_crucible_final,
     specialists_final,
     surveyor_final,
@@ -522,4 +523,5 @@ def install_finalized_sprites(registry: Registry, out: Path) -> None:
     specialists_final.install_specialists(registry, out)
     installed_defenses_final.install_defenses(registry, out)
     mechanical_final.install_machines(registry, out)
+    mantle_final.install_mantle(registry, out)
     surveyor_final.install_surveyor(registry, out)

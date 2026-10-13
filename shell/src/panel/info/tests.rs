@@ -115,3 +115,18 @@ fn scouts_list_their_radar_and_a_surveyor_reports_it_unfolding() {
     }
     assert_eq!(status(&game), ["Radar up"]);
 }
+
+#[test]
+fn point_defense_charges_read_the_same_for_owner_and_enemy() {
+    for foreign in [false, true] {
+        let panel = selected(UnitKind::Mantle, foreign);
+        assert!(
+            panel
+                .info
+                .rows
+                .iter()
+                .any(|r| r.label == "Charges" && r.value == "3/3"),
+            "foreign: {foreign}"
+        );
+    }
+}

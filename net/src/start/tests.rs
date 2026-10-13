@@ -10,8 +10,9 @@ fn secs(seconds: u64) -> Duration {
 
 /// Twin Forges with seats 0 to 2 human and seat 3 a bot.
 fn scenario() -> Scenario {
-    let mut scenario = Scenario::from_json(include_str!("../../../scenarios/twin-forges.json"))
-        .expect("the shipped map parses");
+    let mut scenario =
+        Scenario::from_json(include_str!("../../../fixtures/scenarios/twin-forges.json"))
+            .expect("the shipped map parses");
     for (seat, player) in scenario.players.iter_mut().enumerate() {
         player.bot = seat == 3;
     }

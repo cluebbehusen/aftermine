@@ -19,6 +19,7 @@ fn unit_facts(kind: UnitKind) -> UnitAnimationFacts {
         demolition_contact: false,
         cooldowns: [0; MAX_WEAPONS],
         radar_unfold: None,
+        point_defense: None,
     }
 }
 
@@ -476,7 +477,7 @@ fn harvesting_requires_real_work_and_cargo_is_a_continuous_fill() {
     unit.order = Order::Harvest {
         node,
         anchor: node,
-        retiring: false,
+        withdrawing: false,
     };
     unit.pos = oxide_sim::geometry::work_approach_point(
         node.offset(-1, 0),
@@ -516,7 +517,7 @@ fn harvesting_requires_real_work_and_cargo_is_a_continuous_fill() {
     unit.order = Order::Harvest {
         node,
         anchor: node,
-        retiring: true,
+        withdrawing: true,
     };
     assert_eq!(
         UnitAnimationFacts::capture(&state, &unit, false).work,
@@ -730,9 +731,11 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
             UnitKind::Harvester.stats().radius,
         ),
         hp: UnitKind::Harvester.stats().max_hp,
+        damaged_at: None,
         worker: Some(oxide_sim::Worker::default()),
         cooldowns: [0; MAX_WEAPONS],
         turret_heading: None,
+        point_defense: None,
         progress: 0,
         order: Order::Build { site: site.id },
         queue: VecDeque::new(),
@@ -1379,4 +1382,34 @@ fn radar_hinges_reverse_from_the_visible_pose() {
         0.875,
         "homing takes the short path across wrap"
     );
+}
+
+#[test]
+fn mantle_charge_progress_follows_the_serial_counter_while_moving() {
+    let controller = AnimationController::default();
+    let mut facts = unit_facts(UnitKind::Mantle);
+    let stats = UnitKind::Mantle.stats().point_defense.unwrap();
+    facts.moved = true;
+    for charges in 0..=stats.charges {
+        facts.point_defense = Some(oxide_sim::state::PointDefense {
+            charges,
+            recharge: if charges == stats.charges {
+                0
+            } else {
+                stats.recharge_ticks / 2
+            },
+        });
+        let state = controller.unit_state(
+            facts,
+            AnimationClock::new(100, 0.0),
+            AnimationOptions::default(),
+        );
+        let held = state.point_defense.unwrap();
+        assert_eq!(held.charges, charges);
+        assert_eq!(
+            held.recharge,
+            if charges == stats.charges { 0.0 } else { 0.5 }
+        );
+        assert!(matches!(state.locomotion, LocomotionState::Moving { .. }));
+    }
 }

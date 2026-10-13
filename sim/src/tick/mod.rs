@@ -239,7 +239,64 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
             deposits.push((unit.tile(), value));
         }
     }
-    state.units.retain(|u| u.hp > 0);
+    // A machine whose dismantling meter filled this tick, and that no
+    // damage source of the tick zeroed, comes apart at its Crucible:
+    // refunded by its final hp, its cargo banked like a delivery, and no
+    // wreck or death.
+    let complete =
+        |u: &crate::Unit| u.hp > 0 && u.retiring() && u.progress >= crate::stats::RETIRE_TICKS;
+    let retired: Vec<(
+        crate::ids::UnitId,
+        crate::ids::PlayerId,
+        crate::UnitKind,
+        u32,
+    )> = state
+        .units
+        .iter()
+        .filter(|u| complete(u))
+        .map(|u| (u.id, u.player, u.kind, u.hp))
+        .collect();
+    for (id, player, kind, hp) in retired {
+        let unit = state.unit(id).expect("just seen");
+        let (pos, cargo) = (unit.pos, unit.carrying());
+        let crate::state::Order::Retire { crucible, .. } = unit.order else {
+            unreachable!("only retiring units complete a dismantling meter");
+        };
+        // Saturating, like a delivery: the event reports what was actually
+        // credited, cargo first, which differs from the raw amounts only at
+        // the bank's ceiling.
+        let seat = state.player_mut(player);
+        let cargo = seat.scrap.saturating_add(cargo) - seat.scrap;
+        seat.scrap += cargo;
+        let refund = seat
+            .scrap
+            .saturating_add(crate::stats::retire_refund(kind, hp))
+            - seat.scrap;
+        seat.scrap += refund;
+        if cargo > 0 {
+            seat.recovery = crate::state::Recovery::Ready;
+        }
+        events.push(Event::UnitRetired {
+            unit: id,
+            kind,
+            player,
+            pos,
+            crucible,
+            hp,
+            refund,
+            cargo,
+        });
+    }
+    state.units.retain(|u| u.hp > 0 && !complete(u));
+    // A unit rally leaves play with its unit. Units leave play only here,
+    // so no rally names a gone unit at a tick boundary.
+    for index in 0..state.buildings.len() {
+        if let Some(crate::state::Rally::Unit(unit)) = state.buildings[index].rally
+            && state.escorted(unit).is_none()
+        {
+            state.buildings[index].rally = None;
+        }
+    }
 
     let mut queue_refunds: Vec<(crate::ids::PlayerId, u32)> = Vec::new();
     for building in state.buildings.iter().filter(|b| b.hp == 0) {

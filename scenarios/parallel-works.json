@@ -56,27 +56,27 @@
  ],
  "players": [
   {
-   "name": "Seat0",
+   "name": "North West",
    "scrap": 150,
    "bot": false,
    "team": 0
   },
   {
-   "name": "Seat1",
+   "name": "North East",
    "scrap": 150,
    "bot": true,
    "team": 1,
    "bot_config": {}
   },
   {
-   "name": "Seat2",
+   "name": "South West",
    "scrap": 150,
    "bot": true,
    "team": 0,
    "bot_config": {}
   },
   {
-   "name": "Seat3",
+   "name": "South East",
    "scrap": 150,
    "bot": true,
    "team": 1,

@@ -217,7 +217,7 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
                         player: game.presentation.human,
                         command: Command::SetRally {
                             building,
-                            rally: Some(chassis::grid::TilePos::new(12, 8)),
+                            rally: Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(12, 8))),
                         },
                     }]);
                 }
@@ -379,7 +379,10 @@ fn rally_changes_preserve_single_and_grouped_production_geometry() {
             let baseline = geometry(&game);
             // Partial and shared rallies exercise both grouped panel states.
             for ids in [vec![selection[0]], selection.clone()] {
-                for rally in [Some(chassis::grid::TilePos::new(20, 10)), None] {
+                for rally in [
+                    Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(20, 10))),
+                    None,
+                ] {
                     let commands: Vec<_> = ids
                         .iter()
                         .map(|id| PlayerCommand {

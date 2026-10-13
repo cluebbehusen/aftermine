@@ -1,7 +1,7 @@
 //! Getting there: idle auto-acquire, advance and hunt routing,
 //! plain walking, contact-propagated arrival, and doorstep approach.
 
-use super::super::landing::{self, Pick, RunIn};
+use super::super::landing::{self, Pick};
 use super::super::reach::Reach;
 use super::super::{
     flight, rect_adjacent_tiles, rect_approach_key_from, rect_approach_origin, route_for,
@@ -137,6 +137,46 @@ pub(super) fn land(
         unit.path = None;
         return;
     }
+    match fly_run_in(state, id, goal) {
+        Touchdown::Flying => {}
+        Touchdown::Landed => state.unit_mut(id).expect("caller checked").advance_queue(),
+        Touchdown::Moved(goal) => {
+            let unit = state.unit_mut(id).expect("caller checked");
+            unit.order = Order::Land { goal, from };
+            unit.path = None;
+        }
+        Touchdown::Stalled(reason) => {
+            let unit = state.unit_mut(id).expect("caller checked");
+            let (player, pos) = (unit.player, unit.pos);
+            unit.drop_active_order();
+            events.push(Event::OrderStalled {
+                unit: id,
+                player,
+                pos,
+                reason,
+            });
+        }
+    }
+}
+
+/// Where a run-in onto a pad stands after one tick of [`fly_run_in`].
+pub(super) enum Touchdown {
+    /// Still flying the approach.
+    Flying,
+    /// Set down on the pad this tick.
+    Landed,
+    /// The pad filled during the approach; this one nearby is clear.
+    Moved(TilePos),
+    /// No clear pad or no route remains.
+    Stalled(StallReason),
+}
+
+/// Flies one tick of a turn-limited airframe's run-in onto `goal` and sets
+/// it down on the tile. Writes only the body and its path: the caller owns
+/// the order and decides what each outcome means for it.
+pub(super) fn fly_run_in(state: &mut State, id: UnitId, goal: TilePos) -> Touchdown {
+    let unit = state.unit(id).expect("caller checked");
+    let stats = unit.kind.stats();
     let (pos, heading, kind) = (unit.pos, unit.heading, unit.kind);
     let center = goal.center();
     let radius = stats.turn_radius();
@@ -157,21 +197,10 @@ pub(super) fn land(
                 Pick::StraightIn,
                 None,
             );
-            let unit = state.unit_mut(id).expect("caller checked");
-            if let Some(goal) = next {
-                unit.order = Order::Land { goal, from };
-                unit.path = None;
-            } else {
-                let (player, pos) = (unit.player, unit.pos);
-                unit.drop_active_order();
-                events.push(Event::OrderStalled {
-                    unit: id,
-                    player,
-                    pos,
-                    reason: StallReason::NoOpenGround,
-                });
-            }
-            return;
+            return next.map_or(
+                Touchdown::Stalled(StallReason::NoOpenGround),
+                Touchdown::Moved,
+            );
         }
         // Judged where the airframe will actually rest, which is what the
         // validator holds a parked heading to.
@@ -179,15 +208,14 @@ pub(super) fn land(
             // Arrived on a heading no takeoff could fly out of: missed
             // approach, plan a fresh run-in.
             state.unit_mut(id).expect("caller checked").path = None;
-            return;
+            return Touchdown::Flying;
         }
         // The airframe rests where it met the tile: no snap to the center,
         // so the touchdown reads as the end of the run rather than a hop.
         let unit = state.unit_mut(id).expect("caller checked");
         unit.touch_down();
         unit.path = None;
-        unit.advance_queue();
-        return;
+        return Touchdown::Landed;
     }
     let on_final = unit
         .path
@@ -218,7 +246,7 @@ pub(super) fn land(
                 let last = path.waypoints.len() - 1;
                 path.waypoints[last] = carrot;
                 path.next = u32::try_from(last).expect("waypoint counts fit in u32");
-                return;
+                return Touchdown::Flying;
             }
         } else {
             let hv = chassis::compass::dir(heading);
@@ -226,7 +254,7 @@ pub(super) fn land(
             let behind = hv.x * d.x + hv.y * d.y < chassis::fx::Fx::ZERO;
             let accept = stats.turn_acceptance();
             if !(behind && pos.dist_sq(center) <= accept * accept) {
-                return;
+                return Touchdown::Flying;
             }
             state.unit_mut(id).expect("caller checked").path = None;
         }
@@ -238,27 +266,27 @@ pub(super) fn land(
         .as_ref()
         .is_some_and(|p| p.goal == goal)
     {
-        return;
+        return Touchdown::Flying;
     }
-    let route = landing::run_in_route(state, stats, kind, pos, heading, goal, RunIn::Landing);
-    let unit = state.unit_mut(id).expect("caller checked");
-    if let Some(waypoints) = route {
-        unit.path = Some(PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-        });
-    } else {
-        let (player, pos) = (unit.player, unit.pos);
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
-    }
+    let route = landing::run_in_route(
+        state,
+        stats,
+        kind,
+        pos,
+        heading,
+        goal,
+        landing::RunIn::Landing,
+    );
+    let Some(waypoints) = route else {
+        return Touchdown::Stalled(StallReason::NoRoute);
+    };
+    state.unit_mut(id).expect("caller checked").path = Some(PathFollow {
+        final_point: None,
+        goal,
+        waypoints,
+        next: 0,
+    });
+    Touchdown::Flying
 }
 
 /// March toward the goal, but engage anything that shows up on the way;
@@ -276,7 +304,7 @@ pub(super) fn hunt(
         unit.order = Order::Attack {
             pursue: false,
             target: target.into(),
-            resume: Some(goal),
+            resume: Some(crate::state::Resume::Hunt(goal)),
         };
         unit.path = None;
         return;
