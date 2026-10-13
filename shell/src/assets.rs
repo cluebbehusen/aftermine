@@ -153,13 +153,19 @@ fn unit_rigs(rects: &Manifest) -> Result<std::collections::HashMap<UnitKind, Uni
             && let Some(rig) = unit_rig(
                 rects,
                 unit_stem(kind),
-                numbered_suffixes(rects, unit_stem(kind), "action")?.len(),
+                numbered_suffixes(rects, &rig_mount_stem(kind), "action")?.len(),
             )?
         {
             rigs.insert(kind, rig);
         }
     }
     Ok(rigs)
+}
+
+/// The stem of a rigged kind's mount layer, which holds its action frames:
+/// the rig draws a hull and a mount in place of whole-body frames.
+fn rig_mount_stem(kind: UnitKind) -> String {
+    format!("rig_{}_mount", unit_stem(kind))
 }
 
 fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitRig>> {
@@ -535,10 +541,15 @@ pub(crate) fn shipped_frames(stem: &str, label: &str) -> usize {
         .len()
 }
 
-/// How many action frames a unit kind's shipped atlas bank holds.
+/// How many action frames a unit kind's shipped atlas bank holds: its rig
+/// mount's for a rigged kind.
 #[cfg(test)]
 pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
-    shipped_frames(unit_stem(kind), "action")
+    if crate::look::unit(kind).rig {
+        shipped_frames(&rig_mount_stem(kind), "action")
+    } else {
+        shipped_frames(unit_stem(kind), "action")
+    }
 }
 
 fn numbered_rows(rects: &Manifest, stem: &str, label: &str) -> Result<Vec<[Rect; 2]>> {
@@ -769,9 +780,9 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         .into_iter()
         .filter(|kind| crate::look::unit(*kind).rig)
         .map(|kind| {
-            let stem = unit_stem(kind);
-            let actions = numbered_suffixes(atlas, stem, "action").expect("complete rows");
-            (stem, actions.len())
+            let actions =
+                numbered_suffixes(atlas, &rig_mount_stem(kind), "action").expect("complete rows");
+            (unit_stem(kind), actions.len())
         })
     {
         for suffix in ["", "_move1", "_move2"] {

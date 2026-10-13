@@ -8424,3 +8424,25 @@ fn the_armed_scout_verb_sends_only_scouts() {
     );
     assert!(!input.armed(ClickVerb::Scout), "a plain click stands down");
 }
+
+#[test]
+fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let (id, at) = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Surveyor)
+        .map(|u| (u.id, vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+        .expect("the opening fields a Surveyor");
+    let click_at = |game: &mut Game, input: &mut InputState, world: Vec2| {
+        let screen = game.presentation.camera.to_screen(world);
+        apply_events(game, input, &click(screen.x, screen.y));
+    };
+    // Inside the two-tile sprite canvas, but clear of the packed body.
+    click_at(&mut game, &mut input, at + vec2(0.0, 0.8));
+    assert!(!game.presentation.selection.units.contains(&id));
+    click_at(&mut game, &mut input, at + vec2(0.0, 0.4));
+    assert!(game.presentation.selection.units.contains(&id));
+}

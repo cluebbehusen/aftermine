@@ -1764,44 +1764,6 @@ def sapper(variant: str, move: int = 0) -> None:
     finish(img, px, f"sapper{variant_tag(variant)}{suffix}")
 
 
-def surveyor(variant: str, move: int = 0, action: int = 0) -> None:
-    """Placeholder ground scout: a slim four-wheeled crawler whose sensor
-    mast lies folded while it drives and rises over four action frames as
-    its radar unfolds at rest."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    dy = (0, -1, 1)[move % 3]
-    for x in (14, 41):
-        for y in (20, 44):
-            d.rounded_rectangle(
-                [s(x), s(y), s(x + 9), s(y + 13)], radius=s(3), fill=(*IRON_DARK, 255)
-            )
-            pip_y = y + (2, 5, 8)[move % 3]
-            d.rectangle(
-                [s(x + 2), s(pip_y), s(x + 7), s(pip_y + 3)], fill=(*IRON_LIGHT, 255)
-            )
-    d.rounded_rectangle(
-        [s(20), s(18 + dy), s(44), s(60 + dy)], radius=s(7), fill=(*IRON, 255)
-    )
-    d.rounded_rectangle(
-        [s(23), s(26 + dy), s(41), s(54 + dy)], radius=s(5), fill=(*pal["base"], 255)
-    )
-    top = 30 - 5 * action + dy
-    reach = 4 + 1.5 * action
-    d.rectangle([s(30), s(top), s(34), s(36 + dy)], fill=(*IRON_LIGHT, 255))
-    d.ellipse(
-        [s(32 - reach), s(top - reach * 0.6), s(32 + reach), s(top + reach * 0.6)],
-        fill=(*pal["dark"], 255),
-    )
-    d.ellipse(
-        [s(32 - reach / 2), s(top - reach * 0.3), s(32 + reach / 2), s(top + reach * 0.3)],
-        fill=(*pal["light"], 255),
-    )
-    suffix = f"_action{action}" if action else ("" if move == 0 else f"_move{move}")
-    finish(img, px, f"surveyor{variant_tag(variant)}{suffix}")
-
-
 def warden(variant: str, move: int = 0, action: int = 0) -> None:
     """Tier-two line brawler: a broad plated hull behind twin shield
     cheeks, one heavy fork cannon dead ahead — the wall that walks."""
@@ -3270,12 +3232,10 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper, surveyor):
+        for unit_fn in (excavator, kestrel, skyhook, sapper):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
-        for action in range(1, 5):
-            surveyor(variant, 0, action)
         airworks(variant)
         for work in range(1, 4):
             airworks(variant, work)

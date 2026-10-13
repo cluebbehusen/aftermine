@@ -23,6 +23,7 @@ from tools.production_sprite_sources import (
     quarry_rocks,
     skyhook_sapper_crucible_final,
     specialists_final,
+    surveyor_final,
     tier_one_combat_final,
 )
 
@@ -77,6 +78,34 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.temp.cleanup()
+
+    def test_surveyor_preserves_deployed_art_and_scanner_seam(self) -> None:
+        digest = hashlib.sha256()
+        for variant in gen.PALETTES:
+            frames = [surveyor_final.render_surveyor(variant, move=i) for i in range(3)]
+            frames += [
+                surveyor_final.render_surveyor(variant, deploy=i / 40)
+                for i in range(1, 41)
+            ]
+            frames += [
+                surveyor_final.render_surveyor(variant, deploy=1, sweep=i)
+                for i in range(80)
+            ]
+            for frame in frames[43:]:
+                digest.update(frame.tobytes())
+            self.assertEqual(frames[42].tobytes(), frames[43].tobytes())
+            self.assertEqual(
+                frames[43].tobytes(),
+                surveyor_final.render_surveyor(variant, deploy=1, sweep=80).tobytes(),
+            )
+            tag = gen.variant_tag(variant)
+            self.assertNotIn(f"surveyor{tag}_action1", self.registry)
+        mounts = [key for key in self.registry if key.startswith("rig_surveyor_mount_action")]
+        self.assertEqual(len(mounts), 120)
+        self.assertEqual(
+            digest.hexdigest(),
+            "000e91b69f35066f88c1e67685df75a731d5463892d2cb166986cc9106a7a920",
+        )
 
     def test_installer_is_independent_of_review_files(self) -> None:
         root = Path(finalized.__file__).parent

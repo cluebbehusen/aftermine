@@ -1,7 +1,7 @@
 {
  "air_shadow": [
-  2906,
-  4362,
+  3962,
+  4890,
   64,
   64
  ],
@@ -1392,8 +1392,8 @@
   128
  ],
  "burst": [
-  2974,
-  4362,
+  4030,
+  4890,
   64,
   64
  ],
@@ -1698,44 +1698,44 @@
   128
  ],
  "debris_0": [
-  2806,
-  4562,
+  2874,
+  5090,
   32,
   32
  ],
  "debris_1": [
-  2842,
-  4562,
+  2910,
+  5090,
   32,
   32
  ],
  "debris_2": [
-  2878,
-  4562,
+  2946,
+  5090,
   32,
   32
  ],
  "decal_crack": [
-  3042,
-  4362,
+  2,
+  5022,
   64,
   64
  ],
  "decal_plate": [
-  3110,
-  4362,
+  70,
+  5022,
   64,
   64
  ],
  "decal_stain": [
-  3178,
-  4362,
+  138,
+  5022,
   64,
   64
  ],
  "decal_wreck": [
-  3246,
-  4362,
+  206,
+  5022,
   64,
   64
  ],
@@ -2928,62 +2928,62 @@
   128
  ],
  "field_debris_abandoned_canisters": [
-  2914,
-  4562,
+  2982,
+  5090,
   32,
   32
  ],
  "field_debris_bent_service_rail": [
-  2950,
-  4562,
+  3018,
+  5090,
   32,
   32
  ],
  "field_debris_braided_cable": [
-  3314,
-  4362,
+  274,
+  5022,
   64,
   64
  ],
  "field_debris_cable_tray": [
-  3382,
-  4362,
+  342,
+  5022,
   64,
   64
  ],
  "field_debris_canister_cluster": [
-  3450,
-  4362,
+  410,
+  5022,
   64,
   64
  ],
  "field_debris_fastener_spill": [
-  3518,
-  4362,
+  478,
+  5022,
   64,
   64
  ],
  "field_debris_inspection_hatch": [
-  3586,
-  4362,
+  546,
+  5022,
   64,
   64
  ],
  "field_debris_motor_casing": [
-  3654,
-  4362,
+  614,
+  5022,
   64,
   64
  ],
  "field_debris_severed_cable": [
-  2986,
-  4562,
+  3054,
+  5090,
   32,
   32
  ],
  "field_debris_sunken_cooling_fan": [
-  3722,
-  4362,
+  682,
+  5022,
   64,
   64
  ],
@@ -3672,44 +3672,44 @@
   128
  ],
  "ground_0": [
-  3790,
-  4362,
+  750,
+  5022,
   64,
   64
  ],
  "ground_1": [
-  3858,
-  4362,
+  818,
+  5022,
   64,
   64
  ],
  "ground_2": [
-  3926,
-  4362,
+  886,
+  5022,
   64,
   64
  ],
  "ground_3": [
-  3994,
-  4362,
+  954,
+  5022,
   64,
   64
  ],
  "ground_4": [
-  2,
-  4494,
+  1022,
+  5022,
   64,
   64
  ],
  "ground_5": [
-  70,
-  4494,
+  1090,
+  5022,
   64,
   64
  ],
  "ground_blocker_compressor_skid": [
-  138,
-  4494,
+  1158,
+  5022,
   128,
   64
  ],
@@ -3744,8 +3744,8 @@
   128
  ],
  "ground_blocker_track_assembly": [
-  270,
-  4494,
+  1290,
+  5022,
   192,
   64
  ],
@@ -3762,74 +3762,74 @@
   128
  ],
  "ground_detail_0": [
-  466,
-  4494,
+  1486,
+  5022,
   64,
   64
  ],
  "ground_detail_1": [
-  534,
-  4494,
+  1554,
+  5022,
   64,
   64
  ],
  "ground_detail_10": [
-  602,
-  4494,
+  1622,
+  5022,
   64,
   64
  ],
  "ground_detail_11": [
-  670,
-  4494,
+  1690,
+  5022,
   64,
   64
  ],
  "ground_detail_2": [
-  738,
-  4494,
+  1758,
+  5022,
   64,
   64
  ],
  "ground_detail_3": [
-  806,
-  4494,
+  1826,
+  5022,
   64,
   64
  ],
  "ground_detail_4": [
-  874,
-  4494,
+  1894,
+  5022,
   64,
   64
  ],
  "ground_detail_5": [
-  942,
-  4494,
+  1962,
+  5022,
   64,
   64
  ],
  "ground_detail_6": [
-  1010,
-  4494,
+  2030,
+  5022,
   64,
   64
  ],
  "ground_detail_7": [
-  1078,
-  4494,
+  2098,
+  5022,
   64,
   64
  ],
  "ground_detail_8": [
-  1146,
-  4494,
+  2166,
+  5022,
   64,
   64
  ],
  "ground_detail_9": [
-  1214,
-  4494,
+  2234,
+  5022,
   64,
   64
  ],
@@ -4194,98 +4194,98 @@
   128
  ],
  "icon_accompany": [
-  1974,
-  4562,
+  2042,
+  5090,
   48,
   48
  ],
  "icon_advance": [
-  2026,
-  4562,
+  2094,
+  5090,
   48,
   48
  ],
  "icon_attack": [
-  2078,
-  4562,
+  2146,
+  5090,
   48,
   48
  ],
  "icon_build": [
-  2130,
-  4562,
+  2198,
+  5090,
   48,
   48
  ],
  "icon_cancel": [
-  2182,
-  4562,
+  2250,
+  5090,
   48,
   48
  ],
  "icon_harvest": [
-  2234,
-  4562,
+  2302,
+  5090,
   48,
   48
  ],
  "icon_hunt": [
-  2286,
-  4562,
+  2354,
+  5090,
   48,
   48
  ],
  "icon_idle": [
-  2338,
-  4562,
+  2406,
+  5090,
   48,
   48
  ],
  "icon_move": [
-  2390,
-  4562,
+  2458,
+  5090,
   48,
   48
  ],
  "icon_patrol": [
-  2442,
-  4562,
+  2510,
+  5090,
   48,
   48
  ],
  "icon_rally": [
-  2494,
-  4562,
+  2562,
+  5090,
   48,
   48
  ],
  "icon_repair": [
-  2546,
-  4562,
+  2614,
+  5090,
   48,
   48
  ],
  "icon_retire": [
-  2598,
-  4562,
+  2666,
+  5090,
   48,
   48
  ],
  "icon_run": [
-  2650,
-  4562,
+  2718,
+  5090,
   48,
   48
  ],
  "icon_salvage": [
-  2702,
-  4562,
+  2770,
+  5090,
   48,
   48
  ],
  "icon_stop": [
-  2754,
-  4562,
+  2822,
+  5090,
   48,
   48
  ],
@@ -4848,74 +4848,74 @@
   128
  ],
  "quarry_dressing_0": [
-  1282,
-  4494,
+  2302,
+  5022,
   64,
   64
  ],
  "quarry_dressing_1": [
-  1350,
-  4494,
+  2370,
+  5022,
   64,
   64
  ],
  "quarry_dressing_10": [
-  1418,
-  4494,
+  2438,
+  5022,
   64,
   64
  ],
  "quarry_dressing_11": [
-  1486,
-  4494,
+  2506,
+  5022,
   64,
   64
  ],
  "quarry_dressing_2": [
-  1554,
-  4494,
+  2574,
+  5022,
   64,
   64
  ],
  "quarry_dressing_3": [
-  1622,
-  4494,
+  2642,
+  5022,
   64,
   64
  ],
  "quarry_dressing_4": [
-  1690,
-  4494,
+  2710,
+  5022,
   64,
   64
  ],
  "quarry_dressing_5": [
-  1758,
-  4494,
+  2778,
+  5022,
   64,
   64
  ],
  "quarry_dressing_6": [
-  1826,
-  4494,
+  2846,
+  5022,
   64,
   64
  ],
  "quarry_dressing_7": [
-  1894,
-  4494,
+  2914,
+  5022,
   64,
   64
  ],
  "quarry_dressing_8": [
-  1962,
-  4494,
+  2982,
+  5022,
   64,
   64
  ],
  "quarry_dressing_9": [
-  2030,
-  4494,
+  3050,
+  5022,
   64,
   64
  ],
@@ -6035,249 +6035,1737 @@
   128,
   128
  ],
- "rig_warden_hull": [
+ "rig_surveyor_hull": [
   1850,
   3594,
   128,
   128
  ],
- "rig_warden_hull_accent": [
+ "rig_surveyor_hull_accent": [
   1982,
   3594,
   128,
   128
  ],
- "rig_warden_hull_accent_move1": [
+ "rig_surveyor_hull_accent_move1": [
   2114,
   3594,
   128,
   128
  ],
- "rig_warden_hull_accent_move2": [
+ "rig_surveyor_hull_accent_move2": [
   2246,
   3594,
   128,
   128
  ],
- "rig_warden_hull_move1": [
+ "rig_surveyor_hull_move1": [
   2378,
   3594,
   128,
   128
  ],
- "rig_warden_hull_move2": [
+ "rig_surveyor_hull_move2": [
   2510,
   3594,
   128,
   128
  ],
- "rig_warden_mount": [
+ "rig_surveyor_mount": [
   2642,
   3594,
   128,
   128
  ],
- "rig_warden_mount_accent": [
+ "rig_surveyor_mount_accent": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action1": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action10": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action100": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action101": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action102": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action103": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action104": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action105": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action106": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action107": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action108": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action109": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action11": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action110": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action111": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action112": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action113": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action114": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action115": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action116": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action117": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action118": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action119": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action12": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action120": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action13": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action14": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action15": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action16": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action17": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action18": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action19": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action2": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action20": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action21": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action22": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action23": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action24": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action25": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action26": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action27": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action28": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action29": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action3": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action30": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action31": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action32": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action33": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action34": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action35": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action36": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action37": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action38": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action39": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action4": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action40": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action41": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action42": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action43": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action44": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action45": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action46": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action47": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action48": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action49": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action5": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action50": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action51": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action52": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action53": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action54": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action55": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action56": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action57": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action58": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action59": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action6": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action60": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action61": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action62": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action63": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action64": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action65": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action66": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action67": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action68": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action69": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action7": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action70": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action71": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action72": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action73": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action74": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action75": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action76": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action77": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action78": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action79": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action8": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action80": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action81": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action82": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action83": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action84": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action85": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action86": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action87": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action88": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action89": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action9": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action90": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action91": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action92": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action93": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action94": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action95": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action96": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action97": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action98": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_accent_action99": [
+  1718,
+  1086,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action1": [
   2774,
   3594,
   128,
   128
  ],
- "rig_warden_mount_accent_action1": [
-  2774,
-  3594,
-  128,
-  128
- ],
- "rig_warden_mount_accent_action2": [
+ "rig_surveyor_mount_action10": [
   2906,
   3594,
   128,
   128
  ],
- "rig_warden_mount_accent_action3": [
+ "rig_surveyor_mount_action100": [
   3038,
   3594,
   128,
   128
  ],
- "rig_warden_mount_accent_action4": [
+ "rig_surveyor_mount_action101": [
   3170,
   3594,
   128,
   128
  ],
- "rig_warden_mount_action1": [
-  2642,
-  3594,
-  128,
-  128
- ],
- "rig_warden_mount_action2": [
+ "rig_surveyor_mount_action102": [
   3302,
   3594,
   128,
   128
  ],
- "rig_warden_mount_action3": [
+ "rig_surveyor_mount_action103": [
   3434,
   3594,
   128,
   128
  ],
- "rig_warden_mount_action4": [
+ "rig_surveyor_mount_action104": [
   3566,
   3594,
   128,
   128
  ],
+ "rig_surveyor_mount_action105": [
+  3698,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action106": [
+  3830,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action107": [
+  3962,
+  3594,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action108": [
+  2,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action109": [
+  134,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action11": [
+  266,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action110": [
+  398,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action111": [
+  530,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action112": [
+  662,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action113": [
+  794,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action114": [
+  926,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action115": [
+  1058,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action116": [
+  1190,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action117": [
+  1322,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action118": [
+  1454,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action119": [
+  1586,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action12": [
+  1718,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action120": [
+  1850,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action13": [
+  1982,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action14": [
+  2114,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action15": [
+  2246,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action16": [
+  2378,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action17": [
+  2510,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action18": [
+  2642,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action19": [
+  2774,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action2": [
+  2906,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action20": [
+  3038,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action21": [
+  3170,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action22": [
+  3302,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action23": [
+  3434,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action24": [
+  3566,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action25": [
+  3698,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action26": [
+  3830,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action27": [
+  3962,
+  3726,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action28": [
+  2,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action29": [
+  134,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action3": [
+  266,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action30": [
+  398,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action31": [
+  530,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action32": [
+  662,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action33": [
+  794,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action34": [
+  926,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action35": [
+  1058,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action36": [
+  1190,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action37": [
+  1322,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action38": [
+  1454,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action39": [
+  1586,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action4": [
+  1718,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action40": [
+  1850,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action41": [
+  1850,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action42": [
+  1982,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action43": [
+  2114,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action44": [
+  2246,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action45": [
+  2378,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action46": [
+  2510,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action47": [
+  2642,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action48": [
+  2774,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action49": [
+  2906,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action5": [
+  3038,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action50": [
+  3170,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action51": [
+  3302,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action52": [
+  3434,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action53": [
+  3566,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action54": [
+  3698,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action55": [
+  3830,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action56": [
+  3962,
+  3858,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action57": [
+  2,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action58": [
+  134,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action59": [
+  266,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action6": [
+  398,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action60": [
+  530,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action61": [
+  662,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action62": [
+  794,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action63": [
+  926,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action64": [
+  1058,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action65": [
+  1190,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action66": [
+  1322,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action67": [
+  1454,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action68": [
+  1586,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action69": [
+  1718,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action7": [
+  1850,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action70": [
+  1982,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action71": [
+  2114,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action72": [
+  2246,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action73": [
+  2378,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action74": [
+  2510,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action75": [
+  2642,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action76": [
+  2774,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action77": [
+  2906,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action78": [
+  3038,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action79": [
+  3170,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action8": [
+  3302,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action80": [
+  3434,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action81": [
+  3566,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action82": [
+  3698,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action83": [
+  3830,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action84": [
+  3962,
+  4098,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action85": [
+  2,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action86": [
+  134,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action87": [
+  266,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action88": [
+  398,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action89": [
+  530,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action9": [
+  662,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action90": [
+  794,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action91": [
+  926,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action92": [
+  1058,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action93": [
+  1190,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action94": [
+  1322,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action95": [
+  1454,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action96": [
+  1586,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action97": [
+  1718,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action98": [
+  1850,
+  4230,
+  128,
+  128
+ ],
+ "rig_surveyor_mount_action99": [
+  1982,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull": [
+  2114,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent": [
+  2246,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent_move1": [
+  2378,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull_accent_move2": [
+  2510,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull_move1": [
+  2642,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_hull_move2": [
+  2774,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount": [
+  2906,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent": [
+  3038,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action1": [
+  3038,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action2": [
+  3170,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action3": [
+  3302,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_accent_action4": [
+  3434,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_action1": [
+  2906,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_action2": [
+  3566,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_action3": [
+  3698,
+  4230,
+  128,
+  128
+ ],
+ "rig_warden_mount_action4": [
+  3830,
+  4230,
+  128,
+  128
+ ],
  "rock_skirt": [
-  2098,
-  4494,
+  3118,
+  5022,
   64,
   64
  ],
  "rock_slab_0_0": [
-  2414,
-  4362,
+  3470,
+  4890,
   78,
   68
  ],
  "rock_slab_0_1": [
-  2496,
-  4362,
+  3552,
+  4890,
   78,
   68
  ],
  "rock_slab_0_2": [
-  2578,
-  4362,
+  3634,
+  4890,
   78,
   68
  ],
  "rock_slab_0_3": [
-  2660,
-  4362,
+  3716,
+  4890,
   78,
   68
  ],
  "rock_slab_0_4": [
-  2742,
-  4362,
+  3798,
+  4890,
   78,
   68
  ],
  "rock_slab_0_5": [
-  2824,
-  4362,
+  3880,
+  4890,
   78,
   68
  ],
  "rock_slab_1_0": [
-  1790,
-  4362,
+  2846,
+  4890,
   100,
   82
  ],
  "rock_slab_1_1": [
-  1894,
-  4362,
+  2950,
+  4890,
   100,
   82
  ],
  "rock_slab_1_2": [
-  1998,
-  4362,
+  3054,
+  4890,
   100,
   82
  ],
  "rock_slab_1_3": [
-  2102,
-  4362,
+  3158,
+  4890,
   100,
   82
  ],
  "rock_slab_1_4": [
-  2206,
-  4362,
+  3262,
+  4890,
   100,
   82
  ],
  "rock_slab_1_5": [
-  2310,
-  4362,
+  3366,
+  4890,
   100,
   82
  ],
  "rock_slab_2_0": [
-  1034,
-  4362,
+  2090,
+  4890,
   122,
   98
  ],
  "rock_slab_2_1": [
-  1160,
-  4362,
+  2216,
+  4890,
   122,
   98
  ],
  "rock_slab_2_2": [
-  1286,
-  4362,
+  2342,
+  4890,
   122,
   98
  ],
  "rock_slab_2_3": [
-  1412,
-  4362,
+  2468,
+  4890,
   122,
   98
  ],
  "rock_slab_2_4": [
-  1538,
-  4362,
+  2594,
+  4890,
   122,
   98
  ],
  "rock_slab_2_5": [
-  1664,
-  4362,
+  2720,
+  4890,
   122,
   98
  ],
  "rock_slab_3_0": [
-  134,
-  4362,
+  1190,
+  4890,
   146,
   114
  ],
  "rock_slab_3_1": [
-  284,
-  4362,
+  1340,
+  4890,
   146,
   114
  ],
  "rock_slab_3_2": [
-  434,
-  4362,
+  1490,
+  4890,
   146,
   114
  ],
  "rock_slab_3_3": [
-  584,
-  4362,
+  1640,
+  4890,
   146,
   114
  ],
  "rock_slab_3_4": [
-  734,
-  4362,
+  1790,
+  4890,
   146,
   114
  ],
  "rock_slab_3_5": [
-  884,
-  4362,
+  1940,
+  4890,
   146,
   114
  ],
@@ -6354,1220 +7842,1172 @@
   156
  ],
  "sapper": [
-  3698,
-  3594,
+  3962,
+  4230,
   128,
   128
  ],
  "sapper_accent": [
-  3830,
-  3594,
-  128,
-  128
- ],
- "sapper_accent_action1": [
-  3962,
-  3594,
-  128,
-  128
- ],
- "sapper_accent_action2": [
-  2,
-  3726,
-  128,
-  128
- ],
- "sapper_accent_action3": [
-  134,
-  3726,
-  128,
-  128
- ],
- "sapper_accent_move1": [
-  266,
-  3726,
-  128,
-  128
- ],
- "sapper_accent_move2": [
-  398,
-  3726,
-  128,
-  128
- ],
- "sapper_action1": [
-  530,
-  3726,
-  128,
-  128
- ],
- "sapper_action2": [
-  662,
-  3726,
-  128,
-  128
- ],
- "sapper_action3": [
-  794,
-  3726,
-  128,
-  128
- ],
- "sapper_move1": [
-  926,
-  3726,
-  128,
-  128
- ],
- "sapper_move2": [
-  1058,
-  3726,
-  128,
-  128
- ],
- "scaffold_dense": [
-  2166,
-  4494,
-  64,
-  64
- ],
- "scaffold_sparse": [
-  2234,
-  4494,
-  64,
-  64
- ],
- "scorch": [
-  1190,
-  3726,
-  128,
-  128
- ],
- "scout_radar": [
-  1322,
-  3726,
-  128,
-  128
- ],
- "scrap_full": [
-  2302,
-  4494,
-  64,
-  64
- ],
- "scrap_low": [
-  2370,
-  4494,
-  64,
-  64
- ],
- "scrap_mid": [
-  2438,
-  4494,
-  64,
-  64
- ],
- "scrap_rich": [
-  2506,
-  4494,
-  64,
-  64
- ],
- "scuttle_charge": [
-  1454,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent": [
-  1586,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site0_0": [
-  1718,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site0_1": [
-  1850,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site1_0": [
-  1982,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site1_1": [
-  2114,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site2_0": [
-  2246,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_accent_site2_1": [
-  2378,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site0_0": [
-  2510,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site0_1": [
-  2642,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site1_0": [
-  2774,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site1_1": [
-  2906,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site2_0": [
-  3038,
-  3726,
-  128,
-  128
- ],
- "scuttle_charge_site2_1": [
-  3170,
-  3726,
-  128,
-  128
- ],
- "scuttler": [
-  3302,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent": [
-  3434,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_action1": [
-  3566,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_action2": [
-  3698,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_action3": [
-  3830,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_action4": [
-  3434,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_move1": [
-  3962,
-  3726,
-  128,
-  128
- ],
- "scuttler_accent_move2": [
-  2,
-  3858,
-  128,
-  128
- ],
- "scuttler_action1": [
-  134,
-  3858,
-  128,
-  128
- ],
- "scuttler_action2": [
-  266,
-  3858,
-  128,
-  128
- ],
- "scuttler_action3": [
-  398,
-  3858,
-  128,
-  128
- ],
- "scuttler_action4": [
-  3302,
-  3726,
-  128,
-  128
- ],
- "scuttler_move1": [
-  530,
-  3858,
-  128,
-  128
- ],
- "scuttler_move2": [
-  662,
-  3858,
-  128,
-  128
- ],
- "sentinel": [
-  794,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent": [
-  926,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_action1": [
-  926,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_action2": [
-  1058,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_action3": [
-  1190,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_action4": [
-  1322,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_move1": [
-  1454,
-  3858,
-  128,
-  128
- ],
- "sentinel_accent_move2": [
-  1586,
-  3858,
-  128,
-  128
- ],
- "sentinel_action1": [
-  794,
-  3858,
-  128,
-  128
- ],
- "sentinel_action2": [
-  1718,
-  3858,
-  128,
-  128
- ],
- "sentinel_action3": [
-  1850,
-  3858,
-  128,
-  128
- ],
- "sentinel_action4": [
-  1982,
-  3858,
-  128,
-  128
- ],
- "sentinel_move1": [
-  2114,
-  3858,
-  128,
-  128
- ],
- "sentinel_move2": [
-  2246,
-  3858,
-  128,
-  128
- ],
- "skyhook": [
-  2378,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent": [
-  2510,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_action1": [
-  2642,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_action2": [
-  2774,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_action3": [
-  2906,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_action4": [
-  2510,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_move1": [
-  3038,
-  3858,
-  128,
-  128
- ],
- "skyhook_accent_move2": [
-  3170,
-  3858,
-  128,
-  128
- ],
- "skyhook_action1": [
-  3302,
-  3858,
-  128,
-  128
- ],
- "skyhook_action2": [
-  3434,
-  3858,
-  128,
-  128
- ],
- "skyhook_action3": [
-  3566,
-  3858,
-  128,
-  128
- ],
- "skyhook_action4": [
-  2378,
-  3858,
-  128,
-  128
- ],
- "skyhook_move1": [
-  3698,
-  3858,
-  128,
-  128
- ],
- "skyhook_move2": [
-  3830,
-  3858,
-  128,
-  128
- ],
- "surveyor": [
-  2574,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent": [
-  2642,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_action1": [
-  2710,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_action2": [
-  2778,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_action3": [
-  2846,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_action4": [
-  2914,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_move1": [
-  2982,
-  4494,
-  64,
-  64
- ],
- "surveyor_accent_move2": [
-  3050,
-  4494,
-  64,
-  64
- ],
- "surveyor_action1": [
-  3118,
-  4494,
-  64,
-  64
- ],
- "surveyor_action2": [
-  3186,
-  4494,
-  64,
-  64
- ],
- "surveyor_action3": [
-  3254,
-  4494,
-  64,
-  64
- ],
- "surveyor_action4": [
-  3322,
-  4494,
-  64,
-  64
- ],
- "surveyor_move1": [
-  3390,
-  4494,
-  64,
-  64
- ],
- "surveyor_move2": [
-  3458,
-  4494,
-  64,
-  64
- ],
- "talon": [
-  3962,
-  3858,
-  128,
-  128
- ],
- "talon_accent": [
-  2,
-  4098,
-  128,
-  128
- ],
- "talon_accent_action1": [
-  134,
-  4098,
-  128,
-  128
- ],
- "talon_accent_action2": [
-  266,
-  4098,
-  128,
-  128
- ],
- "talon_accent_action3": [
-  398,
-  4098,
-  128,
-  128
- ],
- "talon_accent_action4": [
-  2,
-  4098,
-  128,
-  128
- ],
- "talon_accent_move1": [
-  530,
-  4098,
-  128,
-  128
- ],
- "talon_accent_move2": [
-  2,
-  4098,
-  128,
-  128
- ],
- "talon_action1": [
-  662,
-  4098,
-  128,
-  128
- ],
- "talon_action2": [
-  794,
-  4098,
-  128,
-  128
- ],
- "talon_action3": [
-  926,
-  4098,
-  128,
-  128
- ],
- "talon_action4": [
-  3962,
-  3858,
-  128,
-  128
- ],
- "talon_move1": [
-  1058,
-  4098,
-  128,
-  128
- ],
- "talon_move2": [
-  3962,
-  3858,
-  128,
-  128
- ],
- "theme_basalt_0": [
-  3526,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_1": [
-  3594,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_2": [
-  3662,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_3": [
-  3730,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_4": [
-  3798,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_5": [
-  3866,
-  4494,
-  64,
-  64
- ],
- "theme_cold_circuitry_0": [
-  3934,
-  4494,
-  64,
-  64
- ],
- "theme_cold_circuitry_1": [
-  4002,
-  4494,
-  64,
-  64
- ],
- "theme_cold_circuitry_2": [
-  2,
-  4562,
-  64,
-  64
- ],
- "theme_cold_circuitry_3": [
-  70,
-  4562,
-  64,
-  64
- ],
- "theme_cold_circuitry_4": [
-  138,
-  4562,
-  64,
-  64
- ],
- "theme_cold_circuitry_5": [
-  206,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_0": [
-  274,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_1": [
-  342,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_2": [
-  410,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_3": [
-  478,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_4": [
-  546,
-  4562,
-  64,
-  64
- ],
- "theme_quarry_dust_5": [
-  614,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_0": [
-  682,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_1": [
-  750,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_2": [
-  818,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_3": [
-  886,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_4": [
-  954,
-  4562,
-  64,
-  64
- ],
- "theme_rusted_yard_5": [
-  1022,
-  4562,
-  64,
-  64
- ],
- "theme_slag_0": [
-  1090,
-  4562,
-  64,
-  64
- ],
- "theme_slag_1": [
-  1158,
-  4562,
-  64,
-  64
- ],
- "theme_slag_2": [
-  1226,
-  4562,
-  64,
-  64
- ],
- "theme_slag_3": [
-  1294,
-  4562,
-  64,
-  64
- ],
- "theme_slag_4": [
-  1362,
-  4562,
-  64,
-  64
- ],
- "theme_slag_5": [
-  1430,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_0": [
-  1498,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_1": [
-  1566,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_2": [
-  1634,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_3": [
-  1702,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_4": [
-  1770,
-  4562,
-  64,
-  64
- ],
- "theme_verdigris_5": [
-  1838,
-  4562,
-  64,
-  64
- ],
- "turret": [
-  1190,
-  4098,
-  128,
-  128
- ],
- "turret_accent": [
-  1322,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site0_0": [
-  1454,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site0_1": [
-  1586,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site1_0": [
-  1718,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site1_1": [
-  1850,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site2_0": [
-  1982,
-  4098,
-  128,
-  128
- ],
- "turret_accent_site2_1": [
-  2114,
-  4098,
-  128,
-  128
- ],
- "turret_barrel": [
-  2246,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_accent": [
-  2378,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_accent_action1": [
-  2510,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_accent_action2": [
-  2642,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_accent_action3": [
-  2774,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_accent_action4": [
-  2378,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_action1": [
-  2906,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_action2": [
-  3038,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_action3": [
-  3170,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_action4": [
-  2246,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1": [
-  3302,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_accent": [
-  3434,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_accent_action1": [
-  3566,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_accent_action2": [
-  3698,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_accent_action3": [
-  3830,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_accent_action4": [
-  3434,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_action1": [
-  3962,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t1_action2": [
-  2,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t1_action3": [
-  134,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t1_action4": [
-  3302,
-  4098,
-  128,
-  128
- ],
- "turret_barrel_t2": [
-  266,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_accent": [
-  398,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_accent_action1": [
-  530,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_accent_action2": [
-  662,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_accent_action3": [
-  794,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_accent_action4": [
-  398,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_action1": [
-  926,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_action2": [
-  1058,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_action3": [
-  1190,
-  4230,
-  128,
-  128
- ],
- "turret_barrel_t2_action4": [
-  266,
-  4230,
-  128,
-  128
- ],
- "turret_site0_0": [
-  1322,
-  4230,
-  128,
-  128
- ],
- "turret_site0_1": [
-  1454,
-  4230,
-  128,
-  128
- ],
- "turret_site1_0": [
-  1586,
-  4230,
-  128,
-  128
- ],
- "turret_site1_1": [
-  1718,
-  4230,
-  128,
-  128
- ],
- "turret_site2_0": [
-  1850,
-  4230,
-  128,
-  128
- ],
- "turret_site2_1": [
-  1982,
-  4230,
-  128,
-  128
- ],
- "turret_t1": [
-  2114,
-  4230,
-  128,
-  128
- ],
- "turret_t1_accent": [
-  2246,
-  4230,
-  128,
-  128
- ],
- "turret_t2": [
-  2378,
-  4230,
-  128,
-  128
- ],
- "turret_t2_accent": [
-  2510,
-  4230,
-  128,
-  128
- ],
- "warden": [
-  2642,
-  4230,
-  128,
-  128
- ],
- "warden_accent": [
-  2774,
-  4230,
-  128,
-  128
- ],
- "warden_accent_action1": [
-  2774,
-  4230,
-  128,
-  128
- ],
- "warden_accent_action2": [
-  2906,
-  4230,
-  128,
-  128
- ],
- "warden_accent_action3": [
-  3038,
-  4230,
-  128,
-  128
- ],
- "warden_accent_action4": [
-  3170,
-  4230,
-  128,
-  128
- ],
- "warden_accent_move1": [
-  3302,
-  4230,
-  128,
-  128
- ],
- "warden_accent_move2": [
-  3434,
-  4230,
-  128,
-  128
- ],
- "warden_action1": [
-  2642,
-  4230,
-  128,
-  128
- ],
- "warden_action2": [
-  3566,
-  4230,
-  128,
-  128
- ],
- "warden_action3": [
-  3698,
-  4230,
-  128,
-  128
- ],
- "warden_action4": [
-  3830,
-  4230,
-  128,
-  128
- ],
- "warden_move1": [
-  3962,
-  4230,
-  128,
-  128
- ],
- "warden_move2": [
   2,
   4362,
   128,
   128
  ],
- "wreck_pile": [
+ "sapper_accent_action1": [
+  134,
+  4362,
+  128,
+  128
+ ],
+ "sapper_accent_action2": [
+  266,
+  4362,
+  128,
+  128
+ ],
+ "sapper_accent_action3": [
+  398,
+  4362,
+  128,
+  128
+ ],
+ "sapper_accent_move1": [
+  530,
+  4362,
+  128,
+  128
+ ],
+ "sapper_accent_move2": [
+  662,
+  4362,
+  128,
+  128
+ ],
+ "sapper_action1": [
+  794,
+  4362,
+  128,
+  128
+ ],
+ "sapper_action2": [
+  926,
+  4362,
+  128,
+  128
+ ],
+ "sapper_action3": [
+  1058,
+  4362,
+  128,
+  128
+ ],
+ "sapper_move1": [
+  1190,
+  4362,
+  128,
+  128
+ ],
+ "sapper_move2": [
+  1322,
+  4362,
+  128,
+  128
+ ],
+ "scaffold_dense": [
+  3186,
+  5022,
+  64,
+  64
+ ],
+ "scaffold_sparse": [
+  3254,
+  5022,
+  64,
+  64
+ ],
+ "scorch": [
+  1454,
+  4362,
+  128,
+  128
+ ],
+ "scout_radar": [
+  1586,
+  4362,
+  128,
+  128
+ ],
+ "scrap_full": [
+  3322,
+  5022,
+  64,
+  64
+ ],
+ "scrap_low": [
+  3390,
+  5022,
+  64,
+  64
+ ],
+ "scrap_mid": [
+  3458,
+  5022,
+  64,
+  64
+ ],
+ "scrap_rich": [
+  3526,
+  5022,
+  64,
+  64
+ ],
+ "scuttle_charge": [
+  1718,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent": [
+  1850,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site0_0": [
+  1982,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site0_1": [
+  2114,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site1_0": [
+  2246,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site1_1": [
+  2378,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site2_0": [
+  2510,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_accent_site2_1": [
+  2642,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site0_0": [
+  2774,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site0_1": [
+  2906,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site1_0": [
+  3038,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site1_1": [
+  3170,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site2_0": [
+  3302,
+  4362,
+  128,
+  128
+ ],
+ "scuttle_charge_site2_1": [
+  3434,
+  4362,
+  128,
+  128
+ ],
+ "scuttler": [
+  3566,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_accent": [
+  3698,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_accent_action1": [
+  3830,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_accent_action2": [
+  3962,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_accent_action3": [
+  2,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_accent_action4": [
+  3698,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_accent_move1": [
+  134,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_accent_move2": [
+  266,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_action1": [
+  398,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_action2": [
+  530,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_action3": [
+  662,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_action4": [
+  3566,
+  4362,
+  128,
+  128
+ ],
+ "scuttler_move1": [
+  794,
+  4494,
+  128,
+  128
+ ],
+ "scuttler_move2": [
+  926,
+  4494,
+  128,
+  128
+ ],
+ "sentinel": [
+  1058,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent": [
+  1190,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_action1": [
+  1190,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_action2": [
+  1322,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_action3": [
+  1454,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_action4": [
+  1586,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_move1": [
+  1718,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_accent_move2": [
+  1850,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_action1": [
+  1058,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_action2": [
+  1982,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_action3": [
+  2114,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_action4": [
+  2246,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_move1": [
+  2378,
+  4494,
+  128,
+  128
+ ],
+ "sentinel_move2": [
+  2510,
+  4494,
+  128,
+  128
+ ],
+ "skyhook": [
+  2642,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent": [
+  2774,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_action1": [
+  2906,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_action2": [
+  3038,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_action3": [
+  3170,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_action4": [
+  2774,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_move1": [
+  3302,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_accent_move2": [
+  3434,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_action1": [
+  3566,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_action2": [
+  3698,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_action3": [
+  3830,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_action4": [
+  2642,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_move1": [
+  3962,
+  4494,
+  128,
+  128
+ ],
+ "skyhook_move2": [
+  2,
+  4626,
+  128,
+  128
+ ],
+ "surveyor": [
+  134,
+  4626,
+  128,
+  128
+ ],
+ "surveyor_accent": [
+  266,
+  4626,
+  128,
+  128
+ ],
+ "surveyor_accent_move1": [
+  398,
+  4626,
+  128,
+  128
+ ],
+ "surveyor_accent_move2": [
+  530,
+  4626,
+  128,
+  128
+ ],
+ "surveyor_move1": [
+  662,
+  4626,
+  128,
+  128
+ ],
+ "surveyor_move2": [
+  794,
+  4626,
+  128,
+  128
+ ],
+ "talon": [
+  926,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent": [
+  1058,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_action1": [
+  1190,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_action2": [
+  1322,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_action3": [
+  1454,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_action4": [
+  1058,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_move1": [
+  1586,
+  4626,
+  128,
+  128
+ ],
+ "talon_accent_move2": [
+  1058,
+  4626,
+  128,
+  128
+ ],
+ "talon_action1": [
+  1718,
+  4626,
+  128,
+  128
+ ],
+ "talon_action2": [
+  1850,
+  4626,
+  128,
+  128
+ ],
+ "talon_action3": [
+  1982,
+  4626,
+  128,
+  128
+ ],
+ "talon_action4": [
+  926,
+  4626,
+  128,
+  128
+ ],
+ "talon_move1": [
+  2114,
+  4626,
+  128,
+  128
+ ],
+ "talon_move2": [
+  926,
+  4626,
+  128,
+  128
+ ],
+ "theme_basalt_0": [
+  3594,
+  5022,
+  64,
+  64
+ ],
+ "theme_basalt_1": [
+  3662,
+  5022,
+  64,
+  64
+ ],
+ "theme_basalt_2": [
+  3730,
+  5022,
+  64,
+  64
+ ],
+ "theme_basalt_3": [
+  3798,
+  5022,
+  64,
+  64
+ ],
+ "theme_basalt_4": [
+  3866,
+  5022,
+  64,
+  64
+ ],
+ "theme_basalt_5": [
+  3934,
+  5022,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_0": [
+  4002,
+  5022,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_1": [
+  2,
+  5090,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_2": [
+  70,
+  5090,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_3": [
+  138,
+  5090,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_4": [
+  206,
+  5090,
+  64,
+  64
+ ],
+ "theme_cold_circuitry_5": [
+  274,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_0": [
+  342,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_1": [
+  410,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_2": [
+  478,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_3": [
+  546,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_4": [
+  614,
+  5090,
+  64,
+  64
+ ],
+ "theme_quarry_dust_5": [
+  682,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_0": [
+  750,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_1": [
+  818,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_2": [
+  886,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_3": [
+  954,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_4": [
+  1022,
+  5090,
+  64,
+  64
+ ],
+ "theme_rusted_yard_5": [
+  1090,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_0": [
+  1158,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_1": [
+  1226,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_2": [
+  1294,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_3": [
+  1362,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_4": [
+  1430,
+  5090,
+  64,
+  64
+ ],
+ "theme_slag_5": [
+  1498,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_0": [
+  1566,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_1": [
+  1634,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_2": [
+  1702,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_3": [
+  1770,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_4": [
+  1838,
+  5090,
+  64,
+  64
+ ],
+ "theme_verdigris_5": [
   1906,
-  4562,
+  5090,
+  64,
+  64
+ ],
+ "turret": [
+  2246,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent": [
+  2378,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site0_0": [
+  2510,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site0_1": [
+  2642,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site1_0": [
+  2774,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site1_1": [
+  2906,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site2_0": [
+  3038,
+  4626,
+  128,
+  128
+ ],
+ "turret_accent_site2_1": [
+  3170,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel": [
+  3302,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_accent": [
+  3434,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_accent_action1": [
+  3566,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_accent_action2": [
+  3698,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_accent_action3": [
+  3830,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_accent_action4": [
+  3434,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_action1": [
+  3962,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_action2": [
+  2,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_action3": [
+  134,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_action4": [
+  3302,
+  4626,
+  128,
+  128
+ ],
+ "turret_barrel_t1": [
+  266,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_accent": [
+  398,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_accent_action1": [
+  530,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_accent_action2": [
+  662,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_accent_action3": [
+  794,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_accent_action4": [
+  398,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_action1": [
+  926,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_action2": [
+  1058,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_action3": [
+  1190,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t1_action4": [
+  266,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2": [
+  1322,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_accent": [
+  1454,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_accent_action1": [
+  1586,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_accent_action2": [
+  1718,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_accent_action3": [
+  1850,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_accent_action4": [
+  1454,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_action1": [
+  1982,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_action2": [
+  2114,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_action3": [
+  2246,
+  4758,
+  128,
+  128
+ ],
+ "turret_barrel_t2_action4": [
+  1322,
+  4758,
+  128,
+  128
+ ],
+ "turret_site0_0": [
+  2378,
+  4758,
+  128,
+  128
+ ],
+ "turret_site0_1": [
+  2510,
+  4758,
+  128,
+  128
+ ],
+ "turret_site1_0": [
+  2642,
+  4758,
+  128,
+  128
+ ],
+ "turret_site1_1": [
+  2774,
+  4758,
+  128,
+  128
+ ],
+ "turret_site2_0": [
+  2906,
+  4758,
+  128,
+  128
+ ],
+ "turret_site2_1": [
+  3038,
+  4758,
+  128,
+  128
+ ],
+ "turret_t1": [
+  3170,
+  4758,
+  128,
+  128
+ ],
+ "turret_t1_accent": [
+  3302,
+  4758,
+  128,
+  128
+ ],
+ "turret_t2": [
+  3434,
+  4758,
+  128,
+  128
+ ],
+ "turret_t2_accent": [
+  3566,
+  4758,
+  128,
+  128
+ ],
+ "warden": [
+  3698,
+  4758,
+  128,
+  128
+ ],
+ "warden_accent": [
+  3830,
+  4758,
+  128,
+  128
+ ],
+ "warden_accent_action1": [
+  3830,
+  4758,
+  128,
+  128
+ ],
+ "warden_accent_action2": [
+  3962,
+  4758,
+  128,
+  128
+ ],
+ "warden_accent_action3": [
+  2,
+  4890,
+  128,
+  128
+ ],
+ "warden_accent_action4": [
+  134,
+  4890,
+  128,
+  128
+ ],
+ "warden_accent_move1": [
+  266,
+  4890,
+  128,
+  128
+ ],
+ "warden_accent_move2": [
+  398,
+  4890,
+  128,
+  128
+ ],
+ "warden_action1": [
+  3698,
+  4758,
+  128,
+  128
+ ],
+ "warden_action2": [
+  530,
+  4890,
+  128,
+  128
+ ],
+ "warden_action3": [
+  662,
+  4890,
+  128,
+  128
+ ],
+ "warden_action4": [
+  794,
+  4890,
+  128,
+  128
+ ],
+ "warden_move1": [
+  926,
+  4890,
+  128,
+  128
+ ],
+ "warden_move2": [
+  1058,
+  4890,
+  128,
+  128
+ ],
+ "wreck_pile": [
+  1974,
+  5090,
   64,
   64
  ]

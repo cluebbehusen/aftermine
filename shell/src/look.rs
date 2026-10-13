@@ -21,13 +21,16 @@ const LARGE_SCALE: f32 = 2.0;
 pub(crate) struct UnitLook {
     /// Sprite size against the unit's tile.
     pub(crate) scale: f32,
+    /// Share of the sprite canvas the visible body spans; the rest is
+    /// transparent margin that neither picks nor rings the unit.
+    pub(crate) extent: f32,
     /// How the body moves on screen.
     pub(crate) gait: Gait,
     /// Which atlas rows hold its two locomotion poses.
     pub(crate) move_rows: MoveRows,
     /// Exposed belt runs inside the track casings, in 128-px sprite space.
     pub(crate) belts: &'static [[f32; 4]],
-    /// A separate weapon or rotor mount drawn over the hull.
+    /// A separate weapon, rotor, or sensor mechanism drawn over the hull.
     pub(crate) rig: bool,
     /// The work body a worker draws instead of its plain sprite.
     pub(crate) tool: Option<WorkerTool>,
@@ -190,6 +193,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
     use MarkerRole as M;
     let plain = UnitLook {
         scale: DEFAULT_SCALE,
+        extent: 1.0,
         gait: Gait::Plain,
         move_rows: MoveRows::Move,
         belts: &[],
@@ -299,7 +303,16 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Worker,
             ..plain
         },
-        UnitKind::Kestrel | UnitKind::Surveyor => UnitLook {
+        UnitKind::Kestrel => UnitLook {
+            marker: M::Scout,
+            ..plain
+        },
+        UnitKind::Surveyor => UnitLook {
+            rig: true,
+            scale: 2.0,
+            // The production art packs the body into 72 of 128 pixels.
+            extent: 72.0 / 128.0,
+            gait: Gait::Treads,
             marker: M::Scout,
             ..plain
         },
