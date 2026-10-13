@@ -911,8 +911,8 @@ fn train_carriers(
 
 /// Trains a scout while fewer are in production than the `lacking` stale
 /// places no scout could take but the one it would train could reach: a
-/// Kestrel at a built Airworks, else a Scuttler at a Foundry.
-/// Once an air scout can be trained a Scuttler no longer counts, since one
+/// Kestrel at a built Airworks, else a Surveyor at a Foundry.
+/// Once an air scout can be trained a Surveyor no longer counts, since one
 /// that could reach a stale point would already be scouting.
 fn train_scout(
     observation: &ObservationData,
@@ -927,7 +927,7 @@ fn train_scout(
     let kinds: &[UnitKind] = if airworks.is_some() {
         &[air]
     } else {
-        &[air, UnitKind::Scuttler]
+        &[air, UnitKind::Surveyor]
     };
     let coming = observation
         .my_queues
@@ -948,7 +948,7 @@ fn train_scout(
         else {
             return;
         };
-        (foundry, UnitKind::Scuttler)
+        (foundry, UnitKind::Surveyor)
     };
     ledger.train(producer.building.id, kind);
 }
@@ -970,8 +970,8 @@ fn train_raiders(
         (UnitKind::Scuttler, scuttlers, 0),
         (UnitKind::Sapper, sappers, spare),
     ] {
-        // A Scuttler out scouting cannot raid; a Sapper in an attack is what
-        // the attack wanted it for.
+        // A Scuttler another mission holds cannot raid; a Sapper in an attack
+        // is what the attack wanted it for.
         let free = |unit: &&UnitObs| {
             kind != UnitKind::Scuttler || elsewhere.binary_search(&unit.id).is_err()
         };

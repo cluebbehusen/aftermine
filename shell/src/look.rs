@@ -145,7 +145,7 @@ impl DefenseReport {
 
 /// Whether a unit sees buried charges, as the simulation's scouts do.
 pub(crate) fn scout(kind: UnitKind) -> bool {
-    kind == UnitKind::Kestrel
+    kind.stats().charge_detection
 }
 
 /// Whether a unit of `kind` launches `payload` from one of its weapons.
@@ -299,7 +299,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Worker,
             ..plain
         },
-        UnitKind::Kestrel => UnitLook {
+        UnitKind::Kestrel | UnitKind::Surveyor => UnitLook {
             marker: M::Scout,
             ..plain
         },

@@ -349,7 +349,8 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Kestrel
         | UnitKind::Skyhook
         | UnitKind::Sapper
-        | UnitKind::Mantle => 0,
+        | UnitKind::Mantle
+        | UnitKind::Surveyor => 0,
     }
 }
 
@@ -378,7 +379,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Kestrel
             | UnitKind::Skyhook
             | UnitKind::Sapper
-            | UnitKind::Mantle => 0,
+            | UnitKind::Mantle
+            | UnitKind::Surveyor => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
             UnitKind::Avalanche => 2,
@@ -397,7 +399,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Kestrel
             | UnitKind::Skyhook
             | UnitKind::Sapper
-            | UnitKind::Mantle => 0,
+            | UnitKind::Mantle
+            | UnitKind::Surveyor => 0,
         },
     }
 }

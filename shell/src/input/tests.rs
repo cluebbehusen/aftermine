@@ -572,28 +572,36 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
 
 #[test]
 fn training_uses_the_first_selected_factory_that_supports_the_slot() {
-    let mut game = multi_producer_game();
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
+        player: 0,
+        kind: oxide_sim::BuildingKind::Crucible,
+        x: 9,
+        y: 3,
+    });
+    let mut game =
+        Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("crucible fixture builds");
     let foundry = game.home_foundry().unwrap().id;
-    let fabricator = game
+    let crucible = game
         .state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::Fabricator)
+        .find(|building| building.kind == oxide_sim::BuildingKind::Crucible)
         .unwrap()
         .id;
-    game.presentation.selection.buildings = vec![foundry, fabricator];
+    game.presentation.selection.buildings = vec![crucible, foundry];
 
-    // Slot 4 sits past the Foundry's four-card roster, so only the
-    // Fabricator can serve it — a slot both producers serve would
-    // legitimately land on the first selected producer instead.
-    super::orders::train(&mut game, 4);
+    // Slot 2 sits past the Crucible's two-card roster, so only the Foundry
+    // can serve it — a slot both producers serve would legitimately land on
+    // the first selected producer instead.
+    super::orders::train(&mut game, 2);
 
     assert!(matches!(
         game.pending.as_slice(),
         [PlayerCommand {
             command: Command::Train { building, .. },
             ..
-        }] if *building == fabricator
+        }] if *building == foundry
     ));
 }
 

@@ -996,7 +996,8 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
         | UnitKind::Kestrel
         | UnitKind::Skyhook
         | UnitKind::Sapper
-        | UnitKind::Mantle => AttackTiming {
+        | UnitKind::Mantle
+        | UnitKind::Surveyor => AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
         },
@@ -1088,7 +1089,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Avalanche
         | UnitKind::Sapper
         | UnitKind::Mantle
-        | UnitKind::Piledriver => None,
+        | UnitKind::Piledriver
+        | UnitKind::Surveyor => None,
     }
 }
 

@@ -210,6 +210,28 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     assert!(missing.is_empty(), "never bought: {missing:?}");
 }
 
+/// Whether West, with income enough to raid, trains a Scuttler to raid an
+/// unguarded East Foundry its Kestrel can see.
+fn raids() -> bool {
+    let mut scenario = field();
+    garrison(&mut scenario);
+    scenario.units.push(unit(0, UnitKind::Kestrel, 18, 10));
+    scenario.units.push(harvester(0, 2, 2));
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::Foundry, 22, 10));
+    scenario.players[0].scrap = 1_000;
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 120, &[]);
+    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
+    json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    trains(&opponent.act(&state, &mut OwnEvents::default()))
+        .iter()
+        .any(|(_, kind)| *kind == UnitKind::Scuttler)
+}
+
 #[test]
 fn every_unit_outside_the_army_is_trained_somewhere() {
     let mut rows: Vec<(UnitKind, bool)> = Vec::new();
@@ -231,8 +253,8 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
     let mut scouting = field();
     scouting.players[0].scrap = 1_000;
     rows.push((
-        UnitKind::Scuttler,
-        trained(&scouting, 1_800, UnitKind::Scuttler),
+        UnitKind::Surveyor,
+        trained(&scouting, 1_800, UnitKind::Surveyor),
     ));
     scouting.buildings.extend([
         building(0, BuildingKind::Fabricator, 6, 16),
@@ -242,6 +264,8 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
         UnitKind::Kestrel,
         trained(&scouting, 1_800, UnitKind::Kestrel),
     ));
+
+    rows.push((UnitKind::Scuttler, raids()));
 
     let mut lifting = super::lift::strait();
     lifting.units.retain(|unit| unit.kind != UnitKind::Skyhook);

@@ -407,9 +407,9 @@ remembers when it last saw each. Each point unseen for a while draws its own
 scout, first the one whose time unseen, weighted by its value, is greatest:
 hostile starts weigh most, then sites nearer an enemy than home. A scout moves
 on to the next point no other scout holds when it sees its own. Scouts are free
-Kestrels, or else Scuttlers on home ground that can walk there. For each stale
+Kestrels, or else Surveyors on home ground that can walk there. For each stale
 point no scout could take, the seat trains one that could reach it: its air
-scout once it has an Airworks, a Scuttler before. It trains none while no
+scout once it has an Airworks, a Surveyor before. It trains none while no
 mission could take another. An air scout flies around known anti-air when the
 straight line crosses it, and a point whose scout was lost on the way counts as
 seen, so the next scout waits until it is stale again.

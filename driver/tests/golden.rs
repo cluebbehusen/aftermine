@@ -273,6 +273,11 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let mantle_e = roster.add(1, UnitKind::Mantle, 43, 22);
     // Over eight tiles from every enemy, in no enemy's reach.
     let piledriver = roster.add(0, UnitKind::Piledriver, 32, 4);
+    // The scout pair, nicked the same way; unarmed, they stand it.
+    let surveyor_w = roster.add(0, UnitKind::Surveyor, 40, 24);
+    let sentinel_surveyor_e = roster.add(1, UnitKind::Sentinel, 41, 24);
+    let sentinel_surveyor_w = roster.add(0, UnitKind::Sentinel, 42, 24);
+    let surveyor_e = roster.add(1, UnitKind::Surveyor, 43, 24);
 
     // Seat 0's standing structures: one of every kind the build palette
     // offers, whole. Its Foundry comes from the map anchor.
@@ -363,6 +368,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 sentinel_sapper_w,
                 mantle_w,
                 sentinel_mantle_w,
+                surveyor_w,
+                sentinel_surveyor_w,
             ],
             annex_e: vec![
                 condor_e,
@@ -374,6 +381,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 sentinel_sapper_e,
                 mantle_e,
                 sentinel_mantle_e,
+                surveyor_e,
+                sentinel_surveyor_e,
             ],
             avalanches: (avalanche_w, avalanche_e),
             piledriver,

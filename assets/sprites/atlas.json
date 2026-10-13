@@ -1698,19 +1698,19 @@
   128
  ],
  "debris_0": [
-  1854,
+  2262,
   4562,
   32,
   32
  ],
  "debris_1": [
-  1890,
+  2298,
   4562,
   32,
   32
  ],
  "debris_2": [
-  1926,
+  2334,
   4562,
   32,
   32
@@ -2928,13 +2928,13 @@
   128
  ],
  "field_debris_abandoned_canisters": [
-  1962,
+  2370,
   4562,
   32,
   32
  ],
  "field_debris_bent_service_rail": [
-  1998,
+  2406,
   4562,
   32,
   32
@@ -2976,7 +2976,7 @@
   64
  ],
  "field_debris_severed_cable": [
-  2034,
+  2442,
   4562,
   32,
   32
@@ -4194,97 +4194,97 @@
   128
  ],
  "icon_accompany": [
-  1022,
+  1430,
   4562,
   48,
   48
  ],
  "icon_advance": [
-  1074,
+  1482,
   4562,
   48,
   48
  ],
  "icon_attack": [
-  1126,
+  1534,
   4562,
   48,
   48
  ],
  "icon_build": [
-  1178,
+  1586,
   4562,
   48,
   48
  ],
  "icon_cancel": [
-  1230,
+  1638,
   4562,
   48,
   48
  ],
  "icon_harvest": [
-  1282,
+  1690,
   4562,
   48,
   48
  ],
  "icon_hunt": [
-  1334,
+  1742,
   4562,
   48,
   48
  ],
  "icon_idle": [
-  1386,
+  1794,
   4562,
   48,
   48
  ],
  "icon_move": [
-  1438,
+  1846,
   4562,
   48,
   48
  ],
  "icon_patrol": [
-  1490,
+  1898,
   4562,
   48,
   48
  ],
  "icon_rally": [
-  1542,
+  1950,
   4562,
   48,
   48
  ],
  "icon_repair": [
-  1594,
+  2002,
   4562,
   48,
   48
  ],
  "icon_retire": [
-  1646,
+  2054,
   4562,
   48,
   48
  ],
  "icon_run": [
-  1698,
+  2106,
   4562,
   48,
   48
  ],
  "icon_salvage": [
-  1750,
+  2158,
   4562,
   48,
   48
  ],
  "icon_stop": [
-  1802,
+  2210,
   4562,
   48,
   48
@@ -6809,6 +6809,42 @@
   128,
   128
  ],
+ "surveyor": [
+  2574,
+  4494,
+  64,
+  64
+ ],
+ "surveyor_accent": [
+  2642,
+  4494,
+  64,
+  64
+ ],
+ "surveyor_accent_move1": [
+  2710,
+  4494,
+  64,
+  64
+ ],
+ "surveyor_accent_move2": [
+  2778,
+  4494,
+  64,
+  64
+ ],
+ "surveyor_move1": [
+  2846,
+  4494,
+  64,
+  64
+ ],
+ "surveyor_move2": [
+  2914,
+  4494,
+  64,
+  64
+ ],
  "talon": [
   3962,
   3858,
@@ -6894,217 +6930,217 @@
   128
  ],
  "theme_basalt_0": [
-  2574,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_1": [
-  2642,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_2": [
-  2710,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_3": [
-  2778,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_4": [
-  2846,
-  4494,
-  64,
-  64
- ],
- "theme_basalt_5": [
-  2914,
-  4494,
-  64,
-  64
- ],
- "theme_cold_circuitry_0": [
   2982,
   4494,
   64,
   64
  ],
- "theme_cold_circuitry_1": [
+ "theme_basalt_1": [
   3050,
   4494,
   64,
   64
  ],
- "theme_cold_circuitry_2": [
+ "theme_basalt_2": [
   3118,
   4494,
   64,
   64
  ],
- "theme_cold_circuitry_3": [
+ "theme_basalt_3": [
   3186,
   4494,
   64,
   64
  ],
- "theme_cold_circuitry_4": [
+ "theme_basalt_4": [
   3254,
   4494,
   64,
   64
  ],
- "theme_cold_circuitry_5": [
+ "theme_basalt_5": [
   3322,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_0": [
+ "theme_cold_circuitry_0": [
   3390,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_1": [
+ "theme_cold_circuitry_1": [
   3458,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_2": [
+ "theme_cold_circuitry_2": [
   3526,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_3": [
+ "theme_cold_circuitry_3": [
   3594,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_4": [
+ "theme_cold_circuitry_4": [
   3662,
   4494,
   64,
   64
  ],
- "theme_quarry_dust_5": [
+ "theme_cold_circuitry_5": [
   3730,
   4494,
   64,
   64
  ],
- "theme_rusted_yard_0": [
+ "theme_quarry_dust_0": [
   3798,
   4494,
   64,
   64
  ],
- "theme_rusted_yard_1": [
+ "theme_quarry_dust_1": [
   3866,
   4494,
   64,
   64
  ],
- "theme_rusted_yard_2": [
+ "theme_quarry_dust_2": [
   3934,
   4494,
   64,
   64
  ],
- "theme_rusted_yard_3": [
+ "theme_quarry_dust_3": [
   4002,
   4494,
   64,
   64
  ],
- "theme_rusted_yard_4": [
+ "theme_quarry_dust_4": [
   2,
   4562,
   64,
   64
  ],
- "theme_rusted_yard_5": [
+ "theme_quarry_dust_5": [
   70,
   4562,
   64,
   64
  ],
- "theme_slag_0": [
+ "theme_rusted_yard_0": [
   138,
   4562,
   64,
   64
  ],
- "theme_slag_1": [
+ "theme_rusted_yard_1": [
   206,
   4562,
   64,
   64
  ],
- "theme_slag_2": [
+ "theme_rusted_yard_2": [
   274,
   4562,
   64,
   64
  ],
- "theme_slag_3": [
+ "theme_rusted_yard_3": [
   342,
   4562,
   64,
   64
  ],
- "theme_slag_4": [
+ "theme_rusted_yard_4": [
   410,
   4562,
   64,
   64
  ],
- "theme_slag_5": [
+ "theme_rusted_yard_5": [
   478,
   4562,
   64,
   64
  ],
- "theme_verdigris_0": [
+ "theme_slag_0": [
   546,
   4562,
   64,
   64
  ],
- "theme_verdigris_1": [
+ "theme_slag_1": [
   614,
   4562,
   64,
   64
  ],
- "theme_verdigris_2": [
+ "theme_slag_2": [
   682,
   4562,
   64,
   64
  ],
- "theme_verdigris_3": [
+ "theme_slag_3": [
   750,
   4562,
   64,
   64
  ],
- "theme_verdigris_4": [
+ "theme_slag_4": [
   818,
   4562,
   64,
   64
  ],
- "theme_verdigris_5": [
+ "theme_slag_5": [
   886,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_0": [
+  954,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_1": [
+  1022,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_2": [
+  1090,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_3": [
+  1158,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_4": [
+  1226,
+  4562,
+  64,
+  64
+ ],
+ "theme_verdigris_5": [
+  1294,
   4562,
   64,
   64
@@ -7482,7 +7518,7 @@
   128
  ],
  "wreck_pile": [
-  954,
+  1362,
   4562,
   64,
   64

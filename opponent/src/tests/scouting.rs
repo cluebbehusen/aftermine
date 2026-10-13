@@ -4,10 +4,10 @@ use crate::frame::gap;
 /// Ticks after which an unseen point is worth a scout.
 const STALE: u64 = 1_800;
 
-/// The field with a West Scuttler, at tick `tick`.
+/// The field with a West Surveyor, at tick `tick`.
 fn scouting(tick: u64) -> (Scenario, State) {
     let mut scenario = field();
-    scenario.units.push(unit(0, UnitKind::Scuttler, 6, 9));
+    scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, tick, &[]);
     (scenario, state)
@@ -24,13 +24,13 @@ fn scouts(missions: &[MissionStatus]) -> Vec<MissionStatus> {
 #[test]
 fn a_stale_hostile_start_draws_the_scout() {
     let (scenario, state) = scouting(STALE);
-    let scuttler = at(&state, 6, 9);
+    let surveyor = at(&state, 6, 9);
     let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
     let [mission] = scouts(&trace.unwrap().missions)[..] else {
         panic!("one scout");
     };
     assert_eq!(mission.kind, MissionKind::Scout { point: 0 });
-    assert_eq!(runs(&commands), [(vec![scuttler], mission.goal)]);
+    assert_eq!(runs(&commands), [(vec![surveyor], mission.goal)]);
     assert_eq!(
         gap(TilePos::new(43, 11), (2, 2), mission.goal, (1, 1)),
         0,
@@ -93,13 +93,13 @@ fn each_stale_start_draws_its_own_scout() {
 
 #[test]
 fn a_stale_start_no_scout_holds_trains_another() {
-    let (scenario, state) = stale_trio(vec![unit(0, UnitKind::Scuttler, 8, 9)], 1_000);
+    let (scenario, state) = stale_trio(vec![unit(0, UnitKind::Surveyor, 8, 9)], 1_000);
     let foundry = foundries(&state, PlayerId(0))[0];
     let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
     let missions = scouts(&trace.unwrap().missions);
     assert_eq!(missions.len(), 1, "premise: {missions:?}");
     assert!(
-        trains(&commands).contains(&(foundry, UnitKind::Scuttler)),
+        trains(&commands).contains(&(foundry, UnitKind::Surveyor)),
         "{commands:?}"
     );
 }
@@ -128,7 +128,7 @@ fn a_seat_without_scouts_trains_one() {
     let foundry = foundries(&state, PlayerId(0))[0];
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     assert!(
-        trains(&commands).contains(&(foundry, UnitKind::Scuttler)),
+        trains(&commands).contains(&(foundry, UnitKind::Surveyor)),
         "{commands:?}"
     );
 
@@ -160,15 +160,15 @@ fn a_seat_without_scouts_trains_one() {
         trained.contains(&(airworks, UnitKind::Kestrel)),
         "{trained:?}"
     );
-    assert!(!trained.iter().any(|(_, kind)| *kind == UnitKind::Scuttler));
+    assert!(!trained.iter().any(|(_, kind)| *kind == UnitKind::Surveyor));
 }
 
 #[test]
 fn mirrored_seats_scout_alike() {
     let mut scenario = field();
     scenario.units.extend([
-        unit(0, UnitKind::Scuttler, 6, 9),
-        unit(1, UnitKind::Scuttler, 41, 14),
+        unit(0, UnitKind::Surveyor, 6, 9),
+        unit(1, UnitKind::Surveyor, 41, 14),
     ]);
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, STALE, &[]);
@@ -416,13 +416,13 @@ fn air_defenders_guard_the_building_a_flyer_raids() {
 }
 
 #[test]
-fn an_air_scout_replaces_a_scuttler_that_cannot_reach() {
+fn an_air_scout_replaces_a_surveyor_that_cannot_reach() {
     let mut scenario = field();
     scenario.players[0].scrap = 1_000;
     for (row, cols) in [(19, "###"), (20, "#.#"), (21, "###")] {
         scenario.map[row].replace_range(19..22, cols);
     }
-    scenario.units.push(unit(0, UnitKind::Scuttler, 20, 20));
+    scenario.units.push(unit(0, UnitKind::Surveyor, 20, 20));
     scenario.buildings.extend([
         BuildingSpec {
             player: 0,
@@ -451,7 +451,7 @@ fn the_mission_cap_holds_back_a_scout() {
     let cap = crate::missions::MISSION_CAP;
     let mut scenario = field();
     scenario.players[0].scrap = 1_000;
-    scenario.units.push(unit(0, UnitKind::Scuttler, 6, 9));
+    scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
     for index in 0..cap {
         let (x, y) = cap_spot(index);
         scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
@@ -482,7 +482,7 @@ fn the_mission_cap_holds_back_a_scout() {
     assert!(
         trains(&commands)
             .iter()
-            .all(|(_, kind)| *kind != UnitKind::Scuttler),
+            .all(|(_, kind)| *kind != UnitKind::Surveyor),
         "a scout no mission could take is not trained: {commands:?}"
     );
     assert!(Opponent::restore(&opponent.checkpoint(), &scenario, &state, map(&scenario)).is_ok());
@@ -628,24 +628,24 @@ fn an_air_scout_flies_around_remembered_anti_air() {
 }
 
 #[test]
-fn no_scuttler_is_trained_for_a_point_across_a_chasm() {
+fn no_surveyor_is_trained_for_a_point_across_a_chasm() {
     let mut scenario = field();
     scenario.players[0].scrap = 1_000;
     for row in &mut scenario.map[1..23] {
         row.replace_range(16..32, &"~".repeat(16));
     }
-    scenario.units.push(unit(0, UnitKind::Scuttler, 6, 9));
+    scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, STALE, &[]);
     let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
     assert!(
         scouts(&trace.unwrap().missions).is_empty(),
-        "premise: the Scuttler cannot go"
+        "premise: the Surveyor cannot go"
     );
     assert!(
         trains(&commands)
             .iter()
-            .all(|(_, kind)| *kind != UnitKind::Scuttler),
+            .all(|(_, kind)| *kind != UnitKind::Surveyor),
         "another could not go either: {commands:?}"
     );
 }
