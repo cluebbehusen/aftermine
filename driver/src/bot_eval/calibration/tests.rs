@@ -29,7 +29,7 @@ fn status(id: u64, phase: Phase) -> MissionStatus {
         kind: kind(),
         phase,
         since: 0,
-        timeout: 1_200,
+        timeout: Some(1_200),
         units: 4,
         goal: TilePos::new(10, 2),
     }

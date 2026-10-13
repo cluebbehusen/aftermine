@@ -234,7 +234,7 @@ fn only_frames_the_seat_has_seen_add_to_a_site() {
 }
 
 #[test]
-fn a_site_is_valued_and_built_from_anchors_on_home_ground() {
+fn a_site_keeps_anchors_on_its_resources_ground_and_can_be_reached_by_lift() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/severance.json");
     let scenario = Scenario::load(path).unwrap();
     let model = map(&scenario);
@@ -245,18 +245,13 @@ fn a_site_is_valued_and_built_from_anchors_on_home_ground() {
     ] {
         let observation = ObservationData::omniscient(&state, player);
         let (index, site) = site_with(&model, node);
-        let home = model.start(player).and_then(|start| model.component(start));
-        assert_ne!(
-            model.component(site.anchors[0]),
-            home,
-            "premise: the best anchor is off home"
-        );
+        let ground = model.component(node);
         let reachable = expansion::anchors(&model, player, site);
         assert!(!reachable.is_empty(), "{player:?}");
         assert!(
             reachable
                 .iter()
-                .all(|anchor| model.component(*anchor) == home)
+                .all(|anchor| model.component(*anchor) == ground)
         );
         assert!(expansion::value(&observation, &model, &Memory::default(), site, 50).is_some());
         let placed: Vec<TilePos> = crate::investments::anchors(
@@ -267,6 +262,12 @@ fn a_site_is_valued_and_built_from_anchors_on_home_ground() {
         )
         .collect();
         assert_eq!(placed, reachable);
+        let other = PlayerId(1 - player.0);
+        assert_ne!(
+            model.start(other).and_then(|start| model.component(start)),
+            ground
+        );
+        assert!(!expansion::anchors(&model, other, site).is_empty());
     }
 }
 

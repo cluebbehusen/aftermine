@@ -74,6 +74,9 @@ pub enum Step {
 pub(crate) struct Candidate {
     pub(crate) investment: Investment,
     pub(crate) score: u32,
+    /// The next purchase toward it and its price, filled in when the
+    /// decision checks where it could stand.
+    pub(crate) next: Option<(Step, u32)>,
 }
 
 /// What the scores read besides the observation.
@@ -269,7 +272,11 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let mut list: Vec<Candidate> = list
         .into_iter()
         .filter(|(_, score)| *score > 0)
-        .map(|(investment, score)| Candidate { investment, score })
+        .map(|(investment, score)| Candidate {
+            investment,
+            score,
+            next: None,
+        })
         .collect();
     // Equal scores go to the investment nearest home in the seat's frame, so
     // mirrored seats pick mirrored sites and frames.

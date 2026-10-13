@@ -4,10 +4,12 @@
 //! attacks, strikes, raids and lifts take away.
 
 use super::attack::{building_value, minimum};
-use super::{Missions, Task, carrier, hits, mine, value};
-use crate::frame::{HomeFrame, doubled};
+use super::{DefendPhase, Missions, Task, carrier, hits, mine, value};
+use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::{Memory, SeenUnit};
+use chassis::grid::TilePos;
+use oxide_sim::geometry::footprint_distance;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::scenario::BotStance;
 use oxide_sim::stats::Domain;
@@ -16,6 +18,10 @@ use std::cmp::Reverse;
 
 /// The body domains a reserve covers, in the order its values keep.
 const DOMAINS: [Domain; 2] = [Domain::Ground, Domain::Air];
+
+/// Empty tiles around a guarded building within which known enemies
+/// threaten it and units training nearby answer for it.
+pub(super) const LOCAL_REACH: i32 = 12;
 
 /// Value against each domain the seat keeps home from offense, before the
 /// units already out defending count: nothing while no enemy could reach
@@ -28,9 +34,38 @@ pub(super) fn reserve(
     memory: &Memory,
     stance: BotStance,
 ) -> [u64; 2] {
+    let Some(anchor) = map.start(observation.me) else {
+        return [0; 2];
+    };
+    need(
+        observation,
+        map,
+        memory,
+        stance,
+        BuildingKind::Foundry,
+        anchor,
+    )
+}
+
+/// Value against each domain the seat keeps at the building of `kind` at
+/// `anchor`. The start's Foundry keeps the home reserve: nothing while no
+/// enemy could reach it that way, else the stance's floor or its share of
+/// the known enemy army that could, whichever is more. Any other building
+/// keeps the stance's share of the known enemies near it alone. Completed
+/// guns covering it count against either: every gun on the start's ground,
+/// elsewhere those whose range reaches the building.
+pub(super) fn need(
+    observation: &ObservationData,
+    map: &MapModel,
+    memory: &Memory,
+    stance: BotStance,
+    kind: BuildingKind,
+    anchor: TilePos,
+) -> [u64; 2] {
     let me = observation.me;
     let now = observation.tick;
-    let home = map.start(me).and_then(|start| map.component(start));
+    let home = map.component(anchor);
+    let primary = kind == BuildingKind::Foundry && map.start(me) == Some(anchor);
     let (floor, share) = match stance {
         BotStance::Turtle => (minimum(stance), 1_500),
         BotStance::Balanced => (minimum(stance) / 2, 1_000),
@@ -41,9 +76,7 @@ pub(super) fn reserve(
         .enemy_buildings
         .iter()
         .any(|building| building.kind == BuildingKind::Airworks);
-    let walks = map
-        .start(me)
-        .is_some_and(|start| map.hostile_distance(me, start) != UNREACHABLE);
+    let walks = map.hostile_distance(me, anchor) != UNREACHABLE;
     let reach = [
         walks || airworks || memory.units().iter().any(|unit| carrier(unit.kind)),
         airworks
@@ -54,26 +87,48 @@ pub(super) fn reserve(
                 .any(|unit| unit.kind.stats().domain == Domain::Air),
     ];
     std::array::from_fn(|index| {
-        if !reach[index] {
+        if primary && !reach[index] {
             return 0;
         }
         let domain = DOMAINS[index];
-        let threat = threat(map, memory, me, now, domain);
+        let threat = memory
+            .units()
+            .iter()
+            .filter(|unit| unit.kind.stats().can_fight())
+            .filter(|unit| unit.kind.stats().domain == domain)
+            .filter(|unit| domain == Domain::Air || map.component(unit.tile) == home)
+            .filter(|unit| primary || gap(anchor, kind.size(), unit.tile, (1, 1)) <= LOCAL_REACH)
+            .map(|unit| unit.value(now))
+            .sum::<u64>();
         let standing: u64 = observation
             .my_buildings
             .iter()
-            .filter(|building| building.built && map.component(building.anchor) == home)
+            .filter(|building| building.built)
             .filter(|building| {
                 building
                     .kind
-                    .base_stats()
+                    .tier_stats(building.tier)
                     .weapons
                     .iter()
-                    .any(|weapon| weapon.targets.covers(domain))
+                    .any(|weapon| {
+                        weapon.targets.covers(domain)
+                            && if primary {
+                                map.component(building.anchor) == home
+                            } else {
+                                footprint_distance(
+                                    anchor,
+                                    kind.size(),
+                                    building.anchor,
+                                    building.kind.size(),
+                                ) <= weapon.range
+                            }
+                    })
             })
             .map(building_value)
             .sum();
-        floor.max(threat * share / 1_000).saturating_sub(standing)
+        (if primary { floor } else { 0 })
+            .max(threat * share / 1_000)
+            .saturating_sub(standing)
     })
 }
 
@@ -175,7 +230,7 @@ impl Missions {
     }
 
     /// The start's ground, and the value against each domain of the free
-    /// units at home and of the units out defending.
+    /// units at home and of the units out defending the start's ground.
     fn at_home(
         &self,
         observation: &ObservationData,
@@ -193,10 +248,20 @@ impl Missions {
                     .sum::<u64>()
             })
         };
+        // A quiet guard keeps its units for its own base, and a defense off
+        // the start's ground answers for that ground, not home.
         let defending: Vec<&UnitObs> = self
             .list
             .iter()
-            .filter(|mission| matches!(mission.task, Task::Defend { .. }))
+            .filter(|mission| match mission.task {
+                Task::Defend { asset, phase } => {
+                    phase != DefendPhase::Guard
+                        && observation.my_buildings.iter().any(|building| {
+                            building.id == asset && map.component(building.anchor) == home
+                        })
+                }
+                _ => false,
+            })
             .flat_map(|mission| &mission.units)
             .filter_map(|id| mine(observation, *id))
             .collect();

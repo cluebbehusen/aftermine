@@ -9,7 +9,7 @@ use crate::income::Income;
 use crate::investments::{self, Candidate, Investment, Situation, Step};
 use crate::map::MapModel;
 use crate::memory::Memory;
-use crate::missions::{Missions, Scratch, Shortfall};
+use crate::missions::{Missions, Scratch, Settlement, Shortfall};
 use crate::placement;
 use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
@@ -54,6 +54,8 @@ pub(crate) struct Ledger {
     /// Own units sitting out orders after stalling for want of a route or a
     /// firing position, by id.
     stuck: Vec<UnitId>,
+    /// Own workers a mission holds, sorted by id.
+    held: Vec<UnitId>,
     /// Wounded own units at or sent to a Repair Bay this decision, by id.
     docked: Vec<UnitId>,
     decision: Decision,
@@ -67,6 +69,7 @@ impl Ledger {
             protected: 0,
             planned: Vec::new(),
             stuck: Vec::new(),
+            held: Vec::new(),
             docked: Vec::new(),
             decision: Decision {
                 allowance,
@@ -76,7 +79,7 @@ impl Ledger {
     }
 
     /// Scrap this decision has not committed.
-    fn available(&self) -> u32 {
+    pub(crate) fn available(&self) -> u32 {
         self.bank - self.decision.spent
     }
 
@@ -200,6 +203,17 @@ impl Ledger {
         )
     }
 
+    /// Units this decision queued at `building`.
+    pub(crate) fn trained_at(&self, building: BuildingId) -> impl Iterator<Item = UnitKind> + '_ {
+        self.decision
+            .purchases
+            .iter()
+            .filter_map(move |purchase| match purchase {
+                Purchase::Train { building: at, unit } if *at == building => Some(*unit),
+                _ => None,
+            })
+    }
+
     /// Units of `kind` this decision queued.
     pub(crate) fn queued(&self, kind: UnitKind) -> usize {
         self.decision
@@ -209,22 +223,31 @@ impl Ledger {
             .count()
     }
 
-    /// Whether this decision already gave `unit` work.
+    /// Marks `workers` as held by missions, replacing those marked before:
+    /// ordinary worker orders leave them be.
+    pub(crate) fn hold(&mut self, mut workers: Vec<UnitId>) {
+        workers.sort_unstable();
+        self.held = workers;
+    }
+
+    /// Whether this decision already gave `unit` work, or a mission holds it.
     pub(crate) fn employs(&self, unit: UnitId) -> bool {
-        self.decision
-            .commands
-            .iter()
-            .any(|command| match &command.command {
-                Command::Harvest { units, .. }
-                | Command::Build { units, .. }
-                | Command::Run { units, .. }
-                | Command::Repair { units, .. }
-                | Command::RepairUnit { units, .. }
-                | Command::Salvage { units, .. }
-                | Command::ReturnCargo { units, .. }
-                | Command::Scout { units, .. } => units.contains(&unit),
-                _ => false,
-            })
+        self.held.binary_search(&unit).is_ok()
+            || self
+                .decision
+                .commands
+                .iter()
+                .any(|command| match &command.command {
+                    Command::Harvest { units, .. }
+                    | Command::Build { units, .. }
+                    | Command::Run { units, .. }
+                    | Command::Repair { units, .. }
+                    | Command::RepairUnit { units, .. }
+                    | Command::Salvage { units, .. }
+                    | Command::ReturnCargo { units, .. }
+                    | Command::Scout { units, .. } => units.contains(&unit),
+                    _ => false,
+                })
     }
 
     fn push(&mut self, command: Command) {
@@ -416,17 +439,21 @@ pub(crate) fn decide(
     let mut candidates = investments::candidates(&situation);
     let danger = placement::Danger::of(observation, map, &persistent.memory);
     sited(
-        observation,
-        map,
-        &persistent.memory,
-        &danger,
+        &Settlement::new(
+            observation,
+            map,
+            profile,
+            &persistent.memory,
+            &danger,
+            &scratch,
+        ),
+        &persistent.missions,
         &mut candidates,
         persistent.saving.investment(),
     );
     let share = share(observation, profile);
     persistent.saving.settle(
         observation,
-        map,
         &candidates,
         share,
         earned,
@@ -438,10 +465,13 @@ pub(crate) fn decide(
         .investment()
         .map(|investment| SavingTarget {
             investment,
-            next: investments::step(observation, map, investment)
+            next: candidates
+                .iter()
+                .find(|candidate| candidate.investment == investment)
+                .and_then(|candidate| candidate.next)
                 .map(|(step, price)| NextPurchase { step, price }),
         });
-
+    ledger.decision.target = target;
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
@@ -450,6 +480,38 @@ pub(crate) fn decide(
             .missions
             .defend(observation, map, frame, &persistent.memory, &mut ledger);
     let short = !shortfalls.is_empty();
+    // Settlements move before guards so an escort let go at its site joins
+    // the site's guard in the same decision; a new settlement recruits only
+    // after the guards have.
+    ledger.hold(persistent.missions.held_workers(observation));
+    let settlement = Settlement::new(
+        observation,
+        map,
+        profile,
+        &persistent.memory,
+        &danger,
+        &scratch,
+    );
+    let failures = persistent
+        .missions
+        .advance_settlements(&settlement, &mut ledger);
+    let guard_gaps = persistent.missions.guard(
+        observation,
+        map,
+        &scratch,
+        &persistent.memory,
+        profile.stance,
+        &mut ledger,
+    );
+    if !short {
+        persistent
+            .missions
+            .settle(&settlement, persistent.saving.investment(), &mut ledger);
+    }
+    ledger.hold(persistent.missions.held_workers(observation));
+    for (kind, anchor) in failures {
+        persistent.memory.fail(kind, anchor, tick);
+    }
     scratch.rival = persistent
         .missions
         .rival(&scratch, observation, map, profile.traits);
@@ -487,6 +549,7 @@ pub(crate) fn decide(
     if !short {
         workers::train(
             observation,
+            map,
             &foundries,
             &staffing,
             profile.traits.greed,
@@ -582,6 +645,9 @@ pub(crate) fn decide(
         .copied()
         .filter(|producer| !saved_for(observation, producer, saving))
         .collect();
+    // Local guards rank ahead of lifts, so their gaps train before a lift
+    // holds production for carriers.
+    arm(observation, map, &producers, guard_gaps, &mut ledger);
     let carrying = lift
         && !short
         && train_carriers(
@@ -620,6 +686,22 @@ pub(crate) fn decide(
                 &mut ledger,
             );
         }
+        let settlement = Settlement::new(
+            observation,
+            map,
+            profile,
+            &persistent.memory,
+            &danger,
+            &scratch,
+        );
+        if !short
+            && let Some((gap, by_air)) = persistent
+                .saving
+                .investment()
+                .and_then(|investment| settlement.capabilities(&persistent.missions, investment))
+        {
+            needs.coverage(gap, by_air);
+        }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
         if short {
             arm(observation, map, &producers, shortfalls, &mut ledger);
@@ -628,6 +710,7 @@ pub(crate) fn decide(
     if !short && exposed {
         workers::train(
             observation,
+            map,
             &foundries,
             &staffing,
             profile.traits.greed,
@@ -666,7 +749,8 @@ fn buy(
     if persistent.saving.pending() {
         return;
     }
-    let Some((step, price)) = investments::step(observation, map, investment) else {
+    let Some(NextPurchase { step, price }) = ledger.decision.target.and_then(|target| target.next)
+    else {
         return;
     };
     let affordable = ledger.available() >= price;
@@ -795,7 +879,7 @@ const PATH_TRIES: u32 = 4;
 
 /// Where a building of `kind` toward `investment` would stand, as far as the
 /// seat knows.
-enum Site {
+pub(crate) enum Site {
     /// The best anchor the seat's knowledge allows.
     At(TilePos, placement::Allowed),
     /// A better anchor the seat has not fully seen, which may turn out
@@ -808,7 +892,7 @@ enum Site {
 /// The first of the anchors toward `investment` that the seat's knowledge
 /// allows or has not fully seen, skipping those refused lately and, but for
 /// a defense, those something the seat knows of could hit.
-fn site(
+pub(crate) fn site(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
@@ -841,33 +925,24 @@ fn site(
 
 /// Drops the investments the seat could not place anywhere, from the best
 /// down until one it could, along with `current` if it cannot: a target with
-/// nowhere to stand would hold the saving no other purchase could use.
+/// nowhere to stand would hold the saving no other purchase could use. Each
+/// one checked gets its next purchase.
 fn sited(
-    observation: &ObservationData,
-    map: &MapModel,
-    memory: &Memory,
-    danger: &placement::Danger,
+    settlement: &Settlement<'_>,
+    missions: &Missions,
     candidates: &mut Vec<Candidate>,
     current: Option<Investment>,
 ) {
     let mut found = false;
-    candidates.retain(|candidate| {
+    candidates.retain_mut(|candidate| {
         if found && Some(candidate.investment) != current {
             return true;
         }
-        let placeable = match investments::step(observation, map, candidate.investment) {
-            Some((Step::Build(kind), _)) => !matches!(
-                site(
-                    observation,
-                    map,
-                    memory,
-                    danger,
-                    candidate.investment,
-                    kind,
-                    &[]
-                ),
-                Site::Nowhere
-            ),
+        candidate.next = settlement.next(missions, candidate.investment);
+        let placeable = match candidate.next {
+            Some((Step::Build(kind), _)) => {
+                !matches!(settlement.site(candidate.investment, kind), Site::Nowhere)
+            }
             _ => true,
         };
         found |= placeable;
@@ -1149,6 +1224,9 @@ fn arm(
     ledger: &mut Ledger,
 ) {
     const DOMAINS: [Domain; 2] = [Domain::Ground, Domain::Air];
+    if shortfalls.is_empty() {
+        return;
+    }
     let hits = |kind: UnitKind, domain: Domain| {
         kind.stats()
             .weapons

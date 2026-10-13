@@ -2,7 +2,6 @@
 //! for, and how much of its bank is protected from ordinary spending.
 
 use crate::investments::{self, ADOPT, Candidate, Investment, Step};
-use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::grid::TilePos;
 use oxide_sim::observation::ObservationData;
@@ -52,7 +51,6 @@ impl Saving {
     pub(crate) fn settle(
         &mut self,
         observation: &ObservationData,
-        map: &MapModel,
         candidates: &[Candidate],
         share: u32,
         earned: u32,
@@ -104,7 +102,12 @@ impl Saving {
         }
         let Some((_, price)) = self
             .target
-            .and_then(|target| investments::step(observation, map, target.investment))
+            .and_then(|target| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.investment == target.investment)
+            })
+            .and_then(|candidate| candidate.next)
         else {
             self.protected = self.protected.min(bank);
             return;

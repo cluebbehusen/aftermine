@@ -21,6 +21,7 @@ mod raid;
 mod repair;
 mod saving;
 mod scouting;
+mod settlement;
 mod strike;
 mod support;
 mod teams;

@@ -145,7 +145,7 @@ impl Missions {
                 if ledger.room() < route_orders(via) {
                     return;
                 }
-                fly_to(ids.clone(), via, bay.anchor, ledger);
+                fly_to(ids.clone(), via, bay.anchor, false, ledger);
             }
             for id in ids {
                 ledger.dock(id);
