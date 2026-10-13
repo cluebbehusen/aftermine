@@ -168,14 +168,8 @@ def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
         for move in (1, 2):
             frames[f"{stem}_move{move}"] = render_surveyor(variant, move=move)
             frames[f"{rig}_hull{tag}_move{move}"] = _pack(_chassis(variant, move))
-        for frame in range(1, RADAR_UNFOLD_FRAMES + 1):
-            frames[f"{stem}_action{frame}"] = render_surveyor(
-                variant, deploy=frame / RADAR_UNFOLD_FRAMES
-            )
-        for frame in range(RADAR_SCAN_FRAMES):
-            frames[f"{stem}_action{RADAR_UNFOLD_FRAMES + frame + 1}"] = render_surveyor(
-                variant, deploy=1.0, sweep=frame
-            )
+        # The rig draws the hull and the mount below, never a whole-body
+        # action frame, so none is shipped.
         for key, image in frames.items():
             gen.save_sprite(image, out, key)
             registry[key] = image

@@ -99,11 +99,9 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 surveyor_final.render_surveyor(variant, deploy=1, sweep=80).tobytes(),
             )
             tag = gen.variant_tag(variant)
-            for action, expected in enumerate(frames[3:], 1):
-                self.assertEqual(
-                    self.registry[f"surveyor{tag}_action{action}"].tobytes(),
-                    expected.tobytes(),
-                )
+            self.assertNotIn(f"surveyor{tag}_action1", self.registry)
+        mounts = [key for key in self.registry if key.startswith("rig_surveyor_mount_action")]
+        self.assertEqual(len(mounts), 120)
         self.assertEqual(
             digest.hexdigest(),
             "000e91b69f35066f88c1e67685df75a731d5463892d2cb166986cc9106a7a920",

@@ -729,18 +729,19 @@ arrivals or splash centers.
 sprite key; the renderer does not load individual sprite textures. Optional rigs
 may fall back to composite sprites, but incomplete rig families are rejected.
 Frame counts come from the atlas: a row family holds as many frames as it ships
-consecutive `_actionN` or `_workN` keys, and every rung of a building's upgrade
-ladder ships its own hull, and mount for a defense. The animation code owns
-timing and which frame each moment shows; tests keep every selected frame below
-the shipped count. A Surveyor's `_actionN` frames unfold its parking radar from
-the simulation's deploy count, then rotate the dish while deployed. The
-presentation controller retains scan timing and hinge transitions. Driving
-disables radar immediately while the reflector returns home and folds over one
-second; the separate hull keeps its tread animation. Interrupted transitions
-reverse from the visible pose, and settled folds discard their presentation
-state. A selected own scout draws its radar ring only while the radar is up.
-Radar blips draw above the fog in no faction's color, told apart by shape: a
-hollow diamond for a ground contact and only its upper half for an air contact.
+consecutive `_actionN` or `_workN` keys, a rigged unit's from its mount layer,
+and every rung of a building's upgrade ladder ships its own hull, and mount for
+a defense. The animation code owns timing and which frame each moment shows;
+tests keep every selected frame below the shipped count. A Surveyor's `_actionN`
+frames unfold its parking radar from the simulation's deploy count, then rotate
+the dish while deployed. The presentation controller retains scan timing and
+hinge transitions. Driving disables radar immediately while the reflector
+returns home and folds over one second; the separate hull keeps its tread
+animation. Interrupted transitions reverse from the visible pose, and settled
+folds discard their presentation state. A selected own scout draws its radar
+ring only while the radar is up. Radar blips draw above the fog in no faction's
+color, told apart by shape: a hollow diamond for a ground contact and only its
+upper half for an air contact.
 
 Procedural quarry boundaries, pits, peaks, and rock walls derive from map
 geometry with fog-aware visibility. The boundary and peaks are one terrace
