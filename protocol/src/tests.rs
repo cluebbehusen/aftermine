@@ -115,10 +115,11 @@ fn command_tag(command: &Command) -> usize {
         Command::CancelOrder { .. } => 23,
         Command::Accompany { .. } => 24,
         Command::Retire { .. } => 25,
+        Command::Scout { .. } => 26,
     }
 }
 
-const COMMAND_VARIANTS: usize = 26;
+const COMMAND_VARIANTS: usize = 27;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -369,6 +370,11 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::Retire {
             units: vec![UnitId(6)],
+            queue: true,
+        },
+        Command::Scout {
+            units: vec![UnitId(6)],
+            goal: TilePos::new(12, 7),
             queue: true,
         },
     ];

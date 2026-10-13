@@ -386,6 +386,18 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
             return;
         }
     }
+    // A selection of scouts scouts wherever it is sent, enemy or ground;
+    // Run is the deliberate way to send one into danger.
+    if units
+        .iter()
+        .all(|id| game.state.unit(*id).is_some_and(|u| u.kind.stats().scouts))
+    {
+        let goal = ground_tile(&game.state, world);
+        game.issue(Command::Scout { units, goal, queue });
+        game.presentation
+            .ping_order(tile_center(goal), PingKind::Move, queue);
+        return;
+    }
     // Fog rules what right-click may target: unseen enemies aren't there
     // as far as the player is concerned (the sim enforces this too).
     if let Some((target, at, _)) = known_hostile_target_at(game, world, tile) {

@@ -176,6 +176,9 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             Command::Retire { units, queue } => {
                 apply_retire(state, pc.player, &canonical_units(units), *queue)
             }
+            Command::Scout { units, goal, queue } => {
+                apply_scout(state, pc.player, &canonical_units(units), *goal, *queue)
+            }
         };
         if let Err(reason) = outcome {
             events.push(Event::CommandRejected {
@@ -393,6 +396,36 @@ fn apply_run(
     })
 }
 
+/// Sends scouts to see one tile. Each takes the tile itself as its goal:
+/// a scout picks its own safe vantage, so a group needs no spread slots.
+fn apply_scout(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    goal: TilePos,
+    queue: bool,
+) -> Result<(), RejectReason> {
+    if !on_map(state, goal) {
+        return Err(RejectReason::OutOfBounds);
+    }
+    let (mut accepted, mut landed) = (0, 0);
+    for &id in units {
+        if let Some(unit) = state.unit_mut(id)
+            && unit.player == player
+            && unit.kind.stats().scouts
+        {
+            accepted += 1;
+            if assign(unit, Order::Scout { tile: goal }, queue) {
+                landed += 1;
+            }
+        }
+    }
+    if accepted == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+}
+
 fn apply_attack(
     state: &mut State,
     player: PlayerId,
@@ -551,6 +584,15 @@ fn apply_patrol(
         return Err(RejectReason::NoValidUnits);
     }
     for (ids, domain) in split_domains(state, accepted) {
+        // Scouts take each waypoint itself; only the others spread, so a
+        // scout in the group never shifts their slots.
+        let (scouts, ids): (Vec<UnitId>, Vec<UnitId>) = ids
+            .into_iter()
+            .partition(|&id| state.unit(id).expect("filtered above").kind.stats().scouts);
+        for id in scouts {
+            let unit = state.unit_mut(id).expect("filtered above");
+            assign_circuit(unit, waypoints.iter().map(|&tile| Order::Scout { tile }));
+        }
         if ids.is_empty() {
             continue;
         }

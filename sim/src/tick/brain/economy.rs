@@ -756,7 +756,7 @@ fn danger_replan_window(state: &State, id: UnitId) -> bool {
 /// Whether the retained route may be kept this tick: clear routes and
 /// off-window far-zone rumors keep it; near-zone threats and on-window
 /// far-zone flags surrender it for a replan.
-fn keep_flagged_route(
+pub(super) fn keep_flagged_route(
     state: &State,
     id: UnitId,
     path: &PathFollow,
@@ -774,7 +774,7 @@ fn keep_flagged_route(
 /// lookahead tile `safe` rejects, or `None` for a clear near segment.
 /// The scan touches at most [`crate::stats::HARVEST_DANGER_LOOKAHEAD`] tiles however
 /// long the route is.
-fn first_flagged_waypoint(
+pub(super) fn first_flagged_waypoint(
     path: &PathFollow,
     mut safe: impl FnMut(TilePos) -> bool,
 ) -> Option<usize> {
@@ -1167,7 +1167,7 @@ fn source_route_avoiding_danger(
 /// live truth. Under fog, static terrain and frozen scrap memory combine
 /// with allied buildings and hostile building ghosts; an unscouted live
 /// enemy structure must not bend the chosen path before the worker sees it.
-fn known_ground_passable(
+pub(super) fn known_ground_passable(
     state: &State,
     danger: &GroundSalvageDanger,
     player: PlayerId,

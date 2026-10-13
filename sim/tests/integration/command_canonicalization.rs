@@ -46,14 +46,15 @@ fn command_tag(command: &Command) -> usize {
         Command::CancelOrder { .. } => 23,
         Command::Accompany { .. } => 24,
         Command::Retire { .. } => 25,
+        Command::Scout { .. } => 26,
     }
 }
 
-const COMMAND_VARIANTS: usize = 26;
+const COMMAND_VARIANTS: usize = 27;
 
 /// The verbs that carry a unit list — every one of them owes this file a
 /// duplicate-id row.
-const UNIT_BEARING_TAGS: [usize; 15] = [0, 1, 2, 3, 4, 5, 7, 8, 9, 14, 15, 19, 22, 24, 25];
+const UNIT_BEARING_TAGS: [usize; 16] = [0, 1, 2, 3, 4, 5, 7, 8, 9, 14, 15, 19, 22, 24, 25, 26];
 
 /// The verbs that address a building alone, with no list to canonicalize.
 const BUILDING_ONLY_TAGS: [usize; 5] = [6, 10, 11, 12, 18];
@@ -84,6 +85,7 @@ struct Stage {
     guard: UnitId,
     worker: UnitId,
     transport: UnitId,
+    scout: UnitId,
     enemy: Target,
     turret: BuildingId,
     patient: UnitId,
@@ -131,6 +133,7 @@ fn stage() -> Stage {
             unit(1, UnitKind::Scuttler, 4, 12),
             // The load family's carrier, hovering out of every fight.
             unit(0, UnitKind::Skyhook, 8, 3),
+            unit(0, UnitKind::Surveyor, 6, 2),
         ],
         buildings: vec![
             BuildingSpec {
@@ -170,6 +173,7 @@ fn stage() -> Stage {
     let patient = state.units()[4].id;
     let biter = state.units()[5].id;
     let transport = state.units()[6].id;
+    let scout = state.units()[7].id;
     let turret = state
         .buildings()
         .iter()
@@ -216,6 +220,7 @@ fn stage() -> Stage {
         guard,
         worker,
         transport,
+        scout,
         enemy,
         turret,
         patient,
@@ -238,6 +243,7 @@ fn families(stage: &Stage) -> Vec<Family> {
         guard,
         worker,
         transport,
+        scout,
         enemy,
         turret,
         patient,
@@ -247,6 +253,15 @@ fn families(stage: &Stage) -> Vec<Family> {
         ..
     } = *stage;
     vec![
+        Family {
+            name: "scout",
+            actor: scout,
+            make: Box::new(move |units, queue| Command::Scout {
+                units,
+                goal: ground,
+                queue,
+            }),
+        },
         Family {
             name: "return-cargo",
             actor: worker,

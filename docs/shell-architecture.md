@@ -305,12 +305,13 @@ fast rate and dotted at the slow rate, and a selected Bay shows one pip per
 patient slot. Unknown concealed mines cannot alter player-visible picking or
 placement feedback.
 
-A unit panel offers only the verbs its selection can use: Run and Hunt need a
-unit that can fight, while Patrol and Accompany stay for every unit. Accompany
-(`E` by default) arms a click on any own unit, aircraft included; the rest of
-the selection escorts the picked unit, so picking one of the selection works. It
-is never a right-click meaning. Stop is not a card. `Panel.stop` is a button in
-its own box above the orders or production dock, published as
+A unit panel offers only the verbs its selection can use: Hunt needs a unit that
+can fight, Scout a unit that scouts, and Run either, since a scout's right-click
+already scouts. Patrol and Accompany stay for every unit. Accompany (`E` by
+default) arms a click on any own unit, aircraft included; the rest of the
+selection escorts the picked unit, so picking one of the selection works. It is
+never a right-click meaning. Stop is not a card. `Panel.stop` is a button in its
+own box above the orders or production dock, published as
 `LayoutModel.queue_stop` and hit-tested with the cards. It stops the selection
 while any selected unit has orders, even when the dock's subject is idle, and
 clears a defense's target preference. Over production it cancels every selected
@@ -444,6 +445,10 @@ last pointer. While placement or a patrol route is armed, a world finger never
 long-presses; other armed verbs stand down for a long-press as they do for a
 right-click. `InputState::queue_held` merges Shift with the sticky QUEUE toggle
 that touch-only builds show.
+
+A right-click with only scouts selected issues Scout to the clicked tile, enemy
+or ground, after the transport boarding check; Run is the deliberate way to send
+a scout into danger. A mixed selection keeps the ordinary contextual order.
 
 The mode ribbon (`LayoutModel.mode_ribbon`) shows while a mode is armed,
 centered above the panel band. The QUEUE toggle (`LayoutModel.queue_toggle`)

@@ -233,6 +233,13 @@ pub enum Order {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pad: Option<TilePos>,
     },
+    /// Scout a tile with the owner's knowledge alone: go there while it is
+    /// safe, otherwise stop at the safe tile nearest it that still sees it.
+    /// [`Unit::progress`] counts the leg's ticks of caution.
+    Scout {
+        /// The tile to see.
+        tile: TilePos,
+    },
 }
 
 /// Where a producer's finished units report.
@@ -2058,6 +2065,9 @@ impl State {
         {
             return Err(E::InvalidRetirement(id));
         }
+        if !stats.scouts && orders().any(|order| matches!(order, Order::Scout { .. })) {
+            return Err(E::InvalidScoutOrder(id));
+        }
         if orders()
             .flat_map(order_references)
             .any(|target| !self.minted(target))
@@ -3045,6 +3055,7 @@ fn order_inside_envelope(order: &Order) -> bool {
         Order::Land { goal, from } => {
             tile_inside_envelope(*goal) && from.is_none_or(tile_inside_envelope)
         }
+        Order::Scout { tile } => tile_inside_envelope(*tile),
         Order::Retire { pad, .. } => pad.is_none_or(tile_inside_envelope),
     }
 }
@@ -3072,7 +3083,8 @@ fn order_references(order: &Order) -> impl Iterator<Item = Target> {
         | Order::Advance { .. }
         | Order::Found { .. }
         | Order::Land { .. }
-        | Order::Unload { .. } => [None, None],
+        | Order::Unload { .. }
+        | Order::Scout { .. } => [None, None],
         Order::Attack { target, resume, .. } => [
             target.entity(),
             match resume {
@@ -3301,6 +3313,9 @@ pub enum StateIntegrityError {
     /// gives a pad to an airframe that cannot land, or holds a full meter.
     #[error("unit {0} has an invalid retirement")]
     InvalidRetirement(UnitId),
+    /// Only scouts take the Scout order.
+    #[error("unit {0} scouts without being a scout")]
+    InvalidScoutOrder(UnitId),
     /// A unit's order names an entity id this run never handed out.
     #[error("unit {0} is ordered against an id the run never minted")]
     UnmintedOrderTarget(UnitId),

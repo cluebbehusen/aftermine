@@ -206,7 +206,7 @@ pub enum Key {
     I,
     /// See [`Key::C`].
     J,
-    /// See [`Key::C`].
+    /// Arm scout in the classic profile.
     K,
     /// See [`Key::C`].
     L,

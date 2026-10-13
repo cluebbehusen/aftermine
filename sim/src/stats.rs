@@ -298,6 +298,9 @@ pub struct UnitStats {
     /// Reveals hostile Scuttle Charges within
     /// [`CHARGE_SCOUT_DETECT_RADIUS`] tiles.
     pub charge_detection: bool,
+    /// Takes the Scout order. Only ground kinds scout, since the caution
+    /// that order applies reads ground threats.
+    pub scouts: bool,
     /// Charges that shoot down hostile projectiles aimed near the machine.
     pub point_defense: Option<PointDefenseStats>,
 }
@@ -693,6 +696,7 @@ const HARVESTER: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -747,6 +751,7 @@ const SENTINEL: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -784,6 +789,7 @@ const SCUTTLER: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -823,6 +829,7 @@ const LANCER: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -867,6 +874,7 @@ const BOMBARD: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -904,6 +912,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -941,6 +950,7 @@ const BUZZARD: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -978,6 +988,7 @@ const TALON: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1019,6 +1030,7 @@ const WARDEN: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1050,6 +1062,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1078,6 +1091,7 @@ const KESTREL: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: true,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1122,6 +1136,7 @@ const CONDOR: UnitStats = UnitStats {
         aligns_to_motion: false,
     }),
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1162,6 +1177,7 @@ const BREAKER: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1206,6 +1222,7 @@ const PILEDRIVER: UnitStats = UnitStats {
     target_priority: TargetPriority::Heaviest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1249,6 +1266,7 @@ const AVALANCHE: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1281,6 +1299,7 @@ const SKYHOOK: UnitStats = UnitStats {
         aligns_to_motion: true,
     }),
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1314,6 +1333,7 @@ const SAPPER: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: None,
 };
 
@@ -1343,6 +1363,7 @@ const MANTLE: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
+    scouts: false,
     point_defense: Some(PointDefenseStats {
         charges: 3,
         radius: Fx::lit("4.5"),
@@ -1375,6 +1396,7 @@ const SURVEYOR: UnitStats = UnitStats {
     target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: true,
+    scouts: true,
     point_defense: None,
 };
 
@@ -2271,6 +2293,24 @@ pub const HARVEST_REPLAN_PERIOD: u64 = 4;
 
 /// Ticks between repeated `DangerHold` reports for one waiting worker.
 pub const DANGER_HOLD_REPORT_PERIOD: u64 = 100;
+
+/// Ticks of caution one Scout leg may spend holding, retreating or detouring
+/// around a danger flag before the scout gives that leg up.
+pub const SCOUT_HOLD_TICKS: u32 = 160;
+
+/// Chebyshev tiles around a known hostile charge a Scout route keeps clear
+/// of. One ring is not enough: the ground follower cuts corners within a
+/// tile of the planned path, closer than [`CHARGE_TRIGGER_RADIUS`].
+pub const SCOUT_CHARGE_AVOID_RADIUS: i32 = 2;
+
+/// Chebyshev reach of the search for safe ground when a scout finds itself
+/// in danger. It covers the widest known envelope: an Avalanche's reach plus
+/// [`HARVEST_MOBILE_DANGER_MARGIN`].
+pub const SCOUT_RETREAT_RADIUS: i32 = 18;
+
+/// Searches one Scout plan may let hit the expansion cap before it settles
+/// for holding.
+pub const SCOUT_ROUTE_ATTEMPTS: usize = 4;
 
 /// How many upcoming route waypoints the ground follower may skip per tick
 /// toward the furthest one its hull can reach on a straight, clear leg.

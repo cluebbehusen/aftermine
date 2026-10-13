@@ -419,10 +419,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidEscort(_) => 83,
         E::InvalidRally(_) => 84,
         E::InvalidRetirement(_) => 85,
+        E::InvalidScoutOrder(_) => 86,
     }
 }
 
-const ROWS: usize = 86;
+const ROWS: usize = 87;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -521,6 +522,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidEscort(UnitId(0)),
         E::InvalidRally(BuildingId(0)),
         E::InvalidRetirement(UnitId(0)),
+        E::InvalidScoutOrder(UnitId(0)),
     ]
 }
 
@@ -1103,6 +1105,13 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["progress"] = json!(oxide_sim::stats::RETIRE_TICKS);
             },
             "has an invalid retirement",
+        ),
+        (
+            "a Scout order on a machine that does not scout",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "scout", "tile": {"x": 3, "y": 3}});
+            },
+            "unit u0 scouts without being a scout",
         ),
         (
             "a harvest source outside its anchored work zone",
