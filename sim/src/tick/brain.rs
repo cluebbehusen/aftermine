@@ -134,6 +134,7 @@ pub(super) fn run(
     index.rebuild(&state.units);
     index.survey(state);
     let motion = MotionSnapshot::capture(state);
+    let parties = escort::Parties::capture(state);
     let mut hits: Vec<PendingHit> = Vec::new();
     let mut builds: Vec<PendingHpGain> = Vec::new();
     let mut heals: Vec<PendingUnitHeal> = Vec::new();
@@ -218,14 +219,14 @@ pub(super) fn run(
             Order::Harvest {
                 node,
                 anchor,
-                retiring,
+                withdrawing,
             } => {
                 let player = state.unit(id).expect("just seen").player;
                 let team = state.player(player).team as usize;
                 let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
                     crate::vision::GroundSalvageDanger::capture(state, player)
                 });
-                harvest(state, danger, id, node, anchor, retiring, events);
+                harvest(state, danger, id, node, anchor, withdrawing, events);
             }
             Order::Attack {
                 target,
@@ -267,6 +268,32 @@ pub(super) fn run(
                 logistics::unload(state, index, &mut reach, id, &mut logistics_pending, events);
             }
             Order::Land { goal, from } => land(state, index, id, goal, from, events),
+            Order::Accompany { unit, weld } => escort::accompany(
+                state,
+                index,
+                &mut reach,
+                &parties,
+                id,
+                unit,
+                weld,
+                &mut field_welds,
+            ),
+            Order::Retire { crucible, pad } => retire::retire(
+                state,
+                &mut reach,
+                id,
+                (crucible, pad),
+                &mut logistics_pending,
+                events,
+            ),
+            Order::Scout { tile } => {
+                let player = state.unit(id).expect("just seen").player;
+                let team = state.player(player).team as usize;
+                let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
+                    crate::vision::GroundSalvageDanger::capture(state, player)
+                });
+                scout::scout(state, index, &mut reach, danger, id, tile, events);
+            }
         }
         if events[reported..]
             .iter()
@@ -279,12 +306,16 @@ pub(super) fn run(
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
-    repair_bay_aura(state, &mut heals, &mut builds);
-    crucible_smelter(state);
-    // Arrivals join this tick's volley; launches land on later ticks
-    // (flight is at least one tick), so ordering here cannot matter.
+    // Interception sees the shells still in flight before any arrive, so a
+    // shell is stoppable on its arrival tick. Arrivals join this tick's
+    // volley; launches land on later ticks (flight is at least one tick), so
+    // ordering here cannot matter. The aura reads the whole volley, so it
+    // comes after.
+    point_defense::run(state, events);
     land_shells(state, &mut hits, events);
     state.shells.extend(launches);
+    repair_bay_aura(state, &hits, &mut heals, &mut builds);
+    crucible_smelter(state);
     let salvaged = resolve_hits(state, &hits, &builds, &heals, &drains, events);
     (logistics_pending, salvaged)
 }
@@ -293,8 +324,12 @@ mod combat;
 pub(in crate::tick) mod contact;
 mod economy;
 pub(super) use economy::return_cargo_destination;
+pub(super) mod escort;
 mod locomotion;
 pub(super) mod logistics;
+mod point_defense;
+pub(super) mod retire;
+mod scout;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{
@@ -323,17 +358,18 @@ fn resolve_hits(
     }
     let mut salvaged = Vec::new();
     let mut incidents = Vec::new();
+    let now = state.current_tick();
     for hit in hits {
         match hit.victim {
             Target::Unit(uid) => {
                 if let Some(v) = state.unit_mut(uid) {
-                    let relevant_hit = v.kind.stats().harvest.is_some();
+                    let relevant_hit = v.kind.stats().harvest.is_some() || v.kind.stats().scouts;
                     let relevant_loss =
                         hit.damage >= v.hp && v.domain() == crate::stats::Domain::Ground;
                     if v.hp > 0 && hit.damage > 0 && (relevant_hit || relevant_loss) {
                         incidents.push((v.player, v.tile(), hit));
                     }
-                    super::damage::unit(v, hit.damage, events);
+                    super::damage::unit(v, hit.damage, now, events);
                 }
             }
             Target::Building(bid) => {
@@ -577,12 +613,34 @@ fn resolve_unit_heals(state: &mut State, heals: &[PendingUnitHeal], events: &mut
     }
 }
 
+/// Hp a fast Repair Bay pulse restores to a patient of `max_hp`: its share
+/// of [`crate::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND`], telescoped over
+/// the global pulse index so fractions add up exactly with no state, and
+/// never less than [`crate::stats::REPAIR_BAY_STEP`].
+fn fast_step(max_hp: u32, pulse: u64) -> u32 {
+    use crate::stats::{REPAIR_BAY_FAST_PERMILLE_PER_SECOND, REPAIR_BAY_PERIOD, REPAIR_BAY_STEP};
+    let per_mille = u64::from(max_hp) * REPAIR_BAY_FAST_PERMILLE_PER_SECOND * REPAIR_BAY_PERIOD;
+    let per_pulse = 1000 * u64::from(crate::TICKS_PER_SECOND);
+    let healed = |pulse: u64| per_mille * pulse / per_pulse;
+    // The meter repeats every `per_pulse` pulses, so reducing the index keeps
+    // the product in range on any clock.
+    let pulse = pulse % per_pulse;
+    u32::try_from(healed(pulse + 1) - healed(pulse))
+        .expect("one pulse heals less than a body's health")
+        .max(REPAIR_BAY_STEP)
+}
+
 /// Repair Bay healing. On its pulse cadence every built bay, in building-id
-/// order, offers each own wounded unit and completed structure inside
+/// order, offers each of its patients ([`State::repair_bay_patients`]) a
+/// fast or slow step and each damaged own completed structure inside
 /// [`crate::stats::REPAIR_BAY_RADIUS`] of its footprint one
 /// [`crate::stats::REPAIR_BAY_STEP`] of hp, billed from the owner's bank at
 /// [`crate::stats::REPAIR_COST_PERMILLE`] of the patient's active tier cost.
-/// Reach measures from body to footprint for units and between the nearest
+/// A patient this tick's volley hits takes the slow step, and a step is
+/// priced from the hp other heals already queued for the patient, so no
+/// payment covers hp the patient cannot take. A patient the bank cannot
+/// fully pay for heals what it can pay. Reach
+/// measures from body to footprint for units and between the nearest
 /// footprint edges for structures. A Bay cannot heal itself;
 /// another Bay may heal it. Units have first claim on limited scrap, then
 /// structures in building-id order. Everything buffers into the shared hp
@@ -590,6 +648,7 @@ fn resolve_unit_heals(state: &mut State, heals: &[PendingUnitHeal], events: &mut
 /// against the same ceiling.
 fn repair_bay_aura(
     state: &mut State,
+    hits: &[PendingHit],
     heals: &mut Vec<PendingUnitHeal>,
     builds: &mut Vec<PendingHpGain>,
 ) {
@@ -607,51 +666,58 @@ fn repair_bay_aura(
         .map(|b| b.id)
         .collect();
     let radius = crate::stats::REPAIR_BAY_RADIUS;
-    // Unit steps already queued per patient this pulse. Overlapping auras
-    // stack in resolution, so a later bay prices from the hp earlier bays
-    // queued; pricing from start-of-tick hp would bill every bay for the
-    // same first interval.
-    let mut in_flight: std::collections::BTreeMap<UnitId, u32> = std::collections::BTreeMap::new();
-    for bay in bays.iter().copied() {
-        let Some(b) = state.building(bay) else {
-            continue;
-        };
-        let owner = b.player;
+    let pulse = state.current_tick() / crate::stats::REPAIR_BAY_PERIOD;
+    let struck: Vec<UnitId> = hits
+        .iter()
+        .filter(|hit| hit.damage > 0)
+        .filter_map(|hit| match hit.victim {
+            Target::Unit(id) => Some(id),
+            Target::Building(_) => None,
+        })
+        .collect();
+    for (bay, patients) in state.repair_bay_patients() {
+        let owner = state.building(bay).expect("a listed Bay stands").player;
         let recovery_reserve = state.recovery_reserve(owner);
-        let patients: Vec<UnitId> = state
-            .units
-            .iter()
-            .filter(|u| {
-                u.player == owner
-                    && u.hp > 0
-                    && u.hp < u.kind.stats().max_hp
-                    && b.closest_point_to(u.pos).dist_sq(u.pos) <= radius * radius
-            })
-            .map(|u| u.id)
-            .collect();
-        for id in patients {
-            let u = state.unit(id).expect("just filtered");
+        for (id, pace) in patients {
+            let u = state.unit(id).expect("a chosen patient lives");
             let stats = u.kind.stats();
-            let queued = in_flight.get(&id).copied().unwrap_or(0);
-            let healed = (u.hp + queued).min(stats.max_hp);
-            let step = crate::stats::REPAIR_BAY_STEP.min(stats.max_hp - healed);
-            if step == 0 {
-                continue; // earlier bays already carry this one to whole
-            }
+            let queued: u32 = heals
+                .iter()
+                .filter(|heal| heal.unit == id)
+                .map(|heal| heal.step)
+                .sum();
+            let hp = (u.hp + queued).min(stats.max_hp);
+            let pace = if struck.contains(&id) {
+                crate::state::RepairPace::Slow
+            } else {
+                pace
+            };
+            let offered = match pace {
+                crate::state::RepairPace::Fast => fast_step(stats.max_hp, pulse),
+                crate::state::RepairPace::Slow => crate::stats::REPAIR_BAY_STEP,
+            };
             let millis = |hp: u32| -> u64 {
                 u64::from(hp) * u64::from(stats.cost) * crate::stats::REPAIR_COST_PERMILLE
                     / u64::from(stats.max_hp)
             };
-            let due = millis(healed + step).div_ceil(1000) - millis(healed).div_ceil(1000);
+            let due = |step: u32| millis(hp + step).div_ceil(1000) - millis(hp).div_ceil(1000);
+            // The bank, less any reserve recovery holds, pays for as much of
+            // the step as it covers; the patient keeps its slot either way.
             let bank = state.player(owner).scrap;
-            let Some(due) = u32::try_from(due).ok().filter(|&due| due <= bank) else {
-                continue; // broke for this patient; cheaper coins may still land
+            let spendable = if recovery_reserve > 0 {
+                bank.saturating_sub(recovery_reserve)
+            } else {
+                bank
             };
-            if due > 0 && recovery_reserve > 0 && bank - due < recovery_reserve {
-                continue;
+            let step = (1..=offered.min(stats.max_hp - hp))
+                .rev()
+                .find(|&step| due(step) <= u64::from(spendable))
+                .unwrap_or(0);
+            if step == 0 {
+                continue; // whole already, or nothing this bank can pay
             }
+            let due = u32::try_from(due(step)).expect("a step's bill fits the bank");
             state.player_mut(owner).scrap = bank - due;
-            in_flight.insert(id, queued + step);
             heals.push(PendingUnitHeal {
                 unit: id,
                 step,
@@ -844,3 +910,5 @@ fn crucible_smelter(state: &mut State) {
 
 #[cfg(test)]
 mod damage_tests;
+#[cfg(test)]
+mod repair_bay_tests;

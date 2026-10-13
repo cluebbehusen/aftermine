@@ -248,6 +248,11 @@ against pending commands again. Selecting one factory shows the exact ordered
 queue and its per-slot cancellation controls. Mixed building kinds keep rally
 controls and the first compatible producer's training shortcuts.
 
+A world rally click, from the armed Set rally card or a right-click with only
+buildings selected, picks the own unit under the cursor before the ground: new
+units then escort it, and the rally line follows that unit's drawn position,
+ending in a ring instead of a flag. Minimap rally clicks name ground only.
+
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
@@ -294,20 +299,26 @@ Units take picking priority over buildings, as with single clicks.
 Selection panels and tooltips derive their facts from simulation accessors.
 Static capabilities may be shown for foreign selections; current enemy orders,
 loads, and building income remain private. Placement and support previews use
-authoritative queries rather than duplicating game rules. Unknown concealed
-mines cannot alter player-visible picking or placement feedback.
+authoritative queries rather than duplicating game rules. Each own Repair Bay
+draws a tether to every machine `State::repair_bay_patients` picks, solid at the
+fast rate and dotted at the slow rate, and a selected Bay shows one pip per
+patient slot. Unknown concealed mines cannot alter player-visible picking or
+placement feedback.
 
-A unit panel offers only the verbs its selection can use: Run and Hunt need a
-unit that can fight, while Patrol stays for unarmed scouts. Stop is not a card.
-`Panel.stop` is a button in its own box above the orders or production dock,
-published as `LayoutModel.queue_stop` and hit-tested with the cards. It stops
-the selection while any selected unit has orders, even when the dock's subject
-is idle, and clears a defense's target preference. Over production it cancels
-every selected producer's queue with full refunds, last job first, so each
-`CancelTrain` index still names its job when it runs. The button takes the chip
-column's width and names itself where the chips do. A single factory's dock is
-headed by the time left on its queue, or "Ready" while a finished head waits for
-an exit.
+A unit panel offers only the verbs its selection can use: Hunt needs a unit that
+can fight, Scout a unit that scouts, and Run either, since a scout's right-click
+already scouts. Patrol and Accompany stay for every unit. Accompany (`E` by
+default) arms a click on any own unit, aircraft included; the rest of the
+selection escorts the picked unit, so picking one of the selection works. It is
+never a right-click meaning. Stop is not a card. `Panel.stop` is a button in its
+own box above the orders or production dock, published as
+`LayoutModel.queue_stop` and hit-tested with the cards. It stops the selection
+while any selected unit has orders, even when the dock's subject is idle, and
+clears a defense's target preference. Over production it cancels every selected
+producer's queue with full refunds, last job first, so each `CancelTrain` index
+still names its job when it runs. The button takes the chip column's width and
+names itself where the chips do. A single factory's dock is headed by the time
+left on its queue, or "Ready" while a finished head waits for an exit.
 
 A unit's orders dock and the selection's waypoint chain show programs with every
 staged command applied. `Presentation` caches that projection for the tick, the
@@ -345,6 +356,11 @@ names, or their cancellation; only Patrol coaches its two-step start.
 `Presentation::toast` and the tooltip's refusal line capitalize the first
 letter, so refusal reasons stay lowercase fragments that also read inside longer
 messages.
+
+An own unit selection offers a Retire card, disabled with a reason until a
+Crucible is complete. It has no default key, so a stray keypress cannot scrap an
+army, and no right-click meaning; Shift queues it. A retiring own machine draws
+a gold dismantling meter under its health bar, as a building under salvage does.
 
 Loaded Harvesters and Excavators expose a Return Cargo card and shortcut (`U` by
 default). Worker selections use Return Cargo, a single selected transport uses
@@ -429,6 +445,10 @@ last pointer. While placement or a patrol route is armed, a world finger never
 long-presses; other armed verbs stand down for a long-press as they do for a
 right-click. `InputState::queue_held` merges Shift with the sticky QUEUE toggle
 that touch-only builds show.
+
+A right-click with only scouts selected issues Scout to the clicked tile, enemy
+or ground, after the transport boarding check; Run is the deliberate way to send
+a scout into danger. A mixed selection keeps the ordinary contextual order.
 
 The mode ribbon (`LayoutModel.mode_ribbon`) shows while a mode is armed,
 centered above the panel band. The QUEUE toggle (`LayoutModel.queue_toggle`)
@@ -666,9 +686,9 @@ use `State::hash` for deterministic identity. `FogView::capture` is the
 player-knowledge view for players and agents; bots read the equivalent
 `ObservationData`, and a parity test keeps the two in agreement. It hides
 hostile intent and economy, exposes enemies under current sight, and otherwise
-supplies only recorded ghosts, remembered salvage, anonymous radar contacts, and
-public buildings such as Deep Bores. Player-facing commands and effects must
-respect that knowledge boundary.
+supplies only recorded ghosts, remembered salvage, radar contacts that name only
+air or ground, and public buildings such as Deep Bores. Player-facing commands
+and effects must respect that knowledge boundary.
 
 ## Rendering and audio
 
@@ -694,36 +714,48 @@ body-frame selection survives lethal removal. Reported unit strikes stay
 anchored to the hit-tick pose while the target moves. Compact contact regions
 derive from atlas alpha at load time and are shared by all instances. Projectile
 launch history retains recorded flight duration and identified targets through
-arrival. When launch history is absent after checkpoint restoration, payload
-recipients are reconstructed from visible world bodies at the fixed impact
-point; landing reports can also use pre-removal bodies. No historical ticks are
-executed. Unguided unit contacts stay on the original course and require the
-nominal impact to overlap the body; bomb spread and ground misses retain their
-positions. Surface flashes, fragments, dust and scorch marks share the cosmetic
-contact point. Weapon and recipient profiles distinguish rail, orb, mortar,
-shell, rocket and bomb contacts. Cosmetic contact never changes simulation
-targeting, damage, shell arrivals or splash centers.
+arrival, or until point defense shoots the shell down. When launch history is
+absent after checkpoint restoration, payload recipients are reconstructed from
+visible world bodies at the fixed impact point; landing reports can also use
+pre-removal bodies. No historical ticks are executed. Unguided unit contacts
+stay on the original course and require the nominal impact to overlap the body;
+bomb spread and ground misses retain their positions. Surface flashes,
+fragments, dust and scorch marks share the cosmetic contact point. Weapon and
+recipient profiles distinguish rail, orb, mortar, shell, rocket and bomb
+contacts. Cosmetic contact never changes simulation targeting, damage, shell
+arrivals or splash centers.
 
 `assets` loads the generated sprite atlas. Its manifest covers every resolved
 sprite key; the renderer does not load individual sprite textures. Optional rigs
 may fall back to composite sprites, but incomplete rig families are rejected.
 Frame counts come from the atlas: a row family holds as many frames as it ships
-consecutive `_actionN` or `_workN` keys, and every rung of a building's upgrade
-ladder ships its own hull, and mount for a defense. The animation code owns
-timing and which frame each moment shows; tests keep every selected frame below
-the shipped count. Procedural quarry boundaries, pits, peaks, and rock walls
-derive from map geometry with fog-aware visibility. The boundary and peaks are
-one terrace system measured from the open floor: a peak is the wall left
-standing, stepping up once it is about five tiles thick, and a peak meeting the
-map edge is a spur whose levels join the wall's. The wall's field reads
-unexplored tiles as floor and each peak's as more peak, so neither discloses
-hidden terrain; both fields are cached until the exploration they read changes.
-Rock walls draw layered slabs from the generated library, sized by local rock
-thickness with unexplored tiles counted as more rock, and machinery blockers
-stay off the edge ring the boundary covers. The shell extends allied unit sight
-discs and completed-building footprint sight into a bounded off-map quarry
-margin. Its presentation-only exploration cache updates on every tick, including
-bulk advances, and rebuilds during explicit command-log reconstruction. Player
+consecutive `_actionN` or `_workN` keys, a rigged unit's from its mount layer,
+and every rung of a building's upgrade ladder ships its own hull, and mount for
+a defense. The animation code owns timing and which frame each moment shows;
+tests keep every selected frame below the shipped count. A Surveyor's `_actionN`
+frames unfold its parking radar from the simulation's deploy count, then rotate
+the dish while deployed. The presentation controller retains scan timing and
+hinge transitions. Driving disables radar immediately while the reflector
+returns home and folds over one second; the separate hull keeps its tread
+animation. Interrupted transitions reverse from the visible pose, and settled
+folds discard their presentation state. A selected own scout draws its radar
+ring only while the radar is up. Radar blips draw above the fog in no faction's
+color, told apart by shape: a hollow diamond for a ground contact and only its
+upper half for an air contact.
+
+Procedural quarry boundaries, pits, peaks, and rock walls derive from map
+geometry with fog-aware visibility. The boundary and peaks are one terrace
+system measured from the open floor: a peak is the wall left standing, stepping
+up once it is about five tiles thick, and a peak meeting the map edge is a spur
+whose levels join the wall's. The wall's field reads unexplored tiles as floor
+and each peak's as more peak, so neither discloses hidden terrain; both fields
+are cached until the exploration they read changes. Rock walls draw layered
+slabs from the generated library, sized by local rock thickness with unexplored
+tiles counted as more rock, and machinery blockers stay off the edge ring the
+boundary covers. The shell extends allied unit sight discs and
+completed-building footprint sight into a bounded off-map quarry margin. Its
+presentation-only exploration cache updates on every tick, including bulk
+advances, and rebuilds during explicit command-log reconstruction. Player
 checkpoints retain that cache directly. Map tiles show authoritative simulation
 fog; the replay viewer is fog-free. Animation, heading, and weapon effects use
 the relevant simulation state rather than inventing movement or firing delays.

@@ -79,8 +79,17 @@ fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
 use macroquad::prelude::vec2;
 use oxide_sim::{Command, PlayerCommand, Scenario};
 
+/// Skirmish with a Sentinel beside West's start, since the opening fields
+/// no fighter.
 fn game() -> Game {
-    Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 800.0)).expect("skirmish builds")
+    let mut scenario = Scenario::skirmish();
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Sentinel,
+        x: 10,
+        y: 7,
+    });
+    Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds")
 }
 
 fn human_foundry(game: &Game) -> oxide_sim::BuildingId {
@@ -398,7 +407,7 @@ fn the_foundry_panel_speaks_its_roster() {
     game.presentation.selection.buildings = vec![foundry];
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.title, "Foundry");
-    assert_eq!(panel.cards.len(), 6, "four units plus two rally controls");
+    assert_eq!(panel.cards.len(), 7, "five units plus two rally controls");
     assert_eq!(panel.cards[0].title, "Set rally");
     assert_eq!(panel.cards[0].action, CardAction::ArmRally);
     assert_eq!(panel.cards[2].hotkey, "Q");
@@ -456,7 +465,7 @@ fn a_producer_always_exposes_set_reset_and_clear_rally_actions() {
         player: game.presentation.human,
         command: Command::SetRally {
             building: foundry,
-            rally: Some(chassis::grid::TilePos::new(12, 8)),
+            rally: Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(12, 8))),
         },
     }]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
@@ -673,7 +682,10 @@ fn the_harvester_panel_is_the_same_grammar() {
     // Unarmed, it has no Run or Hunt, and an empty hopper has
     // no cargo to return.
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
-    assert_eq!(titles, ["Patrol", "Salvage", "Weld", "Build"]);
+    assert_eq!(
+        titles,
+        ["Patrol", "Accompany", "Salvage", "Weld", "Retire", "Build"]
+    );
     assert!(
         !panel
             .info
@@ -888,6 +900,9 @@ fn order_kind(order: &Order) -> usize {
         Order::Unload { .. } => 12,
         Order::Land { .. } => 13,
         Order::ReturnCargo { .. } => 14,
+        Order::Accompany { .. } => 15,
+        Order::Retire { .. } => 16,
+        Order::Scout { .. } => 17,
     }
 }
 
@@ -912,7 +927,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Attack {
                 target: contact,
                 pursue: false,
-                resume: Some(goal),
+                resume: Some(oxide_sim::Resume::Hunt(goal)),
             },
             Order::Land {
                 goal: TilePos::new(3, 3),
@@ -934,7 +949,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Harvest {
                 node: TilePos::new(4, 4),
                 anchor: tile,
-                retiring: false,
+                withdrawing: false,
             },
             Order::ReturnCargo {
                 foundry,
@@ -952,13 +967,22 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             Order::Board {
                 transport: harvester,
             },
+            Order::Accompany {
+                unit: harvester,
+                weld: None,
+            },
+            Order::Retire {
+                crucible: foundry,
+                pad: None,
+            },
+            Order::Scout { tile },
         ],
         looping: false,
     };
     let mut kinds: Vec<usize> = program.orders.iter().map(order_kind).collect();
     kinds.sort_unstable();
     kinds.dedup();
-    assert_eq!(kinds, (0..15).collect::<Vec<_>>(), "every order has a chip");
+    assert_eq!(kinds, (0..18).collect::<Vec<_>>(), "every order has a chip");
 
     let view = game.view();
     let actions: Vec<CardAction> = (0..program.orders.len())
@@ -976,11 +1000,11 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
         actions,
         [
             CardAction::None,
+            remove(walk, 5),
             remove(walk, 4),
             remove(walk, 3),
             remove(walk, 2),
             remove(walk, 1),
-            remove(walk, 0),
             remove(OrderKey::Land { pad: tile }, 0),
             remove(OrderKey::Attack { objective: contact }, 0),
             remove(OrderKey::Unload { tile }, 0),
@@ -998,6 +1022,9 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
                 },
                 0
             ),
+            remove(OrderKey::Accompany { unit: harvester }, 0),
+            remove(OrderKey::Retire { crucible: foundry }, 0),
+            remove(walk, 0),
         ]
     );
 }

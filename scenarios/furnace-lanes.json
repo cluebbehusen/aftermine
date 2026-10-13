@@ -22,7 +22,7 @@
    "bot_config": {}
   },
   {
-   "name": "South East",
+   "name": "North East",
    "scrap": 150,
    "bot": true,
    "team": 1,
@@ -36,7 +36,7 @@
    "bot_config": {}
   },
   {
-   "name": "North East",
+   "name": "South East",
    "scrap": 150,
    "bot": true,
    "team": 1,
@@ -114,7 +114,7 @@
   },
   {
    "player": 0,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 6,
    "y": 4
   },
@@ -132,7 +132,7 @@
   },
   {
    "player": 1,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 6,
    "y": 12
   },
@@ -150,7 +150,7 @@
   },
   {
    "player": 2,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 6,
    "y": 22
   },
@@ -168,7 +168,7 @@
   },
   {
    "player": 5,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 59,
    "y": 49
   },
@@ -186,7 +186,7 @@
   },
   {
    "player": 4,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 59,
    "y": 41
   },
@@ -204,7 +204,7 @@
   },
   {
    "player": 3,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 59,
    "y": 31
   }

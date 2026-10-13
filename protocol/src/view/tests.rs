@@ -432,7 +432,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 units: state
                     .units()
                     .iter()
-                    .filter(|u| u.player.0 == seat && u.kind.stats().can_fight())
+                    .filter(|u| u.player.0 == seat && u.kind.stats().harvest.is_none())
                     .map(|u| u.id)
                     .collect(),
                 goal: foundry(&state, 1 - seat),
@@ -517,10 +517,8 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .flat_map(|row| row.chars().map(|c| c == '*'))
                     .collect();
                 assert_eq!(fog_visible, obs.visible, "tick {tick} seat {seat:?} sight");
-                let fog_contacts: Vec<[i32; 2]> = fog.contacts.clone();
-                let obs_contacts: Vec<[i32; 2]> = obs.blips.iter().map(|t| [t.x, t.y]).collect();
                 assert_eq!(
-                    fog_contacts, obs_contacts,
+                    fog.contacts, obs.blips,
                     "tick {tick} seat {seat:?} contacts"
                 );
 
@@ -559,4 +557,46 @@ fn a_fog_view_without_public_buildings_omits_the_field() {
     let state = oxide_sim::Scenario::skirmish().build().unwrap();
     let json = serde_json::to_value(FogView::capture(&state, PlayerId(0))).unwrap();
     assert!(json.get("public_buildings").is_none());
+}
+
+/// Seat 0's Kestrel at `watcher` and seat 1's Mantle mid-basin holding one
+/// charge, a tick into the match.
+fn watched_mantle(watcher: (i32, i32)) -> State {
+    use oxide_sim::scenario::UnitSpec;
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: oxide_sim::UnitKind::Kestrel,
+            x: watcher.0,
+            y: watcher.1,
+        },
+        UnitSpec {
+            player: 1,
+            kind: oxide_sim::UnitKind::Mantle,
+            x: 24,
+            y: 12,
+        },
+    ];
+    let state = scenario.build().unwrap();
+    let mut doc = serde_json::to_value(&state).unwrap();
+    doc["units"][1]["point_defense"] = serde_json::json!({"charges": 1, "recharge": 7});
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    state.tick(&[]);
+    state
+}
+
+#[test]
+fn the_fog_view_shows_a_seen_point_defenders_charges_and_nothing_unseen() {
+    let state = watched_mantle((20, 12));
+    for seat in [0, 1] {
+        let fog = FogView::capture(&state, PlayerId(seat));
+        let mantle = fog.units.iter().find(|u| u.player == 1).unwrap();
+        assert_eq!(mantle.charges, Some(1), "lit emitters show to every viewer");
+        let kestrel = fog.units.iter().find(|u| u.player == 0).unwrap();
+        assert_eq!(kestrel.charges, None);
+    }
+    let far = watched_mantle((2, 2));
+    let fog = FogView::capture(&far, PlayerId(0));
+    assert!(fog.units.iter().all(|u| u.player == 0), "unseen, unshown");
 }

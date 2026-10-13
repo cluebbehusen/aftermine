@@ -18,16 +18,13 @@ pub(super) fn solution(
     weapon: &WeaponStats,
 ) -> bool {
     let aim = view.aim_from(from);
-    view.domain.is_none_or(|d| weapon.targets.covers(d))
+    weapon.targets.covers(view.domain)
         && within_weapon_reach(weapon, from.dist_sq(aim))
         && predicted_impact_open(state, from, aim, terrain_cover(view, weapon, shooter))
 }
 
 fn terrain_cover(view: AttackView, weapon: &WeaponStats, shooter: Domain) -> bool {
-    view.domain
-        .map_or(!weapon.indirect && weapon.targets.ground, |domain| {
-            traces_terrain(weapon, shooter, domain)
-        })
+    traces_terrain(weapon, shooter, view.domain)
 }
 
 pub(super) fn radar_in_range(
@@ -378,7 +375,7 @@ pub(super) fn sidearm_radar(
     });
 }
 
-fn complete(state: &mut State, id: UnitId, resume: Option<crate::state::Goal>) {
+fn complete(state: &mut State, id: UnitId, resume: Option<Resume>) {
     state
         .unit_mut(id)
         .expect("live unit")
@@ -390,7 +387,7 @@ pub(in crate::tick::brain) fn attack_known(
     index: &super::super::super::spatial::UnitIndex,
     motion: &MotionSnapshot,
     id: UnitId,
-    program: (AttackTarget, Option<crate::state::Goal>, bool),
+    program: (AttackTarget, Option<Resume>, bool),
     buffers: ShotBuffers<'_>,
 ) {
     let (target, resume, pursue) = program;
@@ -409,13 +406,31 @@ pub(in crate::tick::brain) fn attack_known(
         complete(state, id, resume);
         return;
     };
+    // Escort duty bounds the fight by the escorted unit. A victim within
+    // the break radius of it is chased wherever the escort is. One past it is
+    // fought only from where the escort stands, in its own reach and while
+    // the escort is within the break radius itself. An escorted unit that
+    // has left play sends the escort back to its slot too.
+    if let Some(Resume::Accompany(escorted)) = resume {
+        let bound = crate::stats::ESCORT_BREAK_RADIUS * crate::stats::ESCORT_BREAK_RADIUS;
+        let in_reach = kind.stats().weapons.iter().any(|weapon| {
+            weapon.targets.covers(view.domain)
+                && within_weapon_reach(weapon, pos.dist_sq(view.aim_from(pos)))
+        });
+        if state.escorted(escorted).is_none_or(|body| {
+            view.position.dist_sq(body.pos) > bound && (!in_reach || pos.dist_sq(body.pos) > bound)
+        }) {
+            complete(state, id, resume);
+            return;
+        }
+    }
     state.unit_mut(id).expect("live unit").order = Order::Attack {
         target,
         resume,
         pursue,
     };
     if !pursue
-        && view.domain.is_none()
+        && view.is_blip()
         && let Some(visible) = acquire_target(state, index, id)
     {
         state.unit_mut(id).expect("live unit").order = Order::Attack {
@@ -440,7 +455,7 @@ pub(in crate::tick::brain) fn attack_known(
     let primary = stats
         .weapons
         .iter()
-        .position(|weapon| view.domain.is_none_or(|d| weapon.targets.covers(d)));
+        .position(|weapon| weapon.targets.covers(view.domain));
     if let Some(primary) = primary {
         let weapon = &stats.weapons[primary];
         if kind.stats().contact_reach.is_none() && solution(state, pos, stats.domain, view, weapon)

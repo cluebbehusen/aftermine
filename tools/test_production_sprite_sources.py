@@ -18,10 +18,12 @@ from tools.production_sprite_sources import (
     installed_defenses_final,
     mechanical_extractor,
     mechanical_final,
+    mantle_final,
     quarry_final,
     quarry_rocks,
     skyhook_sapper_crucible_final,
     specialists_final,
+    surveyor_final,
     tier_one_combat_final,
 )
 
@@ -77,6 +79,34 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.temp.cleanup()
 
+    def test_surveyor_preserves_deployed_art_and_scanner_seam(self) -> None:
+        digest = hashlib.sha256()
+        for variant in gen.PALETTES:
+            frames = [surveyor_final.render_surveyor(variant, move=i) for i in range(3)]
+            frames += [
+                surveyor_final.render_surveyor(variant, deploy=i / 40)
+                for i in range(1, 41)
+            ]
+            frames += [
+                surveyor_final.render_surveyor(variant, deploy=1, sweep=i)
+                for i in range(80)
+            ]
+            for frame in frames[43:]:
+                digest.update(frame.tobytes())
+            self.assertEqual(frames[42].tobytes(), frames[43].tobytes())
+            self.assertEqual(
+                frames[43].tobytes(),
+                surveyor_final.render_surveyor(variant, deploy=1, sweep=80).tobytes(),
+            )
+            tag = gen.variant_tag(variant)
+            self.assertNotIn(f"surveyor{tag}_action1", self.registry)
+        mounts = [key for key in self.registry if key.startswith("rig_surveyor_mount_action")]
+        self.assertEqual(len(mounts), 120)
+        self.assertEqual(
+            digest.hexdigest(),
+            "000e91b69f35066f88c1e67685df75a731d5463892d2cb166986cc9106a7a920",
+        )
+
     def test_installer_is_independent_of_review_files(self) -> None:
         root = Path(finalized.__file__).parent
         production_sources = "\n".join(
@@ -92,7 +122,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 629)
+        self.assertEqual(len(frames), 643)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -100,7 +130,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "94c29027fb67851009bffccdbb831ce143cc7bfa626283de5c84c30fe6ed0c4a",
+            "eb0f2d8263ca6d49478cc352ceff8422f91f8d96d90b60c79bf306d99bcf2298",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:
@@ -884,6 +914,30 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 for pixel in report.crop((50, 8, 79, 35)).get_flattened_data()
             )
             self.assertGreater(flashes, 0)
+
+
+class MantleSourceTests(unittest.TestCase):
+    def test_charge_key_poses_preserve_the_approved_art(self):
+        digests = (
+            "e1c1ed2b4cde1c321b433b432c62c0bab7aefaa83df92401010dfe693194436a",
+            "8285ba2d7715488e061e726dc3698298f450c16b70128ba74a64e699590f7140",
+            "2a7aa359330d69c5004982c96993624d94c4d3e1593967265546eeacf81ef693",
+            "9d9a1243ed6da12cffe197f78a969bd59121af2a3ce5afecab84acfcdc3aeba4",
+        )
+        for charges, expected in enumerate(digests):
+            image = mantle_final.render_mantle("base", charges=charges)
+            self.assertEqual(hashlib.sha256(image.tobytes()).hexdigest(), expected)
+
+    def test_serial_recharge_composes_without_changing_the_chassis(self):
+        for frame in range(mantle_final.CHARGE_FRAMES):
+            charges, step = divmod(frame, mantle_final.RECHARGE_STEPS)
+            for move in range(3):
+                actual = mantle_final.render_mantle("base", move)
+                actual.alpha_composite(mantle_final.render_charge_frame(frame))
+                expected = mantle_final.render_mantle(
+                    "base", move, charges, step / mantle_final.RECHARGE_STEPS
+                )
+                self.assertEqual(actual.tobytes(), expected.tobytes(), (frame, move))
 
 
 if __name__ == "__main__":

@@ -272,8 +272,10 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
 
 #[test]
 fn a_lan_checkpoint_binds_the_host_seat_and_lists_every_other_player() {
-    let mut scenario =
-        Scenario::from_json(include_str!("../../../../scenarios/twin-forges.json")).unwrap();
+    let mut scenario = Scenario::from_json(include_str!(
+        "../../../../fixtures/scenarios/twin-forges.json"
+    ))
+    .unwrap();
     for (seat, player) in scenario.players.iter_mut().enumerate() {
         player.bot = seat == 3;
         player.bot_config = player.bot.then_some(BotConfig::default());
@@ -323,8 +325,10 @@ fn a_lan_checkpoint_binds_the_host_seat_and_lists_every_other_player() {
 
 #[test]
 fn a_lan_save_waits_only_for_players_still_in_the_match() {
-    let mut scenario =
-        Scenario::from_json(include_str!("../../../../scenarios/twin-forges.json")).unwrap();
+    let mut scenario = Scenario::from_json(include_str!(
+        "../../../../fixtures/scenarios/twin-forges.json"
+    ))
+    .unwrap();
     for (seat, player) in scenario.players.iter_mut().enumerate() {
         player.bot = seat == 3;
         player.bot_config = player.bot.then_some(BotConfig::default());

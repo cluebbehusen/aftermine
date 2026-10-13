@@ -428,6 +428,10 @@ enum Cmd {
         /// Write the full report, every leg included, as JSON.
         #[arg(long)]
         json: Option<PathBuf>,
+        /// Spot for an army whose guns outrange its sight with a Surveyor
+        /// parked outside the enemy's reach, radar up, instead of a Kestrel.
+        #[arg(long)]
+        surveyor_spotter: bool,
     },
     /// Search mixes of up to three unit kinds at equal scrap for a
     /// composition nobody beats: grows a pool of strong mixes and the blend
@@ -636,6 +640,10 @@ fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
     Ok(())
 }
 
+fn duel_lab_support(kind: oxide_sim::UnitKind) -> bool {
+    oxide_driver::duel_lab::support_units().contains(&kind)
+}
+
 /// Refuse requested unit kinds a tool cannot field, naming them, rather than
 /// quietly running on a smaller roster than was asked for.
 fn refuse_unusable(
@@ -656,6 +664,11 @@ fn refuse_unusable(
         refused.join(", "),
         if refused.contains(&"sapper") {
             " (Sappers fight only defenses, with --defenses in the duel lab)"
+        } else if requested
+            .iter()
+            .any(|kind| duel_lab_support(*kind) && !usable.contains(kind))
+        {
+            " (support units join mixes in the composition search)"
         } else {
             ""
         }
@@ -1256,6 +1269,7 @@ fn main() -> Result<()> {
             ticks,
             jobs,
             json,
+            surveyor_spotter,
         } => {
             use oxide_driver::duel_lab;
             let usable: Vec<_> = if defenses {
@@ -1287,6 +1301,7 @@ fn main() -> Result<()> {
                     Vec::new()
                 },
                 tick_limit: ticks,
+                surveyor_spotter,
             };
             let start = std::time::Instant::now();
             let outcomes = duel_lab::run_plan(&plan, jobs)?;
@@ -1309,11 +1324,15 @@ fn main() -> Result<()> {
             json,
         } => {
             use oxide_driver::{composition_search, duel_lab};
-            refuse_unusable(&kinds, &duel_lab::armed_units(), "the composition search")?;
+            let roster: Vec<_> = duel_lab::armed_units()
+                .into_iter()
+                .chain(duel_lab::support_units())
+                .collect();
+            refuse_unusable(&kinds, &roster, "the composition search")?;
             let kinds = if kinds.is_empty() {
-                duel_lab::armed_units()
+                roster
             } else {
-                duel_lab::armed_units()
+                roster
                     .into_iter()
                     .filter(|kind| kinds.contains(kind))
                     .collect()

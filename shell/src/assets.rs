@@ -25,7 +25,7 @@ pub struct Sprites {
     array_rig: Option<ArrayRig>,
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
-    verb_icons: [Rect; 14],
+    verb_icons: [Rect; 16],
     ground: [Rect; 6],
     ground_detail: [Rect; 12],
     quarry_dressing: Option<[Rect; 12]>,
@@ -60,7 +60,11 @@ pub struct Sprites {
     scaffold: [Rect; 2],
     debris: [Rect; 3],
     excavator_cargo: [Rect; EXCAVATOR_CARGO_LEVELS],
+    mantle_charge: [Rect; MANTLE_CHARGE_FRAMES],
 }
+
+pub(crate) const MANTLE_RECHARGE_STEPS: usize = 16;
+const MANTLE_CHARGE_FRAMES: usize = 3 * MANTLE_RECHARGE_STEPS + 1;
 
 /// First slot of every tinted sprite row: the art itself.
 const BASE: usize = 0;
@@ -149,13 +153,19 @@ fn unit_rigs(rects: &Manifest) -> Result<std::collections::HashMap<UnitKind, Uni
             && let Some(rig) = unit_rig(
                 rects,
                 unit_stem(kind),
-                numbered_suffixes(rects, unit_stem(kind), "action")?.len(),
+                numbered_suffixes(rects, &rig_mount_stem(kind), "action")?.len(),
             )?
         {
             rigs.insert(kind, rig);
         }
     }
     Ok(rigs)
+}
+
+/// The stem of a rigged kind's mount layer, which holds its action frames:
+/// the rig draws a hull and a mount in place of whole-body frames.
+fn rig_mount_stem(kind: UnitKind) -> String {
+    format!("rig_{}_mount", unit_stem(kind))
 }
 
 fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitRig>> {
@@ -220,7 +230,7 @@ const SINGLE_KEYS: [&str; 10] = [
 ];
 
 /// Verb pictograms, ordered to match [`crate::panel::VerbIcon`].
-const VERB_ICON_KEYS: [&str; 14] = [
+const VERB_ICON_KEYS: [&str; 16] = [
     "icon_stop",
     "icon_move",
     "icon_advance",
@@ -235,6 +245,8 @@ const VERB_ICON_KEYS: [&str; 14] = [
     "icon_idle",
     "icon_run",
     "icon_hunt",
+    "icon_accompany",
+    "icon_retire",
 ];
 
 const GROUND_KEYS: [&str; 6] = [
@@ -529,10 +541,15 @@ pub(crate) fn shipped_frames(stem: &str, label: &str) -> usize {
         .len()
 }
 
-/// How many action frames a unit kind's shipped atlas bank holds.
+/// How many action frames a unit kind's shipped atlas bank holds: its rig
+/// mount's for a rigged kind.
 #[cfg(test)]
 pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
-    shipped_frames(unit_stem(kind), "action")
+    if crate::look::unit(kind).rig {
+        shipped_frames(&rig_mount_stem(kind), "action")
+    } else {
+        shipped_frames(unit_stem(kind), "action")
+    }
 }
 
 fn numbered_rows(rects: &Manifest, stem: &str, label: &str) -> Result<Vec<[Rect; 2]>> {
@@ -563,6 +580,14 @@ fn harvester_cargo_motion_rows(
         }
     }
     Ok(out)
+}
+
+fn mantle_charge_rows(rects: &Manifest) -> Result<[Rect; MANTLE_CHARGE_FRAMES]> {
+    let mut rows = [Rect::new(0.0, 0.0, 0.0, 0.0); MANTLE_CHARGE_FRAMES];
+    for (frame, rect) in rows.iter_mut().enumerate() {
+        *rect = lookup(rects, &format!("mantle_charge{frame}"))?;
+    }
+    Ok(rows)
 }
 
 fn excavator_cargo_rows(rects: &Manifest) -> Result<[Rect; EXCAVATOR_CARGO_LEVELS]> {
@@ -755,9 +780,9 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         .into_iter()
         .filter(|kind| crate::look::unit(*kind).rig)
         .map(|kind| {
-            let stem = unit_stem(kind);
-            let actions = numbered_suffixes(atlas, stem, "action").expect("complete rows");
-            (stem, actions.len())
+            let actions =
+                numbered_suffixes(atlas, &rig_mount_stem(kind), "action").expect("complete rows");
+            (unit_stem(kind), actions.len())
         })
     {
         for suffix in ["", "_move1", "_move2"] {
@@ -795,6 +820,9 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         for suffix in TREAD_SUFFIXES.into_iter().chain(SCOOP_SUFFIXES) {
             keys.extend(variant_keys("harvester", &format!("_cargo{level}{suffix}")));
         }
+    }
+    for frame in 0..MANTLE_CHARGE_FRAMES {
+        keys.push(format!("mantle_charge{frame}"));
     }
     for level in 0..EXCAVATOR_CARGO_LEVELS {
         keys.push(format!("excavator_cargo{level}"));
@@ -954,6 +982,7 @@ impl Sprites {
             scaffold: pick(&rects, SCAFFOLD_KEYS)?,
             debris: pick(&rects, DEBRIS_KEYS)?,
             excavator_cargo: excavator_cargo_rows(&rects)?,
+            mantle_charge: mantle_charge_rows(&rects)?,
         })
     }
 
@@ -1348,6 +1377,10 @@ impl Sprites {
         self.excavator_frame_row(pose)[ACCENT]
     }
 
+    /// Centered charge bars and the next serial recharge.
+    pub(crate) fn mantle_charge(&self, frame: usize) -> Rect {
+        self.mantle_charge[frame.min(MANTLE_CHARGE_FRAMES - 1)]
+    }
     /// The recessed Excavator meter at one of five load-fraction levels.
     pub fn excavator_cargo(&self, cargo: usize) -> Rect {
         self.excavator_cargo[cargo.min(EXCAVATOR_CARGO_LEVELS - 1)]

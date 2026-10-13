@@ -641,26 +641,26 @@ fn defenses_remembered_out_of_sight_each_want_a_sapper() {
 }
 
 #[test]
-fn a_scuttler_out_scouting_leaves_the_raid_stock_short() {
+fn a_scuttler_another_mission_holds_leaves_the_raid_stock_short() {
     let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
     scenario.units.retain(|unit| (unit.x, unit.y) != RAIDERS[1]);
     scenario.units.push(harvester(0, 2, 2));
     scenario.players[0].scrap = 1_000;
     let mut state = scenario.build().unwrap();
-    let scout = at(&state, RAIDERS[0].0, RAIDERS[0].1);
+    let held = at(&state, RAIDERS[0].0, RAIDERS[0].1);
     advance_to(&mut state, 120, &[]);
+    let home = foundries(&state, PlayerId(0))[0];
     let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    // Income enough to raid, and the one Scuttler holding the one scouting
-    // point.
+    // Income enough to raid, and the one Scuttler held by a defense.
     json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
     json["missions"] = serde_json::json!({
         "next": 1,
         "list": [{
             "id": 0,
-            "task": {"task": "scout", "point": 0},
+            "task": {"task": "defend", "asset": home.0, "phase": "recover"},
             "since": 100,
-            "units": [scout],
-            "goal": {"x": 40, "y": 11},
+            "units": [held],
+            "goal": {"x": 6, "y": 11},
         }],
         "waiting": null,
     });

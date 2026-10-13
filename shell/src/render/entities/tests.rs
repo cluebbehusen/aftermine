@@ -900,3 +900,160 @@ fn unguided_unit_contacts_never_turn_toward_a_nearby_body() {
     assert!(!on_payload_course(from, to, vec2(7.7, 5.2)));
     assert!(!on_payload_course(from, to, vec2(8.2, 5.)));
 }
+
+#[test]
+fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
+    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+        "name": "Scout radar fixture", "map": ["....................", "....................", "..1.................",
+            "....................", "....................", "....................",
+            "....................", "....................", "....................",
+            "....................", "....................", "...................."],
+        "players": [{"name": "You", "scrap": 0, "bot": false}],
+        "units": [{"player": 0, "kind": "kestrel", "x": 5, "y": 7},
+            {"player": 0, "kind": "surveyor", "x": 12, "y": 7}]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let id = |game: &Game, kind: oxide_sim::UnitKind| {
+        game.state
+            .units()
+            .iter()
+            .find(|unit| unit.kind == kind)
+            .unwrap()
+            .id
+    };
+    let radar_rings = |game: &Game| {
+        let mut radii = Vec::new();
+        visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
+            if indicator.range.kind == BuildingRangeKind::Radar
+                && let BuildingRangeShape::Circle { radius, .. } = indicator.range.shape
+            {
+                radii.push(radius);
+            }
+        });
+        radii
+    };
+    let (kestrel, surveyor) = (
+        id(&game, oxide_sim::UnitKind::Kestrel),
+        id(&game, oxide_sim::UnitKind::Surveyor),
+    );
+    game.presentation.selection.units = vec![kestrel];
+    assert_eq!(radar_rings(&game), [14.0]);
+    game.presentation.selection.units = vec![surveyor];
+    assert!(radar_rings(&game).is_empty(), "folded at the start");
+    let deploy = oxide_sim::UnitKind::Surveyor
+        .stats()
+        .radar
+        .unwrap()
+        .deploy_ticks;
+    for _ in 0..deploy {
+        game.do_tick();
+    }
+    assert_eq!(radar_rings(&game), [12.0]);
+}
+
+#[test]
+fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
+    use oxide_sim::stats::Domain;
+    let center = vec2(50.0, 50.0);
+    let ground = blip_strokes(center, 10.0, Domain::Ground);
+    let air = blip_strokes(center, 10.0, Domain::Air);
+    assert_eq!(ground.len(), 4, "a closed diamond");
+    assert_eq!(air.len(), 2, "an open peak");
+    for stroke in &air {
+        assert!(ground.contains(stroke));
+        assert!(stroke.0.y <= center.y && stroke.1.y <= center.y);
+    }
+}
+
+#[test]
+fn repair_tethers_follow_each_own_bays_patient_choice() {
+    let scenario = oxide_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Tethers",
+            "players": [
+                {"name": "Medic", "scrap": 500, "bot": false},
+                {"name": "Rival", "scrap": 500, "bot": false}
+            ],
+            "map": [
+                "######################",
+                "#1...................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#..................2.#",
+                "#....................#",
+                "######################"
+            ],
+            "units": [
+                {"player": 0, "kind": "sentinel", "x": 7, "y": 4},
+                {"player": 0, "kind": "sentinel", "x": 7, "y": 5},
+                {"player": 0, "kind": "sentinel", "x": 4, "y": 7},
+                {"player": 0, "kind": "sentinel", "x": 5, "y": 7},
+                {"player": 0, "kind": "sentinel", "x": 3, "y": 4},
+                {"player": 1, "kind": "sentinel", "x": 15, "y": 5}
+            ],
+            "buildings": [
+                {"player": 0, "kind": "repair_bay", "x": 4, "y": 4},
+                {"player": 1, "kind": "repair_bay", "x": 12, "y": 4}
+            ]
+        })
+        .to_string(),
+    )
+    .expect("tether arena parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    let mut state = (*game.state).clone();
+    state.tick(&[]);
+    let mut value = serde_json::to_value(&state).unwrap();
+    let hit_at = state.current_tick() - 1;
+    for (index, unit) in value["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        unit["hp"] = serde_json::json!(20 + 5 * index);
+        if index == 1 {
+            unit["damaged_at"] = serde_json::json!(hit_at);
+        }
+    }
+    game.replace_state_after_jump(&serde_json::from_value(value).unwrap());
+    let own = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| {
+            b.player == game.presentation.human && b.kind == oxide_sim::BuildingKind::RepairBay
+        })
+        .unwrap()
+        .id;
+
+    let tethers = repair_tethers(&game.view());
+    assert!(
+        tethers.iter().all(|tether| tether.bay == own),
+        "own Bays only"
+    );
+    assert_eq!(
+        tethers
+            .iter()
+            .map(|tether| (tether.unit, tether.pace))
+            .collect::<Vec<_>>(),
+        game.state
+            .repair_bay_patients()
+            .into_iter()
+            .find(|(bay, _)| *bay == own)
+            .map(|(_, patients)| patients)
+            .unwrap(),
+        "the sim's own choice, four at most"
+    );
+    assert_eq!(tethers.len(), oxide_sim::stats::REPAIR_BAY_PATIENTS);
+    assert!(
+        tethers
+            .iter()
+            .any(|tether| tether.pace == oxide_sim::state::RepairPace::Slow),
+        "the one just hit heals slowly"
+    );
+}

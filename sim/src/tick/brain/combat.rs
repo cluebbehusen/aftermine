@@ -14,7 +14,7 @@ use super::PendingHit;
 use super::locomotion::{approach_rect, walk};
 use crate::event::{Event, StallReason, UnitLaunchPose};
 use crate::ids::{PlayerId, Target, UnitId};
-use crate::state::{Order, PathFollow, State};
+use crate::state::{Order, PathFollow, Resume, State};
 use crate::stats::{Domain, WeaponStats};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -494,7 +494,7 @@ pub(super) fn turret_fire(
         );
         let focused = focus
             .and_then(|target| state.attack_view(me, target))
-            .filter(|view| view.domain.is_none_or(|domain| atk.targets.covers(domain)));
+            .filter(|view| atk.targets.covers(view.domain));
         if focus.is_some() && focused.is_none() {
             state.building_mut(id).expect("just seen").focus = None;
         }
@@ -788,13 +788,99 @@ pub(super) fn acquire_target_from(
     id: UnitId,
     pos: chassis::fx::Vec2Fx,
 ) -> Option<Target> {
+    acquire_target_within(state, index, id, pos, None, |_| true)
+}
+
+/// An escort's pick. It chases the threat nearest the followed body at
+/// `center`, within [`crate::stats::ESCORT_ENGAGE_RADIUS`] of it and the
+/// escort's own aggro range, passing over a victim it can neither shoot from
+/// where it stands nor reach: that chase could only stall, return to the
+/// slot, and pick the victim again every tick. Failing that, an escort
+/// within the engage radius of the body fires without moving at an enemy
+/// already in its own weapon reach, so a long gun escorts at full range from
+/// its slot. Further out it is catching up: such a fight would be broken off
+/// at the break radius before it closed.
+pub(super) fn acquire_escort_target(
+    state: &State,
+    index: &super::super::spatial::UnitIndex,
+    reach: &mut super::super::reach::Reach,
+    id: UnitId,
+    center: chassis::fx::Vec2Fx,
+) -> Option<Target> {
+    let unit = state.unit(id).expect("caller checked");
+    let (kind, pos, domain) = (unit.kind, unit.pos, unit.kind.stats().domain);
+    let in_reach_now = |target: Target| in_weapon_reach_from(state, kind, pos, target);
+    let cap = Some(crate::stats::ESCORT_ENGAGE_RADIUS);
+    let near = acquire_target_within(state, index, id, center, cap, |target| {
+        in_reach_now(target)
+            || match target {
+                Target::Unit(u) => state.unit(u).is_some_and(|victim| {
+                    let tile = victim.tile();
+                    if state.passable_for(domain, tile) {
+                        return reach.reaches(state, id, [tile]);
+                    }
+                    // A victim over ground the escort cannot stand on is a
+                    // fight only if a firing stand around it can be reached.
+                    let Some(weapon) = kind
+                        .stats()
+                        .weapons
+                        .iter()
+                        .find(|weapon| weapon.targets.covers(victim.domain()))
+                    else {
+                        return false;
+                    };
+                    let range = unit_weapon_reach(state, kind, target, weapon);
+                    let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
+                    reach.reaches(state, id, stands)
+                }),
+                Target::Building(b) => state.building(b).is_some_and(|b| {
+                    let (w, h) = b.kind.size();
+                    let ring = (-1..=w).flat_map(move |dx| (-1..=h).map(move |dy| (dx, dy)));
+                    reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)))
+                }),
+            }
+    });
+    let engage = crate::stats::ESCORT_ENGAGE_RADIUS;
+    near.or_else(|| {
+        (pos.dist_sq(center) <= engage * engage)
+            .then(|| acquire_target_within(state, index, id, pos, None, in_reach_now))
+            .flatten()
+    })
+}
+
+/// Whether a `kind` machine standing at `pos` has a weapon that reaches
+/// `target` now.
+fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, target: Target) -> bool {
+    let victim = target_domain(state, target);
+    let aim = match target {
+        Target::Unit(u) => state.unit(u).map(|u| u.pos),
+        Target::Building(b) => state.building(b).map(|b| b.closest_point_to(pos)),
+    };
+    aim.is_some_and(|aim| {
+        kind.stats().weapons.iter().any(|weapon| {
+            weapon.targets.covers(victim)
+                && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim))
+        })
+    })
+}
+
+/// [`acquire_target_from`] around `pos` within the unit's aggro range,
+/// capped at `cap`, skipping every candidate `accept` refuses.
+fn acquire_target_within(
+    state: &State,
+    index: &super::super::spatial::UnitIndex,
+    id: UnitId,
+    pos: chassis::fx::Vec2Fx,
+    cap: Option<chassis::fx::Fx>,
+    mut accept: impl FnMut(Target) -> bool,
+) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
     let stats = unit.kind.stats();
     if !stats.can_fight() {
         return None;
     }
     let me = unit.player;
-    let acquisition_range = stats.aggro_range;
+    let acquisition_range = cap.map_or(stats.aggro_range, |cap| stats.aggro_range.min(cap));
     // Every pick needs current team sight of the victim, even within the
     // unit's own vision radius: range is measured between positions while
     // sight covers whole tiles around the unit's tile, so a victim just past
@@ -806,7 +892,13 @@ pub(super) fn acquire_target_from(
     let home = TilePos::containing(pos);
     let reach = acquisition_range.floor().to_num::<i32>() + 1;
     let team = state.player(me).team;
-    let mut unit_target: Option<(chassis::fx::Fx, UnitId)> = None;
+    // Lower ranks first: the nearest, or for a heavy-first gun the most
+    // full health and then the nearest.
+    let heft = |kind: crate::stats::UnitKind| match stats.target_priority {
+        crate::stats::TargetPriority::Nearest => 0,
+        crate::stats::TargetPriority::Heaviest => u32::MAX - kind.stats().max_hp,
+    };
+    let mut unit_target: Option<(u32, chassis::fx::Fx, UnitId)> = None;
     // A building in acquisition range covers a tile within `reach` of the
     // unit's tile, or the next one where its closest point sits on an edge.
     let hostiles = index.hostiles_near(team, home, reach + 1);
@@ -828,9 +920,10 @@ pub(super) fn acquire_target_from(
                     weapon.targets.covers(u.domain())
                         && d >= weapon.minimum_range * weapon.minimum_range
                 });
+                let rank = (heft(u.kind), d, u.id);
                 if !(d <= aggro_sq
                     && outside_dead_zone
-                    && unit_target.is_none_or(|best| (d, u.id) < best))
+                    && unit_target.is_none_or(|best| rank < best))
                 {
                     continue;
                 }
@@ -851,11 +944,14 @@ pub(super) fn acquire_target_from(
                         continue;
                     }
                 }
-                unit_target = Some((d, u.id));
+                if !accept(Target::Unit(u.id)) {
+                    continue;
+                }
+                unit_target = Some(rank);
             }
         }
     }
-    if let Some((_, uid)) = unit_target {
+    if let Some((_, _, uid)) = unit_target {
         return Some(Target::Unit(uid));
     }
     if !stats.can_target(Domain::Ground) {
@@ -885,6 +981,7 @@ pub(super) fn acquire_target_from(
         .filter(|(_, b)| state.building_apparent(me, b))
         .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
         .map(|(d, b)| (d, b.id))
+        .filter(|&(_, bid)| accept(Target::Building(bid)))
         .min()
         .map(|(_, bid)| Target::Building(bid))
 }
@@ -1057,7 +1154,7 @@ fn sapper_attack(
     state: &mut State,
     id: UnitId,
     target: Target,
-    resume: Option<crate::state::Goal>,
+    resume: Option<Resume>,
     events: &mut Vec<Event>,
     hits: &mut Vec<PendingHit>,
 ) {
@@ -1224,7 +1321,7 @@ fn bomber_attack(
     motion: &MotionSnapshot,
     id: UnitId,
     target: Target,
-    resume: Option<crate::state::Goal>,
+    resume: Option<Resume>,
     events: &mut Vec<Event>,
     launches: &mut Vec<crate::state::Shell>,
 ) {
@@ -1476,7 +1573,7 @@ pub(super) fn attack(
     motion: &MotionSnapshot,
     id: UnitId,
     target: Target,
-    resume: Option<crate::state::Goal>,
+    resume: Option<Resume>,
     events: &mut Vec<Event>,
     hits: &mut Vec<PendingHit>,
     launches: &mut Vec<crate::state::Shell>,
@@ -1805,11 +1902,18 @@ pub(super) fn attack(
 fn stall_attack(
     state: &mut State,
     id: UnitId,
-    resume: Option<crate::state::Goal>,
+    resume: Option<Resume>,
     reason: StallReason,
     events: &mut Vec<Event>,
 ) {
     let unit = state.unit_mut(id).expect("caller checked");
+    // A fight escort duty picked for itself is dropped as quietly: the
+    // escort goes back to its slot, and acquisition never picks a victim it
+    // can neither shoot nor reach.
+    if let Some(Resume::Accompany(_)) = resume {
+        unit.complete_attack(resume);
+        return;
+    }
     // A tethered chase that cannot route breaks off home quietly: it
     // abandons its own acquisition, not a player order, so no stall event.
     if resume.is_none()
@@ -1965,7 +2069,28 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     }
     let resume = match unit.order {
         Order::Idle => None,
-        Order::Hunt { goal } => Some(goal),
+        Order::Hunt { goal } => Some(Resume::Hunt(goal)),
+        // An escort answers fire from near the unit it guards, or, while it
+        // stands within the engage radius itself, from anything its own guns
+        // reach; any other shooter would draw it away only to be broken off.
+        Order::Accompany { unit: escorted, .. } => {
+            let engage = crate::stats::ESCORT_ENGAGE_RADIUS * crate::stats::ESCORT_ENGAGE_RADIUS;
+            let answers = state.escorted(escorted).is_some_and(|body| {
+                let from = match attacker {
+                    Target::Unit(uid) => state.unit(uid).map(|a| a.pos),
+                    Target::Building(bid) => {
+                        state.building(bid).map(|b| b.closest_point_to(body.pos))
+                    }
+                };
+                from.is_some_and(|from| from.dist_sq(body.pos) <= engage)
+                    || (unit.pos.dist_sq(body.pos) <= engage
+                        && in_weapon_reach_from(state, unit.kind, unit.pos, attacker))
+            });
+            if !answers {
+                return;
+            }
+            Some(Resume::Accompany(escorted))
+        }
         // A tethered homecoming answers fire: the walk home resumes through
         // the leash once the attacker falls, so no resume goal is carried. A
         // plain Run is the player's recall verb and never auto-engages.

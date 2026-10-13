@@ -104,7 +104,7 @@ fn maps_that_are_not_duels_are_refused() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("evaluation");
     let mut manifest = manifest();
     manifest.maps = vec![ManifestMap {
-        path: "../../../scenarios/salvage-triangle.json".into(),
+        path: "../../../scenarios/scramble-basin.json".into(),
         family: MapFamily::Open,
     }];
     let scenarios = manifest.scenarios(&base.join("ladder")).unwrap();

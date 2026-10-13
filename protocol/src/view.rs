@@ -124,6 +124,10 @@ pub struct UnitView {
     /// one, so the fog view never redacts it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub landed: bool,
+    /// Ready point-defense charges, for kinds that carry point defense.
+    /// The emitters show them, so the fog view never redacts them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charges: Option<u8>,
 }
 
 /// One building.
@@ -147,9 +151,10 @@ pub struct BuildingView {
     /// Ticks until `queue[0]` finishes (absent when idle).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticks_remaining: Option<u32>,
-    /// Rally tile `[x, y]`, if set.
+    /// Where finished units report, if set: a tile, or an own unit they
+    /// escort.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rally: Option<[i32; 2]>,
+    pub rally: Option<oxide_sim::Rally>,
     /// Player-designated defense target. The fog view exposes this only for
     /// allied buildings; hostile targeting intent is redacted with rally
     /// and production state.
@@ -210,8 +215,9 @@ pub struct FogView {
     pub scrap: Vec<RememberedTileView>,
     /// Remembered wreck salvage, same treatment as scrap.
     pub wrecks: Vec<RememberedTileView>,
-    /// Radar blips: bare tiles with no kind or owner.
-    pub contacts: Vec<[i32; 2]>,
+    /// Radar blips: a tile and an air or ground domain, with no kind or
+    /// owner.
+    pub contacts: Vec<oxide_sim::RadarContact>,
     /// Continuously observed contacts; entity identity appears only in true sight.
     pub contact_tracks: Vec<oxide_sim::vision::ContactTrack>,
     /// Hostile buildings every seat knows of regardless of fog, such as Deep
@@ -348,7 +354,7 @@ impl FogView {
                 .collect(),
             scrap,
             wrecks,
-            contacts: vision.contacts().iter().map(|t| [t.x, t.y]).collect(),
+            contacts: vision.contacts().to_vec(),
             contact_tracks: vision.tracks().to_vec(),
             public_buildings: oxide_sim::observation::hostile_public_buildings(state, player)
                 .into_iter()
@@ -529,11 +535,13 @@ fn unit_view(u: &Unit) -> UnitView {
         queue: u.queue.iter().copied().collect(),
         patrolling: Some(u.looping),
         landed: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 
-/// A hostile unit as the viewer sees it: body, position, wounds, and
-/// visible cargo, but never its orders, queue, or patrol flag.
+/// A hostile unit as the viewer sees it: body, position, wounds, visible
+/// cargo and point-defense charges, but never its orders, queue, or patrol
+/// flag.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,
@@ -556,7 +564,7 @@ fn building_view(b: &Building) -> BuildingView {
                 .train_ticks
                 .saturating_sub(b.training_progress())
         }),
-        rally: b.rally.map(|r| [r.x, r.y]),
+        rally: b.rally,
         focus: b.focus,
         built: b.built(),
         provisional: b.provisional(),

@@ -1,6 +1,6 @@
 use super::*;
 
-const SOUND_NAMES: [&str; 37] = [
+const SOUND_NAMES: [&str; 38] = [
     "ack",
     "alert",
     "artillery_boom",
@@ -25,6 +25,7 @@ const SOUND_NAMES: [&str; 37] = [
     "demolition_boom",
     "denied",
     "deposit",
+    "intercept_zap",
     "laser",
     "laser2",
     "music_calm",
@@ -328,7 +329,7 @@ fn the_unit_loader_finds_every_kind_in_the_shipped_atlas() {
     for kind in UnitKind::ALL {
         assert_eq!(
             art[kind as usize].action.len(),
-            unit_action_frames(kind),
+            shipped_frames(unit_stem(kind), "action"),
             "{kind:?}"
         );
     }

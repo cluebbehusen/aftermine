@@ -126,13 +126,66 @@ fn unit_state() -> UnitAnimationState {
         work_target: None,
         welding_arm: None,
         cargo: None,
+        point_defense: None,
         attack: None,
         weapons: [WeaponCycle::Unavailable; MAX_WEAPONS],
         propulsion: PropulsionState::None,
         scanner: None,
         transport: None,
         demolition_preparation: None,
+        radar_unfold: None,
     }
+}
+
+#[test]
+fn a_parking_radar_unfolds_then_scans_until_it_drives() {
+    let at = |progress: f32| {
+        unit_frame(
+            UnitKind::Surveyor,
+            UnitAnimationState {
+                radar_unfold: Some(progress),
+                ..unit_state()
+            },
+        )
+    };
+    assert_eq!(at(0.01), UnitFrame::Action(0));
+    for tick in 1..=40 {
+        assert_eq!(at(tick as f32 / 40.0), UnitFrame::Action(tick - 1));
+    }
+    assert_eq!(
+        crate::assets::unit_action_frames(UnitKind::Surveyor),
+        RADAR_UNFOLD_FRAMES + RADAR_SCAN_FRAMES
+    );
+    for frame in 0..RADAR_SCAN_FRAMES {
+        assert_eq!(
+            unit_frame(
+                UnitKind::Surveyor,
+                UnitAnimationState {
+                    radar_unfold: Some(1.0),
+                    scanner: Some(frame as f32 / RADAR_SCAN_FRAMES as f32),
+                    locomotion: LocomotionState::Moving { cycle: 0.5 },
+                    ..unit_state()
+                }
+            ),
+            UnitFrame::Action(RADAR_UNFOLD_FRAMES + frame)
+        );
+    }
+    assert_eq!(
+        unit_frame(
+            UnitKind::Surveyor,
+            UnitAnimationState {
+                locomotion: LocomotionState::Moving { cycle: 0.5 },
+                ..unit_state()
+            }
+        ),
+        UnitFrame::Moving(0)
+    );
+    assert_eq!(at(1.0), UnitFrame::Action(RADAR_UNFOLD_FRAMES - 1));
+    assert_eq!(
+        unit_frame(UnitKind::Surveyor, unit_state()),
+        UnitFrame::Idle,
+        "a folded radar shows the plain body"
+    );
 }
 
 fn building_state() -> BuildingAnimationState {
@@ -652,5 +705,29 @@ fn avalanche_stays_empty_through_most_of_reload_even_while_moving() {
             unit_frame(UnitKind::Avalanche, state),
             UnitFrame::Action(frame)
         );
+    }
+}
+
+#[test]
+fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
+    let mut state = unit_state();
+    for charges in 0..=3 {
+        for progress in [0.0, 0.5, 0.999_9, 1.0] {
+            state.point_defense = Some(crate::presentation_animation::PointDefenseState {
+                charges,
+                recharge: progress,
+            });
+            state.locomotion = LocomotionState::Rest;
+            let idle = super::super::UnitSpriteFrame::capture(UnitKind::Mantle, state);
+            state.locomotion = LocomotionState::Moving { cycle: 0.5 };
+            let moving = super::super::UnitSpriteFrame::capture(UnitKind::Mantle, state);
+            assert_eq!(idle.point_defense, moving.point_defense);
+            let row = usize::from(idle.point_defense.unwrap());
+            assert_eq!(
+                row / crate::assets::MANTLE_RECHARGE_STEPS,
+                usize::from(charges)
+            );
+            assert!(row <= 48);
+        }
     }
 }

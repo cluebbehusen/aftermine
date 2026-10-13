@@ -136,6 +136,10 @@ pub enum Action {
     MenuEnd,
     DeleteSave,
     ReturnCargo,
+    Accompany,
+    /// No default key: one keystroke should not scrap an army.
+    Retire,
+    Scout,
 }
 impl Action {
     pub fn label(self) -> String {
@@ -160,6 +164,7 @@ impl Action {
             Self::Salvage => "Salvage building".into(),
             Self::Run => "Run".into(),
             Self::Hunt => "Hunt".into(),
+            Self::Scout => "Scout".into(),
             Self::SetBookmark(n) => format!("Set camera bookmark {}", n + 1),
             Self::RecallBookmark(n) => format!("Recall camera bookmark {}", n + 1),
             Self::RepairUnit => "Weld unit".into(),
@@ -170,6 +175,8 @@ impl Action {
             Self::ClearRally => "Clear rally".into(),
             Self::Unload => "Unload here".into(),
             Self::ReturnCargo => "Return cargo".into(),
+            Self::Accompany => "Accompany".into(),
+            Self::Retire => "Retire at a Crucible".into(),
             Self::ReplayPause => "Pause replay".into(),
             Self::ReplayBack => "Seek back 25 seconds".into(),
             Self::ReplayForward => "Seek forward 25 seconds".into(),
@@ -195,8 +202,10 @@ impl Action {
             Self::TrainSlot(_) | Self::SetRally | Self::ClearRally => 8,
             Self::Upgrade => 4 | 8,
             Self::StopOrScrap => UNITS | 4,
-            Self::Patrol => UNITS,
-            Self::Salvage | Self::Run | Self::Hunt | Self::RepairUnit => UNITS | 0b1_1111_0000,
+            Self::Patrol | Self::Accompany | Self::Retire => UNITS,
+            Self::Salvage | Self::Run | Self::Hunt | Self::Scout | Self::RepairUnit => {
+                UNITS | 0b1_1111_0000
+            }
             Self::Unload => 2,
             Self::ReturnCargo => 4096 | 0b1_1111_0000,
             Self::BuildCategory(_) => 16,
@@ -278,13 +287,13 @@ pub struct BindingMap {
 impl BindingMap {
     pub fn classic() -> Self {
         use Action::{
-            AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm, CycleIdleWorker,
-            DeleteSave, HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd, MenuHome, MenuLeft,
-            MenuPageDown, MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft, PanRight, PanUp, Patrol,
-            RecallBookmark, RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause,
-            ReplaySpeed, ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, SetBookmark,
-            SetRally, Slot, StopOrScrap, ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot,
-            Unload, Upgrade,
+            Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm,
+            CycleIdleWorker, DeleteSave, HomeCamera, Hunt, JumpToLastAlert, MenuDown, MenuEnd,
+            MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, PanDown, PanLeft,
+            PanRight, PanUp, Patrol, RecallBookmark, RepairUnit, ReplayBack, ReplayEnd,
+            ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats, ReturnCargo, Run,
+            Salvage, Scout, SetBookmark, SetRally, Slot, StopOrScrap, ToggleBuildPalette,
+            ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
         };
         let mut map = Self {
             bindings: Vec::new(),
@@ -308,11 +317,13 @@ impl BindingMap {
             (Salvage, Key::V),
             (Run, Key::G),
             (Hunt, Key::F),
+            (Scout, Key::K),
             (RepairUnit, Key::C),
             (Upgrade, Key::U),
             (SetRally, Key::Y),
             (Unload, Key::U),
             (ReturnCargo, Key::U),
+            (Accompany, Key::E),
             (ReplayPause, Key::Space),
             (ReplayBack, Key::PageUp),
             (ReplayForward, Key::PageDown),

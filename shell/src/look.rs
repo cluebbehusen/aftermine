@@ -21,13 +21,16 @@ const LARGE_SCALE: f32 = 2.0;
 pub(crate) struct UnitLook {
     /// Sprite size against the unit's tile.
     pub(crate) scale: f32,
+    /// Share of the sprite canvas the visible body spans; the rest is
+    /// transparent margin that neither picks nor rings the unit.
+    pub(crate) extent: f32,
     /// How the body moves on screen.
     pub(crate) gait: Gait,
     /// Which atlas rows hold its two locomotion poses.
     pub(crate) move_rows: MoveRows,
     /// Exposed belt runs inside the track casings, in 128-px sprite space.
     pub(crate) belts: &'static [[f32; 4]],
-    /// A separate weapon or rotor mount drawn over the hull.
+    /// A separate weapon, rotor, or sensor mechanism drawn over the hull.
     pub(crate) rig: bool,
     /// The work body a worker draws instead of its plain sprite.
     pub(crate) tool: Option<WorkerTool>,
@@ -106,6 +109,7 @@ pub(crate) enum MarkerRole {
     Gun,
     Siege,
     AntiAir,
+    PointDefense,
     Scout,
     Transport,
     Demolition,
@@ -144,7 +148,7 @@ impl DefenseReport {
 
 /// Whether a unit sees buried charges, as the simulation's scouts do.
 pub(crate) fn scout(kind: UnitKind) -> bool {
-    kind == UnitKind::Kestrel
+    kind.stats().charge_detection
 }
 
 /// Whether a unit of `kind` launches `payload` from one of its weapons.
@@ -189,6 +193,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
     use MarkerRole as M;
     let plain = UnitLook {
         scale: DEFAULT_SCALE,
+        extent: 1.0,
         gait: Gait::Plain,
         move_rows: MoveRows::Move,
         belts: &[],
@@ -302,6 +307,15 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Scout,
             ..plain
         },
+        UnitKind::Surveyor => UnitLook {
+            rig: true,
+            scale: 2.0,
+            // The production art packs the body into 72 of 128 pixels.
+            extent: 72.0 / 128.0,
+            gait: Gait::Treads,
+            marker: M::Scout,
+            ..plain
+        },
         UnitKind::Condor => UnitLook {
             scale: LARGE_SCALE,
             airframe: Some(Airframe {
@@ -318,6 +332,13 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             gait: Gait::Treads,
             belts: &[[23., 42., 38., 107.], [90., 42., 105., 107.]],
             weapon: Some(weapon(SoundKind::BreakerFire, ShotStyle::Mortar, 0.625)),
+            ..plain
+        },
+        UnitKind::Piledriver => UnitLook {
+            scale: LARGE_SCALE,
+            gait: Gait::Treads,
+            belts: &[[23., 42., 38., 107.], [90., 42., 105., 107.]],
+            weapon: Some(weapon(SoundKind::BreakerFire, heavy, 0.625)),
             ..plain
         },
         UnitKind::Avalanche => UnitLook {
@@ -344,6 +365,18 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             gait: Gait::Legs,
             weapon: Some(launcher(SoundKind::DemolitionBoom)),
             marker: M::Demolition,
+            ..plain
+        },
+        UnitKind::Mantle => UnitLook {
+            scale: HEAVY_SCALE,
+            gait: Gait::Treads,
+            belts: &[
+                [13., 29., 31., 57.],
+                [97., 29., 115., 57.],
+                [13., 82., 31., 112.],
+                [97., 82., 115., 112.],
+            ],
+            marker: M::PointDefense,
             ..plain
         },
     }

@@ -216,7 +216,8 @@ impl Effect {
     /// drain a terminal battlefield after simulation time has stopped.
     pub(crate) fn age_at(&self, completed_ticks: u64, tick_fraction: f32) -> f32 {
         match self.kind {
-            EffectKind::DirectShot { completed_tick, .. }
+            EffectKind::Intercept { completed_tick, .. }
+            | EffectKind::DirectShot { completed_tick, .. }
             | EffectKind::SapperDetonation { completed_tick, .. }
             | EffectKind::Impact { completed_tick, .. } => {
                 let whole = completed_ticks.saturating_sub(completed_tick) as f32;
@@ -297,6 +298,8 @@ chassis::listed_enum! {
         DemolitionBoom,
         /// A works coming back online one rung higher.
         UpgradeDone,
+        /// A point defender's emitter firing at a shell.
+        InterceptZap,
     }
 }
 
@@ -457,8 +460,34 @@ fn shell_launch_audio(
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct InterceptFlight {
+    pub launch: Vec2,
+    pub impact: Vec2,
+    pub shooter: oxide_sim::Target,
+    pub kind: oxide_sim::ProjectileKind,
+    pub pose: Option<super::LaunchPose>,
+    pub surface: Option<HitSurface>,
+    pub progress: f32,
+    pub ticks: f32,
+}
+
+pub(crate) fn mantle_emitter(center: Vec2, rotation: f32, slot: u8) -> Vec2 {
+    let local = Vec2::new(58.0 + f32::from(slot.min(2)) * 6.0 - 64.0, 25.0 - 64.0) / 128.0
+        * crate::look::unit(oxide_sim::UnitKind::Mantle).scale;
+    center + Vec2::from_angle(rotation).rotate(local)
+}
+
 /// Effect shapes.
 pub enum EffectKind {
+    /// A spent point-defense emitter and the interrupted projectile.
+    Intercept {
+        from: Option<Vec2>,
+        at: Vec2,
+        flight: Option<InterceptFlight>,
+        impact_witnessed: bool,
+        completed_tick: u64,
+    },
     /// A direct-fire shot, styled by the weapon family that spoke.
     DirectShot {
         /// Visual family (contact, kinetic, rail, or flak).
@@ -664,7 +693,8 @@ impl Presentation {
         let terminal = state.result().is_some();
         for fx in &mut self.fx {
             match fx.kind {
-                EffectKind::DirectShot { .. }
+                EffectKind::Intercept { .. }
+                | EffectKind::DirectShot { .. }
                 | EffectKind::SapperDetonation { .. }
                 | EffectKind::Impact { .. }
                 | EffectKind::Falling { crash: Some(_), .. }
@@ -672,7 +702,8 @@ impl Presentation {
                 {
                     fx.age += dt;
                 }
-                EffectKind::DirectShot { .. }
+                EffectKind::Intercept { .. }
+                | EffectKind::DirectShot { .. }
                 | EffectKind::SapperDetonation { .. }
                 | EffectKind::Impact { .. }
                 | EffectKind::Falling { crash: Some(_), .. } => {}
@@ -684,6 +715,7 @@ impl Presentation {
         self.fx.retain(|fx| {
             fx.age_at(completed_ticks, tick_fraction)
                 < match fx.kind {
+                    EffectKind::Intercept { .. } => 10.0 * super::TICK_DT,
                     EffectKind::DirectShot { style, .. } => style.life(),
                     EffectKind::SapperDetonation { .. } => super::TICK_DT * 2.0,
                     EffectKind::Collapse { .. } => 4.5,
@@ -866,6 +898,12 @@ impl Presentation {
                 .vision(game.human)
                 .visible(chassis::grid::TilePos::containing(pos))
         };
+        let mut remaining = std::collections::HashMap::<oxide_sim::UnitId, u8>::new();
+        for event in events {
+            if let Event::ShellIntercepted { defender, .. } = event {
+                *remaining.entry(*defender).or_default() += 1;
+            }
+        }
         for event in events {
             match event {
                 Event::DamageTaken { player, pos } if *player == self.human => {
@@ -1312,6 +1350,107 @@ impl Presentation {
                         self.sounds_pending.push((sound, Some(world_vec(at))));
                     }
                 }
+                Event::ShellIntercepted {
+                    defender,
+                    defender_player,
+                    defender_pos,
+                    player,
+                    shooter,
+                    kind,
+                    at,
+                    impact,
+                    arrival,
+                } => {
+                    let left = remaining.get_mut(defender).expect("interception counted");
+                    *left -= 1;
+                    let charges = state
+                        .unit(*defender)
+                        .and_then(|unit| unit.point_defense)
+                        .map_or(0, |held| held.charges);
+                    let slot = charges.saturating_add(*left).min(2);
+                    let from = (self.all_seeing()
+                        || *defender_player == self.human
+                        || sees(self, *defender_pos))
+                    .then(|| {
+                        let rotation = match self
+                            .hit_surface(state, Some(oxide_sim::Target::Unit(*defender)))
+                        {
+                            Some(HitSurface::Unit(hit)) => hit.body.rotation,
+                            _ => 0.0,
+                        };
+                        mantle_emitter(world_vec(*defender_pos), rotation, slot)
+                    });
+                    let impact_witnessed =
+                        self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *at);
+                    if from.is_none() && !impact_witnessed {
+                        continue;
+                    }
+                    let flight = self
+                        .fx_previous
+                        .shells
+                        .iter()
+                        .position(|shell| {
+                            shell.shooter == *shooter
+                                && shell.kind == *kind
+                                && shell.player == *player
+                                && shell.impact == *impact
+                                && shell.arrival == *arrival
+                        })
+                        .map(|index| {
+                            let shell = &self.fx_previous.shells[index];
+                            let release = self
+                                .projectile_releases
+                                .flight(&self.fx_previous.shells, index);
+                            let ticks =
+                                shell.arrival.saturating_sub(shell.launched_at).max(1) as f32;
+                            InterceptFlight {
+                                launch: world_vec(shell.launch),
+                                impact: world_vec(shell.impact),
+                                shooter: shell.shooter,
+                                kind: shell.kind,
+                                pose: release.and_then(|flight| flight.pose).or_else(|| {
+                                    self.projectile_releases.bomber_pose(
+                                        state,
+                                        &self.fx_previous.shells,
+                                        index,
+                                    )
+                                }),
+                                surface: self.payload_surface(
+                                    state,
+                                    release.and_then(|flight| flight.target),
+                                    shell.player,
+                                    world_vec(shell.impact),
+                                    shell.targets,
+                                ),
+                                progress: (state
+                                    .current_tick()
+                                    .saturating_sub(1)
+                                    .saturating_sub(shell.launched_at)
+                                    as f32
+                                    / ticks)
+                                    .clamp(0.0, 1.0),
+                                ticks,
+                            }
+                        });
+                    // Like gunfire, the zap is heard when either end is seen:
+                    // at the emitter when it is, else where the shell
+                    // dissolves. The shell makes no sound of its own.
+                    if from.is_some() || impact_witnessed {
+                        let anchor = if from.is_some() { defender_pos } else { at };
+                        self.sounds_pending
+                            .push((SoundKind::InterceptZap, Some(world_vec(*anchor))));
+                    }
+                    self.fx.push(Effect {
+                        kind: EffectKind::Intercept {
+                            from,
+                            at: world_vec(*at),
+                            flight,
+                            impact_witnessed,
+                            completed_tick: state.current_tick(),
+                        },
+                        age: 0.0,
+                    });
+                }
                 Event::ChargeDetonated { at, .. } => {
                     // A mine going off is loud and unmistakable whoever
                     // owned it.
@@ -1410,11 +1549,14 @@ impl Presentation {
                 // orders; a bot's private stall feedback must not read
                 // as "your order failed" in the replay viewer.
                 Event::OrderStalled {
+                    unit,
                     player,
                     pos,
                     reason,
-                    ..
                 } if *player == self.human && !self.spectate => {
+                    let scout = state
+                        .unit(*unit)
+                        .is_some_and(|unit| unit.kind.stats().scouts);
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
                     self.toast(match reason {
@@ -1426,8 +1568,17 @@ impl Presentation {
                         }
                         oxide_sim::StallReason::TransportFull => "The transport is full",
                         oxide_sim::StallReason::NoOpenGround => "No open ground to unload there",
+                        oxide_sim::StallReason::DangerHold if scout => {
+                            "Scout waiting for a safe way to see"
+                        }
                         oxide_sim::StallReason::DangerHold => {
                             "Worker waiting for a safe route home"
+                        }
+                        oxide_sim::StallReason::SafeVantage => {
+                            "Scout stopped short where it could safely see"
+                        }
+                        oxide_sim::StallReason::NoSafeVantage => {
+                            "Scout found no safe way to see there"
                         }
                     });
                     self.fx.push(Effect {

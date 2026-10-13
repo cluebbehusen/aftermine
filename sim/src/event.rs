@@ -109,6 +109,27 @@ pub enum Event {
         /// Its center (for shell effects).
         pos: Vec2Fx,
     },
+    /// A machine was dismantled at its owner's Crucible: deliberate, not a
+    /// loss. It leaves no wreck, and stat screens must not count it among
+    /// casualties.
+    UnitRetired {
+        /// The dismantled machine.
+        unit: UnitId,
+        /// What it was.
+        kind: UnitKind,
+        /// Its owner, who banks the refund and the cargo.
+        player: PlayerId,
+        /// Where it stood.
+        pos: Vec2Fx,
+        /// The Crucible that took it apart.
+        crucible: BuildingId,
+        /// Its hp as it came apart, after the tick's damage.
+        hp: u32,
+        /// Scrap credited for the machine itself, by that hp.
+        refund: u32,
+        /// Scrap credited from its cargo, banked like a delivery.
+        cargo: u32,
+    },
     /// A building was taken apart by its own crew — deliberate, not a
     /// loss: no wreck, no scorch, and stat screens must not count it
     /// among casualties.
@@ -242,6 +263,28 @@ pub enum Event {
         /// Splash radius, when the shell splashes.
         splash: Option<chassis::fx::Fx>,
     },
+    /// A point defender shot a hostile shell down in flight: it left the
+    /// world without landing, splashing, or reporting [`Event::ShellLanded`].
+    ShellIntercepted {
+        /// The machine that spent a charge.
+        defender: UnitId,
+        /// Its owner.
+        defender_player: PlayerId,
+        /// Where it stood.
+        defender_pos: Vec2Fx,
+        /// The seat that fired the shell.
+        player: PlayerId,
+        /// The gun that launched it, which may be dead by now.
+        shooter: Target,
+        /// The shell's payload.
+        kind: crate::stats::ProjectileKind,
+        /// The shell's ground-track position when it was stopped.
+        at: Vec2Fx,
+        /// Where it would have landed.
+        impact: Vec2Fx,
+        /// The tick it would have landed on.
+        arrival: Tick,
+    },
     /// A construction site reached full function.
     BuildingCompleted {
         /// The finished building.
@@ -363,8 +406,15 @@ pub enum StallReason {
     /// stranded cargo stays aboard.
     NoOpenGround,
     /// A loaded worker has a route home but every safe one is blocked by
-    /// known danger, so it is standing and waiting for a window.
-    /// Reported periodically while the wait lasts; the order itself is
-    /// kept. Own-state only: it names no threat.
+    /// known danger, so it is standing and waiting for a window, or a scout
+    /// is waiting for a safe way to see its goal. Reported periodically
+    /// while the wait lasts; the order itself is kept. Own-state only: it
+    /// names no threat.
     DangerHold,
+    /// A scout stopped short of its goal, at the safest place it could
+    /// reach that still sees it. A patrol lap passes silently.
+    SafeVantage,
+    /// A scout found no safe way to see its goal before its caution ran
+    /// out and gave that leg up. A patrol lap passes silently.
+    NoSafeVantage,
 }

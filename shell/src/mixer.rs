@@ -95,6 +95,7 @@ pub(crate) const fn spec(kind: SoundKind) -> SoundSpec {
         SoundKind::BombRelease => row("bomb_release", Effects, Heavy, true, false),
         SoundKind::DemolitionBoom => row("demolition_boom", Effects, Heavy, true, true),
         SoundKind::UpgradeDone => row("upgrade_done", Effects, Standard, false, false),
+        SoundKind::InterceptZap => row("intercept_zap", Effects, Detail, true, false),
     }
 }
 

@@ -260,6 +260,16 @@ pub fn armed_units() -> Vec<UnitKind> {
         .collect()
 }
 
+/// Every unarmed kind that supports an army, such as a point defender: it
+/// joins mixes in the composition search and never fights alone.
+pub fn support_units() -> Vec<UnitKind> {
+    UnitKind::ALL
+        .iter()
+        .copied()
+        .filter(|kind| !kind.stats().can_fight() && kind.stats().point_defense.is_some())
+        .collect()
+}
+
 /// Every unit kind that can attack a defense, Sappers included.
 pub fn defense_attackers() -> Vec<UnitKind> {
     UnitKind::ALL
@@ -338,6 +348,9 @@ pub struct Duel {
     pub formation: Formation,
     /// Whether side `a` takes the west seat.
     pub a_west: bool,
+    /// Whether an army that needs a spotter gets a parked Surveyor instead
+    /// of a Kestrel.
+    pub surveyor_spotter: bool,
 }
 
 /// What to fight and for how long.
@@ -353,6 +366,9 @@ pub struct Plan {
     pub defenses: Vec<Defense>,
     /// Tick cap per duel.
     pub tick_limit: u32,
+    /// Whether an army that needs a spotter gets a parked Surveyor instead
+    /// of a Kestrel; a defense line keeps its Kestrel.
+    pub surveyor_spotter: bool,
 }
 
 impl Plan {
@@ -385,6 +401,7 @@ impl Plan {
                             layout,
                             formation,
                             a_west,
+                            surveyor_spotter: self.surveyor_spotter,
                         });
                     }
                 }
@@ -407,9 +424,10 @@ pub enum End {
 /// One side's standing when the duel ended.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Standing {
-    /// Bodies still alive.
+    /// Bodies still alive that can fight.
     pub alive: u32,
-    /// Surviving value: each live body's cost scaled by its health.
+    /// Surviving value: each live body's cost scaled by its health, none
+    /// once no fighter is left.
     pub retained: f64,
 }
 
@@ -437,7 +455,8 @@ pub struct Outcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Force {
-    /// Units hunting together, the shortest-ranged in the front ranks.
+    /// Units hunting together, the shortest-ranged in the front ranks and
+    /// support behind every gun, following the nearest fighter.
     Army(Vec<(UnitKind, u32)>),
     /// A line of one defense.
     Line(Defense, u32),
@@ -509,7 +528,13 @@ fn mirrored(player: u8, tile: TilePos) -> TilePos {
 
 /// Stage an engagement as a sandbox scenario: `west` takes seat 0, `east`
 /// seat 1, mirrored through the field's center.
-pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -> Scenario {
+pub fn stage(
+    west: &Force,
+    east: &Force,
+    layout: Layout,
+    formation: Formation,
+    surveyor_spotter: bool,
+) -> Scenario {
     let mut units = Vec::new();
     let mut buildings = Vec::new();
     let mut scrap = [0u32; 2];
@@ -517,7 +542,13 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
         match force {
             Force::Army(members) => {
                 let mut ranks: Vec<(UnitKind, u32)> = members.clone();
-                ranks.sort_by_key(|&(kind, _)| kind.stats().weapons.iter().map(|w| w.range).max());
+                ranks.sort_by_key(|&(kind, _)| {
+                    let stats = kind.stats();
+                    (
+                        !stats.can_fight(),
+                        stats.weapons.iter().map(|w| w.range).max(),
+                    )
+                });
                 let bodies: Vec<UnitKind> = ranks
                     .iter()
                     .flat_map(|&(kind, count)| std::iter::repeat_n(kind, count as usize))
@@ -579,7 +610,7 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
                 scrap[usize::from(player)] = count * (defense.cost() - Defense::base(kind).cost());
             }
         }
-        if force.needs_spotter() {
+        if force.needs_spotter() && !(surveyor_spotter && matches!(force, Force::Army(_))) {
             let tile = mirrored(player, TilePos::new(SPOTTER_X, HEIGHT / 2));
             units.push(UnitSpec {
                 player,
@@ -587,6 +618,19 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
                 x: tile.x,
                 y: tile.y,
             });
+        }
+    }
+    if surveyor_spotter {
+        for (player, force, foe) in [(0u8, west, east), (1u8, east, west)] {
+            if let (Force::Army(_), true) = (force, force.needs_spotter()) {
+                let tile = parked_spot(&layout.map(), player, foe, &buildings);
+                units.push(UnitSpec {
+                    player,
+                    kind: UnitKind::Surveyor,
+                    x: tile.x,
+                    y: tile.y,
+                });
+            }
         }
     }
     let seat = |name: &str, scrap: u32| PlayerSpec {
@@ -607,10 +651,72 @@ pub fn stage(west: &Force, east: &Force, layout: Layout, formation: Formation) -
     }
 }
 
+/// Where a parked Surveyor spots for `player`'s guns along the centre row:
+/// the open tile nearest the enemy that stands beyond every enemy gun's
+/// reach plus a tile yet keeps an enemy footprint inside its radar. A gun
+/// that outreaches the radar leaves no such tile; the scout then takes the
+/// first open tile whose radar reaches an enemy footprint.
+fn parked_spot(map: &[String], player: u8, foe: &Force, buildings: &[BuildingSpec]) -> TilePos {
+    let radar = UnitKind::Surveyor
+        .stats()
+        .radar
+        .expect("the Surveyor carries a radar")
+        .radius;
+    let reach = match foe {
+        Force::Line(defense, _) => defense
+            .stats()
+            .weapons
+            .iter()
+            .map(|weapon| weapon.range.to_num::<f64>())
+            .fold(0.0, f64::max),
+        Force::Army(_) => 0.0,
+    };
+    let enemy: Vec<&BuildingSpec> = buildings.iter().filter(|b| b.player != player).collect();
+    let open = |tile: TilePos| {
+        map.get(as_index(tile.y))
+            .and_then(|row| row.as_bytes().get(as_index(tile.x)))
+            == Some(&b'.')
+    };
+    let gap = |tile: TilePos, b: &BuildingSpec| {
+        let (w, h) = b.kind.size();
+        let (cx, cy) = (f64::from(tile.x) + 0.5, f64::from(tile.y) + 0.5);
+        let dx = (f64::from(b.x) - cx).max(cx - f64::from(b.x + w)).max(0.0);
+        let dy = (f64::from(b.y) - cy).max(cy - f64::from(b.y + h)).max(0.0);
+        (dx * dx + dy * dy).sqrt()
+    };
+    let covers = |tile: TilePos| {
+        enemy.iter().any(|b| {
+            let (w, h) = b.kind.size();
+            (0..w).any(|dx| {
+                (0..h).any(|dy| {
+                    let (ex, ey) = (b.x + dx - tile.x, b.y + dy - tile.y);
+                    ex * ex + ey * ey <= radar * radar
+                })
+            })
+        })
+    };
+    let row: Vec<TilePos> = (1..WIDTH - 1)
+        .map(|x| mirrored(player, TilePos::new(x, HEIGHT / 2)))
+        .filter(|&tile| open(tile))
+        .collect();
+    row.iter()
+        .rev()
+        .copied()
+        .find(|&tile| covers(tile) && enemy.iter().all(|b| gap(tile, b) > reach + 1.0))
+        .or_else(|| row.iter().copied().find(|&tile| covers(tile)))
+        .unwrap_or_else(|| mirrored(player, TilePos::new(SPOTTER_X, HEIGHT / 2)))
+}
+
 /// Stage one duel lab leg.
 pub fn scenario(duel: &Duel) -> Scenario {
     let (west, east) = seated(duel);
-    stage(&west, &east, duel.layout, duel.formation)
+    stage(
+        &west,
+        &east,
+        duel.layout,
+        duel.formation,
+        duel.surveyor_spotter,
+    )
 }
 
 fn seated(duel: &Duel) -> (Force, Force) {
@@ -618,7 +724,9 @@ fn seated(duel: &Duel) -> (Force, Force) {
     if duel.a_west { (a, b) } else { (b, a) }
 }
 
-/// Bodies a force still fields, and their health-scaled value.
+/// Bodies a force still fields that can fight, and the health-scaled value
+/// of everything it fields. Support with no fighter left is lost with the
+/// army it served.
 fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
     let mut alive = 0;
     let mut retained = 0.0;
@@ -630,8 +738,13 @@ fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
                 .filter(|u| u.player == player && force.fields(u.kind) && u.hp > 0)
             {
                 let stats = u.kind.stats();
-                alive += 1;
+                if stats.can_fight() {
+                    alive += 1;
+                }
                 retained += f64::from(stats.cost) * f64::from(u.hp) / f64::from(stats.max_hp);
+            }
+            if alive == 0 {
+                retained = 0.0;
             }
         }
         Force::Line(defense, _) => {
@@ -715,7 +828,11 @@ fn seek(
         .units()
         .iter()
         .filter(|u| {
-            u.player == me && mine.fields(u.kind) && u.hp > 0 && matches!(u.order, Order::Idle)
+            u.player == me
+                && mine.fields(u.kind)
+                && u.kind.stats().can_fight()
+                && u.hp > 0
+                && matches!(u.order, Order::Idle)
         })
         .collect();
     let from = idle.first()?.pos;
@@ -750,6 +867,40 @@ fn seek(
         player: me,
         command,
     })
+}
+
+/// Send a side's support bodies that have drifted from their army to its
+/// nearest fighter: farther than half a point defender's reach, its
+/// middle would leave the cover.
+fn escort(state: &State, me: PlayerId, mine: &Force) -> Vec<PlayerCommand> {
+    let fighters: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == me && mine.fields(u.kind) && u.kind.stats().can_fight() && u.hp > 0)
+        .collect();
+    state
+        .units()
+        .iter()
+        .filter(|u| u.player == me && mine.fields(u.kind) && !u.kind.stats().can_fight())
+        .filter_map(|support| {
+            let nearest = fighters
+                .iter()
+                .min_by_key(|fighter| (support.pos.dist_sq(fighter.pos), fighter.id))?;
+            let gap = support
+                .kind
+                .stats()
+                .point_defense
+                .map_or(chassis::fx::Fx::ONE, |defense| defense.radius / 2);
+            (support.pos.dist_sq(nearest.pos) > gap * gap).then(|| PlayerCommand {
+                player: me,
+                command: Command::Run {
+                    units: vec![support.id],
+                    goal: nearest.tile(),
+                    queue: false,
+                },
+            })
+        })
+        .collect()
 }
 
 /// Keep a side's spotter hovering short of the nearest enemy, on its own
@@ -840,8 +991,9 @@ pub fn fight(
     layout: Layout,
     formation: Formation,
     tick_limit: u32,
+    surveyor_spotter: bool,
 ) -> Result<Fought> {
-    let sc = stage(west, east, layout, formation);
+    let sc = stage(west, east, layout, formation, surveyor_spotter);
     let mut state = sc.build().with_context(|| format!("staging {}", sc.name))?;
     refit(&mut state, [(PlayerId(0), west), (PlayerId(1), east)])
         .with_context(|| format!("refitting {}", sc.name))?;
@@ -854,7 +1006,9 @@ pub fn fight(
         let units = state
             .units()
             .iter()
-            .filter(|u| u.player == PlayerId(player) && force.fields(u.kind))
+            .filter(|u| {
+                u.player == PlayerId(player) && force.fields(u.kind) && u.kind.stats().can_fight()
+            })
             .map(|u| u.id)
             .collect();
         orders.push(PlayerCommand {
@@ -891,8 +1045,10 @@ pub fn fight(
                         seek(&state, me, mine, foe, theirs),
                         spot(&state, me, mine, foe, theirs),
                     ]
+                    .into_iter()
+                    .flatten()
+                    .chain(escort(&state, me, mine))
                 })
-                .flatten()
                 .collect()
         } else {
             Vec::new()
@@ -911,7 +1067,14 @@ pub fn fight(
 /// Run one duel lab leg to a wipe or the tick cap.
 pub fn run(duel: &Duel, tick_limit: u32) -> Result<Outcome> {
     let (west, east) = seated(duel);
-    let fought = fight(&west, &east, duel.layout, duel.formation, tick_limit)?;
+    let fought = fight(
+        &west,
+        &east,
+        duel.layout,
+        duel.formation,
+        tick_limit,
+        duel.surveyor_spotter,
+    )?;
     let (a, b) = if duel.a_west {
         (fought.west, fought.east)
     } else {

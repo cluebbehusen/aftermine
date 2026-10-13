@@ -104,6 +104,14 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
                 "{owner} carries an inoperable harvest profile"
             );
         }
+        if let Some(defense) = stats.point_defense {
+            assert!(
+                defense.charges > 0
+                    && defense.radius > chassis::fx::Fx::ZERO
+                    && defense.recharge_ticks > 0,
+                "{owner} carries inoperable point defense"
+            );
+        }
         if stats.transport_capacity > 0 {
             assert_eq!(stats.transport_size, 0, "a carrier cannot carry itself");
         }
@@ -681,7 +689,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
         state
             .vision(PlayerId(0))
             .contacts()
-            .contains(&intruder_tile),
+            .contains(&common::ground_blip(intruder_tile)),
         "the ring detects what sight cannot reach"
     );
     assert!(
@@ -692,7 +700,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
     // The fog-honest observation carries the blip and nothing more about
     // the contact — the unit itself is absent.
     let obs = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
-    assert!(obs.blips.contains(&intruder_tile));
+    assert!(obs.blips.contains(&common::ground_blip(intruder_tile)));
     assert!(
         obs.enemy_units.is_empty(),
         "detection is not identification"
@@ -730,7 +738,11 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
     });
     let seen = state.unit(intruder).unwrap().tile();
     assert!(
-        !state.vision(PlayerId(0)).contacts().contains(&seen),
+        !state
+            .vision(PlayerId(0))
+            .contacts()
+            .iter()
+            .any(|contact| contact.tile == seen),
         "seen contacts are sightings, not blips"
     );
 }

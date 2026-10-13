@@ -258,6 +258,7 @@ fn thinned_live_totals_match_recomputed_event_totals() {
         assert_eq!(actual.units_lost, expected.units_lost);
         assert_eq!(actual.buildings_lost, expected.buildings_lost);
         assert_eq!(actual.buildings_salvaged, expected.buildings_salvaged);
+        assert_eq!(actual.units_retired, expected.units_retired);
         assert_eq!(actual.scrap.last(), expected.scrap.last());
         assert_eq!(actual.army_value.last(), expected.army_value.last());
     }
@@ -297,6 +298,35 @@ fn deliberate_salvage_is_not_counted_as_a_building_loss() {
     assert_eq!(players[0].buildings_salvaged, 1);
     assert_eq!(players[1].buildings_lost, 0);
     assert_eq!(players[1].buildings_salvaged, 0);
+}
+
+#[test]
+fn a_retirement_is_not_counted_as_a_unit_loss() {
+    use chassis::fx::Vec2Fx;
+    use oxide_sim::{BuildingId, UnitId, UnitKind};
+
+    let mut players = blank_players(2);
+    accumulate_events(
+        &mut players,
+        &[Event::UnitRetired {
+            unit: UnitId(3),
+            kind: UnitKind::Harvester,
+            player: PlayerId(1),
+            pos: Vec2Fx::ZERO,
+            crucible: BuildingId(2),
+            hp: 30,
+            refund: 25,
+            cargo: 4,
+        }],
+    );
+
+    assert_eq!(players[1].units_lost, 0);
+    assert_eq!(players[1].units_retired, 1);
+    assert_eq!(
+        players[1].scrap_collected, 4,
+        "the load counts as collected"
+    );
+    assert_eq!(players[0].units_retired, 0);
 }
 
 #[test]

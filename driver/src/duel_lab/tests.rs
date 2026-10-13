@@ -7,6 +7,7 @@ fn plan(budget: u32) -> Plan {
         attackers: defense_attackers(),
         defenses: armed_defenses(),
         tick_limit: 4_000,
+        surveyor_spotter: false,
     }
 }
 
@@ -95,6 +96,7 @@ fn a_mirror_match_scores_the_same_from_either_seat() {
         layout: Layout::Open,
         formation: Formation::Line,
         a_west,
+        surveyor_spotter: false,
     };
     let west = run(&leg(true), 2_000).expect("west leg runs");
     let east = run(&leg(false), 2_000).expect("east leg runs");
@@ -110,6 +112,7 @@ fn a_duel_replays_identically() {
         layout: Layout::Cover,
         formation: Formation::Clump,
         a_west: true,
+        surveyor_spotter: false,
     };
     let first = run(&duel, 2_000).expect("duel runs");
     assert_eq!(first, run(&duel, 2_000).expect("duel runs again"));
@@ -209,6 +212,7 @@ fn upgraded_defenses_refit_before_the_fight() {
         layout: Layout::Open,
         formation: Formation::Line,
         a_west: true,
+        surveyor_spotter: false,
     };
     let sc = scenario(&duel);
     let mut state = sc.build().expect("the line stages");
@@ -264,6 +268,7 @@ fn a_small_plan_reports_both_matrices_and_its_flags() {
         attackers: vec![UnitKind::Sapper],
         defenses: vec![Defense::base(BuildingKind::Bastion)],
         tick_limit: 1_500,
+        surveyor_spotter: false,
     };
     let jobs = NonZeroUsize::new(2).expect("two workers");
     let outcomes = run_plan(&plan, jobs).expect("the plan runs");
@@ -336,8 +341,84 @@ fn a_pairing_against_a_defense_line_scores_the_same_from_either_seat() {
         layout: Layout::Open,
         formation: Formation::Line,
         a_west,
+        surveyor_spotter: false,
     };
     let west = run(&leg(true), 8_000).expect("west leg runs");
     let east = run(&leg(false), 8_000).expect("east leg runs");
     assert_eq!((west.score, west.ticks), (east.score, east.ticks));
+}
+
+#[test]
+fn a_surveyor_spotter_parks_outside_a_bastion_line_with_its_radar_on_it() {
+    let line = Side::sized(
+        Contender::Defense(Defense::base(BuildingKind::Bastion)),
+        2_100,
+    );
+    let guns = Side::sized(Contender::Unit(UnitKind::Avalanche), 2_100);
+    let duel = Duel {
+        a: guns,
+        b: line,
+        layout: Layout::Open,
+        formation: Formation::Line,
+        a_west: true,
+        surveyor_spotter: true,
+    };
+    let scenario = scenario(&duel);
+    let scout = scenario
+        .units
+        .iter()
+        .find(|u| u.kind == UnitKind::Surveyor)
+        .expect("the army's spotter is a Surveyor");
+    assert!(
+        !scenario
+            .units
+            .iter()
+            .any(|u| u.player == scout.player && u.kind == UnitKind::Kestrel),
+        "and no Kestrel spots for the army"
+    );
+    let reach = 9.5 + 1.0;
+    let radar = UnitKind::Surveyor.stats().radar.unwrap().radius;
+    let gaps: Vec<(f64, i32)> = scenario
+        .buildings
+        .iter()
+        .filter(|b| b.player != scout.player && b.kind == BuildingKind::Bastion)
+        .map(|b| {
+            let (cx, cy) = (f64::from(scout.x) + 0.5, f64::from(scout.y) + 0.5);
+            let dx = (f64::from(b.x) - cx).max(cx - f64::from(b.x + 2)).max(0.0);
+            let dy = (f64::from(b.y) - cy).max(cy - f64::from(b.y + 2)).max(0.0);
+            let near = (0..2)
+                .flat_map(|ox| (0..2).map(move |oy| (b.x + ox - scout.x, b.y + oy - scout.y)))
+                .map(|(ex, ey)| ex * ex + ey * ey)
+                .min()
+                .unwrap();
+            ((dx * dx + dy * dy).sqrt(), near)
+        })
+        .collect();
+    assert!(gaps.iter().all(|&(gap, _)| gap > reach), "{gaps:?}");
+    assert!(
+        gaps.iter().any(|&(_, near)| near <= radar * radar),
+        "{gaps:?}"
+    );
+}
+
+#[test]
+fn support_walks_with_its_army_and_falls_with_it() {
+    let escorted = Force::Army(vec![(UnitKind::Mantle, 1), (UnitKind::Breaker, 1)]);
+    let mirror = fight(
+        &escorted,
+        &escorted,
+        Layout::Open,
+        Formation::Line,
+        3_000,
+        false,
+    )
+    .expect("the mirror runs");
+    assert_eq!(mirror.west, mirror.east, "both seats fare alike");
+    let lone = Force::Army(vec![(UnitKind::Mantle, 2), (UnitKind::Sentinel, 1)]);
+    let heavy = Force::Army(vec![(UnitKind::Breaker, 2)]);
+    let fought =
+        fight(&lone, &heavy, Layout::Open, Formation::Line, 6_000, false).expect("it runs");
+    assert_eq!(fought.end, End::Wipe, "the fight ends with the last gun");
+    assert_eq!(fought.west.alive, 0);
+    assert_eq!(fought.west.retained, 0.0, "support is lost with its army");
 }

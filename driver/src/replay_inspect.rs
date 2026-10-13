@@ -394,6 +394,9 @@ fn command_name(command: &Command) -> &'static str {
         Command::Unload { .. } => "unload",
         Command::ClearFocus { .. } => "clear_focus",
         Command::CancelOrder { .. } => "cancel_order",
+        Command::Accompany { .. } => "accompany",
+        Command::Retire { .. } => "retire",
+        Command::Scout { .. } => "scout",
     }
 }
 

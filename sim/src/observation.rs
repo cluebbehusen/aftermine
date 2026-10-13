@@ -87,6 +87,11 @@ pub struct UnitObs {
     /// cannot land.
     #[serde(default)]
     pub grounded: bool,
+    /// Ready point-defense charges, for kinds that carry point defense. Lit
+    /// emitters show them, so like `grounded` they are reported for allies
+    /// and enemies in sight too.
+    #[serde(default)]
+    pub charges: Option<u8>,
 }
 
 impl UnitObs {
@@ -212,10 +217,11 @@ pub struct ObservationData {
     /// already bounded and expired by the authoritative vision system.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub salvage_incidents: Vec<TilePos>,
-    /// Radar blips: tiles holding an unidentified hostile contact inside
-    /// an Array's outer ring but out of sight. Always empty under the
-    /// omniscient builder. Sorted by (y, x).
-    pub blips: Vec<TilePos>,
+    /// Radar blips: unidentified hostile contacts and their domains inside
+    /// an allied radar ring but out of sight. Always empty under the
+    /// omniscient builder. In [`crate::vision::RadarContact::sort_key`]
+    /// order.
+    pub blips: Vec<crate::vision::RadarContact>,
     /// Hostile buildings every seat knows of regardless of fog, such as
     /// Deep Bores. Sorted by (y, x, owner).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -529,7 +535,8 @@ impl ObservationData {
                 obs.known_frames.push(*frame);
             }
         }
-        // Blips carry tiles only, so they pass through unfiltered.
+        // Blips carry a tile and a domain only, so they pass through
+        // unfiltered.
         obs.blips = vision.contacts().to_vec();
         obs.contact_tracks = vision.tracks().to_vec();
         obs.my_shells = state.shells().iter().filter(|s| s.player == me).count();
@@ -615,7 +622,10 @@ impl ObservationData {
 fn own_repair_target(order: &Order) -> Option<Target> {
     match order {
         Order::Repair { building } => Some(Target::Building(*building)),
-        Order::RepairUnit { unit } => Some(Target::Unit(*unit)),
+        Order::RepairUnit { unit }
+        | Order::Accompany {
+            weld: Some(unit), ..
+        } => Some(Target::Unit(*unit)),
         _ => None,
     }
 }
@@ -652,8 +662,9 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
             Order::Found { kind, anchor } if site.is_none() => Some((kind, anchor)),
             _ => None,
         },
-        repairing: matches!(u.order, Order::Repair { .. } | Order::RepairUnit { .. }),
+        repairing: own_repair_target(&u.order).is_some(),
         grounded: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 
@@ -673,6 +684,7 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         founding: None,   // ditto
         repairing: false,
         grounded: u.landed(),
+        charges: u.point_defense.map(|held| held.charges),
     }
 }
 

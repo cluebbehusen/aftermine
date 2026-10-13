@@ -5,6 +5,8 @@
 //! Missions take units in a fixed order each decision: defense first, then
 //! lift, then attacks, anti-air clearing, strikes and raids, then scouting.
 //! Each takes from what [`Missions::available`] leaves free when it runs.
+//! Between defense and the rest, free wounded units go to a Repair Bay and
+//! sit out the other missions while they heal.
 
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, ring};
@@ -25,6 +27,7 @@ mod focus;
 mod guarding;
 mod lift;
 mod raid;
+mod repair;
 mod reserve;
 mod rival;
 mod scouting;
@@ -35,6 +38,7 @@ pub(crate) use air::{Hazard, hazards};
 pub(crate) use attack::{building_value, minimum};
 pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
+pub(crate) use repair::treating;
 pub(crate) use scouting::{look, points};
 pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;
@@ -625,10 +629,10 @@ impl Missions {
 
     /// Units no mission holds that may take orders: a unit sitting out after
     /// its order found no route joins no mission, since it would be sent
-    /// nowhere.
+    /// nowhere, and a wounded unit at or bound for a Repair Bay stays there.
     fn free(&self, observation: &ObservationData, ledger: &Ledger) -> Vec<UnitId> {
         let mut free = self.available(observation, false);
-        free.retain(|unit| !ledger.stuck(*unit));
+        free.retain(|unit| !ledger.stuck(*unit) && !ledger.docked(*unit));
         free
     }
 

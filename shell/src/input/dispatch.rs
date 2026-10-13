@@ -23,10 +23,13 @@ pub(super) fn dispatch_action(
             action,
             Action::Run
                 | Action::Hunt
+                | Action::Scout
                 | Action::Salvage
                 | Action::RepairUnit
+                | Action::Accompany
                 | Action::Unload
                 | Action::ReturnCargo
+                | Action::Retire
         )
     {
         input.close_construction();
@@ -97,6 +100,18 @@ pub(super) fn dispatch_action(
                 units: game.presentation.selection.units.clone(),
                 foundry: None,
                 repair: false,
+            });
+        }
+        Action::Retire => {
+            if game.presentation.selection.units.is_empty() || !game.selection_commandable() {
+                game.presentation
+                    .toast("You can only command your own units");
+                return;
+            }
+            input.disarm_click_verbs();
+            game.issue(Command::Retire {
+                units: game.presentation.selection.units.clone(),
+                queue: input.queue_held(),
             });
         }
         Action::StopOrScrap => {
@@ -285,6 +300,25 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No welder in hand");
             }
         }
+        Action::Accompany => {
+            // A toggle, like weld: pressing again stands down.
+            if input.armed(ClickVerb::Accompany) {
+                input.click_verb = None;
+                return;
+            }
+            let has_own_unit = game.presentation.selection.units.iter().any(|id| {
+                game.state
+                    .unit(*id)
+                    .is_some_and(|u| u.player == game.presentation.human)
+            });
+            if has_own_unit {
+                input.disarm_click_verbs();
+                input.click_verb = Some(ClickVerb::Accompany);
+            } else {
+                game.presentation
+                    .toast("You can only command your own units");
+            }
+        }
         Action::Run => {
             // A toggle, like salvage: pressing again stands down.
             if input.armed(ClickVerb::Run) {
@@ -301,6 +335,23 @@ pub(super) fn dispatch_action(
                 input.click_verb = Some(ClickVerb::Run);
             } else {
                 game.presentation.toast("No machines selected to run");
+            }
+        }
+        Action::Scout => {
+            if input.armed(ClickVerb::Scout) {
+                input.click_verb = None;
+                return;
+            }
+            let has_own_scout = game.presentation.selection.units.iter().any(|id| {
+                game.state
+                    .unit(*id)
+                    .is_some_and(|u| u.kind.stats().scouts && u.player == game.presentation.human)
+            });
+            if has_own_scout {
+                input.disarm_click_verbs();
+                input.click_verb = Some(ClickVerb::Scout);
+            } else {
+                game.presentation.toast("No scouts selected");
             }
         }
         Action::Hunt => {

@@ -56,6 +56,8 @@ pub(crate) struct Ledger {
     stuck: Vec<UnitId>,
     /// Own workers a mission holds, sorted by id.
     held: Vec<UnitId>,
+    /// Wounded own units at or sent to a Repair Bay this decision, by id.
+    docked: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -68,6 +70,7 @@ impl Ledger {
             planned: Vec::new(),
             stuck: Vec::new(),
             held: Vec::new(),
+            docked: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -164,6 +167,19 @@ impl Ledger {
         self.stuck.binary_search(&unit).is_ok()
     }
 
+    /// Keeps `unit` at a Repair Bay for the rest of this decision: no
+    /// mission or welder takes it.
+    pub(crate) fn dock(&mut self, unit: UnitId) {
+        if let Err(index) = self.docked.binary_search(&unit) {
+            self.docked.insert(index, unit);
+        }
+    }
+
+    /// Whether `unit` is at or bound for a Repair Bay this decision.
+    pub(crate) fn docked(&self, unit: UnitId) -> bool {
+        self.docked.binary_search(&unit).is_ok()
+    }
+
     /// Unit orders this decision may still issue.
     pub(crate) fn room(&self) -> u32 {
         self.decision.allowance - self.decision.unit_orders
@@ -211,7 +227,8 @@ impl Ledger {
                     | Command::Repair { units, .. }
                     | Command::RepairUnit { units, .. }
                     | Command::Salvage { units, .. }
-                    | Command::ReturnCargo { units, .. } => units.contains(&unit),
+                    | Command::ReturnCargo { units, .. }
+                    | Command::Scout { units, .. } => units.contains(&unit),
                     _ => false,
                 })
     }
@@ -239,7 +256,8 @@ fn units_of(command: &mut Command) -> Option<&mut Vec<UnitId>> {
         | Command::RepairUnit { units, .. }
         | Command::Advance { units, .. }
         | Command::Load { units, .. }
-        | Command::ReturnCargo { units, .. } => Some(units),
+        | Command::ReturnCargo { units, .. }
+        | Command::Scout { units, .. } => Some(units),
         _ => None,
     }
 }
@@ -522,6 +540,9 @@ pub(crate) fn decide(
             &mut ledger,
         );
     }
+    persistent
+        .missions
+        .repair(observation, map, &scratch, &mut ledger);
     let patients = persistent.missions.patients(observation, &ledger);
     workers::run(
         observation,
@@ -584,6 +605,9 @@ pub(crate) fn decide(
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
+    persistent
+        .missions
+        .scouts_stopped(events, &mut persistent.memory, tick);
     let lacking = persistent.missions.scout(
         observation,
         map,
@@ -955,8 +979,8 @@ fn train_carriers(
 
 /// Trains a scout while fewer are in production than the `lacking` stale
 /// places no scout could take but the one it would train could reach: a
-/// Kestrel at a built Airworks, else a Scuttler at a Foundry.
-/// Once an air scout can be trained a Scuttler no longer counts, since one
+/// Kestrel at a built Airworks, else a Surveyor at a Foundry.
+/// Once an air scout can be trained a Surveyor no longer counts, since one
 /// that could reach a stale point would already be scouting.
 fn train_scout(
     observation: &ObservationData,
@@ -971,7 +995,7 @@ fn train_scout(
     let kinds: &[UnitKind] = if airworks.is_some() {
         &[air]
     } else {
-        &[air, UnitKind::Scuttler]
+        &[air, UnitKind::Surveyor]
     };
     let coming = observation
         .my_queues
@@ -992,7 +1016,7 @@ fn train_scout(
         else {
             return;
         };
-        (foundry, UnitKind::Scuttler)
+        (foundry, UnitKind::Surveyor)
     };
     ledger.train(producer.building.id, kind);
 }
@@ -1014,8 +1038,8 @@ fn train_raiders(
         (UnitKind::Scuttler, scuttlers, 0),
         (UnitKind::Sapper, sappers, spare),
     ] {
-        // A Scuttler out scouting cannot raid; a Sapper in an attack is what
-        // the attack wanted it for.
+        // A Scuttler another mission holds cannot raid; a Sapper in an attack
+        // is what the attack wanted it for.
         let free = |unit: &&UnitObs| {
             kind != UnitKind::Scuttler || elsewhere.binary_search(&unit.id).is_err()
         };

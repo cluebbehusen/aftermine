@@ -169,6 +169,9 @@ struct Cast {
     annex_e: Vec<UnitId>,
     /// The Avalanche pair, trading one volley across their blind rings.
     avalanches: (UnitId, UnitId),
+    /// Seat 0's Piledriver, staged wounded out of every enemy's reach: one
+    /// slug at anything near would rewrite the bounded wounds around it.
+    piledriver: UnitId,
 }
 
 fn showcase_scenario() -> (Scenario, Cast) {
@@ -262,6 +265,19 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let sentinel_sapper_e = roster.add(1, UnitKind::Sentinel, 41, 20);
     let sentinel_sapper_w = roster.add(0, UnitKind::Sentinel, 42, 20);
     let sapper_e = roster.add(1, UnitKind::Sapper, 43, 20);
+    // The point defenders, likewise nicked by a sentinel each and out of
+    // reach of every shell aimed at the annex.
+    let mantle_w = roster.add(0, UnitKind::Mantle, 40, 22);
+    let sentinel_mantle_e = roster.add(1, UnitKind::Sentinel, 41, 22);
+    let sentinel_mantle_w = roster.add(0, UnitKind::Sentinel, 42, 22);
+    let mantle_e = roster.add(1, UnitKind::Mantle, 43, 22);
+    // Over eight tiles from every enemy, in no enemy's reach.
+    let piledriver = roster.add(0, UnitKind::Piledriver, 32, 4);
+    // The scout pair, nicked the same way; unarmed, they stand it.
+    let surveyor_w = roster.add(0, UnitKind::Surveyor, 40, 24);
+    let sentinel_surveyor_e = roster.add(1, UnitKind::Sentinel, 41, 24);
+    let sentinel_surveyor_w = roster.add(0, UnitKind::Sentinel, 42, 24);
+    let surveyor_e = roster.add(1, UnitKind::Surveyor, 43, 24);
 
     // Seat 0's standing structures: one of every kind the build palette
     // offers, whole. Its Foundry comes from the map anchor.
@@ -350,6 +366,10 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 flakhound_sling_w,
                 sapper_w,
                 sentinel_sapper_w,
+                mantle_w,
+                sentinel_mantle_w,
+                surveyor_w,
+                sentinel_surveyor_w,
             ],
             annex_e: vec![
                 condor_e,
@@ -359,8 +379,13 @@ fn showcase_scenario() -> (Scenario, Cast) {
                 flakhound_sling_e,
                 sapper_e,
                 sentinel_sapper_e,
+                mantle_e,
+                sentinel_mantle_e,
+                surveyor_e,
+                sentinel_surveyor_e,
             ],
             avalanches: (avalanche_w, avalanche_e),
+            piledriver,
         },
     )
 }
@@ -501,6 +526,8 @@ fn opening_orders(cast: &Cast) -> Vec<PlayerCommand> {
         attack(1, cast.annex_e[4], cast.annex_w[3]),
         attack(0, cast.annex_w[6], cast.annex_e[5]),
         attack(1, cast.annex_e[6], cast.annex_w[5]),
+        attack(0, cast.annex_w[8], cast.annex_e[7]),
+        attack(1, cast.annex_e[8], cast.annex_w[7]),
     ]);
     commands
 }
@@ -557,6 +584,13 @@ fn showcase_state() -> State {
             }
         }
     }
+    let row = staged["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(cast.piledriver))
+        .unwrap();
+    row["hp"] = serde_json::json!(UnitKind::Piledriver.stats().max_hp * 2 / 3);
     state = serde_json::from_value(staged).unwrap();
     let mut avalanches_withdrew = false;
     let mut bombards_withdrew = false;

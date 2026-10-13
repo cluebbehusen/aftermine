@@ -154,6 +154,39 @@ impl Reach {
         Some(best)
     }
 
+    /// Whether any route can bring unit `id` onto one of `tiles`.
+    pub(super) fn reaches(
+        &mut self,
+        state: &State,
+        id: UnitId,
+        tiles: impl IntoIterator<Item = TilePos>,
+    ) -> bool {
+        let Some(unit) = state.unit(id) else {
+            return false;
+        };
+        let domain = unit.kind.stats().domain;
+        let from = unit.tile();
+        let labels = labels(
+            match domain {
+                Domain::Ground => &mut self.ground,
+                Domain::Air => &mut self.air,
+            },
+            state,
+            domain,
+        );
+        let width = state.map.width();
+        let height = state.map.height();
+        let label = |tile: TilePos| label_at(labels, width, height, tile);
+        if from.x < 0 || from.y < 0 || from.x >= width || from.y >= height {
+            return false;
+        }
+        let set = label_set(&label, from);
+        tiles.into_iter().any(|tile| {
+            let l = label(tile);
+            l != 0 && set.contains(&l)
+        })
+    }
+
     /// Whether unit `id` touches a parked body of its own layer that
     /// connects, through touching parked bodies, to one within
     /// [`crate::stats::ARRIVAL_NEAR`] of `endpoint`, counting only bodies

@@ -8,24 +8,59 @@ use crate::game::{Game, PingKind};
 use crate::numeric;
 use chassis::grid::TilePos;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{Command, Target, UnitId};
+use oxide_sim::{Command, Rally, Target, UnitId};
 
 pub(super) fn selected_producers(game: &Game) -> Vec<oxide_sim::BuildingId> {
     crate::building_actions::SelectedBuildings::inspect(&game.view()).producers()
 }
 
-pub(super) fn rally_selected_producers(game: &mut Game, rally: TilePos) {
+pub(super) fn rally_selected_producers(game: &mut Game, rally: Rally) {
     let producers = selected_producers(game);
     if producers.is_empty() {
         return;
     }
+    rally_producers(game, producers, rally);
+}
+
+/// Points `producers` at `rally` and pings where it lands.
+pub(super) fn rally_producers(
+    game: &mut Game,
+    producers: Vec<oxide_sim::BuildingId>,
+    rally: Rally,
+) {
     for building in producers {
         game.issue(Command::SetRally {
             building,
             rally: Some(rally),
         });
     }
-    game.presentation.ping(tile_center(rally), PingKind::Rally);
+    let at = match rally {
+        Rally::Tile(tile) => tile_center(tile),
+        Rally::Unit(unit) => match game.state.unit(unit) {
+            Some(u) => vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()),
+            None => return,
+        },
+    };
+    game.presentation.ping(at, PingKind::Rally);
+}
+
+/// The rally a world click names: the own unit under it, or else the
+/// ground.
+pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
+    game.state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| {
+            let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            (at.distance(world), u.id, u.kind)
+        })
+        .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or_else(
+            || Rally::Tile(ground_tile(&game.state, world)),
+            |(_, unit, _)| Rally::Unit(unit),
+        )
 }
 
 fn visible_hostile_target_at(
@@ -85,13 +120,9 @@ fn known_hostile_target_at(
     game: &Game,
     world: Vec2,
     tile: TilePos,
-) -> Option<(
-    oxide_sim::AttackTarget,
-    Vec2,
-    Option<oxide_sim::stats::Domain>,
-)> {
+) -> Option<(oxide_sim::AttackTarget, Vec2, oxide_sim::stats::Domain)> {
     if let Some((target, at, domain)) = visible_hostile_target_at(game, world, tile) {
-        return Some((target.into(), at, Some(domain)));
+        return Some((target.into(), at, domain));
     }
     if let Some(track) = game
         .my_vision()
@@ -102,7 +133,7 @@ fn known_hostile_target_at(
         return Some((
             oxide_sim::AttackTarget::Contact(track.id),
             vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5),
-            None,
+            track.domain,
         ));
     }
     if let Some(ghost) = game.my_vision().ghosts().iter().find(|ghost| {
@@ -119,7 +150,7 @@ fn known_hostile_target_at(
                 anchor: ghost.anchor,
             }),
             world,
-            Some(oxide_sim::stats::Domain::Ground),
+            oxide_sim::stats::Domain::Ground,
         ));
     }
     if let Some(public) =
@@ -130,7 +161,7 @@ fn known_hostile_target_at(
         return Some((
             oxide_sim::AttackTarget::RememberedBuilding(public.target()),
             world,
-            Some(oxide_sim::stats::Domain::Ground),
+            oxide_sim::stats::Domain::Ground,
         ));
     }
     None
@@ -189,8 +220,8 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
     let tile = numeric::tile_at(world);
     if game.presentation.selection.units.is_empty() {
         if let Some((target, at, domain)) = known_hostile_target_at(game, world, tile) {
-            let defenses =
-                crate::building_actions::SelectedBuildings::inspect(&game.view()).defenses(domain);
+            let defenses = crate::building_actions::SelectedBuildings::inspect(&game.view())
+                .defenses(Some(domain));
             if !defenses.is_empty() {
                 game.issue(Command::FocusFire {
                     buildings: defenses,
@@ -200,9 +231,11 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 return;
             }
         }
-        // Selected producers share one rally destination. Non-producers
-        // ignore a ground right-click.
-        rally_selected_producers(game, ground_tile(&game.state, world));
+        // Selected producers share one rally destination: the own unit
+        // under the cursor, which new units then escort, or the ground.
+        // Non-producers ignore the click.
+        let rally = rally_at(game, world);
+        rally_selected_producers(game, rally);
         return;
     }
     if !game.selection_commandable() {
@@ -348,6 +381,18 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
             game.presentation.ping_order(world, PingKind::Move, queue);
             return;
         }
+    }
+    // A selection of scouts scouts wherever it is sent, enemy or ground;
+    // Run is the deliberate way to send one into danger.
+    if units
+        .iter()
+        .all(|id| game.state.unit(*id).is_some_and(|u| u.kind.stats().scouts))
+    {
+        let goal = ground_tile(&game.state, world);
+        game.issue(Command::Scout { units, goal, queue });
+        game.presentation
+            .ping_order(tile_center(goal), PingKind::Move, queue);
+        return;
     }
     // Fog rules what right-click may target: unseen enemies aren't there
     // as far as the player is concerned (the sim enforces this too).

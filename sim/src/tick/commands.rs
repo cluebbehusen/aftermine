@@ -168,6 +168,17 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 *from_end,
                 &canonical_units(units),
             ),
+            Command::Accompany {
+                units,
+                target,
+                queue,
+            } => apply_accompany(state, pc.player, &canonical_units(units), *target, *queue),
+            Command::Retire { units, queue } => {
+                apply_retire(state, pc.player, &canonical_units(units), *queue)
+            }
+            Command::Scout { units, goal, queue } => {
+                apply_scout(state, pc.player, &canonical_units(units), *goal, *queue)
+            }
         };
         if let Err(reason) = outcome {
             events.push(Event::CommandRejected {
@@ -385,6 +396,36 @@ fn apply_run(
     })
 }
 
+/// Sends scouts to see one tile. Each takes the tile itself as its goal:
+/// a scout picks its own safe vantage, so a group needs no spread slots.
+fn apply_scout(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    goal: TilePos,
+    queue: bool,
+) -> Result<(), RejectReason> {
+    if !on_map(state, goal) {
+        return Err(RejectReason::OutOfBounds);
+    }
+    let (mut accepted, mut landed) = (0, 0);
+    for &id in units {
+        if let Some(unit) = state.unit_mut(id)
+            && unit.player == player
+            && unit.kind.stats().scouts
+        {
+            accepted += 1;
+            if assign(unit, Order::Scout { tile: goal }, queue) {
+                landed += 1;
+            }
+        }
+    }
+    if accepted == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+}
+
 fn apply_attack(
     state: &mut State,
     player: PlayerId,
@@ -403,9 +444,8 @@ fn apply_attack(
     // A demolition machine carries no gun, but its charge covers ground the
     // same way a weapon would.
     let covers = |stats: &crate::stats::UnitStats| {
-        victim_domain.map_or(stats.can_fight(), |domain| {
-            stats.can_target(domain) || (stats.demolition.is_some() && domain == Domain::Ground)
-        })
+        stats.can_target(victim_domain)
+            || (stats.demolition.is_some() && victim_domain == Domain::Ground)
     };
     // Machines that cannot hit the target walk to its tile instead, each
     // movement domain sharing the one tile its first slot names.
@@ -510,7 +550,7 @@ fn apply_harvest(
             Order::Harvest {
                 node,
                 anchor: node,
-                retiring: false,
+                withdrawing: false,
             },
             queue,
         ) {
@@ -543,6 +583,15 @@ fn apply_patrol(
         return Err(RejectReason::NoValidUnits);
     }
     for (ids, domain) in split_domains(state, accepted) {
+        // Scouts take each waypoint itself; only the others spread, so a
+        // scout in the group never shifts their slots.
+        let (scouts, ids): (Vec<UnitId>, Vec<UnitId>) = ids
+            .into_iter()
+            .partition(|&id| state.unit(id).expect("filtered above").kind.stats().scouts);
+        for id in scouts {
+            let unit = state.unit_mut(id).expect("filtered above");
+            assign_circuit(unit, waypoints.iter().map(|&tile| Order::Scout { tile }));
+        }
         if ids.is_empty() {
             continue;
         }
@@ -1051,7 +1100,12 @@ fn apply_repair_unit(
     let stats = t.kind.stats();
     // A parked airframe is a ground body a welder can reach; an airborne
     // one is not.
-    if t.player != player || t.hp == 0 || t.hp >= stats.max_hp || t.domain() != Domain::Ground {
+    if t.player != player
+        || t.hp == 0
+        || t.hp >= stats.max_hp
+        || t.domain() != Domain::Ground
+        || t.retiring()
+    {
         return Err(RejectReason::InvalidTarget);
     }
     let crew: Vec<UnitId> = units.iter().copied().filter(|&id| id != target).collect();
@@ -1070,6 +1124,118 @@ fn apply_repair_unit(
     Ok(())
 }
 
+/// Sends units to escort an own unit in the world. A unit the target
+/// already follows, through any escort duty in any program, is skipped so
+/// no two units ever escort each other in a loop.
+fn apply_accompany(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    target: UnitId,
+    queue: bool,
+) -> Result<(), RejectReason> {
+    let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
+    if t.player != player || t.hp == 0 {
+        return Err(RejectReason::InvalidTarget);
+    }
+    let followed = followed_from(state, target);
+    let escorts: Vec<UnitId> = units
+        .iter()
+        .copied()
+        .filter(|id| *id != target && followed.binary_search(id).is_err())
+        .collect();
+    let mut landed = 0;
+    let applied = for_owned_units(state, player, &escorts, |unit| {
+        if assign(
+            unit,
+            Order::Accompany {
+                unit: target,
+                weld: None,
+            },
+            queue,
+        ) {
+            landed += 1;
+        }
+    });
+    if applied == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    if landed == 0 {
+        return Err(RejectReason::QueueFull);
+    }
+    Ok(())
+}
+
+/// Sends own units each to the nearest own completed Crucible it can reach,
+/// to be dismantled there.
+fn apply_retire(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    queue: bool,
+) -> Result<(), RejectReason> {
+    if !state.buildings().iter().any(|b| {
+        b.player == player
+            && b.hp > 0
+            && b.built()
+            && b.kind == crate::stats::BuildingKind::Crucible
+    }) {
+        return Err(RejectReason::MissingPrerequisite);
+    }
+    let own = accepted_units(state, player, units);
+    if own.is_empty() {
+        return Err(RejectReason::NoValidUnits);
+    }
+    let mut reach = super::reach::Reach::new(state);
+    let routed: Vec<(UnitId, crate::ids::BuildingId)> = own
+        .into_iter()
+        .filter_map(|id| {
+            super::brain::retire::nearest_crucible(state, &mut reach, id)
+                .map(|crucible| (id, crucible))
+        })
+        .collect();
+    if routed.is_empty() {
+        return Err(RejectReason::UnreachableGoal);
+    }
+    let mut landed = 0;
+    for (id, crucible) in routed {
+        let order = Order::Retire {
+            crucible,
+            pad: None,
+        };
+        if assign(state.unit_mut(id).expect("accepted unit"), order, queue) {
+            landed += 1;
+        }
+    }
+    if landed == 0 {
+        return Err(RejectReason::QueueFull);
+    }
+    Ok(())
+}
+
+/// Every unit `from` escorts, directly or through a chain of escorts, by any
+/// order in any program: active, queued, or a fight escort duty picked.
+/// Sorted. Escort edges come only from accepted commands and from rally
+/// newborns, which nothing escorts yet, so refusing these at dispatch keeps
+/// every escort chain loop-free.
+fn followed_from(state: &State, from: UnitId) -> Vec<UnitId> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut frontier = vec![from];
+    while let Some(id) = frontier.pop() {
+        let Some(unit) = state.unit(id) else {
+            continue;
+        };
+        for order in std::iter::once(&unit.order).chain(&unit.queue) {
+            if let Some(escorted) = order.escorted()
+                && seen.insert(escorted)
+            {
+                frontier.push(escorted);
+            }
+        }
+    }
+    seen.into_iter().collect()
+}
+
 /// Sends carriable ground machines to climb aboard an own transport.
 /// Capacity is checked at the sling, not here, because contents change
 /// while the boarders walk.
@@ -1081,7 +1247,7 @@ fn apply_load(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(transport).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 {
+    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 || t.retiring() {
         return Err(RejectReason::InvalidTarget);
     }
     let mut landed = 0;
@@ -1364,12 +1530,22 @@ fn apply_set_rally(
     state: &mut State,
     player: PlayerId,
     building: crate::ids::BuildingId,
-    rally: Option<TilePos>,
+    rally: Option<crate::state::Rally>,
 ) -> Result<(), RejectReason> {
-    if let Some(rally) = rally
-        && !on_map(state, rally)
+    use crate::state::Rally;
+    if let Some(Rally::Tile(tile)) = rally
+        && !on_map(state, tile)
     {
         return Err(RejectReason::OutOfBounds);
+    }
+    // A unit aboard a transport is still in play, so it can be rallied onto
+    // like one in the world.
+    if let Some(Rally::Unit(unit)) = rally
+        && state
+            .escorted(unit)
+            .is_none_or(|body| body.player != player || body.hp == 0)
+    {
+        return Err(RejectReason::InvalidTarget);
     }
     let b = state
         .building_mut(building)
@@ -1381,7 +1557,8 @@ fn apply_set_rally(
         return Err(RejectReason::InvalidTarget);
     }
     // Any tile on the map is a legal rally: each newborn resolves it like a
-    // move of its own, and a scrap-node rally requests auto-harvest.
+    // move of its own, and a scrap-node rally requests auto-harvest. A unit
+    // rally names an own unit in the world for every newborn to escort.
     b.rally = rally;
     Ok(())
 }
@@ -1423,9 +1600,9 @@ fn apply_focus_fire(
     let view = state
         .attack_view(player, target)
         .ok_or(RejectReason::InvalidTarget)?;
-    if view
-        .domain
-        .is_some_and(|domain| weapons.iter().any(|weapon| !weapon.targets.covers(domain)))
+    if weapons
+        .iter()
+        .any(|weapon| !weapon.targets.covers(view.domain))
     {
         return Err(RejectReason::InvalidTarget);
     }

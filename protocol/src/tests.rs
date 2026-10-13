@@ -113,10 +113,13 @@ fn command_tag(command: &Command) -> usize {
         Command::ClearFocus { .. } => 21,
         Command::ReturnCargo { .. } => 22,
         Command::CancelOrder { .. } => 23,
+        Command::Accompany { .. } => 24,
+        Command::Retire { .. } => 25,
+        Command::Scout { .. } => 26,
     }
 }
 
-const COMMAND_VARIANTS: usize = 24;
+const COMMAND_VARIANTS: usize = 27;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -315,7 +318,7 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::SetRally {
             building: BuildingId(6),
-            rally: Some(TilePos::new(4, 4)),
+            rally: Some(oxide_sim::Rally::Unit(UnitId(3))),
         },
         Command::Surrender,
         Command::RepairUnit {
@@ -359,6 +362,20 @@ fn every_command_variant_survives_the_send_command_wire() {
             },
             from_end: 1,
             units: vec![UnitId(4), UnitId(5)],
+        },
+        Command::Accompany {
+            units: vec![UnitId(6), UnitId(7)],
+            target: UnitId(8),
+            queue: true,
+        },
+        Command::Retire {
+            units: vec![UnitId(6)],
+            queue: true,
+        },
+        Command::Scout {
+            units: vec![UnitId(6)],
+            goal: TilePos::new(12, 7),
+            queue: true,
         },
     ];
     assert_every_tag_sampled(
@@ -570,8 +587,8 @@ fn typos_inside_command_values_are_rejected() {
             "command.anchor",
         ),
         (
-            r#"{"id":13,"method":"send_command","params":{"player":0,"command":{"type":"set_rally","building":2,"rally":{"x":3,"y":4,"radius":2}}}}"#,
-            "command.rally",
+            r#"{"id":13,"method":"send_command","params":{"player":0,"command":{"type":"set_rally","building":2,"rally":{"tile":{"x":3,"y":4,"radius":2}}}}}"#,
+            "command.rally.tile",
         ),
         (
             r#"{"id":14,"method":"send_command","params":{"player":0,"command":{"type":"unload","transport":2,"at":{"x":3,"y":4,"spread":2},"queue":false}}}"#,

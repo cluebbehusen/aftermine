@@ -1,5 +1,5 @@
 //! Anchored Harvester work zones: local chaining, wreck cleanup, delivery,
-//! queue handoff, and fog-honest retirement.
+//! queue handoff, and fog-honest withdrawal.
 
 use crate::common;
 use chassis::grid::as_index;
@@ -13,7 +13,7 @@ use oxide_sim::stats::{
 use oxide_sim::{Command, Event, Order, PlayerId, State, Target, UnitKind};
 use serde_json::json;
 
-use common::{cmd, open_arena_with, run_until, unit};
+use common::{cmd, ground_blip, open_arena_with, run_until, unit};
 
 #[test]
 fn a_loaded_worker_inside_static_pressure_leaves_and_deposits() {
@@ -331,14 +331,14 @@ fn a_dry_node_adopts_a_neighboring_wreck_inside_the_same_contract() {
     let Order::Harvest {
         node,
         anchor: work_anchor,
-        retiring,
+        withdrawing,
     } = state.unit(worker).unwrap().order
     else {
         panic!("the local cleanup should still be the active work contract")
     };
     assert_eq!(node, wreck);
     assert_eq!(work_anchor, anchor);
-    assert!(!retiring);
+    assert!(!withdrawing);
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn a_delivery_returns_to_the_same_zone_while_salvage_remains() {
         Order::Harvest {
             node,
             anchor,
-            retiring: false,
+            withdrawing: false,
         } if node == source && anchor == source
     ));
     assert_eq!(state.unit(worker).unwrap().carrying(), 0);
@@ -416,12 +416,12 @@ fn a_delivery_returns_to_the_same_zone_while_salvage_remains() {
     });
     assert!(
         state.map().scrap_at(source) < 2,
-        "the worker returned after depositing instead of retiring at home"
+        "the worker returned after depositing instead of withdrawing at home"
     );
 }
 
 #[test]
-fn retirement_deposits_then_advances_one_queued_order_at_the_foundry() {
+fn withdrawal_deposits_then_advances_one_queued_order_at_the_foundry() {
     let source = TilePos::new(9, 5);
     let goal = TilePos::new(18, 5);
     let mut state = state_with_salvage(
@@ -477,12 +477,12 @@ fn retirement_deposits_then_advances_one_queued_order_at_the_foundry() {
     state.tick(&[]);
     assert!(
         matches!(state.unit(worker).unwrap().order, Order::Run { goal: g } if g.tile() == goal),
-        "retirement cannot pop the newly active order a second time"
+        "withdrawal cannot pop the newly active order a second time"
     );
 }
 
 #[test]
-fn shared_sight_retires_an_autonomous_retarget_but_not_before_it_is_known() {
+fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
     let anchor = TilePos::new(11, 5);
     let fallback = TilePos::new(14, 5);
     let mut state = state_with_salvage(
@@ -519,7 +519,7 @@ fn shared_sight_retires_an_autonomous_retarget_but_not_before_it_is_known() {
                 Order::Harvest {
                     node,
                     anchor: work_anchor,
-                    retiring: false,
+                    withdrawing: false,
                 } if node == fallback && work_anchor == anchor
             )
     });
@@ -541,7 +541,10 @@ fn shared_sight_retires_an_autonomous_retarget_but_not_before_it_is_known() {
     run_until(&mut state, 300, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
-            Order::Harvest { retiring: true, .. }
+            Order::Harvest {
+                withdrawing: true,
+                ..
+            }
         )
     });
     state.tick(&[cmd(
@@ -559,11 +562,11 @@ fn shared_sight_retires_an_autonomous_retarget_but_not_before_it_is_known() {
         events
             .iter()
             .any(|event| matches!(event, Event::ScrapDeposited { .. })),
-        "sticky retirement brought the partial load home"
+        "sticky withdrawal brought the partial load home"
     );
     assert!(
         state.map().scrap_at(fallback) > 0,
-        "losing sight cannot send the retired worker back into the zone"
+        "losing sight cannot send the withdrawn worker back into the zone"
     );
 }
 
@@ -601,7 +604,7 @@ fn a_hidden_artillery_hit_diverts_autonomous_work_without_revealing_the_gun() {
             Order::Harvest {
                 node,
                 anchor: work_anchor,
-                retiring: false,
+                withdrawing: false,
             } if node == exposed && work_anchor == anchor
         ) && state.unit(worker).unwrap().path.is_none()
             && state.can_see(PlayerId(1), state.unit(worker).unwrap().tile())
@@ -662,7 +665,7 @@ fn a_hidden_artillery_hit_diverts_autonomous_work_without_revealing_the_gun() {
         Order::Harvest {
             node,
             anchor: work_anchor,
-            retiring: false,
+            withdrawing: false,
         } if node == safe && work_anchor == anchor
     ));
     assert_eq!(
@@ -857,7 +860,7 @@ fn a_hidden_hit_on_any_harvesting_worker_is_remembered() {
 }
 
 #[test]
-fn an_own_loss_retires_a_worker_home_before_it_surfaces_idle() {
+fn an_own_loss_withdraws_a_worker_home_before_it_surfaces_idle() {
     let anchor = TilePos::new(13, 5);
     let exposed = TilePos::new(15, 5);
     let struck = TilePos::new(19, 4);
@@ -933,7 +936,10 @@ fn an_own_loss_retires_a_worker_home_before_it_surfaces_idle() {
     state.tick(&[]);
     assert!(matches!(
         state.unit(worker).unwrap().order,
-        Order::Harvest { retiring: true, .. }
+        Order::Harvest {
+            withdrawing: true,
+            ..
+        }
     ));
     let events = run_until(&mut state, 800, |state, _| {
         state.unit(worker).unwrap().order == Order::Idle
@@ -948,7 +954,7 @@ fn an_own_loss_retires_a_worker_home_before_it_surfaces_idle() {
 }
 
 #[test]
-fn a_far_radar_contact_does_not_retire_an_unrelated_zone() {
+fn a_far_radar_contact_does_not_withdraw_an_unrelated_zone() {
     let source = TilePos::new(13, 5);
     let contact = TilePos::new(20, 5);
     assert!(contact.chebyshev(source) > HARVEST_RADAR_DANGER_RADIUS);
@@ -968,7 +974,10 @@ fn a_far_radar_contact_does_not_retire_an_unrelated_zone() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     state.tick(&[cmd(
         0,
         Command::Harvest {
@@ -985,7 +994,7 @@ fn a_far_radar_contact_does_not_retire_an_unrelated_zone() {
             && matches!(
                 state.unit(worker).unwrap().order,
                 Order::Harvest {
-                    retiring: false,
+                    withdrawing: false,
                     ..
                 }
             ),
@@ -1014,7 +1023,10 @@ fn an_explicit_anchor_remains_authoritative_inside_a_local_radar_contact() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(contact));
 
     state.tick(&[cmd(
@@ -1031,7 +1043,7 @@ fn an_explicit_anchor_remains_authoritative_inside_a_local_radar_contact() {
             Order::Harvest {
                 node,
                 anchor: work_anchor,
-                retiring: false,
+                withdrawing: false,
             } if node == source && work_anchor == source
         ),
         "danger filters autonomous chaining, not the source the commander explicitly named"
@@ -1073,7 +1085,10 @@ fn an_explicit_source_avoids_unrelated_known_danger_on_the_way() {
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(contact));
     assert!(!state.vision(PlayerId(0)).visible(source));
 
@@ -1137,7 +1152,10 @@ fn an_explicit_source_prefers_a_safe_doorstep_before_a_dangerous_fallback() {
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     assert!(!state.vision(PlayerId(0)).visible(source));
 
     state.tick(&[cmd(
@@ -1186,7 +1204,10 @@ fn a_loaded_delivery_routes_around_known_danger() {
         }],
     );
     let worker = state.units()[0].id;
-    assert_eq!(state.vision(PlayerId(0)).contacts(), &[contact]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        &[ground_blip(contact)]
+    );
     state.tick(&[cmd(
         0,
         Command::Harvest {
@@ -1321,7 +1342,7 @@ fn a_remembered_armed_structure_blocks_an_autonomous_retarget_after_sight_is_los
             Order::Harvest {
                 node,
                 anchor: work_anchor,
-                retiring: true,
+                withdrawing: true,
             } if node == anchor && work_anchor == anchor
         )
     });
@@ -1363,7 +1384,7 @@ fn an_autonomous_retarget_routes_around_known_danger() {
             Order::Harvest {
                 node,
                 anchor: work_anchor,
-                retiring: false,
+                withdrawing: false,
             } if node == fallback && work_anchor == anchor
         ) && state.unit(worker).unwrap().path.is_some()
     });
@@ -1550,14 +1571,17 @@ fn a_claimed_work_tile_still_serves_when_the_free_ones_are_sealed() {
     for _ in 0..200 {
         state.tick(&[]);
         let worker = state.unit(second).unwrap();
-        let Order::Harvest { node, retiring, .. } = worker.order else {
+        let Order::Harvest {
+            node, withdrawing, ..
+        } = worker.order
+        else {
             panic!("the chained worker dropped its harvest: {:?}", worker.order);
         };
         if node != source {
             continue;
         }
         chained = true;
-        assert!(!retiring, "the chained worker gave the source up");
+        assert!(!withdrawing, "the chained worker gave the source up");
         if worker.carrying() > 1 {
             extracted = true;
             break;

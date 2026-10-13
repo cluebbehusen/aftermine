@@ -34,7 +34,8 @@ fn player_config() -> BotConfig {
 
 /// Twin Forges with seats 0 to 2 played by people and seat 3 a host bot.
 fn scenario() -> Scenario {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scenarios/twin-forges.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/scenarios/twin-forges.json");
     let mut scenario = Scenario::load(&path).unwrap();
     for (seat, player) in scenario.players.iter_mut().enumerate() {
         player.bot = seat == 3;

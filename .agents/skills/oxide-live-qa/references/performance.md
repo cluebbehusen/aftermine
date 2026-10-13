@@ -45,9 +45,9 @@ Build once before timing, from the workspace root:
 ```sh
 cargo build --release --locked -p oxide-driver -p oxide-shell
 mkdir -p replays/performance
-cargo run --release --locked -p oxide-driver -- run scenarios/skirmish.json --bots --ticks 720 --save-replay replays/performance/duel.json
+cargo run --release --locked -p oxide-driver -- run fixtures/scenarios/skirmish.json --bots --ticks 720 --save-replay replays/performance/duel.json
 cargo run --release --locked -p oxide-driver -- run scenarios/compass-grand.json --bots --ticks 6480 --save-replay replays/performance/grand.json
-cargo run --release --locked -p oxide-driver -- run scenarios/skyhook-anchorage.json --bots --ticks 6480 --save-replay replays/performance/skyhook.json
+cargo run --release --locked -p oxide-driver -- run fixtures/scenarios/skyhook-anchorage.json --bots --ticks 6480 --save-replay replays/performance/skyhook.json
 ```
 
 Use the authored scenarios and configured bot profiles. `--bots` retains one

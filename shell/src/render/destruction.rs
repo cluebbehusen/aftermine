@@ -108,6 +108,50 @@ pub(super) fn draw_hit(sprites: &Sprites, center: Vec2, zoom: f32, radius: f32, 
     }
 }
 
+pub(super) fn draw_interception(center: Vec2, zoom: f32, progress: f32) {
+    let t = progress.clamp(0.0, 1.0);
+    let fade = (1.0 - t).powi(2);
+    let pixel = (zoom / 32.0).max(1.0);
+    let motion = if reduced_motion() { 0.25 } else { 1.0 };
+    for i in 0..7 {
+        let h = hash(137, i);
+        let angle = (h % 628) as f32 / 100.0;
+        let reach = 0.035 + 0.10 * t * motion;
+        let p = center + (Vec2::from_angle(angle) * reach - vec2(0.0, 0.10 * t * motion)) * zoom;
+        let size = zoom * (0.075 + t * 0.13);
+        pixel_rect(
+            p + vec2(0.0, size * 0.18),
+            vec2(size, size * 0.8),
+            pixel,
+            Color::new(0.18, 0.19, 0.20, fade * 0.60),
+        );
+        pixel_rect(
+            p,
+            vec2(size * 0.8, size * 0.65),
+            pixel,
+            Color::new(0.51, 0.52, 0.52, fade * 0.75),
+        );
+    }
+    if reduced_motion() {
+        return;
+    }
+    for (i, angle) in [0.35_f32, 2.1, 3.55, 5.0].into_iter().enumerate() {
+        let travel = Vec2::from_angle(angle) * (0.035 + t * 0.27);
+        let p = center + (travel + vec2(0.0, 0.18 * t * t)) * zoom;
+        let size = if i % 2 == 0 {
+            vec2(0.055, 0.025)
+        } else {
+            vec2(0.025, 0.045)
+        };
+        pixel_rect(
+            p,
+            size * zoom,
+            pixel,
+            Color::new(0.64, 0.61, 0.55, (1.0 - t) * 0.9),
+        );
+    }
+}
+
 fn dust(center: Vec2, zoom: f32, spread: f32, age: f32, seed: u32) {
     if !(0.0..0.95).contains(&age) {
         return;

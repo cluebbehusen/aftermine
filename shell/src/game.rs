@@ -101,7 +101,7 @@ mod projectiles;
 pub(crate) mod projection;
 pub(crate) use projectiles::LaunchPose;
 
-pub(crate) use fx::{BuildingHit, HitSurface, UnitBody, UnitHit};
+pub(crate) use fx::{BuildingHit, HitSurface, InterceptFlight, UnitBody, UnitHit};
 pub use fx::{Effect, EffectKind, FlakYokeDelay, PingKind, ShotStyle, SoundKind};
 
 /// A transient HUD message (rejected orders, stalled units).
@@ -536,6 +536,14 @@ impl Game {
         {
             self.demo.deposited = true;
         }
+        // Likewise the combat lesson completes when a fighter rolls out:
+        // the lesson after it needs one to select.
+        if report.events.iter().any(|e| {
+            matches!(e, Event::UnitTrained { player, kind, .. }
+                if *player == self.presentation.human && kind.stats().can_fight())
+        }) {
+            self.demo.trained_fighter = true;
+        }
 
         // A concession that did not decide the match (a team game with the
         // ally fighting on) raises the surrender overlay with the human's
@@ -570,12 +578,7 @@ impl Game {
                 .map(|pc| &pc.command)
             {
                 match command {
-                    Command::Train { kind, .. } => {
-                        self.demo.trained = true;
-                        if kind.stats().can_fight() {
-                            self.demo.trained_fighter = true;
-                        }
-                    }
+                    Command::Train { .. } => self.demo.trained = true,
                     Command::Harvest { .. } => self.demo.harvested = true,
                     Command::Build { .. } => self.demo.built = true,
                     // The march lesson teaches the default zero-chase advance;
