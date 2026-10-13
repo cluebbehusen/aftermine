@@ -1,6 +1,7 @@
 //! Motor loops for warheads and interceptors in flight. A loop plays only
-//! while its missile would be drawn: over a tile the viewer sees now, or in
-//! an omniscient view (see [`crate::render::sky::missile_seen`]).
+//! while its missile would be drawn: always for the viewer's own and
+//! allied missiles, and for a hostile one over a tile the viewer sees now,
+//! or in an omniscient view (see [`crate::render::sky::missile_seen`]).
 
 use crate::game::{EffectKind, INTERCEPT_MEET, Scene, SoundKind, TICK_DT};
 use crate::render::sky::{missile_seen, warhead_track};
@@ -55,26 +56,28 @@ pub(crate) fn warhead_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
         game.state.known_warheads(human)
     };
     let mut motors = Vec::new();
-    let mut push = |key: WarheadId, line: Option<oxide_sim::strike::WarheadLine>, at, tick| {
-        let (ground, envelope) = match line {
-            Some(line) => {
-                let (ground, progress) = warhead_track(line, tick);
-                let flight = oxide_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact);
-                let launched_at = line.arrival.saturating_sub(flight) as f32;
-                (ground, warhead_envelope(tick, launched_at, progress))
+    let mut push =
+        |key: WarheadId, hostile: bool, line: Option<oxide_sim::strike::WarheadLine>, at, tick| {
+            let (ground, envelope) = match line {
+                Some(line) => {
+                    let (ground, progress) = warhead_track(line, tick);
+                    let flight = oxide_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact);
+                    let launched_at = line.arrival.saturating_sub(flight) as f32;
+                    (ground, warhead_envelope(tick, launched_at, progress))
+                }
+                None => (at, 1.0),
+            };
+            if envelope > 0.0 && missile_seen(game, hostile, ground) {
+                let gain = camera_gain(game, SoundKind::WarheadMotor, ground) * envelope;
+                if gain > 0.0 {
+                    motors.push(Motor { key, gain });
+                }
             }
-            None => (at, 1.0),
         };
-        if envelope > 0.0 && missile_seen(game, ground) {
-            let gain = camera_gain(game, SoundKind::WarheadMotor, ground) * envelope;
-            if gain > 0.0 {
-                motors.push(Motor { key, gain });
-            }
-        }
-    };
     for warhead in warheads {
         push(
             warhead.id,
+            warhead.hostile,
             warhead.line,
             crate::game::world_vec(warhead.position),
             tick,
@@ -85,6 +88,7 @@ pub(crate) fn warhead_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
     for fx in &game.presentation.fx {
         if let EffectKind::Interception {
             line: Some(line),
+            warhead_hostile,
             at,
             seed,
             completed_tick,
@@ -94,7 +98,13 @@ pub(crate) fn warhead_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
             let age = fx.age_at(completed, fraction);
             if age < INTERCEPT_MEET {
                 let stopped = completed_tick.saturating_sub(1) as f32;
-                push(WarheadId(seed), Some(line), at, stopped + age / TICK_DT);
+                push(
+                    WarheadId(seed),
+                    warhead_hostile,
+                    Some(line),
+                    at,
+                    stopped + age / TICK_DT,
+                );
             }
         }
     }
@@ -113,7 +123,10 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
         let climbed = launch.climbed(tick);
         let envelope = interceptor_envelope(climbed);
         let ground = launch.from.lerp(launch.at, climbed);
-        if envelope > 0.0 && missile_seen(game, ground) {
+        let hostile = game
+            .state
+            .hostile(game.presentation.human, launch.battery_player);
+        if envelope > 0.0 && missile_seen(game, hostile, ground) {
             let gain = camera_gain(game, SoundKind::InterceptorMotor, ground) * envelope;
             if gain > 0.0 {
                 motors.push(Motor {
@@ -126,6 +139,7 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
     for fx in &game.presentation.fx {
         if let EffectKind::Interception {
             pod: Some(pod),
+            battery_player,
             at,
             seed,
             ..
@@ -134,7 +148,8 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
             let climbed = fx.age_at(completed, fraction) / INTERCEPT_MEET;
             let envelope = interceptor_envelope(climbed);
             let ground = pod.lerp(at, climbed.clamp(0.0, 1.0));
-            if envelope > 0.0 && missile_seen(game, ground) {
+            let hostile = game.state.hostile(game.presentation.human, battery_player);
+            if envelope > 0.0 && missile_seen(game, hostile, ground) {
                 let gain = camera_gain(game, SoundKind::InterceptorMotor, ground) * envelope;
                 if gain > 0.0 {
                     motors.push(Motor {

@@ -506,7 +506,7 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             // line this seat has not tracked shows as the missile it is
             // while over ground in sight, else as its radar contact.
             let ground = crate::game::world_vec(warhead.position);
-            let seen = super::sky::missile_seen(game, ground).then(|| {
+            let seen = super::sky::missile_seen(game, warhead.hostile, ground).then(|| {
                 state
                     .warheads()
                     .iter()
@@ -583,7 +583,7 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             line_between(a, b, 1.5, track);
         }
         let ground = flight.ground(tick);
-        if super::sky::missile_seen(game, ground) {
+        if super::sky::missile_seen(game, warhead.hostile, ground) {
             draw_flight(game, sprites, flight, tick, owner);
         } else {
             // Its line is known, but the missile is over ground out of
@@ -595,7 +595,8 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     // meet their warheads where the simulation stops them.
     for launch in &game.presentation.prelaunches {
         let climbed = launch.climbed(tick);
-        if !super::sky::missile_seen(game, launch.from.lerp(launch.at, climbed)) {
+        let hostile = state.hostile(game.presentation.human, launch.battery_player);
+        if !super::sky::missile_seen(game, hostile, launch.from.lerp(launch.at, climbed)) {
             continue;
         }
         let (sky, _, _) = sky_pose(camera, Flight::of(launch.line), launch.stop);
@@ -636,6 +637,8 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     seed,
                     stopped: completed_tick.saturating_sub(1) as f32,
                     early,
+                    warhead_hostile,
+                    battery_hostile: state.hostile(game.presentation.human, battery_player),
                 },
                 fx.age_at(completed, fraction),
             );
@@ -673,6 +676,10 @@ struct Interception {
     /// Whether the interceptor launched ahead and met the warhead at its
     /// stop.
     early: bool,
+    /// Whether the warhead is hostile to this viewer.
+    warhead_hostile: bool,
+    /// Whether the interceptor is.
+    battery_hostile: bool,
 }
 
 /// Tiles above its stop an unknown warhead is taken to fly when this seat
@@ -706,8 +713,11 @@ fn draw_interception(
     } else {
         meeting.stopped + meet / crate::game::TICK_DT
     };
-    // Each part shows only over ground this seat sees.
-    let seen = |ground: Vec2| super::sky::missile_seen(game, ground);
+    // A hostile missile shows only over ground this seat sees.
+    let warhead_seen =
+        |ground: Vec2| super::sky::missile_seen(game, meeting.warhead_hostile, ground);
+    let interceptor_seen =
+        |ground: Vec2| super::sky::missile_seen(game, meeting.battery_hostile, ground);
     // Where they meet, high over the warhead's ground track, and how far
     // the ground lies below.
     let (sky, drop) = match flight {
@@ -724,12 +734,12 @@ fn draw_interception(
     if age < meet {
         if let Some(flight) = flight {
             let tick = meeting.stopped + age / crate::game::TICK_DT;
-            if tick < flight.arrival && seen(flight.ground(tick)) {
+            if tick < flight.arrival && warhead_seen(flight.ground(tick)) {
                 draw_flight(game, sprites, flight, tick, meeting.tint);
             }
         }
         if let Some(pod) = meeting.pod
-            && seen(pod.lerp(below, age / meet))
+            && interceptor_seen(pod.lerp(below, age / meet))
         {
             draw_interceptor(
                 game,
@@ -742,12 +752,15 @@ fn draw_interception(
         }
         return;
     }
-    if !seen(below) {
+    // Out of sight, a seat whose missile it was sees only the puff of smoke
+    // it ended in; a seat with neither missile sees nothing.
+    let in_sight = super::sky::ground_seen_by(game.presentation, game.state, below);
+    if !in_sight && meeting.warhead_hostile && meeting.battery_hostile {
         return;
     }
     let after = age - meet;
     // The flash where they met: a white core, then a halo racing out.
-    if after < 0.3 {
+    if in_sight && after < 0.3 {
         let k = after / 0.3;
         let core = (after / 0.1).min(1.0);
         fill_circle(
@@ -782,6 +795,9 @@ fn draw_interception(
                 ),
             );
         }
+    }
+    if !in_sight {
+        return;
     }
     // Fragments arc out and fall on smoking trails, gone before the ground.
     let fall_time = meet + 1.0;

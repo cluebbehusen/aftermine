@@ -2399,3 +2399,33 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
         "the burst comes at the stop itself"
     );
 }
+
+#[test]
+fn only_the_warheads_owner_is_told_it_was_intercepted() {
+    let mut game = mantle_interception_game();
+    advance(&mut game, 20);
+    let at = chassis::grid::TilePos::new(10, 10).center();
+    let stop = |warhead_player: u8, battery_player: u8| Event::WarheadIntercepted {
+        warhead: oxide_sim::WarheadId(0),
+        player: oxide_sim::PlayerId(warhead_player),
+        battery: BuildingId(99),
+        battery_player: oxide_sim::PlayerId(battery_player),
+        pod: 1,
+        at,
+        impact: at,
+    };
+    let told = |game: &Game| {
+        game.presentation
+            .toasts
+            .iter()
+            .any(|toast| toast.text == "Warhead intercepted")
+    };
+    let human = game.presentation.human.0;
+    let other = 1 - human;
+    game.presentation
+        .spawn_fx(&game.state, &[stop(other, human)]);
+    assert!(!told(&game), "the defender is not told");
+    game.presentation
+        .spawn_fx(&game.state, &[stop(human, other)]);
+    assert!(told(&game), "the attacker is");
+}

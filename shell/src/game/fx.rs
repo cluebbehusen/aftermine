@@ -1763,13 +1763,17 @@ impl Presentation {
                             let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
                             self.pod_shots
                                 .insert((battery.0, *pod), (angle, self.fx_clock));
-                            if crate::render::missile_seen_by(self, state, from) {
+                            let hostile = state.hostile(self.human, *battery_player);
+                            if crate::render::missile_seen_by(self, state, hostile, from) {
                                 self.sounds_pending
                                     .push((SoundKind::InterceptorLaunch, Some(from)));
                             }
                             from
                         })
                     });
+                    if *player == self.human && !self.all_seeing() {
+                        self.toast("Warhead intercepted");
+                    }
                     let known = self
                         .fx_previous
                         .warheads
@@ -1892,7 +1896,8 @@ impl Presentation {
             let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
             self.pod_shots
                 .insert((battery.id.0, stop.pod), (angle, self.fx_clock));
-            if crate::render::missile_seen_by(self, state, from) {
+            let hostile = state.hostile(self.human, battery.player);
+            if crate::render::missile_seen_by(self, state, hostile, from) {
                 self.sounds_pending
                     .push((SoundKind::InterceptorLaunch, Some(from)));
             }

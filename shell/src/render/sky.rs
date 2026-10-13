@@ -4,15 +4,26 @@
 use macroquad::prelude::Vec2;
 
 /// Whether a missile over `ground`, its world position on the ground
-/// track, shows to this viewer now. Everyone sees missiles true to fog,
-/// whoever owns them: only while the tile under it is in sight, or in an
-/// omniscient view.
-pub(crate) fn missile_seen(game: &crate::game::Scene<'_>, ground: Vec2) -> bool {
-    missile_seen_by(game.presentation, game.state, ground)
+/// track, shows to this viewer now. A viewer's own and allied missiles
+/// always show, as their units do; a `hostile` one shows true to fog, only
+/// while the tile under it is in sight, or in an omniscient view.
+pub(crate) fn missile_seen(game: &crate::game::Scene<'_>, hostile: bool, ground: Vec2) -> bool {
+    missile_seen_by(game.presentation, game.state, hostile, ground)
 }
 
 /// [`missile_seen`] for a presentation and the state it shows.
 pub(crate) fn missile_seen_by(
+    presentation: &crate::game::Presentation,
+    state: &oxide_sim::State,
+    hostile: bool,
+    ground: Vec2,
+) -> bool {
+    !hostile || ground_seen_by(presentation, state, ground)
+}
+
+/// Whether this viewer sees the ground at `ground` itself, whatever flies
+/// over it.
+pub(crate) fn ground_seen_by(
     presentation: &crate::game::Presentation,
     state: &oxide_sim::State,
     ground: Vec2,

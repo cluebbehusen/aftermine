@@ -811,15 +811,17 @@ Bore out of sight draws above the fog as corner brackets and a drill glyph in
 its owner's color, and as an outlined footprint on the minimap. Markers do not
 change entity positions, selection, picking, or simulation.
 
-Missiles show true to fog for everyone, whoever owns them: a warhead or
-interceptor draws, and its motor loop plays, only while the viewer sees the tile
-under it (`render::sky::missile_seen`). What a seat knows of a warhead from
-`State::known_warheads` draws above the fog regardless: the strike rings of its
-own and tracked hostile warheads, and a contact marker where a known warhead
-flies out of sight, its ring filling toward lock while untracked. In sight, a
-warhead flies its line with a presentation-only altitude: a steep climb, a high
-cruise and a steep dive, lifted above its ground shadow and growing with height,
-with a smoke trail along the arc. Interceptors launch from
+A seat's own and allied missiles draw, and their motor loops play, wherever they
+fly, as its units do; a hostile warhead or interceptor only while the viewer
+sees the tile under it (`render::sky::missile_seen`). An interception out of
+sight ends in a puff of smoke for a seat whose missile it was, without the other
+missile, and in nothing for anyone else; the warhead's owner is told it was
+intercepted. What a seat knows of a hostile warhead from `State::known_warheads`
+draws above the fog regardless: the strike rings once tracked, and a contact
+marker where it flies out of sight, its ring filling toward lock while
+untracked. A warhead flies its line with a presentation-only altitude: a steep
+climb, a high cruise and a steep dive, lifted above its ground shadow and
+growing with height, with a smoke trail along the arc. Interceptors launch from
 `State::interception_forecast` the meeting time ahead of their stop, so they
 meet the warhead where the simulation stops it; a stop forecast too late flies
 the warhead on to meet its interceptor instead. The Spire deck draws at its

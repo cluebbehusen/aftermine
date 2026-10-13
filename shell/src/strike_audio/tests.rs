@@ -58,7 +58,7 @@ fn spire_game() -> (Game, oxide_sim::BuildingId) {
 }
 
 #[test]
-fn a_warhead_motor_follows_the_warhead_only_while_it_is_seen() {
+fn an_own_warhead_motor_follows_it_anywhere_and_a_hostile_one_only_in_sight() {
     let (mut game, spire) = spire_game();
     game.issue(oxide_sim::Command::Launch {
         building: spire,
@@ -81,9 +81,15 @@ fn a_warhead_motor_follows_the_warhead_only_while_it_is_seen() {
         .unwrap();
     let tick = game.state.current_tick().saturating_sub(1) as f32;
     game.presentation.camera.center = warhead_track(line, tick).0;
+    assert_eq!(
+        warhead_motors(&game.view()).len(),
+        1,
+        "an own warhead is heard out of sight, as it is drawn"
+    );
+    game.presentation.human = oxide_sim::PlayerId(1);
     assert!(
         warhead_motors(&game.view()).is_empty(),
-        "even an own warhead is heard only over ground in sight"
+        "a hostile one is heard only over ground in sight"
     );
     game.presentation.overlay = true;
     assert_eq!(
@@ -159,7 +165,7 @@ fn a_stopped_warhead_keeps_its_motor_until_the_interceptor_reaches_it() {
 }
 
 #[test]
-fn an_unseen_interceptor_climbs_in_silence() {
+fn an_unseen_hostile_interceptor_climbs_in_silence_and_an_own_one_is_heard() {
     let (mut game, _) = spire_game();
     for _ in 0..5 {
         game.do_tick();
@@ -167,10 +173,21 @@ fn an_unseen_interceptor_climbs_in_silence() {
     let now = game.state.current_tick();
     let far = Vec2::new(60.0, 9.0);
     game.presentation.camera.center = far;
+    let mut hostile = interception(None, Some(far), far, now - 2);
+    if let EffectKind::Interception { battery_player, .. } = &mut hostile.kind {
+        *battery_player = oxide_sim::PlayerId(1);
+    }
+    game.presentation.fx.push(hostile);
+    assert!(interceptor_motors(&game.view()).is_empty());
     game.presentation
         .fx
         .push(interception(None, Some(far), far, now - 2));
-    assert!(interceptor_motors(&game.view()).is_empty());
+    assert_eq!(
+        interceptor_motors(&game.view()).len(),
+        1,
+        "the viewer's own interceptor is heard out of sight"
+    );
+    game.presentation.fx.pop();
     game.presentation.overlay = true;
     assert_eq!(interceptor_motors(&game.view()).len(), 1);
 }
