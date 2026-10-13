@@ -548,3 +548,32 @@ fn a_footprint_that_closes_off_a_pocket_is_refused() {
     assert!(keeps(pocket.offset(0, 2)), "the pocket still opens below");
     assert!(!keeps(pocket.offset(0, 1)), "the last side closes it");
 }
+
+#[test]
+fn a_footprint_that_takes_a_buildings_last_side_is_refused() {
+    let mut scenario = saturated(400);
+    let walled = TilePos::new(13, 7);
+    put(&mut scenario, 0, BuildingKind::Reclaimer, walled);
+    for side in [(-1, 0), (1, 0), (0, -1)] {
+        put(
+            &mut scenario,
+            0,
+            BuildingKind::Reclaimer,
+            walled.offset(side.0, side.1),
+        );
+    }
+    let model = map(&scenario);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let keeps = |anchor: TilePos| {
+        defenses::keeps_paths(&observation, &model, BuildingKind::Spire, anchor, &[])
+    };
+    assert!(
+        keeps(walled.offset(0, 2)),
+        "a worker still reaches it from below"
+    );
+    assert!(
+        !keeps(walled.offset(0, 1)),
+        "no worker could reach it to repair it"
+    );
+}

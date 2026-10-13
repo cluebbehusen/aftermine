@@ -2207,8 +2207,9 @@ fn tiles_at(point: (i64, i64)) -> Vec<TilePos> {
 
 /// Whether a `kind` at `anchor` still leaves its ground open: an exit beside
 /// every own producer, every worked home scrap node and every hostile start
-/// on that ground, a tile to work from beside itself and every own site
-/// still going up, and no open ground beside it cut off, where units would
+/// on that ground, a tile to work from beside itself, every own site still
+/// going up and every own building it borders, which would otherwise be
+/// beyond repair, and no open ground beside it cut off, where units would
 /// be trapped or trained into a pocket they never leave. One flood fill over
 /// the ground from the rings of the seat's Foundries on it, with known
 /// buildings, claims, `planned` footprints, known live scrap and the new
@@ -2324,10 +2325,14 @@ pub(crate) fn keeps_paths(
     let workable = |kind: BuildingKind, anchor: TilePos| sides(kind, anchor).any(reached_at);
     // Any pocket the footprint closes off borders one of its sides.
     let sealing = sides(kind, anchor).any(|tile| open(tile) && !reached_at(tile));
+    let covered = |tile: TilePos| tiles(kind, anchor).any(|own| own == tile);
+    // Only a neighbour can lose its last side to this footprint: it cuts
+    // nothing else off without sealing a pocket beside itself.
     let sites = observation
         .my_buildings
         .iter()
-        .filter(|building| !building.built && building.kind != BuildingKind::ScuttleCharge)
+        .filter(|building| building.kind != BuildingKind::ScuttleCharge)
+        .filter(|building| !building.built || sides(building.kind, building.anchor).any(covered))
         .map(|building| (building.kind, building.anchor))
         .chain(claims.iter().copied())
         .chain([(kind, anchor)])
