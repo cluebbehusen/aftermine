@@ -227,7 +227,13 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
             player,
         });
         if let Some(rally) = rally {
-            let order = rally_order(state, unit, rally);
+            let order = match rally {
+                crate::state::Rally::Tile(tile) => rally_order(state, unit, tile),
+                crate::state::Rally::Unit(escorted) => Order::Accompany {
+                    unit: escorted,
+                    weld: None,
+                },
+            };
             state.unit_mut(unit).expect("just spawned").order = order;
         }
         let b = state.building_mut(id).expect("still standing");

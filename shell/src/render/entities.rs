@@ -147,6 +147,7 @@ pub(crate) fn breadcrumb_points(
         oxide_sim::Order::Board { .. }
         | oxide_sim::Order::Unload { .. }
         | oxide_sim::Order::Land { .. } => BONE_FAINT,
+        oxide_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
         oxide_sim::Order::Retire { .. } => Color::new(0.85, 0.64, 0.25, 0.55),
         oxide_sim::Order::Idle => BONE_FAINT,
     };
@@ -176,6 +177,11 @@ pub(crate) fn breadcrumb_points(
             oxide_sim::Order::RepairUnit { unit } => tile_center(game.state.unit(*unit)?.tile()),
             oxide_sim::Order::Board { transport } => {
                 tile_center(game.state.unit(*transport)?.tile())
+            }
+            // An escorted unit is own, so it is always seen, aboard a
+            // transport included.
+            oxide_sim::Order::Accompany { unit, .. } => {
+                tile_center(game.state.escorted(*unit)?.tile())
             }
             oxide_sim::Order::Unload { at, .. } => tile_center(at.tile()),
             // A landing that took over a walk marks the walk's click.
@@ -3063,7 +3069,7 @@ pub(crate) fn draw_pings(game: &crate::game::Scene<'_>) {
 
 /// The selected own building's rally flag, above the fog for the same
 /// reason as pings.
-pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>) {
+pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
     // A selected producer draws a line to its rally as well as the flag.
     // Own producers only, like the flag below: an inspected foreign
     // building must not reveal its rally.
@@ -3080,22 +3086,30 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>) {
             building.anchor.x as f32 + building.kind.size().0 as f32 * 0.5,
             building.anchor.y as f32 + building.kind.size().1 as f32 * 0.5,
         ));
-        let b = game
-            .presentation
-            .camera
-            .to_screen(vec2(rally.x as f32 + 0.5, rally.y as f32 + 0.5));
+        // A unit rally rides with its unit, or with the transport carrying it.
+        let b = match rally {
+            oxide_sim::Rally::Tile(tile) => game
+                .presentation
+                .camera
+                .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5)),
+            oxide_sim::Rally::Unit(unit) => {
+                let Some(body) = game.state.escorted(unit) else {
+                    continue;
+                };
+                game.presentation
+                    .camera
+                    .to_screen(game.presentation.draw_pos(body.id, body.pos, alpha))
+            }
+        };
         line_between(a, b, 1.5, Color::new(0.91, 0.89, 0.85, 0.35));
-    }
-    for rally in game
-        .presentation
-        .selection
-        .buildings
-        .iter()
-        .filter_map(|id| game.state.building(*id))
-        .filter(|building| building.player == game.presentation.human)
-        .filter_map(|building| building.rally)
-    {
-        draw_rally_flag(game, rally, game.presentation.camera.zoom);
+        match rally {
+            oxide_sim::Rally::Tile(tile) => {
+                draw_rally_flag(game, tile, game.presentation.camera.zoom);
+            }
+            oxide_sim::Rally::Unit(_) => {
+                stroke_circle(b, game.presentation.camera.zoom * 0.6, 2.0, SCRAP_COLOR);
+            }
+        }
     }
 }
 

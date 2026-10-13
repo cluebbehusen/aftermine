@@ -134,7 +134,10 @@ pub fn commanded(order: Order) -> Order {
         } => Order::Attack {
             target,
             pursue,
-            resume: resume.map(tile),
+            resume: resume.map(|resume| match resume {
+                oxide_sim::Resume::Hunt(goal) => oxide_sim::Resume::Hunt(tile(goal)),
+                escort @ oxide_sim::Resume::Accompany(_) => escort,
+            }),
         },
         other => other,
     }

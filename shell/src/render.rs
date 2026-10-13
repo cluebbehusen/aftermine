@@ -529,7 +529,7 @@ pub(crate) fn draw_with_performance(
     draw_blips(game);
     entities::draw_public_buildings(game);
     entities::draw_repair_tethers(game);
-    draw_rally_marker(game);
+    draw_rally_marker(game, alpha);
     draw_breadcrumbs(game, input);
     // Deferred claims are the player's own intent, like breadcrumbs; a
     // spectator has none.

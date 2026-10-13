@@ -152,12 +152,14 @@ pub enum Command {
         /// Queue position (0 = currently training).
         index: u8,
     },
-    /// Point a building's fresh units somewhere (`None` clears the rally).
+    /// Point a building's fresh units at a tile or at an own unit in play,
+    /// aboard a transport included, for them to escort (`None` clears the
+    /// rally).
     SetRally {
         /// The building.
         building: BuildingId,
-        /// Rally tile, or `None` for the doorstep default.
-        rally: Option<TilePos>,
+        /// The rally, or `None` for the doorstep default.
+        rally: Option<crate::state::Rally>,
     },
     /// Concede the seat. The issuer's Foundries stop counting toward the
     /// team-scoped victory check and its future commands reject as
@@ -280,6 +282,22 @@ pub enum Command {
         /// Other units to edit alike; those without a match are skipped.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         units: Vec<UnitId>,
+    },
+    /// Escort an own unit: each escort holds a slot around it at its own
+    /// top speed, fights threats near it, and, if it can weld, mends it and
+    /// its other escorts whenever it stops. When the escorted unit leaves
+    /// play each escort takes its next queued order, or idles where it
+    /// stands. The sim reads `units` as a sorted set, never lets the target
+    /// escort itself, and skips any unit the target already follows,
+    /// directly or through other escorts, now or later in its program.
+    Accompany {
+        /// The escorts.
+        units: Vec<UnitId>,
+        /// The own unit in the world to escort.
+        target: UnitId,
+        /// Append instead of replace (see [`Command::Run::queue`]).
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        queue: bool,
     },
     /// Send own units to the nearest own completed Crucible each can reach,
     /// to be dismantled for a refund scaled by their remaining hp. Refused

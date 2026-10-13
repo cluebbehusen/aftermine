@@ -304,7 +304,7 @@ pub(super) fn hunt(
         unit.order = Order::Attack {
             pursue: false,
             target: target.into(),
-            resume: Some(goal),
+            resume: Some(crate::state::Resume::Hunt(goal)),
         };
         unit.path = None;
         return;

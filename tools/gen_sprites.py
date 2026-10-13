@@ -3086,6 +3086,23 @@ def icon_rally() -> None:
     finish(img, ICON, "icon_rally")
 
 
+def icon_accompany() -> None:
+    """Escort duty: the leader ahead, two escorts keeping pace at its flanks."""
+    img, d = canvas(ICON)
+
+    def arrow(cx: float, top: float, half: float, head: float, stem: float, bottom: float, color):
+        d.polygon(
+            [(s(cx), s(top)), (s(cx + half), s(top + head)), (s(cx - half), s(top + head))],
+            fill=color,
+        )
+        d.rectangle([s(cx - stem / 2), s(top + head), s(cx + stem / 2), s(bottom)], fill=color)
+
+    arrow(24, 4, 9, 11, 6, 30, (*SCRAP, 255))
+    arrow(11, 16, 7, 9, 5, 45, (*BONE, 255))
+    arrow(37, 16, 7, 9, 5, 45, (*BONE, 255))
+    finish(img, ICON, "icon_accompany")
+
+
 def icon_retire() -> None:
     """Retirement: a gear melting down, its lower half running off as scrap."""
     img, d = canvas(ICON)
@@ -3244,6 +3261,7 @@ def generate(output: Path) -> None:
     icon_cancel()
     icon_rally()
     icon_idle()
+    icon_accompany()
     icon_retire()
     pack_atlas()
     print("done")

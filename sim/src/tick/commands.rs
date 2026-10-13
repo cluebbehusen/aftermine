@@ -168,6 +168,11 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 *from_end,
                 &canonical_units(units),
             ),
+            Command::Accompany {
+                units,
+                target,
+                queue,
+            } => apply_accompany(state, pc.player, &canonical_units(units), *target, *queue),
             Command::Retire { units, queue } => {
                 apply_retire(state, pc.player, &canonical_units(units), *queue)
             }
@@ -1078,6 +1083,48 @@ fn apply_repair_unit(
     Ok(())
 }
 
+/// Sends units to escort an own unit in the world. A unit the target
+/// already follows, through any escort duty in any program, is skipped so
+/// no two units ever escort each other in a loop.
+fn apply_accompany(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    target: UnitId,
+    queue: bool,
+) -> Result<(), RejectReason> {
+    let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
+    if t.player != player || t.hp == 0 {
+        return Err(RejectReason::InvalidTarget);
+    }
+    let followed = followed_from(state, target);
+    let escorts: Vec<UnitId> = units
+        .iter()
+        .copied()
+        .filter(|id| *id != target && followed.binary_search(id).is_err())
+        .collect();
+    let mut landed = 0;
+    let applied = for_owned_units(state, player, &escorts, |unit| {
+        if assign(
+            unit,
+            Order::Accompany {
+                unit: target,
+                weld: None,
+            },
+            queue,
+        ) {
+            landed += 1;
+        }
+    });
+    if applied == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    if landed == 0 {
+        return Err(RejectReason::QueueFull);
+    }
+    Ok(())
+}
+
 /// Sends own units each to the nearest own completed Crucible it can reach,
 /// to be dismantled there.
 fn apply_retire(
@@ -1123,6 +1170,29 @@ fn apply_retire(
         return Err(RejectReason::QueueFull);
     }
     Ok(())
+}
+
+/// Every unit `from` escorts, directly or through a chain of escorts, by any
+/// order in any program: active, queued, or a fight escort duty picked.
+/// Sorted. Escort edges come only from accepted commands and from rally
+/// newborns, which nothing escorts yet, so refusing these at dispatch keeps
+/// every escort chain loop-free.
+fn followed_from(state: &State, from: UnitId) -> Vec<UnitId> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut frontier = vec![from];
+    while let Some(id) = frontier.pop() {
+        let Some(unit) = state.unit(id) else {
+            continue;
+        };
+        for order in std::iter::once(&unit.order).chain(&unit.queue) {
+            if let Some(escorted) = order.escorted()
+                && seen.insert(escorted)
+            {
+                frontier.push(escorted);
+            }
+        }
+    }
+    seen.into_iter().collect()
 }
 
 /// Sends carriable ground machines to climb aboard an own transport.
@@ -1419,12 +1489,22 @@ fn apply_set_rally(
     state: &mut State,
     player: PlayerId,
     building: crate::ids::BuildingId,
-    rally: Option<TilePos>,
+    rally: Option<crate::state::Rally>,
 ) -> Result<(), RejectReason> {
-    if let Some(rally) = rally
-        && !on_map(state, rally)
+    use crate::state::Rally;
+    if let Some(Rally::Tile(tile)) = rally
+        && !on_map(state, tile)
     {
         return Err(RejectReason::OutOfBounds);
+    }
+    // A unit aboard a transport is still in play, so it can be rallied onto
+    // like one in the world.
+    if let Some(Rally::Unit(unit)) = rally
+        && state
+            .escorted(unit)
+            .is_none_or(|body| body.player != player || body.hp == 0)
+    {
+        return Err(RejectReason::InvalidTarget);
     }
     let b = state
         .building_mut(building)
@@ -1436,7 +1516,8 @@ fn apply_set_rally(
         return Err(RejectReason::InvalidTarget);
     }
     // Any tile on the map is a legal rally: each newborn resolves it like a
-    // move of its own, and a scrap-node rally requests auto-harvest.
+    // move of its own, and a scrap-node rally requests auto-harvest. A unit
+    // rally names an own unit in the world for every newborn to escort.
     b.rally = rally;
     Ok(())
 }

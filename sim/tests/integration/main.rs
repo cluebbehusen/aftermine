@@ -5,6 +5,7 @@
 
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+mod accompany;
 mod aircraft_turning;
 mod bastion_acquisition;
 mod behavior_combat;
@@ -55,6 +56,7 @@ mod surrender;
 mod teams;
 mod transports;
 mod turret_acquisition;
+mod unit_rally;
 mod unreachable_goals;
 mod upgrades;
 mod worker_contact;

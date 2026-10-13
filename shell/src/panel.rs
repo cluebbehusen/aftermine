@@ -90,6 +90,8 @@ pub enum VerbIcon {
     Idle,
     Run,
     Hunt,
+    /// The escort slots around a guarded unit.
+    Accompany,
     /// A gear melting down to scrap.
     Retire,
 }
@@ -588,6 +590,18 @@ fn order_subject(
                 Some(frac),
             ))
         }
+        // The escorted unit is own by construction; its meter is its hull.
+        // Riding a transport it is out of the world, and the chip goes bare.
+        Order::Accompany { unit, .. } => {
+            let u = game.state.unit(*unit)?;
+            let frac = (u.hp as f32 / u.kind.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
+            Some((
+                OrderSubject::Unit(u.kind, owner_of(u.player)),
+                entity_name(u.kind.name()),
+                false,
+                Some(frac),
+            ))
+        }
         // The Crucible taking the machine apart. The dismantling meter
         // draws over the machine itself.
         Order::Retire { crucible, .. } => {
@@ -704,6 +718,11 @@ fn order_card(
             VerbIcon::Repair,
             "Weld",
             "Repairing a damaged unit; consumes scrap.",
+        ),
+        Order::Accompany { .. } => (
+            VerbIcon::Accompany,
+            "Accompany",
+            "Escorting a unit: keeping pace, fighting threats near it, and welding its group whenever it stops.",
         ),
         Order::Retire { .. } => (
             VerbIcon::Retire,
@@ -1273,6 +1292,20 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         desc: vec![
             patrol_desc(crate::platform::hands()).into(),
             "Machines engage whatever they meet along the way.".into(),
+        ],
+        progress: None,
+    });
+    panel.cards.push(Card {
+        icon: CardIcon::Verb(VerbIcon::Accompany),
+        title: "Accompany".into(),
+        cost: None,
+        hotkey: chord(bindings, Action::Accompany),
+        action: CardAction::Dispatch(Action::Accompany),
+        enabled: true,
+        why: None,
+        desc: vec![
+            "Select a friendly unit for the rest to escort. They keep pace,".into(),
+            "fight threats near it, and weld the group whenever it stops.".into(),
         ],
         progress: None,
     });

@@ -2194,3 +2194,14 @@ pub const LEASH_REACQUIRE_COOLDOWN: u16 = 60;
 /// re-acquires unleashed; otherwise unit-id ordering can decide which
 /// side's advancing army is tethered first.
 pub const LEASH_STATION_TICKS: u16 = 40;
+
+/// How far from the escorted unit an escort looks for a fight, in tiles,
+/// capped by its own aggro range. Welders mend escort-party members within
+/// the same distance of it.
+pub const ESCORT_ENGAGE_RADIUS: Fx = Fx::lit("7");
+
+/// How far from the escorted unit an escort's victim may stray before the
+/// escort breaks off, firing included, and returns to its slot. Wider than
+/// [`ESCORT_ENGAGE_RADIUS`] so a fight it just picked never ends on the next
+/// tick.
+pub const ESCORT_BREAK_RADIUS: Fx = Fx::lit("10");

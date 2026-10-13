@@ -67,12 +67,13 @@ enum CommandTag {
     ClearFocus,
     ReturnCargo,
     CancelOrder,
+    Accompany,
     Retire,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 25] = [
+const COMMAND_TAGS: [CommandTag; 26] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -97,6 +98,7 @@ const COMMAND_TAGS: [CommandTag; 25] = [
     CommandTag::ClearFocus,
     CommandTag::ReturnCargo,
     CommandTag::CancelOrder,
+    CommandTag::Accompany,
     CommandTag::Retire,
 ];
 
@@ -138,7 +140,8 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::ClearFocus => 21,
         CommandTag::ReturnCargo => 22,
         CommandTag::CancelOrder => 23,
-        CommandTag::Retire => 24,
+        CommandTag::Accompany => 24,
+        CommandTag::Retire => 25,
     }
 }
 
@@ -169,6 +172,7 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::ClearFocus { .. } => CommandTag::ClearFocus,
         Command::ReturnCargo { .. } => CommandTag::ReturnCargo,
         Command::CancelOrder { .. } => CommandTag::CancelOrder,
+        Command::Accompany { .. } => CommandTag::Accompany,
         Command::Retire { .. } => CommandTag::Retire,
     }
 }
@@ -528,7 +532,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
         },
         CommandTag::SetRally => Command::SetRally {
             building: building_id(rng, state),
-            rally: (rng.next_below(3) != 0).then(|| tile(rng, state)),
+            rally: match rng.next_below(3) {
+                0 => None,
+                1 => Some(oxide_sim::Rally::Tile(tile(rng, state))),
+                _ => Some(oxide_sim::Rally::Unit(unit_id(rng, state))),
+            },
         },
         CommandTag::Surrender => Command::Surrender,
         CommandTag::RepairUnit => Command::RepairUnit {
@@ -561,6 +569,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             queue: queue(rng),
         },
         CommandTag::CancelOrder => cancel_order(rng, state),
+        CommandTag::Accompany => Command::Accompany {
+            units: units(rng, state),
+            target: unit_id(rng, state),
+            queue: queue(rng),
+        },
         CommandTag::Retire => Command::Retire {
             units: units(rng, state),
             queue: queue(rng),
@@ -591,6 +604,10 @@ struct Reach {
     cancelled: u64,
     cancelled_found: u64,
     cancelled_order: u64,
+    /// Most units on escort duty at once.
+    escorts: usize,
+    /// Most producers rallied onto a unit at once.
+    unit_rallies: usize,
     retired: u64,
 }
 
@@ -612,6 +629,8 @@ impl Reach {
         self.cancelled += other.cancelled;
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
+        self.escorts = self.escorts.max(other.escorts);
+        self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
     }
 }
@@ -998,6 +1017,20 @@ fn fuzz_run(seed: u64) -> Run {
                 .max()
                 .unwrap_or(0),
         );
+        reach.escorts = reach.escorts.max(
+            state
+                .units()
+                .iter()
+                .filter(|u| matches!(u.order, oxide_sim::Order::Accompany { .. }))
+                .count(),
+        );
+        reach.unit_rallies = reach.unit_rallies.max(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| matches!(b.rally, Some(oxide_sim::Rally::Unit(_))))
+                .count(),
+        );
         reach.train_queue = reach.train_queue.max(
             state
                 .buildings()
@@ -1131,6 +1164,14 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must land an order cancellation drawn from a real program"
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
+    assert!(
+        reach.escorts > 0,
+        "the sweep must put a unit on escort duty"
+    );
+    assert!(
+        reach.unit_rallies > 0,
+        "the sweep must rally a producer onto a unit"
+    );
     assert!(reach.retired > 0, "the sweep must take a unit apart");
 }
 
