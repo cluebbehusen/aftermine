@@ -902,6 +902,71 @@ fn unguided_unit_contacts_never_turn_toward_a_nearby_body() {
 }
 
 #[test]
+fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
+    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+        "name": "Scout radar fixture", "map": ["....................", "....................", "..1.................",
+            "....................", "....................", "....................",
+            "....................", "....................", "....................",
+            "....................", "....................", "...................."],
+        "players": [{"name": "You", "scrap": 0, "bot": false}],
+        "units": [{"player": 0, "kind": "kestrel", "x": 5, "y": 7},
+            {"player": 0, "kind": "surveyor", "x": 12, "y": 7}]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let id = |game: &Game, kind: oxide_sim::UnitKind| {
+        game.state
+            .units()
+            .iter()
+            .find(|unit| unit.kind == kind)
+            .unwrap()
+            .id
+    };
+    let radar_rings = |game: &Game| {
+        let mut radii = Vec::new();
+        visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
+            if indicator.range.kind == BuildingRangeKind::Radar
+                && let BuildingRangeShape::Circle { radius, .. } = indicator.range.shape
+            {
+                radii.push(radius);
+            }
+        });
+        radii
+    };
+    let (kestrel, surveyor) = (
+        id(&game, oxide_sim::UnitKind::Kestrel),
+        id(&game, oxide_sim::UnitKind::Surveyor),
+    );
+    game.presentation.selection.units = vec![kestrel];
+    assert_eq!(radar_rings(&game), [14.0]);
+    game.presentation.selection.units = vec![surveyor];
+    assert!(radar_rings(&game).is_empty(), "folded at the start");
+    let deploy = oxide_sim::UnitKind::Surveyor
+        .stats()
+        .radar
+        .unwrap()
+        .deploy_ticks;
+    for _ in 0..deploy {
+        game.do_tick();
+    }
+    assert_eq!(radar_rings(&game), [12.0]);
+}
+
+#[test]
+fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
+    use oxide_sim::stats::Domain;
+    let center = vec2(50.0, 50.0);
+    let ground = blip_strokes(center, 10.0, Domain::Ground);
+    let air = blip_strokes(center, 10.0, Domain::Air);
+    assert_eq!(ground.len(), 4, "a closed diamond");
+    assert_eq!(air.len(), 2, "an open peak");
+    for stroke in &air {
+        assert!(ground.contains(stroke));
+        assert!(stroke.0.y <= center.y && stroke.1.y <= center.y);
+    }
+}
+
+#[test]
 fn repair_tethers_follow_each_own_bays_patient_choice() {
     let scenario = oxide_sim::Scenario::from_json(
         &serde_json::json!({

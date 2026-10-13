@@ -221,7 +221,8 @@ impl Ledger {
                 | Command::Repair { units, .. }
                 | Command::RepairUnit { units, .. }
                 | Command::Salvage { units, .. }
-                | Command::ReturnCargo { units, .. } => units.contains(&unit),
+                | Command::ReturnCargo { units, .. }
+                | Command::Scout { units, .. } => units.contains(&unit),
                 _ => false,
             })
     }
@@ -249,7 +250,8 @@ fn units_of(command: &mut Command) -> Option<&mut Vec<UnitId>> {
         | Command::RepairUnit { units, .. }
         | Command::Advance { units, .. }
         | Command::Load { units, .. }
-        | Command::ReturnCargo { units, .. } => Some(units),
+        | Command::ReturnCargo { units, .. }
+        | Command::Scout { units, .. } => Some(units),
         _ => None,
     }
 }
@@ -558,6 +560,9 @@ pub(crate) fn decide(
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
+    persistent
+        .missions
+        .scouts_stopped(events, &mut persistent.memory, tick);
     let lacking = persistent.missions.scout(
         observation,
         map,

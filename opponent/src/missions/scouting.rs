@@ -6,13 +6,14 @@ use super::Scratch;
 use super::air::{self, Hazard};
 use super::{MISSION_CAP, Mission, Missions, Task, approach, mine, run};
 use crate::decision::Ledger;
+use crate::events::OwnEvent;
 use crate::frame::{HomeFrame, doubled};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, PlayerId, UnitKind};
+use oxide_sim::{BuildingKind, Command, PlayerId, StallReason, UnitKind};
 use std::cell::OnceCell;
 
 /// Ticks a point may go unseen before it is worth a look.
@@ -147,12 +148,14 @@ impl Missions {
             .filter_map(|id| mine(observation, id))
             .filter(|unit| {
                 unit.kind == UnitKind::Kestrel
-                    || (unit.kind == UnitKind::Surveyor && map.component(unit.tile) == home)
+                    || (unit.kind.stats().scouts && map.component(unit.tile) == home)
             })
             .collect();
+        // Ground scouts take what they can reach first, leaving aircraft
+        // the places only flight reaches.
         scouts.sort_by_key(|unit| {
             (
-                unit.kind != UnitKind::Kestrel,
+                flies(unit),
                 frame.rank(frame.home, doubled(unit.tile)),
                 unit.id,
             )
@@ -198,6 +201,28 @@ impl Missions {
             })
             .count()
     }
+
+    /// Counts the point of each scout that stopped short of it, or gave it
+    /// up for want of a safe view, as seen: the scout moves on, and the next
+    /// one waits until the point is stale again.
+    pub(crate) fn scouts_stopped(&self, events: &[OwnEvent], memory: &mut Memory, now: u64) {
+        for event in events {
+            let OwnEvent::OrderStalled {
+                unit,
+                reason: StallReason::SafeVantage | StallReason::NoSafeVantage,
+                ..
+            } = *event
+            else {
+                continue;
+            };
+            if let Some(point) = self.list.iter().find_map(|mission| match mission.task {
+                Task::Scout { point } if mission.units.contains(&unit) => Some(point),
+                _ => None,
+            }) {
+                memory.saw(usize::from(point), now);
+            }
+        }
+    }
 }
 
 /// Counts every scouting point in sight now as seen, before any mission
@@ -221,8 +246,10 @@ fn flies(scout: &UnitObs) -> bool {
     scout.kind.stats().domain == Domain::Air
 }
 
-/// Sends `scout` to `goal`, an aircraft around known anti-air when the
-/// straight line crosses it. Returns whether the orders fit this decision.
+/// Sends `scout` to `goal`: a ground scout scouts it, which keeps out of
+/// known reach on its own, and an aircraft flies around known anti-air when
+/// the straight line crosses it. Returns whether the orders fit this
+/// decision.
 fn send(
     observation: &ObservationData,
     frame: HomeFrame,
@@ -231,11 +258,14 @@ fn send(
     goal: TilePos,
     ledger: &mut Ledger,
 ) -> bool {
-    let flies = scout.kind.stats().domain == Domain::Air;
-    let Some(via) = flies
-        .then(|| air::route(observation, frame, hazards, scout.tile, goal))
-        .flatten()
-    else {
+    if !flies(scout) {
+        return ledger.order(Command::Scout {
+            units: vec![scout.id],
+            goal,
+            queue: false,
+        });
+    }
+    let Some(via) = air::route(observation, frame, hazards, scout.tile, goal) else {
         return ledger.order(run(vec![scout.id], goal));
     };
     if ledger.room() < 2 {
@@ -263,22 +293,22 @@ struct Goals<'a> {
 
 impl Goals<'_> {
     /// Each point's goal for a scout, an aircraft when `air`, `None` where it
-    /// cannot go.
+    /// cannot go: the point's footprint tile nearest home, since a Scout
+    /// order that stops short guarantees a view of its goal tile alone.
     fn of(&self, air: bool) -> &[Option<TilePos>] {
         let frame = self.frame;
+        let (width, height) = BuildingKind::Foundry.size();
+        let nearest = move |point: &Point| {
+            (0..height)
+                .flat_map(|dy| (0..width).map(move |dx| point.anchor.offset(dx, dy)))
+                .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
+        };
         if air {
-            self.air.get_or_init(|| {
-                let (width, height) = BuildingKind::Foundry.size();
-                self.points
-                    .iter()
-                    .map(|point| {
-                        (0..height)
-                            .flat_map(|dy| (0..width).map(move |dx| point.anchor.offset(dx, dy)))
-                            .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
-                    })
-                    .collect()
-            })
+            self.air
+                .get_or_init(|| self.points.iter().map(nearest).collect())
         } else {
+            // A ground scout reaches a point when a tile beside it is open
+            // to it on foot.
             self.ground.get_or_init(|| {
                 self.points
                     .iter()
@@ -290,6 +320,7 @@ impl Goals<'_> {
                             BuildingKind::Foundry,
                             point.anchor,
                         )
+                        .and_then(|_| nearest(point))
                     })
                     .collect()
             })

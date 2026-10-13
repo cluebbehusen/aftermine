@@ -244,12 +244,15 @@ pub(crate) struct UnitAnimationState {
     pub(crate) weapons: [WeaponCycle; MAX_WEAPONS],
     /// Mechanisms that must run independently of locomotion.
     pub(crate) propulsion: PropulsionState,
-    /// Continuously powered scout scanner, independent of flight or movement.
+    /// Reflector bearing during scanning or return to the stowed bearing.
     pub(crate) scanner: Option<f32>,
     /// Event-driven cargo-door and clamp movement.
     pub(crate) transport: Option<TransportActionState>,
     /// A Sapper has physically reached contact and will detonate next tick.
     pub(crate) demolition_preparation: Option<f32>,
+    /// Visible hinge deployment, including folding after the sim disables radar.
+    /// None once fully stowed.
+    pub(crate) radar_unfold: Option<f32>,
 }
 
 /// Facts about a unit that can be captured without mutating the simulation.
@@ -263,6 +266,9 @@ pub(crate) struct UnitAnimationFacts {
     carrying: u32,
     demolition_contact: bool,
     cooldowns: [u32; MAX_WEAPONS],
+    /// A parking radar's deployed ticks and deploy time, while unfolding
+    /// or up.
+    radar_unfold: Option<(u8, u8)>,
     point_defense: Option<oxide_sim::state::PointDefense>,
 }
 
@@ -329,6 +335,12 @@ impl UnitAnimationFacts {
             carrying: unit.carrying(),
             demolition_contact: sapper_at_contact(state, unit),
             cooldowns: unit.cooldowns,
+            radar_unfold: unit
+                .kind
+                .stats()
+                .radar
+                .filter(|radar| radar.deploy_ticks > 0 && unit.radar_deploy > 0)
+                .map(|radar| (unit.radar_deploy, radar.deploy_ticks)),
             point_defense: unit.point_defense,
         }
     }
@@ -499,6 +511,87 @@ impl WeldingArmTransition {
     }
 }
 
+const RADAR_FOLD_TICKS: f32 = 20.0;
+const RADAR_HOME_TICKS: f32 = 4.0;
+
+#[derive(Debug, Clone, Copy)]
+struct RadarPose {
+    deployment: f32,
+    bearing: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RadarTransition {
+    Deploying {
+        from: f32,
+        bearing: f32,
+        started: u64,
+        ready: u64,
+    },
+    Scanning {
+        started: u64,
+    },
+    Folding {
+        from: f32,
+        bearing: f32,
+        started: u64,
+    },
+}
+
+impl RadarTransition {
+    fn pose(self, clock: AnimationClock) -> RadarPose {
+        match self {
+            Self::Scanning { started } => RadarPose {
+                deployment: 1.0,
+                bearing: Some(
+                    AnimationClock::new(
+                        clock.completed_ticks.saturating_sub(started),
+                        clock.tick_fraction,
+                    )
+                    .cycle(0, 80, false),
+                ),
+            },
+            Self::Deploying {
+                from,
+                bearing,
+                started,
+                ready,
+            } => {
+                let elapsed = clock.elapsed_since(started).unwrap_or(0.0);
+                let progress =
+                    (elapsed / ready.saturating_sub(started).max(1) as f32).clamp(0.0, 1.0);
+                RadarPose {
+                    deployment: from + (1.0 - from) * progress,
+                    bearing: (bearing != 0.0 && elapsed < RADAR_HOME_TICKS)
+                        .then(|| home_bearing(bearing, elapsed)),
+                }
+            }
+            Self::Folding {
+                from,
+                bearing,
+                started,
+            } => {
+                let elapsed = clock.elapsed_since(started).unwrap_or(0.0);
+                let homing = if bearing == 0.0 {
+                    0.0
+                } else {
+                    RADAR_HOME_TICKS
+                };
+                let progress = ((elapsed - homing) / (RADAR_FOLD_TICKS - homing)).clamp(0.0, 1.0);
+                RadarPose {
+                    deployment: from * (1.0 - progress),
+                    bearing: (elapsed < homing).then(|| home_bearing(bearing, elapsed)),
+                }
+            }
+        }
+    }
+}
+
+fn home_bearing(bearing: f32, elapsed: f32) -> f32 {
+    let shortest = (bearing + 0.5).rem_euclid(1.0) - 0.5;
+    (shortest * (1.0 - (elapsed / RADAR_HOME_TICKS).clamp(0.0, 1.0))).rem_euclid(1.0)
+}
+
 /// Presentation-only memory for transient reports and mechanism transitions.
 #[derive(Debug, Default)]
 pub(crate) struct AnimationController {
@@ -508,6 +601,8 @@ pub(crate) struct AnimationController {
     transport_actions: HashMap<UnitId, TransportActionStamp>,
     airworks_launches: HashMap<BuildingId, u64>,
     welding_arms: HashMap<UnitId, WeldingArmTransition>,
+    // The sim stops radar immediately; the shell retains its mechanical transition.
+    radars: HashMap<UnitId, RadarTransition>,
 }
 
 impl AnimationController {
@@ -584,6 +679,7 @@ impl AnimationController {
         self.transport_actions.clear();
         self.airworks_launches.clear();
         self.welding_arms.clear();
+        self.radars.clear();
     }
 
     /// Forgets ids no longer present in the current world.
@@ -599,6 +695,71 @@ impl AnimationController {
             state.building(*building).is_some()
                 && state.current_tick().saturating_sub(*completed_tick) < AIRWORKS_LAUNCH_TICKS
         });
+    }
+
+    /// Tracks hinge reversals and scanning; completed folds and dead units expire.
+    pub(crate) fn observe_radars(&mut self, state: &State) {
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Surveyor)
+        {
+            self.observe_radar(
+                UnitAnimationFacts::capture(state, unit, false),
+                state.current_tick(),
+            );
+        }
+        self.radars.retain(|id, _| state.unit(*id).is_some());
+    }
+
+    fn observe_radar(&mut self, facts: UnitAnimationFacts, tick: u64) {
+        let previous = self.radars.get(&facts.id).copied();
+        let clock = AnimationClock::new(tick, 0.0);
+        if let Some((deployed, total)) = facts.radar_unfold {
+            if deployed >= total {
+                if !matches!(previous, Some(RadarTransition::Scanning { .. })) {
+                    self.radars
+                        .insert(facts.id, RadarTransition::Scanning { started: tick });
+                }
+            } else if let Some(previous @ RadarTransition::Folding { .. }) = previous {
+                let pose = previous.pose(clock);
+                self.radars.insert(
+                    facts.id,
+                    RadarTransition::Deploying {
+                        from: pose.deployment,
+                        bearing: pose.bearing.unwrap_or(0.0),
+                        started: tick,
+                        ready: tick.saturating_add(u64::from(total - deployed)),
+                    },
+                );
+            } else if previous.is_none() {
+                self.radars.insert(
+                    facts.id,
+                    RadarTransition::Deploying {
+                        from: 0.0,
+                        bearing: 0.0,
+                        started: tick.saturating_sub(u64::from(deployed)),
+                        ready: tick.saturating_add(u64::from(total - deployed)),
+                    },
+                );
+            }
+        } else if let Some(previous) = previous {
+            let pose = previous.pose(clock);
+            if matches!(previous, RadarTransition::Folding { .. }) {
+                if pose.deployment <= 0.0 {
+                    self.radars.remove(&facts.id);
+                }
+            } else {
+                self.radars.insert(
+                    facts.id,
+                    RadarTransition::Folding {
+                        from: pose.deployment,
+                        bearing: pose.bearing.unwrap_or(0.0),
+                        started: tick,
+                    },
+                );
+            }
+        }
     }
 
     /// Captures tool transitions once per completed simulation tick.
@@ -736,6 +897,16 @@ impl AnimationController {
                 cycle: clock.cycle(facts.id.0, period, options.reduced_motion),
             }
         });
+        let radar = self
+            .radars
+            .get(&facts.id)
+            .map(|radar| radar.pose(clock))
+            .or_else(|| {
+                facts.radar_unfold.map(|(deployed, total)| RadarPose {
+                    deployment: ratio(u32::from(deployed), u32::from(total)),
+                    bearing: (deployed >= total).then_some(0.0),
+                })
+            });
         UnitAnimationState {
             work_target: facts.work_target,
             welding_arm: self.welding_arm(facts, work, clock, options),
@@ -757,8 +928,13 @@ impl AnimationController {
             attack: self.unit_attack(facts.id, facts.kind, clock),
             weapons,
             propulsion,
-            scanner: (facts.kind == UnitKind::Kestrel)
-                .then(|| clock.cycle(facts.id.0, 96, options.reduced_motion)),
+            scanner: if facts.kind == UnitKind::Kestrel {
+                Some(clock.cycle(facts.id.0, 96, options.reduced_motion))
+            } else {
+                radar
+                    .and_then(|pose| pose.bearing)
+                    .map(|bearing| if options.reduced_motion { 0.0 } else { bearing })
+            },
             transport: self.transport_action(facts.id, clock),
             demolition_preparation: facts
                 .demolition_contact
@@ -767,6 +943,9 @@ impl AnimationController {
                 } else {
                     clock.tick_fraction
                 }),
+            radar_unfold: radar
+                .filter(|pose| pose.deployment > 0.0)
+                .map(|pose| pose.deployment),
         }
     }
 

@@ -475,17 +475,19 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidEscort(_) => 83,
         E::InvalidRally(_) => 84,
         E::InvalidRetirement(_) => 85,
-        E::InvalidMagazine(_) => 86,
-        E::InvalidLauncher(_) => 87,
-        E::UnsortedWarheads => 88,
-        E::StaleWarheadCounter => 89,
-        E::ForeignWarheadOwner(_) => 90,
-        E::InvalidWarheadFlight(_) => 91,
-        E::InvalidWarheadTracking(_) => 92,
+        E::InvalidScoutOrder(_) => 86,
+        E::InvalidRadarDeploy(_) => 87,
+        E::InvalidMagazine(_) => 88,
+        E::InvalidLauncher(_) => 89,
+        E::UnsortedWarheads => 90,
+        E::StaleWarheadCounter => 91,
+        E::ForeignWarheadOwner(_) => 92,
+        E::InvalidWarheadFlight(_) => 93,
+        E::InvalidWarheadTracking(_) => 94,
     }
 }
 
-const ROWS: usize = 93;
+const ROWS: usize = 95;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -584,6 +586,8 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidEscort(UnitId(0)),
         E::InvalidRally(BuildingId(0)),
         E::InvalidRetirement(UnitId(0)),
+        E::InvalidScoutOrder(UnitId(0)),
+        E::InvalidRadarDeploy(UnitId(0)),
         E::InvalidMagazine(BuildingId(0)),
         E::InvalidLauncher(BuildingId(0)),
         E::UnsortedWarheads,
@@ -1175,6 +1179,18 @@ fn every_checklist_row_refuses_its_forgery() {
             "has an invalid retirement",
         ),
         (
+            "a radar unfolding on a machine that carries none",
+            |d| d["units"][0]["radar_deploy"] = json!(1),
+            "unit u0 has an impossible radar deployment",
+        ),
+        (
+            "a Scout order on a machine that does not scout",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "scout", "tile": {"x": 3, "y": 3}});
+            },
+            "unit u0 scouts without being a scout",
+        ),
+        (
             "a harvest source outside its anchored work zone",
             |d| {
                 d["units"][0]["order"]["node"] = json!({"x": 15, "y": 8});
@@ -1611,13 +1627,36 @@ fn every_checklist_row_refuses_its_forgery() {
         ),
         (
             "a radar blip at the far end of the coordinate space",
-            |d| d["vision"][0]["contacts"] = json!([{"x": i32::MIN, "y": 0}]),
+            |d| {
+                d["vision"][0]["contacts"] =
+                    json!([{"tile": {"x": i32::MIN, "y": 0}, "domain": "ground"}]);
+            },
             "player p0 holds a radar contact outside the envelope",
         ),
         (
             "radar blips out of canonical order",
-            |d| d["vision"][0]["contacts"] = json!([{"x": 1, "y": 4}, {"x": 3, "y": 3}]),
+            |d| {
+                d["vision"][0]["contacts"] = json!([
+                    {"tile": {"x": 1, "y": 4}, "domain": "ground"},
+                    {"tile": {"x": 3, "y": 3}, "domain": "ground"},
+                ]);
+            },
             "player p0 holds radar contacts out of canonical order",
+        ),
+        (
+            "an air blip listed before the ground blip on its tile",
+            |d| {
+                d["vision"][0]["contacts"] = json!([
+                    {"tile": {"x": 3, "y": 3}, "domain": "air"},
+                    {"tile": {"x": 3, "y": 3}, "domain": "ground"},
+                ]);
+            },
+            "player p0 holds radar contacts out of canonical order",
+        ),
+        (
+            "a track of a ground machine that claims to fly",
+            |d| d["vision"][0]["tracking"]["tracks"][0]["domain"] = json!("air"),
+            "player p0 has invalid contact tracking",
         ),
         (
             "more recent impact sites than the bounded memory permits",

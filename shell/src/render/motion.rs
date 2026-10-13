@@ -111,6 +111,18 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         return UnitFrame::Action(cycle_index(progress, 3));
     }
 
+    // A shove preserves the deployed radar even if the chassis is moving.
+    if let Some(progress) = state.radar_unfold {
+        let frame = if let Some(cycle) = state.scanner {
+            RADAR_UNFOLD_FRAMES + cycle_index(cycle, RADAR_SCAN_FRAMES)
+        } else {
+            numeric::to_usize((progress * RADAR_UNFOLD_FRAMES as f32).round())
+                .saturating_sub(1)
+                .min(RADAR_UNFOLD_FRAMES - 1)
+        };
+        return UnitFrame::Action(frame);
+    }
+
     if kind == UnitKind::Harvester {
         let cargo = state.cargo.map_or(0, cargo_bucket);
         let pose = match state.work {
@@ -457,6 +469,10 @@ fn defense_attack_frame(kind: BuildingKind, attack: AttackPhase) -> Option<usize
         ) => return None,
     })
 }
+
+/// Deployment poses precede the fully deployed scanner loop in `_actionN`.
+pub(crate) const RADAR_UNFOLD_FRAMES: usize = 40;
+pub(crate) const RADAR_SCAN_FRAMES: usize = 80;
 
 fn cycle_index(progress: f32, count: usize) -> usize {
     debug_assert!(count > 0);

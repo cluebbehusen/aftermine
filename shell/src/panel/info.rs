@@ -5,8 +5,8 @@ use crate::game::Scene;
 use oxide_sim::stats::{
     BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
     CHARGE_DAMAGE, CHARGE_SCOUT_DETECT_RADIUS, CHARGE_TRIGGER_RADIUS, CRUCIBLE_SMELT_RADIUS,
-    Domain, FOUNDRY_DRIP_START_TICK, RADAR_DETECT_RADIUS, REPAIR_BAY_PERIOD, REPAIR_BAY_RADIUS,
-    REPAIR_BAY_STEP, WeaponStats,
+    Domain, FOUNDRY_DRIP_START_TICK, REPAIR_BAY_PERIOD, REPAIR_BAY_RADIUS, REPAIR_BAY_STEP,
+    WeaponStats,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +254,29 @@ impl SelectionInfo {
     }
 }
 
+/// A machine's radar ring and, for one that unfolds it only at rest, how far
+/// it has.
+fn radar_facts(info: &mut SelectionInfo, unit: &oxide_sim::Unit) {
+    let Some(radar) = unit.kind.stats().radar else {
+        return;
+    };
+    let parked = if radar.deploy_ticks > 0 {
+        if unit.radar().is_some() {
+            info.status.push("Radar up".into());
+        } else if unit.radar_deploy > 0 {
+            info.status.push("Unfolding radar".into());
+        }
+        " (parked)"
+    } else {
+        ""
+    };
+    info.row(
+        "Radar",
+        format!("{} tiles{parked}", radar.radius),
+        Some(StatIcon::Capability(CapabilityIcon::Radar)),
+    );
+}
+
 pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
     use StatIcon::{Capability as Cap, Verb};
     let mut info = SelectionInfo::default();
@@ -343,13 +366,15 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 }
             }
         }
+        if let Some(radar) = b.stats().radar {
+            info.row(
+                "Radar",
+                format!("{radar} tiles"),
+                Some(Cap(CapabilityIcon::Radar)),
+            );
+        }
         match b.kind {
             BuildingKind::Array => {
-                info.row(
-                    "Radar",
-                    format!("{RADAR_DETECT_RADIUS} tiles"),
-                    Some(Cap(CapabilityIcon::Radar)),
-                );
                 let radius = if b.tier == 0 {
                     CHARGE_BASE_ARRAY_DETECT_RADIUS
                 } else {
@@ -426,6 +451,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 Some(Cap(CapabilityIcon::Radar)),
             );
         }
+        radar_facts(&mut info, u);
         if stats.transport_capacity > 0 {
             let value = if game.state.hostile(game.presentation.human, u.player) {
                 format!("{} points", stats.transport_capacity)

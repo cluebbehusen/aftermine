@@ -91,7 +91,9 @@ Phase order is game behavior. `State::tick` performs:
    warheads, and resolve buffered damage, construction, salvage, and repair.
 6. Resolve boarding and unloading after every unit has decided.
 7. Evict pathless ground bodies from newly claimed blocking footprints.
-8. Follow paths, then resolve same-domain unit collisions.
+8. Follow paths, then resolve same-domain unit collisions. Parking radars unfold
+   a tick further on machines that did not drive themselves, and fold on any
+   that did.
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
@@ -280,6 +282,24 @@ sets its riders down where the flight ended. Riders take the open tiles
 ring-scanned outward from where the transport stopped, framed by the transport's
 approach when the order was issued, so mirrored drops set riders on mirrored
 tiles.
+
+`Scout` is a scout's own verb: only kinds whose stats say they scout take it,
+and a patrol gives them Scout legs. A Scout leg names its clicked tile and plans
+from its team's knowledge alone, through the snapshot Harvesters steer by:
+visible armed enemies' reach plus a margin, remembered defenses at their
+remembered tier, radar contacts, recent incidents, and known Scuttle Charges.
+Friendly screens do not count. The scout walks to the tile while the tile and
+the way are safe; otherwise it heads for the safe tile nearest the target that
+still has it in sight, ranked in the approach frame. A scout standing in danger
+first retreats to the nearest safe ground it can reach without closing on any
+threat, and with no safe view it stands and periodically reports `DangerHold`.
+Each tick spent retreating, detouring around danger flagged on its planned
+route, or waiting counts in `Unit::progress`; a route planned safe from the
+start costs nothing, however long. At `SCOUT_HOLD_TICKS` the leg ends with
+`NoSafeVantage`, and a leg that ends at a view short of its tile reports
+`SafeVantage`. Patrol laps stay silent. A scout on a Scout leg steers only one
+waypoint ahead, so a straight leg never chords a detour back into the reach it
+bends around.
 
 ## Movement and collision
 
@@ -723,8 +743,9 @@ weapon range without requiring sight. Building attacks end when observation
 clears the memory. An automatic engagement also ends rather than fire on a
 building out of current sight: one destroyed out of sight leaves its memory
 standing, and only an explicit order may shell that memory. Contact attacks end
-when sight and radar are both lost, or identification reveals an incompatible
-domain. Contact loss also clears defense focus and advances queued orders.
+when sight and radar are both lost, or when the contact's domain becomes one the
+attacker cannot hit, as when a flyer lands. Contact loss also clears defense
+focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Among visible machines in reach a unit takes
@@ -744,12 +765,12 @@ never acquire buildings.
 
 Direct ground-to-ground fire traces terrain: rocks provide cover, while
 buildings and scrap do not. Fire involving aircraft and indirect weapons ignores
-ordinary rock cover. For anonymous contacts, ground-capable direct fire uses
-ground cover and air-only fire uses air rules. Peaks block both. Blind hitscan
-spends a shot and selects one eligible hostile in the reported tile by distance
-to its center, then id. Remembered-building hitscan resolves against a footprint
-at the aim point. Both apply normal splash rules and report firing coordinates
-without a victim id, including on misses.
+ordinary rock cover. Radar contacts carry their domain, so blind fire follows
+the same cover rules and never aims a weapon at a domain it cannot hit. Peaks
+block both. Blind hitscan spends a shot and selects one eligible hostile in the
+reported tile by distance to its center, then id. Remembered-building hitscan
+resolves against a footprint at the aim point. Both apply normal splash rules
+and report firing coordinates without a victim id, including on misses.
 
 Hitscan attacks buffer damage for same-tick resolution. Projectile weapons
 launch a serialized `Shell` toward a fixed fire-time aim point. Predictive aim
@@ -871,25 +892,31 @@ Enemy buildings remain as last-seen ghosts until their footprint is observed
 again: kind, owner, anchor, hit points, whether construction had finished, and
 upgrade tier, all as last seen. A refit out of sight stays unknown until the
 footprint is seen again. Scrap and wreck amounts likewise freeze at the last
-visible value. Arrays add sorted, deduplicated radar contact tiles outside true
-sight. A hostile unit reports its tile; an apparent hostile building reports the
-one footprint tile nearest a mast, with distance ties ranked in its radial map
-frame and, for a footprint centered on the map, toward its owner's first
-Foundry. A contact carries no owner, type, domain, or concealed entity id, and
-radar fire at a building's contact tile can hit it. Team-shared tracks retain a
-contact id and one second of reported positions. Spatial buckets bound
-one-to-one matching, ranked by predicted distance, previous distance, contact
-id, and coordinates. Visible identity can link visible observations; radar
-matching uses only reported movement. Unmatched tracks end immediately, and ids
-are never reused.
+visible value. Radar adds sorted, deduplicated contacts outside true sight. Its
+sources are allied built masts (Arrays and Deep Arrays) and allied machines
+whose radar is up, each with the ring radius its stats give: a Kestrel's is
+always up, and a Surveyor's unfolds only after it has stood still for its deploy
+time, folding again the moment it drives itself; a collision push does not fold
+it. A hostile unit reports its tile; an apparent hostile building reports the
+one footprint tile nearest a covering source, with distance ties ranked in its
+radial map frame and, for a footprint centered on the map, toward its owner's
+first Foundry. A contact carries its domain, air for a flying machine and ground
+for a landed one or a building, but no owner, type, or concealed entity id, so
+one tile can hold an air and a ground contact. Radar fire at a building's
+contact tile can hit it. Team-shared tracks retain a contact id and one second
+of reported positions. Spatial buckets bound one-to-one matching, ranked by
+predicted distance, previous distance, contact id, and coordinates. Visible
+identity can link visible observations; radar matching uses only reported
+movement and never pairs contacts of different domains. Unmatched tracks end
+immediately, and ids are never reused.
 
 Salvage-relevant hostile incidents, such as a hit on any machine that can
-harvest or an allied loss, remember only the victim's tile for a bounded caution
-period, never the attacker's identity or location. Only fire from an attacker
-the victim's team cannot see leaves an incident; a visible attacker is live
-danger that ends when it dies or leaves sight. A worker already inside a
-remembered static firing envelope may retreat laterally or outward, without
-approaching any overlapping gun. This escape rule never makes the source
+harvest or scout or an allied loss, remember only the victim's tile for a
+bounded caution period, never the attacker's identity or location. Only fire
+from an attacker the victim's team cannot see leaves an incident; a visible
+attacker is live danger that ends when it dies or leaves sight. A worker already
+inside a remembered static firing envelope may retreat laterally or outward,
+without approaching any overlapping gun. This escape rule never makes the source
 eligible for work and does not permit crossing mobile or radar pressure.
 
 All allegiance checks route through normalized team ids. Teammates share vision,
@@ -915,6 +942,7 @@ map rather than an exhaustive test inventory.
 | Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
 | Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
+| Scouting                                          | `sim/src/tick/brain/scout.rs`, `sim/src/vision.rs`                                                                                      | `sim/tests/integration/scout.rs`                                                                                                                                                                |
 | Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |

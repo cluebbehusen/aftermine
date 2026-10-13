@@ -66,8 +66,9 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         queue: bool,
     },
-    /// Walk a looping circuit of waypoints, engaging everything met on the
-    /// way (legs are hunt orders). The route repeats until another
+    /// Walk a looping circuit of waypoints. Armed units engage everything
+    /// met on the way (their legs are hunt orders), scouts scout each
+    /// waypoint, and other machines run. The route repeats until another
     /// command replaces it.
     Patrol {
         /// The units to commit.
@@ -307,6 +308,19 @@ pub enum Command {
     Retire {
         /// The units to dismantle.
         units: Vec<UnitId>,
+        /// Append instead of replace (see [`Command::Run::queue`]).
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        queue: bool,
+    },
+    /// Scout a tile using only the issuer's knowledge: go there while the
+    /// way and the tile are safe from known enemy reach, otherwise stop at
+    /// the safe tile nearest it that still sees it, and wait or give up
+    /// when no safe view exists. Only scouts take it.
+    Scout {
+        /// The units to commit (only scouts are accepted).
+        units: Vec<UnitId>,
+        /// The tile to see.
+        goal: TilePos,
         /// Append instead of replace (see [`Command::Run::queue`]).
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         queue: bool,

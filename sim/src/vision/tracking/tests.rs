@@ -3,25 +3,24 @@ use crate::scenario::ScenarioMode;
 
 /// A reference refresh that generates and sorts every candidate pairing.
 fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: PlayerId) {
-    let mut observations: Vec<(TilePos, Option<UnitId>)> = view
+    let mut observations: Vec<(TilePos, Domain, Option<UnitId>)> = view
         .contacts
         .iter()
-        .copied()
-        .map(|tile| (tile, None))
+        .map(|contact| (contact.tile, contact.domain, None))
         .collect();
     observations.extend(
         state
             .units()
             .iter()
             .filter(|u| state.hostile(player, u.player) && view.visible(u.tile()))
-            .map(|u| (u.tile(), Some(u.id))),
+            .map(|u| (u.tile(), u.domain(), Some(u.id))),
     );
-    observations.sort_unstable_by_key(|(tile, unit)| (tile.y, tile.x, *unit));
+    observations.sort_unstable_by_key(|(tile, domain, unit)| (tile.y, tile.x, *domain, *unit));
     // Sorted by tile, so a row's observations from `x0` through `x1` are
     // one contiguous run.
     let span = |y: i32, x0: i32, x1: i32| {
-        let start = observations.partition_point(|(t, _)| (t.y, t.x) < (y, x0));
-        let len = observations[start..].partition_point(|(t, _)| (t.y, t.x) <= (y, x1));
+        let start = observations.partition_point(|(t, _, _)| (t.y, t.x) < (y, x0));
+        let len = observations[start..].partition_point(|(t, _, _)| (t.y, t.x) <= (y, x1));
         start..start + len
     };
     let mut candidates = Vec::new();
@@ -36,11 +35,14 @@ fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: Pla
         let predicted = track.tile.center() + track.velocity();
         for dy in -1..=1 {
             for new in span(track.tile.y + dy, track.tile.x - 1, track.tile.x + 1) {
-                let (tile, visible) = observations[new];
+                let (tile, domain, visible) = observations[new];
                 if track.visible_unit.zip(visible).is_some_and(|(a, b)| a != b) {
                     continue;
                 }
                 let identified = track.visible_unit.is_some() && track.visible_unit == visible;
+                if !identified && track.domain != domain {
+                    continue;
+                }
                 candidates.push((
                     !identified,
                     predicted.dist_sq(tile.center()),
@@ -69,7 +71,7 @@ fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: Pla
         .map(Some)
         .collect();
     let mut tracks = Vec::with_capacity(observations.len());
-    for (new, (tile, visible_unit)) in observations.into_iter().enumerate() {
+    for (new, (tile, domain, visible_unit)) in observations.into_iter().enumerate() {
         let mut track = if let Some(old) = matches[new] {
             previous[old].take().expect("a track matches at most once")
         } else {
@@ -78,11 +80,13 @@ fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: Pla
             ContactTrack {
                 id,
                 tile,
+                domain,
                 visible_unit,
                 history: Vec::new(),
             }
         };
         track.tile = tile;
+        track.domain = domain;
         track.visible_unit = visible_unit;
         // Samples are consecutive ticks, oldest first, so the ones kept
         // form one run. Refresh may run more than once at a scenario's
@@ -123,7 +127,10 @@ fn a_new_blip_beside_a_seen_unit_leaves_that_unit_its_track() {
     let mut tracking = Tracking::default();
     refresh(&mut tracking, &view, &state);
     state.tick += 1;
-    view.contacts = vec![tile.offset(1, 0)];
+    view.contacts = vec![RadarContact {
+        tile: tile.offset(1, 0),
+        domain: Domain::Ground,
+    }];
     refresh(&mut tracking, &view, &state);
     assert_eq!(tracking.tracks.len(), 2);
     assert!(
@@ -220,8 +227,14 @@ fn direct_pairing_matches_sorting_every_candidate() {
 
 fn observe(tracking: &mut Tracking, state: &mut State, positions: &[(i32, i32)]) {
     let mut view = Vision::new(state.map().width(), state.map().height());
-    view.contacts = positions.iter().map(|&(x, y)| TilePos::new(x, y)).collect();
-    view.contacts.sort_unstable_by_key(|tile| (tile.y, tile.x));
+    view.contacts = positions
+        .iter()
+        .map(|&(x, y)| RadarContact {
+            tile: TilePos::new(x, y),
+            domain: Domain::Ground,
+        })
+        .collect();
+    view.contacts.sort_unstable_by_key(RadarContact::sort_key);
     tracking.refresh(&view, state, PlayerId(0), &Sighting::gather(state));
     state.tick += 1;
 }

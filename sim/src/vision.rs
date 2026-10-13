@@ -8,7 +8,8 @@
 //!
 //! Fog is both a presentation surface and the knowledge boundary for built-in
 //! opponents. Fog-honest views expose current sight, explored terrain, ghosts,
-//! remembered salvage, anonymous radar contacts, and the public buildings every
+//! remembered salvage, radar contacts that tell air from ground but name nothing
+//! else, and the public buildings every
 //! seat knows of. A targeted attack needs current team sight, a remembered or
 //! public building, or a live contact track.
 
@@ -23,6 +24,24 @@ use std::cell::{Cell, OnceCell, RefCell};
 
 mod tracking;
 pub use tracking::{ContactSample, ContactTrack};
+
+/// A radar blip: a tile holding an unseen hostile machine or one tile of an
+/// unseen hostile building, and whether the return is airborne. Radar names
+/// no kind, owner or condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RadarContact {
+    /// The reported tile.
+    pub tile: TilePos,
+    /// Air for a flying machine; ground for a landed one or a building.
+    pub domain: Domain,
+}
+
+impl RadarContact {
+    /// The canonical blip order: by tile, then ground before air.
+    pub fn sort_key(&self) -> (i32, i32, Domain) {
+        (self.tile.y, self.tile.x, self.domain)
+    }
+}
 
 /// A building every seat knows of regardless of fog: where it stands, what it
 /// is and whose it is, never its condition.
@@ -124,11 +143,10 @@ pub struct Vision {
     /// apart from scrap memory because renderers draw them differently
     /// and the harvest brain approaches them differently.
     remembered_wreck: Grid<u32>,
-    /// Radar blips: tiles holding a hostile unit or one tile of a hostile
-    /// building inside an own built Array's outer ring but outside true
-    /// sight. A contact without identity — no kind, no owner, no memory
-    /// (rebuilt every tick).
-    contacts: Vec<TilePos>,
+    /// Radar blips: hostile units and one tile of each hostile building
+    /// inside an allied radar ring but outside true sight. A contact carries
+    /// its domain but no kind, owner or memory (rebuilt every tick).
+    contacts: Vec<RadarContact>,
     tracking: tracking::Tracking,
     /// Recent tiles where this team saw one of its own assets take damage.
     /// Sorted and deduplicated by (y, x).
@@ -230,8 +248,9 @@ impl Vision {
         self.remembered_wreck.get(pos).copied().unwrap_or(0)
     }
 
-    /// Radar blips: sorted (y, x), deduplicated, rebuilt every tick.
-    pub fn contacts(&self) -> &[TilePos] {
+    /// Radar blips in [`RadarContact::sort_key`] order, deduplicated,
+    /// rebuilt every tick. One tile can hold an air and a ground blip.
+    pub fn contacts(&self) -> &[RadarContact] {
         &self.contacts
     }
 
@@ -557,19 +576,23 @@ pub(crate) type VisionRows<'a> = (&'a [bool], &'a [bool], &'a [u32], &'a [u32]);
 /// Memo-lane bits for [`GroundSalvageDanger::lanes`].
 mod lane {
     /// Tile sits inside some incident danger ring (stamped at capture).
-    pub const INCIDENT_NEAR: u8 = 1 << 0;
+    pub const INCIDENT_NEAR: u16 = 1 << 0;
     /// The contains verdict has been computed.
-    pub const CONTAINS_SET: u8 = 1 << 1;
+    pub const CONTAINS_SET: u16 = 1 << 1;
     /// The memoized contains verdict.
-    pub const CONTAINS: u8 = 1 << 2;
+    pub const CONTAINS: u16 = 1 << 2;
     /// The observed-contains verdict has been computed.
-    pub const OBSERVED_SET: u8 = 1 << 3;
+    pub const OBSERVED_SET: u16 = 1 << 3;
     /// The memoized observed-contains verdict.
-    pub const OBSERVED: u8 = 1 << 4;
+    pub const OBSERVED: u16 = 1 << 4;
     /// The known-ground verdict has been computed.
-    pub const GROUND_SET: u8 = 1 << 5;
+    pub const GROUND_SET: u16 = 1 << 5;
     /// The memoized known-ground verdict.
-    pub const GROUND: u8 = 1 << 6;
+    pub const GROUND: u16 = 1 << 6;
+    /// The scout-danger verdict has been computed.
+    pub const SCOUT_SET: u16 = 1 << 7;
+    /// The memoized scout-danger verdict.
+    pub const SCOUT: u16 = 1 << 8;
 }
 
 /// One player's immutable, fog-honest salvage-danger snapshot for the
@@ -580,19 +603,22 @@ pub(crate) struct GroundSalvageDanger {
     height: i32,
     contacts: Vec<TilePos>,
     incidents: Vec<TilePos>,
+    /// Remembered hostile Scuttle Charge anchors, which only Scout routing
+    /// steers around.
+    charges: Vec<TilePos>,
     mobile: Vec<MobileGroundPressure>,
     statics: Vec<StaticGroundPressure>,
     building_blocks: Vec<Vec<(i32, i32)>>,
     /// Per coarse cell, the threat records whose reach could cover a tile
     /// in it; built from the captured lists on the first probe.
     threat_cells: OnceCell<ThreatCells>,
-    /// One byte of memo lanes per tile; the A* predicates probe these once
+    /// Memo lanes per tile; the A* predicates probe these once
     /// per neighbor. The incident-near stamp is set at capture (the
     /// incident rule depends on the mover's origin, so only the
     /// outside-every-ring case caches); the contains and observed verdicts
     /// memoize on first probe; known-ground memoizes except its volatile
     /// arm (a visible tile with live scrap), which is served uncached.
-    lanes: Vec<Cell<u8>>,
+    lanes: Vec<Cell<u16>>,
     path_scratch: RefCell<AstarScratch>,
     /// What failed safe searches from outside every envelope reached this
     /// phase; see [`Self::safe_route_impossible`].
@@ -695,7 +721,7 @@ impl GroundSalvageDanger {
             .map(|incident| incident.tile)
             .collect();
         let (width, height) = (state.map.width(), state.map.height());
-        let lanes: Vec<Cell<u8>> = std::iter::repeat_with(|| Cell::new(0))
+        let lanes: Vec<Cell<u16>> = std::iter::repeat_with(|| Cell::new(0))
             .take(cell_count)
             .collect();
         let radius = crate::stats::HARVEST_INCIDENT_DANGER_RADIUS;
@@ -707,11 +733,26 @@ impl GroundSalvageDanger {
                 }
             }
         }
+        let charges = vision
+            .ghosts()
+            .iter()
+            .filter(|ghost| ghost.kind.is_stealthy())
+            .map(|ghost| ghost.anchor)
+            .collect();
         Self {
             width,
             height,
-            contacts: vision.contacts().to_vec(),
+            contacts: {
+                let mut tiles: Vec<TilePos> = vision
+                    .contacts()
+                    .iter()
+                    .map(|contact| contact.tile)
+                    .collect();
+                tiles.dedup();
+                tiles
+            },
             incidents,
+            charges,
             mobile,
             statics,
             building_blocks,
@@ -766,10 +807,19 @@ impl GroundSalvageDanger {
                 )
             }),
         );
+        let near = crate::stats::SCOUT_CHARGE_AVOID_RADIUS;
+        let charges = CellLists::build(
+            columns,
+            rows,
+            self.charges
+                .iter()
+                .map(|&charge| (charge.offset(-near, -near), charge.offset(near, near))),
+        );
         ThreatCells {
             contacts,
             mobile,
             statics,
+            charges,
         }
     }
 
@@ -838,7 +888,7 @@ impl GroundSalvageDanger {
 
     /// Memoized observed-danger test for one tile, given its lane index
     /// and current lane bits.
-    fn observed_at(&self, tile: TilePos, index: Option<usize>, bits: u8) -> bool {
+    fn observed_at(&self, tile: TilePos, index: Option<usize>, bits: u16) -> bool {
         if let Some(i) = index {
             if bits & lane::OBSERVED_SET != 0 {
                 bits & lane::OBSERVED != 0
@@ -991,6 +1041,13 @@ impl GroundSalvageDanger {
         self.route_searches.get()
     }
 
+    /// Whether the most recent route search explored its start's whole
+    /// component before failing, so [`Self::last_route_reachability`] can
+    /// answer for other goals.
+    pub(crate) fn last_route_exhausted(&self) -> bool {
+        self.path_scratch.borrow().last_search_exhausted()
+    }
+
     /// Reachability of alternate goals proved by the most recent exhausted
     /// route search. `allow_goal_only` handles a goal-specific exception to
     /// the common passability predicate: an alternate goal can be entered iff
@@ -1071,6 +1128,85 @@ impl GroundSalvageDanger {
         }
         hostile_strength > screen_strength
     }
+
+    /// Whether a scout keeps off `tile`: inside the known reach of a visible
+    /// armed enemy or a remembered defense, near a radar contact or a recent
+    /// incident, or beside a known charge. Friendly screens do not count,
+    /// so a lone scout never walks into fire because an army stands nearby.
+    pub(crate) fn scout_contains(&self, tile: TilePos) -> bool {
+        self.lane_memo(tile, lane::SCOUT_SET, lane::SCOUT, || {
+            self.scout_threatened(tile, None)
+        })
+    }
+
+    /// Whether a scout route planned from `from` may cross `tile`. Safe
+    /// tiles always pass. A dangerous tile passes only when it lies no
+    /// closer than `from` to every threat covering it, so a scout already in
+    /// danger can slip sideways or away but never toward a gun, and a scout
+    /// on safe ground never enters danger. A known charge is stricter: each
+    /// step beside one must open the distance, because the follower cuts
+    /// corners closer than the trigger radius.
+    pub(crate) fn scout_route_safe_from(&self, from: TilePos, tile: TilePos) -> bool {
+        !self.scout_contains(tile) || !self.scout_threatened(tile, Some(from))
+    }
+
+    /// Whether some threat covers `tile`; with `from`, only threats that
+    /// `tile` is closer to than `from` is count.
+    fn scout_threatened(&self, tile: TilePos, from: Option<TilePos>) -> bool {
+        let approaches = |next: i64, origin: Option<i64>| origin.is_none_or(|was| next < was);
+        let point = tile.center();
+        let from_point = from.map(TilePos::center);
+        let cell = self.cell_of(tile);
+        let cells = self.threat_cells();
+        let charge_radius = crate::stats::SCOUT_CHARGE_AVOID_RADIUS;
+        if cells.charges.at(cell).iter().any(|&i| {
+            let charge = self.charges[i as usize];
+            let next = charge.chebyshev(tile);
+            next <= charge_radius && from.is_none_or(|from| next <= charge.chebyshev(from))
+        }) {
+            return true;
+        }
+        let incident_radius = crate::stats::HARVEST_INCIDENT_DANGER_RADIUS;
+        if self.incidents.iter().any(|incident| {
+            let next = incident.chebyshev(tile);
+            next <= incident_radius
+                && approaches(
+                    i64::from(next),
+                    from.map(|from| i64::from(incident.chebyshev(from))),
+                )
+        }) {
+            return true;
+        }
+        let radar = crate::stats::HARVEST_RADAR_DANGER_RADIUS;
+        if cells.contacts.at(cell).iter().any(|&i| {
+            let contact = self.contacts[i as usize];
+            let next = contact.chebyshev(tile);
+            next <= radar
+                && approaches(
+                    i64::from(next),
+                    from.map(|from| i64::from(contact.chebyshev(from))),
+                )
+        }) {
+            return true;
+        }
+        let closer = |next: Fx, was: Option<Fx>| was.is_none_or(|was| next < was);
+        if cells.mobile.at(cell).iter().any(|&i| {
+            let pressure = &self.mobile[i as usize];
+            let next = pressure.pos.dist_sq(point);
+            pressure.hostile
+                && next <= pressure.reach_sq
+                && closer(next, from_point.map(|from| pressure.pos.dist_sq(from)))
+        }) {
+            return true;
+        }
+        cells.statics.at(cell).iter().any(|&i| {
+            let pressure = &self.statics[i as usize];
+            let closest =
+                |at: Vec2Fx| rect_closest_point(pressure.anchor, pressure.size, at).dist_sq(at);
+            let next = closest(point);
+            next <= pressure.reach_sq && closer(next, from_point.map(closest))
+        })
+    }
 }
 
 impl GroundSalvageDanger {
@@ -1107,7 +1243,13 @@ impl GroundSalvageDanger {
 
     /// Serves one boolean verdict through its memo lane pair; out of
     /// bounds computes uncached.
-    fn lane_memo(&self, tile: TilePos, set: u8, value: u8, compute: impl FnOnce() -> bool) -> bool {
+    fn lane_memo(
+        &self,
+        tile: TilePos,
+        set: u16,
+        value: u16,
+        compute: impl FnOnce() -> bool,
+    ) -> bool {
         let Some(index) = self.lane_index(tile) else {
             return compute();
         };
@@ -1156,6 +1298,7 @@ struct ThreatCells {
     contacts: CellLists,
     mobile: CellLists,
     statics: CellLists,
+    charges: CellLists,
 }
 
 /// Record indices filed per coarse cell, ascending within each cell.
@@ -1441,33 +1584,48 @@ pub(crate) fn refresh(state: &mut State) {
             }
         }
 
-        // Radar blips: hostile units and buildings inside any own built
-        // Array's outer ring, on ground this player cannot actually see. A
-        // tile only, with no identity and no memory: a contact that leaves
-        // the ring is gone.
+        // Radar blips: hostile units and buildings inside any allied radar
+        // ring (a built mast's, or a scout's with its radar up), on ground
+        // this player cannot actually see. A tile and a domain, with no
+        // identity and no memory: a contact that leaves every ring is gone.
         view.contacts.clear();
-        let masts: Vec<TilePos> = state
+        let mut masts: Vec<(TilePos, i32)> = state
             .buildings
             .iter()
-            .filter(|b| allied(b.player) && b.built() && b.kind == BuildingKind::Array)
-            .map(|b| b.anchor)
+            .filter(|b| allied(b.player) && b.built())
+            .filter_map(|b| Some((b.anchor, b.stats().radar?)))
+            .chain(
+                sightings
+                    .iter()
+                    .filter(|unit| unit.team == my_team)
+                    .filter_map(|unit| Some((unit.tile, unit.radar?))),
+            )
             .collect();
-        let r = crate::stats::RADAR_DETECT_RADIUS;
+        // A wider ring on the same tile contains a narrower one.
+        masts.sort_unstable_by_key(|&(t, r)| (t.y, t.x, std::cmp::Reverse(r)));
+        masts.dedup_by_key(|&mut (t, _)| t);
+        let distance = |t: TilePos, m: TilePos| {
+            let (dx, dy) = (t.x - m.x, t.y - m.y);
+            dx * dx + dy * dy
+        };
+        // The squared distance to the nearest mast whose ring covers `t`.
         let ring_distance = |t: TilePos| {
             masts
                 .iter()
-                .map(|m| {
-                    let (dx, dy) = (t.x - m.x, t.y - m.y);
-                    dx * dx + dy * dy
+                .filter_map(|&(m, r)| {
+                    let d = distance(t, m);
+                    (d <= r * r).then_some(d)
                 })
                 .min()
-                .filter(|&d| d <= r * r)
         };
         if !masts.is_empty() {
             for unit in sightings.iter().filter(|unit| unit.team != my_team) {
                 let t = unit.tile;
-                if !view.visible(t) && ring_distance(t).is_some() {
-                    view.contacts.push(t);
+                if !view.visible(t) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
+                    view.contacts.push(RadarContact {
+                        tile: t,
+                        domain: unit.domain,
+                    });
                 }
             }
             // A building returns one blip, like a unit of any size. An
@@ -1482,11 +1640,14 @@ pub(crate) fn refresh(state: &mut State) {
                 if b.tiles().any(|t| view.visible(t)) {
                     continue;
                 }
-                if let Some(t) = radar_return(state, b, ring_distance) {
-                    view.contacts.push(t);
+                if let Some(tile) = radar_return(state, b, ring_distance) {
+                    view.contacts.push(RadarContact {
+                        tile,
+                        domain: Domain::Ground,
+                    });
                 }
             }
-            view.contacts.sort_unstable_by_key(|t| (t.y, t.x));
+            view.contacts.sort_unstable_by_key(RadarContact::sort_key);
             view.contacts.dedup();
         }
         let mut tracking = std::mem::take(&mut view.tracking);
@@ -1503,7 +1664,11 @@ pub(super) struct Sighting {
     pub(super) id: crate::UnitId,
     pub(super) tile: TilePos,
     pub(super) team: u8,
+    /// Where the unit is now: a landed flyer is on the ground.
+    pub(super) domain: Domain,
     vision: i32,
+    /// The unit's radar radius while its ring is up.
+    radar: Option<i32>,
 }
 
 impl Sighting {
@@ -1515,14 +1680,16 @@ impl Sighting {
                 id: unit.id,
                 tile: unit.tile(),
                 team: state.players[unit.player.0 as usize].team,
+                domain: unit.domain(),
                 vision: unit.kind.stats().vision,
+                radar: unit.radar(),
             })
             .collect()
     }
 }
 
 /// The footprint tile a building's radar return reports: the one nearest a
-/// mast, with distance ties ranked in the footprint's radial map frame. A
+/// mast whose ring covers it, with distance ties ranked in the footprint's radial map frame. A
 /// footprint centered on the map has no radial frame, so its remaining ties
 /// rank toward the owner's first Foundry and then by seat parity, the fallback
 /// order group spreads use. Mirrored seats therefore report mirrored tiles.

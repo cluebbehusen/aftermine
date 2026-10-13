@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "order", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OrderKey {
-    /// A Run, Hunt, or Advance to this clicked tile, the march an
+    /// A Run, Hunt, Advance, or Scout to this clicked tile, the march an
     /// engagement resumes, or the walk a landing took over.
     Walk {
         /// The clicked tile.
@@ -139,6 +139,7 @@ impl Order {
             Order::RepairUnit { unit } => OrderKey::RepairUnit { unit },
             Order::Board { transport } => OrderKey::Board { transport },
             Order::Retire { crucible, .. } => OrderKey::Retire { crucible },
+            Order::Scout { tile } => OrderKey::Walk { tile },
         })
     }
 }

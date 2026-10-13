@@ -1687,11 +1687,14 @@ impl Presentation {
                 // orders; a bot's private stall feedback must not read
                 // as "your order failed" in the replay viewer.
                 Event::OrderStalled {
+                    unit,
                     player,
                     pos,
                     reason,
-                    ..
                 } if *player == self.human && !self.spectate => {
+                    let scout = state
+                        .unit(*unit)
+                        .is_some_and(|unit| unit.kind.stats().scouts);
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
                     self.toast(match reason {
@@ -1703,8 +1706,17 @@ impl Presentation {
                         }
                         oxide_sim::StallReason::TransportFull => "The transport is full",
                         oxide_sim::StallReason::NoOpenGround => "No open ground to unload there",
+                        oxide_sim::StallReason::DangerHold if scout => {
+                            "Scout waiting for a safe way to see"
+                        }
                         oxide_sim::StallReason::DangerHold => {
                             "Worker waiting for a safe route home"
+                        }
+                        oxide_sim::StallReason::SafeVantage => {
+                            "Scout stopped short where it could safely see"
+                        }
+                        oxide_sim::StallReason::NoSafeVantage => {
+                            "Scout found no safe way to see there"
                         }
                     });
                     self.fx.push(Effect {

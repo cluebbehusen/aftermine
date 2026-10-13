@@ -42,8 +42,10 @@ const APPROACH: [i64; 4] = [3, 6, 9, 12];
 /// Tiles from a building's centre toward a threat an Array watches.
 const FAR: [i64; 4] = [9, 12, 15, 18];
 
-/// Tiles an Array's radar reaches.
-const RADAR: i64 = 20;
+/// Tiles a built mast of `kind` at `tier` reaches by radar; zero without one.
+fn radar(kind: BuildingKind, tier: u8) -> i64 {
+    i64::from(kind.tier_stats(tier).radar.unwrap_or(0))
+}
 
 /// Tiles either side of a Lattice's ring, along a known Spire's line, where
 /// an Array watches for warheads before they enter it.
@@ -397,11 +399,7 @@ impl<'a> Guard<'a> {
             .filter(|building| building.built)
             .map(|building| {
                 let vision = i64::from(building.kind.tier_stats(building.tier).vision);
-                let reach = if building.kind == BuildingKind::Array {
-                    vision.max(RADAR)
-                } else {
-                    vision
-                };
+                let reach = vision.max(radar(building.kind, building.tier));
                 (
                     footprint_centre(building.kind, building.anchor),
                     4 * reach * reach,
@@ -586,9 +584,10 @@ impl<'a> Guard<'a> {
     fn gain(asset: &Asset, kind: BuildingKind, anchor: TilePos, reach: Option<Cover>) -> u64 {
         if kind == BuildingKind::Array {
             let centre = footprint_centre(kind, anchor);
+            let radar = radar(kind, 0);
             return 2_000
                 * Self::watched(asset, |point, seen| {
-                    !seen && distance2(centre, point) <= 4 * RADAR * RADAR
+                    !seen && distance2(centre, point) <= 4 * radar * radar
                 });
         }
         let Some(reach) = reach else {
@@ -1326,8 +1325,9 @@ fn upgrade(guard: &Guard<'_>, building: &BuildingObs, weight: u64) -> Option<(In
                     .map(|approach| approach.evidence.weight())
                     .max()
                     .unwrap_or(0);
+                let radar = radar(building.kind, building.tier + 1);
                 let watched = Guard::watched(asset, |point, _| {
-                    distance2(centre, point) <= 4 * RADAR * RADAR
+                    distance2(centre, point) <= 4 * radar * radar
                 });
                 asset.value * watched * evidence
             }

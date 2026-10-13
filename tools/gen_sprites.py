@@ -1764,35 +1764,6 @@ def sapper(variant: str, move: int = 0) -> None:
     finish(img, px, f"sapper{variant_tag(variant)}{suffix}")
 
 
-def surveyor(variant: str, move: int = 0) -> None:
-    """Placeholder ground scout: a slim four-wheeled crawler under a tall
-    sensor mast, unarmed and built to run."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    dy = (0, -1, 1)[move % 3]
-    for x in (14, 41):
-        for y in (20, 44):
-            d.rounded_rectangle(
-                [s(x), s(y), s(x + 9), s(y + 13)], radius=s(3), fill=(*IRON_DARK, 255)
-            )
-            pip_y = y + (2, 5, 8)[move % 3]
-            d.rectangle(
-                [s(x + 2), s(pip_y), s(x + 7), s(pip_y + 3)], fill=(*IRON_LIGHT, 255)
-            )
-    d.rounded_rectangle(
-        [s(20), s(18 + dy), s(44), s(60 + dy)], radius=s(7), fill=(*IRON, 255)
-    )
-    d.rounded_rectangle(
-        [s(23), s(26 + dy), s(41), s(54 + dy)], radius=s(5), fill=(*pal["base"], 255)
-    )
-    d.rectangle([s(30), s(10 + dy), s(34), s(36 + dy)], fill=(*IRON_LIGHT, 255))
-    d.ellipse([s(22), s(2 + dy), s(42), s(18 + dy)], fill=(*pal["dark"], 255))
-    d.ellipse([s(27), s(6 + dy), s(37), s(14 + dy)], fill=(*pal["light"], 255))
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"surveyor{variant_tag(variant)}{suffix}")
-
-
 def warden(variant: str, move: int = 0, action: int = 0) -> None:
     """Tier-two line brawler: a broad plated hull behind twin shield
     cheeks, one heavy fork cannon dead ahead — the wall that walks."""
@@ -3261,7 +3232,7 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper, surveyor):
+        for unit_fn in (excavator, kestrel, skyhook, sapper):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)

@@ -336,7 +336,7 @@ fn the_unit_loader_finds_every_kind_in_the_shipped_atlas() {
     for kind in UnitKind::ALL {
         assert_eq!(
             art[kind as usize].action.len(),
-            unit_action_frames(kind),
+            shipped_frames(unit_stem(kind), "action"),
             "{kind:?}"
         );
     }

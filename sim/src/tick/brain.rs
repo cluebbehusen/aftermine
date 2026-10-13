@@ -286,6 +286,14 @@ pub(super) fn run(
                 &mut logistics_pending,
                 events,
             ),
+            Order::Scout { tile } => {
+                let player = state.unit(id).expect("just seen").player;
+                let team = state.player(player).team as usize;
+                let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
+                    crate::vision::GroundSalvageDanger::capture(state, player)
+                });
+                scout::scout(state, index, &mut reach, danger, id, tile, events);
+            }
         }
         if events[reported..]
             .iter()
@@ -327,6 +335,7 @@ mod locomotion;
 pub(super) mod logistics;
 mod point_defense;
 pub(super) mod retire;
+mod scout;
 mod warheads;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
@@ -361,7 +370,7 @@ fn resolve_hits(
         match hit.victim {
             Target::Unit(uid) => {
                 if let Some(v) = state.unit_mut(uid) {
-                    let relevant_hit = v.kind.stats().harvest.is_some();
+                    let relevant_hit = v.kind.stats().harvest.is_some() || v.kind.stats().scouts;
                     let relevant_loss =
                         hit.damage >= v.hp && v.domain() == crate::stats::Domain::Ground;
                     if v.hp > 0 && hit.damage > 0 && (relevant_hit || relevant_loss) {

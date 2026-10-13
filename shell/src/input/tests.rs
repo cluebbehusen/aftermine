@@ -48,8 +48,22 @@ fn crumbs(game: &Game, unit: &oxide_sim::Unit) -> Vec<(usize, Vec2, macroquad::c
 }
 
 fn headless_game() -> Game {
-    Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
-        .expect("embedded skirmish builds")
+    Game::with_viewport(armed_skirmish(), vec2(1280.0, 800.0)).expect("embedded skirmish builds")
+}
+
+/// Skirmish with a Sentinel beside each start. The opening itself fields no
+/// fighter, and most of these tests need one at hand.
+pub(super) fn armed_skirmish() -> oxide_sim::Scenario {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    for (player, x, y) in [(0, 10, 7), (1, 29, 16)] {
+        scenario.units.push(oxide_sim::scenario::UnitSpec {
+            player,
+            kind: UnitKind::Sentinel,
+            x,
+            y,
+        });
+    }
+    scenario
 }
 
 #[test]
@@ -4968,7 +4982,11 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
             _ => None,
         })
         .collect();
-    assert_eq!(strip.len(), 2, "two kinds, two counted cards: {strip:?}");
+    assert_eq!(
+        strip.len(),
+        3,
+        "three kinds, three counted cards: {strip:?}"
+    );
     assert!(
         panel
             .cards
@@ -6207,16 +6225,20 @@ fn the_tutorial_survives_its_own_literal_instructions() {
     controls_key(&mut game, &mut input, Key::E);
     game.do_tick();
     assert!(t.advance(game.demo));
+    assert_eq!(t.step, 3, "an accepted order is no fighter yet");
+    await_trained_sentinel(&mut game);
+    assert!(t.advance(game.demo));
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
-    // Lesson 5 — right-click ground with a fighter selected.
+    // Lesson 5 — right-click ground with a fighter selected: the one the
+    // last lesson trained.
     let sentinel = game
         .state
         .units()
         .iter()
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
         .map(|u| (u.id, u.pos))
-        .expect("the starting sentinel stands");
+        .expect("the trained sentinel stands");
     let p = game.presentation.camera.to_screen(vec2(
         sentinel.1.x.to_num::<f32>(),
         sentinel.1.y.to_num::<f32>(),
@@ -6231,6 +6253,23 @@ fn the_tutorial_survives_its_own_literal_instructions() {
     // stream; its flag flips in `app::screen_flow`.
     game.demo.paused_menu = true;
     assert!(!t.advance(game.demo), "school is out");
+}
+
+/// Plays on until the Sentinel the fighter lesson trained has spawned: the
+/// opening fields no fighter of its own, and the lesson waits for this one.
+fn await_trained_sentinel(game: &mut Game) {
+    for _ in 0..600 {
+        if game
+            .state
+            .units()
+            .iter()
+            .any(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
+        {
+            return;
+        }
+        game.do_tick();
+    }
+    panic!("the trained sentinel never stepped out");
 }
 
 /// Publishes the live panel's card whose action `pick` accepts at one
@@ -6362,6 +6401,7 @@ fn the_tutorial_survives_its_own_touch_instructions() {
     tap_world(&mut game, &mut input, world);
     tap_panel_card(&mut game, &mut input, |card| card.title == "Sentinel");
     game.do_tick();
+    await_trained_sentinel(&mut game);
     assert!(t.advance(game.demo));
     assert_eq!(t.step, 4, "the fighter graduates the arming lesson");
 
@@ -7317,11 +7357,13 @@ fn knowledge_attack_game() -> Game {
             x: 12,
             y: 14,
         },
+        // A ground contact the Bastion can focus, inside the Array's
+        // radar but beyond every gun's reach.
         UnitSpec {
             player: 1,
-            kind: UnitKind::Kestrel,
-            x: 14,
-            y: 8,
+            kind: UnitKind::Harvester,
+            x: 20,
+            y: 10,
         },
     ];
     scenario.buildings = vec![
@@ -7436,6 +7478,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
 fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
     let mut scenario = knowledge_attack_game().scenario.clone();
     scenario.units[0].kind = UnitKind::Talon;
+    scenario.units[2].kind = UnitKind::Kestrel;
     scenario.units[2].x = 16;
     scenario.units[2].y = 16;
     scenario.buildings[1].kind = oxide_sim::BuildingKind::FlakTurret;
@@ -8344,4 +8387,99 @@ fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
     dispatch_action(&mut game, &mut input, Action::Launch);
     dispatch_action(&mut game, &mut input, Action::Back);
     assert!(input.striking.is_empty());
+}
+
+/// Skirmish's starting Surveyor and a staged Sentinel beside it.
+fn scout_game() -> (Game, oxide_sim::UnitId, oxide_sim::UnitId) {
+    let game = headless_game();
+    let own = |kind: UnitKind| {
+        game.state
+            .units()
+            .iter()
+            .find(|u| u.player == game.presentation.human && u.kind == kind)
+            .expect("staged")
+            .id
+    };
+    let (scout, sentinel) = (own(UnitKind::Surveyor), own(UnitKind::Sentinel));
+    (game, scout, sentinel)
+}
+
+#[test]
+fn a_right_click_scouts_only_when_every_selected_machine_scouts() {
+    let goal = TilePos::new(20, 10);
+    let (mut game, scout, sentinel) = scout_game();
+    let screen = game.presentation.camera.to_screen(off_centre(goal));
+    game.presentation.selection.units = vec![scout];
+    context_order(&mut game, screen, true);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Scout { goal: g, queue: true, .. }, .. }] if *g == goal
+        ),
+        "{:?}",
+        game.pending
+    );
+
+    let (mut game, scout, sentinel_too) = scout_game();
+    assert_eq!(sentinel, sentinel_too);
+    game.presentation.selection.units = vec![scout, sentinel];
+    context_order(&mut game, screen, false);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand {
+                command: Command::Advance { .. },
+                ..
+            }]
+        ),
+        "a mixed selection advances together: {:?}",
+        game.pending
+    );
+}
+
+#[test]
+fn the_armed_scout_verb_sends_only_scouts() {
+    let (mut game, scout, sentinel) = scout_game();
+    let mut input = InputState::new();
+    game.presentation.selection.units = vec![sentinel];
+    apply_events(&mut game, &mut input, &[key_down(Key::K), key_up(Key::K)]);
+    assert!(!input.armed(ClickVerb::Scout), "no scout in hand");
+
+    game.presentation.selection.units = vec![scout, sentinel];
+    apply_events(&mut game, &mut input, &[key_down(Key::K), key_up(Key::K)]);
+    assert!(input.armed(ClickVerb::Scout), "K arms Scout");
+    let goal = TilePos::new(20, 10);
+    let p = game.presentation.camera.to_screen(off_centre(goal));
+    apply_events(&mut game, &mut input, &[left_down(p), left_up(p)]);
+    assert!(
+        game.pending.iter().any(|c| matches!(
+            &c.command,
+            Command::Scout { goal: g, queue: false, .. } if *g == goal
+        )),
+        "{:?}",
+        game.pending
+    );
+    assert!(!input.armed(ClickVerb::Scout), "a plain click stands down");
+}
+
+#[test]
+fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let (id, at) = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Surveyor)
+        .map(|u| (u.id, vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+        .expect("the opening fields a Surveyor");
+    let click_at = |game: &mut Game, input: &mut InputState, world: Vec2| {
+        let screen = game.presentation.camera.to_screen(world);
+        apply_events(game, input, &click(screen.x, screen.y));
+    };
+    // Inside the two-tile sprite canvas, but clear of the packed body.
+    click_at(&mut game, &mut input, at + vec2(0.0, 0.8));
+    assert!(!game.presentation.selection.units.contains(&id));
+    click_at(&mut game, &mut input, at + vec2(0.0, 0.4));
+    assert!(game.presentation.selection.units.contains(&id));
 }

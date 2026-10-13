@@ -470,8 +470,15 @@ pub enum StallReason {
     /// stranded cargo stays aboard.
     NoOpenGround,
     /// A loaded worker has a route home but every safe one is blocked by
-    /// known danger, so it is standing and waiting for a window.
-    /// Reported periodically while the wait lasts; the order itself is
-    /// kept. Own-state only: it names no threat.
+    /// known danger, so it is standing and waiting for a window, or a scout
+    /// is waiting for a safe way to see its goal. Reported periodically
+    /// while the wait lasts; the order itself is kept. Own-state only: it
+    /// names no threat.
     DangerHold,
+    /// A scout stopped short of its goal, at the safest place it could
+    /// reach that still sees it. A patrol lap passes silently.
+    SafeVantage,
+    /// A scout found no safe way to see its goal before its caution ran
+    /// out and gave that leg up. A patrol lap passes silently.
+    NoSafeVantage,
 }

@@ -133,7 +133,7 @@ fn a_staged_sites_chip_cancels_it_by_kind_and_anchor_whoever_takes_its_id() {
     use crate::game::network::NetRole;
     use oxide_sim::BuildingKind::Turret;
     let (host_seat, client_seat) = (PlayerId(0), PlayerId(1));
-    let mut duel = oxide_sim::Scenario::skirmish();
+    let mut duel = super::armed_skirmish();
     for player in &mut duel.players {
         player.bot = false;
         player.bot_config = None;
@@ -395,7 +395,7 @@ fn a_chip_sends_the_rest_of_the_selection_along() {
 fn a_lan_clients_chip_names_the_leg_it_showed_after_legs_finish_in_flight() {
     use crate::game::network::NetRole;
     let (host_seat, client_seat) = (PlayerId(0), PlayerId(1));
-    let mut duel = oxide_sim::Scenario::skirmish();
+    let mut duel = super::armed_skirmish();
     for player in &mut duel.players {
         player.bot = false;
         player.bot_config = None;

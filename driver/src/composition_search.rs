@@ -173,7 +173,7 @@ pub fn payoff(a: &Force, b: &Force, tick_limit: u32) -> Result<f64> {
         for formation in Formation::ALL {
             for a_west in [true, false] {
                 let (west, east) = if a_west { (a, b) } else { (b, a) };
-                let fought = duel_lab::fight(west, east, layout, formation, tick_limit)?;
+                let fought = duel_lab::fight(west, east, layout, formation, tick_limit, false)?;
                 let (mine, theirs) = if a_west {
                     (fought.west, fought.east)
                 } else {

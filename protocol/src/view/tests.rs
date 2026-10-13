@@ -434,7 +434,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 units: state
                     .units()
                     .iter()
-                    .filter(|u| u.player.0 == seat && u.kind.stats().can_fight())
+                    .filter(|u| u.player.0 == seat && u.kind.stats().harvest.is_none())
                     .map(|u| u.id)
                     .collect(),
                 goal: foundry(&state, 1 - seat),
@@ -519,10 +519,8 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .flat_map(|row| row.chars().map(|c| c == '*'))
                     .collect();
                 assert_eq!(fog_visible, obs.visible, "tick {tick} seat {seat:?} sight");
-                let fog_contacts: Vec<[i32; 2]> = fog.contacts.clone();
-                let obs_contacts: Vec<[i32; 2]> = obs.blips.iter().map(|t| [t.x, t.y]).collect();
                 assert_eq!(
-                    fog_contacts, obs_contacts,
+                    fog.contacts, obs.blips,
                     "tick {tick} seat {seat:?} contacts"
                 );
 

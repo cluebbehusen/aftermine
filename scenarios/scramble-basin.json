@@ -146,7 +146,7 @@
   },
   {
    "player": 0,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 48,
    "y": 15
   },
@@ -164,7 +164,7 @@
   },
   {
    "player": 1,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 74,
    "y": 31
   },
@@ -182,7 +182,7 @@
   },
   {
    "player": 2,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 74,
    "y": 61
   },
@@ -200,7 +200,7 @@
   },
   {
    "player": 3,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 48,
    "y": 76
   },
@@ -218,7 +218,7 @@
   },
   {
    "player": 4,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 23,
    "y": 61
   },
@@ -236,7 +236,7 @@
   },
   {
    "player": 5,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 23,
    "y": 31
   }

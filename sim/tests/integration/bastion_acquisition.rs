@@ -290,7 +290,10 @@ fn radar_contacts_enable_bastion_fire_without_acquiring_building_ghosts() {
             .any(|ghost| ghost.anchor == target_anchor)
     );
     assert!(!state.can_see(PlayerId(0), radar_tile));
-    assert_eq!(state.vision(PlayerId(0)).contacts(), [radar_tile]);
+    assert_eq!(
+        state.vision(PlayerId(0)).contacts(),
+        [ground_blip(radar_tile)]
+    );
 
     let mut shots = 0;
     for _ in 0..(BuildingKind::Bastion.base_stats().weapons[0].cooldown_ticks + 30) {

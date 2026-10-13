@@ -182,6 +182,9 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             Command::Retire { units, queue } => {
                 apply_retire(state, pc.player, &canonical_units(units), *queue)
             }
+            Command::Scout { units, goal, queue } => {
+                apply_scout(state, pc.player, &canonical_units(units), *goal, *queue)
+            }
             Command::OrderRound { building } => {
                 super::ordnance::apply_order_round(state, pc.player, *building)
             }
@@ -414,6 +417,36 @@ fn apply_run(
     })
 }
 
+/// Sends scouts to see one tile. Each takes the tile itself as its goal:
+/// a scout picks its own safe vantage, so a group needs no spread slots.
+fn apply_scout(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    goal: TilePos,
+    queue: bool,
+) -> Result<(), RejectReason> {
+    if !on_map(state, goal) {
+        return Err(RejectReason::OutOfBounds);
+    }
+    let (mut accepted, mut landed) = (0, 0);
+    for &id in units {
+        if let Some(unit) = state.unit_mut(id)
+            && unit.player == player
+            && unit.kind.stats().scouts
+        {
+            accepted += 1;
+            if assign(unit, Order::Scout { tile: goal }, queue) {
+                landed += 1;
+            }
+        }
+    }
+    if accepted == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+}
+
 fn apply_attack(
     state: &mut State,
     player: PlayerId,
@@ -432,9 +465,8 @@ fn apply_attack(
     // A demolition machine carries no gun, but its charge covers ground the
     // same way a weapon would.
     let covers = |stats: &crate::stats::UnitStats| {
-        victim_domain.map_or(stats.can_fight(), |domain| {
-            stats.can_target(domain) || (stats.demolition.is_some() && domain == Domain::Ground)
-        })
+        stats.can_target(victim_domain)
+            || (stats.demolition.is_some() && victim_domain == Domain::Ground)
     };
     // Machines that cannot hit the target walk to its tile instead, each
     // movement domain sharing the one tile its first slot names.
@@ -572,6 +604,15 @@ fn apply_patrol(
         return Err(RejectReason::NoValidUnits);
     }
     for (ids, domain) in split_domains(state, accepted) {
+        // Scouts take each waypoint itself; only the others spread, so a
+        // scout in the group never shifts their slots.
+        let (scouts, ids): (Vec<UnitId>, Vec<UnitId>) = ids
+            .into_iter()
+            .partition(|&id| state.unit(id).expect("filtered above").kind.stats().scouts);
+        for id in scouts {
+            let unit = state.unit_mut(id).expect("filtered above");
+            assign_circuit(unit, waypoints.iter().map(|&tile| Order::Scout { tile }));
+        }
         if ids.is_empty() {
             continue;
         }
@@ -1574,9 +1615,9 @@ fn apply_focus_fire(
     let view = state
         .attack_view(player, target)
         .ok_or(RejectReason::InvalidTarget)?;
-    if view
-        .domain
-        .is_some_and(|domain| weapons.iter().any(|weapon| !weapon.targets.covers(domain)))
+    if weapons
+        .iter()
+        .any(|weapon| !weapon.targets.covers(view.domain))
     {
         return Err(RejectReason::InvalidTarget);
     }

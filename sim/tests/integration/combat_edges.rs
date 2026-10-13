@@ -6,7 +6,7 @@
 //! ring's exact detection boundary. Public API only, like `domains.rs`.
 
 use crate::common;
-use common::{arena, cmd, face_target, players, run_until, unit};
+use common::{arena, cmd, face_target, ground_blip, players, run_until, unit};
 use oxide_sim::scenario::ScenarioMode;
 
 use chassis::grid::TilePos;
@@ -657,11 +657,11 @@ fn radar_detects_at_the_ring_and_goes_quiet_one_tile_beyond() {
         "test premise: both intruders are out of true sight"
     );
     assert!(
-        view.contacts().contains(&ring_tile),
+        view.contacts().contains(&ground_blip(ring_tile)),
         "a tile exactly on the ring is a blip"
     );
     assert!(
-        !view.contacts().contains(&past_tile),
+        !view.contacts().contains(&ground_blip(past_tile)),
         "one tile past the ring falls silent"
     );
 }

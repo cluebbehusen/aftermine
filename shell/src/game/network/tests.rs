@@ -36,7 +36,9 @@ fn host_batches_play_out_exactly_like_do_tick() {
     let mut local = Game::with_viewport(Scenario::skirmish(), viewport()).unwrap();
     let mut host = Game::networked(Scenario::skirmish(), human, NetRole::Host, viewport()).unwrap();
     assert_eq!(host.bots.len(), 1, "the host runs the scenario's bot seat");
-    for tick in 0..240 {
+    // Long enough for the Sentinel to roll out, which is what the fighter
+    // lesson waits for.
+    for tick in 0..480 {
         let order = match tick {
             5 => Some(UnitKind::Harvester),
             120 => Some(UnitKind::Sentinel),

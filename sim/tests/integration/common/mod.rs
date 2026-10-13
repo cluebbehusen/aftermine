@@ -53,6 +53,22 @@ pub fn unit(player: u8, kind: UnitKind, x: i32, y: i32) -> UnitSpec {
     UnitSpec { player, kind, x, y }
 }
 
+/// A radar blip on the ground at `tile`.
+pub fn ground_blip(tile: chassis::grid::TilePos) -> oxide_sim::RadarContact {
+    oxide_sim::RadarContact {
+        tile,
+        domain: oxide_sim::stats::Domain::Ground,
+    }
+}
+
+/// A radar blip in the air over `tile`.
+pub fn air_blip(tile: chassis::grid::TilePos) -> oxide_sim::RadarContact {
+    oxide_sim::RadarContact {
+        tile,
+        domain: oxide_sim::stats::Domain::Air,
+    }
+}
+
 pub fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
     BuildingSpec { player, kind, x, y }
 }

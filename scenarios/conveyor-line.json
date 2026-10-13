@@ -76,7 +76,7 @@
   },
   {
    "player": 0,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 7,
    "y": 21
   },
@@ -100,7 +100,7 @@
   },
   {
    "player": 1,
-   "kind": "sentinel",
+   "kind": "surveyor",
    "x": 104,
    "y": 18
   }

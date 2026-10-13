@@ -133,7 +133,59 @@ fn unit_state() -> UnitAnimationState {
         scanner: None,
         transport: None,
         demolition_preparation: None,
+        radar_unfold: None,
     }
+}
+
+#[test]
+fn a_parking_radar_unfolds_then_scans_until_it_drives() {
+    let at = |progress: f32| {
+        unit_frame(
+            UnitKind::Surveyor,
+            UnitAnimationState {
+                radar_unfold: Some(progress),
+                ..unit_state()
+            },
+        )
+    };
+    assert_eq!(at(0.01), UnitFrame::Action(0));
+    for tick in 1..=40 {
+        assert_eq!(at(tick as f32 / 40.0), UnitFrame::Action(tick - 1));
+    }
+    assert_eq!(
+        crate::assets::unit_action_frames(UnitKind::Surveyor),
+        RADAR_UNFOLD_FRAMES + RADAR_SCAN_FRAMES
+    );
+    for frame in 0..RADAR_SCAN_FRAMES {
+        assert_eq!(
+            unit_frame(
+                UnitKind::Surveyor,
+                UnitAnimationState {
+                    radar_unfold: Some(1.0),
+                    scanner: Some(frame as f32 / RADAR_SCAN_FRAMES as f32),
+                    locomotion: LocomotionState::Moving { cycle: 0.5 },
+                    ..unit_state()
+                }
+            ),
+            UnitFrame::Action(RADAR_UNFOLD_FRAMES + frame)
+        );
+    }
+    assert_eq!(
+        unit_frame(
+            UnitKind::Surveyor,
+            UnitAnimationState {
+                locomotion: LocomotionState::Moving { cycle: 0.5 },
+                ..unit_state()
+            }
+        ),
+        UnitFrame::Moving(0)
+    );
+    assert_eq!(at(1.0), UnitFrame::Action(RADAR_UNFOLD_FRAMES - 1));
+    assert_eq!(
+        unit_frame(UnitKind::Surveyor, unit_state()),
+        UnitFrame::Idle,
+        "a folded radar shows the plain body"
+    );
 }
 
 fn building_state() -> BuildingAnimationState {

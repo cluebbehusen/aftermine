@@ -251,23 +251,27 @@ fn blind_hitscan_damage_alerts_only_its_owner_in_live_and_playback() {
 
 #[test]
 fn blind_hitscan_miss_does_not_raise_an_attack_alert() {
-    let mut game = blind_bulwark_scene(UnitKind::Kestrel);
-    let victim = game.state.units()[0].id;
-    let hp = game.state.unit(victim).unwrap().hp;
-    let report = game.do_tick();
+    // Radar names a contact's domain, so no gun fires on a blip it cannot
+    // hit. A miss is replayed instead: a real blind shot observed without
+    // any damage evidence.
+    let mut live = blind_bulwark_scene(UnitKind::Excavator);
+    let report = live.do_tick();
     assert!(
         report
             .events
             .iter()
             .any(|event| matches!(event, Event::TurretFired { target: None, .. }))
     );
-    assert!(
-        !report
-            .events
-            .iter()
-            .any(|event| matches!(event, Event::DamageTaken { .. }))
-    );
-    assert_eq!(game.state.unit(victim).unwrap().hp, hp);
+    let missed: Vec<_> = report
+        .events
+        .iter()
+        .filter(|event| !matches!(event, Event::DamageTaken { .. }))
+        .cloned()
+        .collect();
+    let mut game = blind_bulwark_scene(UnitKind::Excavator);
+    game.presentation.remember_previous_tick(&game.state);
+    game.presentation
+        .observe_tick(&game.state, &missed, &report.movement);
     assert!(game.presentation.alerts.is_empty());
     assert!(
         !game
