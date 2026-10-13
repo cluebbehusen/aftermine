@@ -21,6 +21,9 @@ const LARGE_SCALE: f32 = 2.0;
 pub(crate) struct UnitLook {
     /// Sprite size against the unit's tile.
     pub(crate) scale: f32,
+    /// Share of the sprite canvas the visible body spans; the rest is
+    /// transparent margin that neither picks nor rings the unit.
+    pub(crate) extent: f32,
     /// How the body moves on screen.
     pub(crate) gait: Gait,
     /// Which atlas rows hold its two locomotion poses.
@@ -190,6 +193,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
     use MarkerRole as M;
     let plain = UnitLook {
         scale: DEFAULT_SCALE,
+        extent: 1.0,
         gait: Gait::Plain,
         move_rows: MoveRows::Move,
         belts: &[],
@@ -306,6 +310,8 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
         UnitKind::Surveyor => UnitLook {
             rig: true,
             scale: 2.0,
+            // The production art packs the body into 72 of 128 pixels.
+            extent: 72.0 / 128.0,
             gait: Gait::Treads,
             marker: M::Scout,
             ..plain

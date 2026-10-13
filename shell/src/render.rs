@@ -611,7 +611,7 @@ fn unit_selection_radius(kind: oxide_sim::UnitKind, zoom: f32, padding: f32) -> 
 }
 
 pub(crate) fn unit_visual_radius(kind: oxide_sim::UnitKind) -> f32 {
-    unit_draw_scale(kind) * 0.5
+    unit_draw_scale(kind) * crate::look::unit(kind).extent * 0.5
 }
 
 pub(crate) fn unit_draw_scale(kind: oxide_sim::UnitKind) -> f32 {
