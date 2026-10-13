@@ -60,6 +60,13 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
+        /// Unarmed tracked point-defense carrier: shoots down hostile projectiles
+        /// aimed near it, while gunfire passes through.
+        Mantle,
+        /// Tier-three anti-heavy gun: braces, then fires one enormous
+        /// instant slug that breaks heavy machines and is wasted on light
+        /// ones.
+        Piledriver,
         /// Ground scout: fast, unarmed, fragile, and far-sighted; it spots
         /// buried charges like a Kestrel.
         Surveyor,
@@ -287,6 +294,8 @@ pub struct UnitStats {
     /// Recoil spades the gun must deploy, stationary and aligned, before
     /// it fires.
     pub brace: Option<BraceStats>,
+    /// Which enemy machine it picks when it chooses its own target.
+    pub target_priority: TargetPriority,
     /// The ground blast a large airframe makes when it crashes.
     pub crash: Option<CrashProfile>,
     /// Reveals hostile Scuttle Charges within
@@ -297,6 +306,20 @@ pub struct UnitStats {
     pub scouts: bool,
     /// The machine's radar, if it carries one.
     pub radar: Option<RadarStats>,
+    /// Charges that shoot down hostile projectiles aimed near the machine.
+    pub point_defense: Option<PointDefenseStats>,
+}
+
+/// How a unit picks an enemy machine when nobody ordered a target. It ranks
+/// only machines it could engage now, so a unit with nothing better in reach
+/// still answers what it can.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetPriority {
+    /// The nearest.
+    Nearest,
+    /// The one with the most full health, then the nearest: a gun whose one
+    /// slug a light machine would mostly waste.
+    Heaviest,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -320,6 +343,20 @@ pub struct RadarStats {
     /// Ticks the machine must stand still before the ring comes up; any
     /// driving of its own folds it again. 0 keeps it up at all times.
     pub deploy_ticks: u8,
+}
+
+/// Point defense: each charge destroys one hostile projectile in flight
+/// whose fixed aim point and current flight position both lie within
+/// `radius`. Hitscan fire is untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointDefenseStats {
+    /// Charges held when full.
+    pub charges: u8,
+    /// Reach from the machine's center, applied to both the aim point and
+    /// the projectile's flight position.
+    pub radius: Fx,
+    /// Ticks to restore one spent charge; charges return one at a time.
+    pub recharge_ticks: u16,
 }
 
 /// A machine's own warhead.
@@ -355,6 +392,12 @@ impl UnitStats {
 }
 
 impl UnitStats {
+    /// Whether this kind can set down and park. Only an airframe that turns
+    /// as it flies lands; the rest hover.
+    pub const fn can_land(&self) -> bool {
+        self.turn_rate > 0
+    }
+
     /// Whether this kind carries any weapon at all.
     pub const fn can_fight(&self) -> bool {
         !self.weapons.is_empty() || self.demolition.is_some()
@@ -581,6 +624,8 @@ impl UnitKind {
             UnitKind::Avalanche => "avalanche",
             UnitKind::Skyhook => "skyhook",
             UnitKind::Sapper => "sapper",
+            UnitKind::Mantle => "mantle",
+            UnitKind::Piledriver => "piledriver",
             UnitKind::Surveyor => "surveyor",
         }
     }
@@ -626,6 +671,12 @@ impl UnitKind {
             UnitKind::Sapper => {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
+            UnitKind::Mantle => {
+                "Unarmed tracked carrier with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
+            }
+            UnitKind::Piledriver => {
+                "Slow, enormous shots that break heavy machines; wasted on small ones. Must brace before firing."
+            }
             UnitKind::Surveyor => {
                 "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby, and unfolds a radar when parked."
             }
@@ -662,10 +713,12 @@ const HARVESTER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -716,10 +769,12 @@ const SENTINEL: UnitStats = UnitStats {
     turret_turn_rate: 8,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -753,10 +808,12 @@ const SCUTTLER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -792,10 +849,12 @@ const LANCER: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -836,10 +895,12 @@ const BOMBARD: UnitStats = UnitStats {
         recoil_ticks: 8,
         retract_per_tick: 3,
     }),
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -873,10 +934,12 @@ const FLAKHOUND: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -910,10 +973,12 @@ const BUZZARD: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -947,10 +1012,12 @@ const TALON: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -988,10 +1055,12 @@ const WARDEN: UnitStats = UnitStats {
     turret_turn_rate: 5,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -1019,10 +1088,12 @@ const EXCAVATOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -1047,6 +1118,7 @@ const KESTREL: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: true,
     scouts: false,
@@ -1054,6 +1126,7 @@ const KESTREL: UnitStats = UnitStats {
         radius: 14,
         deploy_ticks: 0,
     }),
+    point_defense: None,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1090,6 +1163,7 @@ const CONDOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: Some(CrashProfile {
         damage: 50,
         radius: Fx::lit("2"),
@@ -1098,6 +1172,7 @@ const CONDOR: UnitStats = UnitStats {
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1134,10 +1209,58 @@ const BREAKER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(4),
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
+};
+
+const PILEDRIVER: UnitStats = UnitStats {
+    contact_reach: None,
+    // A Breaker takes four slugs; light machines waste most of one, so a
+    // swarm outlasts it. Its own hp stays well under two slugs, so it never
+    // counts as the heavy machine it hunts.
+    max_hp: 240,
+    speed: Fx::lit("0.06"), // 1.2 tiles/s
+    radius: Fx::lit("0.5"),
+    cost: 400,
+    train_ticks: 600, // 30 s
+    domain: Domain::Ground,
+    weapons: &[WeaponStats {
+        damage: 280,
+        range: Fx::lit("8"), // past the Bulwark, short of the Bastion
+        minimum_range: Fx::ZERO,
+        cooldown_ticks: 100, // one slug per 5 s
+        targets: DomainMask::GROUND,
+        splash: None,
+        indirect: false,
+        projectile: None, // instant, so point defense cannot stop it
+    }],
+    aggro_range: Fx::lit("8"),
+    harvest: None,
+    vision: 8,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 3,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: Some(3),
+    brace: Some(BraceStats {
+        deploy_ticks: 12,
+        recoil_ticks: 8,
+        retract_per_tick: 3,
+    }),
+    target_priority: TargetPriority::Heaviest,
+    crash: None,
+    charge_detection: false,
+    scouts: false,
+    radar: None,
+    point_defense: None,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1177,10 +1300,12 @@ const AVALANCHE: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(3),
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1205,6 +1330,7 @@ const SKYHOOK: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: Some(CrashProfile {
         damage: 40,
         radius: Fx::lit("2"),
@@ -1213,6 +1339,7 @@ const SKYHOOK: UnitStats = UnitStats {
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1242,10 +1369,47 @@ const SAPPER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: false,
     scouts: false,
     radar: None,
+    point_defense: None,
+};
+
+const MANTLE: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 350,
+    speed: Fx::lit("0.07"),
+    radius: Fx::lit("0.45"),
+    cost: 450,
+    train_ticks: 500,
+    domain: Domain::Ground,
+    weapons: &[],
+    aggro_range: Fx::ZERO,
+    harvest: None,
+    // Sees past its reach, so anything it shoots down is in its own sight.
+    vision: 6,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 2,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: None,
+    brace: None,
+    target_priority: TargetPriority::Nearest,
+    crash: None,
+    charge_detection: false,
+    scouts: false,
+    radar: None,
+    point_defense: Some(PointDefenseStats {
+        charges: 3,
+        radius: Fx::lit("4.5"),
+        recharge_ticks: 60, // one charge back every 3 s
+    }),
 };
 
 const SURVEYOR: UnitStats = UnitStats {
@@ -1270,6 +1434,7 @@ const SURVEYOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
+    target_priority: TargetPriority::Nearest,
     crash: None,
     charge_detection: true,
     scouts: true,
@@ -1277,6 +1442,7 @@ const SURVEYOR: UnitStats = UnitStats {
         radius: 12,
         deploy_ticks: 40, // 2 s
     }),
+    point_defense: None,
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -1461,7 +1627,12 @@ const AIRWORKS: BuildingStats = BuildingStats {
 const CRUCIBLE: BuildingStats = BuildingStats {
     max_hp: 900,
     vision: 6,
-    produces: &[UnitKind::Breaker, UnitKind::Avalanche],
+    produces: &[
+        UnitKind::Breaker,
+        UnitKind::Avalanche,
+        UnitKind::Mantle,
+        UnitKind::Piledriver,
+    ],
     weapons: &[],
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
@@ -1676,6 +1847,8 @@ impl UnitKind {
             UnitKind::Avalanche => &AVALANCHE,
             UnitKind::Skyhook => &SKYHOOK,
             UnitKind::Sapper => &SAPPER,
+            UnitKind::Mantle => &MANTLE,
+            UnitKind::Piledriver => &PILEDRIVER,
             UnitKind::Surveyor => &SURVEYOR,
         }
     }
@@ -1735,7 +1908,7 @@ impl BuildingKind {
                 "Produces scrap continuously without workers. Upgrade to a Refinery for higher output."
             }
             BuildingKind::RepairBay => {
-                "Repairs nearby friendly units and completed buildings using scrap. Cannot repair itself."
+                "Repairs up to four nearby friendly machines at a time, fast once they are out of combat, and completed buildings slowly, using scrap. Condors must land to be repaired. Cannot repair itself."
             }
             BuildingKind::Extractor => {
                 "Rebuild on a derelict mining frame to generate scrap. A nearby own Foundry increases output. Upgrade to a Deep Bore for triple output."
@@ -1776,7 +1949,7 @@ impl BuildingKind {
     }
 
     /// Whether harvesters can deliver their cargo here. The one funnel
-    /// every drop-off decision consults — deliveries, retirement homes,
+    /// every drop-off decision consults — deliveries, withdrawal homes,
     /// and route planning alike.
     pub const fn is_drop_off(self) -> bool {
         matches!(self, BuildingKind::Foundry)
@@ -1967,15 +2140,46 @@ pub fn unit_repair_debit(kind: UnitKind, progress: u32) -> u32 {
 /// (against `max_hp`). A full-health salvage banks cost * permille / 1000.
 pub const SALVAGE_REFUND_PERMILLE: u64 = 800;
 
+/// Per-mille of a unit's cost a retirement at a Crucible refunds at full
+/// health, scaled linearly by remaining hp. Units price like buildings:
+/// below [`REPAIR_COST_PERMILLE`] per hp, so welding a machine up and then
+/// retiring it always loses scrap.
+pub const RETIRE_REFUND_PERMILLE: u64 = 500;
+
+/// Ticks a unit stands at a Crucible being dismantled. Long enough to read,
+/// and to leave fire time to win, so a dying machine cannot cash out.
+pub const RETIRE_TICKS: u32 = 60;
+
+/// How near a Crucible's footprint a retiring unit stands or hovers to be
+/// dismantled, in tiles. A doorstep tile is within it.
+pub const RETIRE_REACH: Fx = Fx::lit("1.5");
+
+/// Scrap a retirement refunds for a `kind` machine at `hp`.
+pub fn retire_refund(kind: UnitKind, hp: u32) -> u32 {
+    let stats = kind.stats();
+    let millis = u64::from(stats.cost) * RETIRE_REFUND_PERMILLE * u64::from(hp.min(stats.max_hp))
+        / u64::from(stats.max_hp);
+    u32::try_from(millis / 1000).expect("a refund never exceeds the unit's cost")
+}
+
 /// Reach of the Repair Bay's aura, in tiles from the nearest point of its
 /// footprint. Shorter than every siege weapon's reach, so the counter to a
 /// healed defense is firing from outside it.
 pub const REPAIR_BAY_RADIUS: Fx = Fx::lit("4.0");
 
-/// Ticks between Repair Bay aura pulses. With [`REPAIR_BAY_STEP`] this sets
-/// the per-patient sustain rate, well below one Turret's damage rate, so an
-/// aura never out-heals focused fire; its value is breadth.
+/// Ticks between Repair Bay aura pulses.
 pub const REPAIR_BAY_PERIOD: u64 = 8;
+
+/// Machines one Repair Bay services at once, most wounded first.
+pub const REPAIR_BAY_PATIENTS: usize = 4;
+
+/// Ticks a machine must go undamaged before a Repair Bay heals it fast.
+pub const REPAIR_BAY_CALM_TICKS: u64 = 60;
+
+/// Per mille of max hp per second a Repair Bay restores to a machine that
+/// has gone [`REPAIR_BAY_CALM_TICKS`] undamaged: half a Breaker back in
+/// about 20 s. Never slower than [`REPAIR_BAY_STEP`] per pulse.
+pub const REPAIR_BAY_FAST_PERMILLE_PER_SECOND: u64 = 30;
 
 /// Reach of the Crucible's smelter, in tiles from the nearest point of its
 /// footprint.
@@ -1985,7 +2189,9 @@ pub const CRUCIBLE_SMELT_RADIUS: Fx = Fx::lit("6.0");
 /// scrap. The rate stays below a dedicated harvester working the same field.
 pub const CRUCIBLE_SMELT_PERIOD: u64 = 40;
 
-/// Hp each aura pulse offers each patient in the ring.
+/// Hp each aura pulse offers a patient under fire, and each damaged
+/// structure in the ring: well below one Turret's damage rate, so an aura
+/// never out-heals focused fire.
 pub const REPAIR_BAY_STEP: u32 = 1;
 
 /// Welding ramp for Foundry repair, used instead of its build time.
@@ -2032,7 +2238,7 @@ pub const UNLOAD_TICKS: u8 = 10;
 
 /// A radar blip only makes salvage unsafe when it is this close to a
 /// candidate source. Contacts carry no identity or range, so a distant
-/// blip must not retire an otherwise healthy work zone.
+/// blip must not withdraw an otherwise healthy work zone.
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile
@@ -2234,3 +2440,14 @@ pub const LEASH_REACQUIRE_COOLDOWN: u16 = 60;
 /// re-acquires unleashed; otherwise unit-id ordering can decide which
 /// side's advancing army is tethered first.
 pub const LEASH_STATION_TICKS: u16 = 40;
+
+/// How far from the escorted unit an escort looks for a fight, in tiles,
+/// capped by its own aggro range. Welders mend escort-party members within
+/// the same distance of it.
+pub const ESCORT_ENGAGE_RADIUS: Fx = Fx::lit("7");
+
+/// How far from the escorted unit an escort's victim may stray before the
+/// escort breaks off, firing included, and returns to its slot. Wider than
+/// [`ESCORT_ENGAGE_RADIUS`] so a fight it just picked never ends on the next
+/// tick.
+pub const ESCORT_BREAK_RADIUS: Fx = Fx::lit("10");

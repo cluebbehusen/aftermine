@@ -303,7 +303,7 @@ fn held_worker(wall: Option<(usize, usize)>) -> (State, UnitId, KnownSource, Pat
     state.units[0].order = Order::Harvest {
         node,
         anchor: node,
-        retiring: false,
+        withdrawing: false,
     };
     let ordered = PathFollow {
         final_point: None,

@@ -2051,3 +2051,205 @@ fn lethal_hit_retains_the_moving_body_frame() {
     }
     panic!("Lancer did not reach the moving target");
 }
+
+fn mantle_interception_game() -> Game {
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name":"Point defense art", "mode":"sandbox", "map":vec!["........................................"; 24],
+        "players":[{"name":"Local","scrap":0,"bot":false},{"name":"Enemy","scrap":0,"bot":false}],
+        "units":[{"player":0,"kind":"mantle","x":10,"y":10},{"player":1,"kind":"bombard","x":18,"y":10}]
+    })).unwrap();
+    Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap()
+}
+
+#[test]
+fn simultaneous_interceptions_use_three_emitters_and_hold_while_paused() {
+    let mut game = mantle_interception_game();
+    let shells: Vec<_> = [
+        oxide_sim::ProjectileKind::Shell,
+        oxide_sim::ProjectileKind::Missile,
+        oxide_sim::ProjectileKind::Bomb,
+    ]
+    .into_iter()
+    .map(|kind| oxide_sim::state::Shell {
+        kind,
+        shooter: Target::Unit(UnitId(1)),
+        player: oxide_sim::PlayerId(1),
+        launch: chassis::grid::TilePos::new(14, 10).center(),
+        impact: chassis::grid::TilePos::new(10, 10).center(),
+        launched_at: 0,
+        arrival: 20,
+        damage: 20,
+        targets: oxide_sim::stats::DomainMask::GROUND,
+        splash: None,
+    })
+    .collect();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    wire["shells"] = serde_json::to_value(shells).unwrap();
+    game.state.0 = std::sync::Arc::new(serde_json::from_value(wire).unwrap());
+    game.present_ticks(1);
+    assert_eq!(
+        game.state
+            .unit(UnitId(0))
+            .unwrap()
+            .point_defense
+            .unwrap()
+            .charges,
+        0
+    );
+    let origins: Vec<_> = game
+        .presentation
+        .fx
+        .iter()
+        .filter_map(|fx| match fx.kind {
+            EffectKind::Intercept {
+                from,
+                flight,
+                impact_witnessed,
+                ..
+            } => {
+                assert!(flight.is_some());
+                assert!(impact_witnessed);
+                from
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(origins.len(), 3);
+    assert!(origins[0].distance(origins[1]) > 0.05);
+    assert!(origins[1].distance(origins[2]) > 0.05);
+    let tick = game.state.current_tick();
+    let ages: Vec<_> = game
+        .presentation
+        .fx
+        .iter()
+        .map(|fx| fx.age_at(tick, 0.0))
+        .collect();
+    game.update_fx(1.0);
+    assert_eq!(
+        ages,
+        game.presentation
+            .fx
+            .iter()
+            .map(|fx| fx.age_at(tick, 0.0))
+            .collect::<Vec<_>>()
+    );
+    game.present_ticks(6);
+    game.update_fx(0.0);
+    assert_eq!(
+        game.presentation
+            .fx
+            .iter()
+            .filter(|fx| matches!(fx.kind, EffectKind::Intercept { .. }))
+            .count(),
+        3
+    );
+    game.present_ticks(4);
+    game.update_fx(0.0);
+    assert!(
+        !game
+            .presentation
+            .fx
+            .iter()
+            .any(|fx| matches!(fx.kind, EffectKind::Intercept { .. }))
+    );
+}
+
+#[test]
+fn intercepted_own_shell_does_not_reveal_a_fogged_defender() {
+    let mut game = mantle_interception_game();
+    let at = chassis::grid::TilePos::new(30, 20).center();
+    let event = Event::ShellIntercepted {
+        defender: UnitId(99),
+        defender_player: oxide_sim::PlayerId(1),
+        defender_pos: at,
+        player: oxide_sim::PlayerId(0),
+        shooter: Target::Unit(UnitId(0)),
+        kind: oxide_sim::ProjectileKind::Shell,
+        at,
+        impact: at,
+        arrival: 20,
+    };
+    game.presentation.spawn_fx(&game.state, &[event]);
+    assert!(matches!(
+        game.presentation.fx.last().unwrap().kind,
+        EffectKind::Intercept {
+            from: None,
+            impact_witnessed: true,
+            ..
+        }
+    ));
+    let zaps: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .filter(|(sound, _)| *sound == SoundKind::InterceptZap)
+        .collect();
+    assert_eq!(
+        zaps,
+        [&(SoundKind::InterceptZap, Some(world_vec(at)))],
+        "an unseen emitter is heard where the seen shell dissolves"
+    );
+}
+
+#[test]
+fn an_interception_seen_at_neither_end_is_silent() {
+    let mut game = mantle_interception_game();
+    let at = chassis::grid::TilePos::new(30, 20).center();
+    let event = Event::ShellIntercepted {
+        defender: UnitId(99),
+        defender_player: oxide_sim::PlayerId(1),
+        defender_pos: at,
+        player: oxide_sim::PlayerId(1),
+        shooter: Target::Unit(UnitId(1)),
+        kind: oxide_sim::ProjectileKind::Shell,
+        at,
+        impact: at,
+        arrival: 20,
+    };
+    game.presentation.spawn_fx(&game.state, &[event]);
+    assert!(
+        !game
+            .presentation
+            .sounds_pending
+            .iter()
+            .any(|(sound, _)| *sound == SoundKind::InterceptZap)
+    );
+}
+
+#[test]
+fn a_seen_emitter_zaps_once_per_shell_it_stops() {
+    let mut game = mantle_interception_game();
+    let at = chassis::grid::TilePos::new(10, 10).center();
+    let event = Event::ShellIntercepted {
+        defender: UnitId(0),
+        defender_player: oxide_sim::PlayerId(0),
+        defender_pos: at,
+        player: oxide_sim::PlayerId(1),
+        shooter: Target::Unit(UnitId(1)),
+        kind: oxide_sim::ProjectileKind::Shell,
+        at,
+        impact: at,
+        arrival: 20,
+    };
+    game.presentation
+        .spawn_fx(&game.state, &[event.clone(), event]);
+    let zaps: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .filter(|(sound, _)| *sound == SoundKind::InterceptZap)
+        .collect();
+    assert_eq!(zaps.len(), 2);
+    assert!(zaps.iter().all(|(_, pos)| *pos == Some(world_vec(at))));
+}
+
+#[test]
+fn mantle_emitter_origins_rotate_with_the_chassis() {
+    let center = Vec2::new(10.0, 10.0);
+    for slot in 0..3 {
+        let north = mantle_emitter(center, 0.0, slot) - center;
+        let south = mantle_emitter(center, std::f32::consts::PI, slot) - center;
+        assert!((north + south).length() < 0.0001);
+        assert!(north.y < 0.0);
+    }
+}

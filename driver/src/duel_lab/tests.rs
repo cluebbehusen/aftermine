@@ -400,3 +400,25 @@ fn a_surveyor_spotter_parks_outside_a_bastion_line_with_its_radar_on_it() {
         "{gaps:?}"
     );
 }
+
+#[test]
+fn support_walks_with_its_army_and_falls_with_it() {
+    let escorted = Force::Army(vec![(UnitKind::Mantle, 1), (UnitKind::Breaker, 1)]);
+    let mirror = fight(
+        &escorted,
+        &escorted,
+        Layout::Open,
+        Formation::Line,
+        3_000,
+        false,
+    )
+    .expect("the mirror runs");
+    assert_eq!(mirror.west, mirror.east, "both seats fare alike");
+    let lone = Force::Army(vec![(UnitKind::Mantle, 2), (UnitKind::Sentinel, 1)]);
+    let heavy = Force::Army(vec![(UnitKind::Breaker, 2)]);
+    let fought =
+        fight(&lone, &heavy, Layout::Open, Formation::Line, 6_000, false).expect("it runs");
+    assert_eq!(fought.end, End::Wipe, "the fight ends with the last gun");
+    assert_eq!(fought.west.alive, 0);
+    assert_eq!(fought.west.retained, 0.0, "support is lost with its army");
+}

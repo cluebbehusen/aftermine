@@ -227,7 +227,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
     match unit.order {
         crate::Order::Harvest {
             node,
-            retiring: false,
+            withdrawing: false,
             ..
         } => {
             unit.kind
@@ -240,7 +240,15 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
         crate::Order::Repair { building } | crate::Order::Salvage { building } => {
             state.in_building_work_reach(unit, building)
         }
-        crate::Order::RepairUnit { unit: patient } => state
+        crate::Order::Retire { crucible, .. } => state.building(crucible).is_some_and(|b| {
+            unit.pos.dist_sq(b.closest_point_to(unit.pos))
+                <= crate::stats::RETIRE_REACH * crate::stats::RETIRE_REACH
+        }),
+        crate::Order::RepairUnit { unit: patient }
+        | crate::Order::Accompany {
+            weld: Some(patient),
+            ..
+        } => state
             .unit(patient)
             .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p)),
         crate::Order::Attack { target, .. } => {

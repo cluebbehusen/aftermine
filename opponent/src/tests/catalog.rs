@@ -46,6 +46,7 @@ fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
             crate::composition::Role::Siege,
             crate::composition::Role::AntiAir,
             crate::composition::Role::AirStrike,
+            crate::composition::Role::AntiHeavy,
         ],
         units: Vec::new(),
         waiting: None,

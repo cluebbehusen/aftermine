@@ -260,6 +260,16 @@ pub fn armed_units() -> Vec<UnitKind> {
         .collect()
 }
 
+/// Every unarmed kind that supports an army, such as a point defender: it
+/// joins mixes in the composition search and never fights alone.
+pub fn support_units() -> Vec<UnitKind> {
+    UnitKind::ALL
+        .iter()
+        .copied()
+        .filter(|kind| !kind.stats().can_fight() && kind.stats().point_defense.is_some())
+        .collect()
+}
+
 /// Every unit kind that can attack a defense, Sappers included.
 pub fn defense_attackers() -> Vec<UnitKind> {
     UnitKind::ALL
@@ -414,9 +424,10 @@ pub enum End {
 /// One side's standing when the duel ended.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Standing {
-    /// Bodies still alive.
+    /// Bodies still alive that can fight.
     pub alive: u32,
-    /// Surviving value: each live body's cost scaled by its health.
+    /// Surviving value: each live body's cost scaled by its health, none
+    /// once no fighter is left.
     pub retained: f64,
 }
 
@@ -444,7 +455,8 @@ pub struct Outcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Force {
-    /// Units hunting together, the shortest-ranged in the front ranks.
+    /// Units hunting together, the shortest-ranged in the front ranks and
+    /// support behind every gun, following the nearest fighter.
     Army(Vec<(UnitKind, u32)>),
     /// A line of one defense.
     Line(Defense, u32),
@@ -530,7 +542,13 @@ pub fn stage(
         match force {
             Force::Army(members) => {
                 let mut ranks: Vec<(UnitKind, u32)> = members.clone();
-                ranks.sort_by_key(|&(kind, _)| kind.stats().weapons.iter().map(|w| w.range).max());
+                ranks.sort_by_key(|&(kind, _)| {
+                    let stats = kind.stats();
+                    (
+                        !stats.can_fight(),
+                        stats.weapons.iter().map(|w| w.range).max(),
+                    )
+                });
                 let bodies: Vec<UnitKind> = ranks
                     .iter()
                     .flat_map(|&(kind, count)| std::iter::repeat_n(kind, count as usize))
@@ -706,7 +724,9 @@ fn seated(duel: &Duel) -> (Force, Force) {
     if duel.a_west { (a, b) } else { (b, a) }
 }
 
-/// Bodies a force still fields, and their health-scaled value.
+/// Bodies a force still fields that can fight, and the health-scaled value
+/// of everything it fields. Support with no fighter left is lost with the
+/// army it served.
 fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
     let mut alive = 0;
     let mut retained = 0.0;
@@ -718,8 +738,13 @@ fn standing(state: &State, player: PlayerId, force: &Force) -> Standing {
                 .filter(|u| u.player == player && force.fields(u.kind) && u.hp > 0)
             {
                 let stats = u.kind.stats();
-                alive += 1;
+                if stats.can_fight() {
+                    alive += 1;
+                }
                 retained += f64::from(stats.cost) * f64::from(u.hp) / f64::from(stats.max_hp);
+            }
+            if alive == 0 {
+                retained = 0.0;
             }
         }
         Force::Line(defense, _) => {
@@ -803,7 +828,11 @@ fn seek(
         .units()
         .iter()
         .filter(|u| {
-            u.player == me && mine.fields(u.kind) && u.hp > 0 && matches!(u.order, Order::Idle)
+            u.player == me
+                && mine.fields(u.kind)
+                && u.kind.stats().can_fight()
+                && u.hp > 0
+                && matches!(u.order, Order::Idle)
         })
         .collect();
     let from = idle.first()?.pos;
@@ -838,6 +867,40 @@ fn seek(
         player: me,
         command,
     })
+}
+
+/// Send a side's support bodies that have drifted from their army to its
+/// nearest fighter: farther than half a point defender's reach, its
+/// middle would leave the cover.
+fn escort(state: &State, me: PlayerId, mine: &Force) -> Vec<PlayerCommand> {
+    let fighters: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == me && mine.fields(u.kind) && u.kind.stats().can_fight() && u.hp > 0)
+        .collect();
+    state
+        .units()
+        .iter()
+        .filter(|u| u.player == me && mine.fields(u.kind) && !u.kind.stats().can_fight())
+        .filter_map(|support| {
+            let nearest = fighters
+                .iter()
+                .min_by_key(|fighter| (support.pos.dist_sq(fighter.pos), fighter.id))?;
+            let gap = support
+                .kind
+                .stats()
+                .point_defense
+                .map_or(chassis::fx::Fx::ONE, |defense| defense.radius / 2);
+            (support.pos.dist_sq(nearest.pos) > gap * gap).then(|| PlayerCommand {
+                player: me,
+                command: Command::Run {
+                    units: vec![support.id],
+                    goal: nearest.tile(),
+                    queue: false,
+                },
+            })
+        })
+        .collect()
 }
 
 /// Keep a side's spotter hovering short of the nearest enemy, on its own
@@ -943,7 +1006,9 @@ pub fn fight(
         let units = state
             .units()
             .iter()
-            .filter(|u| u.player == PlayerId(player) && force.fields(u.kind))
+            .filter(|u| {
+                u.player == PlayerId(player) && force.fields(u.kind) && u.kind.stats().can_fight()
+            })
             .map(|u| u.id)
             .collect();
         orders.push(PlayerCommand {
@@ -980,8 +1045,10 @@ pub fn fight(
                         seek(&state, me, mine, foe, theirs),
                         spot(&state, me, mine, foe, theirs),
                     ]
+                    .into_iter()
+                    .flatten()
+                    .chain(escort(&state, me, mine))
                 })
-                .flatten()
                 .collect()
         } else {
             Vec::new()

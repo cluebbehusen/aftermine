@@ -8,24 +8,59 @@ use crate::game::{Game, PingKind};
 use crate::numeric;
 use chassis::grid::TilePos;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{Command, Target, UnitId};
+use oxide_sim::{Command, Rally, Target, UnitId};
 
 pub(super) fn selected_producers(game: &Game) -> Vec<oxide_sim::BuildingId> {
     crate::building_actions::SelectedBuildings::inspect(&game.view()).producers()
 }
 
-pub(super) fn rally_selected_producers(game: &mut Game, rally: TilePos) {
+pub(super) fn rally_selected_producers(game: &mut Game, rally: Rally) {
     let producers = selected_producers(game);
     if producers.is_empty() {
         return;
     }
+    rally_producers(game, producers, rally);
+}
+
+/// Points `producers` at `rally` and pings where it lands.
+pub(super) fn rally_producers(
+    game: &mut Game,
+    producers: Vec<oxide_sim::BuildingId>,
+    rally: Rally,
+) {
     for building in producers {
         game.issue(Command::SetRally {
             building,
             rally: Some(rally),
         });
     }
-    game.presentation.ping(tile_center(rally), PingKind::Rally);
+    let at = match rally {
+        Rally::Tile(tile) => tile_center(tile),
+        Rally::Unit(unit) => match game.state.unit(unit) {
+            Some(u) => vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()),
+            None => return,
+        },
+    };
+    game.presentation.ping(at, PingKind::Rally);
+}
+
+/// The rally a world click names: the own unit under it, or else the
+/// ground.
+pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
+    game.state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| {
+            let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            (at.distance(world), u.id, u.kind)
+        })
+        .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or_else(
+            || Rally::Tile(ground_tile(&game.state, world)),
+            |(_, unit, _)| Rally::Unit(unit),
+        )
 }
 
 fn visible_hostile_target_at(
@@ -196,9 +231,11 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 return;
             }
         }
-        // Selected producers share one rally destination. Non-producers
-        // ignore a ground right-click.
-        rally_selected_producers(game, ground_tile(&game.state, world));
+        // Selected producers share one rally destination: the own unit
+        // under the cursor, which new units then escort, or the ground.
+        // Non-producers ignore the click.
+        let rally = rally_at(game, world);
+        rally_selected_producers(game, rally);
         return;
     }
     if !game.selection_commandable() {

@@ -10,7 +10,7 @@ fn an_append_a_full_queue_refuses_leaves_the_unit_untouched() {
     let busy = Order::Harvest {
         node: TilePos::new(5, 5),
         anchor: TilePos::new(5, 5),
-        retiring: false,
+        withdrawing: false,
     };
     unit.order = busy;
     unit.queue = std::iter::repeat_n(busy, ORDER_QUEUE_CAP).collect();

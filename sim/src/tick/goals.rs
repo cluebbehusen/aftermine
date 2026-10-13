@@ -140,7 +140,9 @@ pub(super) fn expose(state: &mut State) {
 /// Whether an order carries a goal still waiting for its slot.
 fn holds_pending(order: &Order) -> bool {
     match order {
-        Order::Attack { resume, .. } => resume.is_some_and(|goal| goal.is_pending()),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_some_and(|goal| goal.is_pending()),
         _ => order.walk_goal().is_some_and(|goal| goal.is_pending()),
     }
 }
@@ -149,7 +151,7 @@ fn holds_pending(order: &Order) -> bool {
 /// engagement resumes.
 fn order_goal_mut(order: &mut Order) -> Option<&mut Goal> {
     match order {
-        Order::Attack { resume, .. } => resume.as_mut(),
+        Order::Attack { resume, .. } => resume.as_mut().and_then(crate::state::Resume::goal_mut),
         _ => order.walk_goal_mut(),
     }
 }

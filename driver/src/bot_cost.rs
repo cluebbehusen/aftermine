@@ -65,7 +65,9 @@ impl Workload {
         let (mut scenario, every_seat) = match self {
             Self::Duel => (Scenario::skirmish(), true),
             Self::Skyhook => (
-                embedded(include_str!("../../scenarios/skyhook-anchorage.json")),
+                embedded(include_str!(
+                    "../../fixtures/scenarios/skyhook-anchorage.json"
+                )),
                 false,
             ),
             Self::MatureArmies => (

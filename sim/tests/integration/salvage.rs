@@ -1372,9 +1372,9 @@ fn a_dry_source_hops_only_inside_its_own_deposit() {
 }
 
 #[test]
-fn a_dry_source_with_no_neighbor_retires_the_harvester_instead_of_marching() {
+fn a_dry_source_with_no_neighbor_withdraws_the_harvester_instead_of_marching() {
     // No other salvage is known in this yard. The Harvester delivers what
-    // it carries and retires at home instead of inventing a prospecting
+    // it carries and withdraws home instead of inventing a prospecting
     // destination.
     let mut scenario = arena(vec![
         unit(0, UnitKind::Harvester, 5, 5),
@@ -1413,7 +1413,7 @@ fn a_dry_source_with_no_neighbor_retires_the_harvester_instead_of_marching() {
                 ..
             }
         )),
-        "the load came home before the unit retired"
+        "the load came home before the unit withdrew"
     );
     assert_eq!(
         state.map().iter().map(|(_, tile)| tile.scrap).sum::<u32>(),

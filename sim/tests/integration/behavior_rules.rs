@@ -281,7 +281,7 @@ fn hostile_coordinates_are_rejected_not_panicked() {
             },
             Command::SetRally {
                 building: foundry,
-                rally: Some(goal),
+                rally: Some(oxide_sim::Rally::Tile(goal)),
             },
         ] {
             let report = state.tick(&[cmd(0, command)]);
@@ -431,7 +431,7 @@ fn rally_on_unexplored_scrap_does_not_probe_the_map() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(TilePos::new(11, 4)),
+                rally: Some(oxide_sim::Rally::Tile(TilePos::new(11, 4))),
             },
         ),
         cmd(
@@ -505,7 +505,7 @@ fn rally_trusts_remembered_scrap_even_when_it_is_stale() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(node),
+                rally: Some(oxide_sim::Rally::Tile(node)),
             },
         ),
         cmd(

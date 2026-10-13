@@ -148,6 +148,8 @@ pub(crate) fn breadcrumb_points(
         oxide_sim::Order::Board { .. }
         | oxide_sim::Order::Unload { .. }
         | oxide_sim::Order::Land { .. } => BONE_FAINT,
+        oxide_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
+        oxide_sim::Order::Retire { .. } => Color::new(0.85, 0.64, 0.25, 0.55),
         oxide_sim::Order::Idle => BONE_FAINT,
     };
     // Building targets draw at their footprint's center, which lies on a
@@ -168,13 +170,20 @@ pub(crate) fn breadcrumb_points(
             oxide_sim::Order::Found { kind, anchor } => {
                 world_vec(oxide_sim::geometry::footprint_center(*anchor, kind.size()))
             }
-            oxide_sim::Order::Repair { building } | oxide_sim::Order::Salvage { building } => {
-                world_vec(game.state.building(*building)?.center())
-            }
+            oxide_sim::Order::Repair { building }
+            | oxide_sim::Order::Salvage { building }
+            | oxide_sim::Order::Retire {
+                crucible: building, ..
+            } => world_vec(game.state.building(*building)?.center()),
             // A repair patient is the viewer's own machine, so it is always seen.
             oxide_sim::Order::RepairUnit { unit } => tile_center(game.state.unit(*unit)?.tile()),
             oxide_sim::Order::Board { transport } => {
                 tile_center(game.state.unit(*transport)?.tile())
+            }
+            // An escorted unit is own, so it is always seen, aboard a
+            // transport included.
+            oxide_sim::Order::Accompany { unit, .. } => {
+                tile_center(game.state.escorted(*unit)?.tile())
             }
             oxide_sim::Order::Unload { at, .. } => tile_center(at.tile()),
             // A landing that took over a walk marks the walk's click.
@@ -429,10 +438,25 @@ fn payload_contact(
     let surface =
         game.presentation
             .payload_surface(game.state, target, shell.player, at, shell.targets);
-    let from = vec2(
-        shell.launch.x.to_num::<f32>(),
-        shell.launch.y.to_num::<f32>(),
+    let point = payload_surface_contact(
+        game,
+        sprites,
+        surface,
+        crate::game::world_vec(shell.launch),
+        at,
+        shell.kind,
     );
+    (point, surface)
+}
+
+fn payload_surface_contact(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    surface: Option<crate::game::HitSurface>,
+    from: Vec2,
+    at: Vec2,
+    kind: oxide_sim::ProjectileKind,
+) -> Vec2 {
     let point = match surface {
         Some(crate::game::HitSurface::Unit(hit)) => {
             let unit = game
@@ -445,7 +469,7 @@ fn payload_contact(
                 posed_unit_contact(
                     sprites,
                     &pose,
-                    if shell.kind == oxide_sim::ProjectileKind::Bomb {
+                    if kind == oxide_sim::ProjectileKind::Bomb {
                         at
                     } else {
                         from
@@ -459,7 +483,7 @@ fn payload_contact(
             game,
             sprites,
             surface,
-            if shell.kind == oxide_sim::ProjectileKind::Bomb {
+            if kind == oxide_sim::ProjectileKind::Bomb {
                 at
             } else {
                 from
@@ -471,7 +495,7 @@ fn payload_contact(
     .filter(|point| {
         game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
     });
-    (point.unwrap_or(at), surface)
+    point.unwrap_or(at)
 }
 
 pub(super) fn impact_contact(
@@ -937,30 +961,7 @@ pub(crate) fn draw_units(game: &crate::game::Scene<'_>, sprites: &Sprites, alpha
 fn bomber_release(game: &crate::game::Scene<'_>, index: usize) -> Option<crate::game::LaunchPose> {
     game.presentation
         .projectile_releases
-        .release(game.state.shells(), index)
-        .or_else(|| {
-            let shell = game.state.shells().get(index)?;
-            if shell.kind != oxide_sim::ProjectileKind::Bomb {
-                return None;
-            }
-            let oxide_sim::Target::Unit(id) = shell.shooter else {
-                return None;
-            };
-            let kind = game.state.unit(id)?.kind;
-            if !crate::look::fires(kind, oxide_sim::ProjectileKind::Bomb) {
-                return None;
-            }
-            // Seeks without launch history use a stable impact line, never the
-            // aircraft's later egress heading.
-            Some(crate::game::LaunchPose {
-                heading: vec2(
-                    (shell.impact.x - shell.launch.x).to_num::<f32>(),
-                    (shell.impact.y - shell.launch.y).to_num::<f32>(),
-                )
-                .normalize_or_zero(),
-                kind,
-            })
-        })
+        .bomber_pose(game.state, game.state.shells(), index)
 }
 
 fn condor_bomb_pose(launch: Vec2, impact: Vec2, heading: Vec2, t: f32) -> (Vec2, Vec2) {
@@ -1006,10 +1007,14 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             continue;
         }
         let flat = game.presentation.camera.to_screen(position);
-        let lift = crate::look::unit(release.kind)
-            .airframe
-            .map_or(0.0, |airframe| airframe.lift);
-        let center = flat - vec2(0.0, zoom * lift * (1.0 - t * t));
+        let center = game.presentation.camera.to_screen(payload_world_position(
+            launch,
+            impact,
+            shell.shooter,
+            shell.kind,
+            Some(release),
+            t,
+        ));
         let scale = zoom * (1.0 - 0.15 * t);
         let normal = vec2(-direction.y, direction.x);
         let nose = center + direction * scale * 0.14;
@@ -1068,6 +1073,70 @@ pub(crate) fn shell_visual_origin(
         oxide_sim::Target::Building(_) => oxide_sim::BuildingKind::Bastion.size().0 as f32 * 0.49,
     };
     launch + direction.normalize() * reach
+}
+
+fn payload_world_position(
+    launch: Vec2,
+    impact: Vec2,
+    shooter: oxide_sim::Target,
+    kind: oxide_sim::ProjectileKind,
+    pose: Option<crate::game::LaunchPose>,
+    progress: f32,
+) -> Vec2 {
+    let t = progress.clamp(0.0, 1.0);
+    if let Some(pose) = pose {
+        if kind == oxide_sim::ProjectileKind::Bomb {
+            let (at, _) = condor_bomb_pose(launch, impact, pose.heading, t);
+            let lift = crate::look::unit(pose.kind)
+                .airframe
+                .map_or(0.0, |air| air.lift);
+            return at - vec2(0.0, lift * (1.0 - t * t));
+        }
+        if kind == oxide_sim::ProjectileKind::Shell {
+            return bombard_shell_position(launch, impact, pose.heading, t);
+        }
+    }
+    let from = shell_visual_origin(launch, impact, shooter, kind);
+    let flat = from.lerp(impact, t);
+    if kind == oxide_sim::ProjectileKind::Shell && matches!(shooter, oxide_sim::Target::Unit(_)) {
+        flat - vec2(
+            0.0,
+            shell_arc_lift(from.distance(impact), 1.0, shooter) * 4.0 * t * (1.0 - t),
+        )
+    } else if kind == oxide_sim::ProjectileKind::Bomb {
+        flat - vec2(0.0, 0.18 * (1.0 - t))
+    } else {
+        flat
+    }
+}
+
+fn intercepted_position(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    flight: crate::game::InterceptFlight,
+) -> Vec2 {
+    let to = payload_surface_contact(
+        game,
+        sprites,
+        flight.surface,
+        flight.launch,
+        flight.impact,
+        flight.kind,
+    );
+    let from = shell_visual_origin(flight.launch, to, flight.shooter, flight.kind);
+    let t = if flight.kind == oxide_sim::ProjectileKind::Missile {
+        missile_travel_progress(flight.progress, flight.ticks, from.distance(to))
+    } else {
+        flight.progress
+    };
+    payload_world_position(
+        flight.launch,
+        to,
+        flight.shooter,
+        flight.kind,
+        flight.pose,
+        t,
+    )
 }
 
 fn bombard_shell_position(launch: Vec2, impact: Vec2, heading: Vec2, progress: f32) -> Vec2 {
@@ -1317,30 +1386,25 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         }
         let a = game.presentation.camera.to_screen(from);
         let b = game.presentation.camera.to_screen(to);
-        let dist = (b - a).length();
-        let lift = if shell.kind == oxide_sim::ProjectileKind::Shell {
-            shell_arc_lift(dist, game.presentation.camera.zoom, shell.shooter)
-        } else {
-            0.0
-        };
         let bastion_shell = shell.kind == oxide_sim::ProjectileKind::Shell
             && matches!(shell.shooter, oxide_sim::Target::Building(_));
         let artillery_heading = game
             .presentation
             .projectile_releases
             .artillery_heading(shell);
+        let pose = artillery_heading.map(|heading| crate::game::LaunchPose {
+            heading,
+            kind: oxide_sim::UnitKind::Bombard,
+        });
         let at = |t: f32| {
-            if let Some(heading) = artillery_heading {
-                return game
-                    .presentation
-                    .camera
-                    .to_screen(bombard_shell_position(launch, to, heading, t));
-            }
-            let flat = a.lerp(b, t);
-            if bastion_shell {
-                return flat;
-            }
-            vec2(flat.x, flat.y - lift * 4.0 * t * (1.0 - t))
+            game.presentation.camera.to_screen(payload_world_position(
+                launch,
+                to,
+                shell.shooter,
+                shell.kind,
+                pose,
+                t,
+            ))
         };
         let tail_t = if shell.kind == oxide_sim::ProjectileKind::Missile {
             (t - 0.65 / from.distance(to).max(f32::EPSILON)).max(0.0)
@@ -1356,15 +1420,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let missile = shell.kind == oxide_sim::ProjectileKind::Missile;
             let length = game.presentation.camera.zoom * if missile { 0.375 } else { 0.28 };
             let width = game.presentation.camera.zoom * if missile { 0.078_125 } else { 0.13 };
-            let center = shell_at
-                - vec2(
-                    0.0,
-                    if missile {
-                        0.0
-                    } else {
-                        game.presentation.camera.zoom * 0.18 * (1.0 - t)
-                    },
-                );
+            let center = shell_at;
             let back = center - direction * length * 0.5;
             let nose = center + direction * length * 0.5;
             let motor = missile_motor_strength(flight_progress, total);
@@ -1540,6 +1596,11 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // Directional geometry still requires a visible source and must
         // not pinpoint a fogged shooter.
         let in_sight = match fx.kind {
+            EffectKind::Intercept {
+                from,
+                impact_witnessed,
+                ..
+            } => from.is_some() || impact_witnessed,
             EffectKind::DirectShot {
                 style, from, to, ..
             } => shot_visibility(style, sees(from), sees(to)) != ShotVisibility::Hidden,
@@ -1573,6 +1634,67 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             continue;
         }
         match fx.kind {
+            EffectKind::Intercept {
+                from,
+                at,
+                flight,
+                impact_witnessed,
+                ..
+            } => {
+                let zoom = game.presentation.camera.zoom;
+                let age = fx.age_at(game.state.current_tick(), game.presentation.tick_fraction());
+                let progress = (age / (6.0 * crate::game::TICK_DT)).clamp(0.0, 1.0);
+                let opacity = 1.0 - progress;
+                let target =
+                    flight.map_or(at, |flight| intercepted_position(game, sprites, flight));
+                let end = game.presentation.camera.to_screen(target);
+                if impact_witnessed {
+                    super::destruction::draw_interception(
+                        end,
+                        zoom,
+                        age / (10.0 * crate::game::TICK_DT),
+                    );
+                }
+                if let Some(from) = from {
+                    let start = game.presentation.camera.to_screen(from);
+                    if impact_witnessed {
+                        line_between(
+                            start,
+                            end,
+                            (zoom * 0.045).max(1.5),
+                            Color::new(0.56, 0.55, 0.53, opacity),
+                        );
+                        line_between(
+                            start,
+                            end,
+                            (zoom * 0.018).max(0.75),
+                            Color::new(0.88, 0.80, 0.64, opacity),
+                        );
+                    }
+                    fill_circle(
+                        start,
+                        zoom * 0.035 * opacity,
+                        Color::new(0.88, 0.80, 0.64, opacity),
+                    );
+                }
+                if impact_witnessed {
+                    let radius = zoom * (0.07 + 0.12 * progress);
+                    for angle in [0.0_f32, 2.094_395, 4.188_79] {
+                        let direction = Vec2::from_angle(angle);
+                        line_between(
+                            end + direction * radius * 0.35,
+                            end + direction * radius,
+                            (zoom * 0.025).max(1.0),
+                            Color::new(0.73, 0.64, 0.44, opacity),
+                        );
+                    }
+                    fill_circle(
+                        end,
+                        zoom * 0.045 * opacity,
+                        Color::new(0.88, 0.80, 0.64, opacity),
+                    );
+                }
+            }
             EffectKind::DirectShot {
                 style,
                 from,
@@ -2377,6 +2499,103 @@ fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomyS
     }
 }
 
+/// One machine an own Repair Bay is servicing, and how fast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RepairTether {
+    bay: oxide_sim::BuildingId,
+    unit: oxide_sim::UnitId,
+    pace: oxide_sim::state::RepairPace,
+}
+
+/// Every own Repair Bay's current patients, read from the same choice the
+/// aura heals by.
+fn repair_tethers(game: &crate::game::Scene<'_>) -> Vec<RepairTether> {
+    game.state
+        .repair_bay_patients()
+        .into_iter()
+        .filter(|(bay, _)| {
+            game.state
+                .building(*bay)
+                .is_some_and(|bay| bay.player == game.presentation.human)
+        })
+        .flat_map(|(bay, patients)| {
+            patients
+                .into_iter()
+                .map(move |(unit, pace)| RepairTether { bay, unit, pace })
+        })
+        .collect()
+}
+
+/// Tethers from each own Repair Bay to the machines it is servicing, solid
+/// while one heals fast and dotted while it heals slowly under fire, so the
+/// line's shape rather than its color tells the two apart. A selected Bay
+/// also shows one pip per slot, filled for each patient.
+pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
+    if game.presentation.spectate {
+        return;
+    }
+    let scale = ui_scale();
+    let zoom = game.presentation.camera.zoom;
+    let color = Color {
+        a: 0.85,
+        ..range_color(BuildingRangeKind::Repair)
+    };
+    let alpha = game.presentation.tick_fraction();
+    let tethers = repair_tethers(game);
+    for tether in &tethers {
+        let (Some(bay), Some(unit)) = (
+            game.state.building(tether.bay),
+            game.state.unit(tether.unit),
+        ) else {
+            continue;
+        };
+        let mut at = game
+            .presentation
+            .camera
+            .to_screen(game.presentation.draw_pos(unit.id, unit.pos, alpha));
+        if unit.domain() == oxide_sim::stats::Domain::Air {
+            at.y -= super::air_presentation(unit.kind, zoom).2;
+        }
+        let body = Vec2::splat(unit.kind.stats().radius.to_num::<f32>() * zoom);
+        let Some([from, to]) = footprint_link(
+            building_screen_bounds(game, bay),
+            (at - body, at + body),
+            3.0 * scale,
+        ) else {
+            continue;
+        };
+        let stroke = match tether.pace {
+            oxide_sim::state::RepairPace::Fast => RangeStroke::Solid,
+            oxide_sim::state::RepairPace::Slow => RangeStroke::Dotted,
+        };
+        stroke_patterned_path(&[from, to], stroke, 1.8 * scale, color, scale, &[]);
+    }
+    for &id in &game.presentation.selection.buildings {
+        let Some(bay) = game
+            .state
+            .building(id)
+            .filter(|bay| bay.player == game.presentation.human)
+            .filter(|bay| bay.kind == oxide_sim::BuildingKind::RepairBay)
+        else {
+            continue;
+        };
+        let used = tethers.iter().filter(|tether| tether.bay == id).count();
+        let (min, max) = building_screen_bounds(game, bay);
+        let radius = 3.0 * scale;
+        let gap = 4.0 * radius;
+        let slots = oxide_sim::stats::REPAIR_BAY_PATIENTS;
+        let left = f32::midpoint(min.x, max.x) - gap * (slots as f32 - 1.0) * 0.5;
+        for slot in 0..slots {
+            let centre = vec2(left + gap * slot as f32, min.y - 3.0 * radius);
+            if slot < used {
+                fill_circle(centre, radius, color);
+            } else {
+                stroke_circle(centre, radius, scale, color);
+            }
+        }
+    }
+}
+
 const ECONOMY_SUPPORT_COLOR: Color = Color::new(0.72, 0.63, 0.46, 0.58);
 
 fn building_screen_bounds(
@@ -2885,7 +3104,7 @@ pub(crate) fn draw_pings(game: &crate::game::Scene<'_>) {
 
 /// The selected own building's rally flag, above the fog for the same
 /// reason as pings.
-pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>) {
+pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
     // A selected producer draws a line to its rally as well as the flag.
     // Own producers only, like the flag below: an inspected foreign
     // building must not reveal its rally.
@@ -2902,22 +3121,30 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>) {
             building.anchor.x as f32 + building.kind.size().0 as f32 * 0.5,
             building.anchor.y as f32 + building.kind.size().1 as f32 * 0.5,
         ));
-        let b = game
-            .presentation
-            .camera
-            .to_screen(vec2(rally.x as f32 + 0.5, rally.y as f32 + 0.5));
+        // A unit rally rides with its unit, or with the transport carrying it.
+        let b = match rally {
+            oxide_sim::Rally::Tile(tile) => game
+                .presentation
+                .camera
+                .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5)),
+            oxide_sim::Rally::Unit(unit) => {
+                let Some(body) = game.state.escorted(unit) else {
+                    continue;
+                };
+                game.presentation
+                    .camera
+                    .to_screen(game.presentation.draw_pos(body.id, body.pos, alpha))
+            }
+        };
         line_between(a, b, 1.5, Color::new(0.91, 0.89, 0.85, 0.35));
-    }
-    for rally in game
-        .presentation
-        .selection
-        .buildings
-        .iter()
-        .filter_map(|id| game.state.building(*id))
-        .filter(|building| building.player == game.presentation.human)
-        .filter_map(|building| building.rally)
-    {
-        draw_rally_flag(game, rally, game.presentation.camera.zoom);
+        match rally {
+            oxide_sim::Rally::Tile(tile) => {
+                draw_rally_flag(game, tile, game.presentation.camera.zoom);
+            }
+            oxide_sim::Rally::Unit(_) => {
+                stroke_circle(b, game.presentation.camera.zoom * 0.6, 2.0, SCRAP_COLOR);
+            }
+        }
     }
 }
 
