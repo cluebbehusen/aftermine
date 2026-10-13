@@ -134,6 +134,7 @@ pub(super) fn run(
     index.rebuild(&state.units);
     index.survey(state);
     let motion = MotionSnapshot::capture(state);
+    let parties = escort::Parties::capture(state);
     let mut hits: Vec<PendingHit> = Vec::new();
     let mut builds: Vec<PendingHpGain> = Vec::new();
     let mut heals: Vec<PendingUnitHeal> = Vec::new();
@@ -218,14 +219,14 @@ pub(super) fn run(
             Order::Harvest {
                 node,
                 anchor,
-                retiring,
+                withdrawing,
             } => {
                 let player = state.unit(id).expect("just seen").player;
                 let team = state.player(player).team as usize;
                 let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
                     crate::vision::GroundSalvageDanger::capture(state, player)
                 });
-                harvest(state, danger, id, node, anchor, retiring, events);
+                harvest(state, danger, id, node, anchor, withdrawing, events);
             }
             Order::Attack {
                 target,
@@ -267,6 +268,24 @@ pub(super) fn run(
                 logistics::unload(state, index, &mut reach, id, &mut logistics_pending, events);
             }
             Order::Land { goal, from } => land(state, index, id, goal, from, events),
+            Order::Accompany { unit, weld } => escort::accompany(
+                state,
+                index,
+                &mut reach,
+                &parties,
+                id,
+                unit,
+                weld,
+                &mut field_welds,
+            ),
+            Order::Retire { crucible, pad } => retire::retire(
+                state,
+                &mut reach,
+                id,
+                (crucible, pad),
+                &mut logistics_pending,
+                events,
+            ),
         }
         if events[reported..]
             .iter()
@@ -279,9 +298,12 @@ pub(super) fn run(
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
-    // Arrivals join this tick's volley; launches land on later ticks
-    // (flight is at least one tick), so ordering here cannot matter. The
-    // aura reads the whole volley, so it comes after.
+    // Interception sees the shells still in flight before any arrive, so a
+    // shell is stoppable on its arrival tick. Arrivals join this tick's
+    // volley; launches land on later ticks (flight is at least one tick), so
+    // ordering here cannot matter. The aura reads the whole volley, so it
+    // comes after.
+    point_defense::run(state, events);
     land_shells(state, &mut hits, events);
     state.shells.extend(launches);
     repair_bay_aura(state, &hits, &mut heals, &mut builds);
@@ -294,8 +316,11 @@ mod combat;
 pub(in crate::tick) mod contact;
 mod economy;
 pub(super) use economy::return_cargo_destination;
+pub(super) mod escort;
 mod locomotion;
 pub(super) mod logistics;
+mod point_defense;
+pub(super) mod retire;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};
 use economy::{

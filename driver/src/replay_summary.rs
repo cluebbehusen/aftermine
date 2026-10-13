@@ -306,6 +306,10 @@ pub struct SeatDigestRow {
     /// Units lost since the previous digest. Without it, a steady roster
     /// cannot be told apart from equal training and losses.
     pub lost: u32,
+    /// Units retired at a Crucible since the previous digest: a shrinking
+    /// roster that is no loss.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub retired: u32,
     /// Buildings completed since the previous digest.
     pub buildings_completed: u32,
     /// Completed buildings lost since the previous digest.
@@ -464,7 +468,7 @@ pub(crate) fn loss(
                 value: u64::from(stats.cost),
                 kind: if stats.transport_capacity > 0 {
                     LossKind::Transport
-                } else if stats.can_fight() {
+                } else if stats.can_fight() || stats.point_defense.is_some() {
                     LossKind::Combat
                 } else {
                     LossKind::Worker
@@ -749,6 +753,7 @@ struct SeatWindow {
     hauled: u64,
     trained: u32,
     lost: u32,
+    retired: u32,
     buildings_completed: u32,
     buildings_lost: u32,
     rejections: u32,
@@ -1017,6 +1022,11 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
                 }
                 Event::ChargeDetonated { .. } => {
                     window_combat += 1;
+                }
+                Event::UnitRetired { player, cargo, .. } => {
+                    let window = &mut windows[player.0 as usize];
+                    window.retired += 1;
+                    window.hauled += u64::from(*cargo);
                 }
                 Event::ScrapDeposited { player, amount, .. } => {
                     windows[player.0 as usize].hauled += u64::from(*amount);
@@ -1415,6 +1425,7 @@ fn capture_digest(
                 hauled: window.hauled,
                 trained: window.trained,
                 lost: window.lost,
+                retired: window.retired,
                 buildings_completed: window.buildings_completed,
                 buildings_lost: window.buildings_lost,
                 buildings,
@@ -1640,9 +1651,14 @@ impl SummaryReport {
                         format!(" [{parts}]")
                     }
                 };
+                let retired = if row.retired > 0 {
+                    format!(" ({} retired)", row.retired)
+                } else {
+                    String::new()
+                };
                 let _ = writeln!(
                     out,
-                    "  s{}: {}u val {} (combat {}) ({})  +{}/-{}  harv {}/{} idle  bank {} +{}  bld {} ({} foundry, +{}/-{})  expl {}% (+{})  rej {}{} stall {}{}",
+                    "  s{}: {}u val {} (combat {}) ({})  +{}/-{}{}  harv {}/{} idle  bank {} +{}  bld {} ({} foundry, +{}/-{})  expl {}% (+{})  rej {}{} stall {}{}",
                     row.seat,
                     row.units,
                     row.army_value,
@@ -1650,6 +1666,7 @@ impl SummaryReport {
                     kinds,
                     row.trained,
                     row.lost,
+                    retired,
                     row.harvesters,
                     row.harvesters_idle,
                     row.bank,
@@ -1820,6 +1837,10 @@ fn render_result(result: GameResult, winner_seats: &[u8]) -> String {
         }
         GameResult::Draw => "draw".to_owned(),
     }
+}
+
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[cfg(test)]

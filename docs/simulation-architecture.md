@@ -93,8 +93,9 @@ Phase order is game behavior. `State::tick` performs:
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
-11. Schedule airborne crashes, remove dead entities, deposit eligible wreck
-    salvage, and refund unstarted sites with no surviving worker commitments.
+11. Schedule airborne crashes, remove dead entities, take apart units whose
+    dismantling meter filled, deposit eligible wreck salvage, and refund
+    unstarted sites with no surviving worker commitments.
 12. Apply wreck decay on its global cadence.
 13. Rebuild team-shared visibility and reconcile fog memory. Activate or refund
     newly visible provisional sites. Newly discovered mines cancel unstarted
@@ -187,6 +188,36 @@ unit's station. `Harvest`, `Build`, `Found`, `Repair`, `RepairUnit`, and
 `Salvage` are persistent work programs lowered by unit behavior over later
 ticks.
 
+`Accompany` puts units on escort duty around one own unit. Each escort holds a
+slot of the open tiles ring-scanned around the escorted unit's tile, ranked in
+id order within its movement domain and framed per owner by the side of the map
+its earliest Foundry stands on, then seat parity, so slots never reshuffle as
+the party moves and mirrored seats take mirrored slots. Escorts move at their
+own top speed and replan only once their slot drifts more than a tile from their
+route's end; nothing couples the escorted unit's speed to theirs. An armed
+escort chases the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
+and its own aggro range, passing over any victim it can neither shoot from where
+it stands nor reach, including one over unstandable ground whose firing stands
+are all out of reach. Failing that, an escort within the engage radius of the
+escorted unit fires without moving at an enemy already in its own weapon reach,
+so a long gun escorts at full range from its slot; further out it is catching
+up. Either fight is an `Attack` that resumes escort duty. A victim within the
+wider `ESCORT_BREAK_RADIUS` of the escorted unit is chased wherever the escort
+is; one past it is fought only while it stays in the escort's reach and the
+escort stays within that radius. A stalled chase returns to duty without a stall
+report. Escorts answer fire from within the engage radius, or, while within it
+themselves, from anything their own guns reach. Weapon masks give each kind its
+role: a fighter escort rises only against aircraft. While the escorted unit
+stood still at the start of the brain phase, a welder escort mends the most
+urgent wounded ground member of the party, the escorted unit first, through the
+ordinary field weld. Its torch target lives in the order and owns the billing
+meter; an empty bank only pauses it. An escorted unit aboard a transport is
+followed through its carrier. When it leaves play, each escort drops the order
+without rotating a patrol and takes its next queued order or idles where it
+stands. Dispatch refuses any escort the target already follows, directly or
+through other escorts in any program, so escort chains are loop-free; the
+validator refuses a state holding a loop.
+
 `Run`, `Hunt`, `Advance`, and `Unload`, and the march an `Attack` resumes, carry
 a `Goal`: the clicked tile, the spread slot the unit aims for around it, and an
 optional endpoint. A tile goal must lie on the map, and an off-map one is
@@ -209,6 +240,12 @@ point each resolve as rank 0, so a rally's newborns and a group's pacifists
 share one tile. Every air route snaps a peak goal to open sky with the same
 scan, framed by the flyer's own approach, so mirrored flights snap to mirrored
 sky.
+
+A producer's rally is a tile or an own unit. Every unit born under a unit rally
+escorts that unit with `Accompany`, harvesters and aircraft included. The rally
+follows its unit aboard a transport and clears in cleanup the tick the unit
+leaves play, so the validator, unlike its rule for order references, refuses a
+unit rally that names a unit out of play or another seat's.
 
 When the target lies outside the unit's reachable ground, the unit routes to the
 reachable tile nearest it by squared distance instead, and stores that tile as
@@ -455,10 +492,11 @@ Reissuing the same delivery preserves progress. Automatic deliveries can choose
 another Foundry after target loss; explicit deliveries retain their usual
 failure policy. A delivery route ends at any point already within unloading
 reach, then brakes before releasing cargo. Workers without a following order
-leave the contact ring after their final delivery so a retired crew cannot block
-the last loaded workers. Queued work takes precedence over this short departure.
-Reservations and blocked-dock replanning use physical approach points and hull
-clearance instead of tile centers. The following job begins on the next tick.
+leave the contact ring after their final delivery so a finished crew cannot
+block the last loaded workers. Queued work takes precedence over this short
+departure. Reservations and blocked-dock replanning use physical approach points
+and hull clearance instead of tile centers. The following job begins on the next
+tick.
 
 `ReturnCargo` replaces loaded workers' active and queued work with a delivery.
 The command selects an owned, living, completed Foundry before replacing each
@@ -552,6 +590,26 @@ hp. Salvaging is active dismantling of a built own structure other than a
 Foundry; its cumulative refund ledger prevents rounding drift, and a salvaged
 building does not count as a combat loss or create a wreck. Prepaid production
 on a successfully salvaged producer is refunded.
+
+`Retire` sends own units to the nearest own completed Crucible each can reach
+and, for a Condor, land beside. An exact distance tie goes by exact products in
+the unit's heading frame, never by mint order. Without a Crucible the command is
+refused as `MissingPrerequisite`. Walkers and hovering aircraft head for a
+doorstep chosen in their approach's frame and stop within `RETIRE_REACH` of the
+footprint; a Condor lands on open ground beside it. A machine standing still
+there runs a `RETIRE_TICKS` dismantling meter. A loaded transport first sets its
+riders down around itself, as an unload does, and riders that find no open
+ground wait aboard for the next try; a retiring transport takes no riders. If
+its Crucible falls, the machine re-picks the nearest standing one with its meter
+reset, a landed Condor lifting off for it, or the order ends. The brain only
+runs the meter. Cleanup takes a unit apart the tick its meter fills, after every
+damage source of the tick, so a machine zeroed that tick dies and wrecks
+instead. A retired unit leaves no wreck and no death: it emits `UnitRetired`,
+refunds `RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks
+any carried scrap like a delivery; the event reports what the bank actually
+credited. Only credited cargo re-arms a stranded seat's recovery. The refund
+rate stays below the repair rate, so welding a machine up and then retiring it
+always loses scrap, and no repair source mends a retiring machine.
 
 Building repair and Harvester field welding are billed per accepted hp. Repair
 Bays feed the same unit-heal resolver as field welders and the same
@@ -702,6 +760,25 @@ shooter survival; deserialization requires it to launch no later than it lands.
 On arrival, buildings take only a direct hit; eligible enemy units may take
 splash according to the weapon's domain mask.
 
+Point defense stops projectiles, never hitscan fire. A unit kind whose stats
+carry it holds serialized charges and a recharge counter. Each tick, before
+arrivals land, a live, charged defender destroys a hostile shell of any payload
+whose fixed aim point and current straight-line ground-track position both lie
+within its radius, so a shell aimed inside is stoppable at the latest on its
+arrival tick and a shell launched this tick on the next one. Hostility is to the
+firing seat, so a defender covers its teammates. Charges are the only limit: a
+defender may spend all of them in one tick. Pairs are assigned greedily in one
+complete order: earliest launch, then the shell nearest the defender, then the
+aim nearest it, then the shell's offset in the defender's own map frame, heavier
+shells first, and list order only for exact coincidences. Greedy assignment is
+not a maximal matching. A stopped shell vanishes without splash or a landing
+report and emits an interception event. Charges return one at a time on a fixed
+cadence that counts only below full and does not restart when a charge is spent.
+A carried defender freezes both, like weapon cooldowns. Validation requires the
+state exactly on kinds with point defense, charges within the kind's, a counter
+short of a full recharge, and a resting counter while full. Both fog projections
+report a visible unit's charges.
+
 ## Fog, memory, radar, and teams
 
 Each seat has `visible` and `explored` grids. Visibility is rebuilt every tick
@@ -782,6 +859,9 @@ map rather than an exhaustive test inventory.
 | Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
 | Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
 | Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
+| Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
+| Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
+| Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

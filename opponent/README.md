@@ -260,6 +260,13 @@ favoring a small economy and a bonus for the owner of the oldest attack or
 strike's target so the seat does not flip between enemies. The rival is chosen
 once per decision, after defense.
 
+Free, healthy point defenders on the target's ground go along with an attack
+when it forms and join it wherever free units do. They never count toward its
+strength, its readiness, its arrival or contact, or the opposition it meets.
+While it travels or fights, a defender farther than half its reach from the
+fighting member nearest the army's middle runs back to that member's tile. An
+attack left with no fighting member sends its defenders home and ends.
+
 Badly wounded members leave between fights and run to the rally, and a defense
 may take the attack's units in any phase but a fight. While a free army that
 could attack does not, or every producer sits idle, the margin for the next
@@ -423,29 +430,40 @@ only by lift, for a share of its own army behind that line that the stance sets
 and siege preference moves (Aggressive seats, which attack early with small
 armies, keep the least), anti-air against the enemy air it has seen (a seen
 enemy Airworks counts as air), anti-heavy units against the enemy heavies it has
-seen, and air strikes by preference once it has an Airworks. A heavy is an armed
-ground machine whose full health takes at least two of an anti-heavy unit's
-single shots whole; once the seat can train anti-heavy units they answer the
-heavies and line units the rest of the enemy's ground army, and until then line
-units answer all of it. Anti-heavy units are bought only for that need, never by
-producers left with nothing wanted. Ground units count only while they can reach
-an enemy, by ground or by lift once an Airworks stands; before then, known enemy
-ground units on the seat's own ground still call for line units. While ground
-reaches no enemy, air strikes are wanted with or without an Airworks, at least
-what a strike needs against the easiest known target the seat has not given up
-on, or what bombers need to clear the anti-air around the next lift's target,
-whichever is more. The most wanted role goes first to the nearest ready producer
-that can afford a unit for it, then the next; ready producers left with nothing
-wanted train, while ground units can reach an enemy, for whichever of line and
-siege they serve is furthest below its share, line alone when the army goes only
-by lift, unless another producer serves a wanted role: the scrap then waits for
-that producer. While the seat saves for a unit, the producers that train it wait
-for it and no other producer trains a cheaper unit of its role. Each chooses the
-unit it can afford now by coarse suitability: reach against the enemy's usual
-reach, what its role is for at the price (firepower for siege and anti-heavy,
-durability for the rest), covering both enemy domains, splash against clustered
-enemies, affordability at the seat's income, variety (a kind that already makes
-up most of its role counts for less, so every kind of a role gets its turn), and
+seen, air strikes by preference once it has an Airworks, and point defenders
+against the enemy shellfire it knows of while its ground army can walk to an
+enemy. That last counts whole defenders: each known gun that fires shells,
+rockets or bombs adds the shots it fires in one defender's recharge, weighed by
+its shot's damage against the heaviest projectile's, so a few heavy launchers
+call for one and a stray light gun does not. Personality's support preference
+caps the defenders at a share of the armed army, to the nearest whole defender,
+and they never add to that army's size. The deficit counts the worth of the
+known guns whose fire no defender answers yet, as anti-air's counts the enemy
+air, so a screen against costly launchers can come before a line deficit of the
+same worth. A point defender has no cheaper stand-in, so the seat saves for one
+as it does for a premium unit. A heavy is an armed ground machine whose full
+health takes at least two of an anti-heavy unit's single shots whole; once the
+seat can train anti-heavy units they answer the heavies and line units the rest
+of the enemy's ground army, and until then line units answer all of it.
+Anti-heavy units are bought only for that need, never by producers left with
+nothing wanted. Ground units count only while they can reach an enemy, by ground
+or by lift once an Airworks stands; before then, known enemy ground units on the
+seat's own ground still call for line units. While ground reaches no enemy, air
+strikes are wanted with or without an Airworks, at least what a strike needs
+against the easiest known target the seat has not given up on, or what bombers
+need to clear the anti-air around the next lift's target, whichever is more. The
+most wanted role goes first to the nearest ready producer that can afford a unit
+for it, then the next; ready producers left with nothing wanted train, while
+ground units can reach an enemy, for whichever of line and siege they serve is
+furthest below its share, line alone when the army goes only by lift, unless
+another producer serves a wanted role: the scrap then waits for that producer.
+While the seat saves for a unit, the producers that train it wait for it and no
+other producer trains a cheaper unit of its role. Each chooses the unit it can
+afford now by coarse suitability: reach against the enemy's usual reach, what
+its role is for at the price (firepower for siege and anti-heavy, durability for
+the rest), covering both enemy domains, splash against clustered enemies,
+affordability at the seat's income, variety (a kind that already makes up most
+of its role counts for less, so every kind of a role gets its turn), and
 personality. While ground reaches no enemy, a strike aircraft's splash is worth
 instead the targets one blast takes in the densest known clump of enemy ground
 units; the seat then saves for a splash bomber the more, within a cap, the more

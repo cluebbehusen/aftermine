@@ -378,7 +378,7 @@ pub(super) fn sidearm_radar(
     });
 }
 
-fn complete(state: &mut State, id: UnitId, resume: Option<crate::state::Goal>) {
+fn complete(state: &mut State, id: UnitId, resume: Option<Resume>) {
     state
         .unit_mut(id)
         .expect("live unit")
@@ -390,7 +390,7 @@ pub(in crate::tick::brain) fn attack_known(
     index: &super::super::super::spatial::UnitIndex,
     motion: &MotionSnapshot,
     id: UnitId,
-    program: (AttackTarget, Option<crate::state::Goal>, bool),
+    program: (AttackTarget, Option<Resume>, bool),
     buffers: ShotBuffers<'_>,
 ) {
     let (target, resume, pursue) = program;
@@ -409,6 +409,26 @@ pub(in crate::tick::brain) fn attack_known(
         complete(state, id, resume);
         return;
     };
+    // Escort duty bounds the fight by the escorted unit. A victim within
+    // the break radius of it is chased wherever the escort is. One past it is
+    // fought only from where the escort stands, in its own reach and while
+    // the escort is within the break radius itself. An escorted unit that
+    // has left play sends the escort back to its slot too.
+    if let Some(Resume::Accompany(escorted)) = resume {
+        let bound = crate::stats::ESCORT_BREAK_RADIUS * crate::stats::ESCORT_BREAK_RADIUS;
+        let in_reach = view.domain.is_some_and(|victim| {
+            kind.stats().weapons.iter().any(|weapon| {
+                weapon.targets.covers(victim)
+                    && within_weapon_reach(weapon, pos.dist_sq(view.aim_from(pos)))
+            })
+        });
+        if state.escorted(escorted).is_none_or(|body| {
+            view.position.dist_sq(body.pos) > bound && (!in_reach || pos.dist_sq(body.pos) > bound)
+        }) {
+            complete(state, id, resume);
+            return;
+        }
+    }
     state.unit_mut(id).expect("live unit").order = Order::Attack {
         target,
         resume,

@@ -21,7 +21,7 @@ fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
         "oxide-driver",
         "bot-eval",
         "skirmish",
-        "scenarios/powder-keg.json",
+        "scenarios/terrace-ledger.json",
         "--ticks",
         "50000",
         "--personality-seed-base",
@@ -52,7 +52,7 @@ fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
     else {
         panic!("bot-eval parsed as another command")
     };
-    assert_eq!(scenarios, ["skirmish", "scenarios/powder-keg.json"]);
+    assert_eq!(scenarios, ["skirmish", "scenarios/terrace-ledger.json"]);
     assert_eq!((ticks, runs), (50_000, 1));
     assert_eq!(personality_seed_base, Some(900));
     assert_eq!(difficulty, oxide_sim::scenario::BotDifficulty::Prime);

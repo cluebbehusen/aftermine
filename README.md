@@ -64,13 +64,14 @@ shortcuts cover the core loop:
 | WASD / arrow keys                        | Pan the camera; both sets work together.                                                                                  |
 | Wheel / middle drag                      | Zoom / pan the camera.                                                                                                    |
 | `U` with a building / transport selected | Upgrade / unload here.                                                                                                    |
-| `Y` / Shift+`Y` with a producer selected | Set / clear rally.                                                                                                        |
+| `Y` / Shift+`Y` with a producer selected | Set / clear rally. Rallying onto an own unit has new units escort it.                                                     |
 | Left click / drag                        | Select a unit, building, or group.                                                                                        |
 | Shift + click / drag                     | Add to or remove from the current selection. Shift-click a kind in the selection panel to drop that kind.                 |
 | Right click                              | Give the contextual order: harvest scrap, attack an enemy, repair an ally, or advance to ground.                          |
 | Shift + right click                      | Queue the contextual order.                                                                                               |
 | `F`, then ground                         | Hunt and engage along the route.                                                                                          |
 | `G`, then ground                         | Run without engaging.                                                                                                     |
+| `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.         |
 | `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                    |
 | `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                    |
 | `B`, then Q/E/R/T, then Q/E/R/T          | Choose a construction category, then a building.                                                                          |
@@ -203,7 +204,7 @@ The driver is the main inspection surface:
 
 ```sh
 cargo run -p oxide-driver -- --help
-cargo run -p oxide-driver -- run scenarios/skirmish.json --ticks 12000 --all-bots --map
+cargo run -p oxide-driver -- run scenarios/basalt-spine.json --ticks 12000 --all-bots --map
 cargo run -p oxide-driver -- bot-eval skirmish --difficulty prime --stance balanced --paired
 cargo run -p oxide-driver -- replay-summary replays/match.json --minimaps sparse
 cargo run -p oxide-driver -- smoke --spawn

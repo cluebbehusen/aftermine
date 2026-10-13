@@ -333,8 +333,10 @@ pub(super) fn repair_unit(
             && t.hp > 0
             && t.hp < t.kind.stats().max_hp
             && t.domain() == crate::stats::Domain::Ground
+            && !t.retiring()
     }) else {
-        // Healed, dead, taken off, or never a patient: the job is over.
+        // Healed, dead, taken off, retiring, or never a patient: the job is
+        // over.
         state.unit_mut(id).expect("caller checked").advance_queue();
         return;
     };
@@ -381,7 +383,7 @@ pub(super) fn commit_unit_welds(
             }
             let Some(unit) = state
                 .unit(weld.welder)
-                .filter(|u| u.order == (Order::RepairUnit { unit: weld.patient }))
+                .filter(|u| welding(u, weld.patient).is_some())
             else {
                 stationary[slot] = false;
                 continue;
@@ -399,6 +401,7 @@ pub(super) fn commit_unit_welds(
                     && t.hp > 0
                     && t.hp < t.kind.stats().max_hp
                     && t.domain() == crate::stats::Domain::Ground
+                    && !t.retiring()
             }) else {
                 stationary[slot] = false;
                 continue;
@@ -412,8 +415,11 @@ pub(super) fn commit_unit_welds(
                 continue;
             }
             stationary[slot] = false;
-            chase_patient(state, weld.welder, weld.patient, events);
-            changed = true;
+            // Escort welders hold their slot until the party stops again.
+            if welding(unit, weld.patient) == Some(Torch::Commanded) {
+                chase_patient(state, weld.welder, weld.patient, events);
+                changed = true;
+            }
         }
         if !changed {
             break;
@@ -424,9 +430,9 @@ pub(super) fn commit_unit_welds(
         if !stationary {
             continue;
         }
-        let Some(unit) = state
+        let Some((unit, torch)) = state
             .unit(weld.welder)
-            .filter(|u| u.order == (Order::RepairUnit { unit: weld.patient }))
+            .and_then(|u| welding(u, weld.patient).map(|torch| (u, torch)))
         else {
             continue;
         };
@@ -451,6 +457,11 @@ pub(super) fn commit_unit_welds(
         let (ramp, ramp_ticks) = (stats.max_hp, stats.train_ticks);
         let due = crate::stats::unit_repair_debit(t_kind, p);
         let bank = state.player(me).scrap;
+        if due > bank && torch == Torch::Escort {
+            // An escort's torch is its own initiative: an empty bank only
+            // waits, and escort duty goes on.
+            continue;
+        }
         if due > bank {
             // Broke stalls the torch.
             let unit = state.unit_mut(weld.welder).expect("just seen");
@@ -481,6 +492,26 @@ pub(super) fn commit_unit_welds(
     }
 }
 
+/// Which program lit a torch on a patient.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Torch {
+    /// A `RepairUnit` order.
+    Commanded,
+    /// Escort duty mending its party.
+    Escort,
+}
+
+/// Whether `welder`'s program welds `patient`, and which program it is.
+fn welding(welder: &crate::state::Unit, patient: UnitId) -> Option<Torch> {
+    match welder.order {
+        Order::RepairUnit { unit } if unit == patient => Some(Torch::Commanded),
+        Order::Accompany {
+            weld: Some(unit), ..
+        } if unit == patient => Some(Torch::Escort),
+        _ => None,
+    }
+}
+
 /// Whether the movement pre-pass will give this pathless body an escape
 /// path from a claimed building footprint. Weld settlement runs before that
 /// pre-pass, so it must predict the same move to uphold the
@@ -490,8 +521,27 @@ fn footprint_eviction_pending(state: &State, id: UnitId) -> bool {
 }
 
 /// Reuses the current approach side as a patient moves, replanning only
-/// when its precise endpoint leaves the final tile.
+/// when its precise endpoint leaves the final tile. A patient no route
+/// reaches ends the weld order.
 fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Vec<Event>) {
+    if approach_patient(state, id, patient) {
+        return;
+    }
+    let unit = state.unit_mut(id).expect("caller checked");
+    let (player, pos) = (unit.player, unit.pos);
+    unit.drop_active_order();
+    events.push(Event::OrderStalled {
+        unit: id,
+        player,
+        pos,
+        reason: StallReason::NoRoute,
+    });
+}
+
+/// Routes welder `id` to a working position against `patient`'s hull,
+/// keeping the current approach side while it still routes. Returns false,
+/// leaving the welder's path untouched, when no position routes.
+pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -> bool {
     let unit = state.unit(id).expect("caller checked");
     let target = state.unit(patient).expect("caller checked");
     let gap =
@@ -525,24 +575,16 @@ fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Ve
                 .as_mut()
                 .expect("checked")
                 .final_point = Some(point);
-            return;
+            return true;
         }
         if let Some(waypoints) = route_for(state, kind, from, goal) {
             let mut path = work_position_path(goal, waypoints);
             path.final_point = Some(point);
             state.unit_mut(id).expect("caller checked").path = Some(path);
-            return;
+            return true;
         }
     }
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.drop_active_order();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    false
 }
 
 /// Strip an own built building for scrap: walk adjacent, then drain hp
@@ -608,7 +650,7 @@ pub(super) fn harvest(
     id: UnitId,
     node: TilePos,
     anchor: TilePos,
-    retiring: bool,
+    withdrawing: bool,
     events: &mut Vec<Event>,
 ) {
     let unit = state.unit(id).expect("caller checked");
@@ -618,11 +660,11 @@ pub(super) fn harvest(
         return;
     };
     if unit.unloading().is_some() {
-        deliver(state, danger, id, events, retiring);
+        deliver(state, danger, id, events, withdrawing);
         return;
     }
-    if retiring {
-        retire(state, danger, id, events);
+    if withdrawing {
+        withdraw(state, danger, id, events);
         return;
     }
 
@@ -639,11 +681,11 @@ pub(super) fn harvest(
             switch_source(state, id, next.pos, anchor);
             return;
         }
-        begin_retirement(state, id, node, anchor);
+        begin_withdrawal(state, id, node, anchor);
         if carrying > 0 {
             deliver(state, danger, id, events, true);
         } else {
-            retire(state, danger, id, events);
+            withdraw(state, danger, id, events);
         }
         return;
     }
@@ -934,7 +976,7 @@ fn approach_source(
 /// that crosses no known-danger tile except, when unavoidable, the final
 /// work position itself. If even that route is sealed, the ordinary route
 /// remains the explicit command's last resort instead of silently turning
-/// a player's order into retirement.
+/// a player's order into withdrawal.
 fn approach_authoritative_source(
     state: &mut State,
     danger: &GroundSalvageDanger,
@@ -1398,18 +1440,18 @@ fn switch_source(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) 
     unit.order = Order::Harvest {
         node,
         anchor,
-        retiring: false,
+        withdrawing: false,
     };
     unit.path = None;
     unit.progress = 0;
 }
 
-fn begin_retirement(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) {
+fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePos) {
     let unit = state.unit_mut(id).expect("caller checked");
     unit.order = Order::Harvest {
         node,
         anchor,
-        retiring: true,
+        withdrawing: true,
     };
     unit.path = None;
     unit.progress = 0;
@@ -1428,11 +1470,11 @@ fn source_route_failed(
         return;
     }
     let carrying = state.unit(id).expect("caller checked").carrying();
-    begin_retirement(state, id, node, anchor);
+    begin_withdrawal(state, id, node, anchor);
     if carrying > 0 {
         deliver(state, danger, id, events, true);
     } else {
-        retire(state, danger, id, events);
+        withdraw(state, danger, id, events);
     }
 }
 
@@ -1639,14 +1681,14 @@ pub(super) fn return_cargo(
 }
 
 /// Haul the load to a reachable own Foundry and deposit when adjacent.
-/// A retiring contract advances its queued program only after that safe
+/// A withdrawing contract advances its queued program only after that safe
 /// arrival; a live contract keeps its anchored zone and returns next tick.
 fn deliver(
     state: &mut State,
     danger: &GroundSalvageDanger,
     id: UnitId,
     events: &mut Vec<Event>,
-    retiring: bool,
+    withdrawing: bool,
 ) {
     let unit = state.unit(id).expect("caller checked");
     let drop_offs = drop_offs_by_distance(state, id);
@@ -1669,7 +1711,7 @@ fn deliver(
             unit.end_release();
             return;
         }
-        if unload_cargo(state, id, foundry, events) && retiring {
+        if unload_cargo(state, id, foundry, events) && withdrawing {
             finish_delivery(state, id, foundry);
         }
         return;
@@ -1693,10 +1735,10 @@ fn deliver(
     });
 }
 
-/// Sticky retirement: a dry/unsafe worker reaches a built Foundry before
+/// Sticky withdrawal: a dry/unsafe worker reaches a built Foundry before
 /// becoming idle or starting the next queued order. If no Foundry is
 /// reachable, the queue still advances once instead of being erased.
-fn retire(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &mut Vec<Event>) {
+fn withdraw(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &mut Vec<Event>) {
     if state.unit(id).expect("caller checked").carrying() > 0 {
         deliver(state, danger, id, events, true);
         return;
@@ -1727,7 +1769,7 @@ fn retire(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &
 }
 
 /// The player's completed drop-off structures, nearest first. The one
-/// funnel deliveries and retirement consult — a kind joins the drop-off
+/// funnel deliveries and withdrawal consult — a kind joins the drop-off
 /// network by answering [`crate::stats::BuildingKind::is_drop_off`].
 fn drop_offs_by_distance(state: &State, id: UnitId) -> Vec<BuildingId> {
     let unit = state.unit(id).expect("caller checked");

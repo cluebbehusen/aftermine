@@ -4,6 +4,7 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
     Needs {
         need: [0; ROLES.len()],
         weight: [1_000; ROLES.len()],
+        answered: 0,
         ground: true,
         lifted: false,
         enemy: Enemy {
@@ -11,6 +12,8 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
             ground: 1_000,
             heavy: 0,
             defenses: 0,
+            shells: 0,
+            shelling: 0,
             reach,
             clustered,
             targets: Vec::new(),

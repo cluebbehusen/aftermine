@@ -60,6 +60,9 @@ chassis::listed_enum! {
         /// detonates — enormous against structures, modest splash against
         /// machines, always fatal to itself.
         Sapper,
+        /// Unarmed tracked point-defense carrier: shoots down hostile projectiles
+        /// aimed near it, while gunfire passes through.
+        Mantle,
         /// Tier-three anti-heavy gun: braces, then fires one enormous
         /// instant slug that breaks heavy machines and is wasted on light
         /// ones.
@@ -289,6 +292,8 @@ pub struct UnitStats {
     pub target_priority: TargetPriority,
     /// The ground blast a large airframe makes when it crashes.
     pub crash: Option<CrashProfile>,
+    /// Charges that shoot down hostile projectiles aimed near the machine.
+    pub point_defense: Option<PointDefenseStats>,
 }
 
 /// How a unit picks an enemy machine when nobody ordered a target. It ranks
@@ -313,6 +318,20 @@ pub struct BraceStats {
     pub recoil_ticks: u32,
     /// Deployment lost per tick while retracting.
     pub retract_per_tick: u8,
+}
+
+/// Point defense: each charge destroys one hostile projectile in flight
+/// whose fixed aim point and current flight position both lie within
+/// `radius`. Hitscan fire is untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointDefenseStats {
+    /// Charges held when full.
+    pub charges: u8,
+    /// Reach from the machine's center, applied to both the aim point and
+    /// the projectile's flight position.
+    pub radius: Fx,
+    /// Ticks to restore one spent charge; charges return one at a time.
+    pub recharge_ticks: u16,
 }
 
 /// A machine's own warhead.
@@ -576,6 +595,7 @@ impl UnitKind {
             UnitKind::Avalanche => "avalanche",
             UnitKind::Skyhook => "skyhook",
             UnitKind::Sapper => "sapper",
+            UnitKind::Mantle => "mantle",
             UnitKind::Piledriver => "piledriver",
         }
     }
@@ -621,6 +641,9 @@ impl UnitKind {
             UnitKind::Sapper => {
                 "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
             }
+            UnitKind::Mantle => {
+                "Unarmed tracked carrier with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
+            }
             UnitKind::Piledriver => {
                 "Slow, enormous shots that break heavy machines; wasted on small ones. Must brace before firing."
             }
@@ -659,6 +682,7 @@ const HARVESTER: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -711,6 +735,7 @@ const SENTINEL: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -746,6 +771,7 @@ const SCUTTLER: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -783,6 +809,7 @@ const LANCER: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -825,6 +852,7 @@ const BOMBARD: UnitStats = UnitStats {
     }),
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -860,6 +888,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -895,6 +924,7 @@ const BUZZARD: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -930,6 +960,7 @@ const TALON: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -969,6 +1000,7 @@ const WARDEN: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -998,6 +1030,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -1024,6 +1057,7 @@ const KESTREL: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1066,6 +1100,7 @@ const CONDOR: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: false,
     }),
+    point_defense: None,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1104,6 +1139,7 @@ const BREAKER: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const PILEDRIVER: UnitStats = UnitStats {
@@ -1146,6 +1182,7 @@ const PILEDRIVER: UnitStats = UnitStats {
     }),
     target_priority: TargetPriority::Heaviest,
     crash: None,
+    point_defense: None,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1187,6 +1224,7 @@ const AVALANCHE: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1217,6 +1255,7 @@ const SKYHOOK: UnitStats = UnitStats {
         radius: Fx::lit("2"),
         aligns_to_motion: true,
     }),
+    point_defense: None,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1248,6 +1287,39 @@ const SAPPER: UnitStats = UnitStats {
     brace: None,
     target_priority: TargetPriority::Nearest,
     crash: None,
+    point_defense: None,
+};
+
+const MANTLE: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 350,
+    speed: Fx::lit("0.07"),
+    radius: Fx::lit("0.45"),
+    cost: 450,
+    train_ticks: 500,
+    domain: Domain::Ground,
+    weapons: &[],
+    aggro_range: Fx::ZERO,
+    harvest: None,
+    // Sees past its reach, so anything it shoots down is in its own sight.
+    vision: 6,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 2,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: None,
+    brace: None,
+    target_priority: TargetPriority::Nearest,
+    crash: None,
+    point_defense: Some(PointDefenseStats {
+        charges: 3,
+        radius: Fx::lit("4.5"),
+        recharge_ticks: 60, // one charge back every 3 s
+    }),
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -1422,7 +1494,12 @@ const AIRWORKS: BuildingStats = BuildingStats {
 const CRUCIBLE: BuildingStats = BuildingStats {
     max_hp: 900,
     vision: 6,
-    produces: &[UnitKind::Breaker, UnitKind::Piledriver, UnitKind::Avalanche],
+    produces: &[
+        UnitKind::Breaker,
+        UnitKind::Avalanche,
+        UnitKind::Mantle,
+        UnitKind::Piledriver,
+    ],
     weapons: &[],
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
@@ -1626,6 +1703,7 @@ impl UnitKind {
             UnitKind::Avalanche => &AVALANCHE,
             UnitKind::Skyhook => &SKYHOOK,
             UnitKind::Sapper => &SAPPER,
+            UnitKind::Mantle => &MANTLE,
             UnitKind::Piledriver => &PILEDRIVER,
         }
     }
@@ -1726,7 +1804,7 @@ impl BuildingKind {
     }
 
     /// Whether harvesters can deliver their cargo here. The one funnel
-    /// every drop-off decision consults — deliveries, retirement homes,
+    /// every drop-off decision consults — deliveries, withdrawal homes,
     /// and route planning alike.
     pub const fn is_drop_off(self) -> bool {
         matches!(self, BuildingKind::Foundry)
@@ -1922,6 +2000,28 @@ pub fn unit_repair_debit(kind: UnitKind, progress: u32) -> u32 {
 /// (against `max_hp`). A full-health salvage banks cost * permille / 1000.
 pub const SALVAGE_REFUND_PERMILLE: u64 = 800;
 
+/// Per-mille of a unit's cost a retirement at a Crucible refunds at full
+/// health, scaled linearly by remaining hp. Units price like buildings:
+/// below [`REPAIR_COST_PERMILLE`] per hp, so welding a machine up and then
+/// retiring it always loses scrap.
+pub const RETIRE_REFUND_PERMILLE: u64 = 500;
+
+/// Ticks a unit stands at a Crucible being dismantled. Long enough to read,
+/// and to leave fire time to win, so a dying machine cannot cash out.
+pub const RETIRE_TICKS: u32 = 60;
+
+/// How near a Crucible's footprint a retiring unit stands or hovers to be
+/// dismantled, in tiles. A doorstep tile is within it.
+pub const RETIRE_REACH: Fx = Fx::lit("1.5");
+
+/// Scrap a retirement refunds for a `kind` machine at `hp`.
+pub fn retire_refund(kind: UnitKind, hp: u32) -> u32 {
+    let stats = kind.stats();
+    let millis = u64::from(stats.cost) * RETIRE_REFUND_PERMILLE * u64::from(hp.min(stats.max_hp))
+        / u64::from(stats.max_hp);
+    u32::try_from(millis / 1000).expect("a refund never exceeds the unit's cost")
+}
+
 /// Reach of the Repair Bay's aura, in tiles from the nearest point of its
 /// footprint. Shorter than every siege weapon's reach, so the counter to a
 /// healed defense is firing from outside it.
@@ -1998,7 +2098,7 @@ pub const UNLOAD_TICKS: u8 = 10;
 
 /// A radar blip only makes salvage unsafe when it is this close to a
 /// candidate source. Contacts carry no identity or range, so a distant
-/// blip must not retire an otherwise healthy work zone.
+/// blip must not withdraw an otherwise healthy work zone.
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile
@@ -2182,3 +2282,14 @@ pub const LEASH_REACQUIRE_COOLDOWN: u16 = 60;
 /// re-acquires unleashed; otherwise unit-id ordering can decide which
 /// side's advancing army is tethered first.
 pub const LEASH_STATION_TICKS: u16 = 40;
+
+/// How far from the escorted unit an escort looks for a fight, in tiles,
+/// capped by its own aggro range. Welders mend escort-party members within
+/// the same distance of it.
+pub const ESCORT_ENGAGE_RADIUS: Fx = Fx::lit("7");
+
+/// How far from the escorted unit an escort's victim may stray before the
+/// escort breaks off, firing included, and returns to its slot. Wider than
+/// [`ESCORT_ENGAGE_RADIUS`] so a fight it just picked never ends on the next
+/// tick.
+pub const ESCORT_BREAK_RADIUS: Fx = Fx::lit("10");

@@ -11,7 +11,7 @@ use crate::numeric;
 use crate::numeric::Fit;
 use crate::panel::{
     building_economy_lines, building_flavor, building_stat_line, building_weapon_lines,
-    unit_flavor, unit_stat_line, weapon_lines,
+    point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
 };
 use crate::render;
 use crate::theme::{
@@ -211,7 +211,10 @@ impl CodexScreen {
                 para(unit_flavor(kind), TEXT_BODY, &mut lines);
                 lines.push((String::new(), TEXT_BODY));
                 lines.push((unit_stat_line(kind), TEXT_PRIMARY));
-                for line in weapon_lines(kind) {
+                for line in weapon_lines(kind)
+                    .into_iter()
+                    .chain(point_defense_line(kind))
+                {
                     lines.push((line, TEXT_SECONDARY));
                 }
                 for line in unit_notes(kind) {

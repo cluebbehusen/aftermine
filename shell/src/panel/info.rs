@@ -89,6 +89,26 @@ impl SelectionInfo {
         });
     }
 
+    /// Charges, reach and recharge for a point defender. Lit emitters show
+    /// the count to anyone in sight, like wounds.
+    fn point_defense(&mut self, unit: &oxide_sim::Unit) {
+        let Some(defense) = unit.kind.stats().point_defense else {
+            return;
+        };
+        let held = unit.point_defense.map_or(0, |held| held.charges);
+        self.row("Charges", format!("{held}/{}", defense.charges), None);
+        self.row(
+            "Intercept reach",
+            format!("{:.1} tiles", defense.radius.to_num::<f32>()),
+            None,
+        );
+        self.row(
+            "Recharge",
+            tick_time_label(u32::from(defense.recharge_ticks)),
+            None,
+        );
+    }
+
     pub(super) fn weapons(&mut self, weapons: &[WeaponStats]) {
         for weapon in weapons {
             let label = match (
@@ -341,6 +361,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 None,
             );
         }
+        info.point_defense(u);
         if let Some(demolition) = stats.demolition {
             info.row(
                 "Structure hit",

@@ -471,6 +471,104 @@ fn an_idle_foundry_leaves_its_scrap_for_a_busy_producer_of_a_wanted_role() {
     );
 }
 
+/// The arena with a working west base, a built Crucible and an army whose
+/// line and siege shares are already met, with `remembered` enemy units seen
+/// over the east base and `owned` extra west units.
+fn crucible_seat(remembered: &[UnitKind], owned: &[UnitKind]) -> (Scenario, State, Opponent) {
+    crucible_seat_banking(2_000, remembered, owned)
+}
+
+fn crucible_seat_banking(
+    scrap: u32,
+    remembered: &[UnitKind],
+    owned: &[UnitKind],
+) -> (Scenario, State, Opponent) {
+    let mut scenario = arena(scrap);
+    scenario.units.extend(workforce(0));
+    scenario
+        .units
+        .extend((3..8).map(|x| unit(0, UnitKind::Avalanche, x, 10)));
+    scenario
+        .units
+        .extend((3..7).map(|x| unit(0, UnitKind::Breaker, x, 7)));
+    scenario
+        .units
+        .extend(owned.iter().zip(3..).map(|(kind, x)| unit(0, *kind, x, 4)));
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 8,
+        y: 8,
+    });
+    let state = scenario.build().unwrap();
+    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
+    json["memory"]["units"] = remembered
+        .iter()
+        .zip(0..)
+        .map(|(kind, index): (&UnitKind, u32)| {
+            serde_json::json!({
+                "id": 1_000 + index,
+                "kind": kind,
+                "tile": {"x": 20, "y": 2 + index},
+                "seen": state.current_tick(),
+            })
+        })
+        .collect();
+    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+    let opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    (scenario, state, opponent)
+}
+
+fn trains_mantle(remembered: &[UnitKind], owned: &[UnitKind]) -> bool {
+    let (_, state, mut opponent) = crucible_seat(remembered, owned);
+    trains(&opponent.act(&state, &mut OwnEvents::default()))
+        .iter()
+        .any(|(_, kind)| *kind == UnitKind::Mantle)
+}
+
+#[test]
+fn seen_heavy_shellfire_brings_point_defense_in_proportion() {
+    let avalanches = [UnitKind::Avalanche, UnitKind::Avalanche];
+    assert!(
+        trains_mantle(&avalanches, &[]),
+        "two Avalanches, one Mantle"
+    );
+    assert!(
+        !trains_mantle(&avalanches, &[UnitKind::Mantle]),
+        "an owned Mantle already answers them"
+    );
+    assert!(
+        !trains_mantle(&[UnitKind::Lancer, UnitKind::Lancer], &[]),
+        "gunfire passes through point defense"
+    );
+    assert!(
+        !trains_mantle(&[UnitKind::Bombard, UnitKind::Bombard], &[]),
+        "a few light shells are no reason for one"
+    );
+}
+
+#[test]
+fn a_short_bank_saves_for_point_defense_against_heavy_shellfire() {
+    let saving = |remembered: &[UnitKind]| {
+        let (_, state, mut opponent) = crucible_seat_banking(100, remembered, &[]);
+        opponent
+            .act_traced(&state, &mut OwnEvents::default())
+            .1
+            .unwrap()
+            .target
+            .map(|target| target.investment)
+    };
+    assert_eq!(
+        saving(&[UnitKind::Avalanche, UnitKind::Avalanche]),
+        Some(Investment::Unit(UnitKind::Mantle)),
+        "a Mantle has no cheaper stand-in, so the seat saves for one"
+    );
+    assert_ne!(
+        saving(&[UnitKind::Lancer, UnitKind::Lancer]),
+        Some(Investment::Unit(UnitKind::Mantle))
+    );
+}
+
 /// `player`'s seat at its first decision, remembering `seen` enemy units on
 /// the given tiles.
 fn recalling(
@@ -550,11 +648,14 @@ fn seen_enemy_heavies_bring_piledrivers_in_proportion() {
     assert!(!crucible_trains(&scenario, &sentinels).contains(&UnitKind::Piledriver));
     assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
 
-    // Three Piledrivers already answer three quarters of two Breakers.
+    // Enough Piledrivers already answer three quarters of two Breakers.
+    let answer = 3 * 2 * UnitKind::Breaker.stats().cost / 4;
+    let enough = answer.div_ceil(UnitKind::Piledriver.stats().cost);
     let mut covered = foundry_of_heavies();
-    covered
-        .units
-        .extend((0..3).map(|index| unit(0, UnitKind::Piledriver, 2 + index, 10)));
+    covered.units.extend(
+        (0..i32::try_from(enough).unwrap())
+            .map(|index| unit(0, UnitKind::Piledriver, 2 + index, 10)),
+    );
     assert!(!crucible_trains(&covered, &breakers).contains(&UnitKind::Piledriver));
 }
 

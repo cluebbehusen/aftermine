@@ -23,3 +23,18 @@ the projectile's audible lifetime.
 libraries and fixed seeds. These three clips round when quantizing to PCM; the
 earlier bank retains its original truncation to preserve its bytes. All other
 effect approvals remain frozen in `EXPECTED_SFX_SHA256`.
+
+## Point-defense interception
+
+Approved by Connor by ear on 2026-10-12 from an audition of six zaps and six
+mid-air bursts. A shot-down shell plays one thin, fast needle from the Mantle's
+emitter, a lighter relative of the Lancer's discharge with no thump. The shell
+itself dissolves silently; the burst candidates were dropped because the art
+shows it as a puff of smoke.
+
+| Production clip     | Duration | Mixer gain | SHA-256                                                            |
+| ------------------- | -------- | ---------- | ------------------------------------------------------------------ |
+| `intercept_zap.wav` | 0.14 s   | 0.24       | `4bedf27c34fe11970a0109a9ff81a627eb2c67569eca1b35cc2f623e6269b18a` |
+
+The zap plays at the emitter only where the viewer sees the defender, once for
+each shell it stops.

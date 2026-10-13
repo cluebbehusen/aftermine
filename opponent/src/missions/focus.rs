@@ -119,20 +119,12 @@ fn threatens(enemy: &UnitObs, members: &[&UnitObs]) -> bool {
 /// The members that can hit `enemy`, by id, if every one of them armed
 /// against it already reaches it in a straight line between tile centres
 /// that terrain does not stop, as the simulation measures a shot, and every
-/// ground member stands on the enemy's ground, so one a little short steps
+/// armed ground member stands on the enemy's ground, so one a little short steps
 /// closer rather than seeking a way round; otherwise none.
 fn shooters(map: &MapModel, members: &[&UnitObs], enemy: &UnitObs) -> Vec<UnitId> {
     let domain = enemy.body_domain();
     let mut shooters = Vec::new();
     for unit in members {
-        let walks = unit.kind.stats().domain == Domain::Ground;
-        let ground = map.component(unit.tile);
-        if walks && (ground.is_none() || map.component(enemy.tile) != ground) {
-            return Vec::new();
-        }
-        let dx = Fx::from_num(unit.tile.x - enemy.tile.x);
-        let dy = Fx::from_num(unit.tile.y - enemy.tile.y);
-        let distance_sq = dx * dx + dy * dy;
         let mut weapons = unit
             .kind
             .stats()
@@ -143,6 +135,14 @@ fn shooters(map: &MapModel, members: &[&UnitObs], enemy: &UnitObs) -> Vec<UnitId
         if weapons.peek().is_none() {
             continue;
         }
+        let walks = unit.kind.stats().domain == Domain::Ground;
+        let ground = map.component(unit.tile);
+        if walks && (ground.is_none() || map.component(enemy.tile) != ground) {
+            return Vec::new();
+        }
+        let dx = Fx::from_num(unit.tile.x - enemy.tile.x);
+        let dy = Fx::from_num(unit.tile.y - enemy.tile.y);
+        let distance_sq = dx * dx + dy * dy;
         let reaches = weapons.any(|weapon| {
             let direct = !weapon.indirect && walks && domain == Domain::Ground;
             distance_sq <= weapon.range * weapon.range

@@ -556,7 +556,7 @@ fn rally_routes_fresh_units_by_role() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(TilePos::new(11, 4)),
+                rally: Some(oxide_sim::Rally::Tile(TilePos::new(11, 4))),
             },
         ),
         cmd(
@@ -578,7 +578,7 @@ fn rally_routes_fresh_units_by_role() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(TilePos::new(10, 6)),
+                rally: Some(oxide_sim::Rally::Tile(TilePos::new(10, 6))),
             },
         ),
         cmd(
@@ -605,7 +605,7 @@ fn rally_on_foreign_building_is_rejected() {
         0,
         Command::SetRally {
             building: theirs,
-            rally: Some(TilePos::new(5, 5)),
+            rally: Some(oxide_sim::Rally::Tile(TilePos::new(5, 5))),
         },
     )]);
     assert!(report.events.contains(&Event::CommandRejected {
@@ -652,7 +652,7 @@ fn rally_rejects_non_producers_and_unfinished_producers() {
             0,
             Command::SetRally {
                 building,
-                rally: Some(TilePos::new(10, 5)),
+                rally: Some(oxide_sim::Rally::Tile(TilePos::new(10, 5))),
             },
         )]);
         assert!(report.events.contains(&Event::CommandRejected {

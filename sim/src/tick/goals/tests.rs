@@ -187,7 +187,9 @@ fn exposure_resolves_every_pending_goal_a_unit_carries() {
     unit.order = Order::Attack {
         target: crate::AttackTarget::Unit(unit.id),
         pursue: false,
-        resume: Some(Goal::pending(explored, 2, reverse)),
+        resume: Some(crate::state::Resume::Hunt(Goal::pending(
+            explored, 2, reverse,
+        ))),
     };
     let mut stale = Goal::pending(explored, 4, reverse);
     stale.endpoint = Some(TilePos::new(0, 0));
@@ -206,7 +208,12 @@ fn exposure_resolves_every_pending_goal_a_unit_carries() {
     let Order::Attack { resume, .. } = unit.order else {
         panic!("the engagement stands");
     };
-    assert_eq!(resume, Some(Goal::slotted(explored, slots[2])));
+    assert_eq!(
+        resume,
+        Some(crate::state::Resume::Hunt(Goal::slotted(
+            explored, slots[2]
+        )))
+    );
     assert_eq!(
         unit.queue[0],
         Order::Run {

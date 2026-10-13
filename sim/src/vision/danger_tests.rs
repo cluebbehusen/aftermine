@@ -115,7 +115,7 @@ fn equal_local_ground_value_screens_a_work_zone() {
 }
 
 #[test]
-fn outmatched_local_ground_value_retires_a_work_zone() {
+fn outmatched_local_ground_value_withdraws_a_work_zone() {
     let (state, source) = screened_source(true);
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
     assert!(danger.contains(source));
