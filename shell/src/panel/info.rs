@@ -191,7 +191,7 @@ impl SelectionInfo {
         self.row(
             "Intercept reach",
             format!("{:.1} tiles", defense.radius.to_num::<f32>()),
-            None,
+            Some(StatIcon::Capability(CapabilityIcon::Intercept)),
         );
         self.row(
             "Recharge",

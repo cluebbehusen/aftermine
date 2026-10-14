@@ -2926,6 +2926,20 @@ fn visit_active_ranges(
                 color: range_color(kind),
             });
         }
+        if let Some(defense) = stats.point_defense {
+            let kind = BuildingRangeKind::Intercept;
+            visit(RangeIndicator {
+                range: BuildingRange {
+                    kind,
+                    shape: BuildingRangeShape::Circle {
+                        center,
+                        radius: defense.radius.to_num::<f32>(),
+                    },
+                },
+                icon: range_icon(kind),
+                color: range_color(kind),
+            });
+        }
         if stats
             .weapons
             .iter()
