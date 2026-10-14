@@ -2,7 +2,7 @@
 
 `oxide-kit` holds Oxide-specific engine services shared by the shell and the
 driver, so the graphical game and the headless harness use the same controller
-hosting, checkpoint, replay, recovery, statistics, and rendering code without
+hosting, checkpoint, replay, statistics, diagnostics, and rendering code without
 either depending on the other. A few services, such as the headless `runner` and
 `bench`, serve only the driver.
 
@@ -26,8 +26,7 @@ while reusable game-independent primitives stay in `chassis`.
   fingerprint binds the captured scenario and world, rejecting later mismatches
   even if both scenario copies change. Capture trusts the host's pairing; the
   fingerprint neither authenticates data nor proves historical origin. Player
-  saves use the core checkpoint without historical commands; recovery pairs it
-  with a world origin and a completed command suffix.
+  saves use the core checkpoint without historical commands.
 
 - `bot_execution` collects commands in input seat order, using a small shared
   worker pool when several bots are due. A busy or unavailable pool falls back
@@ -39,11 +38,6 @@ while reusable game-independent primitives stay in `chassis`.
   controllers stay available for saves. Speculation drains own-event buffers
   only in its clones, so events are consumed when its result is installed.
 
-- `recovery` keeps a bounded incremental command journal, distinguishes prepared
-  commands from completed ticks, and exports verified replay prefixes with build
-  provenance. Its worker handles disk durability without blocking the caller.
-  Diagnostics share the recording identity, while export also records the
-  identity of the executable preparing the report.
 - `build` describes the executable that recorded or wrote a file. The host
   supplies it; the kit never probes Git or embeds a sibling executable's
   revision.
@@ -77,6 +71,5 @@ cargo clippy -p oxide-kit --all-targets --locked -- -D warnings
 `diagnostics` is the process's crash and freeze monitor: main-thread stages and
 bot seat heartbeats published through atomics, a stall watchdog, and a panic
 hook that records a backtrace. Recent frame timing stays in memory and is
-written only with an incident, to the open recording or the recovery root.
-Diagnostic output is observational; recovery's prepared/completed journal alone
-determines the playable prefix.
+written only with an incident, to the diagnostics folder's bounded log.
+Diagnostic output is observational and never becomes replay input.

@@ -55,9 +55,9 @@ pub fn autosave_dir() -> Option<PathBuf> {
     data_dir().map(|d| d.join("autosaves"))
 }
 
-/// Incremental recoveries and crash and freeze incident logs.
-pub fn recovery_dir() -> Option<PathBuf> {
-    data_dir().map(|directory| directory.join("recovery"))
+/// Crash and freeze incident logs and exported diagnostic reports.
+pub fn diagnostics_dir() -> Option<PathBuf> {
+    data_dir().map(|directory| directory.join("diagnostics"))
 }
 
 /// Explicit, player-initiated saves. Autosave rotation never touches

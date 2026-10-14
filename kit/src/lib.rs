@@ -28,6 +28,4 @@ pub type GameReplay = chassis::replay::Replay<Scenario, PlayerCommand, recording
 
 pub use replay::{ReplayPlayback, bounded_replay_duration, load_replay, replay_duration};
 
-pub mod recovery;
-
 pub mod diagnostics;

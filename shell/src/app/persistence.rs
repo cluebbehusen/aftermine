@@ -33,10 +33,7 @@ struct Work {
     task: Task,
 }
 pub(super) enum Output {
-    Catalog {
-        entries: Vec<crate::saves::ReplayEntry>,
-        recovery: Option<PathBuf>,
-    },
+    Catalog(Vec<crate::saves::ReplayEntry>),
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
@@ -97,10 +94,9 @@ impl Worker {
         self.active.is_some()
     }
 
-    /// Lets a replaced match wind down here: its recording finishes and
-    /// its bots stop off the frame thread, since finishing a recording may
-    /// wait on its writer. A worker busy with other work leaves the game to
-    /// drop on the caller's thread, its recording already told to finish.
+    /// Lets a replaced match's world, bots and any speculative bot decision
+    /// drop here rather than on the frame thread. A worker busy with other
+    /// work leaves the game to drop on the caller's thread.
     pub(super) fn retire(&mut self, old: Game) {
         if self.busy() {
             drop(old);
@@ -132,14 +128,13 @@ impl Worker {
 pub(super) enum Intent {
     Load(PathBuf),
     Continue,
-    Recover(PathBuf),
     Named(String),
     Leave(screens::pause::LeaveVerb, bool),
     Rematch,
 }
 impl Intent {
     fn loading(&self) -> bool {
-        matches!(self, Self::Load(_) | Self::Continue | Self::Recover(_))
+        matches!(self, Self::Load(_) | Self::Continue)
     }
 }
 /// How long after a failed LAN autosave the host tries again.
@@ -230,12 +225,13 @@ impl App {
             if let Err(error) = &result {
                 self.notify(format!("Could not refresh saves: {error:#}"), true);
             }
-            if let Ok(Output::Catalog { entries, recovery }) = result {
+            if let Ok(Output::Catalog(entries)) = result {
                 match screen {
-                    Screen::Home(home) => home.set_catalog(
-                        entries.iter().any(|e| e.compatible && e.kind.continues()),
-                        recovery,
-                    ),
+                    Screen::Home(home) => {
+                        home.set_catalog(
+                            entries.iter().any(|e| e.compatible && e.kind.continues()),
+                        );
+                    }
                     Screen::Replays(shelf) => shelf.set_catalog(entries),
                     _ => {}
                 }
@@ -291,12 +287,7 @@ impl App {
             }
             let entries = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
-            let recovery = crate::paths::recovery_dir().and_then(|root| {
-                oxide_kit::recovery::interrupted_candidates(&root)
-                    .into_iter()
-                    .next()
-            });
-            Ok(Output::Catalog { entries, recovery })
+            Ok(Output::Catalog(entries))
         });
         match self.persistence.start(task) {
             Ok(id) => self.catalog_id = Some(id),
@@ -305,28 +296,13 @@ impl App {
     }
 }
 
-fn load_candidates(
-    paths: Vec<PathBuf>,
-    recovery: bool,
-    root: Option<PathBuf>,
-    cancel: &Cancellation,
-) -> Result<Output> {
+fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output> {
     let mut last_error = anyhow::anyhow!("no loadable save is available");
     for path in paths {
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
-        let result = if recovery {
-            oxide_kit::recovery::inspect(&path)
-                .and_then(|record| {
-                    crate::game::checkpoint::RestoredGame::recover(record, || cancel.cancelled())
-                })
-                .map(|game| crate::saved_game::Loaded::Local(Box::new(game)))
-        } else {
-            crate::saved_game::prepare(&path)
-        };
-        match result {
-            Ok(crate::saved_game::Loaded::Local(mut loaded)) => {
+        match crate::saved_game::prepare(&path) {
+            Ok(crate::saved_game::Loaded::Local(loaded)) => {
                 cancel.commit()?;
-                loaded.start_recovery(root, recovery.then_some(path))?;
                 return Ok(Output::Loaded(loaded));
             }
             Ok(crate::saved_game::Loaded::Lan(save)) => {
@@ -471,11 +447,6 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         home,
                     )));
                 }
-                if matches!(busy.intent, Intent::Recover(_))
-                    && let Screen::Home(home) = &mut *busy.back
-                {
-                    home.clear_recovery();
-                }
                 app.notify(
                     if loading {
                         format!("Load failed: {error}")
@@ -489,7 +460,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 }
                 return Ok(*busy.back);
             }
-            Ok(Output::Catalog { .. } | Output::Retired) => unreachable!(),
+            Ok(Output::Catalog(_) | Output::Retired) => unreachable!(),
         }
     }
     if !busy.presented {
@@ -524,23 +495,13 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     Ok(Output::Saved)
                 })
             }
-            Intent::Load(_) | Intent::Continue | Intent::Recover(_) => {
+            Intent::Load(_) | Intent::Continue => {
                 let paths = match &busy.intent {
-                    Intent::Load(path) | Intent::Recover(path) => Some(vec![path.clone()]),
+                    Intent::Load(path) => Some(vec![path.clone()]),
                     _ => None,
                 };
-                let recovery = matches!(busy.intent, Intent::Recover(_));
-                let root = app.game.recovery_root.clone();
                 Box::new(move |cancel| {
-                    let mut paths = paths.unwrap_or_else(autosave::candidates);
-                    if recovery && let Some(root) = &root {
-                        for candidate in oxide_kit::recovery::interrupted_candidates(root) {
-                            if !paths.contains(&candidate) {
-                                paths.push(candidate);
-                            }
-                        }
-                    }
-                    load_candidates(paths, recovery, root, cancel)
+                    load_candidates(paths.unwrap_or_else(autosave::candidates), cancel)
                 })
             }
         };

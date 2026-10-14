@@ -42,7 +42,7 @@ fn block(executor: &BotExecutor) -> Arc<Barrier> {
 }
 
 #[test]
-fn snapshots_save_and_recover_while_running_and_ready() {
+fn snapshots_save_while_running_and_ready() {
     let scenario = Scenario::skirmish();
     let executor = BotExecutor::new(2);
     let mut state = Arc::new(scenario.build().unwrap());
@@ -85,40 +85,24 @@ fn snapshots_save_and_recover_while_running_and_ready() {
     assert_eq!(Arc::strong_count(&state), 1);
     let prepared = capture(&bots);
     assert_eq!(checkpoint(&bots), before);
-    let mut replay = prepared
-        .recording(&crate::build::BuildIdentity::default())
-        .unwrap();
     let mut commands = human.clone();
     commands.extend(job.finish(&state, &mut bots));
-    for command in &commands {
-        replay.record(state.current_tick(), command.clone());
-    }
     Arc::get_mut(&mut state).unwrap().tick(&commands);
-    replay.meta.ticks = Some(state.current_tick());
     for saved in [idle, running, prepared] {
-        let empty = saved
-            .recording(&crate::build::BuildIdentity::default())
-            .unwrap();
-        let mut restored = saved.clone().resume_recording(&empty).unwrap();
+        let mut restored = saved.restore().unwrap();
         assert_eq!(restored.pending, human);
         let mut restored_commands = std::mem::take(&mut restored.pending);
         restored_commands.extend(executor.commands(&restored.state, &mut restored.bots));
         assert_eq!(commands, restored_commands);
         restored.state.tick(&restored_commands);
-        let mut recovered = saved.resume_recording(&replay).unwrap();
-        assert!(recovered.pending.is_empty());
         assert_eq!(restored.state.hash(), state.hash());
-        assert_eq!(recovered.state.hash(), state.hash());
         assert_eq!(checkpoint(&restored.bots), checkpoint(&bots));
-        assert_eq!(checkpoint(&recovered.bots), checkpoint(&bots));
+        let mut original = (State::clone(&state), bots.clone());
         for _ in 0..60 {
             let commands = executor.commands(&restored.state, &mut restored.bots);
-            assert_eq!(
-                commands,
-                executor.commands(&recovered.state, &mut recovered.bots)
-            );
+            assert_eq!(commands, executor.commands(&original.0, &mut original.1));
             restored.state.tick(&commands);
-            recovered.state.tick(&commands);
+            original.0.tick(&commands);
         }
     }
 }

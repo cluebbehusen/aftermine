@@ -1,44 +1,6 @@
 use super::*;
 use oxide_sim::scenario::ScenarioMode;
 
-#[test]
-fn recovery_records_the_shell_boundary_and_resumes_the_same_future() {
-    use std::time::{Duration, Instant};
-    let root = std::env::temp_dir().join(format!("oxide-shell-recovery-{}", std::process::id()));
-    let mut original = Game::new(Scenario::skirmish()).unwrap();
-    original.recovery_root = Some(root.clone());
-    original.advance_ticks(180);
-    let writer = original.recovery.as_ref().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while writer.status().durable_tick < 180 {
-        assert!(Instant::now() < deadline, "{:?}", writer.status());
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let replay = oxide_kit::recovery::inspect(writer.directory())
-        .unwrap()
-        .replay;
-    let mut resumed = Game::from_replay(replay).unwrap();
-    assert_eq!(original.hash_hex(), resumed.hash_hex());
-    original.advance_ticks(120);
-    resumed.advance_ticks(120);
-    assert_eq!(original.hash_hex(), resumed.hash_hex());
-    if let Some(writer) = &original.recovery {
-        finish_recording(writer, original.state.current_tick());
-    }
-    assert!(original.recovery.as_ref().unwrap().status().clean);
-    let directory = original.recovery.as_ref().unwrap().directory().to_owned();
-    drop(original);
-    loop {
-        let lease = std::fs::File::open(directory.join("lease")).unwrap();
-        if lease.try_lock().is_ok() {
-            break;
-        }
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    std::fs::remove_dir_all(root).unwrap();
-}
-
 /// The watch-back loop replays every re-executed tick through the seat
 /// bots so they rebuild their cross-tick memory. Without it the resume
 /// hash still matches (the recorded commands carry it) and only the
@@ -71,6 +33,7 @@ fn a_resumed_session_plays_the_same_future_as_an_unsaved_one() {
              bot memory was not rebuilt by the watch-back"
     );
 }
+
 #[test]
 fn multiple_bot_seats_rebuild_the_same_history_on_resume() {
     let mut scenario =

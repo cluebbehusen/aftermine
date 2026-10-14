@@ -43,26 +43,6 @@ fn a_touch_only_door_offers_no_quit_and_keeps_its_verbs() {
 }
 
 #[test]
-fn recovery_is_explicit_and_does_not_change_continue_or_play() {
-    for resumable in [false, true] {
-        let mut home = HomeScreen::with_resumable(resumable).with_recovery(Some(
-            oxide_kit::recovery::InterruptedMatch {
-                directory: "/unused".into(),
-                ticks: 2400,
-                scenario: "test".into(),
-            },
-        ));
-        assert!(home.menu.view().items[0].contains("02:00"));
-        assert_eq!(pick(&mut home, 0), Out::Recover);
-        assert_eq!(
-            pick(&mut home, 1),
-            if resumable { Out::Continue } else { Out::Play }
-        );
-        assert_eq!(pick(&mut home, usize::from(resumable) + 6), Out::Settings);
-    }
-}
-
-#[test]
 fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
     let mut home = HomeScreen::with_resumable(true);
     home.set_rejoin(Some("Rejoin Connor's match on Broad Front".to_owned()));
@@ -78,7 +58,7 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
     );
     assert!(home.menu.wide, "the long row fits inside the list");
 
-    home.set_catalog(true, None);
+    home.set_catalog(true);
     assert_eq!(
         home.menu.view().items[0],
         "Rejoin Connor's match on Broad Front",

@@ -6,8 +6,6 @@
 //! instead of a bool.
 
 use crate::game::Game;
-#[cfg(test)]
-use crate::game::GameReplay;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -249,7 +247,6 @@ pub(crate) struct SaveJob {
     dir: Option<PathBuf>,
     named: bool,
     already_saved: bool,
-    recovery: Option<std::sync::Arc<oxide_kit::recovery::RecoveryWriter>>,
 }
 
 impl SaveJob {
@@ -300,7 +297,6 @@ impl SaveJob {
             },
             named,
             already_saved: game.autosave_done,
-            recovery: (!named).then(|| game.recovery.clone()).flatten(),
         }
     }
 
@@ -327,7 +323,6 @@ impl SaveJob {
             },
             named,
             already_saved: false,
-            recovery: None,
         }
     }
 
@@ -356,9 +351,6 @@ impl SaveJob {
         } else {
             SaveOutcome::NothingToSave
         };
-        if let Some(writer) = self.recovery {
-            crate::game::finish_recording(&writer, self.meta.ticks.unwrap());
-        }
         Ok(outcome)
     }
 }

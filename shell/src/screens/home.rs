@@ -13,8 +13,6 @@ pub enum Out {
     Stay,
     /// Take back a seat in a running LAN match.
     Rejoin,
-    /// Resume an interrupted recording, initially paused.
-    Recover,
     /// Resume the newest autosave.
     Continue,
     /// Open the New Match wizard.
@@ -36,12 +34,10 @@ pub enum Out {
 /// The Home screen: its menu and the verb behind each row.
 pub struct HomeScreen {
     /// The rows, each standing for its verb, so a conditional row
-    /// (Recover, Continue) cannot shift its neighbours onto the wrong
+    /// (Rejoin, Continue) cannot shift its neighbours onto the wrong
     /// verb.
     pub menu: Menu<Out>,
     pub(crate) catalog_ready: bool,
-    /// Independently recoverable interrupted session, if any.
-    pub recovery: Option<oxide_kit::recovery::InterruptedMatch>,
     /// The row offering a LAN seat back, once its host confirmed it waits.
     rejoin: Option<String>,
 }
@@ -52,16 +48,9 @@ impl HomeScreen {
         Self::with_resumable(false)
     }
 
-    pub(crate) fn set_catalog(&mut self, resumable: bool, recovery: Option<std::path::PathBuf>) {
+    pub(crate) fn set_catalog(&mut self, resumable: bool) {
         let selected = self.menu.value().copied();
-        let fresh = Self::with_resumable(resumable).with_recovery(recovery.map(|directory| {
-            oxide_kit::recovery::InterruptedMatch {
-                directory,
-                ticks: 0,
-                scenario: String::new(),
-            }
-        }));
-        let mut fresh = fresh.with_rejoin(self.rejoin.take());
+        let mut fresh = Self::with_resumable(resumable).with_rejoin(self.rejoin.take());
         if let Some(selected) = selected {
             fresh.menu.select_where(|row| *row == selected);
         }
@@ -75,13 +64,9 @@ impl HomeScreen {
             return;
         }
         let resumable = self.resumable();
-        let recovery = self
-            .recovery
-            .as_ref()
-            .map(|record| record.directory.clone());
         let ready = self.catalog_ready;
         self.rejoin = label;
-        self.set_catalog(resumable, recovery);
+        self.set_catalog(resumable);
         self.catalog_ready = ready;
     }
 
@@ -107,27 +92,6 @@ impl HomeScreen {
         self
     }
 
-    pub(crate) fn clear_recovery(&mut self) {
-        let resumable = self.resumable();
-        self.set_catalog(resumable, None);
-    }
-
-    fn with_recovery(mut self, recovery: Option<oxide_kit::recovery::InterruptedMatch>) -> Self {
-        self.recovery = recovery;
-        if let Some(record) = &self.recovery {
-            let seconds = record.ticks / u64::from(oxide_sim::TICKS_PER_SECOND);
-            let label = if record.ticks == 0 {
-                "Recover match".to_string()
-            } else {
-                format!("Recover match ({:02}:{:02})", seconds / 60, seconds % 60)
-            };
-            let mut lines = vec![crate::menu::Line::Row(Label::Text(label), Out::Recover)];
-            lines.extend_from_slice(self.menu.lines());
-            self.menu = Menu::new("OXIDE", lines);
-        }
-        self
-    }
-
     /// Builds the door with resumability decided by the caller (tests).
     pub fn with_resumable(resumable: bool) -> Self {
         Self::build(resumable, !crate::platform::TOUCH_ONLY)
@@ -150,7 +114,6 @@ impl HomeScreen {
             .map(|(label, out)| (Label::from(label), out));
         Self {
             menu: Menu::rows("OXIDE", rows),
-            recovery: None,
             catalog_ready: false,
             rejoin: None,
         }

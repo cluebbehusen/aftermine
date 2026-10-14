@@ -3,10 +3,10 @@
 #[cfg(test)]
 mod tests;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Build provenance does not participate in replay compatibility or state hashes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BuildIdentity {
     /// Package version.
     pub version: String,

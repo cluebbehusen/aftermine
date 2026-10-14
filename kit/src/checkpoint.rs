@@ -1,6 +1,6 @@
 //! Same-version session continuation without executing historical ticks.
 //!
-//! Player saves and recovery wrap this checkpoint; replay origins carry only the
+//! Player saves wrap this checkpoint; replay origins carry only the
 //! world. Controller memory is part of continuation, not world state.
 
 use crate::controller::{ControllerCheckpoint, SeatController};
@@ -61,83 +61,6 @@ impl SessionCheckpoint {
             self.scenario.clone(),
             crate::recording::WorldOrigin::capture(&self.scenario, &self.state)?,
         )?)
-    }
-
-    pub(crate) fn validate_origin(&self, replay: &GameReplay) -> Result<()> {
-        replay.validate(Some(SIM_VERSION))?;
-        self.clone().restore()?;
-        ensure!(
-            replay.origin.is_some()
-                && replay.setup == self.scenario
-                && replay.start_tick() == self.state.current_tick()
-                && crate::recording::initial_state(replay)?.hash() == self.state.hash(),
-            "recovery checkpoint does not match recording origin"
-        );
-        if crate::replay_duration(replay) > replay.start_tick() {
-            let mut first = replay
-                .commands
-                .iter()
-                .take_while(|timed| timed.tick == replay.start_tick());
-            ensure!(
-                self.pending
-                    .iter()
-                    .all(|pending| first.next().is_some_and(|timed| timed.command == *pending)),
-                "recovery batch omits pending checkpoint commands"
-            );
-        }
-        Ok(())
-    }
-
-    pub(crate) fn validate_first_batch(&self, commands: &[PlayerCommand]) -> Result<()> {
-        ensure!(
-            commands.starts_with(&self.pending),
-            "recovery batch omits pending checkpoint commands"
-        );
-        Ok(())
-    }
-
-    /// Restores controllers, then observes only the recorded suffix. Pending
-    /// inputs survive an empty suffix; a completed first tick consumes them once.
-    pub fn resume_recording(self, replay: &GameReplay) -> Result<RestoredSession> {
-        self.resume_recording_cancellable(replay, || false)
-    }
-
-    /// Restores a recorded suffix with a cooperative host cancellation boundary per tick.
-    pub fn resume_recording_cancellable(
-        self,
-        replay: &GameReplay,
-        cancelled: impl Fn() -> bool,
-    ) -> Result<RestoredSession> {
-        self.validate_origin(replay)?;
-        let end = crate::bounded_replay_duration(replay)?;
-        let mut session = self.restore()?;
-        let mut cursor = replay.cursor();
-        for tick in session.state.current_tick()..end {
-            ensure!(!cancelled(), "recovery cancelled");
-            let commands: Vec<_> = cursor
-                .take_tick(tick)
-                .iter()
-                .map(|timed| timed.command.clone())
-                .collect();
-            if tick == replay.start_tick() {
-                ensure!(
-                    commands.starts_with(&session.pending),
-                    "recovery batch omits pending checkpoint commands"
-                );
-                session.pending.clear();
-            }
-            let _ = crate::bot_execution::commands(&session.state, &mut session.bots);
-            let report = session.state.tick(&commands);
-            crate::controller::record_events(&mut session.bots, &report);
-            if let Some(stats) = &mut session.stats {
-                stats.observe(&session.state, &report.events);
-            }
-        }
-        ensure!(
-            cursor.is_finished(),
-            "recovery suffix left unconsumed commands"
-        );
-        Ok(session)
     }
 
     /// Borrows a quiescent host after its tick and statistics update have finished.

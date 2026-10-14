@@ -196,14 +196,6 @@ fn resting(game: &Game) -> bool {
 }
 
 #[test]
-fn a_networked_session_never_journals() {
-    let mut host = Game::networked(duel(), PlayerId(0), NetRole::Host, viewport()).unwrap();
-    host.recovery_root = Some(std::env::temp_dir().join("oxide-lan-never-journals"));
-    host.start_recovery();
-    assert!(host.recovery.is_none());
-}
-
-#[test]
 fn a_networked_session_queues_staged_orders_for_the_host() {
     let mut local = Game::with_viewport(duel(), viewport()).unwrap();
     local.issue(train(&local, PlayerId(0), UnitKind::Harvester));

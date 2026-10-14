@@ -178,16 +178,6 @@ impl<'a> Visible<'a> {
             Self::Replay(session) => session.clock.paused,
         }
     }
-
-    /// The crash-recovery recording behind the session; a replay has none.
-    pub(super) fn recording(
-        self,
-    ) -> Option<&'a std::sync::Arc<oxide_kit::recovery::RecoveryWriter>> {
-        match self {
-            Self::Live(game) => game.recovery.as_ref(),
-            Self::Replay(_) => None,
-        }
-    }
 }
 
 impl Screen {

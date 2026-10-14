@@ -12,8 +12,7 @@ automated players use the same command path as every other player.
 Build provenance belongs to this executable. Its build script watches the driver
 and shared dependency package trees plus shared build inputs, assets, and
 scenarios; shell-only edits and private workspace notes do not contribute to its
-dirty status. Reports retain both the original recording identity and this
-exporter's identity. Source archives report unknown provenance.
+dirty status. Source archives report unknown provenance.
 
 ## Main pieces
 
@@ -21,10 +20,6 @@ exporter's identity. Source archives report unknown provenance.
   `oxide-kit`, shared with the shell.
 - `client` speaks the debug protocol; `session` serves it windowlessly, and its
   save and load commands use replay files.
-- `recovery-inspect <session-directory> [--export <new-report-directory>]`
-  verifies an interrupted journal, reports how its session ended, and exports
-  its completed replay prefix plus incident logs without needing a responsive
-  shell.
 - `replay_inspect` and `replay_summary` provide exact snapshots and compact
   match narratives. Checkpoint-origin recordings report their first available
   absolute tick, and summaries and inactivity windows cover only that segment.

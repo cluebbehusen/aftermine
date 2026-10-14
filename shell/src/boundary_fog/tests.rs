@@ -2,7 +2,6 @@ use super::*;
 use crate::game::Game;
 use chassis::grid::as_index;
 use macroquad::prelude::vec2;
-use oxide_kit::build::BuildIdentity;
 use oxide_sim::{Command, PlayerCommand, Scenario};
 
 #[test]
@@ -109,25 +108,11 @@ fn boundary_exploration_survives_movement_bulk_ticks_and_resume() {
     assert!(game.presentation.boundary_fog.explored(tile));
     let mut replay = game.recorder.clone();
     replay.meta.ticks = Some(game.state.current_tick());
-    let recovered = crate::game::checkpoint::RestoredGame::recover(
-        oxide_kit::recovery::Inspection {
-            kind: oxide_kit::recovery::RecordingKind::LiveMatch,
-            build: BuildIdentity::default(),
-            session: "boundary-exploration".into(),
-            replay: replay.clone(),
-            checkpoint: None,
-            prepared: None,
-            issue: None,
-            clean: false,
-        },
-        || false,
-    )
-    .unwrap()
-    .install();
-    assert_eq!(game.hash_hex(), recovered.hash_hex());
+    let saved: Game = serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+    assert_eq!(game.hash_hex(), saved.hash_hex());
     assert_eq!(
         game.presentation.boundary_fog,
-        recovered.presentation.boundary_fog
+        saved.presentation.boundary_fog
     );
     let resumed = Game::from_replay(replay).unwrap();
     assert_eq!(game.hash_hex(), resumed.hash_hex());

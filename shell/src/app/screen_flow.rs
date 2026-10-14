@@ -454,14 +454,6 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         | screens::home::Out::Roster
         | screens::home::Out::Join
         | screens::home::Out::Rejoin => {}
-        screens::home::Out::Recover => {
-            if let Some(record) = &home.recovery {
-                let path = record.directory.clone();
-                return Ok(
-                    app.persistence_screen(persistence::Intent::Recover(path), Screen::Home(home))
-                );
-            }
-        }
         screens::home::Out::Continue => {
             return Ok(app.persistence_screen(persistence::Intent::Continue, Screen::Home(home)));
         }
@@ -544,18 +536,6 @@ fn settings_frame(
     ctrl_at_frame_start: bool,
     shift_at_frame_start: bool,
 ) -> Screen {
-    if sc.notice.is_none()
-        && let Some(error) = app
-            .game
-            .recovery
-            .as_ref()
-            .and_then(|writer| writer.status().error)
-    {
-        sc.notice = Some(screens::settings::Notice {
-            text: format!("Recovery stopped: {error}"),
-            danger: true,
-        });
-    }
     let input_scope = app
         .game
         .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
@@ -576,7 +556,7 @@ fn settings_frame(
         }
         screens::settings::Out::ExportDiagnostics => match app
             .report_job
-            .start(&app.game, crate::paths::recovery_dir())
+            .start(&app.game, crate::paths::diagnostics_dir())
         {
             Ok(()) => app.notify("Exporting diagnostic report...", false),
             Err(error) => app.notify(error.to_string(), true),

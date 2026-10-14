@@ -76,13 +76,9 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
             .problem
             .is_none()
     );
-    let Output::Loaded(restored) = load_candidates(
-        vec![newer, older.clone()],
-        false,
-        None,
-        &Cancellation::default(),
-    )
-    .unwrap() else {
+    let Output::Loaded(restored) =
+        load_candidates(vec![newer, older.clone()], &Cancellation::default()).unwrap()
+    else {
         panic!()
     };
     let mut restored = restored.install();
@@ -92,8 +88,7 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
     }
     let cancelled = Cancellation::default();
     assert!(cancelled.cancel());
-    assert!(load_candidates(vec![older], false, Some(dir.join("recovery")), &cancelled).is_err());
-    assert!(!dir.join("recovery").exists());
+    assert!(load_candidates(vec![older], &cancelled).is_err());
     std::fs::remove_dir_all(dir).unwrap();
 }
 

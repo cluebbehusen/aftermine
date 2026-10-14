@@ -99,7 +99,7 @@ impl ReportJob {
         }
     }
     pub(crate) fn open_folder(&mut self) -> Result<()> {
-        let root = crate::paths::recovery_dir().context("diagnostics folder unavailable")?;
+        let root = crate::paths::diagnostics_dir().context("diagnostics folder unavailable")?;
         self.begin("oxide-open-diagnostics", move || {
             std::fs::create_dir_all(&root)?;
             #[cfg(target_os = "macos")]

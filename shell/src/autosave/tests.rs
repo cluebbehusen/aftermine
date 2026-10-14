@@ -7,6 +7,7 @@ fn write_record(game: &mut Game, dir: &Path) -> Result<SaveOutcome, SaveError> {
     game.autosave_done = true;
     Ok(result)
 }
+
 fn write_named(game: &Game, name: &str, dir: &Path, saved_at: u64) -> Result<PathBuf, SaveError> {
     let mut job = SaveJob::capture(game, Some(name));
     job.dir = Some(dir.to_owned());
@@ -83,83 +84,6 @@ fn a_lan_match_leaves_only_a_watch_only_recording() {
     let record = oxide_kit::load_replay(&path).unwrap();
     assert_eq!(record.meta.kind.as_deref(), Some("match"));
     std::fs::remove_dir_all(dir).unwrap();
-}
-
-#[test]
-fn a_tick_zero_clean_exit_finishes_existing_recovery_without_writing_a_save() {
-    use oxide_kit::recovery::{RecoveryWriter, inspect, latest_diagnostic_record};
-    let root = scratch("zero-recovery");
-    let baseline = GameReplay::new(
-        oxide_sim::SIM_VERSION,
-        "test",
-        oxide_sim::Scenario::skirmish(),
-    );
-    let old = RecoveryWriter::start(root.clone(), baseline, 0, crate::build_identity()).unwrap();
-    old.prepared(0, &[]);
-    old.completed(1);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while old.status().durable_tick != 1 {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    let old_path = old.directory().to_owned();
-    drop(old);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::fs::File::open(old_path.join("lease"))
-        .unwrap()
-        .try_lock()
-        .is_err()
-    {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    for public_path in [true, false] {
-        // Hold startup past the save path's bounded wait for recovery.
-        let budget = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .open(root.join("budget.lock"))
-            .unwrap();
-        budget.lock().unwrap();
-        let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-        game.recovery_root = Some(root.clone());
-        game.start_recovery();
-        let directory = game.recovery.as_ref().unwrap().directory().to_owned();
-        let outcome = if public_path {
-            SaveJob::capture(&game, None).run()
-        } else {
-            write_record(&mut game, &root.join("saves"))
-        };
-        assert!(matches!(outcome, Ok(SaveOutcome::NothingToSave)));
-        let writer = game.recovery.as_ref().unwrap();
-        assert!(!writer.status().ready);
-        drop(budget);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        loop {
-            let status = writer.status();
-            assert!(status.error.is_none(), "{status:?}");
-            if status.clean {
-                break;
-            }
-            assert!(std::time::Instant::now() < deadline, "{status:?}");
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(inspect(&directory).unwrap().clean);
-        drop(game);
-        assert_eq!(latest_diagnostic_record(&root).unwrap().directory, old_path);
-    }
-    assert!(!root.join("saves").exists());
-    for entry in std::fs::read_dir(&root).unwrap().flatten() {
-        let lease = entry.path().join("lease");
-        if lease.exists() {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while std::fs::File::open(&lease).unwrap().try_lock().is_err() {
-                assert!(std::time::Instant::now() < deadline);
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
-    }
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

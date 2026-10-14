@@ -182,7 +182,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     };
     mark("run enter (first frame)");
     match oxide_kit::diagnostics::Monitor::start(
-        crate::paths::recovery_dir(),
+        crate::paths::diagnostics_dir(),
         crate::build_identity(),
     ) {
         Ok(monitor) => drop(monitor.install()),
@@ -225,11 +225,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         };
         Game::new(scenario)?
     };
-    game.recovery_root = crate::paths::recovery_dir();
-    if game.recovery_root.is_none() {
-        game.presentation
-            .toast("Recovery unavailable: no writable data folder is configured");
-    }
     game.clock.paused = args.paused;
     game.clock.speed = args.speed;
     mark("game built");
@@ -396,10 +391,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
                 || visible.paused(),
             minimized: input::reported_minimized(),
-            recording: visible.recording(),
         });
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
-        app.game.poll_recovery();
         let time = FrameTime::measure(get_frame_time());
         let first_pass = !std::mem::take(&mut rerun_pass);
         if first_pass {
@@ -860,13 +853,9 @@ impl Install {
 
 /// Carries session-level toggles (pause/speed/overlay) onto a fresh game.
 fn keep_flags(mut fresh: Game, old: &Game) -> Game {
-    if let Some(writer) = &old.recovery {
-        writer.finish(old.state.current_tick());
-    }
     fresh.clock.paused = old.clock.paused;
     fresh.clock.speed = old.clock.speed;
     fresh.presentation.overlay = old.presentation.overlay;
-    fresh.recovery_root.clone_from(&old.recovery_root);
     fresh
 }
 

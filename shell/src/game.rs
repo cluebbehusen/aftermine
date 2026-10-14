@@ -15,19 +15,6 @@ use oxide_sim::{
 };
 use std::{ops::Deref, sync::Arc};
 
-pub(crate) fn finish_recording(writer: &oxide_kit::recovery::RecoveryWriter, tick: u64) {
-    writer.finish(tick);
-    // Only the explicit leave/save path waits. A failed or slow writer
-    // leaves an interrupted record, even if the ordinary save landed.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while !writer.status().clean
-        && writer.status().error.is_none()
-        && std::time::Instant::now() < deadline
-    {
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
 /// Seconds per sim tick.
 pub const TICK_DT: f32 = 1.0 / TICKS_PER_SECOND as f32;
 /// Catch-up limit before returning to presentation. Supports the 64x speed cap
@@ -126,10 +113,6 @@ pub struct Game {
     bot_decision: Option<oxide_kit::bot_execution::PendingDecision>,
     /// Every command of the session, tick-stamped.
     pub recorder: GameReplay,
-    pub(crate) recovery_root: Option<std::path::PathBuf>,
-    pub(crate) recovery: Option<std::sync::Arc<oxide_kit::recovery::RecoveryWriter>>,
-    recovery_warned: bool,
-    pub(crate) recovery_source: Option<std::path::PathBuf>,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
     /// Whether the current session content is already autosaved; a new
@@ -174,17 +157,11 @@ impl Game {
             bot_decision,
             recorder,
             live_stats,
-            recovery,
             presentation,
             ..
         } = self;
         drop(presentation);
-        move || {
-            if let Some(writer) = &recovery {
-                finish_recording(writer, state.current_tick());
-            }
-            drop((state, bots, bot_decision, recorder, live_stats, recovery));
-        }
+        move || drop((state, bots, bot_decision, recorder, live_stats))
     }
 
     pub(crate) fn view(&self) -> Scene<'_> {
@@ -290,10 +267,6 @@ impl Game {
             recorder,
             pending: PendingCommands(Vec::new()),
             autosave_done: false,
-            recovery_root: None,
-            recovery: None,
-            recovery_warned: false,
-            recovery_source: None,
             end_stats: None,
             live_stats,
             concede_stats: None,
@@ -392,81 +365,6 @@ impl Game {
         oxide_kit::diagnostics::stage(stage, self.state.current_tick())
     }
 
-    /// Starts the crash-recovery journal when a root is configured. A
-    /// networked session never journals: its batches come from the host.
-    pub(crate) fn start_recovery(&mut self) {
-        if self.net.is_none()
-            && self.recovery.is_none()
-            && !self.recovery_warned
-            && let Some(root) = &self.recovery_root
-        {
-            let source = self.recovery_source.take();
-            let start = (|| -> Result<_> {
-                if self.recorder.origin.is_some() {
-                    if let Some(source) = source {
-                        let checkpoint = oxide_kit::recovery::inspect(&source)?
-                            .checkpoint
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("missing recovered controller origin")
-                            })?;
-                        oxide_kit::recovery::RecoveryWriter::start_recovered_checkpoint(
-                            root.clone(),
-                            self.recorder.clone(),
-                            self.state.current_tick(),
-                            checkpoint,
-                            Some(source),
-                            crate::build_identity(),
-                        )
-                    } else {
-                        let checkpoint = oxide_kit::checkpoint::SessionCheckpoint::capture(
-                            &self.scenario,
-                            &self.state,
-                            &self.bots,
-                            &self.pending,
-                            Some(&self.live_stats),
-                        )?;
-                        oxide_kit::recovery::RecoveryWriter::start_checkpoint(
-                            root.clone(),
-                            checkpoint,
-                            crate::build_identity(),
-                        )
-                    }
-                } else {
-                    oxide_kit::recovery::RecoveryWriter::start_recovered(
-                        root.clone(),
-                        self.recorder.clone(),
-                        self.state.current_tick(),
-                        source,
-                        crate::build_identity(),
-                    )
-                }
-            })();
-            match start {
-                Ok(writer) => {
-                    let writer = std::sync::Arc::new(writer);
-                    oxide_kit::diagnostics::attach(&writer);
-                    self.recovery = Some(writer);
-                }
-                Err(error) => {
-                    self.recovery_warned = true;
-                    self.presentation
-                        .toast(format!("Recovery unavailable: {error}"));
-                }
-            }
-        }
-    }
-
-    pub(crate) fn poll_recovery(&mut self) {
-        if !self.recovery_warned
-            && let Some(writer) = &self.recovery
-            && let Some(error) = writer.status().error
-        {
-            self.recovery_warned = true;
-            self.presentation
-                .toast(format!("Recovery stopped: {error}"));
-        }
-    }
-
     /// Runs exactly one tick: bots think, staged commands drain, everything
     /// is recorded, and presentation caches update. Outside networked
     /// sessions, which execute supplied batches, this owns the live world's
@@ -476,7 +374,6 @@ impl Game {
             self.net.is_none(),
             "networked sessions execute supplied batches"
         );
-        self.start_recovery();
         let mut commands = std::mem::take(&mut self.pending.0);
         let staged = commands.len();
         commands.extend(self.bot_commands());
@@ -508,18 +405,12 @@ impl Game {
             self.recorder
                 .record(self.state.current_tick(), command.clone());
         }
-        if let Some(recovery) = &self.recovery {
-            recovery.prepared(self.state.current_tick(), commands);
-        }
         let sim_stage = self.diagnostic_stage(Stage::Simulation);
         let report = Arc::get_mut(&mut self.state.0)
             .expect("bot decision retained the world after collection")
             .tick(commands);
         drop(sim_stage);
         oxide_kit::controller::record_events(&mut self.bots, &report);
-        if let Some(recovery) = &self.recovery {
-            recovery.completed(self.state.current_tick());
-        }
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.presentation
             .boundary_fog

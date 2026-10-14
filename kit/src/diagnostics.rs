@@ -8,12 +8,11 @@
 //! healthy. Diagnostics are observational and never become replay input.
 
 use crate::build::BuildIdentity;
-use crate::recovery::RecoveryWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::{
     cell::Cell,
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard, OnceLock, TryLockError,
@@ -23,7 +22,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-/// Incident log name, inside a recording directory or at the recovery root.
+/// Incident log name inside the diagnostics folder.
 pub const INCIDENTS: &str = "incidents.json";
 const STALL: Duration = Duration::from_secs(5);
 const RECENT_SECONDS: u64 = 30;
@@ -93,7 +92,7 @@ impl Stage {
 
 /// Display context sampled once per frame and attached to incidents.
 #[derive(Clone, Copy)]
-pub struct FrameContext<'a> {
+pub struct FrameContext {
     /// Visible screen's stable name.
     pub screen: &'static str,
     /// Visible session's current tick.
@@ -114,82 +113,6 @@ pub struct FrameContext<'a> {
     pub paused: bool,
     /// Last reported native minimize state; `None` means unknown.
     pub minimized: Option<bool>,
-    /// The visible live match's recording. Incidents go to its directory while
-    /// it is open, and to the recovery root otherwise.
-    pub recording: Option<&'a Arc<RecoveryWriter>>,
-}
-
-/// How a recording's session ended, from its journal and incident log.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Ending {
-    /// The journal closed cleanly.
-    Clean,
-    /// A live writer still holds the recording.
-    InProgress,
-    /// The last incident was a panic.
-    Panic,
-    /// A recorded stall never resumed.
-    Froze,
-    /// Only the main thread's wait for its next frame never resumed: the OS
-    /// suspended or hid the app, or presentation hung.
-    AwaitingFrame,
-    /// No clean close, panic or unresolved stall: a native crash, a kill or
-    /// power loss.
-    Abnormal,
-}
-
-/// Classify a recording from its journal state, its incident log, and any
-/// incidents for it that reached `root`'s log before its directory was ready.
-pub fn ending(directory: &Path, root: Option<&Path>, clean: bool, active: bool) -> Ending {
-    if clean {
-        return Ending::Clean;
-    }
-    if active {
-        return Ending::InProgress;
-    }
-    let session = directory.file_name().and_then(|name| name.to_str());
-    let mut incidents: Vec<Value> = read_log(&directory.join(INCIDENTS))
-        .map(|log| log.incidents)
-        .unwrap_or_default();
-    incidents.extend(
-        root.and_then(|root| read_log(&root.join(INCIDENTS)))
-            .map(|log| log.incidents)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|incident| session.is_some() && incident["session"].as_str() == session),
-    );
-    incidents.sort_by_key(|incident| incident["uptime_ms"].as_u64().unwrap_or(0));
-    concluding(&incidents)
-}
-
-fn concluding(incidents: &[Value]) -> Ending {
-    if incidents.last().is_some_and(|last| last["kind"] == "panic") {
-        return Ending::Panic;
-    }
-    let mut open = BTreeMap::new();
-    for incident in incidents {
-        let thread = incident["thread"].as_str().unwrap_or_default();
-        match incident["kind"].as_str() {
-            Some("stall") => {
-                open.insert(thread, incident["stage"].as_str());
-            }
-            Some("resumed") => {
-                open.remove(thread);
-            }
-            _ => {}
-        }
-    }
-    if open.is_empty() {
-        Ending::Abnormal
-    } else if open
-        .iter()
-        .all(|(thread, stage)| *thread == "main" && *stage == Some(Stage::Present.name()))
-    {
-        Ending::AwaitingFrame
-    } else {
-        Ending::Froze
-    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -363,7 +286,6 @@ struct Inner {
     seats: [Seat; SEATS],
     minimized: AtomicBool,
     recent: Mutex<Recent>,
-    target: Mutex<Option<Arc<RecoveryWriter>>>,
     writing: Mutex<()>,
     stop: AtomicBool,
 }
@@ -398,22 +320,13 @@ impl Inner {
         previous
     }
 
-    fn frame(&self, context: FrameContext<'_>) {
+    fn frame(&self, context: FrameContext) {
         let now = self.micros();
         self.close_segment(now);
         let spent = std::array::from_fn(|index| self.main.spent[index].swap(0, Ordering::Relaxed));
         self.main.tick.store(context.tick, Ordering::Relaxed);
         self.main.progress.store(now, Ordering::Release);
         self.main.armed.store(true, Ordering::Release);
-        if let Ok(mut target) = self.target.lock() {
-            let unchanged = match (target.as_ref(), context.recording) {
-                (Some(current), Some(next)) => Arc::ptr_eq(current, next),
-                (current, next) => current.is_none() && next.is_none(),
-            };
-            if !unchanged {
-                *target = context.recording.cloned();
-            }
-        }
         if let Ok(mut recent) = self.recent.lock() {
             recent.context = Some(json!({
                 "screen": context.screen,
@@ -486,32 +399,16 @@ impl Inner {
         Value::Object(incident)
     }
 
-    /// Write to the open recording's directory, falling back to the recovery
-    /// root. A recording whose directory is not ready yet only names itself, so
-    /// its ending can still find the incident.
-    fn record(&self, mut incident: Value) {
+    /// Append to the diagnostics folder's incident log, if there is one.
+    fn record(&self, incident: Value) {
         let nested = Writing::enter();
         // A panic while this thread writes re-enters holding the lock, and the
         // interrupted write never finishes.
         let _writing = (!nested.0).then(|| lock_briefly_for(&self.writing, WRITE_WAIT));
-        let mut recording = None;
-        if let Some(writer) = lock_briefly(&self.target).and_then(|target| target.clone()) {
-            let status = writer.status();
-            if !status.clean {
-                let session = writer
-                    .directory()
-                    .file_name()
-                    .and_then(|name| name.to_str());
-                incident["session"] = json!(session);
-                recording = status.ready.then(|| writer.directory().to_owned());
-            }
-        }
-        for directory in recording.into_iter().chain(self.root.clone()) {
-            if std::fs::create_dir_all(&directory).is_ok()
-                && append(&directory, incident.clone()).is_ok()
-            {
-                return;
-            }
+        if let Some(root) = &self.root
+            && std::fs::create_dir_all(root).is_ok()
+        {
+            let _ = append(root, incident);
         }
     }
 
@@ -688,7 +585,7 @@ pub struct Monitor {
 
 impl Monitor {
     /// Start monitoring with the calling thread as the main thread. Incidents
-    /// outside an open recording go to `root`; without one they are not kept.
+    /// go to `root`; without one they are not kept.
     pub fn start(root: Option<PathBuf>, build: BuildIdentity) -> std::io::Result<Self> {
         Self::start_with(root, build, STALL)
     }
@@ -708,7 +605,6 @@ impl Monitor {
             seats: std::array::from_fn(|_| Seat::default()),
             minimized: AtomicBool::new(false),
             recent: Mutex::default(),
-            target: Mutex::default(),
             writing: Mutex::default(),
             stop: AtomicBool::new(false),
         });
@@ -784,19 +680,9 @@ impl Monitor {
 
     /// Close a main-thread frame: fold its stage times into recent timing and
     /// sample display context. Other threads are ignored.
-    pub fn frame(&self, context: FrameContext<'_>) {
+    pub fn frame(&self, context: FrameContext) {
         if self.inner.on_main() {
             self.inner.frame(context);
-        }
-    }
-
-    /// Send incidents to a recording the main thread just started, before the
-    /// next frame samples it.
-    pub fn attach(&self, recording: &Arc<RecoveryWriter>) {
-        if self.inner.on_main()
-            && let Ok(mut target) = self.inner.target.lock()
-        {
-            *target = Some(recording.clone());
         }
     }
 
@@ -833,16 +719,9 @@ pub fn seat(seat: u8, tick: u64) -> Option<SeatGuard<'static>> {
 }
 
 /// Close a frame on the installed monitor.
-pub fn frame(context: FrameContext<'_>) {
+pub fn frame(context: FrameContext) {
     if let Some(monitor) = PROCESS.get() {
         monitor.frame(context);
-    }
-}
-
-/// Point the installed monitor at a recording the main thread just started.
-pub fn attach(recording: &Arc<RecoveryWriter>) {
-    if let Some(monitor) = PROCESS.get() {
-        monitor.attach(recording);
     }
 }
 
