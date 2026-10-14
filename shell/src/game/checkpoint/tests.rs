@@ -92,6 +92,17 @@ fn checkpoint_recovery_restores_the_shell_without_replaying_the_opening() {
 }
 
 #[test]
+fn a_save_capture_leaves_the_live_world_free_to_tick() {
+    let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
+    game.advance_ticks(5);
+    let capture = game.capture_save();
+    game.do_tick();
+    let saved = capture.checkpoint().unwrap().restore().unwrap().install();
+    assert_eq!(saved.state.current_tick(), 5);
+    assert_eq!(game.state.current_tick(), 6);
+}
+
+#[test]
 fn checkpoint_preserves_pending_input_memory_and_statistics() {
     let mut scenario = Scenario::skirmish();
     scenario.players[1].bot = true;

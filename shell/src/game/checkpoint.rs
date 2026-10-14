@@ -60,9 +60,11 @@ fn joined_seats(scenario: &Scenario, host: PlayerId) -> impl Iterator<Item = Pla
         .filter(move |&seat| seat != host)
 }
 
+/// Everything a save needs, detached from the live session so the match can
+/// keep ticking while a worker encodes it.
 pub(crate) struct SaveCapture {
     scenario: Scenario,
-    state: Arc<State>,
+    state: State,
     bots: Vec<SeatController>,
     pending: Vec<oxide_sim::PlayerCommand>,
     stats: oxide_kit::stats::LiveMatchStats,
@@ -77,7 +79,7 @@ impl Game {
     pub(crate) fn capture_save(&self) -> SaveCapture {
         SaveCapture {
             scenario: self.scenario.clone(),
-            state: Arc::clone(&self.state.0),
+            state: State::clone(&self.state.0),
             bots: self.bots.clone(),
             pending: self.pending.to_vec(),
             stats: self.live_stats.clone(),
