@@ -374,6 +374,27 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
 }
 
 #[test]
+fn an_order_the_bank_cannot_pay_is_refused_with_its_price() {
+    let cost = BuildingKind::Spire.magazine().unwrap().round_cost;
+    let game = fixture(BuildingKind::Spire, &[0], cost - 1);
+    let selected = SelectedBuildings::inspect(&game.view());
+    let expected = format!("needs {cost} scrap");
+    assert_eq!(selected.round_order(), Err(expected.clone()));
+    let order = selected
+        .cards(&BindingMap::classic())
+        .into_iter()
+        .find(|card| card.title == "Order warhead")
+        .unwrap();
+    assert!(!order.enabled);
+    assert_eq!(order.why, Some(expected));
+    let funded = fixture(BuildingKind::Spire, &[0], cost);
+    assert_eq!(
+        SelectedBuildings::inspect(&funded.view()).round_order(),
+        Ok(funded.presentation.selection.buildings[0])
+    );
+}
+
+#[test]
 fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
     let mut game = fixture(BuildingKind::Lattice, &[0, 0], 2000);
     // Both start with autofill on.

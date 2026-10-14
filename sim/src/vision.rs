@@ -433,7 +433,7 @@ impl Vision {
                 in_view,
             };
             if track.tracked() && held < crate::stats::WARHEAD_TRACK_TICKS {
-                revealed |= self.remember_silo(warhead);
+                revealed |= self.remember_silo(state, warhead);
             }
             self.warheads.push(track);
         }
@@ -444,32 +444,48 @@ impl Vision {
     }
 
     /// Records the Spire `warhead` launched from, unless the team already
-    /// remembers it. Returns whether it added a memory.
-    fn remember_silo(&mut self, warhead: &crate::state::Warhead) -> bool {
+    /// remembers it or has its ground in sight, where memory reconciliation
+    /// has just recorded what stands there. Returns whether it added a
+    /// memory.
+    ///
+    /// The launch proves the Spire stood there, so every remembered
+    /// building its footprint overlaps is gone, except a concealed charge
+    /// of a seat hostile to the silo's owner: a hostile building may stand
+    /// over one.
+    fn remember_silo(&mut self, state: &State, warhead: &crate::state::Warhead) -> bool {
         let kind = BuildingKind::Spire;
         let (width, height) = kind.size();
-        let anchor = TilePos::containing(
-            warhead.launch
-                - chassis::fx::Vec2Fx::new(
-                    chassis::fx::Fx::from_num(width) / 2,
-                    chassis::fx::Fx::from_num(height) / 2,
-                ),
-        );
-        if self
-            .ghosts
-            .iter()
-            .any(|g| g.kind == kind && g.owner == warhead.player && g.anchor == anchor)
-        {
-            return false;
-        }
-        self.ghosts.push(GhostBuilding {
+        let silo = GhostBuilding {
             kind,
             owner: warhead.player,
-            anchor,
+            anchor: TilePos::containing(
+                warhead.launch
+                    - chassis::fx::Vec2Fx::new(
+                        chassis::fx::Fx::from_num(width) / 2,
+                        chassis::fx::Fx::from_num(height) / 2,
+                    ),
+            ),
             hp: kind.base_stats().max_hp,
             built: true,
             tier: 0,
+        };
+        if silo.footprint().any(|t| self.visible(t))
+            || self
+                .ghosts
+                .iter()
+                .any(|g| g.kind == kind && g.owner == silo.owner && g.anchor == silo.anchor)
+        {
+            return false;
+        }
+        let covered = |t: TilePos| {
+            (silo.anchor.x..silo.anchor.x + width).contains(&t.x)
+                && (silo.anchor.y..silo.anchor.y + height).contains(&t.y)
+        };
+        self.ghosts.retain(|g| {
+            (g.kind.is_stealthy() && state.hostile(g.owner, silo.owner))
+                || !g.footprint().any(covered)
         });
+        self.ghosts.push(silo);
         true
     }
 

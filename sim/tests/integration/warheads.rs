@@ -791,6 +791,77 @@ fn three_warheads_saturate_a_two_round_lattice() {
 }
 
 #[test]
+fn a_battery_between_two_seats_warheads_stops_the_one_its_frame_ranks_first() {
+    // One round against equal flights from opposite sides into the
+    // battery's centre, which tie on every measure of the pair but where
+    // each stands. Swapping the seats that fire keeps the stop on the west.
+    let stopped = |west: u8| {
+        let east = 3 - west;
+        let mut scenario = open_arena_with(WIDTH, HEIGHT, vec![], |rows| rows[1][36] = '3');
+        scenario.players.push(PlayerSpec {
+            name: "North".into(),
+            team: None,
+            scrap: 0,
+            bot: false,
+            bot_config: None,
+        });
+        let mut spires = [(west, (4, 12)), (east, (66, 14))];
+        spires.sort_unstable();
+        scenario.buildings = spires
+            .iter()
+            .map(|&(seat, (x, y))| building(seat, BuildingKind::Spire, x, y))
+            .chain([
+                building(0, BuildingKind::Lattice, 35, 13),
+                building(0, BuildingKind::Array, 12, 12),
+                building(0, BuildingKind::Array, 58, 14),
+            ])
+            .collect();
+        let mut state = loaded(&scenario.build().unwrap());
+        let mut d = serde_json::to_value(&state).unwrap();
+        for (b, value) in state
+            .buildings()
+            .iter()
+            .zip(d["buildings"].as_array_mut().unwrap())
+        {
+            if b.kind == BuildingKind::Lattice {
+                value["magazine"]["loaded"] = json!(1);
+            }
+        }
+        state = serde_json::from_value(d).unwrap();
+        let mut commands = vec![
+            cmd(
+                west,
+                launch(id(&state, west, BuildingKind::Spire), TilePos::new(36, 14)),
+            ),
+            cmd(
+                east,
+                launch(id(&state, east, BuildingKind::Spire), TilePos::new(35, 13)),
+            ),
+        ];
+        let mut launches = Vec::new();
+        let mut stops = Vec::new();
+        for _ in 0..600 {
+            let report = state.tick(&std::mem::take(&mut commands));
+            for event in &report.events {
+                match event {
+                    Event::WarheadLaunched { .. } => launches.push(report.tick),
+                    Event::WarheadIntercepted { player, .. } => stops.push(*player),
+                    _ => {}
+                }
+            }
+        }
+        assert!(
+            launches.len() == 2 && launches[0] == launches[1],
+            "both launch together: {launches:?}"
+        );
+        assert_eq!(stops.len(), 1);
+        stops[0]
+    };
+    assert_eq!(stopped(1), PlayerId(1));
+    assert_eq!(stopped(2), PlayerId(2));
+}
+
+#[test]
 fn a_decided_match_drops_its_warheads_and_tracks() {
     let mut state = loaded(
         &field(
@@ -1139,6 +1210,66 @@ fn a_completed_track_reveals_the_silo_it_came_from() {
         Some(ghost),
         "remembered after the warhead lands"
     );
+}
+
+#[test]
+fn a_revealed_silo_replaces_the_memories_its_footprint_overlaps() {
+    // East last saw a West Turret where the Spire now stands, a West Array
+    // beside it, and a North charge under it, which a hostile building may
+    // stand over.
+    let mut scenario = open_arena_with(WIDTH, HEIGHT, vec![], |rows| rows[1][36] = '3');
+    scenario.players.push(PlayerSpec {
+        name: "North".into(),
+        team: None,
+        scrap: 0,
+        bot: false,
+        bot_config: None,
+    });
+    scenario.buildings = vec![
+        building(0, BuildingKind::Spire, SPIRE.0, SPIRE.1),
+        building(1, BuildingKind::Array, 20, 2),
+        building(2, BuildingKind::Array, 36, 24),
+    ];
+    let mut state = loaded(&scenario.build().unwrap());
+    let memory = |kind: BuildingKind, owner: u8, x: i32, y: i32| oxide_sim::GhostBuilding {
+        kind,
+        owner: PlayerId(owner),
+        anchor: TilePos::new(x, y),
+        hp: kind.base_stats().max_hp,
+        built: true,
+        tier: 0,
+    };
+    let mut d = serde_json::to_value(&state).unwrap();
+    let mut stale = vec![
+        memory(BuildingKind::ScuttleCharge, 2, SPIRE.0, SPIRE.1),
+        memory(BuildingKind::Turret, 0, SPIRE.0 + 1, SPIRE.1 + 1),
+        memory(BuildingKind::Array, 0, SPIRE.0 + 4, SPIRE.1),
+    ];
+    stale.sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner));
+    d["vision"][1]["ghosts"] = serde_json::to_value(&stale).unwrap();
+    state = serde_json::from_value(d).unwrap();
+    let spire = id(&state, 0, BuildingKind::Spire);
+    state.tick(&[cmd(0, launch(spire, TARGET))]);
+    run_until(&mut state, 200, |s, _| {
+        s.vision(PlayerId(1))
+            .warheads()
+            .first()
+            .is_some_and(oxide_sim::vision::WarheadTrack::tracked)
+    });
+    let kinds: Vec<_> = state
+        .vision(PlayerId(1))
+        .ghosts()
+        .iter()
+        .map(|g| (g.kind, g.owner))
+        .collect();
+    assert_eq!(kinds.len(), 3, "{kinds:?}");
+    for kept in [
+        (BuildingKind::ScuttleCharge, PlayerId(2)),
+        (BuildingKind::Spire, PlayerId(0)),
+        (BuildingKind::Array, PlayerId(0)),
+    ] {
+        assert!(kinds.contains(&kept), "{kinds:?}");
+    }
 }
 
 #[test]

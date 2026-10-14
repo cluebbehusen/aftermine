@@ -141,9 +141,11 @@ pub(super) fn dispatch_action(
         }
         Action::OrderRound => {
             let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
-            match selected.round_recipient() {
-                Some(building) => game.issue(Command::OrderRound { building }),
-                None => game.presentation.toast("Magazine is full"),
+            match selected.round_order() {
+                Ok(building) => game.issue(Command::OrderRound { building }),
+                Err(why) => game
+                    .presentation
+                    .toast(crate::typography::sentence_case(&why)),
             }
         }
         Action::CancelRound => {

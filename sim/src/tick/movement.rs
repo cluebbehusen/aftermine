@@ -720,7 +720,7 @@ const STACKED_DIRS: [Vec2Fx; 8] = [
     Vec2Fx::new(Fx::lit("0.7071"), Fx::lit("-0.7071")),
 ];
 
-pub(super) fn uses_rotated_map_frame(state: &State, pos: Vec2Fx) -> bool {
+pub(crate) fn uses_rotated_map_frame(state: &State, pos: Vec2Fx) -> bool {
     let twice_x = pos.x + pos.x;
     let twice_y = pos.y + pos.y;
     let map_width = Fx::from_num(state.map.width());

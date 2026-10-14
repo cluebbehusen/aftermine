@@ -165,6 +165,22 @@ impl SelectedBuildings {
             .map(|(_, id)| id)
     }
 
+    /// The selected magazine an order fills, or why the order cannot go.
+    pub fn round_order(&self) -> Result<BuildingId, String> {
+        let building = self
+            .round_recipient()
+            .ok_or_else(|| "magazine is full".to_string())?;
+        let cost = self
+            .magazines()
+            .first()
+            .and_then(|b| b.kind.magazine())
+            .map_or(0, |stats| stats.round_cost);
+        if self.scrap < cost {
+            return Err(format!("needs {cost} scrap"));
+        }
+        Ok(building)
+    }
+
     /// The selected magazine whose latest paid round a cancel refunds.
     pub fn round_to_cancel(&self) -> Option<BuildingId> {
         self.magazines()
@@ -217,7 +233,7 @@ impl SelectedBuildings {
                 progress: None,
             });
         }
-        let recipient = self.round_recipient();
+        let order = self.round_order();
         let ordering = magazines
             .iter()
             .filter_map(|b| b.magazine)
@@ -228,8 +244,8 @@ impl SelectedBuildings {
             cost: Some(stats.round_cost),
             hotkey: bindings.labels(Action::OrderRound),
             action: CardAction::Dispatch(Action::OrderRound),
-            enabled: recipient.is_some(),
-            why: recipient.is_none().then(|| "magazine is full".into()),
+            enabled: order.is_ok(),
+            why: order.err(),
             desc: vec![format!(
                 "Paid now; built one at a time in {}.",
                 tick_time_label(stats.round_ticks)

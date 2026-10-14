@@ -277,10 +277,12 @@ pub(crate) struct Engagement {
 ///
 /// A flight ends inside a convex disc, so a warhead that enters stays
 /// inside until it lands. Every key after the entry tick measures the pair
-/// itself, so a half-turned world resolves the half-turned way; list order
-/// breaks only exact coincidences.
+/// itself, so a half-turned world resolves the half-turned way. Remaining
+/// ties compare where the warhead stands in the battery's own map frame, as
+/// point defense does, so neither a seat nor a list position decides; list
+/// order breaks only exact coincidences.
 pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> {
-    let batteries: Vec<(usize, &Building, Vec2Fx, Fx)> = state
+    let batteries: Vec<(usize, &Building, Vec2Fx, Fx, bool)> = state
         .buildings
         .iter()
         .enumerate()
@@ -292,12 +294,16 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
                     Scope::Team(viewer) => !state.hostile(viewer, b.player),
                     Scope::Now | Scope::Every => true,
                 })
-            .then(|| (index, b, b.center(), ring * ring))
+            .then(|| {
+                let centre = b.center();
+                let rotated = crate::tick::uses_rotated_map_frame(state, centre);
+                (index, b, centre, ring * ring, rotated)
+            })
         })
         .collect();
     let mut pairs = Vec::new();
     for (w, warhead) in state.warheads.iter().enumerate() {
-        for (slot, &(_, b, centre, ring_sq)) in batteries.iter().enumerate() {
+        for (slot, &(_, b, centre, ring_sq, rotated)) in batteries.iter().enumerate() {
             let inside = |p: Vec2Fx| p.dist_sq(centre) <= ring_sq;
             if !state.hostile(warhead.player, b.player) || !inside(warhead.impact) {
                 continue;
@@ -323,6 +329,7 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
             let path = warhead.impact - warhead.launch;
             let offset = centre - at;
             let side = (path.x * offset.y - path.y * offset.x).signum();
+            let framed = if rotated { offset } else { -offset };
             pairs.push((
                 (
                     fire,
@@ -331,6 +338,8 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
                     at.dist_sq(centre),
                     warhead.impact.dist_sq(centre),
                     side,
+                    framed.x,
+                    framed.y,
                     w,
                     slot,
                 ),
@@ -341,11 +350,11 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
     pairs.sort_unstable_by_key(|(key, _)| *key);
     let mut rounds: Vec<u8> = batteries
         .iter()
-        .map(|(_, b, _, _)| b.magazine.map_or(0, |m| m.loaded))
+        .map(|(_, b, _, _, _)| b.magazine.map_or(0, |m| m.loaded))
         .collect();
     let mut stopped = vec![false; state.warheads.len()];
     let mut engagements = Vec::new();
-    for ((fire, _, _, _, _, _, w, slot), at) in pairs {
+    for ((fire, _, _, _, _, _, _, _, w, slot), at) in pairs {
         if stopped[w] || rounds[slot] == 0 {
             continue;
         }

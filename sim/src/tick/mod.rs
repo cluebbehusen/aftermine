@@ -11,6 +11,7 @@ pub(crate) use crate::geometry::{
     group_spread_scan_reversed, rect_adjacent_tiles, rect_approach_key_from,
     rect_approach_origin_for_map, spawn_doorstep_key,
 };
+pub(crate) use movement::uses_rotated_map_frame;
 mod aircraft_crashes;
 mod brain;
 mod charges;
