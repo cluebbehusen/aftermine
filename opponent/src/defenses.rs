@@ -984,19 +984,28 @@ impl<'a> Guard<'a> {
         for (stake, _) in &mut open {
             *stake = *stake * share / SPIRE_SIGNALS;
         }
-        let mut sites = Vec::new();
-        // Neighbouring members offer many of the same anchors.
-        let mut offered = std::collections::BTreeSet::new();
-        for asset in self.assets.iter().filter(|asset| {
+        let aimed = |(anchor, (width, height)): &(TilePos, (i32, i32))| {
+            let (x, y) = (2 * i64::from(anchor.x), 2 * i64::from(anchor.y));
             open.iter().any(|(_, aim)| {
-                asset.members.iter().any(|(anchor, (width, height))| {
-                    let (x, y) = (2 * i64::from(anchor.x), 2 * i64::from(anchor.y));
-                    (x..x + 2 * i64::from(*width)).contains(&aim.0)
-                        && (y..y + 2 * i64::from(*height)).contains(&aim.1)
-                })
+                (x..x + 2 * i64::from(*width)).contains(&aim.0)
+                    && (y..y + 2 * i64::from(*height)).contains(&aim.1)
             })
-        }) {
-            for (member, footprint) in &asset.members {
+        };
+        // The ring covers an aim from anywhere beside the building it falls
+        // on, so the search starts there, and widens to the rest of that
+        // base only when nothing beside it can be placed.
+        let members: Vec<&(TilePos, (i32, i32))> = self
+            .assets
+            .iter()
+            .filter(|asset| asset.members.iter().any(aimed))
+            .flat_map(|asset| &asset.members)
+            .collect();
+        let (near, rest): (Vec<_>, Vec<_>) = members.into_iter().partition(|member| aimed(member));
+        let site_among = |members: &[&(TilePos, (i32, i32))]| {
+            let mut sites = Vec::new();
+            // Neighbouring members offer many of the same anchors.
+            let mut offered = std::collections::BTreeSet::new();
+            for (member, footprint) in members {
                 for anchor in sites_around(*member, *footprint, kind.size()) {
                     if !offered.insert(anchor) {
                         continue;
@@ -1012,8 +1021,9 @@ impl<'a> Guard<'a> {
                     }
                 }
             }
-        }
-        first_placeable(sites, |anchor| self.placeable(kind, anchor))
+            first_placeable(sites, |anchor| self.placeable(kind, anchor))
+        };
+        site_among(&near).or_else(|| site_among(&rest))
     }
 
     /// Whether `kind` may go at `anchor` as far as the seat knows, on ground
