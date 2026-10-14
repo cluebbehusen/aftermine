@@ -1,7 +1,9 @@
 //! Map-audit gates: every shipped scenario must keep its pace label, spawn
-//! fairness, artillery pressure, and mirrored authoring, as measured by
-//! `driver map-audit`. Terrain on existing maps is frozen (hash fixtures
-//! move only by addition), so these gates bind labels and new maps.
+//! fairness, artillery pressure, passage widths, and mirrored authoring, as
+//! measured by `driver map-audit`.
+//!
+//! Set `OXIDE_MAP_GATES_DIR` to a directory of drafts, relative to the
+//! repository root, to hold them to the same gates before promotion.
 
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
@@ -13,7 +15,10 @@ use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
 
 fn shipped() -> Vec<(String, Scenario)> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
+    let drafts = std::env::var("OXIDE_MAP_GATES_DIR").ok();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(drafts.as_deref().unwrap_or("scenarios"));
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir).expect("scenarios dir") {
         let path = entry.expect("dir entry").path();
@@ -28,7 +33,10 @@ fn shipped() -> Vec<(String, Scenario)> {
         out.push((name, Scenario::load(&path).expect("shipped maps load")));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
-    assert!(out.len() >= 10, "the shipped roster is present");
+    assert!(
+        drafts.is_some() || out.len() >= 10,
+        "the shipped roster is present"
+    );
     out
 }
 
@@ -151,6 +159,27 @@ fn routes_connect_and_pace_labels_hold() {
                 "{name}: pace '{pace}' promises first contact in {band:?}, measured {min_effective}"
             );
         }
+    }
+}
+
+#[test]
+fn trafficked_passages_are_at_least_three_tiles_wide() {
+    // Groups crowd and even one unit reads badly squeezing through a gap a
+    // tile or two wide, and an experimental needs three tiles to pass. The
+    // audit counts only ground where hostile seats meet, so islands keep
+    // their authored shape.
+    for (name, scenario) in shipped() {
+        let report = audit(&scenario).expect("audit builds");
+        let spots: Vec<String> = report
+            .narrow_passages
+            .iter()
+            .map(|p| format!("({},{})..({},{})", p.min.0, p.min.1, p.max.0, p.max.1))
+            .collect();
+        assert!(
+            spots.is_empty(),
+            "{name}: traffic squeezes through passages under three tiles wide at {}",
+            spots.join(", ")
+        );
     }
 }
 

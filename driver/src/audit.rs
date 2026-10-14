@@ -11,6 +11,10 @@ use oxide_sim::{Scenario, State};
 use serde::Serialize;
 use std::collections::BinaryHeap;
 
+mod passages;
+
+pub use passages::NarrowPassage;
+
 /// One seat's room and spacing.
 #[derive(Debug, Serialize)]
 pub struct SeatAudit {
@@ -78,6 +82,11 @@ pub struct MapAudit {
     pub seats: Vec<SeatAudit>,
     /// Every cross-team Foundry pair.
     pub routes: Vec<RouteAudit>,
+    /// Trafficked passages narrower than three tiles: ground a 3x3 body
+    /// cannot pass that some shortest route between Foundries, Extractor
+    /// frames or starting units crosses, on ground where hostile seats
+    /// meet.
+    pub narrow_passages: Vec<NarrowPassage>,
 }
 
 /// Longest artillery reach, read from the Bombard, Avalanche and Bastion
@@ -437,6 +446,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         scrap_total,
         seats,
         routes,
+        narrow_passages: passages::narrow_passages(&state),
     })
 }
 
@@ -483,6 +493,19 @@ impl MapAudit {
                     .map_or("-".into(), |p| format!("{:.0}%", p * 100.0)),
             );
         }
+        let _ = writeln!(
+            out,
+            "  narrow passages: {}",
+            if self.narrow_passages.is_empty() {
+                "none".into()
+            } else {
+                self.narrow_passages
+                    .iter()
+                    .map(|p| format!("{},{}..{},{}", p.min.0, p.min.1, p.max.0, p.max.1))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+        );
         out
     }
 }

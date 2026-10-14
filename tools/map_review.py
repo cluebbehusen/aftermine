@@ -148,6 +148,8 @@ def main() -> None:
             for key in ("free_tiles", "nodes"):
                 if key in audit:
                     stats[key.replace("_", " ")] = audit[key]
+            if "narrow_passages" in audit:
+                stats["narrow passages"] = len(audit["narrow_passages"]) or "none"
 
         cards.append(review_card(draft.stem, meta, stats, png))
 

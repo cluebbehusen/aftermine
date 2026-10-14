@@ -143,7 +143,8 @@ dirty status. Source archives report unknown provenance.
   and ranks the costliest windows, to choose where to profile.
   `bot-cost --save-replay` records a timed workload for both.
 - `audit` (the `map-audit` command) measures map geometry: room per seat, route
-  lengths, resources, and artillery pressure.
+  lengths, resources, artillery pressure, and trafficked passages narrower than
+  three tiles.
 - `auto`, `smoke`, `shots`, and `profile` exercise the real shell where a
   headless run is not enough.
 - `ios` (aliased as `cargo ios`) builds, installs, and launches the iPad app on
