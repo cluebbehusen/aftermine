@@ -231,7 +231,7 @@ fn run_without_bots_is_quiet_but_valid() {
         &Scenario::skirmish(),
         100,
         false,
-        Some(&oxide_kit::recovery::BuildIdentity::default()),
+        Some(&oxide_kit::build::BuildIdentity::default()),
     )
     .unwrap();
     let replay = outcome.replay.unwrap();

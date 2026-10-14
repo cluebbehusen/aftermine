@@ -2,7 +2,7 @@ use super::*;
 use crate::game::Game;
 use chassis::grid::as_index;
 use macroquad::prelude::vec2;
-use oxide_kit::recovery::BuildIdentity;
+use oxide_kit::build::BuildIdentity;
 use oxide_sim::{Command, PlayerCommand, Scenario};
 
 #[test]

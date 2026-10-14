@@ -2,6 +2,7 @@
 
 pub mod bench;
 pub mod bot_execution;
+pub mod build;
 pub mod checkpoint;
 pub mod controller;
 pub mod perceptual;

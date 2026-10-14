@@ -86,7 +86,7 @@ fn snapshots_save_and_recover_while_running_and_ready() {
     let prepared = capture(&bots);
     assert_eq!(checkpoint(&bots), before);
     let mut replay = prepared
-        .recording(&crate::recovery::BuildIdentity::default())
+        .recording(&crate::build::BuildIdentity::default())
         .unwrap();
     let mut commands = human.clone();
     commands.extend(job.finish(&state, &mut bots));
@@ -97,7 +97,7 @@ fn snapshots_save_and_recover_while_running_and_ready() {
     replay.meta.ticks = Some(state.current_tick());
     for saved in [idle, running, prepared] {
         let empty = saved
-            .recording(&crate::recovery::BuildIdentity::default())
+            .recording(&crate::build::BuildIdentity::default())
             .unwrap();
         let mut restored = saved.clone().resume_recording(&empty).unwrap();
         assert_eq!(restored.pending, human);

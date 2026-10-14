@@ -7,7 +7,8 @@
 //! written only with an incident, so nothing reaches the disk while play is
 //! healthy. Diagnostics are observational and never become replay input.
 
-use crate::recovery::{BuildIdentity, RecoveryWriter};
+use crate::build::BuildIdentity;
+use crate::recovery::RecoveryWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::{

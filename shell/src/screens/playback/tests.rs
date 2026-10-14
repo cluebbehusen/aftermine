@@ -10,7 +10,7 @@ fn replay() -> GameReplay {
         &scenario,
         60,
         true,
-        Some(&oxide_kit::recovery::BuildIdentity::default()),
+        Some(&oxide_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");
@@ -109,7 +109,7 @@ fn an_all_bot_record_opens_for_watching() {
         &scenario,
         60,
         true,
-        Some(&oxide_kit::recovery::BuildIdentity::default()),
+        Some(&oxide_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");
@@ -458,7 +458,7 @@ fn the_viewer_answers_the_shared_surface_exactly_like_a_resumed_live_session() {
         &scenario,
         120,
         true,
-        Some(&oxide_kit::recovery::BuildIdentity::default()),
+        Some(&oxide_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");

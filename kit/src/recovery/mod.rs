@@ -4,6 +4,7 @@
 mod tests;
 mod writer;
 
+pub use crate::build::BuildIdentity;
 pub use crate::diagnostics::Ending;
 use crate::diagnostics::INCIDENTS;
 use crate::{GameReplay, MAX_REPLAY_TICKS};
@@ -21,49 +22,6 @@ pub(crate) const MAX_BYTES: u64 = chassis::replay::MAX_REPLAY_BYTES as u64;
 pub(crate) const MAGIC: &[u8; 8] = b"OXREC001";
 /// Aggregate managed recording budget, excluding explicitly exported reports.
 pub const MANAGED_BYTES: u64 = 256 * 1024 * 1024;
-
-/// Build provenance does not participate in replay compatibility or state hashes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BuildIdentity {
-    /// Package version.
-    pub version: String,
-    /// Recording commit, or `unknown` for a source archive.
-    pub revision: String,
-    /// Whether the executable's package/dependency trees and shared build inputs
-    /// had changes: `true`, `false`, or `unknown` when source could not be inspected.
-    pub dirty: String,
-    /// Build operating system.
-    pub os: String,
-    /// Build architecture.
-    pub architecture: String,
-}
-impl Default for BuildIdentity {
-    fn default() -> Self {
-        Self::new(env!("CARGO_PKG_VERSION"), "unknown", "unknown")
-    }
-}
-
-impl BuildIdentity {
-    /// The commit, marked `-dirty` when the build had local changes.
-    pub fn label(&self) -> String {
-        if self.dirty == "true" {
-            format!("{}-dirty", self.revision)
-        } else {
-            self.revision.clone()
-        }
-    }
-
-    /// Identity captured by the host executable's build script.
-    pub fn new(version: &str, revision: &str, dirty: &str) -> Self {
-        Self {
-            version: version.into(),
-            revision: revision.into(),
-            dirty: dirty.into(),
-            os: std::env::consts::OS.into(),
-            architecture: std::env::consts::ARCH.into(),
-        }
-    }
-}
 
 /// Whether a recording can resume live play or only reproduce a viewer session.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

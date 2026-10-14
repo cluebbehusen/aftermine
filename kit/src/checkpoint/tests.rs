@@ -135,7 +135,7 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
     }
     let origin = SessionCheckpoint::capture(&scenario, &state, &bots, &[], None).unwrap();
     let mut suffix = origin
-        .recording(&crate::recovery::BuildIdentity::default())
+        .recording(&crate::build::BuildIdentity::default())
         .unwrap();
     let mut commands = crate::bot_execution::commands(&state, &mut bots);
     commands.extend([0, 1].map(|seat| PlayerCommand {

@@ -157,7 +157,7 @@ fn a_claimed_billion_ticks_is_an_error_not_a_hang() {
         &scenario,
         60,
         true,
-        Some(&crate::recovery::BuildIdentity::default()),
+        Some(&crate::build::BuildIdentity::default()),
     )
     .unwrap();
     let mut replay = outcome.replay.unwrap();
@@ -175,7 +175,7 @@ fn the_final_state_is_always_sampled() {
         &scenario,
         100,
         true,
-        Some(&crate::recovery::BuildIdentity::default()),
+        Some(&crate::build::BuildIdentity::default()),
     )
     .unwrap();
     let stats = compute(&outcome.replay.unwrap(), 41).unwrap();

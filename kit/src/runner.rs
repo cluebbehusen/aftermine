@@ -87,7 +87,7 @@ pub fn run_scenario(
     scenario: &Scenario,
     ticks: u64,
     with_bots: bool,
-    record: Option<&crate::recovery::BuildIdentity>,
+    record: Option<&crate::build::BuildIdentity>,
 ) -> Result<RunOutcome> {
     let mut state = scenario.build().context("building scenario")?;
     let mut bots = if with_bots {

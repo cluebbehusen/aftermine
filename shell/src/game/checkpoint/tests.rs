@@ -1,7 +1,7 @@
 use super::*;
 use crate::numeric::Fit;
 use crate::tutorial::Demo;
-use oxide_kit::recovery::BuildIdentity;
+use oxide_kit::build::BuildIdentity;
 use oxide_sim::scenario::BotConfig;
 
 #[test]
@@ -21,7 +21,7 @@ fn checkpoint_recovery_restores_the_shell_without_replaying_the_opening() {
     )
     .unwrap();
     original.recorder = checkpoint
-        .recording(&oxide_kit::recovery::BuildIdentity::default())
+        .recording(&oxide_kit::build::BuildIdentity::default())
         .unwrap();
     original.do_tick();
     let mut replay = original.recorder.clone();
