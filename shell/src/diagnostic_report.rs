@@ -2,6 +2,9 @@
 use anyhow::{Context, Result, ensure};
 use std::sync::mpsc::{self, Receiver};
 
+/// Largest diagnostic sidecar a report copies.
+const MAX_COPIED_BYTES: u64 = 16 * 1024 * 1024;
+
 #[derive(Default)]
 pub(crate) struct ReportJob {
     receiver: Option<Receiver<Result<String, String>>>,
@@ -25,41 +28,60 @@ impl ReportJob {
         self.receiver = Some(receiver);
         Ok(())
     }
-    pub(crate) fn start(&mut self, game: &crate::game::Game) -> Result<()> {
-        let root = game
-            .recovery_root
-            .clone()
-            .or_else(crate::paths::recovery_dir)
-            .context("diagnostics folder unavailable")?;
-        let active = (game.state.current_tick() > 0)
-            .then(|| game.recovery.clone())
-            .flatten();
+    /// Exports the live match's command log, when it has played any ticks,
+    /// with the incident log under `root`.
+    pub(crate) fn start(
+        &mut self,
+        game: &crate::game::Game,
+        root: Option<std::path::PathBuf>,
+    ) -> Result<()> {
+        let root = root.context("diagnostics folder unavailable")?;
+        let replay = (game.state.current_tick() > game.recorder.start_tick()).then(|| {
+            let mut replay = game.recorder.clone();
+            replay.meta.ticks = Some(game.state.current_tick());
+            replay
+        });
         self.begin("oxide-report-export", move || {
-            if let Some(writer) = &active {
-                let status = writer.status();
-                ensure!(
-                    status.ready || status.error.is_some(),
-                    "recording is still starting; try exporting again shortly"
-                );
-            }
-            let source = active
-                .as_ref()
-                .map(|writer| writer.directory().to_owned())
-                .or_else(|| {
-                    oxide_kit::recovery::latest_diagnostic_record(&root)
-                        .map(|record| record.directory)
-                })
-                .context("no recorded match is available")?;
+            let incidents = root.join(oxide_kit::diagnostics::INCIDENTS);
+            let incidents = incidents.is_file().then_some(incidents);
+            ensure!(
+                replay.is_some() || incidents.is_some(),
+                "no match or incident is available to export"
+            );
             let reports = root.join("reports");
             std::fs::create_dir_all(&reports)?;
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_nanos();
-            oxide_kit::recovery::export(
-                &source,
-                &reports.join(format!("report-{stamp}")),
-                &crate::build_identity(),
-            )?;
+            let report = reports.join(format!("report-{stamp}"));
+            std::fs::create_dir(&report)?;
+            let mut contents = Vec::new();
+            if let Some(replay) = &replay {
+                replay.save(report.join("replay.json"))?;
+                contents.push("replay.json");
+            }
+            if let Some(incidents) = &incidents {
+                ensure!(
+                    std::fs::metadata(incidents)?.len() <= MAX_COPIED_BYTES,
+                    "incident log is too large to export"
+                );
+                let bytes = std::fs::read(incidents)?;
+                chassis::fsx::write_atomic(
+                    report.join(oxide_kit::diagnostics::INCIDENTS),
+                    |writer| std::io::Write::write_all(writer, &bytes),
+                )?;
+                contents.push(oxide_kit::diagnostics::INCIDENTS);
+            }
+            let manifest = serde_json::json!({
+                "format": 1,
+                "running_build": crate::build_identity(),
+                "sim_version": oxide_sim::SIM_VERSION,
+                "ticks": replay.as_ref().and_then(|replay| replay.meta.ticks),
+                "contents": contents,
+            });
+            chassis::fsx::write_atomic(report.join("manifest.json"), |writer| {
+                serde_json::to_writer_pretty(writer, &manifest).map_err(std::io::Error::other)
+            })?;
             Ok("Diagnostic report exported. Open diagnostics folder to find it.".into())
         })
     }

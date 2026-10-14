@@ -155,10 +155,10 @@ paused. Ordinary Continue and named saves remain separate.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only
-when a panic or stall occurs. Reports stay local and contain a replay, panic and
-stall incidents with recent frame timing, and how the session ended.
-`diagnostic_report` runs exports and folder operations off the frame thread;
-`kit::recovery` and `kit::diagnostics` own bounded persistence.
+when a panic or stall occurs. Reports stay local and contain the current match's
+command log and the incident log, whose panic and stall incidents carry recent
+frame timing. `diagnostic_report` runs exports and folder operations off the
+frame thread; `kit::recovery` and `kit::diagnostics` own bounded persistence.
 
 See [the persistence contract](../docs/shell-architecture.md) for durability,
 retention, compatibility, and timing semantics. Recovery warnings mean the

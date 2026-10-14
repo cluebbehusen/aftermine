@@ -1,62 +1,95 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-fn until(mut condition: impl FnMut() -> bool) {
+fn finished(job: &mut ReportJob) -> Result<String, String> {
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !condition() {
+    loop {
+        if let Some(result) = job.poll() {
+            return result;
+        }
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(10));
     }
 }
 
-#[test]
-fn home_exports_the_interrupted_match_instead_of_its_empty_active_backdrop() {
-    use oxide_kit::recovery::{RecoveryWriter, inspect};
-    let root = std::env::temp_dir().join(format!("oxide-report-home-{}", std::process::id()));
-    let base = oxide_kit::GameReplay::new(
-        oxide_sim::SIM_VERSION,
-        "test",
-        oxide_sim::Scenario::skirmish(),
-    );
-    let interrupted =
-        RecoveryWriter::start(root.clone(), base, 0, crate::build_identity()).unwrap();
-    interrupted.prepared(0, &[]);
-    interrupted.completed(1);
-    until(|| interrupted.status().durable_tick == 1);
-    let source = interrupted.directory().to_owned();
-    drop(interrupted);
-    until(|| {
-        std::fs::File::open(source.join("lease"))
+fn scratch(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "oxide-report-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .try_lock()
-            .is_ok()
-    });
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    root
+}
 
+#[test]
+fn a_report_holds_the_live_matchs_commands_and_the_incident_log() {
+    let root = scratch("live");
+    std::fs::write(
+        root.join(oxide_kit::diagnostics::INCIDENTS),
+        br#"{"incidents":[]}"#,
+    )
+    .unwrap();
     let mut game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.recovery_root = Some(root.clone());
-    game.start_recovery();
-    until(|| game.recovery.as_ref().unwrap().status().ready);
+    game.issue(oxide_sim::Command::Train {
+        building: oxide_sim::BuildingId(0),
+        kind: oxide_sim::UnitKind::Harvester,
+    });
+    game.advance_ticks(3);
+
     let mut job = ReportJob::default();
-    job.start(&game).unwrap();
+    job.start(&game, Some(root.clone())).unwrap();
     assert!(
-        job.start(&game).is_err(),
+        job.start(&game, Some(root.clone())).is_err(),
         "only one export can run at a time"
     );
-    until(|| job.poll().is_some_and(|result| result.is_ok()));
+    finished(&mut job).unwrap();
+
     let report = std::fs::read_dir(root.join("reports"))
         .unwrap()
         .next()
         .unwrap()
         .unwrap()
         .path();
-    assert_eq!(inspect(&report).unwrap().replay.meta.ticks, Some(1));
-    let active = game.recovery.as_ref().unwrap().directory().to_owned();
-    drop(game);
-    until(|| {
-        std::fs::File::open(active.join("lease"))
-            .unwrap()
-            .try_lock()
-            .is_ok()
-    });
+    let replay = oxide_kit::load_replay(report.join("replay.json")).unwrap();
+    assert_eq!(replay.meta.ticks, Some(3));
+    assert_eq!(
+        serde_json::to_value(&replay.commands).unwrap(),
+        serde_json::to_value(&game.recorder.commands).unwrap()
+    );
+    assert_eq!(
+        std::fs::read(report.join(oxide_kit::diagnostics::INCIDENTS)).unwrap(),
+        br#"{"incidents":[]}"#
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(report.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(
+        manifest["contents"],
+        serde_json::json!(["replay.json", "incidents.json"])
+    );
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_unplayed_match_without_incidents_has_nothing_to_export() {
+    let root = scratch("empty");
+    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut job = ReportJob::default();
+    job.start(&game, Some(root.clone())).unwrap();
+    assert!(
+        finished(&mut job)
+            .unwrap_err()
+            .contains("no match or incident")
+    );
+    assert!(!root.join("reports").exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_report_needs_a_diagnostics_folder() {
+    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    assert!(ReportJob::default().start(&game, None).is_err());
 }

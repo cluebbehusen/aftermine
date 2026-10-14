@@ -574,7 +574,10 @@ fn settings_frame(
                 app.notify(error.to_string(), true);
             }
         }
-        screens::settings::Out::ExportDiagnostics => match app.report_job.start(&app.game) {
+        screens::settings::Out::ExportDiagnostics => match app
+            .report_job
+            .start(&app.game, crate::paths::recovery_dir())
+        {
             Ok(()) => app.notify("Exporting diagnostic report...", false),
             Err(error) => app.notify(error.to_string(), true),
         },

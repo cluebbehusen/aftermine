@@ -661,16 +661,12 @@ counts what it dropped. Diagnostics are observational and never become replay
 input. Simulation and bot failures reproduce from the recorded replay, not from
 timing.
 
-Report export runs off the frame thread. Reports contain a standard recovered
-replay, unfinished-tick evidence, the recording's incidents and the root log,
-build provenance, and how the session ended: clean, still in progress, a panic,
-a stall that never resumed, a main thread left waiting for its next frame (OS
-suspension, a hidden window or a presentation hang), or an abnormal exit (a
-native crash, kill or power loss) with none of those recorded. The completion
-manifest is published last and binds the replay digest; the inspector rejects
-incomplete exports. Build differences remain visible even when simulation
-versions permit playback. Reports stay local, and diagnostics never take
-screenshots or enable the debug server.
+Report export runs off the frame thread. A report holds the live match's command
+log as a standard replay when the match has played any ticks, the root incident
+log, and a manifest, written last, naming the running build and what the report
+contains. The replay's metadata keeps the recording build, so build differences
+remain visible even when simulation versions permit playback. Reports stay
+local, and diagnostics never take screenshots or enable the debug server.
 
 ## Debug protocol
 
