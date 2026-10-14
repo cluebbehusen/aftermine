@@ -6,7 +6,7 @@
 //! instead of a bool.
 
 use crate::game::Game;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -113,7 +113,7 @@ impl Drop for PathReservation {
     }
 }
 
-/// A collision-free `{prefix}-{tick}` path in `dir`, reserved by
+/// A collision-free `{prefix}-{tick}` path in `dir` for a named save, reserved by
 /// `create_new` (`O_EXCL`). Every successful return owns its candidate;
 /// collision suffixes have no arbitrary cutoff that can bypass the
 /// exclusive create.
@@ -121,11 +121,10 @@ fn free_path(dir: &Path, prefix: &str, tick: u64) -> Result<PathReservation, Sav
     static RESERVATION_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut n = 0u64;
     loop {
-        let extension = if prefix == "match" { "json" } else { "oxsave" };
         let path = if n == 0 {
-            dir.join(format!("{prefix}-{tick:010}.{extension}"))
+            dir.join(format!("{prefix}-{tick:010}.oxsave"))
         } else {
-            dir.join(format!("{prefix}-{tick:010}-{n}.{extension}"))
+            dir.join(format!("{prefix}-{tick:010}-{n}.oxsave"))
         };
         match std::fs::File::create_new(&path) {
             Ok(mut file) => {
@@ -172,6 +171,100 @@ fn now_unix() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// One match's place among the autosaves. Its autosave, LAN autosave and
+/// finished record share the id, so each write replaces the last instead of
+/// adding a file, and rotation keeps whole matches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SaveSlot(String);
+
+/// Autosave kinds; a slot holds at most one of them.
+const AUTOSAVE_KINDS: [&str; 2] = ["autosave", "lan-autosave"];
+
+impl SaveSlot {
+    /// A new match's slot, distinct from every slot this process made.
+    pub(crate) fn fresh() -> Self {
+        static LAST: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
+            });
+        let mut last = LAST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *last = now.max(last.saturating_add(1));
+        Self(last.to_string())
+    }
+
+    /// The slot of the autosave at `path` when it lies in `autosaves`, so a
+    /// continued match keeps overwriting the file it came from.
+    pub(crate) fn adopt(path: &Path, autosaves: &Path) -> Option<Self> {
+        if path.parent() != Some(autosaves) {
+            return None;
+        }
+        let name = path.file_name()?.to_str()?;
+        AUTOSAVE_KINDS
+            .iter()
+            .find_map(|kind| name.strip_prefix(kind)?.strip_prefix('-'))
+            .and_then(|rest| rest.strip_suffix(".oxsave"))
+            .filter(|id| !id.is_empty())
+            .map(|id| Self(id.to_owned()))
+    }
+
+    fn file(&self, kind: &str) -> String {
+        let extension = if kind == "match" { "json" } else { "oxsave" };
+        format!("{kind}-{}.{extension}", self.0)
+    }
+
+    /// Removes this slot's autosaves other than `kept`; its finished
+    /// record stays.
+    fn clear_autosaves(&self, dir: &Path, kept: &str) {
+        for kind in AUTOSAVE_KINDS.into_iter().filter(|kind| *kind != kept) {
+            std::fs::remove_file(dir.join(self.file(kind))).ok();
+        }
+    }
+
+    /// Removes this slot's autosaves from `dir`, for a match its player
+    /// abandoned.
+    fn discard(&self, dir: &Path) {
+        self.clear_autosaves(dir, "");
+    }
+}
+
+/// Deletes the autosaves of abandoned matches once the save worker is idle,
+/// so a save still in flight cannot write a slot back after its deletion.
+pub(crate) fn discard_when_idle(slots: &mut Vec<SaveSlot>, busy: bool, dir: Option<&Path>) {
+    if busy || slots.is_empty() {
+        return;
+    }
+    for slot in slots.drain(..) {
+        if let Some(dir) = dir {
+            slot.discard(dir);
+        }
+    }
+}
+
+/// What a save of a session holds: ticks only advance, and staged orders
+/// only grow until a tick consumes them, so an equal key means nothing new.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SaveKey {
+    tick: u64,
+    pending: usize,
+}
+
+impl SaveKey {
+    pub(crate) fn new(tick: u64, pending: usize) -> Self {
+        Self { tick, pending }
+    }
+}
+
+/// An unnamed save's slot and the content it wrote there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SaveMark {
+    pub(crate) slot: SaveSlot,
+    pub(crate) key: SaveKey,
+}
+
 /// Retention runs per record kind: live sessions and finished matches
 /// each rotate against their own budget, so quick quits never evict
 /// finished matches. Anything else in the directory, explicit saves
@@ -199,7 +292,6 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.starts_with(prefix))
         })
-        .filter(|p| !is_reservation_marker(p))
         .collect();
     // Newest last by modification time; ties by name for determinism.
     files.sort_by_key(|p| {
@@ -212,18 +304,6 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
         let oldest = files.remove(0);
         std::fs::remove_file(oldest).ok();
     }
-}
-
-fn is_reservation_marker(path: &Path) -> bool {
-    let Ok(mut file) = std::fs::File::open(path) else {
-        return false;
-    };
-    let mut prefix = [0; RESERVATION_MARKER_PREFIX.len()];
-    // Keep this read on one handle. If an atomic rename happens before
-    // `open`, this sees and counts the completed replay. If it happens
-    // afterward, this sees the old marker and defers its accounting until
-    // the publishing saver rotates.
-    file.read_exact(&mut prefix).is_ok() && prefix == RESERVATION_MARKER_PREFIX.as_bytes()
 }
 
 /// Header-eligible autosaves, local and LAN, newest first. Loading must
@@ -245,7 +325,9 @@ pub(crate) struct SaveJob {
     data: Option<SaveData>,
     meta: chassis::replay::ReplayMeta,
     dir: Option<PathBuf>,
-    named: bool,
+    /// Where an unnamed save lands and what it holds; a named save gets a
+    /// fresh file in the saves folder instead.
+    mark: Option<SaveMark>,
     already_saved: bool,
 }
 
@@ -256,9 +338,9 @@ impl SaveJob {
             !(named && game.net_role().is_some()),
             "LAN matches offer no named save"
         );
+        let already_saved = game.is_saved();
         let needed = named
-            || (!game.autosave_done
-                && (game.state.current_tick() != 0 || !game.pending.is_empty()));
+            || (!already_saved && (game.state.current_tick() != 0 || !game.pending.is_empty()));
         // A LAN match cannot resume on one machine, so it keeps the
         // watch-only record a decided match keeps.
         let recording = game.state.result().is_some() || game.net_role().is_some();
@@ -295,8 +377,11 @@ impl SaveJob {
             } else {
                 crate::paths::autosave_dir()
             },
-            named,
-            already_saved: game.autosave_done,
+            mark: (!named).then(|| SaveMark {
+                slot: game.slot.clone(),
+                key: game.save_key(),
+            }),
+            already_saved,
         }
     }
 
@@ -321,9 +406,17 @@ impl SaveJob {
             } else {
                 crate::paths::autosave_dir()
             },
-            named,
+            mark: (!named).then(|| SaveMark {
+                slot: game.slot.clone(),
+                key: game.save_key(),
+            }),
             already_saved: false,
         }
+    }
+
+    /// The slot and content an unnamed save leaves behind.
+    pub(crate) fn mark(&self) -> Option<SaveMark> {
+        self.mark.clone()
     }
 
     pub(crate) fn run(self) -> Result<SaveOutcome, SaveError> {
@@ -333,18 +426,28 @@ impl SaveJob {
                 path: dir.clone(),
                 source,
             })?;
-            let prefix = self.meta.kind.as_deref().unwrap();
-            let path = free_path(&dir, prefix, self.meta.ticks.unwrap())?
-                .publish(|path| match data {
-                    SaveData::Checkpoint(capture) => {
-                        crate::saved_game::write_capture(capture, self.meta.clone(), path)
-                    }
-                    SaveData::Recording(replay) => replay.save(path).map_err(Into::into),
-                })
-                .map_err(|(path, source)| SaveError::Write { path, source })?;
-            if !self.named {
+            let kind = self.meta.kind.as_deref().unwrap();
+            let meta = self.meta.clone();
+            let write = |path: &Path| match data {
+                SaveData::Checkpoint(capture) => {
+                    crate::saved_game::write_capture(capture, meta, path)
+                }
+                SaveData::Recording(replay) => replay.save(path).map_err(Into::into),
+            };
+            let path = if let Some(mark) = &self.mark {
+                let path = dir.join(mark.slot.file(kind));
+                write(&path).map_err(|source| SaveError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                mark.slot.clear_autosaves(&dir, kind);
                 rotate(&dir);
-            }
+                path
+            } else {
+                free_path(&dir, kind, self.meta.ticks.unwrap())?
+                    .publish(write)
+                    .map_err(|(path, source)| SaveError::Write { path, source })?
+            };
             SaveOutcome::Wrote(path)
         } else if self.already_saved {
             SaveOutcome::AlreadySaved

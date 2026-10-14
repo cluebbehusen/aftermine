@@ -517,10 +517,20 @@ byte strings. No old player-save import or format migration is provided.
 
 Restoration runs no historical ticks and starts a fresh world-origin recording
 at the saved tick. Pending input remains pending until that tick executes. A
-save is self-contained. Named saves persist until explicitly deleted; autosaves,
-LAN autosaves, and finished-match recordings rotate separately. Finished matches
-remain JSON recordings, containing the available history since the current
-segment began.
+save is self-contained. Named saves persist until explicitly deleted. Each match
+owns one autosave slot: its autosave or LAN autosave and its finished-match
+recording share an id, so a save replaces the match's earlier file and the
+finished recording replaces its autosave. Autosaves, LAN autosaves, and
+finished-match recordings rotate separately, so rotation keeps whole matches.
+Finished matches remain JSON recordings, containing the available history since
+the current segment began.
+
+A match continued from an autosave keeps that slot and starts as already saved;
+any other load starts a new slot. A save records the slot and session content it
+captured, and the session counts as saved only while it still holds that
+content. Restart deletes the abandoned match's autosave once the worker is idle,
+so a save still in flight cannot write it back. Leave Without Saving keeps the
+autosave, since that choice only follows a failed save.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 decompression, restoration, and catalog scans. Smaller file operations run
@@ -550,12 +560,12 @@ cannot reconstruct earlier events and explicitly describe only available
 history. World-only recordings cannot resume live play because they lack
 controller memory.
 
-Save publication reserves a collision-free destination and uses the chassis
-atomic-write path. Failures are reported to the player. Checkpoint discovery
-reads metadata only: eligibility is not full validation. Continue tries eligible
-autosaves newest first on the worker, skipping corrupt payloads and installing
-the already restored result. Saves in an unsupported format are listed as
-unavailable and left on disk.
+A named save reserves a collision-free destination; an unnamed save replaces its
+slot's file. Both use the chassis atomic-write path. Failures are reported to
+the player. Checkpoint discovery reads metadata only: eligibility is not full
+validation. Continue tries eligible autosaves newest first on the worker,
+skipping corrupt payloads and installing the already restored result. Saves in
+an unsupported format are listed as unavailable and left on disk.
 
 `Game::from_replay` reconstructs state from the recorded commands. Bots observe
 reconstruction to restore their controller-local memory, but their regenerated

@@ -1311,6 +1311,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
         }
         screens::pause::Out::Restart => {
             let fresh = rebuild_match(&app.game)?;
+            app.discarded.push(app.game.slot.clone());
             // Restarting a tutorial also restarts its lesson state.
             let tutorial = app.tutorial.is_some().then(tutorial::Tutorial::new);
             app.install(

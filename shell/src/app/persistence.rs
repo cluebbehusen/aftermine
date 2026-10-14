@@ -37,7 +37,8 @@ pub(super) enum Output {
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
-    Saved,
+    /// A save finished; an unnamed one names the slot and content it wrote.
+    Saved(Option<autosave::SaveMark>),
     Retired,
 }
 
@@ -205,6 +206,11 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
+        autosave::discard_when_idle(
+            &mut self.discarded,
+            self.persistence.busy(),
+            crate::paths::autosave_dir().as_deref(),
+        );
         if self.catalog_delete.is_some() && !self.persistence.busy() {
             self.request_catalog();
         }
@@ -213,6 +219,9 @@ impl App {
         };
         if self.autosave_id == Some(id) {
             self.autosave_id = None;
+            if let Ok(Output::Saved(Some(mark))) = &result {
+                self.game.mark_saved(mark);
+            }
             if let Err(error) = result {
                 eprintln!("LAN autosave failed: {error:#}");
                 self.notify(error.to_string(), true);
@@ -263,12 +272,13 @@ impl App {
             return;
         };
         let job = autosave::SaveJob::lan(&self.game, capture, None);
+        let mark = job.mark();
         let task: Task = Box::new(move |_| {
             job.run().map_err(|error| {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
-            Ok(Output::Saved)
+            Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
             Ok(id) => self.autosave_id = Some(id),
@@ -388,9 +398,9 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     &mut app.draft,
                 )));
             }
-            Ok(Output::Saved) => {
-                if !matches!(busy.intent, Intent::Named(_)) {
-                    app.game.autosave_done = true;
+            Ok(Output::Saved(mark)) => {
+                if let Some(mark) = mark {
+                    app.game.mark_saved(&mark);
                 }
                 if busy.quit_after {
                     return Ok(app.persistence_screen(
@@ -487,12 +497,13 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     Some(capture) => autosave::SaveJob::lan(&app.game, capture, name),
                     None => autosave::SaveJob::capture(&app.game, name),
                 };
+                let mark = job.mark();
                 Box::new(move |_| {
                     job.run().map_err(|error| {
                         let line = error.player_line();
                         anyhow::Error::new(error).context(line)
                     })?;
-                    Ok(Output::Saved)
+                    Ok(Output::Saved(mark))
                 })
             }
             Intent::Load(_) | Intent::Continue => {

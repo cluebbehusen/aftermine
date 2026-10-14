@@ -115,10 +115,11 @@ pub struct Game {
     pub recorder: GameReplay,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
-    /// Whether the current session content is already autosaved; a new
-    /// tick makes it stale again. Guards double-writes when Main Menu
+    /// Where this match's autosave and finished record go.
+    pub(crate) slot: crate::autosave::SaveSlot,
+    /// What the slot last received. Guards double-writes when Main Menu
     /// saves and the same game then quits as the Home backdrop.
-    pub autosave_done: bool,
+    pub(crate) saved: Option<crate::autosave::SaveKey>,
     /// End-of-match statistics, computed once from the recorder when
     /// the result lands from the bounded live tracker.
     pub end_stats: Option<oxide_kit::stats::MatchStats>,
@@ -266,7 +267,8 @@ impl Game {
             bot_decision: None,
             recorder,
             pending: PendingCommands(Vec::new()),
-            autosave_done: false,
+            slot: crate::autosave::SaveSlot::fresh(),
+            saved: None,
             end_stats: None,
             live_stats,
             concede_stats: None,
@@ -346,6 +348,8 @@ impl Game {
         game.live_stats = live_stats;
         if game.state.result().is_some() {
             game.end_stats = Some(game.live_stats.snapshot(&game.state));
+            // The replay already is this match's finished record.
+            game.saved = Some(game.save_key());
         }
         if let Some(focus) = game
             .state
@@ -380,6 +384,23 @@ impl Game {
         self.execute(&commands, staged)
     }
 
+    /// The session content a save taken now would hold.
+    pub(crate) fn save_key(&self) -> crate::autosave::SaveKey {
+        crate::autosave::SaveKey::new(self.state.current_tick(), self.pending.len())
+    }
+
+    /// Whether the slot already holds this session's content.
+    pub(crate) fn is_saved(&self) -> bool {
+        self.saved == Some(self.save_key())
+    }
+
+    /// Records a finished save, unless it wrote another match's slot.
+    pub(crate) fn mark_saved(&mut self, mark: &crate::autosave::SaveMark) {
+        if mark.slot == self.slot {
+            self.saved = Some(mark.key);
+        }
+    }
+
     /// This tick's bot commands, joining any background decision.
     fn bot_commands(&mut self) -> Vec<PlayerCommand> {
         let _bot_stage = self.diagnostic_stage(Stage::Bots);
@@ -394,8 +415,6 @@ impl Game {
     /// tutorial evidence, and presentation. Only the first `graded` commands
     /// can grade the tutorial, so bot orders for a bot-bound seat never do.
     fn execute(&mut self, commands: &[PlayerCommand], graded: usize) -> oxide_sim::TickReport {
-        // New ticks make any earlier autosave stale.
-        self.autosave_done = false;
         // Interpolation cache; pointless during suppressed bulk advances
         // (advance_ticks rebuilds it once at the end).
         if !self.suppress_presentation {

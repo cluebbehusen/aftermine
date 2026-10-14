@@ -118,6 +118,9 @@ struct App {
     persistence_result: Option<Result<persistence::Output>>,
     catalog_id: Option<u64>,
     catalog_delete: Option<std::path::PathBuf>,
+    /// Autosave slots of abandoned matches, deleted once no save can still
+    /// be writing them.
+    discarded: Vec<crate::autosave::SaveSlot>,
     /// Presented frames in a row spent in live play; the suspension
     /// pause reads it to tell a stalled match from a heavy transition.
     live_streak: u8,
@@ -350,6 +353,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         persistence_result: None,
         catalog_id: None,
         catalog_delete: None,
+        discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,
         soft_keyboard: None,

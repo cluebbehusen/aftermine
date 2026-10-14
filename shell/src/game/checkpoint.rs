@@ -150,6 +150,8 @@ impl<'de> Deserialize<'de> for Game {
 /// A saved LAN match, checked, waiting in Match Setup for its players.
 pub(crate) struct LanSave {
     checkpoint: GameCheckpoint,
+    /// The autosave slot the save came from, which the resumed match keeps.
+    slot: Option<crate::autosave::SaveSlot>,
     scenario: Scenario,
     tick: u64,
     /// The joined seats still in the match, with their installations.
@@ -160,6 +162,12 @@ impl LanSave {
     /// The saved match's seats.
     pub(crate) fn scenario(&self) -> &Scenario {
         &self.scenario
+    }
+
+    /// Keeps writing to the autosave slot the save came from.
+    pub(crate) fn with_slot(mut self, slot: Option<crate::autosave::SaveSlot>) -> Self {
+        self.slot = slot;
+        self
     }
 
     /// The host's seat.
@@ -239,7 +247,12 @@ impl LanSave {
     /// The saved match with `bots` seats handed to bots and their orders
     /// dropped.
     fn with_bots(&self, bots: &[(PlayerId, BotDifficulty, BotStance)]) -> Result<Game> {
-        let mut game = self.checkpoint.clone().restore()?.install();
+        let mut game = self
+            .checkpoint
+            .clone()
+            .restore()?
+            .with_slot(self.slot.clone())
+            .install();
         for &(seat, difficulty, stance) in bots {
             anyhow::ensure!(
                 self.joined().iter().any(|(joined, _)| *joined == seat),
@@ -261,6 +274,8 @@ pub(crate) struct RestoredGame {
     demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
+    /// The autosave slot the save came from, which the match keeps.
+    slot: Option<crate::autosave::SaveSlot>,
 }
 
 impl GameCheckpoint {
@@ -287,6 +302,7 @@ impl GameCheckpoint {
             .filter(|&(seat, _)| state.accepts_commands(seat))
             .collect();
         Ok(LanSave {
+            slot: None,
             scenario: restored.scenario().clone(),
             tick: restored.tick(),
             players,
@@ -338,11 +354,18 @@ impl GameCheckpoint {
             demo: checkpoint.demo,
             concede_stats: checkpoint.concede_stats,
             boundary_fog: checkpoint.boundary_fog,
+            slot: None,
         })
     }
 }
 
 impl RestoredGame {
+    /// Keeps writing to the autosave slot the save came from.
+    pub(crate) fn with_slot(mut self, slot: Option<crate::autosave::SaveSlot>) -> Self {
+        self.slot = slot;
+        self
+    }
+
     pub(crate) fn scenario(&self) -> &Scenario {
         &self.core.scenario
     }
@@ -357,6 +380,7 @@ impl RestoredGame {
             demo,
             concede_stats,
             boundary_fog,
+            slot,
         } = self;
         let live_stats = core.stats.expect("restoration validated statistics");
         let mut presentation = Presentation::new(&core.state, human, crate::render::viewport());
@@ -367,7 +391,8 @@ impl RestoredGame {
             .state
             .result()
             .map(|_| live_stats.snapshot(&core.state));
-        Game {
+        let adopted = slot.is_some();
+        let mut game = Game {
             scenario: core.scenario,
             state: ReadOnlyState(Arc::new(core.state)),
             bots: core.bots,
@@ -384,11 +409,18 @@ impl RestoredGame {
                 paused: true,
                 ..super::Clock::default()
             },
-            autosave_done: false,
+            slot: slot.unwrap_or_else(crate::autosave::SaveSlot::fresh),
+            saved: None,
             suppress_presentation: false,
             net: None,
             outbox: Vec::new(),
+        };
+        // A continued autosave already holds this content, and a decided
+        // match was recorded when it ended.
+        if adopted || game.state.result().is_some() {
+            game.saved = Some(game.save_key());
         }
+        game
     }
 }
 
