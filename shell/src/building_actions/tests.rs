@@ -351,6 +351,10 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
     };
     assert!(!card(&game, "Launch").enabled, "nothing to launch yet");
     assert!(card(&game, "Order").enabled);
+    assert_eq!(
+        card(&game, "Order").icon,
+        CardIcon::Round(BuildingKind::Spire)
+    );
     assert!(!card(&game, "Cancel").enabled);
     assert_eq!(
         card(&game, "Autofill: off").action,

@@ -248,7 +248,7 @@ impl SelectedBuildings {
         }
         let order = self.round_order();
         cards.push(Card {
-            icon: CardIcon::Building(first.kind, 0),
+            icon: CardIcon::Round(first.kind),
             title: "Order".into(),
             cost: Some(stats.round_cost),
             hotkey: bindings.labels(Action::OrderRound),
