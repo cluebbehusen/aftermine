@@ -105,12 +105,10 @@ impl SelectionInfo {
             if let Some(detail) = known.detail {
                 if detail.ordered > 0 {
                     let percent = detail.progress * 100 / stats.round_ticks.max(1);
-                    let queued = if detail.ordered > 1 {
-                        format!(", {} more paid", detail.ordered - 1)
-                    } else {
-                        String::new()
-                    };
-                    self.row("Assembling", format!("{percent}%{queued}"), None);
+                    self.row("Assembling", format!("{percent}%"), None);
+                }
+                if detail.ordered > 1 {
+                    self.row("Queued", format!("{} paid", detail.ordered - 1), None);
                 }
                 self.row(
                     "Autofill",
@@ -124,7 +122,7 @@ impl SelectionInfo {
             }
         }
         self.row(
-            "Round cost",
+            "Round",
             format!(
                 "{} scrap, {}s",
                 stats.round_cost,
@@ -161,12 +159,13 @@ impl SelectionInfo {
                 Some(StatIcon::Capability(CapabilityIcon::Weapon)),
             );
             self.row(
-                "Blast",
-                format!(
-                    "{:.1} tiles full, {:.1} tiles edge",
-                    warhead.full_radius.to_num::<f32>(),
-                    warhead.outer_radius.to_num::<f32>()
-                ),
+                "Full blast",
+                format!("{:.1} tiles", warhead.full_radius.to_num::<f32>()),
+                None,
+            );
+            self.row(
+                "Blast edge",
+                format!("{:.1} tiles", warhead.outer_radius.to_num::<f32>()),
                 None,
             );
         }

@@ -30,38 +30,46 @@ fn a_selected_foundry_lays_its_cards_inside_the_action_region() {
         .unwrap()
         .id;
     game.presentation.selection.buildings.push(foundry);
-    let hud = layout(
-        &game.view(),
-        &InputState::new(),
-        &BindingMap::classic(),
-        env(1280.0, 800.0),
-        None,
-        &fixed,
-    );
-    let panel = hud.panel.as_ref().expect("a selection has a panel");
-    let model = hud.layout;
-    assert!(model.card_count > 0);
-    assert_eq!(model.card_count, panel.cards.len().min(16));
-    let actions = model.panel_regions[1];
-    for (rect, _) in &model.cards[..model.card_count] {
-        assert!(
-            rect.x >= actions.x
-                && rect.y >= actions.y
-                && rect.right() <= actions.right()
-                && rect.bottom() <= actions.bottom(),
-            "{rect:?} outside {actions:?}"
+    // iPad mini, iPad Pro 11", and Steam Deck: the floor and its neighbours.
+    for (w, h) in [(1133.0, 744.0), (1210.0, 834.0), (1280.0, 800.0)] {
+        let hud = layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            env(w, h),
+            None,
+            &fixed,
         );
+        let panel = hud.panel.as_ref().expect("a selection has a panel");
+        let model = hud.layout;
+        assert!(model.card_count > 0);
+        assert_eq!(model.card_count, panel.cards.len().min(16));
+        let actions = model.panel_regions[1];
+        let cards = &model.cards[..model.card_count];
+        for (rect, _) in cards {
+            assert!(
+                rect.x >= actions.x
+                    && rect.y >= actions.y
+                    && rect.right() <= actions.right()
+                    && rect.bottom() <= actions.bottom(),
+                "{rect:?} outside {actions:?} at {w}x{h}"
+            );
+        }
+        assert!(
+            cards.iter().all(|(rect, _)| rect.y == cards[0].0.y),
+            "rally controls and every product share one row at {w}x{h}"
+        );
+        assert_eq!(
+            model.minimap,
+            minimap_rect_scaled(
+                game.state.map().width(),
+                game.state.map().height(),
+                vec2(w, h),
+                1.0
+            )
+        );
+        assert!(model.menu_button.w > 0.0 && model.pause_status.w > 0.0);
     }
-    assert_eq!(
-        model.minimap,
-        minimap_rect_scaled(
-            game.state.map().width(),
-            game.state.map().height(),
-            vec2(1280.0, 800.0),
-            1.0
-        )
-    );
-    assert!(model.menu_button.w > 0.0 && model.pause_status.w > 0.0);
 }
 
 #[test]

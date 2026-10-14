@@ -146,6 +146,46 @@ fn toasts_clear_the_panel_and_its_orders_dock() {
 }
 
 #[test]
+fn a_long_toast_wraps_short_of_the_minimap_at_the_layout_floor() {
+    let viewport = vec2(1133.0, 744.0);
+    let minimap = minimap_rect_scaled(40, 24, viewport, 1.0);
+    let orders = Rect::new(0.0, 400.0, 400.0, 260.0);
+    let origin = toast_origin(viewport, 1.0, 660.0, orders, Rect::default(), 0);
+    let right = toast_right(
+        viewport.x,
+        1.0,
+        origin.y - 94.0,
+        origin.y + 6.0,
+        &[minimap, Rect::default()],
+    );
+    assert_eq!(right, minimap.x - 12.0);
+    let measure = |text: &str, size: f32| text.chars().count() as f32 * size * 0.5;
+    let text = "Recovery stopped: recovery session limit: existing records are protected";
+    let (size, lines) = toast_lines(text, right - origin.x, 1.0, measure);
+    assert_eq!(size, crate::theme::Type::Body.at(1.0));
+    assert!(lines.len() > 1);
+    assert_eq!(lines.join(" "), text);
+    assert!(
+        lines
+            .iter()
+            .all(|line| measure(line, size) <= right - origin.x)
+    );
+    assert_eq!(
+        toast_lines("Queue is full", right - origin.x, 1.0, measure),
+        (
+            crate::theme::Type::Heading.at(1.0),
+            vec!["Queue is full".to_string()]
+        )
+    );
+}
+
+#[test]
+fn chrome_clear_of_the_toast_rows_leaves_the_window_edge_free() {
+    let above = Rect::new(1000.0, 60.0, 100.0, 200.0);
+    assert_eq!(toast_right(1133.0, 1.0, 560.0, 660.0, &[above]), 1121.0);
+}
+
+#[test]
 fn toasts_stack_above_the_ribbon_row() {
     let viewport = vec2(1280.0, 800.0);
     let panel_top = 640.0;

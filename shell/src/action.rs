@@ -73,15 +73,15 @@ pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 5] = [
             BuildingKind::Barricade,
         ],
     ),
+    ("Utility", &[BuildingKind::Array, BuildingKind::RepairBay]),
     (
-        "Utility",
+        "Strategic",
         &[
-            BuildingKind::Array,
-            BuildingKind::RepairBay,
+            BuildingKind::Spire,
+            BuildingKind::Lattice,
             BuildingKind::ScuttleCharge,
         ],
     ),
-    ("Strategic", &[BuildingKind::Spire, BuildingKind::Lattice]),
 ];
 pub fn building_category(kind: BuildingKind) -> u8 {
     (BUILD_CATEGORIES
