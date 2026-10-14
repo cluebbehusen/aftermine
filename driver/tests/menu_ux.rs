@@ -13,8 +13,8 @@
 
 use anyhow::{Result, bail};
 use oxide_driver::auto::{
-    ShellGuard, SpawnOptions, activate_labeled, assert_mode, inject, press_key, spawn_shell, ui,
-    wait_for_mode,
+    ShellGuard, SpawnOptions, activate_labeled, assert_mode, inject, press_key, select_labeled,
+    select_tab, spawn_shell, ui, wait_for_mode,
 };
 use oxide_driver::client::Client;
 use oxide_protocol::{Key, MouseButton, RawEvent, Request};
@@ -239,12 +239,9 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
 
     activate_labeled(&mut client, "settings")?;
     assert_mode(&mut client, "settings", "Home > Settings")?;
-    activate_labeled(&mut client, "controls")?;
-    assert_mode(&mut client, "controls", "Settings > Controls")?;
+    select_tab(&mut client, "controls")?;
     press_key(&mut client, Key::Escape)?;
-    assert_mode(&mut client, "settings", "Controls > Esc")?;
-    press_key(&mut client, Key::Escape)?;
-    assert_mode(&mut client, "home", "Settings > Esc")?;
+    assert_mode(&mut client, "home", "Settings Controls tab > Esc")?;
 
     activate_labeled(&mut client, "replays")?;
     assert_mode(&mut client, "replays", "Home > Replays")?;
@@ -297,10 +294,7 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
     // SAME pause menu — the payload waits intact, not a fresh Home.
     activate_labeled(&mut client, "settings")?;
     assert_mode(&mut client, "settings", "Pause > Settings")?;
-    activate_labeled(&mut client, "controls")?;
-    assert_mode(&mut client, "controls", "pause-origin Settings > Controls")?;
-    press_key(&mut client, Key::Escape)?;
-    assert_mode(&mut client, "settings", "Controls > Esc")?;
+    select_tab(&mut client, "controls")?;
     press_key(&mut client, Key::Escape)?;
     assert_mode(&mut client, "pause_menu", "Settings > Esc returns to pause")?;
     activate_labeled(&mut client, "main menu")?;
@@ -317,21 +311,20 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
 #[test]
 #[ignore = "spawns a real window; run explicitly in the phase battery"]
 fn a_modifier_held_on_another_screen_still_captures_its_chord() -> Result<()> {
-    // A Ctrl pressed on Settings must still read as held on Controls, so
-    // the rebind captures the chord rather than a bare key. The shared
-    // spawn helper keeps the persisted rebind inside this test's scratch
-    // HOME.
+    // A Ctrl pressed on another Settings tab must still read as held on
+    // Controls, so the rebind captures the chord rather than a bare key.
+    // The shared spawn helper keeps the persisted rebind inside this
+    // test's scratch HOME.
     let (_guard, mut client) = spawn(4144)?;
 
     activate_labeled(&mut client, "settings")?;
-    // Ctrl goes down HERE, on the Settings screen...
+    // Ctrl goes down HERE, on the General tab...
     client.call(Request::InjectEvent {
         event: RawEvent::KeyDown { key: Key::Ctrl },
     })?;
-    activate_labeled(&mut client, "controls")?;
-    assert_mode(&mut client, "controls", "Settings > Controls")?;
-    // ...arm the first row and press the key while Ctrl is still held.
-    press_key(&mut client, Key::Enter)?;
+    select_tab(&mut client, "controls")?;
+    // ...arm a binding row and press the key while Ctrl is still held.
+    activate_labeled(&mut client, "pan up:")?;
     press_key(&mut client, Key::K)?;
     client.call(Request::InjectEvent {
         event: RawEvent::KeyUp { key: Key::Ctrl },
@@ -356,9 +349,10 @@ fn a_modifier_held_on_another_screen_still_captures_its_chord() -> Result<()> {
 fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction() -> Result<()> {
     let (mut guard, mut client) = spawn(4159)?;
     activate_labeled(&mut client, "settings")?;
-    activate_labeled(&mut client, "controls")?;
+    select_tab(&mut client, "controls")?;
+    select_labeled(&mut client, "pan up:")?;
     press_key(&mut client, Key::Right)?;
-    activate_labeled(&mut client, "pan up:")?;
+    press_key(&mut client, Key::Enter)?;
     press_key(&mut client, Key::I)?;
     let rows = ui(&mut client)?.items;
     assert!(
@@ -385,7 +379,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     guard.shell = Some(shell);
     client = reconnected;
     activate_labeled(&mut client, "settings")?;
-    activate_labeled(&mut client, "controls")?;
+    select_tab(&mut client, "controls")?;
     assert!(
         ui(&mut client)?
             .items

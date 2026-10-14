@@ -34,10 +34,11 @@ crate-level rustdoc.
   `press` is the press-then-release-in-place gesture every pointer target
   shares, with `ScrollPress` adding the finger drag that scrolls the menu lists
   and the map grid; `nav` is the one keyboard rule (arrows wrap, Home and End
-  jump, paging stops at the ends); `menu::Menu` holds typed rows; and `button`
-  draws the shared action and BACK buttons. `camera::controls` holds the camera
-  hands every view shares; `viewer_touch` pans and pinches the read-only
-  viewers. Key bindings live only in the configuration.
+  jump, paging stops at the ends); `menu::Menu` holds typed rows; `tabs` is the
+  tab strip Settings hangs under its title; and `button` draws the shared action
+  and BACK buttons. `camera::controls` holds the camera hands every view shares;
+  `viewer_touch` pans and pinches the read-only viewers. Key bindings live only
+  in the configuration.
 - `platform` states whether the build is touch-only (iOS) and publishes the
   pointer and keys in use.
 - `building_actions` derives single and grouped building controls from their
@@ -52,7 +53,8 @@ crate-level rustdoc.
 - `look` declares each unit and defense kind's presentation in one exhaustive
   match.
 - `theme` names the chrome's colors, stroke weights, type sizes, and touch
-  target.
+  target. `clock_label` renders every player-facing duration as clock time;
+  players never see ticks.
 - `assets`, `typography`, `audio_mix`, and `soundtrack` own presentation
   resources. `mixer` plays clips and holds the one table of what the shell
   decides per sound kind: its clip, bus, mix weight, and whether it is a blast

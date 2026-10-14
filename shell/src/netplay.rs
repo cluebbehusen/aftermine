@@ -76,7 +76,10 @@ impl End {
             End::Over => "That match is over.".to_owned(),
             End::TooLarge => "The match is too large to rejoin.".to_owned(),
             End::Desync { tick } => {
-                format!("Desync at tick {tick}: the match halted and its replay was saved.")
+                format!(
+                    "Desync at {}: the match halted and its replay was saved.",
+                    crate::clock_label::ticks(tick)
+                )
             }
         }
     }
@@ -1869,7 +1872,7 @@ impl ClientLobby {
                                 .and_then(|built| {
                                     anyhow::ensure!(
                                         built.state.current_tick() == tick,
-                                        "the saved match is at another tick"
+                                        "the saved match is at a different point"
                                     );
                                     Ok(built)
                                 });

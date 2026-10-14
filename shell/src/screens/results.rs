@@ -9,10 +9,11 @@ use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
 use crate::theme::Type;
+use crate::typography::{clip_chars, elide_to_width};
 use crate::{render, theme};
 use macroquad::prelude::*;
 use oxide_protocol::{Key, RawEvent};
-use oxide_sim::{GameResult, PlayerId, TICKS_PER_SECOND};
+use oxide_sim::{GameResult, PlayerId};
 
 const WIDE_STAT_HEADERS: [[&str; 2]; 6] = [
     ["PEAK ARMY", "VALUE"],
@@ -294,7 +295,7 @@ fn player_name_with_controller(
     compact: bool,
 ) -> String {
     let player = &game.state.players()[seat];
-    let name = clipped_name(&player.name, max_name_chars);
+    let name = clip_chars(&player.name, max_name_chars);
     let Some(spec) = game.scenario.players.get(seat) else {
         return name;
     };
@@ -316,19 +317,6 @@ fn player_name_with_controller(
 
 fn text_fits(text: &str, max_width: f32, measure: &impl Fn(&str) -> f32) -> bool {
     measure(text) <= max_width
-}
-
-fn elide_text_to_width(text: &str, max_width: f32, measure: &impl Fn(&str) -> f32) -> String {
-    if text_fits(text, max_width, measure) {
-        return text.to_string();
-    }
-    for cap in (4..text.chars().count()).rev() {
-        let candidate = clipped_name(text, cap);
-        if text_fits(&candidate, max_width, measure) {
-            return candidate;
-        }
-    }
-    String::new()
 }
 
 fn fitted_player_name_with_controller(
@@ -365,7 +353,7 @@ fn fitted_player_name_with_controller(
         ),
         _ => game.state.players()[seat].name.clone(),
     };
-    elide_text_to_width(&fallback, max_width, measure)
+    elide_to_width(&fallback, max_width, measure)
 }
 
 /// Stateful pointer/keyboard ownership for the report.
@@ -493,7 +481,7 @@ impl ResultsScreen {
         );
         let stats = game.end_stats.as_ref();
         let duration = stats.map_or(0, |report| report.final_tick);
-        let meta = format!("{subtitle}  |  {}", format_duration(duration));
+        let meta = format!("{subtitle}  |  {}", crate::clock_label::ticks(duration));
         let meta_size =
             crate::typography::fit(&meta, layout.meta_size, panel.w - 24.0 * s, 10.0 * s);
         let meta_dims = measure_text(&meta, None, numeric::font_size(meta_size), 1.0);
@@ -733,20 +721,6 @@ fn winner_subtitle(game: &Game, winners: &[PlayerId]) -> String {
     )
 }
 
-fn clipped_name(name: &str, max: usize) -> String {
-    if name.chars().count() <= max {
-        return name.to_string();
-    }
-    let mut clipped: String = name.chars().take(max.saturating_sub(3)).collect();
-    clipped.push_str("...");
-    clipped
-}
-
-fn format_duration(ticks: u64) -> String {
-    let seconds = ticks / u64::from(TICKS_PER_SECOND);
-    format!("{:02}:{:02}", seconds / 60, seconds % 60)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StatIcon {
     Unit,
@@ -942,7 +916,7 @@ fn draw_army_graph(
             1.0 * scale,
             Color::new(0.55, 0.55, 0.62, 0.13),
         );
-        let label = format_duration(tick);
+        let label = crate::clock_label::ticks(tick);
         let dims = measure_text(&label, None, numeric::font_size(label_size), 1.0);
         let label_x =
             (x - dims.width * 0.5).clamp(rect.x + 2.0, rect.x + rect.w - dims.width - 2.0);

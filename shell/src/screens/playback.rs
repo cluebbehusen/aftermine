@@ -9,7 +9,7 @@ use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
 use crate::render::prim::{fill_rect, stroke_rect};
-use crate::{render, theme};
+use crate::{clock_label, render, theme};
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
 #[cfg(test)]
@@ -187,7 +187,11 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     if let Some(target) = pb.seeking {
         // Mid-seek the transport numbers would show intermediate state;
         // show seek progress instead.
-        let line = format!("SEEKING  {} / {target}", pb.engine.position());
+        let line = format!(
+            "SEEKING  {} / {}",
+            clock_label::ticks(pb.engine.position()),
+            clock_label::ticks(target)
+        );
         let width = measure_text(&line, None, numeric::font_size(size), 1.0).width;
         let x = (screen_width() - width) * 0.5;
         let y = screen_height() - 14.0 * s;
@@ -203,8 +207,8 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     }
     let full = format!(
         "PLAYBACK {} / {} | {}x{} | {} pause | {}/{} seek | {} stats | {} leave",
-        pb.engine.position(),
-        pb.engine.total(),
+        clock_label::ticks(pb.engine.position()),
+        clock_label::ticks(pb.engine.total()),
         pb.clock.speed,
         if pb.clock.paused { " PAUSED" } else { "" },
         bindings.label(Action::ReplayPause),
@@ -223,8 +227,8 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     {
         format!(
             "PLAYBACK  {} / {}  |  {}x{}",
-            pb.engine.position(),
-            pb.engine.total(),
+            clock_label::ticks(pb.engine.position()),
+            clock_label::ticks(pb.engine.total()),
             pb.clock.speed,
             if pb.clock.paused { "  |  PAUSED" } else { "" },
         )

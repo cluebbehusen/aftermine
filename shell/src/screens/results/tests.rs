@@ -74,14 +74,12 @@ fn maximum_roster_stays_readable_above_the_actions() {
 }
 
 #[test]
-fn compact_columns_and_names_fit_without_breaking_unicode() {
+fn compact_columns_stay_ordered_inside_the_table() {
     let columns = table_columns(20.0, 620.0, false);
     assert_eq!(columns.player, 20.0);
     assert!(columns.player < columns.stats[0]);
     assert!(columns.stats.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(columns.stats[5] < 620.0);
-    assert_eq!(clipped_name("short", 8), "short");
-    assert_eq!(clipped_name("cupréous", 7), "cupr...");
 }
 
 #[test]
@@ -442,12 +440,6 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
     let (title, _, subtitle) = verdict(&surrendered);
     assert_eq!(title, "SURRENDERED");
     assert_eq!(subtitle, "your machines fell silent");
-}
-
-#[test]
-fn duration_uses_sim_time() {
-    assert_eq!(format_duration(0), "00:00");
-    assert_eq!(format_duration(u64::from(TICKS_PER_SECOND) * 125), "02:05");
 }
 
 #[test]

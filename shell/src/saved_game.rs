@@ -31,7 +31,30 @@ pub struct RecordInfo {
     pub meta: ReplayMeta,
     pub map: String,
     pub seats: usize,
-    pub problem: Option<String>,
+    /// The teams the seats form, where the record keeps its setup: a
+    /// finished match's recording does, a save's header does not.
+    pub teams: Option<usize>,
+    pub problem: Option<Unavailable>,
+}
+
+/// Why this build cannot open a record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    /// Written by another build; pre-launch builds never read each
+    /// other's records.
+    OtherVersion,
+    /// Damaged or malformed.
+    Unreadable,
+}
+
+impl Unavailable {
+    /// The reason as a player reads it.
+    pub fn reason(self) -> &'static str {
+        match self {
+            Unavailable::OtherVersion => "made by a different version of Oxide",
+            Unavailable::Unreadable => "this record is damaged and can't be opened",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -225,13 +248,16 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
     if compact {
         file.seek(SeekFrom::Start(0))?;
         let header = read_header(file, len)?;
-        let problem = check_header(&header)
-            .err()
-            .map(|error| format!("{error:#}"));
+        let problem = if header.version != VERSION || header.meta.sim_version != SIM_VERSION {
+            Some(Unavailable::OtherVersion)
+        } else {
+            check_header(&header).err().map(|_| Unavailable::Unreadable)
+        };
         Ok(RecordInfo {
             meta: header.meta,
             map: header.map,
             seats: header.seats,
+            teams: None,
             problem,
         })
     } else if path.extension().and_then(|extension| extension.to_str()) == Some("oxsave") {
@@ -239,19 +265,25 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
     } else {
         // Replay inspection remains separate from player checkpoint restoration.
         let replay = oxide_kit::load_replay(path)?;
-        let problem = replay
-            .validate(Some(SIM_VERSION))
-            .map_err(anyhow::Error::from)
-            .and_then(|()| oxide_kit::bounded_replay_duration(&replay).map(|_| ()))
-            .err()
-            .map(|error| format!("{error:#}"));
+        let problem = if replay.meta.sim_version == SIM_VERSION {
+            replay
+                .validate(Some(SIM_VERSION))
+                .map_err(anyhow::Error::from)
+                .and_then(|()| oxide_kit::bounded_replay_duration(&replay).map(|_| ()))
+                .err()
+                .map(|_| Unavailable::Unreadable)
+        } else {
+            Some(Unavailable::OtherVersion)
+        };
         let ticks = oxide_kit::replay_duration(&replay);
+        let teams = crate::menu::team_count(replay.setup.players.iter().map(|p| p.team));
         let mut meta = replay.meta;
         meta.ticks = Some(ticks);
         Ok(RecordInfo {
             meta,
             map: replay.setup.name,
             seats: replay.setup.players.len(),
+            teams: Some(teams),
             problem,
         })
     }

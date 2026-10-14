@@ -15,7 +15,8 @@ use std::path::PathBuf;
 
 use crate::press::{ScrollPress, Swipe};
 use crate::theme::{
-    SURFACE_MENU, Stroke, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE,
+    SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY,
+    TEXT_TITLE,
 };
 
 const ITEM_HEIGHT: f32 = 44.0;
@@ -51,10 +52,28 @@ pub(crate) fn binding_hint(template: &str) -> String {
             ("{left}", Action::MenuLeft),
             ("{right}", Action::MenuRight),
             ("{delete}", Action::DeleteSave),
+            ("{prev_tab}", Action::PrevTab),
+            ("{next_tab}", Action::NextTab),
         ] {
-            text = text.replace(token, &bindings.label(action));
+            let label = match action {
+                Action::PrevTab | Action::NextTab => bindings
+                    .tab_chord(action)
+                    .map_or_else(|| "unbound".into(), crate::action::BindingMap::chord_label),
+                _ => bindings.label(action),
+            };
+            text = text.replace(token, &label);
         }
         text
+    })
+}
+
+/// The key that steps tabs as `action` in menus right now, if any.
+pub(crate) fn tab_key(action: crate::action::Action) -> Option<String> {
+    MENU_BINDINGS.with(|bindings| {
+        bindings
+            .borrow()
+            .tab_chord(action)
+            .map(crate::action::BindingMap::chord_label)
     })
 }
 
@@ -98,6 +117,42 @@ impl BindingColumns {
     }
 }
 
+/// Where a shelf record's columns sit: its title, what it is, how long
+/// the match ran, and when it was saved. Drawing and tests share it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RecordColumns {
+    /// The record's name, or its map.
+    pub title: Rect,
+    /// What kind of record it is.
+    pub detail: Rect,
+    /// Match time, right-aligned.
+    pub clock: Rect,
+    /// When it was saved, right-aligned.
+    pub when: Rect,
+}
+
+impl RecordColumns {
+    /// The columns across `row` at UI scale `s`.
+    pub fn of(row: Rect, s: f32) -> Self {
+        let pad = 18.0 * s;
+        let inner = row.w - 2.0 * pad;
+        let column = |from: f32, to: f32| {
+            Rect::new(
+                row.x + pad + inner * from,
+                row.y,
+                inner * (to - from),
+                row.h,
+            )
+        };
+        Self {
+            title: column(0.0, 0.42),
+            detail: column(0.45, 0.65),
+            clock: column(0.66, 0.78),
+            when: column(0.80, 1.0),
+        }
+    }
+}
+
 /// What a menu row says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Label {
@@ -110,6 +165,17 @@ pub enum Label {
         name: String,
         keys: [String; 2],
         marked: Option<usize>,
+    },
+    /// A Settings row: what the setting is, and its value right-aligned.
+    Setting { name: String, value: String },
+    /// A saved game or replay on the shelf, drawn in [`RecordColumns`];
+    /// an unavailable record's title draws disabled.
+    Record {
+        title: String,
+        detail: String,
+        clock: String,
+        when: String,
+        available: bool,
     },
 }
 
@@ -128,6 +194,14 @@ impl std::fmt::Display for Label {
                 };
                 write!(f, "{name}: {} | {}", key(0), key(1))
             }
+            Label::Setting { name, value } => write!(f, "{name}: {value}"),
+            Label::Record {
+                title,
+                detail,
+                clock,
+                when,
+                ..
+            } => write!(f, "{title} | {detail} | {clock} | {when}"),
         }
     }
 }
@@ -219,6 +293,10 @@ pub struct Menu<R> {
     /// Draws the list at the Controls width, for rows whose labels outgrow
     /// the usual one.
     pub wide: bool,
+    /// Logical height reserved under the title for a strip the screen
+    /// draws there. A list with a band hangs just below it instead of
+    /// centring, so changing what the strip shows never moves the list.
+    pub band: f32,
 }
 
 fn view_w() -> f32 {
@@ -267,6 +345,7 @@ impl<R: Clone> Menu<R> {
             carry: 0.0,
             shift: 0.0,
             wide: false,
+            band: 0.0,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -330,14 +409,16 @@ impl<R: Clone> Menu<R> {
         }
     }
 
-    /// Whether the list draws wide: asked to, or because a row draws as
-    /// Controls columns.
+    /// Whether the list draws wide: asked to, or because a row draws in
+    /// columns.
     fn wide(&self) -> bool {
         self.wide
-            || self
-                .lines
-                .iter()
-                .any(|line| matches!(line, Line::Row(Label::Binding { .. }, _)))
+            || self.lines.iter().any(|line| {
+                matches!(
+                    line,
+                    Line::Row(Label::Binding { .. } | Label::Record { .. }, _)
+                )
+            })
     }
 
     /// The nearest non-header row from `index`, toward the start when
@@ -408,14 +489,15 @@ impl<R: Clone> Menu<R> {
     /// around the selection instead of running off the screen.
     fn window(&self) -> ListWindow {
         let s = ui();
-        let top_bound = (view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s);
+        let top_bound = (view_h() * 0.36).max(view_h() * 0.28 + (64.0 + self.band) * s);
         let bottom_bound = view_h() - 64.0 * s;
         let avail = (bottom_bound - top_bound).max(ITEM_HEIGHT * s);
         let n = self.lines.len().max(1);
         let pitch = row_pitch(avail, n, s, crate::platform::TOUCH_ONLY);
         let visible = numeric::to_usize((avail / pitch).floor()).clamp(1, n);
+        let centring = if self.band > 0.0 { 0.0 } else { 0.5 };
         ListWindow {
-            top: top_bound + (avail - visible as f32 * pitch) * 0.5,
+            top: top_bound + (avail - visible as f32 * pitch) * centring,
             pitch,
             // The window is scroll state, clamped — never a function of
             // the selection, or hovering near an edge walks the list.
@@ -682,12 +764,77 @@ impl<R: Clone> Menu<R> {
                         draw_text(&text, column.x, rect.y + rect.h * 0.68, size, color);
                     }
                 }
-                Label::Text(text) => {
+                Label::Setting { name, value } => {
+                    let pad = 18.0 * s;
+                    let value_size = crate::typography::fit(value, text_size, rect.w * 0.4, 1.0);
+                    let value_width =
+                        measure_text(value, None, numeric::font_size(value_size), 1.0).width;
+                    let value_x = rect.x + rect.w - pad - value_width;
+                    let shown = crate::typography::elide_to_width(
+                        name,
+                        value_x - rect.x - 2.0 * pad,
+                        &|text: &str| {
+                            measure_text(text, None, numeric::font_size(text_size), 1.0).width
+                        },
+                    );
+                    let baseline = rect.y + rect.h * 0.68;
+                    draw_text(&shown, rect.x + pad, baseline, text_size, color);
                     draw_text(
+                        value,
+                        value_x,
+                        baseline,
+                        value_size,
+                        if busy { TEXT_DISABLED } else { TEXT_ACCENT },
+                    );
+                }
+                Label::Record {
+                    title,
+                    detail,
+                    clock,
+                    when,
+                    available,
+                } => {
+                    let columns = RecordColumns::of(rect, s);
+                    let dim = if busy { TEXT_DISABLED } else { TEXT_SECONDARY };
+                    let title_color = if *available { color } else { TEXT_DISABLED };
+                    let measure = |text: &str| {
+                        measure_text(text, None, numeric::font_size(text_size), 1.0).width
+                    };
+                    for (text, column, tint) in [
+                        (title, columns.title, title_color),
+                        (detail, columns.detail, dim),
+                    ] {
+                        let shown = crate::typography::elide_to_width(text, column.w, &measure);
+                        draw_text(&shown, column.x, rect.y + rect.h * 0.68, text_size, tint);
+                    }
+                    for (text, column) in [(clock, columns.clock), (when, columns.when)] {
+                        let size = crate::typography::fit(text, text_size, column.w, 1.0);
+                        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+                        draw_text(
+                            text,
+                            column.x + column.w - width,
+                            rect.y + rect.h * 0.68,
+                            size,
+                            dim,
+                        );
+                    }
+                }
+                Label::Text(text) => {
+                    let room = rect.w - 36.0 * s;
+                    let size = crate::typography::fit(
                         text,
+                        text_size,
+                        room,
+                        crate::theme::Type::Label.at(s),
+                    );
+                    let shown = crate::typography::elide_to_width(text, room, &|text: &str| {
+                        measure_text(text, None, numeric::font_size(size), 1.0).width
+                    });
+                    draw_text(
+                        &shown,
                         rect.x + 18.0 * s,
                         rect.y + rect.h * 0.68,
-                        text_size,
+                        size,
                         color,
                     );
                 }
@@ -994,9 +1141,20 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
     entries
 }
 
+/// A match's format as players name it: "1v1", "2v2", "4-way FFA".
+pub(crate) fn match_format(seats: usize, teams: usize) -> String {
+    match (seats, teams) {
+        (0 | 1, _) => "Solo".to_string(),
+        (2, _) => "1v1".to_string(),
+        (n, t) if t == n => format!("{n}-way FFA"),
+        (n, 2) if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
+        (n, _) => format!("{n} seats"),
+    }
+}
+
 /// Teams formed by seats with these team indices: seats sharing an index
 /// count once, and a seat with none is its own team.
-fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
+pub(crate) fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
     let mut shared = std::collections::BTreeSet::new();
     let mut alone = 0;
     for team in teams {

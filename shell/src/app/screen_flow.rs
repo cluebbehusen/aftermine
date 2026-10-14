@@ -237,7 +237,7 @@ pub(super) fn update_and_draw(
         keys: app.input.keys_seen,
     });
     // Controls capture and text editing keep their conventional recovery keys.
-    let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if matches!(screen.face, screens::settings::Face::Controls { .. }))
+    let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())
         || screen.text_entry();
     let classic = crate::action::BindingMap::classic();
     crate::menu::set_bindings(if fixed_editor {
@@ -1261,14 +1261,9 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             Screen::Playing
         }
         screens::pause::Out::SaveGame => {
-            // Only the session knows its map and tick; the
-            // screen just edits the string.
-            let suggested = format!(
-                "{} | t{}",
-                app.game.scenario.name,
-                app.game.state.current_tick()
-            );
-            ps.begin_naming(&suggested);
+            // Only the session knows its map; the screen just edits
+            // the string.
+            ps.begin_naming(&app.game.scenario.name);
             Screen::Pause(ps)
         }
         screens::pause::Out::Save(name) => {

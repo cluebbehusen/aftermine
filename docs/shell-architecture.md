@@ -262,9 +262,9 @@ radii draw at the tile with a line from the silo. Stop calls a held strike off.
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
-and production-card positions. Narrow layouts widen the group to preserve
-minimum touch targets; production wraps in the remaining columns. Card
-rectangles and panel bounds share the same separator and inset calculations.
+and production-card positions. The group is wide enough to keep minimum touch
+targets; production wraps in the remaining columns. Card rectangles and panel
+bounds share the same separator and inset calculations.
 
 Coordinates are logical throughout the input/layout pipeline; the hardware
 adapter applies DPI conversion once. Touches arrive through the same ordered
@@ -279,17 +279,20 @@ each press or release that follows another event in the batch, and before
 drawing. Every pass publishes the `LayoutModel` whose rectangles drive hit
 testing together with the panel model, and drawing consumes the same pass, so a
 click always hits what the next frame shows. The HUD's supported layout floor is
-1280×800 at default UI scale. Smaller windows are overflow stress cases.
-`layout::top_bar` places the top bar from measured text: the bank, income, and
-unit count run left to right, then the idle and under-attack badges, and the
-status hangs off the menu button. Touch-only builds hold the menu button and
-bank further from the corners, which iPad screens round and iPadOS safe areas
-leave out. `layout::group_column` stacks the control groups on a plate above the
-minimap's right edge, mirroring the orders dock, and wraps into more columns
-when the window is short. It shows once a group is saved or the selection can be
-saved, never while the minimap is hidden, and a setting hides it; its slots and
-plate are chrome. The top edge is left to taps because iPadOS takes a long-press
-there as a window move.
+iPad mini in landscape, 1133×744 logical points at default UI scale; every
+modern iPad and Steam Deck (1280×800) sit above it. At the floor, a Harvester
+carrying scrap, a factory's rally controls with five products, and the grouped
+build palette each fit one band. Smaller windows, and UI scales above 100% on
+the smallest devices, are overflow stress cases. `layout::top_bar` places the
+top bar from measured text: the bank, income, and unit count run left to right,
+then the idle and under-attack badges, and the status hangs off the menu button.
+Touch-only builds hold the menu button and bank further from the corners, which
+iPad screens round and iPadOS safe areas leave out. `layout::group_column`
+stacks the control groups on a plate above the minimap's right edge, mirroring
+the orders dock, and wraps into more columns when the window is short. It shows
+once a group is saved or the selection can be saved, never while the minimap is
+hidden, and a setting hides it; its slots and plate are chrome. The top edge is
+left to taps because iPadOS takes a long-press there as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated
@@ -393,24 +396,27 @@ count, since the on-screen keyboard sends some as key events.
 Every screen offers a pointer path for what Escape does, on every platform. The
 top bar ends in a menu button that opens the pause menu, and its clock or PAUSED
 status toggles pause; both are `LayoutModel` chrome that `UiView` reports. The
-New Match steps, replay playback, the final map, Settings and Controls, the
-roster, and the replay shelf draw a top-left BACK button instead of a Back row,
-and playback adds Play/Pause. These ride `Press::feed`, which also tells the
-screen when a button claimed an event; the menus share `button::BackButton`,
-which acts as Escape does on each face. Menu lists and the map grid scroll by a
-finger dragged past `press::DRAG_SLOP` (`ScrollPress`). Every cursor steps
-through `nav`: arrows wrap at the edges, Home and End land on the first and last
-live cell, and paging stops at the ends. Menu rows stand for typed values
-(`Menu<R>`), so a screen never maps a row index back to its meaning. Chrome
-colors, stroke weights and the eight type sizes come from `theme`; world colors
-stay with the renderer. The read-only viewers pan and pinch through
-`ViewerTouch`, within the shared `camera::controls::ViewerHands`. Text entry
-(the save name, the Settings name, and the Join form's name and host address) is
-a `text_field::Form`: labeled fields in one row above Cancel and a confirm
-button, each filtering what it accepts and checking its value before a commit.
-On touch-only builds the frame loop raises and hides the on-screen keyboard to
-follow the focused field and asks for the numbers-and-punctuation layout on the
-address.
+New Match steps, replay playback, the final map, Settings, the roster, and the
+replay shelf draw a top-left BACK button instead of a Back row, and playback
+adds Play/Pause. These ride `Press::feed`, which also tells the screen when a
+button claimed an event; the menus share `button::BackButton`, which acts as
+Escape does on each face. Settings splits its rows across tabs on a
+`tabs::TabStrip` under its title, which claims its own presses the same way; the
+Previous tab and Next tab menu actions step it from the keyboard, and on the
+Controls tab, which reads raw keys, the classic Q and E work too. Menu lists and
+the map grid scroll by a finger dragged past `press::DRAG_SLOP` (`ScrollPress`).
+Every cursor steps through `nav`: arrows wrap at the edges, Home and End land on
+the first and last live cell, and paging stops at the ends. Menu rows stand for
+typed values (`Menu<R>`), so a screen never maps a row index back to its
+meaning. Chrome colors, stroke weights and the eight type sizes come from
+`theme`; world colors stay with the renderer. The read-only viewers pan and
+pinch through `ViewerTouch`, within the shared `camera::controls::ViewerHands`.
+Text entry (the save name, the Settings name, and the Join form's name and host
+address) is a `text_field::Form`: labeled fields in one row above Cancel and a
+confirm button, each filtering what it accepts and checking its value before a
+commit. On touch-only builds the frame loop raises and hides the on-screen
+keyboard to follow the focused field and asks for the numbers-and-punctuation
+layout on the address.
 
 Hints, toasts, card descriptions, and the tutorial say tap or click for the last
 pointer and name keys only once a hardware key has been pressed; copy that mixes
@@ -462,16 +468,17 @@ shows on touch-only builds while the human commands a selected unit or QUEUE is
 on. It sits over the panel's left corner in the orders dock's column, and the
 dock rises to stack above it, so queueing orders never moves the toggle.
 `ribbon_row_press` hit-tests both before every other target: the toggle flips
-QUEUE and the ribbon cancels its mode. The build palette ends with a Back card
-(`CardAction::ClosePalette`) that leaves construction in one press, and on touch
-a tap that picks no unit or building while the palette is open and nothing is
-armed closes it and keeps the selection, even over a scrap pile: dismissing
-never also acts. With QUEUE lit (or Shift or Ctrl held), a roster chip drops its
-kind instead of keeping only it. Taps and clicks select through `select::pick`,
-which gives a fingertip a wider reach than a cursor. A press that picks nothing
-on a tile with known salvage selects that tile as `Selection::pile`, read-only
-and exclusive: any other selection drops it, and `Game` drops it once the viewer
-knows of no salvage there. Its panel and the desktop hover readout share
+QUEUE and the ribbon cancels its mode. The build palette's Back card
+(`CardAction::ClosePalette`) stands in its own column at the band's left edge
+and leaves construction in one press, and on touch a tap that picks no unit or
+building while the palette is open and nothing is armed closes it and keeps the
+selection, even over a scrap pile: dismissing never also acts. With QUEUE lit
+(or Shift or Ctrl held), a roster chip drops its kind instead of keeping only
+it. Taps and clicks select through `select::pick`, which gives a fingertip a
+wider reach than a cursor. A press that picks nothing on a tile with known
+salvage selects that tile as `Selection::pile`, read-only and exclusive: any
+other selection drops it, and `Game` drops it once the viewer knows of no
+salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
 
@@ -482,10 +489,10 @@ carry the coaching (`Menu::draw_with_coaching`), and screens that mix
 information with key help show only the information until then.
 
 Touch-only builds hide rows they cannot use: Open diagnostics folder (no file
-manager) and Quit (the platform closes apps). Controls, the left-handed preset,
-and edge pan stay for an attached keyboard or trackpad. A match autosaves as the
-window goes inactive, so Continue resumes one the platform terminates in the
-background.
+manager) and Quit (the platform closes apps). The Controls tab, the left-handed
+preset, and edge pan stay for an attached keyboard or trackpad. A match
+autosaves as the window goes inactive, so Continue resumes one the platform
+terminates in the background.
 
 ## Persistence and replay
 
@@ -610,7 +617,7 @@ live state.
 
 ## Performance and diagnostics
 
-The player-facing Performance display is independent of crash diagnostics and
+The player-facing Performance readout is independent of crash diagnostics and
 debug profiling. It observes completed frame measurements without changing fog,
 pausing a match, or arming capture. Off adds no timing samples. FPS measures
 frame-start intervals, including presentation waits; Detailed also measures CPU

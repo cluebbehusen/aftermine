@@ -25,10 +25,14 @@ struct PanelPacking {
     hides_minimap: bool,
 }
 
+/// The info column's width, then a command tile's width, height, and gap.
+/// Tiles are sized so a Harvester carrying scrap (seven verbs), or rally
+/// controls beside five products, fill one row at the 1133×744 layout
+/// floor.
 fn card_metrics(viewport: Vec2, scale: f32) -> (f32, f32, f32, f32) {
     let small = viewport.x / scale < 800.0 || viewport.y / scale < 500.0;
     let left = if small { 204.0 } else { 228.0 };
-    let (width, height) = if small { (66.0, 76.0) } else { (116.0, 48.0) };
+    let (width, height) = if small { (66.0, 76.0) } else { (84.0, 72.0) };
     (left * scale, width * scale, height * scale, 6.0 * scale)
 }
 
@@ -390,6 +394,23 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
     time_width(ticks.sum()).max(measure("Ready"))
 }
 
+/// The grouped palette's Back column, which spans both rows.
+const PALETTE_BACK_WIDTH: f32 = 60.0;
+/// A grouped palette cell's height.
+const PALETTE_CELL_H: f32 = 76.0;
+/// The narrowest grouped cell. Below it, only under the layout floor,
+/// the palette falls back to a flat grid.
+const PALETTE_MIN_CELL: f32 = 72.0;
+
+/// Palette columns a category spans: its buildings fill two rows across.
+fn category_columns(buildings: usize) -> usize {
+    buildings.div_ceil(2)
+}
+
+/// The construction palette for `count` cards: every building in its
+/// category's columns with Back last. Grouped, Back stands in its own
+/// column at the band's left edge and each category fills two rows under
+/// its header.
 fn catalog_geometry(
     viewport: Vec2,
     scale: f32,
@@ -403,24 +424,54 @@ fn catalog_geometry(
         viewport.x
     };
     let available = (right - left - 10.0 * scale).max(136.0 * scale);
+    let gap = 4.0 * scale;
+    let header = 28.0 * scale;
+    let categories = &crate::action::BUILD_CATEGORIES;
+    let buildings: usize = categories.iter().map(|(_, kinds)| kinds.len()).sum();
+    let columns: usize = categories
+        .iter()
+        .map(|(_, kinds)| category_columns(kinds.len()))
+        .sum();
+    let back_w = PALETTE_BACK_WIDTH * scale;
+    let cell_w = ((available - back_w - columns as f32 * gap) / columns as f32).min(140.0 * scale);
+    if count == buildings + 1 && cell_w >= PALETTE_MIN_CELL * scale {
+        let cell_h = PALETTE_CELL_H * scale;
+        let height = header + 2.0 * cell_h + gap + 8.0 * scale;
+        let top = viewport.y - height;
+        let first_x = left + back_w + gap;
+        let mut slots = Vec::with_capacity(count);
+        let mut column = 0;
+        for (_, kinds) in categories {
+            let span = category_columns(kinds.len());
+            for i in 0..kinds.len() {
+                slots.push(Rect::new(
+                    first_x + (column + i % span) as f32 * (cell_w + gap),
+                    top + header + (i / span) as f32 * (cell_h + gap),
+                    cell_w,
+                    cell_h,
+                ));
+            }
+            column += span;
+        }
+        slots.push(Rect::new(left, top + header, back_w, 2.0 * cell_h + gap));
+        let band = Rect::new(
+            0.0,
+            top,
+            first_x + columns as f32 * (cell_w + gap) - gap + 10.0 * scale,
+            height,
+        );
+        return (band, slots, true);
+    }
     let max_columns = numeric::to_usize(
         ((available + 4.0 * scale) / (116.0 * scale))
             .floor()
             .max(1.0),
     );
     let rows = count.max(1).div_ceil(max_columns);
-    // Fifteen buildings in their five categories plus Back, which
-    // takes the free cell under UTILITY.
-    let grouped = count == 16 && max_columns >= 8;
-    let columns = if grouped {
-        8
-    } else {
-        count.max(1).div_ceil(rows)
-    };
+    let columns = count.max(1).div_ceil(rows);
     let width = ((available - columns.saturating_sub(1) as f32 * 4.0 * scale) / columns as f32)
         .min(140.0 * scale);
     let row_h = 58.0 * scale;
-    let header = 28.0 * scale;
     let height = header + count.div_ceil(columns) as f32 * row_h + 8.0 * scale;
     let band = Rect::new(
         0.0,
@@ -430,27 +481,15 @@ fn catalog_geometry(
     );
     let slots = (0..count)
         .map(|i| {
-            let (column, row) = if grouped {
-                match i {
-                    0..=1 => (0, i),
-                    2..=5 => (1 + (i - 2) % 2, (i - 2) / 2),
-                    6..=9 => (3 + (i - 6) % 2, (i - 6) / 2),
-                    10..=12 => (5 + (i - 10) % 2, (i - 10) / 2),
-                    13..=14 => (7, i - 13),
-                    _ => (6, 1),
-                }
-            } else {
-                (i % columns, i / columns)
-            };
             Rect::new(
-                left + column as f32 * (width + 4.0 * scale),
-                band.y + header + row as f32 * row_h,
+                left + (i % columns) as f32 * (width + 4.0 * scale),
+                band.y + header + (i / columns) as f32 * row_h,
                 width,
                 row_h - 4.0 * scale,
             )
         })
         .collect();
-    (band, slots, grouped)
+    (band, slots, false)
 }
 
 /// A construction category's header: its name, a marker while open,
@@ -504,20 +543,14 @@ fn draw_catalog(
         );
     }
     if grouped {
-        for (category, (index, label)) in [
-            (0, "ECONOMY"),
-            (2, "PRODUCTION"),
-            (6, "DEFENSE"),
-            (10, "UTILITY"),
-            (13, "STRATEGIC"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        let mut first = 0;
+        for (category, (name, kinds)) in crate::action::BUILD_CATEGORIES.iter().enumerate() {
+            let cells = &slots[first..first + kinds.len()];
+            first += kinds.len();
             let key = bindings.label(crate::action::Action::BuildCategory(category.fit::<u8>()));
             let palette_key = bindings.label(crate::action::Action::ToggleBuildPalette);
             let label = category_label(
-                label,
+                &name.to_uppercase(),
                 input.build_category == Some(category.fit::<u8>()),
                 &key,
                 input
@@ -526,11 +559,14 @@ fn draw_catalog(
                     .then_some(palette_key.as_str()),
                 !crate::platform::hands().keys,
             );
+            let x = cells[0].x + 5.0 * s;
+            let right = cells.iter().map(Rect::right).fold(x, f32::max);
+            let caption = crate::theme::Type::Caption.at(s);
             crate::typography::draw(
                 &label,
-                slots[index].x + 5.0 * s,
+                x,
                 band.y + 20.0 * s,
-                crate::theme::Type::Caption.at(s),
+                crate::typography::fit(&label, caption, right - x - 2.0 * s, 8.0 * s),
                 TEXT_SECONDARY,
             );
         }
@@ -558,6 +594,10 @@ fn draw_catalog(
                 rect.h,
                 if armed { SCRAP_COLOR } else { TEXT_PRIMARY },
             );
+        }
+        if grouped {
+            draw_palette_cell(card, rect, s, draw_icon);
+            continue;
         }
         draw_icon(
             Rect::new(rect.x + 5.0 * s, rect.y + 9.0 * s, 34.0 * s, 34.0 * s),
@@ -624,6 +664,122 @@ fn draw_catalog(
     }
 }
 
+/// One grouped palette cell: the building over its name, with the cost and
+/// hotkey in a footer. A card without a cost, like Back, centers its icon
+/// and name instead.
+fn draw_palette_cell(
+    card: &crate::panel::Card,
+    rect: Rect,
+    s: f32,
+    draw_icon: &impl Fn(Rect, &crate::panel::CardIcon, Color),
+) {
+    let icon = 30.0 * s;
+    let width = rect.w - 8.0 * s;
+    let size = crate::typography::fit(
+        &card.title,
+        crate::theme::Type::Body.at(s),
+        width,
+        crate::theme::Type::Caption.at(s),
+    );
+    let measure = |text: &str| measure_text(text, None, numeric::font_size(size), 1.0);
+    let names = card_title_lines(&card.title, |text| measure(text).width, width);
+    let ascent = names
+        .iter()
+        .map(|name| measure(name).offset_y)
+        .fold(0.0, f32::max);
+    let line_h = size + 2.0 * s;
+    let stack = icon + 4.0 * s + names.len() as f32 * line_h;
+    let top = if card.cost.is_some() {
+        rect.y + 6.0 * s
+    } else {
+        rect.y + ((rect.h - stack) * 0.5).max(4.0 * s)
+    };
+    draw_icon(
+        Rect::new(rect.x + (rect.w - icon) * 0.5, top, icon, icon),
+        &card.icon,
+        if card.enabled {
+            WHITE
+        } else {
+            Color::new(1.0, 1.0, 1.0, 0.5)
+        },
+    );
+    for (line, name) in names.iter().enumerate() {
+        draw_text(
+            name,
+            rect.x + (rect.w - measure(name).width) * 0.5,
+            top + icon + 4.0 * s + ascent + line as f32 * line_h,
+            size,
+            if card.enabled {
+                TEXT_PRIMARY
+            } else {
+                TEXT_SECONDARY
+            },
+        );
+    }
+    let footer = rect.y + rect.h - 6.0 * s;
+    if let Some(cost) = card.cost {
+        crate::typography::draw(
+            &cost.to_string(),
+            rect.x + 5.0 * s,
+            footer,
+            crate::theme::Type::Small.at(s),
+            if card.enabled {
+                SCRAP_COLOR
+            } else {
+                TEXT_DISABLED
+            },
+        );
+    }
+    let caption = crate::theme::Type::Caption.at(s);
+    let key_width = measure_text(&card.hotkey, None, numeric::font_size(caption), 1.0).width;
+    draw_text(
+        &card.hotkey,
+        rect.x + rect.w - key_width - 5.0 * s,
+        footer,
+        caption,
+        TEXT_SECONDARY,
+    );
+}
+
+/// The baseline of a command tile's hotkey, below the tile's top edge.
+const TILE_HOTKEY_BASELINE: f32 = 13.0;
+
+/// The highest a command tile's icon may sit: clear of the hotkey label
+/// when it reaches into the icon's column, as a modifier chord or a second
+/// binding does, else just inside the tile's top edge.
+fn tile_icon_floor(tile: Rect, icon_size: f32, hotkey: Option<Rect>, scale: f32) -> f32 {
+    let icon_x = tile.x + (tile.w - icon_size) * 0.5;
+    match hotkey {
+        Some(label) if label.right() + 2.0 * scale > icon_x => label.bottom() + 6.0 * scale,
+        _ => tile.y + 4.0 * scale,
+    }
+}
+
+/// How much taller than the band an info column may be before the two
+/// keep separate top edges.
+const FLUSH_SLACK: f32 = 12.0;
+
+/// Grows the band to an info column that overtops it by less than
+/// [`FLUSH_SLACK`], so they share one top edge instead of a sliver of a
+/// step. A real difference keeps its open notch for the world.
+fn flush_band(
+    packing: PanelPacking,
+    info_height: f32,
+    viewport_h: f32,
+    scale: f32,
+) -> PanelPacking {
+    let excess = info_height - packing.band_h;
+    if excess > 0.0 && excess < FLUSH_SLACK * scale {
+        PanelPacking {
+            band_h: info_height,
+            top: viewport_h - info_height,
+            ..packing
+        }
+    } else {
+        packing
+    }
+}
+
 fn selection_info_rect(viewport: Vec2, width: f32, content_height: f32, actions: Rect) -> Rect {
     let height = content_height.max(actions.h);
     Rect::new(0.0, viewport.y - height, width, height)
@@ -633,7 +789,7 @@ fn selection_info_rect(viewport: Vec2, width: f32, content_height: f32, actions:
 /// drawing so input hit-tests exactly what the next draw shows.
 pub(crate) enum PanelLayout {
     /// The construction palette: its band, one slot per card, and
-    /// whether the slots stand in their four category columns.
+    /// whether the slots stand in their category columns beside Back.
     Catalog {
         band: Rect,
         slots: Vec<Rect>,
@@ -715,6 +871,7 @@ pub(crate) fn layout_panel(
     );
     let (cards_x, _, _, _) = card_metrics(viewport, s);
     let measured = measure_info(panel, cards_x, s, small, measure);
+    let packing = flush_band(packing, measured.height, viewport.y, s);
     let (card_rects, cards_w) = command_card_geometry(viewport, s, packing, &panel.cards);
     let action_rect = action_panel_rect(packing, cards_x, cards_w, !panel.cards.is_empty());
     let info_rect = selection_info_rect(viewport, cards_x, measured.height, action_rect);
@@ -1229,29 +1386,12 @@ pub(crate) fn draw_panel(
             draw_rally_control(card, rect, s);
             continue;
         }
-        let horizontal = rect.w >= 100.0 * s;
+        // A tile stacks its icon over a centered title. A card with a cost
+        // keeps a footer for the train time and cost and hangs the stack
+        // from the top; any other card centers the stack.
         let icon_size = crate::theme::Type::Heading.at(s);
-        draw_icon(
-            Rect::new(
-                if horizontal {
-                    rect.x + 6.0 * s
-                } else {
-                    rect.x + (rect.w - icon_size) * 0.5
-                },
-                rect.y + if horizontal { 6.0 } else { 4.0 } * s,
-                icon_size,
-                icon_size,
-            ),
-            &card.icon,
-            tint,
-        );
-        let name_x = if horizontal {
-            rect.x + 36.0 * s
-        } else {
-            rect.x + 4.0 * s
-        };
-        let title_top = rect.y + if horizontal { 4.0 } else { 32.0 } * s;
-        let title_bottom = if let Some(cost) = card.cost {
+        let icon_gap = 6.0 * s;
+        let footer_top = card.cost.map(|cost| {
             let dims = measure_text(
                 cost.to_string(),
                 None,
@@ -1259,12 +1399,27 @@ pub(crate) fn draw_panel(
                 1.0,
             );
             rect.y + rect.h - 5.0 * s - dims.offset_y - 3.0 * s
-        } else {
-            rect.y + rect.h - 4.0 * s
-        };
-        let title_width = rect.x + rect.w - name_x - 4.0 * s;
+        });
+        let hotkey = (!card.hotkey.is_empty()).then(|| {
+            let dims = measure_text(
+                &card.hotkey,
+                None,
+                numeric::font_size(crate::theme::Type::Small.at(s)),
+                1.0,
+            );
+            Rect::new(
+                rect.x + 4.0 * s,
+                rect.y + TILE_HOTKEY_BASELINE * s - dims.offset_y,
+                dims.width,
+                dims.height,
+            )
+        });
+        let icon_floor = tile_icon_floor(rect, icon_size, hotkey, s);
+        let room =
+            footer_top.unwrap_or(rect.y + rect.h - 4.0 * s) - (icon_floor + icon_size + icon_gap);
+        let title_width = rect.w - 8.0 * s;
         let mut title_size = crate::theme::Type::Small.at(s);
-        let (names, ascent) = loop {
+        let (names, ascent, title_height) = loop {
             let names = card_title_lines(
                 &card.title,
                 |text| measure_text(text, None, numeric::font_size(title_size), 1.0).width,
@@ -1280,16 +1435,32 @@ pub(crate) fn draw_panel(
                 width = width.max(dims.width);
             }
             let height = ascent + descent + names.len().saturating_sub(1) as f32 * title_size;
-            if (height <= title_bottom - title_top && width <= title_width) || title_size <= 8.0 * s
-            {
-                break (names, ascent);
+            if (height <= room && width <= title_width) || title_size <= 8.0 * s {
+                break (names, ascent, height);
             }
             title_size -= 0.5 * s;
         };
+        let icon_y = if footer_top.is_some() {
+            icon_floor
+        } else {
+            (rect.y + (rect.h - icon_size - icon_gap - title_height) * 0.5).max(icon_floor)
+        };
+        draw_icon(
+            Rect::new(
+                rect.x + (rect.w - icon_size) * 0.5,
+                icon_y,
+                icon_size,
+                icon_size,
+            ),
+            &card.icon,
+            tint,
+        );
+        let title_top = icon_y + icon_size + icon_gap;
         for (line_index, name) in names.iter().enumerate() {
+            let width = measure_text(name, None, numeric::font_size(title_size), 1.0).width;
             draw_text(
                 name,
-                name_x,
+                rect.x + (rect.w - width) * 0.5,
                 title_top + ascent + line_index as f32 * title_size,
                 title_size,
                 TEXT_PRIMARY,
@@ -1319,11 +1490,7 @@ pub(crate) fn draw_panel(
             draw_text(
                 &card.hotkey,
                 rect.x + 4.0 * s,
-                if horizontal {
-                    rect.y + rect.h - 5.0 * s
-                } else {
-                    rect.y + 13.0 * s
-                },
+                rect.y + TILE_HOTKEY_BASELINE * s,
                 crate::theme::Type::Small.at(s),
                 TEXT_SECONDARY,
             );
@@ -1334,11 +1501,7 @@ pub(crate) fn draw_panel(
             let label = crate::panel::unit_train_time_label(kind);
             draw_text(
                 &label,
-                if horizontal {
-                    rect.x + 54.0 * s
-                } else {
-                    rect.x + 4.0 * s
-                },
+                rect.x + 4.0 * s,
                 rect.y + rect.h - 5.0 * s,
                 crate::theme::Type::Caption.at(s),
                 if card.enabled {

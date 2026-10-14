@@ -36,6 +36,33 @@ pub(crate) fn install(font: Font) {
     DISPLAY.with(|current| *current.borrow_mut() = Some(font));
 }
 
+/// `text` cut to `max` characters, its last three spent on "...". Counts
+/// chars, not bytes: names are player-typed, and slicing bytes could
+/// split a multibyte character.
+pub(crate) fn clip_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut clipped: String = text.chars().take(max.saturating_sub(3)).collect();
+    clipped.push_str("...");
+    clipped
+}
+
+/// `text` clipped with "..." until `measure` says it fits `max_width`;
+/// empty when not even four characters fit.
+pub(crate) fn elide_to_width(text: &str, max_width: f32, measure: &impl Fn(&str) -> f32) -> String {
+    if measure(text) <= max_width {
+        return text.to_string();
+    }
+    for cap in (4..text.chars().count()).rev() {
+        let candidate = clip_chars(text, cap);
+        if measure(&candidate) <= max_width {
+            return candidate;
+        }
+    }
+    String::new()
+}
+
 /// The size at which body-face `text` fits `width`: `size` when it
 /// already fits, else shrunk to fit, but never below `floor`.
 pub(crate) fn fit(text: &str, size: f32, width: f32, floor: f32) -> f32 {
@@ -66,3 +93,6 @@ pub(crate) fn draw(text: &str, x: f32, y: f32, size: f32, color: Color) {
         );
     });
 }
+
+#[cfg(test)]
+mod tests;

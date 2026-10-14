@@ -2,12 +2,13 @@
 //! Unavailable revisions stay visible with a reason; malformed files are skipped.
 
 use crate::numeric::Fit;
+pub use crate::saved_game::Unavailable;
 #[cfg(test)]
 use oxide_sim::SIM_VERSION;
 use std::path::PathBuf;
 
-/// What a record on disk is, read from its metadata `kind` tag with a
-/// filename-prefix fallback for records that carry no tag.
+/// What a record on disk is, read from its metadata `kind` tag; an
+/// untagged record is a finished match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
     /// A live session written on quit; Continue's material.
@@ -46,27 +47,39 @@ pub(crate) fn record_kind(meta: &chassis::replay::ReplayMeta) -> RecordKind {
     }
 }
 
-/// One row in the replay browser.
+/// One record on the shelf.
 pub struct ReplayEntry {
     /// File on disk.
     pub path: PathBuf,
-    /// Browser row label: name (or map), length, date.
-    pub label: String,
-    /// Focused-row detail line.
-    pub blurb: String,
-    /// What activating the row does, as a keyboard verb and a pointer
-    /// verb, where it can be activated.
-    pub action: Option<(&'static str, &'static str)>,
-    /// Whether this build can load or watch the record.
-    pub compatible: bool,
+    /// The record's name, or its map when nobody named it.
+    pub title: String,
+    /// What the record is, beside its title: a named save's map, the
+    /// kind of an unnamed one, or a finished match's format.
+    pub detail: String,
+    /// Match time when the record was written.
+    pub clock: String,
+    /// When the record was saved, in unix seconds.
+    pub saved_secs: u64,
+    /// Why this build cannot open the record, if it cannot.
+    pub problem: Option<Unavailable>,
     /// What the record is; decides its shelf section and verb.
     pub kind: RecordKind,
 }
 
 impl ReplayEntry {
+    /// Whether this build can load or watch the record.
+    pub fn available(&self) -> bool {
+        self.problem.is_none()
+    }
+
     /// How to act on the row, for the hands the player is using.
     pub fn hint(&self, hands: crate::platform::Hands) -> String {
-        entry_hint(self.action, hands)
+        let action = match (self.problem, self.kind.resumable()) {
+            (Some(_), _) => None,
+            (None, true) => Some(("loads paused", "load paused")),
+            (None, false) => Some(("watches", "watch")),
+        };
+        entry_hint(action, hands)
     }
 }
 
@@ -86,9 +99,44 @@ fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> St
     }
 }
 
-/// Days-since-epoch to a civil date (Howard Hinnant's algorithm) —
-/// enough calendar for a browser row without pulling a time crate.
-fn civil_date(secs: u64) -> String {
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// When a record was saved, as of `now` (both unix seconds): minutes,
+/// hours, then days for a week, then its UTC calendar date, with the
+/// year only when it is not this one. A save stamped in the future (a
+/// clock moved back) reads as just now.
+pub fn saved_ago(saved: u64, now: u64) -> String {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+    const WEEK: u64 = 7 * DAY;
+    let elapsed = now.saturating_sub(saved);
+    match elapsed {
+        ..MINUTE => "just now".to_string(),
+        MINUTE..HOUR => format!("{} min ago", elapsed / MINUTE),
+        HOUR..DAY => format!("{} h ago", elapsed / HOUR),
+        DAY..WEEK => match elapsed / DAY {
+            1 => "1 day ago".to_string(),
+            days => format!("{days} days ago"),
+        },
+        _ => {
+            let (year, month, day) = civil(saved);
+            let month = MONTHS[month as usize - 1];
+            if year == civil(now).0 {
+                format!("{month} {day}")
+            } else {
+                format!("{month} {day}, {year}")
+            }
+        }
+    }
+}
+
+/// Days-since-epoch to a civil (year, month, day) in UTC (Howard
+/// Hinnant's algorithm): enough calendar for a shelf row without pulling
+/// a time crate.
+fn civil(secs: u64) -> (i64, u32, u32) {
     let days = (secs / 86_400).fit::<i64>();
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -100,19 +148,7 @@ fn civil_date(secs: u64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// Shortens a long file stem for the browser row. Counts chars, not
-/// bytes: replay files are user-named, and slicing bytes could split a
-/// multibyte character and panic.
-fn elide(stem: &str) -> String {
-    if stem.chars().count() > 26 {
-        let head: String = stem.chars().take(23).collect();
-        format!("{head}...")
-    } else {
-        stem.to_string()
-    }
+    (y, m.fit::<u32>(), d.fit::<u32>())
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -150,10 +186,6 @@ fn scan_cancellable(
         let Ok(replay) = crate::saved_game::inspect(&path) else {
             continue;
         };
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("replay");
         let kind = record_kind(&replay.meta);
         // A record's own saved_at outranks mtime: a copied or synced
         // file reports the copy date, and only the metadata records when
@@ -171,42 +203,32 @@ fn scan_cancellable(
                 std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs))
             })
             .unwrap_or(modified);
-        let date = saved_at
+        let saved_secs = saved_at
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| civil_date(d.as_secs()))
-            .unwrap_or_default();
-        let ticks = replay.meta.ticks.unwrap_or(0);
-        let compatible = replay.problem.is_none();
-        // A named save leads with its name; everything else leads with
-        // its map and keeps the file stem for identification.
-        let label = match replay.meta.description.as_deref() {
-            Some(name) => format!("{} | {} | t{} | {}", elide(name), replay.map, ticks, date),
-            None => format!("{} | t{} | {} | {}", replay.map, ticks, date, elide(stem)),
-        };
-        let (blurb, action) = if let Some(problem) = replay.problem {
-            (format!("unavailable: {problem}"), None)
-        } else if kind.resumable() {
-            let what = match kind {
-                RecordKind::Save => "a saved game",
-                RecordKind::LanSave => "a saved LAN match",
-                RecordKind::LanAutosave => "a live LAN match",
-                RecordKind::Autosave | RecordKind::Match => "a live session",
-            };
-            (what.to_string(), Some(("loads paused", "load paused")))
-        } else {
-            (
-                format!("{} seats | sim v{}", replay.seats, replay.meta.sim_version),
-                Some(("watches", "watch")),
-            )
+            .map_or(0, |d| d.as_secs());
+        let name = replay.meta.description.clone();
+        let detail = match (kind, name.as_deref()) {
+            (RecordKind::Match, _) => {
+                crate::menu::match_format(replay.seats, replay.teams.unwrap_or(replay.seats))
+            }
+            (RecordKind::Autosave, _) => "Autosave".to_string(),
+            (RecordKind::LanAutosave, _) => "LAN autosave".to_string(),
+            (RecordKind::Save, Some(name)) if name != replay.map => replay.map.clone(),
+            (RecordKind::Save, _) => "Saved game".to_string(),
+            (RecordKind::LanSave, Some(name)) if name != replay.map => {
+                format!("LAN \u{b7} {}", replay.map)
+            }
+            (RecordKind::LanSave, _) => "LAN save".to_string(),
         };
         out.push((
             RecordTime { saved_at, modified },
             ReplayEntry {
                 path,
-                label,
-                blurb,
-                action,
-                compatible,
+                title: name.unwrap_or_else(|| replay.map.clone()),
+                detail,
+                clock: crate::clock_label::ticks(replay.meta.ticks.unwrap_or(0)),
+                saved_secs,
+                problem: replay.problem,
                 kind,
             },
         ));

@@ -74,16 +74,6 @@ pub struct Browser {
     last_view: Vec2,
 }
 
-/// The section heading for a map's seats and the teams they form.
-fn heading(seats: usize, teams: usize) -> String {
-    match (seats, teams) {
-        (2, _) => "1v1".to_string(),
-        (n, t) if t == n => format!("{n}-way FFA"),
-        (n, 2) if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
-        (n, _) => format!("{n} seats"),
-    }
-}
-
 fn columns(view_w: f32, ui: f32) -> usize {
     if view_w < 980.0 * ui { 3 } else { 4 }
 }
@@ -98,7 +88,7 @@ fn lines(entries: &[ScenarioEntry], cols: usize) -> Vec<Line> {
             if !row.is_empty() {
                 out.push(Line::Cards(std::mem::take(&mut row)));
             }
-            out.push(Line::Heading(heading(e.seats, e.teams)));
+            out.push(Line::Heading(crate::menu::match_format(e.seats, e.teams)));
             last = Some((e.seats, e.teams));
         }
         row.push(i);

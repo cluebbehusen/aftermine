@@ -28,19 +28,14 @@ pub enum PerformanceDisplay {
 }
 
 impl PerformanceDisplay {
+    /// Every mode, from showing least to most.
+    pub const ALL: [Self; 3] = [Self::Off, Self::Fps, Self::Detailed];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Off => "Off",
             Self::Fps => "FPS",
             Self::Detailed => "Detailed",
-        }
-    }
-
-    pub fn next(self) -> Self {
-        match self {
-            Self::Off => Self::Fps,
-            Self::Fps => Self::Detailed,
-            Self::Detailed => Self::Off,
         }
     }
 }
@@ -159,21 +154,29 @@ impl MarkerPrefs {
         }
     }
 
-    pub fn timing_label(self) -> &'static str {
-        match (self.start, self.end) {
-            (24.0, 16.0) => "Standard",
-            (30.0, 22.0) => "Earlier",
-            (18.0, 10.0) => "Later",
-            _ => "Custom",
-        }
+    /// The timing presets as (start, end, name), from the latest
+    /// transition to the earliest.
+    pub const TIMINGS: [(f32, f32, &'static str); 3] = [
+        (18.0, 10.0, "Later"),
+        (24.0, 16.0, "Standard"),
+        (30.0, 22.0, "Earlier"),
+    ];
+
+    /// The preset these endpoints match, if any.
+    pub fn timing(self) -> Option<usize> {
+        Self::TIMINGS.iter().position(|&(start, end, _)| {
+            start.to_bits() == self.start.to_bits() && end.to_bits() == self.end.to_bits()
+        })
     }
 
-    pub fn cycle_timing(&mut self) {
-        (self.start, self.end) = match (self.start, self.end) {
-            (24.0, 16.0) => (30.0, 22.0),
-            (30.0, 22.0) => (18.0, 10.0),
-            _ => (24.0, 16.0),
-        };
+    pub fn timing_label(self) -> &'static str {
+        self.timing()
+            .map_or("Custom", |preset| Self::TIMINGS[preset].2)
+    }
+
+    /// Moves the endpoints to preset `index` of [`Self::TIMINGS`].
+    pub fn set_timing(&mut self, index: usize) {
+        (self.start, self.end, _) = Self::TIMINGS[index];
     }
 }
 

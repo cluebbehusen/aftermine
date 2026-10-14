@@ -244,7 +244,7 @@ impl App {
                 match screen {
                     Screen::Home(home) => {
                         home.set_catalog(
-                            entries.iter().any(|e| e.compatible && e.kind.continues()),
+                            entries.iter().any(|e| e.available() && e.kind.continues()),
                         );
                     }
                     Screen::Replays(shelf) => shelf.set_catalog(entries),
