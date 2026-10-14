@@ -335,6 +335,9 @@ pub(crate) fn decide(
     let home = map
         .start(observation.me)
         .and_then(|start| map.component(start));
+    persistent.memory.assembled(observation, events, |owner| {
+        map.hostile(observation.me, owner)
+    });
     persistent.memory.observe_stranded(observation, |unit| {
         crate::missions::stranded(unit, map, home)
     });
@@ -347,7 +350,17 @@ pub(crate) fn decide(
         profile.stance,
         &persistent.missions,
     );
-    let staffing = workers::staffing(observation, map, frame, profile, &foundries, &scratch);
+    let meals = persistent
+        .missions
+        .meals(observation, map, &scratch, &ledger);
+    let staffing = workers::staffing(
+        observation,
+        map,
+        frame,
+        profile,
+        (&foundries, &meals),
+        &scratch,
+    );
     let airworks = observation
         .my_buildings
         .iter()
@@ -561,9 +574,7 @@ pub(crate) fn decide(
     persistent
         .missions
         .repair(observation, map, &scratch, &mut ledger);
-    persistent
-        .missions
-        .feed(observation, map, &scratch, &mut ledger);
+    Missions::feed(observation, &scratch, &meals, &mut ledger);
     let patients = persistent.missions.patients(observation, &ledger);
     workers::run(
         observation,

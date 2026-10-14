@@ -38,7 +38,7 @@ pub(crate) use air::{Hazard, hazards};
 pub(crate) use attack::{building_value, margin, minimum};
 pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
-pub(crate) use repair::{feeds, treating};
+pub(crate) use repair::{Meal, feeds, treating};
 pub(crate) use scouting::{look, points};
 pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;

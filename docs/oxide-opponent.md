@@ -210,8 +210,8 @@ Each behavior is proven by a staged scenario test.
 | Enemy Spire tech known                                   | A Lattice over the most valuable base for a Deep Bore or a seen Crucible; cover over every base when one enemy holds both                             |
 | Enemy Spire known                                        | Lattice cover over each base in proportion to known enemy Spires, and radar where a Spire's line enters a guarded ring                                |
 | Known guns the army cannot attack, or an attack given up | Assemble a Maw where it can drive out of the base, crewed by the fastest free workers; it joins the next attack and cuts the nearest defense          |
-| Enemy cradle known                                       | Raise the anti-heavy need before its machine stands up                                                                                                |
-| Wounded Maw and safe known wreck                         | Drive it to the wreck and keep it there, out of missions, while its kiln feeds                                                                        |
+| Enemy cradle known                                       | Raise the anti-heavy need before its machine stands up, and keep it once the machine stands up out of sight                                           |
+| Wounded Maw and safe known wreck                         | Drive it where its hull fits and its kiln reaches the wreck, keep it there out of missions while its kiln feeds, and keep harvesters off that wreck   |
 
 It also covers scouting, where a point whose scout was lost on the way or found
 no safe view waits to go stale again rather than drawing scouts one after

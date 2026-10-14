@@ -272,7 +272,15 @@ fn a_given_up_attack_wants_a_cradle_even_against_no_known_guns() {
 /// Maw at `maw`, West harvesters at home, and wreck at `wreck`, which West
 /// sees.
 fn feeding(maw: (i32, i32), wreck: TilePos) -> (Scenario, State, UnitId) {
-    let mut scenario = super::attack::armed(8, &[]);
+    feeding_on(super::attack::armed(8, &[]), maw, wreck)
+}
+
+/// [`feeding`] on `scenario`'s map.
+fn feeding_on(
+    mut scenario: Scenario,
+    maw: (i32, i32),
+    wreck: TilePos,
+) -> (Scenario, State, UnitId) {
     scenario.units.push(unit(0, UnitKind::Maw, maw.0, maw.1));
     scenario
         .units
@@ -304,8 +312,9 @@ fn a_wounded_maw_drives_to_safe_wreck_and_feeds_there_out_of_every_mission() {
     let wreck = TilePos::new(8, 15);
     let (scenario, state, maw) = feeding((8, 9), wreck);
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    // The nearest tile from which its intake reaches the wreck.
     assert!(
-        runs(&commands).contains(&(vec![maw], wreck)),
+        runs(&commands).contains(&(vec![maw], TilePos::new(8, 13))),
         "the Maw heads for the wreck: {:?}",
         runs(&commands)
     );
@@ -329,5 +338,92 @@ fn a_wounded_maw_drives_to_safe_wreck_and_feeds_there_out_of_every_mission() {
     assert!(
         !harvests(&commands).iter().any(|(tile, _)| *tile == wreck),
         "harvesters leave the Maw its wreck"
+    );
+}
+
+/// Whether a Maw's hull fits on `tile` in `state`: every tile under it is
+/// open ground.
+fn hull_fits(state: &State, tile: TilePos) -> bool {
+    oxide_sim::geometry::hull_open(tile, UnitKind::Maw.stats().radius, |cell| {
+        state.passable(cell)
+    })
+}
+
+#[test]
+fn a_wounded_maw_feeds_only_from_ground_its_hull_fits() {
+    // Wreck against the map's edge: the Maw's centre can never stand on it,
+    // but its intake reaches it from open ground beside.
+    let wreck = TilePos::new(1, 15);
+    let (scenario, state, maw) = feeding((8, 9), wreck);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let goal = runs(&commands)
+        .into_iter()
+        .find(|(units, _)| units == &[maw])
+        .map(|(_, goal)| goal)
+        .expect("the Maw heads for the wreck");
+    assert!(
+        !hull_fits(&state, wreck),
+        "premise: no hull fits on the wreck"
+    );
+    assert!(
+        hull_fits(&state, goal),
+        "the hull fits where it goes: {goal:?}"
+    );
+    assert!(
+        goal.chebyshev(wreck) <= 2,
+        "its intake reaches the wreck: {goal:?}"
+    );
+
+    // Wreck in a pocket whose door is one tile wide: ordinary ground reaches
+    // it, the Maw's hull never does, so it is not sent at all.
+    let mut pocket = super::attack::armed(8, &[]);
+    pocket.map[16].replace_range(1..6, "#####");
+    for row in &mut pocket.map[17..23] {
+        row.replace_range(5..6, "#");
+    }
+    pocket.map[19].replace_range(5..6, ".");
+    let wreck = TilePos::new(2, 19);
+    let (scenario, state, maw) = feeding_on(pocket, (8, 9), wreck);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| !units.contains(&maw)),
+        "no Run the hull cannot drive: {:?}",
+        runs(&commands)
+    );
+}
+
+#[test]
+fn harvesters_leave_wreck_to_the_maw_bound_for_it() {
+    let wreck = TilePos::new(8, 15);
+    let (scenario, mut state, maw) = feeding((8, 9), wreck);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let sent: Vec<PlayerCommand> = commands
+        .iter()
+        .filter(|command| matches!(&command.command, Command::Run { units, .. } if units == &[maw]))
+        .cloned()
+        .collect();
+    assert_eq!(sent.len(), 1, "the Maw heads for the wreck");
+    assert!(
+        !harvests(&commands).iter().any(|(tile, _)| *tile == wreck),
+        "no harvester races it there in the same decision"
+    );
+
+    // On its way, a later decision still leaves the wreck to it.
+    state.tick(&sent);
+    state.tick(&[]);
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(0))
+            .my_units
+            .iter()
+            .any(|unit| unit.id == maw && !unit.idle),
+        "premise: the Maw is under way"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        !harvests(&commands).iter().any(|(tile, _)| *tile == wreck),
+        "harvesters leave it the wreck it drives to: {:?}",
+        harvests(&commands)
     );
 }

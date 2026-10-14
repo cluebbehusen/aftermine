@@ -158,22 +158,38 @@ impl Missions {
     }
 }
 
+/// Where a free wounded kiln machine feeds this decision: the tile it
+/// stands on when its intake already reaches safe wreck there, else the tile
+/// it drives to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Meal {
+    pub(crate) unit: UnitId,
+    kind: UnitKind,
+    pub(crate) at: TilePos,
+}
+
+impl Meal {
+    /// Whether the machine's intake reaches the wreck on `tile` from where it
+    /// feeds, so workers leave that wreck to it.
+    pub(crate) fn reserves(&self, tile: TilePos) -> bool {
+        intake_reaches(self.kind, self.at, tile)
+    }
+}
+
 impl Missions {
-    /// Keeps the free wounded kiln machines whose intake already reaches
-    /// safe known wreck there while calm, and sends the idle ones to the
-    /// nearest such wreck on their ground: one holding enough to mend what
-    /// they miss first. Safe wreck is wreck the seat's harvesters could
-    /// salvage, by a route from home that avoids known danger and recent
-    /// losses. No other mission takes them this decision; free units are out
-    /// of every fight, so a machine at work in an attack feeds on what it
-    /// cuts instead.
-    pub(crate) fn feed(
+    /// Where each free wounded kiln machine feeds: where it stands if its
+    /// intake already reaches safe known wreck, else the nearest tile its
+    /// whole hull can drive to through known ground whose intake would,
+    /// one holding enough to mend what it misses first. Safe wreck is wreck
+    /// the seat's harvesters could salvage, by a route from home that avoids
+    /// known danger and recent losses.
+    pub(crate) fn meals(
         &self,
         observation: &ObservationData,
         map: &MapModel,
         scratch: &Scratch,
-        ledger: &mut Ledger,
-    ) {
+        ledger: &Ledger,
+    ) -> Vec<Meal> {
         let frame = scratch.frame;
         let hungry: Vec<&UnitObs> = self
             .free(observation, ledger)
@@ -183,7 +199,7 @@ impl Missions {
             .filter(|unit| wound(unit).is_some())
             .collect();
         if hungry.is_empty() {
-            return;
+            return Vec::new();
         }
         let homes: Vec<&BuildingObs> = observation
             .my_buildings
@@ -199,44 +215,53 @@ impl Missions {
             .filter(|(tile, _)| routes.clear(*tile))
             .copied()
             .collect();
-        for unit in hungry {
-            let Mend::Kiln(kiln) = unit.kind.stats().mend else {
+        if fields.is_empty() {
+            return Vec::new();
+        }
+        hungry
+            .into_iter()
+            .filter_map(|unit| {
+                let at = meal(observation, map, frame, &fields, unit)?;
+                Some(Meal {
+                    unit: unit.id,
+                    kind: unit.kind,
+                    at,
+                })
+            })
+            .collect()
+    }
+
+    /// Keeps each of `meals` whose machine already feeds where it stands
+    /// there while calm, and sends the idle others to where they would feed.
+    /// No other mission takes them this decision; free units are out of
+    /// every fight, so a machine at work in an attack feeds on what it cuts
+    /// instead.
+    pub(crate) fn feed(
+        observation: &ObservationData,
+        scratch: &Scratch,
+        meals: &[Meal],
+        ledger: &mut Ledger,
+    ) {
+        for meal in meals {
+            let Some(unit) = mine(observation, meal.unit) else {
                 continue;
             };
-            let at = doubled(unit.tile);
-            if fields.iter().any(|(tile, _)| feeds(unit, *tile))
-                && calm(observation, &scratch.ground, unit.tile, (1, 1), at)
-            {
-                ledger.dock(unit.id);
+            if meal.at == unit.tile {
+                if calm(
+                    observation,
+                    &scratch.ground,
+                    unit.tile,
+                    (1, 1),
+                    doubled(unit.tile),
+                ) {
+                    ledger.dock(unit.id);
+                }
                 continue;
             }
             if !unit.idle {
                 continue;
             }
-            let missing = unit.kind.stats().max_hp.saturating_sub(unit.hp);
-            let ground = map.component(unit.tile);
-            // What a machine standing on `tile` would find in its intake.
-            let around = |tile: TilePos| {
-                let reach = kiln.reach + 1;
-                fields
-                    .iter()
-                    .filter(|(other, _)| other.chebyshev(tile) <= reach)
-                    .map(|(_, amount)| u64::from(*amount))
-                    .sum::<u64>()
-            };
-            let Some((field, _)) = fields
-                .iter()
-                .filter(|(tile, _)| ground.is_some() && map.component(*tile) == ground)
-                .min_by_key(|(tile, _)| {
-                    (
-                        around(*tile) * u64::from(kiln.hp_per_wreck) < u64::from(missing),
-                        frame.rank(at, doubled(*tile)),
-                    )
-                })
-            else {
-                continue;
-            };
-            if !ledger.order(run(vec![unit.id], *field)) {
+            if !ledger.order(run(vec![unit.id], meal.at)) {
                 return;
             }
             ledger.dock(unit.id);
@@ -244,17 +269,83 @@ impl Missions {
     }
 }
 
+/// Where wounded kiln machine `unit` feeds on `fields`: where it stands if
+/// its intake already reaches one, else the nearest tile its hull reaches
+/// from there whose intake would, preferring one holding enough to mend what
+/// it misses.
+fn meal(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    fields: &[(TilePos, u32)],
+    unit: &UnitObs,
+) -> Option<TilePos> {
+    let stats = unit.kind.stats();
+    let Mend::Kiln(kiln) = stats.mend else {
+        return None;
+    };
+    if fields
+        .iter()
+        .any(|(tile, _)| intake_reaches(unit.kind, unit.tile, *tile))
+    {
+        return Some(unit.tile);
+    }
+    // Each tile a machine could feed from, with the wreck its intake would
+    // reach there: no farther from a wreck than its hull's excess past one
+    // tile plus the intake's reach.
+    let span = oxide_sim::stats::hull_excess(stats.radius)
+        .ceil()
+        .to_num::<i32>()
+        + kiln.reach;
+    let mut stands: Vec<(TilePos, u64)> = Vec::new();
+    for (wreck, amount) in fields {
+        for dy in -span..=span {
+            for dx in -span..=span {
+                let stand = wreck.offset(dx, dy);
+                if intake_reaches(unit.kind, stand, *wreck) {
+                    stands.push((stand, u64::from(*amount)));
+                }
+            }
+        }
+    }
+    stands.sort_unstable_by_key(|(tile, _)| (tile.y, tile.x));
+    let mut food: Vec<(TilePos, u64)> = Vec::with_capacity(stands.len());
+    for (tile, amount) in stands {
+        match food.last_mut() {
+            Some((last, held)) if *last == tile => *held += amount,
+            _ => food.push((tile, amount)),
+        }
+    }
+    let missing = u64::from(stats.max_hp.saturating_sub(unit.hp));
+    let from = doubled(unit.tile);
+    food.sort_unstable_by_key(|(tile, held)| {
+        (
+            held * u64::from(kiln.hp_per_wreck) < missing,
+            frame.rank(from, doubled(*tile)),
+        )
+    });
+    let mut flood = crate::breach::HullFlood::new(map, observation, stats.radius, unit.tile);
+    food.into_iter()
+        .map(|(tile, _)| tile)
+        .find(|tile| flood.reaches(*tile))
+}
+
 /// Whether wounded kiln machine `unit` would bite the wreck on `tile` from
 /// where it stands: the tile lies under its hull or within its kiln's reach
 /// of it.
 pub(crate) fn feeds(unit: &UnitObs, tile: TilePos) -> bool {
-    let stats = unit.kind.stats();
+    unit.hp < unit.kind.stats().max_hp && intake_reaches(unit.kind, unit.tile, tile)
+}
+
+/// Whether the kiln of a `kind` machine standing on `stand` reaches the wreck
+/// on `tile`: the tile lies under its hull or within its kiln's reach of it.
+fn intake_reaches(kind: UnitKind, stand: TilePos, tile: TilePos) -> bool {
+    let stats = kind.stats();
     let Mend::Kiln(kiln) = stats.mend else {
         return false;
     };
-    unit.hp < stats.max_hp
-        && oxide_sim::geometry::body_tiles(unit.tile.center(), stats.radius)
-            .any(|body| body.chebyshev(tile) <= kiln.reach)
+    oxide_sim::geometry::body_tiles(stand.center(), stats.radius)
+        .any(|body| body.chebyshev(tile) <= kiln.reach)
 }
 
 /// Whether a Repair Bay in reach could heal `unit` where it stands: wounded,

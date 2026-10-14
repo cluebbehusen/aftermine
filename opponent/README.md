@@ -487,11 +487,14 @@ as it launches or regroups; what breachers bring against buildings answers the
 guarding buildings in the attack's need and in the opposition its fight weighs.
 In a fight an idle breacher cuts the nearest defense, staying at it while the
 rest of the army moves on, and nothing at home mends it, so wounds never send it
-back. Between fights a free, wounded Maw drives to the nearest known wreck its
+back. Between fights a free, wounded Maw drives to the nearest place its whole
+hull can reach through known ground where its kiln would reach wreck its
 harvesters could safely salvage, one holding enough to mend it first, and sits
 out missions there while it is calm and its kiln has wreck to eat; harvesters
-leave that wreck to it. A known enemy cradle counts as the heavy machine it will
-stand up.
+leave that wreck to it, on its way and once there. A known enemy cradle counts
+as the heavy machine it will stand up, and the machine that stands up from it is
+remembered where it stood up, even out of sight, since every seat learns of a
+public cradle's rollout.
 
 ## Scouting
 
@@ -662,15 +665,16 @@ seat's authored start, so mirrored seats make mirrored choices.
 ## Own events
 
 Each decision also receives the seat's own `OrderStalled` and `CommandRejected`
-events since its previous decision, oldest first. `OwnEvents` holds them: the
-host keeps one per seat beside the controller and calls `record` after every
-tick, and a decision takes them all. A repeat of a unit's stall for the same
-reason, or of a rejection for the same reason, replaces the earlier one in its
-place; the buffer is bounded and drops the oldest first. A tick without a
-decision leaves the buffer untouched. A rejection holds back that decision's
-income sample. A unit whose order stalled for want of a route or a firing
-position sits out orders, and joins no new mission or work, until it moves off
-where it stopped or a while passes. The trace reports the events.
+events since its previous decision, and every other seat's `UnitAssembled`,
+oldest first. `OwnEvents` holds them: the host keeps one per seat beside the
+controller and calls `record` after every tick, and a decision takes them all. A
+repeat of a unit's stall for the same reason, or of a rejection for the same
+reason, replaces the earlier one in its place; the buffer is bounded and drops
+the oldest first. A tick without a decision leaves the buffer untouched. A
+rejection holds back that decision's income sample. A unit whose order stalled
+for want of a route or a firing position sits out orders, and joins no new
+mission or work, until it moves off where it stopped or a while passes. The
+trace reports the events.
 
 ## Selection
 

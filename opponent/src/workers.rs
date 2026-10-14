@@ -5,7 +5,7 @@
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::{MapModel, UNREACHABLE};
-use crate::missions::{Hazard, Scratch};
+use crate::missions::{Hazard, Meal, Scratch};
 use crate::profile::ResolvedProfile;
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
@@ -121,13 +121,14 @@ fn slots(kind: UnitKind) -> usize {
 }
 
 /// Counts the worked nodes and wrecks with their crews and the worker slots
-/// filled by workers alive, carried or queued.
+/// filled by workers alive, carried or queued. Wreck a wounded kiln machine
+/// feeds on where it stands, or is bound for in `meals`, is left to it.
 pub(crate) fn staffing(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     profile: &ResolvedProfile,
-    foundries: &[Producer<'_>],
+    (foundries, meals): (&[Producer<'_>], &[Meal]),
     scratch: &Scratch,
 ) -> Staffing {
     let homes: Vec<&BuildingObs> = foundries.iter().map(|foundry| foundry.building).collect();
@@ -155,12 +156,14 @@ pub(crate) fn staffing(
         .filter(|(tile, amount)| {
             *amount > 0 && !observation.known_scrap_at(*tile) && !warned(*tile)
         })
-        // A wounded kiln machine has the wreck it feeds on.
+        // A wounded kiln machine has the wreck it feeds on, and the wreck it
+        // drives to: workers would strip it before the slow machine arrives.
         .filter(|(tile, _)| {
             !observation
                 .my_units
                 .iter()
                 .any(|unit| crate::missions::feeds(unit, *tile))
+                && !meals.iter().any(|meal| meal.reserves(*tile))
         })
         .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()

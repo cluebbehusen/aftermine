@@ -1,5 +1,6 @@
-//! What the seat remembers between decisions: enemy units it has seen, with
-//! confidence that fades until they are seen again; building footprints it
+//! What the seat remembers between decisions: enemy units it has seen or
+//! learned stood up from a public cradle, with confidence that fades until
+//! they are seen again; building footprints it
 //! failed to claim, so it tries somewhere else for a while; enemy buildings
 //! it gave up attacking, so it attacks something else for a while; enemy
 //! buildings it raided, so the next raid goes elsewhere; when it last saw
@@ -11,7 +12,7 @@
 use crate::events::OwnEvent;
 use chassis::grid::TilePos;
 use oxide_sim::observation::ObservationData;
-use oxide_sim::{BuildingKind, StallReason, UnitId, UnitKind};
+use oxide_sim::{BuildingKind, PlayerId, StallReason, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
 /// Ticks a failed footprint stays skipped.
@@ -137,6 +138,39 @@ impl Memory {
                 .map(|(index, _)| index)
                 .expect("over the cap");
             self.units.remove(stalest);
+        }
+    }
+
+    /// Remembers each machine of a seat `hostile` names that `events` report
+    /// standing up from its cradle, as seen where it stood up at this
+    /// decision. A later observation refreshes or forgets it like any unit
+    /// seen.
+    pub(crate) fn assembled(
+        &mut self,
+        observation: &ObservationData,
+        events: &[OwnEvent],
+        hostile: impl Fn(PlayerId) -> bool,
+    ) {
+        for event in events {
+            if let OwnEvent::MachineAssembled {
+                unit,
+                kind,
+                player,
+                pos,
+            } = *event
+                && hostile(player)
+            {
+                let seen = SeenUnit {
+                    id: unit,
+                    kind,
+                    tile: TilePos::containing(pos),
+                    seen: observation.tick,
+                };
+                match self.units.binary_search_by_key(&unit, |known| known.id) {
+                    Ok(index) => self.units[index] = seen,
+                    Err(index) => self.units.insert(index, seen),
+                }
+            }
         }
     }
 
