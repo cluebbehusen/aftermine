@@ -16,8 +16,18 @@ fn rejected(player: u8, reason: RejectReason) -> Event {
     }
 }
 
+fn assembled(player: u8, unit: u32) -> Event {
+    Event::UnitAssembled {
+        cradle: oxide_sim::BuildingId(9),
+        unit: UnitId(unit),
+        kind: UnitKind::Maw,
+        player: PlayerId(player),
+        pos: Vec2Fx::default(),
+    }
+}
+
 #[test]
-fn a_buffer_keeps_only_the_seats_own_failures_in_order() {
+fn a_buffer_keeps_the_seats_own_failures_and_other_seats_rollouts_in_order() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(1),
@@ -31,7 +41,9 @@ fn a_buffer_keeps_only_the_seats_own_failures_in_order() {
                 amount: 5,
             },
             stalled(0, 3),
+            assembled(1, 4),
             rejected(1, RejectReason::QueueFull),
+            assembled(0, 5),
         ],
     );
     events.record(PlayerId(1), &[rejected(1, RejectReason::BadSite)]);
@@ -45,6 +57,12 @@ fn a_buffer_keeps_only_the_seats_own_failures_in_order() {
             },
             OwnEvent::CommandRejected {
                 reason: RejectReason::QueueFull,
+            },
+            OwnEvent::MachineAssembled {
+                unit: UnitId(5),
+                kind: UnitKind::Maw,
+                player: PlayerId(0),
+                pos: Vec2Fx::default(),
             },
             OwnEvent::CommandRejected {
                 reason: RejectReason::BadSite,
@@ -71,7 +89,7 @@ fn repeats_of_one_failure_keep_its_first_place() {
     assert_eq!(kept.len(), 4 + wide.len(), "{kept:?}");
     let stalled_unit = |event: &OwnEvent| match event {
         OwnEvent::OrderStalled { unit, .. } => Some(unit.0),
-        OwnEvent::CommandRejected { .. } => None,
+        OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => None,
     };
     assert_eq!(stalled_unit(&kept[0]), Some(7));
     assert_eq!(stalled_unit(&kept[1]), Some(8));
@@ -101,7 +119,7 @@ fn a_full_buffer_drops_its_oldest_events_and_refuses_to_load_over_its_cap() {
         .into_iter()
         .map(|event| match event {
             OwnEvent::OrderStalled { unit, .. } => unit.0,
-            OwnEvent::CommandRejected { .. } => unreachable!(),
+            OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => unreachable!(),
         })
         .collect();
     assert_eq!(

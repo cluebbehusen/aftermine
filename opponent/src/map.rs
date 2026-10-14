@@ -576,7 +576,8 @@ impl MapModel {
             .filter(move |other| self.hostile(player, *other))
     }
 
-    fn hostile(&self, a: PlayerId, b: PlayerId) -> bool {
+    /// Whether seats `a` and `b` are enemies.
+    pub(crate) fn hostile(&self, a: PlayerId, b: PlayerId) -> bool {
         let team = |player: PlayerId| self.teams.get(usize::from(player.0)).copied().flatten();
         a != b && (team(a).is_none() || team(a) != team(b))
     }

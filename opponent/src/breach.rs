@@ -7,9 +7,11 @@ use crate::investments::Investment;
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
+use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use oxide_sim::BuildingKind;
 use oxide_sim::observation::ObservationData;
+use std::collections::VecDeque;
 
 /// How far past a cradle's bar, a quarter of its machine's price, the
 /// fortification it answers raises its score, in multiples of the bar: a
@@ -129,22 +131,7 @@ pub(crate) fn exits(
     let me = observation.me;
     let (width, height) = map.size();
     let (w, h) = kind.size();
-    let mut blocked = Grid::new(width, height, false);
-    for building in observation
-        .my_buildings
-        .iter()
-        .chain(&observation.ally_buildings)
-        .chain(&observation.enemy_buildings)
-    {
-        let (bw, bh) = building.kind.size();
-        for dy in 0..bh {
-            for dx in 0..bw {
-                if let Some(cell) = blocked.get_mut(building.anchor.offset(dx, dy)) {
-                    *cell = true;
-                }
-            }
-        }
-    }
+    let blocked = known_footprints(map, observation);
     let beyond = observation
         .my_buildings
         .iter()
@@ -189,4 +176,87 @@ pub(crate) fn exits(
         }
     }
     false
+}
+
+/// Every tile under a building the seat knows: its own, its allies' and the
+/// enemy buildings it remembers.
+fn known_footprints(map: &MapModel, observation: &ObservationData) -> Grid<bool> {
+    let (width, height) = map.size();
+    let mut blocked = Grid::new(width, height, false);
+    for building in observation
+        .my_buildings
+        .iter()
+        .chain(&observation.ally_buildings)
+        .chain(&observation.enemy_buildings)
+    {
+        let (bw, bh) = building.kind.size();
+        for dy in 0..bh {
+            for dx in 0..bw {
+                if let Some(cell) = blocked.get_mut(building.anchor.offset(dx, dy)) {
+                    *cell = true;
+                }
+            }
+        }
+    }
+    blocked
+}
+
+/// A flood over the ground a body of `radius` fits, clear of every known
+/// building, from where it stands. It grows breadth-first only as far as
+/// each question needs and visits each tile of the map at most once.
+pub(crate) struct HullFlood<'a> {
+    map: &'a MapModel,
+    blocked: Grid<bool>,
+    radius: Fx,
+    reached: Grid<bool>,
+    frontier: VecDeque<TilePos>,
+}
+
+impl<'a> HullFlood<'a> {
+    pub(crate) fn new(
+        map: &'a MapModel,
+        observation: &ObservationData,
+        radius: Fx,
+        start: TilePos,
+    ) -> Self {
+        let (width, height) = map.size();
+        let mut reached = Grid::new(width, height, false);
+        let mut frontier = VecDeque::new();
+        if let Some(cell) = reached.get_mut(start) {
+            *cell = true;
+            frontier.push_back(start);
+        }
+        Self {
+            map,
+            blocked: known_footprints(map, observation),
+            radius,
+            reached,
+            frontier,
+        }
+    }
+
+    /// Whether the body could drive to `tile`.
+    pub(crate) fn reaches(&mut self, tile: TilePos) -> bool {
+        while self.reached.get(tile) == Some(&false) {
+            let Some(from) = self.frontier.pop_front() else {
+                return false;
+            };
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let next = from.offset(dx, dy);
+                if self.reached.get(next) == Some(&false) && self.open(next) {
+                    if let Some(cell) = self.reached.get_mut(next) {
+                        *cell = true;
+                    }
+                    self.frontier.push_back(next);
+                }
+            }
+        }
+        self.reached.get(tile) == Some(&true)
+    }
+
+    fn open(&self, tile: TilePos) -> bool {
+        oxide_sim::geometry::hull_open(tile, self.radius, |cell| {
+            self.map.component(cell).is_some() && !self.blocked.get(cell).copied().unwrap_or(true)
+        })
+    }
 }
