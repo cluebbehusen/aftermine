@@ -10,6 +10,8 @@
 //! Extractor frame doorsteps, and starting ground units. Every shortest
 //! route counts, not one chosen path, so ties never change the verdict;
 //! a notch beside a route that nothing has reason to enter never does.
+//! Only ground where hostile seats meet counts: an island that joins no
+//! enemy keeps its authored shape.
 
 use chassis::grid::{TilePos, as_index};
 use oxide_sim::stats::{BuildingKind, Domain};
@@ -253,26 +255,8 @@ pub fn narrow_passages(state: &State) -> Vec<NarrowPassage> {
     let grid = Grid::new(state);
     let narrow = narrow_tiles(&grid);
     let points = points_of_interest(state, &grid);
-    let fields: Vec<Vec<u32>> = points.iter().map(|p| grid.distances(p)).collect();
-    let mut traffic = vec![false; grid.cells()];
-    for i in 0..fields.len() {
-        for j in (i + 1)..fields.len() {
-            let total = points[j]
-                .iter()
-                .map(|&t| fields[i][grid.index(t)])
-                .min()
-                .unwrap_or(u32::MAX);
-            if total == u32::MAX {
-                continue;
-            }
-            for (cell, flag) in traffic.iter_mut().enumerate() {
-                let (a, b) = (fields[i][cell], fields[j][cell]);
-                if a != u32::MAX && b != u32::MAX && a + b == total {
-                    *flag = true;
-                }
-            }
-        }
-    }
+    let traffic = traffic(&grid, &points);
+    let contested = contested_ground(state);
     let mut grouped = vec![false; grid.cells()];
     let mut passages = Vec::new();
     for y in 0..grid.height {
@@ -287,7 +271,7 @@ pub fn narrow_passages(state: &State) -> Vec<NarrowPassage> {
             let (mut tiles, mut crossed) = (0, false);
             while let Some(t) = queue.pop_front() {
                 tiles += 1;
-                crossed |= traffic[grid.index(t)];
+                crossed |= traffic[grid.index(t)] && contested[grid.index(t)];
                 min = (min.0.min(t.x), min.1.min(t.y));
                 max = (max.0.max(t.x), max.1.max(t.y));
                 for dy in -1..=1 {
@@ -308,47 +292,122 @@ pub fn narrow_passages(state: &State) -> Vec<NarrowPassage> {
     passages
 }
 
-/// Whether terrain alone keeps some pair of hostile Foundries apart on
-/// the ground: an island map, which the width rule leaves as authored.
-pub fn ground_severed(state: &State) -> bool {
-    let (width, height) = (state.map().width(), state.map().height());
-    let flood = |seed: TilePos| {
-        let mut seen = vec![false; as_index(width * height)];
-        let walkable = |t: TilePos| {
-            t.x >= 0
-                && t.y >= 0
-                && t.x < width
-                && t.y < height
-                && state
-                    .map()
-                    .tile(t)
-                    .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Ground)
-        };
-        seen[as_index(seed.y * width + seed.x)] = true;
-        let mut queue = VecDeque::from([seed]);
-        while let Some(t) = queue.pop_front() {
-            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let n = t.offset(dx, dy);
-                if walkable(n) && !seen[as_index(n.y * width + n.x)] {
-                    seen[as_index(n.y * width + n.x)] = true;
-                    queue.push_back(n);
+/// Tiles on some shortest ground route between two points of interest.
+///
+/// Distances come from one point at a time. Walking back from every later
+/// point's nearest tiles along the steps that keep a route shortest marks
+/// exactly the tiles of every such route, so memory holds one field and
+/// time grows with the number of points rather than its square.
+fn traffic(grid: &Grid, points: &[Vec<TilePos>]) -> Vec<bool> {
+    let mut traffic = vec![false; grid.cells()];
+    let mut seen = vec![false; grid.cells()];
+    let mut queue = Vec::new();
+    for (i, source) in points.iter().enumerate() {
+        let dist = grid.distances(source);
+        seen.fill(false);
+        for target in &points[i + 1..] {
+            let Some(best) = target
+                .iter()
+                .map(|&t| dist[grid.index(t)])
+                .min()
+                .filter(|&d| d != u32::MAX)
+            else {
+                continue;
+            };
+            for &t in target {
+                if dist[grid.index(t)] == best && !seen[grid.index(t)] {
+                    seen[grid.index(t)] = true;
+                    queue.push(t);
                 }
             }
         }
-        seen
+        while let Some(t) = queue.pop() {
+            traffic[grid.index(t)] = true;
+            let here = dist[grid.index(t)];
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if (dx, dy) == (0, 0) {
+                        continue;
+                    }
+                    let n = t.offset(dx, dy);
+                    if !grid.open(n) || seen[grid.index(n)] {
+                        continue;
+                    }
+                    let diagonal = dx != 0 && dy != 0;
+                    if diagonal && !(grid.open(t.offset(dx, 0)) && grid.open(t.offset(0, dy))) {
+                        continue;
+                    }
+                    let there = dist[grid.index(n)];
+                    let step = if diagonal { 14 } else { 10 };
+                    if there != u32::MAX && there + step == here {
+                        seen[grid.index(n)] = true;
+                        queue.push(n);
+                    }
+                }
+            }
+        }
+    }
+    traffic
+}
+
+/// Ground where hostile seats meet: the tiles of every terrain-only ground
+/// region that holds two hostile Foundries. The width rule binds only
+/// there, so an island that joins no enemy keeps its authored shape even
+/// on a map whose other seats share ground. Scrap and buildings never
+/// split a region, since both clear in play.
+fn contested_ground(state: &State) -> Vec<bool> {
+    let (width, height) = (state.map().width(), state.map().height());
+    let index = |t: TilePos| as_index(t.y * width + t.x);
+    let ground = |t: TilePos| {
+        t.x >= 0
+            && t.y >= 0
+            && t.x < width
+            && t.y < height
+            && state
+                .map()
+                .tile(t)
+                .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Ground)
     };
-    let foundries: Vec<(PlayerId, TilePos)> = state
+    let mut region = vec![usize::MAX; as_index(width * height)];
+    let mut next = 0;
+    for y in 0..height {
+        for x in 0..width {
+            let seed = TilePos::new(x, y);
+            if !ground(seed) || region[index(seed)] != usize::MAX {
+                continue;
+            }
+            region[index(seed)] = next;
+            let mut queue = VecDeque::from([seed]);
+            while let Some(t) = queue.pop_front() {
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = t.offset(dx, dy);
+                    if ground(n) && region[index(n)] == usize::MAX {
+                        region[index(n)] = next;
+                        queue.push_back(n);
+                    }
+                }
+            }
+            next += 1;
+        }
+    }
+    let foundries: Vec<(PlayerId, usize)> = state
         .buildings()
         .iter()
         .filter(|b| b.kind == BuildingKind::Foundry)
-        .map(|b| (b.player, b.anchor))
+        .map(|b| (b.player, region[index(b.anchor)]))
         .collect();
-    foundries.iter().enumerate().any(|(i, &(a, at))| {
-        let reach = flood(at);
-        foundries[i + 1..]
-            .iter()
-            .any(|&(b, bt)| state.hostile(a, b) && !reach[as_index(bt.y * width + bt.x)])
-    })
+    let mut contested = vec![false; next];
+    for (i, &(a, ra)) in foundries.iter().enumerate() {
+        for &(b, rb) in &foundries[i + 1..] {
+            if ra == rb && ra != usize::MAX && state.hostile(a, b) {
+                contested[ra] = true;
+            }
+        }
+    }
+    region
+        .iter()
+        .map(|&r| r != usize::MAX && contested[r])
+        .collect()
 }
 
 #[cfg(test)]

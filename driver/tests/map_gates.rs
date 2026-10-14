@@ -165,14 +165,11 @@ fn routes_connect_and_pace_labels_hold() {
 #[test]
 fn trafficked_passages_are_at_least_three_tiles_wide() {
     // Groups crowd and even one unit reads badly squeezing through a gap a
-    // tile or two wide, and an experimental needs three tiles to pass.
-    // Island maps keep their authored shape: their ground never joins
-    // hostile seats, so the width rule leaves them alone.
+    // tile or two wide, and an experimental needs three tiles to pass. The
+    // audit counts only ground where hostile seats meet, so islands keep
+    // their authored shape.
     for (name, scenario) in shipped() {
         let report = audit(&scenario).expect("audit builds");
-        if report.ground_severed {
-            continue;
-        }
         let spots: Vec<String> = report
             .narrow_passages
             .iter()

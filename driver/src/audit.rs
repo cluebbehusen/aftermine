@@ -82,12 +82,10 @@ pub struct MapAudit {
     pub seats: Vec<SeatAudit>,
     /// Every cross-team Foundry pair.
     pub routes: Vec<RouteAudit>,
-    /// Whether terrain alone keeps some hostile pair apart on the ground,
-    /// which makes this an island map.
-    pub ground_severed: bool,
     /// Trafficked passages narrower than three tiles: ground a 3x3 body
     /// cannot pass that some shortest route between Foundries, Extractor
-    /// frames or starting units crosses.
+    /// frames or starting units crosses, on ground where hostile seats
+    /// meet.
     pub narrow_passages: Vec<NarrowPassage>,
 }
 
@@ -448,7 +446,6 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         scrap_total,
         seats,
         routes,
-        ground_severed: passages::ground_severed(&state),
         narrow_passages: passages::narrow_passages(&state),
     })
 }
@@ -496,14 +493,9 @@ impl MapAudit {
                     .map_or("-".into(), |p| format!("{:.0}%", p * 100.0)),
             );
         }
-        let island = if self.ground_severed {
-            " (island map)"
-        } else {
-            ""
-        };
         let _ = writeln!(
             out,
-            "  narrow passages{island}: {}",
+            "  narrow passages: {}",
             if self.narrow_passages.is_empty() {
                 "none".into()
             } else {

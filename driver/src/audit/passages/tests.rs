@@ -99,11 +99,147 @@ fn a_two_wide_staircase_between_open_rooms_is_narrow() {
     assert!(narrow_passages(&staircase(3)).is_empty());
 }
 
+/// A walled three-seat field: `1` and `2` share the west ground and `3`
+/// stands alone east of a pit trench, with its Extractor frame behind a
+/// one-tile door.
+fn hybrid(west_gap: usize) -> State {
+    let mut rows = Vec::new();
+    for y in 0..12 {
+        let west_wall = if (5..5 + west_gap).contains(&y) {
+            '.'
+        } else {
+            '#'
+        };
+        let east_wall = if y == 5 { '.' } else { '#' };
+        let row: String = (0..33)
+            .map(|x| match (x, y) {
+                (2, 5) => '1',
+                (14, 5) => '2',
+                (24, 5) => '3',
+                (30, 5) => 'E',
+                (9, _) => west_wall,
+                (20, _) => '~',
+                (27, _) => east_wall,
+                _ => '.',
+            })
+            .collect();
+        rows.push(row);
+    }
+    let width = rows[0].len();
+    let mut map = vec!["#".repeat(width + 2)];
+    map.extend(rows.iter().map(|r| format!("#{r}#")));
+    map.push("#".repeat(width + 2));
+    let mut players = Scenario::skirmish().players;
+    let mut third = players[1].clone();
+    third.name = "East".into();
+    players.push(third);
+    Scenario {
+        mode: ScenarioMode::Match,
+        name: "hybrid".into(),
+        map,
+        players,
+        units: Vec::new(),
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap()
+}
+
 #[test]
-fn an_island_map_is_ground_severed() {
-    assert!(!ground_severed(&rooms(1)));
-    let state = field(&["..1..~..2..", ".....~.....", ".....~....."]);
-    assert!(ground_severed(&state));
+fn the_rule_binds_ground_where_hostile_seats_meet_and_spares_lone_islands() {
+    // The west door between two hostile seats counts; the east island's
+    // door to its own frame never does, though traffic crosses it.
+    let narrow = narrow_passages(&hybrid(1));
+    assert_eq!(narrow.len(), 1, "{narrow:?}");
+    assert_eq!(narrow[0].min.0, 10);
+    assert!(narrow_passages(&hybrid(3)).is_empty());
+}
+
+#[test]
+fn an_island_map_reports_no_passages() {
+    // Each seat on its own island, its frame behind a one-tile door.
+    let state = field(&[
+        ".......#E.~.........",
+        "..1....#..~.....2...",
+        ".......#..~.........",
+        ".......#..~.....#...",
+        ".......#..~.....#...",
+        ".......#..~.....#...",
+        ".......#..~.....#.E.",
+        "..........~.........",
+    ]);
+    // The west island's frame lies past a one-tile gap under its rock, so
+    // the same layout on contested ground would report it.
+    let grid = Grid::new(&state);
+    assert!(narrow_tiles(&grid).iter().any(|&n| n));
+    assert!(narrow_passages(&state).is_empty());
+}
+
+/// The traffic mask as it was first written: every pair of points' fields
+/// at once, a tile on a shortest route when its two distances sum to the
+/// pair's.
+fn pairwise_traffic(grid: &Grid, points: &[Vec<TilePos>]) -> Vec<bool> {
+    let fields: Vec<Vec<u32>> = points.iter().map(|p| grid.distances(p)).collect();
+    let mut traffic = vec![false; grid.cells()];
+    for i in 0..fields.len() {
+        for j in (i + 1)..fields.len() {
+            let total = points[j]
+                .iter()
+                .map(|&t| fields[i][grid.index(t)])
+                .min()
+                .unwrap_or(u32::MAX);
+            if total == u32::MAX {
+                continue;
+            }
+            for (cell, flag) in traffic.iter_mut().enumerate() {
+                let (a, b) = (fields[i][cell], fields[j][cell]);
+                if a != u32::MAX && b != u32::MAX && a + b == total {
+                    *flag = true;
+                }
+            }
+        }
+    }
+    traffic
+}
+
+#[test]
+fn walking_back_marks_exactly_the_pairwise_shortest_routes() {
+    let mut staged = vec![
+        rooms(1),
+        rooms(3),
+        staircase(2),
+        offset_blocks(1),
+        diagonal_ends(3),
+        hybrid(1),
+    ];
+    // Random rock fields with frames and the two Foundries in fixed spots.
+    let mut rng = chassis::rng::Pcg32::new(41, 3);
+    for _ in 0..12 {
+        let rows: Vec<String> = (0..16)
+            .map(|y| {
+                (0..24)
+                    .map(|x| match (x, y) {
+                        (2, 2) => '1',
+                        (20, 12) => '2',
+                        (11, 7) | (4, 12) => 'E',
+                        (1..=5, 1..=5) | (18..=23, 10..=15) => '.',
+                        (10..=13, 6..=9) => '.',
+                        (3..=6, 11..=14) => '.',
+                        _ if rng.next_below(5) == 0 => '#',
+                        _ => '.',
+                    })
+                    .collect()
+            })
+            .collect();
+        let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
+        staged.push(field(&refs));
+    }
+    for state in &staged {
+        let grid = Grid::new(state);
+        let points = points_of_interest(state, &grid);
+        assert_eq!(traffic(&grid, &points), pairwise_traffic(&grid, &points));
+    }
 }
 
 /// An open field with two rock blocks, one above the other, offset so

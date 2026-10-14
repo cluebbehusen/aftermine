@@ -76,9 +76,9 @@ experimental machines need three tiles to pass. Widen a gap rather than seal it
 where the route matters, and keep a scrap node either flush with a wall or three
 tiles from it.
 
-Island maps, whose ground never joins hostile seats, keep their authored shape;
-the rule leaves them alone. The audit reports the narrow passages it finds and
-the map gates enforce the rule.
+The rule covers ground where hostile seats meet. An island whose ground joins no
+enemy keeps its authored shape, on an island map or beside contested ground. The
+audit reports the narrow passages it finds and the map gates enforce the rule.
 
 ## Design for decisions
 
