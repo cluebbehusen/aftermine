@@ -1,6 +1,6 @@
 use super::*;
 
-const SOUND_NAMES: [&str; 38] = [
+const SOUND_NAMES: [&str; 42] = [
     "ack",
     "alert",
     "artillery_boom",
@@ -12,6 +12,7 @@ const SOUND_NAMES: [&str; 38] = [
     "attack_flak_turret",
     "attack_flakhound",
     "attack_lancer",
+    "attack_piledriver",
     "attack_scuttler",
     "attack_sentinel",
     "attack_talon",
@@ -34,6 +35,9 @@ const SOUND_NAMES: [&str; 38] = [
     "music_menu",
     "music_result",
     "music_victory",
+    "piledriver_deploy",
+    "piledriver_fold",
+    "piledriver_impact",
     "rocket_impact",
     "train_done",
     "unit_death",

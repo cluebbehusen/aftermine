@@ -966,6 +966,45 @@ pub(crate) fn unit_body_pose(
     }
 }
 
+fn draw_piledriver_anchors(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    unit: &oxide_sim::Unit,
+    pose: (Vec2, f32, f32),
+    zoom: f32,
+) {
+    let (body, body_rotation, dest) = pose;
+    let deployment = game.presentation.animations.brace_deployment(
+        unit,
+        crate::presentation_animation::AnimationClock::from_state(
+            game.state,
+            game.presentation.tick_fraction(),
+        ),
+    );
+    if let Some((anchor, accent)) = sprites.piledriver_anchors(deployment) {
+        for (source, tint) in [
+            (anchor, WHITE),
+            (accent, seat_identity_color(game, unit.player)),
+        ] {
+            let factor = dest / 128.0;
+            let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * (13.0 * factor);
+            let size = vec2(source.w, source.h) * factor;
+            sprites.draw_unit(
+                center.x - size.x * 0.5,
+                center.y - size.y * 0.5,
+                tint,
+                DrawTextureParams {
+                    dest_size: Some(size),
+                    source: Some(source),
+                    rotation: body_rotation,
+                    ..Default::default()
+                },
+                zoom,
+            );
+        }
+    }
+}
+
 fn draw_unit_pass(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -1146,6 +1185,9 @@ fn draw_unit_pass(
                 zoom,
             );
         }
+        if unit.kind == oxide_sim::UnitKind::Piledriver {
+            draw_piledriver_anchors(game, sprites, unit, (body, body_rotation, dest), zoom);
+        }
         if let Some(rig) = rig {
             let action = match motion::unit_mount_frame(unit.kind, animation) {
                 motion::UnitFrame::Action(action) => Some(action),
@@ -1156,19 +1198,35 @@ fn draw_unit_pass(
                 (mount, WHITE),
                 (accent, seat_identity_color(game, unit.player)),
             ] {
+                let mount_rotation = if unit.kind.stats().weapons.is_empty()
+                    || unit.kind == oxide_sim::UnitKind::Piledriver
+                {
+                    body_rotation
+                } else {
+                    rotation
+                };
+                let (center, size) = if unit.kind == oxide_sim::UnitKind::Piledriver {
+                    // The cropped mechanism retains its position on the 128-pixel chassis.
+                    let offset = vec2(4.0, -8.0) * (dest / 128.0);
+                    let (sin, cos) = mount_rotation.sin_cos();
+                    (
+                        body + vec2(
+                            offset.x * cos - offset.y * sin,
+                            offset.x * sin + offset.y * cos,
+                        ),
+                        vec2(source.w, source.h) * (dest / 128.0),
+                    )
+                } else {
+                    (body, body_size)
+                };
                 sprites.draw_unit(
-                    body.x - dest * 0.5,
-                    body.y - dest * 0.5,
+                    center.x - size.x * 0.5,
+                    center.y - size.y * 0.5,
                     tint,
                     DrawTextureParams {
-                        dest_size: Some(body_size),
+                        dest_size: Some(size),
                         source: Some(source),
-                        // A mount that carries no weapon turns with the hull.
-                        rotation: if unit.kind.stats().weapons.is_empty() {
-                            body_rotation
-                        } else {
-                            rotation
-                        },
+                        rotation: mount_rotation,
                         ..Default::default()
                     },
                     zoom,

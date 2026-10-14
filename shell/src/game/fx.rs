@@ -286,6 +286,14 @@ chassis::listed_enum! {
         WardenFire,
         /// The Breaker's siege mortar.
         BreakerFire,
+        /// The Piledriver's pressure discharge.
+        PiledriverFire,
+        /// Its compact armor impact.
+        PiledriverImpact,
+        /// Ground anchors deploying.
+        PiledriverDeploy,
+        /// Ground anchors folding for travel.
+        PiledriverFold,
         /// The Avalanche bank launching.
         AvalancheFire,
         /// Missile motor ignition after launcher ejection.
@@ -502,6 +510,8 @@ pub enum EffectKind {
         attacker: Option<oxide_sim::UnitId>,
         /// Visible target geometry survives a lethal hit for this report.
         surface: Option<HitSurface>,
+        /// Consumed when the cosmetic kinetic round reaches its target.
+        impact_sound: Option<SoundKind>,
         /// Simulation tick immediately after the hit was reported.
         completed_tick: u64,
     },
@@ -595,6 +605,7 @@ fn push_direct_report(
             completed_tick,
             surface,
             attacker: None,
+            impact_sound: None,
         },
         age: 0.0,
     });
@@ -712,6 +723,20 @@ impl Presentation {
         }
         let completed_ticks = state.current_tick();
         let tick_fraction = self.tick_fraction();
+        for fx in &mut self.fx {
+            let age = fx.age_at(completed_ticks, tick_fraction);
+            if let EffectKind::DirectShot {
+                style,
+                to,
+                impact_sound,
+                ..
+            } = &mut fx.kind
+                && age >= style.life() * 0.6
+                && let Some(sound) = impact_sound.take()
+            {
+                self.sounds_pending.push((sound, Some(*to)));
+            }
+        }
         self.fx.retain(|fx| {
             fx.age_at(completed_ticks, tick_fraction)
                 < match fx.kind {
@@ -888,6 +913,24 @@ impl Presentation {
             })
     }
 
+    pub(super) fn queue_brace_sounds(&mut self, state: &State) {
+        for unit in state.units().iter().filter(|unit| {
+            unit.kind == oxide_sim::UnitKind::Piledriver
+                && state.vision(self.human).visible(unit.tile())
+        }) {
+            let sound = match self.animations.brace_change(unit) {
+                Some(crate::presentation_animation::BraceChange::Deploying) => {
+                    SoundKind::PiledriverDeploy
+                }
+                Some(crate::presentation_animation::BraceChange::Folding) => {
+                    SoundKind::PiledriverFold
+                }
+                None => continue,
+            };
+            self.sounds_pending.push((sound, Some(world_vec(unit.pos))));
+        }
+    }
+
     /// Turns a tick's events into flashes and queued clips. Explosions can be
     /// heard through fog; the camera mixer bounds their audible distance.
     /// Visual effects retain their independent sight rules.
@@ -1037,10 +1080,16 @@ impl Presentation {
                             surface,
                         );
                         if let EffectKind::DirectShot {
-                            attacker: source, ..
+                            attacker: source,
+                            impact_sound,
+                            ..
                         } = &mut report.kind
                         {
                             *source = Some(*attacker);
+                            if *attacker_kind == oxide_sim::UnitKind::Piledriver && impact_witnessed
+                            {
+                                *impact_sound = Some(SoundKind::PiledriverImpact);
+                            }
                         }
                     }
                 }

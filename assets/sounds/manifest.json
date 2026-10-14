@@ -140,6 +140,38 @@
     },
     {
       "category": "signature-weapon",
+      "filename": "attack_piledriver.wav",
+      "min_gap": 0.2,
+      "mixer_volume": 0.55,
+      "name": "attack_piledriver",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "piledriver_impact.wav",
+      "min_gap": 0.2,
+      "mixer_volume": 0.26,
+      "name": "piledriver_impact",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "piledriver_deploy.wav",
+      "min_gap": 0.15,
+      "mixer_volume": 0.023919582824089177,
+      "name": "piledriver_deploy",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "piledriver_fold.wav",
+      "min_gap": 0.15,
+      "mixer_volume": 0.02266065741229501,
+      "name": "piledriver_fold",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
       "filename": "avalanche_launch.wav",
       "min_gap": 0.2,
       "mixer_volume": 0.5,

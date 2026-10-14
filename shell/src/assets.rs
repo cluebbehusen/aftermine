@@ -21,6 +21,7 @@ pub struct Sprites {
     /// Hull and mount layers for every kind whose look draws a rig.
     unit_rigs: std::collections::HashMap<UnitKind, UnitRig>,
     bombard_spades: Option<[Rect; 5]>,
+    piledriver_anchors: Option<Vec<[Rect; 2]>>,
     scout_radar: Option<Rect>,
     array_rig: Option<ArrayRig>,
     /// Verb pictograms for cards and order chips, indexed by
@@ -189,6 +190,15 @@ fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitR
             })
             .collect::<Result<_>>()?,
     }))
+}
+
+fn piledriver_anchor_rows(rects: &Manifest) -> Result<Option<Vec<[Rect; 2]>>> {
+    if !rects.contains_key("piledriver_anchors") {
+        return Ok(None);
+    }
+    let mut rows = vec![variant_row(rects, "piledriver_anchors", "")?];
+    rows.extend(numbered_rows(rects, "piledriver_anchors", "action")?);
+    Ok(Some(rows))
 }
 
 fn bombard_spade_rows(rects: &Manifest) -> Result<Option<[Rect; 5]>> {
@@ -756,6 +766,14 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         .map(|key| (*key).to_string())
         .collect();
     keys.extend((0..5).map(|phase| format!("bombard_spades_{phase}")));
+    if atlas.contains_key("piledriver_anchors") {
+        keys.extend(variant_keys("piledriver_anchors", ""));
+        for suffix in
+            numbered_suffixes(atlas, "piledriver_anchors", "action").expect("complete anchors")
+        {
+            keys.extend(variant_keys("piledriver_anchors", &suffix));
+        }
+    }
     keys.push("scout_radar".to_owned());
     if atlas
         .keys()
@@ -945,6 +963,7 @@ impl Sprites {
         Ok(Self {
             unit_rigs: unit_rigs(&rects)?,
             bombard_spades: bombard_spade_rows(&rects)?,
+            piledriver_anchors: piledriver_anchor_rows(&rects)?,
             array_rig: array_rig(&rects)?,
             scout_radar: rects
                 .get("scout_radar")
@@ -1451,6 +1470,15 @@ impl Sprites {
 
     pub(crate) fn array_rig(&self) -> Option<&ArrayRig> {
         self.array_rig.as_ref()
+    }
+
+    pub(crate) fn piledriver_anchors(&self, deployment: f32) -> Option<(Rect, Rect)> {
+        self.piledriver_anchors.as_ref().map(|rows| {
+            let index =
+                numeric::to_usize((deployment.clamp(0.0, 1.0) * (rows.len() - 1) as f32).round());
+            let row = rows[index];
+            (row[BASE], row[ACCENT])
+        })
     }
 
     /// The spade row for a Bombard's deployment, from stowed (row 0) to
