@@ -350,18 +350,15 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
             .unwrap_or_else(|| panic!("no {title} card"))
     };
     assert!(!card(&game, "Launch").enabled, "nothing to launch yet");
-    assert!(card(&game, "Order warhead").enabled);
-    assert!(!card(&game, "Cancel warhead").enabled);
+    assert!(card(&game, "Order").enabled);
+    assert!(!card(&game, "Cancel").enabled);
     assert_eq!(
         card(&game, "Autofill: off").action,
         CardAction::Dispatch(Action::ToggleAutofill)
     );
     load_selected(&mut game);
     assert!(card(&game, "Launch").enabled);
-    assert!(
-        !card(&game, "Order warhead").enabled,
-        "one warhead fills a Spire"
-    );
+    assert!(!card(&game, "Order").enabled, "one warhead fills a Spire");
     let selected = SelectedBuildings::inspect(&game.view());
     assert_eq!(
         selected.loaded_silos(),
@@ -383,7 +380,7 @@ fn an_order_the_bank_cannot_pay_is_refused_with_its_price() {
     let order = selected
         .cards(&BindingMap::classic())
         .into_iter()
-        .find(|card| card.title == "Order warhead")
+        .find(|card| card.title == "Order")
         .unwrap();
     assert!(!order.enabled);
     assert_eq!(order.why, Some(expected));

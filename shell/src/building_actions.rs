@@ -248,15 +248,15 @@ impl SelectedBuildings {
         }
         let order = self.round_order();
         cards.push(Card {
-            icon: CardIcon::Round(first.kind),
-            title: format!("Order {noun}"),
+            icon: CardIcon::Building(first.kind, 0),
+            title: "Order".into(),
             cost: Some(stats.round_cost),
             hotkey: bindings.labels(Action::OrderRound),
             action: CardAction::Dispatch(Action::OrderRound),
             enabled: order.is_ok(),
             why: order.err(),
             desc: vec![format!(
-                "Paid now; built one at a time in {}.",
+                "One {noun}, paid now; built one at a time in {}.",
                 tick_time_label(stats.round_ticks)
             )],
             progress: None,
@@ -264,14 +264,14 @@ impl SelectedBuildings {
         let cancel = self.round_cancel();
         cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Cancel),
-            title: format!("Cancel {noun}"),
+            title: "Cancel".into(),
             cost: None,
             hotkey: bindings.labels(Action::CancelRound),
             action: CardAction::Dispatch(Action::CancelRound),
             enabled: cancel.is_some(),
             why: cancel.is_none().then(|| format!("no {noun} on order")),
             desc: vec![
-                "Refunds the latest paid round in full.".into(),
+                format!("Refunds the latest paid {noun} in full."),
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
             progress: None,

@@ -29,7 +29,8 @@ pub enum CardIcon {
     Unit(UnitKind),
     /// A building sprite.
     Building(BuildingKind, u8),
-    /// A magazine's round: a Spire's warhead or a Lattice's interceptor.
+    /// A magazine's round in the queue dock: a Spire's warhead or a
+    /// Lattice's interceptor.
     Round(BuildingKind),
     /// A verb pictogram from the atlas's icon family.
     Verb(VerbIcon),
