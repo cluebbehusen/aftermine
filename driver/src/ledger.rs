@@ -702,6 +702,16 @@ impl ImpactLedger {
             working: BTreeMap::new(),
             field_scrap: BTreeMap::new(),
         };
+        // A recording that starts from a checkpoint may begin with warheads
+        // already in flight, whose launches it never shows.
+        for warhead in state.warheads() {
+            if let Some(source) = ledger.source(
+                Key::Building(warhead.silo),
+                Some(TilePos::containing(warhead.launch)),
+            ) {
+                ledger.warheads.insert(warhead.id, source);
+            }
+        }
         ledger.note_work(state);
         ledger
     }
@@ -1649,7 +1659,8 @@ fn category(kind: BuildingKind) -> &'static str {
         | BuildingKind::FlakTurret
         | BuildingKind::Bastion
         | BuildingKind::Barricade
-        | BuildingKind::ScuttleCharge => "defense",
+        | BuildingKind::ScuttleCharge
+        | BuildingKind::Lattice => "defense",
         _ => "tech",
     }
 }

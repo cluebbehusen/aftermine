@@ -137,11 +137,16 @@ impl SelectedBuildings {
             .collect()
     }
 
-    /// Selected Spires turning toward an ordered strike.
+    /// Selected Spires turning toward an ordered strike, whatever else is
+    /// selected with them.
     fn armed_silos(&self) -> Vec<BuildingId> {
-        self.magazines()
-            .into_iter()
-            .filter(|b| b.launcher.is_some_and(|launcher| launcher.target.is_some()))
+        self.buildings
+            .iter()
+            .filter(|b| {
+                self.accepts
+                    && b.built()
+                    && b.launcher.is_some_and(|launcher| launcher.target.is_some())
+            })
             .map(|b| b.id)
             .collect()
     }

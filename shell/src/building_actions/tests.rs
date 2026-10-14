@@ -392,3 +392,33 @@ fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
         "two full batteries take no order"
     );
 }
+
+#[test]
+fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
+    let mut game = fixture(BuildingKind::Spire, &[0], 2000);
+    load_selected(&mut game);
+    let spire = game.presentation.selection.buildings[0];
+    game.issue(Command::Launch {
+        building: spire,
+        // Behind the deck, which starts facing the map's centre.
+        target: chassis::grid::TilePos::new(0, 11),
+    });
+    assert_accepted(&mut game);
+    let fabricator = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    game.presentation.selection.buildings.push(fabricator);
+    stop_or_scrap(&mut game);
+    assert!(
+        matches!(
+            &game.pending.last().unwrap().command,
+            Command::ClearFocus { buildings } if buildings == &[spire]
+        ),
+        "{:?}",
+        game.pending
+    );
+}

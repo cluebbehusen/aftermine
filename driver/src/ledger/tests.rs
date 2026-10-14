@@ -1228,6 +1228,12 @@ fn a_shell_shot_down_is_counted_for_its_defender_and_deals_nothing() {
 /// loaded, and the match plays on until it has flown; East holds a Lattice
 /// and the radar to track the strike while `defended`.
 fn strike(defended: bool) -> Vec<SeatLedger> {
+    strike_from(defended, None)
+}
+
+/// [`strike`], with the ledger started afresh `resume` ticks after the
+/// launch order, as a recording from a checkpoint would start.
+fn strike_from(defended: bool, resume: Option<u64>) -> Vec<SeatLedger> {
     let mut buildings = vec![
         (0, BuildingKind::Spire, 4, 6),
         (1, BuildingKind::Crucible, 24, 6),
@@ -1254,6 +1260,10 @@ fn strike(defended: bool) -> Vec<SeatLedger> {
             )],
             _ => Vec::new(),
         };
+        if resume.is_some_and(|resume| tick == round + 5 + resume) {
+            assert!(!state.warheads().is_empty(), "the warhead is in flight");
+            ledger = ImpactLedger::new(&state);
+        }
         let report = state.tick(&orders);
         ledger.observe(&state, &report);
     }
@@ -1279,4 +1289,21 @@ fn a_warhead_is_credited_to_its_spire_and_a_stop_to_its_lattice() {
     assert_eq!((spire.fired, spire.landed), (1, 0));
     assert_eq!(spire.dealt.total(), 0);
     assert_eq!(built(&defended, 1, "lattice").intercepted, 1);
+}
+
+#[test]
+fn a_warhead_already_in_flight_when_the_record_starts_is_its_spires() {
+    let resumed = strike_from(false, Some(40));
+    let spire = built(&resumed, 0, "spire");
+    assert_eq!(
+        (spire.fired, spire.landed),
+        (0, 1),
+        "launched before the record, landed in it"
+    );
+    assert!(spire.dealt.buildings > 0);
+}
+
+#[test]
+fn a_lattice_is_defense_spending() {
+    assert_eq!(category(BuildingKind::Lattice), "defense");
 }
