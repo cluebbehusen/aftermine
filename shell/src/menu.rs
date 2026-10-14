@@ -98,6 +98,42 @@ impl BindingColumns {
     }
 }
 
+/// Where a shelf record's columns sit: its title, what it is, how long
+/// the match ran, and when it was saved. Drawing and tests share it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RecordColumns {
+    /// The record's name, or its map.
+    pub title: Rect,
+    /// What kind of record it is.
+    pub detail: Rect,
+    /// Match time, right-aligned.
+    pub clock: Rect,
+    /// When it was saved, right-aligned.
+    pub when: Rect,
+}
+
+impl RecordColumns {
+    /// The columns across `row` at UI scale `s`.
+    pub fn of(row: Rect, s: f32) -> Self {
+        let pad = 18.0 * s;
+        let inner = row.w - 2.0 * pad;
+        let column = |from: f32, to: f32| {
+            Rect::new(
+                row.x + pad + inner * from,
+                row.y,
+                inner * (to - from),
+                row.h,
+            )
+        };
+        Self {
+            title: column(0.0, 0.42),
+            detail: column(0.45, 0.65),
+            clock: column(0.66, 0.78),
+            when: column(0.80, 1.0),
+        }
+    }
+}
+
 /// What a menu row says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Label {
@@ -110,6 +146,15 @@ pub enum Label {
         name: String,
         keys: [String; 2],
         marked: Option<usize>,
+    },
+    /// A saved game or replay on the shelf, drawn in [`RecordColumns`];
+    /// an unavailable record's title draws disabled.
+    Record {
+        title: String,
+        detail: String,
+        clock: String,
+        when: String,
+        available: bool,
     },
 }
 
@@ -128,6 +173,13 @@ impl std::fmt::Display for Label {
                 };
                 write!(f, "{name}: {} | {}", key(0), key(1))
             }
+            Label::Record {
+                title,
+                detail,
+                clock,
+                when,
+                ..
+            } => write!(f, "{title} | {detail} | {clock} | {when}"),
         }
     }
 }
@@ -330,14 +382,16 @@ impl<R: Clone> Menu<R> {
         }
     }
 
-    /// Whether the list draws wide: asked to, or because a row draws as
-    /// Controls columns.
+    /// Whether the list draws wide: asked to, or because a row draws in
+    /// columns.
     fn wide(&self) -> bool {
         self.wide
-            || self
-                .lines
-                .iter()
-                .any(|line| matches!(line, Line::Row(Label::Binding { .. }, _)))
+            || self.lines.iter().any(|line| {
+                matches!(
+                    line,
+                    Line::Row(Label::Binding { .. } | Label::Record { .. }, _)
+                )
+            })
     }
 
     /// The nearest non-header row from `index`, toward the start when
@@ -682,12 +736,54 @@ impl<R: Clone> Menu<R> {
                         draw_text(&text, column.x, rect.y + rect.h * 0.68, size, color);
                     }
                 }
+                Label::Record {
+                    title,
+                    detail,
+                    clock,
+                    when,
+                    available,
+                } => {
+                    let columns = RecordColumns::of(rect, s);
+                    let dim = if busy { TEXT_DISABLED } else { TEXT_SECONDARY };
+                    let title_color = if *available { color } else { TEXT_DISABLED };
+                    let measure = |text: &str| {
+                        measure_text(text, None, numeric::font_size(text_size), 1.0).width
+                    };
+                    for (text, column, tint) in [
+                        (title, columns.title, title_color),
+                        (detail, columns.detail, dim),
+                    ] {
+                        let shown = crate::typography::elide_to_width(text, column.w, &measure);
+                        draw_text(&shown, column.x, rect.y + rect.h * 0.68, text_size, tint);
+                    }
+                    for (text, column) in [(clock, columns.clock), (when, columns.when)] {
+                        let size = crate::typography::fit(text, text_size, column.w, 1.0);
+                        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+                        draw_text(
+                            text,
+                            column.x + column.w - width,
+                            rect.y + rect.h * 0.68,
+                            size,
+                            dim,
+                        );
+                    }
+                }
                 Label::Text(text) => {
-                    draw_text(
+                    let room = rect.w - 36.0 * s;
+                    let size = crate::typography::fit(
                         text,
+                        text_size,
+                        room,
+                        crate::theme::Type::Label.at(s),
+                    );
+                    let shown = crate::typography::elide_to_width(text, room, &|text: &str| {
+                        measure_text(text, None, numeric::font_size(size), 1.0).width
+                    });
+                    draw_text(
+                        &shown,
                         rect.x + 18.0 * s,
                         rect.y + rect.h * 0.68,
-                        text_size,
+                        size,
                         color,
                     );
                 }
@@ -994,9 +1090,20 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
     entries
 }
 
+/// A match's format as players name it: "1v1", "2v2", "4-way FFA".
+pub(crate) fn match_format(seats: usize, teams: usize) -> String {
+    match (seats, teams) {
+        (0 | 1, _) => "Solo".to_string(),
+        (2, _) => "1v1".to_string(),
+        (n, t) if t == n => format!("{n}-way FFA"),
+        (n, 2) if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
+        (n, _) => format!("{n} seats"),
+    }
+}
+
 /// Teams formed by seats with these team indices: seats sharing an index
 /// count once, and a seat with none is its own team.
-fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
+pub(crate) fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
     let mut shared = std::collections::BTreeSet::new();
     let mut alone = 0;
     for team in teams {

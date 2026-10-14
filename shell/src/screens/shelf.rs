@@ -68,6 +68,14 @@ impl Shelf {
     /// Sections appear only when they have rows; an empty shelf is just
     /// the empty-state subtitle.
     pub fn from_entries(entries: Vec<ReplayEntry>) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        Self::at(entries, now)
+    }
+
+    /// The shelf as of `now` (unix seconds), which dates every row.
+    fn at(entries: Vec<ReplayEntry>, now: u64) -> Self {
         let mut lines = Vec::new();
         for (title, resumable) in [("SAVES", true), ("REPLAYS", false)] {
             let section: Vec<usize> = entries
@@ -81,7 +89,15 @@ impl Shelf {
             }
             lines.push(Line::Header(title.to_string()));
             for i in section {
-                lines.push(Line::Row(Label::Text(entries[i].label.clone()), i));
+                let entry = &entries[i];
+                let label = Label::Record {
+                    title: entry.title.clone(),
+                    detail: entry.detail.clone(),
+                    clock: entry.clock.clone(),
+                    when: crate::saves::saved_ago(entry.saved_secs, now),
+                    available: entry.available(),
+                };
+                lines.push(Line::Row(label, i));
             }
         }
         Self {
@@ -120,12 +136,12 @@ impl Shelf {
         if let Some(row) = picked {
             sounds.push((SoundKind::Click, None));
             return match self.entries.get(row.value) {
-                Some(entry) if entry.compatible && entry.kind.resumable() => {
+                Some(entry) if entry.available() && entry.kind.resumable() => {
                     Out::Load(entry.path.clone())
                 }
-                Some(entry) if entry.compatible => Out::Watch(entry.path.clone()),
+                Some(entry) if entry.available() => Out::Watch(entry.path.clone()),
                 Some(_) => {
-                    // The row's version badge already says why.
+                    // The subtitle already says why.
                     sounds.push((SoundKind::Denied, None));
                     Out::Stay
                 }
@@ -158,18 +174,20 @@ impl Shelf {
             .filter(|hint| !hint.is_empty())
     }
 
-    /// The focused row's detail line.
+    /// The line under the title: what the shelf is doing, or what is
+    /// wrong with the focused record. Rows say everything else.
     pub fn subtitle(&self) -> String {
-        if self.entries.is_empty() {
+        if !self.catalog_ready {
+            "looking for saves and replays...".to_string()
+        } else if self.entries.is_empty() {
             "nothing recorded yet: finish a match or quit one mid-way".to_string()
         } else if self.arming.is_some() && self.arming == self.menu.value().copied() {
             "press {delete} again to delete this record".to_string()
         } else {
             self.menu
                 .value()
-                .and_then(|i| self.entries.get(*i))
-                .map(|e| e.blurb.clone())
-                .unwrap_or_default()
+                .and_then(|i| self.entries.get(*i)?.problem)
+                .map_or_else(String::new, |problem| problem.reason().to_string())
         }
     }
 }

@@ -228,3 +228,30 @@ fn binding_rows_widen_the_list_and_report_the_clicked_chord() {
     let picked = menu.handle(&[RawEvent::KeyDown { key: Key::Enter }], &mut mouse);
     assert_eq!(picked.and_then(|picked| picked.column), None);
 }
+
+#[test]
+fn record_rows_widen_the_list_and_keep_their_columns_in_order() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let record = Label::Record {
+        title: "Long Causeway".to_string(),
+        detail: "Autosave".to_string(),
+        clock: "28:58".to_string(),
+        when: "12 min ago".to_string(),
+        available: true,
+    };
+    let menu = Menu::rows("SHELF", [(record, 0)]);
+    assert_eq!(
+        menu.view().items,
+        vec!["Long Causeway | Autosave | 28:58 | 12 min ago"]
+    );
+    let plain = Menu::list("PLAIN", vec!["one".to_string()]);
+    let row = menu.item_rect(0).expect("the record row shows");
+    assert!(row.w > plain.item_rect(0).expect("a plain row").w);
+    let columns = RecordColumns::of(row, crate::render::ui_scale());
+    let spans = [columns.title, columns.detail, columns.clock, columns.when];
+    assert!(
+        spans.windows(2).all(|pair| pair[0].right() <= pair[1].x),
+        "columns never overlap: {spans:?}"
+    );
+    assert!(row.x < columns.title.x && columns.when.right() < row.right());
+}
