@@ -45,6 +45,8 @@
       {"chord": {"key": "home", "ctrl": false, "shift": false}, "action": "MenuHome"},
       {"chord": {"key": "end", "ctrl": false, "shift": false}, "action": "MenuEnd"},
       {"chord": {"key": "x", "ctrl": false, "shift": false}, "action": "DeleteSave"},
+      {"chord": {"key": "q", "ctrl": false, "shift": false}, "action": "PrevTab"},
+      {"chord": {"key": "e", "ctrl": false, "shift": false}, "action": "NextTab"},
       {"chord": {"key": "y", "ctrl": false, "shift": true}, "action": "ClearRally"},
       {"chord": {"key": "o", "ctrl": false, "shift": true}, "action": "ToggleAutofill"},
       {"chord": {"key": "q", "ctrl": false, "shift": false}, "action": {"TrainSlot": 0}},

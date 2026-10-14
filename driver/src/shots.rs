@@ -257,9 +257,8 @@ fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<
     suite.shot("home", "home")?;
     auto::activate_labeled(suite.client, "settings")?;
     suite.shot("settings", "settings")?;
-    auto::activate_labeled(suite.client, "controls")?;
+    auto::select_tab(suite.client, "controls")?;
     suite.shot("controls", "controls")?;
-    auto::press_key(suite.client, Key::Escape)?;
     auto::press_key(suite.client, Key::Escape)?;
     auto::activate_labeled(suite.client, "replays")?;
     suite.shot("replay-shelf", "replays")?;
@@ -330,8 +329,8 @@ fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<
     // font atlas here, and drawing them earlier re-rasterizes the text of
     // every later capture.
     auto::activate_labeled(suite.client, "settings")?;
-    auto::activate_labeled(suite.client, "controls")?;
-    auto::press_key(suite.client, Key::Enter)?;
+    auto::select_tab(suite.client, "controls")?;
+    auto::activate_labeled(suite.client, "pan up:")?;
     auto::press_key(suite.client, Key::M)?;
     suite.shot("controls-conflict", "controls")?;
 

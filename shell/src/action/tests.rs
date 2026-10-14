@@ -173,12 +173,12 @@ fn malformed_secondary_rows_and_unknown_slots_are_rejected() {
 fn rebound_menu_keys_emit_only_their_contextual_navigation() {
     use oxide_protocol::RawEvent;
     let mut map = BindingMap::classic();
-    assert!(map.rebind(Action::Confirm, Chord::bare(Key::Q)));
+    assert!(map.rebind(Action::Confirm, Chord::bare(Key::Z)));
     let events = map.menu_events(
         &[
-            RawEvent::KeyDown { key: Key::Q },
+            RawEvent::KeyDown { key: Key::Z },
             RawEvent::KeyDown { key: Key::W },
-            RawEvent::Text { ch: 'q' },
+            RawEvent::Text { ch: 'z' },
         ],
         false,
         false,
@@ -187,7 +187,25 @@ fn rebound_menu_keys_emit_only_their_contextual_navigation() {
         events,
         vec![
             RawEvent::KeyDown { key: Key::Enter },
-            RawEvent::Text { ch: 'q' }
+            RawEvent::Text { ch: 'z' }
         ]
+    );
+}
+
+#[test]
+fn tab_keys_reach_menus_and_stay_left_then_right_on_either_hand() {
+    use oxide_protocol::RawEvent;
+    let tabs = |map: &BindingMap, keys: [Key; 2]| {
+        map.menu_events(&keys.map(|key| RawEvent::KeyDown { key }), false, false)
+    };
+    let canonical = vec![
+        RawEvent::KeyDown { key: Key::Q },
+        RawEvent::KeyDown { key: Key::E },
+    ];
+    assert_eq!(tabs(&BindingMap::classic(), [Key::Q, Key::E]), canonical);
+    assert_eq!(
+        tabs(&BindingMap::left_handed(), [Key::U, Key::O]),
+        canonical,
+        "on the right hand U, the left key, is still Previous"
     );
 }

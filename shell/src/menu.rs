@@ -15,7 +15,8 @@ use std::path::PathBuf;
 
 use crate::press::{ScrollPress, Swipe};
 use crate::theme::{
-    SURFACE_MENU, Stroke, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE,
+    SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY,
+    TEXT_TITLE,
 };
 
 const ITEM_HEIGHT: f32 = 44.0;
@@ -51,10 +52,22 @@ pub(crate) fn binding_hint(template: &str) -> String {
             ("{left}", Action::MenuLeft),
             ("{right}", Action::MenuRight),
             ("{delete}", Action::DeleteSave),
+            ("{prev_tab}", Action::PrevTab),
+            ("{next_tab}", Action::NextTab),
         ] {
             text = text.replace(token, &bindings.label(action));
         }
         text
+    })
+}
+
+/// The key `action` answers to in menus right now; `None` while unbound.
+pub(crate) fn menu_key(action: crate::action::Action) -> Option<String> {
+    MENU_BINDINGS.with(|bindings| {
+        bindings
+            .borrow()
+            .chord_for(action)
+            .map(crate::action::BindingMap::chord_label)
     })
 }
 
@@ -147,6 +160,8 @@ pub enum Label {
         keys: [String; 2],
         marked: Option<usize>,
     },
+    /// A Settings row: what the setting is, and its value right-aligned.
+    Setting { name: String, value: String },
     /// A saved game or replay on the shelf, drawn in [`RecordColumns`];
     /// an unavailable record's title draws disabled.
     Record {
@@ -173,6 +188,7 @@ impl std::fmt::Display for Label {
                 };
                 write!(f, "{name}: {} | {}", key(0), key(1))
             }
+            Label::Setting { name, value } => write!(f, "{name}: {value}"),
             Label::Record {
                 title,
                 detail,
@@ -271,6 +287,10 @@ pub struct Menu<R> {
     /// Draws the list at the Controls width, for rows whose labels outgrow
     /// the usual one.
     pub wide: bool,
+    /// Logical height reserved under the title for a strip the screen
+    /// draws there. A list with a band hangs just below it instead of
+    /// centring, so changing what the strip shows never moves the list.
+    pub band: f32,
 }
 
 fn view_w() -> f32 {
@@ -319,6 +339,7 @@ impl<R: Clone> Menu<R> {
             carry: 0.0,
             shift: 0.0,
             wide: false,
+            band: 0.0,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -462,14 +483,15 @@ impl<R: Clone> Menu<R> {
     /// around the selection instead of running off the screen.
     fn window(&self) -> ListWindow {
         let s = ui();
-        let top_bound = (view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s);
+        let top_bound = (view_h() * 0.36).max(view_h() * 0.28 + (64.0 + self.band) * s);
         let bottom_bound = view_h() - 64.0 * s;
         let avail = (bottom_bound - top_bound).max(ITEM_HEIGHT * s);
         let n = self.lines.len().max(1);
         let pitch = row_pitch(avail, n, s, crate::platform::TOUCH_ONLY);
         let visible = numeric::to_usize((avail / pitch).floor()).clamp(1, n);
+        let centring = if self.band > 0.0 { 0.0 } else { 0.5 };
         ListWindow {
-            top: top_bound + (avail - visible as f32 * pitch) * 0.5,
+            top: top_bound + (avail - visible as f32 * pitch) * centring,
             pitch,
             // The window is scroll state, clamped — never a function of
             // the selection, or hovering near an edge walks the list.
@@ -735,6 +757,29 @@ impl<R: Clone> Menu<R> {
                         let size = crate::typography::fit(&text, text_size, column.w, 1.0);
                         draw_text(&text, column.x, rect.y + rect.h * 0.68, size, color);
                     }
+                }
+                Label::Setting { name, value } => {
+                    let pad = 18.0 * s;
+                    let value_size = crate::typography::fit(value, text_size, rect.w * 0.4, 1.0);
+                    let value_width =
+                        measure_text(value, None, numeric::font_size(value_size), 1.0).width;
+                    let value_x = rect.x + rect.w - pad - value_width;
+                    let shown = crate::typography::elide_to_width(
+                        name,
+                        value_x - rect.x - 2.0 * pad,
+                        &|text: &str| {
+                            measure_text(text, None, numeric::font_size(text_size), 1.0).width
+                        },
+                    );
+                    let baseline = rect.y + rect.h * 0.68;
+                    draw_text(&shown, rect.x + pad, baseline, text_size, color);
+                    draw_text(
+                        value,
+                        value_x,
+                        baseline,
+                        value_size,
+                        if busy { TEXT_DISABLED } else { TEXT_ACCENT },
+                    );
                 }
                 Label::Record {
                     title,
