@@ -29,7 +29,7 @@ impl ReportJob {
         Ok(())
     }
     /// Exports the live match's command log, when it has played any ticks,
-    /// with the incident log under `root`.
+    /// with the incident log and the newest crash dump under `root`.
     pub(crate) fn start(
         &mut self,
         game: &crate::game::Game,
@@ -44,8 +44,9 @@ impl ReportJob {
         self.begin("oxide-report-export", move || {
             let incidents = root.join(oxide_kit::diagnostics::INCIDENTS);
             let incidents = incidents.is_file().then_some(incidents);
+            let crash = oxide_kit::diagnostics::newest_crash_dump(&root);
             ensure!(
-                replay.is_some() || incidents.is_some(),
+                replay.is_some() || incidents.is_some() || crash.is_some(),
                 "no match or incident is available to export"
             );
             let reports = root.join("reports");
@@ -60,17 +61,26 @@ impl ReportJob {
                 replay.save(report.join("replay.json"))?;
                 contents.push("replay.json");
             }
-            if let Some(incidents) = &incidents {
+            let crash = crash.iter().flat_map(|dump| {
+                [
+                    (dump.join("replay.json"), "crash-replay.json"),
+                    (dump.join("crash.json"), "crash.json"),
+                ]
+            });
+            for (source, name) in incidents
+                .map(|incidents| (incidents, oxide_kit::diagnostics::INCIDENTS))
+                .into_iter()
+                .chain(crash)
+            {
                 ensure!(
-                    std::fs::metadata(incidents)?.len() <= MAX_COPIED_BYTES,
-                    "incident log is too large to export"
+                    std::fs::metadata(&source)?.len() <= MAX_COPIED_BYTES,
+                    "{name} is too large to export"
                 );
-                let bytes = std::fs::read(incidents)?;
-                chassis::fsx::write_atomic(
-                    report.join(oxide_kit::diagnostics::INCIDENTS),
-                    |writer| std::io::Write::write_all(writer, &bytes),
-                )?;
-                contents.push(oxide_kit::diagnostics::INCIDENTS);
+                let bytes = std::fs::read(&source)?;
+                chassis::fsx::write_atomic(report.join(name), |writer| {
+                    std::io::Write::write_all(writer, &bytes)
+                })?;
+                contents.push(name);
             }
             let manifest = serde_json::json!({
                 "format": 1,

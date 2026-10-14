@@ -71,5 +71,7 @@ cargo clippy -p oxide-kit --all-targets --locked -- -D warnings
 `diagnostics` is the process's crash and freeze monitor: main-thread stages and
 bot seat heartbeats published through atomics, a stall watchdog, and a panic
 hook that records a backtrace. Recent frame timing stays in memory and is
-written only with an incident, to the diagnostics folder's bounded log.
-Diagnostic output is observational and never becomes replay input.
+written only with an incident, to the diagnostics folder's bounded log. Crash
+dumps keep the commands of a tick that panicked, as a replay of the completed
+ticks plus the unfinished batch. Diagnostic output is observational and never
+becomes replay input.

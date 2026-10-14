@@ -636,12 +636,23 @@ Each log keeps a bounded number of its newest incidents and counts what it
 dropped. Diagnostics are observational and never become replay input. Simulation
 and bot failures reproduce from the recorded replay, not from timing.
 
+Every tick of a live or LAN match runs behind one unwind boundary. A panic there
+writes a crash dump before unwinding continues: the commands through the last
+completed tick as a standard replay, and a manifest, written last, with the
+panic message, the build, how far the tick got, and the batch the simulation
+never finished. Bots decide from the world alone, so a panic while their orders
+are collected replays from that prefix. A match continued from a save records
+from a world-only origin without controller memory, so its dump reproduces
+simulation panics but not bot panics. The folder keeps the newest few dumps; the
+interrupted world is never saved.
+
 Report export runs off the frame thread. A report holds the live match's command
 log as a standard replay when the match has played any ticks, the root incident
-log, and a manifest, written last, naming the running build and what the report
-contains. The replay's metadata keeps the recording build, so build differences
-remain visible even when simulation versions permit playback. Reports stay
-local, and diagnostics never take screenshots or enable the debug server.
+log, the newest crash dump, and a manifest, written last, naming the running
+build and what the report contains. The replay's metadata keeps the recording
+build, so build differences remain visible even when simulation versions permit
+playback. Reports stay local, and diagnostics never take screenshots or enable
+the debug server.
 
 ## Debug protocol
 

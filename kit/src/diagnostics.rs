@@ -577,6 +577,86 @@ fn truncate(mut text: String, limit: usize) -> String {
     text
 }
 
+/// How many crash dumps the diagnostics folder keeps, newest first.
+const KEEP_CRASH_DUMPS: usize = 5;
+const CRASH_DUMP_PREFIX: &str = "crash-";
+/// Written last, so a dump without it never finished.
+const CRASH_DUMP_MANIFEST: &str = "crash.json";
+
+/// What a tick that panicked leaves behind to reproduce it.
+pub struct CrashDump<'a> {
+    /// The session's commands through its last completed tick.
+    pub replay: &'a crate::GameReplay,
+    /// Where the tick got: `collection`, `simulation` or `after_simulation`.
+    pub phase: &'static str,
+    /// The panicking tick's batch when the simulation never finished it.
+    pub unfinished: &'a [oxide_sim::PlayerCommand],
+    /// The panic message.
+    pub message: &'a str,
+    /// The executable that crashed.
+    pub build: &'a BuildIdentity,
+}
+
+/// Writes `dump` into its own folder under `root`, dropping all but the
+/// newest few dumps.
+pub fn write_crash_dump(root: &Path, dump: &CrashDump<'_>) -> std::io::Result<PathBuf> {
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |time| time.as_millis());
+    let directory = root.join(format!(
+        "{CRASH_DUMP_PREFIX}{at:013}-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory)?;
+    dump.replay
+        .save(directory.join("replay.json"))
+        .map_err(std::io::Error::other)?;
+    let manifest = json!({
+        "format": 1,
+        "at_unix_ms": at,
+        "ticks": dump.replay.meta.ticks,
+        "phase": dump.phase,
+        "unfinished": dump.unfinished,
+        "message": dump.message,
+        "build": dump.build,
+    });
+    chassis::fsx::write_atomic(directory.join(CRASH_DUMP_MANIFEST), |writer| {
+        serde_json::to_writer_pretty(writer, &manifest).map_err(std::io::Error::other)
+    })?;
+    let mut dumps = crash_dumps(root);
+    while dumps.len() > KEEP_CRASH_DUMPS {
+        let _ = std::fs::remove_dir_all(dumps.remove(0));
+    }
+    Ok(directory)
+}
+
+/// The newest finished crash dump under `root`.
+pub fn newest_crash_dump(root: &Path) -> Option<PathBuf> {
+    crash_dumps(root)
+        .into_iter()
+        .rev()
+        .find(|dump| dump.join(CRASH_DUMP_MANIFEST).is_file())
+}
+
+/// Crash dump folders under `root`, oldest first.
+fn crash_dumps(root: &Path) -> Vec<PathBuf> {
+    let mut dumps: Vec<PathBuf> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir())
+                && entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(CRASH_DUMP_PREFIX))
+        })
+        .map(|entry| entry.path())
+        .collect();
+    dumps.sort();
+    dumps
+}
+
 /// Main-thread stage tracking, bot seat heartbeats, a stall watchdog and panic
 /// capture for one process. Its watchdog never takes gameplay locks.
 pub struct Monitor {

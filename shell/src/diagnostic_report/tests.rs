@@ -93,3 +93,47 @@ fn a_report_needs_a_diagnostics_folder() {
     let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
     assert!(ReportJob::default().start(&game, None).is_err());
 }
+
+#[test]
+fn a_report_carries_the_newest_crash_dump() {
+    let root = scratch("crash");
+    let mut crashed = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    crashed.advance_ticks(2);
+    let mut replay = crashed.recorder.clone();
+    replay.meta.ticks = Some(2);
+    oxide_kit::diagnostics::write_crash_dump(
+        &root,
+        &oxide_kit::diagnostics::CrashDump {
+            replay: &replay,
+            phase: "collection",
+            unfinished: &[],
+            message: "boom",
+            build: &crate::build_identity(),
+        },
+    )
+    .unwrap();
+    let relaunched = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut job = ReportJob::default();
+    job.start(&relaunched, Some(root.clone())).unwrap();
+    finished(&mut job).unwrap();
+    let report = std::fs::read_dir(root.join("reports"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(report.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(
+        manifest["contents"],
+        serde_json::json!(["crash-replay.json", "crash.json"])
+    );
+    assert_eq!(
+        oxide_kit::load_replay(report.join("crash-replay.json"))
+            .unwrap()
+            .meta
+            .ticks,
+        Some(2)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

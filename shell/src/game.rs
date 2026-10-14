@@ -41,6 +41,15 @@ impl std::ops::DerefMut for ReadOnlyState {
     }
 }
 
+/// How far a tick got before a panic: whether its batch was recorded and
+/// whether the simulation finished it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickPhase {
+    Collecting,
+    Simulating,
+    Simulated,
+}
+
 /// Commands waiting for the next recorded tick. A networked session keeps
 /// its bound seat's orders here from sending until their batch executes.
 #[derive(Debug, Default)]
@@ -120,6 +129,10 @@ pub struct Game {
     /// What the slot last received. Guards double-writes when Main Menu
     /// saves and the same game then quits as the Home backdrop.
     pub(crate) saved: Option<crate::autosave::SaveKey>,
+    /// Where a tick that panics leaves its command log; none keeps nothing.
+    pub(crate) crash_dumps: Option<std::path::PathBuf>,
+    /// How far the tick in progress got, for its crash dump.
+    tick_phase: TickPhase,
     /// End-of-match statistics, computed once from the recorder when
     /// the result lands from the bounded live tracker.
     pub end_stats: Option<oxide_kit::stats::MatchStats>,
@@ -269,6 +282,8 @@ impl Game {
             pending: PendingCommands(Vec::new()),
             slot: crate::autosave::SaveSlot::fresh(),
             saved: None,
+            crash_dumps: None,
+            tick_phase: TickPhase::Collecting,
             end_stats: None,
             live_stats,
             concede_stats: None,
@@ -378,10 +393,73 @@ impl Game {
             self.net.is_none(),
             "networked sessions execute supplied batches"
         );
-        let mut commands = std::mem::take(&mut self.pending.0);
-        let staged = commands.len();
-        commands.extend(self.bot_commands());
-        self.execute(&commands, staged)
+        self.guard_tick(|game| {
+            let mut commands = std::mem::take(&mut game.pending.0);
+            let staged = commands.len();
+            commands.extend(game.bot_commands());
+            game.execute(&commands, staged)
+        })
+    }
+
+    /// Runs one tick's work. A panic leaves the command log behind for its
+    /// repro before it continues to unwind, since the world it interrupted
+    /// is not trusted.
+    pub(crate) fn guard_tick<R>(&mut self, work: impl FnOnce(&mut Self) -> R) -> R {
+        let tick = self.state.current_tick();
+        let recorded = self.recorder.commands.len();
+        self.tick_phase = TickPhase::Collecting;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(self))) {
+            Ok(result) => result,
+            Err(payload) => {
+                self.dump_crash(tick, recorded, payload.as_ref());
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+
+    /// Writes the commands through the last completed tick, with the
+    /// panicking tick's batch kept apart when the simulation never finished
+    /// it. Bots decide from the world alone, so a panic while collecting
+    /// their orders replays from the prefix.
+    fn dump_crash(&self, tick: u64, recorded: usize, payload: &(dyn std::any::Any + Send)) {
+        let Some(root) = &self.crash_dumps else {
+            return;
+        };
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-text panic payload".into());
+        let mut replay = self.recorder.clone();
+        let (phase, unfinished, ticks) = match self.tick_phase {
+            TickPhase::Collecting => ("collection", Vec::new(), tick),
+            TickPhase::Simulating => (
+                "simulation",
+                replay
+                    .commands
+                    .split_off(recorded)
+                    .into_iter()
+                    .map(|timed| timed.command)
+                    .collect(),
+                tick,
+            ),
+            TickPhase::Simulated => ("after_simulation", Vec::new(), tick + 1),
+        };
+        replay.meta.ticks = Some(ticks);
+        let build = crate::build_identity();
+        // Failing to write the dump must not replace the original panic.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            oxide_kit::diagnostics::write_crash_dump(
+                root,
+                &oxide_kit::diagnostics::CrashDump {
+                    replay: &replay,
+                    phase,
+                    unfinished: &unfinished,
+                    message: &message,
+                    build: &build,
+                },
+            )
+        }));
     }
 
     /// The session content a save taken now would hold.
@@ -417,18 +495,20 @@ impl Game {
     fn execute(&mut self, commands: &[PlayerCommand], graded: usize) -> oxide_sim::TickReport {
         // Interpolation cache; pointless during suppressed bulk advances
         // (advance_ticks rebuilds it once at the end).
-        if !self.suppress_presentation {
-            self.presentation.remember_previous_tick(&self.state);
-        }
         for command in commands {
             self.recorder
                 .record(self.state.current_tick(), command.clone());
+        }
+        self.tick_phase = TickPhase::Simulating;
+        if !self.suppress_presentation {
+            self.presentation.remember_previous_tick(&self.state);
         }
         let sim_stage = self.diagnostic_stage(Stage::Simulation);
         let report = Arc::get_mut(&mut self.state.0)
             .expect("bot decision retained the world after collection")
             .tick(commands);
         drop(sim_stage);
+        self.tick_phase = TickPhase::Simulated;
         oxide_kit::controller::record_events(&mut self.bots, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.presentation

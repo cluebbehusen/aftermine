@@ -279,3 +279,87 @@ fn incident_logs_keep_the_newest_entries_within_their_bound() {
     assert_eq!(incidents(&root).len(), 1, "a damaged log restarts");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+fn crash_replay() -> crate::GameReplay {
+    let mut replay = crate::GameReplay::new(
+        oxide_sim::SIM_VERSION,
+        "test",
+        oxide_sim::Scenario::skirmish(),
+    );
+    replay.record(
+        0,
+        oxide_sim::PlayerCommand {
+            player: oxide_sim::PlayerId(0),
+            command: oxide_sim::Command::Surrender,
+        },
+    );
+    replay.meta.ticks = Some(1);
+    replay
+}
+
+#[test]
+fn a_crash_dump_holds_a_loadable_replay_and_the_unfinished_batch() {
+    let root = temp();
+    let replay = crash_replay();
+    let unfinished = [oxide_sim::PlayerCommand {
+        player: oxide_sim::PlayerId(1),
+        command: oxide_sim::Command::Surrender,
+    }];
+    let directory = write_crash_dump(
+        &root,
+        &CrashDump {
+            replay: &replay,
+            phase: "simulation",
+            unfinished: &unfinished,
+            message: "boom",
+            build: &build(),
+        },
+    )
+    .unwrap();
+    assert_eq!(newest_crash_dump(&root), Some(directory.clone()));
+    let loaded = crate::load_replay(directory.join("replay.json")).unwrap();
+    assert_eq!(loaded.meta.ticks, Some(1));
+    assert_eq!(loaded.commands.len(), 1);
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(directory.join("crash.json")).unwrap()).unwrap();
+    assert_eq!(manifest["phase"], "simulation");
+    assert_eq!(manifest["message"], "boom");
+    assert_eq!(manifest["ticks"], 1);
+    assert_eq!(manifest["unfinished"][0]["player"], 1);
+    assert_eq!(manifest["build"]["revision"], "diagnostic-host");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn crash_dumps_keep_the_newest_finished_ones() {
+    let root = temp();
+    for at in 1..=6 {
+        let old = root.join(format!("crash-{at:013}-1"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join(CRASH_DUMP_MANIFEST), b"{}").unwrap();
+    }
+    let replay = crash_replay();
+    let newest = write_crash_dump(
+        &root,
+        &CrashDump {
+            replay: &replay,
+            phase: "collection",
+            unfinished: &[],
+            message: "boom",
+            build: &build(),
+        },
+    )
+    .unwrap();
+    let kept = crash_dumps(&root);
+    assert_eq!(kept.len(), KEEP_CRASH_DUMPS);
+    assert_eq!(kept.last(), Some(&newest));
+    assert!(!root.join(format!("crash-{:013}-1", 2)).exists());
+    let unfinished = root.join("crash-9999999999999-1");
+    std::fs::create_dir_all(&unfinished).unwrap();
+    assert_eq!(
+        newest_crash_dump(&root),
+        Some(newest),
+        "a dump without its manifest never finished"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

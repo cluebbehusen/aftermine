@@ -411,6 +411,8 @@ impl RestoredGame {
             },
             slot: slot.unwrap_or_else(crate::autosave::SaveSlot::fresh),
             saved: None,
+            crash_dumps: None,
+            tick_phase: super::TickPhase::Collecting,
             suppress_presentation: false,
             net: None,
             outbox: Vec::new(),

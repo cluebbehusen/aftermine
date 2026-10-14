@@ -812,3 +812,112 @@ fn angular_interpolation_crosses_zero_by_the_short_arc() {
         (game.presentation.draw_heading(id, 254, 0.5) - std::f32::consts::FRAC_PI_2).abs() < 1e-6
     );
 }
+
+fn crash_root(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "oxide-crash-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ))
+}
+
+/// The dump a panicking tick left, as its replay and manifest.
+fn crash_dump(root: &std::path::Path) -> (GameReplay, serde_json::Value) {
+    let dump = oxide_kit::diagnostics::newest_crash_dump(root).expect("the panic left a dump");
+    let replay = oxide_kit::load_replay(dump.join("replay.json")).unwrap();
+    let manifest =
+        serde_json::from_slice(&std::fs::read(dump.join("crash.json")).unwrap()).unwrap();
+    (replay, manifest)
+}
+
+#[test]
+fn a_simulation_panic_dump_resumes_the_world_it_interrupted() {
+    let root = crash_root("simulation");
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.crash_dumps = Some(root.clone());
+    game.advance_ticks(40);
+    let train = Command::Train {
+        building: oxide_sim::BuildingId(0),
+        kind: UnitKind::Harvester,
+    };
+    game.issue(train.clone());
+    let before = game.hash_hex();
+    // A world shared outside the session makes the tick's exclusive borrow
+    // panic after its batch was recorded and before the simulation ran.
+    let held = Arc::clone(&game.state.0);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| game.do_tick()));
+    assert!(panicked.is_err());
+    drop(held);
+
+    let (replay, manifest) = crash_dump(&root);
+    assert_eq!(manifest["phase"], "simulation");
+    assert_eq!(manifest["ticks"], 40);
+    assert!(
+        manifest["message"]
+            .as_str()
+            .unwrap()
+            .contains("retained the world")
+    );
+    assert_eq!(
+        manifest["unfinished"][0]["command"],
+        serde_json::to_value(&train).unwrap(),
+        "the batch the simulation never finished"
+    );
+    let resumed = Game::from_replay(replay).unwrap();
+    assert_eq!(resumed.hash_hex(), before);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_collection_panic_dump_ends_at_the_last_completed_tick() {
+    let root = crash_root("collection");
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.crash_dumps = Some(root.clone());
+    game.advance_ticks(12);
+    let before = game.hash_hex();
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        game.guard_tick(|_| -> () { panic!("a bot exploded") });
+    }));
+    assert!(panicked.is_err());
+    let (replay, manifest) = crash_dump(&root);
+    assert_eq!(manifest["phase"], "collection");
+    assert_eq!(manifest["message"], "a bot exploded");
+    assert_eq!(manifest["unfinished"], serde_json::json!([]));
+    assert_eq!(Game::from_replay(replay).unwrap().hash_hex(), before);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_panic_after_the_simulation_keeps_the_finished_tick() {
+    let root = crash_root("after");
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.crash_dumps = Some(root.clone());
+    game.advance_ticks(7);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        game.guard_tick(|game| {
+            game.execute(&[], 0);
+            panic!("presentation exploded");
+        })
+    }));
+    assert!(panicked.is_err());
+    let (replay, manifest) = crash_dump(&root);
+    assert_eq!(manifest["phase"], "after_simulation");
+    assert_eq!(replay.meta.ticks, Some(8));
+    assert_eq!(
+        Game::from_replay(replay).unwrap().hash_hex(),
+        game.hash_hex()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_session_without_a_diagnostics_folder_leaves_no_dump() {
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        game.guard_tick(|_| -> () { panic!("nowhere to write") });
+    }));
+    assert!(panicked.is_err());
+}

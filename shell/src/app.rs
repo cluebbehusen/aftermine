@@ -231,6 +231,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         };
         Game::new(scenario)?
     };
+    game.crash_dumps = crate::paths::diagnostics_dir();
     game.clock.paused = args.paused;
     game.clock.speed = args.speed;
     mark("game built");
@@ -874,6 +875,7 @@ fn keep_flags(mut fresh: Game, old: &Game) -> Game {
     fresh.clock.paused = old.clock.paused;
     fresh.clock.speed = old.clock.speed;
     fresh.presentation.overlay = old.presentation.overlay;
+    fresh.crash_dumps.clone_from(&old.crash_dumps);
     fresh
 }
 
