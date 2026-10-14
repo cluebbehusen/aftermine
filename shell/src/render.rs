@@ -646,6 +646,19 @@ fn unit_selection_radius(kind: oxide_sim::UnitKind, zoom: f32, padding: f32) -> 
     collision_radius.max(visual_radius) * zoom + padding
 }
 
+/// How far past the view a unit may stand and still reach into it: a
+/// sprite wider than the usual margin reaches in from further out.
+fn unit_cull_margin(kind: oxide_sim::UnitKind, margin: f32) -> f32 {
+    margin.max(unit_visual_radius(kind) + 1.0)
+}
+
+/// A health bar's width in tiles: about the body, up to its whole width on
+/// a hull wider than a tile.
+fn hp_bar_tiles(kind: oxide_sim::UnitKind, draw_scale: f32) -> f32 {
+    let widest = 1.4f32.max(2.0 * kind.stats().radius.to_num::<f32>());
+    (draw_scale - 0.25).clamp(0.8, widest)
+}
+
 pub(crate) fn unit_visual_radius(kind: oxide_sim::UnitKind) -> f32 {
     unit_draw_scale(kind) * crate::look::unit(kind).extent * 0.5
 }
@@ -692,7 +705,7 @@ fn tracked_mount_angle(
             let target = game.state.unit(id)?;
             if target.player != game.presentation.human
                 && !game.presentation.all_seeing()
-                && !game.my_vision().visible(target.tile())
+                && !game.my_vision().sees_unit(target)
             {
                 return None;
             }
@@ -1063,10 +1076,11 @@ fn draw_unit_pass(
             continue;
         }
         let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-        if pos.x < view_lo.x - CULL_MARGIN
-            || pos.y < view_lo.y - CULL_MARGIN
-            || pos.x > view_hi.x + CULL_MARGIN
-            || pos.y > view_hi.y + CULL_MARGIN
+        let margin = unit_cull_margin(unit.kind, CULL_MARGIN);
+        if pos.x < view_lo.x - margin
+            || pos.y < view_lo.y - margin
+            || pos.x > view_hi.x + margin
+            || pos.y > view_hi.y + margin
         {
             continue;
         }
@@ -1284,7 +1298,7 @@ fn draw_unit_pass(
             );
         }
         let max_hp = unit.kind.stats().max_hp;
-        let w = zoom * (draw_scale - 0.25).clamp(0.8, 1.4);
+        let w = zoom * hp_bar_tiles(unit.kind, draw_scale);
         if unit.hp < max_hp {
             hp_bar(
                 screen.x - w * 0.5,

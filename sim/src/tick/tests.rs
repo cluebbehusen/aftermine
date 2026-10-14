@@ -1353,3 +1353,41 @@ fn mirrored_sappers_press_mirrored_doorsteps() {
     assert!(tile_adjacent_to_rect(west, TilePos::new(9, 5), (1, 1)));
     assert_eq!(doorstep(&state, 1), mirror_tile(&state, west));
 }
+
+#[test]
+fn a_wide_hull_routes_only_through_ground_that_holds_it() {
+    // Two rooms joined by a two-tile gap and, further along, a three-tile
+    // gap: a small body takes the short way, a 1.4-radius hull the wide one.
+    let mut rows = vec!["#".repeat(23)];
+    for y in 1..11 {
+        let wall = match y {
+            2..=3 | 6..=8 => '.',
+            _ => '#',
+        };
+        rows.push(format!("#..........{wall}..........#"));
+    }
+    rows.push("#".repeat(23));
+    rows[1].replace_range(2..3, "1");
+    rows[9].replace_range(19..20, "2");
+    let state = crate::Scenario {
+        mode: ScenarioMode::Match,
+        name: "rooms".into(),
+        map: rows,
+        players: crate::Scenario::skirmish().players,
+        units: Vec::new(),
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .expect("rooms build");
+    let (from, to) = (TilePos::new(5, 2), TilePos::new(17, 2));
+    let small = ground_route(&state, Fx::lit("0.55"), from, to).expect("small route");
+    assert_eq!(small, astar_for(&state, from, to).expect("astar route"));
+    assert!(small.iter().any(|t| t.x == 11 && (2..=3).contains(&t.y)));
+    let wide = ground_route(&state, Fx::lit("1.4"), from, to).expect("wide route");
+    let door: Vec<&TilePos> = wide.iter().filter(|t| t.x == 11).collect();
+    assert!(
+        !door.is_empty() && door.iter().all(|t| t.y == 7),
+        "{wide:?}"
+    );
+}

@@ -438,7 +438,13 @@ impl Scenario {
             // Validated in the unit's own movement domain: a flyer may
             // legally start over any on-map tile it could hover over in
             // play — rock included — while walkers need open ground.
-            let standable = state.passable_for(spec.kind.stats().domain, tile);
+            let stats = spec.kind.stats();
+            let standable = match stats.domain {
+                crate::stats::Domain::Ground => {
+                    crate::geometry::hull_open(tile, stats.radius, |t| state.passable(t))
+                }
+                crate::stats::Domain::Air => state.passable_for(stats.domain, tile),
+            };
             if (spec.player as usize) >= self.players.len() || !standable {
                 return Err(ScenarioError::BadUnit(index));
             }

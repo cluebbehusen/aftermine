@@ -191,7 +191,7 @@ impl PreviousEffects {
                 .filter(|unit| {
                     unit.player == game.human
                         || game.all_seeing()
-                        || state.vision(game.human).visible(unit.tile())
+                        || state.vision(game.human).sees_unit(unit)
                 })
                 .map(|unit| {
                     (
@@ -979,7 +979,7 @@ impl Presentation {
         let (body, mut center, airborne, frame) = if let Some(unit) = state.unit(id) {
             if !self.all_seeing()
                 && unit.player != self.human
-                && !state.vision(self.human).visible(unit.tile())
+                && !state.vision(self.human).sees_unit(unit)
             {
                 return None;
             }
@@ -1088,8 +1088,7 @@ impl Presentation {
 
     pub(super) fn queue_brace_sounds(&mut self, state: &State) {
         for unit in state.units().iter().filter(|unit| {
-            unit.kind == oxide_sim::UnitKind::Piledriver
-                && state.vision(self.human).visible(unit.tile())
+            unit.kind == oxide_sim::UnitKind::Piledriver && state.vision(self.human).sees_unit(unit)
         }) {
             let sound = match self.animations.brace_change(unit) {
                 Some(crate::presentation_animation::BraceChange::Deploying) => {
@@ -2083,7 +2082,7 @@ impl Presentation {
                         let unit = state.unit(id)?;
                         let visible = self.all_seeing()
                             || !state.hostile(self.human, unit.player)
-                            || state.vision(self.human).visible(unit.tile());
+                            || state.vision(self.human).sees_unit(unit);
                         visible.then(|| world_vec(unit.pos))?
                     }
                     oxide_sim::Target::Building(id) => {

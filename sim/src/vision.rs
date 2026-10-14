@@ -342,6 +342,16 @@ impl Vision {
         self.visible.get(pos).copied().unwrap_or(false)
     }
 
+    /// Whether any tile `unit` claims is in sight: its centre tile for a
+    /// small body, any tile of a wider hull, so a machine half out of the
+    /// fog is seen.
+    pub fn sees_unit(&self, unit: &crate::state::Unit) -> bool {
+        if unit.kind.stats().radius <= crate::stats::SMALL_BODY_RADIUS {
+            return self.visible(unit.tile());
+        }
+        unit.body_tiles().any(|t| self.visible(t))
+    }
+
     /// Drops one tile from current sight until the next vision refresh.
     #[cfg(test)]
     pub(crate) fn conceal(&mut self, pos: TilePos) {
@@ -670,7 +680,7 @@ impl GroundSalvageDanger {
             .iter()
             .filter_map(|unit| {
                 let hostile = state.hostile(viewer, unit.player);
-                if hostile && !vision.visible(unit.tile()) {
+                if hostile && !vision.sees_unit(unit) {
                     return None;
                 }
                 let range = ground_weapon_reach(unit.kind.stats().weapons)?
@@ -1653,7 +1663,7 @@ pub(crate) fn refresh(state: &mut State) {
         if !masts.is_empty() {
             for unit in sightings.iter().filter(|unit| unit.team != my_team) {
                 let t = unit.tile;
-                if !view.visible(t) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
+                if !unit.seen_by(view) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
                     view.contacts.push(RadarContact {
                         tile: t,
                         domain: unit.domain,
@@ -1695,6 +1705,8 @@ pub(crate) fn refresh(state: &mut State) {
 pub(super) struct Sighting {
     pub(super) id: crate::UnitId,
     pub(super) tile: TilePos,
+    pos: chassis::fx::Vec2Fx,
+    radius: chassis::fx::Fx,
     pub(super) team: u8,
     /// Where the unit is now: a landed flyer is on the ground.
     pub(super) domain: Domain,
@@ -1711,12 +1723,22 @@ impl Sighting {
             .map(|unit| Self {
                 id: unit.id,
                 tile: unit.tile(),
+                pos: unit.pos,
+                radius: unit.kind.stats().radius,
                 team: state.players[unit.player.0 as usize].team,
                 domain: unit.domain(),
                 vision: unit.kind.stats().vision,
                 radar: unit.radar(),
             })
             .collect()
+    }
+
+    /// Whether `view` sees any tile this body claims.
+    pub(super) fn seen_by(&self, view: &Vision) -> bool {
+        if self.radius <= crate::stats::SMALL_BODY_RADIUS {
+            return view.visible(self.tile);
+        }
+        crate::geometry::body_tiles(self.pos, self.radius).any(|t| view.visible(t))
     }
 }
 

@@ -22,13 +22,18 @@ fn increment(speed: Fx, ticks: i64) -> Fx {
 fn leg_open(unit: &Unit, waypoint: TilePos, terrain: &GroundTerrain) -> bool {
     let here = TilePos::containing(unit.pos);
     if here.chebyshev(waypoint) <= 1 {
-        super::early_advance_safe(here, waypoint, terrain)
+        // A hull wider than a tile also needs the waypoint's ground to hold
+        // all of it, as the route that chose it did.
+        let radius = unit.kind.stats().radius;
+        let hull = crate::stats::hull_excess(radius) == Fx::ZERO
+            || crate::geometry::hull_open(waypoint, radius, |t| terrain.open(t));
+        hull && (super::early_advance_safe(here, waypoint, terrain)
             || (!terrain.open(here)
                 && terrain.contact_clear(
                     unit.pos,
                     waypoint.center(),
                     crate::tick::brain::contact::collision_radius(unit),
-                ))
+                )))
     } else {
         !swept_leg_blocked(
             unit.pos,
@@ -127,7 +132,7 @@ fn route_target(
         while !facing
             && target < cursor + lookahead
             && let Some(&candidate) = path.waypoints.get(target + 1)
-            && clear(candidate)
+            && crate::geometry::hull_open(candidate, radius, clear)
             && !swept_leg_blocked(unit.pos, path_point(path, target + 1), radius, clear)
         {
             target += 1;
@@ -257,8 +262,12 @@ pub(super) fn advance(unit: &mut Unit, terrain: &GroundTerrain, parked: &ParkedB
     // test already refuses. Only an off-bearing arc step, or ground that
     // closed this tick, stops the motor here.
     let contact_radius = crate::tick::brain::contact::collision_radius(unit);
+    let radius = unit.kind.stats().radius;
     let allowed = if terrain.at_contact(unit.pos, contact_radius) {
         terrain.contact_clear(unit.pos, proposed, contact_radius)
+    } else if crate::stats::hull_excess(radius) > Fx::ZERO {
+        crate::geometry::hull_step_open(unit.pos, proposed, radius, |t| terrain.open(t))
+            && (there == here || super::early_advance_safe(here, there, terrain))
     } else {
         there == here || (terrain.open(there) && super::early_advance_safe(here, there, terrain))
     };

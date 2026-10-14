@@ -85,10 +85,9 @@ impl State {
             u.hp > 0
                 && self.hostile(player, u.player)
                 && u.domain() == crate::stats::Domain::Ground
-                && {
-                    let t = u.tile();
+                && u.body_tiles().any(|t| {
                     t.x >= anchor.x && t.x < anchor.x + w && t.y >= anchor.y && t.y < anchor.y + h
-                }
+                })
         });
         hostile_in_footprint.then_some(PlaceRefusal::Unit)
     }
@@ -343,10 +342,8 @@ impl State {
             u.hp > 0
                 && self.hostile(player, u.player)
                 && u.domain() == crate::stats::Domain::Ground
-                && {
-                    let t = u.tile();
-                    covers(anchor, (w, h), t) && vision.visible(t)
-                }
+                && u.body_tiles()
+                    .any(|t| covers(anchor, (w, h), t) && vision.visible(t))
         });
         hostile_in_sight.then_some(PlaceRefusal::Unit)
     }

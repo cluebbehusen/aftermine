@@ -125,7 +125,7 @@ pub(super) fn click_on_hud(game: &Game, screen: Vec2) -> bool {
 fn selectable(game: &Game, unit: &oxide_sim::Unit) -> bool {
     !game.state.hostile(game.presentation.human, unit.player)
         || game.presentation.all_seeing()
-        || game.my_vision().visible(unit.tile())
+        || game.my_vision().sees_unit(unit)
 }
 
 /// Whether the human may select this building without learning through

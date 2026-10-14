@@ -601,7 +601,7 @@ impl Game {
             self.presentation.selection.units.retain(|id| {
                 state.unit(*id).is_some_and(|u| {
                     !state.hostile(human, u.player) || all_seeing || {
-                        state.vision(human).visible(u.tile())
+                        state.vision(human).sees_unit(u)
                     }
                 })
             });

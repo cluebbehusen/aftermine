@@ -109,7 +109,8 @@ pub fn line_blocked(a: Vec2Fx, b: Vec2Fx, mut passable: impl FnMut(TilePos) -> b
 
 /// Whether a body of `radius` sweeping the segment from `a` to `b` crosses a
 /// tile that fails `passable`: the center line plus the two parallel edge
-/// lines offset by `radius`. The center line's endpoint tiles are never
+/// lines offset by `radius`, and for a radius of a tile or more, interior
+/// lines between them less than a tile apart. The center line's endpoint tiles are never
 /// tested, like [`line_blocked`]: the body may be leaving ground it could not
 /// enter, and the caller checks the destination tile itself. An edge line's
 /// start tile is tested when it lies outside the body's own tile, so a hull
@@ -139,10 +140,24 @@ pub fn swept_line_blocked(
     }
     let side = Vec2Fx::new(-delta.y, delta.x) * (radius / length);
     let own = TilePos::containing(a);
-    [side, -side].into_iter().any(|side| {
-        let (from, to) = (inset(a + side, a), inset(b + side, b));
-        let start = TilePos::containing(from);
-        (start != own && !passable(start)) || line_blocked(from, to, &mut passable)
+    // Lines a whole tile apart could straddle a closed tile between them, so
+    // a hull a tile or more in radius adds evenly spaced interior lines.
+    let lines = if radius >= Fx::ONE {
+        radius.to_num::<i32>() + 1
+    } else {
+        1
+    };
+    (1..=lines).any(|k| {
+        let offset = if k == lines {
+            side
+        } else {
+            side * Fx::from_num(k) / Fx::from_num(lines)
+        };
+        [offset, -offset].into_iter().any(|side| {
+            let (from, to) = (inset(a + side, a), inset(b + side, b));
+            let start = TilePos::containing(from);
+            (start != own && !passable(start)) || line_blocked(from, to, &mut passable)
+        })
     })
 }
 

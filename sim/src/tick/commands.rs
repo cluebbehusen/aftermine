@@ -887,21 +887,60 @@ pub(super) fn finish_site_claim(state: &mut State, site: BuildingId, builder: Un
     let mut dealt = 0usize;
     for i in 0..state.units.len() {
         let u = &state.units[i];
-        if u.hp == 0 || u.domain() != crate::stats::Domain::Ground || !inside(u.tile()) {
+        if u.hp == 0 || u.domain() != crate::stats::Domain::Ground || !u.body_tiles().any(inside) {
             continue;
         }
         let (unit_kind, tile) = (u.kind, u.tile());
         if super::movement::escape_route(state, unit_kind, tile, u.heading).is_some() {
             continue; // it can walk; the eviction pre-pass sees to it
         }
-        let Some(&to) = ring.get(dealt % ring.len().max(1)) else {
-            continue; // no perimeter at all: leave it; collision resolves
+        let radius = unit_kind.stats().radius;
+        let to = if crate::stats::hull_excess(radius) == chassis::fx::Fx::ZERO {
+            let Some(&to) = ring.get(dealt % ring.len().max(1)) else {
+                continue; // no perimeter at all: leave it; collision resolves
+            };
+            dealt += 1;
+            to
+        } else {
+            // A hull wider than a tile stands clear only on a ring far
+            // enough out that none of its tiles touch the footprint.
+            let Some(to) = hull_ring(state, from, player, anchor, size, radius) else {
+                continue;
+            };
+            to
         };
-        dealt += 1;
         let unit = &mut state.units[i];
         unit.pos = to.center();
         unit.path = None;
     }
+}
+
+/// The first tile, in the founder's approach frame, of the ring around a
+/// footprint where a hull of `radius` fits without touching it.
+fn hull_ring(
+    state: &State,
+    from: TilePos,
+    player: PlayerId,
+    anchor: TilePos,
+    size: (i32, i32),
+    radius: chassis::fx::Fx,
+) -> Option<TilePos> {
+    let gap = 1 + crate::stats::hull_excess(radius).ceil().to_num::<i32>();
+    let approach = super::rect_approach_origin(state, player, from, anchor, size);
+    (-gap..size.1 + gap)
+        .flat_map(|dy| (-gap..size.0 + gap).map(move |dx| anchor.offset(dx, dy)))
+        .filter(|t| {
+            let (dx, dy) = (t.x - anchor.x, t.y - anchor.y);
+            let out = (-dx).max(dx - size.0 + 1).max((-dy).max(dy - size.1 + 1));
+            out == gap && crate::geometry::hull_open(*t, radius, |c| state.passable(c))
+        })
+        .min_by_key(|&t| {
+            (
+                super::rect_approach_key_from(from, approach, anchor, size, t),
+                t.y,
+                t.x,
+            )
+        })
 }
 
 /// Refund an unstarted site in full; after work starts, scale by current hp.

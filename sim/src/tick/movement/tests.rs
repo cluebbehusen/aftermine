@@ -1381,3 +1381,29 @@ fn a_seat_resolving_first_cannot_change_how_its_mirror_splits_through_targets() 
         );
     }
 }
+
+#[test]
+fn an_anchored_body_holds_unless_a_wider_hull_shoves_it() {
+    let small = Fx::lit("0.3");
+    let breaker = Fx::lit("0.55");
+    let wide = Fx::lit("1.4");
+    let mover = (false, false);
+    // A worker at work holds against any small body, the Breaker included.
+    assert_eq!(
+        push_shares(mover, (true, false), (small, breaker)),
+        (Fx::ZERO, Fx::ONE)
+    );
+    // A wider hull splits by mass instead, so the worker gives way.
+    let (worker, hull) = push_shares(mover, (true, false), (small, wide));
+    assert!(worker > hull && worker + hull == Fx::ONE);
+    // A wide hull at work still holds against a small mover.
+    assert_eq!(
+        push_shares(mover, (false, true), (small, wide)),
+        (Fx::ONE, Fx::ZERO)
+    );
+    // A landed airframe takes nothing, whatever shoves it.
+    assert_eq!(
+        push_shares((true, false), (false, false), (small, wide)),
+        (Fx::ZERO, Fx::ONE)
+    );
+}

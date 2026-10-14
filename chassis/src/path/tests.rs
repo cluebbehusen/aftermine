@@ -969,3 +969,77 @@ fn expansion_cap_gives_up_gracefully() {
     );
     assert_eq!(capped, None);
 }
+
+/// The sweep as it stood before interior lines: the center line and the two
+/// edges only.
+fn edge_only_sweep(a: Vec2Fx, b: Vec2Fx, radius: Fx, passable: impl Fn(TilePos) -> bool) -> bool {
+    let delta = b - a;
+    let length = delta.length();
+    if length == Fx::ZERO {
+        return false;
+    }
+    if line_blocked(a, b, &passable) {
+        return true;
+    }
+    if radius <= Fx::ZERO {
+        return false;
+    }
+    let side = Vec2Fx::new(-delta.y, delta.x) * (radius / length);
+    let own = TilePos::containing(a);
+    [side, -side].into_iter().any(|side| {
+        let (from, to) = (inset(a + side, a), inset(b + side, b));
+        let start = TilePos::containing(from);
+        (start != own && !passable(start)) || line_blocked(from, to, &passable)
+    })
+}
+
+#[test]
+fn a_hull_under_a_tile_sweeps_exactly_as_before() {
+    let mut rng = Pcg32::new(7, 11);
+    for _ in 0..400 {
+        let rows: Vec<String> = (0..10)
+            .map(|_| {
+                (0..10)
+                    .map(|_| if below(&mut rng, 6) == 0 { '#' } else { '.' })
+                    .collect()
+            })
+            .collect();
+        let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let (grid, _, _) = arena(&refs);
+        let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+        let point = |rng: &mut Pcg32| {
+            Vec2Fx::new(
+                Fx::from_num(below(rng, 80)) / 8,
+                Fx::from_num(below(rng, 80)) / 8,
+            )
+        };
+        let (a, b) = (point(&mut rng), point(&mut rng));
+        for radius in ["0.25", "0.42", "0.55", "0.99"] {
+            let radius = Fx::lit(radius);
+            assert_eq!(
+                swept_line_blocked(a, b, radius, open),
+                edge_only_sweep(a, b, radius, open),
+                "{a:?} -> {b:?} at {radius}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_wide_hull_cannot_straddle_a_single_closed_tile() {
+    // The center line runs along row 2 and a 1.4-radius edge along row 4,
+    // skipping row 3, where a pillar stands: the hull covers it.
+    let (grid, _, _) = arena(&[
+        "..........",
+        "..........",
+        "..........",
+        ".....#....",
+        "..........",
+        "..........",
+    ]);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let at = |x: &str, y: &str| Vec2Fx::new(Fx::lit(x), Fx::lit(y));
+    let (a, b) = (at("0.5", "2.7"), at("9.5", "2.7"));
+    assert!(!edge_only_sweep(a, b, Fx::lit("1.4"), open));
+    assert!(swept_line_blocked(a, b, Fx::lit("1.4"), open));
+}

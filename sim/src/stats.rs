@@ -2646,6 +2646,62 @@ pub const CROWD_CHAIN_REACH: Fx = Fx::lit("16");
 /// hold); the mover takes the rest. Passers-by flow around workers.
 pub const ANCHORED_PUSH_SHARE: Fx = Fx::lit("0.1");
 
+/// The widest body whose centre tile stands for all of it. A body this size
+/// may overhang the ground around that tile, as every machine up to the
+/// Breaker does; only a wider body's hull claims tiles beyond it.
+pub const SMALL_BODY_RADIUS: Fx = Fx::lit("0.55");
+
+/// How far a body of `radius` reaches past [`SMALL_BODY_RADIUS`]: exactly
+/// zero for every small body, so rules written in terms of it leave small
+/// bodies exactly as they were.
+pub fn hull_excess(radius: Fx) -> Fx {
+    (radius - SMALL_BODY_RADIUS).max(Fx::ZERO)
+}
+
+/// The widest collision radius any unit kind has.
+pub const MAX_UNIT_RADIUS: Fx = {
+    let mut widest = 0;
+    let mut i = 0;
+    while i < UnitKind::ALL.len() {
+        let bits = UnitKind::ALL[i].stats().radius.to_bits();
+        if bits > widest {
+            widest = bits;
+        }
+        i += 1;
+    }
+    Fx::from_bits(widest)
+};
+
+// Production spawns a new unit on a tile beside its producer, which a hull
+// wider than a Breaker would partly overlap. No producer may train one until
+// spawning makes room for the whole hull.
+const _: () = {
+    let mut b = 0;
+    while b < BuildingKind::ALL.len() {
+        let tiers = BuildingKind::ALL[b].tiers();
+        let mut t = 0;
+        while t < tiers.len() {
+            let produces = tiers[t].produces;
+            let mut u = 0;
+            while u < produces.len() {
+                assert!(
+                    produces[u].stats().radius.to_bits() <= SMALL_BODY_RADIUS.to_bits(),
+                    "a producer trains a hull wider than spawning makes room for"
+                );
+                u += 1;
+            }
+            t += 1;
+        }
+        b += 1;
+    }
+};
+
+/// The widest [`hull_excess`] any unit kind has.
+pub const MAX_HULL_EXCESS: Fx = {
+    let excess = MAX_UNIT_RADIUS.to_bits() - SMALL_BODY_RADIUS.to_bits();
+    Fx::from_bits(if excess > 0 { excess } else { 0 })
+};
+
 /// Furthest collision resolution may displace one unit in a whole tick,
 /// across every relaxation pass. This stays below the visible-jolt limit
 /// while leaving enough separation headroom for dense armies to flow.

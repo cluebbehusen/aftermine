@@ -240,6 +240,84 @@ pub fn work_tile(
     )
 }
 
+/// The tiles a body centred at `pos` claims: its centre tile alone for a
+/// small body, and for a wider one every tile whose square lies strictly
+/// within its [`hull_excess`](crate::stats::hull_excess) of the centre on
+/// both axes. Strict bounds keep the set mirrored under a half turn: a
+/// square that only touches the reach on one side has its twin only
+/// touching on the other.
+pub fn body_tiles(pos: chassis::fx::Vec2Fx, radius: chassis::fx::Fx) -> BodyTiles {
+    use chassis::fx::Fx;
+    if radius <= crate::stats::SMALL_BODY_RADIUS {
+        return BodyTiles::block(TilePos::containing(pos), TilePos::containing(pos));
+    }
+    let excess = crate::stats::hull_excess(radius);
+    let span = |c: Fx| {
+        (
+            (c - excess).floor().to_num::<i32>(),
+            (c + excess).ceil().to_num::<i32>() - 1,
+        )
+    };
+    let ((x0, x1), (y0, y1)) = (span(pos.x), span(pos.y));
+    BodyTiles::block(TilePos::new(x0, y0), TilePos::new(x1, y1))
+}
+
+/// The tiles of a body, row by row: see [`body_tiles`].
+#[derive(Debug, Clone)]
+pub struct BodyTiles {
+    low_x: i32,
+    high: TilePos,
+    next: TilePos,
+}
+
+impl BodyTiles {
+    fn block(low: TilePos, high: TilePos) -> Self {
+        Self {
+            low_x: low.x,
+            high,
+            next: low,
+        }
+    }
+}
+
+impl Iterator for BodyTiles {
+    type Item = TilePos;
+
+    fn next(&mut self) -> Option<TilePos> {
+        if self.next.y > self.high.y {
+            return None;
+        }
+        let tile = self.next;
+        self.next = if tile.x < self.high.x {
+            TilePos::new(tile.x + 1, tile.y)
+        } else {
+            TilePos::new(self.low_x, tile.y + 1)
+        };
+        Some(tile)
+    }
+}
+
+/// Whether a body of `radius` centred on `tile` finds every tile it claims
+/// open: the tile alone for a small body.
+pub fn hull_open(tile: TilePos, radius: chassis::fx::Fx, open: impl Fn(TilePos) -> bool) -> bool {
+    if radius <= crate::stats::SMALL_BODY_RADIUS {
+        return open(tile);
+    }
+    body_tiles(tile.center(), radius).all(open)
+}
+
+/// Whether a body of `radius` may move from `from` to `to`: every tile it
+/// would claim there is open or already under it. A hull squeezed onto
+/// closed ground can still back out of it; it can never press further in.
+pub fn hull_step_open(
+    from: chassis::fx::Vec2Fx,
+    to: chassis::fx::Vec2Fx,
+    radius: chassis::fx::Fx,
+    open: impl Fn(TilePos) -> bool,
+) -> bool {
+    body_tiles(to, radius).all(|t| open(t) || body_tiles(from, radius).any(|f| f == t))
+}
+
 /// Whether a chassis circle fits the adjacent passable tiles.
 pub fn circle_clear(
     point: chassis::fx::Vec2Fx,

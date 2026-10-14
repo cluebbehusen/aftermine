@@ -87,7 +87,7 @@ impl Tracking {
         observations.extend(
             sightings
                 .iter()
-                .filter(|unit| unit.team != team && view.visible(unit.tile))
+                .filter(|unit| unit.team != team && unit.seen_by(view))
                 .map(|unit| (unit.tile, unit.domain, Some(unit.id))),
         );
         observations.sort_unstable_by_key(|(tile, domain, unit)| (tile.y, tile.x, *domain, *unit));
@@ -249,7 +249,7 @@ impl Tracking {
             if let Some(id) = track.visible_unit {
                 if !state.unit(id).is_some_and(|u| {
                     state.hostile(player, u.player)
-                        && view.visible(u.tile())
+                        && view.sees_unit(u)
                         && u.tile() == track.tile
                         && u.domain() == track.domain
                 }) {
@@ -275,7 +275,7 @@ impl Tracking {
                     == state
                         .units()
                         .iter()
-                        .filter(|u| state.hostile(player, u.player) && view.visible(u.tile()))
+                        .filter(|u| state.hostile(player, u.player) && view.sees_unit(u))
                         .map(|u| u.id)
                         .collect::<Vec<_>>())
     }

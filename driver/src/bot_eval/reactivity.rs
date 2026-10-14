@@ -553,7 +553,7 @@ impl ReactivityDetectors {
                     unit.hp > 0
                         && state.hostile(player, unit.player)
                         && attacker(unit.kind)
-                        && state.can_see(player, unit.tile())
+                        && state.sees_unit(player, unit)
                 })
                 .collect();
             check_air(watch, state, player, &seen, now);
