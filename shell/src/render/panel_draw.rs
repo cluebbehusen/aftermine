@@ -741,6 +741,20 @@ fn draw_palette_cell(
     );
 }
 
+/// The baseline of a command tile's hotkey, below the tile's top edge.
+const TILE_HOTKEY_BASELINE: f32 = 13.0;
+
+/// The highest a command tile's icon may sit: clear of the hotkey label
+/// when it reaches into the icon's column, as a modifier chord or a second
+/// binding does, else just inside the tile's top edge.
+fn tile_icon_floor(tile: Rect, icon_size: f32, hotkey: Option<Rect>, scale: f32) -> f32 {
+    let icon_x = tile.x + (tile.w - icon_size) * 0.5;
+    match hotkey {
+        Some(label) if label.right() + 2.0 * scale > icon_x => label.bottom() + 6.0 * scale,
+        _ => tile.y + 4.0 * scale,
+    }
+}
+
 /// How much taller than the band an info column may be before the two
 /// keep separate top edges.
 const FLUSH_SLACK: f32 = 12.0;
@@ -1386,8 +1400,23 @@ pub(crate) fn draw_panel(
             );
             rect.y + rect.h - 5.0 * s - dims.offset_y - 3.0 * s
         });
-        let room = footer_top.unwrap_or(rect.y + rect.h - 4.0 * s)
-            - (rect.y + 4.0 * s + icon_size + icon_gap);
+        let hotkey = (!card.hotkey.is_empty()).then(|| {
+            let dims = measure_text(
+                &card.hotkey,
+                None,
+                numeric::font_size(crate::theme::Type::Small.at(s)),
+                1.0,
+            );
+            Rect::new(
+                rect.x + 4.0 * s,
+                rect.y + TILE_HOTKEY_BASELINE * s - dims.offset_y,
+                dims.width,
+                dims.height,
+            )
+        });
+        let icon_floor = tile_icon_floor(rect, icon_size, hotkey, s);
+        let room =
+            footer_top.unwrap_or(rect.y + rect.h - 4.0 * s) - (icon_floor + icon_size + icon_gap);
         let title_width = rect.w - 8.0 * s;
         let mut title_size = crate::theme::Type::Small.at(s);
         let (names, ascent, title_height) = loop {
@@ -1412,9 +1441,9 @@ pub(crate) fn draw_panel(
             title_size -= 0.5 * s;
         };
         let icon_y = if footer_top.is_some() {
-            rect.y + 4.0 * s
+            icon_floor
         } else {
-            rect.y + ((rect.h - icon_size - icon_gap - title_height) * 0.5).max(4.0 * s)
+            (rect.y + (rect.h - icon_size - icon_gap - title_height) * 0.5).max(icon_floor)
         };
         draw_icon(
             Rect::new(
@@ -1461,7 +1490,7 @@ pub(crate) fn draw_panel(
             draw_text(
                 &card.hotkey,
                 rect.x + 4.0 * s,
-                rect.y + 13.0 * s,
+                rect.y + TILE_HOTKEY_BASELINE * s,
                 crate::theme::Type::Small.at(s),
                 TEXT_SECONDARY,
             );

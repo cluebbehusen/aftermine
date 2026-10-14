@@ -705,3 +705,14 @@ fn cards_light_under_the_mouse_only_while_it_is_the_pointer_in_use() {
         "a finger leaves the mouse point stale"
     );
 }
+
+#[test]
+fn a_tile_icon_drops_below_a_hotkey_that_reaches_its_column() {
+    let tile = Rect::new(100.0, 600.0, 84.0, 72.0);
+    let letter = Rect::new(104.0, 603.0, 9.0, 10.0);
+    assert_eq!(tile_icon_floor(tile, 22.0, None, 1.0), 604.0);
+    assert_eq!(tile_icon_floor(tile, 22.0, Some(letter), 1.0), 604.0);
+    let chord = Rect::new(104.0, 603.0, 45.0, 10.0);
+    let floor = tile_icon_floor(tile, 22.0, Some(chord), 1.0);
+    assert!(floor > chord.bottom(), "the icon clears Shift+O");
+}
