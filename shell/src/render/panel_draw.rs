@@ -375,7 +375,7 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
         .iter()
         .filter_map(|card| match (card.action, card.icon) {
             (CardAction::CancelQueue(..), CardIcon::Unit(kind)) => Some(kind.stats().train_ticks),
-            (CardAction::CancelRound(..), CardIcon::Building(kind, _)) => {
+            (CardAction::CancelRound(..), CardIcon::Round(kind)) => {
                 kind.magazine().map(|stats| stats.round_ticks)
             }
             _ => None,
@@ -1091,6 +1091,13 @@ pub(crate) fn draw_panel(
                         dest,
                         &building_layers(*kind, *tier, true, tint, panel.owner),
                     );
+                }
+                CardIcon::Round(kind) => {
+                    let layers = sprites.round(*kind).map_or_else(
+                        || building_layers(*kind, 0, true, tint, panel.owner),
+                        |[body, accent]| vec![(body, tint), (accent, shade(panel.owner, tint))],
+                    );
+                    sprites.draw_portrait(dest, &layers);
                 }
                 CardIcon::Verb(v) => blit(dest, sprites.verb_icon(*v), tint),
                 CardIcon::Salvage { wreck } => blit(

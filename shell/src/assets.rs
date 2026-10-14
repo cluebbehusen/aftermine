@@ -1656,6 +1656,17 @@ impl Sprites {
         self.strategic_rigs.as_ref()
     }
 
+    /// A magazine's finished round, body then accent: the warhead seated on
+    /// a Spire's deck or a Lattice's interceptor.
+    pub(crate) fn round(&self, kind: oxide_sim::BuildingKind) -> Option<[Rect; 2]> {
+        let rigs = self.strategic_rigs.as_ref()?;
+        match kind {
+            oxide_sim::BuildingKind::Spire => Some(rigs.spire.round),
+            oxide_sim::BuildingKind::Lattice => Some(rigs.lattice.interceptor),
+            _ => None,
+        }
+    }
+
     pub(crate) fn piledriver_anchors(&self, deployment: f32) -> Option<(Rect, Rect)> {
         self.piledriver_anchors.as_ref().map(|rows| {
             let index =

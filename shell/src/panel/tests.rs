@@ -1291,6 +1291,7 @@ fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
         "one chip per paid round, the head wearing its meter"
     );
     assert_eq!(panel.queue[0].title, "Interceptor");
+    assert_eq!(panel.queue[0].icon, CardIcon::Round(BuildingKind::Lattice));
     assert_eq!(
         panel.queue_label,
         tick_time_label(2 * stats.round_ticks - 2),

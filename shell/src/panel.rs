@@ -29,6 +29,8 @@ pub enum CardIcon {
     Unit(UnitKind),
     /// A building sprite.
     Building(BuildingKind, u8),
+    /// A magazine's round: a Spire's warhead or a Lattice's interceptor.
+    Round(BuildingKind),
     /// A verb pictogram from the atlas's icon family.
     Verb(VerbIcon),
     /// A salvage pile: a wreck, or a scrap node.
@@ -512,7 +514,7 @@ fn magazine_queue(building: &oxide_sim::Building, queue: &mut Vec<Card>) -> Opti
         crate::typography::sentence_case(crate::building_actions::round_noun(building.kind));
     for index in 0..magazine.ordered {
         queue.push(Card {
-            icon: CardIcon::Building(building.kind, 0),
+            icon: CardIcon::Round(building.kind),
             title: title.clone(),
             cost: None,
             hotkey: String::new(),
