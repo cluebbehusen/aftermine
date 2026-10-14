@@ -985,6 +985,8 @@ impl<'a> Guard<'a> {
             *stake = *stake * share / SPIRE_SIGNALS;
         }
         let mut sites = Vec::new();
+        // Neighbouring members offer many of the same anchors.
+        let mut offered = std::collections::BTreeSet::new();
         for asset in self.assets.iter().filter(|asset| {
             open.iter().any(|(_, aim)| {
                 asset.members.iter().any(|(anchor, (width, height))| {
@@ -996,6 +998,9 @@ impl<'a> Guard<'a> {
         }) {
             for (member, footprint) in &asset.members {
                 for anchor in sites_around(*member, *footprint, kind.size()) {
+                    if !offered.insert(anchor) {
+                        continue;
+                    }
                     let centre = footprint_centre(kind, anchor);
                     let worth: u64 = open
                         .iter()
@@ -1762,32 +1767,33 @@ fn spire_threat(observation: &ObservationData) -> SpireThreat {
     if known > 0 {
         return SpireThreat::Known(known);
     }
-    let deep_bore = |owner: oxide_sim::PlayerId| {
-        observation.public_buildings.iter().any(|public| {
-            public.owner == owner && public.kind == BuildingKind::Extractor && public.tier > 0
-        }) || observation.enemy_buildings.iter().any(|building| {
-            building.player == owner
-                && building.kind == BuildingKind::Extractor
-                && building.tier > 0
-        })
+    // Each enemy's known Deep Bore and Crucible, by player index.
+    let mut held: Vec<(bool, bool)> = Vec::new();
+    let mut note = |owner: oxide_sim::PlayerId, deep_bore: bool, crucible: bool| {
+        let index = usize::from(owner.0);
+        if held.len() <= index {
+            held.resize(index + 1, (false, false));
+        }
+        held[index].0 |= deep_bore;
+        held[index].1 |= crucible;
     };
-    let crucible = |owner: oxide_sim::PlayerId| {
-        observation
-            .enemy_buildings
-            .iter()
-            .any(|building| building.player == owner && building.kind == BuildingKind::Crucible)
-    };
-    let signals = observation
-        .public_buildings
+    for public in &observation.public_buildings {
+        note(
+            public.owner,
+            public.kind == BuildingKind::Extractor && public.tier > 0,
+            false,
+        );
+    }
+    for building in &observation.enemy_buildings {
+        note(
+            building.player,
+            building.kind == BuildingKind::Extractor && building.tier > 0,
+            building.kind == BuildingKind::Crucible,
+        );
+    }
+    let signals = held
         .iter()
-        .map(|public| public.owner)
-        .chain(
-            observation
-                .enemy_buildings
-                .iter()
-                .map(|building| building.player),
-        )
-        .map(|owner| u64::from(deep_bore(owner)) + u64::from(crucible(owner)))
+        .map(|&(deep_bore, crucible)| u64::from(deep_bore) + u64::from(crucible))
         .max()
         .unwrap_or(0);
     if signals == 0 {
