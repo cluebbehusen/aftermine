@@ -506,13 +506,14 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
     }
 }
 
+/// Where toast text line `line` (0 is the newest, lowest line) starts.
 fn toast_origin(
     viewport: Vec2,
     scale: f32,
     panel_top: f32,
     orders: Rect,
     row: Rect,
-    index: usize,
+    line: usize,
 ) -> Vec2 {
     let x = if orders.w > 0.0 {
         orders.x + orders.w + 12.0 * scale
@@ -533,7 +534,44 @@ fn toast_origin(
     };
     vec2(
         x,
-        (newest - 24.0 * index as f32 * scale).max((crate::layout::TOP_BAR_H + 18.0) * scale),
+        (newest - TOAST_LINE * line as f32 * scale).max((crate::layout::TOP_BAR_H + 18.0) * scale),
+    )
+}
+
+/// The spacing between toast lines, in logical px.
+const TOAST_LINE: f32 = 24.0;
+
+/// How far right toast text may reach: short of any chrome in `obstacles`
+/// that shares the rows from `top` to `bottom`, else the window's edge.
+/// The minimap and control-group plate draw over toasts.
+fn toast_right(viewport_w: f32, scale: f32, top: f32, bottom: f32, obstacles: &[Rect]) -> f32 {
+    obstacles
+        .iter()
+        .filter(|rect| rect.w > 0.0 && rect.y < bottom && rect.y + rect.h > top)
+        .map(|rect| rect.x)
+        .fold(viewport_w, f32::min)
+        - 12.0 * scale
+}
+
+/// A toast's text size and lines within `width`: shrunk from the heading
+/// size down to body size, then wrapped rather than run past `width`.
+fn toast_lines(
+    text: &str,
+    width: f32,
+    scale: f32,
+    measure: impl Fn(&str, f32) -> f32,
+) -> (f32, Vec<String>) {
+    let floor = crate::theme::Type::Body.at(scale);
+    let mut size = crate::theme::Type::Heading.at(scale);
+    while measure(text, size) > width && size > floor {
+        size = (size - scale).max(floor);
+    }
+    if measure(text, size) <= width {
+        return (size, vec![text.to_string()]);
+    }
+    (
+        size,
+        super::wrap_words(text, |line| measure(line, size), width),
     )
 }
 
@@ -756,9 +794,8 @@ pub(crate) fn draw_hud(
     let mode_ribbon = layout.mode_ribbon;
 
     // Toasts: rejected orders and stalled units, newest at the bottom.
-    for (i, toast) in game.presentation.toasts.iter().rev().take(3).enumerate() {
-        let fade = (1.0 - (toast.age - 1.5).max(0.0)).clamp(0.0, 1.0);
-        let origin = toast_origin(
+    let origin = |line: usize| {
+        toast_origin(
             vec2(screen_width(), screen_height()),
             s,
             if panel_regions[1].w > 0.0 {
@@ -776,20 +813,33 @@ pub(crate) fn draw_hud(
                 0.0,
             ),
             mode_ribbon,
-            i,
-        );
-        let mut size = crate::theme::Type::Heading.at(s);
-        let available = (screen_width() - origin.x - 12.0 * s).max(1.0);
-        while measure_text(&toast.text, None, numeric::font_size(size), 1.0).width > available
-            && size > 12.0 * s
-        {
-            size -= 1.0 * s;
-        }
+            line,
+        )
+    };
+    let newest = origin(0);
+    let right = toast_right(
+        screen_width(),
+        s,
+        newest.y - (3.0 * TOAST_LINE + 22.0) * s,
+        newest.y + 6.0 * s,
+        &[layout.minimap, layout.group_column],
+    );
+    let mut lines_below = 0;
+    for toast in game.presentation.toasts.iter().rev().take(3) {
+        let fade = (1.0 - (toast.age - 1.5).max(0.0)).clamp(0.0, 1.0);
+        let (size, lines) =
+            toast_lines(&toast.text, (right - newest.x).max(1.0), s, |text, size| {
+                measure_text(text, None, numeric::font_size(size), 1.0).width
+            });
         let color = Color {
             a: fade,
             ..crate::theme::TEXT_ALERT
         };
-        draw_text(&toast.text, origin.x, origin.y, size, color);
+        for (index, line) in lines.iter().enumerate() {
+            let at = origin(lines_below + lines.len() - 1 - index);
+            draw_text(line, at.x, at.y, size, color);
+        }
+        lines_below += lines.len();
     }
 
     // Spectator strip: a foundry-less or resigned seat on a living team

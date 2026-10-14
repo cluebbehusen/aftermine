@@ -262,9 +262,9 @@ radii draw at the tile with a line from the silo. Stop calls a held strike off.
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
-and production-card positions. Narrow layouts widen the group to preserve
-minimum touch targets; production wraps in the remaining columns. Card
-rectangles and panel bounds share the same separator and inset calculations.
+and production-card positions. The group is wide enough to keep minimum touch
+targets; production wraps in the remaining columns. Card rectangles and panel
+bounds share the same separator and inset calculations.
 
 Coordinates are logical throughout the input/layout pipeline; the hardware
 adapter applies DPI conversion once. Touches arrive through the same ordered
@@ -279,17 +279,20 @@ each press or release that follows another event in the batch, and before
 drawing. Every pass publishes the `LayoutModel` whose rectangles drive hit
 testing together with the panel model, and drawing consumes the same pass, so a
 click always hits what the next frame shows. The HUD's supported layout floor is
-1280×800 at default UI scale. Smaller windows are overflow stress cases.
-`layout::top_bar` places the top bar from measured text: the bank, income, and
-unit count run left to right, then the idle and under-attack badges, and the
-status hangs off the menu button. Touch-only builds hold the menu button and
-bank further from the corners, which iPad screens round and iPadOS safe areas
-leave out. `layout::group_column` stacks the control groups on a plate above the
-minimap's right edge, mirroring the orders dock, and wraps into more columns
-when the window is short. It shows once a group is saved or the selection can be
-saved, never while the minimap is hidden, and a setting hides it; its slots and
-plate are chrome. The top edge is left to taps because iPadOS takes a long-press
-there as a window move.
+iPad mini in landscape, 1133×744 logical points at default UI scale; every
+modern iPad and Steam Deck (1280×800) sit above it. At the floor, a Harvester
+carrying scrap, a factory's rally controls with five products, and the grouped
+build palette each fit one band. Smaller windows, and UI scales above 100% on
+the smallest devices, are overflow stress cases. `layout::top_bar` places the
+top bar from measured text: the bank, income, and unit count run left to right,
+then the idle and under-attack badges, and the status hangs off the menu button.
+Touch-only builds hold the menu button and bank further from the corners, which
+iPad screens round and iPadOS safe areas leave out. `layout::group_column`
+stacks the control groups on a plate above the minimap's right edge, mirroring
+the orders dock, and wraps into more columns when the window is short. It shows
+once a group is saved or the selection can be saved, never while the minimap is
+hidden, and a setting hides it; its slots and plate are chrome. The top edge is
+left to taps because iPadOS takes a long-press there as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated
@@ -462,16 +465,17 @@ shows on touch-only builds while the human commands a selected unit or QUEUE is
 on. It sits over the panel's left corner in the orders dock's column, and the
 dock rises to stack above it, so queueing orders never moves the toggle.
 `ribbon_row_press` hit-tests both before every other target: the toggle flips
-QUEUE and the ribbon cancels its mode. The build palette ends with a Back card
-(`CardAction::ClosePalette`) that leaves construction in one press, and on touch
-a tap that picks no unit or building while the palette is open and nothing is
-armed closes it and keeps the selection, even over a scrap pile: dismissing
-never also acts. With QUEUE lit (or Shift or Ctrl held), a roster chip drops its
-kind instead of keeping only it. Taps and clicks select through `select::pick`,
-which gives a fingertip a wider reach than a cursor. A press that picks nothing
-on a tile with known salvage selects that tile as `Selection::pile`, read-only
-and exclusive: any other selection drops it, and `Game` drops it once the viewer
-knows of no salvage there. Its panel and the desktop hover readout share
+QUEUE and the ribbon cancels its mode. The build palette's Back card
+(`CardAction::ClosePalette`) stands in its own column at the band's left edge
+and leaves construction in one press, and on touch a tap that picks no unit or
+building while the palette is open and nothing is armed closes it and keeps the
+selection, even over a scrap pile: dismissing never also acts. With QUEUE lit
+(or Shift or Ctrl held), a roster chip drops its kind instead of keeping only
+it. Taps and clicks select through `select::pick`, which gives a fingertip a
+wider reach than a cursor. A press that picks nothing on a tile with known
+salvage selects that tile as `Selection::pile`, read-only and exclusive: any
+other selection drops it, and `Game` drops it once the viewer knows of no
+salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
 

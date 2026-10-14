@@ -123,20 +123,23 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
     let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
-    // One card beyond what the Fabricator offers, so its actions wrap.
-    let last = panel.cards.last().unwrap();
-    let extra = crate::panel::Card {
-        icon: last.icon,
-        title: last.title.clone(),
-        cost: last.cost,
-        hotkey: last.hotkey.clone(),
-        action: last.action,
-        enabled: last.enabled,
-        why: last.why.clone(),
-        desc: last.desc.clone(),
-        progress: last.progress,
-    };
-    panel.cards.push(extra);
+    // More cards than one row of the Fabricator's band holds, so its
+    // actions wrap.
+    for _ in 0..3 {
+        let last = panel.cards.last().unwrap();
+        let extra = crate::panel::Card {
+            icon: last.icon,
+            title: last.title.clone(),
+            cost: last.cost,
+            hotkey: last.hotkey.clone(),
+            action: last.action,
+            enabled: last.enabled,
+            why: last.why.clone(),
+            desc: last.desc.clone(),
+            progress: last.progress,
+        };
+        panel.cards.push(extra);
+    }
     for (viewport, scale) in [(vec2(1280.0, 800.0), 1.0), (vec2(1920.0, 1200.0), 1.5)] {
         let minimap = minimap_rect_scaled(40, 24, viewport, scale);
         let packing = panel_packing(
@@ -286,28 +289,151 @@ fn narrow_cards_keep_short_orders_on_one_line_and_wrap_long_names() {
     );
 }
 
+/// The supported windows from the iPad mini floor up: iPad mini, iPad and
+/// iPad Air 11", iPad Pro 11", Steam Deck, iPad Pro 13", and desktop.
+const SUPPORTED: [(f32, f32); 6] = [
+    (1133.0, 744.0),
+    (1180.0, 820.0),
+    (1210.0, 834.0),
+    (1280.0, 800.0),
+    (1376.0, 1032.0),
+    (1920.0, 1080.0),
+];
+
+fn command(action: crate::panel::CardAction) -> crate::panel::Card {
+    crate::panel::Card {
+        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Move),
+        title: String::new(),
+        cost: None,
+        hotkey: String::new(),
+        action,
+        enabled: true,
+        why: None,
+        desc: Vec::new(),
+        progress: None,
+    }
+}
+
 #[test]
-fn construction_catalog_keeps_every_choice_and_minimap_at_supported_sizes() {
-    for viewport in [vec2(640.0, 400.0), vec2(1280.0, 800.0), vec2(1440.0, 900.0)] {
-        let minimap = minimap_rect_scaled(36, 24, viewport, 1.0);
-        let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, 14);
-        assert_eq!(slots.len(), 14);
-        if grouped {
-            assert_eq!(slots[13].x, slots[11].x, "Back sits under UTILITY");
-            assert_eq!(slots[13].y, slots[12].y);
+fn a_carrying_harvester_and_a_full_factory_fill_one_row_at_supported_sizes() {
+    use crate::action::Action;
+    use crate::panel::CardAction;
+
+    let verbs: Vec<_> = (0..7)
+        .map(|_| command(CardAction::Dispatch(Action::Patrol)))
+        .collect();
+    let mut factory = vec![
+        command(CardAction::ArmRally),
+        command(CardAction::ClearRally),
+    ];
+    factory.extend((0..5).map(|slot| command(CardAction::Dispatch(Action::TrainSlot(slot)))));
+    for (w, h) in SUPPORTED {
+        let viewport = vec2(w, h);
+        let minimap = minimap_rect_scaled(40, 24, viewport, 1.0);
+        for cards in [&verbs, &factory] {
+            let packing =
+                panel_packing(viewport, minimap, 1.0, cards.len(), rally_card_count(cards));
+            let (slots, right) = command_card_geometry(viewport, 1.0, packing, cards);
+            assert!(!packing.hides_minimap, "{w}x{h}");
+            assert!(right <= minimap.x, "{w}x{h}: band ends at {right}");
+            assert!(
+                slots.iter().all(|slot| slot.y == slots[0].y),
+                "{} cards wrap at {w}x{h}",
+                cards.len()
+            );
         }
+        // Return cargo arrives last and moves no card already shown.
+        let packing = panel_packing(viewport, minimap, 1.0, 6, 0);
+        let (six, _) = command_card_geometry(viewport, 1.0, packing, &verbs[..6]);
+        let packing = panel_packing(viewport, minimap, 1.0, 7, 0);
+        let (seven, _) = command_card_geometry(viewport, 1.0, packing, &verbs);
+        assert_eq!(six[..], seven[..6], "{w}x{h}");
+    }
+}
+
+#[test]
+fn the_construction_palette_groups_categories_beside_back_at_supported_sizes() {
+    let categories = &crate::action::BUILD_CATEGORIES;
+    let count = categories
+        .iter()
+        .map(|(_, kinds)| kinds.len())
+        .sum::<usize>()
+        + 1;
+    for (w, h) in SUPPORTED {
+        let viewport = vec2(w, h);
+        let minimap = minimap_rect_scaled(36, 24, viewport, 1.0);
+        let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, count);
+        assert!(grouped, "{w}x{h}");
+        assert_eq!(slots.len(), count);
         assert!(band.y >= crate::layout::TOP_BAR_H);
-        assert!(band.w < minimap.x);
+        assert!(band.right() <= minimap.x, "{w}x{h}");
         for (i, rect) in slots.iter().enumerate() {
-            assert!(rect.w >= crate::theme::MIN_TOUCH_TARGET);
-            assert!(rect.h >= crate::theme::MIN_TOUCH_TARGET);
-            assert!(band.contains(vec2(rect.x, rect.y)));
-            assert!(rect.y + rect.h <= viewport.y);
+            let min_w = if i + 1 == count {
+                crate::theme::MIN_TOUCH_TARGET
+            } else {
+                90.0
+            };
+            assert!(rect.w >= min_w && rect.h >= crate::theme::MIN_TOUCH_TARGET);
+            assert!(rect.x >= band.x && rect.right() <= band.right());
+            assert!(rect.y >= band.y && rect.bottom() <= viewport.y);
             assert!(slots[..i].iter().all(|other| !rect.overlaps(other)));
         }
-        if viewport.x >= 1280.0 {
-            assert!(band.h <= 170.0);
+        let back = slots[count - 1];
+        assert!(slots.iter().all(|slot| slot.x >= back.x), "Back leads");
+        assert_eq!(back.y, slots[0].y, "Back starts on the first row");
+        assert_eq!(back.bottom(), slots[1].bottom(), "and ends on the second");
+        let mut first = 0;
+        let mut previous_right = back.right();
+        for (name, kinds) in categories {
+            let cells = &slots[first..first + kinds.len()];
+            first += kinds.len();
+            let left = cells
+                .iter()
+                .map(|cell| cell.x)
+                .fold(f32::INFINITY, f32::min);
+            assert!(
+                left > previous_right,
+                "{name} sits right of what precedes it"
+            );
+            previous_right = cells.iter().map(Rect::right).fold(0.0, f32::max);
+            assert!(
+                cells
+                    .iter()
+                    .all(|cell| cell.y == slots[0].y || cell.y == slots[1].y),
+                "{name} fills the palette's two rows"
+            );
         }
+    }
+}
+
+#[test]
+fn a_window_below_the_floor_keeps_every_palette_choice_in_a_flat_grid() {
+    let viewport = vec2(640.0, 400.0);
+    let minimap = minimap_rect_scaled(36, 24, viewport, 1.0);
+    let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, 16);
+    assert!(!grouped);
+    assert_eq!(slots.len(), 16);
+    for (i, rect) in slots.iter().enumerate() {
+        assert!(band.contains(vec2(rect.x, rect.y)));
+        assert!(slots[..i].iter().all(|other| !rect.overlaps(other)));
+    }
+}
+
+#[test]
+fn an_info_column_a_sliver_taller_than_the_band_shares_its_top() {
+    let viewport = vec2(1133.0, 744.0);
+    let minimap = minimap_rect_scaled(40, 24, viewport, 1.0);
+    let packing = panel_packing(viewport, minimap, 1.0, 7, 2);
+    let flush = flush_band(packing, packing.band_h + 2.0, viewport.y, 1.0);
+    assert_eq!(flush.band_h, packing.band_h + 2.0);
+    assert_eq!(flush.top, viewport.y - flush.band_h);
+    let (left, ..) = card_metrics(viewport, 1.0);
+    let (_, right) = command_card_geometry(viewport, 1.0, flush, &[]);
+    let actions = action_panel_rect(flush, left, right, true);
+    let info = selection_info_rect(viewport, left, packing.band_h + 2.0, actions);
+    assert_eq!(info.y, actions.y);
+    for info_height in [packing.band_h - 2.0, packing.band_h + 40.0] {
+        assert_eq!(flush_band(packing, info_height, viewport.y, 1.0), packing);
     }
 }
 
@@ -369,7 +495,7 @@ fn rally_changes_preserve_single_and_grouped_production_geometry() {
                         assert_eq!(slots[0].y, slots[1].y);
                         assert!(slots[1].x >= slots[0].right());
                         if viewport == vec2(1920.0, 1080.0) && preference == 1.0 {
-                            assert_eq!(packing.band_h, 72.0);
+                            assert_eq!(packing.band_h, 92.0);
                         }
                         result.push((packing, slots, right));
                     }
@@ -578,4 +704,15 @@ fn cards_light_under_the_mouse_only_while_it_is_the_pointer_in_use() {
         !hovers(&input, rect),
         "a finger leaves the mouse point stale"
     );
+}
+
+#[test]
+fn a_tile_icon_drops_below_a_hotkey_that_reaches_its_column() {
+    let tile = Rect::new(100.0, 600.0, 84.0, 72.0);
+    let letter = Rect::new(104.0, 603.0, 9.0, 10.0);
+    assert_eq!(tile_icon_floor(tile, 22.0, None, 1.0), 604.0);
+    assert_eq!(tile_icon_floor(tile, 22.0, Some(letter), 1.0), 604.0);
+    let chord = Rect::new(104.0, 603.0, 45.0, 10.0);
+    let floor = tile_icon_floor(tile, 22.0, Some(chord), 1.0);
+    assert!(floor > chord.bottom(), "the icon clears Shift+O");
 }
