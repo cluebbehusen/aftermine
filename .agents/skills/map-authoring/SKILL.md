@@ -66,6 +66,20 @@ content keeps seat 0 human with no bot config; every other seat has `bot: true`
 and `bot_config: {}`. Name each seat by its spawn position, such as North West
 or Mid South East.
 
+## Keep traffic three tiles wide
+
+Every route a match actually uses must be at least three tiles wide: between
+Foundries, Extractor frames, and starting units, no ground gap of one or two
+tiles, with starting scrap counting as a wall until it is mined. Groups crowd
+and even single units read badly squeezing through a narrow gap, and the
+experimental machines need three tiles to pass. Widen a gap rather than seal it
+where the route matters, and keep a scrap node either flush with a wall or three
+tiles from it.
+
+Island maps, whose ground never joins hostile seats, keep their authored shape;
+the rule leaves them alone. The audit reports the narrow passages it finds and
+the map gates enforce the rule.
+
 ## Design for decisions
 
 Give every reachable region a reason to exist: salvage, a route, an expansion,
@@ -116,9 +130,12 @@ cargo run -q -p oxide-driver -- map-audit scenarios/<map>.json --json
 ```
 
 Inspect reachable room, nearest scrap, hostile ground and air routes, artillery
-pressure, spawn spacing, pairings, and Extractor access. The maintained bands
-and tolerances in `driver/tests/map_gates.rs` are authoritative; do not
-duplicate their current numbers in this skill.
+pressure, narrow passages, spawn spacing, pairings, and Extractor access. The
+maintained bands and tolerances in `driver/tests/map_gates.rs` are
+authoritative; do not duplicate their current numbers in this skill.
+
+Hold drafts to the same gates before promotion with
+`OXIDE_MAP_GATES_DIR=map-drafts cargo test -p oxide-driver --test map_gates --locked`.
 
 For a shipped-map layout or seat change, run the map gates and choose the
 headless/native checks that exercise its changed routes, resources or opening.
