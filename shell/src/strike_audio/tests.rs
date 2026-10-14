@@ -65,7 +65,10 @@ fn an_own_warhead_motor_follows_it_anywhere_and_a_hostile_one_only_in_sight() {
         // Straight east, so the deck is already lined up.
         target: chassis::grid::TilePos::new(64, 9),
     });
-    game.do_tick();
+    // It stands ready while its locks release, then fires.
+    for _ in 0..oxide_sim::BuildingKind::Spire.silo().unwrap().ready_ticks {
+        game.do_tick();
+    }
     assert_eq!(game.state.warheads().len(), 1);
     for _ in 0..6 {
         game.do_tick();
@@ -99,24 +102,32 @@ fn an_own_warhead_motor_follows_it_anywhere_and_a_hostile_one_only_in_sight() {
     );
 }
 
+/// Ticks after the stop the noses meet in [`interception`].
+const MEET: f32 = 6.0;
+
+/// A stop reported with no forecast: the interceptor leaves `pod` as it is
+/// reported and meets the warhead `MEET` ticks later at `at`.
 fn interception(
     line: Option<oxide_sim::strike::WarheadLine>,
     pod: Option<Vec2>,
     at: Vec2,
     completed_tick: u64,
 ) -> Effect {
+    let stopped = completed_tick.saturating_sub(1) as f32;
     Effect {
         kind: EffectKind::Interception {
             line,
             warhead_player: Some(oxide_sim::PlayerId(1)),
             warhead_hostile: true,
-            pod,
+            path: pod.map(|from| {
+                crate::render::sky::InterceptorPath::to(from, at, stopped, stopped + MEET, 2.0)
+            }),
             battery_player: oxide_sim::PlayerId(0),
-            at,
+            contact: at,
+            contact_tick: stopped + MEET,
             seed: 7,
             completed_tick,
             burst_heard: false,
-            early: false,
         },
         age: 0.0,
     }
@@ -154,7 +165,7 @@ fn a_stopped_warhead_keeps_its_motor_until_the_interceptor_reaches_it() {
         1,
         "the interceptor climbs"
     );
-    for _ in 0..=u64::from(crate::numeric::to_u8(INTERCEPT_MEET / TICK_DT)) {
+    for _ in 0..=crate::numeric::to_u8(MEET + crate::game::INTERCEPT_OVERLAP_TICKS) {
         game.do_tick();
     }
     assert!(

@@ -265,13 +265,15 @@ pub(crate) struct Engagement {
     pub(crate) pod: u8,
 }
 
-/// Loaded batteries matched greedily to hostile warheads their team has
-/// tracked and whose impact lies in their ring, earliest ring entry first,
-/// one interceptor per warhead.
+/// Loaded batteries matched greedily to hostile warheads whose impact lies
+/// in their ring, one interceptor per warhead: earliest stop first, then
+/// earliest ring entry. A battery stops a warhead on its ring entry or the
+/// tick its team locks on, whichever is later.
 ///
-/// Interception ([`Scope::Now`]) takes only the pairs whose warhead already
-/// stands inside the ring; a forecast takes every pair as it would stand on
-/// its ring entry or `now`, whichever is later.
+/// Interception ([`Scope::Now`]) takes only locked-on warheads already
+/// inside the ring. A forecast also takes each tracked warhead still in
+/// view, as the tick its lock would complete, and any warhead before its
+/// ring entry.
 ///
 /// A flight ends inside a convex disc, so a warhead that enters stays
 /// inside until it lands. Every key after the entry tick measures the pair
@@ -297,25 +299,33 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
     for (w, warhead) in state.warheads.iter().enumerate() {
         for (slot, &(_, b, centre, ring_sq)) in batteries.iter().enumerate() {
             let inside = |p: Vec2Fx| p.dist_sq(centre) <= ring_sq;
-            if !state.hostile(warhead.player, b.player)
-                || !inside(warhead.impact)
-                || !state
-                    .vision(b.player)
-                    .warhead(warhead.id)
-                    .is_some_and(crate::vision::WarheadTrack::tracked)
-            {
+            if !state.hostile(warhead.player, b.player) || !inside(warhead.impact) {
                 continue;
             }
+            let Some(track) = state.vision(b.player).warhead(warhead.id) else {
+                continue;
+            };
+            // The tick the battery's team locks on: now once locked; ahead,
+            // only as a forecast of a tracked warhead still in view.
+            let locked = if track.locked() {
+                now
+            } else if scope != Scope::Now && track.tracked() && track.in_view {
+                now + Tick::from(track.lock_remaining())
+            } else {
+                continue;
+            };
             let entry = entry_tick(warhead, inside);
-            if scope == Scope::Now && entry > now {
+            let fire = entry.max(locked);
+            if (scope == Scope::Now && entry > now) || fire > warhead.arrival {
                 continue;
             }
-            let at = warhead.position(entry.max(now));
+            let at = warhead.position(fire);
             let path = warhead.impact - warhead.launch;
             let offset = centre - at;
             let side = (path.x * offset.y - path.y * offset.x).signum();
             pairs.push((
                 (
+                    fire,
                     entry,
                     warhead.arrival,
                     at.dist_sq(centre),
@@ -335,7 +345,7 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
         .collect();
     let mut stopped = vec![false; state.warheads.len()];
     let mut engagements = Vec::new();
-    for ((entry, _, _, _, _, w, slot), at) in pairs {
+    for ((fire, _, _, _, _, _, w, slot), at) in pairs {
         if stopped[w] || rounds[slot] == 0 {
             continue;
         }
@@ -345,7 +355,7 @@ pub(crate) fn assign(state: &State, now: Tick, scope: Scope) -> Vec<Engagement> 
             warhead: w,
             battery: batteries[slot].0,
             at,
-            tick: entry.max(now),
+            tick: fire,
             pod: rounds[slot],
         });
     }

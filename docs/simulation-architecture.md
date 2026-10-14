@@ -821,11 +821,13 @@ and off for the Spire.
 
 A Spire's launch deck has a heading that starts toward the map centre. `Launch`
 holds a strike on any tile, seen or not, while a warhead is loaded; each tick
-the deck turns toward it at the silo's rate and launches once aligned.
-`ClearFocus` calls a held strike off. The warhead flies the straight line from
-the silo's centre to the tile centre at a fixed speed, unguided, and is stored
-with an id, its owner and silo, both ends, and its launch and arrival ticks.
-Validation requires the flight time to match its line.
+the deck turns toward it at the silo's rate, and once it has stood aligned for
+the silo's ready ticks, while its locks release, it launches. A new strike, or
+losing alignment, starts that count again. `ClearFocus` calls a held strike off.
+The warhead flies the straight line from the silo's centre to the tile centre at
+a fixed speed, unguided, and is stored with an id, its owner and silo, both
+ends, and its launch and arrival ticks. Validation requires the flight time to
+match its line.
 
 On arrival it bursts with one falloff splash for every hostile target: full
 damage within an inner radius, fading linearly to nothing at an outer radius,
@@ -839,15 +841,19 @@ warhead's current tile in true sight or within an allied Array's radar ring; the
 hold need not be continuous and is shared by teammates. A warhead is tracked
 once the hold reaches its threshold, and completing a track gives the silo away:
 the line starts at its centre, so the team remembers a Spire there, intact for
-all it knows, like any remembered building. Each tick, before arrivals land, a
-built, loaded Lattice stops a hostile warhead its team has tracked when both the
-warhead's impact point and its current position lie inside its ring. The flight
-ends inside a convex disc, so this happens on the ring crossing or on the tick
-tracking completes inside, never on the launch tick. Pairs are assigned
-greedily: earliest ring entry, then arrival, then the distances from the
-battery's centre to the warhead and to its impact, then which side of the flight
-line the battery stands on, and list order only for exact coincidences. One
-interceptor stops one warhead, and a battery may spend both in one tick.
+all it knows, like any remembered building. The hold keeps counting to a second
+threshold, the lock-on, which covers an interceptor's climb. Each tick, before
+arrivals land, a built, loaded Lattice stops a hostile warhead its team has
+locked on to when both the warhead's impact point and its current position lie
+inside its ring. The flight ends inside a convex disc, so this happens on the
+ring crossing or on the tick the lock completes inside, never on the launch
+tick. Pairs are assigned greedily: earliest stop, then ring entry, then arrival,
+then the distances from the battery's centre to the warhead and to its impact,
+then which side of the flight line the battery stands on, and list order only
+for exact coincidences. `State::interception_forecast` runs the same assignment
+ahead, taking each tracked warhead still in view at the tick its lock would
+complete. One interceptor stops one warhead, and a battery may spend both in one
+tick.
 
 `State::known_magazines` and `State::known_warheads` decide what a seat knows:
 its team's magazines and warheads in full; a hostile magazine's loaded rounds

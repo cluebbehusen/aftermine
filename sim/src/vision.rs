@@ -158,24 +158,40 @@ pub struct Vision {
     warheads: Vec<WarheadTrack>,
 }
 
+/// Exposure at which a team's batteries have locked on to a warhead.
+const LOCKED: u8 = crate::stats::WARHEAD_TRACK_TICKS + crate::stats::WARHEAD_LOCK_TICKS;
+
 /// A team's hold on one hostile warhead in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WarheadTrack {
     /// The warhead.
     pub id: crate::WarheadId,
-    /// Ticks the team has held it in sight or radar, capped at
-    /// [`WARHEAD_TRACK_TICKS`](crate::stats::WARHEAD_TRACK_TICKS).
+    /// Ticks the team has held it in sight or radar, capped once its
+    /// batteries have locked on: [`WARHEAD_TRACK_TICKS`] to track it, then
+    /// [`WARHEAD_LOCK_TICKS`] more.
+    ///
+    /// [`WARHEAD_TRACK_TICKS`]: crate::stats::WARHEAD_TRACK_TICKS
+    /// [`WARHEAD_LOCK_TICKS`]: crate::stats::WARHEAD_LOCK_TICKS
     pub exposure: u8,
     /// Whether it was in sight or radar at the last refresh.
     pub in_view: bool,
 }
 
 impl WarheadTrack {
-    /// Whether the team has held it long enough for its batteries to
-    /// stop it.
+    /// Whether the team has held it long enough to know its line.
     pub fn tracked(&self) -> bool {
         self.exposure >= crate::stats::WARHEAD_TRACK_TICKS
+    }
+
+    /// Whether the team's batteries have locked on and may stop it.
+    pub fn locked(&self) -> bool {
+        self.exposure >= LOCKED
+    }
+
+    /// Ticks in view still needed before the team's batteries lock on.
+    pub(crate) fn lock_remaining(self) -> u8 {
+        LOCKED.saturating_sub(self.exposure)
     }
 }
 
@@ -413,7 +429,7 @@ impl Vision {
             }
             let track = WarheadTrack {
                 id: warhead.id,
-                exposure: (held + u8::from(in_view)).min(crate::stats::WARHEAD_TRACK_TICKS),
+                exposure: (held + u8::from(in_view)).min(LOCKED),
                 in_view,
             };
             if track.tracked() && held < crate::stats::WARHEAD_TRACK_TICKS {

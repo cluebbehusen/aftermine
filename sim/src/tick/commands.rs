@@ -136,6 +136,7 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                         b.focus = None;
                         if let Some(launcher) = &mut b.launcher {
                             launcher.target = None;
+                            launcher.ready = 0;
                         }
                     }
                     Ok(())

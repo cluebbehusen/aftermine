@@ -1063,6 +1063,10 @@ pub struct Launcher {
     /// The ordered strike, held until the deck comes about and fires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<TilePos>,
+    /// Ticks the deck has stood aligned on its strike; it fires on the
+    /// silo's [`ready_ticks`](crate::stats::SiloStats::ready_ticks)th.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub ready: u8,
 }
 
 /// Whether `magazine` is what a `kind` building can hold: present exactly
@@ -1092,11 +1096,15 @@ fn launcher_fits(
 ) -> bool {
     match (kind.silo(), launcher) {
         (None, None) => true,
-        (Some(_), Some(launcher)) => launcher.target.is_none_or(|target| {
-            state.map.tile(target).is_some()
-                && built
-                && magazine.is_some_and(|magazine| magazine.loaded > 0)
-        }),
+        (Some(silo), Some(launcher)) => {
+            launcher.ready < silo.ready_ticks
+                && (launcher.ready == 0 || launcher.target.is_some())
+                && launcher.target.is_none_or(|target| {
+                    state.map.tile(target).is_some()
+                        && built
+                        && magazine.is_some_and(|magazine| magazine.loaded > 0)
+                })
+        }
         _ => false,
     }
 }
@@ -2626,7 +2634,8 @@ impl State {
         if !v.warheads().windows(2).all(|a| a[0].id < a[1].id)
             || v.warheads().iter().any(|track| {
                 track.exposure == 0
-                    || track.exposure > crate::stats::WARHEAD_TRACK_TICKS
+                    || track.exposure
+                        > crate::stats::WARHEAD_TRACK_TICKS + crate::stats::WARHEAD_LOCK_TICKS
                     || self
                         .warheads
                         .binary_search_by_key(&track.id, |w| w.id)
@@ -3103,6 +3112,7 @@ impl State {
                     ) - crate::geometry::footprint_center(anchor, kind.size()),
                 ),
                 target: None,
+                ready: 0,
             }),
         }
     }
@@ -3677,8 +3687,9 @@ pub enum StateIntegrityError {
     #[error("building {0} carries an invalid magazine")]
     InvalidMagazine(BuildingId),
     /// A launch deck on a kind that launches nothing, missing from a silo,
-    /// or holding a strike off the map, before the silo stands, or with
-    /// nothing loaded.
+    /// holding a strike off the map, before the silo stands, or with
+    /// nothing loaded, or counting ready ticks with no strike or past the
+    /// tick it fires on.
     #[error("building {0} carries an invalid launch deck")]
     InvalidLauncher(BuildingId),
     /// Warheads are not strictly ordered by id.

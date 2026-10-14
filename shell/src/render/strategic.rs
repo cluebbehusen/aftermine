@@ -7,6 +7,9 @@ use super::*;
 use crate::assets::{LatticeRig, SpireRig};
 use crate::numeric::Fit;
 use crate::render::prim::{fill_circle, line_between, stroke_circle};
+use crate::render::sky::{
+    Flight, INTERCEPTOR_TAIL, InterceptorPath, SCALE_PER_TILE, SHADOW_PER_TILE, WARHEAD_TAIL,
+};
 use oxide_sim::Building;
 
 /// Where a Lattice pod turns, as a share of the footprint.
@@ -25,6 +28,11 @@ pub(crate) fn lattice_pod_pivot(b: &Building, pod: u8) -> Vec2 {
 
 /// The art faces north at zero and turns clockwise; the compass starts
 /// east and turns clockwise too.
+/// Ready ticks at which the Spire's upper and lower locks start to
+/// release; each takes four.
+const UPPER_RELEASE: usize = 2;
+const LOWER_RELEASE: usize = 6;
+
 fn deck_rotation(heading: u8) -> f32 {
     f32::from(heading) / 256.0 * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2
 }
@@ -108,21 +116,11 @@ pub(super) fn draw_spire(
     let assembling = (magazine.ordered > 0 && magazine.loaded == 0)
         .then(|| magazine.progress as f32 / stats.round_ticks.max(1) as f32);
     let (lower, upper) = if magazine.loaded > 0 {
-        // The locks spring open during the last of the swing, the upper
-        // one first, so the round is free as the deck lines up.
-        let remaining = launcher.target.map_or(u32::MAX, |target| {
-            let desired = chassis::compass::heading_of(target.center() - b.center());
-            u32::from(
-                desired
-                    .wrapping_sub(launcher.heading)
-                    .cast_signed()
-                    .unsigned_abs(),
-            ) / u32::from(b.kind.silo().map_or(1, |silo| silo.turn_rate.max(1)))
-        });
-        (
-            if remaining <= 4 { 0 } else { 4 },
-            if remaining <= 8 { 0 } else { 4 },
-        )
+        // Once the deck stands aligned on its strike, the upper lock
+        // releases, then the lower, and the round is free to fly.
+        let ready = usize::from(launcher.ready);
+        let release = |from: usize| 4 - ready.saturating_sub(from).min(4);
+        (release(LOWER_RELEASE), release(UPPER_RELEASE))
     } else if let Some(p) = assembling {
         (
             closing_step(p, 1.0 / 3.0, 0.4),
@@ -215,7 +213,13 @@ pub(super) fn draw_lattice(
         }
     });
     let aim = pod_aims(game, b, magazine.loaded);
+    let tick = sky_tick(game);
     for pod in 0..2u8 {
+        let firing = game
+            .presentation
+            .prelaunches
+            .iter()
+            .find(|launch| launch.battery == b.id && launch.pod == pod);
         let pivot = game
             .presentation
             .camera
@@ -233,7 +237,14 @@ pub(super) fn draw_lattice(
         };
         layers.push(layer(rig.pod[0], WHITE));
         layers.push(layer(rig.pod[1], accent));
-        let clamp = if pod < magazine.loaded {
+        let clamp = if let Some(launch) = firing {
+            // The round is the interceptor; it leaves the pod empty.
+            if !launch.launched(tick) {
+                layers.push(layer(rig.interceptor[0], WHITE));
+                layers.push(layer(rig.interceptor[1], accent));
+            }
+            4 - numeric::to_usize((4.0 * launch.opened(tick)).round())
+        } else if pod < magazine.loaded {
             layers.push(layer(rig.interceptor[0], WHITE));
             layers.push(layer(rig.interceptor[1], accent));
             4
@@ -270,9 +281,14 @@ pub(super) fn draw_lattice(
 
 /// Each pod's bearing: a pod that just fired holds toward its shot and
 /// swings back north; for the battery's own team, the next pod to fire
-/// tracks the warhead its forecast assigns.
+/// tracks the warhead its forecast assigns; a pod whose stop is under way
+/// swings onto its interceptor's path.
 fn pod_aims(game: &crate::game::Scene<'_>, b: &Building, loaded: u8) -> [f32; 2] {
     let now = game.presentation.fx_time();
+    let wrap = |angle: f32| {
+        (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+    };
+    let bearing = |d: Vec2| d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
     let mut aims = [0.0; 2];
     for (pod, aim) in aims.iter_mut().enumerate() {
         let Some(&(angle, stamp)) = game.presentation.pod_shots.get(&(b.id.0, pod.fit::<u8>()))
@@ -281,14 +297,11 @@ fn pod_aims(game: &crate::game::Scene<'_>, b: &Building, loaded: u8) -> [f32; 2]
         };
         let age = now - stamp;
         let back = smoothstep((age - POD_HOLD) / POD_RETURN);
-        let swing =
-            (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-        *aim = swing * (1.0 - back);
+        *aim = wrap(angle) * (1.0 - back);
     }
+    let tick = sky_tick(game);
     if loaded > 0 && !game.state.hostile(game.presentation.human, b.player) {
         let ready = usize::from(loaded - 1);
-        let tick =
-            game.state.current_tick().saturating_sub(1) as f32 + game.presentation.tick_fraction();
         if let Some(target) = game
             .state
             .known_warheads(game.presentation.human)
@@ -297,61 +310,29 @@ fn pod_aims(game: &crate::game::Scene<'_>, b: &Building, loaded: u8) -> [f32; 2]
             .filter_map(|w| w.line)
             .min_by_key(|line| line.arrival)
         {
-            let ground = Flight::of(target).ground(tick);
-            let d = ground - lattice_pod_pivot(b, ready.fit::<u8>());
+            let d = Flight::of(target).ground(tick) - lattice_pod_pivot(b, ready.fit::<u8>());
             if d.length_squared() > 1e-4 {
-                let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
-                aims[ready] = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
-                    - std::f32::consts::PI;
+                aims[ready] = wrap(bearing(d));
             }
         }
+    }
+    for launch in game
+        .presentation
+        .prelaunches
+        .iter()
+        .filter(|launch| launch.battery == b.id && !launch.launched(tick))
+    {
+        let pod = usize::from(launch.pod.min(1));
+        let target = wrap(bearing(launch.path.heading()));
+        let turn = wrap(target - aims[pod]);
+        aims[pod] = wrap(aims[pod] + turn * smoothstep(launch.aimed(tick)));
     }
     aims
 }
 
-/// A warhead's whole flight in presentation terms.
-#[derive(Clone, Copy)]
-struct Flight {
-    launch: Vec2,
-    impact: Vec2,
-    launched_at: f32,
-    arrival: f32,
-}
-
-impl Flight {
-    fn of(line: oxide_sim::strike::WarheadLine) -> Self {
-        let ticks = oxide_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact);
-        Self {
-            launch: crate::game::world_vec(line.launch),
-            impact: crate::game::world_vec(line.impact),
-            launched_at: line.arrival.saturating_sub(ticks) as f32,
-            arrival: line.arrival as f32,
-        }
-    }
-
-    fn progress(self, tick: f32) -> f32 {
-        ((tick - self.launched_at) / (self.arrival - self.launched_at).max(1.0)).clamp(0.0, 1.0)
-    }
-
-    fn ground(self, tick: f32) -> Vec2 {
-        self.launch + (self.impact - self.launch) * self.progress(tick)
-    }
-
-    /// How high the warhead stands, in tiles of screen lift: a steep
-    /// boost, a long high cruise, and a steep dive onto the target.
-    fn apex(self) -> f32 {
-        (self.launch.distance(self.impact) * 0.22).clamp(2.0, 9.0)
-    }
-}
-
-/// Height as a share of the apex, and its slope, along the flight.
-fn altitude(p: f32) -> (f32, f32) {
-    const SHAPE: f32 = 0.55;
-    let s = (std::f32::consts::PI * p).sin().max(0.02);
-    let height = s.powf(SHAPE);
-    let slope =
-        SHAPE * s.powf(SHAPE - 1.0) * (std::f32::consts::PI * p).cos() * std::f32::consts::PI;
-    (height, slope)
+/// The presentation tick the sky draws at.
+fn sky_tick(game: &crate::game::Scene<'_>) -> f32 {
+    game.state.current_tick().saturating_sub(1) as f32 + game.presentation.tick_fraction()
 }
 
 /// Seconds before landing a warhead glows with re-entry and its strike
@@ -376,19 +357,10 @@ fn warhead_tint(
 
 /// Where a flight stands in the sky on screen at `tick`, its height as a
 /// share of the apex, and the screen direction it is moving.
-fn sky_pose(camera: &crate::camera::Camera, flight: Flight, tick: f32) -> (Vec2, f32, Vec2) {
-    let zoom = camera.zoom;
-    let p = flight.progress(tick);
-    let (height, slope) = altitude(p);
-    let apex = flight.apex();
-    let body = camera.to_screen(flight.ground(tick)) - vec2(0.0, apex * zoom * height);
-    let velocity = (flight.impact - flight.launch) * zoom - vec2(0.0, apex * zoom * slope);
-    (body, height, velocity)
-}
-
-/// One warhead in flight at `tick`: its ground shadow, the smoke trail
-/// along the arc it has flown, the body under power or coasting, and the
-/// re-entry glow over its last moments.
+/// One warhead in flight at `tick`, on the straight line from its deck to
+/// its target: its shadow falling away as it climbs, the smoke trail
+/// behind its nozzle, the body under power or coasting, and the re-entry
+/// glow over its last moments.
 fn draw_flight(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -399,42 +371,29 @@ fn draw_flight(
     let camera = &game.presentation.camera;
     let zoom = camera.zoom;
     let p = flight.progress(tick);
-    let (body, height, velocity) = sky_pose(camera, flight, tick);
-    // Its shadow keeps to the ground, fading as the warhead climbs.
-    let ground = camera.to_screen(flight.ground(tick));
-    let shadow_size = Vec2::splat(zoom * 1.1 * (1.0 - 0.45 * height));
-    sprites.draw(
-        ground.x - shadow_size.x * 0.5,
-        ground.y - shadow_size.y * 0.5,
-        Color::new(1.0, 1.0, 1.0, 0.55 * (1.0 - 0.75 * height)),
-        DrawTextureParams {
-            dest_size: Some(shadow_size),
-            source: Some(sprites.air_shadow()),
-            ..Default::default()
-        },
-    );
-    // A smoke trail along the arc it has flown.
-    let span = (flight.arrival - flight.launched_at).max(1.0);
-    let mut previous = body;
-    for step in 1..=14 {
-        let back = tick - step as f32 * 0.012 * span;
-        if back <= flight.launched_at {
-            break;
-        }
-        let (point, _, _) = sky_pose(camera, flight, back);
-        let fade = 1.0 - step as f32 / 15.0;
-        line_between(
-            previous,
-            point,
-            (0.16 * zoom * fade).max(1.0),
-            Color::new(0.86, 0.85, 0.82, 0.32 * fade),
-        );
-        previous = point;
+    let at = flight.ground(tick);
+    let height = flight.altitude(tick);
+    let scale = flight.scale(tick);
+    let heading = flight.heading();
+    let body = camera.to_screen(at);
+    if at.distance(flight.launch) > 0.6 {
+        draw_air_shadow(sprites, camera, at, height);
     }
+    // Smoke from the nozzle, back along the line it has flown.
+    let nozzle = |tick: f32| {
+        camera.to_screen(flight.ground(tick) - heading * WARHEAD_TAIL * flight.scale(tick))
+    };
+    draw_trail(
+        zoom,
+        (1..=18).map(|step| tick - step as f32),
+        flight.launched_at,
+        nozzle,
+        tick,
+        0.16,
+    );
     let remaining = (flight.arrival - tick) * crate::game::TICK_DT;
     let glow = (1.0 - remaining / REENTRY).clamp(0.0, 1.0);
-    let heading = velocity.normalize_or_zero();
-    let size = Vec2::splat(2.5 * zoom * (1.0 + 0.5 * height));
+    let size = Vec2::splat(2.5 * zoom * scale);
     if glow > 0.0 {
         // Re-entry: a hot streak behind the nose and a halo around it.
         let nose = body + heading * size.y * 0.22;
@@ -455,7 +414,7 @@ fn draw_flight(
             Color::new(1.0, 1.0, 1.0, 0.7 * glow),
         );
     }
-    let rotation = velocity.y.atan2(velocity.x) + std::f32::consts::FRAC_PI_2;
+    let rotation = heading.y.atan2(heading.x) + std::f32::consts::FRAC_PI_2;
     let Some(rows) = sprites.strategic_rigs().map(|rigs| &rigs.spire.warhead) else {
         fill_circle(body, 0.25 * zoom, tint);
         return;
@@ -480,6 +439,53 @@ fn draw_flight(
                 ..Default::default()
             },
         );
+    }
+}
+
+/// A missile's shadow on the ground under `at`, falling away down and to
+/// the right as it climbs `height` tiles, the way an aircraft's does.
+fn draw_air_shadow(sprites: &Sprites, camera: &crate::camera::Camera, at: Vec2, height: f32) {
+    let zoom = camera.zoom;
+    let ground = camera.to_screen(at + SHADOW_PER_TILE * height);
+    let size = Vec2::splat(zoom * 1.0 * (1.0 - 0.05 * height.min(5.0)));
+    sprites.draw(
+        ground.x - size.x * 0.5,
+        ground.y - size.y * 0.5,
+        Color::new(1.0, 1.0, 1.0, 0.5 - 0.05 * height.min(5.0)),
+        DrawTextureParams {
+            dest_size: Some(size),
+            source: Some(sprites.air_shadow()),
+            ..Default::default()
+        },
+    );
+}
+
+/// A smoke trail through the nozzle positions at `ticks`, newest first,
+/// none before `start`, joining the nozzle at `now`; `width` in tiles.
+fn draw_trail(
+    zoom: f32,
+    ticks: impl Iterator<Item = f32>,
+    start: f32,
+    nozzle: impl Fn(f32) -> Vec2,
+    now: f32,
+    width: f32,
+) {
+    let mut previous = nozzle(now);
+    let ticks: Vec<f32> = ticks.collect();
+    let count = ticks.len() as f32 + 1.0;
+    for (index, back) in ticks.into_iter().enumerate() {
+        if back < start {
+            break;
+        }
+        let point = nozzle(back);
+        let fade = 1.0 - (index as f32 + 1.0) / count;
+        line_between(
+            previous,
+            point,
+            (width * zoom * fade).max(1.0),
+            Color::new(0.86, 0.85, 0.82, 0.34 * fade),
+        );
+        previous = point;
     }
 }
 
@@ -591,57 +597,76 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             draw_contact(camera.to_screen(ground), zoom, warhead.exposure, owner);
         }
     }
-    // Interceptors launched ahead of their forecast stops, climbing to
-    // meet their warheads where the simulation stops them.
+    // Interceptors climbing ahead of their forecast stops to meet their
+    // warheads nose to nose where the simulation stops them.
     for launch in &game.presentation.prelaunches {
-        let climbed = launch.climbed(tick);
-        let hostile = state.hostile(game.presentation.human, launch.battery_player);
-        if !super::sky::missile_seen(game, hostile, launch.from.lerp(launch.at, climbed)) {
+        if !launch.launched(tick) || tick >= launch.stop {
             continue;
         }
-        let (sky, _, _) = sky_pose(camera, Flight::of(launch.line), launch.stop);
-        draw_interceptor(
-            game,
-            sprites,
-            camera.to_screen(launch.from),
-            sky,
-            seat_identity_color(game, launch.battery_player),
-            climbed,
-        );
+        let hostile = state.hostile(game.presentation.human, launch.battery_player);
+        if super::sky::missile_seen(game, hostile, launch.path.at(tick)) {
+            draw_interceptor(
+                game,
+                sprites,
+                &launch.path,
+                tick,
+                seat_identity_color(game, launch.battery_player),
+            );
+        }
     }
-    let completed = state.current_tick();
-    let fraction = game.presentation.tick_fraction();
     for fx in &game.presentation.fx {
         if let crate::game::EffectKind::Interception {
             line,
             warhead_player,
             warhead_hostile,
-            pod,
+            path,
             battery_player,
-            at,
+            contact,
+            contact_tick,
             seed,
-            completed_tick,
-            early,
             ..
         } = fx.kind
         {
-            draw_interception(
-                game,
-                sprites,
-                Interception {
-                    line,
-                    tint: warhead_tint(game, warhead_player, warhead_hostile),
-                    pod,
-                    battery: seat_identity_color(game, battery_player),
-                    at,
-                    seed,
-                    stopped: completed_tick.saturating_sub(1) as f32,
-                    early,
-                    warhead_hostile,
-                    battery_hostile: state.hostile(game.presentation.human, battery_player),
-                },
-                fx.age_at(completed, fraction),
-            );
+            let battery_hostile = state.hostile(game.presentation.human, battery_player);
+            let flying_on = tick < contact_tick + crate::game::INTERCEPT_OVERLAP_TICKS;
+            // Both fly on into the burst, which swallows them.
+            if let Some(line) = line
+                && flying_on
+            {
+                let flight = Flight::of(line);
+                if tick < flight.arrival
+                    && super::sky::missile_seen(game, warhead_hostile, flight.ground(tick))
+                {
+                    draw_flight(
+                        game,
+                        sprites,
+                        flight,
+                        tick,
+                        warhead_tint(game, warhead_player, warhead_hostile),
+                    );
+                }
+            }
+            if let Some(path) = path
+                && flying_on
+                && super::sky::missile_seen(game, battery_hostile, path.at(tick))
+            {
+                draw_interceptor(
+                    game,
+                    sprites,
+                    &path,
+                    tick,
+                    seat_identity_color(game, battery_player),
+                );
+            }
+            if tick >= contact_tick {
+                // Out of sight, a seat whose missile it was sees only the
+                // puff of smoke it ended in; anyone else sees nothing.
+                let in_sight = super::sky::ground_seen_by(game.presentation, game.state, contact);
+                if in_sight || !warhead_hostile || !battery_hostile {
+                    let drift = line.map_or(Vec2::ZERO, |line| Flight::of(line).heading());
+                    draw_sky_burst(game, contact, tick - contact_tick, drift, seed, in_sight);
+                }
+            }
         }
     }
 }
@@ -662,29 +687,58 @@ fn draw_contact(center: Vec2, zoom: f32, exposure: Option<u8>, tint: Color) {
     crate::render::prim::stroke_arc(center, r * 1.6, 2.0, 360.0 * held.clamp(0.0, 1.0), tint);
 }
 
-/// What an interception draws from.
-#[derive(Clone, Copy)]
-struct Interception {
-    line: Option<oxide_sim::strike::WarheadLine>,
+/// An interceptor at `tick` on its straight climb: its shadow falling away,
+/// smoke from its nozzle back to its pod, and the round under power.
+fn draw_interceptor(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    path: &InterceptorPath,
+    tick: f32,
     tint: Color,
-    pod: Option<Vec2>,
-    battery: Color,
-    at: Vec2,
-    seed: u32,
-    /// The tick the simulation stopped the warhead on.
-    stopped: f32,
-    /// Whether the interceptor launched ahead and met the warhead at its
-    /// stop.
-    early: bool,
-    /// Whether the warhead is hostile to this viewer.
-    warhead_hostile: bool,
-    /// Whether the interceptor is.
-    battery_hostile: bool,
+) {
+    let camera = &game.presentation.camera;
+    let zoom = camera.zoom;
+    let at = path.at(tick);
+    let height = path.altitude_at(tick);
+    let heading = path.heading();
+    if at.distance(path.from) > 0.4 {
+        draw_air_shadow(sprites, camera, at, height);
+    }
+    let scale = |tick: f32| 1.0 + SCALE_PER_TILE * path.altitude_at(tick);
+    let nozzle =
+        |tick: f32| camera.to_screen(path.at(tick) - heading * INTERCEPTOR_TAIL * scale(tick));
+    draw_trail(
+        zoom,
+        (1..=12).map(|step| tick - step as f32),
+        path.launch,
+        nozzle,
+        tick,
+        0.12,
+    );
+    let body = camera.to_screen(at);
+    let Some(rows) = sprites.strategic_rigs().map(|rigs| &rigs.lattice.launch) else {
+        fill_circle(body, 0.15 * zoom, WHITE);
+        return;
+    };
+    let rotation = heading.y.atan2(heading.x) + std::f32::consts::FRAC_PI_2;
+    let flicker = numeric::to_usize((game.presentation.fx_time() * 30.0).floor());
+    let row = rows[1 + flicker % (rows.len() - 1).max(1)];
+    let size = Vec2::splat(2.0 * zoom * scale(tick));
+    for (source, color) in [(row[0], WHITE), (row[1], tint)] {
+        sprites.draw(
+            body.x - size.x * 0.5,
+            body.y - size.y * 0.5,
+            color,
+            DrawTextureParams {
+                dest_size: Some(size),
+                source: Some(source),
+                rotation,
+                pivot: Some(body),
+                ..Default::default()
+            },
+        );
+    }
 }
-
-/// Tiles above its stop an unknown warhead is taken to fly when this seat
-/// never knew its line.
-const UNKNOWN_LIFT: f32 = 3.0;
 
 /// A deterministic share in `0..1` for fragment `index` of seed `seed`.
 fn scatter(seed: u32, index: u32) -> f32 {
@@ -695,207 +749,115 @@ fn scatter(seed: u32, index: u32) -> f32 {
     (x & 0xFFFF) as f32 / 65_535.0
 }
 
-/// A stopped warhead flying on as a ghost while the interceptor climbs out
-/// of its pod on a curve to meet it in the sky; then a burst up there, its
-/// fragments falling and fading before they reach the ground.
-fn draw_interception(
+/// A soft disc: fine layered circles fading toward the rim.
+fn soft_disc(centre: Vec2, radius: f32, color: Color) {
+    if radius < 0.5 || color.a <= 0.005 {
+        return;
+    }
+    for layer in 0..8u8 {
+        fill_circle(
+            centre,
+            radius * (1.0 - f32::from(layer) / 9.0),
+            Color::new(color.r, color.g, color.b, color.a * 0.2),
+        );
+    }
+}
+
+/// The sky burst where an interceptor met a warhead, `age` ticks after
+/// contact at `at`: a white flash big enough to swallow both noses, a
+/// fireball rolling on along the warhead's `drift`, smoke that spreads and
+/// drifts, and fragments falling away on short streaks. Out of sight only
+/// the smoke shows.
+fn draw_sky_burst(
     game: &crate::game::Scene<'_>,
-    sprites: &Sprites,
-    meeting: Interception,
+    at: Vec2,
     age: f32,
+    drift: Vec2,
+    seed: u32,
+    in_sight: bool,
 ) {
     let camera = &game.presentation.camera;
     let zoom = camera.zoom;
-    let meet = crate::game::INTERCEPT_MEET;
-    let flight = meeting.line.map(Flight::of);
-    let meet_tick = if meeting.early {
-        meeting.stopped
-    } else {
-        meeting.stopped + meet / crate::game::TICK_DT
-    };
-    // A hostile missile shows only over ground this seat sees.
-    let warhead_seen =
-        |ground: Vec2| super::sky::missile_seen(game, meeting.warhead_hostile, ground);
-    let interceptor_seen =
-        |ground: Vec2| super::sky::missile_seen(game, meeting.battery_hostile, ground);
-    // Where they meet, high over the warhead's ground track, and how far
-    // the ground lies below.
-    let (sky, drop) = match flight {
-        Some(flight) => {
-            let (body, height, _) = sky_pose(camera, flight, meet_tick);
-            (body, flight.apex() * zoom * height)
-        }
-        None => (
-            camera.to_screen(meeting.at) - vec2(0.0, UNKNOWN_LIFT * zoom),
-            UNKNOWN_LIFT * zoom,
-        ),
-    };
-    let below = flight.map_or(meeting.at, |flight| flight.ground(meet_tick));
-    if age < meet {
-        if let Some(flight) = flight {
-            let tick = meeting.stopped + age / crate::game::TICK_DT;
-            if tick < flight.arrival && warhead_seen(flight.ground(tick)) {
-                draw_flight(game, sprites, flight, tick, meeting.tint);
-            }
-        }
-        if let Some(pod) = meeting.pod
-            && interceptor_seen(pod.lerp(below, age / meet))
-        {
-            draw_interceptor(
-                game,
-                sprites,
-                camera.to_screen(pod),
-                sky,
-                meeting.battery,
-                age / meet,
-            );
-        }
-        return;
-    }
-    // Out of sight, a seat whose missile it was sees only the puff of smoke
-    // it ended in; a seat with neither missile sees nothing.
-    let in_sight = super::sky::ground_seen_by(game.presentation, game.state, below);
-    if !in_sight && meeting.warhead_hostile && meeting.battery_hostile {
-        return;
-    }
-    let after = age - meet;
-    // The flash where they met: a white core, then a halo racing out.
-    if in_sight && after < 0.3 {
-        let k = after / 0.3;
-        let core = (after / 0.1).min(1.0);
-        fill_circle(
-            sky,
-            zoom * (0.25 + 0.6 * core) * (1.0 - 0.5 * k),
-            Color::new(1.0, 1.0, 1.0, 0.95 * (1.0 - k)),
+    let px = zoom / 64.0;
+    let roll = |rate: f32| camera.to_screen(at + drift * rate * age * 1.4 / 64.0);
+    if age < 34.0 {
+        let k = age / 34.0;
+        let build = ((age + 1.0) / 4.0).min(1.0) * (1.0 - k);
+        let centre = roll(0.6) - vec2(0.0, 14.0 * k * px);
+        soft_disc(
+            centre,
+            (20.0 + 24.0 * k) * px,
+            Color::new(0.41, 0.4, 0.38, 0.8 * build),
         );
-        stroke_circle(
-            sky,
-            zoom * (0.4 + 1.4 * k),
-            0.25 * zoom * (1.0 - k) + 1.0,
-            Color::new(HEAT.r, HEAT.g, HEAT.b, 0.8 * (1.0 - k)),
-        );
-    }
-    // Ragged smoke that spreads and drifts up there.
-    if after < 1.2 {
-        let k = after / 1.2;
-        for puff in 0..6u32 {
-            let angle = scatter(meeting.seed, puff + 40) * std::f32::consts::TAU;
-            let reach = zoom * (0.2 + 0.7 * scatter(meeting.seed, puff + 50)) * (0.3 + k);
-            let centre =
-                sky + vec2(angle.cos(), angle.sin() * 0.7) * reach - vec2(0.0, zoom * 0.35 * k);
-            let shade = 0.42 + 0.14 * scatter(meeting.seed, puff + 60);
-            fill_circle(
-                centre,
-                zoom * (0.22 + 0.45 * k) * (0.7 + 0.6 * scatter(meeting.seed, puff + 70)),
-                Color::new(
-                    shade,
-                    shade * 0.98,
-                    shade * 0.95,
-                    0.38 * (1.0 - k) * (1.0 - k),
-                ),
+        for puff in 0..7u32 {
+            let angle = puff as f32 * 0.9 + 0.4 + scatter(seed, puff) * 0.3;
+            let reach = (6.0 + 18.0 * k * (0.6 + 0.4 * scatter(seed, puff + 10))) * px;
+            soft_disc(
+                centre + vec2(angle.cos(), angle.sin() * 0.7) * reach,
+                (10.0 + 12.0 * k) * px,
+                Color::new(0.43, 0.42, 0.4, 0.32 * build),
             );
         }
     }
     if !in_sight {
         return;
     }
-    // Fragments arc out and fall on smoking trails, gone before the ground.
-    let fall_time = meet + 1.0;
-    let gravity = 2.0 * drop.max(zoom) / (fall_time * fall_time);
-    for index in 0..8 {
-        let angle = scatter(meeting.seed, index) * std::f32::consts::TAU;
-        let speed = zoom * (1.0 + 2.0 * scatter(meeting.seed, index + 11));
-        let out = vec2(angle.cos(), angle.sin() * 0.6 - 0.5) * speed;
-        let at = |t: f32| sky + out * t + vec2(0.0, 0.5 * gravity * t * t);
-        let fade = (1.0 - after).clamp(0.0, 1.0);
-        if fade <= 0.0 {
-            continue;
-        }
-        let mut previous = at(after);
-        for step in 1..=5 {
-            let back = after - step as f32 * 0.05;
-            if back <= 0.0 {
-                break;
-            }
-            let point = at(back);
-            let trail = fade * (1.0 - step as f32 / 6.0);
-            line_between(
-                previous,
-                point,
-                2.0,
-                Color::new(0.5, 0.49, 0.47, 0.6 * trail),
-            );
-            previous = point;
-        }
-        let hot = (1.0 - after / 0.5).clamp(0.0, 1.0);
+    if age < 12.0 {
+        let k = age / 12.0;
+        let centre = roll(0.8);
+        soft_disc(
+            centre,
+            (24.0 + 14.0 * k) * px,
+            Color::new(0.91, 0.5, 0.2, 0.9 * (1.0 - k).powf(0.8)),
+        );
+        soft_disc(
+            centre,
+            (13.0 + 6.0 * k) * px,
+            Color::new(1.0, 0.77, 0.43, 0.85 * (1.0 - k)),
+        );
+    }
+    let centre = camera.to_screen(at);
+    if age < 5.0 {
+        let k = age / 5.0;
+        soft_disc(
+            centre,
+            (54.0 + 18.0 * k) * px,
+            Color::new(1.0, 0.93, 0.8, 0.75 * (1.0 - k)),
+        );
         fill_circle(
-            at(after),
-            2.4,
-            Color::new(
-                0.25 + 0.75 * hot,
-                0.24 + 0.71 * hot,
-                0.23 + 0.59 * hot,
-                fade,
-            ),
+            centre,
+            (22.0 - 8.0 * k) * px,
+            Color::new(1.0, 1.0, 1.0, 1.0 - 0.7 * k),
         );
     }
-}
-
-/// The interceptor climbing out of its pod at `from` on a curve to `to`,
-/// `t` of the way there.
-fn draw_interceptor(
-    game: &crate::game::Scene<'_>,
-    sprites: &Sprites,
-    from: Vec2,
-    to: Vec2,
-    tint: Color,
-    t: f32,
-) {
-    let zoom = game.presentation.camera.zoom;
-    // Straight up out of the pod first, then over onto the meeting point.
-    let control = from - vec2(0.0, (from.distance(to) * 0.7).max(2.0 * zoom));
-    let t = (0.3 * t + 0.7 * t * t).clamp(0.0, 1.0);
-    let point = |t: f32| from * (1.0 - t) * (1.0 - t) + control * 2.0 * (1.0 - t) * t + to * t * t;
-    let at = point(t);
-    let tangent = (control - from) * 2.0 * (1.0 - t) + (to - control) * 2.0 * t;
-    // Exhaust along the curve it has climbed.
-    let mut previous = at;
-    for step in 1..=10 {
-        let back = t - step as f32 * 0.04;
-        if back <= 0.0 {
-            break;
+    if (5.0..23.0).contains(&age) {
+        let t = age - 2.0;
+        let fade = 1.0 - (age - 5.0) / 18.0;
+        let push = drift * 1.4 * 0.5;
+        for index in 0..6u32 {
+            let angle = (scatter(seed, index + 20) * 360.0 - 180.0).to_radians();
+            let speed = 1.4 + 2.7 * scatter(seed, index + 30);
+            let fall = 0.4 + 0.45 * scatter(seed, index + 40);
+            let head = centre
+                + vec2(
+                    angle.cos() * speed * 1.3 * t + push.x * t,
+                    angle.sin() * speed * 0.8 * t + fall * t * t * 0.5 + push.y * t,
+                ) * px;
+            let velocity = vec2(angle.cos() * speed, angle.sin() * speed * 0.8 + fall * t);
+            let tail =
+                head - velocity.normalize_or_zero() * (4.0 + 3.0 * scatter(seed, index + 50)) * px;
+            line_between(
+                tail,
+                head,
+                (2.0 * px).max(1.0),
+                Color::new(0.59, 0.56, 0.52, 0.67 * fade),
+            );
+            fill_circle(
+                head,
+                (1.2 * px).max(0.75),
+                Color::new(0.86, 0.8, 0.7, 0.86 * fade),
+            );
         }
-        let point = point(back);
-        let fade = 1.0 - step as f32 / 11.0;
-        line_between(
-            previous,
-            point,
-            (0.12 * zoom * fade).max(1.0),
-            Color::new(0.9, 0.9, 0.86, 0.35 * fade),
-        );
-        previous = point;
-    }
-    let Some(rows) = sprites.strategic_rigs().map(|rigs| &rigs.lattice.launch) else {
-        fill_circle(at, 0.15 * zoom, WHITE);
-        return;
-    };
-    let rotation = tangent.y.atan2(tangent.x) + std::f32::consts::FRAC_PI_2;
-    let flicker = numeric::to_usize((game.presentation.fx_time() * 30.0).floor());
-    let row = rows[1 + flicker % (rows.len() - 1).max(1)];
-    let size = Vec2::splat(2.0 * zoom * (1.0 + 0.4 * t));
-    for (source, color) in [(row[0], WHITE), (row[1], tint)] {
-        sprites.draw(
-            at.x - size.x * 0.5,
-            at.y - size.y * 0.5,
-            color,
-            DrawTextureParams {
-                dest_size: Some(size),
-                source: Some(source),
-                rotation,
-                pivot: Some(at),
-                ..Default::default()
-            },
-        );
     }
 }
 

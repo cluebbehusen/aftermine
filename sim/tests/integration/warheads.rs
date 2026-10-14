@@ -8,7 +8,7 @@ use chassis::grid::TilePos;
 use oxide_sim::command::RejectReason;
 use oxide_sim::scenario::{PlayerSpec, Scenario, UnitSpec};
 use oxide_sim::state::Warhead;
-use oxide_sim::stats::{BuildingKind, WARHEAD, WARHEAD_TRACK_TICKS};
+use oxide_sim::stats::{BuildingKind, WARHEAD, WARHEAD_LOCK_TICKS, WARHEAD_TRACK_TICKS};
 use oxide_sim::{BuildingId, Command, Event, PlayerId, State, UnitKind};
 use serde_json::json;
 
@@ -89,6 +89,13 @@ fn launch(silo: BuildingId, target: TilePos) -> Command {
 }
 
 /// Runs until a warhead launches, returning it as it flies.
+/// Orders `silo` to strike `target` and runs until the warhead leaves its
+/// deck, returning it.
+fn fire(state: &mut State, player: u8, silo: BuildingId, target: TilePos) -> Warhead {
+    state.tick(&[cmd(player, launch(silo, target))]);
+    launched(state, 200)
+}
+
 fn launched(state: &mut State, ticks: u64) -> Warhead {
     let events = run_until(state, ticks, |_, events| {
         events
@@ -282,7 +289,7 @@ fn refused_round_and_strike_orders_change_nothing() {
         id(&state, 1, BuildingKind::Lattice),
     );
     let mut empty = state.clone();
-    empty.tick(&[cmd(0, launch(spire, TARGET))]);
+    fire(&mut empty, 0, spire, TARGET);
     assert_eq!(empty.building(spire).unwrap().magazine.unwrap().loaded, 0);
     for (command, expected) in [
         (
@@ -363,18 +370,17 @@ fn a_spire_comes_about_before_it_launches_and_stop_calls_the_strike_off() {
             .unwrap(),
     );
     let spire = id(&state, 0, BuildingKind::Spire);
-    let turn = BuildingKind::Spire.silo().unwrap().turn_rate;
+    let silo = BuildingKind::Spire.silo().unwrap();
+    let (turn, ready) = (silo.turn_rate, u64::from(silo.ready_ticks));
 
     // The deck starts toward the map centre, so an eastward strike is
-    // already lined up.
+    // already lined up: it stands ready while its locks release, then
+    // fires.
     let mut ahead = state.clone();
-    let report = ahead.tick(&[cmd(0, launch(spire, TARGET))]);
-    assert!(
-        report
-            .events
-            .iter()
-            .any(|event| matches!(event, Event::WarheadLaunched { .. }))
-    );
+    ahead.tick(&[cmd(0, launch(spire, TARGET))]);
+    assert_eq!(ahead.building(spire).unwrap().launcher.unwrap().ready, 1);
+    assert!(ahead.warheads().is_empty(), "the locks release first");
+    assert_eq!(launched(&mut ahead, 200).launched_at, ready - 1);
 
     // Behind it, the deck swings a half turn first, in plain sight.
     let mut behind = state.clone();
@@ -389,11 +395,21 @@ fn a_spire_comes_about_before_it_launches_and_stop_calls_the_strike_off() {
     let after = behind.building(spire).unwrap().launcher.unwrap().heading;
     assert_eq!(after.wrapping_sub(start).cast_signed().unsigned_abs(), turn);
     let warhead = launched(&mut behind, 200);
-    // It fires once within two steps of the bearing.
+    // It stands ready once within two steps of the bearing, then fires.
     assert_eq!(
         warhead.launched_at,
-        u64::from((swing - 2).div_ceil(turn)) - 1,
+        u64::from((swing - 2).div_ceil(turn)) - 1 + ready - 1,
         "a {swing}-step swing at {turn} a tick"
+    );
+
+    // A new strike lines up afresh.
+    let mut retargeted = state.clone();
+    retargeted.tick(&[cmd(0, launch(spire, TARGET))]);
+    retargeted.tick(&[]);
+    retargeted.tick(&[cmd(0, launch(spire, TARGET))]);
+    assert_eq!(
+        retargeted.building(spire).unwrap().launcher.unwrap().ready,
+        1
     );
 
     // Stop before it comes about and nothing flies.
@@ -444,8 +460,7 @@ fn a_warhead_bursts_on_its_arrival_tick_with_one_falloff_splash() {
         .unwrap(),
     );
     let spire = id(&state, 0, BuildingKind::Spire);
-    state.tick(&[cmd(0, launch(spire, TARGET))]);
-    let warhead = state.warheads()[0].clone();
+    let warhead = fire(&mut state, 0, spire, TARGET);
     assert_eq!(
         warhead.arrival - warhead.launched_at,
         WARHEAD.flight_ticks(warhead.launch, impact)
@@ -580,7 +595,7 @@ fn a_team_tracks_warheads_by_sight_or_radar_and_keeps_its_exposure() {
         .unwrap(),
     );
     let spire = id(&radar, 0, BuildingKind::Spire);
-    radar.tick(&[cmd(0, launch(spire, TARGET))]);
+    fire(&mut radar, 0, spire, TARGET);
     run(&mut radar, 40);
     let held = radar.vision(east).warheads()[0];
     let at = TilePos::containing(radar.warheads()[0].position(radar.current_tick() - 1));
@@ -634,8 +649,7 @@ fn a_tracked_warhead_is_stopped_where_it_enters_the_ring() {
     let lattice = id(&state, 1, BuildingKind::Lattice);
     let ring = BuildingKind::Lattice.battery().unwrap().ring;
     let centre = state.building(lattice).unwrap().center();
-    state.tick(&[cmd(0, launch(spire, TARGET))]);
-    let warhead = state.warheads()[0].clone();
+    let warhead = fire(&mut state, 0, spire, TARGET);
     let events = run_until(&mut state, 400, |_, events| {
         events.iter().any(|event| {
             matches!(
@@ -662,7 +676,9 @@ fn a_tracked_warhead_is_stopped_where_it_enters_the_ring() {
 }
 
 #[test]
-fn a_warhead_first_seen_inside_the_ring_is_stopped_once_tracked() {
+fn a_warhead_first_seen_inside_the_ring_is_stopped_once_locked_on() {
+    // A Sentinel's sight first finds the warhead inside the ring, far
+    // enough out for the battery to lock on before it lands.
     let mut state = loaded(
         &field(
             0,
@@ -670,7 +686,7 @@ fn a_warhead_first_seen_inside_the_ring_is_stopped_once_tracked() {
                 (0, BuildingKind::Spire, SPIRE.0, SPIRE.1),
                 (1, BuildingKind::Lattice, LATTICE.0, LATTICE.1),
             ],
-            vec![],
+            vec![unit(1, UnitKind::Sentinel, 50, 13)],
         )
         .build()
         .unwrap(),
@@ -697,8 +713,8 @@ fn a_warhead_first_seen_inside_the_ring_is_stopped_once_tracked() {
     );
     assert_eq!(
         state.current_tick() - 1,
-        seen + u64::from(WARHEAD_TRACK_TICKS),
-        "the battery fires the tick after its team's hold completes"
+        seen + u64::from(WARHEAD_TRACK_TICKS) + u64::from(WARHEAD_LOCK_TICKS),
+        "the battery fires the tick after its team locks on"
     );
 }
 
@@ -947,7 +963,7 @@ fn a_hostile_warhead_shows_on_radar_its_line_once_tracked_and_its_own_team_forec
     let spire = id(&state, 0, BuildingKind::Spire);
     let lattice = id(&state, 1, BuildingKind::Lattice);
     let (west, east) = (PlayerId(0), PlayerId(1));
-    state.tick(&[cmd(0, launch(spire, TARGET))]);
+    fire(&mut state, 0, spire, TARGET);
     state.tick(&[]);
     let early = state.known_warheads(east);
     assert_eq!(early.len(), 1);

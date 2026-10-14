@@ -819,15 +819,21 @@ missile, and in nothing for anyone else; the warhead's owner is told it was
 intercepted. What a seat knows of a hostile warhead from `State::known_warheads`
 draws above the fog regardless: the strike rings once tracked, and a contact
 marker where it flies out of sight, its ring filling toward lock while
-untracked. A warhead flies its line with a presentation-only altitude: a steep
-climb, a high cruise and a steep dive, lifted above its ground shadow and
-growing with height, with a smoke trail along the arc. Interceptors launch from
-`State::interception_forecast` the meeting time ahead of their stop, so they
-meet the warhead where the simulation stops it; a stop forecast too late flies
-the warhead on to meet its interceptor instead. The Spire deck draws at its
-simulation heading with the round's assembly on it; each Lattice pod turns on
-its own in presentation, toward the warhead its team's forecast assigns, holding
-its shot's bearing and swinging back north to reload. The first time a seat
+untracked. The missile that flies is the round that sat in its launcher, at the
+same place, size and bearing. A warhead eases off its deck's rail and then holds
+the simulation's position on the straight line to its target; its height shows
+only as its shadow falling away down and to the right, as an aircraft's does,
+and a slight growth, with smoke from its nozzle (`render::sky::Flight`). The
+Spire deck draws at its simulation heading with the round's assembly on it, its
+locks releasing over the deck's ready ticks. From
+`State::interception_forecast`, a Lattice's firing pod swings onto its
+interceptor's path, opens its clamp and launches its own round, which climbs in
+a straight line to meet the warhead nose to nose on the stop tick
+(`render::sky::InterceptorPath`); the pod is empty from launch. Both missiles
+fly on into a flash that swallows them, then a fireball rolls on along the
+warhead's heading and smoke and fragments clear. A stop with no forecast flies
+the warhead on a moment to meet an interceptor leaving as it is reported. Pods
+hold their shot's bearing and swing back north to reload. The first time a seat
 knows of a hostile warhead it gets an alert at the impact once known, or where
 the warhead flies.
 

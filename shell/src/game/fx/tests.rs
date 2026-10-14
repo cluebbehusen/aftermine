@@ -2362,11 +2362,11 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
         building: spire,
         target: chassis::grid::TilePos::new(56, 9),
     });
-    let mut stop = None;
+    let mut first = None;
     for _ in 0..400 {
         game.do_tick();
         if let Some(launch) = game.presentation.prelaunches.first() {
-            stop.get_or_insert(launch.stop);
+            first.get_or_insert(*launch);
         }
         if game
             .presentation
@@ -2377,7 +2377,17 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
             break;
         }
     }
-    let stop = stop.expect("the interceptor left ahead of the stop");
+    let first = first.expect("the pod started ahead of the stop");
+    let stop = first.stop;
+    assert!(
+        stop - first.created >= INTERCEPT_LEAD_TICKS - 1.0,
+        "the lock-on leaves the pod its whole lead"
+    );
+    assert_eq!(
+        first.path.launch,
+        stop - INTERCEPT_FLIGHT_TICKS,
+        "it climbs for its full flight"
+    );
     assert_eq!(
         (game.state.current_tick() - 1) as f32,
         stop,
@@ -2390,13 +2400,9 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
         .iter()
         .find(|fx| matches!(fx.kind, EffectKind::Interception { .. }))
         .unwrap();
-    assert!(matches!(
-        fx.kind,
-        EffectKind::Interception { early: true, .. }
-    ));
     assert!(
-        fx.age >= INTERCEPT_MEET,
-        "the burst comes at the stop itself"
+        matches!(fx.kind, EffectKind::Interception { contact_tick, path: Some(_), .. } if contact_tick == stop),
+        "the noses meet at the stop itself"
     );
 }
 

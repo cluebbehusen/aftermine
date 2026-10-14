@@ -407,7 +407,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
     if kind == BuildingKind::Spire {
         let warhead = oxide_sim::stats::WARHEAD;
         notes.push(format!(
-            "Launches at any tile, seen or not, once its deck has turned to face it. The warhead flies {:.0} tiles/s and deals {} damage within {:.1} tiles, fading to nothing at {:.1}. Foundries take half.",
+            "Launches at any tile, seen or not, once its deck has turned to face it and its locks release. The warhead flies {:.0} tiles/s and deals {} damage within {:.1} tiles, fading to nothing at {:.1}. Foundries take half.",
             warhead.speed.to_num::<f32>() * oxide_sim::TICKS_PER_SECOND as f32,
             warhead.peak_damage,
             warhead.full_radius.to_num::<f32>(),
@@ -418,7 +418,8 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
         notes.push(format!(
             "Stops enemy warheads that will land within {:.0} tiles, once sight or radar has held them for {:.1} s.",
             battery.ring.to_num::<f32>(),
-            f32::from(oxide_sim::stats::WARHEAD_TRACK_TICKS) / oxide_sim::TICKS_PER_SECOND as f32,
+            f32::from(oxide_sim::stats::WARHEAD_TRACK_TICKS + oxide_sim::stats::WARHEAD_LOCK_TICKS)
+                / oxide_sim::TICKS_PER_SECOND as f32,
         ));
     }
     if let Some(c) = base.construction

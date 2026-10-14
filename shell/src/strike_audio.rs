@@ -3,7 +3,7 @@
 //! allied missiles, and for a hostile one over a tile the viewer sees now,
 //! or in an omniscient view (see [`crate::render::sky::missile_seen`]).
 
-use crate::game::{EffectKind, INTERCEPT_MEET, Scene, SoundKind, TICK_DT};
+use crate::game::{EffectKind, INTERCEPT_OVERLAP_TICKS, Scene, SoundKind, TICK_DT};
 use crate::render::sky::{missile_seen, warhead_track};
 use crate::rocket_audio::{LoopBank, Motor, camera_gain, densest};
 use macroquad::audio::Sound;
@@ -89,22 +89,18 @@ pub(crate) fn warhead_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
         if let EffectKind::Interception {
             line: Some(line),
             warhead_hostile,
-            at,
+            contact,
+            contact_tick,
             seed,
             completed_tick,
             ..
         } = fx.kind
         {
-            let age = fx.age_at(completed, fraction);
-            if age < INTERCEPT_MEET {
-                let stopped = completed_tick.saturating_sub(1) as f32;
-                push(
-                    WarheadId(seed),
-                    warhead_hostile,
-                    Some(line),
-                    at,
-                    stopped + age / TICK_DT,
-                );
+            // A stopped warhead flies on, and is heard, until the burst.
+            let tick =
+                completed_tick.saturating_sub(1) as f32 + fx.age_at(completed, fraction) / TICK_DT;
+            if tick < contact_tick + INTERCEPT_OVERLAP_TICKS {
+                push(WarheadId(seed), warhead_hostile, Some(line), contact, tick);
             }
         }
     }
@@ -119,10 +115,13 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
     let fraction = game.presentation.tick_fraction();
     let mut motors = Vec::new();
     let tick = sky_tick(game);
+    let climbed = |path: &crate::render::sky::InterceptorPath, tick: f32| {
+        (tick - path.launch) / (path.contact - path.launch).max(1.0)
+    };
     for launch in &game.presentation.prelaunches {
-        let climbed = launch.climbed(tick);
+        let climbed = climbed(&launch.path, tick);
         let envelope = interceptor_envelope(climbed);
-        let ground = launch.from.lerp(launch.at, climbed);
+        let ground = launch.path.at(tick);
         let hostile = game
             .state
             .hostile(game.presentation.human, launch.battery_player);
@@ -138,16 +137,18 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
     }
     for fx in &game.presentation.fx {
         if let EffectKind::Interception {
-            pod: Some(pod),
+            path: Some(path),
             battery_player,
-            at,
             seed,
+            completed_tick,
             ..
         } = fx.kind
         {
-            let climbed = fx.age_at(completed, fraction) / INTERCEPT_MEET;
+            let tick =
+                completed_tick.saturating_sub(1) as f32 + fx.age_at(completed, fraction) / TICK_DT;
+            let climbed = climbed(&path, tick);
             let envelope = interceptor_envelope(climbed);
-            let ground = pod.lerp(at, climbed.clamp(0.0, 1.0));
+            let ground = path.at(tick);
             let hostile = game.state.hostile(game.presentation.human, battery_player);
             if envelope > 0.0 && missile_seen(game, hostile, ground) {
                 let gain = camera_gain(game, SoundKind::InterceptorMotor, ground) * envelope;

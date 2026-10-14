@@ -625,8 +625,11 @@ pub struct MagazineStats {
 pub struct SiloStats {
     /// Its stored warheads.
     pub magazine: MagazineStats,
-    /// Heading steps per tick the launch deck turns; it fires once aligned.
+    /// Heading steps per tick the launch deck turns.
     pub turn_rate: u8,
+    /// Ticks the deck stands aligned before it fires, while its locks
+    /// release the round.
+    pub ready_ticks: u8,
 }
 
 /// An interceptor battery.
@@ -675,8 +678,13 @@ impl WarheadStats {
 }
 
 /// Ticks, not necessarily consecutive, a team must hold a hostile warhead
-/// in sight or radar before its batteries can stop it.
+/// in sight or radar to track it: its line becomes known.
 pub const WARHEAD_TRACK_TICKS: u8 = 30;
+
+/// Further ticks in sight or radar, after tracking, before the team's
+/// batteries can lock on and stop it. They cover an interceptor's climb,
+/// so a warhead tracked late still meets its interceptor in the air.
+pub const WARHEAD_LOCK_TICKS: u8 = 30;
 
 impl BuildingStats {
     /// Whether this kind fires on its own.
@@ -1873,6 +1881,7 @@ const SPIRE_ORDNANCE: Ordnance = Ordnance::Silo(SiloStats {
         autofill: false,
     },
     turn_rate: 2,
+    ready_ticks: 12,
 });
 
 /// The one warhead every silo fires.

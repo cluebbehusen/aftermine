@@ -1806,6 +1806,26 @@ fn every_checklist_row_refuses_its_forgery() {
             "carries an invalid launch deck",
         ),
         (
+            "a deck standing ready with no strike",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["launcher"]["ready"] = json!(3);
+            },
+            "carries an invalid launch deck",
+        ),
+        (
+            "a deck ready past the tick it fires on",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["magazine"]["loaded"] = json!(1);
+                d["buildings"][spire]["launcher"]["target"] = json!({"x": 3, "y": 3});
+                d["buildings"][spire]["launcher"]["ready"] = json!(12);
+            },
+            "carries an invalid launch deck",
+        ),
+        (
             "a launch deck on a battery",
             |d| {
                 *d = strike();
@@ -1860,7 +1880,7 @@ fn every_checklist_row_refuses_its_forgery() {
             "a track held past full exposure",
             |d| {
                 *d = strike();
-                d["vision"][1]["warheads"][0]["exposure"] = json!(31);
+                d["vision"][1]["warheads"][0]["exposure"] = json!(61);
             },
             "holds impossible warhead tracks",
         ),

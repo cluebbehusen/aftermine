@@ -13,7 +13,8 @@ use crate::state::{State, Warhead};
 use crate::stats::WARHEAD;
 
 /// Each built silo with an ordered strike turns its deck toward the tile
-/// and, once aligned, launches into `launches`.
+/// and, once it has stood aligned for the silo's ready ticks, launches
+/// into `launches`. Losing alignment starts the count again.
 pub(super) fn aim_and_launch(
     state: &mut State,
     launches: &mut Vec<Warhead>,
@@ -34,9 +35,15 @@ pub(super) fn aim_and_launch(
         let launcher = b.launcher.as_mut().expect("checked above");
         launcher.heading = heading;
         if !aligned {
+            launcher.ready = 0;
+            continue;
+        }
+        launcher.ready += 1;
+        if launcher.ready < silo.ready_ticks {
             continue;
         }
         launcher.target = None;
+        launcher.ready = 0;
         b.magazine
             .as_mut()
             .expect("a strike is held only while loaded")

@@ -123,7 +123,10 @@ pub(super) fn apply_launch(
     if b.magazine.is_none_or(|magazine| magazine.loaded == 0) {
         return Err(RejectReason::NothingLoaded);
     }
-    b.launcher.as_mut().expect("checked above").target = Some(target);
+    let launcher = b.launcher.as_mut().expect("checked above");
+    // A new strike lines up afresh.
+    launcher.target = Some(target);
+    launcher.ready = 0;
     Ok(())
 }
 
