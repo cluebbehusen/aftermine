@@ -263,11 +263,21 @@ fn left_and_right_stop_at_the_ends_while_enter_wraps() {
 }
 
 #[test]
-fn a_value_between_the_steps_moves_from_where_it_reads() {
+fn a_value_between_the_steps_moves_to_its_neighbour() {
     let mut config = Config::default();
-    config.volumes.music = 0.6;
-    assert!(step_setting(&mut config, Row::MusicVolume, Step::Forward));
-    assert_eq!(config.volumes.music, 0.75);
+    for (step, landed) in [
+        (Step::Back, 0.5),
+        (Step::Forward, 0.75),
+        (Step::Cycle, 0.75),
+    ] {
+        config.volumes.music = 0.6;
+        assert!(step_setting(&mut config, Row::MusicVolume, step));
+        assert_eq!(config.volumes.music, landed, "{step:?}");
+    }
+    config.ui_scale = 0.9;
+    step_setting(&mut config, Row::UiScale, Step::Back);
+    assert_eq!(config.ui_scale, 0.75, "never past the level below");
+    crate::render::set_user_scale(1.0);
     config.markers.start = 33.0;
     assert_eq!(config.markers.timing_label(), "Custom");
     assert!(step_setting(&mut config, Row::MarkerTiming, Step::Cycle));
@@ -561,6 +571,34 @@ fn a_conflicting_chord_is_refused_and_the_notice_names_the_holder() {
     // The next action clears it.
     drive(&mut s, &mut config, &press(Key::Enter), false);
     assert!(s.notice.is_none(), "arming a row is the next action");
+}
+
+#[test]
+fn unbinding_after_a_refusal_retires_the_notice() {
+    let mut config = Config::default();
+    let mut s = on(Tab::Controls, &config);
+    focus(&mut s, Item::Binding(Action::Patrol));
+    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &press(Key::G), false);
+    assert!(s.notice.is_some());
+    let up = drive(&mut s, &mut config, &press(Key::X), false);
+    assert!(up.dirty);
+    assert_eq!(config.bindings.chord_for(Action::Patrol), None);
+    assert!(s.notice.is_none(), "the refusal no longer applies");
+}
+
+#[test]
+fn the_strip_names_the_classic_tab_keys_while_the_tab_actions_are_unbound() {
+    let mut bindings = BindingMap::classic();
+    bindings.unbind_slot(Action::PrevTab, 0);
+    bindings.unbind_slot(Action::NextTab, 0);
+    crate::menu::set_bindings(&bindings);
+    assert_eq!(tab_keys(), Some(("Q".to_string(), "E".to_string())));
+    assert!(
+        crate::menu::binding_hint(settings_hint(crate::platform::ALL_HANDS[0], true))
+            .contains("Q/E switch tabs")
+    );
+    crate::menu::set_bindings(&BindingMap::classic());
 }
 
 #[test]

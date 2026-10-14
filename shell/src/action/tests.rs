@@ -209,3 +209,40 @@ fn tab_keys_reach_menus_and_stay_left_then_right_on_either_hand() {
         "on the right hand U, the left key, is still Previous"
     );
 }
+
+#[test]
+fn unbound_tab_actions_keep_their_classic_keys_while_menus_leave_them_free() {
+    use oxide_protocol::RawEvent;
+    let mut map = BindingMap::classic();
+    map.unbind_slot(Action::PrevTab, 0);
+    map.unbind_slot(Action::NextTab, 0);
+    let menu = |map: &BindingMap| {
+        map.menu_events(
+            &[
+                RawEvent::KeyDown { key: Key::Q },
+                RawEvent::KeyDown { key: Key::E },
+            ],
+            false,
+            false,
+        )
+    };
+    assert_eq!(
+        menu(&map),
+        vec![
+            RawEvent::KeyDown { key: Key::Q },
+            RawEvent::KeyDown { key: Key::E },
+        ],
+        "the keyboard can still reach the Controls tab to bind them again"
+    );
+    assert_eq!(map.tab_chord(Action::PrevTab), Some(Chord::bare(Key::Q)));
+    assert!(map.rebind(Action::MenuUp, Chord::bare(Key::Q)));
+    assert_eq!(
+        menu(&map),
+        vec![
+            RawEvent::KeyDown { key: Key::Up },
+            RawEvent::KeyDown { key: Key::E },
+        ],
+        "a key another menu action claims means that action"
+    );
+    assert_eq!(map.tab_chord(Action::PrevTab), None);
+}

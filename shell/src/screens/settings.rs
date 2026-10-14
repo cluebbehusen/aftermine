@@ -360,8 +360,9 @@ impl Row {
     }
 }
 
-/// The settings tabs' coaching line. `tab_keys` says both tab actions
-/// are bound; a config saved before they existed has neither.
+/// The settings tabs' coaching line. `tab_keys` says a key steps the
+/// tabs each way; a tab action left unbound has none once another menu
+/// action takes its classic key.
 fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str {
     match (hands.touch(), hands.keys, tab_keys) {
         (false, true, true) => {
@@ -377,9 +378,9 @@ fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str 
     }
 }
 
-/// The keys that step tabs in menus now, while both are bound.
+/// The keys that step tabs in menus now, while both have one.
 fn tab_keys() -> Option<(String, String)> {
-    crate::menu::menu_key(Action::PrevTab).zip(crate::menu::menu_key(Action::NextTab))
+    crate::menu::tab_key(Action::PrevTab).zip(crate::menu::tab_key(Action::NextTab))
 }
 
 /// The rows `tab` offers on this build, in order.
@@ -458,30 +459,34 @@ fn stepped(len: usize, at: usize, step: Step) -> usize {
     }
 }
 
-/// The position of the value in `values` nearest `current`, so a stored
-/// value between the steps still moves from where it reads.
-fn nearest(values: &[f32], current: f32) -> usize {
-    values
-        .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| (*a - current).abs().total_cmp(&(*b - current).abs()))
-        .map_or(0, |(index, _)| index)
+/// The level `step` moves `current` to among ascending `values`: the
+/// nearest one strictly below or above it, so a stored value between
+/// two levels moves to its neighbour rather than past it. Back and
+/// Forward stop at the ends; Cycle wraps past the last.
+fn level(values: &[f32], current: f32, step: Step) -> f32 {
+    let (first, last) = (values[0], values[values.len() - 1]);
+    let below = values.iter().rev().find(|value| **value < current);
+    let above = values.iter().find(|value| **value > current);
+    match step {
+        Step::Back => below.copied().unwrap_or(first),
+        Step::Forward => above.copied().unwrap_or(last),
+        Step::Cycle => above.copied().unwrap_or(first),
+    }
 }
 
 /// Moves one settings row's value and applies it live. False on rows
 /// that act instead of holding a value.
 fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
-    let level = |values: &[f32], current: f32| {
-        values[stepped(values.len(), nearest(values, current), step)]
-    };
     let toggle = |on: bool| stepped(2, usize::from(on), step) == 1;
     match row {
-        Row::MasterVolume => config.volumes.master = level(&VOLUMES, config.volumes.master),
-        Row::EffectsVolume => config.volumes.effects = level(&VOLUMES, config.volumes.effects),
-        Row::UiVolume => config.volumes.ui = level(&VOLUMES, config.volumes.ui),
-        Row::MusicVolume => config.volumes.music = level(&VOLUMES, config.volumes.music),
+        Row::MasterVolume => config.volumes.master = level(&VOLUMES, config.volumes.master, step),
+        Row::EffectsVolume => {
+            config.volumes.effects = level(&VOLUMES, config.volumes.effects, step);
+        }
+        Row::UiVolume => config.volumes.ui = level(&VOLUMES, config.volumes.ui, step),
+        Row::MusicVolume => config.volumes.music = level(&VOLUMES, config.volumes.music, step),
         Row::UiScale => {
-            config.ui_scale = level(&SCALES, config.ui_scale);
+            config.ui_scale = level(&SCALES, config.ui_scale, step);
             render::set_user_scale(config.ui_scale);
         }
         Row::EdgePan => config.camera.edge_pan = toggle(config.camera.edge_pan),
@@ -516,7 +521,7 @@ fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
             crate::strategic_markers::set_prefs(config.markers);
         }
         Row::MarkerSize => {
-            config.markers.scale = level(&SCALES, config.markers.scale);
+            config.markers.scale = level(&SCALES, config.markers.scale, step);
             crate::strategic_markers::set_prefs(config.markers);
         }
         Row::PlayerName | Row::LeftHandedPreset | Row::OpenDiagnostics | Row::ExportDiagnostics => {
@@ -861,8 +866,10 @@ impl SettingsScreen {
             && let Some(&Item::Binding(target)) = self.menu.value()
         {
             // X on a binding row unbinds it (outside capture, so the key
-            // is free to mean this).
+            // is free to mean this). Like any action, it retires the
+            // standing notice.
             config.bindings.unbind_slot(target, self.binding_slot);
+            self.notice = None;
             update.dirty = true;
             self.relabel(config);
             return update;

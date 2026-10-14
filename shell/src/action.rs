@@ -541,7 +541,14 @@ impl BindingMap {
                     RawEvent::KeyDown { key } | RawEvent::KeyUp { key } => *key,
                     _ => return Some(*event),
                 };
-                let action = self.resolve_in(key, ctrl, shift, Context::Menu)?;
+                let action = self
+                    .resolve_in(key, ctrl, shift, Context::Menu)
+                    .or_else(|| {
+                        [Action::PrevTab, Action::NextTab].into_iter().find(|tab| {
+                            self.chord_for(*tab).is_none()
+                                && self.tab_chord(*tab).is_some_and(|chord| chord.key == key)
+                        })
+                    })?;
                 let key = match action {
                     Action::Back => Key::Escape,
                     Action::Confirm => Key::Enter,
@@ -565,6 +572,22 @@ impl BindingMap {
                 })
             })
             .collect()
+    }
+    /// The chord that steps tabs as `action` in menus: its own binding,
+    /// or while it has none, its classic key if that key means nothing
+    /// else in menus. A player who clears the tab bindings can still
+    /// reach the Controls tab from the keyboard to bind them again.
+    pub fn tab_chord(&self, action: Action) -> Option<Chord> {
+        let classic = match action {
+            Action::PrevTab => Key::Q,
+            Action::NextTab => Key::E,
+            _ => return None,
+        };
+        self.chord_for(action).or_else(|| {
+            self.resolve_in(classic, false, false, Context::Menu)
+                .is_none()
+                .then_some(Chord::bare(classic))
+        })
     }
     pub fn chord_for(&self, action: Action) -> Option<Chord> {
         self.chord_at(action, 0)

@@ -55,18 +55,24 @@ pub(crate) fn binding_hint(template: &str) -> String {
             ("{prev_tab}", Action::PrevTab),
             ("{next_tab}", Action::NextTab),
         ] {
-            text = text.replace(token, &bindings.label(action));
+            let label = match action {
+                Action::PrevTab | Action::NextTab => bindings
+                    .tab_chord(action)
+                    .map_or_else(|| "unbound".into(), crate::action::BindingMap::chord_label),
+                _ => bindings.label(action),
+            };
+            text = text.replace(token, &label);
         }
         text
     })
 }
 
-/// The key `action` answers to in menus right now; `None` while unbound.
-pub(crate) fn menu_key(action: crate::action::Action) -> Option<String> {
+/// The key that steps tabs as `action` in menus right now, if any.
+pub(crate) fn tab_key(action: crate::action::Action) -> Option<String> {
     MENU_BINDINGS.with(|bindings| {
         bindings
             .borrow()
-            .chord_for(action)
+            .tab_chord(action)
             .map(crate::action::BindingMap::chord_label)
     })
 }
