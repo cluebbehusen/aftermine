@@ -53,7 +53,9 @@ pub(super) fn dispatch_action(
         | Action::MenuPageDown
         | Action::MenuHome
         | Action::MenuEnd
-        | Action::DeleteSave => {}
+        | Action::DeleteSave
+        | Action::PrevTab
+        | Action::NextTab => {}
         Action::Slot(n) => digit_action(game, input, (n - 1) as usize),
         Action::AssignGroup(n) => {
             // Only own units enter a group: a recalled selection holding an

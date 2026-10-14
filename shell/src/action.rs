@@ -139,6 +139,8 @@ pub enum Action {
     MenuHome,
     MenuEnd,
     DeleteSave,
+    PrevTab,
+    NextTab,
     ReturnCargo,
     Accompany,
     /// No default key: one keystroke should not scrap an army.
@@ -209,6 +211,8 @@ impl Action {
             Self::MenuHome => "Menu first item".into(),
             Self::MenuEnd => "Menu last item".into(),
             Self::DeleteSave => "Delete saved replay".into(),
+            Self::PrevTab => "Previous tab".into(),
+            Self::NextTab => "Next tab".into(),
         }
     }
     fn contexts(self) -> u16 {
@@ -246,7 +250,9 @@ impl Action {
             | Self::MenuPageDown
             | Self::MenuHome
             | Self::MenuEnd
-            | Self::DeleteSave => 2048,
+            | Self::DeleteSave
+            | Self::PrevTab
+            | Self::NextTab => 2048,
             _ => LIVE,
         }
     }
@@ -310,12 +316,12 @@ impl BindingMap {
         use Action::{
             Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm,
             CycleIdleWorker, DeleteSave, HomeCamera, Hunt, JumpToLastAlert, Launch, MenuDown,
-            MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, OrderRound,
-            PanDown, PanLeft, PanRight, PanUp, Patrol, RecallBookmark, RepairUnit, ReplayBack,
-            ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats,
-            ReturnCargo, Run, Salvage, Scout, SetBookmark, SetRally, Slot, StopOrScrap,
-            ToggleAutofill, ToggleBuildPalette, ToggleOverlay, TogglePause, TrainSlot, Unload,
-            Upgrade,
+            MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, NextTab,
+            OrderRound, PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark,
+            RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
+            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SetBookmark, SetRally,
+            Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette, ToggleOverlay, TogglePause,
+            TrainSlot, Unload, Upgrade,
         };
         let mut map = Self {
             bindings: Vec::new(),
@@ -363,6 +369,8 @@ impl BindingMap {
             (MenuHome, Key::Home),
             (MenuEnd, Key::End),
             (DeleteSave, Key::X),
+            (PrevTab, Key::Q),
+            (NextTab, Key::E),
         ];
         for (action, key) in defaults {
             assert!(map.rebind(action, Chord::bare(key)));
@@ -460,6 +468,15 @@ impl BindingMap {
                 other => other,
             };
         }
+        // Q and E land on O and U, which sit the other way round on the
+        // right hand; the tab actions trade keys so Previous stays left.
+        for binding in map.bindings.iter_mut().chain(&mut map.secondary) {
+            binding.action = match binding.action {
+                Action::PrevTab => Action::NextTab,
+                Action::NextTab => Action::PrevTab,
+                other => other,
+            };
+        }
         map
     }
     fn rows(&self) -> impl Iterator<Item = &Binding> {
@@ -524,7 +541,14 @@ impl BindingMap {
                     RawEvent::KeyDown { key } | RawEvent::KeyUp { key } => *key,
                     _ => return Some(*event),
                 };
-                let action = self.resolve_in(key, ctrl, shift, Context::Menu)?;
+                let action = self
+                    .resolve_in(key, ctrl, shift, Context::Menu)
+                    .or_else(|| {
+                        [Action::PrevTab, Action::NextTab].into_iter().find(|tab| {
+                            self.chord_for(*tab).is_none()
+                                && self.tab_chord(*tab).is_some_and(|chord| chord.key == key)
+                        })
+                    })?;
                 let key = match action {
                     Action::Back => Key::Escape,
                     Action::Confirm => Key::Enter,
@@ -537,6 +561,8 @@ impl BindingMap {
                     Action::MenuHome => Key::Home,
                     Action::MenuEnd => Key::End,
                     Action::DeleteSave => Key::X,
+                    Action::PrevTab => Key::Q,
+                    Action::NextTab => Key::E,
                     _ => return None,
                 };
                 Some(if matches!(event, RawEvent::KeyDown { .. }) {
@@ -546,6 +572,22 @@ impl BindingMap {
                 })
             })
             .collect()
+    }
+    /// The chord that steps tabs as `action` in menus: its own binding,
+    /// or while it has none, its classic key if that key means nothing
+    /// else in menus. A player who clears the tab bindings can still
+    /// reach the Controls tab from the keyboard to bind them again.
+    pub fn tab_chord(&self, action: Action) -> Option<Chord> {
+        let classic = match action {
+            Action::PrevTab => Key::Q,
+            Action::NextTab => Key::E,
+            _ => return None,
+        };
+        self.chord_for(action).or_else(|| {
+            self.resolve_in(classic, false, false, Context::Menu)
+                .is_none()
+                .then_some(Chord::bare(classic))
+        })
     }
     pub fn chord_for(&self, action: Action) -> Option<Chord> {
         self.chord_at(action, 0)

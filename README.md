@@ -90,13 +90,16 @@ shortcuts cover the core loop:
 | `P`                                      | Pause immediately; clicking the clock at the top right does the same.                                                     |
 | `Esc`                                    | Cancel the active action, clear selection, or open the pause menu. The ≡ button at the top right opens the menu directly. |
 
-Controls offers primary and secondary bindings for every keyboard action,
-including buildings, production slots, groups, bookmarks, replay controls, and
-menu navigation. Select a row and column, then press Enter to remap it; X clears
-the selected binding. Mouse selection of either binding column works too. Escape
-cancels capture (or restores Escape when editing Back). The binding editor and
-save-name entry retain conventional editing keys so custom mappings cannot lock
-you out. Existing custom bindings are preserved when upgrading.
+Settings is split into General, Audio, Display, and Controls tabs; click a tab
+or press Q and E to switch. Left and Right step a value, and Enter cycles it.
+The Controls tab offers primary and secondary bindings for every keyboard
+action, including buildings, production slots, groups, bookmarks, replay
+controls, and menu navigation. Select a row and column, then press Enter to
+remap it; X clears the selected binding. Mouse selection of either binding
+column works too. Escape cancels capture (or restores Escape when editing Back).
+The binding editor and save-name entry retain conventional editing keys so
+custom mappings cannot lock you out. Existing custom bindings are preserved when
+upgrading.
 
 On a touchscreen, tap to select, drag to pan, pinch to zoom, and long-press for
 the contextual order; a ring fills while it charges. For a selection box, rest

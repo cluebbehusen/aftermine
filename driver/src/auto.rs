@@ -233,9 +233,9 @@ impl Walk {
     }
 }
 
-/// Selects the row whose label contains `needle` (case-insensitive)
-/// with keyboard navigation, then activates it with Enter.
-pub fn activate_labeled(client: &mut Client, needle: &str) -> Result<()> {
+/// Moves the cursor with keyboard navigation to the row whose label
+/// contains `needle` (case-insensitive), without activating it.
+pub fn select_labeled(client: &mut Client, needle: &str) -> Result<()> {
     let view = ui(client)?;
     let mut walk = Walk::to_label(&view, needle)?;
     let mut selected = view.selected.unwrap_or(0);
@@ -245,10 +245,30 @@ pub fn activate_labeled(client: &mut Client, needle: &str) -> Result<()> {
                 press_key(client, key)?;
                 selected = ui(client)?.selected.unwrap_or(0);
             }
-            Stride::Arrived => return press_key(client, Key::Enter),
+            Stride::Arrived => return Ok(()),
             Stride::Stuck => bail!("the cursor never reached '{needle}' in {:?}", view.items),
         }
     }
+}
+
+/// Selects the row whose label contains `needle` (case-insensitive)
+/// with keyboard navigation, then activates it with Enter.
+pub fn activate_labeled(client: &mut Client, needle: &str) -> Result<()> {
+    select_labeled(client, needle)?;
+    press_key(client, Key::Enter)
+}
+
+/// Steps the Settings tabs with the classic Next tab key until the
+/// shell reports `mode`, the wanted tab's mode name.
+pub fn select_tab(client: &mut Client, mode: &str) -> Result<()> {
+    const TABS: usize = 4;
+    for _ in 0..TABS {
+        if ui(client)?.mode == mode {
+            return Ok(());
+        }
+        press_key(client, Key::E)?;
+    }
+    assert_mode(client, mode, "stepping the Settings tabs")
 }
 
 /// Fails loudly when the shell is not on the expected screen.
