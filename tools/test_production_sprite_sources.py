@@ -974,9 +974,11 @@ class StrategicSourceTests(unittest.TestCase):
                 (0.0, 5, 0, 1.0, 1.0),
                 "747bf87b3487986dbe2b70f7673535ad721a628d85057586a097e2c232a0976d",
             ),
+            # A quarter turn: other headings resample between pixels, and
+            # bicubic rounding differs across platforms.
             (
-                (135.0, 5, 0, 1.0, 1.0),
-                "3a766ac9dff0d76c7babf2a22d1a6112405fdb0f4f1f929f258c4772b51ca70e",
+                (90.0, 5, 0, 1.0, 1.0),
+                "fa656cb5cf4f0ff1cf07c5f3de15eb42d2ff05f6aaa8bff60f4cd08d0b359ed1",
             ),
         )
         for pose, expected in poses:
