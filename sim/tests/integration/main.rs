@@ -62,6 +62,7 @@ mod turret_acquisition;
 mod unit_rally;
 mod unreachable_goals;
 mod upgrades;
+mod warheads;
 mod worker_contact;
 
 #[test]

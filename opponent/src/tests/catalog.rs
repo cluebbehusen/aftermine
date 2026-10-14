@@ -69,7 +69,7 @@ fn bought(state: &State, investments: &[Investment]) -> Vec<(BuildingKind, u8)> 
             Investment::Expansion(_) => Some((BuildingKind::Foundry, 0)),
             Investment::Extractor(_) => Some((BuildingKind::Extractor, 0)),
             Investment::Reclaimer => Some((BuildingKind::Reclaimer, 0)),
-            Investment::Unit(_) => None,
+            Investment::Unit(_) | Investment::Round(_) => None,
             Investment::Upgrade { building, tier } => state
                 .buildings()
                 .iter()
@@ -178,6 +178,24 @@ fn every_building_and_upgrade_is_bought_somewhere() {
         .push(building(0, BuildingKind::Extractor, 6, 1));
     let state = bore.build().unwrap();
     offer(&bore, &state, 3_000);
+
+    // A Spire once a Crucible and a Deep Bore stand and a block of seen
+    // enemy works is worth a warhead.
+    let mut strike = bore.clone();
+    strike.buildings.extend([
+        building(1, BuildingKind::Crucible, 12, 8),
+        building(1, BuildingKind::Crucible, 14, 8),
+    ]);
+    let state = tiered(&strike.build().unwrap(), BuildingKind::Extractor, 1);
+    offer(&strike, &state, 3_000);
+
+    // A Lattice over the base against a seen enemy Spire.
+    let mut missile = crucible.clone();
+    missile
+        .buildings
+        .push(building(1, BuildingKind::Spire, 12, 8));
+    let state = missile.build().unwrap();
+    offer(&missile, &state, 3_000);
 
     // A Repair Bay where the wounded gather.
     let mut hurt = arena(0);

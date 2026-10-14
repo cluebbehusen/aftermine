@@ -141,7 +141,7 @@ fn group_hold(input: &InputState) -> Option<(TouchPoint, crate::layout::GroupSlo
 /// Whether an armed mode takes a minimap tap as its target (a rally
 /// point or a patrol waypoint), so the minimap must not steer under it.
 fn minimap_targets(input: &InputState) -> bool {
-    !input.rallying.is_empty() || input.patrol_route.is_some()
+    !input.rallying.is_empty() || !input.striking.is_empty() || input.patrol_route.is_some()
 }
 
 /// Points the camera at the minimap spot under a steering finger.

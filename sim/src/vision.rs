@@ -152,6 +152,47 @@ pub struct Vision {
     /// Sorted and deduplicated by (y, x).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     salvage_incidents: Vec<SalvageIncident>,
+    /// Hostile warheads in flight this team has had in sight or radar,
+    /// sorted by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warheads: Vec<WarheadTrack>,
+}
+
+/// Exposure at which a team's batteries have locked on to a warhead.
+const LOCKED: u8 = crate::stats::WARHEAD_TRACK_TICKS + crate::stats::WARHEAD_LOCK_TICKS;
+
+/// A team's hold on one hostile warhead in flight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WarheadTrack {
+    /// The warhead.
+    pub id: crate::WarheadId,
+    /// Ticks the team has held it in sight or radar, capped once its
+    /// batteries have locked on: [`WARHEAD_TRACK_TICKS`] to track it, then
+    /// [`WARHEAD_LOCK_TICKS`] more.
+    ///
+    /// [`WARHEAD_TRACK_TICKS`]: crate::stats::WARHEAD_TRACK_TICKS
+    /// [`WARHEAD_LOCK_TICKS`]: crate::stats::WARHEAD_LOCK_TICKS
+    pub exposure: u8,
+    /// Whether it was in sight or radar at the last refresh.
+    pub in_view: bool,
+}
+
+impl WarheadTrack {
+    /// Whether the team has held it long enough to know its line.
+    pub fn tracked(&self) -> bool {
+        self.exposure >= crate::stats::WARHEAD_TRACK_TICKS
+    }
+
+    /// Whether the team's batteries have locked on and may stop it.
+    pub fn locked(&self) -> bool {
+        self.exposure >= LOCKED
+    }
+
+    /// Ticks in view still needed before the team's batteries lock on.
+    pub(crate) fn lock_remaining(self) -> u8 {
+        LOCKED.saturating_sub(self.exposure)
+    }
 }
 
 impl Vision {
@@ -175,6 +216,7 @@ impl Vision {
             contacts: Vec::new(),
             tracking: tracking::Tracking::default(),
             salvage_incidents: Vec::new(),
+            warheads: Vec::new(),
         }
     }
 
@@ -329,6 +371,7 @@ impl Vision {
             contacts,
             tracking,
             salvage_incidents,
+            warheads,
         } = self;
         visible.copy_from(&src.visible);
         explored.copy_from(&src.explored);
@@ -338,6 +381,112 @@ impl Vision {
         contacts.clone_from(&src.contacts);
         tracking.clone_from(&src.tracking);
         salvage_incidents.clone_from(&src.salvage_incidents);
+        warheads.clone_from(&src.warheads);
+    }
+
+    /// This team's holds on hostile warheads in flight, sorted by id.
+    pub fn warheads(&self) -> &[WarheadTrack] {
+        &self.warheads
+    }
+
+    /// This team's hold on the warhead `id`, if it has ever seen it.
+    pub fn warhead(&self, id: crate::WarheadId) -> Option<&WarheadTrack> {
+        self.warheads
+            .binary_search_by_key(&id, |track| track.id)
+            .ok()
+            .map(|index| &self.warheads[index])
+    }
+
+    /// Forgets every warhead, as a decided match does.
+    pub(crate) fn forget_warheads(&mut self) {
+        self.warheads.clear();
+    }
+
+    /// Rebuilds the holds over the warheads now in flight: one more tick
+    /// of exposure for each hostile warhead whose tile is in sight or
+    /// `on_radar`, and a hold dropped once its warhead is gone.
+    ///
+    /// A completed track gives the silo away: the line starts at its
+    /// centre, so the team remembers a Spire there, intact for all it
+    /// knows, until it sees that ground again.
+    fn track_warheads(
+        &mut self,
+        state: &State,
+        hostile: impl Fn(PlayerId) -> bool,
+        on_radar: impl Fn(TilePos) -> bool,
+    ) {
+        let old = std::mem::take(&mut self.warheads);
+        let mut revealed = false;
+        for warhead in state.warheads.iter().filter(|w| hostile(w.player)) {
+            let tile = TilePos::containing(warhead.position(state.tick));
+            let in_view = self.visible(tile) || on_radar(tile);
+            let held = old
+                .binary_search_by_key(&warhead.id, |track| track.id)
+                .ok()
+                .map_or(0, |index| old[index].exposure);
+            if held == 0 && !in_view {
+                continue;
+            }
+            let track = WarheadTrack {
+                id: warhead.id,
+                exposure: (held + u8::from(in_view)).min(LOCKED),
+                in_view,
+            };
+            if track.tracked() && held < crate::stats::WARHEAD_TRACK_TICKS {
+                revealed |= self.remember_silo(state, warhead);
+            }
+            self.warheads.push(track);
+        }
+        if revealed {
+            self.ghosts
+                .sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner));
+        }
+    }
+
+    /// Records the Spire `warhead` launched from, unless the team already
+    /// remembers it or has its ground in sight, where memory reconciliation
+    /// has just recorded what stands there. Returns whether it added a
+    /// memory.
+    ///
+    /// The launch proves the Spire stood there, so every remembered
+    /// building its footprint overlaps is gone, except a concealed charge
+    /// of a seat hostile to the silo's owner: a hostile building may stand
+    /// over one.
+    fn remember_silo(&mut self, state: &State, warhead: &crate::state::Warhead) -> bool {
+        let kind = BuildingKind::Spire;
+        let (width, height) = kind.size();
+        let silo = GhostBuilding {
+            kind,
+            owner: warhead.player,
+            anchor: TilePos::containing(
+                warhead.launch
+                    - chassis::fx::Vec2Fx::new(
+                        chassis::fx::Fx::from_num(width) / 2,
+                        chassis::fx::Fx::from_num(height) / 2,
+                    ),
+            ),
+            hp: kind.base_stats().max_hp,
+            built: true,
+            tier: 0,
+        };
+        if silo.footprint().any(|t| self.visible(t))
+            || self
+                .ghosts
+                .iter()
+                .any(|g| g.kind == kind && g.owner == silo.owner && g.anchor == silo.anchor)
+        {
+            return false;
+        }
+        let covered = |t: TilePos| {
+            (silo.anchor.x..silo.anchor.x + width).contains(&t.x)
+                && (silo.anchor.y..silo.anchor.y + height).contains(&t.y)
+        };
+        self.ghosts.retain(|g| {
+            (g.kind.is_stealthy() && state.hostile(g.owner, silo.owner))
+                || !g.footprint().any(covered)
+        });
+        self.ghosts.push(silo);
+        true
     }
 
     /// Row slices for the observation builder's full-map walk, instead of
@@ -1487,21 +1636,21 @@ pub(crate) fn refresh(state: &mut State) {
         // A wider ring on the same tile contains a narrower one.
         masts.sort_unstable_by_key(|&(t, r)| (t.y, t.x, std::cmp::Reverse(r)));
         masts.dedup_by_key(|&mut (t, _)| t);
+        let distance = |t: TilePos, m: TilePos| {
+            let (dx, dy) = (t.x - m.x, t.y - m.y);
+            dx * dx + dy * dy
+        };
+        // The squared distance to the nearest mast whose ring covers `t`.
+        let ring_distance = |t: TilePos| {
+            masts
+                .iter()
+                .filter_map(|&(m, r)| {
+                    let d = distance(t, m);
+                    (d <= r * r).then_some(d)
+                })
+                .min()
+        };
         if !masts.is_empty() {
-            let distance = |t: TilePos, m: TilePos| {
-                let (dx, dy) = (t.x - m.x, t.y - m.y);
-                dx * dx + dy * dy
-            };
-            // The squared distance to the nearest mast whose ring covers `t`.
-            let ring_distance = |t: TilePos| {
-                masts
-                    .iter()
-                    .filter_map(|&(m, r)| {
-                        let d = distance(t, m);
-                        (d <= r * r).then_some(d)
-                    })
-                    .min()
-            };
             for unit in sightings.iter().filter(|unit| unit.team != my_team) {
                 let t = unit.tile;
                 if !view.visible(t) && masts.iter().any(|&(m, r)| distance(t, m) <= r * r) {
@@ -1536,6 +1685,7 @@ pub(crate) fn refresh(state: &mut State) {
         let mut tracking = std::mem::take(&mut view.tracking);
         tracking.refresh(view, state, PlayerId::from_index(index), &sightings);
         view.tracking = tracking;
+        view.track_warheads(state, |p| !allied(p), |t| ring_distance(t).is_some());
     }
     state.vision = vision;
 }

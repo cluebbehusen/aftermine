@@ -31,11 +31,13 @@ from tools.production_sprite_sources import (
     ground_final,
     heavy_structures,
     installed_defenses_final,
+    lattice_final,
     mechanical_final,
     piledriver_final,
     mantle_final,
     skyhook_sapper_crucible_final,
     specialists_final,
+    spire_final,
     surveyor_final,
     structures_base,
     tier_one_combat_final,
@@ -526,4 +528,6 @@ def install_finalized_sprites(registry: Registry, out: Path) -> None:
     mechanical_final.install_machines(registry, out)
     piledriver_final.install_piledriver(registry, out)
     mantle_final.install_mantle(registry, out)
+    spire_final.install_spire(registry, out)
+    lattice_final.install_lattice(registry, out)
     surveyor_final.install_surveyor(registry, out)

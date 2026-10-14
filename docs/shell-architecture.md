@@ -253,6 +253,12 @@ buildings selected, picks the own unit under the cursor before the ground: new
 units then escort it, and the rally line follows that unit's drawn position,
 ending in a ring instead of a flag. Minimap rally clicks name ground only.
 
+A Spire or Lattice selection shows its magazine cards: Order, Cancel, and the
+Autofill toggle, and on a Spire the armed Launch card. A Launch click on the
+world or the minimap names any tile, seen or not, for every selected loaded
+Spire; while armed, and for a selected own Spire's held strike, the blast's two
+radii draw at the tile with a line from the silo. Stop calls a held strike off.
+
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
 selected producer has a rally. Rally changes preserve the action band's height
@@ -428,13 +434,13 @@ Gameplay touch lives in `input::touch`. Each finger records where it landed
 (`TouchBorn`: world, minimap, other chrome, or the placement ghost), and that
 decides what it may drive for its whole life. A minimap finger steers the camera
 through `render::minimap_world_clamped`, the same clamp the mouse uses, except
-while rally or patrol take minimap taps as targets. A two-finger `Pair` starts
-undecided: a spread past `PAIR_PINCH_PX` zooms, and a pair that rests for
-`BOX_REST_MS` claims a box whose corners follow the fingers. The box appears
-only when claimed, so any box on screen can be dragged and selects when a finger
-lifts; an undecided pair shows nothing and its lift selects nothing. A pair with
-a non-world finger, formed mid-pan, or formed while a mode is armed does
-neither.
+while rally, a strike, or patrol take minimap taps as targets. A two-finger
+`Pair` starts undecided: a spread past `PAIR_PINCH_PX` zooms, and a pair that
+rests for `BOX_REST_MS` claims a box whose corners follow the fingers. The box
+appears only when claimed, so any box on screen can be dragged and selects when
+a finger lifts; an undecided pair shows nothing and its lift selects nothing. A
+pair with a non-world finger, formed mid-pan, or formed while a mode is armed
+does neither.
 
 Touch placement drops a `PlacementGhost` centered under the finger instead of
 placing on the tap. Dragging the ghost moves it by whole tiles, and a still tap
@@ -773,21 +779,24 @@ weapon's projectile payload, which buildings fight or train, and upgrade
 ladders.
 
 `entity_lod` derives full, half, quarter, and eighth-resolution entity textures
-at startup without changing authored atlas bytes. Regions pack in descending
-size order to avoid wasting full-height rows on small mips. Units with layered
-rigs omit unused complete movement/action poses from this cache while retaining
-idle portraits and the independent layers. Independent regions have extruded
-borders; reduction, linear sampling, level blending, and compositing retain
-premultiplied alpha. Physical destination size, including DPI and both axes,
-selects levels with a fixed negative detail bias. Secondary UVs and blend
-weights travel in vertex data; immutable page materials preserve batching
-without reordering translucent layers. The material also handles ordinary
-straight-alpha 2D draws and remains active until the screen boundary. Terrain
-and unrelated effects keep nearest-neighbor sampling. Panel and roster portraits
-share this bank, frame visible alpha bounds, and align to physical pixels.
-Layered portraits use union bounds to preserve the relative positions of bases
-and mounts. Construction subjects and scaffolds share the authored canvas; verb
-pictograms fill their destination without portrait cropping.
+at startup without changing authored atlas bytes. Each sprite packs only its
+painted area, grown by one eighth-resolution texel of transparency and aligned
+to it, so every level samples the area's edge as it would the whole sprite and
+the quad covers just that area. Regions pack in descending size order to avoid
+wasting full-height rows on small mips. Units with layered rigs omit unused
+complete movement/action poses from this cache while retaining idle portraits
+and the independent layers. Independent regions have extruded borders;
+reduction, linear sampling, level blending, and compositing retain premultiplied
+alpha. Physical destination size, including DPI and both axes, selects levels
+with a fixed negative detail bias. Secondary UVs and blend weights travel in
+vertex data; immutable page materials preserve batching without reordering
+translucent layers. The material also handles ordinary straight-alpha 2D draws
+and remains active until the screen boundary. Terrain and unrelated effects keep
+nearest-neighbor sampling. Panel and roster portraits share this bank, frame
+visible alpha bounds, and align to physical pixels. Layered portraits use union
+bounds to preserve the relative positions of bases and mounts. Construction
+subjects and scaffolds share the authored canvas; verb pictograms fill their
+destination without portrait cropping.
 
 `strategic_markers` supplies role and allegiance cues between two zoom
 thresholds in logical pixels per tile. Buildings retain subdued footprints
@@ -801,6 +810,32 @@ at, or at a public building's tier when every seat knows it. A public enemy Deep
 Bore out of sight draws above the fog as corner brackets and a drill glyph in
 its owner's color, and as an outlined footprint on the minimap. Markers do not
 change entity positions, selection, picking, or simulation.
+
+A seat's own and allied missiles draw, and their motor loops play, wherever they
+fly, as its units do; a hostile warhead or interceptor only while the viewer
+sees the tile under it (`render::sky::missile_seen`). An interception out of
+sight ends in a puff of smoke for a seat whose missile it was, without the other
+missile, and in nothing for anyone else; the warhead's owner is told it was
+intercepted. What a seat knows of a hostile warhead from `State::known_warheads`
+draws above the fog regardless: the strike rings once tracked, and a contact
+marker where it flies out of sight, its ring filling toward lock while
+untracked. The missile that flies is the round that sat in its launcher, at the
+same place, size and bearing. A warhead eases off its deck's rail and then holds
+the simulation's position on the straight line to its target; its height shows
+only as its shadow falling away down and to the right, as an aircraft's does,
+and a slight growth, with smoke from its nozzle (`render::sky::Flight`). The
+Spire deck draws at its simulation heading with the round's assembly on it, its
+locks releasing over the deck's ready ticks. From
+`State::interception_forecast`, a Lattice's firing pod swings onto its
+interceptor's path, opens its clamp and launches its own round, which climbs in
+a straight line to meet the warhead nose to nose on the stop tick
+(`render::sky::InterceptorPath`); the pod is empty from launch. Both missiles
+fly on into a flash that swallows them, then a fireball rolls on along the
+warhead's heading and smoke and fragments clear. A stop with no forecast flies
+the warhead on a moment to meet an interceptor leaving as it is reported. Pods
+hold their shot's bearing and swing back north to reload. The first time a seat
+knows of a hostile warhead it gets an alert at the impact once known, or where
+the warhead flies.
 
 Settings persists marker timing presets (Standard, Earlier, Later) and size in
 `Config::markers`, applying changes immediately. A config without marker

@@ -21,6 +21,10 @@ fn every_authored_weapon_report_raises_combat_pressure() {
         SoundKind::AvalancheFire,
         SoundKind::BombRelease,
         SoundKind::DemolitionBoom,
+        SoundKind::SpireLaunch,
+        SoundKind::IncomingWarning,
+        SoundKind::WarheadDetonation,
+        SoundKind::InterceptorLaunch,
     ] {
         assert!(spec(kind).combat, "{kind:?} must pressure the score");
     }

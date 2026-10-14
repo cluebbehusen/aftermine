@@ -47,20 +47,24 @@ fn command_tag(command: &Command) -> usize {
         Command::Accompany { .. } => 24,
         Command::Retire { .. } => 25,
         Command::Scout { .. } => 26,
+        Command::OrderRound { .. } => 27,
+        Command::CancelRound { .. } => 28,
+        Command::SetAutofill { .. } => 29,
+        Command::Launch { .. } => 30,
     }
 }
 
-const COMMAND_VARIANTS: usize = 27;
+const COMMAND_VARIANTS: usize = 31;
 
 /// The verbs that carry a unit list — every one of them owes this file a
 /// duplicate-id row.
 const UNIT_BEARING_TAGS: [usize; 16] = [0, 1, 2, 3, 4, 5, 7, 8, 9, 14, 15, 19, 22, 24, 25, 26];
 
 /// The verbs that address a building alone, with no list to canonicalize.
-const BUILDING_ONLY_TAGS: [usize; 5] = [6, 10, 11, 12, 18];
+const BUILDING_ONLY_TAGS: [usize; 8] = [6, 10, 11, 12, 18, 27, 28, 30];
 
-/// The one verb whose building operand is a canonicalized set.
-const BUILDING_BEARING_TAGS: [usize; 2] = [16, 21];
+/// The verbs whose building operand is a canonicalized set.
+const BUILDING_BEARING_TAGS: [usize; 3] = [16, 21, 29];
 
 /// The one verb that addresses a logical site, with no entity list to canonicalize.
 const SITE_ONLY_TAGS: [usize; 1] = [17];

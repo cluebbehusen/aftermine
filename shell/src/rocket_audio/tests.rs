@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::Game;
 
-fn motor(id: u32, arrival: u64) -> Motor {
+fn motor(id: u32, arrival: u64) -> Motor<RocketKey> {
     Motor {
         key: RocketKey {
             shooter: Target::Unit(oxide_sim::UnitId(id)),

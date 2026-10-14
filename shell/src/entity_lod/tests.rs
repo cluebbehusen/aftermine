@@ -64,19 +64,46 @@ fn layered_units_omit_unused_full_poses_but_keep_portraits_and_fallbacks() {
     );
 }
 
+/// The production atlas pages and their height.
+fn atlas_pages() -> (Vec<Image>, u32) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/sprites");
+    let mut pages = Vec::new();
+    for index in 0.. {
+        let name = if index == 0 {
+            "atlas.png".to_owned()
+        } else {
+            format!("atlas_{index}.png")
+        };
+        let Ok(bytes) = std::fs::read(root.join(name)) else {
+            break;
+        };
+        pages.push(Image::from_file_with_format(&bytes, Some(ImageFormat::Png)).unwrap());
+    }
+    let height = u32::from(pages[0].height);
+    (pages, height)
+}
+
 #[test]
 fn production_mips_fit_seven_pages_without_discarding_levels() {
     let manifest: HashMap<String, [f32; 4]> =
         serde_json::from_str(include_str!("../../../assets/sprites/atlas.json")).unwrap();
-    let sources = entity_sources(&manifest);
-    let order = packing_order(&sources);
-    assert_eq!(order.len(), sources.len() * LEVELS.len());
+    let (pages, height) = atlas_pages();
+    let areas: BTreeMap<_, _> = entity_sources(&manifest)
+        .into_iter()
+        .map(|key| {
+            let local = [key[0], key[1] % height, key[2], key[3]];
+            (key, packed_area(&pages[(key[1] / height) as usize], local))
+        })
+        .collect();
+    let order = packing_order(&areas);
+    assert_eq!(order.len(), areas.len() * LEVELS.len());
     let mut packer = Packer::new();
     for (key, level) in order {
         let factor = LEVELS[level].fit::<u32>();
+        let area = areas[&key];
         let region = packer.insert(&Image::gen_image_color(
-            (key[2] / factor).fit::<u16>(),
-            (key[3] / factor).fit::<u16>(),
+            (area[2] / factor).fit::<u16>(),
+            (area[3] / factor).fit::<u16>(),
             WHITE,
         ));
         assert!(region.rect.right() < PAGE as f32);
@@ -102,7 +129,8 @@ fn mip_vertex_data_preserves_flip_pivot_rotation_and_tint() {
     let a = Rect::new(128.0, 256.0, 64.0, 32.0);
     let b = Rect::new(64.0, 512.0, 32.0, 16.0);
     let tint = Color::new(0.3, 0.6, 0.9, 0.4);
-    let vertices = sprite_vertices(vec2(10.0, 20.0), tint, &params, a, b, 0.6);
+    let whole = Rect::new(0.0, 0.0, 1.0, 1.0);
+    let vertices = sprite_vertices(vec2(10.0, 20.0), tint, &params, whole, [a, b], 0.6);
     for (vertex, expected) in vertices.iter().zip([
         vec2(-10.0, 60.0),
         vec2(-10.0, 20.0),
@@ -134,7 +162,15 @@ fn mip_quad_rotates_about_the_destination_center_by_default() {
         ..Default::default()
     };
     let source = Rect::new(0.0, 0.0, 64.0, 64.0);
-    let vertices = sprite_vertices(vec2(10.0, 20.0), WHITE, &params, source, source, 0.0);
+    let whole = Rect::new(0.0, 0.0, 1.0, 1.0);
+    let vertices = sprite_vertices(
+        vec2(10.0, 20.0),
+        WHITE,
+        &params,
+        whole,
+        [source, source],
+        0.0,
+    );
     assert!(vertices[0].position.truncate().distance(vec2(50.0, 40.0)) < 0.0001);
     assert!(vertices[2].position.truncate().distance(vec2(10.0, 20.0)) < 0.0001);
 }
@@ -213,4 +249,100 @@ fn packed_borders_do_not_import_adjacent_sprites() {
     packer.x = PAGE - 2;
     packer.y = PAGE - 2;
     assert_eq!(packer.insert(&Image::gen_image_color(2, 2, GREEN)).page, 1);
+}
+
+/// A 64-pixel sprite whose only painted texels span `x0..x1`, `y0..y1`.
+fn painted(x0: u32, x1: u32, y0: u32, y1: u32) -> Image {
+    let mut image = Image::gen_image_color(64, 64, BLANK);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            image.set_pixel(x, y, Color::new(0.8, 0.4, 0.2, 0.5));
+        }
+    }
+    image
+}
+
+#[test]
+fn a_packed_area_keeps_a_transparent_coarse_texel_around_the_paint_within_the_sprite() {
+    assert_eq!(
+        packed_area(&painted(20, 30, 33, 40), [0, 0, 64, 64]),
+        [8, 24, 32, 24]
+    );
+    // Paint at the sprite's edge keeps that edge, as the whole sprite does.
+    assert_eq!(
+        packed_area(&painted(0, 5, 60, 64), [0, 0, 64, 64]),
+        [0, 48, 16, 16]
+    );
+    assert_eq!(
+        packed_area(&painted(0, 0, 0, 0), [0, 0, 64, 64]),
+        [0, 0, 8, 8]
+    );
+    // Any alpha counts, however faint.
+    let mut faint = painted(0, 0, 0, 0);
+    faint.set_pixel(40, 9, Color::from_rgba(255, 255, 255, 1));
+    assert_eq!(packed_area(&faint, [0, 0, 64, 64]), [32, 0, 24, 24]);
+}
+
+#[test]
+fn every_level_of_a_packed_area_matches_that_part_of_the_whole_sprite() {
+    let image = painted(20, 30, 33, 40);
+    let area = packed_area(&image, [0, 0, 64, 64]);
+    for factor in LEVELS {
+        let whole = reduce(&image, [0, 0, 64, 64], factor);
+        let part = reduce(&image, area, factor);
+        let f = factor.fit::<u32>();
+        for y in 0..u32::from(part.height) {
+            for x in 0..u32::from(part.width) {
+                assert_eq!(
+                    part.get_pixel(x, y),
+                    whole.get_pixel(area[0] / f + x, area[1] / f + y)
+                );
+            }
+        }
+        // The area's edge texels are transparent at every level, so linear
+        // sampling there blends with nothing, as it does in the whole sprite.
+        let (w, h) = (u32::from(part.width), u32::from(part.height));
+        for x in 0..w {
+            assert_eq!(part.get_pixel(x, 0).a, 0.0);
+            assert_eq!(part.get_pixel(x, h - 1).a, 0.0);
+        }
+        for y in 0..h {
+            assert_eq!(part.get_pixel(0, y).a, 0.0);
+            assert_eq!(part.get_pixel(w - 1, y).a, 0.0);
+        }
+    }
+}
+
+#[test]
+fn a_packed_area_draws_where_it_lies_in_the_whole_flipped_and_turned_sprite() {
+    let params = DrawTextureParams {
+        dest_size: Some(vec2(40.0, 20.0)),
+        flip_x: true,
+        rotation: std::f32::consts::PI,
+        ..Default::default()
+    };
+    let region = Rect::new(0.0, 0.0, 16.0, 16.0);
+    // The area's left quarter, upper half: flipped, it covers the right
+    // quarter; turned a half turn about the whole quad's centre, the left
+    // quarter's lower half.
+    let area = Rect::new(0.0, 0.0, 0.25, 0.5);
+    let vertices = sprite_vertices(
+        vec2(10.0, 20.0),
+        WHITE,
+        &params,
+        area,
+        [region, region],
+        0.0,
+    );
+    for (vertex, expected) in vertices.iter().zip([
+        vec2(10.0, 40.0),
+        vec2(20.0, 40.0),
+        vec2(20.0, 30.0),
+        vec2(10.0, 30.0),
+    ]) {
+        assert!(
+            vertex.position.truncate().distance(expected) < 0.0001,
+            "{vertex:?} {expected}"
+        );
+    }
 }

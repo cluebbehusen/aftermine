@@ -1,6 +1,6 @@
 use super::*;
 
-const SOUND_NAMES: [&str; 42] = [
+const SOUND_NAMES: [&str; 49] = [
     "ack",
     "alert",
     "artillery_boom",
@@ -26,7 +26,11 @@ const SOUND_NAMES: [&str; 42] = [
     "demolition_boom",
     "denied",
     "deposit",
+    "incoming_warning",
     "intercept_zap",
+    "interception",
+    "interceptor_flight",
+    "interceptor_launch",
     "laser",
     "laser2",
     "music_calm",
@@ -39,10 +43,13 @@ const SOUND_NAMES: [&str; 42] = [
     "piledriver_fold",
     "piledriver_impact",
     "rocket_impact",
+    "spire_launch",
     "train_done",
     "unit_death",
     "upgrade_done",
     "victory",
+    "warhead_detonation",
+    "warhead_flight",
 ];
 
 /// Each defense rung's hull and mount stems.

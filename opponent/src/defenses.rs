@@ -47,6 +47,10 @@ fn radar(kind: BuildingKind, tier: u8) -> i64 {
     i64::from(kind.tier_stats(tier).radar.unwrap_or(0))
 }
 
+/// Tiles either side of a Lattice's ring, along a known Spire's line, where
+/// an Array watches for warheads before they enter it.
+const RING_WATCH: [i64; 3] = [-3, 0, 3];
+
 /// Tiles beyond a base's edge along its approach where its Scuttle Charges
 /// start.
 const MINEFIELD_START: i64 = 3;
@@ -249,6 +253,11 @@ struct Asset {
     members: Vec<(TilePos, (i32, i32))>,
     ground: Option<Approach>,
     air: Option<Approach>,
+    /// Points where a warhead from the nearest known enemy Spire crosses
+    /// into the ring of an own Lattice guarding the asset, just outside,
+    /// at and just inside it, and whether own buildings see or pick up
+    /// each: radar there tracks a warhead before the Lattice must stop it.
+    missile: Vec<((i64, i64), bool)>,
 }
 
 impl Asset {
@@ -496,6 +505,32 @@ impl<'a> Guard<'a> {
                 approach.far = far.into_iter().map(|point| (point, seen(point))).collect();
             }
         }
+        let spires = spire_sources(observation);
+        let ring = lattice_ring();
+        let lattices: Vec<(i64, i64)> = observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::Lattice)
+            .map(|building| footprint_centre(building.kind, building.anchor))
+            .collect();
+        for asset in &mut assets {
+            let guarded = lattices
+                .iter()
+                .any(|lattice| distance2(*lattice, asset.centre) <= 4 * ring * ring);
+            let nearest = spires.iter().copied().min_by_key(|spire| {
+                (
+                    chebyshev(*spire, asset.centre),
+                    frame.rank(asset.centre, *spire),
+                )
+            });
+            if let (true, Some(spire)) = (guarded, nearest) {
+                let tiles = RING_WATCH.map(|offset| ring + offset);
+                asset.missile = along(asset.centre, spire, 0, &tiles)
+                    .into_iter()
+                    .map(|point| (point, seen(point)))
+                    .collect();
+            }
+        }
         let mut crews: Vec<u32> = observation
             .my_units
             .iter()
@@ -585,6 +620,7 @@ impl<'a> Guard<'a> {
             .into_iter()
             .filter_map(|domain| asset.approach(domain))
             .flat_map(|approach| &approach.far)
+            .chain(&asset.missile)
             .filter(|(point, seen)| counts(*point, *seen))
             .count() as u64
     }
@@ -853,6 +889,143 @@ impl<'a> Guard<'a> {
         })
     }
 
+    /// The best spot for a Lattice, as its anchor and worth, while the seat
+    /// should expect an enemy Spire (see [`spire_threat`]).
+    ///
+    /// An asset counts as covered by the own Lattices, built or not, whose
+    /// ring holds its costliest point, where one warhead would take the
+    /// most: that is where a strike lands. Assets holding fewer interceptors
+    /// there than the Spires the seat expects are open; a mere capability
+    /// leaves only the most valuable one open. A site is worth the stakes of
+    /// the open assets its ring would cover, scaled by how much of a Spire
+    /// the seat knows the enemy holds, and ties go to the site nearest home,
+    /// so the battery stands behind what it guards.
+    fn lattice(&self) -> Option<(TilePos, u64)> {
+        let observation = self.observation;
+        let kind = BuildingKind::Lattice;
+        let required = kind
+            .base_stats()
+            .construction
+            .map_or(&[][..], |c| c.requires);
+        let (expected, every_asset, share) = match spire_threat(observation) {
+            SpireThreat::None => return None,
+            SpireThreat::Capable { signals } => (1, signals >= SPIRE_SIGNALS, signals),
+            SpireThreat::Known(spires) => (spires, true, SPIRE_SIGNALS),
+        };
+        if !built_all(observation, required) {
+            return None;
+        }
+        let ring = lattice_ring();
+        let reach2 = 4 * ring * ring;
+        let capacity = kind.magazine().map_or(0, |stats| u64::from(stats.capacity));
+        let lattices: Vec<(i64, i64)> = observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == kind)
+            .map(|building| footprint_centre(kind, building.anchor))
+            .collect();
+        let marks = crate::warheads::by_column(
+            observation
+                .my_buildings
+                .iter()
+                .filter(|building| building.built)
+                .map(crate::warheads::Mark::of)
+                .collect(),
+        );
+        let mut open: Vec<(u64, (i64, i64))> = self
+            .assets
+            .iter()
+            .filter_map(|asset| {
+                // A strike there is aimed at its most valuable building.
+                let worth = |anchor: TilePos| {
+                    observation
+                        .my_buildings
+                        .iter()
+                        .find(|building| building.anchor == anchor)
+                        .map_or(0, |building| building.kind.invested_cost(building.tier))
+                };
+                let (anchor, (width, height)) =
+                    asset.members.iter().min_by_key(|(anchor, size)| {
+                        let centre = (
+                            2 * i64::from(anchor.x) + i64::from(size.0),
+                            2 * i64::from(anchor.y) + i64::from(size.1),
+                        );
+                        (
+                            Reverse(worth(*anchor)),
+                            self.frame.rank(self.frame.home, centre),
+                        )
+                    })?;
+                let (stake, aim) = (0..*height)
+                    .flat_map(|dy| (0..*width).map(move |dx| anchor.offset(dx, dy)))
+                    .map(|tile| {
+                        let aim = (2 * i64::from(tile.x) + 1, 2 * i64::from(tile.y) + 1);
+                        (crate::warheads::volley(&marks, tile, 1), aim)
+                    })
+                    .min_by_key(|(stake, aim)| {
+                        (Reverse(*stake), self.frame.rank(self.frame.home, *aim))
+                    })?;
+                (stake > 0).then_some((stake, aim))
+            })
+            .collect();
+        if !every_asset {
+            open.sort_by_key(|(stake, aim)| {
+                (Reverse(*stake), self.frame.rank(self.frame.home, *aim))
+            });
+            open.truncate(1);
+        }
+        open.retain(|(_, aim)| {
+            let held = lattices
+                .iter()
+                .filter(|lattice| distance2(**lattice, *aim) <= reach2)
+                .count() as u64
+                * capacity;
+            held < expected
+        });
+        for (stake, _) in &mut open {
+            *stake = *stake * share / SPIRE_SIGNALS;
+        }
+        let aimed = |(anchor, (width, height)): &(TilePos, (i32, i32))| {
+            let (x, y) = (2 * i64::from(anchor.x), 2 * i64::from(anchor.y));
+            open.iter().any(|(_, aim)| {
+                (x..x + 2 * i64::from(*width)).contains(&aim.0)
+                    && (y..y + 2 * i64::from(*height)).contains(&aim.1)
+            })
+        };
+        // The ring covers an aim from anywhere beside the building it falls
+        // on, so the search starts there, and widens to the rest of that
+        // base only when nothing beside it can be placed.
+        let members: Vec<&(TilePos, (i32, i32))> = self
+            .assets
+            .iter()
+            .filter(|asset| asset.members.iter().any(aimed))
+            .flat_map(|asset| &asset.members)
+            .collect();
+        let (near, rest): (Vec<_>, Vec<_>) = members.into_iter().partition(|member| aimed(member));
+        let site_among = |members: &[&(TilePos, (i32, i32))]| {
+            let mut sites = Vec::new();
+            // Neighbouring members offer many of the same anchors.
+            let mut offered = std::collections::BTreeSet::new();
+            for (member, footprint) in members {
+                for anchor in sites_around(*member, *footprint, kind.size()) {
+                    if !offered.insert(anchor) {
+                        continue;
+                    }
+                    let centre = footprint_centre(kind, anchor);
+                    let worth: u64 = open
+                        .iter()
+                        .filter(|(_, aim)| distance2(*aim, centre) <= reach2)
+                        .map(|(stake, _)| stake)
+                        .sum();
+                    if worth > 0 {
+                        sites.push((worth, self.frame.rank(self.frame.home, centre), anchor));
+                    }
+                }
+            }
+            first_placeable(sites, |anchor| self.placeable(kind, anchor))
+        };
+        site_among(&near).or_else(|| site_among(&rest))
+    }
+
     /// Whether `kind` may go at `anchor` as far as the seat knows, on ground
     /// a Harvester of the seat stands on, and was not refused there lately:
     /// off the lanes of the base's layout and the seat's gates, or for a
@@ -1060,6 +1233,13 @@ pub(crate) fn investments(
         list.push((
             Investment::Defense { kind, anchor },
             points(worth * cunning / OBSTACLE_POINTS),
+        ));
+    }
+    if let Some((anchor, stake)) = guard.lattice() {
+        let kind = BuildingKind::Lattice;
+        list.push((
+            Investment::Defense { kind, anchor },
+            points(stake * composition::weight(traits.fortification) / 1_000),
         ));
     }
     if let Some((anchor, wounds)) = guard.bay() {
@@ -1444,6 +1624,7 @@ fn buildings(observation: &ObservationData, frame: HomeFrame) -> Vec<Asset> {
                 members: vec![(building.anchor, size)],
                 ground: None,
                 air: None,
+                missile: Vec::new(),
             })
         })
         .collect();
@@ -1500,6 +1681,7 @@ fn bases(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec
             members: vec![(origin.anchor, size(origin))],
             ground: None,
             air: None,
+            missile: Vec::new(),
         })
         .collect();
     for building in observation.my_buildings.iter().filter(|building| {
@@ -1521,6 +1703,7 @@ fn bases(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec
                 members: vec![(anchor, footprint)],
                 ground: None,
                 air: None,
+                missile: Vec::new(),
             });
             continue;
         }
@@ -1556,7 +1739,110 @@ fn defense(kind: BuildingKind) -> bool {
             | BuildingKind::Barricade
             | BuildingKind::ScuttleCharge
             | BuildingKind::RepairBay
+            | BuildingKind::Lattice
     )
+}
+
+/// Centres of the enemy Spires the seat knows, seen or remembered, in
+/// doubled coordinates.
+fn enemy_spires(observation: &ObservationData) -> Vec<(i64, i64)> {
+    observation
+        .enemy_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Spire)
+        .map(|building| footprint_centre(building.kind, building.anchor))
+        .collect()
+}
+
+/// A Spire's two kinds of tech: a Deep Bore and a Crucible.
+const SPIRE_SIGNALS: u64 = 2;
+
+/// How strongly the seat should expect an enemy Spire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireThreat {
+    /// No enemy is known to hold any of a Spire's tech.
+    None,
+    /// No Spire is known, but one enemy is known to hold `signals` of the
+    /// [`SPIRE_SIGNALS`] kinds of tech a Spire needs.
+    Capable { signals: u64 },
+    /// Enemy Spires the seat knows, seen or given away by a tracked
+    /// warhead.
+    Known(u64),
+}
+
+/// Every seat sees each Deep Bore, so this needs no scouting for the Deep
+/// Bore; a Crucible must have been seen.
+fn spire_threat(observation: &ObservationData) -> SpireThreat {
+    let known = enemy_spires(observation).len() as u64;
+    if known > 0 {
+        return SpireThreat::Known(known);
+    }
+    // Each enemy's known Deep Bore and Crucible, by player index.
+    let mut held: Vec<(bool, bool)> = Vec::new();
+    let mut note = |owner: oxide_sim::PlayerId, deep_bore: bool, crucible: bool| {
+        let index = usize::from(owner.0);
+        if held.len() <= index {
+            held.resize(index + 1, (false, false));
+        }
+        held[index].0 |= deep_bore;
+        held[index].1 |= crucible;
+    };
+    for public in &observation.public_buildings {
+        note(
+            public.owner,
+            public.kind == BuildingKind::Extractor && public.tier > 0,
+            false,
+        );
+    }
+    for building in &observation.enemy_buildings {
+        note(
+            building.player,
+            building.kind == BuildingKind::Extractor && building.tier > 0,
+            building.kind == BuildingKind::Crucible,
+        );
+    }
+    let signals = held
+        .iter()
+        .map(|&(deep_bore, crucible)| u64::from(deep_bore) + u64::from(crucible))
+        .max()
+        .unwrap_or(0);
+    if signals == 0 {
+        SpireThreat::None
+    } else {
+        SpireThreat::Capable { signals }
+    }
+}
+
+/// Where the seat expects warheads to come from: its known enemy Spires,
+/// or failing those, the Spire tech it knows enemies hold.
+fn spire_sources(observation: &ObservationData) -> Vec<(i64, i64)> {
+    let spires = enemy_spires(observation);
+    if !spires.is_empty() {
+        return spires;
+    }
+    observation
+        .enemy_buildings
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Crucible
+                || (building.kind == BuildingKind::Extractor && building.tier > 0)
+        })
+        .map(|building| footprint_centre(building.kind, building.anchor))
+        .chain(
+            observation
+                .public_buildings
+                .iter()
+                .filter(|public| public.kind == BuildingKind::Extractor && public.tier > 0)
+                .map(|public| footprint_centre(public.kind, public.anchor)),
+        )
+        .collect()
+}
+
+/// A Lattice's ring, in whole tiles.
+fn lattice_ring() -> i64 {
+    BuildingKind::Lattice
+        .battery()
+        .map_or(0, |battery| battery.ring.to_num::<i64>())
 }
 
 /// What one decision knows about where threats come from.
@@ -1937,8 +2223,9 @@ fn tiles_at(point: (i64, i64)) -> Vec<TilePos> {
 
 /// Whether a `kind` at `anchor` still leaves its ground open: an exit beside
 /// every own producer, every worked home scrap node and every hostile start
-/// on that ground, a tile to work from beside itself and every own site
-/// still going up, and no open ground beside it cut off, where units would
+/// on that ground, a tile to work from beside itself, every own site still
+/// going up and every own building it borders, which would otherwise be
+/// beyond repair, and no open ground beside it cut off, where units would
 /// be trapped or trained into a pocket they never leave. One flood fill over
 /// the ground from the rings of the seat's Foundries on it, with known
 /// buildings, claims, `planned` footprints, known live scrap and the new
@@ -2054,10 +2341,14 @@ pub(crate) fn keeps_paths(
     let workable = |kind: BuildingKind, anchor: TilePos| sides(kind, anchor).any(reached_at);
     // Any pocket the footprint closes off borders one of its sides.
     let sealing = sides(kind, anchor).any(|tile| open(tile) && !reached_at(tile));
+    let covered = |tile: TilePos| tiles(kind, anchor).any(|own| own == tile);
+    // Only a neighbour can lose its last side to this footprint: it cuts
+    // nothing else off without sealing a pocket beside itself.
     let sites = observation
         .my_buildings
         .iter()
-        .filter(|building| !building.built && building.kind != BuildingKind::ScuttleCharge)
+        .filter(|building| building.kind != BuildingKind::ScuttleCharge)
+        .filter(|building| !building.built || sides(building.kind, building.anchor).any(covered))
         .map(|building| (building.kind, building.anchor))
         .chain(claims.iter().copied())
         .chain([(kind, anchor)])
@@ -2281,14 +2572,11 @@ fn raises(
     }
 }
 
-/// Whether the seat has built every kind in `required`.
-fn built_all(observation: &ObservationData, required: &[BuildingKind]) -> bool {
-    required.iter().all(|kind| {
-        observation
-            .my_buildings
-            .iter()
-            .any(|own| own.kind == *kind && own.built)
-    })
+/// Whether the seat meets every one of `required`.
+fn built_all(observation: &ObservationData, required: &[oxide_sim::stats::Prerequisite]) -> bool {
+    required
+        .iter()
+        .all(|need| crate::investments::met(observation, *need))
 }
 
 /// What a building costs to place.

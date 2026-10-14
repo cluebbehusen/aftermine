@@ -80,6 +80,98 @@ impl SelectionInfo {
         );
     }
 
+    /// Rounds as the viewer may know them, then what they do: a Spire's
+    /// warhead, a Lattice's ring and the hostile warheads falling into it.
+    fn magazine_rows(&mut self, game: &Scene<'_>, b: &oxide_sim::Building) {
+        let Some(stats) = b.kind.magazine() else {
+            return;
+        };
+        let known = game
+            .state
+            .known_magazines(game.presentation.human)
+            .into_iter()
+            .find(|known| known.building == b.id);
+        let noun = if b.kind == BuildingKind::Spire {
+            "Warheads"
+        } else {
+            "Interceptors"
+        };
+        if let Some(known) = known {
+            self.row(
+                noun,
+                format!("{}/{}", known.loaded, stats.capacity),
+                Some(StatIcon::Capability(CapabilityIcon::Intercept)),
+            );
+            if let Some(detail) = known.detail {
+                if detail.ordered > 0 {
+                    let percent = detail.progress * 100 / stats.round_ticks.max(1);
+                    let queued = if detail.ordered > 1 {
+                        format!(", {} more paid", detail.ordered - 1)
+                    } else {
+                        String::new()
+                    };
+                    self.row("Assembling", format!("{percent}%{queued}"), None);
+                }
+                self.row(
+                    "Autofill",
+                    if detail.autofill { "On" } else { "Off" }.into(),
+                    None,
+                );
+                if let Some(target) = detail.target {
+                    self.status
+                        .push(format!("Turning to strike {}, {}", target.x, target.y));
+                }
+            }
+        }
+        self.row(
+            "Round cost",
+            format!(
+                "{} scrap, {}s",
+                stats.round_cost,
+                stats.round_ticks / oxide_sim::TICKS_PER_SECOND
+            ),
+            None,
+        );
+        if let Some(battery) = b.kind.battery() {
+            self.row(
+                "Ring",
+                format!("{:.0} tiles", battery.ring.to_num::<f32>()),
+                Some(StatIcon::Capability(CapabilityIcon::Intercept)),
+            );
+            let centre = b.center();
+            let ring = battery.ring * battery.ring;
+            for warhead in game.state.known_warheads(game.presentation.human) {
+                if !warhead.hostile {
+                    continue;
+                }
+                let status = match (warhead.line, warhead.interceptor) {
+                    (Some(line), _) if line.impact.dist_sq(centre) > ring => continue,
+                    (Some(_), Some(battery)) if battery == b.id => "tracked, this battery",
+                    (Some(_), Some(_)) => "tracked, another battery",
+                    (Some(_), None) => "tracked, no interceptor",
+                    (None, _) => "tracking",
+                };
+                self.status.push(format!("Incoming warhead: {status}"));
+            }
+        } else {
+            let warhead = oxide_sim::stats::WARHEAD;
+            self.row(
+                "Warhead",
+                format!("{} damage", warhead.peak_damage),
+                Some(StatIcon::Capability(CapabilityIcon::Weapon)),
+            );
+            self.row(
+                "Blast",
+                format!(
+                    "{:.1} tiles full, {:.1} tiles edge",
+                    warhead.full_radius.to_num::<f32>(),
+                    warhead.outer_radius.to_num::<f32>()
+                ),
+                None,
+            );
+        }
+    }
+
     fn row(&mut self, label: &str, value: String, icon: Option<StatIcon>) {
         self.rows.push(StatRow {
             label: label.into(),
@@ -295,6 +387,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 );
             }
             BuildingKind::RepairBay => info.repair_bay_rows(),
+            BuildingKind::Spire | BuildingKind::Lattice => info.magazine_rows(game, b),
             BuildingKind::Crucible => info.row(
                 "Smelt reach",
                 format!("{:.1} tiles", CRUCIBLE_SMELT_RADIUS.to_num::<f32>()),

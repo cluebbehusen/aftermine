@@ -397,6 +397,10 @@ fn command_name(command: &Command) -> &'static str {
         Command::Accompany { .. } => "accompany",
         Command::Retire { .. } => "retire",
         Command::Scout { .. } => "scout",
+        Command::OrderRound { .. } => "order_round",
+        Command::CancelRound { .. } => "cancel_round",
+        Command::SetAutofill { .. } => "set_autofill",
+        Command::Launch { .. } => "launch",
     }
 }
 

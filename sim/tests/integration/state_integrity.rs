@@ -154,6 +154,62 @@ fn snapshot() -> Value {
     doc(&state)
 }
 
+/// West's Spire, loaded by surgery, launches at East's Foundry; the
+/// warhead flies until East has tracked it, while East's Lattice assembles
+/// its first interceptor. Every piece of magazine, launch-deck, warhead and
+/// tracking state is live in the result.
+fn strike() -> Value {
+    let mut scenario = arena();
+    scenario.buildings.extend([
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Spire,
+            x: 7,
+            y: 1,
+        },
+        BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Lattice,
+            x: 14,
+            y: 1,
+        },
+    ]);
+    let mut d = doc(&scenario.build().unwrap());
+    let spire = kind_index(&d, "spire");
+    d["buildings"][spire]["magazine"]["loaded"] = json!(1);
+    let silo = BuildingId(u32::try_from(d["buildings"][spire]["id"].as_u64().unwrap()).unwrap());
+    let mut state: State = serde_json::from_value(d).unwrap();
+    state.tick(&[cmd(
+        0,
+        Command::Launch {
+            building: silo,
+            target: chassis::grid::TilePos::new(17, 8),
+        },
+    )]);
+    for _ in 0..200 {
+        if state
+            .vision(PlayerId(1))
+            .warheads()
+            .first()
+            .is_some_and(oxide_sim::vision::WarheadTrack::tracked)
+        {
+            return doc(&state);
+        }
+        state.tick(&[]);
+    }
+    panic!("East never tracked the warhead");
+}
+
+/// Where the first building of `kind` sits in a snapshot's list.
+fn kind_index(d: &Value, kind: &str) -> usize {
+    d["buildings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|b| b["kind"] == json!(kind))
+        .unwrap()
+}
+
 fn doc(state: &State) -> Value {
     serde_json::from_str(&serde_json::to_string(state).unwrap()).unwrap()
 }
@@ -421,10 +477,17 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidRetirement(_) => 85,
         E::InvalidScoutOrder(_) => 86,
         E::InvalidRadarDeploy(_) => 87,
+        E::InvalidMagazine(_) => 88,
+        E::InvalidLauncher(_) => 89,
+        E::UnsortedWarheads => 90,
+        E::StaleWarheadCounter => 91,
+        E::ForeignWarheadOwner(_) => 92,
+        E::InvalidWarheadFlight(_) => 93,
+        E::InvalidWarheadTracking(_) => 94,
     }
 }
 
-const ROWS: usize = 88;
+const ROWS: usize = 95;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -525,6 +588,13 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidRetirement(UnitId(0)),
         E::InvalidScoutOrder(UnitId(0)),
         E::InvalidRadarDeploy(UnitId(0)),
+        E::InvalidMagazine(BuildingId(0)),
+        E::InvalidLauncher(BuildingId(0)),
+        E::UnsortedWarheads,
+        E::StaleWarheadCounter,
+        E::ForeignWarheadOwner(0),
+        E::InvalidWarheadFlight(0),
+        E::InvalidWarheadTracking(PlayerId(0)),
     ]
 }
 
@@ -1689,6 +1759,138 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][1]["id"] = id;
             },
             "are parked inside each other",
+        ),
+        (
+            "a magazine on a building that stores no rounds",
+            |d| d["buildings"][0]["magazine"] = json!({"autofill": true}),
+            "carries an invalid magazine",
+        ),
+        (
+            "a Spire without its magazine",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("magazine");
+            },
+            "carries an invalid magazine",
+        ),
+        (
+            "rounds past the magazine's capacity",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["magazine"]["loaded"] = json!(1);
+                d["buildings"][spire]["magazine"]["ordered"] = json!(1);
+            },
+            "carries an invalid magazine",
+        ),
+        (
+            "assembly progress with nothing ordered",
+            |d| {
+                *d = strike();
+                let lattice = kind_index(d, "lattice");
+                d["buildings"][lattice]["magazine"]["ordered"] = json!(0);
+            },
+            "carries an invalid magazine",
+        ),
+        (
+            "a held strike with nothing loaded",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["launcher"]["target"] = json!({"x": 3, "y": 3});
+            },
+            "carries an invalid launch deck",
+        ),
+        (
+            "a deck standing ready with no strike",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["launcher"]["ready"] = json!(3);
+            },
+            "carries an invalid launch deck",
+        ),
+        (
+            "a deck ready past the tick it fires on",
+            |d| {
+                *d = strike();
+                let spire = kind_index(d, "spire");
+                d["buildings"][spire]["magazine"]["loaded"] = json!(1);
+                d["buildings"][spire]["launcher"]["target"] = json!({"x": 3, "y": 3});
+                d["buildings"][spire]["launcher"]["ready"] = json!(12);
+            },
+            "carries an invalid launch deck",
+        ),
+        (
+            "a launch deck on a battery",
+            |d| {
+                *d = strike();
+                let lattice = kind_index(d, "lattice");
+                d["buildings"][lattice]["launcher"] = json!({"heading": 3});
+            },
+            "carries an invalid launch deck",
+        ),
+        (
+            "two warheads under one id",
+            |d| {
+                *d = strike();
+                let twin = d["warheads"][0].clone();
+                d["warheads"].as_array_mut().unwrap().push(twin);
+            },
+            "warheads are out of id order",
+        ),
+        (
+            "a warhead id the counter never reached",
+            |d| {
+                *d = strike();
+                d["next_warhead_id"] = json!(0);
+            },
+            "a warhead id is at or past the warhead counter",
+        ),
+        (
+            "a warhead launched by a seat outside the table",
+            |d| {
+                *d = strike();
+                d["warheads"][0]["player"] = json!(9);
+            },
+            "is owned by a player outside the table",
+        ),
+        (
+            "a warhead that lands later than its line takes",
+            |d| {
+                *d = strike();
+                let arrival = d["warheads"][0]["arrival"].as_u64().unwrap();
+                d["warheads"][0]["arrival"] = json!(arrival + 5);
+            },
+            "has an impossible flight",
+        ),
+        (
+            "a warhead still flying after the match is decided",
+            |d| {
+                *d = strike();
+                d["result"] = json!({"outcome": "victory", "team": 0});
+            },
+            "has an impossible flight",
+        ),
+        (
+            "a track held past full exposure",
+            |d| {
+                *d = strike();
+                d["vision"][1]["warheads"][0]["exposure"] = json!(61);
+            },
+            "holds impossible warhead tracks",
+        ),
+        (
+            "a seat tracking its own warhead",
+            |d| {
+                *d = strike();
+                d["vision"][0]["warheads"] = d["vision"][1]["warheads"].clone();
+            },
+            "holds impossible warhead tracks",
         ),
     ];
 

@@ -11,6 +11,7 @@ pub(crate) use crate::geometry::{
     group_spread_scan_reversed, rect_adjacent_tiles, rect_approach_key_from,
     rect_approach_origin_for_map, spawn_doorstep_key,
 };
+pub(crate) use movement::uses_rotated_map_frame;
 mod aircraft_crashes;
 mod brain;
 mod charges;
@@ -22,6 +23,7 @@ pub(crate) mod flight;
 mod goals;
 pub(crate) mod landing;
 mod movement;
+mod ordnance;
 mod production;
 mod reach;
 mod spatial;
@@ -311,7 +313,15 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
                 pos: building.center(),
                 refund: building.salvage_credited,
             });
-            let prepaid: u32 = building.queue.iter().map(|k| k.stats().cost).sum();
+            // Ordered rounds are prepaid production too; loaded ones are
+            // spent work and refund nothing.
+            let rounds = building
+                .magazine
+                .zip(building.kind.magazine())
+                .map_or(0, |(magazine, stats)| {
+                    u32::from(magazine.ordered) * stats.round_cost
+                });
+            let prepaid: u32 = building.queue.iter().map(|k| k.stats().cost).sum::<u32>() + rounds;
             if prepaid > 0 {
                 queue_refunds.push((building.player, prepaid));
             }
@@ -423,6 +433,10 @@ fn victory(state: &mut State, events: &mut Vec<Event>) {
         _ => return, // multiple teams standing — play on
     };
     state.aircraft_crashes.clear();
+    state.warheads.clear();
+    for view in &mut state.vision {
+        view.forget_warheads();
+    }
     state.result = Some(result);
     events.push(Event::GameOver { result });
 }

@@ -456,7 +456,10 @@ fn a_remote_extractor_is_never_deepened() {
         building: own_extractor(&state),
         tier: 1,
     };
-    assert_eq!(crate::investments::step(&observation, deep_bore), None);
+    assert_eq!(
+        crate::investments::step(&observation, &map(&bore_arena(13)), deep_bore),
+        None
+    );
 }
 
 #[test]

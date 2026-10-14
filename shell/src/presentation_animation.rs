@@ -1090,7 +1090,9 @@ impl AnimationController {
                 | BuildingKind::FlakTurret
                 | BuildingKind::Bastion
                 | BuildingKind::Barricade
-                | BuildingKind::ScuttleCharge => BuildingActivity::Idle,
+                | BuildingKind::ScuttleCharge
+                | BuildingKind::Spire
+                | BuildingKind::Lattice => BuildingActivity::Idle,
             }
         } else {
             BuildingActivity::Idle
@@ -1298,7 +1300,9 @@ fn building_attack_timing(kind: BuildingKind) -> Option<AttackTiming> {
         | BuildingKind::Airworks
         | BuildingKind::Crucible
         | BuildingKind::Barricade
-        | BuildingKind::ScuttleCharge => return None,
+        | BuildingKind::ScuttleCharge
+        | BuildingKind::Spire
+        | BuildingKind::Lattice => return None,
     };
     Some(AttackTiming {
         report_ticks,

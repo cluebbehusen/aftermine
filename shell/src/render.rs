@@ -84,6 +84,10 @@ mod panel_layout;
 mod performance;
 mod pits;
 pub(crate) mod prim;
+pub(crate) mod sky;
+mod strategic;
+pub(crate) use sky::missile_seen_by;
+pub(crate) use strategic::lattice_pod_pivot;
 mod support_brackets;
 mod terraces;
 mod worker;
@@ -131,6 +135,7 @@ fn capability_icon_color(icon: crate::panel::CapabilityIcon) -> Color {
         CapabilityIcon::Radar => Color::new(0.22, 0.76, 0.72, 0.90),
         CapabilityIcon::Repair => Color::new(0.38, 0.82, 0.45, 0.90),
         CapabilityIcon::EconomySupport => Color::new(0.95, 0.72, 0.24, 0.92),
+        CapabilityIcon::Intercept => Color::new(0.64, 0.62, 1.0, 0.92),
     }
 }
 
@@ -292,6 +297,35 @@ fn draw_capability_icon(
                 center.x,
                 center.y + radius,
                 stroke * 1.25,
+                color,
+            );
+        }
+        CapabilityIcon::Intercept => {
+            // A ring with a rising round inside it.
+            draw_circle_lines(center.x, center.y, radius * 0.86, stroke, color);
+            let tip = vec2(center.x, center.y - radius * 0.55);
+            draw_line(
+                tip.x,
+                tip.y,
+                center.x,
+                center.y + radius * 0.5,
+                stroke,
+                color,
+            );
+            draw_line(
+                tip.x,
+                tip.y,
+                tip.x - radius * 0.3,
+                tip.y + radius * 0.32,
+                stroke,
+                color,
+            );
+            draw_line(
+                tip.x,
+                tip.y,
+                tip.x + radius * 0.3,
+                tip.y + radius * 0.32,
+                stroke,
                 color,
             );
         }
@@ -527,9 +561,11 @@ pub(crate) fn draw_with_performance(
     draw_pings(game);
     draw_range_rings(game, input);
     draw_blips(game);
+    strategic::draw_warheads(game, sprites);
     entities::draw_public_buildings(game);
     entities::draw_repair_tethers(game);
     draw_rally_marker(game, alpha);
+    strategic::draw_strike_preview(game, input);
     draw_breadcrumbs(game, input);
     // Deferred claims are the player's own intent, like breadcrumbs; a
     // spectator has none.

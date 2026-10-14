@@ -12,6 +12,7 @@ use crate::profile::PersonalityTraits;
 use crate::workers;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{BuildingObs, ObservationData};
+use oxide_sim::stats::Prerequisite;
 use oxide_sim::{BuildingId, BuildingKind, PlayerId, TICKS_PER_SECOND, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -50,6 +51,8 @@ pub enum Investment {
     Extractor(TilePos),
     /// A unit a wanted role prefers but the scrap on hand cannot buy.
     Unit(UnitKind),
+    /// A warhead for this own empty Spire.
+    Round(BuildingId),
 }
 
 /// The next purchase toward an investment.
@@ -62,6 +65,8 @@ pub enum Step {
     Upgrade(BuildingId),
     /// Training a unit.
     Train(UnitKind),
+    /// Ordering a round for a magazine building.
+    Round(BuildingId),
 }
 
 /// An investment the seat wants now, with how much.
@@ -151,6 +156,12 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     for (kind, score) in &situation.units {
         list.push((Investment::Unit(*kind), *score));
     }
+    list.extend(crate::warheads::investments(
+        observation,
+        situation.map,
+        traits,
+        situation.income,
+    ));
     let growth = expansion::candidates(
         observation,
         situation.map,
@@ -299,22 +310,29 @@ fn location(map: &MapModel, me: PlayerId, investment: Investment) -> Option<(i64
         | Investment::Capacity(_)
         | Investment::Reclaimer
         | Investment::Upgrade { .. }
-        | Investment::Unit(_) => None,
+        | Investment::Unit(_)
+        | Investment::Round(_) => None,
     }
 }
 
 /// The next purchase toward `investment` and its price, or `None` while a
 /// prerequisite is still being built or the investment is gone.
-pub(crate) fn step(observation: &ObservationData, investment: Investment) -> Option<(Step, u32)> {
+pub(crate) fn step(
+    observation: &ObservationData,
+    map: &MapModel,
+    investment: Investment,
+) -> Option<(Step, u32)> {
+    let build = |kind| build_step(observation, map, kind, 3);
     match investment {
-        Investment::Tech(kind) | Investment::Capacity(kind) => build_step(observation, kind, 3),
-        Investment::Reclaimer => build_step(observation, BuildingKind::Reclaimer, 3),
-        Investment::Expansion(_) => build_step(observation, BuildingKind::Foundry, 3),
-        Investment::Extractor(_) => build_step(observation, BuildingKind::Extractor, 3),
-        Investment::Defense { kind, .. } => build_step(observation, kind, 3),
+        Investment::Tech(kind) | Investment::Capacity(kind) => build(kind),
+        Investment::Reclaimer => build(BuildingKind::Reclaimer),
+        Investment::Expansion(_) => build(BuildingKind::Foundry),
+        Investment::Extractor(_) => build(BuildingKind::Extractor),
+        Investment::Defense { kind, .. } => build(kind),
         Investment::Unit(kind) => producers_of(observation, kind)
             .next()
             .map(|_| (Step::Train(kind), kind.stats().cost)),
+        Investment::Round(building) => crate::warheads::round_step(observation, building),
         Investment::Upgrade { building, tier } => {
             let building = observation.my_buildings.iter().find(|own| {
                 own.id == building && own.built && own.tier.checked_add(1) == Some(tier)
@@ -328,10 +346,10 @@ pub(crate) fn step(observation: &ObservationData, investment: Investment) -> Opt
             match upgrade
                 .requires
                 .iter()
-                .find(|required| !built(observation, **required))
+                .find(|required| !met(observation, **required))
             {
                 None => Some((Step::Upgrade(building.id), upgrade.cost)),
-                Some(missing) => requirement_step(observation, *missing, 2),
+                Some(missing) => requirement_step(observation, map, *missing, 2),
             }
         }
     }
@@ -347,6 +365,7 @@ pub(crate) fn completes(investment: Investment, step: Step) -> bool {
         (Investment::Expansion(_), Step::Build(built)) => built == BuildingKind::Foundry,
         (Investment::Extractor(_), Step::Build(built)) => built == BuildingKind::Extractor,
         (Investment::Unit(kind), Step::Train(trained)) => kind == trained,
+        (Investment::Round(building), Step::Round(ordered)) => building == ordered,
         _ => false,
     }
 }
@@ -430,28 +449,67 @@ fn foundries(map: &MapModel, observation: &ObservationData) -> Vec<TilePos> {
     foundries
 }
 
-fn build_step(observation: &ObservationData, kind: BuildingKind, depth: u8) -> Option<(Step, u32)> {
+fn build_step(
+    observation: &ObservationData,
+    map: &MapModel,
+    kind: BuildingKind,
+    depth: u8,
+) -> Option<(Step, u32)> {
     let construction = kind.base_stats().construction.as_ref()?;
     match construction
         .requires
         .iter()
-        .find(|required| !built(observation, **required))
+        .find(|required| !met(observation, **required))
     {
         None => Some((Step::Build(kind), construction.cost)),
-        Some(missing) => requirement_step(observation, *missing, depth),
+        Some(missing) => requirement_step(observation, map, *missing, depth),
     }
 }
 
-/// A missing requirement already under construction is waited for.
+/// The step toward a missing requirement. An upgraded tier is reached by
+/// upgrading the seat's own completed building one rung short, the one
+/// nearest home in the seat's frame whose upgrade has the support it needs;
+/// with none, the seat waits. A missing building already under construction
+/// is waited for too.
 fn requirement_step(
     observation: &ObservationData,
-    missing: BuildingKind,
+    map: &MapModel,
+    missing: Prerequisite,
     depth: u8,
 ) -> Option<(Step, u32)> {
-    if owned(observation, missing) > 0 || depth <= 1 {
+    if depth <= 1 {
         return None;
     }
-    build_step(observation, missing, depth - 1)
+    if missing.tier > 0 {
+        let frame = HomeFrame::of(observation, map);
+        let building = observation
+            .my_buildings
+            .iter()
+            .filter(|building| {
+                building.kind == missing.kind
+                    && building.built
+                    && building.tier.checked_add(1) == Some(missing.tier)
+                    && (!building.kind.upgrade_needs_foundry_support(building.tier)
+                        || expansion::supported(observation, building.anchor))
+            })
+            .min_by_key(|building| {
+                let centre = footprint_centre(building.kind, building.anchor);
+                frame.map(|frame| frame.rank(frame.home, centre))
+            })?;
+        let upgrade = building.kind.upgrade_from(building.tier)?;
+        return match upgrade
+            .requires
+            .iter()
+            .find(|required| !met(observation, **required))
+        {
+            None => Some((Step::Upgrade(building.id), upgrade.cost)),
+            Some(further) => requirement_step(observation, map, *further, depth - 1),
+        };
+    }
+    if owned(observation, missing.kind) > 0 {
+        return None;
+    }
+    build_step(observation, map, missing.kind, depth - 1)
 }
 
 /// Built own producers that can train `kind` for the seat now.
@@ -532,4 +590,13 @@ fn built(observation: &ObservationData, kind: BuildingKind) -> bool {
         .my_buildings
         .iter()
         .any(|building| building.kind == kind && building.built)
+}
+
+/// Whether the seat meets `need`: a completed own building of its kind at
+/// its tier or above, as the simulation checks.
+pub(crate) fn met(observation: &ObservationData, need: Prerequisite) -> bool {
+    observation
+        .my_buildings
+        .iter()
+        .any(|building| building.kind == need.kind && building.built && building.tier >= need.tier)
 }

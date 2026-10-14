@@ -264,7 +264,7 @@ fn every_building_inherits_single_and_group_actions_from_capabilities() {
         for count in [1, 2] {
             let mut selected = original.clone();
             selected.buildings.truncate(count);
-            selected.tech = BuildingKind::ALL.to_vec();
+            selected.tech = BuildingKind::ALL.iter().map(|kind| (*kind, 0)).collect();
             for b in &mut selected.buildings {
                 b.kind = kind;
             }
@@ -319,5 +319,127 @@ fn a_deep_bore_waits_for_a_foundry_in_reach() {
     assert_eq!(
         batch.reason.as_deref(),
         Some("needs a Foundry within 8 tiles")
+    );
+}
+
+/// Loads every selected magazine to capacity, as finished assembly does.
+fn load_selected(game: &mut Game) {
+    let mut json = serde_json::to_value(&*game.state).unwrap();
+    for id in &game.presentation.selection.buildings {
+        let b = json["buildings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|b| b["id"] == serde_json::json!(id))
+            .unwrap();
+        let kind: BuildingKind = serde_json::from_value(b["kind"].clone()).unwrap();
+        b["magazine"]["loaded"] = kind.magazine().unwrap().capacity.into();
+    }
+    *game.state = serde_json::from_value(json).unwrap();
+}
+
+#[test]
+fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_order() {
+    let mut game = fixture(BuildingKind::Spire, &[0], 2000);
+    let bindings = BindingMap::classic();
+    let card = |game: &Game, title: &str| {
+        SelectedBuildings::inspect(&game.view())
+            .cards(&bindings)
+            .into_iter()
+            .find(|card| card.title == title)
+            .unwrap_or_else(|| panic!("no {title} card"))
+    };
+    assert!(!card(&game, "Launch").enabled, "nothing to launch yet");
+    assert!(card(&game, "Order warhead").enabled);
+    assert!(!card(&game, "Cancel warhead").enabled);
+    assert_eq!(
+        card(&game, "Autofill: off").action,
+        CardAction::Dispatch(Action::ToggleAutofill)
+    );
+    load_selected(&mut game);
+    assert!(card(&game, "Launch").enabled);
+    assert!(
+        !card(&game, "Order warhead").enabled,
+        "one warhead fills a Spire"
+    );
+    let selected = SelectedBuildings::inspect(&game.view());
+    assert_eq!(
+        selected.loaded_silos(),
+        game.presentation.selection.buildings
+    );
+    assert!(matches!(
+        selected.autofill_toggle(),
+        Some(Command::SetAutofill { enabled: true, .. })
+    ));
+}
+
+#[test]
+fn an_order_the_bank_cannot_pay_is_refused_with_its_price() {
+    let cost = BuildingKind::Spire.magazine().unwrap().round_cost;
+    let game = fixture(BuildingKind::Spire, &[0], cost - 1);
+    let selected = SelectedBuildings::inspect(&game.view());
+    let expected = format!("needs {cost} scrap");
+    assert_eq!(selected.round_order(), Err(expected.clone()));
+    let order = selected
+        .cards(&BindingMap::classic())
+        .into_iter()
+        .find(|card| card.title == "Order warhead")
+        .unwrap();
+    assert!(!order.enabled);
+    assert_eq!(order.why, Some(expected));
+    let funded = fixture(BuildingKind::Spire, &[0], cost);
+    assert_eq!(
+        SelectedBuildings::inspect(&funded.view()).round_order(),
+        Ok(funded.presentation.selection.buildings[0])
+    );
+}
+
+#[test]
+fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
+    let mut game = fixture(BuildingKind::Lattice, &[0, 0], 2000);
+    // Both start with autofill on.
+    let selected = SelectedBuildings::inspect(&game.view());
+    assert!(matches!(
+        selected.autofill_toggle(),
+        Some(Command::SetAutofill { enabled: false, .. })
+    ));
+    let ids = game.presentation.selection.buildings.clone();
+    assert_eq!(selected.round_recipient(), Some(ids[0]));
+    assert_eq!(selected.round_to_cancel(), None);
+    load_selected(&mut game);
+    assert_eq!(
+        SelectedBuildings::inspect(&game.view()).round_recipient(),
+        None,
+        "two full batteries take no order"
+    );
+}
+
+#[test]
+fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
+    let mut game = fixture(BuildingKind::Spire, &[0], 2000);
+    load_selected(&mut game);
+    let spire = game.presentation.selection.buildings[0];
+    game.issue(Command::Launch {
+        building: spire,
+        // Behind the deck, which starts facing the map's centre.
+        target: chassis::grid::TilePos::new(0, 11),
+    });
+    assert_accepted(&mut game);
+    let fabricator = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    game.presentation.selection.buildings.push(fabricator);
+    stop_or_scrap(&mut game);
+    assert!(
+        matches!(
+            &game.pending.last().unwrap().command,
+            Command::ClearFocus { buildings } if buildings == &[spire]
+        ),
+        "{:?}",
+        game.pending
     );
 }

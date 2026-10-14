@@ -292,7 +292,7 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
 fn building_glyph(kind: oxide_sim::BuildingKind, p: Vec2, ink: Color) {
     use oxide_sim::BuildingKind::{
         Airworks, Array, Barricade, Bastion, Crucible, Extractor, Fabricator, FlakTurret, Foundry,
-        Reclaimer, RepairBay, ScuttleCharge, Turret,
+        Lattice, Reclaimer, RepairBay, ScuttleCharge, Spire, Turret,
     };
     let line = |a: (f32, f32), b: (f32, f32)| {
         draw_line(p.x + a.0, p.y + a.1, p.x + b.0, p.y + b.1, 1.35, ink);
@@ -361,6 +361,18 @@ fn building_glyph(kind: oxide_sim::BuildingKind, p: Vec2, ink: Color) {
         ScuttleCharge => {
             line((-3.0, -3.0), (3.0, 3.0));
             line((-3.0, 3.0), (3.0, -3.0));
+        }
+        Spire => {
+            line((0.0, -5.0), (-2.5, -1.0));
+            line((0.0, -5.0), (2.5, -1.0));
+            line((-2.5, -1.0), (-2.5, 4.0));
+            line((2.5, -1.0), (2.5, 4.0));
+            line((-4.0, 4.0), (4.0, 4.0));
+        }
+        Lattice => {
+            draw_circle_lines(p.x - 2.5, p.y, 2.2, 1.3, ink);
+            draw_circle_lines(p.x + 2.5, p.y, 2.2, 1.3, ink);
+            line((-5.0, 4.5), (5.0, 4.5));
         }
     }
 }

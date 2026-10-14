@@ -129,6 +129,37 @@ pub(super) fn dispatch_action(
                 game.issue(Command::Stop { units });
             }
         }
+        Action::Launch => {
+            let silos =
+                crate::building_actions::SelectedBuildings::inspect(&game.view()).loaded_silos();
+            if silos.is_empty() {
+                game.presentation.toast("No warhead loaded");
+                return;
+            }
+            input.disarm_click_verbs();
+            input.striking = silos;
+        }
+        Action::OrderRound => {
+            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+            match selected.round_order() {
+                Ok(building) => game.issue(Command::OrderRound { building }),
+                Err(why) => game
+                    .presentation
+                    .toast(crate::typography::sentence_case(&why)),
+            }
+        }
+        Action::CancelRound => {
+            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+            if let Some(building) = selected.round_to_cancel() {
+                game.issue(Command::CancelRound { building });
+            }
+        }
+        Action::ToggleAutofill => {
+            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+            if let Some(command) = selected.autofill_toggle() {
+                game.issue(command);
+            }
+        }
         Action::TrainSlot(_)
         | Action::Upgrade
         | Action::SetRally
@@ -244,6 +275,10 @@ pub(super) fn dispatch_action(
             }
             if !input.rallying.is_empty() {
                 input.rallying.clear();
+                return;
+            }
+            if !input.striking.is_empty() {
+                input.striking.clear();
                 return;
             }
             if input.patrol_route.take().is_some() {

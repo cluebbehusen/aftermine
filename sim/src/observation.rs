@@ -235,6 +235,13 @@ pub struct ObservationData {
     /// seeing (fog-honest: the impact tile must be visible). Sorted by
     /// (y, x).
     pub incoming_shells: Vec<TilePos>,
+    /// Magazines this seat may know of, in building-id order: its team's
+    /// in full, hostile ones' loaded rounds and deck while in sight.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub magazines: Vec<crate::strike::KnownMagazine>,
+    /// Warheads in flight this seat may know of, in id order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warheads: Vec<crate::strike::KnownWarhead>,
 }
 
 impl ObservationData {
@@ -403,6 +410,8 @@ impl ObservationData {
             .map(|s| TilePos::containing(s.impact))
             .collect();
         obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
+        obs.magazines = state.omniscient_magazines(me);
+        obs.warheads = state.omniscient_warheads(me);
         obs
     }
 
@@ -548,6 +557,8 @@ impl ObservationData {
             .filter(|t| vision.visible(*t))
             .collect();
         obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
+        obs.magazines = state.known_magazines(me);
+        obs.warheads = state.known_warheads(me);
         obs
     }
 
@@ -590,6 +601,8 @@ impl ObservationData {
             contact_tracks: Vec::new(),
             my_shells: 0,
             incoming_shells: Vec::new(),
+            magazines: Vec::new(),
+            warheads: Vec::new(),
         }
     }
 }

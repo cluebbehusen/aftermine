@@ -226,6 +226,21 @@ by support. A Bay, standing or planned, treats the buildings it reaches and as
 many units in reach as its slots hold after earlier Bays took theirs, so wounded
 a full Bay cannot take can justify another beside it.
 
+The seat expects enemy Spires before it sees one. An enemy holding a Deep Bore,
+which every seat sees, or a seen Crucible counts as one possible Spire, and
+earns a Lattice over the most valuable base only; an enemy holding both earns
+Lattice cover over every base, as a known Spire does. Known enemy Spires, seen,
+remembered, or given away by a tracked warhead's line, call for interceptors in
+proportion. A base counts as covered by the own Lattices, built or not, whose
+ring holds its costliest point, where one warhead would take the most; a site is
+worth the bases it would cover, weighted by fortification, and by half when the
+threat is only one half of a Spire's tech. Among equal sites the one nearest
+home wins, so the battery stands behind what it guards. Arrays then also watch
+where the line from the nearest known enemy Spire, or failing one the nearest
+known Spire tech, crosses into the ring of a Lattice guarding the base, just
+outside, at and just inside it, so radar holds a warhead long enough for the
+Lattice to stop it.
+
 Defenses upgrade in place (Heavy Turret, Bulwark, Burst Flak, Citadel, Deep
 Array) once the next tier's prerequisite stands, worth how far the approach they
 cover still falls short of holding, counting for a Citadel only ground something
@@ -399,6 +414,34 @@ known anti-air reaching them outweighs them. A target a strike withdrew from,
 lost its aircraft to, or stood idle beside is skipped for a while. A defense may
 take a strike's aircraft while they gather or withdraw.
 
+## Warheads
+
+The seat values a warhead on each footprint tile of every known hostile
+building, seen, remembered or public, and on a hostile start it has never seen
+as the Foundry there: the scrap paid for each building times the share of its
+known health the simulation's own falloff and resistance would take there, after
+what the team's warheads already flying will take. Known hostile Lattices whose
+ring holds the tile count their loaded interceptors when seen and a full
+magazine when remembered. A volley is worth firing when the warheads that get
+past those interceptors take at least the price of every round it spends.
+
+Loaded Spires with no strike pending launch at such a volley: Veteran and Prime
+at the one that takes the most beyond its price, Scrapheap and Standard at the
+worthy aim nearest home, each with the fewest Spires that get through, the
+Spires nearest the aim firing. Launches are unit orders and count against the
+decision's allowance; a volley the allowance cannot hold whole waits. Otherwise
+loaded Spires hold.
+
+Once a Crucible stands and a known strike is worth a round, the seat wants a
+Spire, upgrading its own supported Extractor nearest home into a Deep Bore first
+when it lacks one; a round for each empty Spire once, with the others stocked,
+it could land one where it is worth it; and another Spire when every Spire is
+stocked or going up and known interceptors over every worthy aim match the
+Spires it has. Siege weighs them, each more the more its best strike takes, and
+income scales them as it does the Crucible. Rounds are saved for like any
+investment and ordered once the bank covers one. Autofill stays as each kind
+starts: Lattices reload on their own and Spires do not.
+
 ## Raids
 
 While no defense is under way, free, idle and healthy raiders of one kind beyond
@@ -511,9 +554,10 @@ leave unspent could keep one more as busy (carriers, Scuttlers and Sappers never
 call for one), an expansion Foundry at a scrap field away from every start, an
 Extractor on a free frame, more Reclaimers (worth more with no expansion left,
 and each one owned weighing less against the next as the scrap around home runs
-out), static defenses, Repair Bays, upgrades, and the unit a wanted role suits
-best when it costs more than the scrap on hand and the role has a cheaper unit
-production would buy instead, worth more the more of two of it the role lacks.
+out), static defenses, Repair Bays, upgrades, the unit a wanted role suits best
+when it costs more than the scrap on hand and the role has a cheaper unit
+production would buy instead, worth more the more of two of it the role lacks,
+and Spires, their rounds and Lattices (see Warheads and Static defense).
 Saturated harvesting, time, income, home depletion, army needs, a needed lift
 and personality set the scores.
 
@@ -532,7 +576,9 @@ A Deep Bore is guarded as worth more than a Crucible. The seat saves for one
 target at a time. It starts saving only for an investment that scores well and
 could stand somewhere it knows of or could look, keeps it while it still scores,
 and switches only for one that scores clearly higher. Prerequisites come first:
-saving for Airworks buys a Fabricator.
+saving for Airworks buys a Fabricator, and one needing an upgraded tier, such as
+a Spire's Deep Bore, upgrades the seat's own building one rung short, nearest
+home and with the support its upgrade needs, or waits while that upgrade runs.
 
 When it adopts a target a share of its bank is protected from ordinary spending,
 and while it saves a share of its estimated income is added, up to the next
@@ -612,14 +658,14 @@ headless, saved and recovered sessions build it from the same scenario data.
 enemy units, footprints it recently failed to claim, enemy buildings it recently
 gave up attacking, lifting to or striking, or raided, its own units sitting out
 orders after a stall, its income sample, and its saving target with the
-protected amount and any purchase awaiting confirmation, its missions with their
-phases, members, goals and focus, since when a free army that could attack has
-not, and when it last saw each scouting point. The host saves the seat's
-`OwnEvents` beside it. Restoring it checks that the seat is a configured
-`oxide-opponent` bot in the bound scenario and world and that nothing it
-remembers is from a later tick or off the map, rebuilds the profile and decision
-interval from the scenario, and takes the map model built from it. A saved
-buffer over the cap does not load.
+protected amount and any purchase awaiting confirmation (a round counts once its
+Spire shows it ordered or loaded), its missions with their phases, members,
+goals and focus, since when a free army that could attack has not, and when it
+last saw each scouting point. The host saves the seat's `OwnEvents` beside it.
+Restoring it checks that the seat is a configured `oxide-opponent` bot in the
+bound scenario and world and that nothing it remembers is from a later tick or
+off the map, rebuilds the profile and decision interval from the scenario, and
+takes the map model built from it. A saved buffer over the cap does not load.
 
 `Opponent::act_traced` returns a `Trace` of the decision's tick, seat, bank,
 received own events, committed spending, purchases, unit-order count, allowance,

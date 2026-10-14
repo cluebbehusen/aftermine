@@ -55,6 +55,10 @@ SFX_CATEGORY_BUDGETS = {
     "propulsion-loop": (4.0, 0.50),
     "destruction": (1.5, 0.50),
     "result": (3.0, 0.50),
+    # The Spire's launch, warning, and detonation are rare, map-wide events
+    # (one warhead a minute at most), so each may run longer than a weapon
+    # report without crowding the mix; the cap still keeps one gesture.
+    "strategic": (3.0, 0.50),
 }
 SFX_ATTACK_AUDIBILITY_NAMES = {
     "attack_breaker",
@@ -142,6 +146,13 @@ SFX_METADATA = (
     ("demolition_boom", "destruction", 0.65, 0.20, None),
     ("upgrade_done", "economy", 0.35, 0.30, None),
     ("intercept_zap", "generic-weapon", 0.24, 0.08, None),
+    ("spire_launch", "strategic", 0.50, 0.50, None),
+    ("incoming_warning", "strategic", 0.40, 1.50, None),
+    ("warhead_detonation", "strategic", 0.65, 0.50, None),
+    ("interceptor_launch", "signature-weapon", 0.35, 0.20, None),
+    ("interception", "signature-weapon", 0.68, 0.20, None),
+    ("warhead_flight", "propulsion-loop", 0.35, 0.20, None),
+    ("interceptor_flight", "propulsion-loop", 0.30, 0.20, None),
     (
         "attack_bombard",
         "signature-weapon",
@@ -216,9 +227,27 @@ EXPECTED_SFX_SHA256 = {
     "unit_death.wav": "b875ac45ad46385a8c5acc3f29f150496fb39071dc2c2bcb036b5d28b0538fec",
     "victory.wav": "ce13a0edb4afb7ad38fcbdf2d33d6afdf4f52ae6f9f3108fe37c8e4291e22ff2",
     "intercept_zap.wav": "4bedf27c34fe11970a0109a9ff81a627eb2c67569eca1b35cc2f623e6269b18a",
+    "spire_launch.wav": "8738e26f6daec50f38ff9d381682a42a143521b09de4ac96b9e153cd7c18039c",
+    "incoming_warning.wav": "4abc0168ecd66353cbec9a9e2316964f2a696e769671c54370b0807b37cc934d",
+    "warhead_detonation.wav": "061059717a4a7b43abf92c4150674d603f97a2f0603cb6a2332faa3a679c4040",
+    "interceptor_launch.wav": "5d3c7e6a91c406c81762be260bb38b3169d3d584cc2ff82951c1df543b3c56d6",
+    "interception.wav": "d2c2412d0567d65108ce1096880ef576fde7029706ee36fd65ec7e77cb350293",
+    "warhead_flight.wav": "b85c23aae2abfb1fc247c7e7e6998dcef0d4b71575057333b604aa7f6334f9c2",
+    "interceptor_flight.wav": "077aab9f1523779c6ae787fef587eef67dc7dff11da3ca168eef4528f5d2f1c1",
 }
-SFX_ROUNDED_PCM = {"avalanche_launch", "avalanche_motor", "rocket_impact"}
-SFX_LOOP_NAMES = {"avalanche_motor"}
+SFX_ROUNDED_PCM = {
+    "avalanche_launch",
+    "avalanche_motor",
+    "rocket_impact",
+    "spire_launch",
+    "incoming_warning",
+    "warhead_detonation",
+    "interceptor_launch",
+    "interception",
+    "warhead_flight",
+    "interceptor_flight",
+}
+SFX_LOOP_NAMES = {"avalanche_motor", "warhead_flight", "interceptor_flight"}
 SFX_META_BY_NAME = {row[0]: row for row in SFX_METADATA}
 
 
@@ -1420,6 +1449,207 @@ def sfx_intercept_zap() -> np.ndarray:
     return sfx_finish(result, highpass=260, peak=0.78)
 
 
+def strategic_axis(seconds: float) -> np.ndarray:
+    return np.arange(round(seconds * SFX_RATE)) / SFX_RATE
+
+
+def sfx_latch(
+    seed: int, low: float = 1400, high: float = 4600, ms: float = 45
+) -> np.ndarray:
+    n = int(ms / 1000 * SFX_RATE)
+    return sfx_attack(
+        sfx_bandpass(sfx_noise(n, seed), low, high) * sfx_decay(n, 7.5), 2.0
+    )
+
+
+def sfx_voiced(
+    samples: np.ndarray,
+    highpass: float = 110.0,
+    presence: float = 0.45,
+    peak: float = 0.9,
+) -> np.ndarray:
+    """Missing-fundamental voicing for laptop speakers: thin the sub and lift
+    the low mids that imply it."""
+    lifted = sfx_highpass(samples, highpass, 2) + presence * sfx_bandpass(
+        samples, 320.0, 2600.0, 2
+    )
+    return sfx_finish(lifted, highpass=highpass, peak=peak)
+
+
+def sfx_spire_launch() -> np.ndarray:
+    # The deck locks unlatch, then a pressure blast and a hiss roar that
+    # recedes as the warhead climbs: the Avalanche's rocket language at
+    # strategic scale, one gesture.
+    canvas = SfxCanvas(2.2)
+    canvas.add(sfx_latch(5101), 0.0, 0.55).add(sfx_latch(5102), 0.11, 0.6)
+    t = strategic_axis(2.0)
+    pressure = rocket_noise(2.0, 5103, 45, 1100) * np.exp(-t * 3.2)
+    roar = (
+        rocket_noise(2.0, 5104, 140, 3200)
+        * (1 - np.exp(-t * 30))
+        * np.exp(-t * 1.6)
+    )
+    body = (
+        np.sin(2 * np.pi * (70 * t - 12 * t * t))
+        + 0.4 * np.sin(2 * np.pi * 3 * (70 * t - 12 * t * t))
+    ) * np.exp(-t * 3.0)
+    canvas.add(
+        0.75 * pressure
+        + 0.5 * sfx_swept_lowres(roar, 3200, 700, resonance=1.2)
+        + 0.3 * body,
+        0.2,
+    )
+    return rocket_finish(canvas.output())
+
+
+def sfx_incoming_warning() -> np.ndarray:
+    # The under-attack alert's own falling tritone, doubled an octave down
+    # and played twice, so a warhead reads as the same kind of bad news.
+    canvas = SfxCanvas(0.8)
+    for repeat in range(2):
+        for frequency, offset, gain in (
+            (587.33, 0.0, 0.45),
+            (293.66, 0.0, 0.3),
+            (415.30, 0.085, 0.45),
+            (207.65, 0.085, 0.3),
+        ):
+            n = int((0.08 if offset else 0.07) * SFX_RATE)
+            tone = sfx_softsquare(np.full(n, frequency), 2.2) * sfx_decay(n, 6.5)
+            canvas.add(tone, 0.28 * repeat + offset, gain)
+    return sfx_finish(
+        sfx_space(sfx_crush(canvas.output(), 11, 2), 0.1, tail=0.15),
+        highpass=110,
+        peak=0.8,
+    )
+
+
+def sfx_warhead_detonation() -> np.ndarray:
+    # The approved rocket impact at strategic scale: a diffuse pressure
+    # bloom with an FM discharge falling very low, voiced so its depth
+    # survives laptop speakers.
+    seconds = 2.6
+    t = strategic_axis(seconds)
+    fracture = rocket_noise(seconds, 6301, 250, 7100) * np.exp(-t * 26)
+    pressure = rocket_noise(seconds, 6302, 30, 900) * np.exp(-t * 2.4)
+    bloom = (1 - np.exp(-t * 50)) * np.exp(-t * 2.6)
+    air = rocket_noise(seconds, 6303, 260, 3000)
+    phase = 2 * np.pi * (55.0 * t + 260 * 0.09 * (1 - np.exp(-t / 0.09)))
+    discharge = np.sin(phase + 3.0 * np.exp(-t * 3) * np.sin(phase * 2.0)) + 0.3 * np.sin(
+        phase * 3.0
+    )
+    low = 2 * np.pi * (36.7 * t + 45 * 0.07 * (1 - np.exp(-t / 0.07)))
+    body = (np.sin(low) + 0.3 * np.sin(3 * low)) * np.exp(-t * 3.5)
+    dry = (
+        0.22 * fracture
+        + 0.65 * pressure
+        + 0.35 * body
+        + (0.55 * air * (0.6 + 0.4 * np.sin(phase * 1.5)) + 0.55 * discharge) * bloom
+    )
+    return sfx_voiced(rocket_finish(dry), presence=0.3)
+
+
+def sfx_interceptor_launch() -> np.ndarray:
+    # A Lattice pod fires: a tight pressure pop into a hiss that rises as
+    # the round leaves.
+    seconds = 0.5
+    t = strategic_axis(seconds)
+    pop = rocket_noise(seconds, 7101, 300, 4000) * np.exp(-t * 45)
+    hiss = (
+        rocket_noise(seconds, 7102, 1200, 8000)
+        * (1 - np.exp(-t * 60))
+        * np.exp(-t * 6)
+    )
+    hiss = sfx_swept_lowres(hiss, 1500, 7000, resonance=1.5)
+    return rocket_finish(0.6 * pop + 0.6 * hiss, peak=0.82)
+
+
+def sfx_airburst(
+    seconds: float,
+    seed: int,
+    *,
+    discharge_hz: float,
+    index: float = 3.0,
+    fracture: float = 0.3,
+    pressure: float = 0.55,
+    body_hz: float = 0.0,
+    body: float = 0.0,
+    air: float = 0.5,
+    discharge: float = 0.55,
+    speed: float = 2.6,
+    air_band: tuple[float, float] = (300.0, 3600.0),
+) -> np.ndarray:
+    """The warhead detonation's pressure bloom and FM discharge, shortened
+    by `speed` and raised for a burst in the sky."""
+    t = strategic_axis(seconds)
+    frac = rocket_noise(seconds, seed, 250, 7100) * np.exp(-t * 26 * speed)
+    press = rocket_noise(seconds, seed + 1, 60, 1100) * np.exp(-t * 2.4 * speed)
+    bloom = (1 - np.exp(-t * 60)) * np.exp(-t * 2.6 * speed)
+    hiss = rocket_noise(seconds, seed + 2, *air_band)
+    sweep = discharge_hz * 4.7
+    phase = 2 * np.pi * (discharge_hz * t + sweep * 0.05 * (1 - np.exp(-t / 0.05)))
+    fm = np.sin(phase + index * np.exp(-t * 3 * speed) * np.sin(phase * 2.0)) + 0.3 * np.sin(
+        phase * 3.0
+    )
+    dry = (
+        fracture * frac
+        + pressure * press
+        + (air * hiss * (0.6 + 0.4 * np.sin(phase * 1.5)) + discharge * fm) * bloom
+    )
+    if body:
+        low = 2 * np.pi * (body_hz * t + body_hz * 1.2 * 0.04 * (1 - np.exp(-t / 0.04)))
+        dry = dry + body * (np.sin(low) + 0.3 * np.sin(3 * low)) * np.exp(-t * 3.5 * speed)
+    return rocket_finish(dry)
+
+
+def sfx_interception() -> np.ndarray:
+    # A Lattice interceptor meets its warhead in the sky: the detonation's
+    # small sibling, its bloom and discharge an octave and a fifth up and a
+    # third as long.
+    return sfx_voiced(
+        sfx_airburst(1.0, 10101, discharge_hz=146.83, body_hz=73.42, body=0.25),
+        presence=0.3,
+    )
+
+
+STRATEGIC_LOOP_SECONDS = 4.0
+
+
+def strategic_loop(samples: np.ndarray, rms: float = 0.145) -> np.ndarray:
+    """A four-second motor loop at the Avalanche motor's compact level,
+    rolled to a quiet boundary without splicing the periodic waveform."""
+    samples = rocket_finish(samples, peak=0.5, loop=True)
+    samples *= min(1.0, rms / np.sqrt(np.mean(samples**2)))
+    boundary = np.argmin(np.abs(samples) + np.abs(np.roll(samples, 1)))
+    return np.roll(samples, -boundary)
+
+
+def strategic_flutter(seed: int, depth: float, low: float, high: float) -> np.ndarray:
+    return 1 + depth * np.tanh(
+        rocket_noise(STRATEGIC_LOOP_SECONDS, seed, low, high)
+    )
+
+
+def sfx_warhead_flight() -> np.ndarray:
+    # A warhead under power: the Spire launch's roar band carried on, high-
+    # passed for the loop, with a slow combustion throb.
+    t = strategic_axis(STRATEGIC_LOOP_SECONDS)
+    roar = rocket_noise(STRATEGIC_LOOP_SECONDS, 11201, 200, 3200)
+    under = rocket_noise(STRATEGIC_LOOP_SECONDS, 11202, 190, 700)
+    throb = 1 + 0.08 * np.sin(2 * np.pi * 6.0 * t)
+    return strategic_loop(
+        (0.6 * roar + 0.35 * under) * throb * strategic_flutter(11203, 0.03, 8, 30)
+    )
+
+
+def sfx_interceptor_flight() -> np.ndarray:
+    # An interceptor climbing to its warhead: a thin, bright needle hiss.
+    hiss = rocket_noise(STRATEGIC_LOOP_SECONDS, 12201, 2000, 9000)
+    edge = rocket_noise(STRATEGIC_LOOP_SECONDS, 12202, 4500, 10000)
+    return strategic_loop(
+        (0.8 * hiss + 0.2 * edge) * strategic_flutter(12203, 0.06, 25, 70), rms=0.11
+    )
+
+
 SFX_BUILDERS = {
     "piledriver_fold": sfx_piledriver_fold,
     "piledriver_deploy": sfx_piledriver_deploy,
@@ -1449,6 +1679,13 @@ SFX_BUILDERS = {
     "demolition_boom": sfx_demolition_boom,
     "upgrade_done": sfx_upgrade_done,
     "intercept_zap": sfx_intercept_zap,
+    "spire_launch": sfx_spire_launch,
+    "incoming_warning": sfx_incoming_warning,
+    "warhead_detonation": sfx_warhead_detonation,
+    "interceptor_launch": sfx_interceptor_launch,
+    "interception": sfx_interception,
+    "warhead_flight": sfx_warhead_flight,
+    "interceptor_flight": sfx_interceptor_flight,
     "attack_bombard": sfx_bombard,
     "attack_bastion": sfx_bastion,
     "artillery_launch": sfx_artillery_launch,

@@ -26,6 +26,7 @@ use oxide_sim::{
     BuildingId, Command, Event, GameResult, OrderKey, PlayerCommand, PlayerId, Scenario, State,
     Target, UnitId, UnitKind,
 };
+use serde_json::json;
 
 /// Ticks per run.
 const TICKS: u64 = 5_000;
@@ -70,11 +71,15 @@ enum CommandTag {
     Accompany,
     Retire,
     Scout,
+    OrderRound,
+    CancelRound,
+    SetAutofill,
+    Launch,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 27] = [
+const COMMAND_TAGS: [CommandTag; 31] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -102,6 +107,10 @@ const COMMAND_TAGS: [CommandTag; 27] = [
     CommandTag::Accompany,
     CommandTag::Retire,
     CommandTag::Scout,
+    CommandTag::OrderRound,
+    CommandTag::CancelRound,
+    CommandTag::SetAutofill,
+    CommandTag::Launch,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -145,6 +154,10 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::Accompany => 24,
         CommandTag::Retire => 25,
         CommandTag::Scout => 26,
+        CommandTag::OrderRound => 27,
+        CommandTag::CancelRound => 28,
+        CommandTag::SetAutofill => 29,
+        CommandTag::Launch => 30,
     }
 }
 
@@ -178,6 +191,10 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::Accompany { .. } => CommandTag::Accompany,
         Command::Retire { .. } => CommandTag::Retire,
         Command::Scout { .. } => CommandTag::Scout,
+        Command::OrderRound { .. } => CommandTag::OrderRound,
+        Command::CancelRound { .. } => CommandTag::CancelRound,
+        Command::SetAutofill { .. } => CommandTag::SetAutofill,
+        Command::Launch { .. } => CommandTag::Launch,
     }
 }
 
@@ -231,7 +248,7 @@ fn unit_kind_index(kind: UnitKind) -> usize {
 
 /// Every building kind, frame-bound and tech-gated ones included —
 /// hostile input must aim at all of them.
-const BUILDING_KINDS: [BuildingKind; 13] = [
+const BUILDING_KINDS: [BuildingKind; 15] = [
     BuildingKind::Foundry,
     BuildingKind::Turret,
     BuildingKind::Fabricator,
@@ -245,6 +262,8 @@ const BUILDING_KINDS: [BuildingKind; 13] = [
     BuildingKind::Crucible,
     BuildingKind::Barricade,
     BuildingKind::ScuttleCharge,
+    BuildingKind::Spire,
+    BuildingKind::Lattice,
 ];
 
 fn building_kind_index(kind: BuildingKind) -> usize {
@@ -262,6 +281,8 @@ fn building_kind_index(kind: BuildingKind) -> usize {
         BuildingKind::Crucible => 10,
         BuildingKind::Barricade => 11,
         BuildingKind::ScuttleCharge => 12,
+        BuildingKind::Spire => 13,
+        BuildingKind::Lattice => 14,
     }
 }
 
@@ -591,6 +612,24 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             goal: tile(rng, state),
             queue: queue(rng),
         },
+        CommandTag::OrderRound => Command::OrderRound {
+            building: building_id(rng, state),
+        },
+        CommandTag::CancelRound => Command::CancelRound {
+            building: building_id(rng, state),
+        },
+        CommandTag::SetAutofill => Command::SetAutofill {
+            buildings: buildings(rng, state),
+            enabled: rng.next_below(2) == 0,
+        },
+        CommandTag::Launch => Command::Launch {
+            building: building_id(rng, state),
+            target: if rng.next_below(2) == 0 {
+                tile(rng, state)
+            } else {
+                plausible_tile(rng, state)
+            },
+        },
     }
 }
 
@@ -628,6 +667,10 @@ struct Reach {
     /// Most producers rallied onto a unit at once.
     unit_rallies: usize,
     retired: u64,
+    rounds: u64,
+    launched: u64,
+    intercepted: u64,
+    burst: u64,
 }
 
 impl Reach {
@@ -654,6 +697,10 @@ impl Reach {
         self.escorts = self.escorts.max(other.escorts);
         self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
+        self.rounds += other.rounds;
+        self.launched += other.launched;
+        self.intercepted += other.intercepted;
+        self.burst += other.burst;
     }
 }
 
@@ -703,6 +750,14 @@ fn arena() -> State {
         standing(1, BuildingKind::Turret, 27, 20),
         standing(1, BuildingKind::Fabricator, 30, 10),
         standing(1, BuildingKind::Crucible, 35, 13),
+        // Strategic pieces per seat: a silo, a battery, and radar over the
+        // battery's approach.
+        standing(0, BuildingKind::Spire, 2, 19),
+        standing(0, BuildingKind::Lattice, 14, 2),
+        standing(0, BuildingKind::Array, 20, 1),
+        standing(1, BuildingKind::Spire, 36, 2),
+        standing(1, BuildingKind::Lattice, 24, 21),
+        standing(1, BuildingKind::Array, 19, 22),
     ];
     scenario.build().expect("the fuzz arena builds")
 }
@@ -979,8 +1034,79 @@ fn exercise_scout_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+/// Seat 0's Spire, loaded by surgery, strikes into seat 1's loaded
+/// Lattice ring under seat 1's radar until the warhead is stopped, then a
+/// tile no ring covers until one bursts.
+fn exercise_warhead_reach(state: &mut State) {
+    let mut d = serde_json::to_value(&*state).unwrap();
+    for (b, value) in state
+        .buildings()
+        .iter()
+        .zip(d["buildings"].as_array_mut().unwrap())
+    {
+        if let Some(stats) = b.kind.magazine()
+            && (b.player == PlayerId(1) || b.kind == BuildingKind::Spire)
+        {
+            value["magazine"]["loaded"] = json!(stats.capacity);
+            value["magazine"]["ordered"] = json!(0);
+            value["magazine"]["progress"] = json!(0);
+        }
+    }
+    *state = serde_json::from_value(d).unwrap();
+    let spire = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Spire)
+        .unwrap()
+        .id;
+    for (target, outcome) in [
+        (TilePos::new(26, 21), "intercepted"),
+        (TilePos::new(36, 10), "burst"),
+    ] {
+        let mut d = serde_json::to_value(&*state).unwrap();
+        for (b, value) in state
+            .buildings()
+            .iter()
+            .zip(d["buildings"].as_array_mut().unwrap())
+        {
+            if b.id == spire {
+                value["magazine"]["loaded"] = json!(1);
+            }
+        }
+        *state = serde_json::from_value(d).unwrap();
+        let report = state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Launch {
+                building: spire,
+                target,
+            },
+        }]);
+        assert!(
+            !report
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::CommandRejected { .. })),
+            "the fuzz reach fixture must land Launch"
+        );
+        let mut done = false;
+        for _ in 0..600 {
+            let report = state.tick(&[]);
+            done |= report.events.iter().any(|event| match outcome {
+                "intercepted" => matches!(event, Event::WarheadIntercepted { .. }),
+                _ => matches!(event, Event::WarheadLanded { .. }),
+            });
+            if done {
+                break;
+            }
+        }
+        assert!(done, "the fuzz reach fixture's warhead must be {outcome}");
+    }
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
+    exercise_warhead_reach(&mut state);
     exercise_cancel_found_reach(&mut state);
     exercise_cancel_order_reach(&mut state);
     exercise_return_cargo_reach(&mut state);
@@ -992,6 +1118,9 @@ fn fuzz_run(seed: u64) -> Run {
         cancelled_found: 1,
         retired: 1,
         salvaged: 1,
+        launched: 2,
+        intercepted: 1,
+        burst: 1,
         ..Reach::default()
     };
     let mut decided: Option<GameResult> = None;
@@ -1066,6 +1195,10 @@ fn fuzz_run(seed: u64) -> Run {
                 Event::BuildingSalvaged { .. } => reach.salvaged += 1,
                 Event::BuildCancelled { .. } => reach.cancelled += 1,
                 Event::UnitRetired { .. } => reach.retired += 1,
+                Event::RoundAssembled { .. } => reach.rounds += 1,
+                Event::WarheadLaunched { .. } => reach.launched += 1,
+                Event::WarheadIntercepted { .. } => reach.intercepted += 1,
+                Event::WarheadLanded { .. } => reach.burst += 1,
                 _ => {}
             }
         }
@@ -1264,6 +1397,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must rally a producer onto a unit"
     );
     assert!(reach.retired > 0, "the sweep must take a unit apart");
+    assert!(reach.rounds > 0, "the sweep must assemble a round");
+    assert!(reach.launched > 0, "the sweep must launch a warhead");
+    assert!(reach.intercepted > 0, "the sweep must stop a warhead");
+    assert!(reach.burst > 0, "the sweep must land a warhead");
 }
 
 /// The forcing chain, stated as a test: the draw pool is the whole tag

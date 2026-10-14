@@ -15,7 +15,8 @@ handled or explicitly refused by the session serving them.
 - `view` turns exact simulation state into readable protocol snapshots: the
   omniscient `StateView` and the fog-honest `FogView`. `FogView` is the debug
   and agent surface; bots read the sim's `ObservationData`, a fog-honest
-  projection of the same vision.
+  projection of the same vision. Both carry magazines and warheads from the
+  sim's own `strike` projections, so they cannot disagree about a strike.
 - `input` defines the hardware-neutral event stream used by automation.
 - `framing` owns line limits, deadlines, connection handling, and response
   correlation.

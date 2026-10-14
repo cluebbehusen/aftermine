@@ -60,7 +60,7 @@ fn steer_heading(unit: &mut crate::state::Unit, direction: Vec2Fx, rate: u8) -> 
     steer_bearing(&mut unit.heading, direction, rate)
 }
 
-fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: u8) -> bool {
+pub(in crate::tick) fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: u8) -> bool {
     if rate == 0 || direction == Vec2Fx::ZERO {
         return true;
     }
@@ -720,7 +720,7 @@ const STACKED_DIRS: [Vec2Fx; 8] = [
     Vec2Fx::new(Fx::lit("0.7071"), Fx::lit("-0.7071")),
 ];
 
-pub(super) fn uses_rotated_map_frame(state: &State, pos: Vec2Fx) -> bool {
+pub(crate) fn uses_rotated_map_frame(state: &State, pos: Vec2Fx) -> bool {
     let twice_x = pos.x + pos.x;
     let twice_y = pos.y + pos.y;
     let map_width = Fx::from_num(state.map.width());

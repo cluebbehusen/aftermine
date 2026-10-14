@@ -100,6 +100,13 @@ pub(crate) const fn spec(kind: SoundKind) -> SoundSpec {
         SoundKind::DemolitionBoom => row("demolition_boom", Effects, Heavy, true, true),
         SoundKind::UpgradeDone => row("upgrade_done", Effects, Standard, false, false),
         SoundKind::InterceptZap => row("intercept_zap", Effects, Detail, true, false),
+        SoundKind::SpireLaunch => row("spire_launch", Effects, Heavy, true, false),
+        SoundKind::IncomingWarning => row("incoming_warning", Effects, Protected, true, false),
+        SoundKind::WarheadDetonation => row("warhead_detonation", Effects, Heavy, true, true),
+        SoundKind::InterceptorLaunch => row("interceptor_launch", Effects, Standard, true, false),
+        SoundKind::Interception => row("interception", Effects, Heavy, true, true),
+        SoundKind::WarheadMotor => row("warhead_flight", Effects, Heavy, true, false),
+        SoundKind::InterceptorMotor => row("interceptor_flight", Effects, Standard, true, false),
     }
 }
 
@@ -152,6 +159,10 @@ fn mixer_spec(kind: SoundKind) -> MixerSpec {
 #[derive(Default)]
 pub(crate) struct Mixer {
     pub(crate) rocket_loops: crate::rocket_audio::RocketLoops,
+    pub(crate) warhead_loops:
+        crate::strike_audio::StrikeLoops<{ crate::strike_audio::WARHEAD_VOICES }>,
+    pub(crate) interceptor_loops:
+        crate::strike_audio::StrikeLoops<{ crate::strike_audio::INTERCEPTOR_VOICES }>,
     last_played: std::collections::HashMap<SoundKind, f64>,
     /// Alternates the basic zap between two clips so volleys read as
     /// many guns, not one sample looping.

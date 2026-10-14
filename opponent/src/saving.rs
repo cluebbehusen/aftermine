@@ -206,6 +206,18 @@ fn outcome(observation: &ObservationData, investment: Investment, attempt: Attem
                 Outcome::Missing
             }
         }
+        Step::Round(id) => {
+            let ordered = observation.magazines.iter().any(|magazine| {
+                magazine.building == id
+                    && (magazine.loaded > 0
+                        || magazine.detail.is_some_and(|detail| detail.ordered > 0))
+            });
+            if ordered {
+                Outcome::Placed
+            } else {
+                Outcome::Missing
+            }
+        }
         Step::Upgrade(id) => {
             // The upgrade raises the tier as soon as it is accepted.
             let tier = match investment {

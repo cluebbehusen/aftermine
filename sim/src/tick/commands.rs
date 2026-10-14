@@ -123,14 +123,21 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 if ids.is_empty()
                     || ids.iter().any(|id| {
                         state.building(*id).is_none_or(|b| {
-                            b.player != pc.player || !b.built() || b.stats().weapons.is_empty()
+                            b.player != pc.player
+                                || !b.built()
+                                || (b.stats().weapons.is_empty() && b.launcher.is_none())
                         })
                     })
                 {
                     Err(RejectReason::NotYourBuilding)
                 } else {
                     for id in ids {
-                        state.building_mut(id).expect("validated").focus = None;
+                        let b = state.building_mut(id).expect("validated");
+                        b.focus = None;
+                        if let Some(launcher) = &mut b.launcher {
+                            launcher.target = None;
+                            launcher.ready = 0;
+                        }
                     }
                     Ok(())
                 }
@@ -178,6 +185,21 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             }
             Command::Scout { units, goal, queue } => {
                 apply_scout(state, pc.player, &canonical_units(units), *goal, *queue)
+            }
+            Command::OrderRound { building } => {
+                super::ordnance::apply_order_round(state, pc.player, *building)
+            }
+            Command::CancelRound { building } => {
+                super::ordnance::apply_cancel_round(state, pc.player, *building)
+            }
+            Command::SetAutofill { buildings, enabled } => super::ordnance::apply_set_autofill(
+                state,
+                pc.player,
+                &canonical_buildings(buildings),
+                *enabled,
+            ),
+            Command::Launch { building, target } => {
+                super::ordnance::apply_launch(state, pc.player, *building, *target)
             }
         };
         if let Err(reason) = outcome {
@@ -1495,13 +1517,7 @@ fn apply_train(
         }
         // Some machines require completed tech buildings beyond their
         // producer (the same rule for every command source).
-        let met = kind.stats().requires.iter().all(|required| {
-            state
-                .buildings
-                .iter()
-                .any(|owned| owned.player == player && owned.kind == *required && owned.built())
-        });
-        if !met {
+        if !state.requirements_met(player, kind.stats().requires) {
             return Err(RejectReason::MissingPrerequisite);
         }
     }
@@ -1636,13 +1652,7 @@ fn apply_upgrade(
     let Some(upgrade) = kind.upgrade_from(tier) else {
         return Err(RejectReason::InvalidTarget);
     };
-    let met = upgrade.requires.iter().all(|required| {
-        state
-            .buildings
-            .iter()
-            .any(|owned| owned.player == player && owned.kind == *required && owned.built())
-    });
-    if !met {
+    if !state.requirements_met(player, upgrade.requires) {
         return Err(RejectReason::MissingPrerequisite);
     }
     if kind.upgrade_needs_foundry_support(tier)

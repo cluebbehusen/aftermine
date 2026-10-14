@@ -202,7 +202,7 @@ impl<'a> Settlement<'a> {
     /// settlement flies, the building itself stays next so the saving keeps
     /// its scrap.
     pub(crate) fn next(&self, missions: &Missions, investment: Investment) -> Option<(Step, u32)> {
-        let basic = investments::step(self.observation, investment)?;
+        let basic = investments::step(self.observation, self.map, investment)?;
         let Some(target) = self.target(missions, investment) else {
             return Some(basic);
         };
@@ -228,7 +228,11 @@ impl<'a> Settlement<'a> {
             .iter()
             .any(|b| b.kind == BuildingKind::Airworks && b.built)
         {
-            return investments::step(self.observation, Investment::Tech(BuildingKind::Airworks));
+            return investments::step(
+                self.observation,
+                self.map,
+                Investment::Tech(BuildingKind::Airworks),
+            );
         }
         let builder = self
             .observation

@@ -116,10 +116,14 @@ fn command_tag(command: &Command) -> usize {
         Command::Accompany { .. } => 24,
         Command::Retire { .. } => 25,
         Command::Scout { .. } => 26,
+        Command::OrderRound { .. } => 27,
+        Command::CancelRound { .. } => 28,
+        Command::SetAutofill { .. } => 29,
+        Command::Launch { .. } => 30,
     }
 }
 
-const COMMAND_VARIANTS: usize = 27;
+const COMMAND_VARIANTS: usize = 31;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -376,6 +380,20 @@ fn every_command_variant_survives_the_send_command_wire() {
             units: vec![UnitId(6)],
             goal: TilePos::new(12, 7),
             queue: true,
+        },
+        Command::OrderRound {
+            building: BuildingId(4),
+        },
+        Command::CancelRound {
+            building: BuildingId(4),
+        },
+        Command::SetAutofill {
+            buildings: vec![BuildingId(5), BuildingId(4)],
+            enabled: false,
+        },
+        Command::Launch {
+            building: BuildingId(4),
+            target: TilePos::new(30, 12),
         },
     ];
     assert_every_tag_sampled(

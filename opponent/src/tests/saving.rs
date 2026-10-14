@@ -263,12 +263,14 @@ fn foundries_of(state: &State, kind: BuildingKind) -> usize {
 
 #[test]
 fn targets_switch_only_for_a_clearly_better_investment() {
-    let state = saturated(200).build().unwrap();
+    let scenario = saturated(200);
+    let model = map(&scenario);
+    let state = scenario.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let candidate = |investment, score| Candidate {
         investment,
         score,
-        next: investments::step(&observation, investment),
+        next: investments::step(&observation, &model, investment),
     };
     let fabricator = Investment::Tech(BuildingKind::Fabricator);
     let mut memory = Memory::default();
@@ -366,6 +368,7 @@ fn reclaimers_wait_for_the_drip_and_refineries_need_a_fabricator() {
     assert_eq!(
         investments::step(
             &observation,
+            &model,
             Investment::Upgrade {
                 building: reclaimer,
                 tier: 1
@@ -676,13 +679,15 @@ fn a_restored_seat_continues_its_saving_exactly() {
 
 #[test]
 fn a_scaffold_stays_pending_until_its_ground_is_confirmed() {
-    let state = saturated(400).build().unwrap();
+    let scenario = saturated(400);
+    let model = map(&scenario);
+    let state = scenario.build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let fabricator = Investment::Tech(BuildingKind::Fabricator);
     let candidates = [Candidate {
         investment: fabricator,
         score: 400,
-        next: investments::step(&observation, fabricator),
+        next: investments::step(&observation, &model, fabricator),
     }];
     let mut memory = Memory::default();
     let mut saving = Saving::default();

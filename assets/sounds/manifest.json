@@ -228,6 +228,64 @@
       "paired_animation": null
     },
     {
+      "category": "strategic",
+      "filename": "spire_launch.wav",
+      "min_gap": 0.5,
+      "mixer_volume": 0.5,
+      "name": "spire_launch",
+      "paired_animation": null
+    },
+    {
+      "category": "strategic",
+      "filename": "incoming_warning.wav",
+      "min_gap": 1.5,
+      "mixer_volume": 0.4,
+      "name": "incoming_warning",
+      "paired_animation": null
+    },
+    {
+      "category": "strategic",
+      "filename": "warhead_detonation.wav",
+      "min_gap": 0.5,
+      "mixer_volume": 0.65,
+      "name": "warhead_detonation",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "interceptor_launch.wav",
+      "min_gap": 0.2,
+      "mixer_volume": 0.35,
+      "name": "interceptor_launch",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "interception.wav",
+      "min_gap": 0.2,
+      "mixer_volume": 0.68,
+      "name": "interception",
+      "paired_animation": null
+    },
+    {
+      "category": "propulsion-loop",
+      "filename": "warhead_flight.wav",
+      "looped": true,
+      "min_gap": 0.2,
+      "mixer_volume": 0.35,
+      "name": "warhead_flight",
+      "paired_animation": null
+    },
+    {
+      "category": "propulsion-loop",
+      "filename": "interceptor_flight.wav",
+      "looped": true,
+      "min_gap": 0.2,
+      "mixer_volume": 0.3,
+      "name": "interceptor_flight",
+      "paired_animation": null
+    },
+    {
       "category": "signature-weapon",
       "filename": "attack_bombard.wav",
       "min_gap": 0.2,

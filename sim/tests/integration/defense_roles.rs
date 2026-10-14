@@ -127,7 +127,9 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!(bastion.construction.unwrap().build_ticks, 500);
     assert_eq!(
         bastion.construction.unwrap().requires,
-        &[BuildingKind::Fabricator]
+        &[oxide_sim::stats::Prerequisite::built(
+            BuildingKind::Fabricator
+        )]
     );
 
     // The Citadel only reaches further.
@@ -155,7 +157,12 @@ fn defense_stats_name_three_distinct_jobs() {
     );
     let upgrade = citadel.construction.unwrap();
     assert_eq!((upgrade.cost, upgrade.build_ticks), (250, 400));
-    assert_eq!(upgrade.requires, &[BuildingKind::Crucible]);
+    assert_eq!(
+        upgrade.requires,
+        &[oxide_sim::stats::Prerequisite::built(
+            BuildingKind::Crucible
+        )]
+    );
 }
 
 #[test]

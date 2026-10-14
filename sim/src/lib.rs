@@ -12,12 +12,15 @@ pub mod observation;
 pub mod scenario;
 pub mod state;
 pub mod stats;
+pub mod strike;
 mod tick;
 pub mod vision;
 
 pub use command::{Command, PlayerCommand};
 pub use event::{Event, GroundMotion, StallReason, TickReport, UnitRepairSource};
-pub use ids::{AttackTarget, BuildingId, ContactId, PlayerId, RememberedBuilding, Target, UnitId};
+pub use ids::{
+    AttackTarget, BuildingId, ContactId, PlayerId, RememberedBuilding, Target, UnitId, WarheadId,
+};
 pub use scenario::Scenario;
 pub use state::{
     Aim, Building, BuildingPhase, ExtractorIncome, ExtractorSupport, GameResult, Goal, Leash,

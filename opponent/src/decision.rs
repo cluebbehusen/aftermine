@@ -138,6 +138,12 @@ impl Ledger {
         self.push(Command::UpgradeBuilding { building });
     }
 
+    fn round(&mut self, building: BuildingId, price: u32) {
+        self.decision.spent += price;
+        self.decision.purchases.push(Purchase::Round { building });
+        self.push(Command::OrderRound { building });
+    }
+
     /// Reports an attack this decision launched.
     pub(crate) fn launched(&mut self, launch: crate::missions::Launch) {
         self.decision.launches.push(launch);
@@ -285,8 +291,8 @@ pub(crate) struct Producer<'a> {
 
 /// Defense first, then worker recovery, then an affordable saving target
 /// unless a defense is short, then workers, who also weld the wounded, then
-/// lifts, attacks, anti-air clearing, strikes, raids, focus fire and
-/// scouting, then production. A short defense instead buys an emergency static defense,
+/// lifts, attacks, anti-air clearing, strikes, raids, Spire launches, focus
+/// fire and scouting, then production. A short defense instead buys an emergency static defense,
 /// trains no Harvester beyond worker recovery, and frees protected scrap for
 /// this decision's production.
 #[expect(
@@ -613,6 +619,7 @@ pub(crate) fn decide(
     ) {
         persistent.memory.raid(kind, anchor, tick);
     }
+    crate::warheads::fire(observation, map, frame, profile.difficulty, &mut ledger);
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
@@ -761,6 +768,21 @@ fn buy(
                 return;
             };
             ledger.upgrade(id, price);
+            ledger.protected = 0;
+            persistent.saving.attempted(step, building.anchor);
+        }
+        Step::Round(id) => {
+            if !affordable {
+                return;
+            }
+            let Some(building) = observation
+                .my_buildings
+                .iter()
+                .find(|building| building.id == id)
+            else {
+                return;
+            };
+            ledger.round(id, price);
             ledger.protected = 0;
             persistent.saving.attempted(step, building.anchor);
         }

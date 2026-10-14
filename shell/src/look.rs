@@ -427,7 +427,9 @@ pub(crate) fn defense(kind: BuildingKind) -> Option<DefenseLook> {
         | BuildingKind::Airworks
         | BuildingKind::Crucible
         | BuildingKind::Barricade
-        | BuildingKind::ScuttleCharge => None,
+        | BuildingKind::ScuttleCharge
+        | BuildingKind::Spire
+        | BuildingKind::Lattice => None,
     }
 }
 

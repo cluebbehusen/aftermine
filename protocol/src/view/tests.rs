@@ -340,6 +340,8 @@ fn building_view_exposes_allied_focus_and_redacts_hostile_focus() {
         cooldown: 0,
         salvage_drained: 0,
         salvage_credited: 0,
+        magazine: None,
+        launcher: None,
     };
 
     assert_eq!(building_view(&building).focus, Some(target.into()));
@@ -533,6 +535,14 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .map(|p| (p.owner.0, p.kind, p.tier, p.anchor.x, p.anchor.y))
                     .collect();
                 assert_eq!(fog_public, obs_public, "tick {tick} seat {seat:?} public");
+                assert_eq!(
+                    fog.magazines, obs.magazines,
+                    "tick {tick} seat {seat:?} magazines"
+                );
+                assert_eq!(
+                    fog.warheads, obs.warheads,
+                    "tick {tick} seat {seat:?} warheads"
+                );
                 compared_public |= obs
                     .public_buildings
                     .iter()

@@ -409,11 +409,11 @@ fn catalog_geometry(
             .max(1.0),
     );
     let rows = count.max(1).div_ceil(max_columns);
-    // Thirteen buildings in their four categories plus Back, which
+    // Fifteen buildings in their five categories plus Back, which
     // takes the free cell under UTILITY.
-    let grouped = count == 14 && max_columns >= 7;
+    let grouped = count == 16 && max_columns >= 8;
     let columns = if grouped {
-        7
+        8
     } else {
         count.max(1).div_ceil(rows)
     };
@@ -435,7 +435,9 @@ fn catalog_geometry(
                     0..=1 => (0, i),
                     2..=5 => (1 + (i - 2) % 2, (i - 2) / 2),
                     6..=9 => (3 + (i - 6) % 2, (i - 6) / 2),
-                    _ => (5 + (i - 10) % 2, (i - 10) / 2),
+                    10..=12 => (5 + (i - 10) % 2, (i - 10) / 2),
+                    13..=14 => (7, i - 13),
+                    _ => (6, 1),
                 }
             } else {
                 (i % columns, i / columns)
@@ -507,6 +509,7 @@ fn draw_catalog(
             (2, "PRODUCTION"),
             (6, "DEFENSE"),
             (10, "UTILITY"),
+            (13, "STRATEGIC"),
         ]
         .into_iter()
         .enumerate()
