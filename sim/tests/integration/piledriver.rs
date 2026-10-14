@@ -88,6 +88,25 @@ fn a_piledriver_braces_before_its_slug_and_never_fires_on_the_move() {
         },
     )]);
     let hp = state.unit(breaker).unwrap().hp;
+    let origin = state.unit(gun).unwrap().pos;
+    let mut retractions = 0;
+    for _ in 0..40 {
+        let before = state.unit(gun).unwrap().braces();
+        state.tick(&[]);
+        let unit = state.unit(gun).unwrap();
+        let after = unit.braces();
+        if before != after {
+            assert_eq!(after, before.saturating_sub(2));
+            retractions += 1;
+        }
+        if after == 0 {
+            break;
+        }
+        assert_eq!(unit.pos, origin, "the planted gun cannot drive");
+    }
+    assert_eq!(retractions, 10, "folding takes half a second");
+    assert_eq!(state.unit(gun).unwrap().braces(), 0);
+    assert_eq!(state.unit(breaker).unwrap().hp, hp);
     let moving = run_until(&mut state, 200, |s, _| {
         s.unit(gun).unwrap().tile() == TilePos::new(5, 9)
     });

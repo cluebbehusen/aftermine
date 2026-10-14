@@ -1415,3 +1415,108 @@ fn mantle_charge_progress_follows_the_serial_counter_while_moving() {
         assert!(matches!(state.locomotion, LocomotionState::Moving { .. }));
     }
 }
+
+#[test]
+fn piledriver_plants_before_firing_and_stows_before_moving() {
+    let mut scenario = Scenario::skirmish();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Piledriver,
+            x: 4,
+            y: 6,
+        },
+        UnitSpec {
+            player: 1,
+            kind: UnitKind::Breaker,
+            x: 11,
+            y: 6,
+        },
+    ];
+    let mut state = scenario.build().unwrap();
+    let id = state.units()[0].id;
+    let mut controller = AnimationController::default();
+    controller.observe_braces(&state);
+    let mut planted = 0;
+    let mut fired = false;
+    let mut deployments = 0;
+    let mut folds = 0;
+    for _ in 0..120 {
+        let report = state.tick(&[]);
+        if let Some(change) = controller.brace_change(state.unit(id).unwrap()) {
+            match change {
+                BraceChange::Deploying => deployments += 1,
+                BraceChange::Folding => folds += 1,
+            }
+        }
+        controller.observe_braces(&state);
+        let unit = state.unit(id).unwrap();
+        let pose = controller.brace_deployment(unit, AnimationClock::from_state(&state, 0.0));
+        if report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::AttackHit {attacker, ..} if *attacker == id))
+        {
+            assert!(
+                planted >= 3,
+                "feet must be visibly planted before the report"
+            );
+            assert_eq!(pose, 1.0);
+            fired = true;
+            break;
+        }
+        planted = if pose == 1.0 { planted + 1 } else { 0 };
+    }
+    assert!(fired);
+    let origin = state.unit(id).unwrap().pos;
+    let order = player_command(Command::Run {
+        units: vec![id],
+        goal: TilePos::new(4, 9),
+        queue: false,
+    });
+    let mut partial = Vec::new();
+    let mut moved = false;
+    for tick in 0..80 {
+        state.tick(if tick == 0 {
+            std::slice::from_ref(&order)
+        } else {
+            &[]
+        });
+        if let Some(change) = controller.brace_change(state.unit(id).unwrap()) {
+            match change {
+                BraceChange::Deploying => deployments += 1,
+                BraceChange::Folding => folds += 1,
+            }
+        }
+        controller.observe_braces(&state);
+        let unit = state.unit(id).unwrap();
+        let pose = controller.brace_deployment(unit, AnimationClock::from_state(&state, 0.0));
+        if unit.pos != origin {
+            assert_eq!(pose, 0.0, "anchors must be stowed before driving");
+            moved = true;
+            break;
+        }
+        if pose > 0.0 && pose < 1.0 {
+            assert!(partial.last().is_none_or(|previous| pose < *previous));
+            partial.push(pose);
+        }
+    }
+    assert!(moved);
+    assert_eq!((deployments, folds), (1, 1));
+    assert!(
+        partial.len() >= 6,
+        "folding must have visible intermediate poses"
+    );
+    controller.braces.insert(
+        UnitId(u32::MAX),
+        BracePose {
+            previous: 1,
+            current: 1,
+            tick: 0,
+        },
+    );
+    controller.observe_braces(&state);
+    assert_eq!(controller.braces.len(), 1);
+    controller.reset_transients();
+    assert!(controller.braces.is_empty());
+}

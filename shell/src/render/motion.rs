@@ -15,6 +15,7 @@ use crate::presentation_animation::{
 };
 
 const BUZZARD_CHARGE_THRESHOLD: f32 = 0.94;
+pub(crate) const PILEDRIVER_RELOAD_FRAMES: usize = 100;
 
 /// A Harvester pose within one cargo-specific row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +95,15 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         && let Some(action) = state.transport
     {
         return skyhook_transport_frame(action);
+    }
+
+    if kind == UnitKind::Piledriver {
+        if let Some(attack) = state.attack {
+            return UnitFrame::Action(unit_attack_frame(kind, attack));
+        }
+        if let Some(progress) = preparation_progress(&state.weapons) {
+            return UnitFrame::Action(piledriver_reload_frame(progress));
+        }
     }
 
     if let Some(attack) = state.attack {
@@ -368,7 +378,22 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
     }
 }
 
+fn piledriver_reload_frame(progress: f32) -> usize {
+    // Normalizing and expanding a tick fraction can land just below its boundary.
+    numeric::to_usize((progress.clamp(0.0, 1.0) * PILEDRIVER_RELOAD_FRAMES as f32 + 0.0001).floor())
+        .min(PILEDRIVER_RELOAD_FRAMES - 1)
+}
+
 fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
+    if kind == UnitKind::Piledriver {
+        let elapsed = match attack {
+            AttackPhase::Report { progress, .. } => progress * 3.0,
+            AttackPhase::Recover { progress, .. } => {
+                3.0 + progress * (kind.stats().weapons[0].cooldown_ticks as f32 - 3.0)
+            }
+        };
+        return piledriver_reload_frame(elapsed / kind.stats().weapons[0].cooldown_ticks as f32);
+    }
     match attack {
         AttackPhase::Report { progress, .. } => match kind {
             UnitKind::Lancer | UnitKind::Bombard => 3,

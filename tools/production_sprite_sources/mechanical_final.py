@@ -50,7 +50,6 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             "warden",
             "lancer",
             "breaker",
-            "piledriver",
             "avalanche",
         ):
             count = 6 if kind == "lancer" else 4
@@ -59,9 +58,7 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                 ("_move1", 1, 0),
                 ("_move2", 2, 0),
             ] + [(f"_action{i}", 0, i) for i in range(1, count + 1)]:
-                # Placeholder: the Piledriver ships the Breaker's frames until
-                # its own art is approved.
-                if kind in ("breaker", "piledriver"):
+                if kind == "breaker":
                     image = ground.render_breaker(variant, move, action)
                 elif kind == "avalanche":
                     image = economy.render_avalanche(variant, move, action)

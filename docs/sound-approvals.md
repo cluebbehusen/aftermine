@@ -85,3 +85,21 @@ in over the launch's receding roar and out as the warhead stops burning for its
 dive, and carries on through the flight that runs on after an interception until
 the burst. The interceptor motor loops through the interceptor's visible climb
 from its pod.
+
+## Piledriver pressure discharge
+
+Approved by Connor by ear on 2026-10-13. The Piledriver uses one dry pressure
+report and a compact impact. Setup and folding retain very light mechanical
+cues, attenuated 18 dB from their initial audition levels. Reload stays silent.
+
+| Production clip         | Duration | Mixer gain  | SHA-256                                                            |
+| ----------------------- | -------- | ----------- | ------------------------------------------------------------------ |
+| `attack_piledriver.wav` | 0.39 s   | 0.55        | `f7a310f69b77e60c64a510245098e916294edb35df253147f515f58e5444740e` |
+| `piledriver_impact.wav` | 0.3 s    | 0.26        | `2cde65203180fbbad6eb2ef0e1d118a374546af586c8ef3fb22412a2fa1a585c` |
+| `piledriver_deploy.wav` | 0.82 s   | 0.023919583 | `4a4dbc55cb8d23a0cb745d0c99a470e6e87da34203ec359b93e0642b6297b6b3` |
+| `piledriver_fold.wav`   | 0.5 s    | 0.022660657 | `72a6539c1588ef3cec75f449920522d207a65a2f72c48ed44a25702f7edcfd20` |
+
+The report and impact retain their approved PCM bytes. Anchor clips retain their
+approved PCM bytes and use the quieter manifest gains. Visible anchor direction
+changes trigger setup and folding once; the impact follows the cosmetic round's
+arrival on the simulation presentation clock. Seeking discards pending impacts.

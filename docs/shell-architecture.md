@@ -861,6 +861,11 @@ and resumed presentation can reconstruct them. Soundtrack state controls music
 beds and crossfades. Audio never feeds a simulation decision. Production sprite
 and sound bytes remain owned by their generators and approval workflows.
 
+Piledriver anchor cues follow visible deployment and folding transitions. Its
+direct-shot effect owns a single pending impact cue, consumed when the cosmetic
+round reaches its target on the presentation clock. Pausing holds that cue;
+effect expiry and timeline resets discard it. Reload is silent.
+
 The tiny-skia renderer in `oxide-kit` produces whole-map CPU schematics. It does
 not share the native atlas, camera, HUD, animation, or visual polish. Screenshot
 responses identify their producer. CPU goldens prove deterministic schematic

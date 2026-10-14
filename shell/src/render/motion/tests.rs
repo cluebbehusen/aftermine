@@ -731,3 +731,47 @@ fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
         }
     }
 }
+
+#[test]
+fn piledriver_reload_runs_through_every_pose_even_when_driving() {
+    assert_eq!(
+        crate::assets::unit_action_frames(UnitKind::Piledriver),
+        PILEDRIVER_RELOAD_FRAMES
+    );
+    for age in 0..100 {
+        let attack = if age < 3 {
+            AttackPhase::Report {
+                weapon: 0,
+                progress: age as f32 / 3.0,
+            }
+        } else {
+            AttackPhase::Recover {
+                weapon: 0,
+                progress: (age - 3) as f32 / 97.0,
+            }
+        };
+        let state = UnitAnimationState {
+            attack: Some(attack),
+            locomotion: LocomotionState::Moving { cycle: 0.5 },
+            ..unit_state()
+        };
+        assert_eq!(
+            unit_mount_frame(UnitKind::Piledriver, state),
+            UnitFrame::Action(age)
+        );
+        let mut restored = state;
+        restored.attack = None;
+        restored.weapons[0] = WeaponCycle::Preparing {
+            progress: age as f32 / 100.0,
+        };
+        assert_eq!(
+            unit_mount_frame(UnitKind::Piledriver, restored),
+            UnitFrame::Action(age),
+            "checkpoint reload at {age}"
+        );
+    }
+    assert_eq!(
+        unit_mount_frame(UnitKind::Piledriver, unit_state()),
+        UnitFrame::Idle
+    );
+}

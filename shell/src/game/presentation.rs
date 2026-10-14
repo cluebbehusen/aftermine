@@ -455,6 +455,7 @@ impl Presentation {
         self.animations.reset_transients();
         self.animations.reset_workers(state);
         self.animations.observe_radars(state);
+        self.animations.observe_braces(state);
         self.audio_timeline.clear();
         self.track_motion.clear();
         self.slide_motion.clear();
@@ -648,6 +649,8 @@ impl Presentation {
         self.animations.observe_events(state.current_tick(), events);
         self.animations.observe_workers(state);
         self.animations.observe_radars(state);
+        self.queue_brace_sounds(state);
+        self.animations.observe_braces(state);
         self.spawn_fx(state, events);
         // Effects retain the intercepted flight before its launch record is removed.
         self.projectile_releases.observe(state, events);

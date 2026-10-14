@@ -1437,9 +1437,9 @@ const PILEDRIVER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(3),
     brace: Some(BraceStats {
-        deploy_ticks: 12,
+        deploy_ticks: 20,
         recoil_ticks: 8,
-        retract_per_tick: 3,
+        retract_per_tick: 2,
     }),
     target_priority: TargetPriority::Heaviest,
     crash: None,

@@ -592,6 +592,19 @@ fn home_bearing(bearing: f32, elapsed: f32) -> f32 {
     (shortest * (1.0 - (elapsed / RADAR_HOME_TICKS).clamp(0.0, 1.0))).rem_euclid(1.0)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BraceChange {
+    Deploying,
+    Folding,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BracePose {
+    previous: u8,
+    current: u8,
+    tick: u64,
+}
+
 /// Presentation-only memory for transient reports and mechanism transitions.
 #[derive(Debug, Default)]
 pub(crate) struct AnimationController {
@@ -603,6 +616,7 @@ pub(crate) struct AnimationController {
     welding_arms: HashMap<UnitId, WeldingArmTransition>,
     // The sim stops radar immediately; the shell retains its mechanical transition.
     radars: HashMap<UnitId, RadarTransition>,
+    braces: HashMap<UnitId, BracePose>,
 }
 
 impl AnimationController {
@@ -680,6 +694,7 @@ impl AnimationController {
         self.airworks_launches.clear();
         self.welding_arms.clear();
         self.radars.clear();
+        self.braces.clear();
     }
 
     /// Forgets ids no longer present in the current world.
@@ -695,6 +710,74 @@ impl AnimationController {
             state.building(*building).is_some()
                 && state.current_tick().saturating_sub(*completed_tick) < AIRWORKS_LAUNCH_TICKS
         });
+    }
+
+    pub(crate) fn brace_change(&self, unit: &Unit) -> Option<BraceChange> {
+        let pose = self.braces.get(&unit.id)?;
+        let current = unit.braces();
+        if current > pose.current && pose.current <= pose.previous {
+            Some(BraceChange::Deploying)
+        } else if current < pose.current && pose.current >= pose.previous {
+            Some(BraceChange::Folding)
+        } else {
+            None
+        }
+    }
+
+    /// Retains two bracing snapshots for the independently drawn ground anchors.
+    pub(crate) fn observe_braces(&mut self, state: &State) {
+        let tick = state.current_tick();
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Piledriver)
+        {
+            let current = unit.braces();
+            self.braces
+                .entry(unit.id)
+                .and_modify(|pose| {
+                    if pose.tick != tick {
+                        *pose = BracePose {
+                            previous: pose.current,
+                            current,
+                            tick,
+                        };
+                    }
+                })
+                .or_insert(BracePose {
+                    previous: current,
+                    current,
+                    tick,
+                });
+        }
+        self.braces.retain(|id, _| state.unit(*id).is_some());
+    }
+
+    pub(crate) fn brace_deployment(&self, unit: &Unit, clock: AnimationClock) -> f32 {
+        let total = unit
+            .kind
+            .stats()
+            .brace
+            .map_or(1, |brace| brace.deploy_ticks.max(1));
+        if unit.braces() == 0 {
+            return 0.0;
+        }
+        // Plant the feet before the firing tick so the locked stance reads clearly.
+        let moving_ticks = total.saturating_sub(4).max(1);
+        (self
+            .braces
+            .get(&unit.id)
+            .map_or(f32::from(unit.braces()), |pose| {
+                let fraction = if pose.tick == clock.completed_ticks {
+                    clock.tick_fraction
+                } else {
+                    1.0
+                };
+                f32::from(pose.previous)
+                    + (f32::from(pose.current) - f32::from(pose.previous)) * fraction
+            })
+            / f32::from(moving_ticks))
+        .clamp(0.0, 1.0)
     }
 
     /// Tracks hinge reversals and scanning; completed folds and dead units expire.
@@ -1169,7 +1252,11 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 5.0,
         },
-        UnitKind::Breaker | UnitKind::Piledriver | UnitKind::Avalanche => AttackTiming {
+        UnitKind::Piledriver => AttackTiming {
+            report_ticks: 3.0,
+            recover_ticks: UnitKind::Piledriver.stats().weapons[0].cooldown_ticks as f32 - 3.0,
+        },
+        UnitKind::Breaker | UnitKind::Avalanche => AttackTiming {
             report_ticks: 3.0,
             recover_ticks: 6.0,
         },
