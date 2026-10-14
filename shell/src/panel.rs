@@ -506,9 +506,21 @@ fn production_queue_label(
 
 /// A magazine's ordered rounds as dock chips, the head wearing its
 /// assembly meter, and the dock's heading: the time left on all of them.
-fn magazine_queue(building: &oxide_sim::Building, queue: &mut Vec<Card>) -> Option<String> {
+/// The team shares its magazines' orders; only the owner's chips cancel.
+fn magazine_queue(
+    game: &Scene<'_>,
+    building: &oxide_sim::Building,
+    queue: &mut Vec<Card>,
+) -> Option<String> {
     let stats = building.kind.magazine()?;
-    let magazine = building.magazine.filter(|m| m.ordered > 0)?;
+    let magazine = game
+        .state
+        .known_magazines(game.presentation.human)
+        .into_iter()
+        .find(|known| known.building == building.id)?
+        .detail
+        .filter(|detail| detail.ordered > 0)?;
+    let own = building.player == game.presentation.human;
     let round_ticks = stats.round_ticks.max(1);
     let title =
         crate::typography::sentence_case(crate::building_actions::round_noun(building.kind));
@@ -518,16 +530,24 @@ fn magazine_queue(building: &oxide_sim::Building, queue: &mut Vec<Card>) -> Opti
             title: title.clone(),
             cost: None,
             hotkey: String::new(),
-            action: CardAction::CancelRound(building.id, index),
+            action: if own {
+                CardAction::CancelRound(building.id, index)
+            } else {
+                CardAction::None
+            },
             enabled: true,
             why: None,
-            desc: vec![
-                format!(
-                    "{} to cancel; full refund.",
-                    crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-                ),
-                "Also turns autofill off, so it is not bought again.".into(),
-            ],
+            desc: if own {
+                vec![
+                    format!(
+                        "{} to cancel; full refund.",
+                        crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
+                    ),
+                    "Also turns autofill off, so it is not bought again.".into(),
+                ]
+            } else {
+                vec!["Read-only: allied rounds cannot be cancelled.".into()]
+            },
             progress: (index == 0)
                 .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
         });
@@ -1112,6 +1132,9 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     desc: vec!["Read-only: allied buildings cannot be controlled.".into()],
                     progress: None,
                 });
+                if let Some(label) = magazine_queue(game, first, &mut panel.queue) {
+                    panel.queue_label = label;
+                }
             }
             return Some(panel);
         }
@@ -1145,7 +1168,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     true,
                     None,
                 ));
-            } else if let Some(label) = magazine_queue(building, &mut panel.queue) {
+            } else if let Some(label) = magazine_queue(game, building, &mut panel.queue) {
                 panel.queue_label = label;
             } else {
                 panel.queue_label =

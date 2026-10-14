@@ -130,3 +130,49 @@ fn point_defense_charges_read_the_same_for_owner_and_enemy() {
         );
     }
 }
+
+#[test]
+fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked() {
+    use chassis::fx::{Fx, Vec2Fx};
+    use oxide_sim::strike::{KnownWarhead, WarheadLine};
+
+    let at = |x: i32| Vec2Fx::new(Fx::from_num(x), Fx::from_num(0));
+    let warhead = |landing: Option<i32>, stopped: bool| KnownWarhead {
+        id: oxide_sim::WarheadId(0),
+        player: None,
+        hostile: true,
+        position: at(0),
+        line: landing.map(|x| WarheadLine {
+            launch: at(0),
+            impact: at(x),
+            arrival: 100,
+        }),
+        exposure: None,
+        interceptor: stopped.then_some(oxide_sim::BuildingId(7)),
+    };
+    let summary = |warheads: &[KnownWarhead]| incoming_warheads(warheads, at(0), Fx::from_num(15));
+
+    assert_eq!(
+        summary(&[warhead(None, false)]).as_deref(),
+        Some("Tracking 1 warhead"),
+        "a contact without a line is neither incoming nor unanswered"
+    );
+    assert_eq!(
+        summary(&[warhead(Some(20), false)]),
+        None,
+        "outside the ring"
+    );
+    assert_eq!(
+        summary(&[
+            warhead(Some(5), true),
+            warhead(Some(10), false),
+            warhead(None, false),
+            KnownWarhead {
+                hostile: false,
+                ..warhead(Some(5), false)
+            },
+        ])
+        .as_deref(),
+        Some("2 incoming warheads, 1 unanswered, tracking 1 more")
+    );
+}

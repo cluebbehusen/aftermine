@@ -113,31 +113,9 @@ impl SelectionInfo {
                 format!("{:.0} tiles", battery.ring.to_num::<f32>()),
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
-            let centre = b.center();
-            let ring = battery.ring * battery.ring;
-            let (mut incoming, mut unanswered) = (0, 0);
-            for warhead in game.state.known_warheads(game.presentation.human) {
-                // A warhead still being tracked has no known line yet.
-                if !warhead.hostile
-                    || warhead
-                        .line
-                        .is_some_and(|line| line.impact.dist_sq(centre) > ring)
-                {
-                    continue;
-                }
-                incoming += 1;
-                unanswered += usize::from(warhead.interceptor.is_none());
-            }
-            if incoming > 0 {
-                let mut line = format!(
-                    "{incoming} incoming warhead{}",
-                    if incoming == 1 { "" } else { "s" }
-                );
-                if unanswered > 0 {
-                    let _ = write!(line, ", {unanswered} unanswered");
-                }
-                self.status.push(line);
-            }
+            let warheads = game.state.known_warheads(game.presentation.human);
+            self.status
+                .extend(incoming_warheads(&warheads, b.center(), battery.ring));
         } else {
             let warhead = oxide_sim::stats::WARHEAD;
             self.row(
@@ -504,6 +482,42 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         }
     }
     info
+}
+
+/// One line on the hostile warheads a battery's ring should know about:
+/// those landing inside it, how many no battery is forecast to stop, and
+/// contacts still being tracked, whose line and interceptor are unknown.
+fn incoming_warheads(
+    warheads: &[oxide_sim::strike::KnownWarhead],
+    centre: chassis::fx::Vec2Fx,
+    ring: chassis::fx::Fx,
+) -> Option<String> {
+    let (mut incoming, mut unanswered, mut tracking) = (0, 0, 0);
+    for warhead in warheads.iter().filter(|warhead| warhead.hostile) {
+        match warhead.line {
+            None => tracking += 1,
+            Some(line) if line.impact.dist_sq(centre) > ring * ring => {}
+            Some(_) => {
+                incoming += 1;
+                unanswered += usize::from(warhead.interceptor.is_none());
+            }
+        }
+    }
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    let mut line = if incoming > 0 {
+        format!("{incoming} incoming warhead{}", plural(incoming))
+    } else if tracking > 0 {
+        return Some(format!("Tracking {tracking} warhead{}", plural(tracking)));
+    } else {
+        return None;
+    };
+    if unanswered > 0 {
+        let _ = write!(line, ", {unanswered} unanswered");
+    }
+    if tracking > 0 {
+        let _ = write!(line, ", tracking {tracking} more");
+    }
+    Some(line)
 }
 
 #[cfg(test)]

@@ -1306,3 +1306,41 @@ fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
     assert_eq!(stat(&panel, "Interceptors").value, "0/2");
     assert_eq!(stat(&panel, "Ring").value, "15 tiles");
 }
+
+#[test]
+fn an_allied_magazine_docks_its_rounds_read_only() {
+    let mut scenario = Scenario::from_json(
+        r#"{
+        "name":"Allied battery", "mode":"sandbox",
+        "map":["................", "................", "................", "................",
+               "................", "................", "................", "................"],
+        "players":[{"name":"You","scrap":0,"bot":false,"team":0},
+                   {"name":"Ally","scrap":1000,"bot":false,"team":0}],
+        "units":[], "buildings":[]
+    }"#,
+    )
+    .unwrap();
+    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Lattice,
+        x: 6,
+        y: 3,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let lattice = game.state.buildings()[0].id;
+    game.presentation.selection.buildings = vec![lattice];
+    // The ally's battery autofills its first interceptor.
+    game.do_tick();
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.cards[0].title, "Ally building");
+    let chips: Vec<_> = panel
+        .queue
+        .iter()
+        .map(|card| (card.action, card.progress.is_some()))
+        .collect();
+    assert_eq!(
+        chips,
+        [(CardAction::None, true)],
+        "a teammate sees the order and its meter but cannot cancel it"
+    );
+}
