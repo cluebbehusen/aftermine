@@ -438,7 +438,7 @@ impl ObservationData {
                 // Teammates stamp this player's vision, so they are
                 // always in sight by construction.
                 obs.ally_units.push(enemy_unit(u));
-            } else if vision.visible(u.tile()) {
+            } else if vision.sees_unit(u) {
                 obs.enemy_units.push(enemy_unit(u));
             }
         }

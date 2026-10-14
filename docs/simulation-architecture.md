@@ -312,6 +312,17 @@ non-stealthy building footprint. A buried Scuttle Charge deliberately blocks
 nothing. Air movement ignores rocks, scrap, and buildings, but Peaks own their
 air column and remain impassable.
 
+A body up to the Breaker's radius may overhang the ground around its centre
+tile, and that tile stands for the whole of it. A wider hull also claims every
+tile within its excess over that radius, its body tiles. It routes only through
+tiles whose body tiles are all passable, over reachability labels of its own;
+its motor and collision pushes never move it onto more closed ground than it
+already covers. Its body tiles deny hostile foundations, are evicted from new
+sites, count as parked ground for friendly lookahead, take a share of its wreck,
+and let any seat that sees one of them see the unit. For every current kind the
+body tiles are the centre tile alone, so these rules reduce exactly to the
+small-body rules.
+
 Workers and units with a contact weapon route to ordinary perimeter tiles, then
 make a short, collision-checked final approach to an authored building surface.
 These coarse fixed polygons capture major corners and recesses. They do not
@@ -485,9 +496,11 @@ against an approaching unit; other stationary bodies receive ordinary
 separation. Same-owner contacts around productive work allow a compressed
 fraction of summed body radii, while moving and waiting crowds use full body
 spacing. Terrain wins over a proposed push, and a per-tick budget prevents dense
-groups from exploding outward. Candidate pairs are gathered and ordered once per
-tick, and every pass walks that list. An overlap within a small slop counts as
-resting contact and is not corrected, so rounding alone never keeps a parked
+groups from exploding outward. A worker anchored at its job holds against a
+mover only when the mover's hull is no wider than its own. Candidate pairs are
+gathered and ordered once per tick, and every pass walks that list; a hull wider
+than a tile scans as far as it can reach. An overlap within a small slop counts
+as resting contact and is not corrected, so rounding alone never keeps a parked
 crowd moving, and a tick with no deeper overlap runs no pass at all. Iteration
 direction alternates with tick parity to avoid a permanent id-order advantage.
 When bodies are perfectly stacked and geometry provides no separating vector,
@@ -865,9 +878,10 @@ these.
 ## Fog, memory, radar, and teams
 
 Each seat has `visible` and `explored` grids. Visibility is rebuilt every tick
-from completed allied buildings and allied units; explored ground only grows.
-Rocks do not occlude vision. Teammates receive byte-identical shared sight and
-memory, computed once per team and cloned to later seats.
+from completed allied buildings and allied units; explored ground only grows. A
+unit is in sight while any of its body tiles is. Rocks do not occlude vision.
+Teammates receive byte-identical shared sight and memory, computed once per team
+and cloned to later seats.
 
 `ObservationData::fog_honest` copies both masks in canonical row-major order, so
 a policy distinguishes current sight from remembered terrain without consulting

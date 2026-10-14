@@ -833,6 +833,13 @@ impl Unit {
         TilePos::containing(self.pos)
     }
 
+    /// The tiles this body claims: its centre tile for a small body, and
+    /// every tile its hull reaches for a wider one. See
+    /// [`crate::geometry::body_tiles`].
+    pub fn body_tiles(&self) -> crate::geometry::BodyTiles {
+        crate::geometry::body_tiles(self.pos, self.kind.stats().radius)
+    }
+
     /// Whether this body is within tool reach of a rectangular resource footprint.
     pub fn in_work_reach(&self, anchor: TilePos, size: (i32, i32)) -> bool {
         let reach = crate::geometry::work_approach_distance(self.kind.stats().radius)
@@ -2664,6 +2671,11 @@ impl State {
         self.vision(player).visible(pos)
     }
 
+    /// Whether `player` currently sees any tile `unit` claims.
+    pub fn sees_unit(&self, player: PlayerId, unit: &Unit) -> bool {
+        self.vision(player).sees_unit(unit)
+    }
+
     /// The movement domain of a live hostile target under the viewer's
     /// current true sight. Radar contacts and remembered buildings do not
     /// identify a target and therefore never satisfy this query.
@@ -2674,10 +2686,8 @@ impl State {
     ) -> Option<crate::stats::Domain> {
         match target {
             Target::Unit(id) => self.unit(id).and_then(|unit| {
-                (unit.hp > 0
-                    && self.hostile(viewer, unit.player)
-                    && self.can_see(viewer, unit.tile()))
-                .then_some(unit.domain())
+                (unit.hp > 0 && self.hostile(viewer, unit.player) && self.sees_unit(viewer, unit))
+                    .then_some(unit.domain())
             }),
             Target::Building(id) => self.building(id).and_then(|building| {
                 (building.hp > 0
@@ -2932,8 +2942,10 @@ impl State {
                 && u.path.is_none()
                 && !self.hostile(player, u.player)
         }) {
-            if let Some(i) = parked.index(unit.tile()) {
-                parked.bits[i / 64] |= 1 << (i % 64);
+            for tile in unit.body_tiles() {
+                if let Some(i) = parked.index(tile) {
+                    parked.bits[i / 64] |= 1 << (i % 64);
+                }
             }
         }
         parked

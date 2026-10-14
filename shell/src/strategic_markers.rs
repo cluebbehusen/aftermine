@@ -43,7 +43,7 @@ pub(crate) fn replaces_units(zoom: f32) -> bool {
 pub(crate) fn visible(game: &Scene<'_>, unit: &Unit) -> bool {
     unit.player == game.presentation.human
         || game.presentation.all_seeing()
-        || game.my_vision().visible(unit.tile())
+        || game.my_vision().sees_unit(unit)
 }
 
 pub fn draw_markers(game: &Scene<'_>, alpha: f32) {

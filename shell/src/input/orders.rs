@@ -74,7 +74,7 @@ fn visible_hostile_target_at(
         .iter()
         .filter(|unit| {
             game.state.hostile(game.presentation.human, unit.player)
-                && game.my_vision().visible(unit.tile())
+                && game.my_vision().sees_unit(unit)
         })
         .filter_map(|unit| {
             let position = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());

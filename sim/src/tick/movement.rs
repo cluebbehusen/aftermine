@@ -163,14 +163,16 @@ pub(super) fn escape_route(
     } else {
         1
     };
-    for r in 1..=crate::stats::EVICT_SCAN_RADIUS {
+    let radius = kind.stats().radius;
+    let reach = crate::stats::hull_excess(radius).ceil().to_num::<i32>();
+    for r in 1..=crate::stats::EVICT_SCAN_RADIUS + reach {
         for dy in -r..=r {
             for dx in -r..=r {
                 if dx.abs().max(dy.abs()) != r {
                     continue;
                 }
                 let goal = from.offset(dx * direction, dy * direction);
-                if !state.passable(goal) {
+                if !crate::geometry::hull_open(goal, radius, |t| state.passable(t)) {
                     continue;
                 }
                 if let Some(waypoints) = super::route_for(state, kind, from, goal) {
@@ -202,6 +204,15 @@ pub(super) fn half_turn_reversed(state: &State, from: TilePos, heading: u8) -> b
     }
 }
 
+/// Whether a building footprint covers any tile `unit` claims.
+fn unit_on_claimed_ground(state: &State, unit: &crate::state::Unit) -> bool {
+    let terrain = state.ground_terrain();
+    if unit.kind.stats().radius <= crate::stats::SMALL_BODY_RADIUS {
+        return terrain.building_blocks(unit.tile());
+    }
+    unit.body_tiles().any(|t| terrain.building_blocks(t))
+}
+
 /// Pure preview of the claimed-ground eviction for one unit.
 ///
 /// Brains that require a body to remain still can consult the exact same
@@ -212,7 +223,7 @@ pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Op
     if unit.hp == 0
         || unit.domain() != crate::stats::Domain::Ground
         || unit.path.is_some()
-        || !state.ground_terrain().building_blocks(unit.tile())
+        || !unit_on_claimed_ground(state, unit)
     {
         return None;
     }
@@ -674,6 +685,13 @@ fn contact_push_open(state: &State, slot: usize, to: Vec2Fx) -> bool {
             .with_contact(Some(surface))
             .contact_clear(unit.pos, to, super::brain::contact::collision_radius(unit));
     }
+    let radius = unit.kind.stats().radius;
+    if unit.domain() == crate::stats::Domain::Ground && crate::stats::hull_excess(radius) > Fx::ZERO
+    {
+        // A hull wider than a tile is never pushed further onto ground it
+        // cannot stand on, whatever its centre tile says.
+        return crate::geometry::hull_step_open(unit.pos, to, radius, |t| state.passable(t));
+    }
     collision_position_open(state, unit.domain(), to)
 }
 
@@ -977,9 +995,10 @@ struct Body {
 /// seats receive adjacent, not mirrored, global ids.
 ///
 /// Gathered and ordered once per tick from the tick's starting positions;
-/// every pass walks the same list. Interaction reach is under one tile (radii
-/// sum < 1), so 3x3 tile neighborhoods suffice, and a pair that only comes
-/// into one through this tick's corrections waits for the next tick. `None`
+/// every pass walks the same list. Between small bodies interaction reach is
+/// about a tile, so 3x3 tile neighborhoods serve; a hull wider than a tile
+/// scans as far as it could reach. A pair that only comes into range
+/// through this tick's corrections waits for the next tick. `None`
 /// means no pair overlaps beyond [`COLLISION_SLOP`], so no pass could move
 /// anything and nothing is sorted; likewise only groups of linked pairs with
 /// such an overlap are kept.
@@ -1029,6 +1048,42 @@ fn collision_pairs(
                         pressed.push(i);
                     }
                     pairs.push((i, j));
+                }
+            }
+        }
+        // A hull wider than a tile reaches bodies the 3x3 scan cannot see.
+        // Only such a body widens its own scan, and only for the bodies
+        // beyond that scan, so small crowds gather exactly as before.
+        if crate::stats::hull_excess(body.radius) > Fx::ZERO {
+            let window = (body.radius
+                + crate::stats::MAX_UNIT_RADIUS
+                + COLLISION_MAX_STEP * 2
+                + const { Fx::lit("0.015625") })
+            .ceil()
+            .to_num::<i32>();
+            for row_offset in 0..=2 * window {
+                let dy = if rotated_frame {
+                    window - row_offset
+                } else {
+                    row_offset - window
+                };
+                let row = index.row_span(home.y + dy, home.x - window, home.x + window);
+                for j in OrientedRow::new(row, rotated_frame) {
+                    let other = &bodies[j];
+                    let beyond = TilePos::containing(other.pos).chebyshev(home) > 1;
+                    let wide = crate::stats::hull_excess(other.radius) > Fx::ZERO;
+                    if j == i
+                        || !beyond
+                        || (wide && j < i)
+                        || !other.shoveable
+                        || !may_touch_this_tick(body, other)
+                    {
+                        continue;
+                    }
+                    if pressing(body, other) {
+                        pressed.push(i);
+                    }
+                    pairs.push((i.min(j), i.max(j)));
                 }
             }
         }
@@ -1088,6 +1143,44 @@ fn sort_collision_pairs(
 /// still overlaps. Sequential application cannot cancel, so jams always
 /// evolve. Dead units are skipped: a corpse should not shove the living on
 /// its removal tick.
+/// How a pressing pair splits its overlap. A landed airframe is a fixture
+/// on its tile center and takes none of it. A body anchored at work in
+/// place takes none either, so movers flow around it, unless the mover's
+/// hull is wider than its own: a small worker cannot pin a machine that
+/// dwarfs it. Otherwise footprint area stands in for mass, so a heavy hull
+/// gives less ground than the light one shoving it, and equal radii split
+/// exactly in half. The division rounds, so it is always taken for the
+/// lighter body: keyed to pair order, a seat's mirror image would receive
+/// the other rounding.
+fn push_shares(
+    (landed_i, landed_j): (bool, bool),
+    (anchored_i, anchored_j): (bool, bool),
+    (radius_i, radius_j): (Fx, Fx),
+) -> (Fx, Fx) {
+    use crate::stats::hull_excess;
+    match (landed_i, landed_j) {
+        (true, true) => (Fx::ZERO, Fx::ZERO),
+        (true, false) => (Fx::ZERO, Fx::ONE),
+        (false, true) => (Fx::ONE, Fx::ZERO),
+        (false, false) => match (
+            anchored_i && hull_excess(radius_j) <= hull_excess(radius_i),
+            anchored_j && hull_excess(radius_i) <= hull_excess(radius_j),
+        ) {
+            (true, false) => (Fx::ZERO, Fx::ONE),
+            (false, true) => (Fx::ONE, Fx::ZERO),
+            _ => {
+                let (mass_i, mass_j) = (radius_i * radius_i, radius_j * radius_j);
+                let light_share = mass_i.max(mass_j) / (mass_i + mass_j);
+                if mass_i <= mass_j {
+                    (light_share, Fx::ONE - light_share)
+                } else {
+                    (Fx::ONE - light_share, light_share)
+                }
+            }
+        },
+    }
+}
+
 fn relaxation_pass(
     state: &mut State,
     travel: &[Vec2Fx],
@@ -1150,36 +1243,14 @@ fn relaxation_pass(
         } else {
             (delta / dist, min_dist - dist, false)
         };
-        // Anchored units (working in place) yield a sliver;
-        // movers absorb the correction and flow around them.
-        // A landed airframe is a fixture on its tile center: it takes no
-        // correction at all, so the whole overlap falls on the mover.
-        let (share_i, share_j) = match (state.units[i].landed(), state.units[j].landed()) {
-            (true, true) => (Fx::ZERO, Fx::ZERO),
-            (true, false) => (Fx::ZERO, Fx::ONE),
-            (false, true) => (Fx::ONE, Fx::ZERO),
-            (false, false) => match (
+        let (share_i, share_j) = push_shares(
+            (state.units[i].landed(), state.units[j].landed()),
+            (
                 is_anchored(&state.units[i]) && productive_i,
                 is_anchored(&state.units[j]) && productive_j,
-            ) {
-                (true, false) => (Fx::ZERO, Fx::ONE),
-                (false, true) => (Fx::ONE, Fx::ZERO),
-                // Footprint area stands in for mass, so a heavy hull gives
-                // less ground than the light one shoving it. Equal radii
-                // still split exactly in half. The division rounds, so it is
-                // always taken for the lighter body: keyed to pair order, a
-                // seat's mirror image would receive the other rounding.
-                _ => {
-                    let (mass_i, mass_j) = (radius_i * radius_i, radius_j * radius_j);
-                    let light_share = mass_i.max(mass_j) / (mass_i + mass_j);
-                    if mass_i <= mass_j {
-                        (light_share, Fx::ONE - light_share)
-                    } else {
-                        (Fx::ONE - light_share, light_share)
-                    }
-                }
-            },
-        };
+            ),
+            (radius_i, radius_j),
+        );
         let (away_i, away_j) = (-dir, dir);
         let closing_i = travel[i].x * away_i.x + travel[i].y * away_i.y < Fx::ZERO;
         let closing_j = travel[j].x * away_j.x + travel[j].y * away_j.y < Fx::ZERO;

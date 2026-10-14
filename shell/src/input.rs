@@ -55,7 +55,9 @@ pub(crate) fn drag_feedback(origin: Vec2, at: Vec2, ui: f32) -> DragFeedback {
 const PICK_RADIUS: f32 = 0.6;
 
 fn unit_pick_radius(kind: oxide_sim::UnitKind) -> f32 {
-    PICK_RADIUS.max(crate::render::unit_visual_radius(kind))
+    PICK_RADIUS
+        .max(crate::render::unit_visual_radius(kind))
+        .max(kind.stats().radius.to_num::<f32>())
 }
 
 /// Camera pan speed in screen pixels per second (converted by zoom).

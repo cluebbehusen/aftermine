@@ -170,7 +170,7 @@ fn visible_hostile_cluster_at(
             unit.hp > 0
                 && state.hostile(owner, unit.player)
                 && weapon.targets.covers(unit.domain())
-                && state.can_see(owner, unit.tile())
+                && state.sees_unit(owner, unit)
                 && unit.pos.dist_sq(current) <= radius_sq
         })
         .take(2)
@@ -529,7 +529,7 @@ pub(super) fn turret_fire(
                     .filter(|u| {
                         state.hostile(me, u.player) && u.hp > 0 && atk.targets.covers(u.domain())
                     })
-                    .filter(|u| state.can_see(me, u.tile()))
+                    .filter(|u| state.sees_unit(me, u))
                     .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()))
                     .filter(|(d, _, _, _)| within_weapon_reach(atk, *d))
                     .filter(|(_, _, pos, dom)| {
@@ -911,7 +911,7 @@ fn acquire_target_within(
                 if !state.hostile(me, u.player)
                     || u.hp == 0
                     || !stats.can_target(u.domain())
-                    || !state.can_see(me, u.tile())
+                    || !state.sees_unit(me, u)
                 {
                     continue;
                 }
@@ -1038,7 +1038,7 @@ pub(super) fn advance(
             if target.hp == 0
                 || !state.hostile(me, target.player)
                 || !weapon.targets.covers(domain)
-                || !state.can_see(me, target.tile())
+                || !state.sees_unit(me, target)
                 || !super::super::movement::advancing_weapon_aligned(unit, target.pos - pos)
             {
                 continue;
@@ -1365,7 +1365,7 @@ fn bomber_attack(
     let full = traces_terrain(weapon, stats.domain, victim_domain);
     let shot_open = |t: TilePos| shot_crosses(state, t, full);
     let seen = match target {
-        Target::Unit(_) => state.can_see(me, target_tile),
+        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
         Target::Building(bid) => state.building(bid).is_some_and(|b| {
             b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
         }),
@@ -1660,7 +1660,7 @@ pub(super) fn attack(
     // validation); a unit is seen at its own tile. The line trace runs
     // only once in range — it is not built for cross-map endpoints.
     let seen = match target {
-        Target::Unit(_) => state.can_see(me, target_tile),
+        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
         Target::Building(bid) => state.building(bid).is_some_and(|b| {
             b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
         }),
@@ -1965,7 +1965,7 @@ fn sidearm_victim(
             if !state.hostile(me, u.player)
                 || u.hp == 0
                 || !weapon.targets.covers(domain)
-                || !state.can_see(me, u.tile())
+                || !state.sees_unit(me, u)
             {
                 continue;
             }
@@ -2059,7 +2059,7 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     let seen = match attacker {
         Target::Unit(uid) => state
             .unit(uid)
-            .is_some_and(|a| state.can_see(unit.player, a.tile())),
+            .is_some_and(|a| state.sees_unit(unit.player, a)),
         Target::Building(bid) => state
             .building(bid)
             .is_some_and(|b| b.tiles().any(|t| state.can_see(unit.player, t))),

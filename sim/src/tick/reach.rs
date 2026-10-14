@@ -36,7 +36,9 @@ type LabelSet = [u32; 4];
 pub(super) struct Reach {
     ground: Option<Vec<u32>>,
     air: Option<Vec<u32>>,
-    endpoints: BTreeMap<(u8, LabelSet, TilePos, bool), Option<TilePos>>,
+    /// Ground a hull wider than a tile can cross, by its radius.
+    wide: BTreeMap<i64, Vec<u32>>,
+    endpoints: BTreeMap<(i64, LabelSet, TilePos, bool), Option<TilePos>>,
     /// Crowd chains by movement layer, the asking walker's team, and
     /// endpoint.
     crowds: BTreeMap<(u8, u8, TilePos), Vec<usize>>,
@@ -49,6 +51,37 @@ fn domain_key(domain: Domain) -> u8 {
     match domain {
         Domain::Ground => 0,
         Domain::Air => 1,
+    }
+}
+
+/// The ground or sky a body routes over: small ground bodies share one
+/// layer, the sky another, and each wider hull radius its own ground.
+#[derive(Clone, Copy)]
+enum Layer {
+    Ground,
+    Air,
+    Wide(Fx),
+}
+
+impl Layer {
+    fn of(unit: &crate::state::Unit) -> Self {
+        let stats = unit.kind.stats();
+        match stats.domain {
+            Domain::Air => Self::Air,
+            Domain::Ground if crate::stats::hull_excess(stats.radius) > Fx::ZERO => {
+                Self::Wide(stats.radius)
+            }
+            Domain::Ground => Self::Ground,
+        }
+    }
+
+    /// A key no two layers share: a wide radius is always above one.
+    fn key(self) -> i64 {
+        match self {
+            Self::Ground => 0,
+            Self::Air => 1,
+            Self::Wide(radius) => radius.to_bits(),
+        }
     }
 }
 
@@ -69,6 +102,7 @@ impl Reach {
         Self {
             ground: None,
             air: None,
+            wide: BTreeMap::new(),
             endpoints: BTreeMap::new(),
             crowds: BTreeMap::new(),
             parked,
@@ -79,8 +113,9 @@ impl Reach {
     /// opened its tile.
     pub(super) fn forget_ground(&mut self) {
         self.ground = None;
+        self.wide.clear();
         self.endpoints
-            .retain(|&(domain, ..), _| domain != domain_key(Domain::Ground));
+            .retain(|&(layer, ..), _| layer == Layer::Air.key());
     }
 
     /// The tile unit `id` should route to for `target`: the target itself
@@ -100,16 +135,15 @@ impl Reach {
         stored: Option<TilePos>,
     ) -> Option<TilePos> {
         let unit = state.unit(id)?;
-        let domain = unit.kind.stats().domain;
+        let layer = Layer::of(unit);
         let from = unit.tile();
         let player = unit.player;
-        let labels = labels(
-            match domain {
-                Domain::Ground => &mut self.ground,
-                Domain::Air => &mut self.air,
-            },
+        let labels = layer_labels(
+            &mut self.ground,
+            &mut self.air,
+            &mut self.wide,
             state,
-            domain,
+            layer,
         );
         let width = state.map.width();
         let height = state.map.height();
@@ -136,7 +170,7 @@ impl Reach {
             target.y.clamp(0, height.max(1) - 1),
         );
         let reverse = scan_reversed(state, player, center, from);
-        let key = (domain_key(domain), set, center, reverse);
+        let key = (layer.key(), set, center, reverse);
         let best = if let Some(&best) = self.endpoints.get(&key) {
             best
         } else {
@@ -164,15 +198,14 @@ impl Reach {
         let Some(unit) = state.unit(id) else {
             return false;
         };
-        let domain = unit.kind.stats().domain;
+        let layer = Layer::of(unit);
         let from = unit.tile();
-        let labels = labels(
-            match domain {
-                Domain::Ground => &mut self.ground,
-                Domain::Air => &mut self.air,
-            },
+        let labels = layer_labels(
+            &mut self.ground,
+            &mut self.air,
+            &mut self.wide,
             state,
-            domain,
+            layer,
         );
         let width = state.map.width();
         let height = state.map.height();
@@ -292,17 +325,51 @@ impl Reach {
 }
 
 /// One layer's component labels, built on first use.
-fn labels<'a>(slot: &'a mut Option<Vec<u32>>, state: &State, domain: Domain) -> &'a [u32] {
+/// The component labels of `layer`, built on first use.
+fn layer_labels<'a>(
+    ground: &'a mut Option<Vec<u32>>,
+    air: &'a mut Option<Vec<u32>>,
+    wide: &'a mut BTreeMap<i64, Vec<u32>>,
+    state: &State,
+    layer: Layer,
+) -> &'a [u32] {
+    match layer {
+        Layer::Ground => labels(ground, state, |t| state.passable(t)),
+        Layer::Air => labels(air, state, |t| state.passable_for(Domain::Air, t)),
+        Layer::Wide(radius) => wide.entry(radius.to_bits()).or_insert_with(|| {
+            chassis::path::cardinal_components(state.map.width(), state.map.height(), |t| {
+                crate::geometry::hull_open(t, radius, |c| state.passable(c))
+            })
+        }),
+    }
+}
+
+fn labels<'a>(
+    slot: &'a mut Option<Vec<u32>>,
+    state: &State,
+    open: impl Fn(TilePos) -> bool,
+) -> &'a [u32] {
     slot.get_or_insert_with(|| {
-        chassis::path::cardinal_components(state.map.width(), state.map.height(), |tile| {
-            state.passable_for(domain, tile)
-        })
+        chassis::path::cardinal_components(state.map.width(), state.map.height(), open)
     })
 }
 
 /// Tiles either side of a body's own tile that can hold a body touching it:
-/// the widest pair of radii plus contact slack stays under two tiles.
-const CONTACT_WINDOW: i32 = 2;
+/// the widest pair of radii plus contact slack, rounded up.
+const CONTACT_WINDOW: i32 = {
+    let one = Fx::ONE.to_bits();
+    let reach = crate::stats::MAX_UNIT_RADIUS.to_bits() * 2 + Fx::lit("0.05").to_bits();
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a contact reach of a few tiles fits i32"
+    )]
+    let tiles = ((reach + one - 1) / one) as i32;
+    tiles
+};
+const _: () = assert!(
+    (CONTACT_WINDOW as i64) * Fx::ONE.to_bits()
+        >= crate::stats::MAX_UNIT_RADIUS.to_bits() * 2 + Fx::lit("0.05").to_bits()
+);
 
 /// Whether two bodies are in contact, with the slack the arrival wave uses.
 fn touching(a: &crate::state::Unit, b: &crate::state::Unit) -> bool {

@@ -32,7 +32,7 @@ use crate::command::PlayerCommand;
 use crate::event::{Event, TickReport};
 use crate::state::{GameResult, State};
 use crate::stats::PATH_EXPANSION_CAP;
-use chassis::fx::Vec2Fx;
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use chassis::path::astar;
 
@@ -226,7 +226,11 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         });
         let value =
             unit.kind.stats().cost * crate::stats::WRECK_VALUE_NUM / crate::stats::WRECK_VALUE_DEN;
-        deposits.push((unit.tile(), value));
+        // A hull wider than a tile leaves its wreck spread over the ground it
+        // covered, split like a building's: a small body's lands on its tile.
+        let tiles: Vec<TilePos> = unit.body_tiles().collect();
+        let share = value / u32::try_from(tiles.len()).expect("a body claims a few tiles");
+        deposits.extend(tiles.into_iter().map(|tile| (tile, share)));
         // Cargo dies with the airframe and deposits at its tile.
         for rider in &unit.cargo {
             events.push(Event::UnitDied {
@@ -453,6 +457,28 @@ pub(crate) fn astar_for(state: &State, from: TilePos, to: TilePos) -> Option<Vec
     )
 }
 
+/// A* for a ground body of `radius`: a small body routes as
+/// [`astar_for`] does, and a hull wider than a tile only through tiles
+/// whose ground holds all of it.
+pub(crate) fn ground_route(
+    state: &State,
+    radius: Fx,
+    from: TilePos,
+    to: TilePos,
+) -> Option<Vec<TilePos>> {
+    if crate::stats::hull_excess(radius) == Fx::ZERO {
+        return astar_for(state, from, to);
+    }
+    astar(
+        state.map.width(),
+        state.map.height(),
+        from,
+        to,
+        |p| crate::geometry::hull_open(p, radius, |t| state.passable(t)),
+        PATH_EXPANSION_CAP,
+    )
+}
+
 /// A route for a unit of the given kind: ground units A* around the
 /// world; air units fly the straight line — one waypoint, landed exactly —
 /// unless a peak stands in it, in which case they A* over air passability
@@ -477,7 +503,7 @@ pub(crate) fn route_for_position(
 ) -> Option<Vec<TilePos>> {
     let from_tile = TilePos::containing(from);
     match kind.stats().domain {
-        crate::stats::Domain::Ground => astar_for(state, from_tile, to),
+        crate::stats::Domain::Ground => ground_route(state, kind.stats().radius, from_tile, to),
         crate::stats::Domain::Air => {
             // Every air route passes here, so peak goals snap here.
             // `line_blocked` ignores endpoints, so an unsnapped peak goal

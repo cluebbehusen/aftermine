@@ -202,7 +202,7 @@ impl Watch {
                         unit.player == attacker
                             && unit.hp > 0
                             && unit.kind.stats().domain == Domain::Air
-                            && state.can_see(defender, unit.tile())
+                            && state.sees_unit(defender, unit)
                     });
                     if seen {
                         self.first_air_sighting = Some(now);

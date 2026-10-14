@@ -321,7 +321,7 @@ impl FogView {
             units: state
                 .units()
                 .iter()
-                .filter(|u| !state.hostile(player, u.player) || vision.visible(u.tile()))
+                .filter(|u| !state.hostile(player, u.player) || vision.sees_unit(u))
                 .map(|u| {
                     if state.hostile(player, u.player) {
                         unit_view_redacted(u)

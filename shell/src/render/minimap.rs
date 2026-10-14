@@ -285,12 +285,13 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         );
     }
     for unit in game.state.units() {
-        let seen =
-            omniscient || unit.player == game.presentation.human || vision.visible(unit.tile());
+        let seen = omniscient || unit.player == game.presentation.human || vision.sees_unit(unit);
         if !seen {
             continue;
         }
-        let dot = (scale * 0.7).max(2.0);
+        // A hull wider than a tile shows at its size; small bodies share one dot.
+        let excess = oxide_sim::stats::hull_excess(unit.kind.stats().radius).to_num::<f32>();
+        let dot = (scale * (0.7 + 2.0 * excess)).max(2.0);
         draw_rectangle(
             rect.x + unit.pos.x.to_num::<f32>() * scale - dot * 0.5,
             rect.y + unit.pos.y.to_num::<f32>() * scale - dot * 0.5,
