@@ -637,12 +637,15 @@ holder moves on to its next order or idles once the newcomer lands. With no
 newcomer admitted the command is refused as `CrewFull` and every program stands.
 A queued joiner is judged when its turn comes: crews settle after the command
 phase and again at the end of the tick, and a promoted worker that does not make
-the crew moves on and reports `OrderStalled` with `CrewFull`. When the last work
-lands the cradle does not complete. After boarding resolves it leaves the world,
-every seat forgets it, its crew moves on, and the machine spawns at its centre
-with the cradle's share of health, reported as `UnitAssembled`. A destroyed
-cradle's wreck holds the ordinary share of its price scaled by the health its
-crew had raised, split across its footprint.
+the crew moves on and reports `OrderStalled` with `CrewFull`. A crew works only
+from the cradle's crew pads (`BuildingKind::crew_pads`), two off its north face
+and two off its south, each member taking a free pad; while any pad is rock or
+under a building, the crew works from anywhere along the cradle as at any site.
+When the last work lands the cradle does not complete. After boarding resolves
+it leaves the world, every seat forgets it, its crew moves on, and the machine
+spawns at its centre with the cradle's share of health, reported as
+`UnitAssembled`. A destroyed cradle's wreck holds the ordinary share of its
+price scaled by the health its crew had raised, split across its footprint.
 
 Cancelling before the first build tick returns the full price. Cancelling an
 unfinished site after work starts returns value proportional to its remaining

@@ -22,33 +22,42 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
     {
         return approach_rect(state, id, anchor, size);
     }
+    let pads = crew_pad_entries(state, unit, b);
     // A held position stays only while it is still free and admissible:
     // ground claimed beside it since it was chosen can leave the motor
-    // unable to land there.
+    // unable to land there. A crew holds only a pad.
     if unit.path.as_ref().is_some_and(|path| {
         path.final_point.is_some_and(|point| {
             !crowding::claimed(state, id, point, true)
                 && admissible(state, unit, b, path.goal, point)
+                && pads.as_ref().is_none_or(|pads| {
+                    pads.iter().any(|&entry| {
+                        crate::geometry::work_tile(entry, pos, b.center()) == path.goal
+                    })
+                })
         })
     }) {
         return true;
     }
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
-    let mut candidates: Vec<_> = crate::geometry::work_positions(
-        anchor,
-        size,
-        clearance(unit),
-        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
-    )
-    .into_iter()
-    .filter(|entry| state.passable(crate::geometry::work_tile(*entry, pos, b.center())))
-    .filter_map(|entry| {
-        endpoint(state, id, building, entry).map(|point| crowding::Position {
-            goal: crate::geometry::work_tile(entry, pos, b.center()),
-            point,
+    let entries = pads.unwrap_or_else(|| {
+        crate::geometry::work_positions(
+            anchor,
+            size,
+            clearance(unit),
+            unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+        )
+    });
+    let mut candidates: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| state.passable(crate::geometry::work_tile(*entry, pos, b.center())))
+        .filter_map(|entry| {
+            endpoint(state, id, building, entry).map(|point| crowding::Position {
+                goal: crate::geometry::work_tile(entry, pos, b.center()),
+                point,
+            })
         })
-    })
-    .collect();
+        .collect();
     candidates.sort_by_key(|candidate| {
         (
             pos.dist_sq(candidate.point),
@@ -69,6 +78,30 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
     let reachable = path.is_some();
     state.unit_mut(id).expect("contact unit").path = path;
     reachable
+}
+
+/// Where a crew member raising an assembly cradle stands to work: off the
+/// footprint at each of its crew pads.
+fn crew_pad_entries(
+    state: &State,
+    unit: &crate::Unit,
+    site: &crate::Building,
+) -> Option<Vec<Vec2Fx>> {
+    let pads = state.crew_pads_for(unit, site)?;
+    let gap = clearance(unit);
+    Some(
+        pads.iter()
+            .map(|pad| {
+                let x = Fx::from_num(pad.x) + Fx::lit("0.5");
+                let y = if pad.y < site.anchor.y {
+                    Fx::from_num(site.anchor.y) - gap
+                } else {
+                    Fx::from_num(pad.y) + gap
+                };
+                Vec2Fx::new(x, y)
+            })
+            .collect(),
+    )
 }
 
 pub(in crate::tick) fn clearance(unit: &crate::Unit) -> Fx {
