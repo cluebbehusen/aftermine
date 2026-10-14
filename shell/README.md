@@ -67,8 +67,8 @@ crate-level rustdoc.
 - `saved_game` owns compact checkpoint files with independently readable
   metadata. `autosave` owns atomic publication and retention; `saves` classifies
   checkpoints and recordings for the shelf. `app/persistence` runs capture
-  encoding, restoration, catalog discovery, deletion, and recovery preparation
-  on one bounded worker. Playback screens accept recordings.
+  encoding, restoration, catalog discovery, and deletion on one bounded worker.
+  Playback screens accept recordings.
 
 ## Development
 
@@ -149,19 +149,21 @@ command validation still apply; sandbox mode does not grant free production or
 control of other players' units. The debug protocol can explicitly attribute
 commands to any seat, as in ordinary sessions.
 
-## Recovery and diagnostics
+## Autosaves and diagnostics
 
-Ordinary play preserves a recent completed match prefix in the platform data
-folder. After an abnormal exit, Home offers **Recover match** and opens it
-paused. Ordinary Continue and named saves remain separate.
+Continue resumes the newest autosave. A match autosaves every minute of play, as
+the window goes inactive, and when the player leaves or quits. Each match keeps
+one autosave, replaced in place, until its finished recording replaces it as
+soon as the match is decided.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only
-when a panic or stall occurs. Reports stay local and contain a replay, panic and
-stall incidents with recent frame timing, and how the session ended.
-`diagnostic_report` runs exports and folder operations off the frame thread;
-`kit::recovery` and `kit::diagnostics` own bounded persistence.
+when a panic or stall occurs. A panic during a tick also leaves a crash dump
+with the match's commands up to it. Reports stay local and contain the current
+match's command log, the newest crash dump, and the incident log, whose panic
+and stall incidents carry recent frame timing. `diagnostic_report` runs exports
+and folder operations off the frame thread; `kit::diagnostics` owns the bounded
+incident log and crash dumps.
 
 See [the persistence contract](../docs/shell-architecture.md) for durability,
-retention, compatibility, and timing semantics. Recovery warnings mean the
-recording stopped at its last intact prefix, not that gameplay stopped.
+retention, compatibility, and timing semantics.

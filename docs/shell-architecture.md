@@ -93,23 +93,23 @@ published batch; a client runs batches as they arrive with a small buffer and
 catches up when behind. Once the match is decided, the host closes the
 connections only after every client has acknowledged the final batch, so late
 hash reports are still checked. Staged orders reach the session through the
-game's outbox. Only the host pauses, and speed is fixed. Networked sessions
-never journal crash recovery. A client saves only a watch-only recording. The
-host saves the undecided match as a LAN checkpoint instead: by name from its
-menu, and on its own every minute of play, when a wait begins, when it drops or
-replaces a seat, and when it leaves. A LAN checkpoint carries every seat's
-unsealed orders and the installation that played each joined seat, binds the
-host's seat rather than the default local one. Loading one, from the shelf or
-from Continue when it is the newest autosave, opens Match Setup locked to the
-save: its map, bots, teams, and the host's seat are fixed, and each joined
-player still in the match has a reserved seat. A joiner takes the reserved seat
-its installation played, else the one played under its name, else the first free
-one; an installation or a name another joiner shares identifies nobody. The host
-can swap players between reserved seats or hand one to a bot, and Start waits
-for every reserved seat. Start ships the saved world as a snapshot, and every
-player gets a fresh rejoin token; once every player's seat went to a bot, the
-host resumes alone. Everyone leaves through the ordinary leave save when the
-host is lost or a desync halts the match.
+game's outbox. Only the host pauses, and speed is fixed. A client saves only a
+watch-only recording. The host saves the undecided match as a LAN checkpoint
+instead: by name from its menu, and on its own every minute of play, when a wait
+begins, when it drops or replaces a seat, when its window goes inactive, and
+when it leaves. A LAN checkpoint carries every seat's unsealed orders and the
+installation that played each joined seat, binds the host's seat rather than the
+default local one. Loading one, from the shelf or from Continue when it is the
+newest autosave, opens Match Setup locked to the save: its map, bots, teams, and
+the host's seat are fixed, and each joined player still in the match has a
+reserved seat. A joiner takes the reserved seat its installation played, else
+the one played under its name, else the first free one; an installation or a
+name another joiner shares identifies nobody. The host can swap players between
+reserved seats or hand one to a bot, and Start waits for every reserved seat.
+Start ships the saved world as a snapshot, and every player gets a fresh rejoin
+token; once every player's seat went to a bot, the host resumes alone. Everyone
+leaves through the ordinary leave save when the host is lost or a desync halts
+the match.
 
 Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
 may think concurrently against the same immutable state; their work joins in
@@ -490,8 +490,9 @@ information with key help show only the information until then.
 
 Touch-only builds hide rows they cannot use: Open diagnostics folder (no file
 manager) and Quit (the platform closes apps). The Controls tab, the left-handed
-preset, and edge pan stay for an attached keyboard or trackpad. A match the
-platform terminates in the background returns through recovery.
+preset, and edge pan stay for an attached keyboard or trackpad. A match
+autosaves as the window goes inactive, so Continue resumes one the platform
+terminates in the background.
 
 ## Persistence and replay
 
@@ -512,8 +513,8 @@ restored roster must match the scenario's bot seats.
 
 The shell adapter captures the core checkpoint without a recorder. It also keeps
 the human seat, tutorial progress, concession statistics, and decorative
-boundary exploration. Camera, selection, effects, and interpolation rebuild, the
-wall clock starts paused, and the recovery worker is not serialized.
+boundary exploration. Camera, selection, effects, and interpolation rebuild, and
+the wall clock starts paused.
 
 Player saves use `.oxsave`: eight-byte `OXIDESAV` magic, a little-endian 32-bit
 header length, a JSON metadata header, and one checksummed Zstandard frame
@@ -525,30 +526,49 @@ byte strings. No old player-save import or format migration is provided.
 
 Restoration runs no historical ticks and starts a fresh world-origin recording
 at the saved tick. Pending input remains pending until that tick executes. A
-save is self-contained. Named saves persist until explicitly deleted; autosaves,
-LAN autosaves, and finished-match recordings rotate separately. Finished matches
-remain JSON recordings, containing the available history since the current
-segment began.
+save is self-contained. Named saves persist until explicitly deleted. Each match
+owns one autosave slot: its autosave or LAN autosave and its finished-match
+recording share an id, so a save replaces the match's earlier file and the
+finished recording replaces its autosave. Autosaves, LAN autosaves, and
+finished-match recordings rotate separately, so rotation keeps whole matches.
+Finished matches remain JSON recordings, containing the available history since
+the current segment began.
+
+A match continued from an autosave keeps that slot and starts as already saved;
+any other load starts a new slot. A save records the slot and session content it
+captured, and the session counts as saved only while it still holds that
+content. Restart deletes the abandoned match's autosave once the worker is idle,
+so a save still in flight cannot write it back. Leave Without Saving keeps the
+autosave, since that choice only follows a failed save.
+
+The app also saves on its own, through the same worker and without pausing. A
+decided match writes its finished recording as soon as it ends, so a later exit
+cannot lose it and Continue never offers it. A match this machine can resume
+autosaves after each minute of play, and when the native window reports going
+inactive; a LAN host's checkpoint takes the inactive save through its link. Play
+counts the ticks the match ran over its speed, so slow or throttled frames still
+count and an OS suspension does not. Automated runs are exempt. A failed
+background save is retried after a delay, and the player hears of a run of
+failures once.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
-decompression, restoration, catalog scans, and recovery preparation. Smaller
-file operations run synchronously on the frame thread: opening a shelf replay
-for playback, loading the scenario picked in the New Match wizard, writing the
-configuration, and the debug `SaveReplay` request. The worker admits one
-operation at a time; a foreground screen can hold one pending intent while a
-cancelled catalog or load finishes. Cancellation does not release admission
-early. Jobs have unique IDs so a stale result cannot replace a newer session.
-Restoration produces CPU data; presentation is installed only on the frame
-thread. Replaced session data and recovery-close waits are retired on the
-worker.
+decompression, restoration, and catalog scans. Smaller file operations run
+synchronously on the frame thread: opening a shelf replay for playback, loading
+the scenario picked in the New Match wizard, writing the configuration, and the
+debug `SaveReplay` request. The worker admits one operation at a time; a
+foreground screen can hold one pending intent while a cancelled catalog or load
+finishes. Cancellation does not release admission early. Jobs have unique IDs so
+a stale result cannot replace a newer session. Restoration produces CPU data;
+presentation is installed only on the frame thread. Replaced session data is
+dropped on the worker.
 
-A loading frame is presented before dispatch. Loads can be cancelled until
-recovery publication begins; cancellation retains the previous session and never
-supersedes a recovery source. Named saves keep the match paused until
-completion. Save-before-leaving failures preserve Retry, Cancel, and Leave
-Without Saving. A window-close request during a save waits for that operation
-and the required exit save. The debug protocol reports `loading`/`saving` and
-refuses session mutations while those screens own the boundary.
+A loading frame is presented before dispatch. Loads can be cancelled until the
+restored session is committed; cancellation retains the previous session. Named
+saves keep the match paused until completion. Save-before-leaving failures
+preserve Retry, Cancel, and Leave Without Saving. A window-close request during
+a save waits for that operation and the required exit save. The debug protocol
+reports `loading`/`saving` and refuses session mutations while those screens own
+the boundary.
 
 Recordings can additionally start from a versioned world checkpoint. Its
 scenario and world fingerprint are validated, and commands cannot precede its
@@ -559,54 +579,17 @@ cannot reconstruct earlier events and explicitly describe only available
 history. World-only recordings cannot resume live play because they lack
 controller memory.
 
-Save publication reserves a collision-free destination and uses the chassis
-atomic-write path. Failures are reported to the player. Checkpoint discovery
-reads metadata only: eligibility is not full validation. Continue tries eligible
-autosaves newest first on the worker, skipping corrupt payloads and installing
-the already restored result. Saves in an unsupported format are listed as
-unavailable and left on disk. Home recovery discovery uses bounded status
-metadata and inactive leases; selection validates the journal and its completed
-prefix before installation.
+A named save reserves a collision-free destination; an unnamed save replaces its
+slot's file. Both use the chassis atomic-write path. Failures are reported to
+the player. Checkpoint discovery reads metadata only: eligibility is not full
+validation. Continue tries eligible autosaves newest first on the worker,
+skipping corrupt payloads and installing the already restored result. Saves in
+an unsupported format are listed as unavailable and left on disk.
 
 `Game::from_replay` reconstructs state from the recorded commands. Bots observe
 reconstruction to restore their controller-local memory, but their regenerated
 commands are discarded. The recorded log is authoritative, and the resumed game
 continues recording onto it.
-
-Ordinary play also keeps an incremental recovery journal through
-`kit::recovery`. A bounded queue sends prepared commands and completed-tick
-boundaries to a persistence worker. Only a contiguous, validated completed
-prefix can be recovered; an unfinished tick is diagnostic evidence. Recovered
-matches start paused.
-
-Recovery journals may pair a world-origin recording with a separate session
-checkpoint. Restoration validates that both describe the same initial world,
-restores controllers and live statistics, then observes only completed suffix
-ticks. Recorded commands remain authoritative. Pending checkpoint inputs must
-prefix the first journal batch: they survive when no tick completed and are
-consumed exactly once when that batch completed. An unfinished prepared batch
-remains diagnostic evidence. Exports retain the controller origin separately
-from the watchable replay. Replacement journals must retain both origins before
-retiring a recovered source. Ordinary new matches start recovery from their
-scenario-backed recorder. A loaded player save starts recovery from its restored
-session checkpoint and new world-origin recording.
-
-The worker publishes durable progress separately from live progress. Storage
-failure or queue exhaustion stops capture with a visible warning while gameplay
-continues. Flush cadence is a target, not a guaranteed loss bound. A recovery
-journal is clean only after its completion marker is durable. After a successful
-player save, the exit path waits at most one second for that marker; a timeout
-or recovery error can leave an interrupted journal even after an ordinary exit.
-Force quit preserves only bytes already written. Recovery retires the
-interrupted source only after its replacement baseline is durable and the
-original diagnostic evidence has been preserved. An exclusive source claim
-prevents concurrent or stale callers from recovering an already-retired record.
-
-Filesystem leases protect active writers and report readers from retention.
-Managed sessions have bounded counts and storage; active records and malformed
-evidence are not silently deleted to admit a new recording. Explicit exports and
-named saves are outside automatic recovery retention. Limits and journal framing
-are defined in `kit::recovery`.
 
 ### Read-only playback
 
@@ -626,10 +609,6 @@ presentation. UI, profiling, and diagnostic context describe the visible
 session. Authoritative session mutations are refused.
 
 Playback writes no recording, since a watched replay is already a file on disk.
-Incidents while viewing go to the recovery root's log. Playback recordings left
-by earlier builds still inspect, export and retire, but never appear as
-resumable live matches. The hidden live game's recovery history remains
-separate.
 
 The ordinary shelf resumes unfinished records, preventing fog-free viewing from
 scouting a live match. Completed records can be watched. Developer `--watch` may
@@ -658,26 +637,29 @@ previous hook. Each incident carries every thread's stage, display context and
 recent per-stage frame timing, which otherwise stays in memory. Thresholds and
 log limits live in `kit::diagnostics`.
 
-Incidents go to `incidents.json` in the visible live match's open recording, and
-to the recovery root's log during playback, menus and LAN matches or once the
-recording closes. An incident before a new recording's directory is ready goes
-to the root log tagged with that recording, which its ending still counts. A
-minimize reaches the watchdog when it happens, since a minimized window may run
-no further frame. Each log keeps a bounded number of its newest incidents and
-counts what it dropped. Diagnostics are observational and never become replay
-input. Simulation and bot failures reproduce from the recorded replay, not from
-timing.
+Incidents go to `incidents.json` in the diagnostics folder. A minimize reaches
+the watchdog when it happens, since a minimized window may run no further frame.
+Each log keeps a bounded number of its newest incidents and counts what it
+dropped. Diagnostics are observational and never become replay input. Simulation
+and bot failures reproduce from the recorded replay, not from timing.
 
-Report export runs off the frame thread. Reports contain a standard recovered
-replay, unfinished-tick evidence, the recording's incidents and the root log,
-build provenance, and how the session ended: clean, still in progress, a panic,
-a stall that never resumed, a main thread left waiting for its next frame (OS
-suspension, a hidden window or a presentation hang), or an abnormal exit (a
-native crash, kill or power loss) with none of those recorded. The completion
-manifest is published last and binds the replay digest; the inspector rejects
-incomplete exports. Build differences remain visible even when simulation
-versions permit playback. Reports stay local, and diagnostics never take
-screenshots or enable the debug server.
+Every tick of a live or LAN match runs behind one unwind boundary. A panic there
+writes a crash dump before unwinding continues: the commands through the last
+completed tick as a standard replay, and a manifest, written last, with the
+panic message, the build, how far the tick got, and the batch the simulation
+never finished. Bots decide from the world alone, so a panic while their orders
+are collected replays from that prefix. A match continued from a save records
+from a world-only origin without controller memory, so its dump reproduces
+simulation panics but not bot panics. The folder keeps the newest few dumps; the
+interrupted world is never saved.
+
+Report export runs off the frame thread. A report holds the live match's command
+log as a standard replay when the match has played any ticks, the root incident
+log, the newest crash dump, and a manifest, written last, naming the running
+build and what the report contains. The replay's metadata keeps the recording
+build, so build differences remain visible even when simulation versions permit
+playback. Reports stay local, and diagnostics never take screenshots or enable
+the debug server.
 
 ## Debug protocol
 
@@ -885,7 +867,7 @@ composition; presentation and input claims require the real shell.
 | App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                             |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                                   |
 | Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests                                                              |
-| Saves and recovery            | `shell/src/autosave.rs`, `shell/src/saves.rs`, `kit/src/recovery/`             | Module tests                                                                        |
+| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                        |
 | Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                        |
 | Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                      |
 | Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs` | Protocol tests, `driver/tests/session_parity.rs`                                    |

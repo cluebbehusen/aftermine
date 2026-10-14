@@ -22,12 +22,12 @@ fn cancellation_keeps_admission_until_the_worker_releases_its_capture() {
             started.send(()).unwrap();
             blocked.recv().unwrap();
             anyhow::ensure!(!cancel.cancelled(), "cancelled");
-            Ok(Output::Saved)
+            Ok(Output::Saved(None))
         }))
         .unwrap();
     observed.recv().unwrap();
     assert!(worker.cancel());
-    assert!(worker.start(Box::new(|_| Ok(Output::Saved))).is_err());
+    assert!(worker.start(Box::new(|_| Ok(Output::Saved(None)))).is_err());
     release.send(()).unwrap();
     let (finished, result) = completion(&mut worker);
     assert_eq!(id, finished);
@@ -37,7 +37,7 @@ fn cancellation_keeps_admission_until_the_worker_releases_its_capture() {
         .start(Box::new(|cancel| {
             cancel.commit()?;
             assert!(!cancel.cancel());
-            Ok(Output::Saved)
+            Ok(Output::Saved(None))
         }))
         .unwrap();
     assert_ne!(id, next);
@@ -51,7 +51,7 @@ fn a_failed_job_does_not_poison_the_worker() {
         .start(Box::new(|_| panic!("injected worker failure")))
         .unwrap();
     assert!(completion(&mut worker).1.is_err());
-    worker.start(Box::new(|_| Ok(Output::Saved))).unwrap();
+    worker.start(Box::new(|_| Ok(Output::Saved(None)))).unwrap();
     assert!(completion(&mut worker).1.is_ok());
 }
 
@@ -76,13 +76,9 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
             .problem
             .is_none()
     );
-    let Output::Loaded(restored) = load_candidates(
-        vec![newer, older.clone()],
-        false,
-        None,
-        &Cancellation::default(),
-    )
-    .unwrap() else {
+    let Output::Loaded(restored) =
+        load_candidates(vec![newer, older.clone()], &Cancellation::default()).unwrap()
+    else {
         panic!()
     };
     let mut restored = restored.install();
@@ -92,8 +88,7 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
     }
     let cancelled = Cancellation::default();
     assert!(cancelled.cancel());
-    assert!(load_candidates(vec![older], false, Some(dir.join("recovery")), &cancelled).is_err());
-    assert!(!dir.join("recovery").exists());
+    assert!(load_candidates(vec![older], &cancelled).is_err());
     std::fs::remove_dir_all(dir).unwrap();
 }
 

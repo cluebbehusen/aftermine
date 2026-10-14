@@ -3,10 +3,24 @@ use super::*;
 fn write_record(game: &mut Game, dir: &Path) -> Result<SaveOutcome, SaveError> {
     let mut job = SaveJob::capture(game, None);
     job.dir = Some(dir.to_owned());
+    let mark = job.mark();
     let result = job.run()?;
-    game.autosave_done = true;
+    if let Some(mark) = mark {
+        game.mark_saved(&mark);
+    }
     Ok(result)
 }
+
+fn files(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
 fn write_named(game: &Game, name: &str, dir: &Path, saved_at: u64) -> Result<PathBuf, SaveError> {
     let mut job = SaveJob::capture(game, Some(name));
     job.dir = Some(dir.to_owned());
@@ -86,83 +100,6 @@ fn a_lan_match_leaves_only_a_watch_only_recording() {
 }
 
 #[test]
-fn a_tick_zero_clean_exit_finishes_existing_recovery_without_writing_a_save() {
-    use oxide_kit::recovery::{RecoveryWriter, inspect, latest_diagnostic_record};
-    let root = scratch("zero-recovery");
-    let baseline = GameReplay::new(
-        oxide_sim::SIM_VERSION,
-        "test",
-        oxide_sim::Scenario::skirmish(),
-    );
-    let old = RecoveryWriter::start(root.clone(), baseline, 0, crate::build_identity()).unwrap();
-    old.prepared(0, &[]);
-    old.completed(1);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while old.status().durable_tick != 1 {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    let old_path = old.directory().to_owned();
-    drop(old);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::fs::File::open(old_path.join("lease"))
-        .unwrap()
-        .try_lock()
-        .is_err()
-    {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    for public_path in [true, false] {
-        // Hold startup past the save path's bounded wait for recovery.
-        let budget = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .open(root.join("budget.lock"))
-            .unwrap();
-        budget.lock().unwrap();
-        let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-        game.recovery_root = Some(root.clone());
-        game.start_recovery();
-        let directory = game.recovery.as_ref().unwrap().directory().to_owned();
-        let outcome = if public_path {
-            SaveJob::capture(&game, None).run()
-        } else {
-            write_record(&mut game, &root.join("saves"))
-        };
-        assert!(matches!(outcome, Ok(SaveOutcome::NothingToSave)));
-        let writer = game.recovery.as_ref().unwrap();
-        assert!(!writer.status().ready);
-        drop(budget);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        loop {
-            let status = writer.status();
-            assert!(status.error.is_none(), "{status:?}");
-            if status.clean {
-                break;
-            }
-            assert!(std::time::Instant::now() < deadline, "{status:?}");
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(inspect(&directory).unwrap().clean);
-        drop(game);
-        assert_eq!(latest_diagnostic_record(&root).unwrap().directory, old_path);
-    }
-    assert!(!root.join("saves").exists());
-    for entry in std::fs::read_dir(&root).unwrap().flatten() {
-        let lease = entry.path().join("lease");
-        if lease.exists() {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while std::fs::File::open(&lease).unwrap().try_lock().is_err() {
-                assert!(std::time::Instant::now() < deadline);
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
-    }
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
 fn outcomes_distinguish_nothing_already_and_wrote() {
     let dir = scratch("outcomes");
     let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
@@ -204,7 +141,7 @@ fn records_carry_their_kind_and_a_named_save_leaves_the_session_recorder_alone()
         "the live recorder never inherits the name"
     );
     assert!(
-        !game.autosave_done,
+        !game.is_saved(),
         "an explicit save is not the session's quit record"
     );
     // A second save on the same tick walks the name instead of
@@ -233,7 +170,7 @@ fn an_unwritable_dir_reports_instead_of_lying() {
     let err = write_record(&mut game, &dir).expect_err("the failure surfaces");
     assert!(matches!(err, SaveError::CreateDir { .. }));
     assert!(err.player_line().is_ascii(), "the menu font is Latin-1");
-    assert!(!game.autosave_done, "a failed save still owes a record");
+    assert!(!game.is_saved(), "a failed save still owes a record");
     std::fs::remove_file(&dir).ok();
 }
 
@@ -301,50 +238,6 @@ fn collisions_beyond_one_thousand_remain_exclusively_reserved() {
         Some("second beyond the cutoff")
     );
 
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn rotation_does_not_count_an_in_flight_reservation() {
-    let dir = scratch("in-flight-rotation");
-    let scenario = oxide_sim::Scenario::skirmish();
-    for ticks in 1..=KEEP_AUTOSAVES {
-        let mut game = Game::new(scenario.clone()).expect("game");
-        game.advance_ticks(ticks as u64);
-        let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
-            panic!("completed autosave lands");
-        };
-        crate::saved_game::inspect(&path).expect("completed autosave loads");
-    }
-
-    let mut game = Game::new(scenario).expect("game");
-    game.advance_ticks(100);
-    let held = free_path(&dir, "autosave", game.state.current_tick())
-        .expect("another saver holds an in-flight destination");
-    let Ok(SaveOutcome::Wrote(new_path)) = write_record(&mut game, &dir) else {
-        panic!("the concurrent completed autosave lands");
-    };
-    assert!(new_path.exists(), "rotation keeps the new completed save");
-
-    let completed: Vec<_> = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| crate::saved_game::inspect(path).is_ok())
-        .collect();
-    assert_eq!(
-        completed.len(),
-        KEEP_AUTOSAVES,
-        "the marker consumes no completed-record retention slot"
-    );
-    assert!(completed.contains(&new_path));
-
-    drop(held);
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        KEEP_AUTOSAVES,
-        "a failed concurrent saver leaves the full completed shelf"
-    );
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -460,5 +353,243 @@ fn a_lan_host_save_is_a_resumable_checkpoint() {
         assert_eq!(info.meta.kind.as_deref(), Some(kind));
         assert_eq!(info.meta.description.as_deref(), name);
     }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_match_overwrites_its_one_slot() {
+    let dir = scratch("one-slot");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(1);
+    let Ok(SaveOutcome::Wrote(first)) = write_record(&mut game, &dir) else {
+        panic!("the first autosave lands");
+    };
+    game.advance_ticks(2);
+    let Ok(SaveOutcome::Wrote(second)) = write_record(&mut game, &dir) else {
+        panic!("the next autosave lands");
+    };
+    assert_eq!(first, second);
+    assert_eq!(files(&dir).len(), 1);
+    let saved = crate::saved_game::inspect(&first).unwrap();
+    assert_eq!(saved.meta.ticks, Some(3));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn continuing_a_slot_overwrites_it() {
+    let dir = scratch("continue-slot");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(4);
+    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+        panic!("the autosave lands");
+    };
+    let slot = SaveSlot::adopt(&path, &dir).unwrap();
+    let crate::saved_game::Loaded::Local(restored) = crate::saved_game::prepare(&path).unwrap()
+    else {
+        panic!("a local autosave restores locally");
+    };
+    let mut resumed = restored.with_slot(Some(slot)).install();
+    assert!(
+        matches!(
+            write_record(&mut resumed, &dir),
+            Ok(SaveOutcome::AlreadySaved)
+        ),
+        "leaving right after Continue rewrites nothing"
+    );
+    resumed.advance_ticks(3);
+    let Ok(SaveOutcome::Wrote(again)) = write_record(&mut resumed, &dir) else {
+        panic!("the continued match saves");
+    };
+    assert_eq!(again, path);
+    assert_eq!(files(&dir).len(), 1);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn only_an_autosave_in_the_autosave_folder_lends_its_slot() {
+    let dir = Path::new("/data/autosaves");
+    let adopt = |path: &str| SaveSlot::adopt(Path::new(path), dir);
+    assert_eq!(
+        adopt("/data/autosaves/autosave-12.oxsave"),
+        Some(SaveSlot("12".into()))
+    );
+    assert_eq!(
+        adopt("/data/autosaves/lan-autosave-12.oxsave"),
+        Some(SaveSlot("12".into()))
+    );
+    for other in [
+        "/data/saves/autosave-12.oxsave",
+        "/data/autosaves/save-12.oxsave",
+        "/data/autosaves/match-12.json",
+        "/data/autosaves/autosave-.oxsave",
+        "/data/autosaves/autosave12.oxsave",
+    ] {
+        assert_eq!(adopt(other), None, "{other}");
+    }
+}
+
+#[test]
+fn fresh_slots_never_repeat() {
+    let slots: Vec<SaveSlot> = (0..64).map(|_| SaveSlot::fresh()).collect();
+    for (index, slot) in slots.iter().enumerate() {
+        assert!(!slots[index + 1..].contains(slot));
+    }
+}
+
+#[test]
+fn rotation_keeps_the_last_five_matches() {
+    let dir = scratch("five-matches");
+    let mut slots = Vec::new();
+    for _ in 0..=KEEP_AUTOSAVES {
+        let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+        for ticks in [1, 2] {
+            game.advance_ticks(ticks);
+            assert!(matches!(
+                write_record(&mut game, &dir),
+                Ok(SaveOutcome::Wrote(_))
+            ));
+        }
+        slots.push(game.slot.clone());
+    }
+    let expected: Vec<String> = {
+        let mut names: Vec<String> = slots[1..]
+            .iter()
+            .map(|slot| slot.file("autosave"))
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(files(&dir), expected, "the oldest match left whole");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_decided_match_writes_its_record_and_drops_its_slot() {
+    let dir = scratch("decided-slot");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(5);
+    assert!(matches!(
+        write_record(&mut game, &dir),
+        Ok(SaveOutcome::Wrote(_))
+    ));
+    game.issue(oxide_sim::Command::Surrender);
+    game.do_tick();
+    assert!(game.state.result().is_some());
+    let Ok(SaveOutcome::Wrote(record)) = write_record(&mut game, &dir) else {
+        panic!("the finished record lands");
+    };
+    assert_eq!(files(&dir), vec![game.slot.file("match")]);
+    assert_eq!(
+        oxide_kit::load_replay(&record)
+            .unwrap()
+            .meta
+            .kind
+            .as_deref(),
+        Some("match")
+    );
+    assert!(matches!(
+        write_record(&mut game, &dir),
+        Ok(SaveOutcome::AlreadySaved)
+    ));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
+    let dir = scratch("late-mark");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(1);
+    let mut job = SaveJob::capture(&game, None);
+    job.dir = Some(dir.clone());
+    let mark = job.mark().unwrap();
+    game.advance_ticks(2);
+    assert!(matches!(job.run(), Ok(SaveOutcome::Wrote(_))));
+    game.mark_saved(&mark);
+    assert!(!game.is_saved());
+    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+        panic!("the newer ticks still save");
+    };
+    assert_eq!(
+        crate::saved_game::inspect(&path).unwrap().meta.ticks,
+        Some(3)
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_mark_for_another_match_changes_nothing() {
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(1);
+    game.mark_saved(&SaveMark {
+        slot: SaveSlot::fresh(),
+        key: game.save_key(),
+    });
+    assert!(!game.is_saved());
+}
+
+#[test]
+fn a_match_decided_before_install_writes_no_record() {
+    let dir = scratch("decided-replay");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.issue(oxide_sim::Command::Surrender);
+    game.advance_ticks(2);
+    let mut replay = game.recorder.clone();
+    replay.meta.ticks = Some(game.state.current_tick());
+    let mut watched = Game::from_replay(replay).unwrap();
+    assert!(watched.state.result().is_some());
+    assert!(matches!(
+        write_record(&mut watched, &dir),
+        Ok(SaveOutcome::AlreadySaved)
+    ));
+    assert!(!dir.exists());
+}
+
+#[test]
+fn a_slot_holds_one_autosave_kind() {
+    let dir = scratch("one-kind");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(3);
+    let manifest =
+        crate::game::checkpoint::LanManifest::new(&game.scenario, game.presentation.human, &[]);
+    let mut job = SaveJob::lan(
+        &game,
+        game.capture_save().for_lan(Vec::new(), manifest),
+        None,
+    );
+    job.dir = Some(dir.clone());
+    assert!(matches!(job.run(), Ok(SaveOutcome::Wrote(_))));
+    assert_eq!(files(&dir), vec![game.slot.file("lan-autosave")]);
+    game.advance_ticks(1);
+    assert!(matches!(
+        write_record(&mut game, &dir),
+        Ok(SaveOutcome::Wrote(_))
+    ));
+    assert_eq!(
+        files(&dir),
+        vec![game.slot.file("autosave")],
+        "a host resumed alone keeps one autosave"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn restarting_drops_the_slot_once_the_worker_is_idle() {
+    let dir = scratch("discard");
+    std::fs::create_dir_all(&dir).unwrap();
+    let slot = SaveSlot("9".into());
+    for kind in ["autosave", "lan-autosave", "match"] {
+        std::fs::write(dir.join(slot.file(kind)), b"{}").unwrap();
+    }
+    let mut discarded = vec![slot.clone()];
+    discard_when_idle(&mut discarded, true, Some(&dir));
+    assert_eq!(
+        discarded,
+        vec![slot.clone()],
+        "a running save may still write it"
+    );
+    assert_eq!(files(&dir).len(), 3);
+    discard_when_idle(&mut discarded, false, Some(&dir));
+    assert!(discarded.is_empty());
+    assert_eq!(files(&dir), vec![slot.file("match")]);
     std::fs::remove_dir_all(&dir).ok();
 }

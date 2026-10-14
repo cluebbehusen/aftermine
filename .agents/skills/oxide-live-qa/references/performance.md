@@ -124,19 +124,20 @@ driver live ui
    Record scenario, seed, profiles, tick, entity counts, file bytes, and the
    hardware/build identity. This uses the actual player-save encoder.
 3. Bracket each UI operation with `driver live performance --reset`. Exercise
-   named Save, shelf Load, Continue, and entering a shelf containing sixteen
-   copies of the same checkpoint under distinct filenames in the QA profile.
-   Wait for the catalog to populate before choosing conditional rows. Inspect
-   `driver live ui` instead of assuming a fixed menu index.
+   named Save, shelf Load, Continue, a periodic autosave during live play, and
+   entering a shelf containing sixteen copies of the same checkpoint under
+   distinct filenames in the QA profile. Wait for the catalog to populate before
+   choosing conditional rows. Inspect `driver live ui` instead of assuming a
+   fixed menu index.
 4. Separately record elapsed operation time and frame work. Named saves stay
    paused; a load presents its loading screen before dispatch and opens paused.
    Capture screenshots outside the timing window. Querying or loading through a
    debug request outside frame timing does not measure a UI transition stall.
 5. Repeat cold-process operations and at least five warm cycles separately.
-   Include saving immediately after loading, rather than warming away recovery
-   initialization or worker-admission delays. For worker/lifecycle changes,
-   exercise cancel/retry and repeated replacements; check memory at comparable
-   settled points and verify the previous session survives cancellation.
+   Include saving immediately after loading, rather than warming away
+   worker-admission delays. For worker/lifecycle changes, exercise cancel/retry
+   and repeated replacements; check memory at comparable settled points and
+   verify the previous session survives cancellation.
 
 On the selected comparison machine, investigate warm 16-save discovery above 100
 ms, capture/install p95 above 4 ms, any repeatable capture/install frame over

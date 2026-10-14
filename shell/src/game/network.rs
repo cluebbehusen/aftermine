@@ -131,18 +131,20 @@ impl Game {
             return;
         }
         self.pace(dt, |game| {
-            if game.state.result().is_some() {
-                return false;
-            }
-            let Some(mut batch) = session.seal(now) else {
-                return false;
-            };
-            batch.extend(game.bot_commands());
-            session.publish(&batch);
-            game.run_batch(&batch);
-            let state = &game.state;
-            session.executed(|| state.hash());
-            true
+            game.guard_tick(|game| {
+                if game.state.result().is_some() {
+                    return false;
+                }
+                let Some(mut batch) = session.seal(now) else {
+                    return false;
+                };
+                batch.extend(game.bot_commands());
+                session.publish(&batch);
+                game.run_batch(&batch);
+                let state = &game.state;
+                session.executed(|| state.hash());
+                true
+            })
         });
         if self.clock.accum < TICK_DT {
             self.prepare_bot_decision();
@@ -164,7 +166,7 @@ impl Game {
         let Some(batch) = session.next_batch() else {
             return false;
         };
-        self.run_batch(&batch);
+        self.guard_tick(|game| game.run_batch(&batch));
         let state = &self.state;
         session.executed(|| state.hash());
         true

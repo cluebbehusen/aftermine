@@ -160,7 +160,7 @@ fn a_long_toast_wraps_short_of_the_minimap_at_the_layout_floor() {
     );
     assert_eq!(right, minimap.x - 12.0);
     let measure = |text: &str, size: f32| text.chars().count() as f32 * size * 0.5;
-    let text = "Recovery stopped: recovery session limit: existing records are protected";
+    let text = "A toast this long wraps onto more lines instead of running under the minimap";
     let (size, lines) = toast_lines(text, right - origin.x, 1.0, measure);
     assert_eq!(size, crate::theme::Type::Body.at(1.0));
     assert!(lines.len() > 1);

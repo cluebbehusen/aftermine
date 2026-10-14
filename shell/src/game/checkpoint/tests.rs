@@ -1,94 +1,17 @@
 use super::*;
 use crate::numeric::Fit;
 use crate::tutorial::Demo;
-use oxide_kit::recovery::BuildIdentity;
 use oxide_sim::scenario::BotConfig;
 
 #[test]
-fn checkpoint_recovery_restores_the_shell_without_replaying_the_opening() {
-    let mut original = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
-    original.advance_ticks(37);
-    original.issue(Command::Train {
-        building: oxide_sim::BuildingId(0),
-        kind: oxide_sim::UnitKind::Harvester,
-    });
-    let checkpoint = SessionCheckpoint::capture(
-        &original.scenario,
-        &original.state,
-        &original.bots,
-        &original.pending,
-        Some(&original.live_stats),
-    )
-    .unwrap();
-    original.recorder = checkpoint
-        .recording(&oxide_kit::recovery::BuildIdentity::default())
-        .unwrap();
-    original.do_tick();
-    let mut replay = original.recorder.clone();
-    replay.meta.ticks = Some(original.state.current_tick());
-    let record = oxide_kit::recovery::Inspection {
-        kind: oxide_kit::recovery::RecordingKind::LiveMatch,
-        build: BuildIdentity::default(),
-        session: "test".into(),
-        replay,
-        checkpoint: Some(checkpoint),
-        prepared: None,
-        issue: None,
-        clean: false,
-    };
-    let root = std::env::temp_dir().join(format!("oxide-restored-prefix-{}", std::process::id()));
-    let mut prepared = RestoredGame::recover(record, || false).unwrap();
-    prepared.start_recovery(Some(root.clone()), None).unwrap();
-    let writer = prepared.recovery.as_ref().unwrap().clone();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while !writer.status().ready {
-        assert!(writer.status().error.is_none(), "{:?}", writer.status());
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    let persisted = oxide_kit::recovery::inspect(writer.directory()).unwrap();
-    assert_eq!(
-        persisted.replay.start_tick(),
-        original.recorder.start_tick()
-    );
-    assert_eq!(
-        serde_json::to_value(persisted.replay.commands).unwrap(),
-        serde_json::to_value(&original.recorder.commands).unwrap()
-    );
-    let mut restored = prepared.install();
-    assert!(restored.clock.paused);
-    assert!(restored.pending.is_empty());
-    assert_eq!(restored.state.hash(), original.state.hash());
-    for _ in 0..24 {
-        assert_eq!(original.do_tick().events, restored.do_tick().events);
-        assert_eq!(original.state.hash(), restored.state.hash());
-    }
-    assert_eq!(
-        original.live_stats.snapshot(&original.state),
-        restored.live_stats.snapshot(&restored.state)
-    );
-    assert_eq!(
-        serde_json::to_vec(&original.recorder.commands).unwrap(),
-        serde_json::to_vec(&restored.recorder.commands).unwrap()
-    );
-    finish_recording(&writer, restored.state.current_tick());
-    let lease = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(writer.directory().join("lease"))
-        .unwrap();
-    drop(restored);
-    drop(writer);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while lease.try_lock().is_err() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "recovery writer did not release its lease"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    drop(lease);
-    std::fs::remove_dir_all(root).unwrap();
+fn a_save_capture_leaves_the_live_world_free_to_tick() {
+    let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
+    game.advance_ticks(5);
+    let capture = game.capture_save();
+    game.do_tick();
+    let saved = capture.checkpoint().unwrap().restore().unwrap().install();
+    assert_eq!(saved.state.current_tick(), 5);
+    assert_eq!(game.state.current_tick(), 6);
 }
 
 #[test]
@@ -145,7 +68,7 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
 }
 
 #[test]
-fn an_opponent_seat_continues_through_save_recovery_and_replay_resume() {
+fn an_opponent_seat_continues_through_save_and_replay_resume() {
     let mut scenario = Scenario::skirmish();
     scenario.players[1].bot = true;
     scenario.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::new(
@@ -176,23 +99,8 @@ fn an_opponent_seat_continues_through_save_recovery_and_replay_resume() {
     );
 
     let saved: Game = serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
-    let recovered = RestoredGame::recover(
-        oxide_kit::recovery::Inspection {
-            kind: oxide_kit::recovery::RecordingKind::LiveMatch,
-            build: BuildIdentity::default(),
-            session: "opponent".into(),
-            replay: replay.clone(),
-            checkpoint: None,
-            prepared: None,
-            issue: None,
-            clean: false,
-        },
-        || false,
-    )
-    .unwrap()
-    .install();
     let resumed = Game::from_replay(replay).unwrap();
-    let mut continuations = [saved, recovered, resumed];
+    let mut continuations = [saved, resumed];
     for game in &continuations {
         assert_eq!(controllers(game), pending);
     }

@@ -16,6 +16,7 @@
 //! without its payload is unrepresentable.
 
 mod audio;
+mod background_save;
 mod debug;
 mod persistence;
 mod screen;
@@ -118,6 +119,9 @@ struct App {
     persistence_result: Option<Result<persistence::Output>>,
     catalog_id: Option<u64>,
     catalog_delete: Option<std::path::PathBuf>,
+    /// Autosave slots of abandoned matches, deleted once no save can still
+    /// be writing them.
+    discarded: Vec<crate::autosave::SaveSlot>,
     /// Presented frames in a row spent in live play; the suspension
     /// pause reads it to tell a stalled match from a heavy transition.
     live_streak: u8,
@@ -142,8 +146,11 @@ struct App {
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
     offer: Option<crate::rejoin_ticket::Ticket>,
-    /// The host's own save of its running LAN match, while it runs.
-    autosave_id: Option<u64>,
+    /// The app's own save of the running match, while it runs, with the
+    /// slot it writes.
+    autosave_id: Option<(u64, crate::autosave::SaveSlot)>,
+    /// When the app next saves the running match on its own.
+    background: background_save::Schedule,
     /// When the host tries again after its own save failed.
     autosave_retry: Option<std::time::Duration>,
     /// The session clock the lobby and the link read.
@@ -182,7 +189,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     };
     mark("run enter (first frame)");
     match oxide_kit::diagnostics::Monitor::start(
-        crate::paths::recovery_dir(),
+        crate::paths::diagnostics_dir(),
         crate::build_identity(),
     ) {
         Ok(monitor) => drop(monitor.install()),
@@ -225,11 +232,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         };
         Game::new(scenario)?
     };
-    game.recovery_root = crate::paths::recovery_dir();
-    if game.recovery_root.is_none() {
-        game.presentation
-            .toast("Recovery unavailable: no writable data folder is configured");
-    }
+    game.crash_dumps = crate::paths::diagnostics_dir();
     game.clock.paused = args.paused;
     game.clock.speed = args.speed;
     mark("game built");
@@ -355,6 +358,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         persistence_result: None,
         catalog_id: None,
         catalog_delete: None,
+        discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,
         soft_keyboard: None,
@@ -366,6 +370,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         next_probe: std::time::Duration::ZERO,
         offer: None,
         autosave_id: None,
+        background: background_save::Schedule::default(),
         autosave_retry: None,
         clock: std::time::Instant::now(),
     };
@@ -374,6 +379,9 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     // the frame's starting screen is the one recorded before it.
     let mut rerun_pass = false;
     let mut began_playing = false;
+    // The live match and its tick when the presented frame began, so the
+    // background save can tell whether the match played during it.
+    let mut live_start = (app.game.slot.clone(), app.game.state.current_tick());
 
     loop {
         if let Some(result) = app.report_job.poll() {
@@ -396,14 +404,13 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
                 || visible.paused(),
             minimized: input::reported_minimized(),
-            recording: visible.recording(),
         });
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
-        app.game.poll_recovery();
         let time = FrameTime::measure(get_frame_time());
         let first_pass = !std::mem::take(&mut rerun_pass);
         if first_pass {
             began_playing = screen.kind() == ScreenKind::Playing;
+            live_start = (app.game.slot.clone(), app.game.state.current_tick());
         }
         if let Some(rx) = &debug_rx {
             while let Ok(incoming) = rx.try_recv() {
@@ -550,6 +557,12 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             rerun_pass = true;
             continue;
         }
+        let played = if app.game.slot == live_start.0 {
+            app.game.state.current_tick().saturating_sub(live_start.1)
+        } else {
+            0
+        };
+        app.background_save(&screen, played);
 
         // The menu-context error line draws over whichever menu is up;
         // the gameplay screens speak through the HUD's toast strip.
@@ -752,6 +765,8 @@ impl App {
         let fresh = keep_flags(fresh, &self.game);
         let old = std::mem::replace(&mut self.game, fresh);
         self.persistence.retire(old);
+        // Timing and failures belong to the match they were counted for.
+        self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
         if let Some(link) = how.net {
             // A LAN match runs in real time with no debug overlay.
@@ -791,6 +806,8 @@ impl App {
         let fresh = keep_flags(fresh, &self.game);
         let old = std::mem::replace(&mut self.game, fresh);
         self.persistence.retire(old);
+        // Timing and failures belong to the match they were counted for.
+        self.background = background_save::Schedule::default();
         self.game.clock.speed = 1.0;
         self.game.presentation.overlay = false;
         self.input.reset_session();
@@ -860,13 +877,10 @@ impl Install {
 
 /// Carries session-level toggles (pause/speed/overlay) onto a fresh game.
 fn keep_flags(mut fresh: Game, old: &Game) -> Game {
-    if let Some(writer) = &old.recovery {
-        writer.finish(old.state.current_tick());
-    }
     fresh.clock.paused = old.clock.paused;
     fresh.clock.speed = old.clock.speed;
     fresh.presentation.overlay = old.presentation.overlay;
-    fresh.recovery_root.clone_from(&old.recovery_root);
+    fresh.crash_dumps.clone_from(&old.crash_dumps);
     fresh
 }
 

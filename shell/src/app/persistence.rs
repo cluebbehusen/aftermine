@@ -33,14 +33,12 @@ struct Work {
     task: Task,
 }
 pub(super) enum Output {
-    Catalog {
-        entries: Vec<crate::saves::ReplayEntry>,
-        recovery: Option<PathBuf>,
-    },
+    Catalog(Vec<crate::saves::ReplayEntry>),
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
-    Saved,
+    /// A save finished; an unnamed one names the slot and content it wrote.
+    Saved(Option<autosave::SaveMark>),
     Retired,
 }
 
@@ -97,10 +95,9 @@ impl Worker {
         self.active.is_some()
     }
 
-    /// Lets a replaced match wind down here: its recording finishes and
-    /// its bots stop off the frame thread, since finishing a recording may
-    /// wait on its writer. A worker busy with other work leaves the game to
-    /// drop on the caller's thread, its recording already told to finish.
+    /// Lets a replaced match's world, bots and any speculative bot decision
+    /// drop here rather than on the frame thread. A worker busy with other
+    /// work leaves the game to drop on the caller's thread.
     pub(super) fn retire(&mut self, old: Game) {
         if self.busy() {
             drop(old);
@@ -132,19 +129,15 @@ impl Worker {
 pub(super) enum Intent {
     Load(PathBuf),
     Continue,
-    Recover(PathBuf),
     Named(String),
     Leave(screens::pause::LeaveVerb, bool),
     Rematch,
 }
 impl Intent {
     fn loading(&self) -> bool {
-        matches!(self, Self::Load(_) | Self::Continue | Self::Recover(_))
+        matches!(self, Self::Load(_) | Self::Continue)
     }
 }
-/// How long after a failed LAN autosave the host tries again.
-const LAN_AUTOSAVE_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
-
 pub(super) struct Busy {
     intent: Intent,
     back: Box<Screen>,
@@ -210,32 +203,53 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
+        autosave::discard_when_idle(
+            &mut self.discarded,
+            self.persistence.busy(),
+            crate::paths::autosave_dir().as_deref(),
+        );
         if self.catalog_delete.is_some() && !self.persistence.busy() {
             self.request_catalog();
         }
         let Some((id, result)) = self.persistence.poll() else {
             return;
         };
-        if self.autosave_id == Some(id) {
-            self.autosave_id = None;
-            if let Err(error) = result {
-                eprintln!("LAN autosave failed: {error:#}");
-                self.notify(error.to_string(), true);
-                // A wait freezes the tick the timed save counts, so try
-                // again after a while instead.
-                self.autosave_retry = Some(self.clock.elapsed() + LAN_AUTOSAVE_RETRY);
+        if let Some((_, slot)) = self.autosave_id.take_if(|(job, _)| *job == id) {
+            // A replaced match's save no longer counts toward this one.
+            let current = slot == self.game.slot;
+            match result {
+                Ok(Output::Saved(mark)) => {
+                    if let Some(mark) = &mark {
+                        self.game.mark_saved(mark);
+                    }
+                    if current {
+                        self.background.succeeded();
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("Autosave failed: {error:#}");
+                    let now = self.clock.elapsed();
+                    if current && self.background.failed(now) {
+                        self.notify(error.to_string(), true);
+                    }
+                    // A wait freezes the tick the timed LAN save counts, so
+                    // try again after a while instead.
+                    self.autosave_retry = Some(now + super::background_save::RETRY);
+                }
             }
         } else if self.catalog_id == Some(id) {
             self.catalog_id = None;
             if let Err(error) = &result {
                 self.notify(format!("Could not refresh saves: {error:#}"), true);
             }
-            if let Ok(Output::Catalog { entries, recovery }) = result {
+            if let Ok(Output::Catalog(entries)) = result {
                 match screen {
-                    Screen::Home(home) => home.set_catalog(
-                        entries.iter().any(|e| e.available() && e.kind.continues()),
-                        recovery,
-                    ),
+                    Screen::Home(home) => {
+                        home.set_catalog(
+                            entries.iter().any(|e| e.available() && e.kind.continues()),
+                        );
+                    }
                     Screen::Replays(shelf) => shelf.set_catalog(entries),
                     _ => {}
                 }
@@ -267,15 +281,84 @@ impl App {
             return;
         };
         let job = autosave::SaveJob::lan(&self.game, capture, None);
+        let mark = job.mark();
         let task: Task = Box::new(move |_| {
             job.run().map_err(|error| {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
-            Ok(Output::Saved)
+            Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
-            Ok(id) => self.autosave_id = Some(id),
+            Ok(id) => self.autosave_id = Some((id, self.game.slot.clone())),
+            Err(error) => self.notify(error.to_string(), true),
+        }
+    }
+
+    /// Starts a save the app owes on its own: a decided match's record, or
+    /// a resumable match's autosave after a minute of live play or as the
+    /// window goes inactive. `ticks` is how far the live match advanced
+    /// during the frame. A LAN host's autosaves go through its link, which
+    /// also saves on its own schedule.
+    pub(super) fn background_save(&mut self, screen: &Screen, ticks: u64) {
+        // Automated runs keep their timing and data folder to themselves.
+        let exempt = self.args.automation;
+        let undecided = self.game.state.result().is_none();
+        let unsaved = !self.game.is_saved();
+        let local = self.game.net_role().is_none();
+        let resumable = local && undecided && !exempt;
+        self.background.observe(super::background_save::Frame {
+            played: if resumable {
+                crate::numeric::to_f32(
+                    f64::from(u32::try_from(ticks).unwrap_or(u32::MAX))
+                        / f64::from(oxide_sim::TICKS_PER_SECOND)
+                        / self.game.clock.speed.max(f64::EPSILON),
+                )
+            } else {
+                0.0
+            },
+            minimized: (!exempt && screen.holds_live_match())
+                .then(crate::input::reported_minimized)
+                .flatten(),
+            unsaved,
+        });
+        if self.background.inactive()
+            && undecided
+            && self.net.as_ref().is_some_and(crate::netplay::Link::hosting)
+        {
+            if let Some(link) = &mut self.net {
+                link.rearm_autosave();
+            }
+            self.background.started();
+            // The frame that reports going inactive may be the last before
+            // the platform suspends the app, so the save starts now.
+            self.lan_autosave();
+        }
+        if self.persistence.busy() || matches!(screen, Screen::Busy(_)) {
+            return;
+        }
+        let decided = !undecided && self.game.end_stats.is_some() && unsaved;
+        if self
+            .background
+            .due(decided, local && undecided && unsaved, self.clock.elapsed())
+            .is_none()
+        {
+            return;
+        }
+        let job = autosave::SaveJob::capture(&self.game, None);
+        let mark = job.mark();
+        let task: Task = Box::new(move |_| {
+            job.run().map_err(|error| {
+                let line = error.player_line();
+                anyhow::Error::new(error).context(line)
+            })?;
+            Ok(Output::Saved(mark))
+        });
+        match self.persistence.start(task) {
+            Ok(id) => {
+                self.autosave_id = Some((id, self.game.slot.clone()));
+                self.background.started();
+            }
             Err(error) => self.notify(error.to_string(), true),
         }
     }
@@ -291,12 +374,7 @@ impl App {
             }
             let entries = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
-            let recovery = crate::paths::recovery_dir().and_then(|root| {
-                oxide_kit::recovery::interrupted_candidates(&root)
-                    .into_iter()
-                    .next()
-            });
-            Ok(Output::Catalog { entries, recovery })
+            Ok(Output::Catalog(entries))
         });
         match self.persistence.start(task) {
             Ok(id) => self.catalog_id = Some(id),
@@ -305,28 +383,13 @@ impl App {
     }
 }
 
-fn load_candidates(
-    paths: Vec<PathBuf>,
-    recovery: bool,
-    root: Option<PathBuf>,
-    cancel: &Cancellation,
-) -> Result<Output> {
+fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output> {
     let mut last_error = anyhow::anyhow!("no loadable save is available");
     for path in paths {
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
-        let result = if recovery {
-            oxide_kit::recovery::inspect(&path)
-                .and_then(|record| {
-                    crate::game::checkpoint::RestoredGame::recover(record, || cancel.cancelled())
-                })
-                .map(|game| crate::saved_game::Loaded::Local(Box::new(game)))
-        } else {
-            crate::saved_game::prepare(&path)
-        };
-        match result {
-            Ok(crate::saved_game::Loaded::Local(mut loaded)) => {
+        match crate::saved_game::prepare(&path) {
+            Ok(crate::saved_game::Loaded::Local(loaded)) => {
                 cancel.commit()?;
-                loaded.start_recovery(root, recovery.then_some(path))?;
                 return Ok(Output::Loaded(loaded));
             }
             Ok(crate::saved_game::Loaded::Lan(save)) => {
@@ -412,9 +475,9 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     &mut app.draft,
                 )));
             }
-            Ok(Output::Saved) => {
-                if !matches!(busy.intent, Intent::Named(_)) {
-                    app.game.autosave_done = true;
+            Ok(Output::Saved(mark)) => {
+                if let Some(mark) = mark {
+                    app.game.mark_saved(&mark);
                 }
                 if busy.quit_after {
                     return Ok(app.persistence_screen(
@@ -471,11 +534,6 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         home,
                     )));
                 }
-                if matches!(busy.intent, Intent::Recover(_))
-                    && let Screen::Home(home) = &mut *busy.back
-                {
-                    home.clear_recovery();
-                }
                 app.notify(
                     if loading {
                         format!("Load failed: {error}")
@@ -489,7 +547,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 }
                 return Ok(*busy.back);
             }
-            Ok(Output::Catalog { .. } | Output::Retired) => unreachable!(),
+            Ok(Output::Catalog(_) | Output::Retired) => unreachable!(),
         }
     }
     if !busy.presented {
@@ -516,31 +574,22 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     Some(capture) => autosave::SaveJob::lan(&app.game, capture, name),
                     None => autosave::SaveJob::capture(&app.game, name),
                 };
+                let mark = job.mark();
                 Box::new(move |_| {
                     job.run().map_err(|error| {
                         let line = error.player_line();
                         anyhow::Error::new(error).context(line)
                     })?;
-                    Ok(Output::Saved)
+                    Ok(Output::Saved(mark))
                 })
             }
-            Intent::Load(_) | Intent::Continue | Intent::Recover(_) => {
+            Intent::Load(_) | Intent::Continue => {
                 let paths = match &busy.intent {
-                    Intent::Load(path) | Intent::Recover(path) => Some(vec![path.clone()]),
+                    Intent::Load(path) => Some(vec![path.clone()]),
                     _ => None,
                 };
-                let recovery = matches!(busy.intent, Intent::Recover(_));
-                let root = app.game.recovery_root.clone();
                 Box::new(move |cancel| {
-                    let mut paths = paths.unwrap_or_else(autosave::candidates);
-                    if recovery && let Some(root) = &root {
-                        for candidate in oxide_kit::recovery::interrupted_candidates(root) {
-                            if !paths.contains(&candidate) {
-                                paths.push(candidate);
-                            }
-                        }
-                    }
-                    load_candidates(paths, recovery, root, cancel)
+                    load_candidates(paths.unwrap_or_else(autosave::candidates), cancel)
                 })
             }
         };

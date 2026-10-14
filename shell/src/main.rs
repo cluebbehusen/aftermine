@@ -268,8 +268,8 @@ async fn main() {
     }
 }
 
-fn build_identity() -> oxide_kit::recovery::BuildIdentity {
-    oxide_kit::recovery::BuildIdentity::new(
+fn build_identity() -> oxide_kit::build::BuildIdentity {
+    oxide_kit::build::BuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         env!("OXIDE_BUILD_REVISION"),
         env!("OXIDE_BUILD_DIRTY"),

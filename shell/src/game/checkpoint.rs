@@ -1,7 +1,6 @@
 //! Self-contained shell continuation; historical commands belong to recordings.
 
 use super::*;
-use crate::tutorial::Demo;
 use oxide_kit::checkpoint::SessionCheckpoint;
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
@@ -60,9 +59,11 @@ fn joined_seats(scenario: &Scenario, host: PlayerId) -> impl Iterator<Item = Pla
         .filter(move |&seat| seat != host)
 }
 
+/// Everything a save needs, detached from the live session so the match can
+/// keep ticking while a worker encodes it.
 pub(crate) struct SaveCapture {
     scenario: Scenario,
-    state: Arc<State>,
+    state: State,
     bots: Vec<SeatController>,
     pending: Vec<oxide_sim::PlayerCommand>,
     stats: oxide_kit::stats::LiveMatchStats,
@@ -77,7 +78,7 @@ impl Game {
     pub(crate) fn capture_save(&self) -> SaveCapture {
         SaveCapture {
             scenario: self.scenario.clone(),
-            state: Arc::clone(&self.state.0),
+            state: State::clone(&self.state.0),
             bots: self.bots.clone(),
             pending: self.pending.to_vec(),
             stats: self.live_stats.clone(),
@@ -149,6 +150,8 @@ impl<'de> Deserialize<'de> for Game {
 /// A saved LAN match, checked, waiting in Match Setup for its players.
 pub(crate) struct LanSave {
     checkpoint: GameCheckpoint,
+    /// The autosave slot the save came from, which the resumed match keeps.
+    slot: Option<crate::autosave::SaveSlot>,
     scenario: Scenario,
     tick: u64,
     /// The joined seats still in the match, with their installations.
@@ -159,6 +162,12 @@ impl LanSave {
     /// The saved match's seats.
     pub(crate) fn scenario(&self) -> &Scenario {
         &self.scenario
+    }
+
+    /// Keeps writing to the autosave slot the save came from.
+    pub(crate) fn with_slot(mut self, slot: Option<crate::autosave::SaveSlot>) -> Self {
+        self.slot = slot;
+        self
     }
 
     /// The host's seat.
@@ -238,7 +247,12 @@ impl LanSave {
     /// The saved match with `bots` seats handed to bots and their orders
     /// dropped.
     fn with_bots(&self, bots: &[(PlayerId, BotDifficulty, BotStance)]) -> Result<Game> {
-        let mut game = self.checkpoint.clone().restore()?.install();
+        let mut game = self
+            .checkpoint
+            .clone()
+            .restore()?
+            .with_slot(self.slot.clone())
+            .install();
         for &(seat, difficulty, stance) in bots {
             anyhow::ensure!(
                 self.joined().iter().any(|(joined, _)| *joined == seat),
@@ -260,8 +274,8 @@ pub(crate) struct RestoredGame {
     demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
-    recovery: Option<Arc<oxide_kit::recovery::RecoveryWriter>>,
-    recovery_origin: Option<SessionCheckpoint>,
+    /// The autosave slot the save came from, which the match keeps.
+    slot: Option<crate::autosave::SaveSlot>,
 }
 
 impl GameCheckpoint {
@@ -288,6 +302,7 @@ impl GameCheckpoint {
             .filter(|&(seat, _)| state.accepts_commands(seat))
             .collect();
         Ok(LanSave {
+            slot: None,
             scenario: restored.scenario().clone(),
             tick: restored.tick(),
             players,
@@ -298,7 +313,6 @@ impl GameCheckpoint {
     pub(crate) fn restore(self) -> Result<RestoredGame> {
         let checkpoint = self;
         let recorder = checkpoint.session.recording(&crate::build_identity())?;
-        let recovery_origin = Some(checkpoint.session.clone());
         let core = checkpoint.session.restore()?;
         match &checkpoint.lan {
             None => anyhow::ensure!(
@@ -340,112 +354,16 @@ impl GameCheckpoint {
             demo: checkpoint.demo,
             concede_stats: checkpoint.concede_stats,
             boundary_fog: checkpoint.boundary_fog,
-            recovery: None,
-            recovery_origin,
+            slot: None,
         })
     }
 }
 
 impl RestoredGame {
-    pub(crate) fn recover(
-        record: oxide_kit::recovery::Inspection,
-        cancelled: impl Fn() -> bool,
-    ) -> Result<Self> {
-        anyhow::ensure!(
-            !record.clean && record.kind == oxide_kit::recovery::RecordingKind::LiveMatch,
-            "recording is not an interrupted live match"
-        );
-        let recovery_origin = record.checkpoint.clone();
-        let (core, boundary_fog) = if let Some(checkpoint) = record.checkpoint {
-            let core = checkpoint.resume_recording_cancellable(&record.replay, &cancelled)?;
-            let fog = crate::boundary_fog::BoundaryFog::new(
-                &core.state,
-                Game::local_seat(&core.scenario),
-            );
-            (core, fog)
-        } else {
-            let scenario = record.replay.setup.clone();
-            record.replay.validate(Some(SIM_VERSION))?;
-            anyhow::ensure!(
-                record.replay.origin.is_none(),
-                "missing recovery checkpoint"
-            );
-            let mut state = scenario.build()?;
-            let human = Game::local_seat(&scenario);
-            let mut boundary_fog = crate::boundary_fog::BoundaryFog::new(&state, human);
-            let mut bots = seat_controllers(&scenario)?;
-            let mut stats = oxide_kit::stats::LiveMatchStats::new(&state);
-            let mut cursor = record.replay.cursor();
-            let end = oxide_kit::bounded_replay_duration(&record.replay)?;
-            for _ in 0..end {
-                anyhow::ensure!(!cancelled(), "load cancelled");
-                let _ = oxide_kit::bot_execution::commands(&state, &mut bots);
-                let commands: Vec<_> = cursor
-                    .take_tick(state.current_tick())
-                    .iter()
-                    .map(|timed| timed.command.clone())
-                    .collect();
-                let report = state.tick(&commands);
-                oxide_kit::controller::record_events(&mut bots, &report);
-                stats.observe(&state, &report.events);
-                boundary_fog.observe(&state, human);
-            }
-            anyhow::ensure!(cursor.is_finished(), "unconsumed recovery commands");
-            (
-                oxide_kit::checkpoint::RestoredSession {
-                    scenario,
-                    state,
-                    bots,
-                    pending: Vec::new(),
-                    stats: Some(stats),
-                },
-                boundary_fog,
-            )
-        };
-        anyhow::ensure!(
-            core.stats.is_some(),
-            "shell recovery requires live statistics"
-        );
-        let human = Game::local_seat(&core.scenario);
-        Ok(Self {
-            core,
-            recorder: record.replay,
-            human,
-            demo: Demo::default(),
-            concede_stats: None,
-            boundary_fog,
-            recovery: None,
-            recovery_origin,
-        })
-    }
-
-    pub(crate) fn start_recovery(
-        &mut self,
-        root: Option<std::path::PathBuf>,
-        source: Option<std::path::PathBuf>,
-    ) -> Result<()> {
-        if let Some(root) = root {
-            let writer = if let Some(checkpoint) = self.recovery_origin.take() {
-                oxide_kit::recovery::RecoveryWriter::start_recovered_checkpoint(
-                    root,
-                    self.recorder.clone(),
-                    self.tick(),
-                    checkpoint,
-                    source,
-                    crate::build_identity(),
-                )?
-            } else {
-                oxide_kit::recovery::RecoveryWriter::start_recovered(
-                    root,
-                    self.recorder.clone(),
-                    self.tick(),
-                    source,
-                    crate::build_identity(),
-                )?
-            };
-            self.recovery = Some(Arc::new(writer));
-        }
-        Ok(())
+    /// Keeps writing to the autosave slot the save came from.
+    pub(crate) fn with_slot(mut self, slot: Option<crate::autosave::SaveSlot>) -> Self {
+        self.slot = slot;
+        self
     }
 
     pub(crate) fn scenario(&self) -> &Scenario {
@@ -462,8 +380,7 @@ impl RestoredGame {
             demo,
             concede_stats,
             boundary_fog,
-            recovery,
-            recovery_origin: _,
+            slot,
         } = self;
         let live_stats = core.stats.expect("restoration validated statistics");
         let mut presentation = Presentation::new(&core.state, human, crate::render::viewport());
@@ -474,7 +391,8 @@ impl RestoredGame {
             .state
             .result()
             .map(|_| live_stats.snapshot(&core.state));
-        Game {
+        let adopted = slot.is_some();
+        let mut game = Game {
             scenario: core.scenario,
             state: ReadOnlyState(Arc::new(core.state)),
             bots: core.bots,
@@ -491,15 +409,20 @@ impl RestoredGame {
                 paused: true,
                 ..super::Clock::default()
             },
-            autosave_done: false,
+            slot: slot.unwrap_or_else(crate::autosave::SaveSlot::fresh),
+            saved: None,
+            crash_dumps: None,
+            tick_phase: super::TickPhase::Collecting,
             suppress_presentation: false,
             net: None,
             outbox: Vec::new(),
-            recovery_root: None,
-            recovery,
-            recovery_warned: false,
-            recovery_source: None,
+        };
+        // A continued autosave already holds this content, and a decided
+        // match was recorded when it ended.
+        if adopted || game.state.result().is_some() {
+            game.saved = Some(game.save_key());
         }
+        game
     }
 }
 

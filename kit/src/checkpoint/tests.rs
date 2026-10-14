@@ -133,18 +133,13 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
     for _ in 0..25 {
         crate::runner::step(&mut state, &mut bots, None);
     }
-    let origin = SessionCheckpoint::capture(&scenario, &state, &bots, &[], None).unwrap();
-    let mut suffix = origin
-        .recording(&crate::recovery::BuildIdentity::default())
-        .unwrap();
     let mut commands = crate::bot_execution::commands(&state, &mut bots);
     commands.extend([0, 1].map(|seat| PlayerCommand {
         player: PlayerId(seat),
         command: Command::Stop { units: vec![] },
     }));
-    let report = crate::runner::record_and_tick(&mut state, &commands, Some(&mut suffix));
+    let report = crate::runner::record_and_tick(&mut state, &commands, None);
     record_events(&mut bots, &report);
-    suffix.meta.ticks = Some(state.current_tick());
 
     let rejected = serde_json::json!([{"event": "command_rejected", "reason": "no_valid_units"}]);
     let json = serde_json::to_value(
@@ -156,25 +151,13 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
         .unwrap()
         .restore()
         .unwrap();
-    let mut recovered = origin.resume_recording(&suffix).unwrap();
-    let rebuilt = SessionCheckpoint::capture(
-        &scenario,
-        &recovered.state,
-        &recovered.bots,
-        &recovered.pending,
-        None,
-    )
-    .unwrap();
-    assert_eq!(serde_json::to_value(rebuilt).unwrap(), json);
 
     let mut received = Vec::new();
     for _ in 0..60 {
         let original = crate::runner::step_traced(&mut state, &mut bots, None);
-        for session in [&mut restored, &mut recovered] {
-            let resumed = crate::runner::step_traced(&mut session.state, &mut session.bots, None);
-            assert_eq!(resumed.report, original.report);
-            assert_eq!(resumed.traces, original.traces);
-        }
+        let resumed = crate::runner::step_traced(&mut restored.state, &mut restored.bots, None);
+        assert_eq!(resumed.report, original.report);
+        assert_eq!(resumed.traces, original.traces);
         received.extend(
             original
                 .traces
@@ -189,7 +172,6 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
         "each seat hears its own rejection at its next decision: Prime decides every 6 ticks, Standard every 12"
     );
     assert_eq!(restored.state.hash(), state.hash());
-    assert_eq!(recovered.state.hash(), state.hash());
 }
 
 #[test]

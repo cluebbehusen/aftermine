@@ -68,6 +68,18 @@ fn host_batches_play_out_exactly_like_do_tick() {
 }
 
 #[test]
+fn a_host_runs_batches_while_a_save_capture_is_encoded() {
+    let mut host =
+        Game::networked(Scenario::skirmish(), PlayerId(0), NetRole::Host, viewport()).unwrap();
+    host.run_batch(&[]);
+    let capture = host.capture_save();
+    host.run_batch(&[]);
+    let saved = capture.checkpoint().unwrap().restore().unwrap().install();
+    assert_eq!(saved.state.current_tick(), 1);
+    assert_eq!(host.state.current_tick(), 2);
+}
+
+#[test]
 fn a_client_binds_its_seat_and_retires_orders_as_they_execute() {
     let (host_seat, client_seat) = (PlayerId(0), PlayerId(1));
     let mut duel = Scenario::skirmish();
@@ -181,14 +193,6 @@ fn duel() -> Scenario {
 
 fn resting(game: &Game) -> bool {
     (game.clock.accum - TICK_DT).abs() < 1e-6
-}
-
-#[test]
-fn a_networked_session_never_journals() {
-    let mut host = Game::networked(duel(), PlayerId(0), NetRole::Host, viewport()).unwrap();
-    host.recovery_root = Some(std::env::temp_dir().join("oxide-lan-never-journals"));
-    host.start_recovery();
-    assert!(host.recovery.is_none());
 }
 
 #[test]

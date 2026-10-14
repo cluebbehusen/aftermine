@@ -1,4 +1,4 @@
-//! World-only recording origins. Controller memory belongs to live recovery.
+//! World-only recording origins. Controller memory belongs to session checkpoints.
 
 use crate::GameReplay;
 use chassis::replay::{RecordingOrigin, ReplayError};

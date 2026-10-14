@@ -35,12 +35,6 @@ impl From<ReplayWire> for GameReplay {
     }
 }
 
-pub(crate) fn deserialize_replay<'de, D: serde::Deserializer<'de>>(
-    decoder: D,
-) -> Result<GameReplay, D::Error> {
-    ReplayWire::deserialize(decoder).map(GameReplay::from)
-}
-
 /// Absolute end tick of a replay: its recorded duration, or one past its last
 /// command when the metadata omits it.
 pub fn replay_duration(replay: &GameReplay) -> u64 {

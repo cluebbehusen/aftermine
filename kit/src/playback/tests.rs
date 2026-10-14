@@ -30,7 +30,7 @@ fn recorded_match() -> GameReplay {
         &scenario,
         900,
         true,
-        Some(&crate::recovery::BuildIdentity::default()),
+        Some(&crate::build::BuildIdentity::default()),
     )
     .unwrap()
     .replay

@@ -1,6 +1,4 @@
 use super::*;
-use crate::{GameReplay, recovery};
-use oxide_sim::{SIM_VERSION, Scenario};
 
 fn temp() -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -15,20 +13,6 @@ fn build() -> BuildIdentity {
     BuildIdentity::new("fixture", "diagnostic-host", "false")
 }
 
-fn recording(root: &Path) -> Arc<RecoveryWriter> {
-    let writer = Arc::new(
-        RecoveryWriter::start(
-            root.to_owned(),
-            GameReplay::new(SIM_VERSION, "test", Scenario::skirmish()),
-            0,
-            build(),
-        )
-        .unwrap(),
-    );
-    until(|| writer.status().ready);
-    writer
-}
-
 fn until(test: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !test() {
@@ -37,7 +21,7 @@ fn until(test: impl Fn() -> bool) {
     }
 }
 
-fn context(tick: u64, recording: Option<&Arc<RecoveryWriter>>) -> FrameContext<'_> {
+fn context(tick: u64) -> FrameContext {
     FrameContext {
         screen: "playing",
         tick,
@@ -49,7 +33,6 @@ fn context(tick: u64, recording: Option<&Arc<RecoveryWriter>>) -> FrameContext<'
         dpi: 2.0,
         paused: false,
         minimized: Some(false),
-        recording,
     }
 }
 
@@ -66,20 +49,18 @@ fn has(directory: &Path, kind: &str, thread: &str) -> bool {
 }
 
 #[test]
-fn a_main_thread_stall_and_its_resumption_land_in_the_open_recording() {
+fn a_main_thread_stall_and_its_resumption_land_in_the_incident_log() {
     let root = temp();
-    let writer = recording(&root);
-    let directory = writer.directory().to_owned();
     let monitor =
         Monitor::start_with(Some(root.clone()), build(), Duration::from_millis(100)).unwrap();
-    monitor.frame(context(7, Some(&writer)));
-    monitor.frame(context(8, Some(&writer)));
+    monitor.frame(context(7));
+    monitor.frame(context(8));
     let simulation = monitor.stage(Stage::Simulation, 8).unwrap();
-    until(|| has(&directory, "stall", "main"));
+    until(|| has(&root, "stall", "main"));
     drop(simulation);
-    until(|| has(&directory, "resumed", "main"));
+    until(|| has(&root, "resumed", "main"));
 
-    let log = incidents(&directory);
+    let log = incidents(&root);
     let stall = log
         .iter()
         .find(|incident| incident["kind"] == "stall")
@@ -98,63 +79,6 @@ fn a_main_thread_stall_and_its_resumption_land_in_the_open_recording() {
         .unwrap();
     assert_eq!(resumed["stage"], "simulation");
     assert!(resumed.get("recent").is_none());
-    assert!(
-        !root.join(INCIDENTS).exists(),
-        "an open recording keeps its own incidents"
-    );
-
-    writer.finish(0);
-    until(|| writer.status().clean);
-    let stalled = monitor.stage(Stage::Draw, 8).unwrap();
-    until(|| has(&root, "stall", "main"));
-    drop(stalled);
-    drop(monitor);
-    drop(writer);
-    until(|| recovery::inactive(&directory).is_some());
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn an_incident_before_a_recording_is_ready_still_sets_its_ending() {
-    let root = temp();
-    std::fs::create_dir_all(&root).unwrap();
-    // Admission waits on the budget lock, so the recording cannot become ready.
-    let budget = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(root.join("budget.lock"))
-        .unwrap();
-    budget.lock().unwrap();
-    let writer = Arc::new(
-        RecoveryWriter::start(
-            root.clone(),
-            GameReplay::new(SIM_VERSION, "test", Scenario::skirmish()),
-            0,
-            build(),
-        )
-        .unwrap(),
-    );
-    let monitor =
-        Monitor::start_with(Some(root.clone()), build(), Duration::from_secs(60)).unwrap();
-    monitor.frame(context(0, None));
-    monitor.attach(&writer);
-    monitor
-        .inner
-        .record_panic("first tick", None, "backtrace".into());
-    let directory = writer.directory().to_owned();
-    let session = directory.file_name().unwrap().to_str().unwrap();
-    assert_eq!(incidents(&root)[0]["session"], session);
-    assert!(!directory.join(INCIDENTS).exists());
-
-    budget.unlock().unwrap();
-    until(|| writer.status().ready);
-    monitor.frame(context(1, None));
-    drop(writer);
-    until(|| recovery::inactive(&directory).is_some());
-    let record = recovery::inspect(&directory).unwrap();
-    assert_eq!(recovery::ending(&directory, &record), Ending::Panic);
     drop(monitor);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -216,7 +140,7 @@ fn a_window_minimized_after_its_last_frame_is_not_a_stall() {
     let root = temp();
     let monitor =
         Monitor::start_with(Some(root.clone()), build(), Duration::from_millis(50)).unwrap();
-    monitor.frame(context(0, None));
+    monitor.frame(context(0));
     let present = monitor.stage(Stage::Present, 0).unwrap();
     monitor.minimized(true);
     std::thread::sleep(Duration::from_millis(300));
@@ -229,14 +153,14 @@ fn a_window_minimized_after_its_last_frame_is_not_a_stall() {
 #[test]
 fn frame_stage_times_partition_the_frame_interval() {
     let monitor = Monitor::start_with(None, build(), Duration::from_secs(60)).unwrap();
-    monitor.frame(context(0, None));
+    monitor.frame(context(0));
     {
         let _input = monitor.stage(Stage::Input, 0).unwrap();
         std::thread::sleep(Duration::from_millis(5));
         let _simulation = monitor.stage(Stage::Simulation, 0).unwrap();
         std::thread::sleep(Duration::from_millis(10));
     }
-    monitor.frame(context(1, None));
+    monitor.frame(context(1));
     let recent = monitor.inner.recent.lock().unwrap().json();
     let frame = &recent["frames"][1];
     let stages = frame["stages_us"].as_object().unwrap();
@@ -260,7 +184,7 @@ fn other_threads_cannot_move_the_main_thread_heartbeat() {
         scope.spawn(|| {
             assert!(monitor.stage(Stage::Simulation, 9).is_none());
             monitor.progress(9);
-            monitor.frame(context(9, None));
+            monitor.frame(context(9));
         });
     });
     assert_eq!(monitor.inner.main.tick.load(Ordering::Relaxed), 0);
@@ -273,7 +197,7 @@ fn panics_record_their_message_location_and_bounded_backtrace() {
     let root = temp();
     let monitor =
         Monitor::start_with(Some(root.clone()), build(), Duration::from_secs(60)).unwrap();
-    monitor.frame(context(5, None));
+    monitor.frame(context(5));
     let simulation = monitor.stage(Stage::Simulation, 5).unwrap();
     monitor
         .inner
@@ -356,39 +280,86 @@ fn incident_logs_keep_the_newest_entries_within_their_bound() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+fn crash_replay() -> crate::GameReplay {
+    let mut replay = crate::GameReplay::new(
+        oxide_sim::SIM_VERSION,
+        "test",
+        oxide_sim::Scenario::skirmish(),
+    );
+    replay.record(
+        0,
+        oxide_sim::PlayerCommand {
+            player: oxide_sim::PlayerId(0),
+            command: oxide_sim::Command::Surrender,
+        },
+    );
+    replay.meta.ticks = Some(1);
+    replay
+}
+
 #[test]
-fn endings_follow_the_last_unresolved_incident() {
-    let stall = |thread: &str| json!({ "kind": "stall", "thread": thread, "stage": "draw" });
-    let waiting = json!({ "kind": "stall", "thread": "main", "stage": "present" });
-    let resumed = |thread: &str| json!({ "kind": "resumed", "thread": thread });
-    let panic = json!({ "kind": "panic", "thread": "main" });
-    assert_eq!(concluding(&[]), Ending::Abnormal);
-    assert_eq!(concluding(&[stall("main")]), Ending::Froze);
-    assert_eq!(
-        concluding(&[stall("main"), resumed("main")]),
-        Ending::Abnormal
-    );
-    assert_eq!(
-        concluding(&[stall("main"), stall("bot seat 1"), resumed("bot seat 1")]),
-        Ending::Froze
-    );
-    assert_eq!(concluding(&[stall("main"), panic.clone()]), Ending::Panic);
-    assert_eq!(
-        concluding(std::slice::from_ref(&waiting)),
-        Ending::AwaitingFrame
-    );
-    assert_eq!(
-        concluding(&[waiting, stall("bot seat 2")]),
-        Ending::Froze,
-        "a stuck seat is a freeze even while the main thread waits"
-    );
-    assert_eq!(
-        concluding(&[panic, stall("main"), resumed("main")]),
-        Ending::Abnormal,
-        "a caught panic followed by recovery does not end the session"
-    );
+fn a_crash_dump_holds_a_loadable_replay_and_the_unfinished_batch() {
     let root = temp();
-    assert_eq!(ending(&root, None, true, false), Ending::Clean);
-    assert_eq!(ending(&root, None, false, true), Ending::InProgress);
-    assert_eq!(ending(&root, None, false, false), Ending::Abnormal);
+    let replay = crash_replay();
+    let unfinished = [oxide_sim::PlayerCommand {
+        player: oxide_sim::PlayerId(1),
+        command: oxide_sim::Command::Surrender,
+    }];
+    let directory = write_crash_dump(
+        &root,
+        &CrashDump {
+            replay: &replay,
+            phase: "simulation",
+            unfinished: &unfinished,
+            message: "boom",
+            build: &build(),
+        },
+    )
+    .unwrap();
+    assert_eq!(newest_crash_dump(&root), Some(directory.clone()));
+    let loaded = crate::load_replay(directory.join("replay.json")).unwrap();
+    assert_eq!(loaded.meta.ticks, Some(1));
+    assert_eq!(loaded.commands.len(), 1);
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(directory.join("crash.json")).unwrap()).unwrap();
+    assert_eq!(manifest["phase"], "simulation");
+    assert_eq!(manifest["message"], "boom");
+    assert_eq!(manifest["ticks"], 1);
+    assert_eq!(manifest["unfinished"][0]["player"], 1);
+    assert_eq!(manifest["build"]["revision"], "diagnostic-host");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn crash_dumps_keep_the_newest_finished_ones() {
+    let root = temp();
+    for at in 1..=6 {
+        let old = root.join(format!("crash-{at:013}-1"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join(CRASH_DUMP_MANIFEST), b"{}").unwrap();
+    }
+    let replay = crash_replay();
+    let newest = write_crash_dump(
+        &root,
+        &CrashDump {
+            replay: &replay,
+            phase: "collection",
+            unfinished: &[],
+            message: "boom",
+            build: &build(),
+        },
+    )
+    .unwrap();
+    let kept = crash_dumps(&root);
+    assert_eq!(kept.len(), KEEP_CRASH_DUMPS);
+    assert_eq!(kept.last(), Some(&newest));
+    assert!(!root.join(format!("crash-{:013}-1", 2)).exists());
+    let unfinished = root.join("crash-9999999999999-1");
+    std::fs::create_dir_all(&unfinished).unwrap();
+    assert_eq!(
+        newest_crash_dump(&root),
+        Some(newest),
+        "a dump without its manifest never finished"
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }
