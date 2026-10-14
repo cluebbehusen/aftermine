@@ -44,6 +44,10 @@ fn looks_agree_with_what_the_simulation_states() {
             look.belts.len().is_multiple_of(2),
             "{kind:?}: belt runs come in pairs"
         );
+        assert!(
+            look.gait != Gait::Treads || !look.belts.is_empty(),
+            "{kind:?}: every tracked hull runs the shared belts"
+        );
     }
 }
 

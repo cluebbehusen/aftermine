@@ -313,6 +313,9 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             // The production art packs the body into 72 of 128 pixels.
             extent: 72.0 / 128.0,
             gait: Gait::Treads,
+            // The side casings, packed like the body; the hull covers the
+            // nose track's run.
+            belts: &[[44., 60., 48., 81.], [80., 60., 84., 81.]],
             marker: M::Scout,
             ..plain
         },
