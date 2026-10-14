@@ -146,8 +146,9 @@ struct App {
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
     offer: Option<crate::rejoin_ticket::Ticket>,
-    /// The app's own save of the running match, while it runs.
-    autosave_id: Option<u64>,
+    /// The app's own save of the running match, while it runs, with the
+    /// slot it writes.
+    autosave_id: Option<(u64, crate::autosave::SaveSlot)>,
     /// When the app next saves the running match on its own.
     background: background_save::Schedule,
     /// When the host tries again after its own save failed.
@@ -764,6 +765,8 @@ impl App {
         let fresh = keep_flags(fresh, &self.game);
         let old = std::mem::replace(&mut self.game, fresh);
         self.persistence.retire(old);
+        // Timing and failures belong to the match they were counted for.
+        self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
         if let Some(link) = how.net {
             // A LAN match runs in real time with no debug overlay.
@@ -803,6 +806,8 @@ impl App {
         let fresh = keep_flags(fresh, &self.game);
         let old = std::mem::replace(&mut self.game, fresh);
         self.persistence.retire(old);
+        // Timing and failures belong to the match they were counted for.
+        self.background = background_save::Schedule::default();
         self.game.clock.speed = 1.0;
         self.game.presentation.overlay = false;
         self.input.reset_session();

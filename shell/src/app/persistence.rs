@@ -214,20 +214,23 @@ impl App {
         let Some((id, result)) = self.persistence.poll() else {
             return;
         };
-        if self.autosave_id == Some(id) {
-            self.autosave_id = None;
+        if let Some((_, slot)) = self.autosave_id.take_if(|(job, _)| *job == id) {
+            // A replaced match's save no longer counts toward this one.
+            let current = slot == self.game.slot;
             match result {
                 Ok(Output::Saved(mark)) => {
                     if let Some(mark) = &mark {
                         self.game.mark_saved(mark);
                     }
-                    self.background.succeeded();
+                    if current {
+                        self.background.succeeded();
+                    }
                 }
                 Ok(_) => {}
                 Err(error) => {
                     eprintln!("Autosave failed: {error:#}");
                     let now = self.clock.elapsed();
-                    if self.background.failed(now) {
+                    if current && self.background.failed(now) {
                         self.notify(error.to_string(), true);
                     }
                     // A wait freezes the tick the timed LAN save counts, so
@@ -287,7 +290,7 @@ impl App {
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
-            Ok(id) => self.autosave_id = Some(id),
+            Ok(id) => self.autosave_id = Some((id, self.game.slot.clone())),
             Err(error) => self.notify(error.to_string(), true),
         }
     }
@@ -321,10 +324,15 @@ impl App {
         });
         if self.background.inactive()
             && undecided
-            && let Some(link) = self.net.as_mut().filter(|link| link.hosting())
+            && self.net.as_ref().is_some_and(|link| link.hosting())
         {
-            link.rearm_autosave();
+            if let Some(link) = &mut self.net {
+                link.rearm_autosave();
+            }
             self.background.started();
+            // The frame that reports going inactive may be the last before
+            // the platform suspends the app, so the save starts now.
+            self.lan_autosave();
         }
         if self.persistence.busy() || matches!(screen, Screen::Busy(_)) {
             return;
@@ -348,7 +356,7 @@ impl App {
         });
         match self.persistence.start(task) {
             Ok(id) => {
-                self.autosave_id = Some(id);
+                self.autosave_id = Some((id, self.game.slot.clone()));
                 self.background.started();
             }
             Err(error) => self.notify(error.to_string(), true),

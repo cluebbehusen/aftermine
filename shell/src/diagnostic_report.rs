@@ -2,9 +2,6 @@
 use anyhow::{Context, Result, ensure};
 use std::sync::mpsc::{self, Receiver};
 
-/// Largest diagnostic sidecar a report copies.
-const MAX_COPIED_BYTES: u64 = 16 * 1024 * 1024;
-
 #[derive(Default)]
 pub(crate) struct ReportJob {
     receiver: Option<Receiver<Result<String, String>>>,
@@ -56,42 +53,46 @@ impl ReportJob {
                 .as_nanos();
             let report = reports.join(format!("report-{stamp}"));
             std::fs::create_dir(&report)?;
-            let mut contents = Vec::new();
-            if let Some(replay) = &replay {
-                replay.save(report.join("replay.json"))?;
-                contents.push("replay.json");
-            }
             let crash = crash.iter().flat_map(|dump| {
                 [
                     (dump.join("replay.json"), "crash-replay.json"),
                     (dump.join("crash.json"), "crash.json"),
                 ]
             });
-            for (source, name) in incidents
+            let copies: Vec<_> = incidents
                 .map(|incidents| (incidents, oxide_kit::diagnostics::INCIDENTS))
                 .into_iter()
                 .chain(crash)
-            {
-                ensure!(
-                    std::fs::metadata(&source)?.len() <= MAX_COPIED_BYTES,
-                    "{name} is too large to export"
-                );
-                let bytes = std::fs::read(&source)?;
-                chassis::fsx::write_atomic(report.join(name), |writer| {
-                    std::io::Write::write_all(writer, &bytes)
+                .collect();
+            let written = (|| -> Result<()> {
+                let mut contents = Vec::new();
+                if let Some(replay) = &replay {
+                    replay.save(report.join("replay.json"))?;
+                    contents.push("replay.json");
+                }
+                // Copies stream from disk, so a replay of any loadable size fits.
+                for (source, name) in copies {
+                    std::fs::copy(&source, report.join(name))
+                        .with_context(|| format!("could not copy {name}"))?;
+                    contents.push(name);
+                }
+                let manifest = serde_json::json!({
+                    "format": 1,
+                    "running_build": crate::build_identity(),
+                    "sim_version": oxide_sim::SIM_VERSION,
+                    "ticks": replay.as_ref().and_then(|replay| replay.meta.ticks),
+                    "contents": contents,
+                });
+                chassis::fsx::write_atomic(report.join("manifest.json"), |writer| {
+                    serde_json::to_writer_pretty(writer, &manifest).map_err(std::io::Error::other)
                 })?;
-                contents.push(name);
+                Ok(())
+            })();
+            if let Err(error) = written {
+                // The folder was created by this export alone.
+                let _ = std::fs::remove_dir_all(&report);
+                return Err(error);
             }
-            let manifest = serde_json::json!({
-                "format": 1,
-                "running_build": crate::build_identity(),
-                "sim_version": oxide_sim::SIM_VERSION,
-                "ticks": replay.as_ref().and_then(|replay| replay.meta.ticks),
-                "contents": contents,
-            });
-            chassis::fsx::write_atomic(report.join("manifest.json"), |writer| {
-                serde_json::to_writer_pretty(writer, &manifest).map_err(std::io::Error::other)
-            })?;
             Ok("Diagnostic report exported. Open diagnostics folder to find it.".into())
         })
     }

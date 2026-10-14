@@ -137,3 +137,26 @@ fn a_report_carries_the_newest_crash_dump() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_failed_export_leaves_no_partial_report() {
+    let root = scratch("failed");
+    let broken = root.join("crash-0000000000001-1");
+    std::fs::create_dir_all(&broken).unwrap();
+    // A finished dump whose replay went missing cannot be copied.
+    std::fs::write(broken.join("crash.json"), b"{}").unwrap();
+    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut job = ReportJob::default();
+    job.start(&game, Some(root.clone())).unwrap();
+    assert!(
+        finished(&mut job)
+            .unwrap_err()
+            .contains("crash-replay.json")
+    );
+    assert_eq!(
+        std::fs::read_dir(root.join("reports")).unwrap().count(),
+        0,
+        "the half-written report is removed"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
