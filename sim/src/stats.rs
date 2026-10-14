@@ -2672,6 +2672,30 @@ pub const MAX_UNIT_RADIUS: Fx = {
     Fx::from_bits(widest)
 };
 
+// Production spawns a new unit on a tile beside its producer, which a hull
+// wider than a Breaker would partly overlap. No producer may train one until
+// spawning makes room for the whole hull.
+const _: () = {
+    let mut b = 0;
+    while b < BuildingKind::ALL.len() {
+        let tiers = BuildingKind::ALL[b].tiers();
+        let mut t = 0;
+        while t < tiers.len() {
+            let produces = tiers[t].produces;
+            let mut u = 0;
+            while u < produces.len() {
+                assert!(
+                    produces[u].stats().radius.to_bits() <= SMALL_BODY_RADIUS.to_bits(),
+                    "a producer trains a hull wider than spawning makes room for"
+                );
+                u += 1;
+            }
+            t += 1;
+        }
+        b += 1;
+    }
+};
+
 /// The widest [`hull_excess`] any unit kind has.
 pub const MAX_HULL_EXCESS: Fx = {
     let excess = MAX_UNIT_RADIUS.to_bits() - SMALL_BODY_RADIUS.to_bits();
