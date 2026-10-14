@@ -64,7 +64,7 @@ fn the_keyboard_follows_the_text_field_on_screen() {
         Screen::Pause(PauseScreen::open(false, true)).keyboard(),
         None
     );
-    pause.begin_naming("Skirmish | t40");
+    pause.begin_naming("Skirmish");
     assert_eq!(Screen::Pause(pause).keyboard(), Some(Keyboard::Text));
     assert!(!Screen::Playing.text_entry());
 

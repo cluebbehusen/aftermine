@@ -445,12 +445,6 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
 }
 
 #[test]
-fn duration_uses_sim_time() {
-    assert_eq!(format_duration(0), "00:00");
-    assert_eq!(format_duration(u64::from(TICKS_PER_SECOND) * 125), "02:05");
-}
-
-#[test]
 fn graph_ceiling_uses_readable_steps() {
     for (value, expected) in [
         (0, 1),

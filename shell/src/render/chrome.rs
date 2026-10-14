@@ -644,8 +644,7 @@ pub(super) fn top_bar_layout(
     } else if (game.clock.speed - 1.0).abs() > f64::EPSILON {
         format!("x{:.2}", game.clock.speed)
     } else {
-        let seconds = game.state.current_tick() / u64::from(oxide_sim::TICKS_PER_SECOND);
-        format!("{}:{:02}", seconds / 60, seconds % 60)
+        crate::clock_label::ticks(game.state.current_tick())
     };
     let bar = crate::layout::top_bar(
         env.viewport.x,

@@ -12,7 +12,7 @@ use crate::theme::Type;
 use crate::{render, theme};
 use macroquad::prelude::*;
 use oxide_protocol::{Key, RawEvent};
-use oxide_sim::{GameResult, PlayerId, TICKS_PER_SECOND};
+use oxide_sim::{GameResult, PlayerId};
 
 const WIDE_STAT_HEADERS: [[&str; 2]; 6] = [
     ["PEAK ARMY", "VALUE"],
@@ -493,7 +493,7 @@ impl ResultsScreen {
         );
         let stats = game.end_stats.as_ref();
         let duration = stats.map_or(0, |report| report.final_tick);
-        let meta = format!("{subtitle}  |  {}", format_duration(duration));
+        let meta = format!("{subtitle}  |  {}", crate::clock_label::ticks(duration));
         let meta_size =
             crate::typography::fit(&meta, layout.meta_size, panel.w - 24.0 * s, 10.0 * s);
         let meta_dims = measure_text(&meta, None, numeric::font_size(meta_size), 1.0);
@@ -742,11 +742,6 @@ fn clipped_name(name: &str, max: usize) -> String {
     clipped
 }
 
-fn format_duration(ticks: u64) -> String {
-    let seconds = ticks / u64::from(TICKS_PER_SECOND);
-    format!("{:02}:{:02}", seconds / 60, seconds % 60)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StatIcon {
     Unit,
@@ -942,7 +937,7 @@ fn draw_army_graph(
             1.0 * scale,
             Color::new(0.55, 0.55, 0.62, 0.13),
         );
-        let label = format_duration(tick);
+        let label = crate::clock_label::ticks(tick);
         let dims = measure_text(&label, None, numeric::font_size(label_size), 1.0);
         let label_x =
             (x - dims.width * 0.5).clamp(rect.x + 2.0, rect.x + rect.w - dims.width - 2.0);

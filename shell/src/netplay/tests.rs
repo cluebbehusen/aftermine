@@ -711,7 +711,7 @@ fn an_injected_desync_halts_both_machines() {
         tick: oxide_net::HASH_INTERVAL,
     };
     assert_eq!(lan.ends(), (desync, desync));
-    assert!(desync.notice().contains("Desync at tick 20"));
+    assert!(desync.notice().contains("Desync at 0:01"));
     assert_eq!(End::HostLost.notice(), "Lost connection to the host.");
 }
 

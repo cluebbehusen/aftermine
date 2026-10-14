@@ -231,7 +231,7 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     assert!(!entry.compatible);
     assert!(entry.label.starts_with("before the push |"));
     assert!(
-        entry.label.contains("| t43 |"),
+        entry.label.contains("| 0:02 |"),
         "duration comes from the command tail"
     );
     assert!(

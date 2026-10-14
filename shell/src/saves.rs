@@ -175,13 +175,13 @@ fn scan_cancellable(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| civil_date(d.as_secs()))
             .unwrap_or_default();
-        let ticks = replay.meta.ticks.unwrap_or(0);
+        let clock = crate::clock_label::ticks(replay.meta.ticks.unwrap_or(0));
         let compatible = replay.problem.is_none();
         // A named save leads with its name; everything else leads with
         // its map and keeps the file stem for identification.
         let label = match replay.meta.description.as_deref() {
-            Some(name) => format!("{} | {} | t{} | {}", elide(name), replay.map, ticks, date),
-            None => format!("{} | t{} | {} | {}", replay.map, ticks, date, elide(stem)),
+            Some(name) => format!("{} | {} | {} | {}", elide(name), replay.map, clock, date),
+            None => format!("{} | {} | {} | {}", replay.map, clock, date, elide(stem)),
         };
         let (blurb, action) = if let Some(problem) = replay.problem {
             (format!("unavailable: {problem}"), None)

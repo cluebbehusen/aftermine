@@ -52,7 +52,8 @@ crate-level rustdoc.
 - `look` declares each unit and defense kind's presentation in one exhaustive
   match.
 - `theme` names the chrome's colors, stroke weights, type sizes, and touch
-  target.
+  target. `clock_label` renders every player-facing duration as clock time;
+  players never see ticks.
 - `assets`, `typography`, `audio_mix`, and `soundtrack` own presentation
   resources. `mixer` plays clips and holds the one table of what the shell
   decides per sound kind: its clip, bus, mix weight, and whether it is a blast
