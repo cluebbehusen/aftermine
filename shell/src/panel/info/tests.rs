@@ -130,3 +130,19 @@ fn point_defense_charges_read_the_same_for_owner_and_enemy() {
         );
     }
 }
+
+#[test]
+fn point_defense_reach_carries_the_icon_its_range_ring_draws() {
+    let panel = selected(UnitKind::Mantle, false);
+    let reach = panel
+        .info
+        .rows
+        .iter()
+        .find(|r| r.label == "Intercept reach")
+        .unwrap();
+    assert_eq!(reach.value, "4.5 tiles");
+    assert_eq!(
+        reach.icon,
+        Some(StatIcon::Capability(CapabilityIcon::Intercept))
+    );
+}
