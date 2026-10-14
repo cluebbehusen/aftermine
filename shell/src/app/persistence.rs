@@ -324,7 +324,7 @@ impl App {
         });
         if self.background.inactive()
             && undecided
-            && self.net.as_ref().is_some_and(|link| link.hosting())
+            && self.net.as_ref().is_some_and(crate::netplay::Link::hosting)
         {
             if let Some(link) = &mut self.net {
                 link.rearm_autosave();
