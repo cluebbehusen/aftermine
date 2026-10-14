@@ -304,8 +304,11 @@ pub enum ScenarioError {
     /// A starting unit is misplaced or mis-owned.
     #[error("starting unit #{0} is invalid (owner in range? tile passable?)")]
     BadUnit(usize),
-    /// A pre-built structure is misplaced or mis-owned.
-    #[error("starting building #{0} is invalid (owner in range? footprint on open ground?)")]
+    /// A pre-built structure is misplaced, mis-owned, or an assembly cradle,
+    /// which exists only while workers raise it.
+    #[error(
+        "starting building #{0} is invalid (owner in range? footprint on open ground? not a cradle?)"
+    )]
     BadBuilding(usize),
     /// Two Foundries can't reach each other by ground or air: the
     /// match could never end.
@@ -427,7 +430,10 @@ impl Scenario {
             let footprint_ok = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
                 .all(|t| state.passable(t));
-            if (spec.player as usize) >= self.players.len() || !footprint_ok {
+            if (spec.player as usize) >= self.players.len()
+                || !footprint_ok
+                || spec.kind.assembles().is_some()
+            {
                 return Err(ScenarioError::BadBuilding(index));
             }
             state.place_building(PlayerId(spec.player), spec.kind, anchor);

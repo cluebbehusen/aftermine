@@ -13,6 +13,8 @@ pub(crate) use crate::geometry::{
 };
 pub(crate) use movement::uses_rotated_map_frame;
 mod aircraft_crashes;
+mod assembly;
+pub(crate) use assembly::assembly_holds;
 mod brain;
 mod charges;
 mod commands;
@@ -145,14 +147,23 @@ impl State {
             production::capture_recovery_entitlements(self);
             construction::reveal(self, &mut events);
             commands::apply(self, commands, &mut events);
+            // Orders that come up later in the tick are held to the cradle
+            // crews as they stood once commands had run.
+            let crews = assembly::CrewSnapshot::capture(self);
             production::run(self, &mut events);
             charges::cancel_discovered(self, &mut events);
             production::decay_abandoned_sites(self);
-            let (boardings, salvaged) = brain::run(self, &mut index, &mut events);
+            let brain::BrainOutcome {
+                boardings,
+                salvaged,
+                assembled,
+            } = brain::run(self, &mut index, &mut events);
             // Boarding and unloading mutate the unit list, which must hold
             // still under the brains, so they resolve between the last
-            // decision and the first movement.
+            // decision and the first movement; finished cradles stand up
+            // their machines here for the same reason.
             brain::logistics::resolve(self, boardings, &mut events);
+            assembly::stand_up(self, &assembled, &mut events);
             movement::evict_claimed_ground(self);
             let air_positions = aircraft_crashes::capture_positions(self);
             let (travel, refused) = movement::run(self);
@@ -186,6 +197,7 @@ impl State {
             if charges::cancel_discovered(self, &mut events) {
                 self.reconcile_attack_knowledge();
             }
+            assembly::settle_crews(self, &crews, &mut events);
             goals::expose(self);
             movement::forget_stalls_without_routes(self);
             victory(self, &mut events);
@@ -341,7 +353,20 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         let price = stats
             .construction
             .map_or(crate::stats::FOUNDRY_WRECK_VALUE, |c| c.cost);
-        let value = price * crate::stats::WRECK_VALUE_NUM / crate::stats::WRECK_VALUE_DEN;
+        let mut value = price * crate::stats::WRECK_VALUE_NUM / crate::stats::WRECK_VALUE_DEN;
+        if building.kind.assembles().is_some() {
+            // A cradle's price is the machine it would become, so its wreck
+            // holds only the share its crew had raised: the hit points its
+            // work had built, of the cradle's full health.
+            let construction = stats.construction.expect("cradles are built");
+            let progress = u64::from(building.construction_progress().unwrap_or(0));
+            let start = u64::from(stats.max_hp / 5);
+            let raised = start
+                + (u64::from(stats.max_hp) - start) * progress
+                    / u64::from(construction.build_ticks.max(1));
+            value = u32::try_from(u64::from(value) * raised / u64::from(stats.max_hp.max(1)))
+                .expect("a share of a wreck fits u32");
+        }
         let (width, height) = building.kind.size();
         let tiles = u32::try_from(width * height).expect("building footprints have positive area");
         for tile in building.tiles() {

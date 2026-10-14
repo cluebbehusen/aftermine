@@ -346,6 +346,7 @@ fn reclaimers_wait_for_the_drip_and_refineries_need_a_fabricator() {
             wanted: Vec::new(),
             units: Vec::new(),
             waiting: None,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -410,6 +411,7 @@ fn reclaimers_keep_coming_once_the_home_scrap_is_mined_out() {
             wanted: Vec::new(),
             units: Vec::new(),
             waiting: None,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .find(|candidate| candidate.investment == Investment::Reclaimer)
@@ -579,6 +581,7 @@ fn a_unit_saved_for_that_waits_on_busy_producers_wants_another() {
             wanted: Vec::new(),
             units: Vec::new(),
             waiting,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -788,6 +791,7 @@ fn mirrored_seats_rank_equal_extractor_frames_alike() {
             wanted: Vec::new(),
             units: Vec::new(),
             waiting: None,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .find_map(|candidate| match candidate.investment {

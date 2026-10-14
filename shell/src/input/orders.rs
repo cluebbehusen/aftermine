@@ -419,6 +419,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 u.player == game.presentation.human
                     && u.hp > 0
                     && u.hp < u.kind.stats().max_hp
+                    && u.kind.stats().repairable()
                     && u.domain() == oxide_sim::stats::Domain::Ground
                     && !game.presentation.selection.units.contains(&u.id)
             })

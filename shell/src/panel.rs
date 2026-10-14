@@ -216,6 +216,10 @@ pub enum CapabilityIcon {
     Intercept,
 }
 
+/// The most command cards a panel shows: the construction palette's every
+/// building and its Back card.
+pub const MAX_CARDS: usize = oxide_sim::BuildingKind::ALL.len() + 1;
+
 /// The panel for the current selection.
 pub struct Panel {
     pub(crate) info: info::SelectionInfo,
@@ -413,10 +417,11 @@ fn weapon_line(weapon: &WeaponStats) -> String {
     } else {
         format!("{:.1} tiles", weapon.range.to_num::<f32>())
     };
-    format!(
-        "{} dmg | {range} | {targets}{flavor}{splash}",
-        weapon.damage
-    )
+    let damage = match weapon.building_damage {
+        Some(structure) => format!("{} dmg, {structure} vs structures", weapon.damage),
+        None => format!("{} dmg", weapon.damage),
+    };
+    format!("{damage} | {range} | {targets}{flavor}{splash}")
 }
 
 /// The compact mark shared by a weapon fact and its battlefield range.
@@ -1370,7 +1375,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             progress: None,
         });
     }
-    if first.player == game.presentation.human {
+    // No Crucible takes an assembled machine apart.
+    if first.player == game.presentation.human && units.iter().any(|u| !u.kind.assembled()) {
         let crucible = game.state.buildings().iter().any(|b| {
             b.player == game.presentation.human
                 && b.built()
@@ -1455,6 +1461,15 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     .collect::<Vec<_>>()
                     .join(", ");
                 (false, Some(format!("needs a standing {need}")))
+            } else if let Some(unit) = kind.assembles()
+                && game
+                    .state
+                    .experimental_slot_taken(game.presentation.human, unit, &[])
+            {
+                (
+                    false,
+                    Some(format!("one {} at a time", entity_name(unit.name()))),
+                )
             } else if scrap < cost {
                 (false, Some(format!("needs {cost} scrap")))
             } else {

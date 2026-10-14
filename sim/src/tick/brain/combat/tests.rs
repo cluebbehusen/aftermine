@@ -278,7 +278,7 @@ fn linear_sidearm_victim(
         .filter(|u| state.hostile(me, u.player) && u.hp > 0 && weapon.targets.covers(u.domain()))
         .filter(|u| state.can_see(me, u.tile()))
         .map(|u| (shooter_pos.dist_sq(u.pos), u.id, u.pos, u.domain()))
-        .filter(|(d, ..)| within_weapon_reach(weapon, *d))
+        .filter(|(d, ..)| within_weapon_reach(weapon, *d, Fx::ZERO))
         .filter(|(_, _, upos, dom)| {
             let full = traces_terrain(weapon, shooter_domain, *dom);
             !chassis::path::line_blocked(shooter_pos, *upos, |t| shot_open(t, full))

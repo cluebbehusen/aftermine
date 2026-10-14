@@ -2,6 +2,7 @@
 // Floats and hash-ordered collections would break bit-identical replays.
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
 
+mod breach;
 mod checkpoint;
 mod composition;
 mod decision;

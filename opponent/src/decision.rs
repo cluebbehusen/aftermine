@@ -435,6 +435,7 @@ pub(crate) fn decide(
         severed: scratch.severed,
         units,
         waiting,
+        margin: crate::missions::margin(profile.difficulty),
     };
     let mut candidates = investments::candidates(&situation);
     let danger = placement::Danger::of(observation, map, &persistent.memory);
@@ -560,6 +561,9 @@ pub(crate) fn decide(
     persistent
         .missions
         .repair(observation, map, &scratch, &mut ledger);
+    persistent
+        .missions
+        .feed(observation, map, &scratch, &mut ledger);
     let patients = persistent.missions.patients(observation, &ledger);
     workers::run(
         observation,

@@ -19,12 +19,17 @@ fn paused_status(key: &str, keyless: bool) -> String {
     }
 }
 
-/// The under-attack badge names the jump key where one exists.
-fn alert_badge_text(key: &str, keyless: bool) -> String {
+/// The alert badge says what the alerts warn of, an attack before an
+/// assembling experimental, and names the jump key where one exists.
+fn alert_badge_text(kind: crate::game::AlertKind, key: &str, keyless: bool) -> String {
+    let what = match kind {
+        crate::game::AlertKind::Attack => "under attack".to_string(),
+        crate::game::AlertKind::Assembly(machine) => format!("enemy {} assembling", machine.name()),
+    };
     if keyless || key.is_empty() {
-        "under attack".to_string()
+        what
     } else {
-        format!("under attack [{key}]")
+        format!("{what} [{key}]")
     }
 }
 
@@ -637,8 +642,13 @@ pub(super) fn top_bar_layout(
     let idle = (idle > 0).then(|| idle_badge_text(idle, &label(Action::CycleIdleWorker), keyless));
     // Alerts age out in a few seconds and hold while paused, so the
     // badge shows exactly while the minimap still pulses one.
-    let alert = (!game.presentation.alerts.is_empty())
-        .then(|| alert_badge_text(&label(Action::JumpToLastAlert), keyless));
+    let alert = game
+        .presentation
+        .alerts
+        .iter()
+        .map(|&(_, _, kind)| kind)
+        .min_by_key(|kind| *kind != crate::game::AlertKind::Attack)
+        .map(|kind| alert_badge_text(kind, &label(Action::JumpToLastAlert), keyless));
     let status = if game.clock.paused {
         paused_status(&label(Action::TogglePause), keyless)
     } else if (game.clock.speed - 1.0).abs() > f64::EPSILON {

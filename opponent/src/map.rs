@@ -81,6 +81,8 @@ pub struct MapModel {
     spot: Grid<bool>,
     /// The same for one-tile footprints.
     tile_spot: Grid<bool>,
+    /// The same for three-by-three footprints, an assembly cradle's.
+    cradle_spot: Grid<bool>,
     /// Each ground component's bounding box, as its lowest and highest
     /// corners, by component.
     extents: Vec<(TilePos, TilePos)>,
@@ -238,6 +240,7 @@ impl MapModel {
         frame_sites(map, &components, anchors, &mut sites);
         let spot = spot_grid(map, &components, 2);
         let tile_spot = spot_grid(map, &components, 1);
+        let cradle_spot = spot_grid(map, &components, 3);
         let extents = extents(&components);
         // Ground the map fixes buildings on: Extractor frames and expansion
         // anchors, which no gate may hold.
@@ -264,6 +267,7 @@ impl MapModel {
             starts,
             spot,
             tile_spot,
+            cradle_spot,
             extents,
             home_nodes,
             distances,
@@ -586,9 +590,9 @@ impl MapModel {
     /// `foundries`, nearest first: every spot at one gap from each Foundry
     /// in turn before any further from any, out to the edge of that
     /// Foundry's ground, each in the layout of its nearest Foundry on its
-    /// ground. A Foundry takes the centre of an empty block, another
-    /// two-by-two building a slot, and a smaller one a slot's tiles beside a
-    /// lane, slot by slot. Once those run out, any place off the lanes
+    /// ground. A Foundry takes the centre of an empty block, a three-by-three
+    /// cradle a whole block, another two-by-two building a slot, and a
+    /// smaller one a slot's tiles beside a lane, slot by slot. Once those run out, any place off the lanes
     /// follows, so cramped ground still takes every building that fits. A
     /// spot is open ground on its Foundry's ground, off every frame and the
     /// seat's gates and a tile clear of starting scrap. Within a gap, spots
@@ -635,6 +639,7 @@ impl MapModel {
             .unwrap_or(0);
         let size = kind.size();
         let small = size.0 < 2 || size.1 < 2;
+        let wide = size.0 > 2 || size.1 > 2;
         let foundry_size = BuildingKind::Foundry.size();
         // A smaller building packs into a slot's tiles, listed slot by slot.
         let listed = if packed && small { foundry_size } else { size };
@@ -668,6 +673,7 @@ impl MapModel {
                 let laid_slot = |anchor: TilePos| {
                     slot(*foundry, anchor) && open(&self.spot, anchor, foundry_size)
                 };
+                let squares = if wide { &self.cradle_spot } else { &self.spot };
                 let rank = |kind: BuildingKind| {
                     move |anchor: &TilePos| frame.rank(frame.home, footprint_centre(kind, *anchor))
                 };
@@ -690,10 +696,13 @@ impl MapModel {
                         .filter(|anchor| {
                             let shaped = if kind == BuildingKind::Foundry {
                                 block_centre(*foundry, *anchor)
+                            } else if wide {
+                                // A cradle fills a block from either side.
+                                off_lanes(*foundry, *anchor, size)
                             } else {
                                 slot(*foundry, *anchor)
                             };
-                            shaped && open(&self.spot, *anchor, size)
+                            shaped && open(squares, *anchor, size)
                         })
                         .collect(),
                     // Any tile off the lanes but those of the slots above.
@@ -705,11 +714,13 @@ impl MapModel {
                                     && laid_slot(slot_of(*foundry, *anchor)))
                         })
                         .collect(),
+                    // Every place a cradle fits off the lanes fills a block.
                     (false, false) => around
                         .filter(|anchor| {
-                            off_lanes(*foundry, *anchor, size)
+                            !wide
+                                && off_lanes(*foundry, *anchor, size)
                                 && !(slot(*foundry, *anchor) || block_centre(*foundry, *anchor))
-                                && open(&self.spot, *anchor, size)
+                                && open(squares, *anchor, size)
                         })
                         .collect(),
                 };

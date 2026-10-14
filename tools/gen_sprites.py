@@ -103,8 +103,9 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "sapper",
             "mantle",
             "surveyor",
+            "maw",
         )
-    ):
+    ) and not name.startswith("maw_cradle"):
         img = rim_light(img)
     save_sprite(img, OUT, name)
     REGISTRY[name] = img
@@ -1764,6 +1765,91 @@ def sapper(variant: str, move: int = 0) -> None:
     finish(img, px, f"sapper{variant_tag(variant)}{suffix}")
 
 
+def maw(variant: str, move: int = 0) -> None:
+    """Placeholder experimental breacher until its art is promoted: twin
+    tread banks under a long hull, a cutter drum across the bow, a belt
+    running aft to a glowing kiln. The canvas spans four tiles; the body
+    fills about 2.8 of them."""
+    px = 256
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    for x in (38, 186):
+        d.rounded_rectangle(
+            [s(x), s(56), s(x + 32), s(214)], radius=s(8), fill=(*IRON_DARK, 255)
+        )
+        for row in range(10):
+            y = 62 + row * 15 + (0, 5, 10)[move % 3]
+            if y + 6 <= 210:
+                d.rectangle(
+                    [s(x + 4), s(y), s(x + 28), s(y + 6)], fill=(*IRON_LIGHT, 255)
+                )
+    d.rounded_rectangle([s(64), s(62), s(192), s(206)], radius=s(14), fill=(*IRON, 255))
+    d.rounded_rectangle(
+        [s(74), s(82), s(182), s(196)], radius=s(10), fill=(*pal["base"], 255)
+    )
+    # The cutter drum spans the bow, wider than the hull it leads.
+    d.rounded_rectangle(
+        [s(46), s(34), s(210), s(66)], radius=s(12), fill=(*IRON_DARK, 255)
+    )
+    for tooth in range(9):
+        # Teeth roll across the drum face and wrap at its far end.
+        x = 54 + (tooth * 18 + (0, 6, 12)[move % 3]) % 144
+        d.polygon(
+            [(s(x), s(36)), (s(x + 8), s(36)), (s(x + 4), s(28))],
+            fill=(*IRON_LIGHT, 255),
+        )
+    d.rectangle([s(56), s(46), s(200), s(54)], fill=(*IRON, 255))
+    # The belt aft from the hood to the kiln.
+    d.rectangle([s(116), s(70), s(140), s(158)], fill=(*IRON_DARK, 255))
+    for slat in range(6):
+        y = 74 + slat * 14 + (0, 5, 10)[move % 3]
+        d.rectangle([s(118), s(y), s(138), s(y + 4)], fill=(*SCRAP_DARK, 255))
+    d.ellipse([s(104), s(152), s(152), s(200)], fill=(*IRON_DARK, 255))
+    d.ellipse([s(114), s(162), s(142), s(190)], fill=(*SCRAP, 255))
+    d.ellipse([s(122), s(170), s(134), s(182)], fill=(*SCRAP_LIGHT, 255))
+    for x in (84, 160):
+        d.ellipse([s(x), s(90), s(x + 12), s(102)], fill=(*pal["light"], 255))
+    suffix = "" if move == 0 else f"_move{move}"
+    finish(img, px, f"maw{variant_tag(variant)}{suffix}")
+
+
+def maw_cradle(variant: str) -> None:
+    """Placeholder 3x3 assembly cradle until its art is promoted: a
+    braced pad between four gantry towers, the machine's outline marked
+    on the deck where its hull will stand."""
+    px = 192
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    d.rounded_rectangle(
+        [s(6), s(6), s(186), s(186)], radius=s(12), fill=(*IRON_DARK, 255)
+    )
+    d.rounded_rectangle([s(18), s(18), s(174), s(174)], radius=s(8), fill=(*IRON, 255))
+    for offset in range(0, 156, 26):
+        d.line(
+            [(s(18 + offset), s(18)), (s(18), s(18 + offset))],
+            fill=(*IRON_LIGHT, 255),
+            width=s(2),
+        )
+    d.rounded_rectangle(
+        [s(52), s(40), s(140), s(156)],
+        radius=s(12),
+        outline=(*SCRAP_DARK, 255),
+        width=s(4),
+    )
+    for x, y in ((10, 10), (150, 10), (10, 150), (150, 150)):
+        d.rounded_rectangle(
+            [s(x), s(y), s(x + 32), s(y + 32)], radius=s(6), fill=(*IRON_LIGHT, 255)
+        )
+        d.rounded_rectangle(
+            [s(x + 6), s(y + 6), s(x + 26), s(y + 26)],
+            radius=s(4),
+            fill=(*pal["base"], 255),
+        )
+    for x in (34, 150):
+        d.rectangle([s(x), s(88), s(x + 8), s(104)], fill=(*pal["light"], 255))
+    finish(img, px, f"maw_cradle{variant_tag(variant)}")
+
+
 def warden(variant: str, move: int = 0, action: int = 0) -> None:
     """Tier-two line brawler: a broad plated hull behind twin shield
     cheeks, one heavy fork cannon dead ahead — the wall that walks."""
@@ -3232,7 +3318,7 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper):
+        for unit_fn in (excavator, kestrel, skyhook, sapper, maw):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
@@ -3244,6 +3330,7 @@ def generate(output: Path) -> None:
             crucible(variant, work)
         barricade(variant)
         scuttle_charge(variant)
+        maw_cradle(variant)
     _install_finalized_sprite_bank()
     _install_finalized_environment_bank()
     _install_finalized_construction_bank()

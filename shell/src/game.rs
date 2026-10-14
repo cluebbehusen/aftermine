@@ -90,7 +90,7 @@ mod clock;
 mod fx;
 mod presentation;
 pub(crate) use clock::Clock;
-pub(crate) use presentation::{Presentation, Salvage, Scene};
+pub(crate) use presentation::{AlertKind, Presentation, Salvage, Scene};
 pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;

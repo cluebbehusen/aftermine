@@ -71,6 +71,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 gen.harvester(variant, dig=2)
                 gen.barricade(variant)
                 gen.scuttle_charge(variant)
+                gen.maw_cradle(variant)
             finalized.install_finalized_sprites(cls.registry, cls.out)
             construction_final.install_finalized_construction(cls.registry, cls.out)
             environment_final.install_finalized_environment(cls.registry, cls.out)
@@ -356,6 +357,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "scuttle_charge",
                 "spire",
                 "lattice",
+                "maw_cradle",
             ),
         )
 

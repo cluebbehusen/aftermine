@@ -26,12 +26,14 @@ fn a_public_building_joins_as_a_memory_and_a_remembered_one_is_brought_up_to_dat
             kind: BuildingKind::Extractor,
             tier: 1,
             anchor: TilePos::new(15, 9),
+            progress: None,
         },
         PublicBuilding {
             owner: PlayerId(1),
             kind: BuildingKind::Extractor,
             tier: 1,
             anchor: TilePos::new(30, 18),
+            progress: None,
         },
     ];
     merge(&mut observation);

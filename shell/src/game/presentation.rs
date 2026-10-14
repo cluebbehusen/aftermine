@@ -10,6 +10,15 @@ use macroquad::prelude::{Vec2, vec2};
 use oxide_sim::{Building, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitId};
 use std::collections::HashMap;
 
+/// What an alert warns of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertKind {
+    /// Own forces under fire, or a hostile warhead inbound.
+    Attack,
+    /// A hostile experimental of this kind is assembling or has stood up.
+    Assembly(oxide_sim::UnitKind),
+}
+
 pub struct Presentation {
     /// The seat local input controls.
     pub human: PlayerId,
@@ -42,6 +51,9 @@ pub struct Presentation {
     pub(crate) pod_shots: HashMap<(u32, u8), (f32, f32)>,
     /// Hostile warheads already announced, so each warns once.
     pub(crate) warned_warheads: std::collections::HashSet<oxide_sim::WarheadId>,
+    /// Hostile assembly cradles already announced, by owner and anchor, so
+    /// each warns once.
+    pub(crate) warned_cradles: std::collections::BTreeSet<(u8, i32, i32)>,
     /// Interceptors in flight ahead of their forecast stops.
     pub(crate) prelaunches: Vec<super::fx::Prelaunch>,
     /// Action-driven authored sprite state. This remembers only transient
@@ -67,9 +79,9 @@ pub struct Presentation {
     /// Scorch decals where buildings died: (world pos, seconds old).
     /// Scorch decals: where, age in seconds, and width in tiles.
     pub scorches: Vec<(Vec2, f32, f32)>,
-    /// Live under-attack alerts: world position and seconds of age.
-    /// Pulsed on the minimap, jumpable, aged out by `update_fx`.
-    pub alerts: Vec<(Vec2, f32)>,
+    /// Live alerts: world position, seconds of age, and what they warn
+    /// of. Pulsed on the minimap, jumpable, aged out by `update_fx`.
+    pub alerts: Vec<(Vec2, f32, AlertKind)>,
     /// The latest alert position, which the jump key targets.
     pub last_alert: Option<Vec2>,
     /// Per-region alert rate limiter: 8-tile cell to last raise time in
@@ -278,6 +290,7 @@ impl Presentation {
             aim_building_targets: HashMap::new(),
             pod_shots: HashMap::new(),
             warned_warheads: std::collections::HashSet::new(),
+            warned_cradles: std::collections::BTreeSet::new(),
             prelaunches: Vec::new(),
             animations: crate::presentation_animation::AnimationController::default(),
             track_motion: HashMap::new(),
@@ -372,7 +385,7 @@ impl Presentation {
             return;
         }
         self.alert_gate.insert(cell, now);
-        self.alerts.push((world, 0.0));
+        self.alerts.push((world, 0.0, AlertKind::Attack));
         self.last_alert = Some(world);
         self.sounds_pending.push((SoundKind::Alert, None));
     }
@@ -381,9 +394,17 @@ impl Presentation {
     /// warning. It bypasses the under-attack gate: each warhead warns once,
     /// even into a region already under attack.
     pub(super) fn raise_warhead_alert(&mut self, world: Vec2) {
-        self.alerts.push((world, 0.0));
+        self.alerts.push((world, 0.0, AlertKind::Attack));
         self.last_alert = Some(world);
         self.sounds_pending.push((SoundKind::IncomingWarning, None));
+    }
+
+    /// Marks a hostile assembly cradle the moment its first work makes it
+    /// public. It bypasses the under-attack gate: each cradle warns once.
+    pub(super) fn raise_cradle_alert(&mut self, world: Vec2, kind: oxide_sim::UnitKind) {
+        self.alerts.push((world, 0.0, AlertKind::Assembly(kind)));
+        self.last_alert = Some(world);
+        self.sounds_pending.push((SoundKind::Alert, None));
     }
 
     /// Interpolated draw position for a unit, trailing a collision slide by
@@ -451,6 +472,7 @@ impl Presentation {
         self.aim_building_targets.clear();
         self.pod_shots.clear();
         self.warned_warheads.clear();
+        self.warned_cradles.clear();
         self.prelaunches.clear();
         self.animations.reset_transients();
         self.animations.reset_workers(state);

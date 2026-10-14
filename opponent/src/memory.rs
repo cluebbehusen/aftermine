@@ -167,6 +167,14 @@ impl Memory {
         recent(&self.abandoned, kind, anchor, now)
     }
 
+    /// Every target an attack, lift or strike recently gave up.
+    pub(crate) fn given_up(&self, now: u64) -> impl Iterator<Item = (BuildingKind, TilePos)> + '_ {
+        self.abandoned
+            .iter()
+            .filter(move |failure| now < failure.at + FAILURE_TICKS)
+            .map(|failure| (failure.kind, failure.anchor))
+    }
+
     /// Remembers a raid on `kind` at `anchor`.
     pub(crate) fn raid(&mut self, kind: BuildingKind, anchor: TilePos, now: u64) {
         record(&mut self.raided, kind, anchor, now);

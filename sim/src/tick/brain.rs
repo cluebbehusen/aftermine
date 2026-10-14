@@ -78,7 +78,7 @@ struct PendingHpGain {
     repair_bay: Option<crate::ids::BuildingId>,
 }
 
-/// A buffered unit hp gain from a field weld or a Repair Bay. Every unit heal
+/// A buffered unit hp gain from a field weld, a Repair Bay or a kiln. Every unit heal
 /// must push into this list and resolve through [`resolve_unit_heals`]; two
 /// independent unit-heal paths would be a determinism trap. Same contract as
 /// [`PendingHpGain`]: applied after damage, so a machine the volley zeroed
@@ -123,11 +123,19 @@ struct PendingHpDrain {
 /// Runs every machine's decision and resolves the tick's buffered work.
 /// Returns the pending boardings and unloads, and the buildings salvage
 /// stripped to nothing, which cleanup removes without wreck.
+/// What the brain phase hands the rest of the tick: boardings and unloads
+/// to resolve, buildings salvaged away, and cradles whose last work landed.
+pub(super) struct BrainOutcome {
+    pub(super) boardings: logistics::Pending,
+    pub(super) salvaged: Vec<crate::ids::BuildingId>,
+    pub(super) assembled: Vec<crate::ids::BuildingId>,
+}
+
 pub(super) fn run(
     state: &mut State,
     index: &mut super::spatial::UnitIndex,
     events: &mut Vec<Event>,
-) -> (logistics::Pending, Vec<crate::ids::BuildingId>) {
+) -> BrainOutcome {
     // Positions and unit slots hold still until resolution, so acquisition
     // and arrival queries share this index. Orders, speed and landed state
     // can change during the loop and must still be read from the live unit.
@@ -321,14 +329,21 @@ pub(super) fn run(
     state.shells.extend(launches);
     state.warheads.extend(warhead_launches);
     repair_bay_aura(state, &hits, &mut heals, &mut builds);
+    kiln::feed(state, &mut heals);
     crucible_smelter(state);
-    let salvaged = resolve_hits(state, &hits, &builds, &heals, &drains, events);
-    (logistics_pending, salvaged)
+    let (salvaged, assembled) = resolve_hits(state, &hits, &builds, &heals, &drains, events);
+    BrainOutcome {
+        boardings: logistics_pending,
+        salvaged,
+        assembled,
+    }
 }
 
 mod combat;
+pub(super) use combat::unit_weapon_reach;
 pub(in crate::tick) mod contact;
 mod economy;
+mod kiln;
 pub(super) use economy::return_cargo_destination;
 pub(super) mod escort;
 mod locomotion;
@@ -356,7 +371,7 @@ fn resolve_hits(
     heals: &[PendingUnitHeal],
     drains: &[PendingHpDrain],
     events: &mut Vec<Event>,
-) -> Vec<crate::ids::BuildingId> {
+) -> (Vec<crate::ids::BuildingId>, Vec<crate::ids::BuildingId>) {
     struct Work {
         building: crate::ids::BuildingId,
         gain: i64,
@@ -364,6 +379,7 @@ fn resolve_hits(
         completes: Option<(crate::ids::PlayerId, crate::stats::BuildingKind)>,
     }
     let mut salvaged = Vec::new();
+    let mut assembled = Vec::new();
     let mut incidents = Vec::new();
     let now = state.current_tick();
     for hit in hits {
@@ -522,12 +538,18 @@ fn resolve_hits(
                 .expect("clamped to a u32 max_hp");
         b.hp = after;
         if let Some((player, kind)) = w.completes {
-            b.complete();
-            events.push(Event::BuildingCompleted {
-                building: w.building,
-                player,
-                kind,
-            });
+            if kind.assembles().is_some() {
+                // A finished cradle becomes its machine once the unit list
+                // may change again.
+                assembled.push(w.building);
+            } else {
+                b.complete();
+                events.push(Event::BuildingCompleted {
+                    building: w.building,
+                    player,
+                    kind,
+                });
+            }
         }
         if w.drain > 0 && after < before {
             b.salvage_drained += before - after;
@@ -559,7 +581,7 @@ fn resolve_hits(
             retaliate(state, uid, hit.attacker);
         }
     }
-    salvaged
+    (salvaged, assembled)
 }
 
 /// Resolves every buffered unit heal, with the building resolver's rules: a

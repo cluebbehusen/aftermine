@@ -68,6 +68,9 @@ pub enum Check {
     /// Every attacker unit that was carried and set down is destroyed, or the
     /// carrier fell before setting anyone down.
     ClearsLanding,
+    /// Every attacker Maw is destroyed and the defender still owns a
+    /// Foundry.
+    StopsBreach,
 }
 
 /// How one scenario went.
@@ -195,7 +198,7 @@ impl Watch {
     fn observe(&mut self, state: &State, defender: PlayerId, attacker: PlayerId) {
         let now = state.current_tick();
         match self.check {
-            Check::KeepsFoundry | Check::SilencesArtillery => {}
+            Check::KeepsFoundry | Check::SilencesArtillery | Check::StopsBreach => {}
             Check::AnswersAir { .. } => {
                 if self.first_air_sighting.is_none() {
                     let seen = state.units().iter().any(|unit| {
@@ -304,6 +307,25 @@ impl Watch {
                     },
                 )
             }
+            Check::StopsBreach => {
+                let breachers = state
+                    .units()
+                    .iter()
+                    .filter(|unit| {
+                        unit.player == attacker && unit.hp > 0 && unit.kind == UnitKind::Maw
+                    })
+                    .count();
+                (
+                    has_foundry && breachers == 0,
+                    if !has_foundry {
+                        "the Foundry fell".into()
+                    } else if breachers == 0 {
+                        "every Maw destroyed".into()
+                    } else {
+                        format!("{breachers} Maw still standing")
+                    },
+                )
+            }
             Check::ClearsLanding if self.landed.is_empty() => {
                 let shot_down = !self.carriers.is_empty()
                     && self
@@ -366,6 +388,7 @@ pub fn report(outcomes: &[PressureOutcome]) -> String {
             Check::AnswersAir { .. } => "answers_air",
             Check::SilencesArtillery => "silences_artillery",
             Check::ClearsLanding => "clears_landing",
+            Check::StopsBreach => "stops_breach",
         };
         let _ = writeln!(
             text,

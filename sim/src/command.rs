@@ -413,4 +413,8 @@ pub enum RejectReason {
     MissingFoundrySupport,
     /// The silo holds no warhead to launch.
     NothingLoaded,
+    /// The player already has this experimental alive or assembling.
+    ExperimentalLimit,
+    /// The cradle's crew is full of workers at least as fast as these.
+    CrewFull,
 }

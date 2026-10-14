@@ -588,6 +588,7 @@ pub(crate) fn building_stem(kind: BuildingKind) -> &'static str {
         BuildingKind::ScuttleCharge => "scuttle_charge",
         BuildingKind::Spire => "spire",
         BuildingKind::Lattice => "lattice",
+        BuildingKind::MawCradle => "maw_cradle",
     }
 }
 

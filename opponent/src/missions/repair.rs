@@ -1,6 +1,7 @@
-//! Wounded units back to a Repair Bay between fights. Nothing here persists:
-//! each decision reads who is wounded, where the Bays stand and how many
-//! patients each already serves.
+//! Wounded units back to a Repair Bay between fights, and wounded kiln
+//! machines to safe known wreck. Nothing here persists: each decision reads
+//! who is wounded, where the Bays stand, how many patients each already
+//! serves, and what wreck the seat knows of.
 
 use super::air::Hazard;
 use super::lift::{fly_to, open, route_orders};
@@ -9,10 +10,10 @@ use crate::decision::Ledger;
 use crate::defenses::Span;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
 use crate::map::MapModel;
-use crate::workers::{UNIT_WELD_DAMAGE, calm, worker};
+use crate::workers::{Routes, UNIT_WELD_DAMAGE, calm, worker};
 use chassis::grid::TilePos;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::stats::{Domain, REPAIR_BAY_PATIENTS};
+use oxide_sim::stats::{Domain, Mend, REPAIR_BAY_PATIENTS};
 use oxide_sim::{BuildingKind, UnitId, UnitKind};
 use std::cmp::Reverse;
 
@@ -72,7 +73,10 @@ impl Missions {
             .free(observation, ledger)
             .into_iter()
             .filter_map(|id| mine(observation, id))
-            .filter(|unit| unit.kind.stats().can_fight() && !worker(unit.kind) && unit.cargo == 0)
+            .filter(|unit| {
+                let stats = unit.kind.stats();
+                stats.can_fight() && stats.repairable() && !worker(unit.kind) && unit.cargo == 0
+            })
             .filter_map(|unit| wound(unit).map(|missing| (missing, unit)))
             .collect();
         wounded.sort_by_key(|(missing, unit)| {
@@ -154,11 +158,110 @@ impl Missions {
     }
 }
 
+impl Missions {
+    /// Keeps the free wounded kiln machines whose intake already reaches
+    /// safe known wreck there while calm, and sends the idle ones to the
+    /// nearest such wreck on their ground: one holding enough to mend what
+    /// they miss first. Safe wreck is wreck the seat's harvesters could
+    /// salvage, by a route from home that avoids known danger and recent
+    /// losses. No other mission takes them this decision; free units are out
+    /// of every fight, so a machine at work in an attack feeds on what it
+    /// cuts instead.
+    pub(crate) fn feed(
+        &self,
+        observation: &ObservationData,
+        map: &MapModel,
+        scratch: &Scratch,
+        ledger: &mut Ledger,
+    ) {
+        let frame = scratch.frame;
+        let hungry: Vec<&UnitObs> = self
+            .free(observation, ledger)
+            .into_iter()
+            .filter_map(|id| mine(observation, id))
+            .filter(|unit| matches!(unit.kind.stats().mend, Mend::Kiln(_)))
+            .filter(|unit| wound(unit).is_some())
+            .collect();
+        if hungry.is_empty() {
+            return;
+        }
+        let homes: Vec<&BuildingObs> = observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::Foundry && building.built)
+            .collect();
+        let routes = Routes::new(map, frame, scratch, &homes);
+        let mut routes = routes.around_incidents(&observation.salvage_incidents);
+        let fields: Vec<(TilePos, u32)> = observation
+            .known_wrecks
+            .iter()
+            .filter(|(tile, amount)| *amount > 0 && !observation.known_scrap_at(*tile))
+            .filter(|(tile, _)| routes.clear(*tile))
+            .copied()
+            .collect();
+        for unit in hungry {
+            let Mend::Kiln(kiln) = unit.kind.stats().mend else {
+                continue;
+            };
+            let at = doubled(unit.tile);
+            if fields.iter().any(|(tile, _)| feeds(unit, *tile))
+                && calm(observation, &scratch.ground, unit.tile, (1, 1), at)
+            {
+                ledger.dock(unit.id);
+                continue;
+            }
+            if !unit.idle {
+                continue;
+            }
+            let missing = unit.kind.stats().max_hp.saturating_sub(unit.hp);
+            let ground = map.component(unit.tile);
+            // What a machine standing on `tile` would find in its intake.
+            let around = |tile: TilePos| {
+                let reach = kiln.reach + 1;
+                fields
+                    .iter()
+                    .filter(|(other, _)| other.chebyshev(tile) <= reach)
+                    .map(|(_, amount)| u64::from(*amount))
+                    .sum::<u64>()
+            };
+            let Some((field, _)) = fields
+                .iter()
+                .filter(|(tile, _)| ground.is_some() && map.component(*tile) == ground)
+                .min_by_key(|(tile, _)| {
+                    (
+                        around(*tile) * u64::from(kiln.hp_per_wreck) < u64::from(missing),
+                        frame.rank(at, doubled(*tile)),
+                    )
+                })
+            else {
+                continue;
+            };
+            if !ledger.order(run(vec![unit.id], *field)) {
+                return;
+            }
+            ledger.dock(unit.id);
+        }
+    }
+}
+
+/// Whether wounded kiln machine `unit` would bite the wreck on `tile` from
+/// where it stands: the tile lies under its hull or within its kiln's reach
+/// of it.
+pub(crate) fn feeds(unit: &UnitObs, tile: TilePos) -> bool {
+    let stats = unit.kind.stats();
+    let Mend::Kiln(kiln) = stats.mend else {
+        return false;
+    };
+    unit.hp < stats.max_hp
+        && oxide_sim::geometry::body_tiles(unit.tile.center(), stats.radius)
+            .any(|body| body.chebyshev(tile) <= kiln.reach)
+}
+
 /// Whether a Repair Bay in reach could heal `unit` where it stands: wounded,
 /// and on the ground or unable to land.
 fn treatable(unit: &UnitObs) -> bool {
     let stats = unit.kind.stats();
-    unit.hp < stats.max_hp && (unit.grounded || !stats.can_land())
+    unit.hp < stats.max_hp && stats.repairable() && (unit.grounded || !stats.can_land())
 }
 
 /// Which of the Repair Bays at `bays` treats each of `units`, as the

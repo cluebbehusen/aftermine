@@ -44,7 +44,8 @@ impl RadarContact {
 }
 
 /// A building every seat knows of regardless of fog: where it stands, what it
-/// is and whose it is, never its condition.
+/// is and whose it is. Its condition stays hidden, except an assembly
+/// cradle's progress, which every seat watches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicBuilding {
     /// Its owner.
@@ -55,6 +56,10 @@ pub struct PublicBuilding {
     pub tier: u8,
     /// Its footprint's top-left tile.
     pub anchor: TilePos,
+    /// For an assembly cradle, the construction work done toward its kind's
+    /// build time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u32>,
 }
 
 impl PublicBuilding {
@@ -1470,13 +1475,24 @@ pub(crate) fn forget_fallen_public_buildings(state: &mut State) {
     let fallen: Vec<_> = state
         .buildings
         .iter()
-        .filter(|b| b.hp == 0 && b.kind.is_public(b.tier))
+        .filter(|b| b.hp == 0 && b.is_public())
         .map(|b| (b.player, b.kind, b.anchor))
         .collect();
     for (owner, kind, anchor) in fallen {
-        for vision in &mut state.vision {
-            vision.forget_building(owner, kind, anchor);
-        }
+        forget_public_building(state, owner, kind, anchor);
+    }
+}
+
+/// Every seat forgets a public building that has left the world: it knew of
+/// it without sight, so it learns of its going the same way.
+pub(crate) fn forget_public_building(
+    state: &mut State,
+    owner: PlayerId,
+    kind: BuildingKind,
+    anchor: TilePos,
+) {
+    for vision in &mut state.vision {
+        vision.forget_building(owner, kind, anchor);
     }
 }
 

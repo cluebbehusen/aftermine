@@ -19,7 +19,7 @@ pub(super) fn solution(
 ) -> bool {
     let aim = view.aim_from(from);
     weapon.targets.covers(view.domain)
-        && within_weapon_reach(weapon, from.dist_sq(aim))
+        && within_weapon_reach(weapon, from.dist_sq(aim), Fx::ZERO)
         && predicted_impact_open(state, from, aim, terrain_cover(view, weapon, shooter))
 }
 
@@ -415,7 +415,12 @@ pub(in crate::tick::brain) fn attack_known(
         let bound = crate::stats::ESCORT_BREAK_RADIUS * crate::stats::ESCORT_BREAK_RADIUS;
         let in_reach = kind.stats().weapons.iter().any(|weapon| {
             weapon.targets.covers(view.domain)
-                && within_weapon_reach(weapon, pos.dist_sq(view.aim_from(pos)))
+                && within_weapon_reach(
+                    weapon,
+                    pos.dist_sq(view.aim_from(pos)),
+                    view.entity
+                        .map_or(Fx::ZERO, |target| target_excess(state, target)),
+                )
         });
         if state.escorted(escorted).is_none_or(|body| {
             view.position.dist_sq(body.pos) > bound && (!in_reach || pos.dist_sq(body.pos) > bound)
@@ -445,6 +450,16 @@ pub(in crate::tick::brain) fn attack_known(
         return;
     }
     if let Some(entity) = view.entity {
+        // A breacher strikes a machine it found itself only while in
+        // contact, and lets it go rather than follow it.
+        if !pursue
+            && matches!(entity, Target::Unit(_))
+            && kind.stats().target_priority == crate::stats::TargetPriority::Buildings
+            && !in_weapon_reach_from(state, kind, pos, entity)
+        {
+            complete(state, id, resume);
+            return;
+        }
         attack(
             state, index, motion, id, entity, resume, events, hits, launches,
         );

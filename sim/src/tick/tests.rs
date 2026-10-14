@@ -722,9 +722,14 @@ fn run_calibration_open_tick(
     assert_calibration_open_symmetry(&stage("production"), state, unit_pairs);
     charges::cancel_discovered(state, &mut events);
     production::decay_abandoned_sites(state);
-    let (pending, salvaged) = brain::run(state, &mut index, &mut events);
+    let brain::BrainOutcome {
+        boardings: pending,
+        salvaged,
+        assembled,
+    } = brain::run(state, &mut index, &mut events);
     assert_calibration_open_symmetry(&stage("brains"), state, unit_pairs);
     brain::logistics::resolve(state, pending, &mut events);
+    assembly::stand_up(state, &assembled, &mut events);
     assert_calibration_open_symmetry(&stage("logistics"), state, unit_pairs);
     movement::evict_claimed_ground(state);
     let air_positions = aircraft_crashes::capture_positions(state);

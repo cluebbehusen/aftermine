@@ -2513,7 +2513,8 @@ fn a_hostile_selection_inspects_and_leaks_nothing() {
             .info
             .rows
             .iter()
-            .any(|row| row.label == "Range" && row.value.contains("tiles"))
+            .any(|row| row.label == "Range"
+                && (row.value.contains("tiles") || row.value == "Contact"))
     );
 
     // And no breadcrumbs, whatever program the enemy runs.
@@ -7200,7 +7201,7 @@ fn construction_menu_shows_every_building_and_shortcuts_arm_the_visible_card() {
     let keys = [Key::Q, Key::E, Key::R, Key::T, Key::Z];
     dispatch_action(&mut game, &mut input, Action::ToggleBuildPalette);
     let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
-    assert_eq!(panel.cards.len(), 16);
+    assert_eq!(panel.cards.len(), crate::panel::MAX_CARDS);
     let (back, buildings) = panel.cards.split_last().expect("cards");
     assert_eq!(back.action, crate::panel::CardAction::ClosePalette);
     for card in buildings {
@@ -7729,8 +7730,12 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
                 .iter()
                 .find(|c| c.action == crate::panel::CardAction::ArmBuild(*kind))
                 .unwrap();
-            // A Spire also needs a Crucible and a Deep Bore this arena lacks.
-            let enabled = *kind != oxide_sim::BuildingKind::Spire;
+            // A Spire and a Maw cradle also need a Crucible and a Deep Bore
+            // this arena lacks.
+            let enabled = !matches!(
+                kind,
+                oxide_sim::BuildingKind::Spire | oxide_sim::BuildingKind::MawCradle
+            );
             assert_eq!(card.enabled, enabled, "{}: {:?}", card.title, card.why);
             assert!(card.hotkey.contains("Ctrl+"));
             controls_key_with(&mut game, &mut input, &bindings, old.key);

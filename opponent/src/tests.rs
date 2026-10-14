@@ -8,6 +8,7 @@ use oxide_sim::{
 use std::sync::Arc;
 
 mod attack;
+mod breach;
 mod catalog;
 mod clear;
 mod composition;

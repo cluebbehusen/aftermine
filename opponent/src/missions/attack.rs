@@ -8,8 +8,8 @@
 use super::Scratch;
 use super::raid::{aim, blast};
 use super::{
-    AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, hits, hunt,
-    insert, mine, run, standing, value,
+    AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
+    approach, breacher, hits, hunt, insert, mine, run, standing, value,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -106,6 +106,8 @@ struct Plan<'a> {
     misjudge: u64,
     /// Idle free Sappers.
     sappers: Vec<&'a UnitObs>,
+    /// Idle free breachers.
+    breachers: Vec<&'a UnitObs>,
     /// Free point defenders fit to walk with an army.
     screens: Vec<&'a UnitObs>,
     /// The enemy to go after first, when there are several.
@@ -160,6 +162,7 @@ impl Missions {
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
+            breachers: Vec::new(),
             screens: Vec::new(),
             rival: scratch.rival,
             held: Vec::new(),
@@ -241,6 +244,7 @@ impl Missions {
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
+            breachers: Vec::new(),
             screens: Vec::new(),
             rival: scratch.rival,
             held: held.clone(),
@@ -281,6 +285,11 @@ impl Missions {
             .copied()
             .filter(|unit| unit.kind == UnitKind::Sapper && unit.idle)
             .collect();
+        plan.breachers = free
+            .iter()
+            .copied()
+            .filter(|unit| breacher(unit.kind) && unit.idle)
+            .collect();
         plan.screens = free
             .iter()
             .copied()
@@ -316,8 +325,9 @@ impl Missions {
         let Some(rally) = plan.rally(target.owner) else {
             return false;
         };
-        let need = plan.need(target);
         let component = plan.map.component(target.approach);
+        let breachers = plan.breachers(component, UNIT_CAP);
+        let need = plan.need(target, breaching(plan.observation, &breachers));
         let fit: Vec<&UnitObs> = fit
             .iter()
             .copied()
@@ -330,6 +340,11 @@ impl Missions {
         let mut recruits = recruit(plan.frame, &fit, rally, taken, UNIT_CAP);
         if recruits.is_empty() {
             return false;
+        }
+        for breacher in breachers {
+            if recruits.len() < UNIT_CAP {
+                insert(&mut recruits, breacher);
+            }
         }
         recruits = plan.with_screens(recruits, rally, component, UNIT_CAP);
         if !ledger.order(hunt(recruits.clone(), rally)) {
@@ -401,7 +416,12 @@ impl Missions {
                 .units
                 .iter()
                 .copied()
-                .filter(|id| mine(observation, *id).is_some_and(|unit| !healthy(unit, WOUNDED)))
+                .filter(|id| {
+                    // A machine nothing at home mends stays with the attack.
+                    mine(observation, *id).is_some_and(|unit| {
+                        !healthy(unit, WOUNDED) && unit.kind.stats().repairable()
+                    })
+                })
                 .collect();
             if !wounded.is_empty() && ledger.order(run(wounded.clone(), rally)) {
                 self.release(&wounded);
@@ -435,9 +455,9 @@ impl Missions {
             }
             return None;
         };
-        let need = plan.need(target);
         let component = plan.map.component(target.approach);
         let mission = &mut self.list[index];
+        let need = plan.need(target, breaching(observation, &mission.units));
         mission.task = Task::Attack {
             target: target.objective(),
             phase,
@@ -451,7 +471,7 @@ impl Missions {
         }
         let all_idle = members
             .iter()
-            .filter(|unit| unit.kind != UnitKind::Sapper)
+            .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
             .all(|unit| unit.idle);
         let strength: u64 = members
             .iter()
@@ -486,22 +506,7 @@ impl Missions {
                         }
                     }
                     let recruited = ordered && !recruits.is_empty();
-                    let sapping = members
-                        .iter()
-                        .filter(|unit| unit.kind == UnitKind::Sapper)
-                        .count();
-                    // A Sapper for each known defense around the target.
-                    let room = plan
-                        .defenses(target)
-                        .count()
-                        .saturating_sub(sapping)
-                        .min(UNIT_CAP.saturating_sub(mission.units.len()));
-                    let sappers = plan.sappers(target, rally, component, room);
-                    if !sappers.is_empty() && ledger.order(run(sappers.clone(), rally)) {
-                        for sapper in sappers {
-                            insert(&mut mission.units, sapper);
-                        }
-                    }
+                    plan.join_support(mission, &members, (target, rally, component), ledger);
                     // Recruits still on their way go along once the time to
                     // regroup is up, or a steady stream of new units would hold
                     // the army at home.
@@ -544,11 +549,12 @@ impl Missions {
                 AttackPhase::Engage { .. } => {
                     // Sappers sent at a defense keep that order whatever the rest
                     // of the army is told next.
+                    // Breachers, too, cut the nearest defense when idle, and stay
+                    // at their work while the rest of the army comes and goes.
                     let mut blasting = Vec::new();
-                    for sapper in members
-                        .iter()
-                        .filter(|unit| unit.kind == UnitKind::Sapper && unit.idle)
-                    {
+                    for sapper in members.iter().filter(|unit| {
+                        (unit.kind == UnitKind::Sapper || breacher(unit.kind)) && unit.idle
+                    }) {
                         if let Some(defense) = plan.nearest_defense(target, sapper)
                             && ledger.order(blast(vec![sapper.id], aim(defense)))
                         {
@@ -559,7 +565,10 @@ impl Missions {
                         .units
                         .iter()
                         .copied()
-                        .filter(|id| !blasting.contains(id))
+                        .filter(|id| {
+                            !blasting.contains(id)
+                                && mine(observation, *id).is_none_or(|unit| !breacher(unit.kind))
+                        })
                         .collect();
                     let opposition = plan.opposition(&members);
                     if opposition * 1_000 > strength * outweighed(plan.difficulty) {
@@ -581,7 +590,7 @@ impl Missions {
                     let next = plan.best(Some(target)).filter(|next| {
                         !standing
                             && members.iter().map(|unit| striking(unit)).sum::<u64>()
-                                >= plan.need(*next)
+                                >= plan.need(*next, breaching(observation, &mission.units))
                     });
                     if let Some(next) = next {
                         if ledger.order(hunt(army, next.approach)) {
@@ -882,13 +891,71 @@ impl<'a> Plan<'a> {
     }
 
     /// Army value the attack on `target` needs: the known army it would
-    /// meet times the margin, and never under the stance minimum.
-    fn need(&self, target: Target) -> u64 {
-        (opposed(self.observation, self.map, self.memory, &[target.approach]) * self.misjudge
-            / 1_000
-            * self.margin
-            / 1_000)
+    /// meet times the margin, and never under the stance minimum. What
+    /// breachers bring against buildings, `breach`, answers the guarding
+    /// buildings before the army has to.
+    fn need(&self, target: Target, breach: u64) -> u64 {
+        let (units, buildings) =
+            opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
+        ((units + buildings.saturating_sub(breach)) * self.misjudge / 1_000 * self.margin / 1_000)
             .max(self.minimum)
+    }
+
+    /// Brings support to a regrouping attack on `target`: a Sapper for each
+    /// known defense around it, and every free breacher that can get there.
+    fn join_support(
+        &self,
+        mission: &mut Mission,
+        members: &[&UnitObs],
+        (target, rally, component): (Target, TilePos, Option<u32>),
+        ledger: &mut Ledger,
+    ) {
+        let sapping = members
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Sapper)
+            .count();
+        let room = self
+            .defenses(target)
+            .count()
+            .saturating_sub(sapping)
+            .min(UNIT_CAP.saturating_sub(mission.units.len()));
+        let sappers = self.sappers(target, rally, component, room);
+        if !sappers.is_empty() && ledger.order(run(sappers.clone(), rally)) {
+            for sapper in sappers {
+                insert(&mut mission.units, sapper);
+            }
+        }
+        let room = UNIT_CAP.saturating_sub(mission.units.len());
+        let breachers: Vec<UnitId> = self
+            .breachers(component, room)
+            .into_iter()
+            .filter(|id| !mission.units.contains(id))
+            .collect();
+        if !breachers.is_empty() && ledger.order(run(breachers.clone(), rally)) {
+            for breacher in breachers {
+                insert(&mut mission.units, breacher);
+            }
+        }
+    }
+
+    /// Idle free breachers, at most `room`, that can get to a target whose
+    /// approach lies in `component`, nearest home first.
+    fn breachers(&self, component: Option<u32>, room: usize) -> Vec<UnitId> {
+        let mut breachers: Vec<&UnitObs> = self
+            .breachers
+            .iter()
+            .copied()
+            .filter(|unit| reaches(self.map, unit, component))
+            .collect();
+        breachers.sort_by_key(|unit| {
+            (
+                self.frame.rank(self.frame.home, doubled(unit.tile)),
+                unit.id,
+            )
+        });
+        let mut ids: Vec<UnitId> = breachers.iter().take(room).map(|unit| unit.id).collect();
+        ids.sort_unstable();
+        ids
     }
 
     /// Value of the armed enemies the seat knows of within contact of the
@@ -920,7 +987,9 @@ impl<'a> Plan<'a> {
             })
             .map(building_value)
             .sum();
-        (units + buildings) * self.misjudge / 1_000
+        // Breachers among the members answer the armed buildings first.
+        let breach: u64 = members.iter().map(|unit| against_buildings(unit)).sum();
+        (units + buildings.saturating_sub(breach)) * self.misjudge / 1_000
     }
 
     /// Where the army gathers against `owner`: the open tile within reach of
@@ -964,6 +1033,18 @@ pub(super) fn opposed(
     memory: &Memory,
     tiles: &[TilePos],
 ) -> u64 {
+    let (units, buildings) = opposed_parts(observation, map, memory, tiles);
+    units + buildings
+}
+
+/// [`opposed`] in its two parts: the armed enemy units, and the guarding
+/// buildings.
+fn opposed_parts(
+    observation: &ObservationData,
+    map: &MapModel,
+    memory: &Memory,
+    tiles: &[TilePos],
+) -> (u64, u64) {
     let now = observation.tick;
     let ground = tiles.first().and_then(|tile| map.component(*tile));
     let home = map
@@ -984,7 +1065,16 @@ pub(super) fn opposed(
         .filter(|building| tiles.iter().any(|tile| guards(building, *tile)))
         .map(building_value)
         .sum();
-    units + buildings
+    (units, buildings)
+}
+
+/// What the breachers among `units` bring against buildings.
+fn breaching(observation: &ObservationData, units: &[UnitId]) -> u64 {
+    units
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .map(against_buildings)
+        .sum()
 }
 
 /// The known ground defense around any of `tiles`, each defender counted

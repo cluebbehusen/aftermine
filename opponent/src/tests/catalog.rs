@@ -50,6 +50,7 @@ fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
         ],
         units: Vec::new(),
         waiting: None,
+        margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
     };
     candidates(&situation)
         .into_iter()
@@ -101,6 +102,46 @@ fn trained(scenario: &Scenario, tick: u64, kind: UnitKind) -> bool {
     trains(&seat_with(scenario, 0, thrifty()).act(&state, &mut OwnEvents::default()))
         .iter()
         .any(|(_, each)| *each == kind)
+}
+
+/// West with its tech, a Deep Bore and a standing army on the open field,
+/// facing a ring of East Bastions it sees, worth more than that army: ground
+/// its army cannot take.
+fn fortress() -> Scenario {
+    let mut fortress = field();
+    fortress.map[4].replace_range(8..9, "E");
+    fortress.players[0].scrap = 2 * UnitKind::Maw.stats().cost;
+    fortress
+        .units
+        .extend((5..10).map(|x| unit(0, UnitKind::Sentinel, x, 14)));
+    fortress
+        .units
+        .extend((5..10).map(|x| unit(0, UnitKind::Excavator, x, 18)));
+    // A Kestrel over East's base, so West knows the guns.
+    fortress.units.push(unit(0, UnitKind::Kestrel, 41, 11));
+    fortress.buildings.extend([
+        building(0, BuildingKind::Crucible, 3, 16),
+        building(0, BuildingKind::Extractor, 8, 4),
+        building(0, BuildingKind::Fabricator, 3, 6),
+        building(0, BuildingKind::Airworks, 6, 6),
+    ]);
+    for (x, y) in [
+        (38, 4),
+        (41, 4),
+        (44, 4),
+        (38, 8),
+        (38, 14),
+        (38, 18),
+        (41, 18),
+        (44, 18),
+        (40, 8),
+        (40, 14),
+    ] {
+        fortress
+            .buildings
+            .push(building(1, BuildingKind::Bastion, x, y));
+    }
+    fortress
 }
 
 #[test]
@@ -188,6 +229,12 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     ]);
     let state = tiered(&strike.build().unwrap(), BuildingKind::Extractor, 1);
     offer(&strike, &state, 3_000);
+
+    // A Maw cradle once a Crucible and a Deep Bore stand and known enemy guns
+    // outweigh the army.
+    let breach = fortress();
+    let state = tiered(&breach.build().unwrap(), BuildingKind::Extractor, 1);
+    offer(&breach, &state, 3_000);
 
     // A Lattice over the base against a seen enemy Spire.
     let mut missile = crucible.clone();
@@ -297,6 +344,14 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
         building(1, BuildingKind::Turret, 9, 9),
     ]);
     rows.push((UnitKind::Sapper, trained(&sapping, 0, UnitKind::Sapper)));
+
+    // A Maw is assembled, not trained: buying its cradle stands for it.
+    let breach = fortress();
+    let state = tiered(&breach.build().unwrap(), BuildingKind::Extractor, 1);
+    rows.push((
+        UnitKind::Maw,
+        offered(&breach, &state, 3_000).contains(&Investment::Tech(BuildingKind::MawCradle)),
+    ));
 
     let failed: Vec<UnitKind> = rows
         .iter()

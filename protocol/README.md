@@ -33,7 +33,7 @@ view, including the public buildings every seat knows of. `clear_focus` clears
 armed defenses' target preferences. Fog views carry radar blips, continuous
 contact tracks, and public buildings. Blips and anonymous tracks give a tile and
 whether the contact flies, never entity identity, and public buildings carry no
-condition.
+condition but an assembly cradle's progress.
 
 ## Development
 

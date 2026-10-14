@@ -1232,12 +1232,18 @@ pub fn tier(kind: UnitKind) -> u8 {
         .iter()
         .copied()
         .find(|b| b.base_stats().produces.contains(&kind));
+    let needs_crucible = |needs: &[oxide_sim::stats::Prerequisite]| {
+        needs.iter().any(|need| need.kind == BuildingKind::Crucible)
+    };
+    let cradle_needs_crucible = BuildingKind::ALL.iter().any(|b| {
+        b.assembles() == Some(kind)
+            && b.base_stats()
+                .construction
+                .is_some_and(|construction| needs_crucible(construction.requires))
+    });
     if producer == Some(BuildingKind::Crucible)
-        || kind
-            .stats()
-            .requires
-            .iter()
-            .any(|need| need.kind == BuildingKind::Crucible)
+        || needs_crucible(kind.stats().requires)
+        || cradle_needs_crucible
     {
         3
     } else if producer == Some(BuildingKind::Foundry) {

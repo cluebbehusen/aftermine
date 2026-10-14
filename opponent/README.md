@@ -468,6 +468,31 @@ target with such defenses takes a free Sapper along for each while it gathers or
 recovers, and once it fights sends each at the nearest such defense on its
 ground, leaving them to it when the rest of the army moves on.
 
+## Breachers
+
+Once a Crucible stands, the seat wants a Maw cradle while its line, siege and
+anti-heavy army falls short of what an attack on the known enemy guns its ground
+reaches would need, by the attack margin, and while it neither fields a Maw nor
+raises a cradle; siege weighs it and income scales it. An attack, lift or strike
+lately given up on ground the seat reaches is direct evidence the army cannot
+break in: the cradle is then wanted at the scale of the seat's upgrades. The
+cradle's next step reaches its Deep Bore first. It stands in a whole block
+beside a Foundry, and only where the Maw's hull could drive out past the seat's
+furthest building. The seat tops its crew up with one order to the free workers
+on its ground, the fastest builders first and never a node's last Harvester.
+
+A breacher's value counts a tenth against machines, its cutter's share, and in
+full against buildings. Every free breacher that can get there joins an attack
+as it launches or regroups; what breachers bring against buildings answers the
+guarding buildings in the attack's need and in the opposition its fight weighs.
+In a fight an idle breacher cuts the nearest defense, staying at it while the
+rest of the army moves on, and nothing at home mends it, so wounds never send it
+back. Between fights a free, wounded Maw drives to the nearest known wreck its
+harvesters could safely salvage, one holding enough to mend it first, and sits
+out missions there while it is calm and its kiln has wreck to eat; harvesters
+leave that wreck to it. A known enemy cradle counts as the heavy machine it will
+stand up.
+
 ## Scouting
 
 The seat keeps its hostile starts and expansion sites as scouting points and

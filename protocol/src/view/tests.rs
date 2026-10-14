@@ -386,12 +386,13 @@ fn the_fog_view_and_the_bot_observation_agree() {
     use oxide_sim::observation::ObservationData;
     use std::collections::BTreeSet;
 
-    // Each seat refits its home Extractor into a Deep Bore at once, so the
-    // public rule is compared as well.
+    // Each seat refits its home Extractor into a Deep Bore at once, and West
+    // then starts a Maw cradle, so both public rules are compared as well.
     let mut scenario = oxide_sim::Scenario::skirmish();
     for player in &mut scenario.players {
         player.scrap = 1_000;
     }
+    scenario.players[0].scrap += oxide_sim::UnitKind::Maw.stats().cost;
     for (seat, kind, x, y) in [
         (0, oxide_sim::BuildingKind::Extractor, 8, 4),
         (1, oxide_sim::BuildingKind::Extractor, 30, 18),
@@ -426,7 +427,9 @@ fn the_fog_view_and_the_bot_observation_agree() {
             .unwrap()
             .anchor
     };
-    let raids: Vec<oxide_sim::PlayerCommand> = [0u8, 1]
+    // Only West raids, so East meets hostiles at home while West's cradle
+    // stays out of its sight.
+    let raids: Vec<oxide_sim::PlayerCommand> = [0u8]
         .into_iter()
         .map(|seat| oxide_sim::PlayerCommand {
             player: PlayerId(seat),
@@ -455,7 +458,9 @@ fn the_fog_view_and_the_bot_observation_agree() {
     state.tick(&raids);
     let mut compared_hostiles = false;
     let mut compared_public = false;
+    let mut compared_cradle = false;
     let mut compared_tiered_ghost = false;
+    let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
             for seat in [PlayerId(0), PlayerId(1)] {
@@ -527,12 +532,25 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 let fog_public: Vec<_> = fog
                     .public_buildings
                     .iter()
-                    .map(|p| (p.owner, p.kind, p.tier, p.anchor[0], p.anchor[1]))
+                    .map(|p| {
+                        (
+                            p.owner,
+                            p.kind,
+                            p.tier,
+                            p.anchor[0],
+                            p.anchor[1],
+                            p.progress,
+                        )
+                    })
                     .collect();
                 let obs_public: Vec<_> = obs
                     .public_buildings
                     .iter()
-                    .map(|p| (p.owner.0, p.kind, p.tier, p.anchor.x, p.anchor.y))
+                    .map(|p| {
+                        (
+                            p.owner.0, p.kind, p.tier, p.anchor.x, p.anchor.y, p.progress,
+                        )
+                    })
                     .collect();
                 assert_eq!(fog_public, obs_public, "tick {tick} seat {seat:?} public");
                 assert_eq!(
@@ -547,10 +565,60 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .public_buildings
                     .iter()
                     .any(|p| !state.vision(seat).visible(p.anchor));
+                compared_cradle |= obs.public_buildings.iter().any(|p| {
+                    p.progress.is_some_and(|progress| progress > 0)
+                        && !state.vision(seat).visible(p.anchor)
+                });
             }
         }
-        state.tick(&[]);
+        let mut orders = Vec::new();
+        if !cradle_ordered
+            && state.requirements_met(
+                PlayerId(0),
+                oxide_sim::BuildingKind::MawCradle
+                    .base_stats()
+                    .construction
+                    .unwrap()
+                    .requires,
+            )
+        {
+            let home = foundry(&state, 0);
+            let anchor = (0..12)
+                .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
+                .find(|&anchor| {
+                    state
+                        .place_refusal(PlayerId(0), oxide_sim::BuildingKind::MawCradle, anchor)
+                        .is_none()
+                })
+                .expect("room for a cradle near West's Foundry");
+            let worker = state
+                .units()
+                .iter()
+                .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
+                .unwrap()
+                .id;
+            orders.push(oxide_sim::PlayerCommand {
+                player: PlayerId(0),
+                command: oxide_sim::Command::Build {
+                    units: vec![worker],
+                    kind: oxide_sim::BuildingKind::MawCradle,
+                    anchor,
+                    queue: false,
+                    defer: false,
+                },
+            });
+            cradle_ordered = true;
+        }
+        state.tick(&orders);
     }
+    assert!(
+        cradle_ordered,
+        "West's Deep Bore came up in time to order a cradle"
+    );
+    assert!(
+        compared_cradle,
+        "a started cradle out of East's sight was compared"
+    );
     assert!(
         compared_hostiles,
         "the raids met, so hostile filtering was compared"

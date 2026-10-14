@@ -4,11 +4,12 @@ use crate::game::Game;
 fn selected(kind: UnitKind, foreign: bool) -> Panel {
     let mut scenario = oxide_sim::Scenario::skirmish();
     let player = u8::from(foreign);
+    // Clear of the Foundry by the widest hull's overhang.
     scenario.units = vec![oxide_sim::scenario::UnitSpec {
         player,
         kind,
-        x: 6,
-        y: 5,
+        x: 7,
+        y: 7,
     }];
     let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(640.0, 400.0)).unwrap();
     game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
