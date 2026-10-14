@@ -40,12 +40,14 @@ pub(super) fn apply_order_round(
     Ok(())
 }
 
-/// Refunds the latest ordered round and switches autofill off, so the
-/// magazine does not buy the round straight back.
+/// Refunds the ordered round at `index` and switches autofill off, so the
+/// magazine does not buy the round straight back. Paid rounds are alike, so
+/// only cancelling the head loses work: the next round starts fresh.
 pub(super) fn apply_cancel_round(
     state: &mut State,
     player: PlayerId,
     building: BuildingId,
+    index: u8,
 ) -> Result<(), RejectReason> {
     let b = state
         .building_mut(building)
@@ -59,10 +61,10 @@ pub(super) fn apply_cancel_round(
     let magazine = b
         .magazine
         .as_mut()
-        .filter(|magazine| magazine.ordered > 0)
+        .filter(|magazine| index < magazine.ordered)
         .ok_or(RejectReason::InvalidTarget)?;
     magazine.ordered -= 1;
-    if magazine.ordered == 0 {
+    if index == 0 {
         magazine.progress = 0;
     }
     magazine.autofill = false;

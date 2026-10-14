@@ -152,8 +152,8 @@ pub(super) fn dispatch_action(
         }
         Action::CancelRound => {
             let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
-            if let Some(building) = selected.round_to_cancel() {
-                game.issue(Command::CancelRound { building });
+            if let Some(command) = selected.round_cancel() {
+                game.issue(command);
             }
         }
         Action::ToggleAutofill => {

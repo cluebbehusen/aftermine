@@ -332,11 +332,14 @@ pub enum Command {
         /// The Spire or Lattice.
         building: BuildingId,
     },
-    /// Cancel the latest ordered round for a full refund. It also turns the
+    /// Cancel one ordered round for a full refund. Cancelling the round
+    /// being assembled also resets its progress. It also turns the
     /// magazine's autofill off, which would otherwise order the round again.
     CancelRound {
         /// The Spire or Lattice.
         building: BuildingId,
+        /// Order position (0 = being assembled).
+        index: u8,
     },
     /// Turn automatic round ordering on or off. The sim reads `buildings`
     /// as a sorted set, and refuses the whole command if any is not the

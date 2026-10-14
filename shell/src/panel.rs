@@ -29,6 +29,8 @@ pub enum CardIcon {
     Unit(UnitKind),
     /// A building sprite.
     Building(BuildingKind, u8),
+    /// A magazine's round: a Spire's warhead or a Lattice's interceptor.
+    Round(BuildingKind),
     /// A verb pictogram from the atlas's icon family.
     Verb(VerbIcon),
     /// A salvage pile: a wreck, or a scrap node.
@@ -107,6 +109,8 @@ pub enum CardAction {
     ArmRally,
     /// Remove a queued unit from a producer (full refund).
     CancelQueue(BuildingId, u8),
+    /// Cancel one ordered magazine round (full refund).
+    CancelRound(BuildingId, u8),
     /// Cancel one selected factory product, preferring waiting work.
     CancelProduction(UnitKind),
     /// Cancel an unfinished site shown by a Harvester's Build order.
@@ -166,6 +170,7 @@ impl CardAction {
                 | Self::CancelSite(_)
                 | Self::CancelFound(..)
                 | Self::CancelQueue(..)
+                | Self::CancelRound(..)
                 | Self::CancelProduction(_)
         )
     }
@@ -497,6 +502,59 @@ fn production_queue_label(
         .map(|kind| kind.stats().train_ticks)
         .sum::<u32>();
     Some(tick_time_label(head_ticks - progress + later_ticks))
+}
+
+/// A magazine's ordered rounds as dock chips, the head wearing its
+/// assembly meter, and the dock's heading: the time left on all of them.
+/// The team shares its magazines' orders; only the owner's chips cancel.
+fn magazine_queue(
+    game: &Scene<'_>,
+    building: &oxide_sim::Building,
+    queue: &mut Vec<Card>,
+) -> Option<String> {
+    let stats = building.kind.magazine()?;
+    let magazine = game
+        .state
+        .known_magazines(game.presentation.human)
+        .into_iter()
+        .find(|known| known.building == building.id)?
+        .detail
+        .filter(|detail| detail.ordered > 0)?;
+    let own = building.player == game.presentation.human;
+    let round_ticks = stats.round_ticks.max(1);
+    let title =
+        crate::typography::sentence_case(crate::building_actions::round_noun(building.kind));
+    for index in 0..magazine.ordered {
+        queue.push(Card {
+            icon: CardIcon::Round(building.kind),
+            title: title.clone(),
+            cost: None,
+            hotkey: String::new(),
+            action: if own {
+                CardAction::CancelRound(building.id, index)
+            } else {
+                CardAction::None
+            },
+            enabled: true,
+            why: None,
+            desc: if own {
+                vec![
+                    format!(
+                        "{} to cancel; full refund.",
+                        crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
+                    ),
+                    "Also turns autofill off, so it is not bought again.".into(),
+                ]
+            } else {
+                vec!["Read-only: allied rounds cannot be cancelled.".into()]
+            },
+            progress: (index == 0)
+                .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
+        });
+    }
+    Some(tick_time_label(
+        u32::from(magazine.ordered) * round_ticks - magazine.progress.min(round_ticks),
+    ))
 }
 
 fn bot_controller_label(game: &Scene<'_>, player: oxide_sim::PlayerId) -> Option<String> {
@@ -1074,6 +1132,9 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     desc: vec!["Read-only: allied buildings cannot be controlled.".into()],
                     progress: None,
                 });
+                if let Some(label) = magazine_queue(game, first, &mut panel.queue) {
+                    panel.queue_label = label;
+                }
             }
             return Some(panel);
         }
@@ -1107,6 +1168,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     true,
                     None,
                 ));
+            } else if let Some(label) = magazine_queue(game, building, &mut panel.queue) {
+                panel.queue_label = label;
             } else {
                 panel.queue_label =
                     production_queue_label(&building.queue, building.training_progress())
