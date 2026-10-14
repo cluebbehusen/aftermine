@@ -1,16 +1,28 @@
 use super::*;
-use crate::saves::RecordKind;
+use crate::saves::{RecordKind, Unavailable};
 use macroquad::prelude::vec2;
 
 fn entry(name: &str, compatible: bool, kind: RecordKind, path: std::path::PathBuf) -> ReplayEntry {
     ReplayEntry {
         path,
-        label: name.to_string(),
-        blurb: format!("{name} blurb"),
-        action: None,
-        compatible,
+        title: name.to_string(),
+        detail: "Skirmish".to_string(),
+        clock: "1:00".to_string(),
+        saved_secs: 0,
+        problem: (!compatible).then_some(Unavailable::OtherVersion),
         kind,
     }
+}
+
+/// Each line's leading text: a header's label, or a row's title.
+fn titles(shelf: &Shelf) -> Vec<String> {
+    shelf
+        .menu
+        .view()
+        .items
+        .iter()
+        .map(|item| item.split(" | ").next().unwrap_or_default().to_string())
+        .collect()
 }
 
 fn drive(shelf: &mut Shelf, key: Key) -> Out {
@@ -23,16 +35,13 @@ fn drive(shelf: &mut Shelf, key: Key) -> Out {
     )
 }
 
-/// Moves the cursor to the labeled row and activates it — by label,
-/// so the tests survive the section headers shifting every index.
-fn activate(shelf: &mut Shelf, label: &str) -> Out {
-    let target = shelf
-        .menu
-        .view()
-        .items
+/// Moves the cursor to the titled row and activates it — by title, so
+/// the tests survive the section headers shifting every index.
+fn activate(shelf: &mut Shelf, title: &str) -> Out {
+    let target = titles(shelf)
         .iter()
-        .position(|i| i == label)
-        .unwrap_or_else(|| panic!("no row labeled {label} in {:?}", shelf.menu.view().items));
+        .position(|t| t == title)
+        .unwrap_or_else(|| panic!("no row titled {title} in {:?}", titles(shelf)));
     while shelf.menu.selected < target {
         drive(shelf, Key::Down);
     }
@@ -68,10 +77,9 @@ fn the_back_button_leaves_even_after_every_record_is_deleted() {
 
 #[test]
 fn a_record_says_how_to_act_only_as_coaching() {
-    let mut record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
-    record.action = Some(("watches", "watch"));
+    let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
     let mut shelf = Shelf::from_entries(vec![record]);
-    assert_eq!(shelf.subtitle(), "done blurb", "the details stay visible");
+    assert_eq!(shelf.subtitle(), "", "an openable record's row says it all");
     assert_eq!(
         shelf.coaching().as_deref(),
         Some("{confirm} watches | {delete} twice deletes")
@@ -92,7 +100,7 @@ fn records_shelve_into_their_sections_and_the_cursor_skips_the_headers() {
         entry("done", true, RecordKind::Match, "/nowhere/m.json".into()),
     ]);
     assert_eq!(
-        shelf.menu.view().items,
+        titles(&shelf),
         vec!["SAVES", "live", "named", "REPLAYS", "done"],
         "saves first, replays after"
     );
@@ -101,7 +109,38 @@ fn records_shelve_into_their_sections_and_the_cursor_skips_the_headers() {
     // Walking down never rests on the REPLAYS header.
     drive(&mut shelf, Key::Down);
     drive(&mut shelf, Key::Down);
-    assert_eq!(shelf.menu.view().items[shelf.menu.selected], "done");
+    assert_eq!(titles(&shelf)[shelf.menu.selected], "done");
+}
+
+#[test]
+fn a_row_reads_its_title_kind_match_time_and_age() {
+    let now = 1_784_721_600;
+    let mut live = entry(
+        "Long Causeway",
+        true,
+        RecordKind::Autosave,
+        "/nowhere/a.json".into(),
+    );
+    live.detail = "Autosave".to_string();
+    live.clock = "28:58".to_string();
+    live.saved_secs = now - 12 * 60;
+    let shelf = Shelf::at(vec![live], now);
+    assert_eq!(
+        shelf.menu.view().items[1],
+        "Long Causeway | Autosave | 28:58 | 12 min ago"
+    );
+}
+
+#[test]
+fn the_shelf_says_it_is_looking_until_the_catalog_lands() {
+    let mut shelf = Shelf::open();
+    assert!(
+        shelf.subtitle().starts_with("looking"),
+        "an unscanned shelf is not an empty one: {}",
+        shelf.subtitle()
+    );
+    shelf.set_catalog(Vec::new());
+    assert!(shelf.subtitle().starts_with("nothing recorded yet"));
 }
 
 #[test]
@@ -157,6 +196,12 @@ fn an_incompatible_record_refuses_its_verb_in_both_sections() {
         Out::Stay,
         "an incompatible save refuses to load"
     );
+    assert_eq!(
+        shelf.subtitle(),
+        Unavailable::OtherVersion.reason(),
+        "the focused record says why it will not open"
+    );
+    assert_eq!(shelf.coaching().as_deref(), Some("{delete} twice deletes"));
     assert_eq!(
         activate(&mut shelf, "old-match"),
         Out::Stay,

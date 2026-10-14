@@ -20,7 +20,7 @@ fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
 }
 
 #[test]
-fn the_shelf_badge_compares_versions_and_never_guesses() {
+fn the_shelf_tells_another_version_from_damage() {
     let dir = std::env::temp_dir().join(format!(
         "oxide-shelf-test-{}-{}",
         std::process::id(),
@@ -36,6 +36,17 @@ fn the_shelf_badge_compares_versions_and_never_guesses() {
     let mut foreign: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
     foreign.meta.sim_version = SIM_VERSION + 1;
     foreign.save(dir.join("foreign.json")).unwrap();
+    let mut damaged: GameReplay =
+        chassis::replay::Replay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+    damaged.record(
+        42,
+        oxide_sim::PlayerCommand {
+            player: oxide_sim::PlayerId(0),
+            command: oxide_sim::Command::Surrender,
+        },
+    );
+    damaged.meta.ticks = Some(10);
+    damaged.save(dir.join("damaged.json")).unwrap();
 
     let mut out = Vec::new();
     scan(&dir, &mut out);
@@ -45,16 +56,12 @@ fn the_shelf_badge_compares_versions_and_never_guesses() {
             .find(|e| e.path.file_stem().unwrap() == name)
             .expect("scanned")
     };
-    assert!(entry("ours").compatible, "our own version wears the badge");
-    let foreign = entry("foreign");
-    assert!(!foreign.compatible, "a foreign version never does");
-    assert!(
-        foreign.blurb.contains(&format!(
-            "recorded on sim {}, this is {SIM_VERSION}",
-            SIM_VERSION + 1
-        )),
-        "the honest badge names both versions: {}",
-        foreign.blurb
+    assert!(entry("ours").available());
+    assert_eq!(entry("foreign").problem, Some(Unavailable::OtherVersion));
+    assert_eq!(
+        entry("damaged").problem,
+        Some(Unavailable::Unreadable),
+        "a record from this version that fails its checks is damaged, not foreign"
     );
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -88,12 +95,21 @@ fn kinds_read_the_metadata_tag() {
             .expect("scanned")
     };
     assert_eq!(entry("anything").kind, RecordKind::Save);
-    assert!(
-        entry("anything").label.starts_with("before the push"),
-        "a named save leads with its name: {}",
-        entry("anything").label
+    assert_eq!(
+        (
+            entry("anything").title.as_str(),
+            entry("anything").detail.as_str()
+        ),
+        ("before the push", "Skirmish Basin"),
+        "a named save leads with its name and keeps its map beside it"
     );
-    assert_eq!(entry("match-0000000099").kind, RecordKind::Match);
+    let finished = entry("match-0000000099");
+    assert_eq!(finished.kind, RecordKind::Match);
+    assert_eq!(
+        (finished.title.as_str(), finished.detail.as_str()),
+        ("Skirmish Basin", "1v1"),
+        "an unnamed match leads with its map and says its format"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -156,7 +172,7 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
         }
         let candidates = newest_first(found)
             .into_iter()
-            .filter(|entry| entry.compatible && entry.kind == RecordKind::Autosave)
+            .filter(|entry| entry.available() && entry.kind == RecordKind::Autosave)
             .map(|entry| {
                 entry
                     .path
@@ -173,26 +189,36 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
 
 #[test]
 fn the_calendar_is_honest_without_a_time_crate() {
-    assert_eq!(civil_date(0), "1970-01-01");
-    assert_eq!(civil_date(86_399), "1970-01-01", "last second of day one");
-    assert_eq!(civil_date(86_400), "1970-01-02");
+    assert_eq!(civil(0), (1970, 1, 1));
+    assert_eq!(civil(86_399), (1970, 1, 1), "last second of day one");
+    assert_eq!(civil(86_400), (1970, 1, 2));
     // Leap handling around the century rule: 2000-02-29 existed.
     // 951_782_400 = 2000-02-29T00:00:00Z; 951_868_800 = 2000-03-01.
-    assert_eq!(civil_date(951_782_400), "2000-02-29");
-    assert_eq!(civil_date(951_868_800), "2000-03-01");
+    assert_eq!(civil(951_782_400), (2000, 2, 29));
+    assert_eq!(civil(951_868_800), (2000, 3, 1));
     // A modern spot check: 2026-07-22T12:00:00Z.
-    assert_eq!(civil_date(1_784_721_600), "2026-07-22");
+    assert_eq!(civil(1_784_721_600), (2026, 7, 22));
 }
 
 #[test]
-fn long_stems_elide_at_char_boundaries() {
-    assert_eq!(elide("short"), "short");
-    let long_ascii = "a".repeat(30);
-    assert_eq!(elide(&long_ascii), format!("{}...", "a".repeat(23)));
-    // 27 chars, with byte offset 23 landing inside the first é, where
-    // byte slicing would panic.
-    let multibyte = format!("{}ééééé", "a".repeat(22));
-    assert_eq!(elide(&multibyte), format!("{}é...", "a".repeat(22)));
+fn saved_times_read_as_ages_then_dates() {
+    let now = 1_784_721_600; // 2026-07-22T12:00:00Z
+    let ago = |secs: u64| saved_ago(now - secs, now);
+    assert_eq!(ago(0), "just now");
+    assert_eq!(ago(59), "just now");
+    assert_eq!(ago(60), "1 min ago");
+    assert_eq!(ago(59 * 60 + 59), "59 min ago");
+    assert_eq!(ago(3600), "1 h ago");
+    assert_eq!(ago(23 * 3600), "23 h ago");
+    assert_eq!(ago(86_400), "1 day ago");
+    assert_eq!(ago(6 * 86_400), "6 days ago");
+    assert_eq!(ago(7 * 86_400), "Jul 15", "a week back reads as a date");
+    assert_eq!(saved_ago(1_784_721_600 - 365 * 86_400, now), "Jul 22, 2025");
+    assert_eq!(
+        saved_ago(now + 600, now),
+        "just now",
+        "a clock moved back never reads as the future"
+    );
 }
 
 #[test]
@@ -228,16 +254,9 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     assert_eq!(out.len(), 1, "bad neighbors do not hide the good record");
     let entry = &out[0].1;
     assert_eq!(entry.kind, RecordKind::Save, "the metadata tag wins");
-    assert!(!entry.compatible);
-    assert!(entry.label.starts_with("before the push |"));
-    assert!(
-        entry.label.contains("| 0:02 |"),
-        "duration comes from the command tail"
-    );
-    assert!(
-        entry.blurb.contains("unavailable"),
-        "saves are loaded, not watched"
-    );
+    assert_eq!(entry.problem, Some(Unavailable::OtherVersion));
+    assert_eq!(entry.title, "before the push");
+    assert_eq!(entry.clock, "0:02", "duration comes from the command tail");
     assert_ne!(
         out[0].0.saved_at,
         std::time::UNIX_EPOCH,

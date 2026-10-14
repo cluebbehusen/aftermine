@@ -233,7 +233,7 @@ fn is_reservation_marker(path: &Path) -> bool {
 pub(crate) fn candidates() -> Vec<PathBuf> {
     crate::saves::discover(|| false)
         .into_iter()
-        .filter(|entry| entry.compatible && entry.kind.continues())
+        .filter(|entry| entry.available() && entry.kind.continues())
         .map(|entry| entry.path)
         .collect()
 }

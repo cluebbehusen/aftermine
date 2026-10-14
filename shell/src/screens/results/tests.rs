@@ -74,14 +74,12 @@ fn maximum_roster_stays_readable_above_the_actions() {
 }
 
 #[test]
-fn compact_columns_and_names_fit_without_breaking_unicode() {
+fn compact_columns_stay_ordered_inside_the_table() {
     let columns = table_columns(20.0, 620.0, false);
     assert_eq!(columns.player, 20.0);
     assert!(columns.player < columns.stats[0]);
     assert!(columns.stats.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(columns.stats[5] < 620.0);
-    assert_eq!(clipped_name("short", 8), "short");
-    assert_eq!(clipped_name("cupréous", 7), "cupr...");
 }
 
 #[test]
