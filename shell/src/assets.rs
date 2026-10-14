@@ -25,6 +25,7 @@ pub struct Sprites {
     scout_radar: Option<Rect>,
     array_rig: Option<ArrayRig>,
     strategic_rigs: Option<StrategicRigs>,
+    maw_rigs: Option<MawRigs>,
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
     verb_icons: [Rect; 16],
@@ -134,6 +135,79 @@ pub(crate) struct LatticeRig {
 pub(crate) struct StrategicRigs {
     pub spire: SpireRig,
     pub lattice: LatticeRig,
+}
+
+/// How many heat steps each belt scrap clump ships, coldest first.
+pub(crate) const MAW_SCRAP_HEAT_STEPS: usize = 4;
+
+/// The Maw's runtime layers. Every layer shares the unit's 256px canvas
+/// and turns with the hull about its centre; they draw in field order.
+pub(crate) struct MawRig {
+    /// Each side's moving cleats, one frame per pixel of their pitch.
+    pub treads: [Vec<Rect>; 2],
+    /// Everything the moving layers do not redraw.
+    pub hull: [Rect; 2],
+    /// Conveyor slats, one frame per pixel of their pitch.
+    pub slats: Vec<Rect>,
+    /// Belt scrap clumps on their own small canvas, variant-major with
+    /// [`MAW_SCRAP_HEAT_STEPS`] steps each.
+    pub scrap: Vec<Rect>,
+    pub kiln: Rect,
+    /// The kiln at full heat where heat changes it; drawn at the heat.
+    pub glow: Rect,
+    /// The drum's arms from stowed to lowered.
+    pub arms: Vec<Rect>,
+    /// The drum and hood fully lowered, over half a turn of spin.
+    pub drum: Vec<[Rect; 2]>,
+}
+
+/// The cradle's crane, drawn over its site on the footprint's canvas: the
+/// bridge on the middle column and the trolley at the centre, idle then
+/// welding. Its crew pads and their lamps, dark then lit, draw on their
+/// own tiles.
+pub(crate) struct CradleRig {
+    pub bridge: [Rect; 2],
+    pub trolley: Vec<[Rect; 2]>,
+    pub pad: Rect,
+    pub lamp: Vec<Rect>,
+}
+
+pub(crate) struct MawRigs {
+    pub maw: MawRig,
+    pub cradle: CradleRig,
+}
+
+fn maw_rigs(rects: &Manifest) -> Result<Option<MawRigs>> {
+    if !rects.contains_key("rig_maw_hull") {
+        return Ok(None);
+    }
+    let scrap = plain_numbered(rects, "rig_maw_scrap")?;
+    anyhow::ensure!(
+        scrap.len() % MAW_SCRAP_HEAT_STEPS == 0,
+        "rig_maw_scrap ships {} frames, not whole heat ramps",
+        scrap.len()
+    );
+    Ok(Some(MawRigs {
+        maw: MawRig {
+            treads: [
+                plain_numbered(rects, "rig_maw_tread_left")?,
+                plain_numbered(rects, "rig_maw_tread_right")?,
+            ],
+            hull: variant_row(rects, "rig_maw_hull", "")?,
+            slats: plain_numbered(rects, "rig_maw_slats")?,
+            scrap,
+            kiln: lookup(rects, "rig_maw_kiln")?,
+            glow: lookup(rects, "rig_maw_kiln_glow")?,
+            arms: plain_numbered(rects, "rig_maw_arms")?,
+            drum: numbered_rows(rects, "rig_maw_drum", "")?,
+        },
+        cradle: CradleRig {
+            bridge: variant_row(rects, "rig_cradle_bridge", "")?,
+            trolley: tinted_sequence(rects, "rig_cradle_trolley")?,
+            pad: lookup(rects, "rig_cradle_pad")?,
+            lamp: plain_sequence(rects, "rig_cradle_lamp")?,
+        },
+    }))
 }
 
 /// The untinted `{stem}_1`, `{stem}_2`, ... frames the atlas ships.
@@ -936,6 +1010,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         }
     }
     keys.extend(strategic_rig_keys(atlas));
+    keys.extend(maw_rig_keys(atlas));
 
     for kind in UnitKind::ALL {
         let stem = unit_stem(kind);
@@ -997,6 +1072,50 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                 }
             }
         }
+    }
+    keys
+}
+
+/// The Maw's and its cradle's composition layers. The hull, drum, bridge
+/// and trolley carry paint; the rest are untinted single rows.
+#[cfg(test)]
+fn maw_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let numbered = |stem: &str| -> Vec<String> {
+        let mut keys = Vec::new();
+        while let key = format!("{stem}_{}", keys.len() + 1)
+            && atlas.contains_key(&key)
+        {
+            keys.push(key);
+        }
+        keys
+    };
+    let mut keys = Vec::new();
+    for stem in ["rig_maw_hull", "rig_cradle_bridge", "rig_cradle_trolley"] {
+        keys.extend(variant_keys(stem, ""));
+    }
+    for stem in ["rig_maw_drum", "rig_cradle_trolley"] {
+        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
+            keys.extend(variant_keys(stem, &suffix));
+        }
+    }
+    keys.extend(
+        [
+            "rig_maw_kiln",
+            "rig_maw_kiln_glow",
+            "rig_cradle_pad",
+            "rig_cradle_lamp",
+        ]
+        .map(str::to_owned),
+    );
+    for stem in [
+        "rig_maw_tread_left",
+        "rig_maw_tread_right",
+        "rig_maw_slats",
+        "rig_maw_arms",
+        "rig_maw_scrap",
+        "rig_cradle_lamp",
+    ] {
+        keys.extend(numbered(stem));
     }
     keys
 }
@@ -1146,6 +1265,7 @@ impl Sprites {
             piledriver_anchors: piledriver_anchor_rows(&rects)?,
             array_rig: array_rig(&rects)?,
             strategic_rigs: strategic_rigs(&rects)?,
+            maw_rigs: maw_rigs(&rects)?,
             scout_radar: rects
                 .get("scout_radar")
                 .map(|&[x, y, w, h]| Rect::new(x, y, w, h)),
@@ -1655,6 +1775,10 @@ impl Sprites {
 
     pub(crate) fn strategic_rigs(&self) -> Option<&StrategicRigs> {
         self.strategic_rigs.as_ref()
+    }
+
+    pub(crate) fn maw_rigs(&self) -> Option<&MawRigs> {
+        self.maw_rigs.as_ref()
     }
 
     pub(crate) fn piledriver_anchors(&self, deployment: f32) -> Option<(Rect, Rect)> {

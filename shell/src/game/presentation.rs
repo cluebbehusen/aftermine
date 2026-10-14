@@ -60,6 +60,7 @@ pub struct Presentation {
     /// output events; clearing it never changes simulation truth.
     pub(crate) animations: crate::presentation_animation::AnimationController,
     pub(crate) track_motion: HashMap<u32, crate::track_motion::TrackMotion>,
+    pub(crate) maw_motion: HashMap<u32, crate::maw_motion::MawMotion>,
     /// Eased collision slides, kept only while a body is drawn off its
     /// simulation pose.
     pub(crate) slide_motion: HashMap<u32, crate::slide_motion::SlideMotion>,
@@ -294,6 +295,7 @@ impl Presentation {
             prelaunches: Vec::new(),
             animations: crate::presentation_animation::AnimationController::default(),
             track_motion: HashMap::new(),
+            maw_motion: HashMap::new(),
             slide_motion: HashMap::new(),
             projectile_releases: projectiles::ProjectileReleases::default(),
             fx_previous: fx::PreviousEffects::default(),
@@ -480,7 +482,33 @@ impl Presentation {
         self.animations.observe_braces(state);
         self.audio_timeline.clear();
         self.track_motion.clear();
+        self.maw_motion.clear();
         self.slide_motion.clear();
+    }
+
+    /// A Maw cuts while its own hits are this recent: two strokes of its
+    /// cutter.
+    const MAW_CUT_TICKS: u64 = 8;
+
+    fn observe_maws(&mut self, state: &State) {
+        let tick = state.current_tick();
+        self.maw_motion
+            .retain(|id, _| state.unit(UnitId(*id)).is_some());
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == oxide_sim::UnitKind::Maw)
+        {
+            let cutting = self
+                .animations
+                .last_unit_attack(unit.id)
+                .is_some_and(|hit| tick.saturating_sub(hit) <= Self::MAW_CUT_TICKS);
+            let feeding = state.kiln_fuel(unit.id).is_some();
+            self.maw_motion
+                .entry(unit.id.0)
+                .or_insert_with(|| crate::maw_motion::MawMotion::new(tick))
+                .observe(tick, cutting, feeding);
+        }
     }
 
     /// Sprite rotation for this tick: a heading-first airframe faces where
@@ -492,10 +520,10 @@ impl Presentation {
         self.observe_slides(state, movement);
         self.track_motion
             .retain(|id, _| state.unit(UnitId(*id)).is_some());
-        for unit in state
+        for (unit, gauge) in state
             .units()
             .iter()
-            .filter(|unit| crate::render::tracks::supported(unit.kind))
+            .filter_map(|unit| Some((unit, crate::render::tread_gauge(unit.kind)?)))
         {
             let heading = f32::from(unit.heading) * std::f32::consts::TAU / 256.0
                 + self
@@ -508,10 +536,7 @@ impl Presentation {
                 .observe(
                     tick,
                     heading,
-                    crate::render::tracks::gauge(
-                        unit.kind,
-                        crate::render::unit_draw_scale(unit.kind),
-                    ),
+                    gauge,
                     // A shove along the hull rolls the belts like driving
                     // does; the part across the hull is a skid.
                     movement
@@ -522,6 +547,8 @@ impl Presentation {
                         }),
                 );
         }
+
+        self.observe_maws(state);
 
         self.aim_unit_targets
             .retain(|id, _| state.unit(UnitId(*id)).is_some());

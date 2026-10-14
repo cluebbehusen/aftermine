@@ -649,6 +649,28 @@ fn draw_defense_mount(
     }
 }
 
+/// Which of a cradle's crew places are worked right now: a crew member
+/// stands on the pad and is at work. A rival's place lights only while the
+/// viewer sees its pad.
+fn crew_lamps(
+    game: &crate::game::Scene<'_>,
+    cradle: &oxide_sim::Building,
+    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+) -> [bool; oxide_sim::stats::ASSEMBLY_CREW_CAP] {
+    let crew = game.state.cradle_crew(cradle.id);
+    pads.map(|(dx, dy)| {
+        let pad = cradle.anchor.offset(dx, dy);
+        let seen = cradle.player == game.presentation.human
+            || game.presentation.all_seeing()
+            || game.my_vision().visible(pad);
+        seen && crew.iter().any(|&id| {
+            game.state.unit(id).is_some_and(|unit| {
+                unit.tile() == pad && game.state.in_building_work_reach(unit, cradle.id)
+            })
+        })
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one draw pass over every building and its dressing"
@@ -857,6 +879,32 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     source: Some(accent_source),
                     ..Default::default()
                 },
+            );
+        }
+        if let Some(site) = animation.construction
+            && let Some(rigs) = sprites.maw_rigs()
+            && let Some(pads) = building.kind.crew_pads()
+        {
+            super::maw::draw_crew_places(
+                sprites,
+                &rigs.cradle,
+                (screen, dest, building.kind.size()),
+                pads,
+                crew_lamps(game, building, pads),
+                zoom,
+            );
+            let welding = matches!(
+                frame.body,
+                super::motion::BuildingBodyFrame::Construction { phase: 1, .. }
+            );
+            super::maw::draw_crane(
+                sprites,
+                &rigs.cradle,
+                (screen, dest),
+                accent_tint,
+                site.progress,
+                welding,
+                zoom,
             );
         }
         if let Some(layers) = array_layers {

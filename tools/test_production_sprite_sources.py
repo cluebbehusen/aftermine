@@ -4,7 +4,7 @@ import unittest
 from itertools import pairwise
 from pathlib import Path
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageStat
 
 from tools import gen_sprites as gen
 from tools.production_sprite_sources import (
@@ -17,6 +17,7 @@ from tools.production_sprite_sources import (
     finalized,
     installed_defenses_final,
     lattice_final,
+    maw_final,
     mechanical_extractor,
     mechanical_final,
     piledriver_final,
@@ -71,7 +72,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 gen.harvester(variant, dig=2)
                 gen.barricade(variant)
                 gen.scuttle_charge(variant)
-                gen.maw_cradle(variant)
             finalized.install_finalized_sprites(cls.registry, cls.out)
             construction_final.install_finalized_construction(cls.registry, cls.out)
             environment_final.install_finalized_environment(cls.registry, cls.out)
@@ -357,7 +357,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "scuttle_charge",
                 "spire",
                 "lattice",
-                "maw_cradle",
             ),
         )
 
@@ -1178,6 +1177,186 @@ class StrategicSourceTests(unittest.TestCase):
         left, top, right, bottom = registry["rig_lattice_pod"].getbbox()
         self.assertLess(abs((left + right) / 2 - lattice_final.POD_SIZE / 2), 1)
         self.assertLess(top, lattice_final.POD_SIZE / 2 < bottom)
+
+
+
+def _maw_layers(left: int, right: int, slats: int, heat: float, arm: int, spin: int) -> Image.Image:
+    """The runtime layers in the shell's draw order, without belt scrap."""
+    image = Image.new("RGBA", (maw_final.SIZE, maw_final.SIZE))
+    for layer in (
+        maw_final.render_tread(0, left),
+        maw_final.render_tread(1, right),
+        maw_final.render_hull("base"),
+        maw_final.render_slats(slats),
+        maw_final.render_kiln(),
+    ):
+        image.alpha_composite(layer)
+    glow = maw_final.render_kiln_glow()
+    glow.putalpha(glow.getchannel("A").point(lambda value: round(value * heat)))
+    image.alpha_composite(glow)
+    image.alpha_composite(maw_final.render_arms(arm))
+    stow = round(maw_final.DRUM_STOW * (1 - arm / maw_final.ARM_STEPS))
+    drum = Image.new("RGBA", image.size)
+    drum.paste(maw_final.render_drum("base", spin).crop((0, 0, 256, 256 - stow)), (0, stow))
+    image.alpha_composite(drum)
+    return image
+
+
+def _bright_centroid_x(image: Image.Image) -> float:
+    """The mean column of bright, opaque pixels: the drum's teeth and arms."""
+    total = weighted = 0
+    for index, (r, g, b, a) in enumerate(image.get_flattened_data()):
+        if a == 255 and (r + g + b) / 3 > 140:
+            total += 1
+            weighted += index % image.width
+    if not total:
+        raise AssertionError("no bright pixels")
+    return weighted / total
+
+
+class MawSourceTests(unittest.TestCase):
+    def test_maw_key_poses_preserve_the_approved_art(self):
+        # Digests of the approved Kilnjaw study's own drawing code at
+        # explicit poses: stowed, cutting with the kiln warming, stowing.
+        poses = (
+            (
+                ((0.0, 0.0), 0.0, 0.0, 0.0, 0.0),
+                "bd5ee62abd4a67fbac7aed4699e2cab53a330bf27ec8e5a1f8f67f9a0d5c0607",
+            ),
+            (
+                ((-3.0, -3.0), 12.5, 0.4, 1.0, 0.7),
+                "6e1c642cef4ca055d80cb2688a1c0949a52e75b366b351c3c2df2122a77a62f2",
+            ),
+            (
+                ((-5.0, -5.0), 33.0, 1.0, 0.5, 2.9),
+                "1be2e18edee8ab7763ac1e2e89b8f546c72c1f2c6629c71d33bd62792fd07847",
+            ),
+        )
+        for pose, expected in poses:
+            study = maw_final.render_study("base", *pose)
+            self.assertEqual(
+                hashlib.sha256(study.tobytes()).hexdigest(), expected, pose
+            )
+            # The game draws the study moved toward the nose, nothing else.
+            moved = maw_final.render_maw("base", *pose)
+            self.assertEqual(
+                moved.crop((0, 0, 256, 256 - maw_final.CENTRE)).tobytes(),
+                study.crop((0, maw_final.CENTRE, 256, 256)).tobytes(),
+            )
+
+    def test_maw_layers_stack_onto_the_single_pass_art(self):
+        for left, right, slats, heat, arm, spin in (
+            (0, 0, 0, 0.0, 0, 0),
+            (3, 5, 2, 0.0, 4, 7),
+            (6, 1, 4, 1.0, 2, 13),
+            (2, 2, 6, 0.5, 4, 0),
+        ):
+            whole = maw_final.render_maw(
+                "base",
+                (float(left), float(right)),
+                float(slats),
+                heat,
+                arm / maw_final.ARM_STEPS,
+                spin * maw_final.DRUM_PERIOD / maw_final.DRUM_FRAMES,
+            )
+            layered = _maw_layers(left, right, slats, heat, arm, spin)
+            # Separately filtered layers differ faintly along shared edges;
+            # a misregistered layer changes hundreds of pixels.
+            self.assertLessEqual(
+                _strongly_changed_pixels(layered, whole), 40, (left, right, spin)
+            )
+
+    def test_moving_layers_cover_only_what_moves(self):
+        left, right, slats = maw_final._masks()
+        for a, b in ((left, right), (left, slats), (right, slats)):
+            self.assertIsNone(ImageChops.multiply(a, b).getbbox())
+        for side in (0, 1):
+            frames = [maw_final.render_tread(side, k) for k in range(maw_final.TREAD_PITCH)]
+            for a, b in pairwise(frames):
+                self.assertGreater(_changed_pixels(a, b), 0)
+        drum = [maw_final.render_drum("base", k) for k in range(maw_final.DRUM_FRAMES)]
+        for a, b in pairwise(drum):
+            self.assertGreater(_changed_pixels(a, b), 0)
+        # Half a turn returns the drum to its first frame.
+        self.assertEqual(
+            maw_final._centred(
+                maw_final._alone(
+                    lambda d: maw_final.drum(
+                        d, maw_final.DRUM_PERIOD, maw_final.PAINT["base"]
+                    )
+                )
+            ).tobytes(),
+            drum[0].tobytes(),
+        )
+
+    def test_scrap_heats_toward_the_kiln(self):
+        for variant in range(maw_final.SCRAP_VARIANTS):
+            steps = [
+                maw_final.render_scrap(variant, step)
+                for step in range(maw_final.HEAT_STEPS)
+            ]
+            brightness = [
+                sum(ImageStat.Stat(image.convert("RGB"), image.getchannel("A")).mean)
+                for image in steps
+            ]
+            # Pale gold dims a little on its way to orange; the hottest
+            # step is still the brightest and every step changes.
+            for a, b in pairwise(steps):
+                self.assertGreater(_changed_pixels(a, b), 0, variant)
+            self.assertEqual(max(brightness), brightness[-1], variant)
+
+    def test_layers_fit_the_atlas(self):
+        layers = [
+            maw_final.render_hull("base"),
+            maw_final.render_tread(0, 0),
+            maw_final.render_slats(0),
+            maw_final.render_kiln(),
+            maw_final.render_kiln_glow(),
+            maw_final.render_arms(0),
+            maw_final.render_drum("base", 0),
+            maw_final.render_scrap(0, 0),
+            maw_final.render_cradle("base"),
+            maw_final.render_cradle_site("base", 0),
+            maw_final.render_bridge("base"),
+            maw_final.render_trolley("base", True),
+            maw_final.render_pad(),
+            maw_final.render_lamp(True),
+        ]
+        for layer in layers:
+            self.assertEqual(layer.width % 8, 0)
+            self.assertEqual(layer.height % 8, 0)
+        for layer in layers[-6:-2]:
+            self.assertEqual(layer.size, (maw_final.CRADLE, maw_final.CRADLE))
+
+    def test_cradle_raises_the_maw_facing_east_in_building_opacity_steps(self):
+        empty = maw_final.render_cradle_site("base", 0)
+        steps = [
+            maw_final.render_cradle_site("base", stage)
+            for stage in range(len(maw_final.HULL_OPACITY))
+        ]
+        bed = maw_final._crop(
+            maw_final._alone(lambda d: (maw_final._bed(d), maw_final._runways(d)))
+        )
+        change = [_changed_pixels(bed, step) for step in steps]
+        self.assertTrue(all(count > 0 for count in change))
+        energy = [
+            sum(ImageChops.difference(bed, step).convert("L").get_flattened_data())
+            for step in steps
+        ]
+        self.assertEqual(energy, sorted(energy))
+        self.assertIsNotNone(empty.getbbox())
+        # The stood-up Maw takes heading zero, east: the drum end of the
+        # assembled hull and of the unit sprite turned east sit east.
+        east = maw_final.render_maw("base").transpose(Image.Transpose.ROTATE_270)
+        self.assertGreater(_bright_centroid_x(east), east.width * 0.65)
+        last = steps[-1]
+        self.assertGreater(_bright_centroid_x(last), last.width * 0.65)
+
+    def test_cradle_crane_welds_only_in_its_working_frame(self):
+        idle = maw_final.render_trolley("base", False)
+        welding = maw_final.render_trolley("base", True)
+        self.assertGreater(_changed_pixels(idle, welding), 0)
+        self.assertIsNotNone(maw_final.render_bridge("base").getbbox())
 
 
 if __name__ == "__main__":

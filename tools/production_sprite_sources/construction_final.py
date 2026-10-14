@@ -28,7 +28,6 @@ BUILDING_STEMS = (
     "scuttle_charge",
     "spire",
     "lattice",
-    "maw_cradle",
 )
 
 DEFENSE_MOUNTS = {
