@@ -138,9 +138,6 @@ impl Intent {
         matches!(self, Self::Load(_) | Self::Continue)
     }
 }
-/// How long after a failed LAN autosave the host tries again.
-const LAN_AUTOSAVE_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
-
 pub(super) struct Busy {
     intent: Intent,
     back: Box<Screen>,
@@ -219,15 +216,24 @@ impl App {
         };
         if self.autosave_id == Some(id) {
             self.autosave_id = None;
-            if let Ok(Output::Saved(Some(mark))) = &result {
-                self.game.mark_saved(mark);
-            }
-            if let Err(error) = result {
-                eprintln!("LAN autosave failed: {error:#}");
-                self.notify(error.to_string(), true);
-                // A wait freezes the tick the timed save counts, so try
-                // again after a while instead.
-                self.autosave_retry = Some(self.clock.elapsed() + LAN_AUTOSAVE_RETRY);
+            match result {
+                Ok(Output::Saved(mark)) => {
+                    if let Some(mark) = &mark {
+                        self.game.mark_saved(mark);
+                    }
+                    self.background.succeeded();
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("Autosave failed: {error:#}");
+                    let now = self.clock.elapsed();
+                    if self.background.failed(now) {
+                        self.notify(error.to_string(), true);
+                    }
+                    // A wait freezes the tick the timed LAN save counts, so
+                    // try again after a while instead.
+                    self.autosave_retry = Some(now + super::background_save::RETRY);
+                }
             }
         } else if self.catalog_id == Some(id) {
             self.catalog_id = None;
@@ -282,6 +288,69 @@ impl App {
         });
         match self.persistence.start(task) {
             Ok(id) => self.autosave_id = Some(id),
+            Err(error) => self.notify(error.to_string(), true),
+        }
+    }
+
+    /// Starts a save the app owes on its own: a decided match's record, or
+    /// a resumable match's autosave after a minute of live play or as the
+    /// window goes inactive. `ticks` is how far the live match advanced
+    /// during the frame. A LAN host's autosaves go through its link, which
+    /// also saves on its own schedule.
+    pub(super) fn background_save(&mut self, screen: &Screen, ticks: u64) {
+        // Automated runs keep their timing and data folder to themselves.
+        let exempt = self.args.automation;
+        let undecided = self.game.state.result().is_none();
+        let unsaved = !self.game.is_saved();
+        let local = self.game.net_role().is_none();
+        let resumable = local && undecided && !exempt;
+        self.background.observe(super::background_save::Frame {
+            played: if resumable {
+                crate::numeric::to_f32(
+                    f64::from(u32::try_from(ticks).unwrap_or(u32::MAX))
+                        / f64::from(oxide_sim::TICKS_PER_SECOND)
+                        / self.game.clock.speed.max(f64::EPSILON),
+                )
+            } else {
+                0.0
+            },
+            minimized: (!exempt && screen.holds_live_match())
+                .then(crate::input::reported_minimized)
+                .flatten(),
+            unsaved,
+        });
+        if self.background.inactive()
+            && undecided
+            && let Some(link) = self.net.as_mut().filter(|link| link.hosting())
+        {
+            link.rearm_autosave();
+            self.background.started();
+        }
+        if self.persistence.busy() || matches!(screen, Screen::Busy(_)) {
+            return;
+        }
+        let decided = !undecided && self.game.end_stats.is_some() && unsaved;
+        if self
+            .background
+            .due(decided, local && undecided && unsaved, self.clock.elapsed())
+            .is_none()
+        {
+            return;
+        }
+        let job = autosave::SaveJob::capture(&self.game, None);
+        let mark = job.mark();
+        let task: Task = Box::new(move |_| {
+            job.run().map_err(|error| {
+                let line = error.player_line();
+                anyhow::Error::new(error).context(line)
+            })?;
+            Ok(Output::Saved(mark))
+        });
+        match self.persistence.start(task) {
+            Ok(id) => {
+                self.autosave_id = Some(id);
+                self.background.started();
+            }
             Err(error) => self.notify(error.to_string(), true),
         }
     }

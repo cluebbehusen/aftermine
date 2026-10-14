@@ -96,19 +96,20 @@ hash reports are still checked. Staged orders reach the session through the
 game's outbox. Only the host pauses, and speed is fixed. A client saves only a
 watch-only recording. The host saves the undecided match as a LAN checkpoint
 instead: by name from its menu, and on its own every minute of play, when a wait
-begins, when it drops or replaces a seat, and when it leaves. A LAN checkpoint
-carries every seat's unsealed orders and the installation that played each
-joined seat, binds the host's seat rather than the default local one. Loading
-one, from the shelf or from Continue when it is the newest autosave, opens Match
-Setup locked to the save: its map, bots, teams, and the host's seat are fixed,
-and each joined player still in the match has a reserved seat. A joiner takes
-the reserved seat its installation played, else the one played under its name,
-else the first free one; an installation or a name another joiner shares
-identifies nobody. The host can swap players between reserved seats or hand one
-to a bot, and Start waits for every reserved seat. Start ships the saved world
-as a snapshot, and every player gets a fresh rejoin token; once every player's
-seat went to a bot, the host resumes alone. Everyone leaves through the ordinary
-leave save when the host is lost or a desync halts the match.
+begins, when it drops or replaces a seat, when its window goes inactive, and
+when it leaves. A LAN checkpoint carries every seat's unsealed orders and the
+installation that played each joined seat, binds the host's seat rather than the
+default local one. Loading one, from the shelf or from Continue when it is the
+newest autosave, opens Match Setup locked to the save: its map, bots, teams, and
+the host's seat are fixed, and each joined player still in the match has a
+reserved seat. A joiner takes the reserved seat its installation played, else
+the one played under its name, else the first free one; an installation or a
+name another joiner shares identifies nobody. The host can swap players between
+reserved seats or hand one to a bot, and Start waits for every reserved seat.
+Start ships the saved world as a snapshot, and every player gets a fresh rejoin
+token; once every player's seat went to a bot, the host resumes alone. Everyone
+leaves through the ordinary leave save when the host is lost or a desync halts
+the match.
 
 Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
 may think concurrently against the same immutable state; their work joins in
@@ -482,8 +483,9 @@ information with key help show only the information until then.
 
 Touch-only builds hide rows they cannot use: Open diagnostics folder (no file
 manager) and Quit (the platform closes apps). Controls, the left-handed preset,
-and edge pan stay for an attached keyboard or trackpad. Continue resumes a match
-the platform terminates in the background from its newest autosave.
+and edge pan stay for an attached keyboard or trackpad. A match autosaves as the
+window goes inactive, so Continue resumes one the platform terminates in the
+background.
 
 ## Persistence and replay
 
@@ -531,6 +533,16 @@ captured, and the session counts as saved only while it still holds that
 content. Restart deletes the abandoned match's autosave once the worker is idle,
 so a save still in flight cannot write it back. Leave Without Saving keeps the
 autosave, since that choice only follows a failed save.
+
+The app also saves on its own, through the same worker and without pausing. A
+decided match writes its finished recording as soon as it ends, so a later exit
+cannot lose it and Continue never offers it. A match this machine can resume
+autosaves after each minute of play, and when the native window reports going
+inactive; a LAN host's checkpoint takes the inactive save through its link. Play
+counts the ticks the match ran over its speed, so slow or throttled frames still
+count and an OS suspension does not. Automated runs are exempt. A failed
+background save is retried after a delay, and the player hears of a run of
+failures once.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 decompression, restoration, and catalog scans. Smaller file operations run

@@ -124,10 +124,11 @@ driver live ui
    Record scenario, seed, profiles, tick, entity counts, file bytes, and the
    hardware/build identity. This uses the actual player-save encoder.
 3. Bracket each UI operation with `driver live performance --reset`. Exercise
-   named Save, shelf Load, Continue, and entering a shelf containing sixteen
-   copies of the same checkpoint under distinct filenames in the QA profile.
-   Wait for the catalog to populate before choosing conditional rows. Inspect
-   `driver live ui` instead of assuming a fixed menu index.
+   named Save, shelf Load, Continue, a periodic autosave during live play, and
+   entering a shelf containing sixteen copies of the same checkpoint under
+   distinct filenames in the QA profile. Wait for the catalog to populate before
+   choosing conditional rows. Inspect `driver live ui` instead of assuming a
+   fixed menu index.
 4. Separately record elapsed operation time and frame work. Named saves stay
    paused; a load presents its loading screen before dispatch and opens paused.
    Capture screenshots outside the timing window. Querying or loading through a

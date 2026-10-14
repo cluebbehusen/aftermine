@@ -149,9 +149,10 @@ commands to any seat, as in ordinary sessions.
 
 ## Autosaves and diagnostics
 
-Continue resumes the newest autosave, which a match writes when the player
-leaves or quits. Each match keeps one autosave, replaced in place, until its
-finished recording replaces it.
+Continue resumes the newest autosave. A match autosaves every minute of play, as
+the window goes inactive, and when the player leaves or quits. Each match keeps
+one autosave, replaced in place, until its finished recording replaces it as
+soon as the match is decided.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only

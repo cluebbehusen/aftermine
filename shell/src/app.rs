@@ -16,6 +16,7 @@
 //! without its payload is unrepresentable.
 
 mod audio;
+mod background_save;
 mod debug;
 mod persistence;
 mod screen;
@@ -145,8 +146,10 @@ struct App {
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
     offer: Option<crate::rejoin_ticket::Ticket>,
-    /// The host's own save of its running LAN match, while it runs.
+    /// The app's own save of the running match, while it runs.
     autosave_id: Option<u64>,
+    /// When the app next saves the running match on its own.
+    background: background_save::Schedule,
     /// When the host tries again after its own save failed.
     autosave_retry: Option<std::time::Duration>,
     /// The session clock the lobby and the link read.
@@ -365,6 +368,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         next_probe: std::time::Duration::ZERO,
         offer: None,
         autosave_id: None,
+        background: background_save::Schedule::default(),
         autosave_retry: None,
         clock: std::time::Instant::now(),
     };
@@ -373,6 +377,9 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     // the frame's starting screen is the one recorded before it.
     let mut rerun_pass = false;
     let mut began_playing = false;
+    // The live match and its tick when the presented frame began, so the
+    // background save can tell whether the match played during it.
+    let mut live_start = (app.game.slot.clone(), app.game.state.current_tick());
 
     loop {
         if let Some(result) = app.report_job.poll() {
@@ -401,6 +408,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         let first_pass = !std::mem::take(&mut rerun_pass);
         if first_pass {
             began_playing = screen.kind() == ScreenKind::Playing;
+            live_start = (app.game.slot.clone(), app.game.state.current_tick());
         }
         if let Some(rx) = &debug_rx {
             while let Ok(incoming) = rx.try_recv() {
@@ -547,6 +555,12 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             rerun_pass = true;
             continue;
         }
+        let played = if app.game.slot == live_start.0 {
+            app.game.state.current_tick().saturating_sub(live_start.1)
+        } else {
+            0
+        };
+        app.background_save(&screen, played);
 
         // The menu-context error line draws over whichever menu is up;
         // the gameplay screens speak through the HUD's toast strip.
