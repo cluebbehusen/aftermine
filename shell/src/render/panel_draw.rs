@@ -375,6 +375,9 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
         .iter()
         .filter_map(|card| match (card.action, card.icon) {
             (CardAction::CancelQueue(..), CardIcon::Unit(kind)) => Some(kind.stats().train_ticks),
+            (CardAction::CancelRound(..), CardIcon::Building(kind, _)) => {
+                kind.magazine().map(|stats| stats.round_ticks)
+            }
             _ => None,
         });
     if ticks.clone().next().is_none() {

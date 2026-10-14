@@ -2102,6 +2102,9 @@ fn activate_card(
         crate::panel::CardAction::CancelQueue(building, index) => {
             game.issue(Command::CancelTrain { building, index });
         }
+        crate::panel::CardAction::CancelRound(building, index) => {
+            game.issue(Command::CancelRound { building, index });
+        }
         crate::panel::CardAction::CancelSite(building) => {
             game.issue(Command::Cancel { building });
         }

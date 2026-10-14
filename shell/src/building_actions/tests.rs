@@ -405,12 +405,23 @@ fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
     ));
     let ids = game.presentation.selection.buildings.clone();
     assert_eq!(selected.round_recipient(), Some(ids[0]));
-    assert_eq!(selected.round_to_cancel(), None);
+    assert!(selected.round_cancel().is_none());
     load_selected(&mut game);
     assert_eq!(
         SelectedBuildings::inspect(&game.view()).round_recipient(),
         None,
         "two full batteries take no order"
+    );
+
+    let mut game = fixture(BuildingKind::Lattice, &[0, 0], 2000);
+    // Each battery autofills its first interceptor; the second takes another.
+    assert_accepted(&mut game);
+    game.issue(Command::OrderRound { building: ids[1] });
+    assert_accepted(&mut game);
+    let cancel = SelectedBuildings::inspect(&game.view()).round_cancel();
+    assert!(
+        matches!(cancel, Some(Command::CancelRound { building, index: 1 }) if building == ids[1]),
+        "the hotkey refunds the busiest battery's latest round: {cancel:?}"
     );
 }
 

@@ -82,6 +82,7 @@ impl SelectionInfo {
 
     /// Rounds as the viewer may know them, then what they do: a Spire's
     /// warhead, a Lattice's ring and the hostile warheads falling into it.
+    /// Ordered rounds and their assembly live in the queue dock.
     fn magazine_rows(&mut self, game: &Scene<'_>, b: &oxide_sim::Building) {
         let Some(stats) = b.kind.magazine() else {
             return;
@@ -91,45 +92,21 @@ impl SelectionInfo {
             .known_magazines(game.presentation.human)
             .into_iter()
             .find(|known| known.building == b.id);
-        let noun = if b.kind == BuildingKind::Spire {
-            "Warheads"
-        } else {
-            "Interceptors"
-        };
         if let Some(known) = known {
             self.row(
-                noun,
+                if b.kind == BuildingKind::Spire {
+                    "Warheads"
+                } else {
+                    "Interceptors"
+                },
                 format!("{}/{}", known.loaded, stats.capacity),
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
-            if let Some(detail) = known.detail {
-                if detail.ordered > 0 {
-                    let percent = detail.progress * 100 / stats.round_ticks.max(1);
-                    self.row("Assembling", format!("{percent}%"), None);
-                }
-                if detail.ordered > 1 {
-                    self.row("Queued", format!("{} paid", detail.ordered - 1), None);
-                }
-                self.row(
-                    "Autofill",
-                    if detail.autofill { "On" } else { "Off" }.into(),
-                    None,
-                );
-                if let Some(target) = detail.target {
-                    self.status
-                        .push(format!("Turning to strike {}, {}", target.x, target.y));
-                }
+            if let Some(target) = known.detail.and_then(|detail| detail.target) {
+                self.status
+                    .push(format!("Turning to strike {}, {}", target.x, target.y));
             }
         }
-        self.row(
-            "Round",
-            format!(
-                "{} scrap, {}s",
-                stats.round_cost,
-                stats.round_ticks / oxide_sim::TICKS_PER_SECOND
-            ),
-            None,
-        );
         if let Some(battery) = b.kind.battery() {
             self.row(
                 "Ring",
@@ -138,18 +115,28 @@ impl SelectionInfo {
             );
             let centre = b.center();
             let ring = battery.ring * battery.ring;
+            let (mut incoming, mut unanswered) = (0, 0);
             for warhead in game.state.known_warheads(game.presentation.human) {
-                if !warhead.hostile {
+                // A warhead still being tracked has no known line yet.
+                if !warhead.hostile
+                    || warhead
+                        .line
+                        .is_some_and(|line| line.impact.dist_sq(centre) > ring)
+                {
                     continue;
                 }
-                let status = match (warhead.line, warhead.interceptor) {
-                    (Some(line), _) if line.impact.dist_sq(centre) > ring => continue,
-                    (Some(_), Some(battery)) if battery == b.id => "tracked, this battery",
-                    (Some(_), Some(_)) => "tracked, another battery",
-                    (Some(_), None) => "tracked, no interceptor",
-                    (None, _) => "tracking",
-                };
-                self.status.push(format!("Incoming warhead: {status}"));
+                incoming += 1;
+                unanswered += usize::from(warhead.interceptor.is_none());
+            }
+            if incoming > 0 {
+                let mut line = format!(
+                    "{incoming} incoming warhead{}",
+                    if incoming == 1 { "" } else { "s" }
+                );
+                if unanswered > 0 {
+                    let _ = write!(line, ", {unanswered} unanswered");
+                }
+                self.status.push(line);
             }
         } else {
             let warhead = oxide_sim::stats::WARHEAD;
@@ -159,13 +146,12 @@ impl SelectionInfo {
                 Some(StatIcon::Capability(CapabilityIcon::Weapon)),
             );
             self.row(
-                "Full blast",
-                format!("{:.1} tiles", warhead.full_radius.to_num::<f32>()),
-                None,
-            );
-            self.row(
-                "Blast edge",
-                format!("{:.1} tiles", warhead.outer_radius.to_num::<f32>()),
+                "Blast",
+                format!(
+                    "{:.1}-{:.1} tiles",
+                    warhead.full_radius.to_num::<f32>(),
+                    warhead.outer_radius.to_num::<f32>()
+                ),
                 None,
             );
         }

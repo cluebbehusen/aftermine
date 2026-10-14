@@ -236,7 +236,13 @@ fn a_lattice_autofills_a_spire_does_not_and_cancelling_stops_autofill() {
     assert_eq!(scrap(&state, 0), 2000, "a Spire orders nothing by itself");
     assert_eq!(state.building(spire).unwrap().magazine.unwrap().ordered, 0);
 
-    state.tick(&[cmd(1, Command::CancelRound { building: lattice })]);
+    state.tick(&[cmd(
+        1,
+        Command::CancelRound {
+            building: lattice,
+            index: 0,
+        },
+    )]);
     let magazine = state.building(lattice).unwrap().magazine.unwrap();
     assert_eq!(
         (magazine.ordered, magazine.progress, magazine.autofill),
@@ -245,6 +251,60 @@ fn a_lattice_autofills_a_spire_does_not_and_cancelling_stops_autofill() {
     assert_eq!(scrap(&state, 1), 2000, "a cancelled round refunds in full");
     run(&mut state, 10);
     assert_eq!(scrap(&state, 1), 2000, "nothing buys it back");
+}
+
+#[test]
+fn cancelling_a_round_by_position_keeps_the_head_s_work_unless_it_is_the_head() {
+    let mut state = field(
+        1000,
+        &[(1, BuildingKind::Lattice, LATTICE.0, LATTICE.1)],
+        vec![],
+    )
+    .build()
+    .unwrap();
+    let lattice = id(&state, 1, BuildingKind::Lattice);
+    let cancel = |index| Command::CancelRound {
+        building: lattice,
+        index,
+    };
+    let order = || cmd(1, Command::OrderRound { building: lattice });
+    state.tick(&[
+        cmd(
+            1,
+            Command::SetAutofill {
+                buildings: vec![lattice],
+                enabled: false,
+            },
+        ),
+        order(),
+        order(),
+    ]);
+    run(&mut state, 9);
+    let magazine = |state: &State| {
+        let magazine = state.building(lattice).unwrap().magazine.unwrap();
+        (magazine.ordered, magazine.progress)
+    };
+    assert_eq!(magazine(&state), (2, 10));
+    let paid = scrap(&state, 1);
+    let cost = BuildingKind::Lattice.magazine().unwrap().round_cost;
+
+    state.tick(&[cmd(1, cancel(1))]);
+    assert_eq!(magazine(&state), (1, 11), "the round behind the head");
+    assert_eq!(scrap(&state, 1), paid + cost);
+    assert_eq!(
+        refusal(&state, 1, cancel(1)),
+        Some(RejectReason::InvalidTarget),
+        "only ordered positions cancel"
+    );
+
+    state.tick(&[order()]);
+    state.tick(&[cmd(1, cancel(0))]);
+    assert_eq!(
+        magazine(&state),
+        (1, 1),
+        "the next round starts fresh and works this tick"
+    );
+    assert_eq!(scrap(&state, 1), paid + cost);
 }
 
 #[test]
@@ -305,11 +365,17 @@ fn refused_round_and_strike_orders_change_nothing() {
             RejectReason::QueueFull,
         ),
         (
-            Command::CancelRound { building: spire },
+            Command::CancelRound {
+                building: spire,
+                index: 0,
+            },
             RejectReason::InvalidTarget,
         ),
         (
-            Command::CancelRound { building: turret },
+            Command::CancelRound {
+                building: turret,
+                index: 0,
+            },
             RejectReason::InvalidTarget,
         ),
         (

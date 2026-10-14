@@ -14,6 +14,7 @@ fn every_dock_chip_that_cancels_work_discards_it_and_nothing_else_does() {
         CardAction::CancelSite(site),
         CardAction::CancelFound(BuildingKind::Turret, tile),
         CardAction::CancelQueue(site, 0),
+        CardAction::CancelRound(site, 0),
         CardAction::CancelProduction(UnitKind::Harvester),
     ] {
         assert!(action.discards_work(), "{action:?}");
@@ -1264,4 +1265,43 @@ fn production_queue_time_counts_partial_head_and_marks_a_blocked_spawn_ready() {
         Some("Ready")
     );
     assert!(production_queue_label(&std::collections::VecDeque::new(), 0).is_none());
+}
+
+#[test]
+fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
+    let mut game = crate::building_actions::tests::fixture(BuildingKind::Lattice, &[0], 2000);
+    let lattice = game.presentation.selection.buildings[0];
+    let stats = BuildingKind::Lattice.magazine().unwrap();
+    // The battery autofills its first interceptor; a second is bought.
+    game.do_tick();
+    game.issue(Command::OrderRound { building: lattice });
+    game.do_tick();
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    let chips: Vec<_> = panel
+        .queue
+        .iter()
+        .map(|card| (card.action, card.progress.is_some()))
+        .collect();
+    assert_eq!(
+        chips,
+        [
+            (CardAction::CancelRound(lattice, 0), true),
+            (CardAction::CancelRound(lattice, 1), false),
+        ],
+        "one chip per paid round, the head wearing its meter"
+    );
+    assert_eq!(panel.queue[0].title, "Interceptor");
+    assert_eq!(
+        panel.queue_label,
+        tick_time_label(2 * stats.round_ticks - 2),
+        "the dock heading counts down both rounds"
+    );
+    for gone in ["Assembling", "Queued", "Autofill", "Round"] {
+        assert!(
+            panel.info.rows.iter().all(|row| row.label != gone),
+            "{gone} belongs to the dock or the cards"
+        );
+    }
+    assert_eq!(stat(&panel, "Interceptors").value, "0/2");
+    assert_eq!(stat(&panel, "Ring").value, "15 tiles");
 }
