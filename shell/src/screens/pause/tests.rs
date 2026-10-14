@@ -283,10 +283,10 @@ fn tap(at: Vec2) -> [RawEvent; 2] {
 
 #[test]
 fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
-    let (mut p, layout) = naming_at_1280("Skirmish | t40");
+    let (mut p, layout) = naming_at_1280("Skirmish");
     assert_eq!(
         pointer(&mut p, &tap(layout.confirm.center())).0,
-        Out::Save("Skirmish | t40".to_string())
+        Out::Save("Skirmish".to_string())
     );
     let (mut p, layout) = naming_at_1280("");
     let click = [
@@ -309,7 +309,7 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
 
 #[test]
 fn the_cancel_button_abandons_like_escape() {
-    let (mut p, layout) = naming_at_1280("Skirmish | t40");
+    let (mut p, layout) = naming_at_1280("Skirmish");
     assert_eq!(pointer(&mut p, &tap(layout.cancel.center())).0, Out::Stay);
     assert!(p.keyboard().is_none());
     assert_eq!(p.menu.view().items[p.menu.selected], "Save Game");
@@ -317,7 +317,7 @@ fn the_cancel_button_abandons_like_escape() {
 
 #[test]
 fn a_save_press_released_elsewhere_keeps_naming() {
-    let (mut p, layout) = naming_at_1280("Skirmish | t40");
+    let (mut p, layout) = naming_at_1280("Skirmish");
     let from = layout.confirm.center();
     let events = [
         RawEvent::TouchDown {
@@ -337,7 +337,7 @@ fn a_save_press_released_elsewhere_keeps_naming() {
 
 #[test]
 fn tapping_the_field_requests_the_keyboard_once() {
-    let (mut p, layout) = naming_at_1280("Skirmish | t40");
+    let (mut p, layout) = naming_at_1280("Skirmish");
     assert!(!p.take_keyboard_request());
     pointer(&mut p, &tap(layout.fields[0].center()));
     assert!(p.take_keyboard_request());
@@ -349,18 +349,15 @@ fn save_game_never_confirms_and_bare_enter_saves_the_suggestion() {
     let mut p = PauseScreen::open(false, true);
     assert_eq!(activate(&mut p, "Save Game"), Out::SaveGame);
     assert!(!confirming(&p), "saving destroys nothing — no dialog");
-    p.begin_naming("skirmish | t100");
+    p.begin_naming("skirmish");
     assert!(p.keyboard().is_some());
     assert_eq!(
         p.menu.view().items[0],
-        "skirmish | t100_",
+        "skirmish_",
         "prefilled, with a static caret"
     );
     // Enter alone commits the suggested name without any typing.
-    assert_eq!(
-        drive(&mut p, Key::Enter),
-        Out::Save("skirmish | t100".to_string())
-    );
+    assert_eq!(drive(&mut p, Key::Enter), Out::Save("skirmish".to_string()));
 }
 
 #[test]

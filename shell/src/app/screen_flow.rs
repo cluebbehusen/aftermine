@@ -1278,14 +1278,9 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             Screen::Playing
         }
         screens::pause::Out::SaveGame => {
-            // Only the session knows its map and tick; the
-            // screen just edits the string.
-            let suggested = format!(
-                "{} | t{}",
-                app.game.scenario.name,
-                app.game.state.current_tick()
-            );
-            ps.begin_naming(&suggested);
+            // Only the session knows its map; the screen just edits
+            // the string.
+            ps.begin_naming(&app.game.scenario.name);
             Screen::Pause(ps)
         }
         screens::pause::Out::Save(name) => {

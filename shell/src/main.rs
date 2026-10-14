@@ -14,6 +14,7 @@ mod boundary_fog;
 mod building_actions;
 mod button;
 mod camera;
+mod clock_label;
 mod config;
 mod debug_server;
 mod diagnostic_report;

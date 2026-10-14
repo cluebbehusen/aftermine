@@ -185,7 +185,7 @@ impl WaitingScreen {
                 format!(
                     "Waiting for {} · {}",
                     crate::netplay::sentence(&names),
-                    clock(waited)
+                    crate::clock_label::seconds(waited.as_secs())
                 )
             }
             Face::Confirm(seat) => format!("{}'s seat surrenders", self.name(seat)),
@@ -270,12 +270,6 @@ fn confirm_menu(name: &str) -> Menu<Choice> {
             (Label::from(format!("Drop {name}")), Choice::Confirm),
         ],
     )
-}
-
-/// A wait as minutes and seconds.
-fn clock(waited: Duration) -> String {
-    let seconds = waited.as_secs();
-    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
 #[cfg(test)]

@@ -222,7 +222,7 @@ fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
 fn a_viewer_restores_the_exact_screen_that_opened_it() {
     let game = Game::new(Scenario::skirmish()).expect("game");
     let mut pause = PauseScreen::open(false, true);
-    pause.begin_naming("Skirmish | t40");
+    pause.begin_naming("Skirmish");
     let viewer = open_playback(live_playback(&game).expect("viewer"), Screen::Pause(pause));
     let Screen::Playback { session, back } = viewer else {
         panic!("a viewer opens");
