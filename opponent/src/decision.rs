@@ -1001,14 +1001,16 @@ fn train_carriers(
     producers: &[Producer<'_>],
     ledger: &mut Ledger,
 ) -> bool {
-    let carriers = (observation
+    // Carriers count in Skyhook rooms, so a larger hold counts for more.
+    let room = u64::from(UnitKind::Skyhook.stats().transport_capacity);
+    let carriers = observation
         .my_units
         .iter()
         .map(|unit| unit.kind)
         .chain(observation.my_queues.iter().flatten().copied())
-        .filter(|kind| crate::missions::carrier(*kind))
-        .count()
-        + ledger.queued(UnitKind::Skyhook)) as u64;
+        .map(|kind| u64::from(kind.stats().transport_capacity) / room)
+        .sum::<u64>()
+        + ledger.queued(UnitKind::Skyhook) as u64;
     let Some(waiting) = persistent.missions.carriers_short(
         observation,
         map,

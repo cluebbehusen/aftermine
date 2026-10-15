@@ -688,7 +688,10 @@ impl GroundSalvageDanger {
                 if hostile && !vision.sees_unit(unit) {
                     return None;
                 }
-                let range = ground_weapon_reach(unit.kind.stats().weapons)?
+                let range = unit
+                    .kind
+                    .stats()
+                    .max_range_vs(crate::stats::Domain::Ground)?
                     + crate::stats::HARVEST_MOBILE_DANGER_MARGIN;
                 let stats = unit.kind.stats();
                 Some(MobileGroundPressure {

@@ -201,7 +201,7 @@ fn tag_of(command: &Command) -> CommandTag {
 
 /// The whole roster — `apply_train` owes every one of them a verdict.
 /// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 20] = [
+const UNIT_KINDS: [UnitKind; 21] = [
     UnitKind::Harvester,
     UnitKind::Sentinel,
     UnitKind::Scuttler,
@@ -222,6 +222,7 @@ const UNIT_KINDS: [UnitKind; 20] = [
     UnitKind::Piledriver,
     UnitKind::Surveyor,
     UnitKind::Maw,
+    UnitKind::Roc,
 ];
 
 fn unit_kind_index(kind: UnitKind) -> usize {
@@ -246,12 +247,13 @@ fn unit_kind_index(kind: UnitKind) -> usize {
         UnitKind::Piledriver => 17,
         UnitKind::Surveyor => 18,
         UnitKind::Maw => 19,
+        UnitKind::Roc => 20,
     }
 }
 
 /// Every building kind, frame-bound and tech-gated ones included —
 /// hostile input must aim at all of them.
-const BUILDING_KINDS: [BuildingKind; 16] = [
+const BUILDING_KINDS: [BuildingKind; 17] = [
     BuildingKind::Foundry,
     BuildingKind::Turret,
     BuildingKind::Fabricator,
@@ -268,6 +270,7 @@ const BUILDING_KINDS: [BuildingKind; 16] = [
     BuildingKind::Spire,
     BuildingKind::Lattice,
     BuildingKind::MawCradle,
+    BuildingKind::RocCradle,
 ];
 
 fn building_kind_index(kind: BuildingKind) -> usize {
@@ -288,6 +291,7 @@ fn building_kind_index(kind: BuildingKind) -> usize {
         BuildingKind::Spire => 13,
         BuildingKind::Lattice => 14,
         BuildingKind::MawCradle => 15,
+        BuildingKind::RocCradle => 16,
     }
 }
 
@@ -752,6 +756,13 @@ fn arena() -> State {
             .units
             .push(common::unit(player, UnitKind::Surveyor, x, y));
     }
+    // A Roc per seat, so mounted guns and their helm run under every
+    // sampled order.
+    for (player, (x, y)) in [(0u8, (5, 12)), (1u8, (33, 10))] {
+        scenario
+            .units
+            .push(common::unit(player, UnitKind::Roc, x, y));
+    }
     // Two Excavators per seat, so a cradle can fill its crew and turn a
     // fifth worker away.
     for (player, (x, y)) in [(0u8, (10, 8)), (0, (11, 8)), (1u8, (28, 15)), (1, (29, 15))] {
@@ -1131,8 +1142,8 @@ fn exercise_warhead_reach(state: &mut State) {
 }
 
 /// Seat 0 raises a Maw cradle with a full crew, turns a fifth worker away,
-/// and stands its Maw up, so the sweep fuzzes a living Maw and the one-per-
-/// player cap from its first command.
+/// and stands its Maw up, so the sweep fuzzes a living Maw from its first
+/// command.
 fn exercise_assembly_reach(state: &mut State) {
     let kind = BuildingKind::MawCradle;
     let home = state

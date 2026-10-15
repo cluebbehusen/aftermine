@@ -476,3 +476,48 @@ fn a_known_enemy_cradle_wants_anti_heavy_fire_before_its_machine_stands() {
         });
     assert!(anti_heavy(&known) > anti_heavy(&observation));
 }
+
+#[test]
+fn a_known_enemy_gunship_cradle_wants_anti_air_not_anti_heavy_fire() {
+    use oxide_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let memory = Memory::default();
+    let outlet = Outlet {
+        ground: true,
+        lifted: false,
+        invaders: 0,
+        air_strikes: false,
+        strike: 0,
+    };
+    let need = |observation: &ObservationData, role: Role| {
+        super::needs(
+            observation,
+            &memory,
+            needs(None, false).traits,
+            BotStance::Balanced,
+            0,
+            outlet,
+        )
+        .need[role as usize]
+    };
+    let mut known = observation.clone();
+    known
+        .enemy_buildings
+        .push(oxide_sim::observation::BuildingObs {
+            provisional: false,
+            id: oxide_sim::BuildingId(u32::MAX),
+            player: PlayerId(1),
+            kind: BuildingKind::RocCradle,
+            anchor: chassis::grid::TilePos::new(30, 12),
+            hp: 400,
+            built: false,
+            seen: false,
+            tier: 0,
+        });
+    assert!(need(&known, Role::AntiAir) > need(&observation, Role::AntiAir));
+    assert_eq!(
+        need(&known, Role::AntiHeavy),
+        need(&observation, Role::AntiHeavy)
+    );
+}

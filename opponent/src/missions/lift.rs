@@ -684,8 +684,9 @@ impl Missions {
             .source(&lifting, &units, None)
             .map(|(_, riders)| riders)
             .unwrap_or_default();
-        // Every carrier is a Skyhook and first fit opens a room only when no
-        // earlier one fits, so the first k rooms are what k carriers load.
+        // Carriers count in Skyhook rooms, and first fit opens a room only
+        // when no earlier one fits, so the first k rooms are what k Skyhooks
+        // load.
         let capacity = UnitKind::Skyhook.stats().transport_capacity;
         let rooms: Vec<u64> = pack(&vec![(UnitId(u32::MAX), capacity); riders.len()], &riders)
             .into_iter()

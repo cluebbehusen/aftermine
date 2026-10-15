@@ -344,10 +344,10 @@ beyond the home reserve or free of other missions on other ground it holds where
 no target stands, it needs lift. The Airworks then scores higher while the seat
 has none, and production keeps enough Skyhooks, alive and queued, to carry every
 free rider on the ground a lift would load at once, packed as a lift would pack
-them. While a ready Airworks waits for the scrap to train one and some of those
-riders have no room, other production waits too, unless a defense is short.
-Carriers and scouts train even at an Airworks held for a unit the seat saves
-for.
+them; another carrier counts for as many Skyhooks as its hold fills. While a
+ready Airworks waits for the scrap to train one and some of those riders have no
+room, other production waits too, unless a defense is short. Carriers and scouts
+train even at an Airworks held for a unit the seat saves for.
 
 One lift runs at a time. It loads on one ground: home, or other ground the
 seat's units stand on where no target stands, an army trained at an expansion or
@@ -502,9 +502,9 @@ hull can reach through known ground where its kiln would reach wreck its
 harvesters could safely salvage, one holding enough to mend it first, and sits
 out missions there while it is calm and its kiln has wreck to eat; harvesters
 leave that wreck to it, on its way and once there. A known enemy cradle counts
-as the heavy machine it will stand up, and the machine that stands up from it is
-remembered where it stood up, even out of sight, since every seat learns of a
-public cradle's rollout.
+as the machine it will stand up, a Maw's as a heavy machine and a Roc's as air,
+and the machine that stands up from it is remembered where it stood up, even out
+of sight, since every seat learns of a public cradle's rollout.
 
 ## Scouting
 

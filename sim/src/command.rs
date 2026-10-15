@@ -231,7 +231,7 @@ pub enum Command {
         building: BuildingId,
     },
     /// Send ground machines to climb aboard an own transport. Each walks
-    /// within [`crate::stats::LOAD_REACH`] and embarks if room remains;
+    /// within [`crate::stats::load_reach`] and embarks if room remains;
     /// a full sling stalls the stragglers where they stand. The sim
     /// reads `units` as a sorted set.
     Load {

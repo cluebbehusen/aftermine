@@ -35,7 +35,7 @@ static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 
 const MAP_WIDTH: i32 = 32;
 const MAP_HEIGHT: i32 = 22;
-const ALL_UNIT_KINDS: [UnitKind; 20] = UnitKind::ALL;
+const ALL_UNIT_KINDS: [UnitKind; 21] = UnitKind::ALL;
 
 struct NativeCapture {
     shell: Option<ShellGuard>,
@@ -1065,6 +1065,7 @@ fn unit_duel_scenario(attacker: UnitKind) -> Value {
         UnitKind::Piledriver => 6,
         UnitKind::Avalanche => 8,
         UnitKind::Maw => 2,
+        UnitKind::Roc => 3,
         UnitKind::Harvester
         | UnitKind::Excavator
         | UnitKind::Kestrel

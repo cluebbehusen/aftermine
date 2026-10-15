@@ -7198,7 +7198,7 @@ fn construction_menu_shows_every_building_and_shortcuts_arm_the_visible_card() {
     use crate::action::{BUILD_CATEGORIES, building_category};
     let mut game = headless_game();
     let mut input = InputState::new();
-    let keys = [Key::Q, Key::E, Key::R, Key::T, Key::Z];
+    let keys = [Key::Q, Key::E, Key::R, Key::T, Key::Z, Key::X];
     dispatch_action(&mut game, &mut input, Action::ToggleBuildPalette);
     let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
     assert_eq!(panel.cards.len(), crate::panel::MAX_CARDS);
@@ -7704,7 +7704,7 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
     for (category, (_, kinds)) in BUILD_CATEGORIES.into_iter().enumerate() {
         assert!(bindings.rebind(
             Action::BuildCategory(category.fit::<u8>()),
-            Chord::ctrl([Key::J, Key::K, Key::L, Key::O, Key::I][category])
+            Chord::ctrl([Key::J, Key::K, Key::L, Key::O, Key::I, Key::Y][category])
         ));
         for kind in kinds {
             let action = Action::Build(*kind);
@@ -7722,7 +7722,7 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
                 &mut game,
                 &mut input,
                 &bindings,
-                [Key::J, Key::K, Key::L, Key::O, Key::I][category],
+                [Key::J, Key::K, Key::L, Key::O, Key::I, Key::Y][category],
             );
             let panel = crate::panel::build_for_input(&game.view(), &bindings, &input).unwrap();
             let card = panel
@@ -7730,11 +7730,13 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
                 .iter()
                 .find(|c| c.action == crate::panel::CardAction::ArmBuild(*kind))
                 .unwrap();
-            // A Spire and a Maw cradle also need a Crucible and a Deep Bore
+            // A Spire and the cradles also need a Crucible and a Deep Bore
             // this arena lacks.
             let enabled = !matches!(
                 kind,
-                oxide_sim::BuildingKind::Spire | oxide_sim::BuildingKind::MawCradle
+                oxide_sim::BuildingKind::Spire
+                    | oxide_sim::BuildingKind::MawCradle
+                    | oxide_sim::BuildingKind::RocCradle
             );
             assert_eq!(card.enabled, enabled, "{}: {:?}", card.title, card.why);
             assert!(card.hotkey.contains("Ctrl+"));

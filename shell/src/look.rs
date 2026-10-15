@@ -386,6 +386,21 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Demolition,
             ..plain
         },
+        UnitKind::Roc => UnitLook {
+            // The canvas spans four tiles; the hull fills about three.
+            scale: 4.0,
+            extent: 192.0 / 256.0,
+            airframe: Some(Airframe {
+                shadow: vec2(3.0, 2.3),
+                shadow_offset: vec2(0.2, 0.3),
+                lift: 0.07,
+            }),
+            // Each gun's shot leaves its own pivot, which the simulation
+            // reports as the shot's origin.
+            weapon: Some(weapon(SoundKind::BuzzardFire, kinetic, AIR_MUZZLE)),
+            marker: M::Transport,
+            ..plain
+        },
         UnitKind::Mantle => UnitLook {
             scale: HEAVY_SCALE,
             gait: Gait::Treads,
@@ -448,7 +463,8 @@ pub(crate) fn defense(kind: BuildingKind) -> Option<DefenseLook> {
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
         | BuildingKind::Lattice
-        | BuildingKind::MawCradle => None,
+        | BuildingKind::MawCradle
+        | BuildingKind::RocCradle => None,
     }
 }
 

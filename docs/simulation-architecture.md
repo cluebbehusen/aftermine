@@ -133,7 +133,7 @@ tick counter still advances so external timelines remain aligned. Per-tick
 acceleration structures, including the unit spatial index, are local scratch.
 They are rebuilt at their use points and never serialized or hashed.
 
-Destroyed airborne Condors and Skyhooks leave a pending crash. The record
+Destroyed airborne Condors, Skyhooks, and Rocs leave a pending crash. The record
 retains owner, kind, heading, launch and contact positions, and start and
 arrival ticks. Contact is fixed at death using the last actual airborne
 displacement, capped at flight speed and reduced by the crash's deceleration.
@@ -285,7 +285,9 @@ crowd therefore never makes a goal count as unreachable. An unreachable `Unload`
 sets its riders down where the flight ended. Riders take the open tiles
 ring-scanned outward from where the transport stopped, framed by the transport's
 approach when the order was issued, so mirrored drops set riders on mirrored
-tiles.
+tiles. A rider boards within `stats::load_reach` of its carrier's centre, which
+grows with a wide hull so a Roc hovering over a pit rim still takes riders from
+the rim.
 
 `Scout` is a scout's own verb: only kinds whose stats say they scout take it,
 and a patrol gives them Scout legs. A Scout leg names its clicked tile and plans
@@ -346,14 +348,14 @@ instead. Building artwork and its approximate contact outline keep their
 authored facing, so asymmetric contact can differ under a map half-turn.
 Placement, travel, and ranged reach use the rectangular footprint.
 
-Talon and Kestrel cruise heading-first but can hover at rest. Their travel and
-fixed-gun traverse rates are independent of bomber flight; per-kind rates live
-in `UnitKind::cruise_turn_rate` in `sim/src/stats.rs`. Near waypoints they slow
-to tighten the arc; intermediate waypoints can be rounded only when the onward
-segment is clear. An obstructed step holds position and keeps its route while
-the nose turns, and replans from the actual position only once the nose faces
-the waypoint and is still blocked. Arrivals, Stop, and in-range attacks hover
-rather than orbit or land. Fixed guns traverse with the body before firing
+Talon, Kestrel, and Roc cruise heading-first but can hover at rest. Their travel
+and fixed-gun traverse rates are independent of bomber flight; per-kind rates
+live in `UnitKind::cruise_turn_rate` in `sim/src/stats.rs`. Near waypoints they
+slow to tighten the arc; intermediate waypoints can be rounded only when the
+onward segment is clear. An obstructed step holds position and keeps its route
+while the nose turns, and replans from the actual position only once the nose
+faces the waypoint and is still blocked. Arrivals, Stop, and in-range attacks
+hover rather than orbit or land. Fixed guns traverse with the body before firing
 ordinary hitscan shots; Advance only fires when already aligned and does not
 turn away from its route to aim. These aircraft spawn facing the map center,
 matching mirrored initial turn costs. Buzzard and Skyhook travel independently
@@ -627,9 +629,10 @@ that Foundry later only drops it to the remote yield.
 
 An assembly cradle is a construction site that never stands finished. A
 `MawCradle` assembles a Maw: it is paid in full when placed and needs a built
-Crucible and a Deep Bore. A player may raise any number of cradles and machines.
-At most `ASSEMBLY_CREW_CAP` workers hold a cradle, counting each own worker
-whose current order builds or founds it. A build order on a full cradle admits a
+Crucible and a Deep Bore; a `RocCradle` assembles a Roc and also needs a built
+Airworks. A player may raise any number of cradles and machines. At most
+`ASSEMBLY_CREW_CAP` workers hold a cradle, counting each own worker whose
+current order builds or founds it. A build order on a full cradle admits a
 newcomer only in place of a strictly slower holder, ranked by build rate, then
 incumbency, then id; the displaced holder moves on to its next order or idles
 once the newcomer lands. With no newcomer admitted the command is refused as
@@ -642,9 +645,9 @@ member taking a free pad; while any pad is rock or under a building, the crew
 works from anywhere along the cradle as at any site. When the last work lands
 the cradle does not complete. After boarding resolves it leaves the world, every
 seat forgets it, its crew moves on, and the machine spawns at its centre with
-the cradle's share of health, reported as `UnitAssembled`. A destroyed cradle's
-wreck holds the ordinary share of its price scaled by the health its crew had
-raised, split across its footprint.
+the cradle's share of health, reported as `UnitAssembled`; a Roc spawns
+airborne. A destroyed cradle's wreck holds the ordinary share of its price
+scaled by the health its crew had raised, split across its footprint.
 
 Cancelling before the first build tick returns the full price. Cancelling an
 unfinished site after work starts returns value proportional to its remaining
@@ -773,6 +776,29 @@ visible, shootable targets during reload. An advance keeps its route while
 traversing toward its ordinary opportunistic target; cooldown starts only once
 the turret aligns. Hidden structures cannot attract an advancing weapon or
 reveal themselves through turret tracking.
+
+A kind whose stats carry `MountedGuns`, the Roc, carries each weapon on a fixed
+pivot of its hull. Each gun's serialized bearing is relative to the hull and
+stays inside its arc, and it traverses at the mounts' rate through the arc's
+middle, never across its blind quarter. Arcs and reach are measured from each
+pivot, so a strip under the rear of the hull lies in no arc. Under every order,
+Run included, each gun picks its own target each tick in a fixed slot order: the
+ordered target, including blind fire on a remembered building, else a seen
+hostile that can hit the hull now, else the nearest seen machine, else the
+nearest seen building, each in that gun's arc, reach, and line of fire. A gun
+fires once it bears and its slot has reloaded; its shot leaves from its pivot.
+With nothing to shoot it holds its bearing.
+
+The hull turns for its guns only on some orders. Moves keep the nose on the
+route. An attack closes until some gun reaches the target, then holds station
+nose-on, following a target that moves; a target under the rear of the hull
+sends it forward a short leg first. Attack-move stops and faces the first enemy
+in reach that a turn could bring into an arc, and flies on once none is left. An
+idle hull yaws toward a gun's blind side only when that gun has nothing to shoot
+and an enemy in its reach sits in its blind quarter, never turning away from
+another gun's target, and then holds that facing for `facing_hold` ticks; the
+serialized `IdleFacing` keeps that hold. A mounted hull never retaliates, chases
+from beyond its guns' reach, or picks up targets as an escort.
 
 A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
 braced motor while its spades are out, counting deployment ticks up to the
@@ -1015,5 +1041,6 @@ map rather than an exhaustive test inventory.
 | Assembly cradles, kilns, and breachers            | `sim/src/tick/assembly.rs`, `sim/src/tick/brain/kiln.rs`, `sim/src/tick/brain/combat.rs`                                                | `sim/tests/integration/assembly.rs`                                                                                                                                                             |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                             |
+| Mounted guns                                      | `sim/src/tick/brain/combat/mounts.rs`                                                                                                   | `sim/tests/integration/roc.rs`                                                                                                                                                                  |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |
