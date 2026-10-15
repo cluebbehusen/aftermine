@@ -59,11 +59,10 @@ pub(super) fn draw(
     };
     let motion = pose.motion.filter(|_| !pose.still);
     let alpha = pose.alpha;
-    let pixels_per_tile = CANVAS / super::unit_draw_scale(oxide_sim::UnitKind::Maw);
     for (side, frames) in rig.treads.iter().enumerate() {
         let travel = if pose.still { 0.0 } else { pose.treads[side] };
         layer(
-            frames[cycle(-travel * pixels_per_tile, frames.len())],
+            frames[tread_phase(travel, frames.len())],
             WHITE,
             Vec2::ZERO,
             size,
@@ -110,6 +109,16 @@ pub(super) fn draw(
     let stow = vec2(0.0, DRUM_STOW * (1.0 - deploy));
     layer(drum[0], WHITE, stow, size);
     layer(drum[1], tint, stow, size);
+}
+
+/// The cleat frame for a side that has rolled `travel` world tiles, its
+/// frames one canvas pixel apart over the cleats' pitch. These are the
+/// shared belts' mechanics: the belt surface keeps pace with the ground, so
+/// a tile of travel moves the cleats a tile of canvas, and travel forward
+/// runs the upper run toward the nose.
+pub(super) fn tread_phase(travel: f32, frames: usize) -> usize {
+    let pixels_per_tile = CANVAS / super::unit_draw_scale(oxide_sim::UnitKind::Maw);
+    cycle(-travel * pixels_per_tile, frames)
 }
 
 /// The frame of a looping row at `position`, in frames.

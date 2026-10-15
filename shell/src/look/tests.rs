@@ -45,8 +45,10 @@ fn looks_agree_with_what_the_simulation_states() {
             look.belts.len().is_multiple_of(2),
             "{kind:?}: belt runs come in pairs"
         );
+        // The Maw's rig draws its approved treads frame by frame with the
+        // shared belts' mechanics instead.
         assert!(
-            look.gait != Gait::Treads || !look.belts.is_empty(),
+            look.gait != Gait::Treads || !look.belts.is_empty() || kind == UnitKind::Maw,
             "{kind:?}: every tracked hull runs the shared belts"
         );
     }

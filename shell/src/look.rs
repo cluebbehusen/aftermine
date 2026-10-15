@@ -376,9 +376,8 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             scale: 4.0,
             extent: 182.0 / 256.0,
             gait: Gait::Treads,
-            // The placeholder's tread casings, in the canvas halved to
-            // sprite space.
-            belts: &[[21., 31., 33., 105.], [95., 31., 107., 105.]],
+            // No shared belts: its rig draws its own treads on the same
+            // odometer and mechanics (`render::maw`).
             weapon: Some(weapon(
                 SoundKind::ScuttlerFire,
                 ShotStyle::Contact,

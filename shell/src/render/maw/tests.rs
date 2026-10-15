@@ -56,3 +56,35 @@ fn each_lamp_sits_on_the_runway_beside_its_pad() {
         assert_eq!(lamp.y < CRADLE_CANVAS * 0.5, pad.1 < 0, "{pad:?}");
     }
 }
+
+#[test]
+fn the_treads_roll_with_the_shared_belts_mechanics() {
+    // The cleats' frames step one canvas pixel toward the tail; a tile of
+    // forward travel runs the upper run a tile of canvas toward the nose.
+    let frames = 7;
+    let pixels_per_tile = CANVAS / super::super::unit_draw_scale(oxide_sim::UnitKind::Maw);
+    assert_eq!(
+        pixels_per_tile, 64.0,
+        "a tile of canvas at the roster's scale"
+    );
+    for step in 0..=128_u8 {
+        let travel = f32::from(step) / pixels_per_tile;
+        let toward_nose = usize::from(step) % frames;
+        assert_eq!(
+            tread_phase(travel, frames),
+            (frames - toward_nose) % frames,
+            "{step} px of travel"
+        );
+        assert_eq!(
+            tread_phase(-travel, frames),
+            toward_nose,
+            "reversing runs it back"
+        );
+    }
+    // Each side rolls its own travel at the bogies' gauge, as the shared
+    // odometer turns a pivot into counter-rolling belts.
+    assert_eq!(
+        crate::render::tread_gauge(oxide_sim::UnitKind::Maw),
+        Some(GAUGE)
+    );
+}

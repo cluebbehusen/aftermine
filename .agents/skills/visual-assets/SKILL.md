@@ -235,7 +235,11 @@ rather than baked tread frames. Declare its exposed belt runs as `belts` in
 packing into a smaller extent. Each run must stay inside its visible casing,
 must not extend under hull plates drawn over the track, and must come in
 left/right pairs. A track the hull mostly covers, such as a nose roller, needs
-no run. A tracked unit without belts fails the look tests.
+no run. A tracked unit without belts fails the look tests. The Maw alone draws
+its approved treads from its own rig frames, with the same mechanics: each side
+rolls its own travel from the shared odometer at its bogies' gauge, a tile of
+travel moves the cleats a tile, and travel forward runs the upper run toward the
+nose.
 
 ## Approve and promote
 
