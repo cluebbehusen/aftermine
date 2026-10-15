@@ -264,9 +264,10 @@ the drop must come by air.
 
 - **Early rush:** Sentinels and Scuttlers attack the base; the Foundry must
   stand at the deadline.
-- **Air switch:** two Buzzards harass the base; the bot must field anti-air (a
-  dedicated anti-air unit or a Flak Turret) within 1,500 ticks of first seeing
-  them.
+- **Air switch:** three Buzzards harass the harvest line away from the base's
+  Sentinels, so they outlive the answer they test; the bot must field anti-air
+  (a dedicated anti-air unit or a Flak Turret) within 1,500 ticks of first
+  seeing them.
 - **Siege:** Bombards shell the base with a Kestrel spotting; by the deadline
   they must be destroyed or out of range. Killing only the spotter does not
   pass.

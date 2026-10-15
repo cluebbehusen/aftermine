@@ -89,6 +89,12 @@
         "kind": "buzzard",
         "x": 29,
         "y": 13
+      },
+      {
+        "player": 1,
+        "kind": "buzzard",
+        "x": 30,
+        "y": 13
       }
     ],
     "buildings": [
@@ -108,15 +114,15 @@
       "tick": 600,
       "command": {
         "type": "patrol",
-        "units": [6, 7],
+        "units": [6, 7, 8],
         "waypoints": [
           {
-            "x": 5,
-            "y": 7
+            "x": 10,
+            "y": 4
           },
           {
-            "x": 5,
-            "y": 15
+            "x": 3,
+            "y": 6
           }
         ]
       }
