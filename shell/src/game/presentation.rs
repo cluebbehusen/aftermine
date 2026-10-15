@@ -568,6 +568,15 @@ impl Presentation {
             let Some(bay) = unit.bay else {
                 continue;
             };
+            if !sees(state, self.human, self.all_seeing(), unit) {
+                // Its bay comes back into view at rest, with no launch or
+                // landing to give away what happened out of sight.
+                self.dock_motion.insert(
+                    unit.id.0,
+                    crate::dock_motion::DockMotion::settled(bay.docked),
+                );
+                continue;
+            }
             let mut launched = Vec::new();
             let mut landed = Vec::new();
             for event in events {
@@ -583,9 +592,13 @@ impl Presentation {
             }
             launched.sort_unstable();
             landed.sort_unstable();
+            // A drone glides in only from where the viewer could see it.
             let landed: Vec<Vec2> = landed
                 .iter()
                 .filter_map(|drone| self.prev_pos.get(drone).copied())
+                .filter(|from| {
+                    self.all_seeing() || state.vision(self.human).visible(numeric::tile_at(*from))
+                })
                 .collect();
             let docks = self
                 .dock_motion
@@ -600,12 +613,16 @@ impl Presentation {
     /// A Roc's engines heat quickly while it moves and cool slowly once it
     /// stops. A Roc first seen moving starts cold.
     fn observe_engines(&mut self, state: &State) {
+        // A Roc out of sight keeps no heat, so its glow never tells how it
+        // moved while hidden.
+        let (human, all_seeing) = (self.human, self.all_seeing());
+        let sees = |unit: &oxide_sim::Unit| sees(state, human, all_seeing, unit);
         self.engine_heat
-            .retain(|id, _| state.unit(UnitId(*id)).is_some());
+            .retain(|id, _| state.unit(UnitId(*id)).is_some_and(sees));
         for unit in state
             .units()
             .iter()
-            .filter(|unit| unit.kind == oxide_sim::UnitKind::Roc)
+            .filter(|unit| unit.kind == oxide_sim::UnitKind::Roc && sees(unit))
         {
             let moving = self
                 .prev_pos
@@ -861,6 +878,11 @@ impl Presentation {
         // still has a heading to show, parked or flying.
         self.refresh_facing(state, &[]);
     }
+}
+
+/// Whether `human` sees `unit` now, as the renderer decides.
+fn sees(state: &State, human: PlayerId, all_seeing: bool, unit: &oxide_sim::Unit) -> bool {
+    unit.player == human || all_seeing || state.vision(human).sees_unit(unit)
 }
 
 /// The engines' heat a tick on: easing toward full heat while moving, back
