@@ -290,13 +290,14 @@ build palette each fit one band. Smaller windows, and UI scales above 100% on
 the smallest devices, are overflow stress cases. `layout::top_bar` places the
 top bar from measured text: the bank, income, and unit count run left to right,
 then the idle and under-attack badges, and the status hangs off the menu button.
-Touch-only builds hold the menu button and bank further from the corners, which
-iPad screens round and iPadOS safe areas leave out. `layout::group_column`
-stacks the control groups on a plate above the minimap's right edge, mirroring
-the orders dock, and wraps into more columns when the window is short. It shows
-once a group is saved or the selection can be saved, never while the minimap is
-hidden, and a setting hides it; its slots and plate are chrome. The top edge is
-left to taps because iPadOS takes a long-press there as a window move.
+Touch-only builds hold the menu button, the bank, and the build palette's Back
+card further from the corners, which iPad screens round and iPadOS safe areas
+leave out. `layout::group_column` stacks the control groups on a plate above the
+minimap's right edge, mirroring the orders dock, and wraps into more columns
+when the window is short. It shows once a group is saved or the selection can be
+saved, never while the minimap is hidden, and a setting hides it; its slots and
+plate are chrome. The top edge is left to taps because iPadOS takes a long-press
+there as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated

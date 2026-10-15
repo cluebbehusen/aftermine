@@ -359,10 +359,13 @@ fn the_construction_palette_groups_categories_beside_back_at_supported_sizes() {
         .map(|(_, kinds)| kinds.len())
         .sum::<usize>()
         + 1;
-    for (w, h) in SUPPORTED {
+    for ((w, h), touch_only) in SUPPORTED
+        .into_iter()
+        .flat_map(|size| [(size, false), (size, true)])
+    {
         let viewport = vec2(w, h);
         let minimap = minimap_rect_scaled(36, 24, viewport, 1.0);
-        let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, count);
+        let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, count, touch_only);
         assert!(grouped, "{w}x{h}");
         assert_eq!(slots.len(), count);
         assert!(band.y >= crate::layout::TOP_BAR_H);
@@ -380,6 +383,19 @@ fn the_construction_palette_groups_categories_beside_back_at_supported_sizes() {
         }
         let back = slots[count - 1];
         assert!(slots.iter().all(|slot| slot.x >= back.x), "Back leads");
+        if touch_only {
+            assert!(
+                back.x >= crate::layout::TOUCH_CORNER_INSET,
+                "Back clears a rounded screen corner at {w}x{h}"
+            );
+            let (_, desktop, _) = catalog_geometry(viewport, 1.0, minimap, count, false);
+            assert_eq!(
+                slots[..count - 1],
+                desktop[..count - 1],
+                "only Back moves at {w}x{h}"
+            );
+            assert_eq!(back.right(), desktop[count - 1].right());
+        }
         assert_eq!(back.y, slots[0].y, "Back starts on the first row");
         assert_eq!(back.bottom(), slots[1].bottom(), "and ends on the second");
         let mut first = 0;
@@ -410,7 +426,7 @@ fn the_construction_palette_groups_categories_beside_back_at_supported_sizes() {
 fn a_window_below_the_floor_keeps_every_palette_choice_in_a_flat_grid() {
     let viewport = vec2(640.0, 400.0);
     let minimap = minimap_rect_scaled(36, 24, viewport, 1.0);
-    let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, 16);
+    let (band, slots, grouped) = catalog_geometry(viewport, 1.0, minimap, 16, false);
     assert!(!grouped);
     assert_eq!(slots.len(), 16);
     for (i, rect) in slots.iter().enumerate() {
