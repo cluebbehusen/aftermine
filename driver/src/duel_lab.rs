@@ -251,12 +251,18 @@ impl Contender {
     }
 }
 
+/// Whether `kind` can be staged on its own: a drone exists only with the
+/// host it flies for.
+fn stands_alone(kind: UnitKind) -> bool {
+    !kind.stats().docks()
+}
+
 /// Every unit kind that carries a gun: the duel roster.
 pub fn armed_units() -> Vec<UnitKind> {
     UnitKind::ALL
         .iter()
         .copied()
-        .filter(|kind| !kind.stats().weapons.is_empty())
+        .filter(|kind| !kind.stats().weapons.is_empty() && stands_alone(*kind))
         .collect()
 }
 
@@ -275,7 +281,7 @@ pub fn defense_attackers() -> Vec<UnitKind> {
     UnitKind::ALL
         .iter()
         .copied()
-        .filter(|kind| kind.stats().can_fight())
+        .filter(|kind| kind.stats().can_fight() && stands_alone(*kind))
         .collect()
 }
 

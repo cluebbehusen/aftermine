@@ -36,15 +36,17 @@ impl Fleets {
     }
 }
 
-/// The nearest seen enemy aircraft to `from` within `radius` of `around`,
-/// by distance then id.
+/// The nearest seen enemy aircraft to `from` within `radius` of `around`.
+/// Equally near ones are told apart by their bearing from `from` turned into
+/// the frame of `heading`, then by their rank among their owner's units, so
+/// mirrored fleets pick mirrored targets.
 fn aircraft_near(
     state: &State,
     index: &super::super::super::spatial::UnitIndex,
     me: PlayerId,
     around: Vec2Fx,
     radius: Fx,
-    from: Vec2Fx,
+    (from, heading): (Vec2Fx, u8),
 ) -> Option<(UnitId, Vec2Fx)> {
     let home = TilePos::containing(around);
     let reach = radius.ceil().to_num::<i32>() + 1;
@@ -53,7 +55,7 @@ fn aircraft_near(
         return None;
     }
     let reach_sq = radius * radius;
-    (-reach..=reach)
+    let candidates = (-reach..=reach)
         .flat_map(|dy| index.row_span(home.y + dy, home.x - reach, home.x + reach))
         .map(|&(_, slot)| &state.units[slot])
         .filter(|u| {
@@ -63,9 +65,26 @@ fn aircraft_near(
                 && around.dist_sq(u.pos) <= reach_sq
                 && state.sees_unit(me, u)
         })
-        .map(|u| (from.dist_sq(u.pos), u.id, u.pos))
-        .min_by_key(|(distance, id, _)| (*distance, *id))
-        .map(|(_, id, pos)| (id, pos))
+        .map(|u| {
+            let bearing = chassis::compass::heading_of(u.pos - from).wrapping_sub(heading);
+            ((from.dist_sq(u.pos), bearing), u)
+        })
+        .collect::<Vec<_>>();
+    let nearest = candidates.iter().map(|(key, _)| *key).min()?;
+    // Ranking walks every unit, so only an exact tie pays for it.
+    candidates
+        .into_iter()
+        .filter(|(key, _)| *key == nearest)
+        .map(|(_, u)| u)
+        .min_by_key(|u| {
+            let rank = crate::ids::owner_local_unit_rank(
+                u.id,
+                u.player,
+                state.units.iter().map(|o| (o.id, o.player)),
+            );
+            (rank, u.player)
+        })
+        .map(|u| (u.id, u.pos))
 }
 
 /// Keeps `id`'s bay on alert while a seen enemy aircraft is within
@@ -76,8 +95,8 @@ pub(in crate::tick::brain) fn watch(
     id: UnitId,
 ) {
     let host = state.unit(id).expect("caller checked");
-    let (me, pos) = (host.player, host.pos);
-    let near = aircraft_near(state, index, me, pos, LAUNCH_RADIUS, pos).is_some();
+    let (me, pos, heading) = (host.player, host.pos, host.heading);
+    let near = aircraft_near(state, index, me, pos, LAUNCH_RADIUS, (pos, heading)).is_some();
     let bay = state
         .unit_mut(id)
         .expect("caller checked")
@@ -122,7 +141,14 @@ pub(in crate::tick::brain) fn fly(
         }
         return;
     }
-    if let Some((victim, aim)) = aircraft_near(state, index, me, hpos, DRONE_LEASH + hradius, pos) {
+    if let Some((victim, aim)) = aircraft_near(
+        state,
+        index,
+        me,
+        hpos,
+        DRONE_LEASH + hradius,
+        (pos, hheading),
+    ) {
         engage(state, id, (victim, aim), shots);
         return;
     }
@@ -213,3 +239,6 @@ pub(in crate::tick::brain) fn alert_hosts(state: &mut State, hit: &[UnitId]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
