@@ -21,6 +21,7 @@ mod commands;
 pub(crate) mod construction;
 pub(crate) mod crowding;
 mod damage;
+mod drones;
 pub(crate) mod flight;
 mod goals;
 pub(crate) mod landing;
@@ -157,6 +158,7 @@ impl State {
                 boardings,
                 salvaged,
                 assembled,
+                docks,
             } = brain::run(self, &mut index, &mut events);
             // Boarding and unloading mutate the unit list, which must hold
             // still under the brains, so they resolve between the last
@@ -164,6 +166,7 @@ impl State {
             // their machines here for the same reason.
             brain::logistics::resolve(self, boardings, &mut events);
             assembly::stand_up(self, &assembled, &mut events);
+            drones::resolve(self, &docks, &mut events);
             movement::evict_claimed_ground(self);
             let air_positions = aircraft_crashes::capture_positions(self);
             let (travel, refused) = movement::run(self);
@@ -226,6 +229,7 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         crate::vision::forget_observed_building(state, id, false);
     }
     crate::vision::forget_fallen_public_buildings(state);
+    drones::fall_with_hosts(state);
     aircraft_crashes::schedule(state);
     let mut deposits: Vec<(TilePos, u32)> = Vec::new();
     for unit in state.units.iter().filter(|u| u.hp == 0) {

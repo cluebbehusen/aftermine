@@ -129,6 +129,8 @@ pub(super) struct BrainOutcome {
     pub(super) boardings: logistics::Pending,
     pub(super) salvaged: Vec<crate::ids::BuildingId>,
     pub(super) assembled: Vec<crate::ids::BuildingId>,
+    /// Drones that reached their calm hosts and dock after the brains.
+    pub(super) docks: Vec<UnitId>,
 }
 
 pub(super) fn run(
@@ -143,6 +145,8 @@ pub(super) fn run(
     index.survey(state);
     let motion = MotionSnapshot::capture(state);
     let parties = escort::Parties::capture(state);
+    let fleets = combat::Fleets::capture(state);
+    let mut docks: Vec<UnitId> = Vec::new();
     let mut hits: Vec<PendingHit> = Vec::new();
     let mut builds: Vec<PendingHpGain> = Vec::new();
     let mut heals: Vec<PendingUnitHeal> = Vec::new();
@@ -170,6 +174,25 @@ pub(super) fn run(
             for cd in &mut unit.cooldowns {
                 *cd = cd.saturating_sub(1);
             }
+        }
+        // A drone flies for its host alone, outside every order.
+        if state.unit(id).is_some_and(|unit| unit.host.is_some()) {
+            combat::fly_drone(
+                state,
+                index,
+                &fleets,
+                id,
+                combat::ShotBuffers {
+                    events,
+                    hits: &mut hits,
+                    launches: &mut launches,
+                },
+                &mut docks,
+            );
+            continue;
+        }
+        if state.unit(id).is_some_and(|unit| unit.bay.is_some()) {
+            combat::watch_drones(state, index, id);
         }
         let mounted = state
             .unit(id)
@@ -375,6 +398,7 @@ pub(super) fn run(
         boardings: logistics_pending,
         salvaged,
         assembled,
+        docks,
     }
 }
 
@@ -420,11 +444,15 @@ fn resolve_hits(
     let mut salvaged = Vec::new();
     let mut assembled = Vec::new();
     let mut incidents = Vec::new();
+    let mut alarmed = Vec::new();
     let now = state.current_tick();
     for hit in hits {
         match hit.victim {
             Target::Unit(uid) => {
                 if let Some(v) = state.unit_mut(uid) {
+                    if hit.damage > 0 && v.hp > 0 && (v.bay.is_some() || v.host.is_some()) {
+                        alarmed.push(uid);
+                    }
                     let relevant_hit = v.kind.stats().harvest.is_some() || v.kind.stats().scouts;
                     let relevant_loss =
                         hit.damage >= v.hp && v.domain() == crate::stats::Domain::Ground;
@@ -463,6 +491,7 @@ fn resolve_hits(
             }
         }
     }
+    combat::alert_hosts(state, &alarmed);
     for (victim, tile, hit) in incidents {
         // A shooter the victim's team can see is already live danger, which
         // ends when it dies or leaves sight. Incident memory stands in only

@@ -380,6 +380,24 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
         offered(&breach, &state, 3_000).contains(&Investment::Tech(BuildingKind::MawCradle)),
     ));
 
+    // A drone is built in a Roc's bay, which the seat leaves refilling.
+    let mut bay = field();
+    bay.players[0].scrap = 1_000;
+    bay.units.push(unit(0, UnitKind::Roc, 10, 11));
+    let mut built = bay.build().unwrap();
+    let mut refilling = seat_with(&bay, 0, thrifty());
+    for _ in 0..u64::from(UnitKind::Drone.stats().train_ticks) + 20 {
+        let commands = refilling.act(&built, &mut OwnEvents::default());
+        built.tick(&commands);
+    }
+    rows.push((
+        UnitKind::Drone,
+        built
+            .units()
+            .iter()
+            .any(|u| u.player == PlayerId(0) && u.bay.is_some_and(|bay| bay.docked > 0)),
+    ));
+
     // A Roc is assembled too: buying its cradle stands for it.
     rows.push((
         UnitKind::Roc,

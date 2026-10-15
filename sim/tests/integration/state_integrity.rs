@@ -554,10 +554,12 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidWarheadTracking(_) => 94,
         E::CrewBeyondCap(_) => 95,
         E::MountsOutOfRange(_) => 96,
+        E::InvalidDroneBay(_) => 97,
+        E::StrayDrone(_) => 98,
     }
 }
 
-const ROWS: usize = 97;
+const ROWS: usize = 99;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -667,6 +669,8 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidWarheadTracking(PlayerId(0)),
         E::CrewBeyondCap(BuildingId(0)),
         E::MountsOutOfRange(UnitId(0)),
+        E::InvalidDroneBay(UnitId(0)),
+        E::StrayDrone(UnitId(0)),
     ]
 }
 
@@ -816,11 +820,30 @@ fn make_roc(d: &mut Value, mounts: Value) {
     d["units"][0]["progress"] = json!(0);
     d["units"][0]["motor"] = json!({"motor": "airborne"});
     d["units"][0]["mounts"] = mounts;
+    d["units"][0]["bay"] = json!({"autofill": true});
     let unit = d["units"][0].as_object_mut().expect("unit is a map");
     unit.remove("worker");
     unit.remove("path");
     unit.remove("leash");
     unit.remove("queue");
+}
+
+/// Reshapes unit 0 into an airborne drone flying for `host`, if any.
+fn make_drone(d: &mut Value, host: Option<u32>) {
+    d["units"][0]["kind"] = json!("drone");
+    d["units"][0]["hp"] = json!(40);
+    d["units"][0]["order"] = json!({"order": "idle"});
+    d["units"][0]["progress"] = json!(0);
+    d["units"][0]["motor"] = json!({"motor": "airborne"});
+    let unit = d["units"][0].as_object_mut().expect("unit is a map");
+    unit.remove("worker");
+    unit.remove("path");
+    unit.remove("leash");
+    unit.remove("queue");
+    unit.remove("turret_heading");
+    if let Some(host) = host {
+        unit.insert("host".into(), json!(host));
+    }
 }
 
 /// A carried Mantle with the given point-defense state aboard a Skyhook.
@@ -1606,6 +1629,45 @@ fn every_checklist_row_refuses_its_forgery() {
                     .remove("mounts");
             },
             "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a drone bay on a kind without one",
+            |d| d["units"][0]["bay"] = json!({"autofill": true}),
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a bay holding more drones than it admits",
+            |d| {
+                make_roc(d, json!({"bearings": [224, 32]}));
+                d["units"][0]["bay"] = json!({"docked": 7, "autofill": true});
+            },
+            "unit u0 holds an impossible drone bay",
+        ),
+        (
+            "a bay building with nothing ordered",
+            |d| {
+                make_roc(d, json!({"bearings": [224, 32]}));
+                d["units"][0]["bay"] = json!({"progress": 5, "autofill": true});
+            },
+            "unit u0 holds an impossible drone bay",
+        ),
+        (
+            "a bay on alert past any threat's recall",
+            |d| {
+                make_roc(d, json!({"bearings": [224, 32]}));
+                d["units"][0]["bay"] = json!({"alert": 61, "autofill": true});
+            },
+            "unit u0 holds an impossible drone bay",
+        ),
+        (
+            "a drone flying for no host at all",
+            |d| make_drone(d, None),
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a drone whose host has left play",
+            |d| make_drone(d, Some(999)),
+            "drone u0 has no host to fly for",
         ),
         (
             "a gun aimed into its blind quarter",

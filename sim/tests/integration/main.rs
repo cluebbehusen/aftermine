@@ -28,6 +28,7 @@ mod defense_focus;
 mod defense_roles;
 mod determinism;
 mod domains;
+mod drones;
 mod extractors;
 mod field_kit;
 mod foundries;

@@ -76,11 +76,14 @@ enum CommandTag {
     CancelRound,
     SetAutofill,
     Launch,
+    OrderDrone,
+    CancelDrone,
+    SetDroneAutofill,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 31] = [
+const COMMAND_TAGS: [CommandTag; 34] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -112,6 +115,9 @@ const COMMAND_TAGS: [CommandTag; 31] = [
     CommandTag::CancelRound,
     CommandTag::SetAutofill,
     CommandTag::Launch,
+    CommandTag::OrderDrone,
+    CommandTag::CancelDrone,
+    CommandTag::SetDroneAutofill,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -159,6 +165,9 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::CancelRound => 28,
         CommandTag::SetAutofill => 29,
         CommandTag::Launch => 30,
+        CommandTag::OrderDrone => 31,
+        CommandTag::CancelDrone => 32,
+        CommandTag::SetDroneAutofill => 33,
     }
 }
 
@@ -196,12 +205,15 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::CancelRound { .. } => CommandTag::CancelRound,
         Command::SetAutofill { .. } => CommandTag::SetAutofill,
         Command::Launch { .. } => CommandTag::Launch,
+        Command::OrderDrone { .. } => CommandTag::OrderDrone,
+        Command::CancelDrone { .. } => CommandTag::CancelDrone,
+        Command::SetDroneAutofill { .. } => CommandTag::SetDroneAutofill,
     }
 }
 
 /// The whole roster — `apply_train` owes every one of them a verdict.
 /// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 21] = [
+const UNIT_KINDS: [UnitKind; 22] = [
     UnitKind::Harvester,
     UnitKind::Sentinel,
     UnitKind::Scuttler,
@@ -223,6 +235,7 @@ const UNIT_KINDS: [UnitKind; 21] = [
     UnitKind::Surveyor,
     UnitKind::Maw,
     UnitKind::Roc,
+    UnitKind::Drone,
 ];
 
 fn unit_kind_index(kind: UnitKind) -> usize {
@@ -248,6 +261,7 @@ fn unit_kind_index(kind: UnitKind) -> usize {
         UnitKind::Surveyor => 18,
         UnitKind::Maw => 19,
         UnitKind::Roc => 20,
+        UnitKind::Drone => 21,
     }
 }
 
@@ -387,6 +401,22 @@ fn building_id(rng: &mut Pcg32, state: &State) -> BuildingId {
         1 => BuildingId(rng.next_below(16)),
         _ if live.is_empty() => BuildingId(rng.next_below(16)),
         _ => live[rng.next_index(live.len())].id,
+    }
+}
+
+/// A unit for a drone-bay verb: mostly a machine with a bay, and otherwise
+/// any id the roster draws, garbage included.
+fn bay_id(rng: &mut Pcg32, state: &State) -> UnitId {
+    let bays: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|u| u.bay.is_some())
+        .map(|u| u.id)
+        .collect();
+    if bays.is_empty() || rng.next_below(4) == 0 {
+        unit_id(rng, state)
+    } else {
+        bays[rng.next_index(bays.len())]
     }
 }
 
@@ -644,6 +674,38 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
                 plausible_tile(rng, state)
             },
         },
+        CommandTag::OrderDrone => Command::OrderDrone {
+            unit: bay_id(rng, state),
+        },
+        CommandTag::CancelDrone => {
+            // A bay builds one drone at a time, so most draws stay in reach.
+            let bound = if rng.next_below(4) == 0 { 256 } else { 2 };
+            Command::CancelDrone {
+                unit: bay_id(rng, state),
+                index: u8::try_from(rng.next_below(bound)).unwrap(),
+            }
+        }
+        CommandTag::SetDroneAutofill => {
+            let mut units = units(rng, state);
+            if rng.next_below(2) == 0 {
+                units.push(bay_id(rng, state));
+            }
+            Command::SetDroneAutofill {
+                units,
+                enabled: rng.next_below(2) == 0,
+            }
+        }
+    }
+}
+
+/// One count per verb, indexed like [`COMMAND_TAGS`]. A newtype only so
+/// it has a default past the 32 entries arrays implement it for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Drawn([u64; COMMAND_TAGS.len()]);
+
+impl Default for Drawn {
+    fn default() -> Self {
+        Self([0; COMMAND_TAGS.len()])
     }
 }
 
@@ -657,8 +719,8 @@ struct Reach {
     sent: u64,
     /// Commands it refused.
     rejected: u64,
-    /// Verbs the generator actually drew, indexed like [`COMMAND_TAGS`].
-    drawn: [u64; COMMAND_TAGS.len()],
+    /// Verbs the generator actually drew.
+    drawn: Drawn,
     attack_targets: [u64; 4],
     /// Deepest order program any unit carried.
     order_queue: usize,
@@ -682,6 +744,9 @@ struct Reach {
     unit_rallies: usize,
     retired: u64,
     rounds: u64,
+    drones_built: u64,
+    drones_launched: u64,
+    drones_docked: u64,
     launched: u64,
     intercepted: u64,
     burst: u64,
@@ -691,7 +756,7 @@ impl Reach {
     fn absorb(&mut self, other: &Reach) {
         self.sent += other.sent;
         self.rejected += other.rejected;
-        for (a, b) in self.drawn.iter_mut().zip(other.drawn) {
+        for (a, b) in self.drawn.0.iter_mut().zip(other.drawn.0) {
             *a += b;
         }
         for (a, b) in self.attack_targets.iter_mut().zip(other.attack_targets) {
@@ -712,6 +777,9 @@ impl Reach {
         self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
         self.rounds += other.rounds;
+        self.drones_built += other.drones_built;
+        self.drones_launched += other.drones_launched;
+        self.drones_docked += other.drones_docked;
         self.launched += other.launched;
         self.intercepted += other.intercepted;
         self.burst += other.burst;
@@ -1234,6 +1302,46 @@ fn exercise_assembly_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+/// Seat 0's Roc, forged on alert with two drones docked, launches them,
+/// and once the alert runs out they fly home and dock, so the sweep fuzzes
+/// drones in flight and docked from its first command.
+fn exercise_drone_reach(state: &mut State) {
+    let roc = state
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Roc)
+        .unwrap()
+        .id;
+    let mut value = serde_json::to_value(&*state).unwrap();
+    let row = value["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|u| u["id"] == json!(roc))
+        .unwrap();
+    row["bay"]["docked"] = json!(2);
+    row["bay"]["alert"] = json!(oxide_sim::stats::RECALL_TICKS);
+    *state = serde_json::from_value(value).unwrap();
+    let (mut launched, mut docked) = (false, false);
+    for _ in 0..600 {
+        let report = state.tick(&[]);
+        launched |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::DroneLaunched { .. }));
+        docked |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::DroneDocked { .. }));
+        if launched && docked {
+            break;
+        }
+    }
+    assert!(launched, "the fuzz reach fixture must launch a drone");
+    assert!(docked, "the fuzz reach fixture must dock a drone");
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
     exercise_assembly_reach(&mut state);
@@ -1244,8 +1352,11 @@ fn fuzz_run(seed: u64) -> Run {
     exercise_retire_reach(&mut state);
     exercise_salvage_reach(&mut state);
     exercise_scout_reach(&mut state);
+    exercise_drone_reach(&mut state);
     let mut rng = Pcg32::new(seed, 0xF022);
     let mut reach = Reach {
+        drones_launched: 1,
+        drones_docked: 1,
         cancelled_found: 1,
         retired: 1,
         salvaged: 1,
@@ -1274,7 +1385,7 @@ fn fuzz_run(seed: u64) -> Run {
                         break d;
                     }
                 };
-                reach.drawn[drawn] += 1;
+                reach.drawn.0[drawn] += 1;
                 PlayerCommand {
                     // Players 0-3 on a two-player map: half the issuers
                     // don't exist.
@@ -1327,6 +1438,9 @@ fn fuzz_run(seed: u64) -> Run {
                 Event::BuildCancelled { .. } => reach.cancelled += 1,
                 Event::UnitRetired { .. } => reach.retired += 1,
                 Event::RoundAssembled { .. } => reach.rounds += 1,
+                Event::DroneAssembled { .. } => reach.drones_built += 1,
+                Event::DroneLaunched { .. } => reach.drones_launched += 1,
+                Event::DroneDocked { .. } => reach.drones_docked += 1,
                 Event::WarheadLaunched { .. } => reach.launched += 1,
                 Event::WarheadIntercepted { .. } => reach.intercepted += 1,
                 Event::WarheadLanded { .. } => reach.burst += 1,
@@ -1482,7 +1596,7 @@ fn seeded_garbage_never_panics_and_reproduces() {
         reach.sent
     );
     assert!(
-        reach.drawn.iter().all(|n| *n > 0),
+        reach.drawn.0.iter().all(|n| *n > 0),
         "a verb was never drawn: {:?}",
         reach.drawn
     );
@@ -1529,6 +1643,9 @@ fn seeded_garbage_never_panics_and_reproduces() {
     );
     assert!(reach.retired > 0, "the sweep must take a unit apart");
     assert!(reach.rounds > 0, "the sweep must assemble a round");
+    assert!(reach.drones_built > 0, "the sweep must build a drone");
+    assert!(reach.drones_launched > 0, "the sweep must launch a drone");
+    assert!(reach.drones_docked > 0, "the sweep must dock a drone");
     assert!(reach.launched > 0, "the sweep must launch a warhead");
     assert!(reach.intercepted > 0, "the sweep must stop a warhead");
     assert!(reach.burst > 0, "the sweep must land a warhead");

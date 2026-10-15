@@ -1382,10 +1382,11 @@ fn workforce(observation: &ObservationData) -> u64 {
 
 /// What the seat's armed units cost.
 fn army(observation: &ObservationData) -> u64 {
+    // A drone comes and goes from its host's bay, so only machines count.
     observation
         .my_units
         .iter()
-        .filter(|unit| !unit.kind.stats().weapons.is_empty())
+        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
         .map(|unit| u64::from(unit.kind.stats().cost))
         .sum()
 }

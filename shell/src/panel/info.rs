@@ -298,6 +298,30 @@ fn radar_facts(info: &mut SelectionInfo, unit: &oxide_sim::Unit) {
     );
 }
 
+/// A carrier's sling and a host's drone bay: what each holds to its owner
+/// and team, and only how much it holds to anyone else.
+fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &oxide_sim::Unit) {
+    let stats = u.kind.stats();
+    let hostile = game.state.hostile(game.presentation.human, u.player);
+    if stats.transport_capacity > 0 {
+        let value = if hostile {
+            format!("{} points", stats.transport_capacity)
+        } else {
+            let held: u8 = u.cargo.iter().map(|r| r.kind.stats().transport_size).sum();
+            format!("{held}/{} points", stats.transport_capacity)
+        };
+        info.row("Cargo", value, Some(StatIcon::Verb(VerbIcon::Build)));
+    }
+    if let Some(bay) = stats.bay {
+        let value = if hostile {
+            format!("{} drones", bay.capacity)
+        } else {
+            crate::unit_bays::readout(game, u.id).unwrap_or_default()
+        };
+        info.row("Drones", value, Some(StatIcon::Verb(VerbIcon::Build)));
+    }
+}
+
 pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
     use StatIcon::{Capability as Cap, Verb};
     let mut info = SelectionInfo::default();
@@ -474,15 +498,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             );
         }
         radar_facts(&mut info, u);
-        if stats.transport_capacity > 0 {
-            let value = if game.state.hostile(game.presentation.human, u.player) {
-                format!("{} points", stats.transport_capacity)
-            } else {
-                let held: u8 = u.cargo.iter().map(|r| r.kind.stats().transport_size).sum();
-                format!("{held}/{} points", stats.transport_capacity)
-            };
-            info.row("Cargo", value, Some(Verb(VerbIcon::Build)));
-        }
+        hold_rows(&mut info, game, u);
         if let Some(harvest) = stats.harvest {
             info.row(
                 "Scrap load",

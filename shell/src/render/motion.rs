@@ -366,6 +366,7 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Scuttler
         | UnitKind::Buzzard
         | UnitKind::Talon
+        | UnitKind::Drone
         | UnitKind::Warden
         | UnitKind::Condor
         | UnitKind::Breaker
@@ -414,6 +415,7 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Scuttler
             | UnitKind::Buzzard
             | UnitKind::Talon
+            | UnitKind::Drone
             | UnitKind::Warden
             | UnitKind::Breaker
             | UnitKind::Piledriver
@@ -437,6 +439,7 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Scuttler
             | UnitKind::Buzzard
             | UnitKind::Talon
+            | UnitKind::Drone
             | UnitKind::Warden
             | UnitKind::Condor
             | UnitKind::Breaker

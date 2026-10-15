@@ -609,8 +609,9 @@ impl Missions {
         held
     }
 
-    /// Units no mission holds, by id. A defense may also `borrow` units that
-    /// a recovering defense or an attack out of contact would lend it.
+    /// Units no mission holds, by id, never a drone, which flies for its host
+    /// alone. A defense may also `borrow` units that a recovering defense or
+    /// an attack out of contact would lend it.
     fn available(&self, observation: &ObservationData, borrow: bool) -> Vec<UnitId> {
         let mut owned: Vec<UnitId> = self
             .list
@@ -622,6 +623,7 @@ impl Missions {
         observation
             .my_units
             .iter()
+            .filter(|unit| !unit.kind.stats().docks())
             .map(|unit| unit.id)
             .filter(|id| owned.binary_search(id).is_err())
             .collect()

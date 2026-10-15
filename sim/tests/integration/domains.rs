@@ -118,9 +118,17 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
         assert!(
             BuildingKind::ALL.iter().any(|building| {
                 building.base_stats().produces.contains(&kind) || building.assembles() == Some(kind)
-            }),
-            "{owner} is neither trained nor assembled"
+            }) || UnitKind::ALL
+                .iter()
+                .any(|host| host.stats().bay.is_some_and(|bay| bay.drone == kind)),
+            "{owner} is neither trained, assembled nor built in a bay"
         );
+        if let Some(bay) = stats.bay {
+            assert!(
+                bay.capacity > 0 && bay.build_ticks > 0 && bay.drone.stats().docks(),
+                "{owner} carries an inoperable drone bay"
+            );
+        }
     }
 
     for kind in BuildingKind::ALL {

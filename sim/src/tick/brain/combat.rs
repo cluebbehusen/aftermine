@@ -4,9 +4,11 @@
 //! nothing here applies damage directly.
 
 mod blind;
+mod drones;
 mod mounts;
 use super::contact;
 pub(super) use blind::{ShotBuffers, attack_known, automatic_radar, normalize_order};
+pub(super) use drones::{Fleets, alert_hosts, fly as fly_drone, watch as watch_drones};
 pub(super) use mounts::{
     Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
 };
@@ -2117,8 +2119,9 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     let attacker_domain = target_domain(state, attacker);
     // A breacher answers a building that hits it, which is its work, but
     // never turns on a machine. Mounted guns already answer whatever
-    // reaches the hull, which never chases what does not.
-    if stats.mounts.is_some() {
+    // reaches the hull, which never chases what does not, and a drone flies
+    // for its host alone.
+    if stats.mounts.is_some() || unit.host.is_some() {
         return;
     }
     if unit.hp == 0

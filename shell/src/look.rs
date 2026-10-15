@@ -405,6 +405,14 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Transport,
             ..plain
         },
+        UnitKind::Drone => UnitLook {
+            scale: 0.6,
+            gait: light_rotor(kind),
+            rig: true,
+            weapon: Some(weapon(SoundKind::TalonFire, ShotStyle::ForgeSpot, 0.22)),
+            marker: M::AntiAir,
+            ..plain
+        },
         UnitKind::Mantle => UnitLook {
             scale: HEAVY_SCALE,
             gait: Gait::Treads,

@@ -773,7 +773,9 @@ weapon's projectile payload, which buildings fight or train, and upgrade
 ladders. A kind with mounted guns, the Roc, draws its mount layer once per gun
 at that gun's pivot on the hull, turned to the simulation's bearing for that gun
 and interpolated the short way between ticks; each gun recoils only for its own
-weapon slot's shots.
+weapon slot's shots. A drone is never selected, boxed or rallied to, and a
+selected own Roc offers its bay's Order, Cancel and Autofill cards on the same
+hotkeys as a magazine's, with placeholder dock clamps lit for docked drones.
 
 `entity_lod` derives full, half, quarter, and eighth-resolution entity textures
 at startup without changing authored atlas bytes. Each sprite packs only its

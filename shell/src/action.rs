@@ -225,11 +225,9 @@ impl Action {
             Self::PanLeft | Self::PanRight | Self::PanUp | Self::PanDown => WORLD,
             Self::Back => WORLD | 2048,
             Self::TrainSlot(_) | Self::SetRally | Self::ClearRally => 8,
-            Self::Upgrade
-            | Self::Launch
-            | Self::OrderRound
-            | Self::CancelRound
-            | Self::ToggleAutofill => 4 | 8,
+            Self::Upgrade | Self::Launch => 4 | 8,
+            // A selected machine's drone bay takes them too.
+            Self::OrderRound | Self::CancelRound | Self::ToggleAutofill => 4 | 8 | 2,
             Self::StopOrScrap => UNITS | 4,
             Self::Patrol | Self::Accompany | Self::Retire => UNITS,
             Self::Salvage | Self::Run | Self::Hunt | Self::Scout | Self::RepairUnit => {

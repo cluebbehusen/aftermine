@@ -8511,3 +8511,77 @@ fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
     click_at(&mut game, &mut input, at + vec2(0.0, 0.4));
     assert!(game.presentation.selection.units.contains(&id));
 }
+
+/// A skirmish with a West Roc on alert beside an enemy Skyhook, its two
+/// docked drones launched by the first tick.
+fn roc_with_drones() -> (Game, UnitId) {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: oxide_sim::UnitKind::Roc,
+        x: 12,
+        y: 10,
+    });
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 1,
+        kind: oxide_sim::UnitKind::Skyhook,
+        x: 15,
+        y: 10,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let roc = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == oxide_sim::UnitKind::Roc)
+        .unwrap()
+        .id;
+    let mut value = serde_json::to_value(&*game.state).unwrap();
+    for row in value["units"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(roc) {
+            row["bay"]["docked"] = serde_json::json!(2);
+        }
+    }
+    *game.state = serde_json::from_value(value).unwrap();
+    game.do_tick();
+    (game, roc)
+}
+
+#[test]
+fn drones_are_never_box_selected() {
+    let (mut game, roc) = roc_with_drones();
+    let drones: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|unit| unit.host == Some(roc))
+        .map(|unit| unit.id)
+        .collect();
+    assert_eq!(drones.len(), 2, "premise: both launched");
+    let top_left = game.presentation.camera.to_screen(vec2(-1.0, -1.0));
+    let bottom_right = game.presentation.camera.to_screen(vec2(40.0, 24.0));
+    box_select(&mut game, top_left, bottom_right, false);
+    let selected = &game.presentation.selection.units;
+    assert!(selected.contains(&roc));
+    assert!(drones.iter().all(|drone| !selected.contains(drone)));
+}
+
+#[test]
+fn a_selected_roc_offers_its_drone_bay() {
+    let (mut game, roc) = roc_with_drones();
+    game.presentation.selection.units = vec![roc];
+    let input = InputState::new();
+    let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
+    let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
+    assert!(titles.contains(&"Order drone"), "{titles:?}");
+    assert!(titles.contains(&"Autofill: on"), "{titles:?}");
+    let mut input = InputState::new();
+    dispatch_action(&mut game, &mut input, Action::OrderRound);
+    assert!(
+        game.pending
+            .iter()
+            .any(|pending| matches!(pending.command, oxide_sim::Command::OrderDrone { unit } if unit == roc)),
+        "the order hotkey pays for a drone: {:?}",
+        game.pending
+    );
+}

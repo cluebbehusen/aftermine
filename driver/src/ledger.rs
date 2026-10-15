@@ -849,6 +849,20 @@ impl ImpactLedger {
                 }
                 self.spent(player.0, format!("round:{}", kind.name()), now, cost);
             }
+            Event::DroneAssembled { unit, player, .. } => {
+                // Like a round: paid when ordered and refunded if cancelled,
+                // so the drones a bay finished are what it cost its host.
+                let cost = self
+                    .records
+                    .get(&Key::Unit(*unit))
+                    .and_then(|record| record.unit)
+                    .and_then(|host| host.stats().bay)
+                    .map_or(0, |bay| u64::from(bay.cost));
+                if let Some(record) = self.records.get_mut(&Key::Unit(*unit)) {
+                    record.paid += cost;
+                }
+                self.spent(player.0, "drone".into(), now, cost);
+            }
             _ => {}
         }
     }

@@ -75,7 +75,8 @@ fn raider(kind: UnitKind) -> Option<Raider> {
         | UnitKind::Mantle
         | UnitKind::Piledriver
         | UnitKind::Maw
-        | UnitKind::Roc => None,
+        | UnitKind::Roc
+        | UnitKind::Drone => None,
     }
 }
 

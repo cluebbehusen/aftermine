@@ -78,6 +78,10 @@ chassis::listed_enum! {
         /// pick their own ground targets. Assembled in a cradle, never
         /// trained.
         Roc,
+        /// A Roc's small anti-air drone: built in its bay, launched to fight
+        /// enemy aircraft and screen fire on a short leash around it, and
+        /// docked again once its host is calm. Never trained or ordered.
+        Drone,
     }
 }
 
@@ -341,6 +345,25 @@ pub struct UnitStats {
     /// its own target inside its arc. `None` for every machine whose weapons
     /// fire from its centre.
     pub mounts: Option<MountedGuns>,
+    /// The drones the machine builds, docks and launches. `None` for every
+    /// machine without a drone bay.
+    pub bay: Option<BayStats>,
+}
+
+/// A drone bay: drones built one at a time, docked out of reach, and
+/// launched to fight around the host while it is under threat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BayStats {
+    /// Drones the host holds, docked, flying and ordered together.
+    pub capacity: u8,
+    /// The kind of drone it builds.
+    pub drone: UnitKind,
+    /// Scrap one drone costs.
+    pub cost: u32,
+    /// Ticks to build one drone.
+    pub build_ticks: u32,
+    /// Whether a new host refills its bay on its own.
+    pub autofill: bool,
 }
 
 /// A gun on a fixed pivot of its hull that traverses only inside its arc.
@@ -404,6 +427,8 @@ pub enum Mend {
     Repair,
     /// Neither: its kiln feeds on wreck salvage around its hull instead.
     Kiln(KilnStats),
+    /// Neither: it launches whole from its host's bay each time.
+    Dock,
 }
 
 /// A kiln that turns wreck salvage into hit points.
@@ -510,6 +535,11 @@ impl UnitStats {
     /// Whether field welds and Repair Bays restore this kind.
     pub const fn repairable(&self) -> bool {
         matches!(self.mend, Mend::Repair)
+    }
+
+    /// Whether this kind is a drone, flying for a host's bay.
+    pub const fn docks(&self) -> bool {
+        matches!(self.mend, Mend::Dock)
     }
 
     /// Whether this kind carries any weapon at all.
@@ -957,6 +987,7 @@ impl UnitKind {
             UnitKind::Surveyor => "surveyor",
             UnitKind::Maw => "maw",
             UnitKind::Roc => "roc",
+            UnitKind::Drone => "drone",
         }
     }
 
@@ -1014,7 +1045,10 @@ impl UnitKind {
                 "Huge, slow breacher that cuts through buildings and is weak against machines. No anti-air. Heals only by eating wreck under and beside it."
             }
             UnitKind::Roc => {
-                "Slow, heavy gunship that carries twelve slots of ground units. Two guns each pick their own ground targets; an attack order turns it nose-on so both bear. No anti-air."
+                "Slow, heavy gunship that carries twelve slots of ground units. Two guns each pick their own ground targets; an attack order turns it nose-on so both bear. Its six drones fight aircraft and screen fire."
+            }
+            UnitKind::Drone => {
+                "A Roc's anti-air drone. Launches when enemy aircraft come near or the Roc is hit, fights close around it, and docks again when the sky is clear."
             }
         }
     }
@@ -1057,6 +1091,7 @@ const HARVESTER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1118,6 +1153,7 @@ const SENTINEL: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1161,6 +1197,7 @@ const SCUTTLER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1206,6 +1243,7 @@ const LANCER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1256,6 +1294,7 @@ const BOMBARD: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1299,6 +1338,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1342,6 +1382,7 @@ const BUZZARD: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1385,6 +1426,7 @@ const TALON: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1432,6 +1474,7 @@ const WARDEN: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1468,6 +1511,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1504,6 +1548,7 @@ const KESTREL: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1554,6 +1599,7 @@ const CONDOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1600,6 +1646,7 @@ const BREAKER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1650,6 +1697,7 @@ const PILEDRIVER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1699,6 +1747,7 @@ const AVALANCHE: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1736,6 +1785,7 @@ const SKYHOOK: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1774,6 +1824,7 @@ const SAPPER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1812,6 +1863,7 @@ const MANTLE: UnitStats = UnitStats {
     }),
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1848,6 +1900,7 @@ const SURVEYOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: None,
     mounts: None,
 };
 
@@ -1901,6 +1954,7 @@ const MAW: UnitStats = UnitStats {
         reach: 1,
     }),
     structural: true,
+    bay: None,
     mounts: None,
 };
 
@@ -1957,6 +2011,7 @@ const ROC: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    bay: Some(ROC_BAY),
     mounts: Some(MountedGuns {
         // Port then starboard. Each arc of 270 degrees is centred 45 degrees
         // outboard of the nose, so its blind quarter lies behind the far
@@ -1981,6 +2036,62 @@ const ROC: UnitStats = UnitStats {
         // Covers sqrt(0.65^2 + 0.55^2), about 0.851.
         reach: Fx::lit("0.86"),
     }),
+};
+
+/// The Roc's drone bay: six drones, built one at a time.
+const ROC_BAY: BayStats = BayStats {
+    capacity: 6,
+    drone: UnitKind::Drone,
+    cost: DRONE.cost,
+    build_ticks: DRONE.train_ticks,
+    autofill: true,
+};
+
+/// A Roc's drone. Six trade about evenly with three Talons.
+const DRONE: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 40,
+    speed: Fx::lit("0.12"), // 2.4 tiles/s
+    radius: Fx::lit("0.25"),
+    cost: 40,
+    // Never trained: its host's bay builds it in this long.
+    train_ticks: 160, // 8 s
+    domain: Domain::Air,
+    // 5 damage a second against aircraft.
+    weapons: &[WeaponStats {
+        damage: 5,
+        range: Fx::lit("3"),
+        minimum_range: Fx::ZERO,
+        cooldown_ticks: 20,
+        targets: DomainMask::AIR,
+        splash: None,
+        indirect: false,
+        building_damage: None,
+        projectile: None,
+    }],
+    aggro_range: DRONE_LEASH,
+    harvest: None,
+    vision: 5,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 0,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 8,
+    hull_turn_rate: None,
+    brace: None,
+    target_priority: TargetPriority::Nearest,
+    crash: None,
+    charge_detection: false,
+    scouts: false,
+    radar: None,
+    point_defense: None,
+    mend: Mend::Dock,
+    structural: false,
+    bay: None,
+    mounts: None,
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -2490,6 +2601,7 @@ impl UnitKind {
             UnitKind::Surveyor => &SURVEYOR,
             UnitKind::Maw => &MAW,
             UnitKind::Roc => &ROC,
+            UnitKind::Drone => &DRONE,
         }
     }
 
@@ -3223,6 +3335,20 @@ pub const LEASH_STATION_TICKS: u16 = 40;
 /// capped by its own aggro range. Welders mend escort-party members within
 /// the same distance of it.
 pub const ESCORT_ENGAGE_RADIUS: Fx = Fx::lit("7");
+
+/// How near a seen enemy aircraft comes to a host before its drones launch,
+/// in tiles.
+pub const LAUNCH_RADIUS: Fx = Fx::lit("6");
+
+/// How far from its host a drone takes a fight, in tiles.
+pub const DRONE_LEASH: Fx = Fx::lit("4");
+
+/// The radius of the ring drones hold around their host with nothing to
+/// fight, in tiles.
+pub const DRONE_ORBIT: Fx = Fx::lit("1.7");
+
+/// Ticks a host's drones stay out after the last threat, about 3 s.
+pub const RECALL_TICKS: u16 = 60;
 
 /// How far from the escorted unit an escort's victim may stray before the
 /// escort breaks off, firing included, and returns to its slot. Wider than

@@ -525,7 +525,8 @@ cradle is then wanted at the scale of the seat's upgrades. The cradle's next
 steps reach its Deep Bore and Airworks first, and it stands and is crewed as a
 Maw cradle is. A Roc leads the seat's lifts, as described above; while ground
 reaches the enemy, an empty one joins the next attack with the army instead.
-Local guards never take a carrier.
+Local guards never take a carrier. The seat leaves a Roc's drone bay refilling
+and never commands its drones, which no mission takes.
 
 ## Scouting
 

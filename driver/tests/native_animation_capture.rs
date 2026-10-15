@@ -35,7 +35,6 @@ static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 
 const MAP_WIDTH: i32 = 32;
 const MAP_HEIGHT: i32 = 22;
-const ALL_UNIT_KINDS: [UnitKind; 21] = UnitKind::ALL;
 
 struct NativeCapture {
     shell: Option<ShellGuard>,
@@ -267,7 +266,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     assert_eq!(overview.units.len(), 10);
     harness.capture_stage("00-idle-overview", 1, 1)?;
 
-    for kind in ALL_UNIT_KINDS {
+    for kind in standalone_kinds() {
         let movement = harness.load(&movement_scenario(kind))?;
         let mover = unit_kind(&movement, 0, kind)?;
         let start = movement
@@ -778,7 +777,7 @@ fn generated_animation_capture_scenarios_are_valid() -> Result<()> {
         repair_bay_scenario(),
         airworks_launch_scenario(),
     ];
-    scenarios.extend(ALL_UNIT_KINDS.map(movement_scenario));
+    scenarios.extend(standalone_kinds().map(movement_scenario));
     scenarios.push(landing_scenario());
     scenarios.extend(combat_kinds().map(unit_duel_scenario));
     scenarios.push(sentinel_sidearm_scenario());
@@ -1026,10 +1025,16 @@ fn overview_scenario() -> Value {
     )
 }
 
-fn combat_kinds() -> impl Iterator<Item = UnitKind> {
+/// Every kind a scenario can stage on its own: a drone exists only in
+/// flight from its host's bay.
+fn standalone_kinds() -> impl Iterator<Item = UnitKind> {
     UnitKind::ALL
         .into_iter()
-        .filter(|kind| !kind.stats().weapons.is_empty())
+        .filter(|kind| !kind.stats().docks())
+}
+
+fn combat_kinds() -> impl Iterator<Item = UnitKind> {
+    standalone_kinds().filter(|kind| !kind.stats().weapons.is_empty())
 }
 
 fn movement_scenario(kind: UnitKind) -> Value {
@@ -1066,6 +1071,7 @@ fn unit_duel_scenario(attacker: UnitKind) -> Value {
         UnitKind::Avalanche => 8,
         UnitKind::Maw => 2,
         UnitKind::Roc => 3,
+        UnitKind::Drone => unreachable!("a drone is never staged alone"),
         UnitKind::Harvester
         | UnitKind::Excavator
         | UnitKind::Kestrel

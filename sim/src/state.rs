@@ -442,6 +442,38 @@ impl Mounts {
     }
 }
 
+/// A host's drone bay: the drones docked out of reach, those paid for and
+/// building, and how long its launched drones stay out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DroneBay {
+    /// Drones docked aboard.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub docked: u8,
+    /// Drones paid for and not yet built, the first building.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub ordered: u8,
+    /// Ticks spent on the drone building.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub progress: u32,
+    /// Whether the bay orders a drone on its own while it has room.
+    pub autofill: bool,
+    /// Ticks the host's drones stay out after the last threat: while above
+    /// zero docked drones launch, and at zero flying ones come home.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub alert: u16,
+}
+
+impl DroneBay {
+    /// An empty bay with the kind's refill setting.
+    fn empty(stats: crate::stats::BayStats) -> Self {
+        Self {
+            autofill: stats.autofill,
+            ..Self::default()
+        }
+    }
+}
+
 /// Whether an idle mounted hull may turn to feed a gun that has nothing to
 /// shoot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -559,6 +591,12 @@ pub struct Unit {
     /// guns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mounts: Option<Mounts>,
+    /// The drone bay, for exactly the kinds with one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bay: Option<DroneBay>,
+    /// The host a drone flies for, for exactly the drone kinds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<UnitId>,
 }
 
 fn is_zero_motion(motion: &Vec2Fx) -> bool {
@@ -776,6 +814,8 @@ impl Unit {
             radar_deploy: 0,
             point_defense: kind.stats().point_defense.map(PointDefense::full),
             mounts: kind.stats().mounts.map(Mounts::resting),
+            bay: kind.stats().bay.map(DroneBay::empty),
+            host: None,
         }
     }
 
@@ -1957,6 +1997,7 @@ impl State {
         if let Some(id) = self.escort_loop() {
             return Err(E::InvalidEscort(id));
         }
+        self.validate_drones()?;
         // Two parked bodies inside their combined radius could never have
         // met: a touchdown needs that clearance and nothing moves a parked
         // body afterwards.
@@ -2106,6 +2147,8 @@ impl State {
             radar_deploy,
             point_defense,
             mounts,
+            bay,
+            host,
         } = u;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -2126,6 +2169,8 @@ impl State {
         if worker.is_some() != stats.harvest.is_some()
             || point_defense.is_some() != stats.point_defense.is_some()
             || mounts.is_some() != stats.mounts.is_some()
+            || bay.is_some() != stats.bay.is_some()
+            || host.is_some() != stats.docks()
             || !motor.fits(*kind)
             || (turret_heading.is_some() && !kind.has_ground_turret())
             || (!cargo.is_empty() && stats.transport_capacity == 0)
@@ -2921,6 +2966,38 @@ impl State {
                 .iter()
                 .find(|carrier| carrier.cargo.iter().any(|rider| rider.id == id))
         })
+    }
+
+    /// Every drone flies for its owner's live machine with a bay, and every
+    /// bay, with its flying drones, stays within what it admits.
+    fn validate_drones(&self) -> Result<(), StateIntegrityError> {
+        use StateIntegrityError as E;
+        for drone in &self.units {
+            let Some(host) = drone.host else {
+                continue;
+            };
+            let bound = self
+                .unit(host)
+                .is_some_and(|u| u.player == drone.player && u.bay.is_some());
+            if !bound {
+                return Err(E::StrayDrone(drone.id));
+            }
+        }
+        for u in &self.units {
+            let (Some(bay), Some(stats)) = (u.bay, u.kind.stats().bay) else {
+                continue;
+            };
+            let flying = self.units.iter().filter(|d| d.host == Some(u.id)).count();
+            let held = usize::from(bay.docked) + usize::from(bay.ordered) + flying;
+            if held > usize::from(stats.capacity)
+                || bay.progress >= stats.build_ticks
+                || (bay.ordered == 0 && bay.progress > 0)
+                || bay.alert > crate::stats::RECALL_TICKS
+            {
+                return Err(E::InvalidDroneBay(u.id));
+            }
+        }
+        Ok(())
     }
 
     /// A unit that escorts itself through a chain of escorts, counting every
@@ -3826,6 +3903,15 @@ pub enum StateIntegrityError {
     /// mount, or an idle facing held longer than the kind ever holds one.
     #[error("unit {0} holds impossible gun bearings")]
     MountsOutOfRange(UnitId),
+    /// A drone bay holding more drones, docked, flying and ordered, than it
+    /// admits, building with nothing ordered or past its build time, or on
+    /// alert longer than any threat keeps it.
+    #[error("unit {0} holds an impossible drone bay")]
+    InvalidDroneBay(UnitId),
+    /// A drone whose host is not its owner's live machine with a bay: cleanup
+    /// removes a drone the tick its host leaves play.
+    #[error("drone {0} has no host to fly for")]
+    StrayDrone(UnitId),
 }
 
 /// Slot i belongs to weapon i; slots past the roster stay zero for the

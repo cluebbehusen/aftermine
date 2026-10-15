@@ -68,6 +68,14 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
                 .collect(),
         ),
         (
+            "DRONE BAYS",
+            UnitKind::ALL
+                .into_iter()
+                .filter_map(|host| host.stats().bay)
+                .map(|bay| Entry::Unit(bay.drone))
+                .collect(),
+        ),
+        (
             "BUILDINGS",
             [
                 BuildingKind::Foundry,

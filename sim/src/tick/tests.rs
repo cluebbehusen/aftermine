@@ -726,10 +726,12 @@ fn run_calibration_open_tick(
         boardings: pending,
         salvaged,
         assembled,
+        docks,
     } = brain::run(state, &mut index, &mut events);
     assert_calibration_open_symmetry(&stage("brains"), state, unit_pairs);
     brain::logistics::resolve(state, pending, &mut events);
     assembly::stand_up(state, &assembled, &mut events);
+    drones::resolve(state, &docks, &mut events);
     assert_calibration_open_symmetry(&stage("logistics"), state, unit_pairs);
     movement::evict_claimed_ground(state);
     let air_positions = aircraft_crashes::capture_positions(state);
