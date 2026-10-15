@@ -631,3 +631,27 @@ fn merged_reactions_sum_and_keep_the_first_examples() {
     assert_eq!(total.withdrawal.unwrap().answer_ticks, 100);
     assert_eq!(total.target_switches, Some(4));
 }
+
+#[test]
+fn a_cradle_is_answered_by_what_counters_its_machine() {
+    let state = built(&field(
+        &[
+            (0, UnitKind::Flakhound, 4, 6),
+            (0, UnitKind::Talon, 5, 6),
+            (0, UnitKind::Piledriver, 6, 8),
+            (1, UnitKind::Flakhound, 18, 6),
+        ],
+        &[(0, BuildingKind::FlakTurret, 8, 4)],
+        false,
+    ));
+    assert_eq!(
+        answers(&state, PlayerId(0), UnitKind::Roc),
+        3,
+        "anti-air units and Flak Turrets answer a flyer"
+    );
+    assert_eq!(
+        answers(&state, PlayerId(0), UnitKind::Maw),
+        1,
+        "anti-heavy machines answer a ground machine"
+    );
+}

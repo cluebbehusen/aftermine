@@ -449,6 +449,13 @@ pub(crate) fn decide(
         units,
         waiting,
         margin: crate::missions::margin(profile.difficulty),
+        lift_flak: persistent.missions.lift_flak(
+            observation,
+            map,
+            profile,
+            &persistent.memory,
+            &scratch,
+        ),
     };
     let mut candidates = investments::candidates(&situation);
     let danger = placement::Danger::of(observation, map, &persistent.memory);
@@ -986,8 +993,9 @@ fn explore(
     }
 }
 
-/// Keeps enough carriers, alive and queued, to lift every free rider at home
-/// at once, training one at a ready Airworks when short. It is a stock, like
+/// Keeps enough carriers, alive, queued or being assembled, to lift every
+/// free rider at home at once, training a Skyhook at a ready Airworks when
+/// short. It is a stock, like
 /// the Harvesters: no mission is promised the carriers it buys. Returns
 /// whether a ready Airworks waits for the scrap to train one while riders at
 /// home already fill every carrier, so that cheaper units do not spend it
@@ -1001,23 +1009,33 @@ fn train_carriers(
     producers: &[Producer<'_>],
     ledger: &mut Ledger,
 ) -> bool {
-    // Carriers count in Skyhook rooms, so a larger hold counts for more.
-    let room = u64::from(UnitKind::Skyhook.stats().transport_capacity);
-    let carriers = observation
+    // Every carrier's hold: alive, queued, bought this decision, or being
+    // assembled in a cradle.
+    let holds: Vec<u8> = observation
         .my_units
         .iter()
         .map(|unit| unit.kind)
         .chain(observation.my_queues.iter().flatten().copied())
-        .map(|kind| u64::from(kind.stats().transport_capacity) / room)
-        .sum::<u64>()
-        + ledger.queued(UnitKind::Skyhook) as u64;
+        .chain(std::iter::repeat_n(
+            UnitKind::Skyhook,
+            ledger.queued(UnitKind::Skyhook),
+        ))
+        .chain(
+            observation
+                .my_buildings
+                .iter()
+                .filter_map(|building| building.kind.assembles()),
+        )
+        .map(|kind| kind.stats().transport_capacity)
+        .filter(|room| *room > 0)
+        .collect();
     let Some(waiting) = persistent.missions.carriers_short(
         observation,
         map,
         profile,
         &persistent.memory,
         scratch,
-        carriers,
+        &holds,
     ) else {
         return false;
     };

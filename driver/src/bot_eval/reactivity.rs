@@ -161,8 +161,10 @@ pub struct SeatReactivity {
     /// the seat hits a presser, or fires at one, within [`RELIEF_TICKS`].
     pub relief: Reactions,
     /// Every seat learned of an enemy assembly cradle; answered when it hits
-    /// the cradle or owns more anti-heavy machines than then, missed when the
-    /// machine stands up first, moot when the cradle falls or is cancelled.
+    /// the cradle or owns more of what answers its machine than then (anti-air
+    /// units or Flak Turrets for a flyer, anti-heavy machines otherwise),
+    /// missed when the machine stands up first, moot when the cradle falls or
+    /// is cancelled.
     pub cradle: Reactions,
     /// `oxide-opponent` only: an attack, strike or raid entered its fight;
     /// answered when it withdrew, missed when it vanished mid-fight having
@@ -296,8 +298,8 @@ struct SeatWatch {
     tended: BTreeSet<u32>,
     extractors: BTreeMap<u32, TilePos>,
     restores: BTreeMap<TilePos, Case>,
-    /// Enemy cradles the seat knows of, by building id, with its anti-heavy
-    /// machines when it learned of each.
+    /// Enemy cradles the seat knows of, by building id, with what it had to
+    /// answer each one's machine when it learned of it.
     cradles: BTreeMap<u32, (Case, usize)>,
     /// Cradles whose case closed while they stand.
     cradles_done: BTreeSet<u32>,
@@ -832,18 +834,39 @@ fn first_foundries(state: &State) -> Vec<Option<Start>> {
         .collect()
 }
 
+/// What the seat has to answer `machine`: its anti-air units and built Flak
+/// Turrets against a flyer, its anti-heavy machines against anything else.
+fn answers(state: &State, player: PlayerId, machine: UnitKind) -> usize {
+    let units = |kinds: &[UnitKind]| {
+        state
+            .units()
+            .iter()
+            .filter(|unit| unit.player == player && unit.hp > 0 && kinds.contains(&unit.kind))
+            .count()
+    };
+    if machine.stats().domain == oxide_sim::stats::Domain::Air {
+        units(&[UnitKind::Flakhound, UnitKind::Talon])
+            + state
+                .buildings()
+                .iter()
+                .filter(|building| {
+                    building.player == player
+                        && building.kind == BuildingKind::FlakTurret
+                        && building.built()
+                })
+                .count()
+    } else {
+        units(&[UnitKind::Piledriver])
+    }
+}
+
 /// Opens a case for each enemy cradle the seat newly knows of, and answers
-/// those it now has more anti-heavy machines for.
+/// those it now has more answers to the machine for.
 fn check_cradles(watch: &mut SeatWatch, state: &State, player: PlayerId, now: u64) {
-    let anti_heavy = state
-        .units()
-        .iter()
-        .filter(|unit| unit.player == player && unit.hp > 0 && unit.kind == UnitKind::Piledriver)
-        .count();
     for public in oxide_sim::observation::hostile_public_buildings(state, player) {
-        if public.kind.assembles().is_none() {
+        let Some(machine) = public.kind.assembles() else {
             continue;
-        }
+        };
         let Some(cradle) = state.buildings().iter().find(|b| {
             b.player == public.owner && b.kind == public.kind && b.anchor == public.anchor
         }) else {
@@ -853,14 +876,24 @@ fn check_cradles(watch: &mut SeatWatch, state: &State, player: PlayerId, now: u6
             watch.found.cradle.open();
             watch.cradles.insert(
                 cradle.id.0,
-                (Case::new(now, cradle.id.0, cradle.kind.name()), anti_heavy),
+                (
+                    Case::new(now, cradle.id.0, cradle.kind.name()),
+                    answers(state, player, machine),
+                ),
             );
         }
     }
     let answered: Vec<u32> = watch
         .cradles
         .iter()
-        .filter(|(_, (_, before))| anti_heavy > *before)
+        .filter(|(id, (_, before))| {
+            state
+                .buildings()
+                .iter()
+                .find(|building| building.id.0 == **id)
+                .and_then(|building| building.kind.assembles())
+                .is_some_and(|machine| answers(state, player, machine) > *before)
+        })
         .map(|(id, _)| *id)
         .collect();
     for id in answered {

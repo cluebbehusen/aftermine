@@ -15,6 +15,7 @@ use super::{
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
+use crate::gunship::gunship;
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
@@ -41,9 +42,16 @@ const SPREAD: i32 = 4;
 /// Tiles a carrier looks around for open ground to wait over.
 const CLEARING: i32 = 4;
 
-/// Tiles around a clearing kept free of other aircraft: a flier that meets
-/// one idling beside its goal stops short of it.
+/// Tiles around a clearing kept free of other aircraft between two small
+/// hulls: a flier that meets one idling beside its goal stops short of it.
 const AIRSPACE: i32 = 2;
+
+/// Tiles kept between aircraft of kinds `a` and `b` at a clearing: the
+/// small hulls' [`AIRSPACE`], widened by however much more their hulls span.
+fn airspace(a: UnitKind, b: UnitKind) -> i32 {
+    let span = (a.stats().radius + b.stats().radius).ceil().to_num::<i32>();
+    AIRSPACE + (span - 1).max(0)
+}
 
 /// Ticks a lift's `phase` should end within.
 pub(super) fn timeout(phase: LiftPhase) -> u64 {
@@ -195,7 +203,7 @@ impl<'a> Delivery<'a> {
                 self.observation.my_units.iter().all(|u| {
                     u.id == carrier.id
                         || u.kind.stats().domain != Domain::Air
-                        || u.tile.chebyshev(*tile) > AIRSPACE
+                        || u.tile.chebyshev(*tile) > airspace(carrier.kind, u.kind)
                 })
             })
             .min_by_key(|tile| {
@@ -369,7 +377,7 @@ struct Flight<'a> {
     grounded: Vec<&'a UnitObs>,
     /// Members aboard the carriers.
     aboard: usize,
-    /// Their value against ground.
+    /// Their value against ground, with the lift's gunships'.
     loaded: u64,
 }
 
@@ -528,9 +536,9 @@ impl Missions {
     /// The loads a lift could take on at `ground`, or else on the source
     /// [`source`](Self::source) picks: its free riders packed strongest value
     /// per slot first into the lift's `own` empty carriers, then into free
-    /// idle empty ones nearest the source, with each load's value. A free
-    /// carrier on the source over ground no rider could reach waits to be
-    /// moved off it.
+    /// idle empty ones, gunships first and then nearest the source, with each
+    /// load's value, a gunship's own guns included. A free carrier on the
+    /// source over ground no rider could reach waits to be moved off it.
     fn loads(
         &self,
         lifting: &Lifting<'_>,
@@ -560,7 +568,13 @@ impl Missions {
                     || lifting.open(unit.tile, source.ground)
             })
             .collect();
-        carriers.sort_by_key(|unit| (frame.rank(gather, doubled(unit.tile)), unit.id));
+        carriers.sort_by_key(|unit| {
+            (
+                !gunship(unit.kind),
+                frame.rank(gather, doubled(unit.tile)),
+                unit.id,
+            )
+        });
         let rooms: Vec<(UnitId, u8)> = own
             .iter()
             .copied()
@@ -571,7 +585,10 @@ impl Missions {
         let loads = pack(&rooms, &riders)
             .into_iter()
             .map(|(carrier, riders)| {
-                let value = riders.iter().map(|unit| striking(unit)).sum();
+                let guns = mine(observation, carrier)
+                    .filter(|unit| gunship(unit.kind))
+                    .map_or(0, striking);
+                let value = riders.iter().map(|unit| striking(unit)).sum::<u64>() + guns;
                 let mut riders = ids(&riders);
                 riders.sort_unstable();
                 (carrier, riders, value)
@@ -659,11 +676,11 @@ impl Missions {
             .trim(lifting.map, riders)
     }
 
-    /// Whether the seat's `have` carriers, alive and queued, fall short of
-    /// lifting every free rider on the ground a lift would load at once,
-    /// packed as a lift packs them: `None` when they do not, and otherwise
-    /// whether some of those riders already have no room. A seat wants at
-    /// least one carrier.
+    /// Whether the seat's carriers, alive, queued and assembling, each given
+    /// by its hold in `holds`, fall short of lifting every free rider on the
+    /// ground a lift would load at once, packed as a lift packs them into the
+    /// largest holds first: `None` when they do not, and otherwise whether
+    /// some of those riders have no room. A seat wants at least one carrier.
     pub(crate) fn carriers_short(
         &self,
         observation: &ObservationData,
@@ -671,7 +688,7 @@ impl Missions {
         profile: &ResolvedProfile,
         memory: &Memory,
         scratch: &Scratch,
-        have: u64,
+        holds: &[u8],
     ) -> Option<bool> {
         let mut lifting = Lifting::new(observation, map, profile, memory, scratch)?;
         lifting.held = self.held(|task| matches!(task, Task::Lift { .. }), None, &[]);
@@ -684,24 +701,18 @@ impl Missions {
             .source(&lifting, &units, None)
             .map(|(_, riders)| riders)
             .unwrap_or_default();
-        // Carriers count in Skyhook rooms, and first fit opens a room only
-        // when no earlier one fits, so the first k rooms are what k Skyhooks
-        // load.
-        let capacity = UnitKind::Skyhook.stats().transport_capacity;
-        let rooms: Vec<u64> = pack(&vec![(UnitId(u32::MAX), capacity); riders.len()], &riders)
-            .into_iter()
-            .map(|(_, riders)| riders.iter().map(|unit| striking(unit)).sum())
-            .collect();
-        let carry = |need: u64| {
-            let mut value = 0;
-            let reached = rooms.iter().position(|room| {
-                value += room;
-                value >= need
-            });
-            reached.map_or(rooms.len(), |index| index + 1).max(1) as u64
-        };
-        let full = have >= rooms.len() as u64;
-        (have < carry(u64::MAX)).then_some(!full)
+        let mut rooms: Vec<(UnitId, u8)> =
+            holds.iter().map(|room| (UnitId(u32::MAX), *room)).collect();
+        rooms.sort_by_key(|(_, room)| std::cmp::Reverse(*room));
+        let carried: usize = pack(&rooms, &riders)
+            .iter()
+            .map(|(_, riders)| riders.len())
+            .sum();
+        if carried < riders.len() {
+            Some(true)
+        } else {
+            holds.is_empty().then_some(false)
+        }
     }
 
     fn advance_lift(
@@ -716,6 +727,18 @@ impl Missions {
             unreachable!("the lift mission's task");
         };
         let manifest = Manifest::new(observation, &mission.units);
+        let loaded = manifest
+            .aboard
+            .iter()
+            .map(|u| super::force(u.kind, u.hp)[0])
+            .chain(
+                manifest
+                    .carriers
+                    .iter()
+                    .filter(|u| gunship(u.kind))
+                    .map(|u| super::force(u.kind, u.hp)[0]),
+            )
+            .sum();
         let flight = Flight {
             index,
             target,
@@ -724,11 +747,7 @@ impl Missions {
             carriers: manifest.carriers,
             grounded: manifest.riders,
             aboard: manifest.aboard.len(),
-            loaded: manifest
-                .aboard
-                .iter()
-                .map(|u| super::force(u.kind, u.hp)[0])
-                .sum(),
+            loaded,
         };
         match phase {
             LiftPhase::Load => {
@@ -813,8 +832,10 @@ impl Missions {
 
     /// Sends every loaded carrier to the landing together in one order, around
     /// known anti-air when the straight line crosses it; each sets its riders
-    /// down once there. Riders still walking to a carrier stop, orders
-    /// permitting, and are let go.
+    /// down once there. A lift with a gunship sends only its gunships now, so
+    /// the anti-air there meets them first, and its other carriers follow
+    /// once a gunship is over the landing. Riders still walking to a carrier
+    /// stop, orders permitting, and are let go.
     fn take_off(&mut self, flight: &Flight<'_>, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let landing = flight.landing;
         let (loaded, empty): (Vec<&UnitObs>, Vec<&UnitObs>) =
@@ -822,16 +843,21 @@ impl Missions {
         let Some(pad) = lifting.pad(landing) else {
             return;
         };
-        let from = loaded
+        let leaders: Vec<&UnitObs> = loaded
+            .iter()
+            .copied()
+            .filter(|unit| gunship(unit.kind))
+            .collect();
+        let flying = if leaders.is_empty() { loaded } else { leaders };
+        let from = flying
             .first()
             .filter(|unit| lifting.map.component(unit.tile) != Some(lifting.home))
             .map_or(pad, |unit| unit.tile);
-        let loaded = ids(&loaded);
         let via = lifting.route(from, landing);
         if ledger.room() < route_orders(via) {
             return;
         }
-        fly_to(loaded, via, landing, false, ledger);
+        fly_to(ids(&flying), via, landing, false, ledger);
         if !flight.grounded.is_empty() && ledger.room() > 0 {
             ledger.order(Command::Stop {
                 units: ids(&flight.grounded),
@@ -853,7 +879,10 @@ impl Missions {
     /// carriers home together and frees them, sends landed riders at the
     /// target, brings back carriers still loaded when time runs out, and
     /// fights once no one is aboard and every emptied carrier is on its way
-    /// home.
+    /// home. Carriers waiting at home on the lift's gunships follow once one
+    /// is over the landing, and unload where they wait if every gunship is
+    /// lost; emptied gunships stay over the landing to fight with the
+    /// riders.
     fn fly(&mut self, flight: &Flight<'_>, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let map = lifting.map;
         let island = map.component(flight.target.anchor);
@@ -865,8 +894,31 @@ impl Missions {
         let (home, away): (Vec<&UnitObs>, Vec<&UnitObs>) = loaded
             .iter()
             .partition(|u| map.component(u.tile) == Some(lifting.home));
-        for carrier in home.iter().filter(|u| u.idle) {
+        // Whether the lift's gunships still lead it, and whether one is
+        // already over the landing.
+        let leading: Vec<&UnitObs> = flight
+            .carriers
+            .iter()
+            .copied()
+            .filter(|u| gunship(u.kind) && !(u.idle && map.component(u.tile) == Some(lifting.home)))
+            .collect();
+        let led = !late && !leading.is_empty();
+        let arrived = leading
+            .iter()
+            .any(|u| u.tile.chebyshev(flight.landing) <= SPREAD);
+        let (following, stranded): (Vec<&UnitObs>, Vec<&UnitObs>) = home
+            .iter()
+            .copied()
+            .filter(|u| u.idle)
+            .partition(|u| led && !gunship(u.kind));
+        for carrier in stranded {
             ledger.order(unload(carrier.id, carrier.tile, false));
+        }
+        if arrived && let Some(first) = following.first() {
+            let via = lifting.route(first.tile, flight.landing);
+            if ledger.room() >= route_orders(via) {
+                fly_to(ids(&following), via, flight.landing, false, ledger);
+            }
         }
         if !late {
             land(&away, flight.landing, ledger);
@@ -882,6 +934,8 @@ impl Missions {
         {
             self.list[flight.index].since = lifting.observation.tick;
         }
+        let (gunships, empty): (Vec<&UnitObs>, Vec<&UnitObs>) =
+            empty.iter().partition(|unit| gunship(unit.kind));
         let (resting, leaving): (Vec<&UnitObs>, Vec<&UnitObs>) =
             empty.iter().partition(|unit| unit.idle);
         let (parked, away): (Vec<&UnitObs>, Vec<&UnitObs>) = resting
@@ -916,11 +970,12 @@ impl Missions {
             return;
         }
         if landed.is_empty() {
-            self.list.remove(flight.index);
+            self.disband(flight, &gunships, lifting, ledger);
             return;
         }
         let goal = hunt_at.unwrap_or(flight.landing);
         let mut riders = ids(&landed);
+        riders.extend(ids(&gunships));
         riders.sort_unstable();
         if ledger.order(hunt(riders, goal)) {
             let mission = &mut self.list[flight.index];
@@ -934,8 +989,9 @@ impl Missions {
     }
 
     /// Landed riders fight the target, then the next target on the same
-    /// ground, and are let go when there is none or time runs out. Returns a
-    /// target they stood beside without taking.
+    /// ground, and are let go when there is none or time runs out. The lift's
+    /// gunships keep over them and fly home with the riders let go, or alone
+    /// once wounded. Returns a target they stood beside without taking.
     fn fight(
         &mut self,
         flight: &Flight<'_>,
@@ -943,15 +999,56 @@ impl Missions {
         ledger: &mut Ledger,
     ) -> Option<Objective> {
         let target = flight.target;
-        if flight.age >= FIGHT_TICKS {
-            self.list.remove(flight.index);
+        let (gunships, wounded): (Vec<&UnitObs>, Vec<&UnitObs>) = flight
+            .carriers
+            .iter()
+            .copied()
+            .filter(|unit| gunship(unit.kind))
+            .partition(|unit| healthy(unit, FIT));
+        let gone = if wounded.is_empty() {
+            Vec::new()
+        } else {
+            lifting.delivery.return_empty(&wounded, ledger)
+        };
+        if !gone.is_empty() && !self.release_units(flight.index, &gone) {
             return None;
+        }
+        // Every gunship the fight still holds, a wounded one this decision's
+        // orders could not yet send home among them, goes home with it.
+        let held: Vec<&UnitObs> = gunships
+            .iter()
+            .copied()
+            .chain(
+                wounded
+                    .iter()
+                    .copied()
+                    .filter(|unit| !gone.contains(&unit.id)),
+            )
+            .collect();
+        if flight.age >= FIGHT_TICKS {
+            self.disband(flight, &held, lifting, ledger);
+            return None;
+        }
+        // Gunships outliving every rider: a landing whose target still
+        // stands went without taking it, as a lift lost whole does.
+        if flight.grounded.is_empty() {
+            self.disband(flight, &held, lifting, ledger);
+            return standing(lifting.observation, target).then_some(target);
+        }
+        let goal = self.list[flight.index].goal;
+        let straying: Vec<UnitId> = gunships
+            .iter()
+            .filter(|unit| unit.idle && unit.tile.chebyshev(goal) > SPREAD)
+            .map(|unit| unit.id)
+            .collect();
+        if !straying.is_empty() {
+            ledger.order(hunt(straying, goal));
         }
         if !flight.grounded.iter().all(|unit| unit.idle) {
             return None;
         }
         if standing(lifting.observation, target) {
-            self.list.remove(flight.index);
+            self.disband(flight, &held, lifting, ledger);
             return Some(target);
         }
         let (map, observation, frame) = (lifting.map, lifting.observation, lifting.frame);
@@ -971,10 +1068,11 @@ impl Missions {
             .filter_map(|objective| Some((objective, lifting.hunt_tile(objective, from)?)))
             .min_by_key(|(_, tile)| (tile.chebyshev(from), frame.rank(frame.home, doubled(*tile))));
         let Some((next, tile)) = next else {
-            self.list.remove(flight.index);
+            self.disband(flight, &held, lifting, ledger);
             return None;
         };
         let mut riders = ids(&flight.grounded);
+        riders.extend(ids(&gunships));
         riders.sort_unstable();
         if ledger.order(hunt(riders, tile)) {
             let mission = &mut self.list[flight.index];
@@ -986,6 +1084,29 @@ impl Missions {
             mission.goal = tile;
         }
         None
+    }
+
+    /// Ends a lift's fight: lets its riders go and sends its `gunships`
+    /// home, keeping the mission only for those this decision's orders could
+    /// not send yet, so none is left idle on the enemy's ground.
+    fn disband(
+        &mut self,
+        flight: &Flight<'_>,
+        gunships: &[&UnitObs],
+        lifting: &Lifting<'_>,
+        ledger: &mut Ledger,
+    ) {
+        let sent = lifting.delivery.return_empty(gunships, ledger);
+        let mut staying: Vec<UnitId> = ids(gunships)
+            .into_iter()
+            .filter(|id| !sent.contains(id))
+            .collect();
+        if staying.is_empty() {
+            self.list.remove(flight.index);
+        } else {
+            staying.sort_unstable();
+            self.list[flight.index].units = staying;
+        }
     }
 
     /// Takes `units` out of the mission at `index`, dropping it if empty.

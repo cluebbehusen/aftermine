@@ -324,7 +324,8 @@ its single heavy shot.
 
 A site on ground no own worker stands on needs a settlement: one builder lifted
 from the nearest Foundry whose ground a worker stands on, with ground escorts
-aboard and air escorts flying beside while known enemies stand near the site.
+aboard and air escorts flying beside while known enemies stand near the site; a
+gunship among its carriers flies on without stopping for what its guns reach.
 The expansion's next purchase is a Harvester while no Foundry's ground has a
 worker, then an Airworks, then a Skyhook, until carriers can take the builder
 and its ground escort. The settlement only delivers: once the builder lands it
@@ -342,55 +343,61 @@ When the seat knows of enemy buildings or hostile starts and ground reaches none
 of them, and the seat has at least the stance's minimum army to carry, at home
 beyond the home reserve or free of other missions on other ground it holds where
 no target stands, it needs lift. The Airworks then scores higher while the seat
-has none, and production keeps enough Skyhooks, alive and queued, to carry every
-free rider on the ground a lift would load at once, packed as a lift would pack
-them; another carrier counts for as many Skyhooks as its hold fills. While a
-ready Airworks waits for the scrap to train one and some of those riders have no
-room, other production waits too, unless a defense is short. Carriers and scouts
-train even at an Airworks held for a unit the seat saves for.
+has none, and production keeps enough carriers, alive, queued or being
+assembled, to carry every free rider on the ground a lift would load at once,
+packed as a lift would pack them into the largest holds first, training Skyhooks
+for the riders left over. While a ready Airworks waits for the scrap to train
+one and some of those riders have no room, other production waits too, unless a
+defense is short. Carriers and scouts train even at an Airworks held for a unit
+the seat saves for.
 
 One lift runs at a time. It loads on one ground: home, or other ground the
 seat's units stand on where no target stands, an army trained at an expansion or
 set down by an earlier lift, whichever ground's riders bring the most, home on a
 tie. It forms only from carriers and passengers that exist: free, healthy line,
 siege and anti-heavy units on that ground, beyond the home reserve at home,
-packed most value per transport slot first into free, idle, empty carriers, the
-nearest that ground first, wherever they hover but over ground there no rider
-could reach. It needs those that can hit ground to be worth the stance's minimum
-and to outweigh by the attack margin the known army it would meet, counted as
-for an attack with the guns guarding both its landing and its target, since
-riders set down out of range still walk into the target's. At Veteran and Prime,
-the bombers out clearing the anti-air around its target count toward that need.
-Except at Scrapheap, a lift also waits for a recent look at its target: the
-scouting point nearest the target on its island must have been in sight recently
-enough that the enemy units seen there are still remembered. Every free carrier
-and rider is loaded as the decision's orders allow, and more board on later
-decisions while boarding lasts; carriers elsewhere fly to open ground beside the
-riders, and an empty carrier of the lift takes more once none of its riders is
-still walking. The target is the most valuable known enemy building, or hostile
-start not seen cleared, for its distance that no ground route reaches and that
-has a landing: open ground on the target's island near it, as far as the seat
-knows, out of reach of known fire where any is, and then a few tiles from it, so
-riders set down out of range walk in, where every tile unloading could set a
-rider on belongs to that island.
+packed most value per transport slot first into free, idle, empty carriers,
+gunships first and then the nearest that ground first, wherever they hover but
+over ground there no rider could reach. It needs those that can hit ground, with
+its gunships' own guns, to be worth the stance's minimum and to outweigh by the
+attack margin the known army it would meet, counted as for an attack with the
+guns guarding both its landing and its target, since riders set down out of
+range still walk into the target's. At Veteran and Prime, the bombers out
+clearing the anti-air around its target count toward that need. Except at
+Scrapheap, a lift also waits for a recent look at its target: the scouting point
+nearest the target on its island must have been in sight recently enough that
+the enemy units seen there are still remembered. Every free carrier and rider is
+loaded as the decision's orders allow, and more board on later decisions while
+boarding lasts; carriers elsewhere fly to open ground beside the riders, and an
+empty carrier of the lift takes more once none of its riders is still walking.
+The target is the most valuable known enemy building, or hostile start not seen
+cleared, for its distance that no ground route reaches and that has a landing:
+open ground on the target's island near it, as far as the seat knows, out of
+reach of known fire where any is, and then a few tiles from it, so riders set
+down out of range walk in, where every tile unloading could set a rider on
+belongs to that island.
 
 A free carrier hovering where no rider could reach it, such as over the Airworks
 that trained it, first moves to open ground, at home or on the ground the lift
 loads at. Riders walk to their carriers and board. Once none is still walking
 and no more were sent, or after a while, the loaded carriers leave together in
 one order if what is aboard, with any bomber cover the seat counts, meets the
-landing's need as now known; a rider that stopped short is not sent again.
-Otherwise the lift sets everyone down and disbands, and riders still walking are
-stopped and let go. Carriers fly straight to the landing, or around known
-anti-air through a via-point when the straight line crosses it. Each sets its
-riders down at the landing once there, as the decision's orders allow, and
-emptied carriers fly home together the same way. Landed riders hunt the target
-and, once no one is aboard and every emptied carrier is on its way home, fight
-on to the next target on the same island. Nothing brings them home. A carrier
-that comes home still loaded sets its riders down and lets them go. A target the
-lift lost its units to, or stood idle beside, is skipped for a while. A lift
-never grows past the mission member cap, and a defense may take its units only
-while they board.
+landing's need as now known; a rider that stopped short is not sent again. A
+lift with a gunship sends only its gunships then, so known anti-air meets them
+first, and its other loaded carriers follow once a gunship is over the landing,
+or set their riders down where they wait if every gunship is lost. Otherwise the
+lift sets everyone down and disbands, and riders still walking are stopped and
+let go. Carriers fly straight to the landing, or around known anti-air through a
+via-point when the straight line crosses it. Each sets its riders down at the
+landing once there, as the decision's orders allow, and emptied carriers fly
+home together the same way. An emptied gunship instead stays over the landing
+and hunts beside the riders, flying home when their fight ends, or alone once
+wounded. Landed riders hunt the target and, once no one is aboard and every
+emptied carrier is on its way home, fight on to the next target on the same
+island. Nothing brings them home. A carrier that comes home still loaded sets
+its riders down and lets them go. A target the lift lost its units to, or stood
+idle beside, is skipped for a while. A lift never grows past the mission member
+cap, and a defense may take its units only while they board, never its carriers.
 
 ## Clearances
 
@@ -506,6 +513,20 @@ as the machine it will stand up, a Maw's as a heavy machine and a Roc's as air,
 and the machine that stands up from it is remembered where it stood up, even out
 of sight, since every seat learns of a public cradle's rollout.
 
+## Gunships
+
+Once a Crucible stands, while its ground reaches no enemy target, the seat wants
+a Roc cradle while the known anti-air around its next lift's target, by the
+attack margin, is more than the Rocs it fields and the cradles it raises can
+take at a Roc's price; air weighs it and income scales it. While the seat
+neither fields a Roc nor raises a cradle, a lift or strike lately given up on
+ground the seat cannot reach is direct evidence its lifts do not get past: the
+cradle is then wanted at the scale of the seat's upgrades. The cradle's next
+steps reach its Deep Bore and Airworks first, and it stands and is crewed as a
+Maw cradle is. A Roc leads the seat's lifts, as described above; while ground
+reaches the enemy, an empty one joins the next attack with the army instead.
+Local guards never take a carrier.
+
 ## Scouting
 
 The seat keeps its hostile starts and expansion sites as scouting points and
@@ -570,8 +591,9 @@ other producer trains a cheaper unit of its role. Each chooses the unit it can
 afford now by coarse suitability: reach against the enemy's usual reach, what
 its role is for at the price (firepower for siege and anti-heavy, durability for
 the rest), covering both enemy domains, splash against clustered enemies,
-affordability at the seat's income, variety (a kind that already makes up most
-of its role counts for less, so every kind of a role gets its turn), and
+anti-air that flies in proportion to the known enemy air that fires only at the
+ground, affordability at the seat's income, variety (a kind that already makes
+up most of its role counts for less, so every kind of a role gets its turn), and
 personality. While ground reaches no enemy, a strike aircraft's splash is worth
 instead the targets one blast takes in the densest known clump of enemy ground
 units; the seat then saves for a splash bomber the more, within a cap, the more

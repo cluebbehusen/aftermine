@@ -1752,3 +1752,203 @@ fn anti_heavy_units_ride_a_lift() {
     };
     assert!(payload(&[(UnitKind::Piledriver, 5, 12)]) > payload(&[]));
 }
+
+/// The strait with a West Roc beside its Skyhooks.
+fn gunship() -> Scenario {
+    let mut scenario = strait();
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
+    scenario
+}
+
+fn roc(state: &State) -> UnitId {
+    state
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Roc)
+        .unwrap()
+        .id
+}
+
+#[test]
+fn twelve_riders_board_one_roc() {
+    let mut scenario = gunship();
+    for x in 6..10 {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, 16));
+    }
+    let state = scenario.build().unwrap();
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let boarding = loads(&commands);
+    assert_eq!(boarding.len(), 1, "one Load fills the Roc: {boarding:?}");
+    assert_eq!(boarding[0].0, roc(&state));
+    assert_eq!(boarding[0].1.len(), 12);
+}
+
+#[test]
+fn a_roc_leads_the_lift_and_the_skyhooks_follow_to_land_no_sooner() {
+    let mut scenario = crowded(&[]);
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
+    let model = map(&scenario);
+    let island = model.component(EAST_START);
+    let mut state = scenario.build().unwrap();
+    let roc = roc(&state);
+    let hooks: Vec<UnitId> = skyhooks(&state, 0).iter().map(|unit| unit.id).collect();
+    let mut opponent = seat(&scenario, 0);
+    let mut took_off = false;
+    let mut landed: Vec<(UnitId, u64)> = Vec::new();
+    while state.current_tick() < 4_000 && landed.len() < 3 {
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let flying = trace.is_some_and(|trace| {
+            lift(&trace.missions).is_some_and(|mission| mission.phase == Phase::Fly)
+        });
+        if flying && !took_off {
+            took_off = true;
+            let sent: Vec<UnitId> = runs(&commands)
+                .into_iter()
+                .flat_map(|(units, _)| units)
+                .collect();
+            assert!(sent.contains(&roc), "the Roc takes off: {sent:?}");
+            assert!(
+                hooks.iter().all(|hook| !sent.contains(hook)),
+                "the Skyhooks wait for it: {sent:?}"
+            );
+        }
+        for (carrier, at, _) in unloads(&commands) {
+            if model.component(at) == island && !landed.iter().any(|(id, _)| *id == carrier) {
+                landed.push((carrier, state.current_tick()));
+            }
+        }
+        state.tick(&commands);
+    }
+    assert!(took_off, "premise: the lift flew");
+    let when = |id: UnitId| {
+        landed
+            .iter()
+            .find(|(carrier, _)| *carrier == id)
+            .map(|(_, tick)| *tick)
+    };
+    let led = when(roc).expect("the Roc sets its riders down");
+    for hook in hooks {
+        let followed = when(hook).expect("each Skyhook sets its riders down");
+        assert!(followed >= led, "a Skyhook landed before the Roc");
+    }
+}
+
+#[test]
+fn a_roc_fights_beside_its_riders_and_flies_home_after() {
+    // An East Foundry on an islet in the strait keeps the match going once
+    // East's start falls.
+    let mut scenario = isles();
+    scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Foundry,
+        x: 19,
+        y: 10,
+    });
+    let model = map(&scenario);
+    let home = model.component(TilePos::new(3, 11));
+    let mut state = scenario.build().unwrap();
+    let roc = roc(&state);
+    let mut opponent = seat(&scenario, 0);
+    let mut hunted = false;
+    while state.current_tick() < 4_000 && standing(&state, BuildingKind::Foundry, EAST_START) {
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let fighting = trace.is_some_and(|trace| {
+            lift(&trace.missions).is_some_and(|mission| mission.phase == Phase::Fight)
+        });
+        hunted |= fighting
+            && hunts(&commands)
+                .iter()
+                .any(|(units, _)| units.contains(&roc));
+        state.tick(&commands);
+    }
+    assert!(!standing(&state, BuildingKind::Foundry, EAST_START));
+    assert!(hunted, "the Roc hunted beside the landed riders");
+    let until = state.current_tick() + 1_200;
+    let mut homebound = false;
+    while state.current_tick() < until && !homebound {
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        homebound = runs(&commands)
+            .iter()
+            .any(|(units, goal)| units.contains(&roc) && model.component(*goal) == home);
+        state.tick(&commands);
+    }
+    assert!(homebound, "the Roc flies home once the fight is done");
+}
+
+#[test]
+fn a_roc_being_assembled_counts_toward_the_carrier_stock() {
+    let mut scenario = strait();
+    scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    scenario.map[4].replace_range(3..4, "E");
+    scenario.buildings.extend([
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Crucible,
+            x: 3,
+            y: 16,
+        },
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Extractor,
+            x: 3,
+            y: 4,
+        },
+    ]);
+    scenario.units.push(unit(0, UnitKind::Excavator, 9, 18));
+    scenario.players[0].scrap = UnitKind::Roc.stats().cost + 1_000;
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        if entry["player"] == 0 && entry["kind"] == "extractor" {
+            entry["tier"] = 1.into();
+        }
+    }
+    let bare: State = serde_json::from_value(value).unwrap();
+    let skyhooks_trained = |state: &State| {
+        trains(&seat_with(&scenario, 0, thrifty()).act(state, &mut OwnEvents::default()))
+            .iter()
+            .filter(|(_, kind)| *kind == UnitKind::Skyhook)
+            .count()
+    };
+    assert_eq!(skyhooks_trained(&bare), 1, "premise: no carrier at all");
+    let mut raising = bare.clone();
+    let founder = at(&raising, 9, 18);
+    raising.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![founder],
+            kind: BuildingKind::RocCradle,
+            anchor: TilePos::new(9, 19),
+            queue: false,
+            defer: false,
+        },
+    }]);
+    assert_eq!(
+        skyhooks_trained(&raising),
+        0,
+        "the Roc being raised holds all eight riders"
+    );
+}
+
+#[test]
+fn a_mid_flight_roc_lift_checkpoint_resumes_identically() {
+    let mut scenario = crowded(&[]);
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
+    let mut state = scenario.build().unwrap();
+    let mut opponent = seat(&scenario, 0);
+    until_phase(&mut opponent, &mut state, Phase::Fly);
+    while !state.current_tick().is_multiple_of(12) {
+        state.tick(&[]);
+    }
+    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
+    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
+    let mut restored = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let until = state.current_tick() + 600;
+    while state.current_tick() < until {
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        assert_eq!(restored.act(&state, &mut OwnEvents::default()), commands);
+        assert_eq!(restored.checkpoint(), opponent.checkpoint());
+        state.tick(&commands);
+    }
+}

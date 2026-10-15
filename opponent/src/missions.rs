@@ -627,6 +627,13 @@ impl Missions {
             .collect()
     }
 
+    /// Whether `unit` belongs to a lift.
+    fn lifts(&self, unit: UnitId) -> bool {
+        self.list.iter().any(|mission| {
+            matches!(mission.task, Task::Lift { .. }) && mission.units.contains(&unit)
+        })
+    }
+
     /// Units no mission holds that may take orders: a unit sitting out after
     /// its order found no route joins no mission, since it would be sent
     /// nowhere, and a wounded unit at or bound for a Repair Bay stays there.

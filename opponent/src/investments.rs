@@ -109,6 +109,8 @@ pub(crate) struct Situation<'a> {
     pub(crate) waiting: Option<BuildingKind>,
     /// Per mille of the known defense an attack must bring.
     pub(crate) margin: u64,
+    /// The known anti-air around the next lift's target, at its value.
+    pub(crate) lift_flak: u64,
 }
 
 /// Every investment the seat wants at all, most wanted first.
@@ -171,6 +173,15 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         traits,
         situation.income,
         situation.margin,
+    ));
+    list.extend(crate::gunship::investments(
+        observation,
+        situation.map,
+        situation.memory,
+        traits,
+        situation.income,
+        situation.margin * situation.lift_flak / 1_000,
+        situation.severed,
     ));
     let growth = expansion::candidates(
         observation,

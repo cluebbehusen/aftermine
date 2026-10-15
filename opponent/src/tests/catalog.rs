@@ -17,6 +17,17 @@ fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
 /// with its economy up, no army to speak of, and every trait high: every
 /// investment that scores enough to be adopted.
 fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
+    offered_lifting(scenario, state, tick, None)
+}
+
+/// As [`offered`], with West's ground reaching no enemy and `lift` the known
+/// anti-air around its next lift's target, when given.
+fn offered_lifting(
+    scenario: &Scenario,
+    state: &State,
+    tick: u64,
+    lift: Option<u64>,
+) -> Vec<Investment> {
     let mut observation = ObservationData::fog_honest(state, PlayerId(0));
     observation.tick = tick;
     let model = map(scenario);
@@ -40,7 +51,7 @@ fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
         pull: Vec::new(),
         exposed: true,
         stakes: defenses::Stakes::default(),
-        severed: false,
+        severed: lift.is_some(),
         wanted: vec![
             crate::composition::Role::Line,
             crate::composition::Role::Siege,
@@ -51,6 +62,7 @@ fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
         units: Vec::new(),
         waiting: None,
         margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
+        lift_flak: lift.unwrap_or(0),
     };
     candidates(&situation)
         .into_iter()
@@ -265,6 +277,16 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     }
     offer(&hurt, &state, 3_000);
 
+    // A Roc cradle once a Crucible, Deep Bore and Airworks stand, while the
+    // seat's ground reaches no enemy and known anti-air guards its next
+    // lift's target.
+    let breach = fortress();
+    let state = tiered(&breach.build().unwrap(), BuildingKind::Extractor, 1);
+    covered.extend(bought(
+        &state,
+        &offered_lifting(&breach, &state, 3_000, Some(guarded_lift())),
+    ));
+
     let missing: Vec<(BuildingKind, u8)> = BuildingKind::ALL
         .into_iter()
         .flat_map(|kind| {
@@ -273,6 +295,11 @@ fn every_building_and_upgrade_is_bought_somewhere() {
         .filter(|rung| !covered.contains(rung))
         .collect();
     assert!(missing.is_empty(), "never bought: {missing:?}");
+}
+
+/// Known anti-air around a lift's target: four Flak Turrets' worth.
+fn guarded_lift() -> u64 {
+    4 * u64::from(BuildingKind::FlakTurret.invested_cost(0))
 }
 
 /// Whether West, with income enough to raid, trains a Scuttler to raid an
@@ -351,6 +378,13 @@ fn every_unit_outside_the_army_is_trained_somewhere() {
     rows.push((
         UnitKind::Maw,
         offered(&breach, &state, 3_000).contains(&Investment::Tech(BuildingKind::MawCradle)),
+    ));
+
+    // A Roc is assembled too: buying its cradle stands for it.
+    rows.push((
+        UnitKind::Roc,
+        offered_lifting(&breach, &state, 3_000, Some(guarded_lift()))
+            .contains(&Investment::Tech(BuildingKind::RocCradle)),
     ));
 
     let failed: Vec<UnitKind> = rows

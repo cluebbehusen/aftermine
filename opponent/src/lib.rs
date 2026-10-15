@@ -10,6 +10,7 @@ mod defenses;
 mod events;
 mod expansion;
 mod frame;
+mod gunship;
 mod income;
 mod investments;
 mod map;

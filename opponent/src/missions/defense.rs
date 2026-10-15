@@ -206,6 +206,10 @@ impl Missions {
                 .iter()
                 .filter_map(|id| mine(observation, *id))
                 .filter(|unit| !members.contains(&unit.id) && !ledger.stuck(unit.id))
+                // A loaded carrier, or one a lift counts on, stays with it.
+                .filter(|unit| {
+                    !super::lift::carrier(unit.kind) || (unit.cargo == 0 && !self.lifts(unit.id))
+                })
                 .filter(|unit| {
                     [Domain::Ground, Domain::Air]
                         .into_iter()
