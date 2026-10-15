@@ -121,8 +121,38 @@ impl Missions {
         memory: &Memory,
         scratch: &Scratch,
     ) -> u64 {
+        self.lift_sweep(observation, map, profile, memory, scratch)
+            .map_or(0, |sweep| sweep.guard())
+    }
+
+    /// The known anti-air around the building a lift goes after, or the next
+    /// lift would, at its value: nothing while no lift has a target or the
+    /// seat's ground reaches an enemy.
+    pub(crate) fn lift_flak(
+        &self,
+        observation: &ObservationData,
+        map: &MapModel,
+        profile: &ResolvedProfile,
+        memory: &Memory,
+        scratch: &Scratch,
+    ) -> u64 {
+        self.lift_sweep(observation, map, profile, memory, scratch)
+            .and_then(|sweep| sweep.cover())
+            .unwrap_or(0)
+    }
+
+    /// What a decision knows about the anti-air around the next lift's
+    /// target, while the seat's ground reaches no enemy and a lift has one.
+    fn lift_sweep<'a>(
+        &self,
+        observation: &'a ObservationData,
+        map: &'a MapModel,
+        profile: &ResolvedProfile,
+        memory: &'a Memory,
+        scratch: &'a Scratch,
+    ) -> Option<Sweep<'a>> {
         if !scratch.severed {
-            return 0;
+            return None;
         }
         let sweep = Sweep {
             observation,
@@ -141,10 +171,7 @@ impl Missions {
                 .lift_focus(observation, map, memory, scratch)
                 .map(|target| target.anchor),
         };
-        if sweep.focus.is_none() {
-            return 0;
-        }
-        sweep.guard()
+        sweep.focus.is_some().then_some(sweep)
     }
 
     /// Strength of the bombers out clearing the anti-air around `target`:
@@ -403,9 +430,15 @@ impl Sweep<'_> {
     /// each counted once, times the margin, so the bombers go in together
     /// rather than one at a time.
     fn guard(&self) -> u64 {
-        let Some(focus) = self.focus else {
-            return u64::MAX;
-        };
+        self.cover().map_or(u64::MAX, |cover| {
+            (cover * self.margin / 1_000).max(self.minimum)
+        })
+    }
+
+    /// The known anti-air covering the lift's target, the anti-air units
+    /// around it, or its flak, at its value.
+    fn cover(&self) -> Option<u64> {
+        let focus = self.focus?;
         let points: Vec<(i64, i64)> = self
             .memory
             .units()
@@ -426,7 +459,7 @@ impl Sweep<'_> {
             .filter(|hazard| points.iter().any(|point| hazard.covers(*point)))
             .map(|hazard| hazard.value)
             .sum();
-        (cover * self.margin / 1_000).max(self.minimum)
+        Some(cover)
     }
 
     /// Strength a sweep at `aim` needs: the known anti-air reaching over it

@@ -265,9 +265,10 @@ impl Missions {
         defenses.len()
     }
 
-    /// The free army beyond the home reserve fit to fight, farthest from home
-    /// first, and the idle free Sappers and fit point defenders into `plan`,
-    /// as earlier missions of this decision left them.
+    /// The free army beyond the home reserve fit to fight, empty gunships
+    /// among it while ground reaches the enemy, farthest from home first, and
+    /// the idle free Sappers and fit point defenders into `plan`, as earlier
+    /// missions of this decision left them.
     fn refresh<'a>(
         &self,
         plan: &mut Plan<'a>,
@@ -295,10 +296,18 @@ impl Missions {
             .copied()
             .filter(|unit| screens(unit) && healthy(unit, FIT))
             .collect();
+        // An empty gunship fights with the army while ground reaches the
+        // enemy; a seat that can only lift keeps it to lead its lifts.
         let fit: Vec<&UnitObs> = free
             .iter()
             .copied()
-            .filter(|unit| eligible(unit, FIT))
+            .filter(|unit| {
+                eligible(unit, FIT)
+                    || (!scratch.severed
+                        && crate::gunship::gunship(unit.kind)
+                        && unit.cargo == 0
+                        && healthy(unit, FIT))
+            })
             .collect();
         self.spare(observation, map, scratch.reserve)
             .outermost(map, scratch.frame, fit)

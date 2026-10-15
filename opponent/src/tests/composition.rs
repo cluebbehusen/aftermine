@@ -215,6 +215,7 @@ fn working_producers_ask_for_another_while_unspent_income_and_need_last() {
             units: Vec::new(),
             waiting: None,
             margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
+            lift_flak: 0,
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -402,6 +403,7 @@ fn a_working_foundry_or_crucible_asks_for_another_at_home() {
             units: Vec::new(),
             waiting: None,
             margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
+            lift_flak: 0,
         })
         .into_iter()
         .map(|candidate| candidate.investment)

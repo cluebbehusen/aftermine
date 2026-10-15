@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 /// fortification it answers raises its score, in multiples of the bar: a
 /// scoring shape that keeps a deep fortress on the scale of the seat's other
 /// investments.
-const WORTH_CAP: u64 = 2;
+pub(crate) const WORTH_CAP: u64 = 2;
 
 /// How far past the seat's furthest building a machine must get to have left
 /// the base, in the map model's distance units (ten a tile): three tiles.
@@ -26,7 +26,7 @@ const EXIT_MARGIN: u16 = 30;
 /// How many times the base a cradle scores once an attack on ground the seat
 /// reaches has been given up: the scale of the seat's upgrades, so direct
 /// evidence that its army cannot break in competes with its tech.
-const GIVEN_UP: u64 = 3;
+pub(crate) const GIVEN_UP: u64 = 3;
 
 /// A cradle for each breaching experimental once a Crucible stands; a
 /// machine that does not break structures is no answer to guns. It is scored by

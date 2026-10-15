@@ -742,8 +742,20 @@ impl Missions {
                     goal,
                 )
             });
-            if ledger.room() >= lift::route_orders(via) {
-                lift::fly_to(flying, via, goal, true, ledger);
+            // A gunship flies on without stopping to face what its guns
+            // reach; they fire on the way regardless.
+            let (gunships, flying): (Vec<UnitId>, Vec<UnitId>) =
+                flying.into_iter().partition(|id| {
+                    mine(observation, *id).is_some_and(|u| crate::gunship::gunship(u.kind))
+                });
+            let groups = u32::from(!gunships.is_empty()) + u32::from(!flying.is_empty());
+            if ledger.room() >= groups * lift::route_orders(via) {
+                if !gunships.is_empty() {
+                    lift::fly_to(gunships, via, goal, false, ledger);
+                }
+                if !flying.is_empty() {
+                    lift::fly_to(flying, via, goal, true, ledger);
+                }
                 self.settle_phase(index, SettlePhase::Fly, observation.tick);
             }
         } else if !carrying && riders.iter().all(|u| u.idle) {

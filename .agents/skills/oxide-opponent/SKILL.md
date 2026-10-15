@@ -232,8 +232,9 @@ cases keep their ticks for replay review with `--replay-dir`.
   ticks, moot if an armed enemy still stands near.
 - **Relief:** a seen armed enemy within 8 tiles of an ally's Foundry; the seat
   hits one, or fires at one, within 1,200 ticks.
-- **Cradle:** an enemy assembly cradle the seat learns of; it owns more
-  anti-heavy machines than then, or hits the cradle, before the machine stands
+- **Cradle:** an enemy assembly cradle the seat learns of; it owns more of what
+  answers the machine than then (anti-air units or Flak Turrets for a flyer,
+  anti-heavy machines otherwise), or hits the cradle, before the machine stands
   up, moot if the cradle falls or is cancelled first.
 - **Withdrawal,** this bot only: an attack, strike or raid in its fight; it
   withdraws rather than vanishing with half its units lost.

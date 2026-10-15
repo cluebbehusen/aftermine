@@ -127,6 +127,9 @@ fn reach(kind: UnitKind) -> Option<Reach> {
 /// What the seat knows of the enemy army, weighted by confidence.
 struct Enemy {
     air: u64,
+    /// The part of `air` armed only against the ground, which cannot shoot
+    /// back at anti-air that flies.
+    grounders: u64,
     ground: u64,
     /// The part of `ground` that is heavy machines.
     heavy: u64,
@@ -142,6 +145,14 @@ struct Enemy {
     targets: Vec<(TilePos, u32)>,
 }
 
+/// Whether `kind` is an armed flyer whose weapons reach only the ground.
+fn grounder(kind: UnitKind) -> bool {
+    let stats = kind.stats();
+    stats.domain == Domain::Air
+        && stats.can_fight()
+        && stats.weapons.iter().all(|weapon| !weapon.targets.air)
+}
+
 /// Remembered enemy ground units a blast is weighed against, the most
 /// recently seen first: a computation bound on a pairwise check, not a limit
 /// on what the seat knows.
@@ -152,6 +163,7 @@ impl Enemy {
         let now = observation.tick;
         let mut enemy = Self {
             air: 0,
+            grounders: 0,
             ground: 0,
             heavy: 0,
             defenses: 0,
@@ -175,6 +187,9 @@ impl Enemy {
             }
             if unit.kind.stats().domain == Domain::Air {
                 enemy.air += value;
+                if grounder(unit.kind) {
+                    enemy.grounders += value;
+                }
             } else if unit.kind.stats().can_fight() {
                 enemy.ground += value;
                 if heavy(unit.kind) {
@@ -201,6 +216,9 @@ impl Enemy {
                 let value = u64::from(machine.stats().cost);
                 if machine.stats().domain == Domain::Air {
                     enemy.air += value;
+                    if grounder(machine) {
+                        enemy.grounders += value;
+                    }
                 } else {
                     enemy.ground += value;
                     if heavy(machine) {
@@ -786,7 +804,8 @@ impl Needs {
     /// A product of coarse per-mille factors: reach against the enemy's
     /// usual reach, what the role is for at the price (a siege unit's
     /// firepower; any other's health, which keeps it fighting), covering
-    /// both of the enemy's domains, splash against clustered enemies,
+    /// both of the enemy's domains, splash against clustered enemies, anti-air
+    /// that flies against enemy air that fires only at the ground,
     /// affordability at the seat's income, variety within the role, and
     /// personality.
     fn suitability(&self, kind: UnitKind, role: Role) -> u64 {
@@ -824,6 +843,13 @@ impl Needs {
         } else {
             1_000
         };
+        // Anti-air that flies is out of reach of enemy air that fires only at
+        // the ground, so it leans that way as much of the enemy's air does.
+        let immune = if role == Role::AntiAir && stats.domain == Domain::Air && self.enemy.air > 0 {
+            1_000 + 1_000 * self.enemy.grounders / self.enemy.air
+        } else {
+            1_000
+        };
         let price = u64::from(stats.cost);
         let affordable = (500 * u64::from(self.income) / price).clamp(500, 1_000);
         let preference = match role {
@@ -838,6 +864,7 @@ impl Needs {
             worth,
             coverage,
             splash,
+            immune,
             affordable,
             self.variety(kind, role),
         ]

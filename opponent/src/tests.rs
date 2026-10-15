@@ -14,6 +14,7 @@ mod clear;
 mod composition;
 mod defenses;
 mod expansion;
+mod gunship;
 mod layout;
 mod lift;
 mod missions;

@@ -71,9 +71,11 @@ fn assets<'a>(
 }
 
 /// Whether `unit` could defend a building on `ground`: aircraft from
-/// anywhere, ground units only from that ground.
+/// anywhere, ground units only from that ground. A carrier stays free for
+/// lifts, however armed.
 fn reaches(unit: &UnitObs, map: &MapModel, ground: Option<u32>) -> bool {
     unit.kind.stats().can_fight()
+        && !super::lift::carrier(unit.kind)
         && (unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == ground)
 }
 

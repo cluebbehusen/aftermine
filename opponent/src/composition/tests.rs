@@ -9,6 +9,7 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
         lifted: false,
         enemy: Enemy {
             air: 0,
+            grounders: 0,
             ground: 1_000,
             heavy: 0,
             defenses: 0,
@@ -520,4 +521,38 @@ fn a_known_enemy_gunship_cradle_wants_anti_air_not_anti_heavy_fire() {
         need(&known, Role::AntiHeavy),
         need(&observation, Role::AntiHeavy)
     );
+}
+
+#[test]
+fn enemy_air_that_cannot_shoot_aircraft_leans_anti_air_to_flyers() {
+    let anti_air = |enemy_air: u64, grounders: u64| {
+        let mut needs = needs(None, false);
+        needs.enemy.air = enemy_air;
+        needs.enemy.grounders = grounders;
+        (
+            needs.suitability(UnitKind::Talon, Role::AntiAir),
+            needs.suitability(UnitKind::Flakhound, Role::AntiAir),
+        )
+    };
+    let (talon, flakhound) = anti_air(3_200, 0);
+    assert!(
+        flakhound >= talon,
+        "premise: against air that shoots back, the ground gun leads"
+    );
+    let (talon, flakhound) = anti_air(3_200, 3_200);
+    assert!(
+        talon > flakhound,
+        "against air that only fires at the ground, the flyer is out of its reach"
+    );
+    let (lean, _) = anti_air(3_200, 1_600);
+    assert!(lean > anti_air(3_200, 0).0 && lean < talon, "in proportion");
+}
+
+#[test]
+fn a_known_roc_counts_as_air_that_cannot_shoot_aircraft() {
+    assert!(grounder(UnitKind::Roc));
+    assert!(grounder(UnitKind::Condor));
+    assert!(!grounder(UnitKind::Talon), "it fights aircraft");
+    assert!(!grounder(UnitKind::Skyhook), "unarmed");
+    assert!(!grounder(UnitKind::Sentinel), "on the ground");
 }
