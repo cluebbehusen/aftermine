@@ -653,8 +653,10 @@ pub(crate) fn decide(
         Some(Investment::Unit(kind)) => Some(kind),
         _ => None,
     };
-    // Producers that train the unit the seat saves for wait for it, so
-    // nothing else queues there first.
+    // Producers that train the unit the seat saves for wait for it, so no
+    // army unit queues there first. Carriers and scouts, small stocks, still
+    // draw on them: a seat saving for a Condor would otherwise lift nothing
+    // and look at nothing until it bought one.
     let free: Vec<Producer<'_>> = producers
         .iter()
         .copied()
@@ -671,12 +673,12 @@ pub(crate) fn decide(
             profile,
             persistent,
             &scratch,
-            &free,
+            &producers,
             &mut ledger,
         );
     if !carrying {
         if lacking > 0 {
-            train_scout(observation, &free, lacking, &mut ledger);
+            train_scout(observation, &producers, lacking, &mut ledger);
         }
         if !short {
             let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;

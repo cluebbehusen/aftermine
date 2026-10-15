@@ -927,8 +927,9 @@ pub(crate) struct Scratch {
     /// Value against ground and against aircraft that offense leaves home,
     /// before the units out defending count.
     pub(crate) reserve: [u64; 2],
-    /// Value against ground of the units at home a lift could take without
-    /// cutting into the reserve.
+    /// Value against ground of the units a lift could take: those at home
+    /// without cutting into the reserve, or those on other own ground no
+    /// target stands on, whichever bring more.
     pub(crate) payload: u64,
     /// Value of the known armed enemy ground units on ground connected to the
     /// seat's start.
@@ -966,6 +967,16 @@ impl Scratch {
                 )
                 .is_none()
             });
+        let targeted: Vec<u32> = objectives
+            .iter()
+            .filter_map(|objective| map.component(objective.anchor))
+            .collect();
+        let mut free = missions.available(observation, false);
+        free.sort_unstable();
+        let (home, elsewhere) = payload(observation, map, &targeted, &free);
+        let payload = missions
+            .liftable(observation, map, reserve, home)
+            .max(elsewhere);
         Self {
             frame,
             air: hazards(observation, map, memory, Domain::Air),
@@ -974,7 +985,7 @@ impl Scratch {
             severed,
             rival: None,
             reserve,
-            payload: missions.liftable(observation, map, reserve, payload(observation, map)),
+            payload,
             invaders: reserve::threat(
                 map,
                 memory,

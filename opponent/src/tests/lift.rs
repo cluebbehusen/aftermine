@@ -278,6 +278,125 @@ fn a_severed_seat_lifts_its_army_across_and_takes_the_target() {
     }
 }
 
+/// The strait with an islet in the middle of the pit, ground no carrier-less
+/// unit leaves.
+fn isles() -> Scenario {
+    let mut scenario = strait();
+    for row in &mut scenario.map[1..23] {
+        row.replace_range(18..22, "....");
+    }
+    scenario
+}
+
+#[test]
+fn an_army_on_another_island_is_lifted_from_where_it_stands() {
+    let mut scenario = isles();
+    let model = map(&scenario);
+    let islet = model.component(TilePos::new(19, 11));
+    assert!(
+        islet.is_some() && islet != model.component(TilePos::new(3, 11)),
+        "premise"
+    );
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    let mut unhooked = scenario.clone();
+    unhooked.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    unhooked.players[0].scrap = 1_000;
+    let commands = seat(&unhooked, 0).act(&unhooked.build().unwrap(), &mut OwnEvents::default());
+    assert!(
+        trains(&commands)
+            .iter()
+            .any(|(_, kind)| *kind == UnitKind::Skyhook),
+        "an army no ground route moves wants carriers: {commands:?}"
+    );
+
+    let mut state = scenario.build().unwrap();
+    let sentinels: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|unit| unit.kind == UnitKind::Sentinel && unit.player == PlayerId(0))
+        .map(|unit| unit.id)
+        .collect();
+    let mut opponent = seat(&scenario, 0);
+    let island = model.component(EAST_START);
+    let mut boarded = Vec::new();
+    let landed = |state: &State| {
+        state
+            .units()
+            .iter()
+            .any(|unit| sentinels.contains(&unit.id) && model.component(unit.tile()) == island)
+    };
+    while !landed(&state) {
+        assert!(
+            state.current_tick() < 4_000,
+            "the islet's army never landed: {boarded:?}"
+        );
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        boarded.extend(loads(&commands).into_iter().flat_map(|(_, units)| units));
+        state.tick(&commands);
+    }
+    assert!(
+        boarded.iter().all(|id| sentinels.contains(id)),
+        "only the islet's army boards: {boarded:?}"
+    );
+}
+
+#[test]
+fn riders_a_mission_holds_off_home_count_toward_no_lift() {
+    let mut scenario = isles();
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let free: Vec<UnitId> = observation.my_units.iter().map(|unit| unit.id).collect();
+    let model = map(&scenario);
+    let (_, free_elsewhere) = crate::missions::payload(&observation, &model, &[], &free);
+    assert!(free_elsewhere > 0, "premise: the islet's army is free");
+    let (_, held_elsewhere) = crate::missions::payload(&observation, &model, &[], &[]);
+    assert_eq!(held_elsewhere, 0, "a held army is no payload");
+}
+
+#[test]
+fn a_carrier_over_an_airworks_on_the_lifts_ground_moves_aside_and_loads() {
+    let mut scenario = isles();
+    scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Airworks,
+        x: 19,
+        y: 2,
+    });
+    scenario.units.push(unit(0, UnitKind::Skyhook, 19, 2));
+    // With a second carrier at home the islet's army is worth a lift.
+    scenario.units.push(unit(0, UnitKind::Skyhook, 10, 8));
+    let mut state = scenario.build().unwrap();
+    let skyhook = at(&state, 19, 2);
+    let mut opponent = seat(&scenario, 0);
+    let mut loaded = false;
+    while !loaded {
+        assert!(
+            state.current_tick() < 1_200,
+            "the Skyhook over the islet's Airworks never loaded"
+        );
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        loaded = loads(&commands)
+            .iter()
+            .any(|(transport, _)| *transport == skyhook);
+        state.tick(&commands);
+    }
+}
+
 #[test]
 fn a_lift_loads_every_carrier_its_need_calls_for_and_they_leave_together() {
     let scenario = crowded(&MORE_SKYHOOKS);
@@ -862,6 +981,53 @@ fn severed_seats_buy_carriers_and_the_airworks_they_need() {
     assert_eq!(
         trace.target.map(|target| target.investment),
         Some(Investment::Tech(BuildingKind::Airworks))
+    );
+}
+
+#[test]
+fn an_airworks_held_for_a_saved_bomber_still_trains_carriers_and_no_surveyor() {
+    let mut scenario = strait();
+    scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Crucible,
+        x: 3,
+        y: 4,
+    });
+    // A Skyhook over the strait shows East's Lancers massed on the far
+    // shore, which a Condor's blast takes together.
+    scenario.units.push(unit(0, UnitKind::Skyhook, 25, 5));
+    for x in 28..=30 {
+        for y in 4..=6 {
+            scenario.units.push(unit(1, UnitKind::Lancer, x, y));
+        }
+    }
+    for player in &mut scenario.players {
+        player.scrap = 650;
+    }
+    let mut state = scenario.build().unwrap();
+    // Long enough unseen that the far islands want a scout.
+    advance_to(&mut state, 1_800, &[]);
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(
+        trace.unwrap().target.map(|target| target.investment),
+        Some(Investment::Unit(UnitKind::Condor)),
+        "premise"
+    );
+    let trained: Vec<(BuildingKind, UnitKind)> = trains(&commands)
+        .into_iter()
+        .map(|(at, kind)| {
+            let building = state.buildings().iter().find(|b| b.id == at).unwrap();
+            (building.kind, kind)
+        })
+        .collect();
+    assert!(
+        trained.contains(&(BuildingKind::Airworks, UnitKind::Skyhook)),
+        "{trained:?}"
+    );
+    assert!(
+        trained.iter().all(|(_, kind)| *kind != UnitKind::Surveyor),
+        "a Surveyor reaches no island: {trained:?}"
     );
 }
 
@@ -1582,7 +1748,7 @@ fn anti_heavy_units_ride_a_lift() {
             .extend(extra.iter().map(|&(kind, x, y)| unit(0, kind, x, y)));
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
-        crate::missions::payload(&observation, &map(&scenario))
+        crate::missions::payload(&observation, &map(&scenario), &[], &[]).0
     };
     assert!(payload(&[(UnitKind::Piledriver, 5, 12)]) > payload(&[]));
 }
