@@ -193,8 +193,8 @@ impl Enemy {
                 enemy.air += 200;
             }
             // A known cradle is the heavy machine it will stand up, before it
-            // does: anti-heavy fire wants to be ready for it. One seat holds a
-            // cradle or its machine, never both, so nothing counts twice.
+            // does: anti-heavy fire wants to be ready for it. A cradle leaves
+            // the world as its machine stands up, so neither counts twice.
             if let Some(machine) = building.kind.assembles() {
                 let value = u64::from(machine.stats().cost);
                 enemy.ground += value;

@@ -46,9 +46,8 @@ an empty bank, or a full sling still ends the whole program.
 An assembly cradle is paid when placed and admits at most `ASSEMBLY_CREW_CAP`
 workers, a faster one displacing a slower holder. Every seat sees a started
 cradle and its progress. Finished, it stands its machine up at its centre
-instead of completing, and a player holds one cradle or machine of a kind at a
-time. Such a machine heals only through its kiln, which eats wreck around its
-hull.
+instead of completing; a player may raise any number of them. Such a machine
+heals only through its kiln, which eats wreck around its hull.
 
 Repair and salvage share one damage-first building-work resolver and remain
 mutually exclusive. Completed Repair Bays automatically heal nearby owned units
