@@ -1,5 +1,6 @@
 //! Drones in flight. Each fights the nearest seen enemy aircraft within its
-//! host's leash, holds a slot on a ring around the host with none, and flies
+//! leash of the host's edge, holds a slot on a ring around the host with
+//! none, and flies
 //! home to dock once the host is calm. A host stays on alert while a seen
 //! enemy aircraft is near it or anything hits it or its drones.
 
@@ -91,8 +92,10 @@ pub(in crate::tick::brain) fn watch(
 }
 
 /// One drone's tick: home to dock once its host is calm; otherwise at the
-/// nearest seen enemy aircraft within its host's leash, firing once it bears
-/// and reaches; otherwise to its slot on the ring around its host.
+/// nearest seen enemy aircraft within its leash of the host's edge, firing
+/// once it bears and reaches; otherwise to its slot on the ring around its
+/// host. The leash runs from the edge so nothing that reaches the host
+/// stands outside it.
 pub(in crate::tick::brain) fn fly(
     state: &mut State,
     index: &super::super::super::spatial::UnitIndex,
@@ -119,7 +122,7 @@ pub(in crate::tick::brain) fn fly(
         }
         return;
     }
-    if let Some((victim, aim)) = aircraft_near(state, index, me, hpos, DRONE_LEASH, pos) {
+    if let Some((victim, aim)) = aircraft_near(state, index, me, hpos, DRONE_LEASH + hradius, pos) {
         engage(state, id, (victim, aim), shots);
         return;
     }

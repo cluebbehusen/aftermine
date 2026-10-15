@@ -3340,7 +3340,7 @@ pub const ESCORT_ENGAGE_RADIUS: Fx = Fx::lit("7");
 /// in tiles.
 pub const LAUNCH_RADIUS: Fx = Fx::lit("6");
 
-/// How far from its host a drone takes a fight, in tiles.
+/// How far beyond its host's edge a drone takes a fight, in tiles.
 pub const DRONE_LEASH: Fx = Fx::lit("4");
 
 /// The radius of the ring drones hold around their host with nothing to

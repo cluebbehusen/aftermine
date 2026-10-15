@@ -170,13 +170,13 @@ fn a_seen_enemy_aircraft_near_the_roc_launches_every_docked_drone() {
 
 #[test]
 fn drones_fight_only_inside_the_leash_and_hold_their_ring_otherwise() {
-    // An unarmed enemy Skyhook five tiles out: inside the launch radius,
-    // outside the leash.
+    // An unarmed enemy Skyhook six tiles out: inside the launch radius,
+    // outside the leash beyond the Roc's edge.
     let state = staged(
         0,
         vec![
             unit(0, UnitKind::Roc, 8, 10),
-            unit(1, UnitKind::Skyhook, 13, 10),
+            unit(1, UnitKind::Skyhook, 14, 10),
         ],
     );
     let roc = roc(&state);
@@ -195,8 +195,9 @@ fn drones_fight_only_inside_the_leash_and_hold_their_ring_otherwise() {
     let host = state.unit(roc).unwrap().pos;
     for drone in drones(&state, roc) {
         let distance = state.unit(drone).unwrap().pos.dist_sq(host);
+        let leash = oxide_sim::stats::DRONE_LEASH + UnitKind::Roc.stats().radius;
         assert!(
-            distance <= oxide_sim::stats::DRONE_LEASH * oxide_sim::stats::DRONE_LEASH,
+            distance <= leash * leash,
             "a drone with nothing to fight keeps near its host"
         );
     }
@@ -211,6 +212,46 @@ fn drones_fight_only_inside_the_leash_and_hold_their_ring_otherwise() {
     let mut near = with_bay(&near, roc, &serde_json::json!({"docked": 3}));
     let events = run(&mut near, 200);
     assert!(shots(&events) > 0, "an aircraft inside the leash is fought");
+}
+
+#[test]
+fn drones_fight_a_fighter_that_reaches_their_host_from_its_full_range() {
+    // A Talon about four and a half tiles from the Roc's centre: its guns
+    // reach the hull, so the drones must reach it.
+    let state = staged(
+        0,
+        vec![
+            unit(0, UnitKind::Roc, 8, 10),
+            unit(1, UnitKind::Talon, 12, 12),
+        ],
+    );
+    let roc = roc(&state);
+    let talon = state
+        .units()
+        .iter()
+        .find(|u| u.kind == UnitKind::Talon)
+        .unwrap()
+        .id;
+    let reach = UnitKind::Talon.stats().weapons[0].range + UnitKind::Roc.stats().radius;
+    let gap = state
+        .unit(talon)
+        .unwrap()
+        .pos
+        .dist_sq(state.unit(roc).unwrap().pos);
+    assert!(
+        gap <= reach * reach && gap > oxide_sim::stats::DRONE_LEASH * oxide_sim::stats::DRONE_LEASH,
+        "premise: the Talon reaches the Roc from beyond the leash's old centre-measured bound"
+    );
+    let mut state = with_bay(&state, roc, &serde_json::json!({"docked": 6}));
+    let events = run(&mut state, 120);
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            Event::AttackHit { attacker_kind: UnitKind::Drone, target: Some(oxide_sim::Target::Unit(target)), .. }
+                if *target == talon
+        )),
+        "the drones fight the Talon"
+    );
 }
 
 #[test]

@@ -808,13 +808,14 @@ host, and whenever the host or one of its drones takes damage, and otherwise
 runs down. While it is above zero, every docked drone launches after the brains,
 as a real unit whose serialized `host` names the machine it flies for, and at
 zero flying drones come home and dock, leaving the world. A drone runs no order:
-it fights the nearest seen enemy aircraft within `DRONE_LEASH` of its host,
-holds a slot on a ring `DRONE_ORBIT` out with none, and never retaliates.
-Commands strip drones from their unit lists, and escort and rally refuse one as
-their target. A drone dies in cleanup the tick its host does, and the host's
-ordered drones are lost with it. Validation rejects a drone whose host is not
-its owner's live machine with a bay, and a bay whose docked, ordered and flying
-drones exceed its capacity.
+it fights the nearest seen enemy aircraft within `DRONE_LEASH` of its host's
+edge, so nothing that reaches the host stands outside the leash, holds a slot on
+a ring `DRONE_ORBIT` out with none, and never retaliates. Commands strip drones
+from their unit lists, and escort and rally refuse one as their target. A drone
+dies in cleanup the tick its host does, and the host's ordered drones are lost
+with it. Validation rejects a drone whose host is not its owner's live machine
+with a bay, and a bay whose docked, ordered and flying drones exceed its
+capacity.
 
 A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
 braced motor while its spades are out, counting deployment ticks up to the
