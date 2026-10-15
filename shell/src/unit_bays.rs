@@ -5,7 +5,7 @@ use crate::action::{Action, BindingMap};
 use crate::game::Scene;
 use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
 use oxide_sim::stats::BayStats;
-use oxide_sim::{Command, UnitId};
+use oxide_sim::{Command, Unit, UnitId};
 
 /// One selected machine's bay as the viewer sees it.
 #[derive(Debug, Clone, Copy)]
@@ -34,38 +34,55 @@ pub struct SelectedBays {
     scrap: u32,
 }
 
+/// `look` at the units, the viewer's bank and whether they may command,
+/// with the commands staged for the next tick already applied.
+fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, bool) -> R) -> R {
+    let human = game.presentation.human;
+    if game.pending.is_empty() {
+        let state = game.state;
+        look(
+            state.units(),
+            state.player(human).scrap,
+            state.accepts_commands(human),
+        )
+    } else {
+        game.state.inspect_command_phase(game.pending, |state| {
+            look(
+                state.units(),
+                state.scrap(human).unwrap_or(0),
+                state.accepts_commands(human),
+            )
+        })
+    }
+}
+
+fn flying(units: &[Unit], host: UnitId) -> u8 {
+    let count = units.iter().filter(|d| d.host == Some(host)).count();
+    u8::try_from(count).unwrap_or(u8::MAX)
+}
+
 impl SelectedBays {
     pub fn inspect(game: &Scene<'_>) -> Self {
         let human = game.presentation.human;
-        let state = game.state;
-        let accepts = state.accepts_commands(human);
-        let hosts = state
-            .units()
-            .iter()
-            .filter(|u| {
-                accepts && u.player == human && game.presentation.selection.units.contains(&u.id)
-            })
-            .filter_map(|u| {
-                let (stats, bay) = (u.kind.stats().bay?, u.bay?);
-                let flying = state
-                    .units()
-                    .iter()
-                    .filter(|d| d.host == Some(u.id))
-                    .count();
-                Some(Host {
-                    id: u.id,
-                    stats,
-                    docked: bay.docked,
-                    ordered: bay.ordered,
-                    flying: u8::try_from(flying).unwrap_or(u8::MAX),
-                    autofill: bay.autofill,
+        let selection = &game.presentation.selection.units;
+        with_pending(game, |units, scrap, accepts| Self {
+            hosts: units
+                .iter()
+                .filter(|u| accepts && u.player == human && selection.contains(&u.id))
+                .filter_map(|u| {
+                    let (stats, bay) = (u.kind.stats().bay?, u.bay?);
+                    Some(Host {
+                        id: u.id,
+                        stats,
+                        docked: bay.docked,
+                        ordered: bay.ordered,
+                        flying: flying(units, u.id),
+                        autofill: bay.autofill,
+                    })
                 })
-            })
-            .collect();
-        Self {
-            hosts,
-            scrap: state.player(human).scrap,
-        }
+                .collect(),
+            scrap,
+        })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -164,18 +181,17 @@ impl SelectedBays {
 }
 
 /// The bay readout for a selected machine: docked, flying and building
-/// out of what it holds.
+/// out of what it holds, counting orders staged for the next tick.
 pub fn readout(game: &Scene<'_>, host: UnitId) -> Option<String> {
-    let unit = game.state.unit(host)?;
-    let (stats, bay) = (unit.kind.stats().bay?, unit.bay?);
-    let flying = game
-        .state
-        .units()
-        .iter()
-        .filter(|d| d.host == Some(host))
-        .count();
-    Some(format!(
-        "{} docked, {flying} out, {} building of {}",
-        bay.docked, bay.ordered, stats.capacity
-    ))
+    with_pending(game, |units, _, _| {
+        let unit = units.iter().find(|u| u.id == host)?;
+        let (stats, bay) = (unit.kind.stats().bay?, unit.bay?);
+        Some(format!(
+            "{} docked, {} out, {} building of {}",
+            bay.docked,
+            flying(units, host),
+            bay.ordered,
+            stats.capacity
+        ))
+    })
 }

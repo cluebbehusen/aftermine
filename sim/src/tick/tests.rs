@@ -1398,3 +1398,60 @@ fn a_wide_hull_routes_only_through_ground_that_holds_it() {
         "{wide:?}"
     );
 }
+
+#[test]
+fn a_dock_queued_before_the_tick_s_hits_waits_for_them() {
+    let mut scenario = crate::Scenario::skirmish();
+    scenario.units = vec![crate::scenario::UnitSpec {
+        player: 0,
+        kind: crate::UnitKind::Roc,
+        x: 8,
+        y: 8,
+    }];
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 1.into();
+    value["units"][0]["bay"]["alert"] = 60.into();
+    let mut launched: State = serde_json::from_value(value).unwrap();
+    launched.tick(&[]);
+    let host = launched.units[0].id;
+    let drone = launched
+        .units
+        .iter()
+        .find(|unit| unit.host == Some(host))
+        .expect("premise: the drone launched")
+        .id;
+    let docks = |state: &mut State| {
+        let mut events = Vec::new();
+        drones::resolve(state, &[drone], &mut events);
+        (
+            state.unit(drone).is_some(),
+            state.unit(host).unwrap().bay.unwrap().docked,
+        )
+    };
+    let calm = |state: &mut State| state.unit_mut(host).unwrap().bay.as_mut().unwrap().alert = 0;
+
+    let mut killed = launched.clone();
+    calm(&mut killed);
+    killed.unit_mut(drone).unwrap().hp = 0;
+    assert_eq!(
+        docks(&mut killed),
+        (true, 0),
+        "a killed drone dies, it does not dock"
+    );
+
+    let mut alerted = launched.clone();
+    alerted.unit_mut(host).unwrap().bay.as_mut().unwrap().alert = 5;
+    assert_eq!(
+        docks(&mut alerted),
+        (true, 0),
+        "a host put back on alert keeps it out"
+    );
+
+    let mut quiet = launched;
+    calm(&mut quiet);
+    assert_eq!(
+        docks(&mut quiet),
+        (false, 1),
+        "a live drone at a calm host docks"
+    );
+}

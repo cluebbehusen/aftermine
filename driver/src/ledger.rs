@@ -84,6 +84,9 @@ struct Body {
     /// The transport a rider travels in; riders count toward worth and die
     /// with their carrier.
     carrier: Option<Key>,
+    /// The machine a drone flies for. A drone keeps no record of its own: its
+    /// fire counts toward its host, which pays for it.
+    host: Option<Key>,
     /// A building's construction or upgrade progress, the build ticks its
     /// tier takes, and the health salvage has drained from it.
     progress: u32,
@@ -443,6 +446,7 @@ fn snapshot(state: &State) -> Vec<Body> {
                 unit: Some(unit.kind),
                 building: None,
                 carrier: None,
+                host: unit.host.map(Key::Unit),
                 progress: 0,
                 build_ticks: 0,
                 salvage: 0,
@@ -468,6 +472,7 @@ fn snapshot(state: &State) -> Vec<Body> {
                     unit: Some(rider.kind),
                     building: None,
                     carrier: Some(Key::Unit(carrier.id)),
+                    host: None,
                     progress: 0,
                     build_ticks: 0,
                     salvage: 0,
@@ -494,6 +499,7 @@ fn snapshot(state: &State) -> Vec<Body> {
             unit: None,
             building: Some((building.kind, building.tier, building.built())),
             carrier: None,
+            host: None,
             progress: building.construction_progress().unwrap_or(0),
             build_ticks: stats
                 .construction
@@ -769,7 +775,7 @@ impl ImpactLedger {
     fn source(&self, key: Key, from: Option<TilePos>) -> Option<Source> {
         if let Some(body) = self.body(key) {
             return Some(Source {
-                key,
+                key: body.host.unwrap_or(key),
                 owner: body.owner,
                 team: body.team,
                 vision: body.vision,
@@ -1251,6 +1257,7 @@ impl ImpactLedger {
         for body in after {
             let before = self.body(body.key).copied();
             match (before, body.building) {
+                (None, _) if body.host.is_some() => {}
                 (None, _) if !self.records.contains_key(&body.key) => {
                     self.records.insert(body.key, record(body, false));
                     if let Some((kind, tier, _)) = body.building {
@@ -1364,6 +1371,7 @@ impl ImpactLedger {
                 unit: Some(kind),
                 building: None,
                 carrier: None,
+                host: None,
                 progress: 0,
                 build_ticks: 0,
                 salvage: 0,

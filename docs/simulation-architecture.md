@@ -815,7 +815,9 @@ from their unit lists, and escort and rally refuse one as their target. A drone
 dies in cleanup the tick its host does, and the host's ordered drones are lost
 with it. Validation rejects a drone whose host is not its owner's live machine
 with a bay, and a bay whose docked, ordered and flying drones exceed its
-capacity.
+capacity. Both fog projections name a visible drone's host and count a visible
+host's docked drones; what a bay has on order and whether it refills follow that
+unit's intent, shown to its owner (and, in the fog view, its allies).
 
 A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
 braced motor while its spades are out, counting deployment ticks up to the

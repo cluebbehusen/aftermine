@@ -170,6 +170,15 @@ pub(super) fn resolve(state: &mut State, docks: &[UnitId], events: &mut Vec<Even
         let (Some(host), player) = (state.units[index].host, state.units[index].player) else {
             continue;
         };
+        // The brains queued the dock before this tick's hits landed: a drone
+        // they killed dies in cleanup, and a host they put back on alert
+        // keeps its drones out.
+        let calm = state
+            .unit(host)
+            .is_some_and(|h| h.hp > 0 && h.bay.is_some_and(|bay| bay.alert == 0));
+        if state.units[index].hp == 0 || !calm {
+            continue;
+        }
         state.units.remove(index);
         if let Some(bay) = state.unit_mut(host).and_then(|u| u.bay.as_mut()) {
             bay.docked += 1;

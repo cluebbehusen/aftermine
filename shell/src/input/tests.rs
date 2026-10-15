@@ -8575,6 +8575,12 @@ fn a_selected_roc_offers_its_drone_bay() {
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
     assert!(titles.contains(&"Order drone"), "{titles:?}");
     assert!(titles.contains(&"Autofill: on"), "{titles:?}");
+    let ordered = |game: &Game| match crate::unit_bays::SelectedBays::inspect(&game.view()).cancel()
+    {
+        Some(oxide_sim::Command::CancelDrone { index, .. }) => index + 1,
+        _ => 0,
+    };
+    let before = ordered(&game);
     let mut input = InputState::new();
     dispatch_action(&mut game, &mut input, Action::OrderRound);
     assert!(
@@ -8583,5 +8589,18 @@ fn a_selected_roc_offers_its_drone_bay() {
             .any(|pending| matches!(pending.command, oxide_sim::Command::OrderDrone { unit } if unit == roc)),
         "the order hotkey pays for a drone: {:?}",
         game.pending
+    );
+    // Paused, the staged order already shows, and a toggle reads the
+    // setting the staged commands leave.
+    assert_eq!(ordered(&game), before + 1, "the staged order counts");
+    dispatch_action(&mut game, &mut input, Action::ToggleAutofill);
+    let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
+    assert!(
+        matches!(
+            bays.autofill_toggle(),
+            Some(oxide_sim::Command::SetDroneAutofill { enabled: true, .. })
+        ),
+        "the second toggle undoes the first: {:?}",
+        bays.autofill_toggle()
     );
 }

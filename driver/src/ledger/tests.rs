@@ -1307,3 +1307,29 @@ fn a_warhead_already_in_flight_when_the_record_starts_is_its_spires() {
 fn a_lattice_is_defense_spending() {
     assert_eq!(category(BuildingKind::Lattice), "defense");
 }
+
+#[test]
+fn a_drone_fights_and_pays_as_part_of_its_host() {
+    let scenario = field(
+        0,
+        &[(0, UnitKind::Roc, 10, 6), (1, UnitKind::Skyhook, 14, 6)],
+        &[],
+    );
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 6.into();
+    let state: State = serde_json::from_value(value).unwrap();
+    let (_, ledgers) = play(state, 300, Vec::new());
+    let skyhook = unit(&ledgers, 1, "skyhook");
+    assert!(skyhook.taken > 0, "premise: the drones fought: {skyhook:?}");
+    assert_eq!(unit(&ledgers, 0, "drone"), KindLedger::default());
+    let roc = unit(&ledgers, 0, "roc");
+    assert!(
+        roc.dealt.total() > 0,
+        "the Roc owns its drones' fire: {roc:?}"
+    );
+    assert_eq!(
+        (roc.starting, roc.built),
+        (1, 0),
+        "launching drones builds nothing"
+    );
+}

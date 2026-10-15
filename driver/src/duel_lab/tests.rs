@@ -422,3 +422,16 @@ fn support_walks_with_its_army_and_falls_with_it() {
     assert_eq!(fought.west.alive, 0);
     assert_eq!(fought.west.retained, 0.0, "support is lost with its army");
 }
+
+#[test]
+fn every_roster_unit_stages_as_a_valid_duel() {
+    for kind in armed_units().into_iter().chain(defense_attackers()) {
+        let side = Force::of(Side::sized(Contender::Unit(kind), 1_800));
+        let scenario = stage(&side, &side, Layout::Open, Formation::Line, false);
+        assert!(scenario.build().is_ok(), "{kind:?} stages alone");
+    }
+    assert!(
+        !armed_units().contains(&UnitKind::Drone),
+        "a drone needs its host"
+    );
+}
