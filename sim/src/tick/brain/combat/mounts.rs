@@ -149,9 +149,12 @@ fn relative(pivot: Vec2Fx, aim: Vec2Fx, heading: u8) -> u8 {
 }
 
 /// Whether a gun at `pivot` has a clear shot at `aim`: only peaks block the
-/// fire of an aircraft.
+/// fire of an aircraft. The trace skips its end tile, but a building's
+/// closest point can sit on its footprint's outer edge and so fall in the
+/// tile beside it, which flush against a peak is the peak itself.
 fn clear(state: &State, pivot: Vec2Fx, aim: Vec2Fx) -> bool {
-    !chassis::path::line_blocked(pivot, aim, |t| shot_crosses(state, t, false))
+    shot_crosses(state, TilePos::containing(aim), false)
+        && !chassis::path::line_blocked(pivot, aim, |t| shot_crosses(state, t, false))
 }
 
 /// Whether `candidate`, aimed at `aim`, is in `weapon`'s reach from `pivot`.
