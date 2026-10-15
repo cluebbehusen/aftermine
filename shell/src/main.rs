@@ -59,6 +59,7 @@ mod theme;
 mod track_motion;
 mod tutorial;
 mod typography;
+mod unit_bays;
 mod viewer_touch;
 
 use crate::numeric::Fit;

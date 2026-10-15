@@ -776,6 +776,8 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         turret_heading: None,
         point_defense: None,
         mounts: None,
+        bay: None,
+        host: None,
         progress: 0,
         order: Order::Build { site: site.id },
         queue: VecDeque::new(),

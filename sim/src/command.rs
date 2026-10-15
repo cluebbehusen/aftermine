@@ -359,6 +359,26 @@ pub enum Command {
         /// The tile to strike.
         target: TilePos,
     },
+    /// Pays for one drone the unit's bay builds next.
+    OrderDrone {
+        /// The own machine with a drone bay.
+        unit: UnitId,
+    },
+    /// Refunds the ordered drone at `index`, the one building first, and
+    /// switches the bay's refill off.
+    CancelDrone {
+        /// The own machine with a drone bay.
+        unit: UnitId,
+        /// Which ordered drone, from the one building.
+        index: u8,
+    },
+    /// Sets whether each bay orders its next drone on its own.
+    SetDroneAutofill {
+        /// Own machines with a drone bay; all or none take the setting.
+        units: Vec<UnitId>,
+        /// Whether they refill.
+        enabled: bool,
+    },
 }
 
 /// A command attributed to its issuing player. Ownership checks are made

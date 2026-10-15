@@ -84,6 +84,9 @@ struct Body {
     /// The transport a rider travels in; riders count toward worth and die
     /// with their carrier.
     carrier: Option<Key>,
+    /// The machine a drone flies for. A drone keeps no record of its own: its
+    /// fire counts toward its host, which pays for it.
+    host: Option<Key>,
     /// A building's construction or upgrade progress, the build ticks its
     /// tier takes, and the health salvage has drained from it.
     progress: u32,
@@ -443,6 +446,7 @@ fn snapshot(state: &State) -> Vec<Body> {
                 unit: Some(unit.kind),
                 building: None,
                 carrier: None,
+                host: unit.host.map(Key::Unit),
                 progress: 0,
                 build_ticks: 0,
                 salvage: 0,
@@ -468,6 +472,7 @@ fn snapshot(state: &State) -> Vec<Body> {
                     unit: Some(rider.kind),
                     building: None,
                     carrier: Some(Key::Unit(carrier.id)),
+                    host: None,
                     progress: 0,
                     build_ticks: 0,
                     salvage: 0,
@@ -494,6 +499,7 @@ fn snapshot(state: &State) -> Vec<Body> {
             unit: None,
             building: Some((building.kind, building.tier, building.built())),
             carrier: None,
+            host: None,
             progress: building.construction_progress().unwrap_or(0),
             build_ticks: stats
                 .construction
@@ -517,10 +523,12 @@ fn class(kind: UnitKind) -> Class {
 }
 
 /// A seat's net worth: its share of `bodies` plus its bank in `state`.
+/// A seat's bank and its bodies at their health. Drones are their host's
+/// equipment, worth nothing apart from it whether docked or flying.
 fn worth(state: &State, bodies: &[Body], seat: usize) -> u64 {
     let owned: u64 = bodies
         .iter()
-        .filter(|body| usize::from(body.owner) == seat)
+        .filter(|body| usize::from(body.owner) == seat && body.host.is_none())
         .map(|body| body.value * u64::from(body.hp) / u64::from(body.max_hp.max(1)))
         .sum();
     owned + u64::from(state.players()[seat].scrap)
@@ -769,7 +777,7 @@ impl ImpactLedger {
     fn source(&self, key: Key, from: Option<TilePos>) -> Option<Source> {
         if let Some(body) = self.body(key) {
             return Some(Source {
-                key,
+                key: body.host.unwrap_or(key),
                 owner: body.owner,
                 team: body.team,
                 vision: body.vision,
@@ -848,6 +856,20 @@ impl ImpactLedger {
                     record.paid += cost;
                 }
                 self.spent(player.0, format!("round:{}", kind.name()), now, cost);
+            }
+            Event::DroneAssembled { unit, player, .. } => {
+                // Like a round: paid when ordered and refunded if cancelled,
+                // so the drones a bay finished are what it cost its host.
+                let cost = self
+                    .records
+                    .get(&Key::Unit(*unit))
+                    .and_then(|record| record.unit)
+                    .and_then(|host| host.stats().bay)
+                    .map_or(0, |bay| u64::from(bay.cost));
+                if let Some(record) = self.records.get_mut(&Key::Unit(*unit)) {
+                    record.paid += cost;
+                }
+                self.spent(player.0, "drone".into(), now, cost);
             }
             _ => {}
         }
@@ -1074,7 +1096,8 @@ impl ImpactLedger {
                 Event::WarheadLaunched { .. }
                 | Event::WarheadLanded { .. }
                 | Event::WarheadIntercepted { .. }
-                | Event::RoundAssembled { .. } => self.strike(event, &mut sources, now),
+                | Event::RoundAssembled { .. }
+                | Event::DroneAssembled { .. } => self.strike(event, &mut sources, now),
                 Event::AircraftImpacted { crash } => {
                     if let Some(profile) = crash.kind.stats().crash {
                         sources.splash.push((
@@ -1237,6 +1260,7 @@ impl ImpactLedger {
         for body in after {
             let before = self.body(body.key).copied();
             match (before, body.building) {
+                (None, _) if body.host.is_some() => {}
                 (None, _) if !self.records.contains_key(&body.key) => {
                     self.records.insert(body.key, record(body, false));
                     if let Some((kind, tier, _)) = body.building {
@@ -1350,6 +1374,7 @@ impl ImpactLedger {
                 unit: Some(kind),
                 building: None,
                 carrier: None,
+                host: None,
                 progress: 0,
                 build_ticks: 0,
                 salvage: 0,

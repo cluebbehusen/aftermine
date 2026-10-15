@@ -1698,19 +1698,19 @@
   128
  ],
  "debris_0": [
-  3010,
+  3962,
   8008,
   32,
   32
  ],
  "debris_1": [
-  3046,
+  3998,
   8008,
   32,
   32
  ],
  "debris_2": [
-  3082,
+  4034,
   8008,
   32,
   32
@@ -1735,6 +1735,42 @@
  ],
  "decal_wreck": [
   3210,
+  7864,
+  64,
+  64
+ ],
+ "drone": [
+  3278,
+  7864,
+  64,
+  64
+ ],
+ "drone_accent": [
+  3346,
+  7864,
+  64,
+  64
+ ],
+ "drone_accent_move1": [
+  3414,
+  7864,
+  64,
+  64
+ ],
+ "drone_accent_move2": [
+  3482,
+  7864,
+  64,
+  64
+ ],
+ "drone_move1": [
+  3550,
+  7864,
+  64,
+  64
+ ],
+ "drone_move2": [
+  3618,
   7864,
   64,
   64
@@ -2928,62 +2964,62 @@
   128
  ],
  "field_debris_abandoned_canisters": [
-  3118,
-  8008,
+  2,
+  8076,
   32,
   32
  ],
  "field_debris_bent_service_rail": [
-  3154,
-  8008,
+  38,
+  8076,
   32,
   32
  ],
  "field_debris_braided_cable": [
-  3278,
+  3686,
   7864,
   64,
   64
  ],
  "field_debris_cable_tray": [
-  3346,
+  3754,
   7864,
   64,
   64
  ],
  "field_debris_canister_cluster": [
-  3414,
+  3822,
   7864,
   64,
   64
  ],
  "field_debris_fastener_spill": [
-  3482,
+  3890,
   7864,
   64,
   64
  ],
  "field_debris_inspection_hatch": [
-  3550,
+  3958,
   7864,
   64,
   64
  ],
  "field_debris_motor_casing": [
-  3618,
+  4026,
   7864,
   64,
   64
  ],
  "field_debris_severed_cable": [
-  3190,
-  8008,
+  74,
+  8076,
   32,
   32
  ],
  "field_debris_sunken_cooling_fan": [
-  3686,
-  7864,
+  2,
+  7940,
   64,
   64
  ],
@@ -3672,43 +3708,43 @@
   128
  ],
  "ground_0": [
-  3754,
-  7864,
+  70,
+  7940,
   64,
   64
  ],
  "ground_1": [
-  3822,
-  7864,
+  138,
+  7940,
   64,
   64
  ],
  "ground_2": [
-  3890,
-  7864,
+  206,
+  7940,
   64,
   64
  ],
  "ground_3": [
-  3958,
-  7864,
+  274,
+  7940,
   64,
   64
  ],
  "ground_4": [
-  4026,
-  7864,
+  342,
+  7940,
   64,
   64
  ],
  "ground_5": [
-  2,
+  410,
   7940,
   64,
   64
  ],
  "ground_blocker_compressor_skid": [
-  70,
+  478,
   7940,
   128,
   64
@@ -3744,7 +3780,7 @@
   128
  ],
  "ground_blocker_track_assembly": [
-  202,
+  610,
   7940,
   192,
   64
@@ -3762,73 +3798,73 @@
   128
  ],
  "ground_detail_0": [
-  398,
-  7940,
-  64,
-  64
- ],
- "ground_detail_1": [
-  466,
-  7940,
-  64,
-  64
- ],
- "ground_detail_10": [
-  534,
-  7940,
-  64,
-  64
- ],
- "ground_detail_11": [
-  602,
-  7940,
-  64,
-  64
- ],
- "ground_detail_2": [
-  670,
-  7940,
-  64,
-  64
- ],
- "ground_detail_3": [
-  738,
-  7940,
-  64,
-  64
- ],
- "ground_detail_4": [
   806,
   7940,
   64,
   64
  ],
- "ground_detail_5": [
+ "ground_detail_1": [
   874,
   7940,
   64,
   64
  ],
- "ground_detail_6": [
+ "ground_detail_10": [
   942,
   7940,
   64,
   64
  ],
- "ground_detail_7": [
+ "ground_detail_11": [
   1010,
   7940,
   64,
   64
  ],
- "ground_detail_8": [
+ "ground_detail_2": [
   1078,
   7940,
   64,
   64
  ],
- "ground_detail_9": [
+ "ground_detail_3": [
   1146,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_4": [
+  1214,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_5": [
+  1282,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_6": [
+  1350,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_7": [
+  1418,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_8": [
+  1486,
+  7940,
+  64,
+  64
+ ],
+ "ground_detail_9": [
+  1554,
   7940,
   64,
   64
@@ -4194,97 +4230,97 @@
   128
  ],
  "icon_accompany": [
-  2178,
+  3130,
   8008,
   48,
   48
  ],
  "icon_advance": [
-  2230,
+  3182,
   8008,
   48,
   48
  ],
  "icon_attack": [
-  2282,
+  3234,
   8008,
   48,
   48
  ],
  "icon_build": [
-  2334,
+  3286,
   8008,
   48,
   48
  ],
  "icon_cancel": [
-  2386,
+  3338,
   8008,
   48,
   48
  ],
  "icon_harvest": [
-  2438,
+  3390,
   8008,
   48,
   48
  ],
  "icon_hunt": [
-  2490,
+  3442,
   8008,
   48,
   48
  ],
  "icon_idle": [
-  2542,
+  3494,
   8008,
   48,
   48
  ],
  "icon_move": [
-  2594,
+  3546,
   8008,
   48,
   48
  ],
  "icon_patrol": [
-  2646,
+  3598,
   8008,
   48,
   48
  ],
  "icon_rally": [
-  2698,
+  3650,
   8008,
   48,
   48
  ],
  "icon_repair": [
-  2750,
+  3702,
   8008,
   48,
   48
  ],
  "icon_retire": [
-  2802,
+  3754,
   8008,
   48,
   48
  ],
  "icon_run": [
-  2854,
+  3806,
   8008,
   48,
   48
  ],
  "icon_salvage": [
-  2906,
+  3858,
   8008,
   48,
   48
  ],
  "icon_stop": [
-  2958,
+  3910,
   8008,
   48,
   48
@@ -5160,73 +5196,73 @@
   128
  ],
  "quarry_dressing_0": [
-  1214,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_1": [
-  1282,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_10": [
-  1350,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_11": [
-  1418,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_2": [
-  1486,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_3": [
-  1554,
-  7940,
-  64,
-  64
- ],
- "quarry_dressing_4": [
   1622,
   7940,
   64,
   64
  ],
- "quarry_dressing_5": [
+ "quarry_dressing_1": [
   1690,
   7940,
   64,
   64
  ],
- "quarry_dressing_6": [
+ "quarry_dressing_10": [
   1758,
   7940,
   64,
   64
  ],
- "quarry_dressing_7": [
+ "quarry_dressing_11": [
   1826,
   7940,
   64,
   64
  ],
- "quarry_dressing_8": [
+ "quarry_dressing_2": [
   1894,
   7940,
   64,
   64
  ],
- "quarry_dressing_9": [
+ "quarry_dressing_3": [
   1962,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_4": [
+  2030,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_5": [
+  2098,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_6": [
+  2166,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_7": [
+  2234,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_8": [
+  2302,
+  7940,
+  64,
+  64
+ ],
+ "quarry_dressing_9": [
+  2370,
   7940,
   64,
   64
@@ -5904,19 +5940,19 @@
   192
  ],
  "rig_cradle_lamp": [
-  3898,
-  8008,
+  782,
+  8076,
   16,
   16
  ],
  "rig_cradle_lamp_1": [
-  3918,
-  8008,
+  802,
+  8076,
   16,
   16
  ],
  "rig_cradle_pad": [
-  2030,
+  2438,
   7940,
   64,
   64
@@ -5944,6 +5980,54 @@
   1562,
   192,
   192
+ ],
+ "rig_drone_hull": [
+  2506,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_hull_accent": [
+  2574,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_hull_accent_move1": [
+  2642,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_hull_accent_move2": [
+  2710,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_hull_move1": [
+  2778,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_hull_move2": [
+  2846,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_mount": [
+  2914,
+  7940,
+  64,
+  64
+ ],
+ "rig_drone_mount_accent": [
+  2982,
+  7940,
+  64,
+  64
  ],
  "rig_excavator_body": [
   530,
@@ -6348,31 +6432,31 @@
   128
  ],
  "rig_lattice_clamp": [
-  2098,
+  3050,
   7940,
   64,
   64
  ],
  "rig_lattice_clamp_1": [
-  2166,
+  3118,
   7940,
   64,
   64
  ],
  "rig_lattice_clamp_2": [
-  2234,
+  3186,
   7940,
   64,
   64
  ],
  "rig_lattice_clamp_3": [
-  2302,
+  3254,
   7940,
   64,
   64
  ],
  "rig_lattice_clamp_4": [
-  2370,
+  3322,
   7940,
   64,
   64
@@ -6384,13 +6468,13 @@
   128
  ],
  "rig_lattice_interceptor": [
-  2438,
+  3390,
   7940,
   64,
   64
  ],
  "rig_lattice_interceptor_accent": [
-  2506,
+  3458,
   7940,
   64,
   64
@@ -6516,25 +6600,25 @@
   128
  ],
  "rig_lattice_pod": [
-  2574,
+  3526,
   7940,
   64,
   64
  ],
  "rig_lattice_pod_accent": [
-  2642,
+  3594,
   7940,
   64,
   64
  ],
  "rig_lattice_stack_1": [
-  2710,
+  3662,
   7940,
   64,
   64
  ],
  "rig_lattice_stack_2": [
-  2778,
+  3730,
   7940,
   64,
   64
@@ -6810,146 +6894,146 @@
   256
  ],
  "rig_maw_scrap_1": [
-  3226,
-  8008,
+  110,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_10": [
-  3254,
-  8008,
+  138,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_11": [
-  3282,
-  8008,
+  166,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_12": [
-  3310,
-  8008,
+  194,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_13": [
-  3338,
-  8008,
+  222,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_14": [
-  3366,
-  8008,
+  250,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_15": [
-  3394,
-  8008,
+  278,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_16": [
-  3422,
-  8008,
+  306,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_17": [
-  3450,
-  8008,
+  334,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_18": [
-  3478,
-  8008,
+  362,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_19": [
-  3506,
-  8008,
+  390,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_2": [
-  3534,
-  8008,
+  418,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_20": [
-  3562,
-  8008,
+  446,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_21": [
-  3590,
-  8008,
+  474,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_22": [
-  3618,
-  8008,
+  502,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_23": [
-  3646,
-  8008,
+  530,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_24": [
-  3674,
-  8008,
+  558,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_3": [
-  3702,
-  8008,
+  586,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_4": [
-  3730,
-  8008,
+  614,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_5": [
-  3758,
-  8008,
+  642,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_6": [
-  3786,
-  8008,
+  670,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_7": [
-  3814,
-  8008,
+  698,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_8": [
-  3842,
-  8008,
+  726,
+  8076,
   24,
   24
  ],
  "rig_maw_scrap_9": [
-  3870,
-  8008,
+  754,
+  8076,
   24,
   24
  ],
@@ -8364,38 +8448,38 @@
   256
  ],
  "rig_roc_mount": [
-  2846,
+  3798,
   7940,
   64,
   64
  ],
  "rig_roc_mount_accent": [
-  2914,
+  3866,
   7940,
   64,
   64
  ],
  "rig_roc_mount_accent_action1": [
-  2982,
+  3934,
   7940,
   64,
   64
  ],
  "rig_roc_mount_accent_action2": [
-  3050,
+  4002,
   7940,
   64,
   64
  ],
  "rig_roc_mount_action1": [
-  3118,
-  7940,
+  2,
+  8008,
   64,
   64
  ],
  "rig_roc_mount_action2": [
-  3186,
-  7940,
+  70,
+  8008,
   64,
   64
  ],
@@ -10854,8 +10938,8 @@
   256
  ],
  "rock_skirt": [
-  3254,
-  7940,
+  138,
+  8008,
   64,
   64
  ],
@@ -11148,14 +11232,14 @@
   128
  ],
  "scaffold_dense": [
-  3322,
-  7940,
+  206,
+  8008,
   64,
   64
  ],
  "scaffold_sparse": [
-  3390,
-  7940,
+  274,
+  8008,
   64,
   64
  ],
@@ -11172,26 +11256,26 @@
   128
  ],
  "scrap_full": [
-  3458,
-  7940,
+  342,
+  8008,
   64,
   64
  ],
  "scrap_low": [
-  3526,
-  7940,
+  410,
+  8008,
   64,
   64
  ],
  "scrap_mid": [
-  3594,
-  7940,
+  478,
+  8008,
   64,
   64
  ],
  "scrap_rich": [
-  3662,
-  7940,
+  546,
+  8008,
   64,
   64
  ],
@@ -11736,217 +11820,217 @@
   128
  ],
  "theme_basalt_0": [
-  3730,
-  7940,
-  64,
-  64
- ],
- "theme_basalt_1": [
-  3798,
-  7940,
-  64,
-  64
- ],
- "theme_basalt_2": [
-  3866,
-  7940,
-  64,
-  64
- ],
- "theme_basalt_3": [
-  3934,
-  7940,
-  64,
-  64
- ],
- "theme_basalt_4": [
-  4002,
-  7940,
-  64,
-  64
- ],
- "theme_basalt_5": [
-  2,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_0": [
-  70,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_1": [
-  138,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_2": [
-  206,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_3": [
-  274,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_4": [
-  342,
-  8008,
-  64,
-  64
- ],
- "theme_cold_circuitry_5": [
-  410,
-  8008,
-  64,
-  64
- ],
- "theme_quarry_dust_0": [
-  478,
-  8008,
-  64,
-  64
- ],
- "theme_quarry_dust_1": [
-  546,
-  8008,
-  64,
-  64
- ],
- "theme_quarry_dust_2": [
   614,
   8008,
   64,
   64
  ],
- "theme_quarry_dust_3": [
+ "theme_basalt_1": [
   682,
   8008,
   64,
   64
  ],
- "theme_quarry_dust_4": [
+ "theme_basalt_2": [
   750,
   8008,
   64,
   64
  ],
- "theme_quarry_dust_5": [
+ "theme_basalt_3": [
   818,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_0": [
+ "theme_basalt_4": [
   886,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_1": [
+ "theme_basalt_5": [
   954,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_2": [
+ "theme_cold_circuitry_0": [
   1022,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_3": [
+ "theme_cold_circuitry_1": [
   1090,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_4": [
+ "theme_cold_circuitry_2": [
   1158,
   8008,
   64,
   64
  ],
- "theme_rusted_yard_5": [
+ "theme_cold_circuitry_3": [
   1226,
   8008,
   64,
   64
  ],
- "theme_slag_0": [
+ "theme_cold_circuitry_4": [
   1294,
   8008,
   64,
   64
  ],
- "theme_slag_1": [
+ "theme_cold_circuitry_5": [
   1362,
   8008,
   64,
   64
  ],
- "theme_slag_2": [
+ "theme_quarry_dust_0": [
   1430,
   8008,
   64,
   64
  ],
- "theme_slag_3": [
+ "theme_quarry_dust_1": [
   1498,
   8008,
   64,
   64
  ],
- "theme_slag_4": [
+ "theme_quarry_dust_2": [
   1566,
   8008,
   64,
   64
  ],
- "theme_slag_5": [
+ "theme_quarry_dust_3": [
   1634,
   8008,
   64,
   64
  ],
- "theme_verdigris_0": [
+ "theme_quarry_dust_4": [
   1702,
   8008,
   64,
   64
  ],
- "theme_verdigris_1": [
+ "theme_quarry_dust_5": [
   1770,
   8008,
   64,
   64
  ],
- "theme_verdigris_2": [
+ "theme_rusted_yard_0": [
   1838,
   8008,
   64,
   64
  ],
- "theme_verdigris_3": [
+ "theme_rusted_yard_1": [
   1906,
   8008,
   64,
   64
  ],
- "theme_verdigris_4": [
+ "theme_rusted_yard_2": [
   1974,
   8008,
   64,
   64
  ],
- "theme_verdigris_5": [
+ "theme_rusted_yard_3": [
   2042,
+  8008,
+  64,
+  64
+ ],
+ "theme_rusted_yard_4": [
+  2110,
+  8008,
+  64,
+  64
+ ],
+ "theme_rusted_yard_5": [
+  2178,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_0": [
+  2246,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_1": [
+  2314,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_2": [
+  2382,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_3": [
+  2450,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_4": [
+  2518,
+  8008,
+  64,
+  64
+ ],
+ "theme_slag_5": [
+  2586,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_0": [
+  2654,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_1": [
+  2722,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_2": [
+  2790,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_3": [
+  2858,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_4": [
+  2926,
+  8008,
+  64,
+  64
+ ],
+ "theme_verdigris_5": [
+  2994,
   8008,
   64,
   64
@@ -12324,7 +12408,7 @@
   128
  ],
  "wreck_pile": [
-  2110,
+  3062,
   8008,
   64,
   64

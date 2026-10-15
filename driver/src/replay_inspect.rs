@@ -401,6 +401,9 @@ fn command_name(command: &Command) -> &'static str {
         Command::CancelRound { .. } => "cancel_round",
         Command::SetAutofill { .. } => "set_autofill",
         Command::Launch { .. } => "launch",
+        Command::OrderDrone { .. } => "order_drone",
+        Command::CancelDrone { .. } => "cancel_drone",
+        Command::SetDroneAutofill { .. } => "set_drone_autofill",
     }
 }
 

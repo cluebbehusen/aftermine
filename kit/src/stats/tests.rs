@@ -355,3 +355,34 @@ fn event_counters_saturate_where_a_restored_record_left_them() {
     assert_eq!(live.stats.players[0].units_trained, u32::MAX);
     assert_eq!(live.stats.players[0].buildings_completed, u32::MAX);
 }
+
+#[test]
+fn drones_count_as_their_hosts_equipment_not_units() {
+    let mut stats = blank_players(1);
+    let player = oxide_sim::PlayerId(0);
+    accumulate_events(
+        &mut stats,
+        &[
+            oxide_sim::Event::DroneAssembled {
+                unit: oxide_sim::UnitId(1),
+                player,
+                docked: 1,
+            },
+            oxide_sim::Event::UnitDied {
+                unit: oxide_sim::UnitId(2),
+                kind: oxide_sim::UnitKind::Drone,
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                grounded: false,
+            },
+            oxide_sim::Event::UnitDied {
+                unit: oxide_sim::UnitId(3),
+                kind: oxide_sim::UnitKind::Talon,
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                grounded: false,
+            },
+        ],
+    );
+    assert_eq!((stats[0].units_trained, stats[0].units_lost), (0, 1));
+}

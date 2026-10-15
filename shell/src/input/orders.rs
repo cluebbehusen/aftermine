@@ -44,13 +44,13 @@ pub(super) fn rally_producers(
     game.presentation.ping(at, PingKind::Rally);
 }
 
-/// The rally a world click names: the own unit under it, or else the
-/// ground.
+/// The rally a world click names: the own unit under it, never a drone,
+/// or else the ground.
 pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
     game.state
         .units()
         .iter()
-        .filter(|u| u.player == game.presentation.human)
+        .filter(|u| u.player == game.presentation.human && u.host.is_none())
         .map(|u| {
             let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             (at.distance(world), u.id, u.kind)

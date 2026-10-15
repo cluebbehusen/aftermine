@@ -73,7 +73,8 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         | UnitKind::Surveyor
         | UnitKind::Skyhook
         | UnitKind::Maw
-        | UnitKind::Roc => None,
+        | UnitKind::Roc
+        | UnitKind::Drone => None,
     }
 }
 

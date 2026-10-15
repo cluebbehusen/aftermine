@@ -128,6 +128,28 @@ pub struct UnitView {
     /// The emitters show them, so the fog view never redacts them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charges: Option<u8>,
+    /// The machine a drone flies for. Drones keep to their host, so the fog
+    /// view never redacts it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<u32>,
+    /// A host's drone bay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bay: Option<BayView>,
+}
+
+/// A drone bay as the viewer sees it. Docked drones ride on the hull, so
+/// they are counted for any host in sight; what is on order and whether the
+/// bay refills are redacted with a hostile unit's intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BayView {
+    /// Drones resting on the hull.
+    pub docked: u8,
+    /// Drones paid for and waiting to be built; `None` when redacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordered: Option<u8>,
+    /// Whether the bay orders drones itself; `None` when redacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autofill: Option<bool>,
 }
 
 /// One building.
@@ -553,17 +575,28 @@ fn unit_view(u: &Unit) -> UnitView {
         patrolling: Some(u.looping),
         landed: u.landed(),
         charges: u.point_defense.map(|held| held.charges),
+        host: u.host.map(|host| host.0),
+        bay: u.bay.map(|bay| BayView {
+            docked: bay.docked,
+            ordered: Some(bay.ordered),
+            autofill: Some(bay.autofill),
+        }),
     }
 }
 
 /// A hostile unit as the viewer sees it: body, position, wounds, visible
-/// cargo and point-defense charges, but never its orders, queue, or patrol
-/// flag.
+/// cargo, point-defense charges and docked drones, but never its orders,
+/// queue, patrol flag or drone orders.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,
         queue: Vec::new(),
         patrolling: None,
+        bay: u.bay.map(|bay| BayView {
+            docked: bay.docked,
+            ordered: None,
+            autofill: None,
+        }),
         ..unit_view(u)
     }
 }

@@ -47,27 +47,51 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             continue;
         }
         let outcome = match &pc.command {
-            Command::Run { units, goal, queue } => {
-                apply_run(state, pc.player, &canonical_units(units), *goal, *queue)
-            }
+            Command::Run { units, goal, queue } => apply_run(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *goal,
+                *queue,
+            ),
             Command::Attack {
                 units,
                 target,
                 queue,
-            } => apply_attack(state, pc.player, &canonical_units(units), *target, *queue),
-            Command::Hunt { units, goal, queue } => {
-                apply_hunt(state, pc.player, &canonical_units(units), *goal, *queue)
-            }
-            Command::Harvest { units, node, queue } => {
-                apply_harvest(state, pc.player, &canonical_units(units), *node, *queue)
-            }
+            } => apply_attack(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *target,
+                *queue,
+            ),
+            Command::Hunt { units, goal, queue } => apply_hunt(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *goal,
+                *queue,
+            ),
+            Command::Harvest { units, node, queue } => apply_harvest(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *node,
+                *queue,
+            ),
             Command::ReturnCargo {
                 units,
                 foundry,
                 repair,
-            } => apply_return_cargo(state, pc.player, &canonical_units(units), *foundry, *repair),
+            } => apply_return_cargo(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *foundry,
+                *repair,
+            ),
             Command::Patrol { units, waypoints } => {
-                apply_patrol(state, pc.player, &canonical_units(units), waypoints)
+                apply_patrol(state, pc.player, &canonical_units(state, units), waypoints)
             }
             Command::Build {
                 units,
@@ -78,7 +102,7 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             } => apply_build(
                 state,
                 pc.player,
-                &canonical_units(units),
+                &canonical_units(state, units),
                 BuildPlacement {
                     kind: *kind,
                     anchor: *anchor,
@@ -92,13 +116,25 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 units,
                 building,
                 queue,
-            } => apply_repair(state, pc.player, &canonical_units(units), *building, *queue),
+            } => apply_repair(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *building,
+                *queue,
+            ),
             Command::Salvage {
                 units,
                 building,
                 queue,
-            } => apply_salvage(state, pc.player, &canonical_units(units), *building, *queue),
-            Command::Stop { units } => apply_stop(state, pc.player, &canonical_units(units)),
+            } => apply_salvage(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *building,
+                *queue,
+            ),
+            Command::Stop { units } => apply_stop(state, pc.player, &canonical_units(state, units)),
             Command::Train { building, kind } => apply_train(state, pc.player, *building, *kind),
             Command::CancelTrain { building, index } => {
                 apply_cancel_train(state, pc.player, *building, *index)
@@ -114,10 +150,20 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 units,
                 target,
                 queue,
-            } => apply_repair_unit(state, pc.player, &canonical_units(units), *target, *queue),
-            Command::Advance { units, goal, queue } => {
-                apply_advance(state, pc.player, &canonical_units(units), *goal, *queue)
-            }
+            } => apply_repair_unit(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *target,
+                *queue,
+            ),
+            Command::Advance { units, goal, queue } => apply_advance(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *goal,
+                *queue,
+            ),
             Command::FocusFire { buildings, target } => {
                 apply_focus_fire(state, pc.player, &canonical_buildings(buildings), *target)
             }
@@ -156,7 +202,7 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             } => apply_load(
                 state,
                 pc.player,
-                &canonical_units(units),
+                &canonical_units(state, units),
                 *transport,
                 *queue,
             ),
@@ -176,19 +222,29 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 *unit,
                 *key,
                 *from_end,
-                &canonical_units(units),
+                &canonical_units(state, units),
             ),
             Command::Accompany {
                 units,
                 target,
                 queue,
-            } => apply_accompany(state, pc.player, &canonical_units(units), *target, *queue),
+            } => apply_accompany(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *target,
+                *queue,
+            ),
             Command::Retire { units, queue } => {
-                apply_retire(state, pc.player, &canonical_units(units), *queue)
+                apply_retire(state, pc.player, &canonical_units(state, units), *queue)
             }
-            Command::Scout { units, goal, queue } => {
-                apply_scout(state, pc.player, &canonical_units(units), *goal, *queue)
-            }
+            Command::Scout { units, goal, queue } => apply_scout(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *goal,
+                *queue,
+            ),
             Command::OrderRound { building } => {
                 super::ordnance::apply_order_round(state, pc.player, *building)
             }
@@ -204,6 +260,16 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             Command::Launch { building, target } => {
                 super::ordnance::apply_launch(state, pc.player, *building, *target)
             }
+            Command::OrderDrone { unit } => super::drones::apply_order(state, pc.player, *unit),
+            Command::CancelDrone { unit, index } => {
+                super::drones::apply_cancel(state, pc.player, *unit, *index)
+            }
+            Command::SetDroneAutofill { units, enabled } => super::drones::apply_set_autofill(
+                state,
+                pc.player,
+                &canonical_units(state, units),
+                *enabled,
+            ),
         };
         if let Err(reason) = outcome {
             events.push(Event::CommandRejected {
@@ -224,8 +290,15 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
 ///
 /// The recorded command keeps the client's bytes; this is how the sim
 /// interprets a list, not a rewrite of it.
-fn canonical_units(ids: &[UnitId]) -> Vec<UnitId> {
-    let mut ids = ids.to_vec();
+///
+/// A drone takes no orders: it flies for its host alone, so it leaves the
+/// list here and no handler ever sees it.
+fn canonical_units(state: &State, ids: &[UnitId]) -> Vec<UnitId> {
+    let mut ids: Vec<UnitId> = ids
+        .iter()
+        .copied()
+        .filter(|id| state.unit(*id).is_none_or(|unit| unit.host.is_none()))
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     ids
@@ -1255,7 +1328,7 @@ fn apply_accompany(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 {
+    if t.player != player || t.hp == 0 || t.host.is_some() {
         return Err(RejectReason::InvalidTarget);
     }
     let followed = followed_from(state, target);
@@ -1660,7 +1733,7 @@ fn apply_set_rally(
     if let Some(Rally::Unit(unit)) = rally
         && state
             .escorted(unit)
-            .is_none_or(|body| body.player != player || body.hp == 0)
+            .is_none_or(|body| body.player != player || body.hp == 0 || body.host.is_some())
     {
         return Err(RejectReason::InvalidTarget);
     }

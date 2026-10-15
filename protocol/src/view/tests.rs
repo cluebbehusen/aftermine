@@ -678,3 +678,70 @@ fn the_fog_view_shows_a_seen_point_defenders_charges_and_nothing_unseen() {
     let fog = FogView::capture(&far, PlayerId(0));
     assert!(fog.units.iter().all(|u| u.player == 0), "unseen, unshown");
 }
+
+#[test]
+fn both_views_count_docked_drones_and_name_hosts_but_only_the_owner_sees_orders() {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.map = vec![".".repeat(30); 22];
+    scenario.map[2].replace_range(2..3, "1");
+    scenario.map[17].replace_range(25..26, "2");
+    scenario.buildings.clear();
+    let unit = |player, kind, x, y| oxide_sim::scenario::UnitSpec { player, kind, x, y };
+    scenario.units = vec![
+        unit(0, oxide_sim::UnitKind::Roc, 12, 10),
+        unit(1, oxide_sim::UnitKind::Skyhook, 16, 10),
+    ];
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 4.into();
+    value["units"][0]["bay"]["ordered"] = 1.into();
+    value["players"][0]["scrap"] = 0.into();
+    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    // The Skyhook brings the drones out.
+    for _ in 0..3 {
+        state.tick(&[]);
+    }
+    let roc = state.units()[0].id;
+    assert!(
+        state.units().iter().any(|u| u.host == Some(roc)),
+        "premise: drones are out"
+    );
+    for seat in [oxide_sim::PlayerId(0), oxide_sim::PlayerId(1)] {
+        let own = seat.0 == 0;
+        let fog = FogView::capture(&state, seat);
+        let obs = oxide_sim::observation::ObservationData::fog_honest(&state, seat);
+        let observed: Vec<_> = obs
+            .my_units
+            .iter()
+            .chain(&obs.ally_units)
+            .chain(&obs.enemy_units)
+            .collect();
+        for row in &fog.units {
+            let seen = observed.iter().find(|u| u.id.0 == row.id).unwrap();
+            assert_eq!(
+                row.host,
+                seen.host.map(|h| h.0),
+                "seat {seat:?} unit {}",
+                row.id
+            );
+            assert_eq!(
+                row.bay.map(|b| (b.docked, b.ordered, b.autofill)),
+                seen.bay.map(|b| (b.docked, b.ordered, b.autofill)),
+                "seat {seat:?} unit {}",
+                row.id
+            );
+        }
+        let bay = fog
+            .units
+            .iter()
+            .find(|u| u.id == roc.0)
+            .unwrap()
+            .bay
+            .unwrap();
+        assert_eq!(bay.ordered.is_some(), own, "seat {seat:?}");
+        assert_eq!(bay.autofill.is_some(), own, "seat {seat:?}");
+        assert!(
+            fog.units.iter().any(|u| u.host == Some(roc.0)),
+            "seat {seat:?} sees whose drones they are"
+        );
+    }
+}

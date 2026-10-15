@@ -1123,6 +1123,36 @@ fn draw_mounted_guns(
     }
 }
 
+/// Placeholder dock clamps down the host's spine, two abreast from its
+/// centre aft, one per drone the bay holds: lit while a drone is docked
+/// there, dark while its drone is out or not yet built.
+fn draw_dock_clamps(
+    game: &crate::game::Scene<'_>,
+    unit: &oxide_sim::Unit,
+    bay: oxide_sim::state::DroneBay,
+    (body, body_rotation): (Vec2, f32),
+    zoom: f32,
+) {
+    let Some(stats) = unit.kind.stats().bay else {
+        return;
+    };
+    let forward = vec2(body_rotation.sin(), -body_rotation.cos());
+    let starboard = vec2(body_rotation.cos(), body_rotation.sin());
+    let lit = seat_identity_color(game, unit.player);
+    let side = zoom * 0.14;
+    for slot in 0..stats.capacity {
+        let row = f32::from(slot / 2);
+        let column = if slot % 2 == 0 { -0.22 } else { 0.22 };
+        let at = body + forward * (zoom * (-0.15 - 0.3 * row)) + starboard * (zoom * column);
+        let color = if slot < bay.docked {
+            lit
+        } else {
+            Color::new(0.08, 0.08, 0.1, 0.9)
+        };
+        draw_rectangle(at.x - side * 0.5, at.y - side * 0.5, side, side, color);
+    }
+}
+
 /// A unit's chassis and allegiance mask: the Maw from its runtime layers,
 /// everything else from its frame with its drawn belts between the two.
 fn draw_unit_body(
@@ -1408,6 +1438,9 @@ fn draw_unit_pass(
                     zoom,
                 );
             }
+        }
+        if let Some(bay) = unit.bay {
+            draw_dock_clamps(game, unit, bay, (body, body_rotation), zoom);
         }
         if let Some(mechanism_layer) = mechanism_layer {
             sprites.draw_unit(

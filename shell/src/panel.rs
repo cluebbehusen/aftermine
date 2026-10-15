@@ -1461,6 +1461,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             progress: None,
         });
     }
+    crate::unit_bays::SelectedBays::inspect(game).cards(bindings, &mut panel.cards);
     // A selected own transport offers its drop verb; the readout in
     // the info column shows what the sling holds.
     if units.len() == 1

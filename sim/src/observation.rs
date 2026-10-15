@@ -92,6 +92,36 @@ pub struct UnitObs {
     /// and enemies in sight too.
     #[serde(default)]
     pub charges: Option<u8>,
+    /// The machine a drone flies for. Drones keep to their host, so anyone
+    /// in sight can tell.
+    #[serde(default)]
+    pub host: Option<UnitId>,
+    /// A host's drone bay.
+    #[serde(default)]
+    pub bay: Option<BayObs>,
+}
+
+/// A drone bay as an observer sees it. Docked drones ride on the hull, so
+/// anyone in sight counts them; only the owner sees what is on order and
+/// whether the bay refills.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BayObs {
+    /// Drones resting on the hull.
+    pub docked: u8,
+    /// Drones paid for and waiting to be built (owner only).
+    pub ordered: Option<u8>,
+    /// Whether the bay orders drones itself (owner only).
+    pub autofill: Option<bool>,
+}
+
+impl BayObs {
+    fn of(bay: crate::state::DroneBay, own: bool) -> Self {
+        Self {
+            docked: bay.docked,
+            ordered: own.then_some(bay.ordered),
+            autofill: own.then_some(bay.autofill),
+        }
+    }
 }
 
 impl UnitObs {
@@ -678,6 +708,8 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
         repairing: own_repair_target(&u.order).is_some(),
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),
+        host: u.host,
+        bay: u.bay.map(|bay| BayObs::of(bay, true)),
     }
 }
 
@@ -698,6 +730,8 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         repairing: false,
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),
+        host: u.host,
+        bay: u.bay.map(|bay| BayObs::of(bay, false)),
     }
 }
 

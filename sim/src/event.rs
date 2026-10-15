@@ -358,6 +358,42 @@ pub enum Event {
         /// Rounds now loaded.
         loaded: u8,
     },
+    /// An autofilling drone bay bought its next drone.
+    DroneAutofilled {
+        /// The machine with the bay.
+        unit: UnitId,
+        /// Its owner, who paid.
+        player: PlayerId,
+        /// Scrap paid.
+        cost: u32,
+    },
+    /// A drone bay finished building a drone.
+    DroneAssembled {
+        /// The machine with the bay.
+        unit: UnitId,
+        /// Its owner.
+        player: PlayerId,
+        /// Drones now docked.
+        docked: u8,
+    },
+    /// A docked drone took off from its host.
+    DroneLaunched {
+        /// The host.
+        host: UnitId,
+        /// The drone, now in the world.
+        drone: UnitId,
+        /// Their owner.
+        player: PlayerId,
+    },
+    /// A drone came home and docked, out of the world.
+    DroneDocked {
+        /// The host.
+        host: UnitId,
+        /// The drone, no longer in the world.
+        drone: UnitId,
+        /// Their owner.
+        player: PlayerId,
+    },
     /// A silo launched a warhead.
     WarheadLaunched {
         /// The new warhead.

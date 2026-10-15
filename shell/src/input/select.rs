@@ -121,11 +121,13 @@ pub(super) fn click_on_hud(game: &Game, screen: Vec2) -> bool {
 
 /// Whether the human may see this unit at all: own and allies always
 /// (team sight), enemies only on currently visible ground. Selection
-/// must never reach through fog.
+/// must never reach through fog. A drone flies for its host alone and is
+/// never selected.
 fn selectable(game: &Game, unit: &oxide_sim::Unit) -> bool {
-    !game.state.hostile(game.presentation.human, unit.player)
-        || game.presentation.all_seeing()
-        || game.my_vision().sees_unit(unit)
+    unit.host.is_none()
+        && (!game.state.hostile(game.presentation.human, unit.player)
+            || game.presentation.all_seeing()
+            || game.my_vision().sees_unit(unit))
 }
 
 /// Whether the human may select this building without learning through
@@ -237,7 +239,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
         .state
         .units()
         .iter()
-        .filter(|u| u.player == game.presentation.human)
+        .filter(|u| u.player == game.presentation.human && u.host.is_none())
         .filter(unit_inside)
         .map(|u| u.id)
         .collect();

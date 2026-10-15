@@ -727,7 +727,34 @@ fn showcase_state() -> State {
     }
     assert!(avalanches_withdrew, "both Avalanches must trade one volley");
     assert!(bombards_withdrew, "both Bombards must trade one volley");
-    state
+    launch_drones(&state, cast.roc)
+}
+
+/// `state` with the Roc's two docked drones just launched on an alert, the
+/// first of them wounded.
+fn launch_drones(state: &State, roc: UnitId) -> State {
+    let mut staged = serde_json::to_value(state).unwrap();
+    for row in staged["units"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(roc) {
+            row["bay"]["docked"] = serde_json::json!(2);
+            row["bay"]["alert"] = serde_json::json!(oxide_sim::stats::RECALL_TICKS);
+        }
+    }
+    let mut state: State = serde_json::from_value(staged).unwrap();
+    state.tick(&[]);
+    let drone = state
+        .units()
+        .iter()
+        .find(|unit| unit.host == Some(roc))
+        .expect("the Roc launched its drones")
+        .id;
+    let mut staged = serde_json::to_value(&state).unwrap();
+    for row in staged["units"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(drone) {
+            row["hp"] = serde_json::json!(UnitKind::Drone.stats().max_hp / 2);
+        }
+    }
+    serde_json::from_value(staged).unwrap()
 }
 
 /// What the golden is *for*. Every branch `kit/src/render.rs` can take

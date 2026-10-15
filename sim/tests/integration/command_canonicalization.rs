@@ -51,10 +51,13 @@ fn command_tag(command: &Command) -> usize {
         Command::CancelRound { .. } => 28,
         Command::SetAutofill { .. } => 29,
         Command::Launch { .. } => 30,
+        Command::OrderDrone { .. } => 31,
+        Command::CancelDrone { .. } => 32,
+        Command::SetDroneAutofill { .. } => 33,
     }
 }
 
-const COMMAND_VARIANTS: usize = 31;
+const COMMAND_VARIANTS: usize = 34;
 
 /// The verbs that carry a unit list — every one of them owes this file a
 /// duplicate-id row.
@@ -69,8 +72,12 @@ const BUILDING_BEARING_TAGS: [usize; 3] = [16, 21, 29];
 /// The one verb that addresses a logical site, with no entity list to canonicalize.
 const SITE_ONLY_TAGS: [usize; 1] = [17];
 
-/// The one verb that addresses a single unit, with no list to canonicalize.
-const UNIT_ONLY_TAGS: [usize; 1] = [20];
+/// The verbs that address a single unit, with no list to canonicalize.
+const UNIT_ONLY_TAGS: [usize; 3] = [20, 31, 32];
+
+/// The one verb whose unit operand is a canonicalized set that writes no
+/// program: it settles a setting, so its repeated-id row compares settings.
+const UNIT_SETTING_TAGS: [usize; 1] = [33];
 
 /// The verbs that name no entity at all — nothing to canonicalize.
 const OPERANDLESS_TAGS: [usize; 1] = [13];
@@ -411,6 +418,7 @@ fn every_verb_is_sorted_into_a_tag_list() {
         .chain(BUILDING_BEARING_TAGS)
         .chain(SITE_ONLY_TAGS)
         .chain(UNIT_ONLY_TAGS)
+        .chain(UNIT_SETTING_TAGS)
         .chain(OPERANDLESS_TAGS)
         .chain(SUBJECT_WITH_UNITS_TAGS)
         .collect();
@@ -420,6 +428,33 @@ fn every_verb_is_sorted_into_a_tag_list() {
         (0..COMMAND_VARIANTS).collect::<Vec<_>>(),
         "every command is unit-bearing, subject-with-units, site-only, building-bearing, building-only, or operandless"
     );
+}
+
+/// A repeated Roc in a drone-refill setting sets its bay once, exactly as
+/// naming it once does.
+#[test]
+fn a_tripled_bay_in_a_refill_setting_lands_what_one_lands() {
+    let scenario = common::open_arena(20, 12, vec![unit(0, UnitKind::Roc, 6, 6)]);
+    let state = scenario.build().unwrap();
+    let roc = state.units()[0].id;
+    let mut once = state.clone();
+    once.tick(&[cmd(
+        0,
+        Command::SetDroneAutofill {
+            units: vec![roc],
+            enabled: false,
+        },
+    )]);
+    let mut thrice = state.clone();
+    thrice.tick(&[cmd(
+        0,
+        Command::SetDroneAutofill {
+            units: vec![roc; 3],
+            enabled: false,
+        },
+    )]);
+    assert!(once.unit(roc).unwrap().bay.is_some_and(|bay| !bay.autofill));
+    assert_eq!(once.hash(), thrice.hash());
 }
 
 /// The direct comparison: a tripled id must leave the world bit-identical

@@ -142,23 +142,40 @@ pub(super) fn dispatch_action(
             input.striking = silos;
         }
         Action::OrderRound => {
-            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
-            match selected.round_order() {
-                Ok(building) => game.issue(Command::OrderRound { building }),
+            let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
+            let order = if bays.is_empty() {
+                crate::building_actions::SelectedBuildings::inspect(&game.view())
+                    .round_order()
+                    .map(|building| Command::OrderRound { building })
+            } else {
+                bays.order().map(|unit| Command::OrderDrone { unit })
+            };
+            match order {
+                Ok(command) => game.issue(command),
                 Err(why) => game
                     .presentation
                     .toast(crate::typography::sentence_case(&why)),
             }
         }
         Action::CancelRound => {
-            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
-            if let Some(command) = selected.round_cancel() {
+            let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
+            let cancel = if bays.is_empty() {
+                crate::building_actions::SelectedBuildings::inspect(&game.view()).round_cancel()
+            } else {
+                bays.cancel()
+            };
+            if let Some(command) = cancel {
                 game.issue(command);
             }
         }
         Action::ToggleAutofill => {
-            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
-            if let Some(command) = selected.autofill_toggle() {
+            let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
+            let toggle = if bays.is_empty() {
+                crate::building_actions::SelectedBuildings::inspect(&game.view()).autofill_toggle()
+            } else {
+                bays.autofill_toggle()
+            };
+            if let Some(command) = toggle {
                 game.issue(command);
             }
         }

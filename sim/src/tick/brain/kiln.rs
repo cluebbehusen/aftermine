@@ -72,7 +72,7 @@ pub(super) fn feed(state: &mut State, heals: &mut Vec<PendingUnitHeal>) {
         .iter()
         .filter_map(|u| match u.kind.stats().mend {
             Mend::Kiln(kiln) => Some((u.id, kiln.hp_per_wreck)),
-            Mend::Repair => None,
+            Mend::Repair | Mend::Dock => None,
         })
         .collect();
     if (tick / KILN_BITE_PERIOD) % 2 == 1 {

@@ -49,6 +49,11 @@ cradle and its progress. Finished, it stands its machine up at its centre
 instead of completing; a player may raise any number of them. A machine with a
 kiln, the Maw, heals only through it, eating wreck around its hull.
 
+A Roc's bay builds up to six drones, which launch while an enemy aircraft is
+near or anything hits the Roc or its drones, fight aircraft on a short leash
+around it, and dock again once it is calm. Drones take no commands and die with
+their host.
+
 A Roc carries its guns on fixed pivots of its hull. Each gun picks its own
 target inside its own arc under every order, and the hull turns for them only on
 an attack, an attack-move that meets an enemy, or an idle gun with an enemy in

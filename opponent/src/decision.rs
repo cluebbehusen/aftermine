@@ -1329,33 +1329,28 @@ fn arm(
 
 /// Per mille of income protected for the saving target. Stance and greed set
 /// it; armed enemy units in sight near the seat's buildings lower it, so the
-/// seat spends on defense when it is threatened.
-fn share(observation: &ObservationData, profile: &ResolvedProfile) -> u32 {
+/// seat spends on defense when it is threatened. Drones count on neither
+/// side: they come and go from their host's bay.
+pub(crate) fn share(observation: &ObservationData, profile: &ResolvedProfile) -> u32 {
     let base = match profile.stance {
         BotStance::Turtle => 550,
         BotStance::Balanced => 500,
         BotStance::Aggressive => 400,
     };
     let greed = 3 * (i32::from(profile.traits.greed) - 50);
-    let armed = |kind: UnitKind| !kind.stats().weapons.is_empty();
-    let threat: u32 = observation
+    let threat: u64 = observation
         .enemy_units
         .iter()
-        .filter(|unit| unit.kind.stats().can_fight())
+        .filter(|unit| unit.kind.stats().can_fight() && !unit.kind.stats().docks())
         .filter(|unit| {
             observation.my_buildings.iter().any(|building| {
                 let size = building.kind.size();
                 gap(building.anchor, size, unit.tile, (1, 1)) < 12
             })
         })
-        .map(|unit| unit.kind.stats().cost)
+        .map(|unit| u64::from(unit.kind.stats().cost))
         .sum();
-    let army: u32 = observation
-        .my_units
-        .iter()
-        .filter(|unit| armed(unit.kind))
-        .map(|unit| unit.kind.stats().cost)
-        .sum();
+    let army = army(observation);
     let cut = if threat == 0 {
         0
     } else if threat >= army {
@@ -1382,10 +1377,11 @@ fn workforce(observation: &ObservationData) -> u64 {
 
 /// What the seat's armed units cost.
 fn army(observation: &ObservationData) -> u64 {
+    // A drone comes and goes from its host's bay, so only machines count.
     observation
         .my_units
         .iter()
-        .filter(|unit| !unit.kind.stats().weapons.is_empty())
+        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
         .map(|unit| u64::from(unit.kind.stats().cost))
         .sum()
 }

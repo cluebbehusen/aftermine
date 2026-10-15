@@ -213,10 +213,12 @@ fn sample(state: &State, stats: &mut [PlayerStats], ticks: &mut Vec<u64>) {
         entry.scrap.push(state.players()[seat].scrap);
         let mut value = 0u32;
         let mut counts: BTreeMap<&'static str, u16> = BTreeMap::new();
+        // A drone is its host's equipment, counted neither in an army nor
+        // among its losses, launched or docked.
         for unit in state
             .units()
             .iter()
-            .filter(|unit| unit.player == PlayerId::from_index(seat))
+            .filter(|unit| unit.player == PlayerId::from_index(seat) && !unit.kind.stats().docks())
         {
             value = value.saturating_add(unit.kind.stats().cost);
             *counts.entry(unit.kind.name()).or_default() += 1;
@@ -244,7 +246,7 @@ fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
                 let counter = &mut stats[player.0 as usize].buildings_completed;
                 *counter = counter.saturating_add(1);
             }
-            Event::UnitDied { player, .. } => {
+            Event::UnitDied { player, kind, .. } if !kind.stats().docks() => {
                 let counter = &mut stats[player.0 as usize].units_lost;
                 *counter = counter.saturating_add(1);
             }

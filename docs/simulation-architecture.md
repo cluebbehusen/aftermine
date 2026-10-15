@@ -496,7 +496,8 @@ Units never make tiles impassable to pathfinding. They are physical bodies,
 however, and deterministic relaxation passes separate overlapping units after
 path movement. Ground collides only with ground and air only with air, and
 turn-limited aircraft take part in no collision at all: a committed arc that
-steering has already checked against the world cannot be shoved off it. Moving
+steering has already checked against the world cannot be shoved off it. A drone
+never collides with its own host, which it launches from and docks into. Moving
 bodies slide around contacts. A productive stationary unit holds its position
 against an approaching unit; other stationary bodies receive ordinary
 separation. Same-owner contacts around productive work allow a compressed
@@ -800,6 +801,25 @@ another gun's target, and then holds that facing for `facing_hold` ticks; the
 serialized `IdleFacing` keeps that hold. A mounted hull never retaliates, chases
 from beyond its guns' reach, or picks up targets as an escort.
 
+A kind whose stats carry `BayStats`, the Roc, keeps a serialized `DroneBay`: its
+docked drones, the paid ones building one at a time in the production phase as a
+magazine's rounds do, its refill setting, and an alert. The alert rises to
+`RECALL_TICKS` while a seen enemy aircraft is within `LAUNCH_RADIUS` of the
+host, and whenever the host or one of its drones takes damage, and otherwise
+runs down. While it is above zero, every docked drone launches after the brains,
+as a real unit whose serialized `host` names the machine it flies for, and at
+zero flying drones come home and dock, leaving the world. A drone runs no order:
+it fights the nearest seen enemy aircraft within `DRONE_LEASH` of its host's
+edge, so nothing that reaches the host stands outside the leash, holds a slot on
+a ring `DRONE_ORBIT` out with none, and never retaliates. Commands strip drones
+from their unit lists, and escort and rally refuse one as their target. A drone
+dies in cleanup the tick its host does, and the host's ordered drones are lost
+with it. Validation rejects a drone whose host is not its owner's live machine
+with a bay, and a bay whose docked, ordered and flying drones exceed its
+capacity. Both fog projections name a visible drone's host and count a visible
+host's docked drones; what a bay has on order and whether it refills follow that
+unit's intent, shown to its owner (and, in the fog view, its allies).
+
 A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
 braced motor while its spades are out, counting deployment ticks up to the
 brace's deployment. It turns with the spades stowed, then deploys over that many
@@ -1042,5 +1062,6 @@ map rather than an exhaustive test inventory.
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                             |
 | Mounted guns                                      | `sim/src/tick/brain/combat/mounts.rs`                                                                                                   | `sim/tests/integration/roc.rs`                                                                                                                                                                  |
+| Drone bays and drones                             | `sim/src/tick/drones.rs`, `sim/src/tick/brain/combat/drones.rs`                                                                         | `sim/tests/integration/drones.rs`                                                                                                                                                               |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
 | Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |

@@ -30,6 +30,8 @@ const DEEP_BORE_PERIOD: u64 = 48;
 const RECLAIMER_PERIOD: u64 = 24;
 const BUZZARD_ROTOR_PERIOD: u64 = 6;
 const SKYHOOK_ROTOR_PERIOD: u64 = 9;
+/// A drone's small, fast rotors.
+const DRONE_ROTOR_PERIOD: u64 = 4;
 /// The Roc's ducted lift fans, larger and slower than a rotorcraft's.
 const ROC_FAN_PERIOD: u64 = 12;
 const SKYHOOK_ACTION_TICKS: f32 = 8.0;
@@ -1297,7 +1299,7 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
         },
-        UnitKind::Talon | UnitKind::Roc => AttackTiming {
+        UnitKind::Talon | UnitKind::Roc | UnitKind::Drone => AttackTiming {
             report_ticks: 2.0,
             recover_ticks: 3.0,
         },
@@ -1375,6 +1377,7 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         UnitKind::Buzzard => Some(BUZZARD_ROTOR_PERIOD),
         UnitKind::Skyhook => Some(SKYHOOK_ROTOR_PERIOD),
         UnitKind::Roc => Some(ROC_FAN_PERIOD),
+        UnitKind::Drone => Some(DRONE_ROTOR_PERIOD),
         UnitKind::Harvester
         | UnitKind::Sentinel
         | UnitKind::Scuttler
