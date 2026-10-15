@@ -2,9 +2,10 @@ use super::*;
 use crate::defenses;
 use crate::investments::{self, ADOPT, Candidate, Investment, Situation};
 use crate::memory::Memory;
+use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
 use crate::{PersonalityTraits, Step};
-use oxide_sim::scenario::BotDifficulty;
+use oxide_sim::scenario::{BotConfig, BotDifficulty};
 
 /// The arena with both seats' Harvesters saturating their nodes, so a
 /// Fabricator is worth saving for from the first decision.
@@ -1031,4 +1032,62 @@ fn checkpoints_reject_state_off_the_map_and_survive_extreme_samples() {
     let mut state = state.clone();
     advance_to(&mut state, 12, &[]);
     opponent.act(&state, &mut OwnEvents::default());
+}
+
+#[test]
+fn drones_out_of_a_bay_move_neither_the_threat_nor_the_army_behind_the_share() {
+    let mut scenario = saturated(0);
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Roc,
+        x: 8,
+        y: 8,
+    });
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let roc = observation
+        .my_units
+        .iter()
+        .find(|unit| unit.kind == UnitKind::Roc)
+        .unwrap()
+        .clone();
+    let profile = ResolvedProfile::resolve(BotConfig::new(
+        BotDifficulty::Standard,
+        BotStance::Balanced,
+        1,
+    ));
+    let mut next = 10_000;
+    let mut unit = |kind, player, host| {
+        next += 1;
+        oxide_sim::observation::UnitObs {
+            id: UnitId(next),
+            kind,
+            player,
+            host,
+            ..roc.clone()
+        }
+    };
+    let enemy_host = UnitId(9_999);
+    let own: Vec<_> = (0..6)
+        .map(|_| unit(UnitKind::Drone, PlayerId(0), Some(roc.id)))
+        .collect();
+    let hostile: Vec<_> = (0..6)
+        .map(|_| unit(UnitKind::Drone, PlayerId(1), Some(enemy_host)))
+        .collect();
+    // Sentinels near the base in steps finer than the drones' worth, so
+    // the threat crosses every point where the share changes.
+    for sentinels in 0..80 {
+        let mut docked = observation.clone();
+        docked.enemy_units = (0..sentinels)
+            .map(|_| unit(UnitKind::Sentinel, PlayerId(1), None))
+            .collect();
+        let mut launched = docked.clone();
+        launched.my_units.extend(own.iter().cloned());
+        launched.enemy_units.extend(hostile.iter().cloned());
+        assert_eq!(
+            crate::decision::share(&launched, &profile),
+            crate::decision::share(&docked, &profile),
+            "{sentinels} sentinels"
+        );
+    }
 }

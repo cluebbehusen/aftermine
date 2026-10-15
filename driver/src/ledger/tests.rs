@@ -1333,3 +1333,51 @@ fn a_drone_fights_and_pays_as_part_of_its_host() {
         "launching drones builds nothing"
     );
 }
+
+#[test]
+fn a_bay_bills_its_host_for_the_drones_it_finishes() {
+    let scenario = field(0, &[(0, UnitKind::Roc, 10, 6)], &[]);
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 0.into();
+    value["units"][0]["bay"]["ordered"] = 2.into();
+    let state: State = serde_json::from_value(value).unwrap();
+    let bay = UnitKind::Roc.stats().bay.unwrap();
+    let (state, ledgers) = play(state, 2 * u64::from(bay.build_ticks) + 10, Vec::new());
+    assert_eq!(
+        state.units()[0].bay.unwrap().docked,
+        2,
+        "premise: both built"
+    );
+    let drones = 2 * u64::from(bay.cost);
+    assert_eq!(
+        unit(&ledgers, 0, "roc").paid,
+        u64::from(UnitKind::Roc.stats().cost) + drones
+    );
+    assert_eq!(ledgers[0].spend["drone"].iter().sum::<u64>(), drones);
+}
+
+#[test]
+fn launching_drones_changes_no_worth() {
+    let scenario = field(
+        0,
+        &[(0, UnitKind::Roc, 10, 6), (1, UnitKind::Skyhook, 14, 6)],
+        &[],
+    );
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 6.into();
+    let mut state: State = serde_json::from_value(value).unwrap();
+    let bodies =
+        |state: &State| worth(state, &snapshot(state), 0) - u64::from(state.players()[0].scrap);
+    loop {
+        let docked = bodies(&state);
+        state.tick(&[]);
+        if state.units().iter().any(|u| u.host.is_some()) {
+            assert_eq!(
+                bodies(&state),
+                docked,
+                "the launched drones are still the Roc's bay"
+            );
+            return;
+        }
+    }
+}

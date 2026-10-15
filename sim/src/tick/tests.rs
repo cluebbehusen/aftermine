@@ -1455,3 +1455,33 @@ fn a_dock_queued_before_the_tick_s_hits_waits_for_them() {
         "a live drone at a calm host docks"
     );
 }
+
+#[test]
+fn drones_launching_from_their_host_do_not_shove_it() {
+    let mut scenario = crate::Scenario::skirmish();
+    scenario.units = vec![crate::scenario::UnitSpec {
+        player: 0,
+        kind: crate::UnitKind::Roc,
+        x: 8,
+        y: 8,
+    }];
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][0]["bay"]["docked"] = 6.into();
+    value["units"][0]["bay"]["alert"] = 60.into();
+    let mut state: State = serde_json::from_value(value).unwrap();
+    let (host, pos) = (state.units[0].id, state.units[0].pos);
+    for _ in 0..4 {
+        state.tick(&[]);
+    }
+    let drones: Vec<_> = state
+        .units
+        .iter()
+        .filter(|u| u.host == Some(host))
+        .collect();
+    assert_eq!(drones.len(), 6, "premise: the bay launched");
+    assert!(
+        drones.iter().any(|d| d.pos != pos),
+        "the drones still spread from one another"
+    );
+    assert_eq!(state.unit(host).unwrap().pos, pos, "the Roc held still");
+}

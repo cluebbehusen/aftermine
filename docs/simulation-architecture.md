@@ -496,7 +496,8 @@ Units never make tiles impassable to pathfinding. They are physical bodies,
 however, and deterministic relaxation passes separate overlapping units after
 path movement. Ground collides only with ground and air only with air, and
 turn-limited aircraft take part in no collision at all: a committed arc that
-steering has already checked against the world cannot be shoved off it. Moving
+steering has already checked against the world cannot be shoved off it. A drone
+never collides with its own host, which it launches from and docks into. Moving
 bodies slide around contacts. A productive stationary unit holds its position
 against an approaching unit; other stationary bodies receive ordinary
 separation. Same-owner contacts around productive work allow a compressed
