@@ -104,6 +104,7 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "mantle",
             "surveyor",
             "roc",
+            "rig_roc_hull",
         )
         # "roc" is also the start of "rock", whose art takes no rim.
     ) and not name.startswith(("roc_cradle", "rock")):
@@ -1742,14 +1743,10 @@ def scuttle_charge(variant: str) -> None:
     finish(img, px, f"scuttle_charge{variant_tag(variant)}")
 
 
-def roc(variant: str, move: int = 0) -> None:
-    """Placeholder experimental gunship until its art is promoted: a long
-    hull, nose up, between stub wings, a gun on each forward shoulder where
-    the simulation pivots them, and a ducted fan on each wing root aft. The
-    canvas spans four tiles; the hull fills about three of them."""
-    px = 256
-    pal = PALETTES[variant]
-    img, d = canvas(px)
+def _roc_hull(d: ImageDraw.ImageDraw, pal: dict, move: int) -> None:
+    """The gunship's hull on its 256 px canvas: a long body, nose up,
+    between stub wings, with a ducted fan on each wing root aft. The hull
+    fills about three of the canvas's four tiles."""
     # Stub wings across the hull's middle.
     d.rounded_rectangle(
         [s(48), s(110), s(208), s(146)], radius=s(12), fill=(*IRON_DARK, 255)
@@ -1793,14 +1790,71 @@ def roc(variant: str, move: int = 0) -> None:
     # Engine glow at the tail.
     for x in (110, 136):
         d.rectangle([s(x), s(214), s(x + 10), s(222)], fill=(*SCRAP_LIGHT, 255))
-    # A gun on each forward shoulder: 0.65 tiles ahead of the centre and
-    # 0.55 either side, at 64 pixels a tile.
-    for cx in (93, 163):
-        d.ellipse([s(cx - 11), s(75), s(cx + 11), s(97)], fill=(*IRON_DARK, 255))
-        d.rectangle([s(cx - 3), s(52), s(cx + 3), s(86)], fill=(*IRON_LIGHT, 255))
-        d.ellipse([s(cx - 6), s(80), s(cx + 6), s(92)], fill=(*pal["light"], 255))
+
+
+# The gun mounts sit 0.65 tiles ahead of the hull's centre and 0.55 either
+# side of it, at 64 pixels a tile, where the simulation pivots them.
+ROC_GUN_PIVOTS = ((92.8, 86.4), (163.2, 86.4))
+# The barrel tip ahead of its pivot, in pixels; the shell's muzzle offset
+# for the gunship matches it.
+ROC_BARREL = 28
+
+
+def _roc_gun(
+    d: ImageDraw.ImageDraw, pal: dict, cx: float, cy: float, recoil: int
+) -> None:
+    """One gun on its turntable, barrel up from its pivot at (cx, cy),
+    pulled back `recoil` pixels."""
+    d.ellipse([s(cx - 11), s(cy - 11), s(cx + 11), s(cy + 11)], fill=(*IRON_DARK, 255))
+    d.rectangle(
+        [s(cx - 3), s(cy - ROC_BARREL + recoil), s(cx + 3), s(cy)],
+        fill=(*IRON_LIGHT, 255),
+    )
+    d.rectangle(
+        [
+            s(cx - 4),
+            s(cy - ROC_BARREL + recoil),
+            s(cx + 4),
+            s(cy - ROC_BARREL + recoil + 4),
+        ],
+        fill=(*IRON, 255),
+    )
+    d.ellipse([s(cx - 6), s(cy - 6), s(cx + 6), s(cy + 6)], fill=(*pal["light"], 255))
+
+
+def roc(variant: str, move: int = 0) -> None:
+    """Placeholder experimental gunship until its art is promoted: the hull
+    with both guns at rest facing ahead, for its portraits."""
+    px = 256
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    _roc_hull(d, pal, move)
+    for cx, cy in ROC_GUN_PIVOTS:
+        _roc_gun(d, pal, cx, cy, 0)
     suffix = "" if move == 0 else f"_move{move}"
     finish(img, px, f"roc{variant_tag(variant)}{suffix}")
+
+
+def rig_roc_hull(variant: str, move: int = 0) -> None:
+    """The gunship's hull without its guns, which the shell draws on their
+    mounts."""
+    px = 256
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    _roc_hull(d, pal, move)
+    suffix = "" if move == 0 else f"_move{move}"
+    finish(img, px, f"rig_roc_hull{variant_tag(variant)}{suffix}")
+
+
+def rig_roc_mount(variant: str, action: int = 0) -> None:
+    """One of the gunship's guns on a one-tile canvas centred on its pivot,
+    barrel up: at rest, then recoiling and returning after a shot."""
+    px = 64
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    _roc_gun(d, pal, 32, 32, (0, 5, 2)[action])
+    suffix = "" if action == 0 else f"_action{action}"
+    finish(img, px, f"rig_roc_mount{variant_tag(variant)}{suffix}")
 
 
 def roc_cradle(variant: str) -> None:
@@ -3363,10 +3417,12 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper, roc):
+        for unit_fn in (excavator, kestrel, skyhook, sapper, roc, rig_roc_hull):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
+        for action in range(3):
+            rig_roc_mount(variant, action)
         airworks(variant)
         for work in range(1, 4):
             airworks(variant, work)

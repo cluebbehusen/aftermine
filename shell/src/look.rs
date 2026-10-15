@@ -187,6 +187,9 @@ fn light_rotor(kind: UnitKind) -> Gait {
 const GROUND_MUZZLE: f32 = 0.38;
 /// The muzzle reach of a direct-fire weapon on a plain airframe.
 const AIR_MUZZLE: f32 = 0.32;
+/// The Roc's barrel tip ahead of its gun's pivot: 28 pixels of its
+/// one-tile, 64-pixel mount.
+const ROC_MUZZLE: f32 = 0.4375;
 
 /// The presentation of `kind`.
 pub(crate) fn unit(kind: UnitKind) -> UnitLook {
@@ -395,9 +398,10 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
                 shadow_offset: vec2(0.2, 0.3),
                 lift: 0.07,
             }),
-            // Each gun's shot leaves its own pivot, which the simulation
-            // reports as the shot's origin.
-            weapon: Some(weapon(SoundKind::BuzzardFire, kinetic, AIR_MUZZLE)),
+            // Each gun turns on its own pivot, which the simulation
+            // reports as its shot's origin.
+            rig: true,
+            weapon: Some(weapon(SoundKind::BuzzardFire, kinetic, ROC_MUZZLE)),
             marker: M::Transport,
             ..plain
         },

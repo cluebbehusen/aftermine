@@ -770,7 +770,10 @@ rung. A new kind must state each of them there. Facts the simulation already
 states are read from its stats instead of a hand list: rotorcraft (no flight
 turn rate), large airframes (a crash), scouts, demolition, braced siege, a
 weapon's projectile payload, which buildings fight or train, and upgrade
-ladders.
+ladders. A kind with mounted guns, the Roc, draws its mount layer once per gun
+at that gun's pivot on the hull, turned to the simulation's bearing for that gun
+and interpolated the short way between ticks; each gun recoils only for its own
+weapon slot's shots.
 
 `entity_lod` derives full, half, quarter, and eighth-resolution entity textures
 at startup without changing authored atlas bytes. Each sprite packs only its

@@ -32,6 +32,8 @@ pub struct Presentation {
     pub prev_pos: HashMap<u32, Vec2>,
     /// Compass headings at the previous tick, for angular interpolation.
     pub prev_heading: HashMap<u32, u8>,
+    /// Mounted guns' world bearings at the previous tick, by weapon slot.
+    pub(crate) prev_mounts: HashMap<u32, [Option<u8>; oxide_sim::stats::MAX_WEAPONS]>,
     /// Sprite rotation per unit (radians; 0 = up).
     pub facing: HashMap<u32, f32>,
     pub(super) hull_heading: HashMap<u32, (f32, f32)>,
@@ -283,6 +285,7 @@ impl Presentation {
             overlay: false,
             prev_pos: HashMap::new(),
             prev_heading: HashMap::new(),
+            prev_mounts: HashMap::new(),
             facing: HashMap::new(),
             hull_heading: HashMap::new(),
             aim_units: HashMap::new(),
@@ -439,6 +442,30 @@ impl Presentation {
         (f32::from(previous) + f32::from(delta) * alpha.clamp(0.0, 1.0)) * std::f32::consts::TAU
             / 256.0
             + std::f32::consts::FRAC_PI_2
+    }
+
+    /// The drawn world bearing of the mounted gun in `slot`, turning the
+    /// short way from last tick's: a gun traverses far less than a half
+    /// turn a tick, so it never appears to sweep its blind quarter.
+    pub(crate) fn draw_mount_heading(
+        &self,
+        unit: &oxide_sim::state::Unit,
+        slot: usize,
+        alpha: f32,
+    ) -> Option<f32> {
+        let current = unit.mount_bearing(slot)?;
+        let previous = self
+            .prev_mounts
+            .get(&unit.id.0)
+            .and_then(|bearings| bearings[slot])
+            .unwrap_or(current);
+        let delta = current.wrapping_sub(previous).cast_signed();
+        Some(
+            (f32::from(previous) + f32::from(delta) * alpha.clamp(0.0, 1.0))
+                * std::f32::consts::TAU
+                / 256.0
+                + std::f32::consts::FRAC_PI_2,
+        )
     }
 
     pub(crate) fn chassis_turning(&self, unit: &oxide_sim::state::Unit) -> bool {
@@ -663,6 +690,17 @@ impl Presentation {
             .units()
             .iter()
             .map(|unit| (unit.id.0, unit.weapon_heading()))
+            .collect();
+        self.prev_mounts = state
+            .units()
+            .iter()
+            .filter(|unit| unit.mounts.is_some())
+            .map(|unit| {
+                (
+                    unit.id.0,
+                    std::array::from_fn(|slot| unit.mount_bearing(slot)),
+                )
+            })
             .collect();
         self.prev_pos = state
             .units()

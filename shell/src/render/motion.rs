@@ -388,7 +388,8 @@ fn piledriver_reload_frame(progress: f32) -> usize {
         .min(PILEDRIVER_RELOAD_FRAMES - 1)
 }
 
-fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
+/// The mount frame of a gun reporting or recovering from its own shot.
+pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
     if kind == UnitKind::Piledriver {
         let elapsed = match attack {
             AttackPhase::Report { progress, .. } => progress * 3.0,
@@ -428,6 +429,7 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Roc => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
+            UnitKind::Roc => 1,
             UnitKind::Avalanche => 2,
             UnitKind::Lancer | UnitKind::Bombard => 4 + cycle_index(progress, 2),
             UnitKind::Flakhound => 7 + cycle_index(progress, 2),
@@ -446,8 +448,7 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Sapper
             | UnitKind::Mantle
             | UnitKind::Surveyor
-            | UnitKind::Maw
-            | UnitKind::Roc => 0,
+            | UnitKind::Maw => 0,
         },
     }
 }

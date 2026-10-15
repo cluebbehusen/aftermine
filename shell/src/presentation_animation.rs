@@ -30,6 +30,8 @@ const DEEP_BORE_PERIOD: u64 = 48;
 const RECLAIMER_PERIOD: u64 = 24;
 const BUZZARD_ROTOR_PERIOD: u64 = 6;
 const SKYHOOK_ROTOR_PERIOD: u64 = 9;
+/// The Roc's ducted lift fans, larger and slower than a rotorcraft's.
+const ROC_FAN_PERIOD: u64 = 12;
 const SKYHOOK_ACTION_TICKS: f32 = 8.0;
 const REPAIR_PULSE_TICKS: f32 = 6.0;
 const AIRWORKS_LAUNCH_TICKS: u64 = 16;
@@ -1166,6 +1168,19 @@ impl AnimationController {
             .map(|(_, _, phase)| phase)
     }
 
+    /// The report and recovery of the mounted gun in weapon slot `slot`
+    /// alone: each of a hull's mounted guns recoils for its own shots.
+    pub(crate) fn mount_attack(
+        &self,
+        unit: UnitId,
+        kind: UnitKind,
+        slot: usize,
+        clock: AnimationClock,
+    ) -> Option<AttackPhase> {
+        let stamp = (*self.unit_attacks.get(&unit)?.get(slot)?)?;
+        attack_phase(clock.elapsed_since(stamp)?, slot, unit_attack_timing(kind))
+    }
+
     fn building_attack(
         &self,
         building: BuildingId,
@@ -1359,6 +1374,7 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
     match kind {
         UnitKind::Buzzard => Some(BUZZARD_ROTOR_PERIOD),
         UnitKind::Skyhook => Some(SKYHOOK_ROTOR_PERIOD),
+        UnitKind::Roc => Some(ROC_FAN_PERIOD),
         UnitKind::Harvester
         | UnitKind::Sentinel
         | UnitKind::Scuttler
@@ -1376,8 +1392,7 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Mantle
         | UnitKind::Piledriver
         | UnitKind::Surveyor
-        | UnitKind::Maw
-        | UnitKind::Roc => None,
+        | UnitKind::Maw => None,
     }
 }
 
