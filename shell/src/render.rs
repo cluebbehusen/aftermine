@@ -12,6 +12,16 @@ use crate::assets::{
 use crate::numeric;
 use crate::numeric::Fit;
 pub(crate) mod tracks;
+
+/// The gauge a tracked hull's belts roll on, in world tiles: drawn belt
+/// runs for most, the Maw's own bogies for the Maw.
+pub(crate) fn tread_gauge(kind: oxide_sim::UnitKind) -> Option<f32> {
+    if tracks::supported(kind) {
+        Some(tracks::gauge(kind, unit_draw_scale(kind)))
+    } else {
+        (kind == oxide_sim::UnitKind::Maw).then_some(maw::GAUGE)
+    }
+}
 static COLORBLIND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Colorblind palettes: swaps every ownership color (sprite accents, rings,
@@ -77,6 +87,7 @@ pub(crate) mod entities;
 mod environment;
 pub(crate) mod hud;
 mod impacts;
+pub(crate) mod maw;
 mod minimap;
 mod motion;
 mod panel_draw;
@@ -1054,6 +1065,80 @@ fn draw_piledriver_anchors(
     }
 }
 
+/// A unit's chassis and allegiance mask: the Maw from its runtime layers,
+/// everything else from its frame with its drawn belts between the two.
+fn draw_unit_body(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    unit: &oxide_sim::Unit,
+    (body, body_rotation, body_size): (Vec2, f32, Vec2),
+    (source, accent): (Rect, Rect),
+    (draw_scale, alpha): (f32, f32),
+) {
+    let zoom = game.presentation.camera.zoom;
+    let maw_rig = (unit.kind == oxide_sim::UnitKind::Maw)
+        .then(|| sprites.maw_rigs())
+        .flatten();
+    if let Some(rigs) = maw_rig {
+        let treads = game
+            .presentation
+            .track_motion
+            .get(&unit.id.0)
+            .map_or([0.0; 2], |motion| motion.distances(alpha));
+        maw::draw(
+            sprites,
+            &rigs.maw,
+            (body, body_rotation, body_size.x),
+            seat_identity_color(game, unit.player),
+            &maw::MawPose {
+                treads,
+                motion: game.presentation.maw_motion.get(&unit.id.0),
+                alpha,
+                still: reduced_motion(),
+            },
+            zoom,
+        );
+    } else {
+        let params = DrawTextureParams {
+            dest_size: Some(body_size),
+            source: Some(source),
+            rotation: body_rotation,
+            ..Default::default()
+        };
+        sprites.draw_unit(
+            body.x - body_size.x * 0.5,
+            body.y - body_size.y * 0.5,
+            WHITE,
+            params.clone(),
+            zoom,
+        );
+        if let Some(motion) = game.presentation.track_motion.get(&unit.id.0) {
+            tracks::draw(
+                unit.kind,
+                body,
+                body_size.x,
+                body_rotation,
+                if reduced_motion() {
+                    [0.0; 2]
+                } else {
+                    motion.distances(alpha)
+                },
+                draw_scale,
+            );
+        }
+        sprites.draw_unit(
+            body.x - body_size.x * 0.5,
+            body.y - body_size.y * 0.5,
+            seat_identity_color(game, unit.player),
+            DrawTextureParams {
+                source: Some(accent),
+                ..params
+            },
+            zoom,
+        );
+    }
+}
+
 fn draw_unit_pass(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -1158,42 +1243,13 @@ fn draw_unit_pass(
                 zoom,
             );
         }
-        let params = DrawTextureParams {
-            dest_size: Some(body_size),
-            source: Some(source),
-            rotation: body_rotation,
-            ..Default::default()
-        };
-        sprites.draw_unit(
-            body.x - body_size.x * 0.5,
-            body.y - body_size.y * 0.5,
-            WHITE,
-            params.clone(),
-            zoom,
-        );
-        if let Some(motion) = game.presentation.track_motion.get(&unit.id.0) {
-            tracks::draw(
-                unit.kind,
-                body,
-                body_size.x,
-                body_rotation,
-                if reduced_motion() {
-                    [0.0; 2]
-                } else {
-                    motion.distances(alpha)
-                },
-                draw_scale,
-            );
-        }
-        sprites.draw_unit(
-            body.x - body_size.x * 0.5,
-            body.y - body_size.y * 0.5,
-            seat_identity_color(game, unit.player),
-            DrawTextureParams {
-                source: Some(accent),
-                ..params
-            },
-            zoom,
+        draw_unit_body(
+            game,
+            sprites,
+            unit,
+            (body, body_rotation, body_size),
+            (source, accent),
+            (draw_scale, alpha),
         );
         if worker_body {
             worker::draw(

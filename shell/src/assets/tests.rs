@@ -561,6 +561,16 @@ fn authored_animation_families_are_complete_distinct_and_masked() {
     for kind in BuildingKind::ALL {
         let stem = building_stem(kind);
         let base = sprite_image(stem);
+        // The cradle's machinery is its crane, a runtime layer whose
+        // trolley welds while the site is worked.
+        let rigged = kind == BuildingKind::MawCradle;
+        if rigged {
+            assert_ne!(
+                sprite_image("rig_cradle_trolley").bytes,
+                sprite_image("rig_cradle_trolley_1").bytes,
+                "the cradle's trolley must weld while its site is worked"
+            );
+        }
         for stage in 0..SITE_STAGES {
             let mut phases = Vec::new();
             for phase in 0..SITE_PHASES {
@@ -574,8 +584,8 @@ fn authored_animation_families_are_complete_distinct_and_masked() {
                 );
                 phases.push(frame.bytes);
             }
-            assert_ne!(
-                phases[0], phases[1],
+            assert!(
+                rigged || phases[0] != phases[1],
                 "{stem} site stage {stage} must move its authored machinery"
             );
         }

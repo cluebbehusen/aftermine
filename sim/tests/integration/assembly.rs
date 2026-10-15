@@ -713,6 +713,14 @@ fn a_maw_strikes_a_machine_only_in_contact_and_never_follows_it() {
     let maw = ids(&state, 0, UnitKind::Maw)[0];
     let sentinel = ids(&state, 1, UnitKind::Sentinel)[0];
     let start = state.unit(maw).unwrap().pos;
+    state.tick(&[cmd(
+        1,
+        Command::Run {
+            units: vec![sentinel],
+            goal: TilePos::new(24, 10),
+            queue: false,
+        },
+    )]);
     let events = run_until(&mut state, 200, |state, _| {
         state.unit(sentinel).unwrap().hp < UnitKind::Sentinel.stats().max_hp
     });
@@ -743,6 +751,22 @@ fn a_maw_cutter_deals_structure_damage_to_structures() {
     let hits = |victim: UnitSpec, buildings: Vec<BuildingSpec>| {
         let mut state = yard(vec![unit(0, UnitKind::Maw, 24, 10), victim], buildings);
         let maw = ids(&state, 0, UnitKind::Maw)[0];
+        // A machine victim drives into the hull; the cutter reaches only
+        // what touches it.
+        let victims: Vec<UnitId> = state
+            .units()
+            .iter()
+            .filter(|u| u.player == PlayerId(1))
+            .map(|u| u.id)
+            .collect();
+        state.tick(&[cmd(
+            1,
+            Command::Run {
+                units: victims,
+                goal: TilePos::new(24, 10),
+                queue: false,
+            },
+        )]);
         let mut lost = Vec::new();
         for _ in 0..200 {
             let before: Vec<(Target, u32)> = state
@@ -832,4 +856,52 @@ fn a_maw_answers_a_gun_that_fires_on_it_from_beyond_its_aggro() {
         state.building(bastion).is_none()
     });
     assert!(state.unit(maw).is_some(), "the Maw cut the gun down");
+}
+
+/// The tiles each of West's Excavators stands on once the crew has been at
+/// work a while, and how far the cradle has come.
+fn crew_at_work(buildings: Vec<BuildingSpec>) -> (Vec<TilePos>, u32) {
+    let mut state = yard(workers(0, UnitKind::Excavator, 4, 14), buildings);
+    let crew = ids(&state, 0, UnitKind::Excavator);
+    state.tick(&[raise(&crew, CRADLE, false)]);
+    run(&mut state, 600);
+    let progress = cradle(&state).unwrap().construction_progress().unwrap();
+    let mut tiles: Vec<TilePos> = crew
+        .iter()
+        .map(|id| state.unit(*id).unwrap().tile())
+        .collect();
+    tiles.sort_by_key(|tile| (tile.y, tile.x));
+    (tiles, progress)
+}
+
+#[test]
+fn a_full_crew_works_from_the_cradles_four_pads() {
+    let (tiles, progress) = crew_at_work(vec![]);
+    assert!(progress > 0);
+    let pads: Vec<TilePos> = BuildingKind::MawCradle
+        .crew_pads()
+        .unwrap()
+        .iter()
+        .map(|&(dx, dy)| CRADLE.offset(dx, dy))
+        .collect();
+    assert_eq!(
+        tiles, pads,
+        "two pads off the north face, two off the south"
+    );
+}
+
+#[test]
+fn a_pad_lost_to_a_building_returns_the_crew_to_the_ordinary_ring() {
+    let (north_east, _) = BuildingKind::MawCradle.crew_pads().unwrap()[1];
+    let blocked = CRADLE.offset(north_east, -1);
+    let (tiles, progress) = crew_at_work(vec![building(
+        0,
+        BuildingKind::Barricade,
+        blocked.x,
+        blocked.y,
+    )]);
+    let (unblocked, _) = crew_at_work(vec![]);
+    assert!(progress > 0, "the crew still raises the cradle");
+    assert!(!tiles.contains(&blocked));
+    assert_ne!(tiles, unblocked);
 }

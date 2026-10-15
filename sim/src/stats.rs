@@ -1754,7 +1754,9 @@ const SURVEYOR: UnitStats = UnitStats {
 };
 
 const MAW: UnitStats = UnitStats {
-    contact_reach: Some(Fx::lit("0.3")),
+    // The drum cuts with the hull against its target: its lowered edge is
+    // the hull's collision edge.
+    contact_reach: Some(Fx::lit("0.05")),
     // Four Breakers' price in one hull: it outlasts a fortified position it
     // reaches, and loses an open fight to the same scrap of machines.
     max_hp: 6000,
@@ -2429,6 +2431,17 @@ impl BuildingKind {
     /// how far along it is, from the first work on its site: a cradle.
     pub const fn public_once_started(self) -> bool {
         self.assembles().is_some()
+    }
+
+    /// The tiles an assembly crew works from, as offsets from the anchor:
+    /// two off the north face and two off the south, at its corners, one
+    /// per crew place. `None` for a kind without a crew.
+    pub const fn crew_pads(self) -> Option<[(i32, i32); ASSEMBLY_CREW_CAP]> {
+        if self.assembles().is_none() {
+            return None;
+        }
+        let (w, h) = self.size();
+        Some([(0, -1), (w - 1, -1), (0, h), (w - 1, h)])
     }
 }
 

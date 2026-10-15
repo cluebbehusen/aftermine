@@ -658,6 +658,58 @@ fn draw_defense_mount(
     }
 }
 
+/// Whether `cradle`'s crew works from its pads as far as `viewer` knows: the
+/// simulation puts it there while every pad is open ground. A rival's pads
+/// are judged only by what the viewer sees or remembers of them, so dropping
+/// them never reveals what stands in fog.
+fn crew_pads_in_use(
+    state: &oxide_sim::State,
+    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
+    cradle: &oxide_sim::Building,
+    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+) -> bool {
+    let vision = state.vision(viewer);
+    pads.iter().all(|&(dx, dy)| {
+        let pad = cradle.anchor.offset(dx, dy);
+        let Some(tile) = state.map().tile(pad) else {
+            return false;
+        };
+        if all_seeing || cradle.player == viewer || vision.visible(pad) {
+            return state.passable(pad);
+        }
+        let rock = vision.explored(pad) && tile.terrain.blocks_ground();
+        let covered = vision.ghosts().iter().any(|ghost| {
+            let (w, h) = ghost.kind.size();
+            (ghost.anchor.x..ghost.anchor.x + w).contains(&pad.x)
+                && (ghost.anchor.y..ghost.anchor.y + h).contains(&pad.y)
+        });
+        !rock && !covered && vision.remembered_scrap(pad) == 0
+    })
+}
+
+/// Which of a cradle's crew places are worked right now: a crew member
+/// stands on the pad, stopped and at work. A rival's place lights only while
+/// the viewer sees its pad.
+fn crew_lamps(
+    state: &oxide_sim::State,
+    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
+    cradle: &oxide_sim::Building,
+    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+) -> [bool; oxide_sim::stats::ASSEMBLY_CREW_CAP] {
+    let crew = state.cradle_crew(cradle.id);
+    pads.map(|(dx, dy)| {
+        let pad = cradle.anchor.offset(dx, dy);
+        let seen = cradle.player == viewer || all_seeing || state.vision(viewer).visible(pad);
+        seen && crew.iter().any(|&id| {
+            state.unit(id).is_some_and(|unit| {
+                unit.tile() == pad
+                    && unit.work_stopped()
+                    && state.in_building_work_reach(unit, cradle.id)
+            })
+        })
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one draw pass over every building and its dressing"
@@ -866,6 +918,35 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     source: Some(accent_source),
                     ..Default::default()
                 },
+            );
+        }
+        if let Some(site) = animation.construction
+            && let Some(rigs) = sprites.maw_rigs()
+            && let Some(pads) = building.kind.crew_pads()
+        {
+            let viewer = (game.presentation.human, game.presentation.all_seeing());
+            if crew_pads_in_use(game.state, viewer, building, pads) {
+                super::maw::draw_crew_places(
+                    sprites,
+                    &rigs.cradle,
+                    (screen, dest, building.kind.size()),
+                    pads,
+                    crew_lamps(game.state, viewer, building, pads),
+                    zoom,
+                );
+            }
+            let welding = matches!(
+                frame.body,
+                super::motion::BuildingBodyFrame::Construction { phase: 1, .. }
+            );
+            super::maw::draw_crane(
+                sprites,
+                &rigs.cradle,
+                (screen, dest),
+                accent_tint,
+                site.progress,
+                welding,
+                zoom,
             );
         }
         if let Some(layers) = array_layers {

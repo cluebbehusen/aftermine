@@ -206,6 +206,28 @@ impl State {
         let surface = self.contact_surface(b);
         unit.pos.dist_sq(surface.closest(unit.pos)) <= reach * reach
             && surface.clear(unit.pos, unit.pos, unit.kind.stats().radius)
+            && self
+                .crew_pads_for(unit, b)
+                .is_none_or(|pads| pads.contains(&unit.tile()))
+    }
+
+    /// The pads a worker raising `site` must stand on: its crew pads while
+    /// every pad is open ground. `None` when the worker may work from
+    /// anywhere along the site, as at any site without a crew, or once a
+    /// pad is lost to rock or a building.
+    pub fn crew_pads_for(
+        &self,
+        unit: &crate::Unit,
+        site: &Building,
+    ) -> Option<[chassis::grid::TilePos; crate::stats::ASSEMBLY_CREW_CAP]> {
+        if unit.order != (crate::Order::Build { site: site.id }) {
+            return None;
+        }
+        let pads = site
+            .kind
+            .crew_pads()?
+            .map(|(dx, dy)| site.anchor.offset(dx, dy));
+        pads.iter().all(|&pad| self.passable(pad)).then_some(pads)
     }
 
     /// Contact artwork and tools use this surface; ranged distance remains rectangular.

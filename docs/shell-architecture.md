@@ -836,6 +836,20 @@ hold their shot's bearing and swing back north to reload. The first time a seat
 knows of a hostile warhead it gets an alert at the impact once known, or where
 the warhead flies.
 
+A Maw draws from runtime layers on its unit canvas. Each side's belts roll with
+that side's travel, so a pivot turns them against each other. Its drum lowers
+and spins while its own hits are recent or its kiln has wreck to eat
+(`State::kiln_fuel`), and stows when both end. While the kiln feeds, scrap rides
+the conveyor from the hood and heats on its way into the kiln, which glows while
+it burns; the belt runs on until its last load is in. An assembly cradle's site
+fades the stowed Maw in through the building opacity steps, facing east as the
+finished machine stands up, under a bridge crane whose place follows assembly
+progress, so it moves only while a crew raises the Maw. Its crew pads draw
+beside it while the crew works from them, as far as the viewer knows, and each
+pad's lamp lights while a crew member works from that pad; a rival's lamp lights
+only while the viewer sees the pad. A Maw first met, as after a seek, starts in
+the steady state of what it is doing.
+
 Settings persists marker timing presets (Standard, Earlier, Later) and size in
 `Config::markers`, applying changes immediately. A config without marker
 settings adopts the defaults without resetting other preferences. Custom config

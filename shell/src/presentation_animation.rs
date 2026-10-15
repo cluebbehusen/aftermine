@@ -1112,6 +1112,16 @@ impl AnimationController {
         }
     }
 
+    /// The completed tick of `unit`'s latest reported hit with any weapon.
+    pub(crate) fn last_unit_attack(&self, unit: UnitId) -> Option<u64> {
+        self.unit_attacks
+            .get(&unit)?
+            .iter()
+            .flatten()
+            .copied()
+            .max()
+    }
+
     fn note_unit_attack(&mut self, unit: UnitId, weapon: usize, completed_tick: u64) {
         if weapon >= MAX_WEAPONS {
             return;
