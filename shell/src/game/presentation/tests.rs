@@ -122,3 +122,116 @@ fn reduced_motion_suppresses_existing_lean_without_discarding_position_easing() 
     }
     assert!(game.presentation.slide_yaw(id, 1.0, false) > 0.0);
 }
+
+#[test]
+fn engines_heat_quickly_while_moving_and_cool_slowly() {
+    let mut heat = 0.0;
+    for _ in 0..20 {
+        heat = super::next_engine_heat(heat, true);
+    }
+    assert!(heat > 0.9, "hot after a second of travel: {heat}");
+    let mut cooling = heat;
+    for _ in 0..20 {
+        cooling = super::next_engine_heat(cooling, false);
+    }
+    assert!(
+        cooling > 0.4,
+        "still warm a second after stopping: {cooling}"
+    );
+    for _ in 0..200 {
+        cooling = super::next_engine_heat(cooling, false);
+    }
+    assert_eq!(cooling, 0.0, "cold in the end");
+}
+
+/// A hostile Roc far outside West's sight, flying, with a drone docked.
+fn hidden_roc() -> (oxide_sim::State, Presentation, oxide_sim::UnitId) {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units = vec![
+        oxide_sim::scenario::UnitSpec {
+            player: 0,
+            kind: UnitKind::Sentinel,
+            x: 2,
+            y: 2,
+        },
+        oxide_sim::scenario::UnitSpec {
+            player: 1,
+            kind: UnitKind::Roc,
+            x: 30,
+            y: 18,
+        },
+    ];
+    let game = Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0)).unwrap();
+    let state = (*game.state).clone();
+    let roc = state.units()[1].id;
+    assert!(
+        !state.vision(PlayerId(0)).sees_unit(&state.units()[1]),
+        "premise: the Roc is out of sight"
+    );
+    (state, game.presentation, roc)
+}
+
+fn fly(state: &mut oxide_sim::State, presentation: &mut Presentation, roc: oxide_sim::UnitId) {
+    let at = state.unit(roc).unwrap().tile();
+    let commands = [oxide_sim::PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Run {
+            units: vec![roc],
+            goal: chassis::grid::TilePos::new(at.x - 4, at.y),
+            queue: false,
+        },
+    }];
+    for tick in 0..20 {
+        presentation.remember_previous_tick(state);
+        let report = state.tick(if tick == 0 { &commands } else { &[] });
+        presentation.observe_tick(state, &report.events, &report.movement);
+    }
+}
+
+#[test]
+fn a_hidden_roc_keeps_no_engine_heat() {
+    let (mut state, mut presentation, roc) = hidden_roc();
+    fly(&mut state, &mut presentation, roc);
+    assert_eq!(
+        presentation.engine_heat(roc),
+        0.0,
+        "its flight stayed hidden"
+    );
+    presentation.human = PlayerId(1);
+    fly(&mut state, &mut presentation, roc);
+    assert!(
+        presentation.engine_heat(roc) > 0.5,
+        "its owner sees it run hot"
+    );
+}
+
+#[test]
+fn a_hidden_roc_s_bay_stays_at_rest() {
+    let (mut state, mut presentation, roc) = hidden_roc();
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["units"][1]["bay"]["docked"] = 2.into();
+    state = serde_json::from_value(value).unwrap();
+    // Seen once docked, as if it had been in sight earlier.
+    presentation.human = PlayerId(1);
+    presentation.observe_tick(&state, &[], &[]);
+    presentation.human = PlayerId(0);
+    presentation.remember_previous_tick(&state);
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["units"][1]["bay"]["docked"] = 0.into();
+    let launched: oxide_sim::State = serde_json::from_value(value).unwrap();
+    presentation.observe_tick(
+        &launched,
+        &[oxide_sim::Event::DroneLaunched {
+            host: roc,
+            drone: oxide_sim::UnitId(99),
+            player: PlayerId(1),
+        }],
+        &[],
+    );
+    assert!(
+        presentation.drone_launches.is_empty(),
+        "no launch is recorded out of sight"
+    );
+    let docks = &presentation.dock_motion[&roc.0];
+    assert_eq!(*docks, crate::dock_motion::DockMotion::settled(0));
+}

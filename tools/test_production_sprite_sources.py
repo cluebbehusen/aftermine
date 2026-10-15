@@ -17,13 +17,14 @@ from tools.production_sprite_sources import (
     finalized,
     installed_defenses_final,
     lattice_final,
+    mantle_final,
     maw_final,
     mechanical_extractor,
     mechanical_final,
     piledriver_final,
-    mantle_final,
     quarry_final,
     quarry_rocks,
+    roc_final,
     skyhook_sapper_crucible_final,
     specialists_final,
     spire_final,
@@ -72,7 +73,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 gen.harvester(variant, dig=2)
                 gen.barricade(variant)
                 gen.scuttle_charge(variant)
-                gen.roc_cradle(variant)
             finalized.install_finalized_sprites(cls.registry, cls.out)
             construction_final.install_finalized_construction(cls.registry, cls.out)
             environment_final.install_finalized_environment(cls.registry, cls.out)
@@ -358,7 +358,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 "scuttle_charge",
                 "spire",
                 "lattice",
-                "roc_cradle",
             ),
         )
 
@@ -1359,6 +1358,163 @@ class MawSourceTests(unittest.TestCase):
         welding = maw_final.render_trolley("base", True)
         self.assertGreater(_changed_pixels(idle, welding), 0)
         self.assertIsNotNone(maw_final.render_bridge("base").getbbox())
+
+
+def _place(image: Image.Image, layer: Image.Image, centre) -> None:
+    x, y = centre
+    out = Image.new("RGBA", image.size)
+    out.paste(layer, (round(x - layer.width / 2), round(y - layer.height / 2)))
+    image.alpha_composite(out)
+
+
+def _roc_layers(age: float) -> Image.Image:
+    """The Roc's runtime layers in the shell's draw order, guns ahead and
+    no drones docked."""
+    image = Image.new("RGBA", (roc_final.SIZE, roc_final.SIZE))
+
+    def centred(point):
+        return point[0], point[1] - roc_final.CENTRE
+
+    centre = roc_final.SIZE // 2
+    _place(image, roc_final.render_shadow(), (centre + roc_final.HULL_SHADOW[0], centre + roc_final.HULL_SHADOW[1]))
+    for mount in roc_final.MOUNTS:
+        x, y = centred(mount)
+        _place(image, roc_final.render_gun_shadow(), (x + roc_final.GUN_SHADOW[0], y + roc_final.GUN_SHADOW[1]))
+    image.alpha_composite(roc_final.render_wall())
+    image.alpha_composite(roc_final.render_yokes())
+    for side, mount in enumerate(roc_final.MOUNTS):
+        _place(image, roc_final.render_gun("base", age if side == 0 else roc_final.NO_SHOT), centred(mount))
+    image.alpha_composite(roc_final.render_hull("base"))
+    for side, fan in enumerate(roc_final.FANS):
+        _place(image, roc_final.render_fan(side, "base", 0), centred(fan))
+    for dock, point in enumerate(roc_final.DOCKS):
+        _place(image, roc_final.render_clamps(dock, "base", 0), centred(point))
+    _place(image, roc_final.render_hatch("base", 0), centred(roc_final.HATCH_CENTRE))
+    return image
+
+
+class RocSourceTests(unittest.TestCase):
+    def test_roc_key_poses_preserve_the_approved_art(self):
+        # Digests of the approved Longbow study's own drawing code with the
+        # ship at rest and every drone docked: guns parked, then the port
+        # gun's first flash.
+        poses = (
+            (
+                (roc_final.NO_SHOT,),
+                "5fe4b9a734bbae30b2eea9cd6ff499637cff3f4162577dc4367209e508078a72",
+            ),
+            (
+                (0,),
+                "cb1483d901ea4f1561bdda8cde32c9e5a0e601f5300bd24fd5b2268eaa20f38d",
+            ),
+        )
+        for (age,), expected in poses:
+            guns = ((roc_final.PARK[0], age), (roc_final.PARK[1], roc_final.NO_SHOT))
+            study = roc_final.render_study("base", guns=guns)
+            self.assertEqual(hashlib.sha256(study.tobytes()).hexdigest(), expected, age)
+        # The portrait is the study without its ground shadow but with the
+        # closed cargo hatch, moved so the ship turns about the canvas centre.
+        study = roc_final.render_study("base", shadows=False, hatch=0.0)
+        self.assertEqual(
+            roc_final.render_roc("base").crop((0, 0, 256, 256 - roc_final.CENTRE)).tobytes(),
+            study.crop((0, roc_final.CENTRE, 256, 256)).tobytes(),
+        )
+
+    def test_roc_layers_stack_onto_the_single_pass_art(self):
+        for age in (roc_final.NO_SHOT, 0, 2, 6):
+            guns = ((0.0, age), (0.0, roc_final.NO_SHOT))
+            whole = roc_final._centred(
+                roc_final.render_study("base", guns=guns, drones=[], hatch=0.0)
+            )
+            # Separately filtered layers differ faintly where the hull's rim
+            # meets its wall; a layer a pixel out of place changes hundreds
+            # more.
+            self.assertLessEqual(_strongly_changed_pixels(_roc_layers(age), whole), 200, age)
+
+    def test_fans_clamps_and_hatch_redraw_only_what_moves(self):
+        fans, clamps, hatch = roc_final._masks()
+        for a, b in ((fans, clamps), (fans, hatch), (clamps, hatch)):
+            self.assertIsNone(ImageChops.multiply(a, b).getbbox())
+        for side in (0, 1):
+            frames = [roc_final.render_fan(side, "base", k) for k in range(roc_final.FAN_FRAMES)]
+            for a, b in pairwise(frames):
+                self.assertGreater(_changed_pixels(a, b), 0)
+        # A fifth of a turn brings the five blades back to the first frame.
+        self.assertEqual(
+            roc_final._hull("base", roc_final.FAN_FRAMES).tobytes(),
+            roc_final._hull("base", 0).tobytes(),
+        )
+        for dock in range(len(roc_final.DOCKS)):
+            steps = [roc_final.render_clamps(dock, "base", k) for k in range(roc_final.CLAMP_STEPS)]
+            for a, b in pairwise(steps):
+                self.assertGreater(_changed_pixels(a, b), 0, dock)
+
+    def test_the_wreck_hull_has_still_fans_and_empty_open_docks(self):
+        wreck = roc_final.render_wreck("base")
+        hull = roc_final.render_hull("base").copy()
+
+        def centred(point):
+            return point[0], point[1] - roc_final.CENTRE
+
+        for side, fan in enumerate(roc_final.FANS):
+            _place(hull, roc_final.render_fan(side, "base", 0), centred(fan))
+        for dock, point in enumerate(roc_final.DOCKS):
+            _place(hull, roc_final.render_clamps(dock, "base", roc_final.CLAMP_STEPS - 1), centred(point))
+        _place(hull, roc_final.render_hatch("base", 0), centred(roc_final.HATCH_CENTRE))
+        self.assertEqual(wreck.tobytes(), hull.tobytes())
+
+    def test_drone_layers_split_the_study_drone(self):
+        for rotor in range(0, roc_final.ROTOR_FRAMES * roc_final.ROTOR_STEP, roc_final.ROTOR_STEP):
+            whole = roc_final.render_drone("base", rotor)
+            layered = roc_final.render_drone_frame("base", rotor)
+            layered.alpha_composite(roc_final.render_drone_body("base"))
+            self.assertLessEqual(_strongly_changed_pixels(layered, whole), 8, rotor)
+        self.assertGreater(
+            _changed_pixels(roc_final.render_drone_body("base"), roc_final.render_drone_body("base", True)),
+            0,
+        )
+
+    def test_the_hatch_and_glow_sit_on_the_hull(self):
+        steps = [roc_final.render_hatch("base", k) for k in range(roc_final.HATCH_STEPS)]
+        for a, b in pairwise(steps):
+            self.assertGreater(_changed_pixels(a, b), 0)
+        glow = roc_final.render_glow()
+        hull = roc_final._centred(roc_final._hull("base"))
+        self.assertGreater(glow.getbbox()[1], 160, "the glow sits on the aft thrusters")
+        spill = sum(
+            g > 8 and h == 0
+            for g, h in zip(
+                glow.getchannel("A").get_flattened_data(), hull.getchannel("A").get_flattened_data()
+            )
+        )
+        self.assertEqual(spill, 0, "the glow never spills off the hull")
+
+    def test_roc_layers_fit_the_atlas(self):
+        layers = [
+            roc_final.render_roc("base"),
+            roc_final.render_hull("base"),
+            roc_final.render_wreck("base"),
+            roc_final.render_wall(),
+            roc_final.render_shadow(),
+            roc_final.render_yokes(),
+            roc_final.render_gun("base"),
+            roc_final.render_gun_shadow(),
+            roc_final.render_fan(0, "base", 0),
+            roc_final.render_clamps(0, "base", 0),
+            roc_final.render_drone("base"),
+            roc_final.render_drone_shadow(),
+            roc_final.render_hatch("base", 0),
+            roc_final.render_glow(),
+            roc_final.render_cradle("base"),
+            roc_final.render_cradle_site("base"),
+        ]
+        for layer in layers:
+            self.assertEqual(layer.width % 8, 0)
+            self.assertEqual(layer.height % 8, 0)
+        # A gun's canvas is centred on its pivot and holds its flash.
+        flash = roc_final.render_gun("base", 0).getbbox()
+        self.assertGreater(flash[1], 0)
+        self.assertAlmostEqual((flash[0] + flash[2]) / 2, roc_final.GUN / 2, delta=2)
 
 
 if __name__ == "__main__":

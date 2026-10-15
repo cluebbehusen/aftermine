@@ -63,6 +63,12 @@ pub struct Presentation {
     pub(crate) animations: crate::presentation_animation::AnimationController,
     pub(crate) track_motion: HashMap<u32, crate::track_motion::TrackMotion>,
     pub(crate) maw_motion: HashMap<u32, crate::maw_motion::MawMotion>,
+    /// Each drone host's docks, by host.
+    pub(crate) dock_motion: HashMap<u32, crate::dock_motion::DockMotion>,
+    /// Drones still rising from their docks: host, dock and launch tick.
+    pub(crate) drone_launches: HashMap<u32, (UnitId, usize, u64)>,
+    /// Each Roc's engine heat last tick and this tick, 0 cold to 1 hot.
+    engine_heat: HashMap<u32, [f32; 2]>,
     /// Eased collision slides, kept only while a body is drawn off its
     /// simulation pose.
     pub(crate) slide_motion: HashMap<u32, crate::slide_motion::SlideMotion>,
@@ -299,6 +305,9 @@ impl Presentation {
             animations: crate::presentation_animation::AnimationController::default(),
             track_motion: HashMap::new(),
             maw_motion: HashMap::new(),
+            dock_motion: HashMap::new(),
+            drone_launches: HashMap::new(),
+            engine_heat: HashMap::new(),
             slide_motion: HashMap::new(),
             projectile_releases: projectiles::ProjectileReleases::default(),
             fx_previous: fx::PreviousEffects::default(),
@@ -510,6 +519,9 @@ impl Presentation {
         self.audio_timeline.clear();
         self.track_motion.clear();
         self.maw_motion.clear();
+        self.dock_motion.clear();
+        self.drone_launches.clear();
+        self.engine_heat.clear();
         self.slide_motion.clear();
     }
 
@@ -536,6 +548,98 @@ impl Presentation {
                 .or_insert_with(|| crate::maw_motion::MawMotion::settled(tick, cutting, feeding))
                 .observe(tick, cutting, feeding);
         }
+    }
+
+    /// Fills and empties each drone host's docks from this tick's launches
+    /// and landings. A landing drone glides in from where it was drawn
+    /// last tick.
+    fn observe_docks(&mut self, state: &State, events: &[Event]) {
+        let tick = state.current_tick();
+        self.dock_motion.retain(|id, _| {
+            state
+                .unit(UnitId(*id))
+                .is_some_and(|unit| unit.bay.is_some())
+        });
+        self.drone_launches.retain(|id, (_, _, at)| {
+            state.unit(UnitId(*id)).is_some()
+                && ((tick - *at) as f32) < crate::dock_motion::LAUNCH_TICKS
+        });
+        for unit in state.units() {
+            let Some(bay) = unit.bay else {
+                continue;
+            };
+            if !sees(state, self.human, self.all_seeing(), unit) {
+                // Its bay comes back into view at rest, with no launch or
+                // landing to give away what happened out of sight.
+                self.dock_motion.insert(
+                    unit.id.0,
+                    crate::dock_motion::DockMotion::settled(bay.docked),
+                );
+                continue;
+            }
+            let mut launched = Vec::new();
+            let mut landed = Vec::new();
+            for event in events {
+                match *event {
+                    Event::DroneLaunched { host, drone, .. } if host == unit.id => {
+                        launched.push(drone.0);
+                    }
+                    Event::DroneDocked { host, drone, .. } if host == unit.id => {
+                        landed.push(drone.0);
+                    }
+                    _ => {}
+                }
+            }
+            launched.sort_unstable();
+            landed.sort_unstable();
+            // A drone glides in only from where the viewer could see it.
+            let landed: Vec<Vec2> = landed
+                .iter()
+                .filter_map(|drone| self.prev_pos.get(drone).copied())
+                .filter(|from| {
+                    self.all_seeing() || state.vision(self.human).visible(numeric::tile_at(*from))
+                })
+                .collect();
+            let docks = self
+                .dock_motion
+                .entry(unit.id.0)
+                .or_insert_with(|| crate::dock_motion::DockMotion::settled(bay.docked));
+            for (drone, dock) in docks.observe(tick, bay.docked, &launched, &landed) {
+                self.drone_launches.insert(drone, (unit.id, dock, tick));
+            }
+        }
+    }
+
+    /// A Roc's engines heat quickly while it moves and cool slowly once it
+    /// stops. A Roc first seen moving starts cold.
+    fn observe_engines(&mut self, state: &State) {
+        // A Roc out of sight keeps no heat, so its glow never tells how it
+        // moved while hidden.
+        let (human, all_seeing) = (self.human, self.all_seeing());
+        let sees = |unit: &oxide_sim::Unit| sees(state, human, all_seeing, unit);
+        self.engine_heat
+            .retain(|id, _| state.unit(UnitId(*id)).is_some_and(sees));
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == oxide_sim::UnitKind::Roc && sees(unit))
+        {
+            let moving = self
+                .prev_pos
+                .get(&unit.id.0)
+                .is_some_and(|previous| (*previous - world_vec(unit.pos)).length_squared() > 1e-6);
+            let heat = self.engine_heat.entry(unit.id.0).or_insert([0.0; 2]);
+            *heat = [heat[1], next_engine_heat(heat[1], moving)];
+        }
+    }
+
+    /// A Roc's engine heat now, between last tick's and this tick's.
+    pub(crate) fn engine_heat(&self, id: UnitId) -> f32 {
+        self.engine_heat
+            .get(&id.0)
+            .map_or(0.0, |[previous, current]| {
+                previous + (current - previous) * self.tick_fraction()
+            })
     }
 
     /// Sprite rotation for this tick: a heading-first airframe faces where
@@ -739,6 +843,8 @@ impl Presentation {
         self.queue_brace_sounds(state);
         self.animations.observe_braces(state);
         self.spawn_fx(state, events);
+        self.observe_docks(state, events);
+        self.observe_engines(state);
         // Effects retain the intercepted flight before its launch record is removed.
         self.projectile_releases.observe(state, events);
         self.refresh_facing(state, movement);
@@ -771,6 +877,22 @@ impl Presentation {
         // Nothing has moved across a jump, but a heading-first airframe
         // still has a heading to show, parked or flying.
         self.refresh_facing(state, &[]);
+    }
+}
+
+/// Whether `human` sees `unit` now, as the renderer decides.
+fn sees(state: &State, human: PlayerId, all_seeing: bool, unit: &oxide_sim::Unit) -> bool {
+    unit.player == human || all_seeing || state.vision(human).sees_unit(unit)
+}
+
+/// The engines' heat a tick on: easing toward full heat while moving, back
+/// toward cold at a third of the rate once still.
+pub(crate) fn next_engine_heat(heat: f32, moving: bool) -> f32 {
+    if moving {
+        heat + (1.0 - heat) * 0.12
+    } else {
+        let cooled = heat * (1.0 - 0.035);
+        if cooled < 0.01 { 0.0 } else { cooled }
     }
 }
 

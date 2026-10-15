@@ -18,6 +18,7 @@ mod clock_label;
 mod config;
 mod debug_server;
 mod diagnostic_report;
+mod dock_motion;
 mod entity_lod;
 mod entropy;
 mod frame_profile;

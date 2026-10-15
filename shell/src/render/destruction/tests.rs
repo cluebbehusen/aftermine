@@ -14,12 +14,7 @@ fn scheduled_airframe_contacts_the_damage_point_with_its_full_level_pose() {
             started: 10,
             arrival: 23,
         };
-        let body = UnitBody {
-            kind,
-            player: crash.player,
-            rotation: 1.2,
-            velocity: Vec2::ZERO,
-        };
+        let body = UnitBody::resting(kind, crash.player, 1.2);
         let start = fall_pose(Vec2::ZERO, body, 0.0, Some(crash));
         let halfway = fall_pose(Vec2::ZERO, body, CRASH_TIME / 2.0, Some(crash));
         let contact = fall_pose(Vec2::ZERO, body, CRASH_TIME, Some(crash));
@@ -94,10 +89,8 @@ fn fragments_land_once_and_stop_without_bouncing() {
 #[test]
 fn aircraft_contact_preserves_heading_and_stops_the_coast() {
     let body = UnitBody {
-        kind: oxide_sim::UnitKind::Condor,
-        player: oxide_sim::PlayerId(0),
-        rotation: 2.1,
         velocity: vec2(-2.0, 1.0),
+        ..UnitBody::resting(oxide_sim::UnitKind::Condor, oxide_sim::PlayerId(0), 2.1)
     };
     let start = crash_pose(vec2(8.0, 8.0), body, 0.0, false);
     let contact = crash_pose(vec2(8.0, 8.0), body, CRASH_TIME, false);
@@ -114,10 +107,8 @@ fn aircraft_contact_preserves_heading_and_stops_the_coast() {
 #[test]
 fn a_hovering_airframe_drops_level_to_its_existing_shadow() {
     let body = UnitBody {
-        kind: oxide_sim::UnitKind::Skyhook,
-        player: oxide_sim::PlayerId(0),
-        rotation: 0.0,
         velocity: Vec2::ZERO,
+        ..UnitBody::resting(oxide_sim::UnitKind::Skyhook, oxide_sim::PlayerId(0), 0.0)
     };
     let start = crash_pose(Vec2::ZERO, body, 0.0, false);
     let middle = crash_pose(Vec2::ZERO, body, CRASH_TIME * 0.5, false);
@@ -144,10 +135,8 @@ fn a_hovering_airframe_drops_level_to_its_existing_shadow() {
 #[test]
 fn small_airframe_breaks_above_ground_then_its_fragments_settle() {
     let body = UnitBody {
-        kind: oxide_sim::UnitKind::Kestrel,
-        player: oxide_sim::PlayerId(0),
-        rotation: 0.0,
         velocity: vec2(1.0, 0.0),
+        ..UnitBody::resting(oxide_sim::UnitKind::Kestrel, oxide_sim::PlayerId(0), 0.0)
     };
     let left = air_fragment(body, 7, 0, 0.0);
     let right = air_fragment(body, 7, 1, 0.0);

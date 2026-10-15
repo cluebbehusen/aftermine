@@ -298,12 +298,13 @@ fn collapse_piece(index: usize, age: f32, seed: u32) -> PiecePose {
     }
 }
 
+#[derive(Clone, Copy)]
 struct RigidSprite {
     center: Vec2,
     size: Vec2,
     rotation: f32,
     source: Rect,
-    accent: Rect,
+    accent: Option<Rect>,
     tint: Color,
 }
 
@@ -313,7 +314,9 @@ impl RigidSprite {
             (vec2(part.x + part.w * 0.5, part.y + part.h * 0.5) - vec2(0.5, 0.5)) * self.size;
         let center = self.center + rotate(local_center, self.rotation) + pose.offset * zoom;
         let size = vec2(part.w, part.h) * self.size;
-        for (source, tint) in [(self.source, WHITE), (self.accent, self.tint)] {
+        for (source, tint) in std::iter::once((self.source, WHITE))
+            .chain(self.accent.map(|accent| (accent, self.tint)))
+        {
             sprites.draw(
                 center.x - size.x * 0.5,
                 center.y - size.y * 0.5,
@@ -368,22 +371,18 @@ fn draw_unit_wreck(
     };
     let alpha = ((2.9 - age) / 0.8).clamp(0.0, 1.0);
     ground_mark(center, zoom, scale * 0.55, alpha * 0.7);
-    let hull = RigidSprite {
-        center,
-        size: Vec2::splat(scale * zoom),
-        rotation: body.rotation,
-        source: sprites.unit(body.kind),
-        accent: sprites.unit_accent(body.kind),
-        tint: seat_identity_color(game, body.player),
-    };
+    let frame = (center, Vec2::splat(scale * zoom), body.rotation);
     for (i, part) in HULL_PIECES.into_iter().enumerate() {
         let h = hash(seed, i.fit::<u32>());
         let direction = vec2(
             (h % 101) as f32 / 100.0 - 0.5,
             ((h >> 8) % 101) as f32 / 100.0 - 0.5,
         );
-        hull.piece(
+        draw_body_piece(
+            game,
             sprites,
+            body,
+            frame,
             part,
             PiecePose {
                 offset: direction * (1.0 - (1.0 - t).powi(3)) * 0.35 * scale,
@@ -391,7 +390,6 @@ fn draw_unit_wreck(
                 shade: 1.0 - t * 0.65,
                 alpha,
             },
-            zoom,
         );
     }
     if body.kind.stats().demolition.is_none() {
@@ -403,6 +401,91 @@ fn draw_unit_wreck(
         draw_impact(center, zoom, radius, age, payload);
     }
     dust(center, zoom, scale * 0.65, age - 0.04, seed);
+}
+
+/// One piece of a destroyed unit drawn at `(center, size, rotation)`: its
+/// whole sprite, or for the Roc its wall and yokes, then each gun its piece
+/// holds at the gun's last bearing, then its wreck hull.
+fn draw_body_piece(
+    game: &Scene<'_>,
+    sprites: &Sprites,
+    body: UnitBody,
+    (center, size, rotation): (Vec2, Vec2, f32),
+    part: Rect,
+    pose: PiecePose,
+) {
+    let zoom = game.presentation.camera.zoom;
+    let tint = seat_identity_color(game, body.player);
+    let rigid = RigidSprite {
+        center,
+        size,
+        rotation,
+        source: sprites.unit(body.kind),
+        accent: Some(sprites.unit_accent(body.kind)),
+        tint,
+    };
+    let roc = (body.kind == oxide_sim::UnitKind::Roc)
+        .then(|| sprites.roc_rig())
+        .flatten();
+    let (Some(roc), Some(rig), Some(guns)) =
+        (roc, sprites.unit_rig(body.kind), body.kind.stats().mounts)
+    else {
+        rigid.piece(sprites, part, pose, zoom);
+        return;
+    };
+    for under in [roc.wall, roc.yoke] {
+        RigidSprite {
+            source: under,
+            accent: None,
+            ..rigid
+        }
+        .piece(sprites, part, pose, zoom);
+    }
+    let part_center = (vec2(part.x + part.w * 0.5, part.y + part.h * 0.5) - vec2(0.5, 0.5)) * size;
+    let turned = rotation + pose.rotation;
+    let (gun, accent) = rig.mount(None);
+    let gun_size = vec2(gun.w, gun.h) * (size.x / roc.wreck[0].w);
+    for (mount, bearing) in guns.mounts.iter().zip(body.mounts) {
+        let Some(bearing) = bearing else {
+            continue;
+        };
+        let pivot = vec2(
+            mount.starboard.to_num::<f32>(),
+            -mount.forward.to_num::<f32>(),
+        ) * (size.x / unit_draw_scale(body.kind));
+        let fraction = pivot / size + vec2(0.5, 0.5);
+        if !part.contains(fraction) {
+            continue;
+        }
+        let at = center
+            + rotate(part_center, rotation)
+            + pose.offset * zoom
+            + rotate(pivot - part_center, turned);
+        for (source, color) in [(gun, WHITE), (accent, tint)] {
+            sprites.draw(
+                at.x - gun_size.x * 0.5,
+                at.y - gun_size.y * 0.5,
+                Color::new(
+                    color.r * pose.shade,
+                    color.g * pose.shade,
+                    color.b * pose.shade,
+                    pose.alpha,
+                ),
+                DrawTextureParams {
+                    dest_size: Some(gun_size),
+                    source: Some(source),
+                    rotation: bearing + pose.rotation,
+                    ..Default::default()
+                },
+            );
+        }
+    }
+    RigidSprite {
+        source: roc.wreck[0],
+        accent: Some(roc.wreck[1]),
+        ..rigid
+    }
+    .piece(sprites, part, pose, zoom);
 }
 
 fn large_airframe(kind: oxide_sim::UnitKind) -> bool {
@@ -529,7 +612,7 @@ fn draw_air_fragments(
             size: Vec2::splat(unit_draw_scale(body.kind) * zoom),
             rotation: body.rotation,
             source: sprites.unit(body.kind),
-            accent: sprites.unit_accent(body.kind),
+            accent: Some(sprites.unit_accent(body.kind)),
             tint: seat_identity_color(game, body.player),
         };
         hull.piece(
@@ -640,16 +723,15 @@ pub(super) fn draw_falling(
             },
         );
     }
-    let hull = RigidSprite {
-        center: game.presentation.camera.to_screen(pose.body_at),
-        size: Vec2::splat(size),
-        rotation: pose.rotation,
-        source: sprites.unit(body.kind),
-        accent: sprites.unit_accent(body.kind),
-        tint: seat_identity_color(game, body.player),
-    };
-    hull.piece(
+    draw_body_piece(
+        game,
         sprites,
+        body,
+        (
+            game.presentation.camera.to_screen(pose.body_at),
+            Vec2::splat(size),
+            pose.rotation,
+        ),
         Rect::new(0.0, 0.0, 1.0, 1.0),
         PiecePose {
             offset: Vec2::ZERO,
@@ -657,7 +739,6 @@ pub(super) fn draw_falling(
             shade: 1.0 - t * 0.3,
             alpha: 1.0,
         },
-        zoom,
     );
     if reduced_motion() {
         return;
@@ -775,7 +856,7 @@ pub(super) fn draw_ground_effects(game: &Scene<'_>, sprites: &Sprites) {
                     center,
                     size,
                     source: sprites.building_tiered(body.kind, body.tier),
-                    accent: sprites.building_tiered_accent(body.kind, body.tier),
+                    accent: Some(sprites.building_tiered_accent(body.kind, body.tier)),
                     tint: seat_identity_color(game, body.player),
                 };
                 for column in 0..3 {
@@ -795,9 +876,11 @@ pub(super) fn draw_ground_effects(game: &Scene<'_>, sprites: &Sprites) {
                     let mount = RigidSprite {
                         rotation: body.rotation,
                         source,
-                        accent: sprites
-                            .defense_mount_accent(body.kind, body.tier)
-                            .expect("defense accent accompanies its mount"),
+                        accent: Some(
+                            sprites
+                                .defense_mount_accent(body.kind, body.tier)
+                                .expect("defense accent accompanies its mount"),
+                        ),
                         ..structure
                     };
                     for (i, part) in HULL_PIECES.into_iter().enumerate() {

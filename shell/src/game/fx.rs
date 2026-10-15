@@ -24,9 +24,34 @@ pub(crate) struct UnitBody {
     pub player: oxide_sim::PlayerId,
     pub rotation: f32,
     pub velocity: Vec2,
+    /// Each mounted gun's last drawn world bearing.
+    pub mounts: [Option<f32>; oxide_sim::stats::MAX_WEAPONS],
 }
 
 impl UnitBody {
+    /// A body seen only at its death or its crash: each mounted gun rests at
+    /// its arc's centre on a hull turned to `rotation`.
+    pub(crate) fn resting(
+        kind: oxide_sim::UnitKind,
+        player: oxide_sim::PlayerId,
+        rotation: f32,
+    ) -> Self {
+        let mut mounts = [None; oxide_sim::stats::MAX_WEAPONS];
+        if let Some(guns) = kind.stats().mounts {
+            for (bearing, mount) in mounts.iter_mut().zip(guns.mounts) {
+                *bearing =
+                    Some(rotation + f32::from(mount.arc_centre) * std::f32::consts::TAU / 256.0);
+            }
+        }
+        Self {
+            kind,
+            player,
+            rotation,
+            velocity: Vec2::ZERO,
+            mounts,
+        }
+    }
+
     fn capture(
         game: &Presentation,
         state: &State,
@@ -66,6 +91,7 @@ impl UnitBody {
             rotation,
             velocity: velocity
                 .clamp_length_max(kind.stats().speed.to_num::<f32>() / super::TICK_DT),
+            mounts: std::array::from_fn(|slot| game.draw_mount_heading(unit, slot, 1.0)),
         }
     }
 }
@@ -821,13 +847,12 @@ impl Presentation {
                 seed: crash.unit.0,
                 crash: Some(crash),
                 impact_witnessed: witnessed,
-                body: UnitBody {
-                    kind: crash.kind,
-                    player: crash.player,
-                    rotation: f32::from(crash.heading) * std::f32::consts::TAU / 256.0
+                body: UnitBody::resting(
+                    crash.kind,
+                    crash.player,
+                    f32::from(crash.heading) * std::f32::consts::TAU / 256.0
                         + std::f32::consts::FRAC_PI_2,
-                    velocity: Vec2::ZERO,
-                },
+                ),
             },
             age: 0.0,
         });
@@ -1376,12 +1401,11 @@ impl Presentation {
                     self.sounds_pending
                         .push((SoundKind::UnitDeath, Some(world_vec(*pos))));
                     let body = prior.map_or(
-                        UnitBody {
-                            kind: *kind,
-                            player: *player,
-                            rotation: self.facing.get(&unit.0).copied().unwrap_or(0.0),
-                            velocity: Vec2::ZERO,
-                        },
+                        UnitBody::resting(
+                            *kind,
+                            *player,
+                            self.facing.get(&unit.0).copied().unwrap_or(0.0),
+                        ),
                         |(body, _)| body,
                     );
                     let airborne =

@@ -498,6 +498,41 @@ fn wreck_capture_keeps_the_hull_bearing_when_the_turret_aims_away() {
 }
 
 #[test]
+fn a_falling_roc_keeps_each_gun_at_its_last_drawn_bearing() {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Roc,
+        x: 8,
+        y: 8,
+    }];
+    let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    wire["units"][0]["mounts"]["bearings"][0] = serde_json::json!(0);
+    game.state.0 = std::sync::Arc::new(serde_json::from_value(wire).unwrap());
+    let unit = game.state.unit(UnitId(0)).unwrap();
+    let body = UnitBody::capture(&game.presentation, &game.state, unit, false);
+    let resting = UnitBody::resting(unit.kind, unit.player, body.rotation);
+    for slot in 0..2 {
+        assert_eq!(
+            body.mounts[slot],
+            game.presentation.draw_mount_heading(unit, slot, 1.0)
+        );
+    }
+    assert!(
+        (body.mounts[0].unwrap() - resting.mounts[0].unwrap()).abs() > 0.1,
+        "the port gun was turned off its rest"
+    );
+    assert!((body.mounts[1].unwrap() - resting.mounts[1].unwrap()).abs() < 1e-5);
+    assert!(
+        UnitBody::resting(UnitKind::Talon, unit.player, 0.0)
+            .mounts
+            .iter()
+            .all(Option::is_none)
+    );
+}
+
+#[test]
 fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
     for witnessed in [true, false] {
         let mut scenario = oxide_sim::Scenario::skirmish();

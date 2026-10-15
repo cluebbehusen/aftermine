@@ -26,6 +26,7 @@ pub struct Sprites {
     array_rig: Option<ArrayRig>,
     strategic_rigs: Option<StrategicRigs>,
     maw_rigs: Option<MawRigs>,
+    roc_rig: Option<RocRig>,
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
     verb_icons: [Rect; 16],
@@ -295,9 +296,22 @@ fn array_rig(rects: &Manifest) -> Result<Option<ArrayRig>> {
 pub(crate) struct UnitRig {
     hull: [[Rect; 2]; 3],
     mount: Vec<[Rect; 2]>,
+    shadow: Option<Rect>,
+    mount_shadow: Option<Rect>,
 }
 
 impl UnitRig {
+    /// The hull's own ground shadow on the hull's canvas, drawn in place of
+    /// the shared airframe shadow.
+    pub(crate) fn shadow(&self) -> Option<Rect> {
+        self.shadow
+    }
+
+    /// Each mounted gun's ground shadow on the gun's canvas.
+    pub(crate) fn mount_shadow(&self) -> Option<Rect> {
+        self.mount_shadow
+    }
+
     pub(crate) fn hull(&self, phase: usize) -> (Rect, Rect) {
         let row = self.hull[phase.min(2)];
         (row[BASE], row[ACCENT])
@@ -376,6 +390,63 @@ fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitR
                 variant_row(rects, &format!("{prefix}_mount"), &suffix)
             })
             .collect::<Result<_>>()?,
+        shadow: optional(rects, &format!("{prefix}_shadow"))?,
+        mount_shadow: optional(rects, &format!("{prefix}_mount_shadow"))?,
+    }))
+}
+
+fn optional(rects: &Manifest, name: &str) -> Result<Option<Rect>> {
+    rects
+        .contains_key(name)
+        .then(|| lookup(rects, name))
+        .transpose()
+}
+
+/// The Roc's layers beyond its hull and guns. The wall and yokes share the
+/// hull's 256px canvas; each fan and each dock has its own small canvas
+/// centred on it, because their edges blend with what lies beneath them.
+pub(crate) struct RocRig {
+    /// The hull's silhouette dropped toward the tail, drawn first.
+    pub wall: Rect,
+    /// The guns' fixed yokes, under the guns.
+    pub yoke: Rect,
+    /// Each fan's blades, one frame per phase of their turn.
+    pub fans: [Vec<[Rect; 2]>; 2],
+    /// Each dock's clamps from closed to fully open.
+    pub docks: Vec<Vec<[Rect; 2]>>,
+    /// The hull falling: fans still and docks empty, drawn over the wall,
+    /// yokes and guns.
+    pub wreck: [Rect; 2],
+    /// The cargo hatch from closed to fully open, centred on it.
+    pub hatch: Vec<[Rect; 2]>,
+    /// The aft thrusters at full heat, drawn at the engines' heat.
+    pub glow: Rect,
+    /// The whole Roc as its cradle assembles it, guns at rest and docks
+    /// empty, faded in by the building opacity steps.
+    pub ghost: [Rect; 2],
+}
+
+fn roc_rig(rects: &Manifest) -> Result<Option<RocRig>> {
+    if !rects.contains_key("rig_roc_wall") {
+        return Ok(None);
+    }
+    let docks = (1..)
+        .map(|dock| format!("rig_roc_dock{dock}"))
+        .take_while(|stem| rects.contains_key(&format!("{stem}_1")))
+        .map(|stem| numbered_rows(rects, &stem, ""))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(RocRig {
+        wall: lookup(rects, "rig_roc_wall")?,
+        yoke: lookup(rects, "rig_roc_yoke")?,
+        fans: [
+            numbered_rows(rects, "rig_roc_fan_left", "")?,
+            numbered_rows(rects, "rig_roc_fan_right", "")?,
+        ],
+        docks,
+        wreck: variant_row(rects, "rig_roc_wreck", "")?,
+        hatch: numbered_rows(rects, "rig_roc_hatch", "")?,
+        glow: lookup(rects, "rig_roc_glow")?,
+        ghost: variant_row(rects, "rig_roc_ghost", "")?,
     }))
 }
 
@@ -998,6 +1069,14 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
             keys.extend(variant_keys(&format!("rig_{stem}_hull"), suffix));
         }
         keys.extend(variant_keys(&format!("rig_{stem}_mount"), ""));
+        for shadow in [
+            format!("rig_{stem}_shadow"),
+            format!("rig_{stem}_mount_shadow"),
+        ] {
+            if atlas.contains_key(&shadow) {
+                keys.push(shadow);
+            }
+        }
         for action in 1..=action_count {
             keys.extend(variant_keys(
                 &format!("rig_{stem}_mount"),
@@ -1012,6 +1091,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
     }
     keys.extend(strategic_rig_keys(atlas));
     keys.extend(maw_rig_keys(atlas));
+    keys.extend(roc_rig_keys(atlas));
 
     for kind in UnitKind::ALL {
         let stem = unit_stem(kind);
@@ -1072,6 +1152,35 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
                     ));
                 }
             }
+        }
+    }
+    keys
+}
+
+/// The Roc's layers beyond its hull and guns: each fan's and dock's rows
+/// carry paint; the wall and yokes are untinted single rows.
+#[cfg(test)]
+fn roc_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let mut keys = vec![
+        "rig_roc_wall".to_owned(),
+        "rig_roc_yoke".to_owned(),
+        "rig_roc_glow".to_owned(),
+    ];
+    keys.extend(variant_keys("rig_roc_wreck", ""));
+    keys.extend(variant_keys("rig_roc_ghost", ""));
+    let docks = (1..)
+        .map(|dock| format!("rig_roc_dock{dock}"))
+        .take_while(|stem| atlas.contains_key(&format!("{stem}_1")));
+    for stem in [
+        "rig_roc_fan_left".to_owned(),
+        "rig_roc_fan_right".to_owned(),
+        "rig_roc_hatch".to_owned(),
+    ]
+    .into_iter()
+    .chain(docks)
+    {
+        for suffix in numbered_suffixes(atlas, &stem, "").expect("complete rows") {
+            keys.extend(variant_keys(&stem, &suffix));
         }
     }
     keys
@@ -1267,6 +1376,7 @@ impl Sprites {
             array_rig: array_rig(&rects)?,
             strategic_rigs: strategic_rigs(&rects)?,
             maw_rigs: maw_rigs(&rects)?,
+            roc_rig: roc_rig(&rects)?,
             scout_radar: rects
                 .get("scout_radar")
                 .map(|&[x, y, w, h]| Rect::new(x, y, w, h)),
@@ -1780,6 +1890,10 @@ impl Sprites {
 
     pub(crate) fn maw_rigs(&self) -> Option<&MawRigs> {
         self.maw_rigs.as_ref()
+    }
+
+    pub(crate) fn roc_rig(&self) -> Option<&RocRig> {
+        self.roc_rig.as_ref()
     }
 
     /// A magazine's finished round, body then accent: the warhead seated on
