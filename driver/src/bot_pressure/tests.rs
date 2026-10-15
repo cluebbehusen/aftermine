@@ -27,7 +27,7 @@ fn named_units(command: &Command) -> Vec<u64> {
 #[test]
 fn shipped_scenarios_script_only_the_attackers_units() {
     let scenarios = shipped();
-    assert_eq!(scenarios.len(), 4);
+    assert_eq!(scenarios.len(), 5);
     for pressure in &scenarios {
         pressure.scenario.build().unwrap();
         let seats = &pressure.scenario.players;

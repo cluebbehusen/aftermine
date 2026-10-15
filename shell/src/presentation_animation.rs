@@ -1092,7 +1092,8 @@ impl AnimationController {
                 | BuildingKind::Barricade
                 | BuildingKind::ScuttleCharge
                 | BuildingKind::Spire
-                | BuildingKind::Lattice => BuildingActivity::Idle,
+                | BuildingKind::Lattice
+                | BuildingKind::MawCradle => BuildingActivity::Idle,
             }
         } else {
             BuildingActivity::Idle
@@ -1265,7 +1266,8 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
         | UnitKind::Skyhook
         | UnitKind::Sapper
         | UnitKind::Mantle
-        | UnitKind::Surveyor => AttackTiming {
+        | UnitKind::Surveyor
+        | UnitKind::Maw => AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
         },
@@ -1302,7 +1304,8 @@ fn building_attack_timing(kind: BuildingKind) -> Option<AttackTiming> {
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
-        | BuildingKind::Lattice => return None,
+        | BuildingKind::Lattice
+        | BuildingKind::MawCradle => return None,
     };
     Some(AttackTiming {
         report_ticks,
@@ -1360,7 +1363,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Sapper
         | UnitKind::Mantle
         | UnitKind::Piledriver
-        | UnitKind::Surveyor => None,
+        | UnitKind::Surveyor
+        | UnitKind::Maw => None,
     }
 }
 

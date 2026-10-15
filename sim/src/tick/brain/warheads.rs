@@ -141,7 +141,10 @@ pub(super) fn land(state: &mut State, hits: &mut Vec<PendingHit>, events: &mut V
             if u.hp == 0 || !state.hostile(warhead.player, u.player) {
                 continue;
             }
-            let damage = WARHEAD.damage_at(u.pos.dist(warhead.impact));
+            // A wide hull is struck from its edge.
+            let excess = crate::stats::hull_excess(u.kind.stats().radius);
+            let damage =
+                WARHEAD.damage_at((u.pos.dist(warhead.impact) - excess).max(chassis::fx::Fx::ZERO));
             if damage > 0 {
                 hits.push(PendingHit::along(
                     state,

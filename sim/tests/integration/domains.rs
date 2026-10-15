@@ -116,10 +116,10 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
             assert_eq!(stats.transport_size, 0, "a carrier cannot carry itself");
         }
         assert!(
-            BuildingKind::ALL
-                .iter()
-                .any(|building| building.base_stats().produces.contains(&kind)),
-            "{owner} is in no production roster"
+            BuildingKind::ALL.iter().any(|building| {
+                building.base_stats().produces.contains(&kind) || building.assembles() == Some(kind)
+            }),
+            "{owner} is neither trained nor assembled"
         );
     }
 

@@ -87,12 +87,12 @@ Keep them out of the PR description.
   test line change per top-level directory from the merge base; `--help` defines
   what counts. `--working-tree` includes uncommitted files.
 - **CPU:** `cargo run --release --locked -p oxide-driver -- bot-cost <workload>`
-  for each of `duel`, `skyhook` and `mature-armies` reports average and p99 time
-  per decision and total CPU per seat, with the observation build beside them.
-  Run it on the branch and on its base, on one machine with no competing builds
-  or benchmarks; `--json` gives the same report as data. The budget: `skyhook`
-  at most 250 µs average and 1 ms p99 per decision; `duel` and `mature-armies`
-  no worse than the base beyond noise.
+  for each of `duel`, `skyhook`, `mature-armies` and `maw` reports average and
+  p99 time per decision and total CPU per seat, with the observation build
+  beside them. Run it on the branch and on its base, on one machine with no
+  competing builds or benchmarks; `--json` gives the same report as data. The
+  budget: `skyhook` at most 250 µs average and 1 ms p99 per decision; `duel` and
+  `mature-armies` no worse than the base beyond noise.
 
 Run the ladder smoke locally on the branch and on its base before handoff; CI
 does not run it:
@@ -232,6 +232,9 @@ cases keep their ticks for replay review with `--replay-dir`.
   ticks, moot if an armed enemy still stands near.
 - **Relief:** a seen armed enemy within 8 tiles of an ally's Foundry; the seat
   hits one, or fires at one, within 1,200 ticks.
+- **Cradle:** an enemy assembly cradle the seat learns of; it owns more
+  anti-heavy machines than then, or hits the cradle, before the machine stands
+  up, moot if the cradle falls or is cancelled first.
 - **Withdrawal,** this bot only: an attack, strike or raid in its fight; it
   withdraws rather than vanishing with half its units lost.
 
@@ -272,6 +275,8 @@ the drop must come by air.
   Skyhook and its load after a Fabricator and an Airworks; its unload is ordered
   early enough for the flight to land then. Every landed unit must be destroyed,
   unless the Skyhook falls before setting anyone down.
+- **Breach:** a Maw walks on the base from open ground; by the deadline it must
+  be destroyed with the Foundry still standing.
 
 Scenario files are JSON: the staged scenario, the defender and attacker seats, a
 deadline, the script (unit ids follow scenario order) and the check.

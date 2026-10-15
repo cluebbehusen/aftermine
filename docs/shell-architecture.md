@@ -686,8 +686,9 @@ player-knowledge view for players and agents; bots read the equivalent
 `ObservationData`, and a parity test keeps the two in agreement. It hides
 hostile intent and economy, exposes enemies under current sight, and otherwise
 supplies only recorded ghosts, remembered salvage, radar contacts that name only
-air or ground, and public buildings such as Deep Bores. Player-facing commands
-and effects must respect that knowledge boundary.
+air or ground, and public buildings such as Deep Bores and started assembly
+cradles. Player-facing commands and effects must respect that knowledge
+boundary.
 
 ## Rendering and audio
 
@@ -801,8 +802,13 @@ claims, apparent buildings, and remembered salvage with world rendering. Ghosts
 remain distinct from live observations and draw at the tier they were last seen
 at, or at a public building's tier when every seat knows it. A public enemy Deep
 Bore out of sight draws above the fog as corner brackets and a drill glyph in
-its owner's color, and as an outlined footprint on the minimap. Markers do not
-change entity positions, selection, picking, or simulation.
+its owner's color, and as an outlined footprint on the minimap. A public enemy
+assembly cradle draws its brackets around a hull outline over a bar of its
+progress, and its minimap outline fills from the bottom as its crew raises it.
+The first time a seat learns of one, and when it stands up its machine, the seat
+gets an alert whose badge names the machine and whose minimap pulse is a square
+rather than a ring. Markers do not change entity positions, selection, picking,
+or simulation.
 
 A seat's own and allied missiles draw, and their motor loops play, wherever they
 fly, as its units do; a hostile warhead or interceptor only while the viewer

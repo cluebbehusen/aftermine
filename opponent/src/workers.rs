@@ -5,7 +5,7 @@
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::{MapModel, UNREACHABLE};
-use crate::missions::{Hazard, Scratch};
+use crate::missions::{Hazard, Meal, Scratch};
 use crate::profile::ResolvedProfile;
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
@@ -58,9 +58,12 @@ pub(crate) fn per_welder(support: u8) -> u64 {
     WOUNDS_PER_WELDER * 1_000 / crate::composition::weight(support)
 }
 
+/// An armed ground machine a weld can mend.
 fn armed_ground(kind: UnitKind) -> bool {
     let stats = kind.stats();
-    stats.domain == oxide_sim::stats::Domain::Ground && !stats.weapons.is_empty()
+    stats.domain == oxide_sim::stats::Domain::Ground
+        && !stats.weapons.is_empty()
+        && stats.repairable()
 }
 
 /// The nodes the seat's Foundries work, each with the Harvesters it wants
@@ -118,13 +121,14 @@ fn slots(kind: UnitKind) -> usize {
 }
 
 /// Counts the worked nodes and wrecks with their crews and the worker slots
-/// filled by workers alive, carried or queued.
+/// filled by workers alive, carried or queued. Wreck a wounded kiln machine
+/// feeds on where it stands, or is bound for in `meals`, is left to it.
 pub(crate) fn staffing(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     profile: &ResolvedProfile,
-    foundries: &[Producer<'_>],
+    (foundries, meals): (&[Producer<'_>], &[Meal]),
     scratch: &Scratch,
 ) -> Staffing {
     let homes: Vec<&BuildingObs> = foundries.iter().map(|foundry| foundry.building).collect();
@@ -151,6 +155,15 @@ pub(crate) fn staffing(
         .iter()
         .filter(|(tile, amount)| {
             *amount > 0 && !observation.known_scrap_at(*tile) && !warned(*tile)
+        })
+        // A wounded kiln machine has the wreck it feeds on, and the wreck it
+        // drives to: workers would strip it before the slow machine arrives.
+        .filter(|(tile, _)| {
+            !observation
+                .my_units
+                .iter()
+                .any(|unit| crate::missions::feeds(unit, *tile))
+                && !meals.iter().any(|meal| meal.reserves(*tile))
         })
         .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()
@@ -293,6 +306,7 @@ pub(crate) fn run(
 ) {
     flee(observation, map, frame, hazards, ledger);
     resume_sites(observation, map, frame, ledger);
+    crew_cradles(observation, map, frame, ledger);
     weld(observation, map, frame, hazards, ledger);
     weld_units(
         observation,
@@ -647,6 +661,85 @@ fn resume_sites(
         };
         let command = Command::Build {
             units: vec![builder],
+            kind: site.kind,
+            anchor: site.anchor,
+            queue: false,
+            defer: false,
+        };
+        if !ledger.order(command) {
+            return;
+        }
+    }
+}
+
+/// Tops each own cradle's crew up to what it admits with one order: free
+/// workers on its ground, the fastest builders first and then the nearest,
+/// never a node's last Harvester. Admission takes a faster worker in place
+/// of a slower holder, so the crew only gets quicker.
+fn crew_cradles(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    ledger: &mut Ledger,
+) {
+    for site in observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind.assembles().is_some() && !building.built)
+    {
+        let crew = observation
+            .my_units
+            .iter()
+            .filter(|unit| {
+                unit.site == Some(site.id) || unit.founding == Some((site.kind, site.anchor))
+            })
+            .count();
+        let room = oxide_sim::stats::ASSEMBLY_CREW_CAP.saturating_sub(crew);
+        let Some(ground) = map.component(site.anchor) else {
+            continue;
+        };
+        if room == 0 {
+            continue;
+        }
+        let last = |unit: &UnitObs| {
+            unit.harvesting.is_some_and(|node| {
+                observation
+                    .my_units
+                    .iter()
+                    .filter(|other| other.harvesting == Some(node))
+                    .count()
+                    == 1
+            })
+        };
+        let centre = footprint_centre(site.kind, site.anchor);
+        let mut free: Vec<&UnitObs> = observation
+            .my_units
+            .iter()
+            .filter(|unit| {
+                worker(unit.kind)
+                    && unit.site.is_none()
+                    && unit.founding.is_none()
+                    && !unit.repairing
+                    && map.component(unit.tile) == Some(ground)
+                    && !ledger.employs(unit.id)
+                    && !ledger.stuck(unit.id)
+                    && !last(unit)
+            })
+            .collect();
+        free.sort_by_key(|unit| {
+            (
+                std::cmp::Reverse(unit.kind.stats().build_rate),
+                frame.rank(centre, doubled(unit.tile)),
+                unit.id,
+            )
+        });
+        let mut units: Vec<UnitId> = free.iter().take(room).map(|unit| unit.id).collect();
+        if units.is_empty() {
+            continue;
+        }
+        units.sort_unstable();
+        let command = Command::Build {
+            units,
             kind: site.kind,
             anchor: site.anchor,
             queue: false,

@@ -214,6 +214,7 @@ fn working_producers_ask_for_another_while_unspent_income_and_need_last() {
             wanted,
             units: Vec::new(),
             waiting: None,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -400,6 +401,7 @@ fn a_working_foundry_or_crucible_asks_for_another_at_home() {
             wanted,
             units: Vec::new(),
             waiting: None,
+            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -673,6 +675,49 @@ fn an_enemy_heavy_out_of_sight_and_memory_brings_no_piledriver() {
         "premise: the Breaker is out of sight"
     );
     assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
+}
+
+#[test]
+fn an_enemy_machine_rolled_out_of_sight_brings_piledrivers() {
+    let mut scenario = foundry_of_heavies();
+    scenario.units.push(unit(1, UnitKind::Maw, 20, 3));
+    let state = scenario.build().unwrap();
+    let maw = state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == UnitKind::Maw)
+        .unwrap();
+    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation.enemy_units.iter().all(|unit| unit.id != maw.id),
+        "premise: the Maw is out of sight"
+    );
+    assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
+
+    // Every seat learns where a public cradle's machine stood up.
+    let crucible = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Crucible)
+        .unwrap()
+        .id;
+    let mut events = OwnEvents::default();
+    events.record(
+        PlayerId(0),
+        &[oxide_sim::Event::UnitAssembled {
+            cradle: oxide_sim::BuildingId(99),
+            unit: maw.id,
+            kind: UnitKind::Maw,
+            player: PlayerId(1),
+            pos: maw.pos,
+        }],
+    );
+    let trained: Vec<UnitKind> = trains(&seat(&scenario, 0).act(&state, &mut events))
+        .into_iter()
+        .filter(|(building, _)| *building == crucible)
+        .map(|(_, kind)| kind)
+        .collect();
+    assert!(trained.contains(&UnitKind::Piledriver), "{trained:?}");
 }
 
 #[test]

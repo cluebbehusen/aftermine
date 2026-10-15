@@ -332,6 +332,7 @@ pub(super) fn repair_unit(
             && t.player == me
             && t.hp > 0
             && t.hp < t.kind.stats().max_hp
+            && t.kind.stats().repairable()
             && t.domain() == crate::stats::Domain::Ground
             && !t.retiring()
     }) else {
@@ -400,6 +401,7 @@ pub(super) fn commit_unit_welds(
                 t.player == me
                     && t.hp > 0
                     && t.hp < t.kind.stats().max_hp
+                    && t.kind.stats().repairable()
                     && t.domain() == crate::stats::Domain::Ground
                     && !t.retiring()
             }) else {

@@ -837,10 +837,10 @@ impl Presentation {
     /// toasts.
     pub fn update_fx(&mut self, state: &State, dt: f32) {
         self.fx_clock += dt;
-        for (_, age) in &mut self.alerts {
+        for (_, age, _) in &mut self.alerts {
             *age += dt;
         }
-        self.alerts.retain(|(_, age)| *age < 6.0);
+        self.alerts.retain(|(_, age, _)| *age < 6.0);
         let terminal = state.result().is_some();
         for fx in &mut self.fx {
             match fx.kind {
@@ -1468,6 +1468,20 @@ impl Presentation {
                         self.scorches.remove(0);
                     }
                 }
+                // The cradle was public, so every seat may learn its
+                // machine has stood up where it stood.
+                Event::UnitAssembled {
+                    kind, player, pos, ..
+                } if !self.all_seeing() => {
+                    let name = crate::typography::entity_name(kind.name());
+                    if *player == self.human {
+                        self.sounds_pending.push((SoundKind::TrainDone, None));
+                        self.toast(format!("{name} assembled"));
+                    } else if state.hostile(self.human, *player) {
+                        self.raise_cradle_alert(world_vec(*pos), *kind);
+                        self.toast(format!("Enemy {name} has rolled out"));
+                    }
+                }
                 Event::UnitTrained { unit, player, .. } if *player == self.human => {
                     self.sounds_pending.push((SoundKind::TrainDone, None));
                     if let Some(u) = state.unit(*unit) {
@@ -1520,6 +1534,10 @@ impl Presentation {
                         oxide_sim::command::RejectReason::NothingLoaded => {
                             "No warhead loaded".into()
                         }
+                        oxide_sim::command::RejectReason::ExperimentalLimit => {
+                            "You already have one of those".into()
+                        }
+                        oxide_sim::command::RejectReason::CrewFull => "Cradle crew is full".into(),
                     };
                     self.toast(why);
                     self.sounds_pending.push((SoundKind::Denied, None));
@@ -1790,6 +1808,7 @@ impl Presentation {
                         oxide_sim::StallReason::GroundTaken => {
                             "That ground was taken before the founder arrived"
                         }
+                        oxide_sim::StallReason::CrewFull => "Cradle crew is full",
                         oxide_sim::StallReason::TransportFull => "The transport is full",
                         oxide_sim::StallReason::NoOpenGround => "No open ground to unload there",
                         oxide_sim::StallReason::DangerHold if scout => {
@@ -1958,6 +1977,7 @@ impl Presentation {
             }
         }
         self.warn_of_warheads(state);
+        self.warn_of_cradles(state);
         self.launch_interceptors(state);
         self.refresh_defense_aim(state);
     }
@@ -2059,6 +2079,42 @@ impl Presentation {
         }
         self.warned_warheads
             .retain(|id| state.warheads().iter().any(|w| w.id == *id));
+    }
+
+    /// Announces each hostile assembly cradle once, the moment every seat
+    /// learns of it, and forgets cradles every seat has forgotten.
+    fn warn_of_cradles(&mut self, state: &State) {
+        if self.all_seeing() {
+            return;
+        }
+        let cradles: Vec<_> = oxide_sim::observation::hostile_public_buildings(state, self.human)
+            .into_iter()
+            .filter(|public| public.kind.assembles().is_some())
+            .collect();
+        for cradle in &cradles {
+            if self
+                .warned_cradles
+                .insert((cradle.owner.0, cradle.anchor.x, cradle.anchor.y))
+            {
+                let (w, h) = cradle.kind.size();
+                let centre = macroquad::prelude::vec2(
+                    cradle.anchor.x as f32 + w as f32 / 2.0,
+                    cradle.anchor.y as f32 + h as f32 / 2.0,
+                );
+                if let Some(machine) = cradle.kind.assembles() {
+                    self.raise_cradle_alert(centre, machine);
+                    self.toast(format!(
+                        "Enemy {} assembling",
+                        crate::typography::entity_name(machine.name())
+                    ));
+                }
+            }
+        }
+        self.warned_cradles.retain(|&(owner, x, y)| {
+            cradles
+                .iter()
+                .any(|c| (c.owner.0, c.anchor.x, c.anchor.y) == (owner, x, y))
+        });
     }
 
     fn refresh_defense_aim(&mut self, state: &State) {

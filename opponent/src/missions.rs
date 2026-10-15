@@ -35,10 +35,10 @@ mod settlement;
 mod strike;
 
 pub(crate) use air::{Hazard, hazards};
-pub(crate) use attack::{building_value, minimum};
+pub(crate) use attack::{building_value, margin, minimum};
 pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
-pub(crate) use repair::treating;
+pub(crate) use repair::{Meal, feeds, treating};
 pub(crate) use scouting::{look, points};
 pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;
@@ -790,17 +790,55 @@ fn remembered(unit: &crate::memory::SeenUnit, map: &MapModel, home: Option<u32>,
     }
 }
 
-/// A unit's price, discounted by its missing health.
+/// A unit's price, discounted by its missing health, as strength against
+/// machines: a breacher brings only the share of it its weapon deals a
+/// machine of what it deals a structure.
 fn value(unit: &UnitObs) -> u64 {
-    let stats = unit.kind.stats();
-    u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
+    worth(unit.kind, unit.hp) * against_machines(unit.kind) / 1_000
+}
+
+/// A unit's price, discounted by its missing health.
+fn worth(kind: UnitKind, hp: u32) -> u64 {
+    let stats = kind.stats();
+    u64::from(stats.cost) * u64::from(hp) / u64::from(stats.max_hp.max(1))
+}
+
+/// Per mille of its price a unit brings against machines: what its primary
+/// weapon deals a machine of what it deals a structure, and all of it for a
+/// weapon that deals both alike.
+fn against_machines(kind: UnitKind) -> u64 {
+    kind.stats()
+        .weapons
+        .first()
+        .and_then(|weapon| {
+            weapon.building_damage.map(|structure| {
+                u64::from(weapon.damage) * 1_000 / u64::from(structure.max(weapon.damage).max(1))
+            })
+        })
+        .unwrap_or(1_000)
+}
+
+/// Whether `kind` is a breacher: its weapon deals structures more than
+/// machines, so it goes after buildings and counts against them.
+pub(crate) fn breacher(kind: UnitKind) -> bool {
+    against_machines(kind) < 1_000
+}
+
+/// A breacher's price, discounted by its missing health, as strength against
+/// buildings; nothing for any other unit.
+fn against_buildings(unit: &UnitObs) -> u64 {
+    if breacher(unit.kind) {
+        worth(unit.kind, unit.hp)
+    } else {
+        0
+    }
 }
 
 /// A unit of `kind` at `hp`, valued by cost and health like [`value`],
 /// against ground and against air: nothing against a domain it cannot hit.
 fn force(kind: UnitKind, hp: u32) -> [u64; 2] {
     let stats = kind.stats();
-    let worth = u64::from(stats.cost) * u64::from(hp) / u64::from(stats.max_hp.max(1));
+    let worth = worth(kind, hp) * against_machines(kind) / 1_000;
     [Domain::Ground, Domain::Air].map(|domain| {
         if stats
             .weapons

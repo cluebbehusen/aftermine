@@ -58,7 +58,7 @@ pub struct LayoutModel {
     pub roster_count: usize,
     /// Command cards: rect plus the action a click performs — the
     /// renderer lays them out, hit-testing replays them verbatim.
-    pub cards: [(Rect, CardAction); 16],
+    pub cards: [(Rect, CardAction); crate::panel::MAX_CARDS],
     /// How many cards are live this frame.
     pub card_count: usize,
     /// Queue thumbnails (production or orders), same contract.
@@ -89,7 +89,7 @@ impl Default for LayoutModel {
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
             roster_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
             roster_count: 0,
-            cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 16],
+            cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,
             queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
             queue_count: 0,

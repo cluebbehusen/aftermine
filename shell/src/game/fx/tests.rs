@@ -832,7 +832,11 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
             } else if viewer == 2 && !collateral_charge {
                 assert_eq!(
                     game.presentation.alerts,
-                    vec![(world_vec(tile.center()), 0.0)]
+                    vec![(
+                        world_vec(tile.center()),
+                        0.0,
+                        crate::game::AlertKind::Attack
+                    )]
                 );
                 assert!(
                     game.presentation

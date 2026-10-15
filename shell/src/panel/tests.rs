@@ -707,7 +707,7 @@ fn the_harvester_panel_is_the_same_grammar() {
             .any(|card| matches!(card.action, CardAction::ArmBuild(_)))
     );
     let construction = build_for_palette(&game.view(), &BindingMap::classic(), true).unwrap();
-    assert_eq!(construction.cards.len(), 16);
+    assert_eq!(construction.cards.len(), MAX_CARDS);
     let (back, buildings) = construction.cards.split_last().expect("cards");
     assert!(
         buildings

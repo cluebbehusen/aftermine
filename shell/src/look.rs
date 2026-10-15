@@ -371,6 +371,22 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             marker: M::Demolition,
             ..plain
         },
+        UnitKind::Maw => UnitLook {
+            // The canvas spans four tiles; the body fills about 2.8 of them.
+            scale: 4.0,
+            extent: 182.0 / 256.0,
+            gait: Gait::Treads,
+            // The placeholder's tread casings, in the canvas halved to
+            // sprite space.
+            belts: &[[21., 31., 33., 105.], [95., 31., 107., 105.]],
+            weapon: Some(weapon(
+                SoundKind::ScuttlerFire,
+                ShotStyle::Contact,
+                GROUND_MUZZLE,
+            )),
+            marker: M::Demolition,
+            ..plain
+        },
         UnitKind::Mantle => UnitLook {
             scale: HEAVY_SCALE,
             gait: Gait::Treads,
@@ -432,7 +448,8 @@ pub(crate) fn defense(kind: BuildingKind) -> Option<DefenseLook> {
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
-        | BuildingKind::Lattice => None,
+        | BuildingKind::Lattice
+        | BuildingKind::MawCradle => None,
     }
 }
 

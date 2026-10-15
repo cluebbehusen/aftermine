@@ -84,9 +84,10 @@ pub(super) fn land(state: &mut State, events: &mut Vec<Event>) {
         let radius_sq = profile.radius * profile.radius;
         let team = state.players[usize::from(crash.player.0)].team;
         for unit in &mut state.units {
+            let reach = profile.radius + crate::stats::hull_excess(unit.kind.stats().radius);
             if unit.domain() == Domain::Ground
                 && state.players[usize::from(unit.player.0)].team != team
-                && unit.pos.dist_sq(crash.impact) <= radius_sq
+                && unit.pos.dist_sq(crash.impact) <= reach * reach
             {
                 super::damage::unit(unit, profile.damage, now, events);
             }

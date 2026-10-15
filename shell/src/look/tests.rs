@@ -35,9 +35,10 @@ fn looks_agree_with_what_the_simulation_states() {
             stats.can_fight(),
             "{kind:?}: every kind that fights has a report"
         );
+        // An experimental's cutter belongs to its own rig.
         assert_eq!(
             look.tool.is_some(),
-            stats.harvest.is_some() || stats.contact_reach.is_some(),
+            stats.harvest.is_some() || (stats.contact_reach.is_some() && !kind.assembled()),
             "{kind:?}: a worker body belongs to the kinds that work with a tool"
         );
         assert!(

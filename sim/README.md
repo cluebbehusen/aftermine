@@ -43,14 +43,21 @@ completes, and lets its program continue, reporting `OrderStalled { NoRoute }`
 once. Other orders that cannot be routed drop only themselves; a refused chase,
 an empty bank, or a full sling still ends the whole program.
 
+An assembly cradle is paid when placed and admits at most `ASSEMBLY_CREW_CAP`
+workers, a faster one displacing a slower holder. Every seat sees a started
+cradle and its progress. Finished, it stands its machine up at its centre
+instead of completing, and a player holds one cradle or machine of a kind at a
+time. Such a machine heals only through its kiln, which eats wreck around its
+hull.
+
 Repair and salvage share one damage-first building-work resolver and remain
 mutually exclusive. Completed Repair Bays automatically heal nearby owned units
-before completed buildings, use the ordinary player bank, and skip structures
-with active or queued salvage commitments. Each Bay services at most
-`REPAIR_BAY_PATIENTS` machines, chosen by `State::repair_bay_patients`, and a
-machine an earlier-built Bay took is left to it. A unit damaged within
-`REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an aircraft that can land is
-serviced only on the ground.
+other than kiln machines before completed buildings, use the ordinary player
+bank, and skip structures with active or queued salvage commitments. Each Bay
+services at most `REPAIR_BAY_PATIENTS` machines, chosen by
+`State::repair_bay_patients`, and a machine an earlier-built Bay took is left to
+it. A unit damaged within `REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an
+aircraft that can land is serviced only on the ground.
 
 Tile routing and most geometric tie rules are also fair under a map half-turn.
 Building contact follows the fixed artwork, so asymmetric outlines can have

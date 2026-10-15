@@ -80,6 +80,7 @@ pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 5] = [
             BuildingKind::Spire,
             BuildingKind::Lattice,
             BuildingKind::ScuttleCharge,
+            BuildingKind::MawCradle,
         ],
     ),
 ];

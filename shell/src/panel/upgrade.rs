@@ -28,7 +28,7 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
     ];
     for (index, weapon) in stats.weapons.iter().enumerate() {
         let mut info = SelectionInfo::default();
-        info.weapons(std::slice::from_ref(weapon));
+        info.weapons(std::slice::from_ref(weapon), false);
         let target = info.rows[0].label.clone();
         let prefix = if stats.weapons.len() > 1 {
             format!("{target} {}", index + 1)

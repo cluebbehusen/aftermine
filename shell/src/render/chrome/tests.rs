@@ -2,11 +2,27 @@ use super::*;
 
 #[test]
 fn hud_copy_names_keys_only_on_desktop() {
+    use crate::game::AlertKind;
     assert_eq!(idle_badge_text(3, "F1", false), "3 idle [F1]");
     crate::platform::assert_touch_copy(&idle_badge_text(3, "F1", true));
-    assert_eq!(alert_badge_text("Tab", false), "under attack [Tab]");
-    assert_eq!(alert_badge_text("", false), "under attack");
-    crate::platform::assert_touch_copy(&alert_badge_text("Tab", true));
+    assert_eq!(
+        alert_badge_text(AlertKind::Attack, "Tab", false),
+        "under attack [Tab]"
+    );
+    assert_eq!(
+        alert_badge_text(AlertKind::Attack, "", false),
+        "under attack"
+    );
+    assert_eq!(
+        alert_badge_text(AlertKind::Assembly(oxide_sim::UnitKind::Maw), "Tab", false),
+        "enemy maw assembling [Tab]"
+    );
+    crate::platform::assert_touch_copy(&alert_badge_text(AlertKind::Attack, "Tab", true));
+    crate::platform::assert_touch_copy(&alert_badge_text(
+        AlertKind::Assembly(oxide_sim::UnitKind::Maw),
+        "Tab",
+        true,
+    ));
     for hands in crate::platform::ALL_HANDS {
         let hint = concede_hint(hands);
         assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");

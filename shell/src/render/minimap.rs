@@ -255,14 +255,31 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
         {
             let (w, h) = public.kind.size();
+            let color = mini_entity_color(game, public.owner);
             draw_rectangle_lines(
                 rect.x + public.anchor.x as f32 * scale - 1.0,
                 rect.y + public.anchor.y as f32 * scale - 1.0,
                 w as f32 * scale + 2.0,
                 h as f32 * scale + 2.0,
                 2.0,
-                mini_entity_color(game, public.owner),
+                color,
             );
+            // A cradle fills from the bottom as its crew raises it.
+            if let Some(progress) = public.progress {
+                let build = public
+                    .kind
+                    .base_stats()
+                    .construction
+                    .map_or(1, |c| c.build_ticks.max(1));
+                let filled = h as f32 * scale * progress.min(build) as f32 / build as f32;
+                draw_rectangle(
+                    rect.x + public.anchor.x as f32 * scale,
+                    rect.y + (public.anchor.y + h) as f32 * scale - filled,
+                    w as f32 * scale,
+                    filled,
+                    color,
+                );
+            }
         }
     }
     for building in game.state.buildings() {
@@ -311,7 +328,9 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
 
     // Under-attack pulses: an expanding, fading ring at each alert, or
     // under reduced motion a steady marker that fades without expanding.
-    for (world, age) in &game.presentation.alerts {
+    // An assembling experimental pulses as a square in bone, so it reads
+    // apart from an attack by shape as well as color.
+    for (world, age, kind) in &game.presentation.alerts {
         let center = vec2(rect.x + world.x * scale, rect.y + world.y * scale);
         let (radius, alpha) = if reduced_motion() {
             (5.0, (1.0 - (age / 6.0)).max(0.0))
@@ -322,7 +341,19 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
                 (1.0 - pulse) * (1.0 - (age / 6.0)).max(0.0),
             )
         };
-        stroke_circle(center, radius, 1.5, Color::new(0.85, 0.32, 0.29, alpha));
+        match kind {
+            crate::game::AlertKind::Attack => {
+                stroke_circle(center, radius, 1.5, Color::new(0.85, 0.32, 0.29, alpha));
+            }
+            crate::game::AlertKind::Assembly(_) => draw_rectangle_lines(
+                center.x - radius,
+                center.y - radius,
+                radius * 2.0,
+                radius * 2.0,
+                1.5,
+                Color { a: alpha, ..BONE },
+            ),
+        }
     }
 }
 

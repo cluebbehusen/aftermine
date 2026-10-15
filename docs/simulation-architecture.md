@@ -81,15 +81,18 @@ Phase order is game behavior. `State::tick` performs:
 1. Capture any newly stranded economy's finite recovery entitlement and resolve
    provisional sites whose full footprints are visible.
 2. Validate and apply this tick's commands in their recorded order, refunding
-   unstarted sites after their last worker commitment is replaced.
+   unstarted sites after their last worker commitment is replaced, then hold
+   every assembly cradle to its crew cap.
 3. Apply recurring income, let autofilling magazines buy a round, assemble
    ordered rounds, advance production queues, and spawn completed units.
 4. Cancel unstarted construction over known mines, then decay unclaimed
    tier-zero construction sites on their global cadence.
 5. Run unit brains and building behavior, turn silo decks and launch aligned
    strikes, intercept shells and tracked warheads, land arriving shells and
-   warheads, and resolve buffered damage, construction, salvage, and repair.
-6. Resolve boarding and unloading after every unit has decided.
+   warheads, feed kilns, and resolve buffered damage, construction, salvage, and
+   repair.
+6. Resolve boarding and unloading after every unit has decided, then stand up
+   the machine of every cradle whose last work landed.
 7. Evict pathless ground bodies from newly claimed blocking footprints.
 8. Follow paths, then resolve same-domain unit collisions. Parking radars unfold
    a tick further on machines that did not drive themselves, and fold on any
@@ -104,9 +107,10 @@ Phase order is game behavior. `State::tick` performs:
 13. Rebuild team-shared visibility and reconcile fog memory, including each
     team's hold on hostile warheads in flight. Activate or refund newly visible
     provisional sites. Newly discovered mines cancel unstarted sites before the
-    next command. Tile goals whose clicked tile the owner's team has now
-    explored take their spread slots, and units left without a route drop their
-    stall counts.
+    next command, and cradle crews are held to their cap again, so orders that
+    came up during the tick obey it. Tile goals whose clicked tile the owner's
+    team has now explored take their spread slots, and units left without a
+    route drop their stall counts.
 14. Determine victory or draw from surviving, non-resigned teams and discard any
     remaining pending crashes, warheads in flight and warhead holds when the
     match ends.
@@ -621,6 +625,25 @@ Besides its tech prerequisites, a Deep Bore upgrade starts only while a
 completed same-owner Foundry stands within the Extractor support radius; losing
 that Foundry later only drops it to the remote yield.
 
+An assembly cradle is a construction site that never stands finished. A
+`MawCradle` assembles a Maw: it is paid in full when placed and needs a built
+Crucible and a Deep Bore. A player holds at most one cradle or living machine of
+a kind, so placement and commands refuse a second as `ExperimentalLimit`;
+resuming the existing site is unaffected. At most `ASSEMBLY_CREW_CAP` workers
+hold a cradle, counting each own worker whose current order builds or founds it.
+A build order on a full cradle admits a newcomer only in place of a strictly
+slower holder, ranked by build rate, then incumbency, then id; the displaced
+holder moves on to its next order or idles once the newcomer lands. With no
+newcomer admitted the command is refused as `CrewFull` and every program stands.
+A queued joiner is judged when its turn comes: crews settle after the command
+phase and again at the end of the tick, and a promoted worker that does not make
+the crew moves on and reports `OrderStalled` with `CrewFull`. When the last work
+lands the cradle does not complete. After boarding resolves it leaves the world,
+every seat forgets it, its crew moves on, and the machine spawns at its centre
+with the cradle's share of health, reported as `UnitAssembled`. A destroyed
+cradle's wreck holds the ordinary share of its price scaled by the health its
+crew had raised, split across its footprint.
+
 Cancelling before the first build tick returns the full price. Cancelling an
 unfinished site after work starts returns value proportional to its remaining
 hp. Salvaging is active dismantling of a built own structure other than a
@@ -646,7 +669,17 @@ refunds `RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks
 any carried scrap like a delivery; the event reports what the bank actually
 credited. Only credited cargo re-arms a stranded seat's recovery. The refund
 rate stays below the repair rate, so welding a machine up and then retiring it
-always loses scrap, and no repair source mends a retiring machine.
+always loses scrap, and no repair source mends a retiring machine. Retire skips
+assembled machines.
+
+A machine whose stats give it a kiln instead of repair takes no field weld and
+no Repair Bay care. While wounded it bites one unit of wreck every
+`KILN_BITE_PERIOD` ticks from its intake, the tiles under its hull and its
+kiln's reach past them: the nearest wreck, then the richest, then in its
+half-turn frame. The heal buffers through the shared unit-heal resolver, and the
+bitten wreck is spent even when the machine dies that tick. Machines bite in
+unit order, reversed on alternate pulses, so neither of two sharing a wreck
+holds a standing first bite.
 
 Building repair and Harvester field welding are billed per accepted hp. Repair
 Bays feed the same unit-heal resolver as field welders and the same
@@ -763,9 +796,17 @@ focus and advances queued orders.
 Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Among visible machines in reach a unit takes
 the nearest, unless its stats rank targets heaviest first, as the Piledriver's
-do: the most full health, then the nearest. Anonymous radar contacts are always
-taken nearest first. Automatic radar fire may stop Idle, Hunt, or Patrol to aim,
-but cannot pursue, retreat, or start a bomber run. It does not change Run or
+do: the most full health, then the nearest. A breacher whose stats rank
+buildings first, as the Maw's do, takes the nearest visible hostile building in
+aggro range before any machine. It strikes a machine only when no building is in
+reach and the machine is already within its weapon's reach, lets a machine it
+found itself go once it leaves that reach, and answers fire only from a
+building. Weapon reach, aggro, splash, blast, trigger and crash radii measure to
+a wide hull's edge. A weapon may carry structure damage, which it deals
+buildings and machines built like structures; demolition charges deal those
+machines their structure damage too. Anonymous radar contacts are always taken
+nearest first. Automatic radar fire may stop Idle, Hunt, or Patrol to aim, but
+cannot pursue, retreat, or start a bomber run. It does not change Run or
 Advance. A fireable explicit target takes priority. Defenses retain blocked or
 out-of-range focus while firing at fallback targets; Stop clears focus.
 
@@ -897,9 +938,11 @@ agreement.
 
 Public buildings are the one hostile fact every seat holds regardless of fog: a
 Deep Bore's owner, kind, tier and footprint, from the moment its upgrade starts
-until it falls, never its condition. Both projections derive them from current
-state, so they add no memory. A public building is a valid attack target without
-sight or a ghost, and when one falls every seat forgets its ghost.
+until it falls, and an assembly cradle's, with its progress, from its first work
+until it falls, is cancelled or stands up its machine. Neither shows any other
+condition. Both projections derive them from current state, so they add no
+memory. A public building is a valid attack target without sight or a ghost, and
+when one leaves the world every seat forgets its ghost.
 
 `oxide-opponent` also builds one immutable `MapModel` per match from the
 authored `Scenario`, through the same `Scenario::parse_map_and_anchors` that
@@ -967,6 +1010,7 @@ map rather than an exhaustive test inventory.
 | Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
 | Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
 | Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
+| Assembly cradles, kilns, and breachers            | `sim/src/tick/assembly.rs`, `sim/src/tick/brain/kiln.rs`, `sim/src/tick/brain/combat.rs`                                                | `sim/tests/integration/assembly.rs`                                                                                                                                                             |
 | Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
 | Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                             |
 | Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |

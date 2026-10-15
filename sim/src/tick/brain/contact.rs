@@ -158,7 +158,10 @@ pub(in crate::tick) fn surface_for(
     let b = target
         .and_then(|id| state.building(id))
         .filter(|b| {
-            b.hp > 0 && unit.pos.dist_sq(b.closest_point_to(unit.pos)) <= const { Fx::lit("2.25") }
+            // Within a tile and a half of the footprint, from a wide hull's edge.
+            let near =
+                const { Fx::lit("1.5") } + crate::stats::hull_excess(unit.kind.stats().radius);
+            b.hp > 0 && unit.pos.dist_sq(b.closest_point_to(unit.pos)) <= near * near
         })
         .or_else(|| {
             (!state.passable(unit.tile()))

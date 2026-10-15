@@ -36,11 +36,14 @@ pub enum Workload {
     /// Basalt Spine terrain, both seats bots, each starting with a mirrored
     /// mature army and tech structures, for 3,000 ticks.
     MatureArmies,
+    /// The mature armies, each seat also fielding a mirrored Maw, for 3,000
+    /// ticks: the cost of wide hulls and of the bot's breacher play.
+    Maw,
 }
 
 impl Workload {
     /// Every named workload.
-    pub const ALL: [Self; 3] = [Self::Duel, Self::Skyhook, Self::MatureArmies];
+    pub const ALL: [Self; 4] = [Self::Duel, Self::Skyhook, Self::MatureArmies, Self::Maw];
 
     /// Stable name used on the command line and in reports.
     pub const fn name(self) -> &'static str {
@@ -48,6 +51,7 @@ impl Workload {
             Self::Duel => "duel",
             Self::Skyhook => "skyhook",
             Self::MatureArmies => "mature-armies",
+            Self::Maw => "maw",
         }
     }
 
@@ -56,7 +60,7 @@ impl Workload {
         match self {
             Self::Duel => 6_000,
             Self::Skyhook => 20_000,
-            Self::MatureArmies => 3_000,
+            Self::MatureArmies | Self::Maw => 3_000,
         }
     }
 
@@ -76,6 +80,21 @@ impl Workload {
                 )),
                 true,
             ),
+            Self::Maw => {
+                let mut scenario = embedded(include_str!(
+                    "../tests/fixtures/performance/mature-armies.json"
+                ));
+                // Mirrored open ground beside each base.
+                for (player, x, y) in [(0, 20, 6), (1, 39, 33)] {
+                    scenario.units.push(oxide_sim::scenario::UnitSpec {
+                        player,
+                        kind: oxide_sim::UnitKind::Maw,
+                        x,
+                        y,
+                    });
+                }
+                (scenario, true)
+            }
         };
         for seat in &mut scenario.players {
             seat.bot |= every_seat;
@@ -105,7 +124,7 @@ impl std::str::FromStr for Workload {
             .into_iter()
             .find(|workload| workload.name() == value)
             .ok_or_else(|| {
-                format!("unknown workload `{value}`; expected duel, skyhook, or mature-armies")
+                format!("unknown workload `{value}`; expected duel, skyhook, mature-armies, or maw")
             })
     }
 }

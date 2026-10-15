@@ -50,6 +50,56 @@ pub(crate) struct SelectionInfo {
 }
 
 impl SelectionInfo {
+    /// A cradle's assembly progress, its crew for its owner, and the machine
+    /// it becomes.
+    fn cradle_rows(&mut self, game: &Scene<'_>, b: &oxide_sim::Building) {
+        if let (Some(progress), Some(construction)) =
+            (b.construction_progress(), b.stats().construction)
+        {
+            self.row(
+                "Assembly",
+                format!(
+                    "{}%",
+                    u64::from(progress) * 100 / u64::from(construction.build_ticks.max(1))
+                ),
+                Some(StatIcon::Verb(VerbIcon::Build)),
+            );
+        }
+        if b.player == game.presentation.human {
+            self.row(
+                "Crew",
+                format!(
+                    "{}/{}",
+                    game.state.cradle_crew(b.id).len(),
+                    oxide_sim::stats::ASSEMBLY_CREW_CAP
+                ),
+                Some(StatIcon::Verb(VerbIcon::Build)),
+            );
+        }
+        if let Some(machine) = b.kind.assembles() {
+            self.row("Becomes", entity_name(machine.name()), None);
+        }
+    }
+
+    /// What a kiln machine's kiln is doing.
+    fn kiln_row(&mut self, game: &Scene<'_>, u: &oxide_sim::Unit) {
+        let stats = u.kind.stats();
+        if let oxide_sim::stats::Mend::Kiln(_) = stats.mend {
+            self.row(
+                "Kiln",
+                if game.state.kiln_fuel(u.id).is_some() {
+                    "Eating wreck"
+                } else if u.hp < stats.max_hp {
+                    "No wreck in reach"
+                } else {
+                    "Cold"
+                }
+                .into(),
+                Some(StatIcon::Verb(VerbIcon::Repair)),
+            );
+        }
+    }
+
     fn repair_bay_rows(&mut self) {
         self.row(
             "Repair radius",
@@ -164,7 +214,10 @@ impl SelectionInfo {
         );
     }
 
-    pub(super) fn weapons(&mut self, weapons: &[WeaponStats]) {
+    /// A weapon's rows: what it deals, to structures too where that
+    /// differs, and how far it reaches, which for a `contact` weapon is the
+    /// hulls touching.
+    pub(super) fn weapons(&mut self, weapons: &[WeaponStats], contact: bool) {
         for weapon in weapons {
             let label = match (
                 weapon.targets.covers(Domain::Ground),
@@ -180,7 +233,12 @@ impl SelectionInfo {
                 Some(StatIcon::Capability(weapon_capability_icon(weapon))),
             );
             self.rows.last_mut().unwrap().section = true;
-            let range = if weapon.minimum_range > chassis::fx::Fx::ZERO {
+            if let Some(structure) = weapon.building_damage {
+                self.row("Structures", format!("{structure} dmg/hit"), None);
+            }
+            let range = if contact {
+                "Contact".to_string()
+            } else if weapon.minimum_range > chassis::fx::Fx::ZERO {
                 format!(
                     "{:.1}-{:.1} tiles",
                     weapon.minimum_range.to_num::<f32>(),
@@ -351,6 +409,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             }
             BuildingKind::RepairBay => info.repair_bay_rows(),
             BuildingKind::Spire | BuildingKind::Lattice => info.magazine_rows(game, b),
+            BuildingKind::MawCradle => info.cradle_rows(game, b),
             BuildingKind::Crucible => info.row(
                 "Smelt reach",
                 format!("{:.1} tiles", CRUCIBLE_SMELT_RADIUS.to_num::<f32>()),
@@ -383,7 +442,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             | BuildingKind::Airworks
             | BuildingKind::Barricade => {}
         }
-        info.weapons(stats.weapons);
+        info.weapons(stats.weapons, false);
     } else if game.presentation.selection.units.len() == 1 {
         let Some(u) = game.state.unit(game.presentation.selection.units[0]) else {
             return info;
@@ -444,6 +503,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             );
         }
         info.point_defense(u);
+        info.kiln_row(game, u);
         if let Some(demolition) = stats.demolition {
             info.row(
                 "Structure hit",
@@ -461,9 +521,15 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 None,
             );
         }
-        info.weapons(stats.weapons);
-        if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
-            info.row("Targets", "Heaviest first".into(), None);
+        info.weapons(stats.weapons, stats.contact_reach.is_some());
+        match stats.target_priority {
+            oxide_sim::stats::TargetPriority::Heaviest => {
+                info.row("Targets", "Heaviest first".into(), None);
+            }
+            oxide_sim::stats::TargetPriority::Buildings => {
+                info.row("Targets", "Buildings first".into(), None);
+            }
+            oxide_sim::stats::TargetPriority::Nearest => {}
         }
     } else {
         if !panel.summary.is_empty() {

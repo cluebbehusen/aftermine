@@ -44,9 +44,16 @@ fn crews(
         stance,
         &crate::missions::Missions::default(),
     );
-    crate::workers::staffing(&observation, &model, frame, &profile, &foundries, &scratch)
-        .crews()
-        .to_vec()
+    crate::workers::staffing(
+        &observation,
+        &model,
+        frame,
+        &profile,
+        (&foundries, &[]),
+        &scratch,
+    )
+    .crews()
+    .to_vec()
 }
 
 /// The field split by a rock wall at x = 20, open only at (20, 3), with a
@@ -844,8 +851,14 @@ fn both_worker_passes_fill_one_open_slot_once() {
         BotStance::Balanced,
         &crate::missions::Missions::default(),
     );
-    let staffing =
-        crate::workers::staffing(&observation, &model, frame, &profile, &foundries, &scratch);
+    let staffing = crate::workers::staffing(
+        &observation,
+        &model,
+        frame,
+        &profile,
+        (&foundries, &[]),
+        &scratch,
+    );
     let mut ledger = crate::decision::Ledger::new(PlayerId(0), 10_000, 10);
     // An exposed seat trains workers both before and after production.
     for _ in 0..2 {

@@ -200,6 +200,74 @@ fn strike() -> Value {
     panic!("East never tracked the warhead");
 }
 
+/// West raises a Maw cradle with four Excavators and a fifth standing by,
+/// a few ticks after the first work landed, so the cradle is public and
+/// its crew are live holders.
+fn cradle() -> Value {
+    let mut scenario = arena();
+    scenario.players[0].scrap = oxide_sim::stats::UnitKind::Maw.stats().cost;
+    scenario.buildings.extend([
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Crucible,
+            x: 13,
+            y: 1,
+        },
+        BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Extractor,
+            x: 10,
+            y: 5,
+        },
+    ]);
+    scenario.units.extend((2..7).map(|x| UnitSpec {
+        player: 0,
+        kind: UnitKind::Excavator,
+        x,
+        y: 9,
+    }));
+    let mut d = doc(&scenario.build().unwrap());
+    let extractor = kind_index(&d, "extractor");
+    d["buildings"][extractor]["tier"] = json!(1);
+    let mut state: State = serde_json::from_value(d).unwrap();
+    let crew: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|u| u.kind == UnitKind::Excavator)
+        .map(|u| u.id)
+        .take(4)
+        .collect();
+    let report = state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: crew,
+            kind: BuildingKind::MawCradle,
+            anchor: chassis::grid::TilePos::new(7, 1),
+            queue: false,
+            defer: false,
+        },
+    )]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. })),
+        "{:?}",
+        report.events
+    );
+    for _ in 0..400 {
+        state.tick(&[]);
+        if state
+            .buildings()
+            .iter()
+            .any(|b| b.kind == BuildingKind::MawCradle && b.is_public())
+        {
+            return doc(&state);
+        }
+    }
+    panic!("West's crew never started the cradle");
+}
+
 /// Where the first building of `kind` sits in a snapshot's list.
 fn kind_index(d: &Value, kind: &str) -> usize {
     d["buildings"]
@@ -484,10 +552,12 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::ForeignWarheadOwner(_) => 92,
         E::InvalidWarheadFlight(_) => 93,
         E::InvalidWarheadTracking(_) => 94,
+        E::CrewBeyondCap(_) => 95,
+        E::ExperimentalBeyondCap(_) => 96,
     }
 }
 
-const ROWS: usize = 95;
+const ROWS: usize = 97;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -595,6 +665,8 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::ForeignWarheadOwner(0),
         E::InvalidWarheadFlight(0),
         E::InvalidWarheadTracking(PlayerId(0)),
+        E::CrewBeyondCap(BuildingId(0)),
+        E::ExperimentalBeyondCap(PlayerId(0)),
     ]
 }
 
@@ -1891,6 +1963,41 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["vision"][0]["warheads"] = d["vision"][1]["warheads"].clone();
             },
             "holds impossible warhead tracks",
+        ),
+        (
+            "a fifth worker on a full cradle",
+            |d| {
+                *d = cradle();
+                let units = d["units"].as_array().unwrap();
+                let excavators: Vec<usize> = (0..units.len())
+                    .filter(|&i| units[i]["kind"] == json!("excavator"))
+                    .collect();
+                let order = d["units"][excavators[0]]["order"].clone();
+                d["units"][excavators[4]]["order"] = order;
+            },
+            "holds more crew than it admits",
+        ),
+        (
+            "a second cradle for one seat",
+            |d| {
+                *d = cradle();
+                let mut twin = d["buildings"][kind_index(d, "maw_cradle")].clone();
+                let id = d["next_building_id"].as_u64().unwrap();
+                twin["id"] = json!(id);
+                twin["anchor"] = json!({"x": 1, "y": 4});
+                d["next_building_id"] = json!(id + 1);
+                d["buildings"].as_array_mut().unwrap().push(twin);
+            },
+            "assembles more than one of an experimental",
+        ),
+        (
+            "a cradle standing finished",
+            |d| {
+                *d = cradle();
+                let cradle = kind_index(d, "maw_cradle");
+                d["buildings"][cradle]["phase"] = json!({"phase": "built"});
+            },
+            "is in a phase its tier cannot hold",
         ),
     ];
 

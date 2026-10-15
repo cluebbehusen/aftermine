@@ -81,7 +81,7 @@ const SHOWCASE_MAP: [&str; 30] = [
     "#.1............................................#",
     "#..............................................#",
     "#....s.........................................#",
-    "#..............................................#",
+    "#............................................E.#",
     "#..............................................#",
     "#..............................................#",
     "#..,,,,,..####..^^^^^..........................#",
@@ -172,6 +172,10 @@ struct Cast {
     /// Seat 0's Piledriver, staged wounded out of every enemy's reach: one
     /// slug at anything near would rewrite the bounded wounds around it.
     piledriver: UnitId,
+    /// Seat 0's Maw, staged wounded the same way.
+    maw: UnitId,
+    /// Seat 1's cradle founder.
+    cradle_crew: UnitId,
 }
 
 fn showcase_scenario() -> (Scenario, Cast) {
@@ -273,6 +277,9 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let mantle_e = roster.add(1, UnitKind::Mantle, 43, 22);
     // Over eight tiles from every enemy, in no enemy's reach.
     let piledriver = roster.add(0, UnitKind::Piledriver, 32, 4);
+    let maw = roster.add(0, UnitKind::Maw, 26, 5);
+    // Beside the corner of East's yard where it raises a Maw cradle.
+    let cradle_crew = roster.add(1, UnitKind::Harvester, 37, 27);
     // The scout pair, nicked the same way; unarmed, they stand it.
     let surveyor_w = roster.add(0, UnitKind::Surveyor, 40, 24);
     let sentinel_surveyor_e = roster.add(1, UnitKind::Sentinel, 41, 24);
@@ -338,13 +345,31 @@ fn showcase_scenario() -> (Scenario, Cast) {
             x: 29,
             y: 2,
         },
+        // Seat 1's Crucible and Deep Bore (refitted when staged), which a
+        // Maw cradle requires.
+        BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Crucible,
+            x: 45,
+            y: 2,
+        },
+        BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Extractor,
+            x: 45,
+            y: 5,
+        },
     ];
 
     let scenario = Scenario {
         mode: ScenarioMode::Match,
         name: "renderer showcase".into(),
         map: SHOWCASE_MAP.iter().map(|r| (*r).to_string()).collect(),
-        players: vec![seat("West", 700), seat("East", 2000), seat("South", 100)],
+        players: vec![
+            seat("West", 700),
+            seat("East", 2000 + UnitKind::Maw.stats().cost),
+            seat("South", 100),
+        ],
         units: roster.units,
         buildings,
         meta: None,
@@ -386,6 +411,8 @@ fn showcase_scenario() -> (Scenario, Cast) {
             ],
             avalanches: (avalanche_w, avalanche_e),
             piledriver,
+            maw,
+            cradle_crew,
         },
     )
 }
@@ -591,6 +618,18 @@ fn showcase_state() -> State {
         .find(|row| row["id"] == serde_json::json!(cast.piledriver))
         .unwrap();
     row["hp"] = serde_json::json!(UnitKind::Piledriver.stats().max_hp * 2 / 3);
+    let row = staged["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(cast.maw))
+        .unwrap();
+    row["hp"] = serde_json::json!(UnitKind::Maw.stats().max_hp * 2 / 3);
+    for row in staged["buildings"].as_array_mut().unwrap() {
+        if row["kind"] == serde_json::json!("extractor") {
+            row["tier"] = serde_json::json!(1);
+        }
+    }
     state = serde_json::from_value(staged).unwrap();
     let mut avalanches_withdrew = false;
     let mut bombards_withdrew = false;
@@ -607,6 +646,16 @@ fn showcase_state() -> State {
                         units: vec![cast.crew[1]],
                         kind: BuildingKind::Foundry,
                         anchor: TilePos::new(9, 5),
+                        queue: false,
+                        defer: false,
+                    },
+                });
+                commands.push(PlayerCommand {
+                    player: PlayerId(1),
+                    command: Command::Build {
+                        units: vec![cast.cradle_crew],
+                        kind: BuildingKind::MawCradle,
+                        anchor: TilePos::new(38, 26),
                         queue: false,
                         defer: false,
                     },
@@ -739,6 +788,13 @@ fn showcase_covers_every_rendered_feature() {
         );
     }
 
+    assert!(
+        state
+            .buildings()
+            .iter()
+            .any(|b| b.kind == BuildingKind::MawCradle && !b.built()),
+        "no Maw cradle site"
+    );
     for kind in UnitKind::ALL {
         assert!(
             state

@@ -1708,6 +1708,7 @@ fn place_at(
             PlaceRefusal::FrameBlocked => {
                 "Can't build there: that ground belongs to a derelict frame"
             }
+            PlaceRefusal::ExperimentalLimit => "You already have one of those",
         });
         game.presentation
             .sounds_pending
@@ -1818,6 +1819,7 @@ fn armed_verb_click(
                     u.player == game.presentation.human
                         && u.hp > 0
                         && u.hp < u.kind.stats().max_hp
+                        && u.kind.stats().repairable()
                         && u.domain() == oxide_sim::stats::Domain::Ground
                 })
                 .map(|u| {

@@ -5,7 +5,7 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use crate::render::prim::{fill_circle, line_between, stroke_circle};
+use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, stroke_rect};
 
 /// The armed building follows the cursor as a translucent footprint. The
 /// tint and the command share the queue-aware placement verdict, so what
@@ -694,7 +694,9 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         && known.kind == ghost.kind
                         && known.anchor == ghost.anchor
                 })
-                .map_or((ghost.tier, ghost.built), |known| (known.tier, true));
+                .map_or((ghost.tier, ghost.built), |known| {
+                    (known.tier, known.progress.is_none())
+                });
             let visible = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| ghost.anchor.offset(dx, dy)))
                 .any(|t| game.my_vision().visible(t));
@@ -2133,10 +2135,12 @@ pub(crate) fn blip_strokes(
     }
 }
 
-/// Hostile Deep Bores every seat knows of, drawn above the fog wherever no
+/// Hostile buildings every seat knows of, drawn above the fog wherever no
 /// footprint tile is in sight: corner brackets around the footprint and a
-/// drill bit inside, so shape alone tells them from radar blips and
-/// remembered buildings; the owner's color only confirms whose it is.
+/// glyph inside, so shape alone tells them from radar blips and remembered
+/// buildings; the owner's color only confirms whose it is. A Deep Bore shows
+/// a drill bit; an assembly cradle the hull it raises and a bar of its
+/// progress.
 pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
     if game.presentation.all_seeing() {
         return;
@@ -2169,6 +2173,41 @@ pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
         }
         let centre = (low + high) * 0.5;
         let r = zoom * 0.45;
+        if let Some(progress) = public.progress {
+            let build = public
+                .kind
+                .base_stats()
+                .construction
+                .map_or(1, |c| c.build_ticks.max(1));
+            let hull = vec2(zoom * 0.7, zoom * 0.9);
+            stroke_rect(
+                Rect::new(
+                    centre.x - hull.x,
+                    centre.y - hull.y,
+                    hull.x * 2.0,
+                    hull.y * 2.0,
+                ),
+                2.0,
+                color,
+            );
+            let bar = Rect::new(
+                low.x + arm,
+                high.y - zoom * 0.35,
+                high.x - low.x - 2.0 * arm,
+                zoom * 0.18,
+            );
+            fill_rect(bar, Color::new(0.0, 0.0, 0.0, 0.6));
+            fill_rect(
+                Rect::new(
+                    bar.x,
+                    bar.y,
+                    bar.w * progress.min(build) as f32 / build as f32,
+                    bar.h,
+                ),
+                BONE,
+            );
+            continue;
+        }
         let (left, right, tip) = (
             centre + vec2(-r * 0.55, -r * 0.1),
             centre + vec2(r * 0.55, -r * 0.1),

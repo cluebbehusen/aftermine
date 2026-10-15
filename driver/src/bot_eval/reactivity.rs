@@ -160,6 +160,10 @@ pub struct SeatReactivity {
     /// A seen armed enemy ground unit pressed an ally's Foundry; answered when
     /// the seat hits a presser, or fires at one, within [`RELIEF_TICKS`].
     pub relief: Reactions,
+    /// Every seat learned of an enemy assembly cradle; answered when it hits
+    /// the cradle or owns more anti-heavy machines than then, missed when the
+    /// machine stands up first, moot when the cradle falls or is cancelled.
+    pub cradle: Reactions,
     /// `oxide-opponent` only: an attack, strike or raid entered its fight;
     /// answered when it withdrew, missed when it vanished mid-fight having
     /// lost at least half its units, moot otherwise.
@@ -187,6 +191,7 @@ impl SeatReactivity {
             (&mut self.repair, &other.repair),
             (&mut self.restoration, &other.restoration),
             (&mut self.relief, &other.relief),
+            (&mut self.cradle, &other.cradle),
         ] {
             mine.merge(theirs);
         }
@@ -201,7 +206,7 @@ impl SeatReactivity {
     }
 
     /// Each kind of situation by its report name.
-    pub fn items(&self) -> [(&'static str, Option<&Reactions>); 11] {
+    pub fn items(&self) -> [(&'static str, Option<&Reactions>); 12] {
         [
             ("anti-air", Some(&self.anti_air)),
             ("airworks", Some(&self.airworks)),
@@ -213,6 +218,7 @@ impl SeatReactivity {
             ("repair", Some(&self.repair)),
             ("restoration", Some(&self.restoration)),
             ("relief", Some(&self.relief)),
+            ("cradle", Some(&self.cradle)),
             ("withdrawal", self.withdrawal.as_ref()),
         ]
     }
@@ -290,6 +296,11 @@ struct SeatWatch {
     tended: BTreeSet<u32>,
     extractors: BTreeMap<u32, TilePos>,
     restores: BTreeMap<TilePos, Case>,
+    /// Enemy cradles the seat knows of, by building id, with its anti-heavy
+    /// machines when it learned of each.
+    cradles: BTreeMap<u32, (Case, usize)>,
+    /// Cradles whose case closed while they stand.
+    cradles_done: BTreeSet<u32>,
     fights: Option<BTreeMap<u64, Fight>>,
     formed: BTreeSet<u64>,
     last_target: Option<PlayerId>,
@@ -352,6 +363,30 @@ impl ReactivityDetectors {
             }
             if let Some(case) = watch.shooters.remove(&target) {
                 watch.found.artillery.answer(&case, now);
+            }
+            if let Target::Building(building) = target
+                && let Some((case, _)) = watch.cradles.remove(&building.0)
+            {
+                watch.found.cradle.answer(&case, now);
+                watch.cradles_done.insert(building.0);
+            }
+        }
+        for event in events {
+            let (cradle, stood_up) = match *event {
+                Event::UnitAssembled { cradle, .. } => (cradle, true),
+                Event::BuildingDestroyed { building, .. }
+                | Event::BuildCancelled { building, .. } => (building, false),
+                _ => continue,
+            };
+            for watch in self.seats.iter_mut().flatten() {
+                watch.cradles_done.remove(&cradle.0);
+                if let Some((case, _)) = watch.cradles.remove(&cradle.0) {
+                    if stood_up {
+                        watch.found.cradle.miss(&case);
+                    } else {
+                        watch.found.cradle.lapse();
+                    }
+                }
             }
         }
         for event in events {
@@ -557,6 +592,7 @@ impl ReactivityDetectors {
                 })
                 .collect();
             check_air(watch, state, player, &seen, now);
+            check_cradles(watch, state, player, now);
             let own: Vec<&Building> = state
                 .buildings()
                 .iter()
@@ -685,6 +721,7 @@ fn settle(watch: &mut SeatWatch) {
             std::mem::take(&mut watch.restores).len(),
             &mut found.restoration,
         ),
+        (std::mem::take(&mut watch.cradles).len(), &mut found.cradle),
     ] {
         reactions.moot += count as u64;
     }
@@ -793,6 +830,45 @@ fn first_foundries(state: &State) -> Vec<Option<Start>> {
                 })
         })
         .collect()
+}
+
+/// Opens a case for each enemy cradle the seat newly knows of, and answers
+/// those it now has more anti-heavy machines for.
+fn check_cradles(watch: &mut SeatWatch, state: &State, player: PlayerId, now: u64) {
+    let anti_heavy = state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == player && unit.hp > 0 && unit.kind == UnitKind::Piledriver)
+        .count();
+    for public in oxide_sim::observation::hostile_public_buildings(state, player) {
+        if public.kind.assembles().is_none() {
+            continue;
+        }
+        let Some(cradle) = state.buildings().iter().find(|b| {
+            b.player == public.owner && b.kind == public.kind && b.anchor == public.anchor
+        }) else {
+            continue;
+        };
+        if !watch.cradles.contains_key(&cradle.id.0) && !watch.cradles_done.contains(&cradle.id.0) {
+            watch.found.cradle.open();
+            watch.cradles.insert(
+                cradle.id.0,
+                (Case::new(now, cradle.id.0, cradle.kind.name()), anti_heavy),
+            );
+        }
+    }
+    let answered: Vec<u32> = watch
+        .cradles
+        .iter()
+        .filter(|(_, (_, before))| anti_heavy > *before)
+        .map(|(id, _)| *id)
+        .collect();
+    for id in answered {
+        if let Some((case, _)) = watch.cradles.remove(&id) {
+            watch.found.cradle.answer(&case, now);
+            watch.cradles_done.insert(id);
+        }
+    }
 }
 
 fn check_air(watch: &mut SeatWatch, state: &State, player: PlayerId, seen: &[&Unit], now: u64) {

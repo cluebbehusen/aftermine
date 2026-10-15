@@ -24,7 +24,7 @@ pub struct PlayerStats {
     pub kinds: Vec<BTreeMap<&'static str, u16>>,
     /// Scrap brought home by Harvesters across the whole match.
     pub scrap_collected: u32,
-    /// Units completed across the whole match.
+    /// Units completed across the whole match, trained or assembled.
     pub units_trained: u32,
     /// Buildings completed across the whole match.
     pub buildings_completed: u32,
@@ -236,7 +236,7 @@ fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
             }
             // Counters saturate: a checkpoint or snapshot from elsewhere may
             // start them anywhere.
-            Event::UnitTrained { player, .. } => {
+            Event::UnitTrained { player, .. } | Event::UnitAssembled { player, .. } => {
                 let counter = &mut stats[player.0 as usize].units_trained;
                 *counter = counter.saturating_add(1);
             }

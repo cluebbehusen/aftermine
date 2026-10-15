@@ -1210,6 +1210,12 @@ impl Building {
         )
     }
 
+    /// Whether every seat knows of this building regardless of fog: a kind
+    /// public at its tier, or an assembly cradle once its first work lands.
+    pub fn is_public(&self) -> bool {
+        self.kind.is_public(self.tier) || (self.kind.public_once_started() && !self.unstarted())
+    }
+
     /// Whether construction has not begun, so cancelling refunds in full.
     pub fn unstarted(&self) -> bool {
         matches!(
@@ -1598,12 +1604,16 @@ impl State {
     pub fn public_buildings(&self) -> impl Iterator<Item = crate::vision::PublicBuilding> + '_ {
         self.buildings
             .iter()
-            .filter(|b| b.hp > 0 && b.kind.is_public(b.tier))
+            .filter(|b| b.hp > 0 && b.is_public())
             .map(|b| crate::vision::PublicBuilding {
                 owner: b.player,
                 kind: b.kind,
                 tier: b.tier,
                 anchor: b.anchor,
+                progress: b
+                    .kind
+                    .public_once_started()
+                    .then(|| b.construction_progress().unwrap_or(0)),
             })
     }
 
@@ -1662,6 +1672,7 @@ impl State {
                     u.player == b.player
                         && u.hp > 0
                         && u.hp < max
+                        && u.kind.stats().repairable()
                         && !u.retiring()
                         && (u.landed() || !u.kind.stats().can_land())
                         && b.closest_point_to(u.pos).dist_sq(u.pos)
@@ -1915,6 +1926,7 @@ impl State {
         for b in buildings {
             self.validate_building(b)?;
         }
+        self.validate_assembly()?;
         self.validate_footprints()?;
         for (i, crash) in aircraft_crashes.iter().enumerate() {
             self.validate_crash(i, crash)?;
@@ -1985,6 +1997,41 @@ impl State {
             && !self.players.iter().any(|player| player.team == team)
         {
             return Err(E::UnknownVictoryTeam(team));
+        }
+        Ok(())
+    }
+
+    /// What admission and the one-per-player cap guarantee: a seat raises
+    /// at most one cradle of a kind and none while that kind's machine
+    /// lives, and no cradle holds more crew than it admits. A scenario may
+    /// field several machines; it cannot field a cradle.
+    fn validate_assembly(&self) -> Result<(), StateIntegrityError> {
+        use StateIntegrityError as E;
+        for cradle in self
+            .buildings
+            .iter()
+            .filter(|b| b.kind.assembles().is_some())
+        {
+            let crew = self
+                .units
+                .iter()
+                .filter(|u| crate::tick::assembly_holds(u, cradle))
+                .count();
+            if crew > crate::stats::ASSEMBLY_CREW_CAP {
+                return Err(E::CrewBeyondCap(cradle.id));
+            }
+            let unit = cradle.kind.assembles().expect("filtered to cradles");
+            if self.buildings.iter().any(|other| {
+                other.id != cradle.id
+                    && other.player == cradle.player
+                    && other.kind.assembles() == Some(unit)
+            }) || self
+                .units
+                .iter()
+                .any(|u| u.player == cradle.player && u.kind == unit)
+            {
+                return Err(E::ExperimentalBeyondCap(cradle.player));
+            }
         }
         Ok(())
     }
@@ -2299,10 +2346,11 @@ impl State {
             return Err(E::TierBeyondLadder(id));
         }
         // Construction starts at the base rung; an upgrade climbs above it.
+        // A cradle never stands finished: its machine replaces it.
         let phase_fits_tier = match phase {
             BuildingPhase::Provisional | BuildingPhase::Site { .. } => *tier == 0,
             BuildingPhase::Upgrading { .. } => *tier > 0,
-            BuildingPhase::Built { .. } => true,
+            BuildingPhase::Built { .. } => kind.assembles().is_none(),
         };
         if !phase_fits_tier {
             return Err(E::InvalidBuildingPhase(id));
@@ -3386,6 +3434,8 @@ pub enum PlaceRefusal {
     /// The footprint overlaps a derelict frame, which no other kind may
     /// pave over.
     FrameBlocked,
+    /// The player already has this experimental alive or assembling.
+    ExperimentalLimit,
 }
 
 #[cfg(test)]
@@ -3723,6 +3773,13 @@ pub enum StateIntegrityError {
     /// between teammates.
     #[error("player {0} holds impossible warhead tracks")]
     InvalidWarheadTracking(PlayerId),
+    /// More workers hold a cradle than its crew admits.
+    #[error("cradle {0} holds more crew than it admits")]
+    CrewBeyondCap(BuildingId),
+    /// A player assembles an experimental while one of that kind lives, or
+    /// two at once.
+    #[error("player {0} assembles more than one of an experimental")]
+    ExperimentalBeyondCap(PlayerId),
 }
 
 /// Slot i belongs to weapon i; slots past the roster stay zero for the

@@ -579,9 +579,9 @@ fn touching_settled_arrival(
     goal: TilePos,
 ) -> bool {
     let unit = state.unit(id).expect("caller checked");
-    let near_sq = crate::stats::ARRIVAL_NEAR * crate::stats::ARRIVAL_NEAR;
+    let near = crate::stats::ARRIVAL_NEAR + crate::stats::hull_excess(unit.kind.stats().radius);
     let goal_center = goal.center();
-    if unit.pos.dist_sq(goal_center) > near_sq {
+    if unit.pos.dist_sq(goal_center) > near * near {
         return false;
     }
     let my_stats = unit.kind.stats();
@@ -589,7 +589,7 @@ fn touching_settled_arrival(
     let contact_slack = const { chassis::fx::Fx::lit("0.05") };
     // Contact only means anything between bodies that collide: a flyer
     // hovering over a parked crowd is not "touching" it.
-    let reach = crate::stats::ARRIVAL_NEAR.to_num::<i32>() + 1;
+    let reach = crate::stats::ARRIVAL_NEAR.to_num::<i32>() + 1 + index.wide_reach();
     (goal.y - reach..=goal.y + reach).any(|y| {
         index
             .row_span(y, goal.x - reach, goal.x + reach)
@@ -602,7 +602,13 @@ fn touching_settled_arrival(
                     && other.path.is_none()
                     && other.drive_speed() == chassis::fx::Fx::ZERO
                     && other.order == Order::Idle
-                    && other.pos.dist_sq(goal_center) <= near_sq
+                    && {
+                        // A wide hull has settled near the goal once its
+                        // edge has.
+                        let near = crate::stats::ARRIVAL_NEAR
+                            + crate::stats::hull_excess(other.kind.stats().radius);
+                        other.pos.dist_sq(goal_center) <= near * near
+                    }
                     && unit.pos.dist(other.pos)
                         <= my_radius + other.kind.stats().radius + contact_slack
             })
@@ -621,6 +627,14 @@ pub(super) fn approach_rect(
         let u = state.unit(id).expect("caller checked");
         (u.tile(), u.kind, u.player)
     };
+    // A wide hull stands back by the tiles it overhangs, so its edge meets
+    // the ring a small body would take.
+    let radius = kind.stats().radius;
+    let ring = crate::stats::hull_excess(radius).ceil().to_num::<i32>();
+    let (anchor, size) = (
+        anchor.offset(-ring, -ring),
+        (size.0 + 2 * ring, size.1 + 2 * ring),
+    );
     let keep = state
         .unit(id)
         .expect("caller checked")
@@ -637,7 +651,10 @@ pub(super) fn approach_rect(
     // rotates: a lone unit never detours to the building's far side.
     let domain = kind.stats().domain;
     let mut candidates: Vec<TilePos> = rect_adjacent_tiles(anchor, size)
-        .filter(|&t| state.passable_for(domain, t))
+        .filter(|&t| {
+            state.passable_for(domain, t)
+                && crate::geometry::hull_open(t, radius, |c| state.passable_for(domain, c))
+        })
         .collect();
     let approach_from = rect_approach_origin(state, player, tile, anchor, size);
     candidates.sort_by_key(|t| rect_approach_key_from(tile, approach_from, anchor, size, *t));

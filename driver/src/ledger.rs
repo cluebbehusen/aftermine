@@ -888,6 +888,13 @@ impl ImpactLedger {
                     };
                     self.spent(player.0, format!("{category}:{}", kind.name()), now, cost);
                 }
+                Event::UnitAssembled {
+                    cradle,
+                    unit,
+                    kind,
+                    player,
+                    ..
+                } => self.assembled(*cradle, *unit, *kind, player.0, now),
                 Event::UnitDied { unit, pos, .. } => {
                     self.cargo.remove(unit);
                     sources
@@ -941,6 +948,8 @@ impl ImpactLedger {
                     let welder = match source {
                         UnitRepairSource::FieldWelder { unit } => Key::Unit(*unit),
                         UnitRepairSource::RepairBay { building } => Key::Building(*building),
+                        // A kiln feeds its own machine.
+                        UnitRepairSource::Kiln { .. } => Key::Unit(*unit),
                     };
                     self.repair(Key::Unit(*unit), welder, *amount, &mut sources);
                 }
@@ -1190,6 +1199,26 @@ impl ImpactLedger {
         if let Some(record) = self.records.get_mut(&Key::Unit(unit)) {
             record.harvested += u64::from(amount);
         }
+    }
+
+    /// A cradle's price buys its machine: the machine takes over the
+    /// cradle's record of what was paid, and the cradle leaves the ledger
+    /// without counting as a loss.
+    fn assembled(&mut self, cradle: BuildingId, unit: UnitId, kind: UnitKind, owner: u8, now: u64) {
+        let paid = self
+            .records
+            .remove(&Key::Building(cradle))
+            .map_or(u64::from(kind.stats().cost), |record| record.paid);
+        self.records.insert(
+            Key::Unit(unit),
+            Record {
+                owner,
+                unit: Some(kind),
+                born: now,
+                paid,
+                ..Record::default()
+            },
+        );
     }
 
     fn gone(&mut self, key: Key, now: u64) {
@@ -1653,6 +1682,9 @@ fn place(bodies: &[Body], dealer: u8, victim: u8, tile: TilePos) -> Place {
 
 /// The spending category of a building kind.
 fn category(kind: BuildingKind) -> &'static str {
+    if kind.assembles().is_some() {
+        return "army";
+    }
     match kind {
         BuildingKind::Foundry | BuildingKind::Extractor | BuildingKind::Reclaimer => "economy",
         BuildingKind::Turret
