@@ -103,8 +103,10 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "sapper",
             "mantle",
             "surveyor",
+            "roc",
         )
-    ):
+        # "roc" is also the start of "rock", whose art takes no rim.
+    ) and not name.startswith(("roc_cradle", "rock")):
         img = rim_light(img)
     save_sprite(img, OUT, name)
     REGISTRY[name] = img
@@ -1740,6 +1742,104 @@ def scuttle_charge(variant: str) -> None:
     finish(img, px, f"scuttle_charge{variant_tag(variant)}")
 
 
+def roc(variant: str, move: int = 0) -> None:
+    """Placeholder experimental gunship until its art is promoted: a long
+    hull, nose up, between stub wings, a gun on each forward shoulder where
+    the simulation pivots them, and a ducted fan on each wing root aft. The
+    canvas spans four tiles; the hull fills about three of them."""
+    px = 256
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    # Stub wings across the hull's middle.
+    d.rounded_rectangle(
+        [s(48), s(110), s(208), s(146)], radius=s(12), fill=(*IRON_DARK, 255)
+    )
+    d.rounded_rectangle([s(92), s(36), s(164), s(222)], radius=s(30), fill=(*IRON, 255))
+    d.rounded_rectangle(
+        [s(102), s(58), s(154), s(200)], radius=s(22), fill=(*pal["base"], 255)
+    )
+    # A cargo hatch down the spine.
+    d.rectangle([s(116), s(132), s(140), s(186)], fill=(*IRON_DARK, 255))
+    for rib in range(4):
+        y = 138 + rib * 12
+        d.rectangle([s(118), s(y), s(138), s(y + 3)], fill=(*IRON_LIGHT, 255))
+    # Ducted fans at each wing root, their blades turning in flight.
+    for cx in (70, 186):
+        d.ellipse([s(cx - 20), s(150), s(cx + 20), s(190)], fill=(*IRON_DARK, 255))
+        d.ellipse([s(cx - 15), s(155), s(cx + 15), s(185)], fill=(*IRON_LIGHT, 255))
+        angle = (0, 1, 2)[move % 3]
+        if angle == 0:
+            d.rectangle([s(cx - 14), s(168), s(cx + 14), s(172)], fill=(*IRON, 255))
+        elif angle == 1:
+            d.polygon(
+                [
+                    (s(cx - 10), s(160)),
+                    (s(cx - 7), s(158)),
+                    (s(cx + 10), s(180)),
+                    (s(cx + 7), s(182)),
+                ],
+                fill=(*IRON, 255),
+            )
+        else:
+            d.polygon(
+                [
+                    (s(cx + 10), s(160)),
+                    (s(cx + 7), s(158)),
+                    (s(cx - 10), s(180)),
+                    (s(cx - 7), s(182)),
+                ],
+                fill=(*IRON, 255),
+            )
+    # Engine glow at the tail.
+    for x in (110, 136):
+        d.rectangle([s(x), s(214), s(x + 10), s(222)], fill=(*SCRAP_LIGHT, 255))
+    # A gun on each forward shoulder: 0.65 tiles ahead of the centre and
+    # 0.55 either side, at 64 pixels a tile.
+    for cx in (93, 163):
+        d.ellipse([s(cx - 11), s(75), s(cx + 11), s(97)], fill=(*IRON_DARK, 255))
+        d.rectangle([s(cx - 3), s(52), s(cx + 3), s(86)], fill=(*IRON_LIGHT, 255))
+        d.ellipse([s(cx - 6), s(80), s(cx + 6), s(92)], fill=(*pal["light"], 255))
+    suffix = "" if move == 0 else f"_move{move}"
+    finish(img, px, f"roc{variant_tag(variant)}{suffix}")
+
+
+def roc_cradle(variant: str) -> None:
+    """Placeholder 3x3 assembly cradle until its art is promoted: a braced
+    pad between four mooring masts, the gunship's winged outline marked on
+    the deck where its hull will lift off."""
+    px = 192
+    pal = PALETTES[variant]
+    img, d = canvas(px)
+    d.rounded_rectangle(
+        [s(6), s(6), s(186), s(186)], radius=s(12), fill=(*IRON_DARK, 255)
+    )
+    d.rounded_rectangle([s(18), s(18), s(174), s(174)], radius=s(8), fill=(*IRON, 255))
+    for offset in range(0, 156, 26):
+        d.line(
+            [(s(174 - offset), s(18)), (s(174), s(18 + offset))],
+            fill=(*IRON_LIGHT, 255),
+            width=s(2),
+        )
+    d.rounded_rectangle(
+        [s(74), s(34), s(118), s(160)],
+        radius=s(18),
+        outline=(*SCRAP_DARK, 255),
+        width=s(4),
+    )
+    d.rounded_rectangle(
+        [s(40), s(84), s(152), s(108)],
+        radius=s(10),
+        outline=(*SCRAP_DARK, 255),
+        width=s(4),
+    )
+    for x, y in ((10, 10), (150, 10), (10, 150), (150, 150)):
+        d.ellipse([s(x), s(y), s(x + 32), s(y + 32)], fill=(*IRON_LIGHT, 255))
+        d.ellipse([s(x + 8), s(y + 8), s(x + 24), s(y + 24)], fill=(*pal["base"], 255))
+    for x in (34, 150):
+        d.rectangle([s(x), s(88), s(x + 8), s(104)], fill=(*pal["light"], 255))
+    finish(img, px, f"roc_cradle{variant_tag(variant)}")
+
+
 def sapper(variant: str, move: int = 0) -> None:
     """The walking charge: a squat frame hauling one oversized shaped
     canister on its back — all payload, no gun."""
@@ -2955,8 +3055,13 @@ def icon_move() -> None:
 def icon_run() -> None:
     img, d = canvas(ICON)
     points = [
-        (28, 5), (40.5, 18), (31.5, 18), (31.5, 41),
-        (24.5, 41), (24.5, 18), (15.5, 18),
+        (28, 5),
+        (40.5, 18),
+        (31.5, 18),
+        (31.5, 41),
+        (24.5, 41),
+        (24.5, 18),
+        (15.5, 18),
     ]
     d.polygon([(s(x), s(y)) for x, y in points], fill=(*BONE, 255))
     for start, end, y in [(7, 14, 24), (5, 17, 32), (9, 17, 40)]:
@@ -2979,8 +3084,13 @@ def icon_hunt() -> None:
             joint="curve",
         )
     points = [
-        (24, 13), (33, 27), (27, 25), (27, 35),
-        (21, 35), (21, 25), (15, 27),
+        (24, 13),
+        (33, 27),
+        (27, 25),
+        (27, 35),
+        (21, 35),
+        (21, 25),
+        (15, 27),
     ]
     d.polygon([(s(x), s(y)) for x, y in points], fill=(*SCRAP_LIGHT, 255))
     finish(img, ICON, "icon_hunt")
@@ -3098,12 +3208,26 @@ def icon_accompany() -> None:
     """Escort duty: the leader ahead, two escorts keeping pace at its flanks."""
     img, d = canvas(ICON)
 
-    def arrow(cx: float, top: float, half: float, head: float, stem: float, bottom: float, color):
+    def arrow(
+        cx: float,
+        top: float,
+        half: float,
+        head: float,
+        stem: float,
+        bottom: float,
+        color,
+    ):
         d.polygon(
-            [(s(cx), s(top)), (s(cx + half), s(top + head)), (s(cx - half), s(top + head))],
+            [
+                (s(cx), s(top)),
+                (s(cx + half), s(top + head)),
+                (s(cx - half), s(top + head)),
+            ],
             fill=color,
         )
-        d.rectangle([s(cx - stem / 2), s(top + head), s(cx + stem / 2), s(bottom)], fill=color)
+        d.rectangle(
+            [s(cx - stem / 2), s(top + head), s(cx + stem / 2), s(bottom)], fill=color
+        )
 
     arrow(24, 4, 9, 11, 6, 30, (*SCRAP, 255))
     arrow(11, 16, 7, 9, 5, 45, (*BONE, 255))
@@ -3239,7 +3363,7 @@ def generate(output: Path) -> None:
                 unit_fn(variant, move)
             for act in range(1, 5):
                 unit_fn(variant, 0, act)
-        for unit_fn in (excavator, kestrel, skyhook, sapper):
+        for unit_fn in (excavator, kestrel, skyhook, sapper, roc):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
@@ -3251,6 +3375,7 @@ def generate(output: Path) -> None:
             crucible(variant, work)
         barricade(variant)
         scuttle_charge(variant)
+        roc_cradle(variant)
     _install_finalized_sprite_bank()
     _install_finalized_environment_bank()
     _install_finalized_construction_bank()

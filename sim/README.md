@@ -46,8 +46,13 @@ an empty bank, or a full sling still ends the whole program.
 An assembly cradle is paid when placed and admits at most `ASSEMBLY_CREW_CAP`
 workers, a faster one displacing a slower holder. Every seat sees a started
 cradle and its progress. Finished, it stands its machine up at its centre
-instead of completing; a player may raise any number of them. Such a machine
-heals only through its kiln, which eats wreck around its hull.
+instead of completing; a player may raise any number of them. A machine with a
+kiln, the Maw, heals only through it, eating wreck around its hull.
+
+A Roc carries its guns on fixed pivots of its hull. Each gun picks its own
+target inside its own arc under every order, and the hull turns for them only on
+an attack, an attack-move that meets an enemy, or an idle gun with an enemy in
+its blind quarter.
 
 Repair and salvage share one damage-first building-work resolver and remain
 mutually exclusive. Completed Repair Bays automatically heal nearby owned units

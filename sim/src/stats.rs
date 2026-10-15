@@ -74,6 +74,10 @@ chassis::listed_enum! {
         /// through structures, is weak against machines, and heals only by
         /// feeding wreck to its kiln. Assembled in a cradle, never trained.
         Maw,
+        /// Experimental gunship: a slow, heavy air transport whose two guns
+        /// pick their own ground targets. Assembled in a cradle, never
+        /// trained.
+        Roc,
     }
 }
 
@@ -132,6 +136,9 @@ chassis::listed_enum! {
         /// Assembly cradle where workers build a Maw. Public once work
         /// starts; on completion the cradle is gone and the Maw stands up.
         MawCradle,
+        /// Assembly cradle where workers build a Roc, public like the Maw's;
+        /// on completion the Roc lifts off from its centre.
+        RocCradle,
     }
 }
 
@@ -330,6 +337,64 @@ pub struct UnitStats {
     /// Built like a structure: demolition charges and building-breaking
     /// weapons deal it their structure damage.
     pub structural: bool,
+    /// Guns on fixed pivots of the hull, one per weapon slot, each choosing
+    /// its own target inside its arc. `None` for every machine whose weapons
+    /// fire from its centre.
+    pub mounts: Option<MountedGuns>,
+}
+
+/// A gun on a fixed pivot of its hull that traverses only inside its arc.
+/// Offsets and the arc are measured in the hull's frame: forward along the
+/// nose, starboard a quarter turn clockwise of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MountStats {
+    /// Tiles the pivot sits ahead of the hull's centre.
+    pub forward: Fx,
+    /// Tiles the pivot sits to starboard of the centreline; negative to port.
+    pub starboard: Fx,
+    /// The arc's centre against the nose, in compass steps, starboard
+    /// positive.
+    pub arc_centre: i8,
+    /// Compass steps the gun may turn either side of its arc's centre.
+    pub arc_half: u8,
+}
+
+impl MountStats {
+    /// The pivot's world position on a hull at `pos` facing `heading`.
+    pub fn pivot(&self, pos: chassis::fx::Vec2Fx, heading: u8) -> chassis::fx::Vec2Fx {
+        pos + chassis::compass::dir(heading) * self.forward
+            + chassis::compass::dir(heading.wrapping_add(64)) * self.starboard
+    }
+
+    /// Steps from the arc's centre to `relative`, a bearing against the
+    /// nose, signed toward starboard.
+    pub fn arc_offset(&self, relative: u8) -> i16 {
+        i16::from(
+            relative
+                .wrapping_sub(self.arc_centre.cast_unsigned())
+                .cast_signed(),
+        )
+    }
+
+    /// Whether the gun can bear on `relative`, a bearing against the nose.
+    pub fn covers(&self, relative: u8) -> bool {
+        self.arc_offset(relative).unsigned_abs() <= u16::from(self.arc_half)
+    }
+}
+
+/// A hull's mounted guns and how its gunners and helm behave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MountedGuns {
+    /// One mount per weapon slot, in slot order.
+    pub mounts: &'static [MountStats],
+    /// Compass steps per tick each gun traverses.
+    pub traverse: u8,
+    /// Ticks an idle hull keeps a facing it turned to before it turns again,
+    /// so a crowd around it cannot keep it spinning.
+    pub facing_hold: u8,
+    /// No pivot lies farther than this from the hull's centre: the margin a
+    /// gun's range reaches beyond the centre's.
+    pub reach: Fx,
 }
 
 /// How a damaged machine recovers hit points.
@@ -457,13 +522,21 @@ impl UnitStats {
         self.weapons.iter().any(|w| w.targets.covers(domain))
     }
 
-    /// The longest reach of any weapon covering the given domain.
+    /// The longest reach of any weapon covering the given domain, from the
+    /// hull's centre.
     pub fn max_range_vs(&self, domain: Domain) -> Option<Fx> {
         self.weapons
             .iter()
             .filter(|w| w.targets.covers(domain))
-            .map(|w| w.range)
+            .map(|w| self.reach(w))
             .max()
+    }
+
+    /// How far from the hull's centre `weapon` reaches: its range, plus how
+    /// far a mounted gun's pivot sits off the centre. Exactly the range for
+    /// every machine without mounts.
+    pub fn reach(&self, weapon: &WeaponStats) -> Fx {
+        weapon.range + self.mounts.map_or(Fx::ZERO, |guns| guns.reach)
     }
 }
 
@@ -508,7 +581,7 @@ impl BuildingKind {
             | BuildingKind::Extractor
             | BuildingKind::Spire
             | BuildingKind::Lattice => (2, 2),
-            BuildingKind::MawCradle => (3, 3),
+            BuildingKind::MawCradle | BuildingKind::RocCradle => (3, 3),
         }
     }
 
@@ -532,6 +605,7 @@ impl BuildingKind {
             BuildingKind::Spire => &[&SPIRE],
             BuildingKind::Lattice => &[&LATTICE],
             BuildingKind::MawCradle => &[&MAW_CRADLE],
+            BuildingKind::RocCradle => &[&ROC_CRADLE],
         }
     }
 
@@ -585,6 +659,7 @@ impl BuildingKind {
     pub const fn assembles(self) -> Option<UnitKind> {
         match self {
             BuildingKind::MawCradle => Some(UnitKind::Maw),
+            BuildingKind::RocCradle => Some(UnitKind::Roc),
             _ => None,
         }
     }
@@ -881,6 +956,7 @@ impl UnitKind {
             UnitKind::Piledriver => "piledriver",
             UnitKind::Surveyor => "surveyor",
             UnitKind::Maw => "maw",
+            UnitKind::Roc => "roc",
         }
     }
 
@@ -937,6 +1013,9 @@ impl UnitKind {
             UnitKind::Maw => {
                 "Huge, slow breacher that cuts through buildings and is weak against machines. No anti-air. Heals only by eating wreck under and beside it."
             }
+            UnitKind::Roc => {
+                "Slow, heavy gunship that carries twelve slots of ground units. Two guns each pick their own ground targets; an attack order turns it nose-on so both bear. No anti-air."
+            }
         }
     }
 }
@@ -978,6 +1057,7 @@ const HARVESTER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -1038,6 +1118,7 @@ const SENTINEL: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -1080,6 +1161,7 @@ const SCUTTLER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -1124,6 +1206,7 @@ const LANCER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -1173,6 +1256,7 @@ const BOMBARD: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -1215,6 +1299,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -1257,6 +1342,7 @@ const BUZZARD: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -1299,6 +1385,7 @@ const TALON: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -1345,6 +1432,7 @@ const WARDEN: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -1380,6 +1468,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -1415,6 +1504,7 @@ const KESTREL: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1464,6 +1554,7 @@ const CONDOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1509,6 +1600,7 @@ const BREAKER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const PILEDRIVER: UnitStats = UnitStats {
@@ -1558,6 +1650,7 @@ const PILEDRIVER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1606,6 +1699,7 @@ const AVALANCHE: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1642,6 +1736,7 @@ const SKYHOOK: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1679,6 +1774,7 @@ const SAPPER: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const MANTLE: UnitStats = UnitStats {
@@ -1716,6 +1812,7 @@ const MANTLE: UnitStats = UnitStats {
     }),
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const SURVEYOR: UnitStats = UnitStats {
@@ -1751,6 +1848,7 @@ const SURVEYOR: UnitStats = UnitStats {
     point_defense: None,
     mend: Mend::Repair,
     structural: false,
+    mounts: None,
 };
 
 const MAW: UnitStats = UnitStats {
@@ -1803,6 +1901,86 @@ const MAW: UnitStats = UnitStats {
         reach: 1,
     }),
     structural: true,
+    mounts: None,
+};
+
+/// One of the Roc's two guns: 30 damage a second against ground, measured
+/// from its own pivot, short of a Flak Turret's reach.
+const ROC_GUN: WeaponStats = WeaponStats {
+    damage: 15,
+    range: Fx::lit("5"),
+    minimum_range: Fx::ZERO,
+    cooldown_ticks: 10,
+    targets: DomainMask::GROUND,
+    splash: None,
+    indirect: false,
+    building_damage: None,
+    projectile: None,
+};
+
+const ROC: UnitStats = UnitStats {
+    contact_reach: None,
+    max_hp: 4500,
+    speed: Fx::lit("0.07"), // 1.4 tiles/s, half a Skyhook
+    radius: Fx::lit("1.3"),
+    cost: 3200,
+    // Never trained: workers assemble it in its cradle. This is the full
+    // crew's assembly time.
+    train_ticks: 2125,
+    domain: Domain::Air,
+    weapons: &[ROC_GUN, ROC_GUN],
+    // The guns choose their own targets; nothing acquires through this.
+    aggro_range: Fx::lit("5"),
+    harvest: None,
+    vision: 7,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 0,
+    transport_capacity: 12,
+    turn_rate: 0,
+    // 180 degrees in 3.2 s.
+    cruise_turn_rate: 2,
+    turret_turn_rate: 0,
+    hull_turn_rate: None,
+    brace: None,
+    target_priority: TargetPriority::Nearest,
+    // A pushed hull keeps its heading, so its guns' arcs never jump.
+    crash: Some(CrashProfile {
+        damage: 120,
+        radius: Fx::lit("3"),
+        aligns_to_motion: false,
+    }),
+    charge_detection: false,
+    scouts: false,
+    radar: None,
+    point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
+    mounts: Some(MountedGuns {
+        // Port then starboard. Each arc of 270 degrees is centred 45 degrees
+        // outboard of the nose, so its blind quarter lies behind the far
+        // wing: both guns bear ahead of the beam, one on each rear quarter.
+        mounts: &[
+            MountStats {
+                forward: Fx::lit("0.65"),
+                starboard: Fx::lit("-0.55"),
+                arc_centre: -32,
+                arc_half: 96,
+            },
+            MountStats {
+                forward: Fx::lit("0.65"),
+                starboard: Fx::lit("0.55"),
+                arc_centre: 32,
+                arc_half: 96,
+            },
+        ],
+        // 180 degrees in about one second.
+        traverse: 6,
+        facing_hold: 60,
+        // Covers sqrt(0.65^2 + 0.55^2), about 0.851.
+        reach: Fx::lit("0.86"),
+    }),
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -2067,6 +2245,24 @@ const MAW_CRADLE: BuildingStats = BuildingStats {
     radar: None,
 };
 
+const ROC_CRADLE: BuildingStats = BuildingStats {
+    max_hp: 2000,
+    vision: 3,
+    produces: &[],
+    weapons: &[],
+    construction: Some(ConstructionStats {
+        cost: ROC.cost,
+        // Four Excavators at two work a tick finish in under two minutes.
+        build_ticks: 17_000,
+        requires: &[
+            Prerequisite::built(BuildingKind::Crucible),
+            Prerequisite::upgraded(BuildingKind::Extractor, 1),
+            Prerequisite::built(BuildingKind::Airworks),
+        ],
+    }),
+    radar: None,
+};
+
 const SPIRE_ORDNANCE: Ordnance = Ordnance::Silo(SiloStats {
     magazine: MagazineStats {
         capacity: 1,
@@ -2293,6 +2489,7 @@ impl UnitKind {
             UnitKind::Piledriver => &PILEDRIVER,
             UnitKind::Surveyor => &SURVEYOR,
             UnitKind::Maw => &MAW,
+            UnitKind::Roc => &ROC,
         }
     }
 
@@ -2328,6 +2525,7 @@ impl BuildingKind {
             BuildingKind::Spire => "spire",
             BuildingKind::Lattice => "lattice",
             BuildingKind::MawCradle => "maw cradle",
+            BuildingKind::RocCradle => "roc cradle",
         }
     }
 
@@ -2378,6 +2576,9 @@ impl BuildingKind {
             BuildingKind::MawCradle => {
                 "Up to four workers assemble a Maw here. Every player sees it once work starts."
             }
+            BuildingKind::RocCradle => {
+                "Up to four workers assemble a Roc here. Every player sees it once work starts."
+            }
         }
     }
 
@@ -2403,6 +2604,7 @@ impl BuildingKind {
             BuildingKind::Spire => &SPIRE,
             BuildingKind::Lattice => &LATTICE,
             BuildingKind::MawCradle => &MAW_CRADLE,
+            BuildingKind::RocCradle => &ROC_CRADLE,
         }
     }
 
@@ -2535,9 +2737,16 @@ pub const AUTO_LAND_SCAN_RADIUS: i32 = 4;
 /// approach is planned with room to line up.
 pub const LANDING_HANDOFF_REACH: Fx = Fx::lit("7");
 
-/// How close a boarding machine must stand to its transport before the
-/// sling takes it.
+/// How close a boarding machine must stand to a small transport's centre
+/// before the sling takes it; a wider hull reaches by its
+/// [`hull_excess`] more (see [`load_reach`]).
 pub const LOAD_REACH: Fx = Fx::lit("1.5");
+
+/// How close a boarding machine must stand to `carrier`'s centre: a riders'
+/// hatch reaches as far past a wide hull as a small one's past its own.
+pub fn load_reach(carrier: &UnitStats) -> Fx {
+    LOAD_REACH + hull_excess(carrier.radius)
+}
 
 /// Ring-scan radius when a transport sets its cargo down: the farthest
 /// tile from the drop point a disgorged machine may appear on.
@@ -2923,6 +3132,35 @@ const _: () = {
             t += 1;
         }
         b += 1;
+    }
+};
+
+// A mounted kind names one mount per weapon, turns its hull as a cruise
+// flier does, and never lands, so its hull's heading is the frame its guns'
+// arcs are measured in.
+const _: () = {
+    let mut u = 0;
+    while u < UnitKind::ALL.len() {
+        let stats = UnitKind::ALL[u].stats();
+        if let Some(guns) = stats.mounts {
+            assert!(
+                guns.mounts.len() == stats.weapons.len() && guns.mounts.len() <= MAX_WEAPONS,
+                "a mounted kind names one mount per weapon"
+            );
+            assert!(
+                stats.cruise_turn_rate > 0 && stats.turn_rate == 0,
+                "a mounted hull turns as a cruise flier"
+            );
+            let mut m = 0;
+            while m < guns.mounts.len() {
+                assert!(
+                    guns.mounts[m].arc_half < 128,
+                    "an arc leaves a blind quarter"
+                );
+                m += 1;
+            }
+        }
+        u += 1;
     }
 };
 

@@ -56,6 +56,7 @@ const LOUD_UNITS: &[UnitKind] = &[
     UnitKind::Condor,
     UnitKind::Skyhook,
     UnitKind::Maw,
+    UnitKind::Roc,
 ];
 
 /// Options controlling one summary pass.

@@ -28,6 +28,7 @@ BUILDING_STEMS = (
     "scuttle_charge",
     "spire",
     "lattice",
+    "roc_cradle",
 )
 
 DEFENSE_MOUNTS = {

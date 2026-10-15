@@ -176,7 +176,7 @@ pub enum Order {
         /// The clicked tile, and where around it this unit is headed.
         goal: Goal,
     },
-    /// Walk within [`crate::stats::LOAD_REACH`] of an own transport and
+    /// Walk within [`crate::stats::load_reach`] of an own transport and
     /// board it: the machine leaves the world and rides as cargo.
     Board {
         /// The carrier to climb onto.
@@ -415,6 +415,50 @@ impl PointDefense {
     }
 }
 
+/// A mounted hull's gunners and helm.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mounts {
+    /// Each gun's bearing against the nose, indexed like the kind's mounts
+    /// and always inside its arc, so a gun swings with the hull. Slots past
+    /// the mounts stay zero.
+    pub bearings: [u8; crate::stats::MAX_WEAPONS],
+    /// How an idle hull keeps a facing it turned to.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub facing: IdleFacing,
+}
+
+impl Mounts {
+    /// Every gun at its arc's centre.
+    fn resting(guns: crate::stats::MountedGuns) -> Self {
+        let mut bearings = [0; crate::stats::MAX_WEAPONS];
+        for (bearing, mount) in bearings.iter_mut().zip(guns.mounts) {
+            *bearing = mount.arc_centre.cast_unsigned();
+        }
+        Self {
+            bearings,
+            facing: IdleFacing::Free,
+        }
+    }
+}
+
+/// Whether an idle mounted hull may turn to feed a gun that has nothing to
+/// shoot.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "facing", rename_all = "snake_case", deny_unknown_fields)]
+pub enum IdleFacing {
+    /// It may start a turn.
+    #[default]
+    Free,
+    /// It turned last tick and may go on turning.
+    Turning,
+    /// It keeps the facing it turned to for these many more ticks.
+    Holding {
+        /// Ticks left.
+        ticks: core::num::NonZeroU8,
+    },
+}
+
 /// What a harvesting machine has aboard and how its delivery stands.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -511,6 +555,10 @@ pub struct Unit {
     /// defense.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub point_defense: Option<PointDefense>,
+    /// Gun bearings and idle facing, for exactly the kinds with mounted
+    /// guns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mounts: Option<Mounts>,
 }
 
 fn is_zero_motion(motion: &Vec2Fx) -> bool {
@@ -727,12 +775,22 @@ impl Unit {
             cargo: Vec::new(),
             radar_deploy: 0,
             point_defense: kind.stats().point_defense.map(PointDefense::full),
+            mounts: kind.stats().mounts.map(Mounts::resting),
         }
     }
 
     /// Compass bearing used to aim this unit's primary weapon.
     pub fn weapon_heading(&self) -> u8 {
         self.turret_heading.unwrap_or(self.heading)
+    }
+
+    /// The world bearing of the mounted gun in weapon slot `slot`, if this
+    /// machine has one there.
+    pub fn mount_bearing(&self, slot: usize) -> Option<u8> {
+        let guns = self.kind.stats().mounts?;
+        guns.mounts.get(slot)?;
+        let bearing = self.mounts?.bearings[slot];
+        Some(self.heading.wrapping_add(bearing))
     }
 
     pub(crate) fn retract_braces(&mut self) {
@@ -2047,6 +2105,7 @@ impl State {
             cargo,
             radar_deploy,
             point_defense,
+            mounts,
         } = u;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -2066,6 +2125,7 @@ impl State {
         }
         if worker.is_some() != stats.harvest.is_some()
             || point_defense.is_some() != stats.point_defense.is_some()
+            || mounts.is_some() != stats.mounts.is_some()
             || !motor.fits(*kind)
             || (turret_heading.is_some() && !kind.has_ground_turret())
             || (!cargo.is_empty() && stats.transport_capacity == 0)
@@ -2074,6 +2134,9 @@ impl State {
         }
         if !point_defense_in_range(*point_defense, stats) {
             return Err(E::PointDefenseOutOfRange(id));
+        }
+        if !mounts_in_range(*mounts, stats) {
+            return Err(E::MountsOutOfRange(id));
         }
         let Worker {
             carrying,
@@ -3759,6 +3822,10 @@ pub enum StateIntegrityError {
     /// More workers hold a cradle than its crew admits.
     #[error("cradle {0} holds more crew than it admits")]
     CrewBeyondCap(BuildingId),
+    /// A mounted gun aimed outside its arc, a bearing on a slot without a
+    /// mount, or an idle facing held longer than the kind ever holds one.
+    #[error("unit {0} holds impossible gun bearings")]
+    MountsOutOfRange(UnitId),
 }
 
 /// Slot i belongs to weapon i; slots past the roster stay zero for the
@@ -3788,6 +3855,28 @@ fn point_defense_in_range(
     held.charges <= stats.charges
         && held.recharge < stats.recharge_ticks
         && (held.charges < stats.charges || held.recharge == 0)
+}
+
+/// Whether every gun bears inside its arc, slots without a mount stay at
+/// zero, and an idle hold is no longer than the kind's. Presence against the
+/// kind is checked separately.
+fn mounts_in_range(mounts: Option<Mounts>, stats: &crate::stats::UnitStats) -> bool {
+    let (Some(held), Some(guns)) = (mounts, stats.mounts) else {
+        return true;
+    };
+    let bearings =
+        held.bearings
+            .iter()
+            .enumerate()
+            .all(|(slot, bearing)| match guns.mounts.get(slot) {
+                Some(mount) => mount.covers(*bearing),
+                None => *bearing == 0,
+            });
+    let hold = match held.facing {
+        IdleFacing::Holding { ticks } => ticks.get() <= guns.facing_hold,
+        IdleFacing::Free | IdleFacing::Turning => true,
+    };
+    bearings && hold
 }
 
 fn valid_air_motion(unit: &Unit) -> bool {

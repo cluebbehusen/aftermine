@@ -553,10 +553,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidWarheadFlight(_) => 93,
         E::InvalidWarheadTracking(_) => 94,
         E::CrewBeyondCap(_) => 95,
+        E::MountsOutOfRange(_) => 96,
     }
 }
 
-const ROWS: usize = 96;
+const ROWS: usize = 97;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -665,6 +666,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidWarheadFlight(0),
         E::InvalidWarheadTracking(PlayerId(0)),
         E::CrewBeyondCap(BuildingId(0)),
+        E::MountsOutOfRange(UnitId(0)),
     ]
 }
 
@@ -798,6 +800,22 @@ fn make_mantle(d: &mut Value, point_defense: Value) {
     d["units"][0]["order"] = json!({"order": "idle"});
     d["units"][0]["progress"] = json!(0);
     d["units"][0]["point_defense"] = point_defense;
+    let unit = d["units"][0].as_object_mut().expect("unit is a map");
+    unit.remove("worker");
+    unit.remove("path");
+    unit.remove("leash");
+    unit.remove("queue");
+}
+
+/// Rewrites units[0] (the working Harvester) into an idle, hovering Roc
+/// holding the given gun state.
+fn make_roc(d: &mut Value, mounts: Value) {
+    d["units"][0]["kind"] = json!("roc");
+    d["units"][0]["hp"] = json!(4500);
+    d["units"][0]["order"] = json!({"order": "idle"});
+    d["units"][0]["progress"] = json!(0);
+    d["units"][0]["motor"] = json!({"motor": "airborne"});
+    d["units"][0]["mounts"] = mounts;
     let unit = d["units"][0].as_object_mut().expect("unit is a map");
     unit.remove("worker");
     unit.remove("path");
@@ -1572,6 +1590,37 @@ fn every_checklist_row_refuses_its_forgery() {
             "a recharge counter at a full recharge",
             |d| make_mantle(d, json!({"charges": 1, "recharge": 60})),
             "unit u0 holds impossible point-defense charges",
+        ),
+        (
+            "gun bearings on a kind without mounted guns",
+            |d| d["units"][0]["mounts"] = json!({"bearings": [0, 0]}),
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a Roc without its mounted guns",
+            |d| {
+                make_roc(d, json!(null));
+                d["units"][0]
+                    .as_object_mut()
+                    .expect("unit is a map")
+                    .remove("mounts");
+            },
+            "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "a gun aimed into its blind quarter",
+            |d| make_roc(d, json!({"bearings": [96, 32]})),
+            "unit u0 holds impossible gun bearings",
+        ),
+        (
+            "an idle facing held past the kind's hold",
+            |d| {
+                make_roc(
+                    d,
+                    json!({"bearings": [224, 32], "facing": {"facing": "holding", "ticks": 61}}),
+                );
+            },
+            "unit u0 holds impossible gun bearings",
         ),
         (
             "a carried Mantle without its point defense",

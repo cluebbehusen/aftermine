@@ -409,7 +409,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             }
             BuildingKind::RepairBay => info.repair_bay_rows(),
             BuildingKind::Spire | BuildingKind::Lattice => info.magazine_rows(game, b),
-            BuildingKind::MawCradle => info.cradle_rows(game, b),
+            BuildingKind::MawCradle | BuildingKind::RocCradle => info.cradle_rows(game, b),
             BuildingKind::Crucible => info.row(
                 "Smelt reach",
                 format!("{:.1} tiles", CRUCIBLE_SMELT_RADIUS.to_num::<f32>()),

@@ -60,7 +60,7 @@ fn cargo_load(transport: &Unit) -> u8 {
         .sum()
 }
 
-/// Walk within [`crate::stats::LOAD_REACH`] of the carrier and ask to
+/// Walk within [`crate::stats::load_reach`] of the carrier and ask to
 /// climb aboard. A full sling, a dead carrier, or a carrier that
 /// stopped being ours stands the boarder down where it is.
 pub(super) fn board(
@@ -87,6 +87,7 @@ pub(super) fn board(
     };
     let capacity = carrier.kind.stats().transport_capacity;
     let carrier_pos = carrier.pos;
+    let reach = crate::stats::load_reach(carrier.kind.stats());
     if cargo_load(carrier) + my_size > capacity {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.clear_program();
@@ -98,7 +99,7 @@ pub(super) fn board(
         });
         return;
     }
-    if pos.dist_sq(carrier_pos) <= crate::stats::LOAD_REACH * crate::stats::LOAD_REACH {
+    if pos.dist_sq(carrier_pos) <= reach * reach {
         // In reach: stop walking and ask for the sling. The embark waits
         // for resolution so the unit list holds still under the other
         // brains.
@@ -116,14 +117,12 @@ pub(super) fn board(
         .path
         .as_ref()
         .is_none_or(|p| {
-            !state.passable(p.goal)
-                || p.goal.center().dist_sq(carrier_pos)
-                    > crate::stats::LOAD_REACH * crate::stats::LOAD_REACH
+            !state.passable(p.goal) || p.goal.center().dist_sq(carrier_pos) > reach * reach
         });
     if !stale {
         return;
     }
-    if let Some((goal, waypoints)) = boarding_route(state, kind, pos, carrier_pos) {
+    if let Some((goal, waypoints)) = boarding_route(state, kind, pos, (carrier_pos, reach)) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.path = Some(PathFollow {
             final_point: None,
@@ -157,18 +156,20 @@ fn boarding_route(
     state: &State,
     kind: crate::stats::UnitKind,
     rider_pos: chassis::fx::Vec2Fx,
-    carrier_pos: chassis::fx::Vec2Fx,
+    carrier: (chassis::fx::Vec2Fx, chassis::fx::Fx),
 ) -> Option<(TilePos, Vec<TilePos>)> {
+    let (carrier_pos, reach) = carrier;
     let from = TilePos::containing(rider_pos);
     let center = TilePos::containing(carrier_pos);
-    let reach_sq = crate::stats::LOAD_REACH * crate::stats::LOAD_REACH;
+    let reach_sq = reach * reach;
+    let span = reach.ceil().to_num::<i32>();
     let approach = carrier_pos - rider_pos;
     let (approach_x, approach_y) = (
         i128::from(approach.x.to_bits()),
         i128::from(approach.y.to_bits()),
     );
-    (center.y - 2..=center.y + 2)
-        .flat_map(|y| (center.x - 2..=center.x + 2).map(move |x| TilePos::new(x, y)))
+    (center.y - span..=center.y + span)
+        .flat_map(|y| (center.x - span..=center.x + span).map(move |x| TilePos::new(x, y)))
         .filter(|goal| state.passable(*goal) && goal.center().dist_sq(carrier_pos) <= reach_sq)
         .filter_map(|goal| {
             let waypoints = route_for(state, kind, from, goal)?;

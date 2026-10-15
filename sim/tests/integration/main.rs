@@ -47,6 +47,7 @@ mod repair_bay;
 mod repair_unit;
 mod retire;
 mod return_cargo;
+mod roc;
 mod roster;
 mod salvage;
 mod sandbox;

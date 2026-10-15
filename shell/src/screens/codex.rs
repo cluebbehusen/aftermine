@@ -86,6 +86,7 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
                 BuildingKind::Spire,
                 BuildingKind::Lattice,
                 BuildingKind::MawCradle,
+                BuildingKind::RocCradle,
             ]
             .into_iter()
             .map(Entry::Building)

@@ -371,7 +371,7 @@ fn the_construction_palette_groups_categories_beside_back_at_supported_sizes() {
             let min_w = if i + 1 == count {
                 crate::theme::MIN_TOUCH_TARGET
             } else {
-                90.0
+                86.0
             };
             assert!(rect.w >= min_w && rect.h >= crate::theme::MIN_TOUCH_TARGET);
             assert!(rect.x >= band.x && rect.right() <= band.right());

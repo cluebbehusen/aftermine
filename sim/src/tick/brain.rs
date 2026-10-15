@@ -171,6 +171,13 @@ pub(super) fn run(
                 *cd = cd.saturating_sub(1);
             }
         }
+        let mounted = state
+            .unit(id)
+            .expect("live unit")
+            .kind
+            .stats()
+            .mounts
+            .is_some();
         let automatic = matches!(
             state.unit(id).expect("live unit").order,
             Order::Idle | Order::Hunt { .. }
@@ -207,7 +214,24 @@ pub(super) fn run(
             }
         }
         let reported = events.len();
+        // Mounted guns survey once: positions hold still until resolution,
+        // so the order and the guns read the same hostiles.
+        let sight = mounted.then(|| combat::MountSight::survey(state, index, id));
         match order {
+            // A mounted hull never acquires an order of its own: its guns
+            // choose their targets after the order runs.
+            Order::Idle if mounted => {}
+            Order::Hunt { .. } if mounted => combat::mounted_hunt(
+                state,
+                index,
+                &mut reach,
+                id,
+                sight.as_ref().expect("surveyed"),
+                events,
+            ),
+            Order::Advance { .. } if mounted => {
+                walk(state, index, &mut reach, id, events);
+            }
             // An idle airframe stays parked and brace retraction moves
             // nothing, so the radar check's acquisition still holds here.
             Order::Idle => idle(state, index, id, acquired),
@@ -310,6 +334,21 @@ pub(super) fn run(
             reach.forget_ground();
         }
         combat::normalize_order(state, id);
+        if let Some(sight) = &sight
+            && state.unit(id).is_some_and(|unit| unit.hp > 0)
+        {
+            let picks = combat::fire_mounts(
+                state,
+                id,
+                sight,
+                combat::ShotBuffers {
+                    events,
+                    hits: &mut hits,
+                    launches: &mut launches,
+                },
+            );
+            combat::face_mounted_idle(state, id, sight, picks);
+        }
     }
     advance_upgrades(state, &mut builds);
     commit_unit_welds(state, field_welds, events, &mut heals);

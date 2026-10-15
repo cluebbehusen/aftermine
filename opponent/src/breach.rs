@@ -28,7 +28,8 @@ const EXIT_MARGIN: u16 = 30;
 /// evidence that its army cannot break in competes with its tech.
 const GIVEN_UP: u64 = 3;
 
-/// A cradle for each experimental once a Crucible stands. It is scored by
+/// A cradle for each breaching experimental once a Crucible stands; a
+/// machine that does not break structures is no answer to guns. It is scored by
 /// how far the army, with the machines the seat fields and assembles at
 /// their price, falls short of what an attack on the known fortification its
 /// ground reaches would need, that fortification by the attack `margin` per
@@ -87,7 +88,7 @@ pub(crate) fn investments(
     let machines: u64 = observation
         .my_units
         .iter()
-        .filter(|unit| assembled(unit.kind))
+        .filter(|unit| assembled(unit.kind) && crate::missions::breacher(unit.kind))
         .map(|unit| {
             let stats = unit.kind.stats();
             u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
@@ -96,6 +97,7 @@ pub(crate) fn investments(
             building
                 .kind
                 .assembles()
+                .filter(|machine| crate::missions::breacher(*machine))
                 .map(|machine| u64::from(machine.stats().cost))
         }))
         .sum();
@@ -107,6 +109,7 @@ pub(crate) fn investments(
     BuildingKind::ALL
         .into_iter()
         .filter_map(|cradle| cradle.assembles().map(|machine| (cradle, machine)))
+        .filter(|(_, machine)| crate::missions::breacher(*machine))
         .filter_map(|(cradle, machine)| {
             let without = given_up
                 && !observation.my_units.iter().any(|unit| unit.kind == machine)
@@ -150,6 +153,10 @@ pub(crate) fn exits(
     let Some(machine) = kind.assembles() else {
         return true;
     };
+    // A machine that flies leaves however the base is built.
+    if machine.stats().domain == oxide_sim::stats::Domain::Air {
+        return true;
+    }
     let me = observation.me;
     let (width, height) = map.size();
     let (w, h) = kind.size();

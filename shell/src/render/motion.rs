@@ -91,7 +91,7 @@ pub(crate) enum BuildingBodyFrame {
 /// Selects a unit frame with action transients taking precedence over every
 /// concurrent state.
 pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame {
-    if kind.stats().transport_capacity > 0
+    if kind == UnitKind::Skyhook
         && let Some(action) = state.transport
     {
         return skyhook_transport_frame(action);
@@ -298,7 +298,8 @@ pub(crate) fn production_frames(kind: BuildingKind) -> Option<usize> {
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
         | BuildingKind::Lattice
-        | BuildingKind::MawCradle => None,
+        | BuildingKind::MawCradle
+        | BuildingKind::RocCradle => None,
     }
 }
 
@@ -376,7 +377,8 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Sapper
         | UnitKind::Mantle
         | UnitKind::Surveyor
-        | UnitKind::Maw => 0,
+        | UnitKind::Maw
+        | UnitKind::Roc => 0,
     }
 }
 
@@ -422,7 +424,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Sapper
             | UnitKind::Mantle
             | UnitKind::Surveyor
-            | UnitKind::Maw => 0,
+            | UnitKind::Maw
+            | UnitKind::Roc => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
             UnitKind::Avalanche => 2,
@@ -443,7 +446,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Sapper
             | UnitKind::Mantle
             | UnitKind::Surveyor
-            | UnitKind::Maw => 0,
+            | UnitKind::Maw
+            | UnitKind::Roc => 0,
         },
     }
 }
@@ -467,7 +471,8 @@ fn defense_preparation_frame(kind: BuildingKind, progress: f32) -> Option<usize>
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
         | BuildingKind::Lattice
-        | BuildingKind::MawCradle => None,
+        | BuildingKind::MawCradle
+        | BuildingKind::RocCradle => None,
     }
 }
 
@@ -495,7 +500,8 @@ fn defense_attack_frame(kind: BuildingKind, attack: AttackPhase) -> Option<usize
             | BuildingKind::ScuttleCharge
             | BuildingKind::Spire
             | BuildingKind::Lattice
-            | BuildingKind::MawCradle,
+            | BuildingKind::MawCradle
+            | BuildingKind::RocCradle,
             _,
         ) => return None,
     })

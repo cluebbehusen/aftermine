@@ -4,8 +4,12 @@
 //! nothing here applies damage directly.
 
 mod blind;
+mod mounts;
 use super::contact;
 pub(super) use blind::{ShotBuffers, attack_known, automatic_radar, normalize_order};
+pub(super) use mounts::{
+    Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
+};
 
 use super::super::flight;
 use super::super::landing;
@@ -95,7 +99,7 @@ pub(in crate::tick) fn unit_weapon_reach(
 ) -> Fx {
     let excess = target.map_or(Fx::ZERO, |target| target_excess(state, target));
     let Some(reach) = kind.stats().contact_reach else {
-        return weapon.range + excess;
+        return kind.stats().reach(weapon) + excess;
     };
     let target_radius = match target {
         Some(Target::Unit(id)) => state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius),
@@ -2112,7 +2116,11 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     let stats = unit.kind.stats();
     let attacker_domain = target_domain(state, attacker);
     // A breacher answers a building that hits it, which is its work, but
-    // never turns on a machine.
+    // never turns on a machine. Mounted guns already answer whatever
+    // reaches the hull, which never chases what does not.
+    if stats.mounts.is_some() {
+        return;
+    }
     if unit.hp == 0
         || !stats.can_target(attacker_domain)
         || (stats.target_priority == crate::stats::TargetPriority::Buildings

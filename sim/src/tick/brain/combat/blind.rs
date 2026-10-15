@@ -89,7 +89,7 @@ fn predicted_aim(
     }
 }
 
-fn buffer_blind(
+pub(super) fn buffer_blind(
     state: &State,
     shooter: (Target, PlayerId),
     from: Vec2Fx,
@@ -307,6 +307,7 @@ pub(in crate::tick::brain) fn automatic_radar(
     let u = state.unit(id).expect("live unit");
     let stats = u.kind.stats();
     if u.kind.stats().contact_reach.is_some()
+        || stats.mounts.is_some()
         || stats.turn_rate > 0
         || stats.weapons.is_empty()
         || (moving && stats.brace.is_some())
@@ -434,6 +435,12 @@ pub(in crate::tick::brain) fn attack_known(
         resume,
         pursue,
     };
+    // Mounted guns fire after the order, at whatever bears; the order only
+    // flies and turns the hull.
+    if kind.stats().mounts.is_some() {
+        super::mounts::attack(state, id, view, resume, events);
+        return;
+    }
     if !pursue
         && view.is_blip()
         && let Some(visible) = acquire_target(state, index, id)

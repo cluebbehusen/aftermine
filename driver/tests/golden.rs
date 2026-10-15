@@ -174,6 +174,9 @@ struct Cast {
     piledriver: UnitId,
     /// Seat 0's Maw, staged wounded the same way.
     maw: UnitId,
+    /// Seat 0's Roc, staged wounded the same way, its guns in reach of
+    /// nothing.
+    roc: UnitId,
     /// Seat 1's cradle founder.
     cradle_crew: UnitId,
 }
@@ -285,6 +288,9 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let sentinel_surveyor_e = roster.add(1, UnitKind::Sentinel, 41, 24);
     let sentinel_surveyor_w = roster.add(0, UnitKind::Sentinel, 42, 24);
     let surveyor_e = roster.add(1, UnitKind::Surveyor, 43, 24);
+    // Added last, so every earlier machine keeps its id; out of the Repair
+    // Bay's ring, whose welds would bill its owner's bank.
+    let roc = roster.add(0, UnitKind::Roc, 16, 12);
 
     // Seat 0's standing structures: one of every kind the build palette
     // offers, whole. Its Foundry comes from the map anchor.
@@ -412,6 +418,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
             avalanches: (avalanche_w, avalanche_e),
             piledriver,
             maw,
+            roc,
             cradle_crew,
         },
     )
@@ -625,6 +632,13 @@ fn showcase_state() -> State {
         .find(|row| row["id"] == serde_json::json!(cast.maw))
         .unwrap();
     row["hp"] = serde_json::json!(UnitKind::Maw.stats().max_hp * 2 / 3);
+    let row = staged["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(cast.roc))
+        .unwrap();
+    row["hp"] = serde_json::json!(UnitKind::Roc.stats().max_hp * 2 / 3);
     for row in staged["buildings"].as_array_mut().unwrap() {
         if row["kind"] == serde_json::json!("extractor") {
             row["tier"] = serde_json::json!(1);

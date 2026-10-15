@@ -32,7 +32,8 @@ impl Context {
             Self::Production => 8,
             Self::Construction => 16,
             Self::BuildCategory(n @ 0..=3) => 32 << n,
-            Self::BuildCategory(_) => 8192,
+            Self::BuildCategory(4) => 8192,
+            Self::BuildCategory(_) => 16384,
             Self::Playback => 512,
             Self::FinalMap => 1024,
             Self::Menu => 2048,
@@ -41,8 +42,8 @@ impl Context {
 }
 const UNITS: u16 = 2 | 4096;
 /// Every build category's context bit, Construction's included.
-const CATEGORIES: u16 = 0b1_1111_0000 | 8192;
-const LIVE: u16 = 511 | 4096 | 8192;
+const CATEGORIES: u16 = 0b1_1111_0000 | 8192 | 16384;
+const LIVE: u16 = 511 | 4096 | 8192 | 16384;
 const WORLD: u16 = LIVE | 512 | 1024;
 
 /// Production hotkey slots a selected factory exposes; no factory may
@@ -50,7 +51,7 @@ const WORLD: u16 = LIVE | 512 | 1024;
 pub const TRAIN_SLOTS: u8 = 6;
 
 /// Categories and card order are shared by rendering and keyboard dispatch.
-pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 5] = [
+pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 6] = [
     (
         "Economy",
         &[BuildingKind::Reclaimer, BuildingKind::Extractor],
@@ -80,8 +81,11 @@ pub const BUILD_CATEGORIES: [(&str, &[BuildingKind]); 5] = [
             BuildingKind::Spire,
             BuildingKind::Lattice,
             BuildingKind::ScuttleCharge,
-            BuildingKind::MawCradle,
         ],
+    ),
+    (
+        "Experimental",
+        &[BuildingKind::MawCradle, BuildingKind::RocCradle],
     ),
 ];
 pub fn building_category(kind: BuildingKind) -> u8 {
