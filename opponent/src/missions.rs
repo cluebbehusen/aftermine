@@ -971,7 +971,9 @@ impl Scratch {
             .iter()
             .filter_map(|objective| map.component(objective.anchor))
             .collect();
-        let (home, elsewhere) = payload(observation, map, &targeted);
+        let mut free = missions.available(observation, false);
+        free.sort_unstable();
+        let (home, elsewhere) = payload(observation, map, &targeted, &free);
         let payload = missions
             .liftable(observation, map, reserve, home)
             .max(elsewhere);

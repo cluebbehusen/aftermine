@@ -345,6 +345,59 @@ fn an_army_on_another_island_is_lifted_from_where_it_stands() {
 }
 
 #[test]
+fn riders_a_mission_holds_off_home_count_toward_no_lift() {
+    let mut scenario = isles();
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let free: Vec<UnitId> = observation.my_units.iter().map(|unit| unit.id).collect();
+    let model = map(&scenario);
+    let (_, free_elsewhere) = crate::missions::payload(&observation, &model, &[], &free);
+    assert!(free_elsewhere > 0, "premise: the islet's army is free");
+    let (_, held_elsewhere) = crate::missions::payload(&observation, &model, &[], &[]);
+    assert_eq!(held_elsewhere, 0, "a held army is no payload");
+}
+
+#[test]
+fn a_carrier_over_an_airworks_on_the_lifts_ground_moves_aside_and_loads() {
+    let mut scenario = isles();
+    scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Airworks,
+        x: 19,
+        y: 2,
+    });
+    scenario.units.push(unit(0, UnitKind::Skyhook, 19, 2));
+    // With a second carrier at home the islet's army is worth a lift.
+    scenario.units.push(unit(0, UnitKind::Skyhook, 10, 8));
+    let mut state = scenario.build().unwrap();
+    let skyhook = at(&state, 19, 2);
+    let mut opponent = seat(&scenario, 0);
+    let mut loaded = false;
+    while !loaded {
+        assert!(
+            state.current_tick() < 1_200,
+            "the Skyhook over the islet's Airworks never loaded"
+        );
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        loaded = loads(&commands)
+            .iter()
+            .any(|(transport, _)| *transport == skyhook);
+        state.tick(&commands);
+    }
+}
+
+#[test]
 fn a_lift_loads_every_carrier_its_need_calls_for_and_they_leave_together() {
     let scenario = crowded(&MORE_SKYHOOKS);
     let mut state = halved(scenario.build().unwrap());
@@ -1695,7 +1748,7 @@ fn anti_heavy_units_ride_a_lift() {
             .extend(extra.iter().map(|&(kind, x, y)| unit(0, kind, x, y)));
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
-        crate::missions::payload(&observation, &map(&scenario), &[]).0
+        crate::missions::payload(&observation, &map(&scenario), &[], &[]).0
     };
     assert!(payload(&[(UnitKind::Piledriver, 5, 12)]) > payload(&[]));
 }

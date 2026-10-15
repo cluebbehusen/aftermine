@@ -445,17 +445,29 @@ impl Missions {
     }
 
     /// Moves free carriers hovering where no rider could reach them, such as
-    /// over the Airworks that trained them, to open ground. Lifts under way
-    /// spend the decision's orders first.
+    /// over the Airworks that trained them, to open ground, at home or on the
+    /// ground a lift would load at. Lifts under way spend the decision's
+    /// orders first.
     fn clear(&self, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let observation = lifting.observation;
-        for unit in self
+        let free: Vec<&UnitObs> = self
             .free(observation, ledger)
             .into_iter()
             .filter_map(|id| mine(observation, id))
-            .filter(|unit| lifting.map.component(unit.tile) == Some(lifting.home))
+            .collect();
+        let source = self
+            .source(lifting, &free, None)
+            .map(|(source, _)| source.ground);
+        for unit in free
+            .iter()
+            .copied()
             .filter(|unit| carrier(unit.kind) && unit.idle && unit.cargo == 0)
-            .filter(|unit| !lifting.open(unit.tile, lifting.home))
+            .filter(|unit| {
+                lifting.map.component(unit.tile).is_some_and(|ground| {
+                    (ground == lifting.home || Some(ground) == source)
+                        && !lifting.open(unit.tile, ground)
+                })
+            })
         {
             if let Some(tile) = lifting.clearing(unit) {
                 ledger.order(run(vec![unit.id], tile));
@@ -1295,12 +1307,13 @@ pub(crate) fn carrier(kind: UnitKind) -> bool {
 }
 
 /// The value against ground of the units a lift could take now: those at
-/// home, and those on the other own ground, none of it `targeted`, where
-/// they bring the most.
+/// home, and those `free` of missions on the other own ground, none of it
+/// `targeted`, where they bring the most. `free` is in id order.
 pub(crate) fn payload(
     observation: &ObservationData,
     map: &MapModel,
     targeted: &[u32],
+    free: &[UnitId],
 ) -> (u64, u64) {
     let home = map
         .start(observation.me)
@@ -1309,8 +1322,12 @@ pub(crate) fn payload(
         .my_units
         .iter()
         .filter(|unit| rides(unit.kind) && healthy(unit, FIT))
-        .filter_map(|unit| Some((map.component(unit.tile)?, striking(unit))))
-        .filter(|(ground, _)| Some(*ground) == home || !targeted.contains(ground))
+        .filter_map(|unit| Some((map.component(unit.tile)?, unit)))
+        .filter(|(ground, unit)| {
+            Some(*ground) == home
+                || (!targeted.contains(ground) && free.binary_search(&unit.id).is_ok())
+        })
+        .map(|(ground, unit)| (ground, striking(unit)))
         .collect();
     grounds.sort_unstable_by_key(|(ground, _)| *ground);
     let mut at_home = 0;
