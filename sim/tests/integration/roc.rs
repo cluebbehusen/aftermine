@@ -9,7 +9,8 @@ use chassis::grid::TilePos;
 use oxide_sim::scenario::UnitSpec;
 use oxide_sim::state::IdleFacing;
 use oxide_sim::{
-    AttackTarget, BuildingKind, Command, Event, Order, State, Target, UnitId, UnitKind,
+    AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Scenario, State, Target, UnitId,
+    UnitKind,
 };
 
 const WIDTH: usize = 30;
@@ -727,4 +728,58 @@ fn a_finished_roc_cradle_lifts_its_roc_off_from_its_centre() {
             .any(|b| b.kind == BuildingKind::RocCradle)
     );
     assert!(state.validate_invariants().is_ok());
+}
+
+#[test]
+fn no_gun_fires_through_a_peak_at_a_building_flush_against_it() {
+    // A building's aim point is its footprint's closest point, an exact
+    // edge that falls in the neighbouring tile. Flush against the ridge's
+    // west face with the Roc to the east, that tile is the peak, which the
+    // line trace skips as its end tile.
+    let mut map = vec!["############^###########".to_string()];
+    for y in 1..11 {
+        let mut row = String::from("#");
+        for x in 1..23 {
+            row.push(match (x, y) {
+                (1, 1) => '1',
+                (10, 5) => '2', // footprint (10,5)-(11,6), flush at x=12
+                (12, _) => '^',
+                _ => '.',
+            });
+        }
+        row.push('#');
+        map.push(row);
+    }
+    map.push("############^###########".to_string());
+    let mut state = Scenario {
+        mode: oxide_sim::scenario::ScenarioMode::Sandbox,
+        name: "flush".into(),
+        map,
+        players: players(0),
+        units: vec![unit(0, UnitKind::Roc, 15, 5)],
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let roc = roc(&state);
+    let west = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(1))
+        .unwrap()
+        .id;
+    let hp = state.building(west).unwrap().hp;
+    for _ in 0..120 {
+        let events = state.tick(&[]).events;
+        assert!(
+            shots(&events, roc).is_empty(),
+            "no gun fires across the ridge"
+        );
+    }
+    assert_eq!(
+        state.unit(roc).unwrap().pos.x,
+        Fx::from_num(15) + Fx::lit("0.5")
+    );
+    assert_eq!(state.building(west).unwrap().hp, hp);
 }
