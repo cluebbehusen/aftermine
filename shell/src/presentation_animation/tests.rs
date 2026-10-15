@@ -128,6 +128,31 @@ fn the_latest_hit_with_any_weapon_is_remembered_per_unit() {
 }
 
 #[test]
+fn each_mounted_gun_recoils_for_its_own_shot_alone() {
+    let mut controller = AnimationController::default();
+    let report = &unit_attack_report(40, UnitId(7), 1);
+    controller.observe_events(report.tick + 1, &report.events);
+    let at = |tick, slot| {
+        controller.mount_attack(
+            UnitId(7),
+            UnitKind::Roc,
+            slot,
+            AnimationClock::new(tick, 0.5),
+        )
+    };
+    assert_eq!(at(41, 0), None, "the other gun holds still");
+    assert!(matches!(
+        at(41, 1),
+        Some(AttackPhase::Report { weapon: 1, .. })
+    ));
+    assert!(matches!(
+        at(43, 1),
+        Some(AttackPhase::Recover { weapon: 1, .. })
+    ));
+    assert_eq!(at(46, 1), None);
+}
+
+#[test]
 fn damage_event_drives_one_report_then_recovery() {
     let mut controller = AnimationController::default();
     let report = &unit_attack_report(40, UnitId(7), 0);
@@ -1203,13 +1228,19 @@ fn capture_and_retention_entrypoints_follow_the_current_world() {
 }
 
 #[test]
-fn only_rotorcraft_spin_lift_rotors() {
+fn only_rotorcraft_and_the_roc_spin_lift_rotors() {
     for kind in UnitKind::ALL {
         let stats = kind.stats();
         let rotorcraft = stats.domain == oxide_sim::stats::Domain::Air
             && stats.turn_rate == 0
             && stats.cruise_turn_rate == 0;
-        assert_eq!(rotor_period(kind).is_some(), rotorcraft, "{kind:?}");
+        // The Roc flies heading-first but hovers on ducted lift fans that
+        // never stop while it is aloft.
+        assert_eq!(
+            rotor_period(kind).is_some(),
+            rotorcraft || kind == UnitKind::Roc,
+            "{kind:?}"
+        );
     }
 }
 

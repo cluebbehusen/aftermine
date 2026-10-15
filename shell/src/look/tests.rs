@@ -26,6 +26,7 @@ fn looks_agree_with_what_the_simulation_states() {
         assert_eq!(
             look.rig,
             stats.turret_turn_rate > 0
+                || stats.mounts.is_some()
                 || rotorcraft(kind)
                 || matches!(kind, UnitKind::Surveyor | UnitKind::Piledriver),
             "{kind:?}: a separate mount layer articulates a weapon, rotor, or folding radar"

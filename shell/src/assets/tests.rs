@@ -637,6 +637,36 @@ fn production_action_and_cargo_rows_match_the_runtime_contract() {
 }
 
 #[test]
+fn mounted_guns_turn_about_their_canvas_centre_and_carry_an_allegiance_mask() {
+    let atlas = manifest();
+    for kind in UnitKind::ALL
+        .into_iter()
+        .filter(|kind| kind.stats().mounts.is_some())
+    {
+        let stem = rig_mount_stem(kind);
+        let actions = numbered_suffixes(&atlas, &stem, "action").unwrap();
+        assert!(!actions.is_empty(), "{stem} ships its recoil frames");
+        for suffix in std::iter::once("").chain(actions.iter().map(String::as_str)) {
+            let gun = sprite_image(&format!("{stem}{suffix}"));
+            assert_eq!(
+                gun.width, gun.height,
+                "{stem}{suffix} rotates about a square"
+            );
+            let (min_x, min_y, max_x, max_y) = opaque_bounds(&gun);
+            let centre = usize::from(gun.width / 2);
+            assert!(
+                min_x <= centre && centre <= max_x && min_y <= centre && centre <= max_y,
+                "{stem}{suffix} turns about its pivot at the canvas centre"
+            );
+        }
+        assert!(
+            alpha_bytes(&sprite_image(&format!("{stem}_accent"))).any(|alpha| alpha > 0),
+            "{stem} needs a non-empty allegiance mask"
+        );
+    }
+}
+
+#[test]
 fn defense_mount_art_covers_its_pivot_and_carries_an_allegiance_mask() {
     for (_, stem) in defense_rungs() {
         let base = sprite_image(&stem);

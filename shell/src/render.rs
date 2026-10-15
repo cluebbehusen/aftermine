@@ -1003,10 +1003,12 @@ pub(crate) fn unit_body_pose(
     } else {
         rotation + slide_yaw
     };
-    let body_rotation = if rig.is_some() {
-        game.draw_hull_heading(unit.id, alpha) + slide_yaw
-    } else {
-        rotation
+    let body_rotation = match rig {
+        // Mounted guns ride a hull without a turret, so the heading drawn
+        // above is the hull's own.
+        Some(_) if unit.kind.stats().mounts.is_some() => rotation + slide_yaw,
+        Some(_) => game.draw_hull_heading(unit.id, alpha) + slide_yaw,
+        None => rotation,
     };
     let (source, accent, mechanism_layer, worker) = unit_body_sources(sprites, unit.kind, frame);
     let mut center = game.presentation.draw_pos(unit.id, unit.pos, alpha);
@@ -1057,6 +1059,62 @@ fn draw_piledriver_anchors(
                     dest_size: Some(size),
                     source: Some(source),
                     rotation: body_rotation,
+                    ..Default::default()
+                },
+                zoom,
+            );
+        }
+    }
+}
+
+/// Each mounted gun on its pivot, at its own interpolated bearing and in
+/// its own recoil. The pivots ride the hull at the simulation's offsets,
+/// and a gun's smaller canvas keeps the hull canvas's pixel density.
+fn draw_mounted_guns(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    unit: &oxide_sim::Unit,
+    rig: &crate::assets::UnitRig,
+    (body, body_rotation, body_size): (Vec2, f32, Vec2),
+    hull: Rect,
+    alpha: f32,
+) {
+    let Some(guns) = unit.kind.stats().mounts else {
+        return;
+    };
+    let zoom = game.presentation.camera.zoom;
+    let forward = vec2(body_rotation.sin(), -body_rotation.cos());
+    let starboard = vec2(body_rotation.cos(), body_rotation.sin());
+    let clock = crate::presentation_animation::AnimationClock::from_state(
+        game.state,
+        game.presentation.tick_fraction(),
+    );
+    for (slot, mount) in guns.mounts.iter().enumerate() {
+        let Some(rotation) = game.presentation.draw_mount_heading(unit, slot, alpha) else {
+            continue;
+        };
+        let pivot = body
+            + forward * (mount.forward.to_num::<f32>() * zoom)
+            + starboard * (mount.starboard.to_num::<f32>() * zoom);
+        let action = game
+            .presentation
+            .animations
+            .mount_attack(unit.id, unit.kind, slot, clock)
+            .map(|attack| motion::unit_attack_frame(unit.kind, attack));
+        let (gun, accent) = rig.mount(action);
+        for (source, tint) in [
+            (gun, WHITE),
+            (accent, seat_identity_color(game, unit.player)),
+        ] {
+            let size = vec2(source.w, source.h) * (body_size.x / hull.w);
+            sprites.draw_unit(
+                pivot.x - size.x * 0.5,
+                pivot.y - size.y * 0.5,
+                tint,
+                DrawTextureParams {
+                    dest_size: Some(size),
+                    source: Some(source),
+                    rotation,
                     ..Default::default()
                 },
                 zoom,
@@ -1294,7 +1352,19 @@ fn draw_unit_pass(
         if unit.kind == oxide_sim::UnitKind::Piledriver {
             draw_piledriver_anchors(game, sprites, unit, (body, body_rotation, dest), zoom);
         }
-        if let Some(rig) = rig {
+        if let Some(rig) = rig
+            && unit.kind.stats().mounts.is_some()
+        {
+            draw_mounted_guns(
+                game,
+                sprites,
+                unit,
+                rig,
+                (body, body_rotation, body_size),
+                source,
+                alpha,
+            );
+        } else if let Some(rig) = rig {
             let action = match motion::unit_mount_frame(unit.kind, animation) {
                 motion::UnitFrame::Action(action) => Some(action),
                 _ => None,

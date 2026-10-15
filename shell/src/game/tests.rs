@@ -813,6 +813,45 @@ fn angular_interpolation_crosses_zero_by_the_short_arc() {
     );
 }
 
+#[test]
+fn a_mounted_gun_turns_the_short_way_between_ticks() {
+    let mut scenario = Scenario::skirmish();
+    scenario.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: oxide_sim::UnitKind::Roc,
+        x: 12,
+        y: 10,
+    });
+    let game = Game::new(scenario).unwrap();
+    let roc = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == oxide_sim::UnitKind::Roc)
+        .unwrap()
+        .clone();
+    let step = std::f32::consts::TAU / 256.0;
+    let angle = |bearing: u8| f32::from(bearing) * step + std::f32::consts::FRAC_PI_2;
+    let mut presentation = game.presentation;
+    let current = roc.mount_bearing(0).unwrap();
+    let drawn = presentation.draw_mount_heading(&roc, 0, 0.5).unwrap();
+    assert!(
+        (drawn - angle(current)).abs() < 1e-5,
+        "a gun with no last tick draws where it is"
+    );
+    for previous in [current.wrapping_sub(6), current.wrapping_add(6)] {
+        presentation
+            .prev_mounts
+            .insert(roc.id.0, [Some(previous), None]);
+        let drawn = presentation.draw_mount_heading(&roc, 0, 0.5).unwrap();
+        let turned = (drawn - angle(previous)) / step;
+        assert!(
+            (turned.abs() - 3.0).abs() < 1e-3,
+            "half of a six-step traverse from {previous} to {current}, not {turned}"
+        );
+    }
+}
+
 fn crash_root(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "oxide-crash-{name}-{}-{}",
