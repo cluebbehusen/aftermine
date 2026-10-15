@@ -953,6 +953,48 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
 }
 
 #[test]
+fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
+    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+        "name": "Mantle reach fixture", "map": ["....................", "....................", "..1.................",
+            "....................", "....................", "....................",
+            "....................", "....................", "....................",
+            "....................", "....................", "...................."],
+        "players": [{"name": "You", "scrap": 0, "bot": false}],
+        "units": [{"player": 0, "kind": "mantle", "x": 9, "y": 7}]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let mantle = &game.state.units()[0];
+    let (id, center) = (
+        mantle.id,
+        vec2(mantle.pos.x.to_num::<f32>(), mantle.pos.y.to_num::<f32>()),
+    );
+    game.presentation.selection.units = vec![id];
+    let mut indicators = Vec::new();
+    visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
+        indicators.push(indicator);
+    });
+    let defense = oxide_sim::UnitKind::Mantle.stats().point_defense.unwrap();
+    let ranges: Vec<_> = indicators.iter().map(|indicator| indicator.range).collect();
+    assert_eq!(
+        ranges,
+        [BuildingRange {
+            kind: BuildingRangeKind::Intercept,
+            shape: BuildingRangeShape::Circle {
+                center,
+                radius: defense.radius.to_num::<f32>(),
+            },
+        }],
+        "unarmed and seeing past its reach, it draws only the intercept ring"
+    );
+    assert_eq!(indicators[0].icon, crate::panel::CapabilityIcon::Intercept);
+    assert_eq!(
+        indicators[0].color,
+        range_color(BuildingRangeKind::Intercept)
+    );
+}
+
+#[test]
 fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
     use oxide_sim::stats::Domain;
     let center = vec2(50.0, 50.0);

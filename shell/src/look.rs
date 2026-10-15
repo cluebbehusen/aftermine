@@ -313,6 +313,9 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             // The production art packs the body into 72 of 128 pixels.
             extent: 72.0 / 128.0,
             gait: Gait::Treads,
+            // The side casings, packed like the body; the hull covers the
+            // nose track's run.
+            belts: &[[44., 60., 48., 81.], [80., 60., 84., 81.]],
             marker: M::Scout,
             ..plain
         },
@@ -373,6 +376,9 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             scale: 4.0,
             extent: 182.0 / 256.0,
             gait: Gait::Treads,
+            // The placeholder's tread casings, in the canvas halved to
+            // sprite space.
+            belts: &[[21., 31., 33., 105.], [95., 31., 107., 105.]],
             weapon: Some(weapon(
                 SoundKind::ScuttlerFire,
                 ShotStyle::Contact,

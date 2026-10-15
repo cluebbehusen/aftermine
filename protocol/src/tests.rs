@@ -386,6 +386,7 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::CancelRound {
             building: BuildingId(4),
+            index: 1,
         },
         Command::SetAutofill {
             buildings: vec![BuildingId(5), BuildingId(4)],

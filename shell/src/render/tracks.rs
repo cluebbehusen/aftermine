@@ -42,9 +42,12 @@ pub(super) fn draw(
         draw_triangle(a, b, c, color);
         draw_triangle(a, c, d, color);
     };
+    // Links keep one size against the visible body, however much of the
+    // canvas that body spans.
+    let link = crate::look::unit(kind).extent;
     for &[x0, y0, x1, y1] in runs(kind) {
         let side = usize::from(x0 > 64.0);
-        let pitch = 13.0;
+        let pitch = 13.0 * link;
         // The visible upper run travels toward the nose; the hidden contact
         // run travels backward. One world unit of belt travel stays one unit.
         let offset = (-travel[side] * 128.0 / scale).rem_euclid(pitch);
@@ -52,19 +55,19 @@ pub(super) fn draw(
         let mut y = y0 - pitch + offset;
         while y < y1 {
             let top = y.max(y0);
-            let bottom = (y + 6.0).min(y1);
+            let bottom = (y + 6.0 * link).min(y1);
             rect(x0, top, x1, bottom, color_u8!(67, 68, 76, 255));
             rect(
-                x0 + 1.0,
+                x0 + link,
                 top,
-                x1 - 1.0,
-                (y + 1.6).min(y1),
+                x1 - link,
+                (y + 1.6 * link).min(y1),
                 color_u8!(107, 105, 107, 255),
             );
             rect(
-                x0 + 2.0,
-                (y + 4.5).max(y0),
-                x1 - 2.0,
+                x0 + 2.0 * link,
+                (y + 4.5 * link).max(y0),
+                x1 - 2.0 * link,
                 bottom,
                 color_u8!(44, 45, 52, 255),
             );

@@ -229,6 +229,14 @@ the generator records none. The shell counts a row's frames from the consecutive
 no count edit, but every frame index the shell selects must stay below that
 count. A new unit or defense states its presentation in `shell/src/look.rs`.
 
+Every tracked unit uses the shared belt renderer in `shell/src/render/tracks.rs`
+rather than baked tread frames. Declare its exposed belt runs as `belts` in
+`look.rs`, in the 128-px sprite space the shipped art occupies, after any
+packing into a smaller extent. Each run must stay inside its visible casing,
+must not extend under hull plates drawn over the track, and must come in
+left/right pairs. A track the hull mostly covers, such as a nose roller, needs
+no run. A tracked unit without belts fails the look tests.
+
 ## Approve and promote
 
 1. Record the source/control SHA-256 and provenance, then present stable

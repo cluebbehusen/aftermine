@@ -8360,6 +8360,27 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
 }
 
 #[test]
+fn a_round_chip_cancels_its_own_position() {
+    let mut game =
+        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Lattice, &[0], 2000);
+    let lattice = game.presentation.selection.buildings[0];
+    let mut input = InputState::new();
+    activate_card(
+        &mut game,
+        &mut input,
+        crate::panel::CardAction::CancelRound(lattice, 1),
+    );
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::CancelRound { building, index: 1 }) if *building == lattice
+        ),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
     let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
     let mut input = InputState::new();

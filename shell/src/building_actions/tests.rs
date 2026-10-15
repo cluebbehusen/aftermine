@@ -350,18 +350,19 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
             .unwrap_or_else(|| panic!("no {title} card"))
     };
     assert!(!card(&game, "Launch").enabled, "nothing to launch yet");
-    assert!(card(&game, "Order warhead").enabled);
-    assert!(!card(&game, "Cancel warhead").enabled);
+    assert!(card(&game, "Order").enabled);
+    assert_eq!(
+        card(&game, "Order").icon,
+        CardIcon::Round(BuildingKind::Spire)
+    );
+    assert!(!card(&game, "Cancel").enabled);
     assert_eq!(
         card(&game, "Autofill: off").action,
         CardAction::Dispatch(Action::ToggleAutofill)
     );
     load_selected(&mut game);
     assert!(card(&game, "Launch").enabled);
-    assert!(
-        !card(&game, "Order warhead").enabled,
-        "one warhead fills a Spire"
-    );
+    assert!(!card(&game, "Order").enabled, "one warhead fills a Spire");
     let selected = SelectedBuildings::inspect(&game.view());
     assert_eq!(
         selected.loaded_silos(),
@@ -383,7 +384,7 @@ fn an_order_the_bank_cannot_pay_is_refused_with_its_price() {
     let order = selected
         .cards(&BindingMap::classic())
         .into_iter()
-        .find(|card| card.title == "Order warhead")
+        .find(|card| card.title == "Order")
         .unwrap();
     assert!(!order.enabled);
     assert_eq!(order.why, Some(expected));
@@ -405,12 +406,23 @@ fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
     ));
     let ids = game.presentation.selection.buildings.clone();
     assert_eq!(selected.round_recipient(), Some(ids[0]));
-    assert_eq!(selected.round_to_cancel(), None);
+    assert!(selected.round_cancel().is_none());
     load_selected(&mut game);
     assert_eq!(
         SelectedBuildings::inspect(&game.view()).round_recipient(),
         None,
         "two full batteries take no order"
+    );
+
+    let mut game = fixture(BuildingKind::Lattice, &[0, 0], 2000);
+    // Each battery autofills its first interceptor; the second takes another.
+    assert_accepted(&mut game);
+    game.issue(Command::OrderRound { building: ids[1] });
+    assert_accepted(&mut game);
+    let cancel = SelectedBuildings::inspect(&game.view()).round_cancel();
+    assert!(
+        matches!(cancel, Some(Command::CancelRound { building, index: 1 }) if building == ids[1]),
+        "the hotkey refunds the busiest battery's latest round: {cancel:?}"
     );
 }
 
