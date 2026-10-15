@@ -627,25 +627,24 @@ that Foundry later only drops it to the remote yield.
 
 An assembly cradle is a construction site that never stands finished. A
 `MawCradle` assembles a Maw: it is paid in full when placed and needs a built
-Crucible and a Deep Bore. A player holds at most one cradle or living machine of
-a kind, so placement and commands refuse a second as `ExperimentalLimit`;
-resuming the existing site is unaffected. At most `ASSEMBLY_CREW_CAP` workers
-hold a cradle, counting each own worker whose current order builds or founds it.
-A build order on a full cradle admits a newcomer only in place of a strictly
-slower holder, ranked by build rate, then incumbency, then id; the displaced
-holder moves on to its next order or idles once the newcomer lands. With no
-newcomer admitted the command is refused as `CrewFull` and every program stands.
-A queued joiner is judged when its turn comes: crews settle after the command
-phase and again at the end of the tick, and a promoted worker that does not make
-the crew moves on and reports `OrderStalled` with `CrewFull`. A crew works only
-from the cradle's crew pads (`BuildingKind::crew_pads`), two off its north face
-and two off its south, each member taking a free pad; while any pad is rock or
-under a building, the crew works from anywhere along the cradle as at any site.
-When the last work lands the cradle does not complete. After boarding resolves
-it leaves the world, every seat forgets it, its crew moves on, and the machine
-spawns at its centre with the cradle's share of health, reported as
-`UnitAssembled`. A destroyed cradle's wreck holds the ordinary share of its
-price scaled by the health its crew had raised, split across its footprint.
+Crucible and a Deep Bore. A player may raise any number of cradles and machines.
+At most `ASSEMBLY_CREW_CAP` workers hold a cradle, counting each own worker
+whose current order builds or founds it. A build order on a full cradle admits a
+newcomer only in place of a strictly slower holder, ranked by build rate, then
+incumbency, then id; the displaced holder moves on to its next order or idles
+once the newcomer lands. With no newcomer admitted the command is refused as
+`CrewFull` and every program stands. A queued joiner is judged when its turn
+comes: crews settle after the command phase and again at the end of the tick,
+and a promoted worker that does not make the crew moves on and reports
+`OrderStalled` with `CrewFull`. A crew works only from the cradle's crew pads
+(`BuildingKind::crew_pads`), two off its north face and two off its south, each
+member taking a free pad; while any pad is rock or under a building, the crew
+works from anywhere along the cradle as at any site. When the last work lands
+the cradle does not complete. After boarding resolves it leaves the world, every
+seat forgets it, its crew moves on, and the machine spawns at its centre with
+the cradle's share of health, reported as `UnitAssembled`. A destroyed cradle's
+wreck holds the ordinary share of its price scaled by the health its crew had
+raised, split across its footprint.
 
 Cancelling before the first build tick returns the full price. Cancelling an
 unfinished site after work starts returns value proportional to its remaining

@@ -677,8 +677,6 @@ struct Reach {
     /// Most producers rallied onto a unit at once.
     unit_rallies: usize,
     retired: u64,
-    /// Commands the one-per-player cap refused.
-    experimental_refused: u64,
     rounds: u64,
     launched: u64,
     intercepted: u64,
@@ -709,7 +707,6 @@ impl Reach {
         self.escorts = self.escorts.max(other.escorts);
         self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
-        self.experimental_refused += other.experimental_refused;
         self.rounds += other.rounds;
         self.launched += other.launched;
         self.intercepted += other.intercepted;
@@ -1312,11 +1309,7 @@ fn fuzz_run(seed: u64) -> Run {
         }
         for event in &report.events {
             match event {
-                Event::CommandRejected { reason, .. } => {
-                    reach.rejected += 1;
-                    reach.experimental_refused +=
-                        u64::from(*reason == RejectReason::ExperimentalLimit);
-                }
+                Event::CommandRejected { .. } => reach.rejected += 1,
                 Event::UnitTrained { .. } => reach.trained += 1,
                 Event::BuildingCompleted { .. } => reach.completed += 1,
                 Event::BuildingSalvaged { .. } => reach.salvaged += 1,
@@ -1524,10 +1517,6 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must rally a producer onto a unit"
     );
     assert!(reach.retired > 0, "the sweep must take a unit apart");
-    assert!(
-        reach.experimental_refused > 0,
-        "the sweep must ask for a second Maw"
-    );
     assert!(reach.rounds > 0, "the sweep must assemble a round");
     assert!(reach.launched > 0, "the sweep must launch a warhead");
     assert!(reach.intercepted > 0, "the sweep must stop a warhead");

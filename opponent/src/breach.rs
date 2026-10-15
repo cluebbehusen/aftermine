@@ -28,12 +28,14 @@ const EXIT_MARGIN: u16 = 30;
 /// evidence that its army cannot break in competes with its tech.
 const GIVEN_UP: u64 = 3;
 
-/// A cradle for each experimental the seat neither fields nor assembles,
-/// once a Crucible stands. It is scored by how far the army falls short of
-/// what an attack on the known fortification its ground reaches would need,
-/// that fortification by the attack `margin` per mille, and wanted at
-/// [`GIVEN_UP`] times the base while an attack on that ground was lately
-/// given up. Siege weighs it and income scales it, as they do a Spire.
+/// A cradle for each experimental once a Crucible stands. It is scored by
+/// how far the army, with the machines the seat fields and assembles at
+/// their price, falls short of what an attack on the known fortification its
+/// ground reaches would need, that fortification by the attack `margin` per
+/// mille. While the seat neither fields nor assembles that machine, it is
+/// also wanted at [`GIVEN_UP`] times the base while an attack on that ground
+/// was lately given up: that attack went without one. Siege weighs it and
+/// income scales it, as they do a Spire.
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
@@ -82,36 +84,56 @@ pub(crate) fn investments(
             u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
         })
         .sum();
-    let shortfall = (fortification * margin / 1_000).saturating_sub(army);
+    let machines: u64 = observation
+        .my_units
+        .iter()
+        .filter(|unit| assembled(unit.kind))
+        .map(|unit| {
+            let stats = unit.kind.stats();
+            u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
+        })
+        .chain(observation.my_buildings.iter().filter_map(|building| {
+            building
+                .kind
+                .assembles()
+                .map(|machine| u64::from(machine.stats().cost))
+        }))
+        .sum();
+    let shortfall = (fortification * margin / 1_000).saturating_sub(army + machines);
     let given_up = memory
         .given_up(observation.tick)
         .any(|(_, anchor)| map.distance(me, anchor) != UNREACHABLE);
-    if shortfall == 0 && !given_up {
-        return Vec::new();
-    }
     let base = u64::from((150 + 3 * u32::from(traits.siege)) * income.min(360) / 360);
     BuildingKind::ALL
         .into_iter()
         .filter_map(|cradle| cradle.assembles().map(|machine| (cradle, machine)))
-        .filter(|&(cradle, machine)| {
-            !observation.my_units.iter().any(|unit| unit.kind == machine)
+        .filter_map(|(cradle, machine)| {
+            let without = given_up
+                && !observation.my_units.iter().any(|unit| unit.kind == machine)
                 && !observation
                     .my_buildings
                     .iter()
-                    .any(|building| building.kind == cradle)
-        })
-        .map(|(cradle, machine)| {
+                    .any(|building| building.kind == cradle);
             // A shortfall of a quarter of the machine's price, the guns of a
             // modest fortress, makes it as wanted as the base.
             let bar = (u64::from(machine.stats().cost) / 4).max(1);
             let guns = base * shortfall.min(WORTH_CAP * bar) / bar;
-            let score = guns.max(if given_up { GIVEN_UP * base } else { 0 });
-            (
-                Investment::Tech(cradle),
-                u32::try_from(score).unwrap_or(u32::MAX),
-            )
+            let score = guns.max(if without { GIVEN_UP * base } else { 0 });
+            (score > 0).then(|| {
+                (
+                    Investment::Tech(cradle),
+                    u32::try_from(score).unwrap_or(u32::MAX),
+                )
+            })
         })
         .collect()
+}
+
+/// Whether some cradle assembles `kind`.
+fn assembled(kind: oxide_sim::UnitKind) -> bool {
+    BuildingKind::ALL
+        .into_iter()
+        .any(|cradle| cradle.assembles() == Some(kind))
 }
 
 /// Whether the machine a cradle of `kind` at `anchor` stands up could drive

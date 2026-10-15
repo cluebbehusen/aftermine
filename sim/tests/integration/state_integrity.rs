@@ -553,11 +553,10 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidWarheadFlight(_) => 93,
         E::InvalidWarheadTracking(_) => 94,
         E::CrewBeyondCap(_) => 95,
-        E::ExperimentalBeyondCap(_) => 96,
     }
 }
 
-const ROWS: usize = 97;
+const ROWS: usize = 96;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -666,7 +665,6 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidWarheadFlight(0),
         E::InvalidWarheadTracking(PlayerId(0)),
         E::CrewBeyondCap(BuildingId(0)),
-        E::ExperimentalBeyondCap(PlayerId(0)),
     ]
 }
 
@@ -1976,19 +1974,6 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][excavators[4]]["order"] = order;
             },
             "holds more crew than it admits",
-        ),
-        (
-            "a second cradle for one seat",
-            |d| {
-                *d = cradle();
-                let mut twin = d["buildings"][kind_index(d, "maw_cradle")].clone();
-                let id = d["next_building_id"].as_u64().unwrap();
-                twin["id"] = json!(id);
-                twin["anchor"] = json!({"x": 1, "y": 4});
-                d["next_building_id"] = json!(id + 1);
-                d["buildings"].as_array_mut().unwrap().push(twin);
-            },
-            "assembles more than one of an experimental",
         ),
         (
             "a cradle standing finished",

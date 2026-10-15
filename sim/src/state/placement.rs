@@ -23,11 +23,6 @@ impl State {
         if !self.prerequisites_met(player, kind) {
             return Some(PlaceRefusal::Prerequisite);
         }
-        if let Some(unit) = kind.assembles()
-            && self.experimental_slot_taken(player, unit, &[])
-        {
-            return Some(PlaceRefusal::ExperimentalLimit);
-        }
         self.place_refusal_except(player, kind, anchor, None)
     }
 
@@ -249,11 +244,6 @@ impl State {
         }
         if !self.prerequisites_met(player, kind) {
             return Some(PlaceRefusal::Prerequisite);
-        }
-        if let Some(unit) = kind.assembles()
-            && self.experimental_slot_taken(player, unit, &released)
-        {
-            return Some(PlaceRefusal::ExperimentalLimit);
         }
         let vision = self.vision(player);
         let (w, h) = kind.size();

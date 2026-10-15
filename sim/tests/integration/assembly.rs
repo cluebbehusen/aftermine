@@ -1,5 +1,5 @@
-//! Assembly cradles and the Maw: the one-per-player cap, the crew a cradle
-//! admits, the public progress every seat watches, the machine that stands
+//! Assembly cradles and the Maw: no cap on how many a player raises, the
+//! crew a cradle admits, the public progress every seat watches, the machine that stands
 //! up at the cradle's centre, and the breacher's own rules (buildings first,
 //! no pursuit, structure damage, healing only by its kiln).
 
@@ -11,8 +11,8 @@ use oxide_sim::observation::ObservationData;
 use oxide_sim::scenario::{BuildingSpec, UnitSpec};
 use oxide_sim::stats::{BuildingKind, KILN_BITE_PERIOD, Mend};
 use oxide_sim::{
-    Command, Event, Order, PlaceRefusal, PlayerCommand, PlayerId, StallReason, State, Target,
-    TickReport, UnitId, UnitKind, UnitRepairSource,
+    Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target, TickReport, UnitId,
+    UnitKind, UnitRepairSource,
 };
 
 const WIDTH: usize = 36;
@@ -153,47 +153,46 @@ fn to_bite(state: &mut State) {
 }
 
 #[test]
-fn a_player_raises_one_maw_at_a_time() {
+fn a_player_raises_another_cradle_beside_one_or_a_living_maw() {
     let mut state = yard(workers(0, UnitKind::Excavator, 2, 12), vec![]);
     let crew = ids(&state, 0, UnitKind::Excavator);
     assert_eq!(
         rejected(&state.tick(&[raise(&crew[..1], CRADLE, false)])),
         None
     );
-
-    // A second cradle is refused wherever it would stand, at placement and
-    // by command, and the refusal changes nothing.
-    let elsewhere = TilePos::new(18, 6);
-    assert_eq!(
-        state.place_refusal(PlayerId(0), BuildingKind::MawCradle, elsewhere),
-        Some(PlaceRefusal::ExperimentalLimit)
+    let (width, height) = (
+        i32::try_from(WIDTH).unwrap(),
+        i32::try_from(HEIGHT).unwrap(),
     );
-    let mut idle = state.clone();
-    idle.tick(&[]);
-    let report = state.tick(&[raise(&crew[1..], elsewhere, false)]);
-    assert_eq!(rejected(&report), Some(RejectReason::ExperimentalLimit));
+    let elsewhere = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .find(|&anchor| {
+            state
+                .place_refusal(PlayerId(0), BuildingKind::MawCradle, anchor)
+                .is_none()
+        })
+        .expect("room in sight for a second cradle");
     assert_eq!(
-        state.hash(),
-        idle.hash(),
-        "a refused cradle changes nothing"
-    );
-
-    // More crew for the cradle already raised is welcome.
-    assert_eq!(
-        rejected(&state.tick(&[raise(&crew[1..], CRADLE, false)])),
+        rejected(&state.tick(&[raise(&crew[1..], elsewhere, false)])),
         None
     );
-    assert!(holds(&state, crew[1]));
+    let cradles = |state: &State| {
+        state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == PlayerId(0) && b.kind == BuildingKind::MawCradle)
+            .count()
+    };
+    assert_eq!(cradles(&state), 2);
+    assert!(holds(&state, crew[0]), "the first crew keeps its cradle");
+    state.validate_invariants().unwrap();
 
-    // A living Maw takes the slot as a cradle does.
     let mut units = workers(0, UnitKind::Excavator, 1, 12);
     units.push(unit(0, UnitKind::Maw, 24, 10));
     let mut state = yard(units, vec![]);
     let crew = ids(&state, 0, UnitKind::Excavator);
-    assert_eq!(
-        rejected(&state.tick(&[raise(&crew, CRADLE, false)])),
-        Some(RejectReason::ExperimentalLimit)
-    );
+    assert_eq!(rejected(&state.tick(&[raise(&crew, CRADLE, false)])), None);
+    assert_eq!(cradles(&state), 1);
 }
 
 #[test]

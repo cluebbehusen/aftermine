@@ -113,11 +113,41 @@ fn a_cradle_is_wanted_against_guns_the_army_cannot_outweigh() {
         "an army that outweighs the guns takes them itself"
     );
 
-    let mut fielded = scenario.clone();
+    // Eight Bastions are within one Maw's price by the margin; ten are not.
+    let mut fielded = fortress(&RING[..8]);
+    assert_eq!(wanted(&fielded, &bored(&fielded)), cradle, "premise");
     fielded.units.push(unit(0, UnitKind::Maw, 20, 11));
     assert!(
         wanted(&fielded, &bored(&fielded)).is_empty(),
-        "one Maw at a time"
+        "a Maw that outweighs the guns takes them itself"
+    );
+    let mut raising = bored(&fortress(&RING[..8]));
+    let founder = raising
+        .units()
+        .iter()
+        .find(|u| u.player == PlayerId(0) && u.kind == UnitKind::Excavator)
+        .unwrap()
+        .id;
+    raising.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![founder],
+            kind: BuildingKind::MawCradle,
+            anchor: TilePos::new(6, 13),
+            queue: false,
+            defer: false,
+        },
+    }]);
+    assert!(
+        wanted(&fortress(&RING[..8]), &raising).is_empty(),
+        "a cradle under way counts as its Maw"
+    );
+    let mut deeper = scenario.clone();
+    deeper.units.push(unit(0, UnitKind::Maw, 20, 11));
+    assert_eq!(
+        wanted(&deeper, &bored(&deeper)),
+        cradle,
+        "guns past what one Maw answers want another"
     );
 
     // Ground cut by a wall of rock: the guns stand beyond any drive.
@@ -256,6 +286,12 @@ fn a_given_up_attack_wants_a_cradle_even_against_no_known_guns() {
     assert_eq!(
         wanted_with(&scenario, &state, &memory),
         [Investment::Tech(BuildingKind::MawCradle)]
+    );
+    let mut fielded = scenario.clone();
+    fielded.units.push(unit(0, UnitKind::Maw, 20, 11));
+    assert!(
+        wanted_with(&fielded, &bored(&fielded), &memory).is_empty(),
+        "an attack given up says nothing of one with a Maw along"
     );
 
     // Ground cut by rock: a target given up there proves nothing a Maw could
