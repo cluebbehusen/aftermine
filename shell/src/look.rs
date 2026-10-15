@@ -187,9 +187,11 @@ fn light_rotor(kind: UnitKind) -> Gait {
 const GROUND_MUZZLE: f32 = 0.38;
 /// The muzzle reach of a direct-fire weapon on a plain airframe.
 const AIR_MUZZLE: f32 = 0.32;
-/// The Roc's barrel tip ahead of its gun's pivot: 28 pixels of its
-/// one-tile, 64-pixel mount.
-const ROC_MUZZLE: f32 = 0.4375;
+/// The Roc's muzzle brake ahead of its gun's pivot: 48 pixels at the
+/// hull's 64 pixels a tile.
+const ROC_MUZZLE: f32 = 0.75;
+/// A drone's muzzle ahead of its body's centre, at the same density.
+const DRONE_MUZZLE: f32 = 0.15;
 
 /// The presentation of `kind`.
 pub(crate) fn unit(kind: UnitKind) -> UnitLook {
@@ -406,10 +408,15 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             ..plain
         },
         UnitKind::Drone => UnitLook {
-            scale: 0.6,
+            // Its 32-pixel canvas at its host's 64 pixels a tile.
+            scale: 0.5,
             gait: light_rotor(kind),
             rig: true,
-            weapon: Some(weapon(SoundKind::TalonFire, ShotStyle::ForgeSpot, 0.22)),
+            weapon: Some(weapon(
+                SoundKind::TalonFire,
+                ShotStyle::ForgeSpot,
+                DRONE_MUZZLE,
+            )),
             marker: M::AntiAir,
             ..plain
         },

@@ -415,11 +415,11 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Scuttler
             | UnitKind::Buzzard
             | UnitKind::Talon
-            | UnitKind::Drone
             | UnitKind::Warden
             | UnitKind::Breaker
             | UnitKind::Piledriver
             | UnitKind::Avalanche => 1,
+            UnitKind::Roc => cycle_index(progress, 2),
             UnitKind::Harvester
             | UnitKind::Excavator
             | UnitKind::Kestrel
@@ -428,10 +428,10 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Mantle
             | UnitKind::Surveyor
             | UnitKind::Maw
-            | UnitKind::Roc => 0,
+            | UnitKind::Drone => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
-            UnitKind::Roc => 1,
+            UnitKind::Roc => 2 + cycle_index(progress, 5),
             UnitKind::Avalanche => 2,
             UnitKind::Lancer | UnitKind::Bombard => 4 + cycle_index(progress, 2),
             UnitKind::Flakhound => 7 + cycle_index(progress, 2),
@@ -439,7 +439,6 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Scuttler
             | UnitKind::Buzzard
             | UnitKind::Talon
-            | UnitKind::Drone
             | UnitKind::Warden
             | UnitKind::Condor
             | UnitKind::Breaker
@@ -451,7 +450,8 @@ pub(crate) fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Sapper
             | UnitKind::Mantle
             | UnitKind::Surveyor
-            | UnitKind::Maw => 0,
+            | UnitKind::Maw
+            | UnitKind::Drone => 0,
         },
     }
 }

@@ -2013,19 +2013,20 @@ const ROC: UnitStats = UnitStats {
     structural: false,
     bay: Some(ROC_BAY),
     mounts: Some(MountedGuns {
-        // Port then starboard. Each arc of 270 degrees is centred 45 degrees
-        // outboard of the nose, so its blind quarter lies behind the far
-        // wing: both guns bear ahead of the beam, one on each rear quarter.
+        // Port then starboard, where the art's gun pivots sit. Each arc of
+        // 270 degrees is centred 45 degrees outboard of the nose, so its
+        // blind quarter lies behind the far wing: both guns bear ahead of
+        // the beam, one on each rear quarter.
         mounts: &[
             MountStats {
-                forward: Fx::lit("0.65"),
-                starboard: Fx::lit("-0.55"),
+                forward: Fx::lit("0.671875"),
+                starboard: Fx::lit("-0.53125"),
                 arc_centre: -32,
                 arc_half: 96,
             },
             MountStats {
-                forward: Fx::lit("0.65"),
-                starboard: Fx::lit("0.55"),
+                forward: Fx::lit("0.671875"),
+                starboard: Fx::lit("0.53125"),
                 arc_centre: 32,
                 arc_half: 96,
             },

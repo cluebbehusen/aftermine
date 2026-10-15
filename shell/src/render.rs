@@ -95,6 +95,7 @@ mod panel_layout;
 mod performance;
 mod pits;
 pub(crate) mod prim;
+mod roc;
 pub(crate) mod sky;
 mod strategic;
 pub(crate) use sky::missile_seen_by;
@@ -1011,7 +1012,8 @@ pub(crate) fn unit_body_pose(
         None => rotation,
     };
     let (source, accent, mechanism_layer, worker) = unit_body_sources(sprites, unit.kind, frame);
-    let mut center = game.presentation.draw_pos(unit.id, unit.pos, alpha);
+    let mut center = roc::drone_draw_pos(game, unit, alpha)
+        .unwrap_or_else(|| game.presentation.draw_pos(unit.id, unit.pos, alpha));
     if unit.domain() == oxide_sim::stats::Domain::Air {
         center.y -= air_presentation(unit.kind, 1.0).2;
     }
@@ -1067,6 +1069,20 @@ fn draw_piledriver_anchors(
     }
 }
 
+/// Where a mounted gun pivots on a hull drawn at `body`, turned by
+/// `body_rotation`: the simulation's offsets, in tiles.
+fn mount_pivot(
+    body: Vec2,
+    body_rotation: f32,
+    mount: &oxide_sim::stats::MountStats,
+    zoom: f32,
+) -> Vec2 {
+    let forward = vec2(body_rotation.sin(), -body_rotation.cos());
+    let starboard = vec2(body_rotation.cos(), body_rotation.sin());
+    body + forward * (mount.forward.to_num::<f32>() * zoom)
+        + starboard * (mount.starboard.to_num::<f32>() * zoom)
+}
+
 /// Each mounted gun on its pivot, at its own interpolated bearing and in
 /// its own recoil. The pivots ride the hull at the simulation's offsets,
 /// and a gun's smaller canvas keeps the hull canvas's pixel density.
@@ -1083,8 +1099,6 @@ fn draw_mounted_guns(
         return;
     };
     let zoom = game.presentation.camera.zoom;
-    let forward = vec2(body_rotation.sin(), -body_rotation.cos());
-    let starboard = vec2(body_rotation.cos(), body_rotation.sin());
     let clock = crate::presentation_animation::AnimationClock::from_state(
         game.state,
         game.presentation.tick_fraction(),
@@ -1093,9 +1107,7 @@ fn draw_mounted_guns(
         let Some(rotation) = game.presentation.draw_mount_heading(unit, slot, alpha) else {
             continue;
         };
-        let pivot = body
-            + forward * (mount.forward.to_num::<f32>() * zoom)
-            + starboard * (mount.starboard.to_num::<f32>() * zoom);
+        let pivot = mount_pivot(body, body_rotation, mount, zoom);
         let action = game
             .presentation
             .animations
@@ -1120,36 +1132,6 @@ fn draw_mounted_guns(
                 zoom,
             );
         }
-    }
-}
-
-/// Placeholder dock clamps down the host's spine, two abreast from its
-/// centre aft, one per drone the bay holds: lit while a drone is docked
-/// there, dark while its drone is out or not yet built.
-fn draw_dock_clamps(
-    game: &crate::game::Scene<'_>,
-    unit: &oxide_sim::Unit,
-    bay: oxide_sim::state::DroneBay,
-    (body, body_rotation): (Vec2, f32),
-    zoom: f32,
-) {
-    let Some(stats) = unit.kind.stats().bay else {
-        return;
-    };
-    let forward = vec2(body_rotation.sin(), -body_rotation.cos());
-    let starboard = vec2(body_rotation.cos(), body_rotation.sin());
-    let lit = seat_identity_color(game, unit.player);
-    let side = zoom * 0.14;
-    for slot in 0..stats.capacity {
-        let row = f32::from(slot / 2);
-        let column = if slot % 2 == 0 { -0.22 } else { 0.22 };
-        let at = body + forward * (zoom * (-0.15 - 0.3 * row)) + starboard * (zoom * column);
-        let color = if slot < bay.docked {
-            lit
-        } else {
-            Color::new(0.08, 0.08, 0.1, 0.9)
-        };
-        draw_rectangle(at.x - side * 0.5, at.y - side * 0.5, side, side, color);
     }
 }
 
@@ -1227,6 +1209,103 @@ fn draw_unit_body(
     }
 }
 
+/// An aircraft's ground shadow beneath `screen`, where it stands unlifted:
+/// its rig's own shadows, or the shared airframe shadow.
+fn draw_air_shadow(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    unit: &oxide_sim::Unit,
+    rig: Option<&crate::assets::UnitRig>,
+    (screen, body_rotation, dest): (Vec2, f32, f32),
+    alpha: f32,
+) {
+    let zoom = game.presentation.camera.zoom;
+    let (shadow_size, shadow_offset, body_lift) = air_presentation(unit.kind, zoom);
+    if let Some(rig) = rig.filter(|rig| rig.shadow().is_some()) {
+        roc::draw_shadows(
+            game,
+            sprites,
+            unit,
+            rig,
+            (
+                screen - vec2(0.0, body_lift),
+                body_rotation,
+                vec2(dest, dest),
+            ),
+            alpha,
+        );
+    } else {
+        sprites.draw_unit(
+            screen.x - shadow_size.x * 0.5 + shadow_offset.x,
+            screen.y - shadow_size.y * 0.5 + shadow_offset.y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(shadow_size),
+                source: Some(sprites.air_shadow()),
+                ..Default::default()
+            },
+            zoom,
+        );
+    }
+}
+
+/// A rig's single mount over its hull: a turret at its aim, a weaponless or
+/// piledriving mechanism with the hull.
+fn draw_rig_mount(
+    game: &crate::game::Scene<'_>,
+    sprites: &Sprites,
+    unit: &oxide_sim::Unit,
+    rig: &crate::assets::UnitRig,
+    (body, body_size, rotation, body_rotation): (Vec2, Vec2, f32, f32),
+    animation: crate::presentation_animation::UnitAnimationState,
+) {
+    let zoom = game.presentation.camera.zoom;
+    let dest = body_size.x;
+    let action = match motion::unit_mount_frame(unit.kind, animation) {
+        motion::UnitFrame::Action(action) => Some(action),
+        _ => None,
+    };
+    let (mount, accent) = rig.mount(action);
+    for (source, tint) in [
+        (mount, WHITE),
+        (accent, seat_identity_color(game, unit.player)),
+    ] {
+        let mount_rotation = if unit.kind.stats().weapons.is_empty()
+            || unit.kind == oxide_sim::UnitKind::Piledriver
+        {
+            body_rotation
+        } else {
+            rotation
+        };
+        let (center, size) = if unit.kind == oxide_sim::UnitKind::Piledriver {
+            // The cropped mechanism retains its position on the 128-pixel chassis.
+            let offset = vec2(4.0, -8.0) * (dest / 128.0);
+            let (sin, cos) = mount_rotation.sin_cos();
+            (
+                body + vec2(
+                    offset.x * cos - offset.y * sin,
+                    offset.x * sin + offset.y * cos,
+                ),
+                vec2(source.w, source.h) * (dest / 128.0),
+            )
+        } else {
+            (body, body_size)
+        };
+        sprites.draw_unit(
+            center.x - size.x * 0.5,
+            center.y - size.y * 0.5,
+            tint,
+            DrawTextureParams {
+                dest_size: Some(size),
+                source: Some(source),
+                rotation: mount_rotation,
+                ..Default::default()
+            },
+            zoom,
+        );
+    }
+}
+
 fn draw_unit_pass(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -1248,7 +1327,8 @@ fn draw_unit_pass(
         if !crate::strategic_markers::visible(game, unit) {
             continue;
         }
-        let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
+        let pos = roc::drone_draw_pos(game, unit, alpha)
+            .unwrap_or_else(|| game.presentation.draw_pos(unit.id, unit.pos, alpha));
         let margin = unit_cull_margin(unit.kind, CULL_MARGIN);
         if pos.x < view_lo.x - margin
             || pos.y < view_lo.y - margin
@@ -1274,18 +1354,18 @@ fn draw_unit_pass(
             ..
         } = unit_body_pose(game, sprites, unit, alpha);
         let rig = sprites.unit_rig(unit.kind);
+        let roc_rig = (unit.kind == oxide_sim::UnitKind::Roc)
+            .then(|| sprites.roc_rig())
+            .flatten();
         if airborne {
-            let (shadow_size, shadow_offset, body_lift) = air_presentation(unit.kind, zoom);
-            sprites.draw_unit(
-                screen.x - shadow_size.x * 0.5 + shadow_offset.x,
-                screen.y - shadow_size.y * 0.5 + shadow_offset.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(shadow_size),
-                    source: Some(sprites.air_shadow()),
-                    ..Default::default()
-                },
-                zoom,
+            let body_lift = air_presentation(unit.kind, zoom).2;
+            draw_air_shadow(
+                game,
+                sprites,
+                unit,
+                rig,
+                (screen, body_rotation, dest),
+                alpha,
             );
             // The body rides visibly above its shadow.
             screen.y -= body_lift;
@@ -1329,6 +1409,17 @@ fn draw_unit_pass(
                     ..Default::default()
                 },
                 zoom,
+            );
+        }
+        if let (Some(rig), Some(roc)) = (rig, roc_rig) {
+            roc::draw_under(
+                game,
+                sprites,
+                unit,
+                (rig, roc),
+                (body, body_rotation, body_size),
+                source,
+                alpha,
             );
         }
         draw_unit_body(
@@ -1385,62 +1476,38 @@ fn draw_unit_pass(
         if let Some(rig) = rig
             && unit.kind.stats().mounts.is_some()
         {
-            draw_mounted_guns(
+            // The Roc's rig draws its guns under the hull.
+            if roc_rig.is_none() {
+                draw_mounted_guns(
+                    game,
+                    sprites,
+                    unit,
+                    rig,
+                    (body, body_rotation, body_size),
+                    source,
+                    alpha,
+                );
+            }
+        } else if let Some(rig) = rig {
+            draw_rig_mount(
                 game,
                 sprites,
                 unit,
                 rig,
-                (body, body_rotation, body_size),
-                source,
-                alpha,
+                (body, body_size, rotation, body_rotation),
+                animation,
             );
-        } else if let Some(rig) = rig {
-            let action = match motion::unit_mount_frame(unit.kind, animation) {
-                motion::UnitFrame::Action(action) => Some(action),
-                _ => None,
-            };
-            let (mount, accent) = rig.mount(action);
-            for (source, tint) in [
-                (mount, WHITE),
-                (accent, seat_identity_color(game, unit.player)),
-            ] {
-                let mount_rotation = if unit.kind.stats().weapons.is_empty()
-                    || unit.kind == oxide_sim::UnitKind::Piledriver
-                {
-                    body_rotation
-                } else {
-                    rotation
-                };
-                let (center, size) = if unit.kind == oxide_sim::UnitKind::Piledriver {
-                    // The cropped mechanism retains its position on the 128-pixel chassis.
-                    let offset = vec2(4.0, -8.0) * (dest / 128.0);
-                    let (sin, cos) = mount_rotation.sin_cos();
-                    (
-                        body + vec2(
-                            offset.x * cos - offset.y * sin,
-                            offset.x * sin + offset.y * cos,
-                        ),
-                        vec2(source.w, source.h) * (dest / 128.0),
-                    )
-                } else {
-                    (body, body_size)
-                };
-                sprites.draw_unit(
-                    center.x - size.x * 0.5,
-                    center.y - size.y * 0.5,
-                    tint,
-                    DrawTextureParams {
-                        dest_size: Some(size),
-                        source: Some(source),
-                        rotation: mount_rotation,
-                        ..Default::default()
-                    },
-                    zoom,
-                );
-            }
         }
-        if let Some(bay) = unit.bay {
-            draw_dock_clamps(game, unit, bay, (body, body_rotation), zoom);
+        if let Some(roc) = roc_rig {
+            roc::draw_over(
+                game,
+                sprites,
+                unit,
+                roc,
+                (body, body_rotation, body_size),
+                animation,
+                source,
+            );
         }
         if let Some(mechanism_layer) = mechanism_layer {
             sprites.draw_unit(

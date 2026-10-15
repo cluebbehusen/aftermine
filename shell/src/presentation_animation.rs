@@ -32,9 +32,11 @@ const BUZZARD_ROTOR_PERIOD: u64 = 6;
 const SKYHOOK_ROTOR_PERIOD: u64 = 9;
 /// A drone's small, fast rotors.
 const DRONE_ROTOR_PERIOD: u64 = 4;
-/// The Roc's ducted lift fans, larger and slower than a rotorcraft's.
-const ROC_FAN_PERIOD: u64 = 12;
+/// The Roc's ducted lift fans: their art turns one five-bladed sixth of a
+/// blade spacing a tick.
+const ROC_FAN_PERIOD: u64 = 6;
 const SKYHOOK_ACTION_TICKS: f32 = 8.0;
+const ROC_HATCH_TICKS: f32 = 16.0;
 const REPAIR_PULSE_TICKS: f32 = 6.0;
 const AIRWORKS_LAUNCH_TICKS: u64 = 16;
 const AIRWORKS_OPEN_TICKS: u32 = 12;
@@ -1022,7 +1024,7 @@ impl AnimationController {
                     .and_then(|pose| pose.bearing)
                     .map(|bearing| if options.reduced_motion { 0.0 } else { bearing })
             },
-            transport: self.transport_action(facts.id, clock),
+            transport: self.transport_action(facts.id, facts.kind, clock),
             demolition_preparation: facts
                 .demolition_contact
                 .then_some(if options.reduced_motion {
@@ -1137,14 +1139,21 @@ impl AnimationController {
     fn transport_action(
         &self,
         transport: UnitId,
+        kind: UnitKind,
         clock: AnimationClock,
     ) -> Option<TransportActionState> {
         let stamp = self.transport_actions.get(&transport)?;
         let elapsed = clock.elapsed_since(stamp.completed_tick)?;
-        if elapsed >= SKYHOOK_ACTION_TICKS {
+        // The Roc's cargo hatch is heavier than a Skyhook's clamps.
+        let ticks = if kind == UnitKind::Roc {
+            ROC_HATCH_TICKS
+        } else {
+            SKYHOOK_ACTION_TICKS
+        };
+        if elapsed >= ticks {
             return None;
         }
-        let progress = (elapsed / SKYHOOK_ACTION_TICKS).clamp(0.0, 1.0);
+        let progress = (elapsed / ticks).clamp(0.0, 1.0);
         Some(match stamp.kind {
             TransportActionKind::Boarding => TransportActionState::Boarding { progress },
             TransportActionKind::Unloading => TransportActionState::Unloading { progress },
@@ -1299,9 +1308,19 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
         },
-        UnitKind::Talon | UnitKind::Roc | UnitKind::Drone => AttackTiming {
+        UnitKind::Talon => AttackTiming {
             report_ticks: 2.0,
             recover_ticks: 3.0,
+        },
+        // The Roc's guns kick back over two ticks and run out over ten.
+        UnitKind::Roc => AttackTiming {
+            report_ticks: 2.0,
+            recover_ticks: 10.0,
+        },
+        // A drone's gun only flashes.
+        UnitKind::Drone => AttackTiming {
+            report_ticks: 2.0,
+            recover_ticks: 0.0,
         },
         UnitKind::Sentinel => AttackTiming {
             report_ticks: 2.0,

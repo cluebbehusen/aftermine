@@ -561,9 +561,9 @@ fn authored_animation_families_are_complete_distinct_and_masked() {
     for kind in BuildingKind::ALL {
         let stem = building_stem(kind);
         let base = sprite_image(stem);
-        // The cradle's machinery is its crane, a runtime layer whose
+        // A cradle's machinery is the shared crane, a runtime layer whose
         // trolley welds while the site is worked.
-        let rigged = kind == BuildingKind::MawCradle;
+        let rigged = kind.assembles().is_some();
         if rigged {
             assert_ne!(
                 sprite_image("rig_cradle_trolley").bytes,

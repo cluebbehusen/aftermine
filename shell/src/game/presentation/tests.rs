@@ -122,3 +122,24 @@ fn reduced_motion_suppresses_existing_lean_without_discarding_position_easing() 
     }
     assert!(game.presentation.slide_yaw(id, 1.0, false) > 0.0);
 }
+
+#[test]
+fn engines_heat_quickly_while_moving_and_cool_slowly() {
+    let mut heat = 0.0;
+    for _ in 0..20 {
+        heat = super::next_engine_heat(heat, true);
+    }
+    assert!(heat > 0.9, "hot after a second of travel: {heat}");
+    let mut cooling = heat;
+    for _ in 0..20 {
+        cooling = super::next_engine_heat(cooling, false);
+    }
+    assert!(
+        cooling > 0.4,
+        "still warm a second after stopping: {cooling}"
+    );
+    for _ in 0..200 {
+        cooling = super::next_engine_heat(cooling, false);
+    }
+    assert_eq!(cooling, 0.0, "cold in the end");
+}

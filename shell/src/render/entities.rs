@@ -920,6 +920,11 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 },
             );
         }
+        if let super::motion::BuildingBodyFrame::Construction { stage, .. } = frame.body
+            && building.kind.assembles() == Some(oxide_sim::UnitKind::Roc)
+        {
+            super::roc::draw_assembling(game, sprites, building.player, screen + dest * 0.5, stage);
+        }
         if let Some(site) = animation.construction
             && let Some(rigs) = sprites.maw_rigs()
             && let Some(pads) = building.kind.crew_pads()

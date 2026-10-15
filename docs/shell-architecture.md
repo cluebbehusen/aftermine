@@ -773,9 +773,23 @@ weapon's projectile payload, which buildings fight or train, and upgrade
 ladders. A kind with mounted guns, the Roc, draws its mount layer once per gun
 at that gun's pivot on the hull, turned to the simulation's bearing for that gun
 and interpolated the short way between ticks; each gun recoils only for its own
-weapon slot's shots. A drone is never selected, boxed or rallied to, and a
-selected own Roc offers its bay's Order, Cancel and Autofill cards on the same
-hotkeys as a magazine's, with placeholder dock clamps lit for docked drones.
+weapon slot's shots. The Roc's rig (`render::roc`) draws its hull's and guns'
+ground shadows in place of the shared airframe shadow, then a wall, the gun
+yokes and the guns under the hull, then the fans' blades and each of six drone
+docks above it. Drones fill the docks rear pair first and leave front pair
+first; `dock_motion` remembers when each dock filled or emptied, so its clamps
+swing open as a drone lifts away, a landing drone glides in from where it was
+last drawn, and a launched drone is drawn rising from its dock while the
+simulation flies it from the hull's centre. The Roc's cargo hatch swings open
+while a rider boards or leaves, and its aft thrusters glow at an engine heat
+that rises while it moves and cools once it stops. A Roc cradle under assembly
+draws the Roc facing east from its own ghost layer at the building opacity
+steps, under the shared crane. A destroyed Roc keeps each gun's last drawn
+bearing; its fall and its wreck's pieces draw the wall, yokes and guns under a
+wreck hull with still fans and empty docks, each gun riding the piece that holds
+its pivot. A drone is never selected, boxed or rallied to, and a selected own
+Roc offers its bay's Order, Cancel and Autofill cards on the same hotkeys as a
+magazine's.
 
 `entity_lod` derives full, half, quarter, and eighth-resolution entity textures
 at startup without changing authored atlas bytes. Each sprite packs only its

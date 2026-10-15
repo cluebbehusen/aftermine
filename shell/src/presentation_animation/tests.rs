@@ -149,7 +149,11 @@ fn each_mounted_gun_recoils_for_its_own_shot_alone() {
         at(43, 1),
         Some(AttackPhase::Recover { weapon: 1, .. })
     ));
-    assert_eq!(at(46, 1), None);
+    assert!(
+        matches!(at(51, 1), Some(AttackPhase::Recover { weapon: 1, .. })),
+        "the barrels run out over ten ticks"
+    );
+    assert_eq!(at(53, 1), None);
 }
 
 #[test]

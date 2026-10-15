@@ -103,13 +103,8 @@ def finish(img: Image.Image, px: int, name: str) -> None:
             "sapper",
             "mantle",
             "surveyor",
-            "roc",
-            "rig_roc_hull",
-            "drone",
-            "rig_drone_hull",
         )
-        # "roc" is also the start of "rock", whose art takes no rim.
-    ) and not name.startswith(("roc_cradle", "rock")):
+    ):
         img = rim_light(img)
     save_sprite(img, OUT, name)
     REGISTRY[name] = img
@@ -236,6 +231,13 @@ def _install_maw_bank() -> None:
     from tools.production_sprite_sources.maw_final import install_maw
 
     install_maw(REGISTRY, OUT)
+
+
+def _install_roc_bank() -> None:
+    """Installs the Roc, its drones and their runtime layers."""
+    from tools.production_sprite_sources.roc_final import install_roc
+
+    install_roc(REGISTRY, OUT)
 
 
 def accent_masks() -> None:
@@ -1743,220 +1745,6 @@ def scuttle_charge(variant: str) -> None:
         d.rectangle([s(x), s(y), s(x + 4), s(y + 4)], fill=(*IRON_DARK, 255))
     d.ellipse([s(29), s(29), s(35), s(35)], fill=(*pal["light"], 255))
     finish(img, px, f"scuttle_charge{variant_tag(variant)}")
-
-
-def _roc_hull(d: ImageDraw.ImageDraw, pal: dict, move: int) -> None:
-    """The gunship's hull on its 256 px canvas: a long body, nose up,
-    between stub wings, with a ducted fan on each wing root aft. The hull
-    fills about three of the canvas's four tiles."""
-    # Stub wings across the hull's middle.
-    d.rounded_rectangle(
-        [s(48), s(110), s(208), s(146)], radius=s(12), fill=(*IRON_DARK, 255)
-    )
-    d.rounded_rectangle([s(92), s(36), s(164), s(222)], radius=s(30), fill=(*IRON, 255))
-    d.rounded_rectangle(
-        [s(102), s(58), s(154), s(200)], radius=s(22), fill=(*pal["base"], 255)
-    )
-    # A cargo hatch down the spine.
-    d.rectangle([s(116), s(132), s(140), s(186)], fill=(*IRON_DARK, 255))
-    for rib in range(4):
-        y = 138 + rib * 12
-        d.rectangle([s(118), s(y), s(138), s(y + 3)], fill=(*IRON_LIGHT, 255))
-    # Ducted fans at each wing root, their blades turning in flight.
-    for cx in (70, 186):
-        d.ellipse([s(cx - 20), s(150), s(cx + 20), s(190)], fill=(*IRON_DARK, 255))
-        d.ellipse([s(cx - 15), s(155), s(cx + 15), s(185)], fill=(*IRON_LIGHT, 255))
-        angle = (0, 1, 2)[move % 3]
-        if angle == 0:
-            d.rectangle([s(cx - 14), s(168), s(cx + 14), s(172)], fill=(*IRON, 255))
-        elif angle == 1:
-            d.polygon(
-                [
-                    (s(cx - 10), s(160)),
-                    (s(cx - 7), s(158)),
-                    (s(cx + 10), s(180)),
-                    (s(cx + 7), s(182)),
-                ],
-                fill=(*IRON, 255),
-            )
-        else:
-            d.polygon(
-                [
-                    (s(cx + 10), s(160)),
-                    (s(cx + 7), s(158)),
-                    (s(cx - 10), s(180)),
-                    (s(cx - 7), s(182)),
-                ],
-                fill=(*IRON, 255),
-            )
-    # Engine glow at the tail.
-    for x in (110, 136):
-        d.rectangle([s(x), s(214), s(x + 10), s(222)], fill=(*SCRAP_LIGHT, 255))
-
-
-# The gun mounts sit 0.65 tiles ahead of the hull's centre and 0.55 either
-# side of it, at 64 pixels a tile, where the simulation pivots them.
-ROC_GUN_PIVOTS = ((92.8, 86.4), (163.2, 86.4))
-# The barrel tip ahead of its pivot, in pixels; the shell's muzzle offset
-# for the gunship matches it.
-ROC_BARREL = 28
-
-
-def _roc_gun(
-    d: ImageDraw.ImageDraw, pal: dict, cx: float, cy: float, recoil: int
-) -> None:
-    """One gun on its turntable, barrel up from its pivot at (cx, cy),
-    pulled back `recoil` pixels."""
-    d.ellipse([s(cx - 11), s(cy - 11), s(cx + 11), s(cy + 11)], fill=(*IRON_DARK, 255))
-    d.rectangle(
-        [s(cx - 3), s(cy - ROC_BARREL + recoil), s(cx + 3), s(cy)],
-        fill=(*IRON_LIGHT, 255),
-    )
-    d.rectangle(
-        [
-            s(cx - 4),
-            s(cy - ROC_BARREL + recoil),
-            s(cx + 4),
-            s(cy - ROC_BARREL + recoil + 4),
-        ],
-        fill=(*IRON, 255),
-    )
-    d.ellipse([s(cx - 6), s(cy - 6), s(cx + 6), s(cy + 6)], fill=(*pal["light"], 255))
-
-
-def _drone_hull(d: ImageDraw.ImageDraw, pal: dict, move: int) -> None:
-    """A drone's frame on its 64 px canvas, nose up: an X of arms to four
-    rotors around a small body, the rotors' blades turned by `move`."""
-    for x0, y0, x1, y1 in ((14, 14, 50, 50), (50, 14, 14, 50)):
-        d.line([(s(x0), s(y0)), (s(x1), s(y1))], fill=(*IRON_DARK, 255), width=s(4))
-    for cx, cy in ((14, 14), (50, 14), (14, 50), (50, 50)):
-        d.ellipse([s(cx - 9), s(cy - 9), s(cx + 9), s(cy + 9)], fill=(*IRON_DARK, 255))
-        d.ellipse([s(cx - 7), s(cy - 7), s(cx + 7), s(cy + 7)], fill=(*IRON_LIGHT, 255))
-        if move % 3 == 0:
-            d.rectangle([s(cx - 7), s(cy - 1), s(cx + 7), s(cy + 1)], fill=(*IRON, 255))
-        elif move % 3 == 1:
-            d.line(
-                [(s(cx - 5), s(cy - 5)), (s(cx + 5), s(cy + 5))],
-                fill=(*IRON, 255),
-                width=s(2),
-            )
-        else:
-            d.line(
-                [(s(cx + 5), s(cy - 5)), (s(cx - 5), s(cy + 5))],
-                fill=(*IRON, 255),
-                width=s(2),
-            )
-    d.ellipse([s(22), s(22), s(42), s(42)], fill=(*IRON, 255))
-    d.ellipse([s(25), s(25), s(39), s(39)], fill=(*pal["base"], 255))
-
-
-def _drone_gun(d: ImageDraw.ImageDraw, pal: dict) -> None:
-    """A drone's gun under its body, barrel up from the canvas centre."""
-    d.rectangle([s(30), s(12), s(34), s(32)], fill=(*IRON_LIGHT, 255))
-    d.ellipse([s(28), s(28), s(36), s(36)], fill=(*pal["light"], 255))
-
-
-def drone(variant: str, move: int = 0) -> None:
-    """Placeholder Roc drone until its art is promoted: a small quadrotor
-    with a gun under its body, for its portraits."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _drone_hull(d, pal, move)
-    _drone_gun(d, pal)
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"drone{variant_tag(variant)}{suffix}")
-
-
-def rig_drone_hull(variant: str, move: int = 0) -> None:
-    """A drone's frame and rotors without its gun, which turns on its own."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _drone_hull(d, pal, move)
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"rig_drone_hull{variant_tag(variant)}{suffix}")
-
-
-def rig_drone_mount(variant: str) -> None:
-    """A drone's gun on the hull's canvas, turning about its centre."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _drone_gun(d, pal)
-    finish(img, px, f"rig_drone_mount{variant_tag(variant)}")
-
-
-def roc(variant: str, move: int = 0) -> None:
-    """Placeholder experimental gunship until its art is promoted: the hull
-    with both guns at rest facing ahead, for its portraits."""
-    px = 256
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _roc_hull(d, pal, move)
-    for cx, cy in ROC_GUN_PIVOTS:
-        _roc_gun(d, pal, cx, cy, 0)
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"roc{variant_tag(variant)}{suffix}")
-
-
-def rig_roc_hull(variant: str, move: int = 0) -> None:
-    """The gunship's hull without its guns, which the shell draws on their
-    mounts."""
-    px = 256
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _roc_hull(d, pal, move)
-    suffix = "" if move == 0 else f"_move{move}"
-    finish(img, px, f"rig_roc_hull{variant_tag(variant)}{suffix}")
-
-
-def rig_roc_mount(variant: str, action: int = 0) -> None:
-    """One of the gunship's guns on a one-tile canvas centred on its pivot,
-    barrel up: at rest, then recoiling and returning after a shot."""
-    px = 64
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    _roc_gun(d, pal, 32, 32, (0, 5, 2)[action])
-    suffix = "" if action == 0 else f"_action{action}"
-    finish(img, px, f"rig_roc_mount{variant_tag(variant)}{suffix}")
-
-
-def roc_cradle(variant: str) -> None:
-    """Placeholder 3x3 assembly cradle until its art is promoted: a braced
-    pad between four mooring masts, the gunship's winged outline marked on
-    the deck where its hull will lift off."""
-    px = 192
-    pal = PALETTES[variant]
-    img, d = canvas(px)
-    d.rounded_rectangle(
-        [s(6), s(6), s(186), s(186)], radius=s(12), fill=(*IRON_DARK, 255)
-    )
-    d.rounded_rectangle([s(18), s(18), s(174), s(174)], radius=s(8), fill=(*IRON, 255))
-    for offset in range(0, 156, 26):
-        d.line(
-            [(s(174 - offset), s(18)), (s(174), s(18 + offset))],
-            fill=(*IRON_LIGHT, 255),
-            width=s(2),
-        )
-    d.rounded_rectangle(
-        [s(74), s(34), s(118), s(160)],
-        radius=s(18),
-        outline=(*SCRAP_DARK, 255),
-        width=s(4),
-    )
-    d.rounded_rectangle(
-        [s(40), s(84), s(152), s(108)],
-        radius=s(10),
-        outline=(*SCRAP_DARK, 255),
-        width=s(4),
-    )
-    for x, y in ((10, 10), (150, 10), (10, 150), (150, 150)):
-        d.ellipse([s(x), s(y), s(x + 32), s(y + 32)], fill=(*IRON_LIGHT, 255))
-        d.ellipse([s(x + 8), s(y + 8), s(x + 24), s(y + 24)], fill=(*pal["base"], 255))
-    for x in (34, 150):
-        d.rectangle([s(x), s(88), s(x + 8), s(104)], fill=(*pal["light"], 255))
-    finish(img, px, f"roc_cradle{variant_tag(variant)}")
 
 
 def sapper(variant: str, move: int = 0) -> None:
@@ -3487,17 +3275,10 @@ def generate(output: Path) -> None:
             kestrel,
             skyhook,
             sapper,
-            roc,
-            rig_roc_hull,
-            drone,
-            rig_drone_hull,
         ):
             unit_fn(variant)
             for move in (1, 2):
                 unit_fn(variant, move)
-        rig_drone_mount(variant)
-        for action in range(3):
-            rig_roc_mount(variant, action)
         airworks(variant)
         for work in range(1, 4):
             airworks(variant, work)
@@ -3506,11 +3287,11 @@ def generate(output: Path) -> None:
             crucible(variant, work)
         barricade(variant)
         scuttle_charge(variant)
-        roc_cradle(variant)
     _install_finalized_sprite_bank()
     _install_finalized_environment_bank()
     _install_finalized_construction_bank()
     _install_maw_bank()
+    _install_roc_bank()
     accent_masks()
     icon_stop()
     icon_move()
