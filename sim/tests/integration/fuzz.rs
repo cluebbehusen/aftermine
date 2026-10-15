@@ -21,6 +21,7 @@ use crate::common;
 
 use chassis::grid::TilePos;
 use chassis::rng::Pcg32;
+use oxide_sim::command::RejectReason;
 use oxide_sim::stats::{BuildingKind, ORDER_QUEUE_CAP};
 use oxide_sim::{
     BuildingId, Command, Event, GameResult, OrderKey, PlayerCommand, PlayerId, Scenario, State,
@@ -200,7 +201,7 @@ fn tag_of(command: &Command) -> CommandTag {
 
 /// The whole roster — `apply_train` owes every one of them a verdict.
 /// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 19] = [
+const UNIT_KINDS: [UnitKind; 20] = [
     UnitKind::Harvester,
     UnitKind::Sentinel,
     UnitKind::Scuttler,
@@ -220,6 +221,7 @@ const UNIT_KINDS: [UnitKind; 19] = [
     UnitKind::Mantle,
     UnitKind::Piledriver,
     UnitKind::Surveyor,
+    UnitKind::Maw,
 ];
 
 fn unit_kind_index(kind: UnitKind) -> usize {
@@ -243,12 +245,13 @@ fn unit_kind_index(kind: UnitKind) -> usize {
         UnitKind::Mantle => 16,
         UnitKind::Piledriver => 17,
         UnitKind::Surveyor => 18,
+        UnitKind::Maw => 19,
     }
 }
 
 /// Every building kind, frame-bound and tech-gated ones included —
 /// hostile input must aim at all of them.
-const BUILDING_KINDS: [BuildingKind; 15] = [
+const BUILDING_KINDS: [BuildingKind; 16] = [
     BuildingKind::Foundry,
     BuildingKind::Turret,
     BuildingKind::Fabricator,
@@ -264,6 +267,7 @@ const BUILDING_KINDS: [BuildingKind; 15] = [
     BuildingKind::ScuttleCharge,
     BuildingKind::Spire,
     BuildingKind::Lattice,
+    BuildingKind::MawCradle,
 ];
 
 fn building_kind_index(kind: BuildingKind) -> usize {
@@ -283,6 +287,7 @@ fn building_kind_index(kind: BuildingKind) -> usize {
         BuildingKind::ScuttleCharge => 12,
         BuildingKind::Spire => 13,
         BuildingKind::Lattice => 14,
+        BuildingKind::MawCradle => 15,
     }
 }
 
@@ -672,6 +677,8 @@ struct Reach {
     /// Most producers rallied onto a unit at once.
     unit_rallies: usize,
     retired: u64,
+    /// Commands the one-per-player cap refused.
+    experimental_refused: u64,
     rounds: u64,
     launched: u64,
     intercepted: u64,
@@ -702,6 +709,7 @@ impl Reach {
         self.escorts = self.escorts.max(other.escorts);
         self.unit_rallies = self.unit_rallies.max(other.unit_rallies);
         self.retired += other.retired;
+        self.experimental_refused += other.experimental_refused;
         self.rounds += other.rounds;
         self.launched += other.launched;
         self.intercepted += other.intercepted;
@@ -747,6 +755,13 @@ fn arena() -> State {
             .units
             .push(common::unit(player, UnitKind::Surveyor, x, y));
     }
+    // Two Excavators per seat, so a cradle can fill its crew and turn a
+    // fifth worker away.
+    for (player, (x, y)) in [(0u8, (10, 8)), (0, (11, 8)), (1u8, (28, 15)), (1, (29, 15))] {
+        scenario
+            .units
+            .push(common::unit(player, UnitKind::Excavator, x, y));
+    }
     // A Crucible per seat, so retirements have somewhere to happen.
     scenario.buildings = vec![
         standing(0, BuildingKind::Turret, 12, 3),
@@ -763,8 +778,17 @@ fn arena() -> State {
         standing(1, BuildingKind::Spire, 36, 2),
         standing(1, BuildingKind::Lattice, 24, 21),
         standing(1, BuildingKind::Array, 19, 22),
+        // A Deep Bore per seat, refitted below, so cradles can be raised.
+        standing(0, BuildingKind::Extractor, 8, 4),
+        standing(1, BuildingKind::Extractor, 30, 18),
     ];
-    scenario.build().expect("the fuzz arena builds")
+    let mut d = serde_json::to_value(scenario.build().expect("the fuzz arena builds")).unwrap();
+    for b in d["buildings"].as_array_mut().unwrap() {
+        if b["kind"] == json!("extractor") {
+            b["tier"] = json!(1);
+        }
+    }
+    serde_json::from_value(d).unwrap()
 }
 
 fn found_claims(state: &State, player: PlayerId, kind: BuildingKind, anchor: TilePos) -> usize {
@@ -1109,8 +1133,102 @@ fn exercise_warhead_reach(state: &mut State) {
     state.validate_invariants().unwrap();
 }
 
+/// Seat 0 raises a Maw cradle with a full crew, turns a fifth worker away,
+/// and stands its Maw up, so the sweep fuzzes a living Maw and the one-per-
+/// player cap from its first command.
+fn exercise_assembly_reach(state: &mut State) {
+    let kind = BuildingKind::MawCradle;
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap()
+        .anchor;
+    let anchor = (0..12)
+        .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
+        .find(|&anchor| state.place_refusal(PlayerId(0), kind, anchor).is_none())
+        .expect("room for a cradle near seat 0's Foundry");
+    // The fastest workers first, so the fifth is no faster than the crew.
+    let mut workers: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|u| u.player == PlayerId(0) && u.kind.stats().harvest.is_some())
+        .map(|u| (std::cmp::Reverse(u.kind.stats().build_rate), u.id))
+        .collect();
+    workers.sort_unstable();
+    let workers: Vec<_> = workers.into_iter().map(|(_, id)| id).collect();
+    assert!(workers.len() > oxide_sim::stats::ASSEMBLY_CREW_CAP);
+    let raise = |units: &[oxide_sim::UnitId]| PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: units.to_vec(),
+            kind,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    };
+    let (crew, spare) = workers.split_at(oxide_sim::stats::ASSEMBLY_CREW_CAP);
+    let report = state.tick(&[raise(crew)]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::CommandRejected { .. })),
+        "the fuzz reach fixture must raise a cradle"
+    );
+    let report = state.tick(&[raise(&spare[..1])]);
+    assert!(
+        report.events.iter().any(|event| matches!(
+            event,
+            Event::CommandRejected {
+                reason: RejectReason::CrewFull,
+                ..
+            }
+        )),
+        "the fuzz reach fixture must turn a fifth worker away"
+    );
+    let mut started = false;
+    for _ in 0..600 {
+        state.tick(&[]);
+        started = state
+            .buildings()
+            .iter()
+            .any(|b| b.kind == kind && !b.unstarted());
+        if started {
+            break;
+        }
+    }
+    assert!(
+        started,
+        "the fuzz reach fixture's crew must start the cradle"
+    );
+    let build = kind.base_stats().construction.unwrap().build_ticks;
+    let mut d = serde_json::to_value(&*state).unwrap();
+    for b in d["buildings"].as_array_mut().unwrap() {
+        if b["kind"] == json!("maw_cradle") {
+            b["phase"] = json!({"phase": "site", "progress": build - 4});
+        }
+    }
+    *state = serde_json::from_value(d).unwrap();
+    let mut assembled = false;
+    for _ in 0..200 {
+        let report = state.tick(&[]);
+        assembled |= report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::UnitAssembled { .. }));
+        if assembled {
+            break;
+        }
+    }
+    assert!(assembled, "the fuzz reach fixture must stand a Maw up");
+    state.validate_invariants().unwrap();
+}
+
 fn fuzz_run(seed: u64) -> Run {
     let mut state = arena();
+    exercise_assembly_reach(&mut state);
     exercise_warhead_reach(&mut state);
     exercise_cancel_found_reach(&mut state);
     exercise_cancel_order_reach(&mut state);
@@ -1194,7 +1312,11 @@ fn fuzz_run(seed: u64) -> Run {
         }
         for event in &report.events {
             match event {
-                Event::CommandRejected { .. } => reach.rejected += 1,
+                Event::CommandRejected { reason, .. } => {
+                    reach.rejected += 1;
+                    reach.experimental_refused +=
+                        u64::from(*reason == RejectReason::ExperimentalLimit);
+                }
                 Event::UnitTrained { .. } => reach.trained += 1,
                 Event::BuildingCompleted { .. } => reach.completed += 1,
                 Event::BuildingSalvaged { .. } => reach.salvaged += 1,
@@ -1402,6 +1524,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must rally a producer onto a unit"
     );
     assert!(reach.retired > 0, "the sweep must take a unit apart");
+    assert!(
+        reach.experimental_refused > 0,
+        "the sweep must ask for a second Maw"
+    );
     assert!(reach.rounds > 0, "the sweep must assemble a round");
     assert!(reach.launched > 0, "the sweep must launch a warhead");
     assert!(reach.intercepted > 0, "the sweep must stop a warhead");

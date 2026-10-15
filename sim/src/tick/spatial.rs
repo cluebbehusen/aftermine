@@ -36,6 +36,10 @@ pub(super) struct UnitIndex {
     /// Which teams own bodies and buildings where, if [`survey`](Self::survey)
     /// ran since the last rebuild.
     presence: Option<Presence>,
+    /// The widest living body's radius, never below
+    /// [`SMALL_BODY_RADIUS`](crate::stats::SMALL_BODY_RADIUS): windows sized
+    /// by it widen only while a hull wider than a tile lives.
+    widest: chassis::fx::Fx,
 }
 
 /// How [`UnitIndex::starts`] buckets the entries.
@@ -94,6 +98,22 @@ fn team_bit(team: u8) -> Option<u32> {
 }
 
 impl UnitIndex {
+    /// Tiles a window must widen by to find every hull that reaches into
+    /// it: zero unless a hull wider than a tile lives.
+    pub(super) fn wide_reach(&self) -> i32 {
+        crate::stats::hull_excess(self.widest)
+            .ceil()
+            .to_num::<i32>()
+    }
+
+    /// Tiles either side of a body's own tile that can hold a body touching
+    /// it: the widest living pair of radii plus contact slack, rounded up.
+    pub(super) fn contact_window(&self) -> i32 {
+        (self.widest * 2 + super::reach::CONTACT_SLACK)
+            .ceil()
+            .to_num::<i32>()
+    }
+
     /// An empty index; [`rebuild`](Self::rebuild) before querying.
     pub(super) fn new() -> Self {
         Self {
@@ -105,6 +125,7 @@ impl UnitIndex {
             width: 0,
             height: 0,
             presence: None,
+            widest: crate::stats::SMALL_BODY_RADIUS,
         }
     }
 
@@ -114,6 +135,11 @@ impl UnitIndex {
     /// envelope permits.
     pub(super) fn rebuild(&mut self, units: &[Unit]) {
         self.presence = None;
+        self.widest = units
+            .iter()
+            .filter(|u| u.hp > 0)
+            .map(|u| u.kind.stats().radius)
+            .fold(crate::stats::SMALL_BODY_RADIUS, chassis::fx::Fx::max);
         self.unordered.clear();
         self.unordered.extend(
             units

@@ -80,7 +80,6 @@ pub(super) fn detonate_under_construction(
 }
 
 pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
-    let trigger_sq = CHARGE_TRIGGER_RADIUS * CHARGE_TRIGGER_RADIUS;
     for slot in 0..state.buildings.len() {
         let b = &state.buildings[slot];
         if b.kind != BuildingKind::ScuttleCharge || !b.built() || b.hp == 0 {
@@ -90,7 +89,11 @@ pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
             u.hp > 0
                 && state.hostile(b.player, u.player)
                 && u.domain() == Domain::Ground
-                && u.pos.dist_sq(b.center()) <= trigger_sq
+                && u.pos.dist_sq(b.center()) <= {
+                    let trigger =
+                        CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
+                    trigger * trigger
+                }
         });
         if tripped {
             detonate(state, slot, events);
@@ -103,6 +106,10 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
     let (id, owner, center) = (b.id, b.player, b.center());
     let blast_sq = CHARGE_BLAST_RADIUS * CHARGE_BLAST_RADIUS;
     let now = state.current_tick();
+    let units_blast = |u: &crate::state::Unit| {
+        let blast = CHARGE_BLAST_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
+        u.pos.dist_sq(center) <= blast * blast
+    };
     crate::vision::forget_observed_building(state, id, true);
     state.buildings[slot].hp = 0;
     events.push(Event::ChargeDetonated {
@@ -114,7 +121,7 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
         if u.hp > 0
             && state.players[owner.0 as usize].team != state.players[u.player.0 as usize].team
             && u.domain() == Domain::Ground
-            && u.pos.dist_sq(center) <= blast_sq
+            && units_blast(u)
         {
             super::damage::unit(u, CHARGE_DAMAGE, now, events);
         }

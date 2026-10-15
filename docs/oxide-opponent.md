@@ -49,8 +49,8 @@ selects actions in precedence order:
 
 1. emergency defense and recovery;
 2. the saving target, when it is affordable and can be placed;
-3. free wounded units to a calm Repair Bay with room, where they sit out
-   missions and welding while they heal;
+3. free wounded units to a calm Repair Bay with room, and wounded kiln machines
+   to safe known wreck, where they sit out missions and welding while they heal;
 4. workers, to keep harvesting saturated: every known node or wreck whose trip
    repays a Harvester within a stance and greed horizon, filled as stance and
    greed choose, with workers left without a place salvaging other known wreck;
@@ -100,9 +100,9 @@ the running total and mission state.
 - Missions recruit from available units in a fixed order (defend, local guard,
   settlement, lift, attack, clearance, strike, raid), and each takes only the
   roles it uses: attack takes line, siege, anti-air and anti-heavy units, with
-  Sappers and point defenders in support; raid takes Scuttlers, Sappers, or
-  ground-attack aircraft too few for a strike; lift takes carriers and a
-  payload; a clearance takes splash bombers while ground reaches no enemy.
+  Sappers, breachers and point defenders in support; raid takes Scuttlers,
+  Sappers, or ground-attack aircraft too few for a strike; lift takes carriers
+  and a payload; a clearance takes splash bombers while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
   that each meet the enemy alone. Other missions may run several of a kind at
@@ -186,29 +186,32 @@ instead of the order being proven in advance.
 
 Each behavior is proven by a staged scenario test.
 
-| Situation                            | Required response                                                                                                                                     |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enemy air seen                       | Anti-air proportional to seen enemy air                                                                                                               |
-| Enemy heavies seen                   | Anti-heavy units proportional to seen enemy heavies                                                                                                   |
-| Enemy Airworks seen                  | Raise the anti-air need before enemy air arrives                                                                                                      |
-| Ground threat at base or expansion   | Defend                                                                                                                                                |
-| Air raid on base or expansion        | Defend with anti-air or fighters                                                                                                                      |
-| Richer economy than the enemy        | Build toward larger attacks, ground and air                                                                                                           |
-| Known defenses at target or on route | Bring siege, or pick another target                                                                                                                   |
-| Ground-severed enemy                 | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire |
-| Local opportunity                    | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                          |
-| Losing a fight                       | Withdraw, with a threshold shaped by personality and difficulty                                                                                       |
-| Won a defense with army left         | Counterattack if the attack check passes                                                                                                              |
-| Enemy artillery shelling assets      | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                  |
-| Assets under indirect fire           | Target visible likely spotters                                                                                                                        |
-| Enemy unit mix                       | Choose units by coarse suitability against seen enemies                                                                                               |
-| Enemy shellfire known                | Point defenders in proportion to the heavy shots it fires, kept over the army                                                                         |
-| Expensive investment wanted          | Save for it while keeping an army share                                                                                                               |
-| Several enemies                      | Choose a target with hysteresis                                                                                                                       |
-| Wounded units and a calm Repair Bay  | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                           |
-| Known strike worth a warhead         | Build a Spire and its rounds; launch loaded Spires when the warheads past the known interceptors take at least their rounds' price                    |
-| Enemy Spire tech known               | A Lattice over the most valuable base for a Deep Bore or a seen Crucible; cover over every base when one enemy holds both                             |
-| Enemy Spire known                    | Lattice cover over each base in proportion to known enemy Spires, and radar where a Spire's line enters a guarded ring                                |
+| Situation                                                | Required response                                                                                                                                     |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enemy air seen                                           | Anti-air proportional to seen enemy air                                                                                                               |
+| Enemy heavies seen                                       | Anti-heavy units proportional to seen enemy heavies                                                                                                   |
+| Enemy Airworks seen                                      | Raise the anti-air need before enemy air arrives                                                                                                      |
+| Ground threat at base or expansion                       | Defend                                                                                                                                                |
+| Air raid on base or expansion                            | Defend with anti-air or fighters                                                                                                                      |
+| Richer economy than the enemy                            | Build toward larger attacks, ground and air                                                                                                           |
+| Known defenses at target or on route                     | Bring siege, or pick another target                                                                                                                   |
+| Ground-severed enemy                                     | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire |
+| Local opportunity                                        | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                          |
+| Losing a fight                                           | Withdraw, with a threshold shaped by personality and difficulty                                                                                       |
+| Won a defense with army left                             | Counterattack if the attack check passes                                                                                                              |
+| Enemy artillery shelling assets                          | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                  |
+| Assets under indirect fire                               | Target visible likely spotters                                                                                                                        |
+| Enemy unit mix                                           | Choose units by coarse suitability against seen enemies                                                                                               |
+| Enemy shellfire known                                    | Point defenders in proportion to the heavy shots it fires, kept over the army                                                                         |
+| Expensive investment wanted                              | Save for it while keeping an army share                                                                                                               |
+| Several enemies                                          | Choose a target with hysteresis                                                                                                                       |
+| Wounded units and a calm Repair Bay                      | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                           |
+| Known strike worth a warhead                             | Build a Spire and its rounds; launch loaded Spires when the warheads past the known interceptors take at least their rounds' price                    |
+| Enemy Spire tech known                                   | A Lattice over the most valuable base for a Deep Bore or a seen Crucible; cover over every base when one enemy holds both                             |
+| Enemy Spire known                                        | Lattice cover over each base in proportion to known enemy Spires, and radar where a Spire's line enters a guarded ring                                |
+| Known guns the army cannot attack, or an attack given up | Assemble a Maw where it can drive out of the base, crewed by the fastest free workers; it joins the next attack and cuts the nearest defense          |
+| Enemy cradle known                                       | Raise the anti-heavy need before its machine stands up, and keep it once the machine stands up out of sight                                           |
+| Wounded Maw and safe known wreck                         | Drive it where its hull fits and its kiln reaches the wreck, keep it there out of missions while its kiln feeds, and keep harvesters off that wreck   |
 
 It also covers scouting, where a point whose scout was lost on the way or found
 no safe view waits to go stale again rather than drawing scouts one after
@@ -219,7 +222,7 @@ timing, tech prerequisites, memory of failed objectives, a response to stalled
 production, focus fire, and pulling wounded units back between fights. It does
 no other per-unit micro, except keeping point defenders over the army they
 travel with. It builds every building kind, reaches every upgrade tier, and
-trains every unit kind.
+trains or assembles every unit kind.
 
 ## Difficulty, stance and personality
 

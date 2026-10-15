@@ -35,17 +35,20 @@ fn looks_agree_with_what_the_simulation_states() {
             stats.can_fight(),
             "{kind:?}: every kind that fights has a report"
         );
+        // An experimental's cutter belongs to its own rig.
         assert_eq!(
             look.tool.is_some(),
-            stats.harvest.is_some() || stats.contact_reach.is_some(),
+            stats.harvest.is_some() || (stats.contact_reach.is_some() && !kind.assembled()),
             "{kind:?}: a worker body belongs to the kinds that work with a tool"
         );
         assert!(
             look.belts.len().is_multiple_of(2),
             "{kind:?}: belt runs come in pairs"
         );
+        // The Maw's rig draws its approved treads frame by frame with the
+        // shared belts' mechanics instead.
         assert!(
-            look.gait != Gait::Treads || !look.belts.is_empty(),
+            look.gait != Gait::Treads || !look.belts.is_empty() || kind == UnitKind::Maw,
             "{kind:?}: every tracked hull runs the shared belts"
         );
     }

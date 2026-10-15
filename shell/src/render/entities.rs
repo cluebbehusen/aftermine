@@ -5,7 +5,7 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use crate::render::prim::{fill_circle, line_between, stroke_circle};
+use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, stroke_rect};
 
 /// The armed building follows the cursor as a translucent footprint. The
 /// tint and the command share the queue-aware placement verdict, so what
@@ -658,6 +658,58 @@ fn draw_defense_mount(
     }
 }
 
+/// Whether `cradle`'s crew works from its pads as far as `viewer` knows: the
+/// simulation puts it there while every pad is open ground. A rival's pads
+/// are judged only by what the viewer sees or remembers of them, so dropping
+/// them never reveals what stands in fog.
+fn crew_pads_in_use(
+    state: &oxide_sim::State,
+    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
+    cradle: &oxide_sim::Building,
+    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+) -> bool {
+    let vision = state.vision(viewer);
+    pads.iter().all(|&(dx, dy)| {
+        let pad = cradle.anchor.offset(dx, dy);
+        let Some(tile) = state.map().tile(pad) else {
+            return false;
+        };
+        if all_seeing || cradle.player == viewer || vision.visible(pad) {
+            return state.passable(pad);
+        }
+        let rock = vision.explored(pad) && tile.terrain.blocks_ground();
+        let covered = vision.ghosts().iter().any(|ghost| {
+            let (w, h) = ghost.kind.size();
+            (ghost.anchor.x..ghost.anchor.x + w).contains(&pad.x)
+                && (ghost.anchor.y..ghost.anchor.y + h).contains(&pad.y)
+        });
+        !rock && !covered && vision.remembered_scrap(pad) == 0
+    })
+}
+
+/// Which of a cradle's crew places are worked right now: a crew member
+/// stands on the pad, stopped and at work. A rival's place lights only while
+/// the viewer sees its pad.
+fn crew_lamps(
+    state: &oxide_sim::State,
+    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
+    cradle: &oxide_sim::Building,
+    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+) -> [bool; oxide_sim::stats::ASSEMBLY_CREW_CAP] {
+    let crew = state.cradle_crew(cradle.id);
+    pads.map(|(dx, dy)| {
+        let pad = cradle.anchor.offset(dx, dy);
+        let seen = cradle.player == viewer || all_seeing || state.vision(viewer).visible(pad);
+        seen && crew.iter().any(|&id| {
+            state.unit(id).is_some_and(|unit| {
+                unit.tile() == pad
+                    && unit.work_stopped()
+                    && state.in_building_work_reach(unit, cradle.id)
+            })
+        })
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one draw pass over every building and its dressing"
@@ -694,7 +746,9 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         && known.kind == ghost.kind
                         && known.anchor == ghost.anchor
                 })
-                .map_or((ghost.tier, ghost.built), |known| (known.tier, true));
+                .map_or((ghost.tier, ghost.built), |known| {
+                    (known.tier, known.progress.is_none())
+                });
             let visible = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| ghost.anchor.offset(dx, dy)))
                 .any(|t| game.my_vision().visible(t));
@@ -864,6 +918,35 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     source: Some(accent_source),
                     ..Default::default()
                 },
+            );
+        }
+        if let Some(site) = animation.construction
+            && let Some(rigs) = sprites.maw_rigs()
+            && let Some(pads) = building.kind.crew_pads()
+        {
+            let viewer = (game.presentation.human, game.presentation.all_seeing());
+            if crew_pads_in_use(game.state, viewer, building, pads) {
+                super::maw::draw_crew_places(
+                    sprites,
+                    &rigs.cradle,
+                    (screen, dest, building.kind.size()),
+                    pads,
+                    crew_lamps(game.state, viewer, building, pads),
+                    zoom,
+                );
+            }
+            let welding = matches!(
+                frame.body,
+                super::motion::BuildingBodyFrame::Construction { phase: 1, .. }
+            );
+            super::maw::draw_crane(
+                sprites,
+                &rigs.cradle,
+                (screen, dest),
+                accent_tint,
+                site.progress,
+                welding,
+                zoom,
             );
         }
         if let Some(layers) = array_layers {
@@ -2133,10 +2216,12 @@ pub(crate) fn blip_strokes(
     }
 }
 
-/// Hostile Deep Bores every seat knows of, drawn above the fog wherever no
+/// Hostile buildings every seat knows of, drawn above the fog wherever no
 /// footprint tile is in sight: corner brackets around the footprint and a
-/// drill bit inside, so shape alone tells them from radar blips and
-/// remembered buildings; the owner's color only confirms whose it is.
+/// glyph inside, so shape alone tells them from radar blips and remembered
+/// buildings; the owner's color only confirms whose it is. A Deep Bore shows
+/// a drill bit; an assembly cradle the hull it raises and a bar of its
+/// progress.
 pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
     if game.presentation.all_seeing() {
         return;
@@ -2169,6 +2254,41 @@ pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
         }
         let centre = (low + high) * 0.5;
         let r = zoom * 0.45;
+        if let Some(progress) = public.progress {
+            let build = public
+                .kind
+                .base_stats()
+                .construction
+                .map_or(1, |c| c.build_ticks.max(1));
+            let hull = vec2(zoom * 0.7, zoom * 0.9);
+            stroke_rect(
+                Rect::new(
+                    centre.x - hull.x,
+                    centre.y - hull.y,
+                    hull.x * 2.0,
+                    hull.y * 2.0,
+                ),
+                2.0,
+                color,
+            );
+            let bar = Rect::new(
+                low.x + arm,
+                high.y - zoom * 0.35,
+                high.x - low.x - 2.0 * arm,
+                zoom * 0.18,
+            );
+            fill_rect(bar, Color::new(0.0, 0.0, 0.0, 0.6));
+            fill_rect(
+                Rect::new(
+                    bar.x,
+                    bar.y,
+                    bar.w * progress.min(build) as f32 / build as f32,
+                    bar.h,
+                ),
+                BONE,
+            );
+            continue;
+        }
         let (left, right, tip) = (
             centre + vec2(-r * 0.55, -r * 0.1),
             centre + vec2(r * 0.55, -r * 0.1),

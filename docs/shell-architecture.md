@@ -686,8 +686,9 @@ player-knowledge view for players and agents; bots read the equivalent
 `ObservationData`, and a parity test keeps the two in agreement. It hides
 hostile intent and economy, exposes enemies under current sight, and otherwise
 supplies only recorded ghosts, remembered salvage, radar contacts that name only
-air or ground, and public buildings such as Deep Bores. Player-facing commands
-and effects must respect that knowledge boundary.
+air or ground, and public buildings such as Deep Bores and started assembly
+cradles. Player-facing commands and effects must respect that knowledge
+boundary.
 
 ## Rendering and audio
 
@@ -801,8 +802,13 @@ claims, apparent buildings, and remembered salvage with world rendering. Ghosts
 remain distinct from live observations and draw at the tier they were last seen
 at, or at a public building's tier when every seat knows it. A public enemy Deep
 Bore out of sight draws above the fog as corner brackets and a drill glyph in
-its owner's color, and as an outlined footprint on the minimap. Markers do not
-change entity positions, selection, picking, or simulation.
+its owner's color, and as an outlined footprint on the minimap. A public enemy
+assembly cradle draws its brackets around a hull outline over a bar of its
+progress, and its minimap outline fills from the bottom as its crew raises it.
+The first time a seat learns of one, and when it stands up its machine, the seat
+gets an alert whose badge names the machine and whose minimap pulse is a square
+rather than a ring. Markers do not change entity positions, selection, picking,
+or simulation.
 
 A seat's own and allied missiles draw, and their motor loops play, wherever they
 fly, as its units do; a hostile warhead or interceptor only while the viewer
@@ -829,6 +835,20 @@ the warhead on a moment to meet an interceptor leaving as it is reported. Pods
 hold their shot's bearing and swing back north to reload. The first time a seat
 knows of a hostile warhead it gets an alert at the impact once known, or where
 the warhead flies.
+
+A Maw draws from runtime layers on its unit canvas. Each side's belts roll with
+that side's travel, so a pivot turns them against each other. Its drum lowers
+and spins while its own hits are recent or its kiln has wreck to eat
+(`State::kiln_fuel`), and stows when both end. While the kiln feeds, scrap rides
+the conveyor from the hood and heats on its way into the kiln, which glows while
+it burns; the belt runs on until its last load is in. An assembly cradle's site
+fades the stowed Maw in through the building opacity steps, facing east as the
+finished machine stands up, under a bridge crane whose place follows assembly
+progress, so it moves only while a crew raises the Maw. Its crew pads draw
+beside it while the crew works from them, as far as the viewer knows, and each
+pad's lamp lights while a crew member works from that pad; a rival's lamp lights
+only while the viewer sees the pad. A Maw first met, as after a seek, starts in
+the steady state of what it is doing.
 
 Settings persists marker timing presets (Standard, Earlier, Later) and size in
 `Config::markers`, applying changes immediately. A config without marker

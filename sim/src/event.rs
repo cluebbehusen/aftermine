@@ -400,6 +400,20 @@ pub enum Event {
         /// Impact point.
         at: Vec2Fx,
     },
+    /// A cradle's last work finished: the cradle is gone and its
+    /// experimental stands where it was.
+    UnitAssembled {
+        /// The cradle, no longer in the world.
+        cradle: BuildingId,
+        /// The machine that stood up.
+        unit: UnitId,
+        /// Its kind.
+        kind: UnitKind,
+        /// Its owner.
+        player: PlayerId,
+        /// Where it stands.
+        pos: Vec2Fx,
+    },
 }
 
 /// The source of an accepted unit repair.
@@ -415,6 +429,11 @@ pub enum UnitRepairSource {
     RepairBay {
         /// The Repair Bay supplying the pulse.
         building: BuildingId,
+    },
+    /// The machine's own kiln, fed one unit of wreck from this tile.
+    Kiln {
+        /// Where the wreck came from.
+        tile: TilePos,
     },
 }
 
@@ -481,4 +500,7 @@ pub enum StallReason {
     /// A scout found no safe way to see its goal before its caution ran
     /// out and gave that leg up. A patrol lap passes silently.
     NoSafeVantage,
+    /// A queued build reached a cradle whose crew was already full of
+    /// workers at least as fast, so the worker moved on.
+    CrewFull,
 }

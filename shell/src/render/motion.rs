@@ -297,7 +297,8 @@ pub(crate) fn production_frames(kind: BuildingKind) -> Option<usize> {
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
-        | BuildingKind::Lattice => None,
+        | BuildingKind::Lattice
+        | BuildingKind::MawCradle => None,
     }
 }
 
@@ -374,7 +375,8 @@ fn unit_preparation_frame(kind: UnitKind, progress: f32) -> usize {
         | UnitKind::Skyhook
         | UnitKind::Sapper
         | UnitKind::Mantle
-        | UnitKind::Surveyor => 0,
+        | UnitKind::Surveyor
+        | UnitKind::Maw => 0,
     }
 }
 
@@ -419,7 +421,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Skyhook
             | UnitKind::Sapper
             | UnitKind::Mantle
-            | UnitKind::Surveyor => 0,
+            | UnitKind::Surveyor
+            | UnitKind::Maw => 0,
         },
         AttackPhase::Recover { progress, .. } => match kind {
             UnitKind::Avalanche => 2,
@@ -439,7 +442,8 @@ fn unit_attack_frame(kind: UnitKind, attack: AttackPhase) -> usize {
             | UnitKind::Skyhook
             | UnitKind::Sapper
             | UnitKind::Mantle
-            | UnitKind::Surveyor => 0,
+            | UnitKind::Surveyor
+            | UnitKind::Maw => 0,
         },
     }
 }
@@ -462,7 +466,8 @@ fn defense_preparation_frame(kind: BuildingKind, progress: f32) -> Option<usize>
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
-        | BuildingKind::Lattice => None,
+        | BuildingKind::Lattice
+        | BuildingKind::MawCradle => None,
     }
 }
 
@@ -489,7 +494,8 @@ fn defense_attack_frame(kind: BuildingKind, attack: AttackPhase) -> Option<usize
             | BuildingKind::Barricade
             | BuildingKind::ScuttleCharge
             | BuildingKind::Spire
-            | BuildingKind::Lattice,
+            | BuildingKind::Lattice
+            | BuildingKind::MawCradle,
             _,
         ) => return None,
     })

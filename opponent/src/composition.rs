@@ -71,7 +71,8 @@ pub(crate) fn role(kind: UnitKind) -> Option<Role> {
         | UnitKind::Sapper
         | UnitKind::Kestrel
         | UnitKind::Surveyor
-        | UnitKind::Skyhook => None,
+        | UnitKind::Skyhook
+        | UnitKind::Maw => None,
     }
 }
 
@@ -190,6 +191,14 @@ impl Enemy {
         for building in &observation.enemy_buildings {
             if building.kind == BuildingKind::Airworks {
                 enemy.air += 200;
+            }
+            // A known cradle is the heavy machine it will stand up, before it
+            // does: anti-heavy fire wants to be ready for it. One seat holds a
+            // cradle or its machine, never both, so nothing counts twice.
+            if let Some(machine) = building.kind.assembles() {
+                let value = u64::from(machine.stats().cost);
+                enemy.ground += value;
+                enemy.heavy += value;
             }
             if DEFENSES.contains(&building.kind) {
                 enemy.defenses += crate::missions::building_value(building);

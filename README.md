@@ -51,6 +51,8 @@ The main strategic layers:
 - persistent wreck salvage, so holding a battlefield has economic value;
 - strategic missiles: a Spire's warhead strikes any tile, and only a
   radar-backed Lattice that has tracked it can stop it;
+- an experimental breacher, the Maw, that workers assemble in a cradle every
+  player can see, and that heals only by eating wreck;
 - free-for-all and team maps as well as conventional duels.
 
 The in-game Roster is the best reference for exact units, buildings, costs,

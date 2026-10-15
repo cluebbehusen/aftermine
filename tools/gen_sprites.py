@@ -226,6 +226,13 @@ def _install_finalized_construction_bank() -> None:
     install_finalized_construction(REGISTRY, OUT)
 
 
+def _install_maw_bank() -> None:
+    """Installs the Maw, its runtime layers and its cradle."""
+    from tools.production_sprite_sources.maw_final import install_maw
+
+    install_maw(REGISTRY, OUT)
+
+
 def accent_masks() -> None:
     """Derives one allegiance-accent mask per probe render, then drops the
     probe renders from the registry.
@@ -3247,6 +3254,7 @@ def generate(output: Path) -> None:
     _install_finalized_sprite_bank()
     _install_finalized_environment_bank()
     _install_finalized_construction_bank()
+    _install_maw_bank()
     accent_masks()
     icon_stop()
     icon_move()

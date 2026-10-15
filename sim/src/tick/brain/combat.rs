@@ -46,29 +46,62 @@ fn shot_crosses(state: &State, t: TilePos, full: bool) -> bool {
     })
 }
 
-fn within_weapon_reach(weapon: &WeaponStats, distance_sq: chassis::fx::Fx) -> bool {
-    distance_sq <= weapon.range * weapon.range
-        && distance_sq >= weapon.minimum_range * weapon.minimum_range
+/// Whether `weapon` reaches a target `distance_sq` from it whose hull
+/// reaches `excess` past a small body's, so a wide machine is hit at its
+/// edge rather than only at its centre.
+fn within_weapon_reach(weapon: &WeaponStats, distance_sq: chassis::fx::Fx, excess: Fx) -> bool {
+    let range = weapon.range + excess;
+    distance_sq <= range * range && distance_sq >= weapon.minimum_range * weapon.minimum_range
 }
 
-/// How far `kind`'s `weapon` reaches `target`: a contact weapon reaches no
-/// further than the two hulls plus its contact reach.
-fn unit_weapon_reach(
+/// Whether a hit on `victim` counts as a hit on a structure: a building, or
+/// a machine built like one.
+fn struck_as_structure(state: &State, victim: Target) -> bool {
+    match victim {
+        Target::Building(_) => true,
+        Target::Unit(id) => state.unit(id).is_some_and(|u| u.kind.stats().structural),
+    }
+}
+
+/// Damage one hit of `weapon` deals `victim`: its structure damage against
+/// a structure, where it has one.
+fn damage_against(state: &State, weapon: &WeaponStats, victim: Target) -> u32 {
+    match weapon.building_damage {
+        Some(damage) if struck_as_structure(state, victim) => damage,
+        _ => weapon.damage,
+    }
+}
+
+/// How far past a small body's the hull of `target` reaches: zero for a
+/// building and for every machine up to the Breaker's radius.
+fn target_excess(state: &State, target: Target) -> Fx {
+    match target {
+        Target::Unit(id) => state.unit(id).map_or(Fx::ZERO, |u| {
+            crate::stats::hull_excess(u.kind.stats().radius)
+        }),
+        Target::Building(_) => Fx::ZERO,
+    }
+}
+
+/// How far `kind`'s `weapon` reaches `target`, measured to its centre: to
+/// a wide hull's edge, and for a contact weapon no further than the two
+/// hulls plus its contact reach. `None` is a target known only by where
+/// it is, with no hull to measure.
+pub(in crate::tick) fn unit_weapon_reach(
     state: &State,
     kind: crate::UnitKind,
-    target: Target,
+    target: Option<Target>,
     weapon: &WeaponStats,
 ) -> Fx {
+    let excess = target.map_or(Fx::ZERO, |target| target_excess(state, target));
     let Some(reach) = kind.stats().contact_reach else {
-        return weapon.range;
+        return weapon.range + excess;
     };
     let target_radius = match target {
-        Target::Unit(id) => state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius),
-        Target::Building(_) => Fx::ZERO,
+        Some(Target::Unit(id)) => state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius),
+        Some(Target::Building(_)) | None => Fx::ZERO,
     };
-    weapon
-        .range
-        .min(kind.stats().radius + target_radius + reach)
+    (weapon.range + excess).min(kind.stats().radius + target_radius + reach)
 }
 
 fn within_unit_weapon_reach(
@@ -78,7 +111,7 @@ fn within_unit_weapon_reach(
     weapon: &WeaponStats,
     distance_sq: Fx,
 ) -> bool {
-    let range = unit_weapon_reach(state, kind, target, weapon);
+    let range = unit_weapon_reach(state, kind, Some(target), weapon);
     distance_sq <= range * range && distance_sq >= weapon.minimum_range * weapon.minimum_range
 }
 
@@ -365,10 +398,11 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
             }
         }
         for u in &state.units {
+            let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
             if u.hp == 0
                 || !state.hostile(shell.player, u.player)
                 || !shell.targets.covers(u.domain())
-                || u.pos.dist_sq(shell.impact) > radius_sq
+                || u.pos.dist_sq(shell.impact) > reach * reach
             {
                 continue;
             }
@@ -411,18 +445,19 @@ fn buffer_shot(
         state,
         attacker,
         victim,
-        weapon.damage,
+        damage_against(state, weapon, victim),
         from,
         aim,
     ));
     let Some(radius) = weapon.splash else { return };
-    let radius_sq = radius * radius;
     for u in &state.units {
+        // A wide hull is caught once the blast reaches its edge.
+        let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
         if u.hp == 0
             || !state.hostile(attacker_owner, u.player)
             || Target::Unit(u.id) == victim
             || !weapon.targets.covers(u.domain())
-            || u.pos.dist_sq(aim) > radius_sq
+            || u.pos.dist_sq(aim) > reach * reach
         {
             continue;
         }
@@ -444,7 +479,7 @@ fn buffer_shot(
                 || !b.kind.is_stealthy()
                 || !state.hostile(attacker_owner, b.player)
                 || Target::Building(b.id) == victim
-                || b.center().dist_sq(aim) > radius_sq
+                || b.center().dist_sq(aim) > radius * radius
             {
                 continue;
             }
@@ -519,7 +554,7 @@ pub(super) fn turret_fire(
         // point sits on an edge. Positions hold still through the brain
         // phase, so the phase's index and survey still describe them.
         let home = TilePos::containing(center);
-        let reach = atk.range.floor().to_num::<i32>() + 1;
+        let reach = atk.range.floor().to_num::<i32>() + 1 + index.wide_reach();
         let hostiles = index.hostiles_near(state.player(me).team, home, reach + 1);
         let unit_victim = (focused_victim.is_none() && hostiles.bodies)
             .then(|| {
@@ -530,8 +565,11 @@ pub(super) fn turret_fire(
                         state.hostile(me, u.player) && u.hp > 0 && atk.targets.covers(u.domain())
                     })
                     .filter(|u| state.sees_unit(me, u))
+                    .filter(|u| {
+                        let excess = crate::stats::hull_excess(u.kind.stats().radius);
+                        within_weapon_reach(atk, center.dist_sq(u.pos), excess)
+                    })
                     .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()))
-                    .filter(|(d, _, _, _)| within_weapon_reach(atk, *d))
                     .filter(|(_, _, pos, dom)| {
                         let full = traces_terrain(atk, Domain::Ground, *dom);
                         !chassis::path::line_blocked(center, *pos, |t| shot_open(t, full))
@@ -559,7 +597,7 @@ pub(super) fn turret_fire(
                     let aim = target.closest_point_to(center);
                     (center.dist_sq(aim), target.id, aim)
                 })
-                .filter(|(distance, _, _)| within_weapon_reach(atk, *distance))
+                .filter(|(distance, _, _)| within_weapon_reach(atk, *distance, Fx::ZERO))
                 .filter(|(_, _, aim)| {
                     let full = traces_terrain(atk, Domain::Ground, Domain::Ground);
                     shot_open(TilePos::containing(*aim), full)
@@ -686,7 +724,7 @@ fn retreat_to_firing_stand(
         };
         let Some(aim) = aim else { return false };
         let distance_sq = position.dist_sq(aim);
-        if !within_weapon_reach(weapon, distance_sq) {
+        if !within_weapon_reach(weapon, distance_sq, target_excess(state, target)) {
             return false;
         }
         let shot_open = |tile| shot_crosses(state, tile, full);
@@ -829,7 +867,7 @@ pub(super) fn acquire_escort_target(
                     else {
                         return false;
                     };
-                    let range = unit_weapon_reach(state, kind, target, weapon);
+                    let range = unit_weapon_reach(state, kind, Some(target), weapon);
                     let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
                     reach.reaches(state, id, stands)
                 }),
@@ -890,18 +928,57 @@ fn acquire_target_within(
     let aggro_sq = acquisition_range * acquisition_range;
 
     let home = TilePos::containing(pos);
-    let reach = acquisition_range.floor().to_num::<i32>() + 1;
+    let reach = acquisition_range.floor().to_num::<i32>() + 1 + index.wide_reach();
     let team = state.player(me).team;
+    // A breacher looks for a structure first, and strikes a machine only
+    // when none stands in reach and the machine is already within the
+    // weapon's own reach: it never sets off after one.
+    let buildings_first = stats.target_priority == crate::stats::TargetPriority::Buildings;
     // Lower ranks first: the nearest, or for a heavy-first gun the most
     // full health and then the nearest.
     let heft = |kind: crate::stats::UnitKind| match stats.target_priority {
-        crate::stats::TargetPriority::Nearest => 0,
+        crate::stats::TargetPriority::Nearest | crate::stats::TargetPriority::Buildings => 0,
         crate::stats::TargetPriority::Heaviest => u32::MAX - kind.stats().max_hp,
     };
     let mut unit_target: Option<(u32, chassis::fx::Fx, UnitId)> = None;
     // A building in acquisition range covers a tile within `reach` of the
     // unit's tile, or the next one where its closest point sits on an edge.
     let hostiles = index.hostiles_near(team, home, reach + 1);
+    let nearest_building = |accept: &mut dyn FnMut(Target) -> bool| {
+        if !stats.can_target(Domain::Ground) {
+            return None;
+        }
+        let candidates = if hostiles.buildings {
+            state.buildings()
+        } else {
+            index.buildings_since_survey(state.buildings())
+        };
+        candidates
+            .iter()
+            .filter(|b| state.hostile(me, b.player) && b.hp > 0)
+            .map(|b| (pos.dist_sq(b.closest_point_to(pos)), b))
+            // Range gates run before the knowledge gates: apparency for a
+            // buried charge scans every friendly scout and radar mast. The
+            // filters commute, so ordering only saves work.
+            .filter(|(d, _)| {
+                *d <= aggro_sq
+                    && stats.weapons.iter().any(|weapon| {
+                        weapon.targets.covers(Domain::Ground)
+                            && *d >= weapon.minimum_range * weapon.minimum_range
+                    })
+            })
+            // An undetected buried charge must never be auto-attacked: that
+            // would leak its existence to the attacker's owner.
+            .filter(|(_, b)| state.building_apparent(me, b))
+            .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
+            .map(|(d, b)| (d, b.id))
+            .filter(|&(_, bid)| accept(Target::Building(bid)))
+            .min()
+            .map(|(_, bid)| Target::Building(bid))
+    };
+    if buildings_first && let Some(building) = nearest_building(&mut accept) {
+        return Some(building);
+    }
     // An army at rest far from any enemy is the common case: the survey
     // proves the window holds no hostile body before any row is walked.
     if hostiles.bodies {
@@ -920,8 +997,16 @@ fn acquire_target_within(
                     weapon.targets.covers(u.domain())
                         && d >= weapon.minimum_range * weapon.minimum_range
                 });
+                // A wide hull is in aggro range once its edge is.
+                let aggro = acquisition_range + crate::stats::hull_excess(u.kind.stats().radius);
+                let in_reach = !buildings_first
+                    || stats.weapons.iter().any(|w| {
+                        w.targets.covers(u.domain())
+                            && within_unit_weapon_reach(state, unit.kind, Target::Unit(u.id), w, d)
+                    });
                 let rank = (heft(u.kind), d, u.id);
-                if !(d <= aggro_sq
+                if !(d <= aggro * aggro
+                    && in_reach
                     && outside_dead_zone
                     && unit_target.is_none_or(|best| rank < best))
                 {
@@ -938,7 +1023,7 @@ fn acquire_target_within(
                         .iter()
                         .find(|w| w.targets.covers(u.domain()))
                         .map_or(chassis::fx::Fx::ZERO, |w| {
-                            unit_weapon_reach(state, unit.kind, Target::Unit(u.id), w)
+                            unit_weapon_reach(state, unit.kind, Some(Target::Unit(u.id)), w)
                         });
                     if chase_stand_ins(state, stats.domain, victim_tile, u.pos, range).is_empty() {
                         continue;
@@ -954,36 +1039,10 @@ fn acquire_target_within(
     if let Some((_, _, uid)) = unit_target {
         return Some(Target::Unit(uid));
     }
-    if !stats.can_target(Domain::Ground) {
+    if buildings_first {
         return None;
     }
-    let candidates = if hostiles.buildings {
-        state.buildings()
-    } else {
-        index.buildings_since_survey(state.buildings())
-    };
-    candidates
-        .iter()
-        .filter(|b| state.hostile(me, b.player) && b.hp > 0)
-        .map(|b| (pos.dist_sq(b.closest_point_to(pos)), b))
-        // Range gates run before the knowledge gates: apparency for a
-        // buried charge scans every friendly scout and radar mast. The
-        // filters commute, so ordering only saves work.
-        .filter(|(d, _)| {
-            *d <= aggro_sq
-                && stats.weapons.iter().any(|weapon| {
-                    weapon.targets.covers(Domain::Ground)
-                        && *d >= weapon.minimum_range * weapon.minimum_range
-                })
-        })
-        // An undetected buried charge must never be auto-attacked: that
-        // would leak its existence to the attacker's owner.
-        .filter(|(_, b)| state.building_apparent(me, b))
-        .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
-        .map(|(d, b)| (d, b.id))
-        .filter(|&(_, bid)| accept(Target::Building(bid)))
-        .min()
-        .map(|(_, bid)| Target::Building(bid))
+    nearest_building(&mut accept)
 }
 
 /// Keeps an advance moving while the primary weapon takes a shot that is
@@ -1027,7 +1086,7 @@ pub(super) fn advance(
         return;
     }
     let (pos, home, me, kind) = (unit.pos, unit.tile(), unit.player, unit.kind);
-    let reach = weapon.range.floor().to_num::<i32>() + 1;
+    let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
     let shot_open = |t: TilePos, full: bool| shot_crosses(state, t, full);
 
     let mut unit_target: Option<(chassis::fx::Fx, UnitId, Vec2Fx)> = None;
@@ -1187,16 +1246,17 @@ fn sapper_attack(
         state.unit_mut(id).expect("caller checked").clear_program();
         return;
     }
-    let reach = demolition.contact_range;
+    let reach = demolition.contact_range + target_excess(state, target);
     if pos.dist_sq(aim_point) <= reach * reach {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.path = None;
         if !super::super::movement::steer_weapon_heading(unit, aim_point - pos) {
             return;
         }
-        let direct = match target {
-            Target::Building(_) => demolition.structure_damage,
-            Target::Unit(_) => demolition.splash_damage,
+        let direct = if struck_as_structure(state, target) {
+            demolition.structure_damage
+        } else {
+            demolition.splash_damage
         };
         hits.push(PendingHit::along(
             state,
@@ -1206,14 +1266,13 @@ fn sapper_attack(
             pos,
             aim_point,
         ));
-        let ring = demolition.blast_radius;
-        let ring_sq = ring * ring;
         for u in &state.units {
+            let ring = demolition.blast_radius + crate::stats::hull_excess(u.kind.stats().radius);
             if u.hp == 0
                 || !state.hostile(me, u.player)
                 || Target::Unit(u.id) == target
                 || u.domain() != Domain::Ground
-                || u.pos.dist_sq(aim_point) > ring_sq
+                || u.pos.dist_sq(aim_point) > ring * ring
             {
                 continue;
             }
@@ -1371,7 +1430,8 @@ fn bomber_attack(
         }),
     };
     let to_target = aim_point - pos;
-    let in_range = within_weapon_reach(weapon, pos.dist_sq(aim_point));
+    let in_range =
+        within_weapon_reach(weapon, pos.dist_sq(aim_point), target_excess(state, target));
     let hv = chassis::compass::dir(heading);
     let ahead = hv.x * to_target.x + hv.y * to_target.y
         >= to_target.length() * crate::stats::BOMBER_CONE_DOT;
@@ -1813,7 +1873,7 @@ pub(super) fn attack(
             let direct = state.passable_for(stats.domain, target_tile);
             // A stand-in must lie within the reach the trigger checks, or
             // the chaser parks where it can never fire.
-            let reach = unit_weapon_reach(state, kind, target, weapon);
+            let reach = unit_weapon_reach(state, kind, Some(target), weapon);
             // Repath when the target has drifted a tile from the
             // path's goal — cheap pursuit without per-tick A*. A path
             // already aimed at a firing position for this victim stays
@@ -1956,7 +2016,7 @@ fn sidearm_victim(
     // |Δpos| <= range on either axis puts the victim's tile within
     // floor(range) + 1 of the shooter's — the acquire_target bound.
     let home = TilePos::containing(shooter_pos);
-    let reach = weapon.range.floor().to_num::<i32>() + 1;
+    let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
     let mut victim: Option<(chassis::fx::Fx, UnitId, Vec2Fx, Domain)> = None;
     for dy in -reach..=reach {
         for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
@@ -1970,7 +2030,7 @@ fn sidearm_victim(
                 continue;
             }
             let d = shooter_pos.dist_sq(u.pos);
-            if !within_weapon_reach(weapon, d) {
+            if !within_weapon_reach(weapon, d, crate::stats::hull_excess(u.kind.stats().radius)) {
                 continue;
             }
             // Pay for the line trace only when the candidate would win;
@@ -2051,7 +2111,13 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
     };
     let stats = unit.kind.stats();
     let attacker_domain = target_domain(state, attacker);
-    if unit.hp == 0 || !stats.can_target(attacker_domain) {
+    // A breacher answers a building that hits it, which is its work, but
+    // never turns on a machine.
+    if unit.hp == 0
+        || !stats.can_target(attacker_domain)
+        || (stats.target_priority == crate::stats::TargetPriority::Buildings
+            && matches!(attacker, Target::Unit(_)))
+    {
         return;
     }
     // Answering fire needs sight: chasing a shell lobbed from beyond every
@@ -2166,7 +2232,7 @@ fn approach_firing_area(
         let aim = b.closest_point_to(point);
         state.passable_for(domain, TilePos::containing(point))
             && crate::tick::crowding::standable(state, unit, point)
-            && within_weapon_reach(weapon, point.dist_sq(aim))
+            && within_weapon_reach(weapon, point.dist_sq(aim), Fx::ZERO)
             && shot_crosses(state, TilePos::containing(aim), full)
             && !chassis::path::line_blocked(point, aim, |t| shot_crosses(state, t, full))
     };

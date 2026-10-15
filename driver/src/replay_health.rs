@@ -406,6 +406,7 @@ impl Pass {
                     self.death(event, now);
                 }
                 Event::UnitTrained { kind, player, .. }
+                | Event::UnitAssembled { kind, player, .. }
                     if report.tick >= LATE_TICK && kind.stats().can_fight() =>
                 {
                     *self.late[usize::from(player.0)]

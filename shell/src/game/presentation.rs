@@ -10,6 +10,15 @@ use macroquad::prelude::{Vec2, vec2};
 use oxide_sim::{Building, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitId};
 use std::collections::HashMap;
 
+/// What an alert warns of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertKind {
+    /// Own forces under fire, or a hostile warhead inbound.
+    Attack,
+    /// A hostile experimental of this kind is assembling or has stood up.
+    Assembly(oxide_sim::UnitKind),
+}
+
 pub struct Presentation {
     /// The seat local input controls.
     pub human: PlayerId,
@@ -42,12 +51,16 @@ pub struct Presentation {
     pub(crate) pod_shots: HashMap<(u32, u8), (f32, f32)>,
     /// Hostile warheads already announced, so each warns once.
     pub(crate) warned_warheads: std::collections::HashSet<oxide_sim::WarheadId>,
+    /// Hostile assembly cradles already announced, by owner and anchor, so
+    /// each warns once.
+    pub(crate) warned_cradles: std::collections::BTreeSet<(u8, i32, i32)>,
     /// Interceptors in flight ahead of their forecast stops.
     pub(crate) prelaunches: Vec<super::fx::Prelaunch>,
     /// Action-driven authored sprite state. This remembers only transient
     /// output events; clearing it never changes simulation truth.
     pub(crate) animations: crate::presentation_animation::AnimationController,
     pub(crate) track_motion: HashMap<u32, crate::track_motion::TrackMotion>,
+    pub(crate) maw_motion: HashMap<u32, crate::maw_motion::MawMotion>,
     /// Eased collision slides, kept only while a body is drawn off its
     /// simulation pose.
     pub(crate) slide_motion: HashMap<u32, crate::slide_motion::SlideMotion>,
@@ -67,9 +80,9 @@ pub struct Presentation {
     /// Scorch decals where buildings died: (world pos, seconds old).
     /// Scorch decals: where, age in seconds, and width in tiles.
     pub scorches: Vec<(Vec2, f32, f32)>,
-    /// Live under-attack alerts: world position and seconds of age.
-    /// Pulsed on the minimap, jumpable, aged out by `update_fx`.
-    pub alerts: Vec<(Vec2, f32)>,
+    /// Live alerts: world position, seconds of age, and what they warn
+    /// of. Pulsed on the minimap, jumpable, aged out by `update_fx`.
+    pub alerts: Vec<(Vec2, f32, AlertKind)>,
     /// The latest alert position, which the jump key targets.
     pub last_alert: Option<Vec2>,
     /// Per-region alert rate limiter: 8-tile cell to last raise time in
@@ -278,9 +291,11 @@ impl Presentation {
             aim_building_targets: HashMap::new(),
             pod_shots: HashMap::new(),
             warned_warheads: std::collections::HashSet::new(),
+            warned_cradles: std::collections::BTreeSet::new(),
             prelaunches: Vec::new(),
             animations: crate::presentation_animation::AnimationController::default(),
             track_motion: HashMap::new(),
+            maw_motion: HashMap::new(),
             slide_motion: HashMap::new(),
             projectile_releases: projectiles::ProjectileReleases::default(),
             fx_previous: fx::PreviousEffects::default(),
@@ -372,7 +387,7 @@ impl Presentation {
             return;
         }
         self.alert_gate.insert(cell, now);
-        self.alerts.push((world, 0.0));
+        self.alerts.push((world, 0.0, AlertKind::Attack));
         self.last_alert = Some(world);
         self.sounds_pending.push((SoundKind::Alert, None));
     }
@@ -381,9 +396,17 @@ impl Presentation {
     /// warning. It bypasses the under-attack gate: each warhead warns once,
     /// even into a region already under attack.
     pub(super) fn raise_warhead_alert(&mut self, world: Vec2) {
-        self.alerts.push((world, 0.0));
+        self.alerts.push((world, 0.0, AlertKind::Attack));
         self.last_alert = Some(world);
         self.sounds_pending.push((SoundKind::IncomingWarning, None));
+    }
+
+    /// Marks a hostile assembly cradle the moment its first work makes it
+    /// public. It bypasses the under-attack gate: each cradle warns once.
+    pub(super) fn raise_cradle_alert(&mut self, world: Vec2, kind: oxide_sim::UnitKind) {
+        self.alerts.push((world, 0.0, AlertKind::Assembly(kind)));
+        self.last_alert = Some(world);
+        self.sounds_pending.push((SoundKind::Alert, None));
     }
 
     /// Interpolated draw position for a unit, trailing a collision slide by
@@ -451,6 +474,7 @@ impl Presentation {
         self.aim_building_targets.clear();
         self.pod_shots.clear();
         self.warned_warheads.clear();
+        self.warned_cradles.clear();
         self.prelaunches.clear();
         self.animations.reset_transients();
         self.animations.reset_workers(state);
@@ -458,7 +482,33 @@ impl Presentation {
         self.animations.observe_braces(state);
         self.audio_timeline.clear();
         self.track_motion.clear();
+        self.maw_motion.clear();
         self.slide_motion.clear();
+    }
+
+    /// A Maw cuts while its own hits are this recent: two strokes of its
+    /// cutter.
+    const MAW_CUT_TICKS: u64 = 8;
+
+    fn observe_maws(&mut self, state: &State) {
+        let tick = state.current_tick();
+        self.maw_motion
+            .retain(|id, _| state.unit(UnitId(*id)).is_some());
+        for unit in state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == oxide_sim::UnitKind::Maw)
+        {
+            let cutting = self
+                .animations
+                .last_unit_attack(unit.id)
+                .is_some_and(|hit| tick.saturating_sub(hit) <= Self::MAW_CUT_TICKS);
+            let feeding = state.kiln_fuel(unit.id).is_some();
+            self.maw_motion
+                .entry(unit.id.0)
+                .or_insert_with(|| crate::maw_motion::MawMotion::settled(tick, cutting, feeding))
+                .observe(tick, cutting, feeding);
+        }
     }
 
     /// Sprite rotation for this tick: a heading-first airframe faces where
@@ -470,10 +520,10 @@ impl Presentation {
         self.observe_slides(state, movement);
         self.track_motion
             .retain(|id, _| state.unit(UnitId(*id)).is_some());
-        for unit in state
+        for (unit, gauge) in state
             .units()
             .iter()
-            .filter(|unit| crate::render::tracks::supported(unit.kind))
+            .filter_map(|unit| Some((unit, crate::render::tread_gauge(unit.kind)?)))
         {
             let heading = f32::from(unit.heading) * std::f32::consts::TAU / 256.0
                 + self
@@ -486,10 +536,7 @@ impl Presentation {
                 .observe(
                     tick,
                     heading,
-                    crate::render::tracks::gauge(
-                        unit.kind,
-                        crate::render::unit_draw_scale(unit.kind),
-                    ),
+                    gauge,
                     // A shove along the hull rolls the belts like driving
                     // does; the part across the hull is a skid.
                     movement
@@ -500,6 +547,8 @@ impl Presentation {
                         }),
                 );
         }
+
+        self.observe_maws(state);
 
         self.aim_unit_targets
             .retain(|id, _| state.unit(UnitId(*id)).is_some());

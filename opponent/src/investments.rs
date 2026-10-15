@@ -107,6 +107,8 @@ pub(crate) struct Situation<'a> {
     /// The producer kind a unit the seat has saved enough for waits on,
     /// because every producer that trains it is busy.
     pub(crate) waiting: Option<BuildingKind>,
+    /// Per mille of the known defense an attack must bring.
+    pub(crate) margin: u64,
 }
 
 /// Every investment the seat wants at all, most wanted first.
@@ -161,6 +163,14 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         situation.map,
         traits,
         situation.income,
+    ));
+    list.extend(crate::breach::investments(
+        observation,
+        situation.map,
+        situation.memory,
+        traits,
+        situation.income,
+        situation.margin,
     ));
     let growth = expansion::candidates(
         observation,
@@ -377,7 +387,7 @@ pub(crate) fn completes(investment: Investment, step: Step) -> bool {
 /// each distance.
 pub(crate) fn anchors<'a>(
     map: &'a MapModel,
-    observation: &ObservationData,
+    observation: &'a ObservationData,
     investment: Investment,
     kind: BuildingKind,
 ) -> Box<dyn Iterator<Item = TilePos> + 'a> {
@@ -398,6 +408,11 @@ pub(crate) fn anchors<'a>(
             },
             kind,
         ) if defense == kind => Box::new(std::iter::once(anchor)),
+        // A cradle stands only where its machine can drive out of the base.
+        _ if kind.assembles().is_some() => Box::new(
+            map.spots(observation.me, foundries(map, observation), kind)
+                .filter(move |anchor| crate::breach::exits(map, observation, kind, *anchor)),
+        ),
         _ => Box::new(map.spots(observation.me, foundries(map, observation), kind)),
     }
 }

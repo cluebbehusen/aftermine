@@ -1092,7 +1092,8 @@ impl AnimationController {
                 | BuildingKind::Barricade
                 | BuildingKind::ScuttleCharge
                 | BuildingKind::Spire
-                | BuildingKind::Lattice => BuildingActivity::Idle,
+                | BuildingKind::Lattice
+                | BuildingKind::MawCradle => BuildingActivity::Idle,
             }
         } else {
             BuildingActivity::Idle
@@ -1109,6 +1110,16 @@ impl AnimationController {
             attack: self.building_attack(facts.id, facts.kind, clock),
             weapon,
         }
+    }
+
+    /// The completed tick of `unit`'s latest reported hit with any weapon.
+    pub(crate) fn last_unit_attack(&self, unit: UnitId) -> Option<u64> {
+        self.unit_attacks
+            .get(&unit)?
+            .iter()
+            .flatten()
+            .copied()
+            .max()
     }
 
     fn note_unit_attack(&mut self, unit: UnitId, weapon: usize, completed_tick: u64) {
@@ -1265,7 +1276,8 @@ fn unit_attack_timing(kind: UnitKind) -> AttackTiming {
         | UnitKind::Skyhook
         | UnitKind::Sapper
         | UnitKind::Mantle
-        | UnitKind::Surveyor => AttackTiming {
+        | UnitKind::Surveyor
+        | UnitKind::Maw => AttackTiming {
             report_ticks: 1.0,
             recover_ticks: 1.0,
         },
@@ -1302,7 +1314,8 @@ fn building_attack_timing(kind: BuildingKind) -> Option<AttackTiming> {
         | BuildingKind::Barricade
         | BuildingKind::ScuttleCharge
         | BuildingKind::Spire
-        | BuildingKind::Lattice => return None,
+        | BuildingKind::Lattice
+        | BuildingKind::MawCradle => return None,
     };
     Some(AttackTiming {
         report_ticks,
@@ -1360,7 +1373,8 @@ fn rotor_period(kind: UnitKind) -> Option<u64> {
         | UnitKind::Sapper
         | UnitKind::Mantle
         | UnitKind::Piledriver
-        | UnitKind::Surveyor => None,
+        | UnitKind::Surveyor
+        | UnitKind::Maw => None,
     }
 }
 

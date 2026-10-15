@@ -22,9 +22,11 @@ fn belts_stay_on_their_track_casings() {
     for kind in UnitKind::ALL.into_iter().filter(|&kind| supported(kind)) {
         let body = idle_body(kind);
         let width = usize::from(body.width);
+        // Runs are in 128-px sprite space, which spans the whole canvas.
+        let pixel = |at: f32| numeric::to_usize(at * f32::from(body.width) / 128.0);
         for &[x0, y0, x1, y1] in runs(kind) {
-            for y in numeric::to_usize(y0)..numeric::to_usize(y1) {
-                for x in numeric::to_usize(x0)..numeric::to_usize(x1) {
+            for y in pixel(y0)..pixel(y1) {
+                for x in pixel(x0)..pixel(x1) {
                     assert_eq!(
                         body.bytes[(y * width + x) * 4 + 3],
                         u8::MAX,

@@ -116,6 +116,18 @@ fn first_shot_is_ready_and_cooldown_prepares_only_the_next_shot() {
 }
 
 #[test]
+fn the_latest_hit_with_any_weapon_is_remembered_per_unit() {
+    let mut controller = AnimationController::default();
+    assert_eq!(controller.last_unit_attack(UnitId(7)), None);
+    let first = &unit_attack_report(40, UnitId(7), 0);
+    controller.observe_events(first.tick + 1, &first.events);
+    let second = &unit_attack_report(52, UnitId(7), 1);
+    controller.observe_events(second.tick + 1, &second.events);
+    assert_eq!(controller.last_unit_attack(UnitId(7)), Some(53));
+    assert_eq!(controller.last_unit_attack(UnitId(8)), None);
+}
+
+#[test]
 fn damage_event_drives_one_report_then_recovery() {
     let mut controller = AnimationController::default();
     let report = &unit_attack_report(40, UnitId(7), 0);

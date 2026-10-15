@@ -73,7 +73,8 @@ fn raider(kind: UnitKind) -> Option<Raider> {
         | UnitKind::Surveyor
         | UnitKind::Skyhook
         | UnitKind::Mantle
-        | UnitKind::Piledriver => None,
+        | UnitKind::Piledriver
+        | UnitKind::Maw => None,
     }
 }
 

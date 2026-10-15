@@ -72,6 +72,7 @@
       {"chord": {"key": "t", "ctrl": false, "shift": false}, "action": {"BuildCategory": 3}},
       {"chord": {"key": "t", "ctrl": false, "shift": false}, "action": {"Build": "crucible"}},
       {"chord": {"key": "t", "ctrl": false, "shift": false}, "action": {"Build": "barricade"}},
+      {"chord": {"key": "t", "ctrl": false, "shift": false}, "action": {"Build": "maw_cradle"}},
       {"chord": {"key": "z", "ctrl": false, "shift": false}, "action": {"TrainSlot": 4}},
       {"chord": {"key": "z", "ctrl": false, "shift": false}, "action": {"BuildCategory": 4}},
       {"chord": {"key": "x", "ctrl": false, "shift": false}, "action": {"TrainSlot": 5}},

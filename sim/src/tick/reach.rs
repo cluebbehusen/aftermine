@@ -235,9 +235,12 @@ impl Reach {
         let Some(unit) = state.unit(id) else {
             return false;
         };
-        // Every chain body lies within CROWD_CHAIN_REACH of the endpoint and
-        // any touch spans less than CONTACT_WINDOW.
-        let span = crate::stats::CROWD_CHAIN_REACH + Fx::from_num(CONTACT_WINDOW);
+        // Every chain body's edge lies within CROWD_CHAIN_REACH of the
+        // endpoint and any touch spans less than the contact window.
+        let window = index.contact_window();
+        let span = crate::stats::CROWD_CHAIN_REACH
+            + Fx::from_num(index.wide_reach())
+            + Fx::from_num(window);
         if unit.pos.dist_sq(endpoint.center()) > span * span {
             return false;
         }
@@ -253,9 +256,9 @@ impl Reach {
             return false;
         }
         let tile = unit.tile();
-        (tile.y - CONTACT_WINDOW..=tile.y + CONTACT_WINDOW).any(|y| {
+        (tile.y - window..=tile.y + window).any(|y| {
             index
-                .row_span(y, tile.x - CONTACT_WINDOW, tile.x + CONTACT_WINDOW)
+                .row_span(y, tile.x - window, tile.x + window)
                 .iter()
                 .any(|&(_, slot)| {
                     let other = &state.units[slot];
@@ -281,36 +284,38 @@ impl Reach {
         endpoint: TilePos,
     ) -> Vec<usize> {
         let center = endpoint.center();
-        let near_sq = crate::stats::ARRIVAL_NEAR * crate::stats::ARRIVAL_NEAR;
-        let bound_sq = crate::stats::CROWD_CHAIN_REACH * crate::stats::CROWD_CHAIN_REACH;
-        let countable = |slot: usize, within_sq: Fx| {
+        // A wide hull counts once its edge is within the bound.
+        let countable = |slot: usize, within: Fx| {
+            let body = &state.units[slot];
+            let within = within + crate::stats::hull_excess(body.kind.stats().radius);
             self.parked
                 .get(slot)
                 .copied()
                 .flatten()
                 .is_some_and(|(layer, owner)| layer == domain && !state.hostile(player, owner))
-                && state.units[slot].pos.dist_sq(center) <= within_sq
+                && body.pos.dist_sq(center) <= within * within
         };
         let mut chain = Vec::new();
         let mut frontier = Vec::new();
-        let seed = crate::stats::ARRIVAL_NEAR.to_num::<i32>() + 1;
+        let seed = crate::stats::ARRIVAL_NEAR.to_num::<i32>() + 1 + index.wide_reach();
         for y in endpoint.y - seed..=endpoint.y + seed {
             for &(_, slot) in index.row_span(y, endpoint.x - seed, endpoint.x + seed) {
-                if countable(slot, near_sq) {
+                if countable(slot, crate::stats::ARRIVAL_NEAR) {
                     chain.push(slot);
                     frontier.push(slot);
                 }
             }
         }
         chain.sort_unstable();
+        let window = index.contact_window();
         while let Some(slot) = frontier.pop() {
             let body = &state.units[slot];
             let tile = body.tile();
-            for y in tile.y - CONTACT_WINDOW..=tile.y + CONTACT_WINDOW {
-                for &(_, other) in
-                    index.row_span(y, tile.x - CONTACT_WINDOW, tile.x + CONTACT_WINDOW)
-                {
-                    if !countable(other, bound_sq) || !touching(body, &state.units[other]) {
+            for y in tile.y - window..=tile.y + window {
+                for &(_, other) in index.row_span(y, tile.x - window, tile.x + window) {
+                    if !countable(other, crate::stats::CROWD_CHAIN_REACH)
+                        || !touching(body, &state.units[other])
+                    {
                         continue;
                     }
                     if let Err(at) = chain.binary_search(&other) {
@@ -354,27 +359,12 @@ fn labels<'a>(
     })
 }
 
-/// Tiles either side of a body's own tile that can hold a body touching it:
-/// the widest pair of radii plus contact slack, rounded up.
-const CONTACT_WINDOW: i32 = {
-    let one = Fx::ONE.to_bits();
-    let reach = crate::stats::MAX_UNIT_RADIUS.to_bits() * 2 + Fx::lit("0.05").to_bits();
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a contact reach of a few tiles fits i32"
-    )]
-    let tiles = ((reach + one - 1) / one) as i32;
-    tiles
-};
-const _: () = assert!(
-    (CONTACT_WINDOW as i64) * Fx::ONE.to_bits()
-        >= crate::stats::MAX_UNIT_RADIUS.to_bits() * 2 + Fx::lit("0.05").to_bits()
-);
+/// Gap two bodies may leave and still touch, as the arrival wave counts it.
+pub(super) const CONTACT_SLACK: Fx = Fx::lit("0.05");
 
 /// Whether two bodies are in contact, with the slack the arrival wave uses.
 fn touching(a: &crate::state::Unit, b: &crate::state::Unit) -> bool {
-    let slack = const { Fx::lit("0.05") };
-    a.pos.dist(b.pos) <= a.kind.stats().radius + b.kind.stats().radius + slack
+    a.pos.dist(b.pos) <= a.kind.stats().radius + b.kind.stats().radius + CONTACT_SLACK
 }
 
 /// A tile's component label; off-map tiles read as closed.

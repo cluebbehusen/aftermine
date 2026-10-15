@@ -29,6 +29,9 @@ fn on_map(state: &State, pos: TilePos) -> bool {
 }
 
 pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut Vec<Event>) {
+    // A command can bring a queued build up to a full cradle (cancelling
+    // the order ahead of it, say); the crews settle once all have run.
+    let crews = super::assembly::CrewSnapshot::capture(state);
     for pc in commands {
         if (pc.player.0 as usize) >= state.players.len() {
             continue; // malformed traffic from outside the sim; nothing to attribute
@@ -211,6 +214,7 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             super::construction::cancel_abandoned(state, events);
         }
     }
+    super::assembly::settle_crews(state, &crews, events);
 }
 
 /// A command's unit list read as the SET it means: id-ordered, each id
@@ -668,6 +672,31 @@ fn apply_build(
         anchor,
         defer,
     } = placement;
+    // A cradle admits only the crew it has room for: refused workers keep
+    // their programs, so they neither take the order nor give up the sites
+    // they hold, and displaced holders leave only once the order lands.
+    let admission = state.assembly_admission(player, kind, anchor, units, queue);
+    let units = match &admission {
+        Some(admission) if admission.admitted.is_empty() && !admission.refused.is_empty() => {
+            return Err(RejectReason::CrewFull);
+        }
+        Some(admission) => admission.admitted.as_slice(),
+        None => units,
+    };
+    let bump = |state: &mut State| {
+        if let Some(admission) = &admission {
+            let site = state
+                .buildings
+                .iter()
+                .find(|b| b.player == player && b.kind == kind && b.anchor == anchor)
+                .map(|b| b.id);
+            for &unit in &admission.bumped {
+                if let Some(site) = site {
+                    release_site_orders(state, unit, site, kind, anchor);
+                }
+            }
+        }
+    };
     let replaced = if queue {
         Vec::new()
     } else {
@@ -681,7 +710,9 @@ fn apply_build(
             .collect::<Vec<_>>()
     };
     if replaced.is_empty() {
-        return apply_build_inner(state, player, units, kind, anchor, queue, defer);
+        apply_build_inner(state, player, units, kind, anchor, queue, defer)?;
+        bump(state);
+        return Ok(());
     }
     let mut candidate = state.clone();
     let mut refunds = Vec::new();
@@ -690,6 +721,7 @@ fn apply_build(
     }
     apply_build_inner(&mut candidate, player, units, kind, anchor, queue, defer)?;
     *state = candidate;
+    bump(state);
     events.extend(refunds);
     Ok(())
 }
@@ -752,6 +784,11 @@ fn apply_build_inner(
     // does not orphan work already claimed.
     if !state.prerequisites_met(player, kind) {
         return Err(RejectReason::MissingPrerequisite);
+    }
+    if let Some(unit) = kind.assembles()
+        && state.experimental_slot_taken(player, unit, &[])
+    {
+        return Err(RejectReason::ExperimentalLimit);
     }
     if defer {
         // Hidden occupancy cannot affect acceptance or payment. Physical
@@ -990,6 +1027,10 @@ pub(super) fn cancel_site(
     if let Some(index) = state.buildings.iter().position(|b| b.id == building) {
         state.stamp_building_occupancy(index, false);
     }
+    if let Some(b) = state.building(building).filter(|b| b.is_public()) {
+        let (kind, anchor) = (b.kind, b.anchor);
+        crate::vision::forget_public_building(state, player, kind, anchor);
+    }
     crate::vision::forget_observed_building(state, building, false);
     clear_site_orders(state, player, building);
     state.buildings.retain(|b| b.id != building);
@@ -1006,15 +1047,37 @@ pub(super) fn clear_site_orders(
     building: crate::ids::BuildingId,
 ) {
     let claim = state.building(building).map(|b| (b.kind, b.anchor));
+    for unit in state.units.iter_mut().filter(|unit| unit.player == player) {
+        release_unit_site(unit, building, claim);
+    }
+}
+
+/// Takes one worker off a site: every queued copy of the job goes, and a
+/// current one ends without coming round again in a patrol.
+pub(super) fn release_site_orders(
+    state: &mut State,
+    unit: UnitId,
+    building: crate::ids::BuildingId,
+    kind: crate::stats::BuildingKind,
+    anchor: TilePos,
+) {
+    if let Some(unit) = state.unit_mut(unit) {
+        release_unit_site(unit, building, Some((kind, anchor)));
+    }
+}
+
+fn release_unit_site(
+    unit: &mut crate::state::Unit,
+    building: crate::ids::BuildingId,
+    claim: Option<(crate::stats::BuildingKind, TilePos)>,
+) {
     let matches_site = |order: &Order| {
         matches!(order, Order::Build { site } if *site == building)
             || matches!(order, Order::Found { kind, anchor } if Some((*kind, *anchor)) == claim)
     };
-    for unit in state.units.iter_mut().filter(|unit| unit.player == player) {
-        unit.queue.retain(|order| !matches_site(order));
-        if matches_site(&unit.order) {
-            remove_active_order(unit);
-        }
+    unit.queue.retain(|order| !matches_site(order));
+    if matches_site(&unit.order) {
+        remove_active_order(unit);
     }
 }
 
@@ -1164,6 +1227,7 @@ fn apply_repair_unit(
     if t.player != player
         || t.hp == 0
         || t.hp >= stats.max_hp
+        || !stats.repairable()
         || t.domain() != Domain::Ground
         || t.retiring()
     {
@@ -1243,7 +1307,10 @@ fn apply_retire(
     }) {
         return Err(RejectReason::MissingPrerequisite);
     }
-    let own = accepted_units(state, player, units);
+    let own: Vec<UnitId> = accepted_units(state, player, units)
+        .into_iter()
+        .filter(|&id| state.unit(id).is_some_and(|u| !u.kind.assembled()))
+        .collect();
     if own.is_empty() {
         return Err(RejectReason::NoValidUnits);
     }

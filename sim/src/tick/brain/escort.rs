@@ -61,13 +61,14 @@ impl Parties {
                 let body = state.escorted(escorted)?;
                 let owner = body.player;
                 let center = body.tile();
+                let hull = crate::geometry::body_tiles(body.pos, body.kind.stats().radius);
                 let reverse = slot_frame(state, owner);
                 let slots = |domain: Domain, count: usize| {
                     if count == 0 {
                         return Vec::new();
                     }
                     spread_goals_by(center, count, reverse, |tile| {
-                        tile != center && state.passable_for(domain, tile)
+                        !hull.clone().any(|t| t == tile) && state.passable_for(domain, tile)
                     })
                 };
                 Some((
@@ -220,6 +221,7 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
                 && u.player == welder.player
                 && u.hp > 0
                 && u.hp < u.kind.stats().max_hp
+                && u.kind.stats().repairable()
                 && u.domain() == Domain::Ground
                 && !u.retiring()
                 && u.pos.dist_sq(party.pos) <= reach_sq

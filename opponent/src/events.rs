@@ -1,17 +1,20 @@
-//! The seat's own order failures, which the host buffers between decisions.
+//! The seat's own order failures, and the machines every seat sees stand up
+//! from public cradles, which the host buffers between decisions.
 
 use chassis::fx::Vec2Fx;
 use oxide_sim::command::RejectReason;
-use oxide_sim::{Event, PlayerId, StallReason, UnitId};
+use oxide_sim::{Event, PlayerId, StallReason, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// Events a buffer holds, the oldest dropped first beyond it: a computation
 /// bound that normal play stays under, since the buffer keeps one stall per
-/// unit and reason and one rejection per reason.
+/// unit and reason and one rejection per reason, and a seat holds one cradle
+/// at a time.
 const CAP: usize = 1_024;
 
-/// One of the seat's own order failures, as the simulation reported it.
+/// One of the seat's own order failures, or another seat's machine standing
+/// up from its cradle, as the simulation reported it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OwnEvent {
@@ -29,6 +32,18 @@ pub enum OwnEvent {
     CommandRejected {
         /// Why.
         reason: RejectReason,
+    },
+    /// Another seat's machine stood up from its cradle. A cradle is public
+    /// once its crew starts, so every seat learns where its machine stands.
+    MachineAssembled {
+        /// The machine.
+        unit: UnitId,
+        /// Its kind.
+        kind: UnitKind,
+        /// Its owner.
+        player: PlayerId,
+        /// Where it stood up.
+        pos: Vec2Fx,
     },
 }
 
@@ -64,12 +79,24 @@ impl OwnEvent {
                 player: issuer,
                 reason,
             } if issuer == player => Some(Self::CommandRejected { reason }),
+            Event::UnitAssembled {
+                unit,
+                kind,
+                player: owner,
+                pos,
+                ..
+            } if owner != player => Some(Self::MachineAssembled {
+                unit,
+                kind,
+                player: owner,
+                pos,
+            }),
             _ => None,
         }
     }
 }
 
-/// A bounded, ordered buffer of one seat's own events. The host keeps it
+/// A bounded, ordered buffer of one seat's events. The host keeps it
 /// beside the controller and records every tick; the seat's next decision
 /// consumes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,8 +104,8 @@ impl OwnEvent {
 pub struct OwnEvents(VecDeque<OwnEvent>);
 
 impl OwnEvents {
-    /// Appends `player`'s own stalls and rejections from one tick's events,
-    /// in report order. A repeat of a stall of the same unit for the same
+    /// Appends `player`'s own stalls and rejections, and other seats'
+    /// machines standing up, from one tick's events, in report order. A repeat of a stall of the same unit for the same
     /// reason, or of a rejection for the same reason, replaces the earlier
     /// one in its place.
     pub fn record(&mut self, player: PlayerId, events: &[Event]) {

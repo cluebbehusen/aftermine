@@ -1167,6 +1167,7 @@ fn every_seat_knows_a_deep_bore_from_the_moment_its_refit_starts() {
             kind: BuildingKind::Extractor,
             tier: 1,
             anchor: SUPPORT_FRAME,
+            progress: None,
         }],
         "known mid-refit, with no sight"
     );

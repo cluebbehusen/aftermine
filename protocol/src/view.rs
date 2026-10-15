@@ -221,7 +221,8 @@ pub struct FogView {
     /// Continuously observed contacts; entity identity appears only in true sight.
     pub contact_tracks: Vec<oxide_sim::vision::ContactTrack>,
     /// Hostile buildings every seat knows of regardless of fog, such as Deep
-    /// Bores, sorted by (y, x, owner). They carry no condition.
+    /// Bores and started assembly cradles, sorted by (y, x, owner). They
+    /// carry no condition beyond a cradle's progress.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_buildings: Vec<PublicBuildingView>,
     /// Magazines the seat may know of, in building-id order: its team's in
@@ -246,6 +247,10 @@ pub struct PublicBuildingView {
     pub owner: u8,
     /// Top-left footprint tile `[x, y]`.
     pub anchor: [i32; 2],
+    /// For an assembly cradle, the construction work done toward its kind's
+    /// build time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u32>,
 }
 
 /// An enemy building as one seat remembers it.
@@ -372,6 +377,7 @@ impl FogView {
                     tier: public.tier,
                     owner: public.owner.0,
                     anchor: [public.anchor.x, public.anchor.y],
+                    progress: public.progress,
                 })
                 .collect(),
             magazines: state.known_magazines(player),

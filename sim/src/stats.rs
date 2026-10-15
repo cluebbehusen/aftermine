@@ -70,6 +70,10 @@ chassis::listed_enum! {
         /// Ground scout: fast, unarmed, fragile, and far-sighted; it spots
         /// buried charges like a Kestrel.
         Surveyor,
+        /// Experimental breacher: a huge, slow mining machine that cuts
+        /// through structures, is weak against machines, and heals only by
+        /// feeding wreck to its kiln. Assembled in a cradle, never trained.
+        Maw,
     }
 }
 
@@ -125,6 +129,9 @@ chassis::listed_enum! {
         /// Interceptor battery: two pods that stop hostile warheads their
         /// team has tracked once those enter its ring.
         Lattice,
+        /// Assembly cradle where workers build a Maw. Public once work
+        /// starts; on completion the cradle is gone and the Maw stands up.
+        MawCradle,
     }
 }
 
@@ -200,6 +207,9 @@ pub struct WeaponStats {
     /// Indirect fire arcs over terrain: the line-of-sight trace that lets
     /// rock block direct shots is skipped.
     pub indirect: bool,
+    /// Hit points removed per hit on a structure, when that differs from
+    /// [`Self::damage`]: a building, or a machine built like one.
+    pub building_damage: Option<u32>,
     /// The shot is a real projectile: a Shell entity travels to a fixed
     /// fire-time aim point and resolves on arrival. Artillery may lead an
     /// existing path before launch, but the shell is never guided and a
@@ -315,6 +325,30 @@ pub struct UnitStats {
     pub radar: Option<RadarStats>,
     /// Charges that shoot down hostile projectiles aimed near the machine.
     pub point_defense: Option<PointDefenseStats>,
+    /// How the machine recovers lost hit points.
+    pub mend: Mend,
+    /// Built like a structure: demolition charges and building-breaking
+    /// weapons deal it their structure damage.
+    pub structural: bool,
+}
+
+/// How a damaged machine recovers hit points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mend {
+    /// Field welds and Repair Bays restore it, billed from the bank.
+    Repair,
+    /// Neither: its kiln feeds on wreck salvage around its hull instead.
+    Kiln(KilnStats),
+}
+
+/// A kiln that turns wreck salvage into hit points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KilnStats {
+    /// Hit points one unit of wreck restores; each bite takes one unit, every
+    /// [`KILN_BITE_PERIOD`] ticks.
+    pub hp_per_wreck: u32,
+    /// How far past the tiles under its hull the intake reaches.
+    pub reach: i32,
 }
 
 /// How a unit picks an enemy machine when nobody ordered a target. It ranks
@@ -327,6 +361,9 @@ pub enum TargetPriority {
     /// The one with the most full health, then the nearest: a gun whose one
     /// slug a light machine would mostly waste.
     Heaviest,
+    /// Buildings before machines: a breacher that strikes a machine only
+    /// when no structure is in reach.
+    Buildings,
 }
 
 /// Recoil spades a gun deploys before it may fire.
@@ -405,6 +442,11 @@ impl UnitStats {
         self.turn_rate > 0
     }
 
+    /// Whether field welds and Repair Bays restore this kind.
+    pub const fn repairable(&self) -> bool {
+        matches!(self.mend, Mend::Repair)
+    }
+
     /// Whether this kind carries any weapon at all.
     pub const fn can_fight(&self) -> bool {
         !self.weapons.is_empty() || self.demolition.is_some()
@@ -466,6 +508,7 @@ impl BuildingKind {
             | BuildingKind::Extractor
             | BuildingKind::Spire
             | BuildingKind::Lattice => (2, 2),
+            BuildingKind::MawCradle => (3, 3),
         }
     }
 
@@ -488,6 +531,7 @@ impl BuildingKind {
             BuildingKind::ScuttleCharge => &[&SCUTTLE_CHARGE],
             BuildingKind::Spire => &[&SPIRE],
             BuildingKind::Lattice => &[&LATTICE],
+            BuildingKind::MawCradle => &[&MAW_CRADLE],
         }
     }
 
@@ -535,6 +579,14 @@ impl BuildingKind {
     /// upgrade starts. Each extra Deep Bore therefore means an expansion.
     pub const fn upgrade_needs_foundry_support(self, tier: u8) -> bool {
         matches!(self, BuildingKind::Extractor) && tier == 0
+    }
+
+    /// The experimental a cradle of this kind assembles, if it is one.
+    pub const fn assembles(self) -> Option<UnitKind> {
+        match self {
+            BuildingKind::MawCradle => Some(UnitKind::Maw),
+            _ => None,
+        }
     }
 
     /// The rounds this kind stores and what it does with them, if any.
@@ -754,6 +806,21 @@ pub struct CrashProfile {
 }
 
 impl UnitKind {
+    /// Whether a cradle assembles this kind: an experimental, of which a
+    /// player fields one at a time and which no Crucible dismantles.
+    pub const fn assembled(self) -> bool {
+        let mut i = 0;
+        while i < BuildingKind::ALL.len() {
+            if let Some(kind) = BuildingKind::ALL[i].assembles()
+                && kind as u8 == self as u8
+            {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+
     /// Hull turn speed in compass steps per tick: the kind's override, or
     /// scaled with ground mobility.
     pub fn ground_turn_rate(self) -> u8 {
@@ -813,6 +880,7 @@ impl UnitKind {
             UnitKind::Mantle => "mantle",
             UnitKind::Piledriver => "piledriver",
             UnitKind::Surveyor => "surveyor",
+            UnitKind::Maw => "maw",
         }
     }
 
@@ -866,6 +934,9 @@ impl UnitKind {
             UnitKind::Surveyor => {
                 "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby, and unfolds a radar when parked."
             }
+            UnitKind::Maw => {
+                "Huge, slow breacher that cuts through buildings and is weak against machines. No anti-air. Heals only by eating wreck under and beside it."
+            }
         }
     }
 }
@@ -905,6 +976,8 @@ const HARVESTER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const SENTINEL: UnitStats = UnitStats {
@@ -927,6 +1000,7 @@ const SENTINEL: UnitStats = UnitStats {
             targets: DomainMask::GROUND,
             splash: None,
             indirect: false,
+            building_damage: None,
             projectile: None,
         },
         // A weak anti-air weapon so a pure air army cannot ignore the core
@@ -939,6 +1013,7 @@ const SENTINEL: UnitStats = UnitStats {
             targets: DomainMask::AIR,
             splash: None,
             indirect: false,
+            building_damage: None,
             projectile: None,
         },
     ],
@@ -961,6 +1036,8 @@ const SENTINEL: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const SCUTTLER: UnitStats = UnitStats {
@@ -979,6 +1056,7 @@ const SCUTTLER: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1000,6 +1078,8 @@ const SCUTTLER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const LANCER: UnitStats = UnitStats {
@@ -1020,6 +1100,7 @@ const LANCER: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1041,6 +1122,8 @@ const LANCER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const BOMBARD: UnitStats = UnitStats {
@@ -1059,6 +1142,7 @@ const BOMBARD: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("1.4")),
         indirect: true,
+        building_damage: None,
         projectile: Some(ProjectileStats {
             payload: ProjectileKind::Shell,
             speed: Fx::lit("0.30"),
@@ -1087,6 +1171,8 @@ const BOMBARD: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const FLAKHOUND: UnitStats = UnitStats {
@@ -1105,6 +1191,7 @@ const FLAKHOUND: UnitStats = UnitStats {
         targets: DomainMask::AIR,
         splash: Some(Fx::lit("1.2")),
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1126,6 +1213,8 @@ const FLAKHOUND: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const BUZZARD: UnitStats = UnitStats {
@@ -1144,6 +1233,7 @@ const BUZZARD: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1165,6 +1255,8 @@ const BUZZARD: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const TALON: UnitStats = UnitStats {
@@ -1183,6 +1275,7 @@ const TALON: UnitStats = UnitStats {
         targets: DomainMask::AIR,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1204,6 +1297,8 @@ const TALON: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const WARDEN: UnitStats = UnitStats {
@@ -1226,6 +1321,7 @@ const WARDEN: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("5"),
@@ -1247,6 +1343,8 @@ const WARDEN: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const EXCAVATOR: UnitStats = UnitStats {
@@ -1280,6 +1378,8 @@ const EXCAVATOR: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const KESTREL: UnitStats = UnitStats {
@@ -1313,6 +1413,8 @@ const KESTREL: UnitStats = UnitStats {
         deploy_ticks: 0,
     }),
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const CONDOR: UnitStats = UnitStats {
@@ -1331,6 +1433,7 @@ const CONDOR: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("2.2")),
         indirect: true,
+        building_damage: None,
         projectile: Some(ProjectileStats {
             payload: ProjectileKind::Bomb,
             speed: Fx::lit("0.30"),
@@ -1359,6 +1462,8 @@ const CONDOR: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const BREAKER: UnitStats = UnitStats {
@@ -1380,6 +1485,7 @@ const BREAKER: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("1.5")),
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     aggro_range: Fx::lit("6"),
@@ -1401,6 +1507,8 @@ const BREAKER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const PILEDRIVER: UnitStats = UnitStats {
@@ -1422,6 +1530,7 @@ const PILEDRIVER: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None, // instant, so point defense cannot stop it
     }],
     aggro_range: Fx::lit("8"),
@@ -1447,6 +1556,8 @@ const PILEDRIVER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const AVALANCHE: UnitStats = UnitStats {
@@ -1468,6 +1579,7 @@ const AVALANCHE: UnitStats = UnitStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("1.6")),
         indirect: true,
+        building_damage: None,
         projectile: Some(ProjectileStats {
             payload: ProjectileKind::Missile,
             speed: Fx::lit("0.30"),
@@ -1492,6 +1604,8 @@ const AVALANCHE: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const SKYHOOK: UnitStats = UnitStats {
@@ -1526,6 +1640,8 @@ const SKYHOOK: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const SAPPER: UnitStats = UnitStats {
@@ -1561,6 +1677,8 @@ const SAPPER: UnitStats = UnitStats {
     scouts: false,
     radar: None,
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const MANTLE: UnitStats = UnitStats {
@@ -1596,6 +1714,8 @@ const MANTLE: UnitStats = UnitStats {
         radius: Fx::lit("4.5"),
         recharge_ticks: 60, // one charge back every 3 s
     }),
+    mend: Mend::Repair,
+    structural: false,
 };
 
 const SURVEYOR: UnitStats = UnitStats {
@@ -1629,6 +1749,60 @@ const SURVEYOR: UnitStats = UnitStats {
         deploy_ticks: 40, // 2 s
     }),
     point_defense: None,
+    mend: Mend::Repair,
+    structural: false,
+};
+
+const MAW: UnitStats = UnitStats {
+    // The drum cuts with the hull against its target: its lowered edge is
+    // the hull's collision edge.
+    contact_reach: Some(Fx::lit("0.05")),
+    // Four Breakers' price in one hull: it outlasts a fortified position it
+    // reaches, and loses an open fight to the same scrap of machines.
+    max_hp: 6000,
+    speed: Fx::lit("0.045"), // 0.9 tiles/s
+    radius: Fx::lit("1.4"),
+    cost: 3600,
+    // Never trained: workers assemble it in its cradle. This is the full
+    // crew's assembly time.
+    train_ticks: 2400,
+    domain: Domain::Ground,
+    weapons: &[WeaponStats {
+        // 30 per second against machines, 300 against structures.
+        damage: 6,
+        range: Fx::lit("3.4"), // the hulls plus contact reach decide
+        minimum_range: Fx::ZERO,
+        cooldown_ticks: 4,
+        targets: DomainMask::GROUND,
+        splash: None,
+        indirect: false,
+        building_damage: Some(60),
+        projectile: None,
+    }],
+    aggro_range: Fx::lit("3"),
+    harvest: None,
+    vision: 6,
+    requires: &[],
+    build_rate: 1,
+    demolition: None,
+    transport_size: 0,
+    transport_capacity: 0,
+    turn_rate: 0,
+    cruise_turn_rate: 0,
+    turret_turn_rate: 0,
+    hull_turn_rate: Some(2),
+    brace: None,
+    target_priority: TargetPriority::Buildings,
+    crash: None,
+    charge_detection: false,
+    scouts: false,
+    radar: None,
+    point_defense: None,
+    mend: Mend::Kiln(KilnStats {
+        hp_per_wreck: 2,
+        reach: 1,
+    }),
+    structural: true,
 };
 
 const FOUNDRY: BuildingStats = BuildingStats {
@@ -1667,6 +1841,7 @@ const TURRET: BuildingStats = BuildingStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     construction: Some(ConstructionStats {
@@ -1709,6 +1884,7 @@ const FLAK_TURRET: BuildingStats = BuildingStats {
         targets: DomainMask::AIR,
         splash: Some(Fx::lit("1.2")),
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     construction: Some(ConstructionStats {
@@ -1735,6 +1911,7 @@ const BASTION: BuildingStats = BuildingStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("1.3")),
         indirect: true,
+        building_damage: None,
         projectile: Some(ProjectileStats {
             payload: ProjectileKind::Shell,
             speed: Fx::lit("0.30"),
@@ -1873,6 +2050,23 @@ const SPIRE: BuildingStats = BuildingStats {
     radar: None,
 };
 
+const MAW_CRADLE: BuildingStats = BuildingStats {
+    max_hp: 2000,
+    vision: 3,
+    produces: &[],
+    weapons: &[],
+    construction: Some(ConstructionStats {
+        cost: MAW.cost,
+        // Four Excavators at two work a tick finish in about two minutes.
+        build_ticks: 19_200,
+        requires: &[
+            Prerequisite::built(BuildingKind::Crucible),
+            Prerequisite::upgraded(BuildingKind::Extractor, 1),
+        ],
+    }),
+    radar: None,
+};
+
 const SPIRE_ORDNANCE: Ordnance = Ordnance::Silo(SiloStats {
     magazine: MagazineStats {
         capacity: 1,
@@ -1950,6 +2144,7 @@ const HEAVY_TURRET: BuildingStats = BuildingStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     construction: Some(ConstructionStats {
@@ -1972,6 +2167,7 @@ const BULWARK: BuildingStats = BuildingStats {
         targets: DomainMask::GROUND,
         splash: None,
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     construction: Some(ConstructionStats {
@@ -1994,6 +2190,7 @@ const BURST_FLAK: BuildingStats = BuildingStats {
         targets: DomainMask::AIR,
         splash: Some(Fx::lit("1.5")),
         indirect: false,
+        building_damage: None,
         projectile: None,
     }],
     construction: Some(ConstructionStats {
@@ -2058,6 +2255,7 @@ const CITADEL: BuildingStats = BuildingStats {
         targets: DomainMask::GROUND,
         splash: Some(Fx::lit("1.3")),
         indirect: true,
+        building_damage: None,
         projectile: Some(ProjectileStats {
             payload: ProjectileKind::Shell,
             speed: Fx::lit("0.30"),
@@ -2094,6 +2292,7 @@ impl UnitKind {
             UnitKind::Mantle => &MANTLE,
             UnitKind::Piledriver => &PILEDRIVER,
             UnitKind::Surveyor => &SURVEYOR,
+            UnitKind::Maw => &MAW,
         }
     }
 
@@ -2128,6 +2327,7 @@ impl BuildingKind {
             BuildingKind::ScuttleCharge => "scuttle charge",
             BuildingKind::Spire => "spire",
             BuildingKind::Lattice => "lattice",
+            BuildingKind::MawCradle => "maw cradle",
         }
     }
 
@@ -2175,6 +2375,9 @@ impl BuildingKind {
             BuildingKind::Lattice => {
                 "Holds two interceptors that stop enemy warheads landing in its ring, once sight or radar has tracked them. Reloads on its own."
             }
+            BuildingKind::MawCradle => {
+                "Up to four workers assemble a Maw here. Every player sees it once work starts. One Maw per player, alive or assembling."
+            }
         }
     }
 
@@ -2199,6 +2402,7 @@ impl BuildingKind {
             BuildingKind::ScuttleCharge => &SCUTTLE_CHARGE,
             BuildingKind::Spire => &SPIRE,
             BuildingKind::Lattice => &LATTICE,
+            BuildingKind::MawCradle => &MAW_CRADLE,
         }
     }
 
@@ -2221,6 +2425,23 @@ impl BuildingKind {
     /// upgrade starts.
     pub const fn is_public(self, tier: u8) -> bool {
         matches!(self, BuildingKind::Extractor) && tier >= 1
+    }
+
+    /// Whether every seat knows where a building of this kind stands, and
+    /// how far along it is, from the first work on its site: a cradle.
+    pub const fn public_once_started(self) -> bool {
+        self.assembles().is_some()
+    }
+
+    /// The tiles an assembly crew works from, as offsets from the anchor:
+    /// two off the north face and two off the south, at its corners, one
+    /// per crew place. `None` for a kind without a crew.
+    pub const fn crew_pads(self) -> Option<[(i32, i32); ASSEMBLY_CREW_CAP]> {
+        if self.assembles().is_none() {
+            return None;
+        }
+        let (w, h) = self.size();
+        Some([(0, -1), (w - 1, -1), (0, h), (w - 1, h)])
     }
 }
 
@@ -2443,6 +2664,10 @@ pub const CRUCIBLE_SMELT_RADIUS: Fx = Fx::lit("6.0");
 /// scrap. The rate stays below a dedicated harvester working the same field.
 pub const CRUCIBLE_SMELT_PERIOD: u64 = 40;
 
+/// Ticks between kiln bites. Every kiln bites on the same pulse, so their
+/// order can alternate pulse by pulse.
+pub const KILN_BITE_PERIOD: u64 = 4;
+
 /// Hp each aura pulse offers a patient under fire, and each damaged
 /// structure in the ring: well below one Turret's damage rate, so an aura
 /// never out-heals focused fire.
@@ -2645,6 +2870,11 @@ pub const CROWD_CHAIN_REACH: Fx = Fx::lit("16");
 /// Collision share taken by an anchored unit (extracting or firing from a
 /// hold); the mover takes the rest. Passers-by flow around workers.
 pub const ANCHORED_PUSH_SHARE: Fx = Fx::lit("0.1");
+
+/// Workers whose labor counts on one assembly cradle at once. Without a
+/// cap a mass of Excavators would finish an experimental before anyone
+/// could answer it.
+pub const ASSEMBLY_CREW_CAP: usize = 4;
 
 /// The widest body whose centre tile stands for all of it. A body this size
 /// may overhang the ground around that tile, as every machine up to the

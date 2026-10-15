@@ -223,9 +223,10 @@ enum Cmd {
     /// final hashes equal an untimed run.
     BotCost {
         /// Named workload: `duel` (Skirmish, both seats, 6,000 ticks),
-        /// `skyhook` (Skyhook Anchorage's seven bot seats, 20,000 ticks) or
+        /// `skyhook` (Skyhook Anchorage's seven bot seats, 20,000 ticks),
         /// `mature-armies` (mirrored staged armies on Basalt Spine, 3,000
-        /// ticks). Every bot seat plays Standard, Balanced, personality seed 0.
+        /// ticks) or `maw` (those armies with a mirrored Maw each). Every bot
+        /// seat plays Standard, Balanced, personality seed 0.
         #[arg(required_unless_present = "scenario", conflicts_with = "scenario")]
         workload: Option<oxide_driver::bot_cost::Workload>,
         /// Custom scenario path, or "skirmish", in place of a named workload.

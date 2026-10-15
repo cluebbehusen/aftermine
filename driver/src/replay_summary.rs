@@ -55,6 +55,7 @@ const LOUD_UNITS: &[UnitKind] = &[
     UnitKind::Avalanche,
     UnitKind::Condor,
     UnitKind::Skyhook,
+    UnitKind::Maw,
 ];
 
 /// Options controlling one summary pass.
@@ -880,6 +881,9 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
         for event in &report.events {
             match event {
                 Event::UnitTrained {
+                    unit, kind, player, ..
+                }
+                | Event::UnitAssembled {
                     unit, kind, player, ..
                 } => {
                     ledgers.unit_owner.insert(*unit, player.0);

@@ -273,16 +273,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                                 && (!full || !t.terrain.blocks_direct_fire())
                         })
                     };
-                    let range = unit.kind.stats().contact_reach.map_or(w.range, |reach| {
-                        let target_radius = match view.entity {
-                            Some(crate::Target::Unit(id)) => {
-                                state.unit(id).map_or(Fx::ZERO, |u| u.kind.stats().radius)
-                            }
-                            _ => Fx::ZERO,
-                        };
-                        w.range
-                            .min(unit.kind.stats().radius + target_radius + reach)
-                    });
+                    let range = super::brain::unit_weapon_reach(state, unit.kind, view.entity, w);
                     w.targets.covers(view.domain)
                         && unit.pos.dist_sq(aim) <= range * range
                         && unit.pos.dist_sq(aim) >= w.minimum_range * w.minimum_range

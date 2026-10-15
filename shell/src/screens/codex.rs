@@ -60,6 +60,14 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
         ("AIRWORKS", trained_at(BuildingKind::Airworks)),
         ("CRUCIBLE", trained_at(BuildingKind::Crucible)),
         (
+            "CRADLES",
+            BuildingKind::ALL
+                .into_iter()
+                .filter_map(BuildingKind::assembles)
+                .map(Entry::Unit)
+                .collect(),
+        ),
+        (
             "BUILDINGS",
             [
                 BuildingKind::Foundry,
@@ -77,6 +85,7 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
                 BuildingKind::RepairBay,
                 BuildingKind::Spire,
                 BuildingKind::Lattice,
+                BuildingKind::MawCradle,
             ]
             .into_iter()
             .map(Entry::Building)
@@ -351,6 +360,27 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
                 .to_string(),
         );
     }
+    if stats.target_priority == oxide_sim::stats::TargetPriority::Buildings {
+        notes.push(
+            "Left to itself, cuts the nearest building in reach. Strikes a machine only when one presses against its hull and never chases one, but goes after a building that fires on it."
+                .to_string(),
+        );
+    }
+    if stats.structural {
+        notes.push(
+            "Built like a structure: demolition charges and building cutters deal it their structure damage."
+                .to_string(),
+        );
+    }
+    if let oxide_sim::stats::Mend::Kiln(kiln) = stats.mend {
+        notes.push(format!(
+            "Takes no welds and no Repair Bay care. Its kiln eats wreck under and beside its hull, {} hp per scrap, one bite every {}.",
+            kiln.hp_per_wreck,
+            crate::panel::tick_time_label(
+                u32::try_from(oxide_sim::stats::KILN_BITE_PERIOD).unwrap_or(u32::MAX)
+            ),
+        ));
+    }
     if !stats.requires.is_empty() {
         let names: Vec<String> = stats
             .requires
@@ -369,6 +399,15 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
     .find(|b| b.base_stats().produces.contains(&kind));
     if let Some(factory) = factory {
         notes.push(format!("Trained at the {}.", entity_name(factory.name())));
+    }
+    if let Some(cradle) = BuildingKind::ALL
+        .into_iter()
+        .find(|b| b.assembles() == Some(kind))
+    {
+        notes.push(format!(
+            "Assembled in a {}. One per player, alive or assembling.",
+            entity_name(cradle.name())
+        ));
     }
     notes
 }
@@ -402,6 +441,13 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             magazine.round_cost,
             seconds(magazine.round_ticks),
             if magazine.autofill { "on" } else { "off" },
+        ));
+    }
+    if let Some(machine) = kind.assembles() {
+        notes.push(format!(
+            "Paid in full when placed. Up to {} workers raise it; a faster worker takes a slower one's place. Every player sees it and its progress once work starts. Finished, it comes apart and a {} stands where it stood.",
+            oxide_sim::stats::ASSEMBLY_CREW_CAP,
+            entity_name(machine.name())
         ));
     }
     if kind == BuildingKind::Spire {
