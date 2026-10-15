@@ -1005,20 +1005,34 @@ impl Missions {
             .copied()
             .filter(|unit| gunship(unit.kind))
             .partition(|unit| healthy(unit, FIT));
-        if !wounded.is_empty() {
-            let gone = lifting.delivery.return_empty(&wounded, ledger);
-            if !self.release_units(flight.index, &gone) {
-                return None;
-            }
+        let gone = if wounded.is_empty() {
+            Vec::new()
+        } else {
+            lifting.delivery.return_empty(&wounded, ledger)
+        };
+        if !gone.is_empty() && !self.release_units(flight.index, &gone) {
+            return None;
         }
+        // Every gunship the fight still holds, a wounded one this decision's
+        // orders could not yet send home among them, goes home with it.
+        let held: Vec<&UnitObs> = gunships
+            .iter()
+            .copied()
+            .chain(
+                wounded
+                    .iter()
+                    .copied()
+                    .filter(|unit| !gone.contains(&unit.id)),
+            )
+            .collect();
         if flight.age >= FIGHT_TICKS {
-            self.disband(flight, &gunships, lifting, ledger);
+            self.disband(flight, &held, lifting, ledger);
             return None;
         }
         // Gunships outliving every rider: a landing whose target still
         // stands went without taking it, as a lift lost whole does.
         if flight.grounded.is_empty() {
-            self.disband(flight, &gunships, lifting, ledger);
+            self.disband(flight, &held, lifting, ledger);
             return standing(lifting.observation, target).then_some(target);
         }
         let goal = self.list[flight.index].goal;
@@ -1034,7 +1048,7 @@ impl Missions {
             return None;
         }
         if standing(lifting.observation, target) {
-            self.disband(flight, &gunships, lifting, ledger);
+            self.disband(flight, &held, lifting, ledger);
             return Some(target);
         }
         let (map, observation, frame) = (lifting.map, lifting.observation, lifting.frame);
@@ -1054,7 +1068,7 @@ impl Missions {
             .filter_map(|objective| Some((objective, lifting.hunt_tile(objective, from)?)))
             .min_by_key(|(_, tile)| (tile.chebyshev(from), frame.rank(frame.home, doubled(*tile))));
         let Some((next, tile)) = next else {
-            self.disband(flight, &gunships, lifting, ledger);
+            self.disband(flight, &held, lifting, ledger);
             return None;
         };
         let mut riders = ids(&flight.grounded);
