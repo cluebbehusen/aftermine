@@ -192,8 +192,8 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
             Command::OrderRound { building } => {
                 super::ordnance::apply_order_round(state, pc.player, *building)
             }
-            Command::CancelRound { building } => {
-                super::ordnance::apply_cancel_round(state, pc.player, *building)
+            Command::CancelRound { building, index } => {
+                super::ordnance::apply_cancel_round(state, pc.player, *building, *index)
             }
             Command::SetAutofill { buildings, enabled } => super::ordnance::apply_set_autofill(
                 state,

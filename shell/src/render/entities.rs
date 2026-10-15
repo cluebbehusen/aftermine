@@ -308,6 +308,15 @@ fn production_progress_visible(
     building.player == game.presentation.human || game.presentation.all_seeing()
 }
 
+fn production_fraction(building: &oxide_sim::Building) -> Option<f32> {
+    if let Some(kind) = building.queue.front() {
+        return Some(building.training_progress() as f32 / kind.stats().train_ticks.max(1) as f32);
+    }
+    let stats = building.kind.magazine()?;
+    let magazine = building.magazine.filter(|m| m.ordered > 0)?;
+    Some(magazine.progress as f32 / stats.round_ticks.max(1) as f32)
+}
+
 fn building_body_sources(
     sprites: &Sprites,
     kind: oxide_sim::BuildingKind,
@@ -937,11 +946,11 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 accent_tint,
             );
         }
-        // Production progress, drawn under the works.
+        // Production progress, drawn under the works: a unit in training or
+        // a magazine round in assembly.
         if production_progress_visible(game, building)
-            && let Some(kind) = building.queue.front()
+            && let Some(fraction) = production_fraction(building)
         {
-            let fraction = building.training_progress() as f32 / kind.stats().train_ticks as f32;
             draw_rectangle(screen.x, screen.y + dest.y + 3.0, dest.x, 4.0, HP_BACK);
             draw_rectangle(
                 screen.x,
@@ -2959,6 +2968,20 @@ fn visit_active_ranges(
                     shape: BuildingRangeShape::Circle {
                         center,
                         radius: weapon.range.to_num::<f32>(),
+                    },
+                },
+                icon: range_icon(kind),
+                color: range_color(kind),
+            });
+        }
+        if let Some(defense) = stats.point_defense {
+            let kind = BuildingRangeKind::Intercept;
+            visit(RangeIndicator {
+                range: BuildingRange {
+                    kind,
+                    shape: BuildingRangeShape::Circle {
+                        center,
+                        radius: defense.radius.to_num::<f32>(),
                     },
                 },
                 icon: range_icon(kind),

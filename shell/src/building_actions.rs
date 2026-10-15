@@ -28,6 +28,15 @@ pub(crate) fn foundry_reach_reason() -> String {
     )
 }
 
+/// What a magazine holds: a Spire's warheads, a Lattice's interceptors.
+pub(crate) fn round_noun(kind: BuildingKind) -> &'static str {
+    if kind == BuildingKind::Spire {
+        "warhead"
+    } else {
+        "interceptor"
+    }
+}
+
 pub(crate) struct UpgradeBatch {
     pub recipients: Vec<BuildingId>,
     pub cost: u32,
@@ -181,13 +190,17 @@ impl SelectedBuildings {
         Ok(building)
     }
 
-    /// The selected magazine whose latest paid round a cancel refunds.
-    pub fn round_to_cancel(&self) -> Option<BuildingId> {
+    /// The cancel refunding the latest paid round of the selected magazine
+    /// with the most on order.
+    pub fn round_cancel(&self) -> Option<Command> {
         self.magazines()
             .into_iter()
-            .filter(|b| b.magazine.is_some_and(|m| m.ordered > 0))
-            .max_by_key(|b| (b.magazine.map_or(0, |m| m.ordered), std::cmp::Reverse(b.id)))
-            .map(|b| b.id)
+            .filter_map(|b| Some((b.magazine.filter(|m| m.ordered > 0)?.ordered, b.id)))
+            .max_by_key(|&(ordered, id)| (ordered, std::cmp::Reverse(id)))
+            .map(|(ordered, building)| Command::CancelRound {
+                building,
+                index: ordered - 1,
+            })
     }
 
     /// The autofill command the toggle issues: on unless every selected
@@ -215,7 +228,7 @@ impl SelectedBuildings {
             return;
         };
         let silo = first.kind == BuildingKind::Spire;
-        let noun = if silo { "warhead" } else { "interceptor" };
+        let noun = round_noun(first.kind);
         if silo {
             let loaded = self.loaded_silos();
             cards.push(Card {
@@ -234,36 +247,31 @@ impl SelectedBuildings {
             });
         }
         let order = self.round_order();
-        let ordering = magazines
-            .iter()
-            .filter_map(|b| b.magazine)
-            .find(|m| m.ordered > 0);
         cards.push(Card {
-            icon: CardIcon::Building(first.kind, 0),
-            title: format!("Order {noun}"),
+            icon: CardIcon::Round(first.kind),
+            title: "Order".into(),
             cost: Some(stats.round_cost),
             hotkey: bindings.labels(Action::OrderRound),
             action: CardAction::Dispatch(Action::OrderRound),
             enabled: order.is_ok(),
             why: order.err(),
             desc: vec![format!(
-                "Paid now; built one at a time in {}.",
+                "One {noun}, paid now; built one at a time in {}.",
                 tick_time_label(stats.round_ticks)
             )],
-            progress: ordering
-                .map(|m| (m.progress as f32 / stats.round_ticks.max(1) as f32).clamp(0.0, 1.0)),
+            progress: None,
         });
-        let cancel = self.round_to_cancel();
+        let cancel = self.round_cancel();
         cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Cancel),
-            title: format!("Cancel {noun}"),
+            title: "Cancel".into(),
             cost: None,
             hotkey: bindings.labels(Action::CancelRound),
             action: CardAction::Dispatch(Action::CancelRound),
             enabled: cancel.is_some(),
             why: cancel.is_none().then(|| format!("no {noun} on order")),
             desc: vec![
-                "Refunds the latest paid round in full.".into(),
+                format!("Refunds the latest paid {noun} in full."),
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
             progress: None,

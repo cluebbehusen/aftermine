@@ -869,9 +869,10 @@ cancelled or when the building is salvaged; loaded rounds and destroyed
 buildings refund nothing. They assemble one at a time. With autofill on, a
 magazine with room and nothing ordered buys its next round in the production
 phase, in building-id order, whenever the bank covers it without spending a
-stranded seat's recovery package. Cancelling a round also turns autofill off, so
-the round is not bought again the same tick. Autofill starts on for the Lattice
-and off for the Spire.
+stranded seat's recovery package. `CancelRound` names an ordered position, like
+`CancelTrain`; cancelling the head resets the assembly meter. Cancelling a round
+also turns autofill off, so the round is not bought again the same tick.
+Autofill starts on for the Lattice and off for the Spire.
 
 A Spire's launch deck has a heading that starts toward the map centre. `Launch`
 holds a strike on any tile, seen or not, while a warhead is loaded; each tick

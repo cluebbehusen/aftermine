@@ -254,10 +254,14 @@ units then escort it, and the rally line follows that unit's drawn position,
 ending in a ring instead of a flag. Minimap rally clicks name ground only.
 
 A Spire or Lattice selection shows its magazine cards: Order, Cancel, and the
-Autofill toggle, and on a Spire the armed Launch card. A Launch click on the
-world or the minimap names any tile, seen or not, for every selected loaded
-Spire; while armed, and for a selected own Spire's held strike, the blast's two
-radii draw at the tile with a line from the silo. Stop calls a held strike off.
+Autofill toggle, and on a Spire the armed Launch card. A single own or allied
+magazine docks its ordered rounds like a production queue: one chip per paid
+round, the head wearing the assembly meter that also draws under the owner's
+building, and each own chip cancelling its own position; an ally's chips are
+read-only. Cancel refunds the latest round. A Launch click on the world or the
+minimap names any tile, seen or not, for every selected loaded Spire; while
+armed, and for a selected own Spire's held strike, the blast's two radii draw at
+the tile with a line from the silo. Stop calls a held strike off.
 
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a

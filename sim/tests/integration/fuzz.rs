@@ -620,9 +620,14 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
         CommandTag::OrderRound => Command::OrderRound {
             building: building_id(rng, state),
         },
-        CommandTag::CancelRound => Command::CancelRound {
-            building: building_id(rng, state),
-        },
+        CommandTag::CancelRound => {
+            // Magazines hold a round or two, so most draws stay in reach.
+            let bound = if rng.next_below(4) == 0 { 256 } else { 2 };
+            Command::CancelRound {
+                building: building_id(rng, state),
+                index: u8::try_from(rng.next_below(bound)).unwrap(),
+            }
+        }
         CommandTag::SetAutofill => Command::SetAutofill {
             buildings: buildings(rng, state),
             enabled: rng.next_below(2) == 0,
