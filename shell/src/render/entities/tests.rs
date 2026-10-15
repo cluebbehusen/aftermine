@@ -1057,3 +1057,131 @@ fn repair_tethers_follow_each_own_bays_patient_choice() {
         "the one just hit heals slowly"
     );
 }
+
+/// West's paid Maw cradle site with four Excavators sent to it, on a quarry
+/// whose `rock` tiles are rock. East's start lies far out of sight.
+fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::BuildingId) {
+    use oxide_sim::scenario::{BuildingSpec, PlayerSpec, Scenario, ScenarioMode, UnitSpec};
+    let mut map: Vec<String> = (0..16)
+        .map(|y| {
+            if y == 0 || y == 15 {
+                "#".repeat(40)
+            } else {
+                format!("#{}#", ".".repeat(38))
+            }
+        })
+        .collect();
+    map[2].replace_range(2..3, "1");
+    map[11].replace_range(35..36, "2");
+    map[12].replace_range(2..3, "E");
+    for &(x, y) in rock {
+        map[y].replace_range(x..=x, "#");
+    }
+    let seat = |name: &str| PlayerSpec {
+        name: name.into(),
+        team: None,
+        scrap: 10_000,
+        bot: false,
+        bot_config: None,
+    };
+    let scenario = Scenario {
+        mode: ScenarioMode::Match,
+        name: "cradle".into(),
+        map,
+        players: vec![seat("west"), seat("east")],
+        units: (12..16)
+            .map(|x| UnitSpec {
+                player: 0,
+                kind: oxide_sim::UnitKind::Excavator,
+                x,
+                y: 5,
+            })
+            .collect(),
+        buildings: vec![
+            BuildingSpec {
+                player: 0,
+                kind: oxide_sim::BuildingKind::Crucible,
+                x: 12,
+                y: 2,
+            },
+            BuildingSpec {
+                player: 0,
+                kind: oxide_sim::BuildingKind::Extractor,
+                x: 2,
+                y: 12,
+            },
+        ],
+        meta: None,
+    };
+    let mut value = serde_json::to_value(scenario.build().expect("cradle scenario")).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        if entry["kind"] == "extractor" {
+            entry["tier"] = 1.into();
+        }
+    }
+    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let crew: Vec<oxide_sim::UnitId> = state.units().iter().map(|unit| unit.id).collect();
+    state.tick(&[oxide_sim::PlayerCommand {
+        player: oxide_sim::PlayerId(0),
+        command: oxide_sim::Command::Build {
+            units: crew,
+            kind: oxide_sim::BuildingKind::MawCradle,
+            anchor: chassis::grid::TilePos::new(8, 7),
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let cradle = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == oxide_sim::BuildingKind::MawCradle)
+        .expect("the cradle site stands")
+        .id;
+    (state, cradle)
+}
+
+#[test]
+fn cradle_pads_show_only_while_the_crew_works_from_them_as_far_as_the_viewer_knows() {
+    let pads = oxide_sim::BuildingKind::MawCradle.crew_pads().unwrap();
+    let (west, east) = (oxide_sim::PlayerId(0), oxide_sim::PlayerId(1));
+    let (state, id) = cradle_site(&[]);
+    let cradle = state.building(id).unwrap();
+    assert!(crew_pads_in_use(&state, (west, false), cradle, pads));
+
+    // A pad on rock sends the crew to the ordinary ring, and its pads go.
+    let (state, id) = cradle_site(&[(10, 10)]);
+    let cradle = state.building(id).unwrap();
+    assert!(!state.passable(chassis::grid::TilePos::new(10, 10)));
+    assert!(!crew_pads_in_use(&state, (west, false), cradle, pads));
+    assert!(!crew_pads_in_use(&state, (east, true), cradle, pads));
+    // East has never seen that rock, so its view keeps the pads rather
+    // than reveal it.
+    assert!(
+        !state
+            .vision(east)
+            .explored(chassis::grid::TilePos::new(10, 10))
+    );
+    assert!(crew_pads_in_use(&state, (east, false), cradle, pads));
+}
+
+#[test]
+fn a_crew_lamp_lights_only_once_its_worker_is_at_work() {
+    let pads = oxide_sim::BuildingKind::MawCradle.crew_pads().unwrap();
+    let viewer = (oxide_sim::PlayerId(0), false);
+    let (mut state, id) = cradle_site(&[]);
+    let progress = |state: &oxide_sim::State| match state.building(id).unwrap().phase {
+        oxide_sim::BuildingPhase::Site { progress } => progress,
+        _ => panic!("the cradle is still a site"),
+    };
+    for _ in 0..600 {
+        let lit = crew_lamps(&state, viewer, state.building(id).unwrap(), pads);
+        if lit.iter().any(|on| *on) {
+            let before = progress(&state);
+            state.tick(&[]);
+            assert!(progress(&state) > before, "a lit lamp means work lands");
+            return;
+        }
+        state.tick(&[]);
+    }
+    panic!("no crew member reached a pad");
+}

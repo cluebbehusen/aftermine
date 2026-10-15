@@ -506,7 +506,7 @@ impl Presentation {
             let feeding = state.kiln_fuel(unit.id).is_some();
             self.maw_motion
                 .entry(unit.id.0)
-                .or_insert_with(|| crate::maw_motion::MawMotion::new(tick))
+                .or_insert_with(|| crate::maw_motion::MawMotion::settled(tick, cutting, feeding))
                 .observe(tick, cutting, feeding);
         }
     }

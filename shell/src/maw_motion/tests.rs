@@ -81,3 +81,41 @@ fn a_repeated_tick_changes_nothing_and_alpha_interpolates_within_it() {
     let between = motion.spin(0.5);
     assert!(before < between && between < spin);
 }
+
+#[test]
+fn a_maw_first_seen_at_work_shows_that_work_at_once() {
+    // A seek lands on a feeding Maw: its first frame is already the steady
+    // state a while of feeding reaches, scrap spaced along the whole belt.
+    let rows = |motion: &MawMotion| -> Vec<f32> {
+        let mut rows: Vec<f32> = motion.loads(1.0).map(|(along, _)| along).collect();
+        rows.sort_by(f32::total_cmp);
+        rows
+    };
+    let spaced = |rows: &[f32]| {
+        rows.windows(2)
+            .all(|pair| (pair[1] - pair[0] - LOAD_SPACING).abs() < 1e-3)
+    };
+    let mut fed = MawMotion::settled(0, false, true);
+    assert_eq!(fed.deploy(1.0), 1.0);
+    assert_eq!(fed.heat(1.0), 1.0);
+    let full = rows(&fed);
+    assert!(
+        spaced(&full) && full[0] < LOAD_SPACING && full[full.len() - 1] + LOAD_SPACING >= BELT_RUN,
+        "a full belt: {full:?}"
+    );
+    run(&mut fed, 1, 30, false, true);
+    let later = rows(&fed);
+    assert!(
+        spaced(&later),
+        "new loads keep the belt's spacing: {later:?}"
+    );
+
+    let cutting = MawMotion::settled(0, true, false);
+    assert_eq!(cutting.deploy(1.0), 1.0);
+    assert_eq!(cutting.heat(1.0), 0.0);
+    assert_eq!(cutting.loads(1.0).count(), 0);
+
+    let idle = MawMotion::settled(0, false, false);
+    assert_eq!(idle.deploy(1.0), 0.0);
+    assert_eq!(idle.loads(1.0).count(), 0);
+}

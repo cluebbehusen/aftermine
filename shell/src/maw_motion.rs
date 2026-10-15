@@ -58,6 +58,36 @@ impl MawMotion {
         }
     }
 
+    /// A machine first seen at `tick`, as it looks after a while at what it
+    /// is doing then: drum lowered and turning while it cuts or feeds, kiln
+    /// hot and the belt full while it feeds. A Maw met after a seek or a
+    /// load shows its work at once.
+    pub(crate) fn settled(tick: u64, cutting: bool, feeding: bool) -> Self {
+        let mut motion = Self::new(tick);
+        if cutting || feeding {
+            motion.deploy = [1.0; 2];
+        }
+        motion.spin_rate = spin_target(cutting, feeding);
+        if feeding {
+            motion.belt_rate = BELT_SPEED;
+            motion.heat = [1.0; 2];
+            let mut along = 0.0;
+            while along + LOAD_SPACING < BELT_RUN {
+                along += LOAD_SPACING;
+            }
+            while along >= 0.0 {
+                motion.loads.push(Load {
+                    start: -along,
+                    variant: motion.issued,
+                });
+                motion.issued += 1;
+                along -= LOAD_SPACING;
+            }
+            motion.next_load = LOAD_SPACING;
+        }
+        motion
+    }
+
     /// Advances one completed tick. `cutting` holds while the Maw's own
     /// hits are recent; `feeding` while its kiln has wreck to eat.
     pub(crate) fn observe(&mut self, tick: u64, cutting: bool, feeding: bool) {
@@ -75,14 +105,7 @@ impl MawMotion {
                 (deploy - 1.0 / DEPLOY_TICKS).max(0.0)
             },
         ];
-        let spin_target = if cutting {
-            CUT_SPIN
-        } else if feeding {
-            FEED_SPIN
-        } else {
-            0.0
-        };
-        self.spin_rate = approach(self.spin_rate, spin_target, SPIN_EASE);
+        self.spin_rate = approach(self.spin_rate, spin_target(cutting, feeding), SPIN_EASE);
         self.spin = [self.spin[1], self.spin[1] + self.spin_rate];
 
         let carrying = !self.loads.is_empty();
@@ -141,6 +164,16 @@ impl MawMotion {
             .iter()
             .map(move |load| (belt - load.start, load.variant))
             .filter(|(along, _)| (0.0..BELT_RUN).contains(along))
+    }
+}
+
+fn spin_target(cutting: bool, feeding: bool) -> f32 {
+    if cutting {
+        CUT_SPIN
+    } else if feeding {
+        FEED_SPIN
+    } else {
+        0.0
     }
 }
 
