@@ -951,13 +951,15 @@ fn collision_pair_position(state: &State, i: usize, j: usize) -> (Vec2Fx, Vec2Fx
 }
 
 /// Whether a candidate pair can reach the overlap test during this tick's
-/// passes. Bodies of different layers never do. A ground body moves no
+/// passes. Bodies of different layers never do, and neither does a drone
+/// with its host: drones launch from the host's center and dock back into
+/// it, so their contact would shove the host. A ground body moves no
 /// farther than [`COLLISION_MAX_STEP`] in a tick, so a ground pair farther
 /// apart than its full spacing plus both bodies' travel never does either.
 /// Air corrections clamp to the flight envelope, which can carry a body
 /// farther, so air pairs always stay.
 fn may_touch_this_tick(a: &Body, b: &Body) -> bool {
-    if a.domain != b.domain {
+    if a.domain != b.domain || a.host == Some(b.id) || b.host == Some(a.id) {
         return false;
     }
     if a.domain == crate::stats::Domain::Air {
@@ -985,6 +987,8 @@ struct Body {
     /// already checked against the world; a shove would carry it faster than
     /// its speed and off that arc, so such aircraft neither push nor yield.
     shoveable: bool,
+    id: crate::ids::UnitId,
+    host: Option<crate::ids::UnitId>,
 }
 
 /// Candidate contacts in a seat-local order. A half-turn maps each pair to a
@@ -1027,6 +1031,8 @@ fn collision_pairs(
             domain: unit.domain(),
             alive: unit.hp > 0,
             shoveable: unit.kind.stats().turn_rate == 0 || unit.landed(),
+            id: unit.id,
+            host: unit.host,
         })
         .collect();
     for (i, body) in bodies.iter().enumerate() {

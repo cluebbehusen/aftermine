@@ -523,10 +523,12 @@ fn class(kind: UnitKind) -> Class {
 }
 
 /// A seat's net worth: its share of `bodies` plus its bank in `state`.
+/// A seat's bank and its bodies at their health. Drones are their host's
+/// equipment, worth nothing apart from it whether docked or flying.
 fn worth(state: &State, bodies: &[Body], seat: usize) -> u64 {
     let owned: u64 = bodies
         .iter()
-        .filter(|body| usize::from(body.owner) == seat)
+        .filter(|body| usize::from(body.owner) == seat && body.host.is_none())
         .map(|body| body.value * u64::from(body.hp) / u64::from(body.max_hp.max(1)))
         .sum();
     owned + u64::from(state.players()[seat].scrap)
@@ -1094,7 +1096,8 @@ impl ImpactLedger {
                 Event::WarheadLaunched { .. }
                 | Event::WarheadLanded { .. }
                 | Event::WarheadIntercepted { .. }
-                | Event::RoundAssembled { .. } => self.strike(event, &mut sources, now),
+                | Event::RoundAssembled { .. }
+                | Event::DroneAssembled { .. } => self.strike(event, &mut sources, now),
                 Event::AircraftImpacted { crash } => {
                     if let Some(profile) = crash.kind.stats().crash {
                         sources.splash.push((

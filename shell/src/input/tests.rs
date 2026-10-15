@@ -8604,3 +8604,32 @@ fn a_selected_roc_offers_its_drone_bay() {
         bays.autofill_toggle()
     );
 }
+
+#[test]
+fn a_roc_s_bay_keys_work_with_a_worker_in_the_selection() {
+    let (mut game, roc) = roc_with_drones();
+    let worker = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind.stats().harvest.is_some())
+        .unwrap()
+        .id;
+    game.presentation.selection.units = vec![roc, worker];
+    let input = InputState::new();
+    let context = input.context(&game);
+    assert_eq!(context, crate::action::Context::Workers);
+    for action in [
+        Action::OrderRound,
+        Action::CancelRound,
+        Action::ToggleAutofill,
+    ] {
+        assert!(action.available(context), "{action:?}");
+    }
+    let bindings = classic();
+    let order = bindings.chord_for(Action::OrderRound).unwrap();
+    assert_eq!(
+        bindings.resolve_in(order.key, order.ctrl, order.shift, context),
+        Some(Action::OrderRound)
+    );
+}
