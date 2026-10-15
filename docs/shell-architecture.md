@@ -474,14 +474,16 @@ dock rises to stack above it, so queueing orders never moves the toggle.
 `ribbon_row_press` hit-tests both before every other target: the toggle flips
 QUEUE and the ribbon cancels its mode. The build palette's Back card
 (`CardAction::ClosePalette`) stands in its own column at the band's left edge
-and leaves construction in one press, and on touch a tap that picks no unit or
-building while the palette is open and nothing is armed closes it and keeps the
-selection, even over a scrap pile: dismissing never also acts. With QUEUE lit
-(or Shift or Ctrl held), a roster chip drops its kind instead of keeping only
-it. Taps and clicks select through `select::pick`, which gives a fingertip a
-wider reach than a cursor. A press that picks nothing on a tile with known
-salvage selects that tile as `Selection::pile`, read-only and exclusive: any
-other selection drops it, and `Game` drops it once the viewer knows of no
+and leaves construction in one press. The orders dock and its Stop button stay
+stacked above the palette's left corner, so a builder's queued work remains
+visible and cancelable while the next site is chosen. On touch a tap that picks
+no unit or building while the palette is open and nothing is armed closes it and
+keeps the selection, even over a scrap pile: dismissing never also acts. With
+QUEUE lit (or Shift or Ctrl held), a roster chip drops its kind instead of
+keeping only it. Taps and clicks select through `select::pick`, which gives a
+fingertip a wider reach than a cursor. A press that picks nothing on a tile with
+known salvage selects that tile as `Selection::pile`, read-only and exclusive:
+any other selection drops it, and `Game` drops it once the viewer knows of no
 salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
