@@ -9,8 +9,8 @@ use std::collections::VecDeque;
 
 /// Events a buffer holds, the oldest dropped first beyond it: a computation
 /// bound that normal play stays under, since the buffer keeps one stall per
-/// unit and reason and one rejection per reason, and a seat holds one cradle
-/// at a time.
+/// unit and reason and one rejection per reason, and a cradle stands its
+/// machine up only after minutes of crew work.
 const CAP: usize = 1_024;
 
 /// One of the seat's own order failures, or another seat's machine standing

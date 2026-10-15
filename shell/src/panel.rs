@@ -1524,15 +1524,6 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     .collect::<Vec<_>>()
                     .join(", ");
                 (false, Some(format!("needs a standing {need}")))
-            } else if let Some(unit) = kind.assembles()
-                && game
-                    .state
-                    .experimental_slot_taken(game.presentation.human, unit, &[])
-            {
-                (
-                    false,
-                    Some(format!("one {} at a time", entity_name(unit.name()))),
-                )
             } else if scrap < cost {
                 (false, Some(format!("needs {cost} scrap")))
             } else {

@@ -2001,10 +2001,7 @@ impl State {
         Ok(())
     }
 
-    /// What admission and the one-per-player cap guarantee: a seat raises
-    /// at most one cradle of a kind and none while that kind's machine
-    /// lives, and no cradle holds more crew than it admits. A scenario may
-    /// field several machines; it cannot field a cradle.
+    /// What admission guarantees: no cradle holds more crew than it admits.
     fn validate_assembly(&self) -> Result<(), StateIntegrityError> {
         use StateIntegrityError as E;
         for cradle in self
@@ -2019,18 +2016,6 @@ impl State {
                 .count();
             if crew > crate::stats::ASSEMBLY_CREW_CAP {
                 return Err(E::CrewBeyondCap(cradle.id));
-            }
-            let unit = cradle.kind.assembles().expect("filtered to cradles");
-            if self.buildings.iter().any(|other| {
-                other.id != cradle.id
-                    && other.player == cradle.player
-                    && other.kind.assembles() == Some(unit)
-            }) || self
-                .units
-                .iter()
-                .any(|u| u.player == cradle.player && u.kind == unit)
-            {
-                return Err(E::ExperimentalBeyondCap(cradle.player));
             }
         }
         Ok(())
@@ -3434,8 +3419,6 @@ pub enum PlaceRefusal {
     /// The footprint overlaps a derelict frame, which no other kind may
     /// pave over.
     FrameBlocked,
-    /// The player already has this experimental alive or assembling.
-    ExperimentalLimit,
 }
 
 #[cfg(test)]
@@ -3776,10 +3759,6 @@ pub enum StateIntegrityError {
     /// More workers hold a cradle than its crew admits.
     #[error("cradle {0} holds more crew than it admits")]
     CrewBeyondCap(BuildingId),
-    /// A player assembles an experimental while one of that kind lives, or
-    /// two at once.
-    #[error("player {0} assembles more than one of an experimental")]
-    ExperimentalBeyondCap(PlayerId),
 }
 
 /// Slot i belongs to weapon i; slots past the roster stay zero for the

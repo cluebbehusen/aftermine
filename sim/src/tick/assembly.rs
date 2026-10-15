@@ -1,10 +1,10 @@
-//! Assembly cradles: the one-per-player cap on experimentals, the crew a
-//! cradle admits, and the machine that stands up when the last work lands.
+//! Assembly cradles: the crew a cradle admits, and the machine that stands
+//! up when the last work lands.
 
 use crate::Event;
 use crate::ids::{BuildingId, PlayerId, UnitId};
 use crate::state::{Building, Order, State, Unit};
-use crate::stats::{ASSEMBLY_CREW_CAP, BuildingKind, UnitKind};
+use crate::stats::{ASSEMBLY_CREW_CAP, BuildingKind};
 use chassis::grid::TilePos;
 use std::cmp::Reverse;
 
@@ -44,26 +44,6 @@ impl State {
         self.building(cradle)
             .filter(|b| b.kind.assembles().is_some())
             .map_or_else(Vec::new, |b| crew(self, b))
-    }
-
-    /// Whether `player` already has `unit` alive, or a cradle assembling
-    /// one in any phase other than the `released` sites a command is
-    /// about to give up.
-    pub fn experimental_slot_taken(
-        &self,
-        player: PlayerId,
-        unit: UnitKind,
-        released: &[BuildingId],
-    ) -> bool {
-        self.units
-            .iter()
-            .any(|u| u.player == player && u.kind == unit && u.hp > 0)
-            || self.buildings.iter().any(|b| {
-                b.player == player
-                    && b.hp > 0
-                    && b.kind.assembles() == Some(unit)
-                    && !released.contains(&b.id)
-            })
     }
 
     /// How a build order from `units` on the cradle of `kind` at `anchor`

@@ -1708,7 +1708,6 @@ fn place_at(
             PlaceRefusal::FrameBlocked => {
                 "Can't build there: that ground belongs to a derelict frame"
             }
-            PlaceRefusal::ExperimentalLimit => "You already have one of those",
         });
         game.presentation
             .sounds_pending

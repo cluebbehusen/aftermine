@@ -2376,7 +2376,7 @@ impl BuildingKind {
                 "Holds two interceptors that stop enemy warheads landing in its ring, once sight or radar has tracked them. Reloads on its own."
             }
             BuildingKind::MawCradle => {
-                "Up to four workers assemble a Maw here. Every player sees it once work starts. One Maw per player, alive or assembling."
+                "Up to four workers assemble a Maw here. Every player sees it once work starts."
             }
         }
     }

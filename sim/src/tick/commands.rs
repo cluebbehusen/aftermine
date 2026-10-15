@@ -785,11 +785,6 @@ fn apply_build_inner(
     if !state.prerequisites_met(player, kind) {
         return Err(RejectReason::MissingPrerequisite);
     }
-    if let Some(unit) = kind.assembles()
-        && state.experimental_slot_taken(player, unit, &[])
-    {
-        return Err(RejectReason::ExperimentalLimit);
-    }
     if defer {
         // Hidden occupancy cannot affect acceptance or payment. Physical
         // validation waits until the entire footprint is visible.

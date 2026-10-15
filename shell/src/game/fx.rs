@@ -1534,9 +1534,6 @@ impl Presentation {
                         oxide_sim::command::RejectReason::NothingLoaded => {
                             "No warhead loaded".into()
                         }
-                        oxide_sim::command::RejectReason::ExperimentalLimit => {
-                            "You already have one of those".into()
-                        }
                         oxide_sim::command::RejectReason::CrewFull => "Cradle crew is full".into(),
                     };
                     self.toast(why);

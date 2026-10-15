@@ -404,10 +404,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
         .into_iter()
         .find(|b| b.assembles() == Some(kind))
     {
-        notes.push(format!(
-            "Assembled in a {}. One per player, alive or assembling.",
-            entity_name(cradle.name())
-        ));
+        notes.push(format!("Assembled in a {}.", entity_name(cradle.name())));
     }
     notes
 }

@@ -471,9 +471,10 @@ ground, leaving them to it when the rest of the army moves on.
 ## Breachers
 
 Once a Crucible stands, the seat wants a Maw cradle while its line, siege and
-anti-heavy army falls short of what an attack on the known enemy guns its ground
-reaches would need, by the attack margin, and while it neither fields a Maw nor
-raises a cradle; siege weighs it and income scales it. An attack, lift or strike
+anti-heavy army, with the Maws it fields and the cradles it raises at a Maw's
+price, falls short of what an attack on the known enemy guns its ground reaches
+would need, by the attack margin; siege weighs it and income scales it. While
+the seat neither fields a Maw nor raises a cradle, an attack, lift or strike
 lately given up on ground the seat reaches is direct evidence the army cannot
 break in: the cradle is then wanted at the scale of the seat's upgrades. The
 cradle's next step reaches its Deep Bore first. It stands in a whole block
