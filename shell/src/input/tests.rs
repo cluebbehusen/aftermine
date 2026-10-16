@@ -740,7 +740,7 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
             apply_events(&mut game, &mut input, &[left_down(point)]);
             assert_eq!(
                 input.planned_stamps(),
-                [(frame, false)],
+                [frame],
                 "the press plans the snapped frame"
             );
             assert!(game.pending.is_empty(), "and stages nothing yet");
@@ -2316,7 +2316,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
-    let second = game.presentation.camera.to_screen(vec2(6.5, 2.5));
+    let second = game.presentation.camera.to_screen(vec2(5.5, 2.5));
     apply_events(
         &mut game,
         &mut input,
@@ -2331,7 +2331,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     game.issue(Command::Stop {
         units: vec![builder],
     });
-    let third = game.presentation.camera.to_screen(vec2(8.5, 2.5));
+    let third = game.presentation.camera.to_screen(vec2(6.5, 2.5));
     apply_events(&mut game, &mut input, &[mouse_move(third)]);
     assert_eq!(
         input.planned_stamps().len(),
@@ -2359,7 +2359,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
             queue: true,
         });
     }
-    let second = game.presentation.camera.to_screen(vec2(6.5, 2.5));
+    let second = game.presentation.camera.to_screen(vec2(5.5, 2.5));
     apply_events(&mut game, &mut input, &[mouse_move(second)]);
     assert_eq!(
         input.planned_stamps().len(),

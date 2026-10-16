@@ -304,8 +304,10 @@ pub(crate) struct PlacingStroke {
     /// Whether the opening stamp queues behind the builder's program; the
     /// rest always do.
     queue: bool,
-    /// The planned stamps in order, each with whether it defers its claim.
-    stamps: Vec<(TilePos, bool)>,
+    /// The planned stamps in order. Whether each defers its claim is
+    /// derived from the player's sight whenever it is needed, never kept,
+    /// so a stamp whose ground falls into fog mid-drag is judged as fog.
+    stamps: Vec<TilePos>,
 }
 
 impl PlacingStroke {
@@ -319,7 +321,7 @@ impl PlacingStroke {
         let (w, h) = kind.size();
         self.stamps
             .iter()
-            .any(|(a, _)| (a.x - anchor.x).abs() < w && (a.y - anchor.y).abs() < h)
+            .any(|a| (a.x - anchor.x).abs() < w && (a.y - anchor.y).abs() < h)
     }
 }
 
@@ -390,6 +392,9 @@ struct PendingBuildProjection {
     refusal: Option<oxide_sim::PlaceRefusal>,
     funds: PendingBuildFunds,
     queue_has_room: bool,
+    /// The human's own blocking buildings once the batch lands, staged and
+    /// planned sites included: footprints the player always knows.
+    own_footprints: Vec<(TilePos, (i32, i32))>,
 }
 
 /// Projects the exact command phase once for every placement surface:
@@ -432,8 +437,15 @@ fn pending_build_projection_for(
         } else {
             crew.first().is_some_and(can_assign)
         };
+        let own_footprints = state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == game.presentation.human && !b.provisional())
+            .map(|b| (b.anchor, b.kind.size()))
+            .collect();
         PendingBuildProjection {
             refusal,
+            own_footprints,
             funds: PendingBuildFunds {
                 scrap: state
                     .scrap(game.presentation.human)
@@ -528,20 +540,21 @@ fn planned_batch(
     stroke: &PlacingStroke,
 ) -> Vec<oxide_sim::PlayerCommand> {
     let units = &game.presentation.selection.units;
-    let stamps = stroke
-        .stamps
-        .iter()
-        .enumerate()
-        .map(|(index, &(anchor, defer))| oxide_sim::PlayerCommand {
-            player: game.presentation.human,
-            command: Command::Build {
-                units: units.clone(),
-                kind,
-                anchor,
-                queue: stroke.queues(index),
-                defer,
-            },
-        });
+    let stamps =
+        stroke
+            .stamps
+            .iter()
+            .enumerate()
+            .map(|(index, &anchor)| oxide_sim::PlayerCommand {
+                player: game.presentation.human,
+                command: Command::Build {
+                    units: units.clone(),
+                    kind,
+                    anchor,
+                    queue: stroke.queues(index),
+                    defer: build_defer_needed(game, kind, anchor),
+                },
+            });
     game.pending.iter().cloned().chain(stamps).collect()
 }
 
@@ -559,12 +572,7 @@ fn judge(
         kind,
         anchor,
         queue,
-        plan: stroke.map(|stroke| {
-            (
-                stroke.queue,
-                stroke.stamps.iter().map(|(anchor, _)| *anchor).collect(),
-            )
-        }),
+        plan: stroke.map(|stroke| (stroke.queue, stroke.stamps.clone())),
     };
     let cache = &game.presentation.placement_verdict.0;
     if let Some((judged, verdict)) = cache.borrow().as_ref()
@@ -591,7 +599,7 @@ fn judge(
         PlacementVerdict::QueueFull
     } else if defer {
         PlacementVerdict::BuildsOnArrival
-    } else if !founder_may_reach(game, kind, anchor) {
+    } else if !founder_may_reach(game, kind, anchor, &projection.own_footprints) {
         PlacementVerdict::Unreachable
     } else {
         PlacementVerdict::Builds
@@ -601,16 +609,19 @@ fn judge(
 }
 
 /// Whether the founder may reach a doorstep of `kind` at `anchor`, as far
-/// as the player can tell. Only ground the player can see blocked, or has
-/// explored as impassable terrain, counts: unexplored and fogged ground is
-/// taken as open, so this never calls reachable ground unreachable and
-/// never reads what fog hides. The sim's own path check still decides; this
-/// catches the walled-off pockets and plateaus the player can see. Moves
-/// run eight ways, a superset of any path the sim takes.
+/// as the player can tell. Only ground the player can see blocked, has
+/// explored as impassable terrain, or holds under `own` footprints (the
+/// player's buildings once the staged and planned batch lands) counts:
+/// unexplored and fogged ground is taken as open, so this never calls
+/// reachable ground unreachable and never reads what fog hides. The sim's
+/// own path check still decides; this catches the walled-off pockets,
+/// plateaus, and rows that seal their own doorsteps the player can see.
+/// Moves run eight ways without cutting corners, as the sim's search does.
 fn founder_may_reach(
     game: &crate::game::Scene<'_>,
     kind: oxide_sim::BuildingKind,
     anchor: TilePos,
+    own: &[(TilePos, (i32, i32))],
 ) -> bool {
     let human = game.presentation.human;
     let Some(founder) = game
@@ -639,6 +650,21 @@ fn founder_may_reach(
     }
     let map = game.state.map();
     let vision = game.state.vision(human);
+    let (width, height) = (map.width(), map.height());
+    let index = |t: TilePos| (t.y * width + t.x).fit::<usize>();
+    let mut own_blocks = vec![false; (width * height).fit::<usize>()];
+    for &(corner, (w, h)) in own {
+        for dy in 0..h {
+            for dx in 0..w {
+                let t = corner.offset(dx, dy);
+                if map.tile(t).is_some() {
+                    own_blocks[index(t)] = true;
+                }
+            }
+        }
+    }
+    // The founder may walk off its own tile even if a site now covers it,
+    // as the sim's search may, but no covered tile is ever a doorstep.
     let open = |t: TilePos| {
         if inside(t) {
             return false;
@@ -646,7 +672,9 @@ fn founder_may_reach(
         let Some(tile) = map.tile(t) else {
             return false;
         };
-        if vision.visible(t) {
+        if own_blocks[index(t)] {
+            false
+        } else if vision.visible(t) {
             game.state.passable(t)
         } else if vision.explored(t) {
             !tile.terrain.blocks_ground()
@@ -654,8 +682,6 @@ fn founder_may_reach(
             true
         }
     };
-    let (width, height) = (map.width(), map.height());
-    let index = |t: TilePos| (t.y * width + t.x).fit::<usize>();
     let mut seen = vec![false; (width * height).fit::<usize>()];
     let mut frontier = std::collections::VecDeque::from([from]);
     if map.tile(from).is_some() {
@@ -676,7 +702,11 @@ fn founder_may_reach(
             (1, 1),
         ] {
             let next = at.offset(dx, dy);
-            if map.tile(next).is_some() && !seen[index(next)] && open(next) {
+            // As `chassis::path::astar` moves: a diagonal step never cuts
+            // a corner, so both cardinal companions must be open.
+            let corner_clear =
+                dx == 0 || dy == 0 || (open(at.offset(dx, 0)) && open(at.offset(0, dy)));
+            if map.tile(next).is_some() && !seen[index(next)] && corner_clear && open(next) {
                 seen[index(next)] = true;
                 frontier.push_back(next);
             }
@@ -774,8 +804,8 @@ pub(crate) fn preview_spot(
                 .filter(|position| *position <= oxide_sim::stats::ORDER_QUEUE_CAP + 1)
                 .map(Lands::Queues)
         };
-        if let Some(index) = stroke.stamps.iter().position(|(a, _)| *a == anchor) {
-            let verdict = if stroke.stamps[index].1 {
+        if let Some(index) = stroke.stamps.iter().position(|a| *a == anchor) {
+            let verdict = if build_defer_needed(game, kind, anchor) {
                 BuildsOnArrival
             } else {
                 Builds
@@ -990,20 +1020,26 @@ impl InputState {
         self.placing.as_ref().map(|placement| placement.kind)
     }
 
-    /// A live stroke's planned stamps, each with whether it defers.
-    pub(crate) fn planned_stamps(&self) -> &[(TilePos, bool)] {
+    /// A live stroke's planned stamps.
+    pub(crate) fn planned_stamps(&self) -> &[TilePos] {
         self.placing
             .as_ref()
             .and_then(|placement| placement.stroke.as_ref())
             .map_or(&[], |stroke| stroke.stamps.as_slice())
     }
 
-    /// Throws a live stroke's plan away, keeping placement armed. Returns
+    /// Throws a live stroke's plan away, keeping placement armed unless
+    /// queue was let go during the stroke after a chain had staged. Returns
     /// whether there was one.
     pub(crate) fn drop_stroke(&mut self) -> bool {
-        self.placing
+        let dropped = self
+            .placing
             .as_mut()
-            .is_some_and(|placement| placement.stroke.take().is_some())
+            .is_some_and(|placement| placement.stroke.take().is_some());
+        if dropped && !self.queue_held() {
+            self.queue_released();
+        }
+        dropped
     }
 
     /// The touch ghost's anchor, while placement is armed.
@@ -1711,7 +1747,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
-            input.mouse = vec2(x, y);
+            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
             // A held minimap press keeps steering: clamp the cursor
             // into the minimap so sliding off its edge doesn't stall
             // the pan mid-gesture.
@@ -1737,26 +1773,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // stamps before it: a wall in one stroke. Nothing stages
             // until the release, so a careless stroke costs nothing.
             // Refused cells skip silently (the ghost tells that story).
-            if let Some(Placement {
-                kind,
-                stroke: Some(stroke),
-                ..
-            }) = input.placing.as_mut()
-                && !click_on_hud(game, vec2(x, y))
-                && crate::render::minimap_world_at(&game.view(), vec2(x, y)).is_none()
-            {
-                let kind = *kind;
-                let world = game.presentation.camera.to_world(vec2(x, y));
-                let anchor = placement_anchor(&game.view(), kind, numeric::tile_at(world));
-                if !stroke.overlaps(kind, anchor) {
-                    let verdict = stroke_verdict(&game.view(), kind, stroke, anchor);
-                    if verdict.builds() {
-                        stroke
-                            .stamps
-                            .push((anchor, verdict == PlacementVerdict::BuildsOnArrival));
-                    }
-                }
-            }
+            extend_stroke(game, input, from, vec2(x, y));
         }
         RawEvent::Wheel { delta } => crate::camera::controls::wheel_zoom(
             &mut game.presentation.camera,
@@ -1823,19 +1840,21 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             x,
             y,
         } => {
-            input.mouse = vec2(x, y);
+            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
             input.minimap_drag = false;
-            // The placement stroke ends at release; Shift decides
-            // whether the mode stays armed.
+            // The placement stroke ends at release, taking the ground
+            // up to the release point; Shift decides whether the mode
+            // stays armed, as letting go of it mid-stroke would have.
+            extend_stroke(game, input, from, vec2(x, y));
             let stroke = input
                 .placing
                 .as_mut()
                 .and_then(|placement| placement.stroke.take());
-            if let (Some(kind), Some(stroke)) = (input.placing_kind(), stroke)
-                && commit_stroke(game, input, kind, &stroke)
-                && !input.queue_held()
-            {
-                input.stop_placing();
+            if let (Some(kind), Some(stroke)) = (input.placing_kind(), stroke) {
+                commit_stroke(game, input, kind, &stroke);
+                if !input.queue_held() {
+                    input.queue_released();
+                }
             }
             if let Some(origin) = input.drag_origin.take() {
                 let release = vec2(x, y);
@@ -2092,7 +2111,7 @@ fn armed_click(
             } else if let Some(placement) = &mut input.placing {
                 placement.stroke = Some(PlacingStroke {
                     queue,
-                    stamps: vec![(anchor, verdict == PlacementVerdict::BuildsOnArrival)],
+                    stamps: vec![anchor],
                 });
             }
         }
@@ -2225,9 +2244,14 @@ fn commit_stroke(
     stroke: &PlacingStroke,
 ) -> bool {
     let mut refusals = Vec::new();
-    for (index, &(anchor, _)) in stroke.stamps.iter().enumerate() {
-        if let Err(refusal) = stage_build(game, kind, anchor, stroke.queues(index)) {
-            refusals.push(refusal);
+    let mut opened = false;
+    for &anchor in &stroke.stamps {
+        // The first stamp that stages opens the row, replacing the
+        // program unless the stroke queued, even when an earlier one
+        // fails its recheck; the rest queue behind it.
+        match stage_build(game, kind, anchor, opened || stroke.queue) {
+            Ok(()) => opened = true,
+            Err(refusal) => refusals.push(refusal),
         }
     }
     let total = stroke.stamps.len();
@@ -2242,11 +2266,45 @@ fn commit_stroke(
             },
         );
     }
-    let staged = skipped < total;
-    if staged && let Some(placement) = &mut input.placing {
+    if opened && let Some(placement) = &mut input.placing {
         placement.placed = true;
     }
-    staged
+    opened
+}
+
+/// Plans the stamps a cursor dragged from `from` to `to` (screen points)
+/// crosses while a stroke is live, sampled finely enough that a fast move
+/// leaves no footprint out. Samples over chrome or the minimap plan nothing.
+fn extend_stroke(game: &Game, input: &mut InputState, from: Vec2, to: Vec2) {
+    let Some(Placement {
+        kind,
+        stroke: Some(stroke),
+        ..
+    }) = input.placing.as_mut()
+    else {
+        return;
+    };
+    let kind = *kind;
+    let camera = &game.presentation.camera;
+    let (a, b) = (camera.to_world(from), camera.to_world(to));
+    // Half a tile a sample, bounded so a flung cursor cannot stall a frame.
+    let samples = numeric::to_i32((a.distance(b) * 2.0).ceil()).clamp(1, 256);
+    for step in 1..=samples {
+        let t = step as f32 / samples as f32;
+        let world = a.lerp(b, t);
+        let screen = camera.to_screen(world);
+        if click_on_hud(game, screen)
+            || crate::render::minimap_world_at(&game.view(), screen).is_some()
+        {
+            continue;
+        }
+        let anchor = placement_anchor(&game.view(), kind, numeric::tile_at(world));
+        if !stroke.overlaps(kind, anchor)
+            && stroke_verdict(&game.view(), kind, stroke, anchor).builds()
+        {
+            stroke.stamps.push(anchor);
+        }
+    }
 }
 
 /// Stages `kind` at `anchor`, judged after the exact pending command phase

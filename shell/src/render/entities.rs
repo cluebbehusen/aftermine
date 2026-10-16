@@ -51,13 +51,14 @@ pub(crate) fn draw_placement_ghost(
         Color::new(1.0, 0.45, 0.4, 0.55),
     );
     let planned = input.planned_stamps();
-    for &(anchor, defer) in planned {
+    for &anchor in planned {
+        let defer = crate::input::build_defer_needed(game, kind, anchor);
         footprint(anchor, if defer { arrives } else { builds });
     }
     let Some(spot) = crate::input::preview_spot(game, input) else {
         return;
     };
-    if !planned.iter().any(|(anchor, _)| *anchor == spot.anchor) {
+    if !planned.contains(&spot.anchor) {
         footprint(
             spot.anchor,
             match spot.verdict {
