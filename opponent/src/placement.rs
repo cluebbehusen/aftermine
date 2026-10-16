@@ -3,6 +3,7 @@
 //! can never change its verdict; the simulation re-checks on arrival and a
 //! refused order is re-planned.
 
+use crate::frame::{ring, tiles_of};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::fx::{Fx, Vec2Fx};
@@ -64,15 +65,7 @@ pub(crate) fn check(
     planned: &[(BuildingKind, TilePos)],
     layout: Layout,
 ) -> Result<Allowed, Refusal> {
-    let requires = kind
-        .base_stats()
-        .construction
-        .as_ref()
-        .map_or(&[][..], |construction| construction.requires);
-    if !requires
-        .iter()
-        .all(|need| crate::investments::met(observation, *need))
-    {
+    if !crate::investments::buildable(observation, kind) {
         return Err(Refusal::Prerequisite);
     }
     let footprint = Footprint::of(kind, anchor);
@@ -216,8 +209,7 @@ impl Footprint {
     }
 
     fn tiles(self) -> impl Iterator<Item = TilePos> + Clone {
-        (0..self.height)
-            .flat_map(move |dy| (0..self.width).map(move |dx| self.anchor.offset(dx, dy)))
+        crate::frame::tiles_of(self.anchor, (self.width, self.height))
     }
 }
 
@@ -335,4 +327,153 @@ impl<'a> Danger<'a> {
         });
         gun || unit || incident
     }
+}
+
+/// Whether a `kind` at `anchor` still leaves its ground open: an exit beside
+/// every own producer, every worked home scrap node and every hostile start
+/// on that ground, a tile to work from beside itself, every own site still
+/// going up and every own building it borders, which would otherwise be
+/// beyond repair, and no open ground beside it cut off, where units would
+/// be trapped or trained into a pocket they never leave. One flood fill over
+/// the ground from the rings of the seat's Foundries on it, with known
+/// buildings, claims, `planned` footprints, known live scrap and the new
+/// footprint in the way. A buried Scuttle Charge blocks nothing.
+pub(crate) fn keeps_paths(
+    observation: &ObservationData,
+    map: &MapModel,
+    kind: BuildingKind,
+    anchor: TilePos,
+    planned: &[(BuildingKind, TilePos)],
+) -> bool {
+    let me = observation.me;
+    let Some(ground) = map.component(anchor) else {
+        return false;
+    };
+    let (width, height) = (observation.map_width, observation.map_height);
+    let index = |tile: TilePos| {
+        ((0..width).contains(&tile.x) && (0..height).contains(&tile.y))
+            .then(|| tile.row_major(width))
+    };
+    let tiles = |kind: BuildingKind, anchor: TilePos| tiles_of(anchor, kind.size());
+    let claims: Vec<(BuildingKind, TilePos)> = observation
+        .my_units
+        .iter()
+        .filter_map(|unit| unit.founding)
+        .chain(planned.iter().copied())
+        .filter(|(kind, _)| *kind != BuildingKind::ScuttleCharge)
+        .collect();
+    let mut blocked = vec![false; chassis::grid::cell_count(width, height)];
+    let solid = observation
+        .my_buildings
+        .iter()
+        .chain(&observation.ally_buildings)
+        .chain(&observation.enemy_buildings)
+        .filter(|building| building.kind != BuildingKind::ScuttleCharge)
+        .map(|building| (building.kind, building.anchor))
+        .chain(claims.iter().copied())
+        .chain([(kind, anchor)]);
+    for (kind, anchor) in solid {
+        for tile in tiles(kind, anchor) {
+            if let Some(at) = index(tile) {
+                blocked[at] = true;
+            }
+        }
+    }
+    for (node, amount) in &observation.known_scrap {
+        if let Some(at) = index(*node)
+            && *amount > 0
+        {
+            blocked[at] = true;
+        }
+    }
+    let open = |tile: TilePos| {
+        index(tile).is_some_and(|at| !blocked[at]) && map.component(tile) == Some(ground)
+    };
+    let foundry = BuildingKind::Foundry.size();
+    let mut reached = vec![false; chassis::grid::cell_count(width, height)];
+    let foundries: Vec<TilePos> = observation
+        .my_buildings
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Foundry
+                && building.built
+                && map.component(building.anchor) == Some(ground)
+        })
+        .map(|building| building.anchor)
+        .collect();
+    // Ground no Foundry stands on has no exits to keep; a Foundry ringed
+    // shut has none left.
+    if foundries.is_empty() {
+        return true;
+    }
+    let mut frontier: Vec<TilePos> = foundries
+        .iter()
+        .flat_map(|anchor| ring(*anchor, foundry))
+        .filter(|tile| open(*tile))
+        .collect();
+    if frontier.is_empty() {
+        return false;
+    }
+    for tile in &frontier {
+        if let Some(at) = index(*tile) {
+            reached[at] = true;
+        }
+    }
+    while let Some(tile) = frontier.pop() {
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let next = tile.offset(dx, dy);
+            if let Some(at) = index(next)
+                && !reached[at]
+                && open(next)
+            {
+                reached[at] = true;
+                frontier.push(next);
+            }
+        }
+    }
+    let on = |tile: TilePos| map.component(tile) == Some(ground);
+    let beside = |anchor: TilePos, size: (i32, i32)| {
+        ring(anchor, size).any(|tile| index(tile).is_some_and(|at| reached[at]))
+    };
+    let reached_at = |tile: TilePos| index(tile).is_some_and(|at| reached[at]);
+    // Workers build from a tile beside a footprint's edge, not its corner.
+    let sides = |kind: BuildingKind, anchor: TilePos| {
+        let (w, h) = kind.size();
+        let inside = |v: i32, low: i32, len: i32| (low..low + len).contains(&v);
+        ring(anchor, (w, h))
+            .filter(move |tile| inside(tile.x, anchor.x, w) || inside(tile.y, anchor.y, h))
+    };
+    let workable = |kind: BuildingKind, anchor: TilePos| sides(kind, anchor).any(reached_at);
+    // Any pocket the footprint closes off borders one of its sides.
+    let sealing = sides(kind, anchor).any(|tile| open(tile) && !reached_at(tile));
+    let covered = |tile: TilePos| tiles(kind, anchor).any(|own| own == tile);
+    // Only a neighbour can lose its last side to this footprint: it cuts
+    // nothing else off without sealing a pocket beside itself.
+    let sites = observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind != BuildingKind::ScuttleCharge)
+        .filter(|building| !building.built || sides(building.kind, building.anchor).any(covered))
+        .map(|building| (building.kind, building.anchor))
+        .chain(claims.iter().copied())
+        .chain([(kind, anchor)])
+        .filter(|(_, anchor)| on(*anchor))
+        .all(|(kind, anchor)| workable(kind, anchor));
+    let producers = observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.built && !building.kind.base_stats().produces.is_empty())
+        .filter(|building| on(building.anchor))
+        .all(|building| beside(building.anchor, building.kind.size()));
+    let nodes = map
+        .home_nodes(me)
+        .iter()
+        .filter(|(node, _)| observation.known_scrap_at(*node) && on(*node))
+        .all(|(node, _)| beside(*node, (1, 1)));
+    let starts = map
+        .hostiles(me)
+        .filter_map(|owner| map.start(owner))
+        .filter(|anchor| ring(*anchor, foundry).any(on))
+        .all(|anchor| beside(anchor, foundry));
+    !sealing && sites && producers && nodes && starts
 }

@@ -141,19 +141,18 @@ fn a_recovering_defense_lends_its_units_to_another_foundry() {
     let home = foundries(&state, PlayerId(0))[0];
     let mut defenders = vec![at(&state, 5, 8), at(&state, 6, 8)];
     defenders.sort_unstable();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {"task": "defend", "asset": home.0, "phase": "recover"},
-            "since": 12,
-            "units": defenders,
-            "goal": {"x": 9, "y": 5},
-        }],
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.0, "phase": "recover"},
+                "since": 12,
+                "units": defenders,
+                "goal": {"x": 9, "y": 5},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let [(units, _)] = &hunts(&commands)[..] else {
         panic!("{commands:?}");
@@ -441,15 +440,8 @@ fn a_mid_defense_checkpoint_resumes_identically() {
     );
     assert!(!opponent.missions().is_empty(), "premise: mid-defense");
 
-    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
-    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
-    let mut restored = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    while state.current_tick() < 300 {
-        let commands = opponent.act(&state, &mut OwnEvents::default());
-        assert_eq!(restored.act(&state, &mut OwnEvents::default()), commands);
-        assert_eq!(restored.checkpoint(), opponent.checkpoint());
-        state.tick(&commands);
-    }
+    let ticks = 300 - state.current_tick();
+    resumes_identically(&mut opponent, &scenario, &mut state, ticks);
 }
 
 #[test]
@@ -757,23 +749,22 @@ fn a_bastion_among_guns_the_garrison_cannot_beat_is_left_to_production() {
 fn a_bastion_is_left_alone_while_the_army_that_could_beat_it_is_away_fighting() {
     let (scenario, state) = bastion(false);
     let garrison: Vec<UnitId> = GARRISON.iter().map(|(x, y)| at(&state, *x, *y)).collect();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {
-                "task": "attack",
-                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
-                "phase": {"engage": {"focus": null}},
-            },
-            "since": state.current_tick(),
-            "units": garrison,
-            "goal": {"x": 11, "y": 11},
-        }],
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": {"engage": {"focus": null}},
+                },
+                "since": state.current_tick(),
+                "units": garrison,
+                "goal": {"x": 11, "y": 11},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let commands = opponent.act(&state, &mut OwnEvents::default());
     assert!(!sent_beside_the_bastion(&commands), "{commands:?}");
 }
@@ -790,19 +781,18 @@ fn a_recovering_defense_counts_its_units_once_against_a_bastion() {
         .chain([&PICKET])
         .map(|(x, y)| at(&state, *x, *y))
         .collect();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {"task": "defend", "asset": home.0, "phase": "recover"},
-            "since": state.current_tick(),
-            "units": units,
-            "goal": {"x": 6, "y": 11},
-        }],
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.0, "phase": "recover"},
+                "since": state.current_tick(),
+                "units": units,
+                "goal": {"x": 6, "y": 11},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let commands = opponent.act(&state, &mut OwnEvents::default());
     assert!(!sent_beside_the_bastion(&commands), "{commands:?}");
 }
@@ -983,16 +973,7 @@ fn a_checkpoint_while_answering_unseen_shelling_resumes_identically() {
     let commands = opponent.act(&state, &mut OwnEvents::default());
     assert!(!advances(&commands).is_empty(), "premise: {commands:?}");
     state.tick(&commands);
-    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
-    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
-    let mut restored = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    let until = state.current_tick() + 360;
-    while state.current_tick() < until {
-        let commands = opponent.act(&state, &mut OwnEvents::default());
-        assert_eq!(restored.act(&state, &mut OwnEvents::default()), commands);
-        assert_eq!(restored.checkpoint(), opponent.checkpoint());
-        state.tick(&commands);
-    }
+    resumes_identically(&mut opponent, &scenario, &mut state, 360);
 }
 
 #[test]

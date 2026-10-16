@@ -2,7 +2,7 @@
 //! map. Terrain and the authored starts never change, so nothing here depends
 //! on what any seat has seen, and every seat of a match shares one model.
 
-use crate::frame::{HomeFrame, doubled, footprint_centre, gap};
+use crate::frame::{HomeFrame, doubled, footprint_centre, gap, tiles_of};
 use chassis::grid::{Grid, TilePos};
 use oxide_sim::map::Map;
 use oxide_sim::scenario::ScenarioError;
@@ -234,7 +234,7 @@ impl MapModel {
                 })
                 .map(|(tile, cell)| (tile, cell.scrap))
                 .collect();
-            distances[seat] = Some(distance_field(&components, *anchor));
+            distances[seat] = Some(extend_distances(&components, &[*anchor], None));
         }
         let mut sites = sites(map, &components, anchors);
         frame_sites(map, &components, anchors, &mut sites);
@@ -253,9 +253,9 @@ impl MapModel {
                     .iter()
                     .filter(|site| !site.nodes.is_empty())
                     .flat_map(|site| {
-                        site.anchors.iter().flat_map(|anchor| {
-                            (0..2).flat_map(move |dy| (0..2).map(move |dx| anchor.offset(dx, dy)))
-                        })
+                        site.anchors
+                            .iter()
+                            .flat_map(|anchor| tiles_of(*anchor, (2, 2)))
                     }),
             )
             .collect();
@@ -428,7 +428,7 @@ impl MapModel {
     }
 
     /// The ground a unit at `start` reaches with `closed` tiles, sorted,
-    /// walled off, one bit a tile in row order. [`distance_field`] steps
+    /// walled off, one bit a tile in row order. [`extend_distances`] steps
     /// diagonally only between two open sides, so steps along the axes reach
     /// the same ground.
     fn reach_without(&self, start: TilePos, closed: &[TilePos]) -> Vec<u64> {
@@ -437,10 +437,8 @@ impl MapModel {
         let mut reached = vec![0_u64; usize::try_from(width * height).unwrap_or(0).div_ceil(64)];
         let open =
             |tile: TilePos| self.component(tile).is_some() && closed.binary_search(&tile).is_err();
-        let mut frontier: Vec<TilePos> = (0..2)
-            .flat_map(|dy| (0..2).map(move |dx| start.offset(dx, dy)))
-            .filter(|tile| open(*tile))
-            .collect();
+        let mut frontier: Vec<TilePos> =
+            tiles_of(start, (2, 2)).filter(|tile| open(*tile)).collect();
         let mark = |reached: &mut Vec<u64>, tile: TilePos| {
             bit(tile).is_some_and(|at| {
                 let fresh = reached[at / 64] >> (at % 64) & 1 == 0;
@@ -482,16 +480,7 @@ impl MapModel {
                 }
                 let tile = piece[index];
                 index += 1;
-                for (dx, dy) in [
-                    (1, 0),
-                    (-1, 0),
-                    (0, 1),
-                    (0, -1),
-                    (1, 1),
-                    (1, -1),
-                    (-1, 1),
-                    (-1, -1),
-                ] {
+                for (dx, dy) in NEIGHBOURS {
                     let next = tile.offset(dx, dy);
                     let squeezed = dx != 0
                         && dy != 0
@@ -667,9 +656,7 @@ impl MapModel {
                 let open = |grid: &Grid<bool>, anchor: TilePos, size: (i32, i32)| {
                     grid.get(anchor) == Some(&true)
                         && claims(anchor, size)
-                        && (0..size.1)
-                            .flat_map(|dy| (0..size.0).map(move |dx| anchor.offset(dx, dy)))
-                            .all(|tile| !self.gated(player, tile))
+                        && tiles_of(anchor, size).all(|tile| !self.gated(player, tile))
                 };
                 let laid_slot = |anchor: TilePos| {
                     slot(*foundry, anchor) && open(&self.spot, anchor, foundry_size)
@@ -904,8 +891,7 @@ fn block_centre(foundry: TilePos, anchor: TilePos) -> bool {
 
 /// A slot's three tiles beside a lane, all but the one inside its block.
 fn edge_tiles(foundry: TilePos, slot: TilePos) -> Vec<TilePos> {
-    (0..2)
-        .flat_map(|dy| (0..2).map(move |dx| slot.offset(dx, dy)))
+    tiles_of(slot, (2, 2))
         .filter(|tile| edge_tile(foundry, *tile))
         .collect()
 }
@@ -925,27 +911,29 @@ fn slot_of(foundry: TilePos, tile: TilePos) -> TilePos {
 
 /// Whether a footprint of `size` at `anchor` keeps off every lane of the
 /// layout around a Foundry at `foundry`.
-fn off_lanes(foundry: TilePos, anchor: TilePos, (width, height): (i32, i32)) -> bool {
-    (0..height)
-        .flat_map(|dy| (0..width).map(move |dx| anchor.offset(dx, dy)))
-        .all(|tile| !lane(foundry, tile))
+fn off_lanes(foundry: TilePos, anchor: TilePos, size: (i32, i32)) -> bool {
+    tiles_of(anchor, size).all(|tile| !lane(foundry, tile))
 }
+
+/// The steps to a tile's eight neighbours, its sides first.
+const NEIGHBOURS: [(i32, i32); 8] = [
+    (1, 0),
+    (-1, 0),
+    (0, 1),
+    (0, -1),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
+];
 
 fn chebyshev(a: TilePos, b: TilePos) -> i32 {
     (a.x - b.x).abs().max((a.y - b.y).abs())
 }
 
-/// Ground distance from a start Foundry's footprint over open ground, with
-/// diagonal steps that never cut a corner. Integer costs keep mirrored starts'
-/// fields mirrored exactly.
-fn distance_field(components: &Grid<u32>, start: TilePos) -> Grid<u16> {
-    distance_fields(components, &[start])
-}
-
-fn distance_fields(components: &Grid<u32>, starts: &[TilePos]) -> Grid<u16> {
-    extend_distances(components, starts, None)
-}
-
+/// Ground distance from the Foundry footprints at `starts` over open ground,
+/// with diagonal steps that never cut a corner, extending `initial` when
+/// given. Integer costs keep mirrored starts' fields mirrored exactly.
 fn extend_distances(
     components: &Grid<u32>,
     starts: &[TilePos],
@@ -955,10 +943,7 @@ fn extend_distances(
     let mut field = initial.unwrap_or_else(|| Grid::new(width, height, UNREACHABLE));
     let mut queue = BinaryHeap::new();
     let open = |tile: TilePos| components.get(tile).is_some_and(|label| *label != 0);
-    for tile in starts
-        .iter()
-        .flat_map(|start| (0..2).flat_map(move |dy| (0..2).map(move |dx| start.offset(dx, dy))))
-    {
+    for tile in starts.iter().flat_map(|start| tiles_of(*start, (2, 2))) {
         if open(tile)
             && let Some(cell) = field.get_mut(tile)
         {
@@ -974,16 +959,7 @@ fn extend_distances(
         {
             continue;
         }
-        for (dx, dy) in [
-            (1, 0),
-            (-1, 0),
-            (0, 1),
-            (0, -1),
-            (1, 1),
-            (1, -1),
-            (-1, 1),
-            (-1, -1),
-        ] {
+        for (dx, dy) in NEIGHBOURS {
             let next = tile.offset(dx, dy);
             let diagonal = dx != 0 && dy != 0;
             if !open(next) || (diagonal && !(open(tile.offset(dx, 0)) && open(tile.offset(0, dy))))
@@ -1022,16 +998,7 @@ fn sites(map: &Map, components: &Grid<u32>, anchors: &[(PlayerId, TilePos)]) -> 
         }
         while let Some(tile) = stack.pop() {
             nodes.push((tile, map.scrap_at(tile)));
-            for (dx, dy) in [
-                (1, 0),
-                (-1, 0),
-                (0, 1),
-                (0, -1),
-                (1, 1),
-                (1, -1),
-                (-1, 1),
-                (-1, -1),
-            ] {
+            for (dx, dy) in NEIGHBOURS {
                 let next = tile.offset(dx, dy);
                 if map.scrap_at(next) > 0
                     && components.get(next) == components.get(seed)
@@ -1104,9 +1071,7 @@ fn site_anchors(map: &Map, components: &Grid<u32>, nodes: &[(TilePos, u32)]) -> 
     for y in min_y - reach..=max_y + reach {
         for x in min_x - reach..=max_x + reach {
             let anchor = TilePos::new(x, y);
-            let footprint: Vec<TilePos> = (0..2)
-                .flat_map(|dy| (0..2).map(move |dx| anchor.offset(dx, dy)))
-                .collect();
+            let footprint: Vec<TilePos> = tiles_of(anchor, (2, 2)).collect();
             let Some(component) = components.get(anchor).copied().filter(|label| *label != 0)
             else {
                 continue;

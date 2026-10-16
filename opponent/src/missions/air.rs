@@ -2,13 +2,14 @@
 //! much of it a straight flight crosses, and a detour around it.
 
 use super::attack::building_value;
+use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::ObservationData;
+use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::stats::Domain;
+use oxide_sim::{BuildingKind, Command, UnitId};
 
 /// Tiles a detour swings the route out from its middle.
 const DETOUR: i32 = 8;
@@ -111,6 +112,96 @@ pub(super) fn route(
         .filter(|(_, risk, _)| *risk < direct)
         .min_by_key(|(via, risk, length)| (*risk, *length, frame.rank(frame.home, doubled(*via))))
         .map(|(via, _, _)| via)
+}
+
+/// How a flight moves on its legs.
+#[derive(Clone, Copy)]
+pub(super) enum Legs {
+    /// Runs every leg.
+    Run,
+    /// Runs to any via-point, then hunts to the goal.
+    Strike,
+    /// Hunts every leg, engaging what it meets on the way.
+    Hunt,
+}
+
+/// Orders a flight issues: one straight to its goal, or two by `via`.
+pub(super) fn orders(via: Option<TilePos>) -> u32 {
+    1 + u32::from(via.is_some())
+}
+
+/// Sends `units` to `goal`, by `via` first when given, the last leg queued.
+/// Returns whether the decision had the orders for it.
+pub(super) fn fly(
+    units: Vec<UnitId>,
+    via: Option<TilePos>,
+    goal: TilePos,
+    legs: Legs,
+    ledger: &mut Ledger,
+) -> bool {
+    if ledger.room() < orders(via) {
+        return false;
+    }
+    let leg = |hunts: bool, units, goal, queue| {
+        if hunts {
+            Command::Hunt { units, goal, queue }
+        } else {
+            Command::Run { units, goal, queue }
+        }
+    };
+    let (first, last) = match legs {
+        Legs::Run => (false, false),
+        Legs::Strike => (false, true),
+        Legs::Hunt => (true, true),
+    };
+    match via {
+        Some(via) => {
+            ledger.order(leg(first, units.clone(), via, false));
+            ledger.order(leg(last, units, goal, true));
+        }
+        None => {
+            ledger.order(leg(last, units, goal, false));
+        }
+    }
+    true
+}
+
+/// [`fly`] from `from` to `goal`, around the known fire in `hazards` when the
+/// straight line crosses it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a flight's route inputs and its orders"
+)]
+pub(super) fn fly_around(
+    observation: &ObservationData,
+    frame: HomeFrame,
+    hazards: &[Hazard],
+    units: Vec<UnitId>,
+    from: TilePos,
+    goal: TilePos,
+    legs: Legs,
+    ledger: &mut Ledger,
+) -> bool {
+    let via = route(observation, frame, hazards, from, goal);
+    fly(units, via, goal, legs, ledger)
+}
+
+/// Value of the `hazards` reaching any of `members`.
+pub(super) fn opposition(hazards: &[Hazard], members: &[&UnitObs]) -> u64 {
+    hazards
+        .iter()
+        .filter(|hazard| members.iter().any(|unit| hazard.covers(doubled(unit.tile))))
+        .map(|hazard| hazard.value)
+        .sum()
+}
+
+/// Value of the `hazards` reaching `point`, in doubled coordinates.
+pub(super) fn cover(hazards: &[Hazard], point: (i64, i64)) -> u64 {
+    hazards
+        .iter()
+        .filter(|hazard| hazard.covers(point))
+        .map(|hazard| hazard.value)
+        .sum()
 }
 
 /// Known enemies that fire at `domain`: remembered units by confidence and

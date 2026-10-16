@@ -15,12 +15,6 @@ use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::WARHEAD;
 use oxide_sim::{BuildingId, BuildingKind, Command};
 
-/// How far past a round's price a strike's worth raises the score of a step
-/// toward it (a Spire or a round),
-/// in multiples of the price: a scoring shape that keeps a rich target on
-/// the scale of the seat's other investments.
-const WORTH_CAP: u64 = 2;
-
 /// A building a warhead could damage, as the seat knows it.
 #[derive(Clone, Copy)]
 pub(crate) struct Mark {
@@ -174,8 +168,7 @@ fn rounds(observation: &ObservationData, battery: &BuildingObs) -> u64 {
 /// Every footprint tile of a known hostile building, with what a warhead
 /// there would take and the interceptors over it, in the seat's frame order
 /// from home.
-fn aims(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec<Aim> {
-    let marks = marks(observation, map);
+fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<Aim> {
     let batteries: Vec<(Vec2Fx, Fx, u64)> = observation
         .enemy_buildings
         .iter()
@@ -189,10 +182,7 @@ fn aims(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec<
         .collect();
     let mut tiles: Vec<TilePos> = marks
         .iter()
-        .flat_map(|mark| {
-            let (width, height) = mark.kind.size();
-            (0..height).flat_map(move |dy| (0..width).map(move |dx| mark.anchor.offset(dx, dy)))
-        })
+        .flat_map(|mark| crate::frame::tiles_of(mark.anchor, mark.kind.size()))
         .collect();
     tiles.sort_unstable_by_key(|tile| frame.rank(frame.home, crate::frame::doubled(*tile)));
     tiles.dedup();
@@ -207,7 +197,7 @@ fn aims(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec<
                 .sum();
             Aim {
                 tile,
-                value: volley(&marks, tile, 1),
+                value: volley(marks, tile, 1),
                 interceptors,
             }
         })
@@ -254,11 +244,11 @@ pub(crate) fn investments(
     if !crucible {
         return Vec::new();
     }
-    let aims = aims(observation, map, frame);
+    let aims = aims(observation, &marks(observation, map), frame);
     let Some((need, worth)) = needed(&aims) else {
         return Vec::new();
     };
-    let base = (150 + 3 * u32::from(traits.siege)) * income.min(360) / 360;
+    let base = crate::investments::weighed(traits.siege, income);
     let spires: Vec<&BuildingObs> = observation
         .my_buildings
         .iter()
@@ -274,9 +264,9 @@ pub(crate) fn investments(
             })
     };
     // A richer known strike raises every step toward it, the Spire itself
-    // included, as it raises a round.
+    // included, as it raises a round, by the round's price.
     let bar = price(1).max(1);
-    let score = u64::from(base) * worth.min(WORTH_CAP * bar) / bar;
+    let score = crate::investments::capped(u64::from(base), worth, bar);
     let scored = u32::try_from(score).unwrap_or(u32::MAX);
     let mut list = Vec::new();
     if spires.is_empty() {
@@ -354,13 +344,15 @@ pub(crate) fn fire(
     // Each worthy volley as (rounds spent, aim, scrap taken beyond their
     // price), in the aims' order nearest home first. A volley spends the
     // fewest Spires that get its hits past the interceptors.
-    let mut volleys = aims(observation, map, frame).into_iter().flat_map(|aim| {
-        let marks = &marks;
-        (aim.interceptors + 1..=ready).filter_map(move |spent| {
-            let taken = volley(marks, aim.tile, spent - aim.interceptors);
-            (taken >= price(spent)).then(|| (spent, aim.tile, taken - price(spent)))
-        })
-    });
+    let mut volleys = aims(observation, &marks, frame)
+        .into_iter()
+        .flat_map(|aim| {
+            let marks = &marks;
+            (aim.interceptors + 1..=ready).filter_map(move |spent| {
+                let taken = volley(marks, aim.tile, spent - aim.interceptors);
+                (taken >= price(spent)).then(|| (spent, aim.tile, taken - price(spent)))
+            })
+        });
     let best = if careful {
         volleys.fold(None, |best: Option<(u64, TilePos, u64)>, volley| {
             if best.is_none_or(|(_, _, net)| volley.2 > net) {

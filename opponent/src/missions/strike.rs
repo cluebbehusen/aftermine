@@ -4,11 +4,12 @@
 //! Ground need not reach the target.
 
 use super::Scratch;
-use super::air::{self, Hazard};
-use super::attack::{FIT, healthy, margin, minimum, recruit, striking};
+use super::air::{self, Hazard, Legs};
+use super::attack::{FIT, healthy, margin, minimum, outweighed, recruit, striking};
+use super::sortie::Sortie;
 use super::{
-    MISSION_CAP, Mission, Missions, Objective, StrikePhase, Task, UNIT_CAP, hunt, mine, run,
-    standing,
+    MISSION_CAP, Mission, Missions, Objective, StrikePhase, Task, UNIT_CAP, distant_worth, mine,
+    run, standing,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -18,10 +19,7 @@ use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::{BuildingKind, UnitKind};
-
-/// Tiles between a member and the target at which the fight begins.
-const CONTACT_TILES: i32 = 6;
+use oxide_sim::{BuildingKind, UnitId, UnitKind};
 
 const GATHER_TICKS: u64 = 600;
 const TRAVEL_TICKS: u64 = 1_800;
@@ -39,15 +37,18 @@ pub(super) fn timeout(phase: StrikePhase) -> u64 {
 }
 
 /// What one decision knows about striking.
-struct Raid<'a> {
-    observation: &'a ObservationData,
+pub(super) struct Raid<'a> {
+    pub(super) observation: &'a ObservationData,
     map: &'a MapModel,
     frame: HomeFrame,
     memory: &'a Memory,
     minimum: u64,
     margin: u64,
+    /// Per mille of its strength the enemies around it must reach before it
+    /// withdraws.
+    pub(super) retreat: u64,
     /// Known fire against aircraft.
-    air: &'a [Hazard],
+    pub(super) air: &'a [Hazard],
     objectives: &'a [Objective],
     /// What offense leaves at home.
     reserve: [u64; 2],
@@ -81,6 +82,7 @@ impl Missions {
             memory,
             minimum: minimum(profile.stance),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             air: &scratch.air,
             objectives: &scratch.objectives,
             reserve: scratch.reserve,
@@ -94,7 +96,7 @@ impl Missions {
                 continue;
             };
             raid.held = self.held(striking_kind, Some(id), &given_up);
-            if let Some(target) = self.advance_strike(index, &raid, ledger) {
+            if let Some(target) = self.advance_sortie(index, Sortie::Strike(&raid), ledger) {
                 given_up.push(target);
             }
         }
@@ -157,143 +159,6 @@ impl Missions {
         self.next += 1;
         true
     }
-
-    /// Moves the strike at `index` through its phases. Returns its target
-    /// when it gave up on it.
-    fn advance_strike(
-        &mut self,
-        index: usize,
-        raid: &Raid<'_>,
-        ledger: &mut Ledger,
-    ) -> Option<Objective> {
-        let observation = raid.observation;
-        let now = observation.tick;
-        let mission = &self.list[index];
-        let Task::Strike { target, phase } = mission.task else {
-            unreachable!("the strike mission's task");
-        };
-        let members: Vec<&UnitObs> = mission
-            .units
-            .iter()
-            .filter_map(|id| mine(observation, *id))
-            .collect();
-        let all_idle = members.iter().all(|unit| unit.idle);
-        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
-        let age = now - mission.since;
-        let centre = footprint_centre(target.building, target.anchor);
-        let rally = air::pad(observation, raid.map, raid.frame, centre)?;
-        let goal = mission.goal;
-        let units = mission.units.clone();
-        let lost = target;
-        // Gives the target up only once the strike has turned back, so a
-        // decision out of orders does not keep refreshing the give-up.
-        let withdraw = |missions: &mut Self, ledger: &mut Ledger| {
-            let turned = ledger.order(run(units.clone(), rally));
-            if turned {
-                missions.list[index].set_strike(target, StrikePhase::Withdraw, now, rally);
-            }
-            turned
-        };
-
-        match phase {
-            StrikePhase::Gather => {
-                if !all_idle && age < GATHER_TICKS {
-                    return None;
-                }
-                if strength < raid.need(target) || !standing(observation, target) {
-                    self.list.remove(index);
-                    return None;
-                }
-                if let Some(aim) = self.sortie(index, raid, rally, target, ledger) {
-                    self.list[index].set_strike(target, StrikePhase::Travel, now, aim);
-                }
-                None
-            }
-            StrikePhase::Travel => {
-                let arrived = members
-                    .iter()
-                    .any(|unit| unit.tile.chebyshev(goal) <= CONTACT_TILES);
-                if arrived {
-                    let engage = StrikePhase::Engage { focus: None };
-                    self.list[index].set_strike(target, engage, now, goal);
-                    return None;
-                }
-                if all_idle || age >= TRAVEL_TICKS || raid.opposition(&members) > strength {
-                    return withdraw(self, ledger).then_some(lost);
-                }
-                None
-            }
-            StrikePhase::Engage { .. } => {
-                if raid.opposition(&members) > strength {
-                    return withdraw(self, ledger).then_some(lost);
-                }
-                if !all_idle && age < ENGAGE_TICKS {
-                    return None;
-                }
-                if standing(observation, target) {
-                    return withdraw(self, ledger).then_some(lost);
-                }
-                match raid.best(strength, Some(target)) {
-                    Some(next) => {
-                        if let Some(aim) = self.sortie(index, raid, goal, next, ledger) {
-                            self.list[index].set_strike(next, StrikePhase::Travel, now, aim);
-                        }
-                    }
-                    None => {
-                        withdraw(self, ledger);
-                    }
-                }
-                None
-            }
-            StrikePhase::Withdraw => {
-                if all_idle || age >= WITHDRAW_TICKS {
-                    self.list.remove(index);
-                }
-                None
-            }
-        }
-    }
-
-    /// Sends the strike at `index` from `from` at the side of `target`
-    /// nearest it, around known anti-air when the straight line crosses it.
-    /// Returns where it went.
-    fn sortie(
-        &mut self,
-        index: usize,
-        raid: &Raid<'_>,
-        from: TilePos,
-        target: Objective,
-        ledger: &mut Ledger,
-    ) -> Option<TilePos> {
-        let units = self.list[index].units.clone();
-        let aim = ring(target.anchor, target.building.size()).min_by_key(|tile| {
-            (
-                tile.chebyshev(from),
-                raid.frame.rank(raid.frame.home, doubled(*tile)),
-            )
-        })?;
-        let Some(via) = air::route(raid.observation, raid.frame, raid.air, from, aim) else {
-            return ledger.order(hunt(units, aim)).then_some(aim);
-        };
-        if ledger.room() < 2 {
-            return None;
-        }
-        ledger.order(run(units.clone(), via));
-        ledger.order(super::Command::Hunt {
-            units,
-            goal: aim,
-            queue: true,
-        });
-        Some(aim)
-    }
-}
-
-impl Mission {
-    fn set_strike(&mut self, target: Objective, phase: StrikePhase, now: u64, goal: TilePos) {
-        self.task = Task::Strike { target, phase };
-        self.since = now;
-        self.goal = goal;
-    }
 }
 
 impl Raid<'_> {
@@ -301,7 +166,7 @@ impl Raid<'_> {
     /// other than `skip`: a known enemy building or hostile start not
     /// recently given up and not seen gone, the rival's first when there are
     /// several enemies.
-    fn best(&self, strength: u64, skip: Option<Objective>) -> Option<Objective> {
+    pub(super) fn best(&self, strength: u64, skip: Option<Objective>) -> Option<Objective> {
         let rival = |target: &Objective| self.rival.is_none_or(|rival| target.owner == rival);
         self.best_of(strength, skip, rival)
             .or_else(|| self.best_of(strength, skip, |_| true))
@@ -327,18 +192,12 @@ impl Raid<'_> {
             })
             .filter(|target| self.need(*target) <= strength)
             .max_by_key(|target| {
-                let cost = target
-                    .building
-                    .base_stats()
-                    .construction
-                    .as_ref()
-                    .map_or(0, |construction| construction.cost);
                 let distance = centre_distance(
                     footprint_centre(BuildingKind::Foundry, start),
                     footprint_centre(target.building, target.anchor),
                 );
                 (
-                    u64::from(cost) * 1_000 / (100 + distance),
+                    distant_worth(target.building, distance),
                     std::cmp::Reverse(self.frame.rank(
                         self.frame.home,
                         footprint_centre(target.building, target.anchor),
@@ -353,23 +212,50 @@ impl Raid<'_> {
         (cover(self.air, target) * self.margin / 1_000).max(self.minimum)
     }
 
-    /// Value of the known anti-air reaching any member.
-    fn opposition(&self, members: &[&UnitObs]) -> u64 {
-        self.air
-            .iter()
-            .filter(|hazard| members.iter().any(|unit| hazard.covers(doubled(unit.tile))))
-            .map(|hazard| hazard.value)
-            .sum()
+    /// Where a strike on `target` gathers and comes back to.
+    pub(super) fn rally(&self, target: Objective) -> Option<TilePos> {
+        let centre = footprint_centre(target.building, target.anchor);
+        air::pad(self.observation, self.map, self.frame, centre)
+    }
+
+    /// Whether a gathered strike of `strength` still goes at `target`.
+    pub(super) fn sets_out(&self, target: Objective, strength: u64) -> bool {
+        strength >= self.need(target) && standing(self.observation, target)
+    }
+
+    /// Sends `units` from `from` at the side of `target` nearest it, around
+    /// known anti-air when the straight line crosses it. Returns where they
+    /// went.
+    pub(super) fn send(
+        &self,
+        units: Vec<UnitId>,
+        from: TilePos,
+        target: Objective,
+        ledger: &mut Ledger,
+    ) -> Option<TilePos> {
+        let aim = ring(target.anchor, target.building.size()).min_by_key(|tile| {
+            (
+                tile.chebyshev(from),
+                self.frame.rank(self.frame.home, doubled(*tile)),
+            )
+        })?;
+        air::fly_around(
+            self.observation,
+            self.frame,
+            self.air,
+            units,
+            from,
+            aim,
+            Legs::Strike,
+            ledger,
+        )
+        .then_some(aim)
     }
 }
 
 /// Known anti-air reaching over `target`.
 fn cover(air: &[Hazard], target: Objective) -> u64 {
-    let centre = footprint_centre(target.building, target.anchor);
-    air.iter()
-        .filter(|hazard| hazard.covers(centre))
-        .map(|hazard| hazard.value)
-        .sum()
+    air::cover(air, footprint_centre(target.building, target.anchor))
 }
 
 /// What a strike needs against the easiest target the seat knows of and has

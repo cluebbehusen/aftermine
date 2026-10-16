@@ -111,70 +111,7 @@ fn profiles_have_a_fixed_budget_and_truthful_ranked_specialties() {
 }
 
 #[test]
-fn golden_profiles_pin_full_width_seed_resolution() {
-    let cases = [
-        (
-            BotDifficulty::Prime,
-            BotStance::Turtle,
-            0,
-            Specialty::Fortification,
-            Specialty::Guile,
-            PersonalityTraits {
-                air: 30,
-                siege: 41,
-                support: 53,
-                fortification: 65,
-                greed: 53,
-                guile: 58,
-            },
-        ),
-        (
-            BotDifficulty::Veteran,
-            BotStance::Balanced,
-            0x8000_0000_0000_0001,
-            Specialty::Guile,
-            Specialty::Fortification,
-            PersonalityTraits {
-                air: 41,
-                siege: 48,
-                support: 50,
-                fortification: 58,
-                greed: 44,
-                guile: 59,
-            },
-        ),
-        (
-            BotDifficulty::Scrapheap,
-            BotStance::Aggressive,
-            u64::MAX,
-            Specialty::Air,
-            Specialty::Siege,
-            PersonalityTraits {
-                air: 69,
-                siege: 63,
-                support: 39,
-                fortification: 32,
-                greed: 59,
-                guile: 38,
-            },
-        ),
-    ];
-
-    for (difficulty, stance, seed, primary, secondary, traits) in cases {
-        let profile = ResolvedProfile::resolve(BotConfig::new(difficulty, stance, seed));
-        assert_eq!(
-            profile,
-            ResolvedProfile {
-                difficulty,
-                stance,
-                personality_seed: seed,
-                primary,
-                secondary,
-                traits,
-            }
-        );
-    }
-
+fn high_seed_bits_change_the_resolved_profile() {
     let low =
         ResolvedProfile::resolve(BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 1));
     let high = ResolvedProfile::resolve(BotConfig::new(

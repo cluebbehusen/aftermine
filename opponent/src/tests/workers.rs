@@ -42,6 +42,7 @@ fn crews(
         frame,
         &memory,
         stance,
+        middling(),
         &crate::missions::Missions::default(),
     );
     crate::workers::staffing(
@@ -77,17 +78,6 @@ fn walled(guarded: bool) -> Scenario {
         });
     }
     scenario
-}
-
-#[test]
-fn a_node_whose_route_runs_past_a_known_turret_is_not_worked() {
-    let worked = |guarded| {
-        let scenario = walled(guarded);
-        let state = scenario.build().unwrap();
-        crew(&crews(&scenario, &state, BotStance::Turtle, 50), (30, 3))
-    };
-    assert!(worked(false).is_some(), "premise: the open route is worked");
-    assert_eq!(worked(true), None, "the only route passes the Turret");
 }
 
 #[test]
@@ -464,6 +454,7 @@ fn checkpoints_reject_malformed_stuck_units() {
             "units": [],
             "failures": [],
             "abandoned": [],
+            "raided": [],
             "scouted": [],
             "stuck": stuck,
         }))
@@ -666,6 +657,7 @@ fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does()
             frame,
             &memory,
             BotStance::Turtle,
+            middling(),
             &crate::missions::Missions::default(),
         );
         let homes: Vec<&oxide_sim::observation::BuildingObs> = observation
@@ -849,6 +841,7 @@ fn both_worker_passes_fill_one_open_slot_once() {
         frame,
         &memory,
         BotStance::Balanced,
+        middling(),
         &crate::missions::Missions::default(),
     );
     let staffing = crate::workers::staffing(

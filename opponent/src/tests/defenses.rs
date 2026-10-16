@@ -30,12 +30,8 @@ fn fabricated(scrap: u32) -> Scenario {
 
 fn traits(fortification: u8) -> PersonalityTraits {
     PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
         fortification,
-        greed: 50,
-        guile: 50,
+        ..middling()
     }
 }
 
@@ -105,20 +101,6 @@ fn offer(wanted: &[(Investment, u32)], kind: BuildingKind) -> Option<(TilePos, u
             } if *offered == kind => Some((*anchor, *score)),
             _ => None,
         })
-}
-
-fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
-            _ => None,
-        })
-        .collect()
-}
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
 }
 
 /// Whether a 1x1 site stands off the West Foundry on the side facing the
@@ -464,20 +446,6 @@ fn an_emergency_turret_faces_raiders_only_while_the_approach_is_bare() {
 }
 
 #[test]
-fn an_emergency_turret_answers_a_raider_beside_the_building() {
-    let mut scenario = arena(200);
-    scenario.units.push(unit(1, UnitKind::Sentinel, 6, 5));
-    let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
-    assert!(
-        builds(&commands)
-            .iter()
-            .any(|(kind, _)| *kind == BuildingKind::Turret),
-        "{commands:?}"
-    );
-}
-
-#[test]
 fn an_emergency_turret_guards_the_building_under_attack() {
     let expansion = TilePos::new(14, 8);
     let mut scenario = arena(200);
@@ -493,6 +461,27 @@ fn an_emergency_turret_guards_the_building_under_attack() {
     assert!(
         crate::frame::gap(expansion, (2, 2), anchor, (1, 1)) <= 3,
         "beside the raided Foundry, not the home one: {anchor:?}"
+    );
+}
+
+#[test]
+fn an_air_raid_gets_its_emergency_flak_when_a_turret_is_out_of_reach() {
+    let expansion = TilePos::new(14, 8);
+    let mut scenario = arena(95);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
+    scenario.units.extend([
+        unit(1, UnitKind::Sentinel, 16, 10),
+        unit(1, UnitKind::Buzzard, 16, 9),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::FlakTurret),
+        "a Flak Turret, though no Turret is affordable: {commands:?}"
     );
 }
 
@@ -707,9 +696,10 @@ fn an_array_watches_for_aircraft_where_no_ground_threat_is_known() {
 fn an_array_deepens_once_a_crucible_stands() {
     let staged = |crucible: bool, bombard: bool| {
         let mut scenario = settled(0);
+        // Where the approach runs just beyond the Array's sight today.
         scenario
             .buildings
-            .push(building(0, BuildingKind::Array, 7, 5));
+            .push(building(0, BuildingKind::Array, 7, 7));
         // Behind the Foundry, so the base's edge stays where it was.
         if crucible {
             scenario
@@ -878,7 +868,9 @@ fn remembered(kind: &str, count: usize) -> Memory {
         "units": army,
         "failures": [],
         "abandoned": [],
+        "raided": [],
         "scouted": [],
+        "stuck": [],
     }))
     .unwrap()
 }
@@ -1063,7 +1055,7 @@ fn a_seat_does_not_wall_itself_in() {
     let state = scrapped.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
-        !defenses::keeps_paths(
+        !crate::placement::keeps_paths(
             &observation,
             &map(&scrapped),
             BuildingKind::Barricade,
@@ -1078,20 +1070,29 @@ fn a_seat_does_not_wall_itself_in() {
 fn an_exposed_opening_buys_no_tech_before_its_first_turret() {
     let mut scenario = arena(150);
     scenario.units.push(unit(0, UnitKind::Sentinel, 3, 10));
-    let built = |state: &State| -> Vec<BuildingKind> {
-        builds(&seat_with(&scenario, 0, thrifty()).act(state, &mut OwnEvents::default()))
+    let state = scenario.build().unwrap();
+    // A seat whose income is `per_minute`.
+    let built = |per_minute: u32| -> Vec<BuildingKind> {
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, thrifty()),
+            &scenario,
+            &state,
+            |json| {
+                json["income"] = serde_json::json!({"previous": null, "per_minute": per_minute});
+            },
+        );
+        builds(&opponent.act(&state, &mut OwnEvents::default()))
             .into_iter()
             .map(|(kind, _)| kind)
             .collect()
     };
-    let mut state = scenario.build().unwrap();
-    let opening = built(&state);
+    let opening = built(0);
     assert!(
         opening.iter().all(|kind| *kind != BuildingKind::Fabricator),
         "no Turret can be placed yet, so tech waits: {opening:?}"
     );
-    advance_to(&mut state, crate::defenses::SETTLE_TICKS, &[]);
-    let settled = built(&state);
+    // Income that would pay for a Turret every minute settles the opening.
+    let settled = built(600);
     assert!(
         settled.contains(&BuildingKind::Turret)
             && settled.iter().all(|kind| *kind != BuildingKind::Fabricator),

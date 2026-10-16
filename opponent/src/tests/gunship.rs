@@ -3,7 +3,7 @@ use crate::frame::HomeFrame;
 use crate::investments::Investment;
 use crate::memory::Memory;
 use crate::missions::{Missions, Scratch};
-use crate::profile::{PersonalityTraits, ResolvedProfile};
+use crate::profile::ResolvedProfile;
 use oxide_sim::observation::ObservationData;
 use oxide_sim::scenario::{BotConfig, BotDifficulty};
 
@@ -14,10 +14,6 @@ const EAST_START: TilePos = TilePos::new(35, 11);
 
 /// East Flak Turrets around its start.
 const FLAK: [(i32, i32); 4] = [(32, 8), (32, 14), (38, 8), (38, 14)];
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
 
 /// The strait with West's lift force and tech, a Crucible and a Deep Bore
 /// frame, and East Flak Turrets at `flak` around its start.
@@ -57,14 +53,7 @@ fn wanted(
     severed: bool,
 ) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
-    let traits = PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    };
+    let traits = middling();
     crate::gunship::investments(
         &observation,
         &map(scenario),
@@ -94,6 +83,7 @@ fn lift_flak(scenario: &Scenario, state: &State) -> u64 {
         frame,
         &memory,
         BotStance::Balanced,
+        middling(),
         &missions,
     );
     let profile = ResolvedProfile::resolve(BotConfig::new(
@@ -102,6 +92,56 @@ fn lift_flak(scenario: &Scenario, state: &State) -> u64 {
         1,
     ));
     missions.lift_flak(&observation, &model, &profile, &memory, &scratch)
+}
+
+/// Three islands in a row, West's start on the first, Mid's on the second
+/// and East's on the third, with an East Flak Turret beside its start that a
+/// West Kestrel overhead sees.
+fn three_islands() -> Scenario {
+    let map: Vec<String> = (0..11)
+        .map(|row| {
+            let mut tiles: Vec<char> = ".".repeat(40).chars().collect();
+            for x in [13, 14, 26, 27] {
+                tiles[x] = '~';
+            }
+            if row == 4 {
+                tiles[2] = '1';
+                tiles[19] = '2';
+                tiles[34] = '3';
+            }
+            tiles.into_iter().collect()
+        })
+        .collect();
+    let mut scenario = crate::tests::match_on(
+        map,
+        &["West", "Mid", "East"],
+        &[(0, UnitKind::Kestrel, 33, 6)],
+    );
+    scenario
+        .buildings
+        .push(building(2, BuildingKind::FlakTurret, 34, 7));
+    scenario
+}
+
+#[test]
+fn lift_support_prepares_for_the_rival_the_lift_goes_after() {
+    let mut scenario = three_islands();
+    let calm = scenario.build().unwrap();
+    assert_eq!(
+        lift_flak(&scenario, &calm),
+        0,
+        "premise: the lift goes after Mid's nearer start, which no anti-air guards"
+    );
+    // East's bombers pressing West's base make East the rival.
+    scenario.units.extend([
+        unit(2, UnitKind::Buzzard, 5, 7),
+        unit(2, UnitKind::Buzzard, 6, 7),
+    ]);
+    let pressed = scenario.build().unwrap();
+    assert!(
+        lift_flak(&scenario, &pressed) > 0,
+        "the anti-air guarding the rival's start"
+    );
 }
 
 #[test]

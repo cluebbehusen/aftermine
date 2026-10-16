@@ -21,6 +21,23 @@ use std::cmp::Reverse;
 /// for stays while it scores at all.
 pub(crate) const ADOPT: u32 = 300;
 
+/// How far past its bar the worth behind an investment raises its score, in
+/// multiples of the bar: a scoring shape that keeps a deep fortress or a rich
+/// strike on the scale of the seat's other investments.
+const WORTH_CAP: u64 = 2;
+
+/// The score of an investment wanted at `base` for each `bar` of `worth`
+/// behind it, up to [`WORTH_CAP`] bars.
+pub(crate) fn capped(base: u64, worth: u64, bar: u64) -> u64 {
+    base * worth.min(WORTH_CAP * bar) / bar
+}
+
+/// The base score of an investment a 0..=100 trait weighs and income scales,
+/// whole once income reaches 360 scrap a minute.
+pub(crate) fn weighed(trait_value: u8, income: u32) -> u32 {
+    (150 + 3 * u32::from(trait_value)) * income.min(360) / 360
+}
+
 /// A concrete investment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -117,7 +134,6 @@ pub(crate) struct Situation<'a> {
 pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let observation = situation.observation;
     let traits = situation.traits;
-    let tick = u32::try_from(observation.tick).unwrap_or(u32::MAX);
     let saturated = situation.saturation >= 750;
     let owned = |kind| owned(observation, kind);
     let pull = |kind: BuildingKind| {
@@ -129,19 +145,21 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             .sum::<u32>()
     };
     let mut list = Vec::new();
+    // Tech grows wanted as income grows to feed it.
     if owned(BuildingKind::Fabricator) == 0 {
-        let score = 300 * u32::from(saturated) + (tick / 6).min(600);
+        let score = 300 * u32::from(saturated) + (situation.income / 2).min(600);
         let score = score + pull(BuildingKind::Fabricator);
         list.push((Investment::Tech(BuildingKind::Fabricator), score));
     }
     if owned(BuildingKind::Airworks) == 0 {
-        let score = u32::from(saturated) * (150 + 4 * u32::from(traits.air)) + (tick / 24).min(300);
+        let score = u32::from(saturated) * (150 + 4 * u32::from(traits.air))
+            + (situation.income / 4).min(300);
         let score = score + pull(BuildingKind::Airworks);
         list.push((Investment::Tech(BuildingKind::Airworks), score));
     }
     if owned(BuildingKind::Crucible) == 0 {
-        let full = 150 + 3 * u32::from(traits.greed.max(traits.siege));
-        let score = full * situation.income.min(360) / 360 + pull(BuildingKind::Crucible);
+        let score = weighed(traits.greed.max(traits.siege), situation.income)
+            + pull(BuildingKind::Crucible);
         list.push((Investment::Tech(BuildingKind::Crucible), score));
     }
     for kind in [
@@ -194,7 +212,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         .iter()
         .any(|(investment, _)| matches!(investment, Investment::Expansion(_)));
     list.extend(growth);
-    if tick >= 2_400 {
+    // Once harvesting is saturated and home scrap has begun to run down, more
+    // workers add no income: salvage and deeper extraction grow it then.
+    if saturated && situation.depletion > 0 {
         let base = 150
             + 3 * u32::from(traits.greed)
             + situation.depletion * 400 / 1_000
@@ -243,7 +263,14 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             }
         }
     }
-    let settled = saturated || observation.tick >= defenses::SETTLE_TICKS;
+    // The opening economy is up once harvesting is saturated or income would
+    // pay for a Turret every minute.
+    let turret = BuildingKind::Turret
+        .base_stats()
+        .construction
+        .as_ref()
+        .map_or(u32::MAX, |construction| construction.cost);
+    let settled = saturated || situation.income >= turret;
     list.extend(defenses::investments(
         observation,
         situation.map,
@@ -625,4 +652,14 @@ pub(crate) fn met(observation: &ObservationData, need: Prerequisite) -> bool {
         .my_buildings
         .iter()
         .any(|building| building.kind == need.kind && building.built && building.tier >= need.tier)
+}
+
+/// Whether the seat meets every prerequisite for building `kind`.
+pub(crate) fn buildable(observation: &ObservationData, kind: BuildingKind) -> bool {
+    kind.base_stats()
+        .construction
+        .as_ref()
+        .map_or(&[][..], |construction| construction.requires)
+        .iter()
+        .all(|need| met(observation, *need))
 }

@@ -3,30 +3,25 @@
 //! where a cradle may stand so its machine can drive out. Nothing here
 //! persists between decisions.
 
-use crate::investments::Investment;
+use crate::investments::{Investment, capped, weighed};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
+use crate::missions::worth;
 use crate::profile::PersonalityTraits;
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::BuildingKind;
 use oxide_sim::observation::ObservationData;
+use oxide_sim::{BuildingKind, UnitKind};
 use std::collections::VecDeque;
-
-/// How far past a cradle's bar, a quarter of its machine's price, the
-/// fortification it answers raises its score, in multiples of the bar: a
-/// scoring shape that keeps a deep fortress on the scale of the seat's other
-/// investments.
-pub(crate) const WORTH_CAP: u64 = 2;
 
 /// How far past the seat's furthest building a machine must get to have left
 /// the base, in the map model's distance units (ten a tile): three tiles.
 const EXIT_MARGIN: u16 = 30;
 
-/// How many times the base a cradle scores once an attack on ground the seat
-/// reaches has been given up: the scale of the seat's upgrades, so direct
-/// evidence that its army cannot break in competes with its tech.
-pub(crate) const GIVEN_UP: u64 = 3;
+/// How many times the base a cradle scores once a mission its machine would
+/// have led has been given up: the scale of the seat's upgrades, so direct
+/// evidence that the seat cannot break in competes with its tech.
+const GIVEN_UP: u64 = 3;
 
 /// A cradle for each breaching experimental once a Crucible stands; a
 /// machine that does not break structures is no answer to guns. It is scored by
@@ -80,36 +75,57 @@ pub(crate) fn investments(
                 )
             )
         })
-        .map(|unit| {
-            let stats = unit.kind.stats();
-            u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
-        })
+        .map(|unit| worth(unit.kind, unit.hp))
         .sum();
-    let machines: u64 = observation
-        .my_units
-        .iter()
-        .filter(|unit| assembled(unit.kind) && crate::missions::breacher(unit.kind))
-        .map(|unit| {
-            let stats = unit.kind.stats();
-            u64::from(stats.cost) * u64::from(unit.hp) / u64::from(stats.max_hp.max(1))
-        })
-        .chain(observation.my_buildings.iter().filter_map(|building| {
-            building
-                .kind
-                .assembles()
-                .filter(|machine| crate::missions::breacher(*machine))
-                .map(|machine| u64::from(machine.stats().cost))
-        }))
-        .sum();
+    let machines = fielded(observation, crate::missions::breacher);
     let shortfall = (fortification * margin / 1_000).saturating_sub(army + machines);
     let given_up = memory
         .given_up(observation.tick)
         .any(|(_, anchor)| map.distance(me, anchor) != UNREACHABLE);
-    let base = u64::from((150 + 3 * u32::from(traits.siege)) * income.min(360) / 360);
+    let base = u64::from(weighed(traits.siege, income));
+    cradles(
+        observation,
+        crate::missions::breacher,
+        shortfall,
+        given_up,
+        base,
+    )
+}
+
+/// What the seat's machines that `fits` are worth: those it fields at their
+/// health, and each one its cradles are assembling at its price.
+pub(crate) fn fielded(observation: &ObservationData, fits: fn(UnitKind) -> bool) -> u64 {
+    observation
+        .my_units
+        .iter()
+        .filter(|unit| unit.kind.assembled() && fits(unit.kind))
+        .map(|unit| worth(unit.kind, unit.hp))
+        .chain(observation.my_buildings.iter().filter_map(|building| {
+            building
+                .kind
+                .assembles()
+                .filter(|machine| fits(*machine))
+                .map(|machine| u64::from(machine.stats().cost))
+        }))
+        .sum()
+}
+
+/// A score for each cradle whose machine `fits`: `base` for each quarter of
+/// the machine's price in `shortfall`, a quarter being what a modest fortress
+/// or its flak is worth, and at least [`GIVEN_UP`] times `base` while
+/// `given_up` holds and the seat neither fields that machine nor has its
+/// cradle.
+pub(crate) fn cradles(
+    observation: &ObservationData,
+    fits: fn(UnitKind) -> bool,
+    shortfall: u64,
+    given_up: bool,
+    base: u64,
+) -> Vec<(Investment, u32)> {
     BuildingKind::ALL
         .into_iter()
         .filter_map(|cradle| cradle.assembles().map(|machine| (cradle, machine)))
-        .filter(|(_, machine)| crate::missions::breacher(*machine))
+        .filter(|(_, machine)| fits(*machine))
         .filter_map(|(cradle, machine)| {
             let without = given_up
                 && !observation.my_units.iter().any(|unit| unit.kind == machine)
@@ -117,11 +133,8 @@ pub(crate) fn investments(
                     .my_buildings
                     .iter()
                     .any(|building| building.kind == cradle);
-            // A shortfall of a quarter of the machine's price, the guns of a
-            // modest fortress, makes it as wanted as the base.
             let bar = (u64::from(machine.stats().cost) / 4).max(1);
-            let guns = base * shortfall.min(WORTH_CAP * bar) / bar;
-            let score = guns.max(if without { GIVEN_UP * base } else { 0 });
+            let score = capped(base, shortfall, bar).max(if without { GIVEN_UP * base } else { 0 });
             (score > 0).then(|| {
                 (
                     Investment::Tech(cradle),
@@ -130,13 +143,6 @@ pub(crate) fn investments(
             })
         })
         .collect()
-}
-
-/// Whether some cradle assembles `kind`.
-fn assembled(kind: oxide_sim::UnitKind) -> bool {
-    BuildingKind::ALL
-        .into_iter()
-        .any(|cradle| cradle.assembles() == Some(kind))
 }
 
 /// Whether the machine a cradle of `kind` at `anchor` stands up could drive
@@ -158,9 +164,7 @@ pub(crate) fn exits(
         return true;
     }
     let me = observation.me;
-    let (width, height) = map.size();
     let (w, h) = kind.size();
-    let blocked = known_footprints(map, observation);
     let beyond = observation
         .my_buildings
         .iter()
@@ -169,39 +173,21 @@ pub(crate) fn exits(
         .max()
         .unwrap_or(0)
         .saturating_add(EXIT_MARGIN);
-    let radius = machine.stats().radius;
-    let open = |tile: TilePos| {
-        oxide_sim::geometry::hull_open(tile, radius, |cell| {
-            map.component(cell).is_some()
-                && (!blocked.get(cell).copied().unwrap_or(true)
-                    || (cell.x >= anchor.x
-                        && cell.x < anchor.x + w
-                        && cell.y >= anchor.y
-                        && cell.y < anchor.y + h))
-        })
-    };
     let start = anchor.offset(w / 2, h / 2);
-    let mut seen = Grid::new(width, height, false);
-    let mut frontier = vec![start];
-    if let Some(cell) = seen.get_mut(start) {
-        *cell = true;
+    let mut flood = HullFlood::through(
+        map,
+        observation,
+        machine.stats().radius,
+        start,
+        Some((anchor, (w, h))),
+    );
+    if !flood.open(start) {
+        return false;
     }
-    while let Some(tile) = frontier.pop() {
-        if !open(tile) {
-            continue;
-        }
+    while let Some(tile) = flood.step() {
         let distance = map.distance(me, tile);
         if distance != UNREACHABLE && distance > beyond {
             return true;
-        }
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let next = tile.offset(dx, dy);
-            if let Some(cell) = seen.get_mut(next)
-                && !*cell
-            {
-                *cell = true;
-                frontier.push(next);
-            }
         }
     }
     false
@@ -237,6 +223,8 @@ pub(crate) struct HullFlood<'a> {
     map: &'a MapModel,
     blocked: Grid<bool>,
     radius: Fx,
+    /// A footprint the body may cross though a building stands on it.
+    exempt: Option<(TilePos, (i32, i32))>,
     reached: Grid<bool>,
     frontier: VecDeque<TilePos>,
 }
@@ -247,6 +235,17 @@ impl<'a> HullFlood<'a> {
         observation: &ObservationData,
         radius: Fx,
         start: TilePos,
+    ) -> Self {
+        Self::through(map, observation, radius, start, None)
+    }
+
+    /// As [`HullFlood::new`], crossing the `exempt` footprint too.
+    fn through(
+        map: &'a MapModel,
+        observation: &ObservationData,
+        radius: Fx,
+        start: TilePos,
+        exempt: Option<(TilePos, (i32, i32))>,
     ) -> Self {
         let (width, height) = map.size();
         let mut reached = Grid::new(width, height, false);
@@ -259,6 +258,7 @@ impl<'a> HullFlood<'a> {
             map,
             blocked: known_footprints(map, observation),
             radius,
+            exempt,
             reached,
             frontier,
         }
@@ -267,25 +267,39 @@ impl<'a> HullFlood<'a> {
     /// Whether the body could drive to `tile`.
     pub(crate) fn reaches(&mut self, tile: TilePos) -> bool {
         while self.reached.get(tile) == Some(&false) {
-            let Some(from) = self.frontier.pop_front() else {
+            if self.step().is_none() {
                 return false;
-            };
-            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let next = from.offset(dx, dy);
-                if self.reached.get(next) == Some(&false) && self.open(next) {
-                    if let Some(cell) = self.reached.get_mut(next) {
-                        *cell = true;
-                    }
-                    self.frontier.push_back(next);
-                }
             }
         }
         self.reached.get(tile) == Some(&true)
     }
 
+    /// Grows the flood from the next tile it has reached, and returns that
+    /// tile: every tile the flood reaches, once each, nearest first.
+    fn step(&mut self) -> Option<TilePos> {
+        let from = self.frontier.pop_front()?;
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let next = from.offset(dx, dy);
+            if self.reached.get(next) == Some(&false) && self.open(next) {
+                if let Some(cell) = self.reached.get_mut(next) {
+                    *cell = true;
+                }
+                self.frontier.push_back(next);
+            }
+        }
+        Some(from)
+    }
+
     fn open(&self, tile: TilePos) -> bool {
         oxide_sim::geometry::hull_open(tile, self.radius, |cell| {
-            self.map.component(cell).is_some() && !self.blocked.get(cell).copied().unwrap_or(true)
+            self.map.component(cell).is_some()
+                && (!self.blocked.get(cell).copied().unwrap_or(true)
+                    || self.exempt.is_some_and(|(anchor, (w, h))| {
+                        cell.x >= anchor.x
+                            && cell.x < anchor.x + w
+                            && cell.y >= anchor.y
+                            && cell.y < anchor.y + h
+                    }))
         })
     }
 }

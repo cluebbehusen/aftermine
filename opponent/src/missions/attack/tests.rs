@@ -21,3 +21,26 @@ fn defenders_around_several_tiles_count_once() {
     assert_eq!(defense(&observation, &memory, b), one);
     assert_eq!(defense_around(&observation, &memory, &[a, b]), one);
 }
+
+#[test]
+fn guile_gives_a_fight_up_sooner_and_the_upper_rungs_hold_on_longer() {
+    use oxide_sim::scenario::{BotConfig, BotStance};
+    let threshold = |difficulty: BotDifficulty, guile: u8| {
+        let mut profile =
+            ResolvedProfile::resolve(BotConfig::new(difficulty, BotStance::Balanced, 0));
+        profile.traits.guile = guile;
+        outweighed(&profile)
+    };
+    for difficulty in [
+        BotDifficulty::Scrapheap,
+        BotDifficulty::Standard,
+        BotDifficulty::Veteran,
+        BotDifficulty::Prime,
+    ] {
+        assert!(threshold(difficulty, 100) < threshold(difficulty, 50));
+        assert!(threshold(difficulty, 50) < threshold(difficulty, 0));
+    }
+    for guile in [0, 50, 100] {
+        assert!(threshold(BotDifficulty::Prime, guile) > threshold(BotDifficulty::Standard, guile));
+    }
+}

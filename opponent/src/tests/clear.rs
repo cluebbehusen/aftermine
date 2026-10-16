@@ -14,20 +14,13 @@ fn around_the_start(count: i32) -> Vec<(i32, i32)> {
 /// West on `scenario`, remembering East Flakhounds seen now at `flak`.
 fn bombing(scenario: &Scenario, flak: &[(i32, i32)]) -> (State, Opponent) {
     let state = scenario.build().unwrap();
-    let mut json = serde_json::to_value(seat(scenario, 0).checkpoint()).unwrap();
-    json["memory"]["units"] = (1_000..)
-        .zip(flak)
-        .map(|(id, (x, y))| {
-            serde_json::json!({
-                "id": id,
-                "kind": "flakhound",
-                "tile": {"x": x, "y": y},
-                "seen": 0,
-            })
-        })
-        .collect();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let opponent = Opponent::restore(&checkpoint, scenario, &state, map(scenario)).unwrap();
+    let opponent = restored_with(&seat(scenario, 0), scenario, &state, |json| {
+        json["memory"]["units"] = remembered(
+            (1_000..)
+                .zip(flak)
+                .map(|(id, &(x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
+        );
+    });
     (state, opponent)
 }
 
@@ -143,16 +136,7 @@ fn a_mid_clearance_checkpoint_resumes_identically() {
     while !state.current_tick().is_multiple_of(12) {
         state.tick(&[]);
     }
-    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
-    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
-    let mut restored = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    let until = state.current_tick() + 300;
-    while state.current_tick() < until {
-        let commands = opponent.act(&state, &mut OwnEvents::default());
-        assert_eq!(restored.act(&state, &mut OwnEvents::default()), commands);
-        assert_eq!(restored.checkpoint(), opponent.checkpoint());
-        state.tick(&commands);
-    }
+    resumes_identically(&mut opponent, &scenario, &mut state, 300);
 }
 
 #[test]
@@ -204,20 +188,13 @@ fn mirrored_seats_clear_alike() {
     let state = scenario.build().unwrap();
     let flak = around_the_start(3);
     let remembering = |player: u8, flak: Vec<(i32, i32)>| {
-        let mut json = serde_json::to_value(seat(&scenario, player).checkpoint()).unwrap();
-        json["memory"]["units"] = (1_000..)
-            .zip(flak)
-            .map(|(id, (x, y))| {
-                serde_json::json!({
-                    "id": id,
-                    "kind": "flakhound",
-                    "tile": {"x": x, "y": y},
-                    "seen": 0,
-                })
-            })
-            .collect();
-        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-        Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap()
+        restored_with(&seat(&scenario, player), &scenario, &state, |json| {
+            json["memory"]["units"] = remembered(
+                (1_000..)
+                    .zip(flak)
+                    .map(|(id, (x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
+            );
+        })
     };
     let mut seats = [
         remembering(0, flak.clone()),

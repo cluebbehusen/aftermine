@@ -121,7 +121,7 @@ fn slots(kind: UnitKind) -> usize {
 }
 
 /// Counts the worked nodes and wrecks with their crews and the worker slots
-/// filled by workers alive, carried or queued. Wreck a wounded kiln machine
+/// filled by workers on each base's ground or queued there. Wreck a wounded kiln machine
 /// feeds on where it stands, or is bound for in `meals`, is left to it.
 pub(crate) fn staffing(
     observation: &ObservationData,
@@ -349,7 +349,6 @@ fn flee(
     if hazards.is_empty() {
         return;
     }
-    let size = BuildingKind::Foundry.size();
     for unit in &observation.my_units {
         let working = unit.idle || unit.harvesting.is_some();
         if !worker(unit.kind) || !working || ledger.employs(unit.id) {
@@ -358,10 +357,7 @@ fn flee(
         let threatened = hazards
             .iter()
             .any(|hazard| hazard.covers(doubled(unit.tile)));
-        let home = foundries
-            .iter()
-            .any(|foundry| gap(foundry.anchor, size, unit.tile, (1, 1)) <= HOME_TILES);
-        if !threatened || home {
+        if !threatened || at_home(&foundries, unit.tile) {
             continue;
         }
         let Some(refuge) = refuge(map, frame, &foundries, unit.tile) else {
@@ -378,6 +374,27 @@ fn flee(
 }
 
 /// The seat's built Foundries.
+/// Whether `tile` lies within [`HOME_TILES`] of one of `foundries`.
+fn at_home(foundries: &[&BuildingObs], tile: TilePos) -> bool {
+    let size = BuildingKind::Foundry.size();
+    foundries
+        .iter()
+        .any(|foundry| gap(foundry.anchor, size, tile, (1, 1)) <= HOME_TILES)
+}
+
+/// Whether `unit` is a worker on `ground` free for new work: not building,
+/// founding or welding, given no work by this decision and not sitting out
+/// orders.
+fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool {
+    worker(unit.kind)
+        && unit.site.is_none()
+        && unit.founding.is_none()
+        && !unit.repairing
+        && map.component(unit.tile) == Some(ground)
+        && !ledger.employs(unit.id)
+        && !ledger.stuck(unit.id)
+}
+
 fn built_foundries(observation: &ObservationData) -> Vec<&BuildingObs> {
     observation
         .my_buildings
@@ -511,12 +528,7 @@ fn weld_units(
     ledger: &mut Ledger,
 ) {
     let foundries = built_foundries(observation);
-    let size = BuildingKind::Foundry.size();
-    let home = |tile: TilePos| {
-        foundries
-            .iter()
-            .any(|foundry| gap(foundry.anchor, size, tile, (1, 1)) <= HOME_TILES)
-    };
+    let home = |tile: TilePos| at_home(&foundries, tile);
     let mine = |id: &UnitId| {
         let index = observation
             .my_units
@@ -579,16 +591,7 @@ fn weld_units(
         let welder = observation
             .my_units
             .iter()
-            .filter(|unit| {
-                worker(unit.kind)
-                    && unit.site.is_none()
-                    && unit.founding.is_none()
-                    && !unit.repairing
-                    && home(unit.tile)
-                    && map.component(unit.tile) == Some(ground)
-                    && !ledger.employs(unit.id)
-                    && !ledger.stuck(unit.id)
-            })
+            .filter(|unit| free_on(unit, map, ground, ledger) && home(unit.tile))
             .min_by_key(|unit| {
                 (
                     Reverse(unit.kind.stats().max_hp),
@@ -625,15 +628,7 @@ pub(crate) fn builder(
     observation
         .my_units
         .iter()
-        .filter(|unit| {
-            worker(unit.kind)
-                && unit.site.is_none()
-                && unit.founding.is_none()
-                && !unit.repairing
-                && map.component(unit.tile) == Some(ground)
-                && !ledger.employs(unit.id)
-                && !ledger.stuck(unit.id)
-        })
+        .filter(|unit| free_on(unit, map, ground, ledger))
         .min_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id))
         .map(|unit| unit.id)
 }
@@ -715,16 +710,7 @@ fn crew_cradles(
         let mut free: Vec<&UnitObs> = observation
             .my_units
             .iter()
-            .filter(|unit| {
-                worker(unit.kind)
-                    && unit.site.is_none()
-                    && unit.founding.is_none()
-                    && !unit.repairing
-                    && map.component(unit.tile) == Some(ground)
-                    && !ledger.employs(unit.id)
-                    && !ledger.stuck(unit.id)
-                    && !last(unit)
-            })
+            .filter(|unit| free_on(unit, map, ground, ledger) && !last(unit))
             .collect();
         free.sort_by_key(|unit| {
             (
@@ -932,7 +918,6 @@ impl<'a> Routes<'a> {
     /// Whether the route from home to `source` is clear.
     pub(crate) fn clear(&mut self, source: TilePos) -> bool {
         let map = self.map;
-        let size = BuildingKind::Foundry.size();
         let mut tile = source;
         let mut distance = self.distances.get(tile).copied().unwrap_or(UNREACHABLE);
         let mut walked = Vec::new();
@@ -945,11 +930,7 @@ impl<'a> Routes<'a> {
                 }
                 walked.push(tile);
             }
-            if self
-                .homes
-                .iter()
-                .any(|home| gap(home.anchor, size, tile, (1, 1)) <= HOME_TILES)
-            {
+            if at_home(self.homes, tile) {
                 break true;
             }
             if self.danger.get(tile) == Some(&true) {

@@ -1,57 +1,15 @@
 use super::*;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
 use oxide_sim::{PlayerId, Scenario, UnitKind};
 
-/// A 20 by 9 field, starts at (2, 1) and (17, 1), with a one-tile chasm
-/// down column 8 when `chasm` holds; West's `members` and one East
-/// `enemy`, each as kind and tile.
+/// The strip field, with a chasm when `chasm` holds; West's `members` and one
+/// East `enemy`, each as kind and tile.
 fn field(chasm: bool, members: &[(UnitKind, i32, i32)], enemy: (UnitKind, i32, i32)) -> Scenario {
-    let map: Vec<String> = (0..9)
-        .map(|row| {
-            let mut tiles: Vec<char> = ".".repeat(20).chars().collect();
-            if chasm {
-                tiles[8] = '~';
-            }
-            if row == 1 {
-                tiles[2] = '1';
-                tiles[17] = '2';
-            }
-            tiles.into_iter().collect()
-        })
-        .collect();
-    let units = members
+    let units: Vec<_> = members
         .iter()
-        .map(|&(kind, x, y)| UnitSpec {
-            player: 0,
-            kind,
-            x,
-            y,
-        })
-        .chain(std::iter::once(UnitSpec {
-            player: 1,
-            kind: enemy.0,
-            x: enemy.1,
-            y: enemy.2,
-        }))
+        .map(|&(kind, x, y)| (0, kind, x, y))
+        .chain([(1, enemy.0, enemy.1, enemy.2)])
         .collect();
-    Scenario {
-        mode: ScenarioMode::Match,
-        name: "focus".into(),
-        map,
-        players: ["West", "East"]
-            .into_iter()
-            .map(|name| PlayerSpec {
-                name: name.into(),
-                team: None,
-                scrap: 0,
-                bot: false,
-                bot_config: None,
-            })
-            .collect(),
-        units,
-        buildings: Vec::new(),
-        meta: None,
-    }
+    crate::tests::match_on(crate::tests::strip(chasm), &["West", "East"], &units)
 }
 
 /// How many of West's units `shooters` would focus on East's unit.

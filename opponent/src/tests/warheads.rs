@@ -1,13 +1,8 @@
 use super::*;
 use crate::investments::{self, Investment, Step};
 use crate::memory::Memory;
-use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
 use serde_json::json;
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
 
 /// Two East Crucibles side by side: a warhead between them takes more than
 /// its round's price.
@@ -207,18 +202,6 @@ fn mirrored_seats_strike_mirrored_aims() {
     assert_eq!(mirror(&state, west), east);
 }
 
-/// Every trait at the middle of its range.
-fn middling() -> PersonalityTraits {
-    PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    }
-}
-
 /// West's warhead investments on `state`.
 fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
@@ -338,14 +321,14 @@ fn saving_for(
     state: &State,
     investment: Investment,
 ) -> (Opponent, Checkpoint) {
-    let mut json = serde_json::to_value(seat(scenario, 0).checkpoint()).unwrap();
-    json["saving"] = json!({
-        "protected": 0,
-        "target": {"investment": investment, "attempt": null},
+    let opponent = restored_with(&seat(scenario, 0), scenario, state, |json| {
+        json["saving"] = json!({
+            "protected": 0,
+            "target": {"investment": investment, "attempt": null},
+        });
+        json["income"] = json!({"previous": null, "per_minute": 2_000});
     });
-    json["income"] = json!({"previous": null, "per_minute": 2_000});
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let opponent = Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap();
+    let checkpoint = opponent.checkpoint();
     (opponent, checkpoint)
 }
 

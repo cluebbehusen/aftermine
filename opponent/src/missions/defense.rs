@@ -8,8 +8,8 @@
 
 use super::attack::{defense, defense_around};
 use super::{
-    DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, hits, hunt, insert, mine, value,
-    walking_gun,
+    DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt, insert, mine,
+    value, walking_gun,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -221,27 +221,7 @@ impl Missions {
                 })
                 .collect();
             candidates.sort_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id));
-            let wanted = |have: &[u64; 2], unit: &UnitObs| {
-                [Domain::Ground, Domain::Air]
-                    .into_iter()
-                    .enumerate()
-                    .any(|(index, domain)| have[index] < need[index] && hits(unit, domain))
-            };
-            let mut recruits = Vec::new();
-            for unit in candidates {
-                if recruits.len() == room || (have[0] >= need[0] && have[1] >= need[1]) {
-                    break;
-                }
-                if !wanted(&have, unit) {
-                    continue;
-                }
-                for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
-                    if hits(unit, domain) {
-                        have[index] += value(unit);
-                    }
-                }
-                recruits.push(unit.id);
-            }
+            let mut recruits = fill(candidates, need, &mut have, room);
             let gap = [0, 1].map(|index| pressing[index].saturating_sub(have[index]));
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
@@ -483,16 +463,7 @@ fn besieged<'a>(
     claimed: &[UnitId],
     claimed_batteries: &[TilePos],
 ) -> Vec<(&'a BuildingObs, Siege<'a>)> {
-    let mut foundries: Vec<&BuildingObs> = buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect();
-    foundries.sort_by_key(|foundry| {
-        (
-            frame.rank(frame.home, footprint_centre(foundry.kind, foundry.anchor)),
-            foundry.id,
-        )
-    });
+    let foundries = built_foundries(buildings, frame);
     let mut groups: Vec<(&BuildingObs, Siege)> = foundries
         .iter()
         .map(|foundry| (*foundry, Siege::default()))
@@ -518,14 +489,7 @@ fn besieged<'a>(
         let near = buildings
             .iter()
             .any(|building| gap(building.anchor, building.kind.size(), enemy.tile, (1, 1)) < reach)
-            || shelled.iter().any(|impact| {
-                enemy
-                    .kind
-                    .stats()
-                    .weapons
-                    .iter()
-                    .any(|weapon| shells(weapon, doubled(enemy.tile), *impact))
-            });
+            || shelled.iter().any(|impact| lobs(enemy, *impact));
         if !near {
             continue;
         }
@@ -566,6 +530,31 @@ fn besieged<'a>(
     }
     groups.retain(|(_, siege)| !siege.units.is_empty() || !siege.batteries.is_empty());
     groups
+}
+
+/// The built Foundries among `buildings`, nearest home first.
+fn built_foundries(buildings: &[BuildingObs], frame: HomeFrame) -> Vec<&BuildingObs> {
+    let mut foundries: Vec<&BuildingObs> = buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
+        .collect();
+    foundries.sort_by_key(|foundry| {
+        (
+            frame.rank(frame.home, footprint_centre(foundry.kind, foundry.anchor)),
+            foundry.id,
+        )
+    });
+    foundries
+}
+
+/// Whether `enemy` sends shells that could land on `impact`.
+fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
+    enemy
+        .kind
+        .stats()
+        .weapons
+        .iter()
+        .any(|weapon| shells(weapon, doubled(enemy.tile), impact))
 }
 
 /// Impacts of hostile shells near any of `buildings`.
@@ -618,14 +607,10 @@ fn unseen<'a>(
     frame: HomeFrame,
 ) -> Vec<(&'a BuildingObs, TilePos)> {
     let fired = |impact: TilePos| {
-        let units = observation.enemy_units.iter().any(|enemy| {
-            enemy
-                .kind
-                .stats()
-                .weapons
-                .iter()
-                .any(|weapon| shells(weapon, doubled(enemy.tile), impact))
-        });
+        let units = observation
+            .enemy_units
+            .iter()
+            .any(|enemy| lobs(enemy, impact));
         units
             || observation
                 .enemy_buildings
@@ -639,17 +624,7 @@ fn unseen<'a>(
     if impacts.is_empty() {
         return Vec::new();
     }
-    let mut foundries: Vec<&BuildingObs> = observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect();
-    foundries.sort_by_key(|foundry| {
-        (
-            frame.rank(frame.home, footprint_centre(foundry.kind, foundry.anchor)),
-            foundry.id,
-        )
-    });
+    let foundries = built_foundries(&observation.my_buildings, frame);
     let nearest = |impact: TilePos| {
         foundries.iter().copied().min_by_key(|foundry| {
             (

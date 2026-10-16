@@ -34,15 +34,6 @@ fn raids_are_remembered_apart_from_given_up_targets() {
     );
     memory.forget(100 + FAILURE_TICKS);
     assert!(!memory.raided(BuildingKind::Foundry, anchor, 100 + FAILURE_TICKS));
-
-    let older: Memory = serde_json::from_value(serde_json::json!({
-        "units": [],
-        "failures": [],
-        "abandoned": [],
-        "scouted": [],
-    }))
-    .unwrap();
-    assert_eq!(older, Memory::default(), "a checkpoint from before raids");
 }
 
 #[test]

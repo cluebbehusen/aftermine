@@ -392,20 +392,15 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
     ]);
     let mut bot = seat_with(&scenario, 0, thrifty());
     let mut state = scenario.build().unwrap();
-    let mut checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
-    checkpoint["memory"]["units"] = state
-        .units()
-        .iter()
-        .filter(|u| u.player == PlayerId(1))
-        .map(|u| serde_json::json!({"id":u.id.0,"kind":u.kind,"tile":u.tile(),"seen":0}))
-        .collect();
-    bot = Opponent::restore(
-        &serde_json::from_value(checkpoint).unwrap(),
-        &scenario,
-        &state,
-        map(&scenario),
-    )
-    .unwrap();
+    bot = restored_with(&bot, &scenario, &state, |json| {
+        json["memory"]["units"] = remembered(
+            state
+                .units()
+                .iter()
+                .filter(|u| u.player == PlayerId(1))
+                .map(|u| (u.id.0, u.kind, u.tile(), 0)),
+        );
+    });
     let (commands, trace) = bot.act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
     let settlement = trace
@@ -1011,6 +1006,7 @@ fn an_incoming_guard_counts_before_more_defenders_are_trained() {
         frame,
         &bot.persistent.memory,
         bot.profile.stance,
+        bot.profile.traits,
         &bot.persistent.missions,
     );
     let mut ledger = crate::decision::Ledger::new(PlayerId(0), observation.scrap, u32::MAX);
@@ -1088,6 +1084,13 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
             }
         )),
         "{commands:?}"
+    );
+    assert!(
+        !bot.missions()
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Settle { .. })),
+        "no settlement starts before its escort exists: {:?}",
+        bot.missions()
     );
     let checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
     for mission in checkpoint["missions"]["list"].as_array().unwrap() {

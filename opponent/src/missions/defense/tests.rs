@@ -1,41 +1,10 @@
 use super::*;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{PlayerId, Scenario};
+use oxide_sim::PlayerId;
 
-/// West's view of a 20 by 9 field, starts at (2, 1) and (17, 1), with
-/// `units` as owner, kind and tile, and their ids in that order.
+/// West's view of the strip field with `units` as owner, kind and tile, and
+/// their ids in that order.
 fn viewed(units: &[(u8, UnitKind, i32, i32)]) -> (ObservationData, Vec<UnitId>) {
-    let map: Vec<String> = (0..9)
-        .map(|row| {
-            let mut tiles: Vec<char> = ".".repeat(20).chars().collect();
-            if row == 1 {
-                tiles[2] = '1';
-                tiles[17] = '2';
-            }
-            tiles.into_iter().collect()
-        })
-        .collect();
-    let scenario = Scenario {
-        mode: ScenarioMode::Match,
-        name: "defense".into(),
-        map,
-        players: ["West", "East"]
-            .into_iter()
-            .map(|name| PlayerSpec {
-                name: name.into(),
-                team: None,
-                scrap: 0,
-                bot: false,
-                bot_config: None,
-            })
-            .collect(),
-        units: units
-            .iter()
-            .map(|&(player, kind, x, y)| UnitSpec { player, kind, x, y })
-            .collect(),
-        buildings: Vec::new(),
-        meta: None,
-    };
+    let scenario = crate::tests::match_on(crate::tests::strip(false), &["West", "East"], units);
     let state = scenario.build().unwrap();
     let ids = units
         .iter()

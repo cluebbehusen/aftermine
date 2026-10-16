@@ -9,10 +9,6 @@ use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
 
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
-
 /// What West would save for on `scenario` at `tick` once it scored best,
 /// with its economy up, no army to speak of, and every trait high: every
 /// investment that scores enough to be adopted.
@@ -47,7 +43,8 @@ fn offered_lifting(
         },
         saturation: 1_000,
         income: 1_000,
-        depletion: 0,
+        // Home scrap has begun to run down.
+        depletion: 1,
         pull: Vec::new(),
         exposed: true,
         stakes: defenses::Stakes::default(),
@@ -114,6 +111,44 @@ fn trained(scenario: &Scenario, tick: u64, kind: UnitKind) -> bool {
     trains(&seat_with(scenario, 0, thrifty()).act(&state, &mut OwnEvents::default()))
         .iter()
         .any(|(_, each)| *each == kind)
+}
+
+#[test]
+fn a_seat_in_an_emergency_trains_defenders_before_scouts() {
+    let mut pressed = field();
+    pressed.players[0].scrap = 1_000;
+    pressed
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 6, 16));
+    pressed.units.push(unit(1, UnitKind::Sentinel, 40, 12));
+    let mut state = pressed.build().unwrap();
+    let raider = at(&state, 40, 12);
+    // Scouting points go stale before an East Sentinel walks up to the West
+    // Foundry.
+    advance_to(&mut state, 1_800, &[]);
+    state.tick(&[run(1, vec![raider], 9, 12)]);
+    while state
+        .units()
+        .iter()
+        .any(|unit| unit.id == raider && unit.tile().x > 10)
+    {
+        state.tick(&[]);
+    }
+    let interval = crate::decision_interval(thrifty().difficulty);
+    while !state.current_tick().is_multiple_of(interval) {
+        state.tick(&[]);
+    }
+    let trained = trains(&seat_with(&pressed, 0, thrifty()).act(&state, &mut OwnEvents::default()));
+    assert!(
+        trained
+            .iter()
+            .any(|(_, kind)| kind.stats().can_target(oxide_sim::stats::Domain::Ground)),
+        "premise: the seat arms against the raider: {trained:?}"
+    );
+    assert!(
+        trained.iter().all(|(_, kind)| *kind != UnitKind::Surveyor),
+        "{trained:?}"
+    );
 }
 
 /// West with its tech, a Deep Bore and a standing army on the open field,
@@ -207,8 +242,15 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = built.build().unwrap();
     offer(&built, &state, 3_000);
 
-    // Bulwarks and Deep Arrays once a Crucible stands.
+    // Bulwarks and Deep Arrays once a Crucible stands, the Array moved to
+    // where the approach runs just beyond its sight today.
     let mut crucible = built.clone();
+    crucible
+        .buildings
+        .retain(|spec| spec.kind != BuildingKind::Array);
+    crucible
+        .buildings
+        .push(building(0, BuildingKind::Array, 8, 2));
     // Behind the Foundry, so the guns standing still face the base's edge.
     crucible
         .buildings
@@ -315,10 +357,9 @@ fn raids() -> bool {
     scenario.players[0].scrap = 1_000;
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 120, &[]);
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    });
     trains(&opponent.act(&state, &mut OwnEvents::default()))
         .iter()
         .any(|(_, kind)| *kind == UnitKind::Scuttler)

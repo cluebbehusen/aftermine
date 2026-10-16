@@ -1,10 +1,9 @@
 use super::*;
-use crate::defenses;
+use crate::Step;
 use crate::investments::{self, ADOPT, Candidate, Investment, Situation};
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
-use crate::{PersonalityTraits, Step};
 use oxide_sim::scenario::{BotConfig, BotDifficulty};
 
 /// The arena with both seats' Harvesters saturating their nodes, so a
@@ -16,27 +15,6 @@ fn saturated(scrap: u32) -> Scenario {
     scenario.units.extend(standing_army(0));
     scenario.units.extend(standing_army(1));
     scenario
-}
-
-fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
-            _ => None,
-        })
-        .collect()
-}
-
-fn traits() -> PersonalityTraits {
-    PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    }
 }
 
 #[test]
@@ -92,6 +70,8 @@ fn a_seat_without_harvesters_spends_protected_scrap_on_one() {
         "protected": protected,
         "target": {"investment": {"tech": "fabricator"}, "attempt": null},
     });
+    // Income that still wants the Fabricator.
+    checkpoint["income"] = serde_json::json!({"previous": null, "per_minute": 400});
     let checkpoint: Checkpoint = serde_json::from_value(checkpoint).unwrap();
     let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
@@ -319,7 +299,7 @@ fn targets_switch_only_for_a_clearly_better_investment() {
 }
 
 #[test]
-fn reclaimers_wait_for_the_drip_and_refineries_need_a_fabricator() {
+fn reclaimers_wait_for_home_scrap_to_run_down_and_refineries_need_a_fabricator() {
     let mut scenario = saturated(200);
     scenario.buildings.push(BuildingSpec {
         player: 0,
@@ -328,35 +308,23 @@ fn reclaimers_wait_for_the_drip_and_refineries_need_a_fabricator() {
         y: 8,
     });
     let state = scenario.build().unwrap();
-    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let model = map(&scenario);
     let memory = Memory::default();
-    let wants = |observation: &ObservationData| {
+    let wants = |observation: &ObservationData, depletion: u32| {
         investments::candidates(&Situation {
-            observation,
-            map: &model,
-            memory: &memory,
-            traits: traits(),
-            saturation: 1_000,
-            income: 400,
-            depletion: 0,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
-            wanted: Vec::new(),
-            units: Vec::new(),
-            waiting: None,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            depletion,
+            ..calm(observation, &model, &memory)
         })
         .into_iter()
         .map(|candidate| candidate.investment)
         .collect::<Vec<_>>()
     };
-    assert!(!wants(&observation).contains(&Investment::Reclaimer));
-    observation.tick = 2_400;
-    let wanted = wants(&observation);
+    assert!(
+        !wants(&observation, 0).contains(&Investment::Reclaimer),
+        "untouched home scrap still pays for workers"
+    );
+    let wanted = wants(&observation, 1);
     assert!(wanted.contains(&Investment::Reclaimer));
     let reclaimer = observation
         .my_buildings
@@ -399,22 +367,8 @@ fn reclaimers_keep_coming_once_the_home_scrap_is_mined_out() {
     let memory = Memory::default();
     let score = |depletion: u32| {
         investments::candidates(&Situation {
-            observation: &observation,
-            map: &model,
-            memory: &memory,
-            traits: traits(),
-            saturation: 1_000,
-            income: 400,
             depletion,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
-            wanted: Vec::new(),
-            units: Vec::new(),
-            waiting: None,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            ..calm(&observation, &model, &memory)
         })
         .into_iter()
         .find(|candidate| candidate.investment == Investment::Reclaimer)
@@ -570,22 +524,8 @@ fn a_unit_saved_for_that_waits_on_busy_producers_wants_another() {
     let memory = Memory::default();
     let wants = |waiting: Option<BuildingKind>| {
         investments::candidates(&Situation {
-            observation: &observation,
-            map: &model,
-            memory: &memory,
-            traits: traits(),
-            saturation: 1_000,
-            income: 400,
-            depletion: 0,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
-            wanted: Vec::new(),
-            units: Vec::new(),
             waiting,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            ..calm(&observation, &model, &memory)
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -781,22 +721,7 @@ fn mirrored_seats_rank_equal_extractor_frames_alike() {
     let first_extractor = |player: u8| {
         let observation = ObservationData::fog_honest(&state, PlayerId(player));
         investments::candidates(&Situation {
-            observation: &observation,
-            map: &model,
-            memory: &memory,
-            traits: traits(),
-            saturation: 1_000,
-            income: 400,
-            depletion: 0,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
-            wanted: Vec::new(),
-            units: Vec::new(),
-            waiting: None,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            ..calm(&observation, &model, &memory)
         })
         .into_iter()
         .find_map(|candidate| match candidate.investment {

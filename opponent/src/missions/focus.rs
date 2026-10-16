@@ -78,7 +78,11 @@ impl Missions {
                 }
                 None if focus.is_some()
                     && ledger.order(hunt(
-                        members.iter().map(|unit| unit.id).collect(),
+                        members
+                            .iter()
+                            .filter(|unit| !unit.kind.stats().weapons.is_empty())
+                            .map(|unit| unit.id)
+                            .collect(),
                         mission.goal,
                     )) =>
                 {

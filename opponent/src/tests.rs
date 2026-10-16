@@ -30,9 +30,57 @@ mod teams;
 mod warheads;
 mod workers;
 
+/// A 20 by 9 field with starts at (2, 1) and (17, 1), and a one-tile chasm
+/// down column 8 when `chasm` holds.
+pub(crate) fn strip(chasm: bool) -> Vec<String> {
+    (0..9)
+        .map(|row| {
+            let mut tiles: Vec<char> = ".".repeat(20).chars().collect();
+            if chasm {
+                tiles[8] = '~';
+            }
+            if row == 1 {
+                tiles[2] = '1';
+                tiles[17] = '2';
+            }
+            tiles.into_iter().collect()
+        })
+        .collect()
+}
+
+/// A match on `map` between seats named `players`, none of them a bot, with
+/// `units` as owner, kind and tile.
+pub(crate) fn match_on(
+    map: Vec<String>,
+    players: &[&str],
+    units: &[(u8, UnitKind, i32, i32)],
+) -> Scenario {
+    Scenario {
+        mode: ScenarioMode::Match,
+        name: "staged".into(),
+        map,
+        players: players
+            .iter()
+            .map(|name| PlayerSpec {
+                name: (*name).into(),
+                team: None,
+                scrap: 0,
+                bot: false,
+                bot_config: None,
+            })
+            .collect(),
+        units: units
+            .iter()
+            .map(|&(player, kind, x, y)| UnitSpec { player, kind, x, y })
+            .collect(),
+        buildings: Vec::new(),
+        meta: None,
+    }
+}
+
 /// A half-turn-symmetric arena. Each seat's Harvesters stand equally far from
 /// their two nearby scrap nodes, so the split depends on the tie-break.
-const ARENA: [&str; 12] = [
+pub(crate) const ARENA: [&str; 12] = [
     "########################",
     "#......................#",
     "#...............s......#",
@@ -72,6 +120,70 @@ fn seat(scenario: &Scenario, player: u8) -> Opponent {
 
 fn seat_with(scenario: &Scenario, player: u8, config: BotConfig) -> Opponent {
     Opponent::new(PlayerId(player), config, map(scenario))
+}
+
+/// `opponent` restored at `state` from its checkpoint, with `edit` applied to
+/// the checkpoint's JSON first.
+fn restored_with(
+    opponent: &Opponent,
+    scenario: &Scenario,
+    state: &State,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Opponent {
+    let mut json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    edit(&mut json);
+    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+    Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap()
+}
+
+/// Memory entries for enemy units, each as id, kind, tile and the tick it
+/// was last seen.
+fn remembered(units: impl IntoIterator<Item = (u32, UnitKind, TilePos, u64)>) -> serde_json::Value {
+    units
+        .into_iter()
+        .map(|(id, kind, tile, seen)| {
+            serde_json::json!({"id": id, "kind": kind, "tile": tile, "seen": seen})
+        })
+        .collect()
+}
+
+/// Every trait at the middle of its range.
+pub(crate) fn middling() -> PersonalityTraits {
+    PersonalityTraits {
+        air: 50,
+        siege: 50,
+        support: 50,
+        fortification: 50,
+        greed: 50,
+        guile: 50,
+    }
+}
+
+/// A saturated seat's situation, not exposed and not severed, with middling
+/// traits, nothing pulled, wanted or waited on, and Standard's margin.
+fn calm<'a>(
+    observation: &'a ObservationData,
+    map: &'a MapModel,
+    memory: &'a crate::memory::Memory,
+) -> crate::investments::Situation<'a> {
+    crate::investments::Situation {
+        observation,
+        map,
+        memory,
+        traits: middling(),
+        saturation: 1_000,
+        income: 400,
+        depletion: 0,
+        pull: Vec::new(),
+        exposed: false,
+        stakes: crate::defenses::Stakes::default(),
+        severed: false,
+        wanted: Vec::new(),
+        units: Vec::new(),
+        waiting: None,
+        margin: crate::missions::margin(BotDifficulty::Standard),
+        lift_flak: 0,
+    }
 }
 
 fn arena(scrap: u32) -> Scenario {
@@ -167,6 +279,20 @@ fn foundries(state: &State, player: PlayerId) -> Vec<BuildingId> {
         .collect()
 }
 
+fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
+    BuildingSpec { player, kind, x, y }
+}
+
+fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
+    commands
+        .iter()
+        .filter_map(|command| match command.command {
+            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
+            _ => None,
+        })
+        .collect()
+}
+
 fn trains(commands: &[PlayerCommand]) -> Vec<(BuildingId, UnitKind)> {
     commands
         .iter()
@@ -235,6 +361,26 @@ fn run(player: u8, units: Vec<UnitId>, x: i32, y: i32) -> PlayerCommand {
             goal: TilePos::new(x, y),
             queue: false,
         },
+    }
+}
+/// Restores `opponent` from its serialized checkpoint and plays both on for
+/// `ticks`, the restored seat issuing the same commands and keeping the same
+/// checkpoint every tick.
+fn resumes_identically(
+    opponent: &mut Opponent,
+    scenario: &Scenario,
+    state: &mut State,
+    ticks: u64,
+) {
+    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
+    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
+    let mut restored = Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap();
+    let until = state.current_tick() + ticks;
+    while state.current_tick() < until {
+        let commands = opponent.act(state, &mut OwnEvents::default());
+        assert_eq!(restored.act(state, &mut OwnEvents::default()), commands);
+        assert_eq!(restored.checkpoint(), opponent.checkpoint());
+        state.tick(&commands);
     }
 }
 
@@ -553,7 +699,7 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
                 unit: UnitKind::Sentinel,
             }],
             unit_orders: 2,
-            allowance: 6,
+            allowance: crate::decision::allowance(BotDifficulty::Standard),
             target: None,
             protected: 0,
             missions: Vec::new(),
@@ -704,17 +850,27 @@ fn decisions_follow_the_difficulty_interval_and_stop_after_the_result() {
         0,
         BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11),
     );
+    let interval = crate::decision_interval;
+    let (fast, mid, slow) = (
+        interval(BotDifficulty::Prime),
+        interval(BotDifficulty::Standard),
+        interval(BotDifficulty::Scrapheap),
+    );
+    assert!(
+        fast < mid && mid < slow,
+        "premise: each rung decides at its own pace"
+    );
     assert!(standard.decision_due(&state) && scrapheap.decision_due(&state));
-    advance_to(&mut state, 6, &[]);
+    advance_to(&mut state, fast, &[]);
     assert!(prime.decision_due(&state));
     assert!(!standard.decision_due(&state));
-    advance_to(&mut state, 12, &[]);
+    advance_to(&mut state, mid, &[]);
     assert!(standard.decision_due(&state));
     assert!(!scrapheap.decision_due(&state));
-    advance_to(&mut state, 24, &[]);
+    advance_to(&mut state, slow, &[]);
     assert!(scrapheap.decision_due(&state));
 
-    advance_to(&mut state, 36, &[surrender(1)]);
+    advance_to(&mut state, slow + mid, &[surrender(1)]);
     assert!(state.result().is_some());
     assert!(!standard.decision_due(&state));
     assert_eq!(

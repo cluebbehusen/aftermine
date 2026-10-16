@@ -19,14 +19,7 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
             clustered,
             targets: Vec::new(),
         },
-        traits: PersonalityTraits {
-            air: 50,
-            siege: 50,
-            support: 50,
-            fortification: 50,
-            greed: 50,
-            guile: 50,
-        },
+        traits: crate::tests::middling(),
         income: 1_000,
         kinds: [0; UnitKind::ALL.len()],
     }
@@ -398,7 +391,9 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
         ],
         "failures": [],
         "abandoned": [],
+        "raided": [],
         "scouted": [],
+        "stuck": [],
     }))
     .unwrap();
     let outlet = Outlet {
@@ -438,48 +433,7 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
 }
 
 #[test]
-fn a_known_enemy_cradle_wants_anti_heavy_fire_before_its_machine_stands() {
-    use oxide_sim::{PlayerId, Scenario};
-    let state = Scenario::skirmish().build().unwrap();
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    let memory = Memory::default();
-    let outlet = Outlet {
-        ground: true,
-        lifted: false,
-        invaders: 0,
-        air_strikes: false,
-        strike: 0,
-    };
-    let anti_heavy = |observation: &ObservationData| {
-        super::needs(
-            observation,
-            &memory,
-            needs(None, false).traits,
-            BotStance::Balanced,
-            0,
-            outlet,
-        )
-        .need[Role::AntiHeavy as usize]
-    };
-    let mut known = observation.clone();
-    known
-        .enemy_buildings
-        .push(oxide_sim::observation::BuildingObs {
-            provisional: false,
-            id: oxide_sim::BuildingId(u32::MAX),
-            player: PlayerId(1),
-            kind: BuildingKind::MawCradle,
-            anchor: chassis::grid::TilePos::new(30, 12),
-            hp: 400,
-            built: false,
-            seen: false,
-            tier: 0,
-        });
-    assert!(anti_heavy(&known) > anti_heavy(&observation));
-}
-
-#[test]
-fn a_known_enemy_gunship_cradle_wants_anti_air_not_anti_heavy_fire() {
+fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
     use oxide_sim::{PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
@@ -502,25 +456,30 @@ fn a_known_enemy_gunship_cradle_wants_anti_air_not_anti_heavy_fire() {
         )
         .need[role as usize]
     };
-    let mut known = observation.clone();
-    known
-        .enemy_buildings
-        .push(oxide_sim::observation::BuildingObs {
-            provisional: false,
-            id: oxide_sim::BuildingId(u32::MAX),
-            player: PlayerId(1),
-            kind: BuildingKind::RocCradle,
-            anchor: chassis::grid::TilePos::new(30, 12),
-            hp: 400,
-            built: false,
-            seen: false,
-            tier: 0,
-        });
-    assert!(need(&known, Role::AntiAir) > need(&observation, Role::AntiAir));
-    assert_eq!(
-        need(&known, Role::AntiHeavy),
-        need(&observation, Role::AntiHeavy)
-    );
+    for (cradle, raised, kept) in [
+        (BuildingKind::MawCradle, Role::AntiHeavy, Role::AntiAir),
+        (BuildingKind::RocCradle, Role::AntiAir, Role::AntiHeavy),
+    ] {
+        let mut known = observation.clone();
+        known
+            .enemy_buildings
+            .push(oxide_sim::observation::BuildingObs {
+                provisional: false,
+                id: oxide_sim::BuildingId(u32::MAX),
+                player: PlayerId(1),
+                kind: cradle,
+                anchor: chassis::grid::TilePos::new(30, 12),
+                hp: 400,
+                built: false,
+                seen: false,
+                tier: 0,
+            });
+        assert!(
+            need(&known, raised) > need(&observation, raised),
+            "{cradle:?}"
+        );
+        assert_eq!(need(&known, kept), need(&observation, kept), "{cradle:?}");
+    }
 }
 
 #[test]

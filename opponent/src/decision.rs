@@ -290,11 +290,15 @@ pub(crate) struct Producer<'a> {
 }
 
 /// Defense first, then worker recovery, then an affordable saving target
-/// unless a defense is short, then workers, who also weld the wounded, then
+/// unless a defense is short, then the wounded to Repair Bays and kilns, then
+/// workers, who also weld the wounded, then island settlements, local guards,
 /// lifts, attacks, anti-air clearing, strikes, raids, Spire launches, focus
-/// fire and scouting, then production. A short defense instead buys an emergency static defense,
-/// trains no Harvester beyond worker recovery, and frees protected scrap for
-/// this decision's production.
+/// fire and scouting, then production: carriers for a severed seat and the
+/// Sappers attacks want first, then the army's roles, then scouts queued
+/// behind whatever their producer has and Scuttlers on the producers the army
+/// leaves, then ground units on any still idle. A short defense instead buys
+/// an emergency static defense, trains no Harvester beyond worker recovery or
+/// scouts, and frees protected scrap for this decision's production.
 #[expect(
     clippy::too_many_lines,
     reason = "one decision in its documented priority order"
@@ -342,12 +346,13 @@ pub(crate) fn decide(
         crate::missions::stranded(unit, map, home)
     });
     crate::missions::look(observation, map, &mut persistent.memory);
-    let mut scratch = Scratch::new(
+    let scratch = Scratch::new(
         observation,
         map,
         frame,
         &persistent.memory,
         profile.stance,
+        profile.traits,
         &persistent.missions,
     );
     let meals = persistent
@@ -501,41 +506,7 @@ pub(crate) fn decide(
             .missions
             .defend(observation, map, frame, &persistent.memory, &mut ledger);
     let short = !shortfalls.is_empty();
-    // Settlements move before guards so an escort let go at its site joins
-    // the site's guard in the same decision; a new settlement recruits only
-    // after the guards have.
     ledger.hold(persistent.missions.held_workers(observation));
-    let settlement = Settlement::new(
-        observation,
-        map,
-        profile,
-        &persistent.memory,
-        &danger,
-        &scratch,
-    );
-    let failures = persistent
-        .missions
-        .advance_settlements(&settlement, &mut ledger);
-    let guard_gaps = persistent.missions.guard(
-        observation,
-        map,
-        &scratch,
-        &persistent.memory,
-        profile.stance,
-        &mut ledger,
-    );
-    if !short {
-        persistent
-            .missions
-            .settle(&settlement, persistent.saving.investment(), &mut ledger);
-    }
-    ledger.hold(persistent.missions.held_workers(observation));
-    for (kind, anchor) in failures {
-        persistent.memory.fail(kind, anchor, tick);
-    }
-    scratch.rival = persistent
-        .missions
-        .rival(&scratch, observation, map, profile.traits);
     workers::recover(observation, &foundries, &mut ledger);
     if short {
         ledger.protected = 0;
@@ -593,6 +564,37 @@ pub(crate) fn decide(
         profile.traits.support,
         &mut ledger,
     );
+    // Settlements move before guards so an escort let go at its site joins
+    // the site's guard in the same decision; a new settlement recruits only
+    // after the guards have.
+    let settlement = Settlement::new(
+        observation,
+        map,
+        profile,
+        &persistent.memory,
+        &danger,
+        &scratch,
+    );
+    let failures = persistent
+        .missions
+        .advance_settlements(&settlement, &mut ledger);
+    let guard_gaps = persistent.missions.guard(
+        observation,
+        map,
+        &scratch,
+        &persistent.memory,
+        profile.stance,
+        &mut ledger,
+    );
+    if !short {
+        persistent
+            .missions
+            .settle(&settlement, persistent.saving.investment(), &mut ledger);
+    }
+    ledger.hold(persistent.missions.held_workers(observation));
+    for (kind, anchor) in failures {
+        persistent.memory.fail(kind, anchor, tick);
+    }
     for (kind, anchor) in persistent.missions.lift(
         observation,
         map,
@@ -671,7 +673,14 @@ pub(crate) fn decide(
         .collect();
     // Local guards rank ahead of lifts, so their gaps train before a lift
     // holds production for carriers.
-    arm(observation, map, &producers, guard_gaps, &mut ledger);
+    arm(
+        observation,
+        map,
+        &producers,
+        guard_gaps,
+        &mut needs,
+        &mut ledger,
+    );
     let carrying = lift
         && !short
         && train_carriers(
@@ -684,16 +693,9 @@ pub(crate) fn decide(
             &mut ledger,
         );
     if !carrying {
-        if lacking > 0 {
-            train_scout(observation, &producers, lacking, &mut ledger);
-        }
+        // Sappers cost more than any army unit their producer trains, so the
+        // ones attacks want against known defenses train ahead of the army.
         if !short {
-            let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;
-            let scuttlers = if raiding {
-                Missions::raid_squad(observation, map, profile, &persistent.memory, &scratch)
-            } else {
-                0
-            };
             let sappers = persistent.missions.sappers_wanted(
                 observation,
                 map,
@@ -704,7 +706,7 @@ pub(crate) fn decide(
             train_raiders(
                 observation,
                 profile,
-                (scuttlers, sappers),
+                (0, sappers),
                 &persistent.missions.held_outside_raids(),
                 &free,
                 &mut ledger,
@@ -727,8 +729,37 @@ pub(crate) fn decide(
             needs.coverage(gap, by_air);
         }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
+        if !short {
+            // A scout joins its producer's queue behind whatever is there;
+            // Scuttlers draw on the producers the army's roles leave.
+            if lacking > 0 {
+                train_scout(observation, &producers, lacking, &mut ledger);
+            }
+            let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;
+            let scuttlers = if raiding {
+                Missions::raid_squad(observation, map, profile, &persistent.memory, &scratch)
+            } else {
+                0
+            };
+            train_raiders(
+                observation,
+                profile,
+                (scuttlers, 0),
+                &persistent.missions.held_outside_raids(),
+                &free,
+                &mut ledger,
+            );
+        }
+        fill(observation, &producers, &mut needs, &mut ledger, saving);
         if short {
-            arm(observation, map, &producers, shortfalls, &mut ledger);
+            arm(
+                observation,
+                map,
+                &producers,
+                shortfalls,
+                &mut needs,
+                &mut ledger,
+            );
         }
     }
     if !short && exposed {
@@ -866,7 +897,7 @@ fn buy(
                 // the next spot, a few a decision, and a Barricade, whose
                 // spot is its own, gives the scrap back.
                 if (packed || kind == BuildingKind::Barricade)
-                    && !defenses::keeps_paths(observation, map, kind, anchor, &ledger.planned)
+                    && !placement::keeps_paths(observation, map, kind, anchor, &ledger.planned)
                 {
                     persistent.memory.fail(kind, anchor, tick);
                     tried += 1;
@@ -1051,7 +1082,9 @@ fn train_carriers(
 
 /// Trains a scout while fewer are in production than the `lacking` stale
 /// places no scout could take but the one it would train could reach: a
-/// Kestrel at a built Airworks, else a Surveyor at a Foundry.
+/// Kestrel at a built Airworks, else a Surveyor at a Foundry, queued behind
+/// whatever that producer already has: waiting for an idle one leaves stale
+/// points unseen while workers and the army keep every producer busy.
 /// Once an air scout can be trained a Surveyor no longer counts, since one
 /// that could reach a stale point would already be scouting.
 fn train_scout(
@@ -1173,9 +1206,7 @@ fn producers(observation: &ObservationData, frame: HomeFrame, interval: u64) -> 
 /// unit for it queues the best one, and a role no ready producer can afford
 /// gives way to the next. While the seat saves for `saving`, a unit, the
 /// producers that train it wait for it and no other producer trains a
-/// cheaper unit of its role. Ready producers left with no wanted role train
-/// ground units while ground units can reach an enemy, unless another
-/// producer serves a wanted role: the scrap waits for it.
+/// cheaper unit of its role.
 fn produce(
     observation: &ObservationData,
     producers: &[Producer<'_>],
@@ -1183,18 +1214,7 @@ fn produce(
     ledger: &mut Ledger,
     saving: Option<UnitKind>,
 ) {
-    let instead = |kind: UnitKind| {
-        saving.is_some_and(|unit| {
-            kind != unit
-                && composition::role(kind).is_some()
-                && composition::role(kind) == composition::role(unit)
-        })
-    };
-    let mut idle: Vec<&Producer<'_>> = producers
-        .iter()
-        .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
-        .filter(|producer| !saved_for(observation, producer, saving))
-        .collect();
+    let mut idle = idle(observation, producers, ledger, saving);
     while let Some((index, kind)) = needs.wanted().into_iter().find_map(|role| {
         idle.iter().enumerate().find_map(|(index, producer)| {
             needs
@@ -1204,7 +1224,7 @@ fn produce(
                     role,
                     ledger.spendable(),
                 )
-                .filter(|kind| !instead(*kind))
+                .filter(|kind| !instead(saving, *kind))
                 .map(|kind| (index, kind))
         })
     }) {
@@ -1213,10 +1233,22 @@ fn produce(
             needs.queued(kind);
         }
     }
+}
+
+/// Ready producers left with no wanted role and no small stock train ground
+/// units while ground units can reach an enemy, unless another producer
+/// serves a wanted role: the scrap waits for it.
+fn fill(
+    observation: &ObservationData,
+    producers: &[Producer<'_>],
+    needs: &mut Needs,
+    ledger: &mut Ledger,
+    saving: Option<UnitKind>,
+) {
     if !needs.fallback() {
         return;
     }
-    for producer in idle {
+    for producer in idle(observation, producers, ledger, saving) {
         let kind = producer.building.kind;
         let wanted = needs.wanted();
         if producers.iter().any(|other| {
@@ -1228,12 +1260,36 @@ fn produce(
         }
         if let Some(role) = needs.fallback_role(observation, kind)
             && let Some(unit) = needs.unit(observation, kind, role, ledger.spendable())
-            && !instead(unit)
+            && !instead(saving, unit)
             && ledger.train(producer.building.id, unit)
         {
             needs.queued(unit);
         }
     }
+}
+
+/// The ready producers nothing queued at this decision, less those that wait
+/// for `saving`.
+fn idle<'a, 'b>(
+    observation: &ObservationData,
+    producers: &'b [Producer<'a>],
+    ledger: &Ledger,
+    saving: Option<UnitKind>,
+) -> Vec<&'b Producer<'a>> {
+    producers
+        .iter()
+        .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
+        .filter(|producer| !saved_for(observation, producer, saving))
+        .collect()
+}
+
+/// Whether `kind` would take the place of `saving` in its role.
+fn instead(saving: Option<UnitKind>, kind: UnitKind) -> bool {
+    saving.is_some_and(|unit| {
+        kind != unit
+            && composition::role(kind).is_some()
+            && composition::role(kind) == composition::role(unit)
+    })
 }
 
 /// Whether `producer` trains `saving`, the unit the seat saves for.
@@ -1258,6 +1314,7 @@ fn arm(
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
+    needs: &mut Needs,
     ledger: &mut Ledger,
 ) {
     const DOMAINS: [Domain; 2] = [Domain::Ground, Domain::Air];
@@ -1322,6 +1379,7 @@ fn arm(
         if let Some(kind) = kind
             && ledger.train(producer.building.id, kind)
         {
+            needs.queued(kind);
             cover(&mut shortfalls, kind, at);
         }
     }
@@ -1419,7 +1477,7 @@ const RAID_INCOME: u32 = 900;
 const LIFT_PULL: u32 = 600;
 
 /// Unit orders one decision may issue: a difficulty limit on attention.
-fn allowance(difficulty: BotDifficulty) -> u32 {
+pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
     match difficulty {
         BotDifficulty::Scrapheap => 2,
         BotDifficulty::Standard => 6,

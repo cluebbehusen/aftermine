@@ -103,12 +103,8 @@ fn an_enemy_threat_to_a_neutral_seat_is_not_the_seat_s_to_answer() {
 
 fn traits(guile: u8) -> PersonalityTraits {
     PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
         guile,
+        ..middling()
     }
 }
 
@@ -121,6 +117,7 @@ fn scratch(observation: &ObservationData, model: &MapModel) -> Scratch {
         frame,
         &Memory::default(),
         BotStance::Balanced,
+        middling(),
         &Missions::default(),
     )
 }
@@ -170,19 +167,18 @@ fn an_ally_s_defenders_come_home_when_home_is_attacked() {
     let ally = foundries(&state, PlayerId(1))[0];
     let own = foundries(&state, PlayerId(0))[0];
     advance_to(&mut state, 12, &[]);
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {"task": "defend", "asset": ally.0, "phase": {"engage": {"focus": null}}},
-            "since": 0,
-            "units": relievers,
-            "goal": {"x": 4, "y": 14},
-        }],
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": ally.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": relievers,
+                "goal": {"x": 4, "y": 14},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(
         defends(&trace.unwrap().missions).contains(&own),

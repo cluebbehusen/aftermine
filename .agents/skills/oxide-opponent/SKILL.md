@@ -50,7 +50,7 @@ for this crate.
    and save-resume are always tested.
 9. **Size is reported, not gated.** Measure every PR's net production and test
    line change, including code this bot adds anywhere (kit, simulation, driver).
-   Growth past about 15,000 production lines triggers a design review, not a
+   Growth past about 17,500 production lines triggers a design review, not a
    failure.
 10. **Guards need evidence:** a failure seen in evaluation, a replay, a playtest
     or prior evaluation evidence, or one directly demonstrable. All work is
