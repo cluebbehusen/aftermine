@@ -1886,9 +1886,14 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             y,
         } => {
             input.mouse = vec2(x, y);
-            // A trackpad drags the touch ghost's row handle as a finger does.
-            let handle = game.presentation.layout.get().ghost_handle;
-            if handle.w > 0.0 && handle.contains(vec2(x, y)) {
+            // A trackpad drags the touch ghost's row handle as a finger does,
+            // where the cross and check mark don't claim the press first.
+            let layout = game.presentation.layout.get();
+            let handle = layout.ghost_handle;
+            if handle.w > 0.0
+                && handle.contains(vec2(x, y))
+                && ghost_control_at(&layout, vec2(x, y)).is_none()
+            {
                 input.handle_drag = true;
                 return;
             }
@@ -2202,9 +2207,12 @@ fn armed_click(
             game.presentation.camera.pan(Vec2::ZERO); // re-clamp
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            if pointer == Pointer::Touch {
+            if pointer == Pointer::Touch || input.ghost_anchor().is_some() {
                 // A tap never builds on its own: it drops the ghost (or
-                // moves it here), and only a tap on the ghost confirms.
+                // moves it here), and only the check mark builds. While a
+                // ghost is down a click does the same, so a trackpad that
+                // takes over from a finger builds where the ghost and the
+                // ribbon say, never at an unpreviewed cursor.
                 let anchor = ghost_anchor_under(&game.view(), kind, world);
                 if let Some(placement) = &mut input.placing {
                     // A moved ghost leaves its row behind.

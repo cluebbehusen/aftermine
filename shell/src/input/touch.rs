@@ -160,12 +160,14 @@ fn steer_minimap(game: &mut Game, p: Vec2) {
 /// Where a finger landing at `p` was born.
 fn born_at(game: &Game, input: &InputState, p: Vec2) -> TouchBorn {
     // The ghost's controls draw over the minimap and every other chrome,
-    // so they own the fingers that land on them.
+    // so they own the fingers that land on them. The cross and check mark
+    // come before the handle, whose fingertip target can reach past its
+    // drawn disc onto them when zoomed out.
     let layout = game.presentation.layout.get();
-    if layout.ghost_handle.w > 0.0 && layout.ghost_handle.contains(p) {
-        TouchBorn::Handle
-    } else if super::ghost_control_at(&layout, p).is_some() {
+    if super::ghost_control_at(&layout, p).is_some() {
         TouchBorn::Chrome
+    } else if layout.ghost_handle.w > 0.0 && layout.ghost_handle.contains(p) {
+        TouchBorn::Handle
     } else if crate::render::minimap_world_at(&game.view(), p).is_some() {
         TouchBorn::Minimap
     } else if click_on_hud(game, p)
@@ -396,10 +398,12 @@ pub(super) fn up(
                 // follow, so the stroke closes here and Shift
                 // decides the mode, as on MouseUp.
                 // A ghost button presses only for the finger that landed
-                // on it: the cross and check mark sit closer than a still
-                // finger may wander.
+                // on it, and a finger that landed on one presses nothing
+                // else: the cross and check mark sit closer than a still
+                // finger may wander, and a lift just off them must not
+                // move the ghost.
                 let control = super::ghost_control_at(&game.presentation.layout.get(), p);
-                if control.is_some() && control != lifted.control {
+                if control != lifted.control {
                     input.last_tap = None;
                     return;
                 }

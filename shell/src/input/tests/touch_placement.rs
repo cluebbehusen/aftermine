@@ -321,6 +321,71 @@ fn a_finger_that_lands_on_the_cross_never_presses_the_check() {
 }
 
 #[test]
+fn a_finger_that_slips_off_a_ghost_button_moves_nothing() {
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    pull_handle_to(&mut game, &mut input, TilePos::new(5, 2));
+    let controls = lay_out_ghost_controls(&game, &input);
+    let landing = vec2(controls.confirm.right() - 1.0, controls.confirm.center().y);
+    let lift = landing + vec2(4.0, 0.0);
+    assert!(
+        ghost_control_at(&game.presentation.layout.get(), lift).is_none(),
+        "premise: the finger lifts just off the buttons"
+    );
+    input.now += 1.0;
+    apply_events(&mut game, &mut input, &[touch_down(1, landing)]);
+    input.now += 0.05;
+    apply_events(&mut game, &mut input, &[touch_up(1, lift)]);
+    assert!(game.pending.is_empty(), "no build");
+    assert_eq!(
+        input.ghost_anchor(),
+        Some(TilePos::new(3, 2)),
+        "the ghost stays put"
+    );
+    assert_eq!(input.planned_stamps().len(), 3, "and keeps its row");
+}
+
+#[test]
+fn the_check_mark_wins_where_the_handle_reaches_over_it() {
+    // Zoomed out, the handle's fingertip target reaches past its disc
+    // onto the check mark below the ghost.
+    let zoomed_out = || {
+        let (mut game, input) = ghost_range(TilePos::new(6, 2));
+        game.presentation.camera.zoom = 12.0;
+        let controls = lay_out_ghost_controls(&game, &input);
+        let shared = controls
+            .confirm
+            .intersect(controls.handle)
+            .expect("premise: the targets overlap");
+        (game, input, shared.center())
+    };
+    let (mut game, mut input, p) = zoomed_out();
+    tap(&mut game, &mut input, p);
+    assert_eq!(builds(&game).len(), 1, "a finger builds");
+
+    let (mut game, mut input, p) = zoomed_out();
+    apply_events(&mut game, &mut input, &[left_down(p), left_up(p)]);
+    assert_eq!(builds(&game).len(), 1, "and so does a click");
+}
+
+#[test]
+fn a_click_moves_a_ghost_a_finger_left() {
+    let (mut game, mut input) = ghost_range(TilePos::new(6, 2));
+    let p = game.presentation.camera.to_screen(vec2(9.5, 3.5));
+    apply_events(
+        &mut game,
+        &mut input,
+        &[mouse_move(p), left_down(p), left_up(p)],
+    );
+    assert!(game.pending.is_empty(), "the click builds nothing");
+    assert_eq!(input.ghost_anchor(), Some(TilePos::new(9, 3)));
+    assert_eq!(
+        placement_preview_anchor(&game.view(), &input).map(|(_, anchor)| anchor),
+        Some(TilePos::new(9, 3)),
+        "so the preview shows where the check mark will build"
+    );
+}
+
+#[test]
 fn the_ghost_controls_answer_before_the_minimap_and_queue() {
     let (mut game, mut input) = ghost_range(TilePos::new(6, 2));
     let controls = lay_out_ghost_controls(&game, &input);

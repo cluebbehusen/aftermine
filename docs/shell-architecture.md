@@ -455,18 +455,21 @@ mode is armed may zoom but never boxes.
 
 Touch placement shows a `PlacementGhost` instead of placing on the tap. Picking
 a building by finger drops it in the middle of the view, and a tap on open
-ground moves it there, centered under the finger. Dragging the ghost moves it by
-whole tiles; one smaller on screen than a fingertip rides a fingertip above the
-finger, so the spot and its tint stay in sight. Building waits for the ghost's
-check mark (`LayoutModel.ghost_confirm`), which runs the shared `place_at`
-checks at the ghost's anchor; the ghost itself only moves, and the tap point is
-never the anchor. Its cross (`LayoutModel.ghost_cancel`) folds a row back or
-gives the building back to the palette. Either presses only for a finger that
-landed on it, since they sit closer than a still finger may wander. The two hang
-side by side below the ghost, or above it where the window's foot or the bottom
-HUD (panel, ribbon, minimap, QUEUE toggle) leaves no room or over a row pulled
+ground moves it there, centered under the finger; while it is down a click moves
+it too, so a trackpad taking over builds where the ghost shows. Dragging the
+ghost moves it by whole tiles; one smaller on screen than a fingertip rides a
+fingertip above the finger, so the spot and its tint stay in sight. Building
+waits for the ghost's check mark (`LayoutModel.ghost_confirm`), which runs the
+shared `place_at` checks at the ghost's anchor; the ghost itself only moves, and
+the tap point is never the anchor. Its cross (`LayoutModel.ghost_cancel`) folds
+a row back or gives the building back to the palette. Either presses only for a
+finger that landed on it, and a finger that landed on either presses nothing
+else, since they sit closer than a still finger may wander. The two hang side by
+side below the ghost, or above it where the window's foot or the bottom HUD
+(panel, ribbon, minimap, QUEUE toggle) leaves no room or over a row pulled
 downward, and with the row handle they draw over the minimap and answer presses
-before it, the QUEUE toggle, and the ribbon. The row handle
+before it, the QUEUE toggle, and the ribbon; the two also answer before the
+handle, whose fingertip target reaches onto them when zoomed out. The row handle
 (`LayoutModel.ghost_handle`), which a trackpad drags as a finger does, pulls out
 a straight row along the axis the pointer leads on, a cell for each footprint it
 travels past where the handle sits, so the handle's own offset adds nothing at
