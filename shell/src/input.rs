@@ -419,16 +419,263 @@ fn pending_build_projection_for(
     })
 }
 
-/// The placement verdict matching the command this shell will stage.
-/// Replacement clicks may reuse claims their selected harvesters abandon;
-/// Shift clicks and drag stamps preserve them.
-pub(crate) fn placement_refusal(
+/// What placing at an anchor would do, judged after the staged batch: the
+/// ghost tints from it, the mode ribbon says it, and a click acts on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlacementVerdict {
+    /// The crew founds the site now, on visible ground.
+    Builds,
+    /// Part of the footprint is remembered ground: the crew walks out and
+    /// founds on arrival.
+    BuildsOnArrival,
+    /// The ground or the rules refuse the site.
+    Refused(oxide_sim::PlaceRefusal),
+    /// The bank is this much scrap short of the site's cost.
+    Short(u32),
+    /// No selected builder has room for the order.
+    QueueFull,
+    /// The ground the player has seen leaves the founder no way to the
+    /// site's doorstep.
+    Unreachable,
+}
+
+impl PlacementVerdict {
+    /// Whether a click here stages the build.
+    pub(crate) fn builds(self) -> bool {
+        matches!(self, Self::Builds | Self::BuildsOnArrival)
+    }
+}
+
+/// The candidate a cached verdict was judged for. Nothing else it reads
+/// can change without one of these changing: the world moves only with
+/// the tick, and the staged batch only grows until a tick drains it.
+#[derive(Debug, PartialEq, Eq)]
+struct VerdictKey {
+    tick: oxide_sim::Tick,
+    pending: usize,
+    units: Vec<UnitId>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+    queue: bool,
+}
+
+/// The latest placement verdict. The ghost, every HUD layout pass, and the
+/// click ask several times a frame, and a staged batch makes each answer
+/// cost a command-phase projection.
+#[derive(Debug, Default)]
+pub(crate) struct VerdictCache(std::cell::RefCell<Option<(VerdictKey, PlacementVerdict)>>);
+
+impl VerdictCache {
+    pub(crate) fn clear(&self) {
+        self.0.take();
+    }
+}
+
+/// What placing `kind` at `anchor` would do for the selected builders.
+pub(crate) fn placement_verdict(
     game: &crate::game::Scene<'_>,
     kind: oxide_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
-) -> Option<oxide_sim::PlaceRefusal> {
-    pending_build_projection(game, kind, anchor, queue).refusal
+) -> PlacementVerdict {
+    let key = VerdictKey {
+        tick: game.state.current_tick(),
+        pending: game.pending.len(),
+        units: game.presentation.selection.units.clone(),
+        kind,
+        anchor,
+        queue,
+    };
+    let cache = &game.presentation.placement_verdict.0;
+    if let Some((judged, verdict)) = cache.borrow().as_ref()
+        && *judged == key
+    {
+        return *verdict;
+    }
+    let defer = build_defer_needed(game, kind, anchor);
+    let projection = pending_build_projection_for(game, kind, anchor, queue, defer);
+    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let available = projection.funds.available();
+    // The order a click checks them in: the ground, the bank, the queue.
+    let verdict = if let Some(refusal) = projection.refusal {
+        PlacementVerdict::Refused(refusal)
+    } else if available < cost {
+        PlacementVerdict::Short(cost - available)
+    } else if !projection.queue_has_room {
+        PlacementVerdict::QueueFull
+    } else if defer {
+        PlacementVerdict::BuildsOnArrival
+    } else if !founder_may_reach(game, kind, anchor) {
+        PlacementVerdict::Unreachable
+    } else {
+        PlacementVerdict::Builds
+    };
+    cache.replace(Some((key, verdict)));
+    verdict
+}
+
+/// Whether the founder may reach a doorstep of `kind` at `anchor`, as far
+/// as the player can tell. Only ground the player can see blocked, or has
+/// explored as impassable terrain, counts: unexplored and fogged ground is
+/// taken as open, so this never calls reachable ground unreachable and
+/// never reads what fog hides. The sim's own path check still decides; this
+/// catches the walled-off pockets and plateaus the player can see. Moves
+/// run eight ways, a superset of any path the sim takes.
+fn founder_may_reach(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+) -> bool {
+    let human = game.presentation.human;
+    let Some(founder) = game
+        .presentation
+        .selection
+        .units
+        .iter()
+        .filter_map(|id| game.state.unit(*id))
+        .find(|unit| unit.player == human && unit.kind.stats().harvest.is_some())
+    else {
+        return true;
+    };
+    let (w, h) = kind.size();
+    let inside =
+        |t: TilePos| t.x >= anchor.x && t.x < anchor.x + w && t.y >= anchor.y && t.y < anchor.y + h;
+    let doorstep = |t: TilePos| {
+        !inside(t)
+            && t.x >= anchor.x - 1
+            && t.x <= anchor.x + w
+            && t.y >= anchor.y - 1
+            && t.y <= anchor.y + h
+    };
+    let from = founder.tile();
+    if inside(from) {
+        return true;
+    }
+    let map = game.state.map();
+    let vision = game.state.vision(human);
+    let open = |t: TilePos| {
+        if inside(t) {
+            return false;
+        }
+        let Some(tile) = map.tile(t) else {
+            return false;
+        };
+        if vision.visible(t) {
+            game.state.passable(t)
+        } else if vision.explored(t) {
+            !tile.terrain.blocks_ground()
+        } else {
+            true
+        }
+    };
+    let (width, height) = (map.width(), map.height());
+    let index = |t: TilePos| (t.y * width + t.x).fit::<usize>();
+    let mut seen = vec![false; (width * height).fit::<usize>()];
+    let mut frontier = std::collections::VecDeque::from([from]);
+    if map.tile(from).is_some() {
+        seen[index(from)] = true;
+    }
+    while let Some(at) = frontier.pop_front() {
+        if doorstep(at) && open(at) {
+            return true;
+        }
+        for (dx, dy) in [
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ] {
+            let next = at.offset(dx, dy);
+            if map.tile(next).is_some() && !seen[index(next)] && open(next) {
+                seen[index(next)] = true;
+                frontier.push_back(next);
+            }
+        }
+    }
+    false
+}
+
+/// The number a queued build takes in the dock's subject's program, if
+/// the subject will take it: a subject with a full queue is skipped while
+/// another selected builder may still accept the order.
+pub(crate) fn queued_position(game: &crate::game::Scene<'_>) -> Option<usize> {
+    placement_backlog(game)
+        .filter(|backlog| *backlog <= oxide_sim::stats::ORDER_QUEUE_CAP)
+        .map(|backlog| backlog + 1)
+}
+
+/// Whether the mouse is the pointer placing and it rests on chrome or the
+/// minimap, where a click does something other than place.
+pub(crate) fn cursor_on_chrome(game: &crate::game::Scene<'_>, input: &InputState) -> bool {
+    input.ghost_anchor().is_none()
+        && input.last_pointer == Pointer::Mouse
+        && (game.presentation.layout.get().chrome_owns(input.mouse)
+            || crate::render::minimap_world_at(game, input.mouse).is_some())
+}
+
+/// How many orders the placement's builder already has, counted as its
+/// dock chips are. The builder is the dock's subject when that can build,
+/// else the lowest-id selected own worker: every selected worker takes the
+/// order, and this one stands for them as the dock does.
+pub(crate) fn placement_backlog(game: &crate::game::Scene<'_>) -> Option<usize> {
+    let builds = |id: &UnitId| {
+        game.state.unit(*id).is_some_and(|unit| {
+            unit.player == game.presentation.human && unit.kind.stats().harvest.is_some()
+        })
+    };
+    let builder = crate::panel::subject_unit(game)
+        .filter(builds)
+        .or_else(|| {
+            game.presentation
+                .selection
+                .units
+                .iter()
+                .copied()
+                .find(builds)
+        })?;
+    let projection = game.projection();
+    let program = projection.program(builder)?;
+    Some(
+        program
+            .orders
+            .iter()
+            .filter(|order| !matches!(order, oxide_sim::Order::Idle))
+            .count(),
+    )
+}
+
+/// Why the ground or the rules refuse a site, as a lowercase fragment.
+pub(crate) fn refusal_reason(refusal: oxide_sim::PlaceRefusal) -> &'static str {
+    use oxide_sim::PlaceRefusal;
+    match refusal {
+        PlaceRefusal::Fog => "you haven't scouted that ground",
+        PlaceRefusal::Terrain => "impassable ground",
+        PlaceRefusal::Building => "something already stands there",
+        PlaceRefusal::Unit => "an enemy machine is holding that ground",
+        PlaceRefusal::NotConstructible => "that can't be built",
+        PlaceRefusal::Prerequisite => "needs its tech building",
+        PlaceRefusal::FrameRequired => "an extractor rebuilds only on a derelict frame",
+        PlaceRefusal::FrameBlocked => "that ground belongs to a derelict frame",
+    }
+}
+
+/// The toast a refused placement click raises.
+fn refusal_toast(refusal: oxide_sim::PlaceRefusal) -> String {
+    use oxide_sim::PlaceRefusal;
+    let reason = refusal_reason(refusal);
+    match refusal {
+        PlaceRefusal::Fog
+        | PlaceRefusal::Terrain
+        | PlaceRefusal::Building
+        | PlaceRefusal::Unit
+        | PlaceRefusal::FrameBlocked => format!("Can't build there: {reason}"),
+        PlaceRefusal::Prerequisite => format!("Can't build that yet: {reason}"),
+        PlaceRefusal::NotConstructible | PlaceRefusal::FrameRequired => reason.to_string(),
+    }
 }
 
 /// The fog-honest anchor shared by the placement ghost and every input path.
@@ -1756,50 +2003,26 @@ fn place_at(
     anchor: TilePos,
 ) -> bool {
     let queue = input.queue_held();
-    let projection = pending_build_projection(&game.view(), kind, anchor, queue);
-    // A refused click keeps the armed mode, and the toast names the
-    // actual blocker. Explored-but-unseen ground is judged by the same
-    // remembered-state predicate the ghost tints from, so Fog here means
-    // unscouted ground.
-    if let Some(refusal) = projection.refusal {
-        use oxide_sim::PlaceRefusal;
-        game.presentation.toast(match refusal {
-            PlaceRefusal::Fog => "Can't build there: you haven't scouted that ground",
-            PlaceRefusal::Terrain => "Can't build there: impassable ground",
-            PlaceRefusal::Building => "Can't build there: something already stands there",
-            PlaceRefusal::Unit => "Can't build there: an enemy machine is holding that ground",
-            PlaceRefusal::NotConstructible => "That can't be built",
-            PlaceRefusal::Prerequisite => "Can't build that yet: needs its tech building",
-            PlaceRefusal::FrameRequired => "An extractor rebuilds only on a derelict frame",
-            PlaceRefusal::FrameBlocked => {
-                "Can't build there: that ground belongs to a derelict frame"
-            }
-        });
-        game.presentation
-            .sounds_pending
-            .push((crate::game::SoundKind::Denied, None));
-        return false;
-    }
-    // Judge the opening stamp after the exact pending command phase, with
-    // future prices held for surviving deferred claims, so an unaffordable
-    // click toasts instead of pinging and then failing in the sim.
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
-    if projection.funds.available() < cost {
-        game.presentation.toast(format!(
+    // Judged after the exact pending command phase, with future prices held
+    // for surviving deferred claims, so a click the sim would refuse toasts
+    // and keeps the mode armed instead of pinging and then failing.
+    // Explored-but-unseen ground is judged by the remembered-state predicate
+    // the ghost tints from, so Fog here means unscouted ground.
+    let verdict = placement_verdict(&game.view(), kind, anchor, queue);
+    let refused = match verdict {
+        PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival => None,
+        PlacementVerdict::Refused(refusal) => Some(refusal_toast(refusal)),
+        PlacementVerdict::Short(_) => Some(format!(
             "Not enough scrap for a {}",
             crate::typography::entity_name(kind.name())
-        ));
-        game.presentation
-            .sounds_pending
-            .push((crate::game::SoundKind::Denied, None));
-        return false;
-    }
-    // The opening stamp must also fit the builder's program: a Shift click
-    // onto a crew already at the order-queue cap would ping and then fail
-    // in the sim as QueueFull. Refuse here and keep the mode armed.
-    if !projection.queue_has_room {
-        game.presentation
-            .toast("That builder's order queue is full");
+        )),
+        PlacementVerdict::QueueFull => Some("That builder's order queue is full".to_string()),
+        PlacementVerdict::Unreachable => {
+            Some("Can't build there: your builders can't reach it".to_string())
+        }
+    };
+    if let Some(toast) = refused {
+        game.presentation.toast(toast);
         game.presentation
             .sounds_pending
             .push((crate::game::SoundKind::Denied, None));
@@ -1816,7 +2039,7 @@ fn place_at(
         // Remembered ground defers the claim: the crew walks out and
         // founds on arrival, paying then. The amber ghost shows which
         // timing this stamp gets.
-        defer: build_defer_needed(&game.view(), kind, anchor),
+        defer: verdict == PlacementVerdict::BuildsOnArrival,
     });
     game.presentation
         .ping_order(placement_ping(kind, anchor), PingKind::Rally, queue);

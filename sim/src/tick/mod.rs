@@ -120,11 +120,17 @@ impl State {
     /// [`State::tick`], but production, brains, movement, cleanup, vision,
     /// victory, and the tick counter do not advance. The receiver is never
     /// mutated; only [`State::tick`] advances an authoritative session.
+    /// With no commands the view reads the receiver itself: an empty
+    /// command phase changes nothing, since valid crews never exceed a
+    /// cradle's cap.
     pub fn inspect_command_phase<R>(
         &self,
         commands: &[PlayerCommand],
         inspect: impl FnOnce(CommandPhaseView<'_>) -> R,
     ) -> R {
+        if commands.is_empty() {
+            return inspect(CommandPhaseView { state: self });
+        }
         let mut projected = self.clone();
         if projected.result.is_none() {
             let mut events = Vec::new();

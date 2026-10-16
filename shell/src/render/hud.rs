@@ -111,7 +111,7 @@ pub(crate) fn layout(
     } else {
         chrome::group_column_layout(game, input, minimap, env.ui)
     };
-    let ribbon = chrome::ribbon_layout(input, &panel_regions, minimap, env, measure);
+    let ribbon = chrome::ribbon_layout(game, input, &panel_regions, minimap, env, measure);
     let queue_toggle = chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY)
         .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
     let performance = performance.and_then(|view| {

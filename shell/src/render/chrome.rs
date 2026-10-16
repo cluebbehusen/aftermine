@@ -325,11 +325,26 @@ fn ribbon_width(viewport: Vec2, scale: f32, label_width: f32) -> f32 {
         .min((viewport.x - 24.0 * scale).max(RIBBON_MIN_W * scale))
 }
 
+/// The status row a placement ribbon adds under its label, in logical px.
+const RIBBON_STATUS_H: f32 = 14.0;
+
+/// The armed-mode ribbon's height: one touch target, plus the status row
+/// while placement has a spot to judge.
+fn ribbon_height(scale: f32, status: bool) -> f32 {
+    let status = if status { RIBBON_STATUS_H } else { 0.0 };
+    (crate::theme::MIN_TOUCH_TARGET + status) * scale
+}
+
 /// Where the armed-mode ribbon sits: centered over the panel band,
 /// sliding left only when it would run off the window or into the
 /// minimap.
-fn ribbon_geometry(viewport: Vec2, scale: f32, panel_top: f32, width: f32, minimap: Rect) -> Rect {
-    let height = crate::theme::MIN_TOUCH_TARGET * scale;
+fn ribbon_geometry(
+    viewport: Vec2,
+    scale: f32,
+    panel_top: f32,
+    (width, height): (f32, f32),
+    minimap: Rect,
+) -> Rect {
     let y = ribbon_row_y(viewport, scale, panel_top, height);
     let blocks_row = minimap.w > 0.0 && minimap.y < y + height && minimap.y + minimap.h > y;
     let right = if blocks_row {
@@ -415,10 +430,25 @@ pub(crate) struct RibbonLayout {
     building: Option<oxide_sim::BuildingKind>,
     label_w: f32,
     icon_w: f32,
+    pub(super) status: Option<RibbonStatus>,
 }
+
+/// A placement ribbon's status row: what a click at the ghost or cursor
+/// would do, then whether it joins the builder's queue or replaces it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RibbonStatus {
+    pub(crate) verdict: String,
+    pub(crate) color: Color,
+    pub(crate) detail: Option<String>,
+    verdict_w: f32,
+}
+
+/// The separator between a status row's verdict and its detail.
+const STATUS_SEPARATOR: &str = " \u{b7} ";
 
 /// The armed-mode ribbon, while a mode is armed.
 pub(super) fn ribbon_layout(
+    game: &crate::game::Scene<'_>,
     input: &InputState,
     regions: &[Rect; 2],
     minimap: Rect,
@@ -441,22 +471,149 @@ pub(super) fn ribbon_layout(
     let cost_w = cost.as_deref().map_or(0.0, |cost| {
         12.0 * s + measure(Face::Body, cost, crate::theme::Type::Body.at(s))
     });
-    let width = ribbon_width(viewport, s, icon_w + label_w + cost_w);
+    let status_size = crate::theme::Type::Small.at(s);
+    let status = building.and_then(|kind| {
+        let mut status = placement_status(game, input, kind)?;
+        status.verdict_w = measure(Face::Body, &status.verdict, status_size);
+        Some(status)
+    });
+    // The row is as wide as its widest possible status, so the ribbon holds
+    // still while the ghost moves between verdicts.
+    let status_w = match (building, &status) {
+        (Some(kind), Some(_)) => {
+            widest_placement_status(kind, &|text| measure(Face::Body, text, status_size))
+        }
+        _ => 0.0,
+    };
+    let content = icon_w + (label_w + cost_w).max(status_w);
+    let size = (
+        ribbon_width(viewport, s, content),
+        ribbon_height(s, status.is_some()),
+    );
     // The ribbon sits above whichever panel region lies under it.
-    let open = ribbon_geometry(viewport, s, f32::INFINITY, width, minimap);
+    let open = ribbon_geometry(viewport, s, f32::INFINITY, size, minimap);
     let panel_top = regions
         .iter()
         .filter(|r| r.w > 0.0 && r.x < open.x + open.w && r.x + r.w > open.x)
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     Some(RibbonLayout {
-        rect: ribbon_geometry(viewport, s, panel_top, width, minimap),
+        rect: ribbon_geometry(viewport, s, panel_top, size, minimap),
         label,
         cost,
         building,
         label_w,
         icon_w,
+        status,
     })
+}
+
+/// What placing `kind` would do at the ghost or under the cursor, if
+/// either names a spot.
+pub(crate) fn placement_status(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    kind: oxide_sim::BuildingKind,
+) -> Option<RibbonStatus> {
+    use crate::input::PlacementVerdict;
+    let (_, anchor) = crate::input::placement_preview_anchor(game, input)?;
+    // Over chrome a click does something else; the row stays, blank, so
+    // the ribbon holds still as the cursor reaches it.
+    if crate::input::cursor_on_chrome(game, input) {
+        return Some(RibbonStatus {
+            verdict: String::new(),
+            color: TEXT_BODY,
+            detail: None,
+            verdict_w: 0.0,
+        });
+    }
+    let queue = input.stroke_live() || input.queue_held();
+    let verdict = crate::input::placement_verdict(game, kind, anchor, queue);
+    let (text, color) = match verdict {
+        PlacementVerdict::Builds => ("Builds now".to_string(), TEXT_BODY),
+        PlacementVerdict::BuildsOnArrival => ("Builds on arrival".to_string(), TEXT_ACCENT),
+        PlacementVerdict::Refused(refusal) => (
+            crate::typography::sentence_case(crate::input::refusal_reason(refusal)),
+            crate::theme::TEXT_DANGER,
+        ),
+        PlacementVerdict::Short(scrap) => (
+            format!("Needs {scrap} more scrap"),
+            crate::theme::TEXT_DANGER,
+        ),
+        PlacementVerdict::QueueFull => {
+            ("Order queue is full".to_string(), crate::theme::TEXT_DANGER)
+        }
+        PlacementVerdict::Unreachable => (UNREACHABLE.to_string(), crate::theme::TEXT_DANGER),
+    };
+    let detail = if !verdict.builds() {
+        None
+    } else if queue {
+        crate::input::queued_position(game).map(|position| format!("Queues as #{position}"))
+    } else {
+        crate::input::placement_backlog(game).and_then(|backlog| backlog_detail(backlog, false))
+    };
+    Some(RibbonStatus {
+        verdict: text,
+        color,
+        detail,
+        verdict_w: 0.0,
+    })
+}
+
+/// The status row's word for a site the founder cannot reach.
+const UNREACHABLE: &str = "Your builders can't reach it";
+
+/// Where a build lands in a builder already holding `backlog` orders.
+fn backlog_detail(backlog: usize, queue: bool) -> Option<String> {
+    if queue {
+        Some(format!("Queues as #{}", backlog + 1))
+    } else if backlog == 1 {
+        Some("Replaces 1 order".to_string())
+    } else if backlog > 1 {
+        Some(format!("Replaces {backlog} orders"))
+    } else {
+        None
+    }
+}
+
+/// The widest status row placing `kind` can show.
+fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str) -> f32) -> f32 {
+    use oxide_sim::PlaceRefusal;
+    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    // A builder holds at most the cap's worth of queue behind its order.
+    let most = oxide_sim::stats::ORDER_QUEUE_CAP + 1;
+    let detail = [backlog_detail(most - 1, true), backlog_detail(most, false)]
+        .into_iter()
+        .flatten()
+        .map(|text| measure(&format!("{STATUS_SEPARATOR}{text}")))
+        .fold(0.0, f32::max);
+    let building = ["Builds now", "Builds on arrival"]
+        .into_iter()
+        .map(|text| measure(text) + detail)
+        .fold(0.0, f32::max);
+    let refusals = [
+        PlaceRefusal::Fog,
+        PlaceRefusal::Terrain,
+        PlaceRefusal::Building,
+        PlaceRefusal::Unit,
+        PlaceRefusal::NotConstructible,
+        PlaceRefusal::Prerequisite,
+        PlaceRefusal::FrameRequired,
+        PlaceRefusal::FrameBlocked,
+    ]
+    .into_iter()
+    .filter(|refusal| {
+        *refusal != PlaceRefusal::FrameRequired || kind == oxide_sim::BuildingKind::Extractor
+    })
+    .map(|refusal| crate::typography::sentence_case(crate::input::refusal_reason(refusal)))
+    .chain([
+        format!("Needs {cost} more scrap"),
+        "Order queue is full".to_string(),
+        UNREACHABLE.to_string(),
+    ])
+    .map(|text| measure(&text))
+    .fold(0.0, f32::max);
+    building.max(refusals)
 }
 
 fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
@@ -467,8 +624,11 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
         building,
         label_w,
         icon_w,
+        status,
     } = layout;
     let (ribbon, building, label_w, icon_w) = (*ribbon, *building, *label_w, *icon_w);
+    // The label keeps the touch-target row; a status row hangs under it.
+    let row_h = crate::theme::MIN_TOUCH_TARGET * s;
     let (label_size, cost_size) = (
         crate::theme::Type::Label.at(s),
         crate::theme::Type::Body.at(s),
@@ -489,16 +649,11 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
                 layers.push((accent, owner));
             }
         }
-        let icon = Rect::new(
-            x,
-            ribbon.y + (ribbon.h - 32.0 * s) * 0.5,
-            32.0 * s,
-            32.0 * s,
-        );
+        let icon = Rect::new(x, ribbon.y + (row_h - 32.0 * s) * 0.5, 32.0 * s, 32.0 * s);
         sprites.draw_portrait(icon, &layers);
         x += icon_w;
     }
-    let baseline = ribbon.y + ribbon.h * 0.64;
+    let baseline = ribbon.y + row_h * 0.64;
     draw_text(label, x, baseline, label_size, TEXT_PRIMARY);
     if let Some(cost) = cost {
         draw_text(
@@ -508,6 +663,20 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
             cost_size,
             SCRAP_COLOR,
         );
+    }
+    if let Some(status) = status {
+        let size = crate::theme::Type::Small.at(s);
+        let baseline = ribbon.y + ribbon.h - 8.0 * s;
+        draw_text(&status.verdict, x, baseline, size, status.color);
+        if let Some(detail) = &status.detail {
+            draw_text(
+                format!("{STATUS_SEPARATOR}{detail}"),
+                x + status.verdict_w,
+                baseline,
+                size,
+                crate::theme::TEXT_SECONDARY,
+            );
+        }
     }
 }
 

@@ -2638,6 +2638,18 @@ fn armed_placement(kind: oxide_sim::BuildingKind) -> (Game, InputState, oxide_si
     (game, input, harvester)
 }
 
+/// The ground verdict matching the command this shell will stage.
+/// Replacement clicks may reuse claims their selected harvesters abandon;
+/// Shift clicks and drag stamps preserve them.
+fn placement_refusal(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+    queue: bool,
+) -> Option<oxide_sim::PlaceRefusal> {
+    pending_build_projection(game, kind, anchor, queue).refusal
+}
+
 fn staged_anchors(game: &Game) -> Vec<TilePos> {
     game.pending
         .iter()
@@ -4555,6 +4567,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
 
 mod order_chips;
 mod placement_chain;
+mod placement_verdict;
 mod relayout;
 mod top_bar;
 

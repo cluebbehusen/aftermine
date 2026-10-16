@@ -118,6 +118,9 @@ pub struct Presentation {
     /// orders dock and the waypoint chain. A `RefCell` because drawing
     /// borrows presentation.
     pub(crate) projection: std::cell::RefCell<super::projection::Projection>,
+    /// The latest placement verdict, shared by the ghost, the mode ribbon,
+    /// and the click.
+    pub(crate) placement_verdict: crate::input::VerdictCache,
     /// Whether the surrender overlay (banner + concede stats + the
     /// Esc-to-menu exit) is up. Presentation only; opening the pause
     /// menu dismisses it so spectating the ally stays unobstructed.
@@ -336,6 +339,7 @@ impl Presentation {
             layout: std::cell::Cell::new(crate::layout::LayoutModel::default()),
             panel_model: std::cell::RefCell::new(None),
             projection: std::cell::RefCell::default(),
+            placement_verdict: crate::input::VerdictCache::default(),
             conceded_banner: false,
             spectate: false,
             tick_fraction: 0.0,
@@ -506,6 +510,7 @@ impl Presentation {
     pub fn drop_presentation(&mut self, state: &State) {
         self.fx.clear();
         self.projection.take();
+        self.placement_verdict.clear();
         self.restore_pending_crashes(state);
         self.sounds_pending.clear();
         self.toasts.clear();

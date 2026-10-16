@@ -470,24 +470,39 @@ or ground, after the transport boarding check; Run is the deliberate way to send
 a scout into danger. A mixed selection keeps the ordinary contextual order.
 
 The mode ribbon (`LayoutModel.mode_ribbon`) shows while a mode is armed,
-centered above the panel band. The QUEUE toggle (`LayoutModel.queue_toggle`)
-shows on touch-only builds while the human commands a selected unit or QUEUE is
-on. It sits over the panel's left corner in the orders dock's column, and the
-dock rises to stack above it, so queueing orders never moves the toggle.
-`ribbon_row_press` hit-tests both before every other target: the toggle flips
-QUEUE and the ribbon cancels its mode. The build palette's Back card
-(`CardAction::ClosePalette`) stands in its own column at the band's left edge
-and leaves construction in one press. The orders dock and its Stop button stay
-stacked above the palette's left corner, so a builder's queued work remains
-visible and cancelable while the next site is chosen. On touch a tap that picks
-no unit or building while the palette is open and nothing is armed closes it and
-keeps the selection, even over a scrap pile: dismissing never also acts. With
-QUEUE lit (or Shift or Ctrl held), a roster chip drops its kind instead of
-keeping only it. Taps and clicks select through `select::pick`, which gives a
-fingertip a wider reach than a cursor. A press that picks nothing on a tile with
-known salvage selects that tile as `Selection::pile`, read-only and exclusive:
-any other selection drops it, and `Game` drops it once the viewer knows of no
-salvage there. Its panel and the desktop hover readout share
+centered above the panel band. While placement has a spot to judge, under the
+cursor or at the touch ghost, the ribbon adds a status row: whether a click
+there builds now, builds on arrival, or why it would be refused, and whether it
+queues as the builder's next numbered order or replaces its orders. A site the
+founder cannot reach is refused when the ground the player can see, or has
+explored as impassable terrain, leaves it no way to the doorstep; fogged and
+unexplored ground counts as open, so the check never reads what fog hides and
+never refuses reachable ground, and the sim's own path check still decides. A
+builder whose queue is full takes no number, since another selected builder may
+take the order. Over chrome or the minimap, where a click does something else,
+the row stays but goes blank. The row is as wide as its widest possible status,
+so the ribbon holds still as the verdict changes, and a queued ghost wears the
+same number as its dock chip will. One `PlacementVerdict`, cached for the tick,
+the staged-command count, the selection, and the candidate, feeds the ghost's
+tint, the ribbon, and the click, so a spot the bank, a full queue, or an
+unreachable doorstep refuses tints red too. The QUEUE toggle
+(`LayoutModel.queue_toggle`) shows on touch-only builds while the human commands
+a selected unit or QUEUE is on. It sits over the panel's left corner in the
+orders dock's column, and the dock rises to stack above it, so queueing orders
+never moves the toggle. `ribbon_row_press` hit-tests both before every other
+target: the toggle flips QUEUE and the ribbon cancels its mode. The build
+palette's Back card (`CardAction::ClosePalette`) stands in its own column at the
+band's left edge and leaves construction in one press. The orders dock and its
+Stop button stay stacked above the palette's left corner, so a builder's queued
+work remains visible and cancelable while the next site is chosen. On touch a
+tap that picks no unit or building while the palette is open and nothing is
+armed closes it and keeps the selection, even over a scrap pile: dismissing
+never also acts. With QUEUE lit (or Shift or Ctrl held), a roster chip drops its
+kind instead of keeping only it. Taps and clicks select through `select::pick`,
+which gives a fingertip a wider reach than a cursor. A press that picks nothing
+on a tile with known salvage selects that tile as `Selection::pile`, read-only
+and exclusive: any other selection drops it, and `Game` drops it once the viewer
+knows of no salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
 

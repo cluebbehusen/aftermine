@@ -12,30 +12,33 @@ use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, s
 /// looks legal is legal: green founds immediately, amber founds on arrival
 /// (part of the footprint is remembered ground, judged from memory rather
 /// than live state so the tint cannot reveal hidden enemies), and red is
-/// refused.
+/// refused, whether by the ground, the bank, or a full order queue. A
+/// queued build wears the place it takes in its builder's program.
 pub(crate) fn draw_placement_ghost(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
     input: &InputState,
 ) {
+    use crate::input::PlacementVerdict;
     let Some((kind, anchor)) = crate::input::placement_preview_anchor(game, input) else {
         return;
     };
     let zoom = game.presentation.camera.zoom;
     let (w, h) = kind.size();
     let queue = input.stroke_live() || input.queue_held();
-    let ok = crate::input::placement_refusal(game, kind, anchor, queue).is_none();
+    let verdict = crate::input::placement_verdict(game, kind, anchor, queue);
     let screen = game
         .presentation
         .camera
         .to_screen(vec2(anchor.x as f32, anchor.y as f32));
     let dest = vec2(w as f32 * zoom, h as f32 * zoom);
-    let tint = if !ok {
-        Color::new(1.0, 0.45, 0.4, 0.55)
-    } else if crate::input::build_defer_needed(game, kind, anchor) {
-        Color::new(1.0, 0.85, 0.45, 0.55)
-    } else {
-        Color::new(0.7, 1.0, 0.75, 0.55)
+    let tint = match verdict {
+        PlacementVerdict::Builds => Color::new(0.7, 1.0, 0.75, 0.55),
+        PlacementVerdict::BuildsOnArrival => Color::new(1.0, 0.85, 0.45, 0.55),
+        PlacementVerdict::Refused(_)
+        | PlacementVerdict::Short(_)
+        | PlacementVerdict::QueueFull
+        | PlacementVerdict::Unreachable => Color::new(1.0, 0.45, 0.4, 0.55),
     };
     sprites.draw(
         screen.x,
@@ -47,15 +50,30 @@ pub(crate) fn draw_placement_ghost(
             ..Default::default()
         },
     );
-    if ok && input.queue_held() {
+    if queue && verdict.builds() {
         let corner = screen + vec2(dest.x, 0.0);
-        fill_circle(corner, 9.0, Color::new(0.08, 0.08, 0.1, 0.85));
-        draw_queued_mark(corner, 5.0, BONE);
+        let s = ui_scale();
+        fill_circle(corner, 10.0 * s, Color::new(0.08, 0.08, 0.1, 0.85));
+        // The number its dock chip will carry once it stages.
+        if let Some(position) = crate::input::queued_position(game) {
+            let label = position.to_string();
+            let size = crate::theme::Type::Small.at(s);
+            let width = measure_text(&label, None, numeric::font_size(size), 1.0).width;
+            draw_text(
+                &label,
+                corner.x - width * 0.5,
+                corner.y + size * 0.35,
+                size,
+                BONE,
+            );
+        } else {
+            draw_queued_mark(corner, 5.0, BONE);
+        }
     }
 }
 
-/// The plus a queued order wears, on its ping and on the placement ghost:
-/// it joins the program rather than replacing it.
+/// The plus a queued order's ping wears: it joins the program rather
+/// than replacing it.
 fn draw_queued_mark(center: Vec2, arm: f32, color: Color) {
     line_between(center - vec2(arm, 0.0), center + vec2(arm, 0.0), 2.0, color);
     line_between(center - vec2(0.0, arm), center + vec2(0.0, arm), 2.0, color);

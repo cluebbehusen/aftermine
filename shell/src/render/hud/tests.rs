@@ -164,3 +164,165 @@ fn a_busy_builder_keeps_its_orders_dock_over_the_construction_palette() {
         }
     }
 }
+
+#[test]
+fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap();
+    let (id, home) = (
+        harvester.id,
+        chassis::grid::TilePos::containing(harvester.pos),
+    );
+    for (dx, queue) in [(4, false), (6, true)] {
+        game.state.tick(&[oxide_sim::PlayerCommand {
+            player: human,
+            command: oxide_sim::Command::Run {
+                units: vec![id],
+                goal: chassis::grid::TilePos {
+                    x: home.x + dx,
+                    y: home.y,
+                },
+                queue,
+            },
+        }]);
+    }
+    game.presentation.selection.units.push(id);
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .anchor;
+    let mut input = InputState::new();
+    input.build_menu = true;
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    let ribbon = |game: &Game, input: &mut InputState, tile: chassis::grid::TilePos| {
+        input.mouse = game
+            .presentation
+            .camera
+            .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
+        layout(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1133.0, 744.0),
+            None,
+            &fixed,
+        )
+        .geometry
+        .ribbon
+        .expect("placement shows its ribbon")
+    };
+    let open = chassis::grid::TilePos::new(foundry.x + 3, foundry.y + 3);
+
+    let builds = ribbon(&game, &mut input, open);
+    let status = builds.status.as_ref().expect("a spot under the cursor");
+    assert_eq!(status.verdict, "Builds now");
+    assert_eq!(status.detail.as_deref(), Some("Replaces 2 orders"));
+    assert!(builds.rect.h > crate::theme::MIN_TOUCH_TARGET);
+
+    let blocked = ribbon(&game, &mut input, foundry);
+    let status = blocked.status.as_ref().expect("a spot under the cursor");
+    assert_eq!(status.verdict, "Something already stands there");
+    assert_eq!(
+        status.detail, None,
+        "a refused spot neither queues nor replaces"
+    );
+    assert_eq!(blocked.rect, builds.rect, "the ribbon holds still");
+
+    input.queue_toggle = true;
+    let queued = ribbon(&game, &mut input, open);
+    let status = queued.status.as_ref().expect("a spot under the cursor");
+    assert_eq!(status.detail.as_deref(), Some("Queues as #3"));
+    assert_eq!(queued.rect, builds.rect);
+}
+
+#[test]
+fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let mut input = InputState::new();
+    input.build_menu = true;
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.last_pointer = crate::input::Pointer::Touch;
+    let ribbon = layout(
+        &game.view(),
+        &input,
+        &BindingMap::classic(),
+        env(1133.0, 744.0),
+        None,
+        &fixed,
+    )
+    .geometry
+    .ribbon
+    .expect("placement shows its ribbon");
+    assert!(ribbon.status.is_none(), "no spot to judge yet");
+    assert_eq!(ribbon.rect.h, crate::theme::MIN_TOUCH_TARGET);
+}
+
+#[test]
+fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .anchor;
+    let mut input = InputState::new();
+    input.build_menu = true;
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.mouse = game.presentation.camera.to_screen(vec2(
+        (foundry.x + 3) as f32 + 0.5,
+        (foundry.y + 3) as f32 + 0.5,
+    ));
+    let lay_out = |game: &Game, input: &InputState| {
+        let hud = layout(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1280.0, 800.0),
+            None,
+            &fixed,
+        );
+        let ribbon = hud.geometry.ribbon.expect("placement shows its ribbon");
+        game.presentation.layout.set(hud.layout);
+        ribbon
+    };
+    let over_ground = lay_out(&game, &input);
+    assert_eq!(
+        over_ground.status.as_ref().unwrap().verdict,
+        "Builds now",
+        "premise"
+    );
+    input.mouse = over_ground.rect.center();
+    let over_ribbon = lay_out(&game, &input);
+    let status = over_ribbon.status.expect("the row stays");
+    assert!(status.verdict.is_empty() && status.detail.is_none());
+    assert_eq!(over_ribbon.rect, over_ground.rect, "the ribbon holds still");
+}
