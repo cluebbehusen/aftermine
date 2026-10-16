@@ -44,14 +44,17 @@ fn ghost_range(ghost: TilePos) -> (Game, InputState) {
     (game, input)
 }
 
-/// Drags the ghost's row handle out to the centre of `tile`.
+/// Drags the ghost's row handle until the row ends at `tile`: the handle
+/// rides a fingertip past the row's far edge, so the finger leads by that.
 fn pull_handle_to(game: &mut Game, input: &mut InputState, tile: TilePos) {
     let handle = lay_out_ghost_controls(game, input).handle;
     assert!(handle.w > 0.0, "premise: the ghost offers a handle");
-    let to = game
-        .presentation
-        .camera
-        .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
+    let ghost = input.ghost_anchor().expect("a ghost is down");
+    let (dx, dy) = ((tile.x - ghost.x).signum(), (tile.y - ghost.y).signum());
+    let reach = crate::theme::MIN_TOUCH_TARGET * input.ui * 0.5 / game.presentation.camera.zoom;
+    let edge =
+        vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5) + vec2(dx as f32, dy as f32) * (0.5 + reach);
+    let to = game.presentation.camera.to_screen(edge);
     input.now += 1.0;
     apply_events(game, input, &[touch_down(7, handle.center())]);
     apply_events(game, input, &[touch_move(7, to)]);
@@ -108,10 +111,10 @@ fn a_pulled_row_previews_until_the_check_builds_it_whole() {
     assert_eq!(
         input.planned_stamps(),
         [
-            (TilePos::new(3, 2), false),
-            (TilePos::new(4, 2), false),
-            (TilePos::new(5, 2), false),
-            (TilePos::new(6, 2), false)
+            TilePos::new(3, 2),
+            TilePos::new(4, 2),
+            TilePos::new(5, 2),
+            TilePos::new(6, 2)
         ],
         "the row runs out to the finger"
     );
@@ -135,7 +138,7 @@ fn a_pulled_row_previews_until_the_check_builds_it_whole() {
 fn a_row_runs_along_the_axis_the_finger_leads() {
     let (mut game, mut input) = ghost_range(TilePos::new(6, 4));
     pull_handle_to(&mut game, &mut input, TilePos::new(6, 1));
-    let rows: Vec<_> = input.planned_stamps().iter().map(|(a, _)| *a).collect();
+    let rows = input.planned_stamps().to_vec();
     assert_eq!(
         rows,
         [
@@ -183,7 +186,8 @@ fn the_cross_folds_a_row_back_then_returns_the_building() {
 fn a_cancelled_handle_drops_its_row_and_moving_the_ghost_leaves_it() {
     let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
     let handle = lay_out_ghost_controls(&game, &input).handle;
-    let to = game.presentation.camera.to_screen(vec2(6.5, 2.5));
+    let reach = crate::theme::MIN_TOUCH_TARGET * input.ui * 0.5 / game.presentation.camera.zoom;
+    let to = game.presentation.camera.to_screen(vec2(7.0 + reach, 2.5));
     input.now += 1.0;
     apply_events(
         &mut game,
@@ -252,4 +256,154 @@ fn a_ghost_smaller_than_a_fingertip_rides_above_the_finger() {
         (ghost.center().x - finger.x).abs() <= game.presentation.camera.zoom * 0.5,
         "straight above it"
     );
+}
+
+#[test]
+fn a_row_builds_with_queue_as_it_stands_at_the_check() {
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    pull_handle_to(&mut game, &mut input, TilePos::new(5, 2));
+    // Queue lights after the row was pulled out, before the check.
+    input.queue_toggle = QueueToggle::Locked;
+    tap_check(&mut game, &mut input);
+    let row = builds(&game);
+    assert_eq!(row.len(), 3);
+    assert!(
+        row.iter().all(|(_, queue)| *queue),
+        "the opener queues too: {row:?}"
+    );
+}
+
+#[test]
+fn a_chain_after_a_gapped_row_keeps_the_row_step() {
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    input.queue_toggle = QueueToggle::Locked;
+    pull_handle_to(&mut game, &mut input, TilePos::new(6, 2));
+    // Another crew's claim makes the row skip its third cell.
+    let other = game.state.units()[0].id;
+    game.issue(Command::Build {
+        units: vec![other],
+        kind: oxide_sim::BuildingKind::Barricade,
+        anchor: TilePos::new(5, 2),
+        queue: true,
+        defer: false,
+    });
+    tap_check(&mut game, &mut input);
+    let row: Vec<_> = builds(&game).iter().map(|(a, _)| *a).collect();
+    assert_eq!(
+        row,
+        [
+            TilePos::new(5, 2),
+            TilePos::new(3, 2),
+            TilePos::new(4, 2),
+            TilePos::new(6, 2)
+        ],
+        "premise: the other claim, then the row with its third cell skipped"
+    );
+    assert_eq!(
+        input.ghost_anchor(),
+        Some(TilePos::new(7, 2)),
+        "one row step past the last site, not the gap's double step"
+    );
+}
+
+#[test]
+fn a_finger_that_lands_on_the_cross_never_presses_the_check() {
+    let (mut game, mut input) = ghost_range(TilePos::new(6, 2));
+    let controls = lay_out_ghost_controls(&game, &input);
+    let landing = vec2(controls.cancel.right() - 1.0, controls.cancel.center().y);
+    let lift = vec2(controls.confirm.x + 1.0, controls.confirm.center().y);
+    input.now += 1.0;
+    apply_events(&mut game, &mut input, &[touch_down(1, landing)]);
+    input.now += 0.05;
+    apply_events(&mut game, &mut input, &[touch_up(1, lift)]);
+    assert!(game.pending.is_empty(), "no build");
+    assert!(input.placing.is_some(), "and no cancel either");
+}
+
+#[test]
+fn the_ghost_controls_answer_before_the_minimap_and_queue() {
+    let (mut game, mut input) = ghost_range(TilePos::new(6, 2));
+    let controls = lay_out_ghost_controls(&game, &input);
+    let mut layout = game.presentation.layout.get();
+    layout.minimap = controls.confirm;
+    layout.queue_toggle = controls.cancel;
+    game.presentation.layout.set(layout);
+    let camera = game.presentation.camera.center;
+    tap(&mut game, &mut input, controls.confirm.center());
+    assert_eq!(builds(&game).len(), 1, "the check under the minimap builds");
+    assert_eq!(
+        game.presentation.camera.center, camera,
+        "and steers nothing"
+    );
+}
+
+#[test]
+fn a_row_grows_with_the_handle_travel_alone() {
+    // At the default zoom, a nudge just past the slop pulls no row.
+    let (mut game, mut input) = ghost_range(TilePos::new(6, 2));
+    let handle = lay_out_ghost_controls(&game, &input).handle;
+    input.now += 1.0;
+    apply_events(
+        &mut game,
+        &mut input,
+        &[
+            touch_down(7, handle.center()),
+            touch_move(7, handle.center() + vec2(13.0, 0.0)),
+        ],
+    );
+    assert!(input.planned_stamps().is_empty(), "a nudge is not a row");
+
+    // Zoomed out, the handle's fingertip offset spans several tiles; only
+    // the travel past it counts: two footprints, two more cells.
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    game.presentation.camera.zoom = 8.0;
+    let handle = lay_out_ghost_controls(&game, &input).handle;
+    input.now += 1.0;
+    apply_events(
+        &mut game,
+        &mut input,
+        &[
+            touch_down(7, handle.center()),
+            touch_move(7, handle.center() + vec2(16.0, 0.0)),
+        ],
+    );
+    assert_eq!(input.planned_stamps().len(), 3);
+}
+
+#[test]
+fn a_held_row_drops_cells_the_world_has_since_taken() {
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    // Queued, so the row keeps the builder's other claims.
+    input.queue_toggle = QueueToggle::Locked;
+    pull_handle_to(&mut game, &mut input, TilePos::new(6, 2));
+    assert_eq!(input.planned_stamps().len(), 4);
+    let other = game.state.units()[0].id;
+    game.issue(Command::Build {
+        units: vec![other],
+        kind: oxide_sim::BuildingKind::Barricade,
+        anchor: TilePos::new(5, 2),
+        queue: true,
+        defer: false,
+    });
+    update_touch(&mut game, &mut input);
+    assert!(
+        !input.planned_stamps().contains(&TilePos::new(5, 2)),
+        "the row is judged again once the batch moves"
+    );
+}
+
+#[test]
+fn a_trackpad_drags_the_row_handle_too() {
+    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    let handle = lay_out_ghost_controls(&game, &input).handle;
+    let reach = crate::theme::MIN_TOUCH_TARGET * input.ui * 0.5 / game.presentation.camera.zoom;
+    let to = game.presentation.camera.to_screen(vec2(6.0 + reach, 2.5));
+    apply_events(
+        &mut game,
+        &mut input,
+        &[left_down(handle.center()), mouse_move(to), left_up(to)],
+    );
+    assert_eq!(input.planned_stamps().len(), 3, "the cursor pulled a row");
+    assert!(game.pending.is_empty(), "and built nothing");
+    assert!(input.placing.is_some());
 }

@@ -156,3 +156,60 @@ fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
     assert_eq!(input.queue_toggle, QueueToggle::Off);
     assert!(input.placing.is_none(), "turning QUEUE off ends the chain");
 }
+
+#[test]
+fn letting_go_of_shift_mid_stroke_then_dropping_it_ends_the_chain() {
+    let (mut game, mut input) = funded_builder();
+    let (a, b, c) = (at(&game, 7, 3), at(&game, 9, 3), at(&game, 10, 3));
+    apply_events(
+        &mut game,
+        &mut input,
+        &[key_down(Key::Shift), left_down(a), left_up(a)],
+    );
+    assert_eq!(builds(&game).len(), 1, "premise: a chain has staged");
+    apply_events(
+        &mut game,
+        &mut input,
+        &[left_down(b), mouse_move(c), key_up(Key::Shift)],
+    );
+    assert!(
+        input.placing.is_some(),
+        "the live stroke defers the release"
+    );
+    apply_events(
+        &mut game,
+        &mut input,
+        &[key_down(Key::Escape), key_up(Key::Escape)],
+    );
+    assert!(
+        input.placing.is_none(),
+        "dropping the stroke settles the released queue"
+    );
+    assert_eq!(builds(&game).len(), 1);
+}
+
+#[test]
+fn a_fully_refused_release_after_letting_go_of_shift_ends_the_chain() {
+    let (mut game, mut input) = funded_builder();
+    let (a, b) = (at(&game, 7, 3), at(&game, 9, 3));
+    apply_events(
+        &mut game,
+        &mut input,
+        &[key_down(Key::Shift), left_down(a), left_up(a)],
+    );
+    apply_events(&mut game, &mut input, &[left_down(b), key_up(Key::Shift)]);
+    // Something else takes the planned ground before the release.
+    let builder = game.presentation.selection.units[0];
+    game.issue(Command::Build {
+        units: vec![builder],
+        kind: oxide_sim::BuildingKind::Barricade,
+        anchor: TilePos::new(9, 3),
+        queue: true,
+        defer: false,
+    });
+    apply_events(&mut game, &mut input, &[left_up(b)]);
+    assert!(
+        input.placing.is_none(),
+        "nothing staged, but the released queue still ends the chain"
+    );
+}

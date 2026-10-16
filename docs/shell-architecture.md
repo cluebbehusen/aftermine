@@ -460,16 +460,24 @@ finger, so the spot and its tint stay in sight. Building waits for the ghost's
 check mark (`LayoutModel.ghost_confirm`), which runs the shared `place_at`
 checks at the ghost's anchor; the ghost itself only moves, and the tap point is
 never the anchor. Its cross (`LayoutModel.ghost_cancel`) folds a row back or
-gives the building back to the palette. The two hang side by side above the
-ghost, or below it near the top bar or over a row pulled upward. The row handle
-(`LayoutModel.ghost_handle`) pulls out a straight row along the axis the finger
-leads on, one footprint per step, planned as a mouse stroke is and built whole
-by the check mark; moving the ghost or a cancelled finger drops it. With
-queueing held, a successful check moves the ghost on by the chain's last step,
-or one footprint east after the first. `InputState::placing` holds the armed
-kind with its stroke and ghost, so no ghost outlives its mode. The mouse's hover
-preview draws only while the mouse is the last pointer. While placement or a
-patrol route is armed, a world finger never long-presses; other armed verbs
+gives the building back to the palette. Either presses only for a finger that
+landed on it, since they sit closer than a still finger may wander. The two hang
+side by side above the ghost, or below it near the top bar or over a row pulled
+upward, and with the row handle they draw over the minimap and answer presses
+before it, the QUEUE toggle, and the ribbon. The row handle
+(`LayoutModel.ghost_handle`), which a trackpad drags as a finger does, pulls out
+a straight row along the axis the pointer leads on, a cell for each footprint it
+travels past where the handle sits, so the handle's own offset adds nothing at
+any zoom. The row keeps its own plan, judged as a mouse stroke's is: again at
+once when the staged batch, the selection, or QUEUE moves, and twice a second as
+the world drifts, since judging a row replays every stamp before each one. The
+check mark judges it whole once more, with QUEUE as it stands, and builds it;
+moving the ghost or a cancelled finger drops it. With queueing held, a
+successful check moves the ghost on by the row's step, or by the chain's last
+step, or one footprint east after the first. `InputState::placing` holds the
+armed kind with its stroke and ghost, so no ghost outlives its mode. The mouse's
+hover preview draws only while the mouse is the last pointer. While placement or
+a patrol route is armed, a world finger never long-presses; other armed verbs
 stand down for a long-press as they do for a right-click.
 `InputState::queue_held` merges Shift with the QUEUE toggle that touch-only
 builds show, which works like the iPad's Shift key: a tap latches it for the
@@ -479,12 +487,18 @@ otherwise the next order or selection change; the check runs after every input
 event and after the long-press timer. Letting go of either after a placement has
 staged a build ends placement, so the next click selects instead of replacing
 the chain just queued; a live stroke still settles at its release. A mouse drag
-in placement mode plans a row instead of staging it: each new spot the plan can
-still afford and fit, judged after the staged batch and the stamps before it,
-draws as a tinted ghost, and the ribbon counts the row and its total. The
-release stages the stamps in order, rechecking each against the exact pending
-phase, and toasts any it skips; Escape or a right-click drops the row and keeps
-placing.
+in placement mode plans a row instead of staging it: every footprint the cursor
+crosses, sampled finely enough that a fast move leaves no gap and through the
+release point, joins the plan if it can still afford and fit it, judged after
+the staged batch and the stamps before it. Whether each stamp defers is derived
+from current sight whenever the plan is judged, never kept, so ground that falls
+into fog mid-drag is judged from memory. The planned stamps draw as tinted
+ghosts, and the ribbon counts the row and its total. The release stages the
+stamps in order, rechecking each against the exact pending phase; the first that
+stages opens the row, replacing the program unless the stroke queued, and the
+release toasts any it skips. Escape or a right-click drops the row and keeps
+placing. However a stroke ends, a queue let go during it then ends a chain that
+has staged.
 
 A right-click with only scouts selected issues Scout to the clicked tile, enemy
 or ground, after the transport boarding check; Run is the deliberate way to send
@@ -494,29 +508,39 @@ The mode ribbon (`LayoutModel.mode_ribbon`) shows while a mode is armed,
 centered above the panel band. While placement has a spot to judge, under the
 cursor or at the touch ghost, the ribbon adds a status row: whether a click
 there builds now, builds on arrival, or why it would be refused, and whether it
-queues as the builder's next numbered order or replaces its orders. The row is
-as wide as its widest possible status, so the ribbon holds still as the verdict
-changes, and a queued ghost wears the same number as its dock chip will. One
-`PlacementVerdict`, cached for the tick, the staged-command count, the
+queues as the builder's next numbered order or replaces its orders. A site the
+founder cannot reach is refused when the ground the player can see, or has
+explored as impassable terrain, leaves it no way to the doorstep; fogged and
+unexplored ground counts as open, so the check never reads what fog hides and
+never refuses reachable ground, and the sim's own path check still decides. The
+player's own buildings once the staged and planned batch lands also block, so a
+row cannot seal a later stamp's doorstep unnoticed, and the search moves as the
+sim's does, eight ways without cutting corners. A builder whose queue is full
+takes no number, since another selected builder may take the order. Over chrome
+or the minimap, where a click does something else, the row stays but goes blank.
+The row is as wide as its widest possible status, so the ribbon holds still as
+the verdict changes, and a queued ghost wears the same number as its dock chip
+will. One `PlacementVerdict`, cached for the tick, the staged-command count, the
 selection, and the candidate, feeds the ghost's tint, the ribbon, and the click,
-so a spot the bank or a full queue refuses tints red too. The QUEUE toggle
-(`LayoutModel.queue_toggle`) shows on touch-only builds while the human commands
-a selected unit or QUEUE is on. It sits over the panel's left corner in the
-orders dock's column, and the dock rises to stack above it, so queueing orders
-never moves the toggle. `ribbon_row_press` hit-tests both before every other
-target: the toggle takes its tap and the ribbon cancels its mode. The build
-palette's Back card (`CardAction::ClosePalette`) stands in its own column at the
-band's left edge and leaves construction in one press. The orders dock and its
-Stop button stay stacked above the palette's left corner, so a builder's queued
-work remains visible and cancelable while the next site is chosen. On touch a
-tap that picks no unit or building while the palette is open and nothing is
-armed closes it and keeps the selection, even over a scrap pile: dismissing
-never also acts. With QUEUE lit (or Shift or Ctrl held), a roster chip drops its
-kind instead of keeping only it. Taps and clicks select through `select::pick`,
-which gives a fingertip a wider reach than a cursor. A press that picks nothing
-on a tile with known salvage selects that tile as `Selection::pile`, read-only
-and exclusive: any other selection drops it, and `Game` drops it once the viewer
-knows of no salvage there. Its panel and the desktop hover readout share
+so a spot the bank, a full queue, or an unreachable doorstep refuses tints red
+too. The QUEUE toggle (`LayoutModel.queue_toggle`) shows on touch-only builds
+while the human commands a selected unit or QUEUE is on. It sits over the
+panel's left corner in the orders dock's column, and the dock rises to stack
+above it, so queueing orders never moves the toggle. `ribbon_row_press`
+hit-tests both before every other target: the toggle takes its tap and the
+ribbon cancels its mode. The build palette's Back card
+(`CardAction::ClosePalette`) stands in its own column at the band's left edge
+and leaves construction in one press. The orders dock and its Stop button stay
+stacked above the palette's left corner, so a builder's queued work remains
+visible and cancelable while the next site is chosen. On touch a tap that picks
+no unit or building while the palette is open and nothing is armed closes it and
+keeps the selection, even over a scrap pile: dismissing never also acts. With
+QUEUE lit (or Shift or Ctrl held), a roster chip drops its kind instead of
+keeping only it. Taps and clicks select through `select::pick`, which gives a
+fingertip a wider reach than a cursor. A press that picks nothing on a tile with
+known salvage selects that tile as `Selection::pile`, read-only and exclusive:
+any other selection drops it, and `Game` drops it once the viewer knows of no
+salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
 

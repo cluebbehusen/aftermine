@@ -45,6 +45,8 @@ pub(crate) struct TouchPoint {
     pub card: Option<PressedCard>,
     /// The control-group slot it landed on, as it stood then.
     pub group: Option<crate::layout::GroupSlot>,
+    /// The ghost button it landed on, which alone its lift may press.
+    pub control: Option<super::GhostControl>,
 }
 
 /// A card as a finger found it: its slot, its action, and its face. A
@@ -157,11 +159,15 @@ fn steer_minimap(game: &mut Game, p: Vec2) {
 
 /// Where a finger landing at `p` was born.
 fn born_at(game: &Game, input: &InputState, p: Vec2) -> TouchBorn {
-    let handle = game.presentation.layout.get().ghost_handle;
-    if crate::render::minimap_world_at(&game.view(), p).is_some() {
-        TouchBorn::Minimap
-    } else if handle.w > 0.0 && handle.contains(p) {
+    // The ghost's controls draw over the minimap and every other chrome,
+    // so they own the fingers that land on them.
+    let layout = game.presentation.layout.get();
+    if layout.ghost_handle.w > 0.0 && layout.ghost_handle.contains(p) {
         TouchBorn::Handle
+    } else if super::ghost_control_at(&layout, p).is_some() {
+        TouchBorn::Chrome
+    } else if crate::render::minimap_world_at(&game.view(), p).is_some() {
+        TouchBorn::Minimap
     } else if click_on_hud(game, p)
         || crate::layout::group_slot_under(&game.presentation.layout.get(), p, Some(input.ui))
             .is_some()
@@ -232,6 +238,7 @@ pub(super) fn down(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
                 p,
                 Some(input.ui),
             ),
+            control: super::ghost_control_at(&game.presentation.layout.get(), p),
         },
     ));
     if input.touches.len() > 2 {
@@ -388,6 +395,14 @@ pub(super) fn up(
                 // it. A tap is an atomic click with no drag to
                 // follow, so the stroke closes here and Shift
                 // decides the mode, as on MouseUp.
+                // A ghost button presses only for the finger that landed
+                // on it: the cross and check mark sit closer than a still
+                // finger may wander.
+                let control = super::ghost_control_at(&game.presentation.layout.get(), p);
+                if control.is_some() && control != lifted.control {
+                    input.last_tap = None;
+                    return;
+                }
                 if super::ribbon_row_press(game, input, p, super::Pointer::Touch)
                     || armed_click(game, input, bindings, p, super::Pointer::Touch)
                 {
@@ -504,8 +519,10 @@ fn world_tap(game: &mut Game, input: &mut InputState, p: Vec2, double: bool) {
 /// the current selection, exactly like a right-click.
 pub fn update_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action::BindingMap) {
     let probe = input.latch_probe(game);
+    // The world moves under a held row; judge it again when due.
+    super::refresh_row(&game.view(), input, false);
     held_touch(game, input, bindings);
-    input.settle_latch(game, &probe);
+    input.settle_latch(game, probe.as_ref());
 }
 
 /// What a resting finger or pair does as time passes.

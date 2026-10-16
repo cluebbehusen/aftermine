@@ -594,6 +594,7 @@ pub(crate) fn draw_with_performance(
         draw_overlay_info(game);
     }
     draw_minimap(game);
+    chrome::draw_ghost_controls(game, input);
     draw_group_press_ring(input);
     draw_result_overlay(game);
     draw_panel_tooltip(game, input);
