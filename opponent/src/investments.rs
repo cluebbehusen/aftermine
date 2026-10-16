@@ -21,6 +21,23 @@ use std::cmp::Reverse;
 /// for stays while it scores at all.
 pub(crate) const ADOPT: u32 = 300;
 
+/// How far past its bar the worth behind an investment raises its score, in
+/// multiples of the bar: a scoring shape that keeps a deep fortress or a rich
+/// strike on the scale of the seat's other investments.
+const WORTH_CAP: u64 = 2;
+
+/// The score of an investment wanted at `base` for each `bar` of `worth`
+/// behind it, up to [`WORTH_CAP`] bars.
+pub(crate) fn capped(base: u64, worth: u64, bar: u64) -> u64 {
+    base * worth.min(WORTH_CAP * bar) / bar
+}
+
+/// The base score of an investment a 0..=100 trait weighs and income scales,
+/// whole once income reaches 360 scrap a minute.
+pub(crate) fn weighed(trait_value: u8, income: u32) -> u32 {
+    (150 + 3 * u32::from(trait_value)) * income.min(360) / 360
+}
+
 /// A concrete investment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -141,8 +158,8 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         list.push((Investment::Tech(BuildingKind::Airworks), score));
     }
     if owned(BuildingKind::Crucible) == 0 {
-        let full = 150 + 3 * u32::from(traits.greed.max(traits.siege));
-        let score = full * situation.income.min(360) / 360 + pull(BuildingKind::Crucible);
+        let score = weighed(traits.greed.max(traits.siege), situation.income)
+            + pull(BuildingKind::Crucible);
         list.push((Investment::Tech(BuildingKind::Crucible), score));
     }
     for kind in [

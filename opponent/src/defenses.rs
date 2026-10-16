@@ -1788,16 +1788,12 @@ fn spire_threat(observation: &ObservationData) -> SpireThreat {
         held[index].1 |= crucible;
     };
     for public in &observation.public_buildings {
-        note(
-            public.owner,
-            public.kind == BuildingKind::Extractor && public.tier > 0,
-            false,
-        );
+        note(public.owner, deep_bore(public.kind, public.tier), false);
     }
     for building in &observation.enemy_buildings {
         note(
             building.player,
-            building.kind == BuildingKind::Extractor && building.tier > 0,
+            deep_bore(building.kind, building.tier),
             building.kind == BuildingKind::Crucible,
         );
     }
@@ -1824,18 +1820,22 @@ fn spire_sources(observation: &ObservationData) -> Vec<(i64, i64)> {
         .enemy_buildings
         .iter()
         .filter(|building| {
-            building.kind == BuildingKind::Crucible
-                || (building.kind == BuildingKind::Extractor && building.tier > 0)
+            building.kind == BuildingKind::Crucible || deep_bore(building.kind, building.tier)
         })
         .map(|building| footprint_centre(building.kind, building.anchor))
         .chain(
             observation
                 .public_buildings
                 .iter()
-                .filter(|public| public.kind == BuildingKind::Extractor && public.tier > 0)
+                .filter(|public| deep_bore(public.kind, public.tier))
                 .map(|public| footprint_centre(public.kind, public.anchor)),
         )
         .collect()
+}
+
+/// Whether a building of `kind` at `tier` is a Deep Bore.
+fn deep_bore(kind: BuildingKind, tier: u8) -> bool {
+    kind == BuildingKind::Extractor && tier > 0
 }
 
 /// A Lattice's ring, in whole tiles.

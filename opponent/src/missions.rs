@@ -821,7 +821,7 @@ fn value(unit: &UnitObs) -> u64 {
 }
 
 /// A unit's price, discounted by its missing health.
-fn worth(kind: UnitKind, hp: u32) -> u64 {
+pub(crate) fn worth(kind: UnitKind, hp: u32) -> u64 {
     let stats = kind.stats();
     u64::from(stats.cost) * u64::from(hp) / u64::from(stats.max_hp.max(1))
 }

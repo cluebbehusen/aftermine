@@ -25,8 +25,12 @@ use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 
-const LOAD_TICKS: u64 = 1_200;
-const FLY_TICKS: u64 = 2_400;
+/// Ticks a lift or a settlement may spend boarding: a computation bound on an
+/// attempt that cannot load.
+pub(super) const LOAD_TICKS: u64 = 1_200;
+/// Ticks a lift or a settlement may spend in flight, out or back: a
+/// computation bound on an attempt that cannot land.
+pub(super) const FLY_TICKS: u64 = 2_400;
 const FIGHT_TICKS: u64 = 3_600;
 
 /// Tiles around a target's footprint searched for a landing: a computation

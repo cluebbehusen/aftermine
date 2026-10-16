@@ -21,14 +21,6 @@ use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
-/// Ticks a settlement may spend boarding: a computation bound on an attempt
-/// that cannot load, the combat lift's own window.
-const LOAD_TICKS: u64 = 1_200;
-
-/// Ticks a settlement may spend in flight, out or back: a computation bound
-/// on an attempt that cannot land, the combat lift's own window.
-const FLY_TICKS: u64 = 2_400;
-
 /// The building a settlement delivers a builder for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -90,8 +82,8 @@ impl SettlePhase {
     /// ends once the building is placed or no known enemy is near.
     pub(super) fn timeout(self) -> Option<u64> {
         match self {
-            Self::Load => Some(LOAD_TICKS),
-            Self::Fly | Self::Recover => Some(FLY_TICKS),
+            Self::Load => Some(lift::LOAD_TICKS),
+            Self::Fly | Self::Recover => Some(lift::FLY_TICKS),
             Self::Found => None,
         }
     }
