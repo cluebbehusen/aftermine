@@ -467,7 +467,12 @@ chain or patrol route, and otherwise the next order or selection change; the
 check runs after every input event and after the long-press timer. Letting go of
 either after a placement has staged a build ends placement, so the next click
 selects instead of replacing the chain just queued; a live stroke still settles
-at its release.
+at its release. A mouse drag in placement mode plans a row instead of staging
+it: each new spot the plan can still afford and fit, judged after the staged
+batch and the stamps before it, draws as a tinted ghost, and the ribbon counts
+the row and its total. The release stages the stamps in order, rechecking each
+against the exact pending phase, and toasts any it skips; Escape or a
+right-click drops the row and keeps placing.
 
 A right-click with only scouts selected issues Scout to the clicked tile, enemy
 or ground, after the transport boarding check; Run is the deliberate way to send

@@ -13,61 +13,77 @@ use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, s
 /// (part of the footprint is remembered ground, judged from memory rather
 /// than live state so the tint cannot reveal hidden enemies), and red is
 /// refused, whether by the ground, the bank, or a full order queue. A
-/// queued build wears the place it takes in its builder's program.
+/// stroke's planned row draws under it, and a queued build wears the place
+/// it takes in its builder's program.
 pub(crate) fn draw_placement_ghost(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
     input: &InputState,
 ) {
     use crate::input::PlacementVerdict;
-    let Some((kind, anchor)) = crate::input::placement_preview_anchor(game, input) else {
+    let Some(kind) = input.placing_kind() else {
         return;
     };
     let zoom = game.presentation.camera.zoom;
     let (w, h) = kind.size();
-    let queue = input.stroke_live() || input.queue_held();
-    let verdict = crate::input::placement_verdict(game, kind, anchor, queue);
-    let screen = game
-        .presentation
-        .camera
-        .to_screen(vec2(anchor.x as f32, anchor.y as f32));
     let dest = vec2(w as f32 * zoom, h as f32 * zoom);
-    let tint = match verdict {
-        PlacementVerdict::Builds => Color::new(0.7, 1.0, 0.75, 0.55),
-        PlacementVerdict::BuildsOnArrival => Color::new(1.0, 0.85, 0.45, 0.55),
-        PlacementVerdict::Refused(_) | PlacementVerdict::Short(_) | PlacementVerdict::QueueFull => {
-            Color::new(1.0, 0.45, 0.4, 0.55)
-        }
+    let corner = |anchor: TilePos| {
+        game.presentation
+            .camera
+            .to_screen(vec2(anchor.x as f32, anchor.y as f32))
     };
-    sprites.draw(
-        screen.x,
-        screen.y,
-        tint,
-        DrawTextureParams {
-            dest_size: Some(dest),
-            source: Some(sprites.construction(kind, 0, 0, 0)),
-            ..Default::default()
-        },
+    let footprint = |anchor: TilePos, tint: Color| {
+        let screen = corner(anchor);
+        sprites.draw(
+            screen.x,
+            screen.y,
+            tint,
+            DrawTextureParams {
+                dest_size: Some(dest),
+                source: Some(sprites.construction(kind, 0, 0, 0)),
+                ..Default::default()
+            },
+        );
+    };
+    let (builds, arrives, refused) = (
+        Color::new(0.7, 1.0, 0.75, 0.55),
+        Color::new(1.0, 0.85, 0.45, 0.55),
+        Color::new(1.0, 0.45, 0.4, 0.55),
     );
-    if queue && verdict.builds() {
-        let corner = screen + vec2(dest.x, 0.0);
+    let planned = input.planned_stamps();
+    for &(anchor, defer) in planned {
+        footprint(anchor, if defer { arrives } else { builds });
+    }
+    let Some(spot) = crate::input::preview_spot(game, input) else {
+        return;
+    };
+    if !planned.iter().any(|(anchor, _)| *anchor == spot.anchor) {
+        footprint(
+            spot.anchor,
+            match spot.verdict {
+                PlacementVerdict::Builds => builds,
+                PlacementVerdict::BuildsOnArrival => arrives,
+                PlacementVerdict::Refused(_)
+                | PlacementVerdict::Short(_)
+                | PlacementVerdict::QueueFull => refused,
+            },
+        );
+    }
+    // The number its dock chip will carry once it stages.
+    if let Some(crate::input::Lands::Queues(position)) = spot.lands {
+        let badge = corner(spot.anchor) + vec2(dest.x, 0.0);
         let s = ui_scale();
-        fill_circle(corner, 10.0 * s, Color::new(0.08, 0.08, 0.1, 0.85));
-        // The number its dock chip will carry once it stages.
-        if let Some(backlog) = crate::input::placement_backlog(game) {
-            let label = (backlog + 1).to_string();
-            let size = crate::theme::Type::Small.at(s);
-            let width = measure_text(&label, None, numeric::font_size(size), 1.0).width;
-            draw_text(
-                &label,
-                corner.x - width * 0.5,
-                corner.y + size * 0.35,
-                size,
-                BONE,
-            );
-        } else {
-            draw_queued_mark(corner, 5.0, BONE);
-        }
+        fill_circle(badge, 10.0 * s, Color::new(0.08, 0.08, 0.1, 0.85));
+        let label = position.to_string();
+        let size = crate::theme::Type::Small.at(s);
+        let width = measure_text(&label, None, numeric::font_size(size), 1.0).width;
+        draw_text(
+            &label,
+            badge.x - width * 0.5,
+            badge.y + size * 0.35,
+            size,
+            BONE,
+        );
     }
 }
 

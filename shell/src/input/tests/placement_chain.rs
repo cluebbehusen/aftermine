@@ -119,7 +119,10 @@ fn letting_go_of_shift_mid_stroke_leaves_the_decision_to_the_release() {
             key_up(Key::Shift),
         ],
     );
-    assert!(input.stroke_live(), "the stroke outlives the Shift release");
+    assert!(
+        !input.planned_stamps().is_empty(),
+        "the stroke outlives the Shift release"
+    );
     apply_events(&mut game, &mut input, &[mouse_move(c), left_up(c)]);
     assert_eq!(builds(&game).len(), 3, "the stroke kept stamping");
     assert!(

@@ -738,7 +738,14 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
             let point = game.presentation.camera.to_screen(world);
 
             apply_events(&mut game, &mut input, &[left_down(point)]);
+            assert_eq!(
+                input.planned_stamps(),
+                [(frame, false)],
+                "the press plans the snapped frame"
+            );
+            assert!(game.pending.is_empty(), "and stages nothing yet");
 
+            apply_events(&mut game, &mut input, &[left_up(point)]);
             assert!(matches!(
                 game.pending.as_slice(),
                 [PlayerCommand {
@@ -750,15 +757,6 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
                     ..
                 }] if *anchor == frame
             ));
-            assert_eq!(
-                input
-                    .placing
-                    .as_ref()
-                    .and_then(|placement| placement.stroke.as_ref())
-                    .expect("accepted click opens its placement stroke")
-                    .anchors,
-                vec![frame]
-            );
             assert!(
                 game.presentation.fx.iter().any(|effect| matches!(
                     effect.kind,
@@ -2318,19 +2316,30 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
-    apply_events(&mut game, &mut input, &[left_down(first)]);
-    assert_eq!(staged_builds(&game), 1, "the last free slot was used");
+    let second = game.presentation.camera.to_screen(vec2(6.5, 2.5));
+    apply_events(
+        &mut game,
+        &mut input,
+        &[left_down(first), mouse_move(second)],
+    );
+    assert_eq!(
+        input.planned_stamps().len(),
+        1,
+        "the last free slot holds the opening stamp alone"
+    );
 
     game.issue(Command::Stop {
         units: vec![builder],
     });
-    let second = game.presentation.camera.to_screen(vec2(6.5, 2.5));
-    apply_events(&mut game, &mut input, &[mouse_move(second)]);
+    let third = game.presentation.camera.to_screen(vec2(8.5, 2.5));
+    apply_events(&mut game, &mut input, &[mouse_move(third)]);
     assert_eq!(
-        staged_builds(&game),
+        input.planned_stamps().len(),
         2,
         "a pending Stop frees the program for the next drag stamp"
     );
+    apply_events(&mut game, &mut input, &[left_up(third)]);
+    assert_eq!(staged_builds(&game), 2, "the release stages the row");
 
     // The inverse interleaving must also hold: externally staged orders
     // can consume all headroom before the next pointer event.
@@ -2339,9 +2348,11 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
     input.arm_placement(oxide_sim::BuildingKind::Turret);
+    apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(first)]);
-    for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
+    // One run goes active; the rest fill the queue to its cap.
+    for _ in 0..=oxide_sim::stats::ORDER_QUEUE_CAP {
         game.issue(Command::Run {
             units: vec![builder],
             goal: TilePos::new(15, 7),
@@ -2351,9 +2362,15 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     let second = game.presentation.camera.to_screen(vec2(6.5, 2.5));
     apply_events(&mut game, &mut input, &[mouse_move(second)]);
     assert_eq!(
-        staged_builds(&game),
+        input.planned_stamps().len(),
         1,
         "a projected full queue refuses a drag stamp the sim would reject"
+    );
+    apply_events(&mut game, &mut input, &[left_up(second)]);
+    assert_eq!(
+        staged_builds(&game),
+        0,
+        "and the release rechecks the opening stamp too"
     );
 }
 
@@ -2640,6 +2657,23 @@ fn armed_placement(kind: oxide_sim::BuildingKind) -> (Game, InputState, oxide_si
     input.arm_placement(kind);
     input.build_menu = true;
     (game, input, harvester)
+}
+
+/// The projection after the staged batch alone.
+fn pending_build_projection(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+    queue: bool,
+) -> PendingBuildProjection {
+    pending_build_projection_for(
+        game,
+        game.pending,
+        kind,
+        anchor,
+        queue,
+        build_defer_needed(game, kind, anchor),
+    )
 }
 
 /// The ground verdict matching the command this shell will stage.
@@ -4574,6 +4608,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
 
 mod order_chips;
 mod placement_chain;
+mod placement_plan;
 mod placement_verdict;
 mod queue_latch;
 mod relayout;
@@ -5019,7 +5054,7 @@ fn a_placement_drag_stamps_a_row_of_queued_builds() {
     let anchors: std::collections::BTreeSet<_> = builds.iter().map(|(a, _)| (a.x, a.y)).collect();
     assert_eq!(anchors.len(), 3, "no overlapping footprints");
     assert!(
-        input.placing.is_none() && !input.stroke_live(),
+        input.placing.is_none() && input.planned_stamps().is_empty(),
         "release without Shift disarms the mode and closes the stroke"
     );
 
@@ -6909,8 +6944,14 @@ fn a_paid_site_does_not_reserve_its_surviving_deferred_claim_again() {
         });
 
     game.presentation.selection.units = vec![workers[1]];
-    let projection =
-        pending_build_projection_for(&game.view(), kind, TilePos::new(13, 4), true, false);
+    let projection = pending_build_projection_for(
+        &game.view(),
+        game.view().pending,
+        kind,
+        TilePos::new(13, 4),
+        true,
+        false,
+    );
     assert_eq!(
         projection.funds,
         PendingBuildFunds {
@@ -6981,11 +7022,13 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
         .expect("visible reachable ground remains");
     game.presentation.selection.units = workers.clone();
     assert!(
-        pending_build_projection_for(&game.view(), kind, anchor, true, true).queue_has_room,
+        pending_build_projection_for(&game.view(), game.view().pending, kind, anchor, true, true)
+            .queue_has_room,
         "deferred construction succeeds when any selected worker can take the claim"
     );
     assert!(
-        !pending_build_projection_for(&game.view(), kind, anchor, true, false).queue_has_room,
+        !pending_build_projection_for(&game.view(), game.view().pending, kind, anchor, true, false)
+            .queue_has_room,
         "immediate construction is still gated by the lowest-id founder"
     );
 
@@ -7409,7 +7452,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
                 Some(oxide_sim::BuildingKind::Reclaimer)
             );
             assert!(input.construction_open());
-            assert!(!input.stroke_live());
+            assert!(input.planned_stamps().is_empty());
             assert!(game.pending.is_empty());
             assert_eq!(game.state.hash(), hash);
         }
