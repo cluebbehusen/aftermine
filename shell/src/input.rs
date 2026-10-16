@@ -2314,14 +2314,14 @@ pub(crate) fn row_handle_at(game: &crate::game::Scene<'_>, input: &InputState) -
     Some(edge + vec2(dx as f32, dy as f32) * reach)
 }
 
-/// Whether the touch ghost's row runs upward, where its controls would
+/// Whether the touch ghost's row runs downward, where its controls would
 /// otherwise hang.
-pub(crate) fn row_runs_up(input: &InputState) -> bool {
+pub(crate) fn row_runs_down(input: &InputState) -> bool {
     input
         .placing
         .as_ref()
         .and_then(|placement| placement.ghost.as_ref()?.row.as_ref())
-        .is_some_and(|row| row.step.1 < 0)
+        .is_some_and(|row| row.step.1 > 0)
 }
 
 /// The longest row a handle pulls out: one order queue's worth bounds

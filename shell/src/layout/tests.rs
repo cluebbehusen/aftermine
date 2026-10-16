@@ -359,7 +359,7 @@ fn a_wide_tooltip_slides_back_inside_the_window() {
 }
 
 #[test]
-fn ghost_controls_hang_above_the_ghost_inside_the_window() {
+fn ghost_controls_hang_below_the_ghost_inside_the_window() {
     let viewport = Vec2::new(1133.0, 744.0);
     let size = MIN_TOUCH_TARGET;
     let inside = |rect: Rect| {
@@ -369,8 +369,8 @@ fn ghost_controls_hang_above_the_ghost_inside_the_window() {
             && rect.bottom() <= viewport.y
     };
     let middle = Rect::new(500.0, 400.0, 32.0, 32.0);
-    let controls = ghost_controls(middle, None, false, viewport, 1.0);
-    assert!(controls.confirm.bottom() <= middle.y, "above the ghost");
+    let controls = ghost_controls(middle, None, false, &[], viewport, 1.0);
+    assert!(controls.confirm.y >= middle.bottom(), "below the ghost");
     assert_eq!(controls.cancel.y, controls.confirm.y, "side by side");
     assert!(
         controls.cancel.right() <= controls.confirm.x,
@@ -379,17 +379,36 @@ fn ghost_controls_hang_above_the_ghost_inside_the_window() {
     assert_eq!(controls.confirm.w, size);
     assert_eq!(controls.handle.w, 0.0, "no handle offered, none laid out");
 
-    let under_bar = Rect::new(500.0, TOP_BAR_H + 4.0, 32.0, 32.0);
-    let controls = ghost_controls(under_bar, None, false, viewport, 1.0);
+    let at_foot = Rect::new(500.0, viewport.y - 40.0, 32.0, 32.0);
+    let controls = ghost_controls(at_foot, None, false, &[], viewport, 1.0);
     assert!(
-        controls.confirm.y >= under_bar.bottom(),
-        "below when the bar is in the way"
+        controls.confirm.bottom() <= at_foot.y,
+        "above at the window's foot"
     );
 
-    let flagged = ghost_controls(middle, None, true, viewport, 1.0);
+    let palette = Rect::new(0.0, middle.bottom() + 20.0, viewport.x, 200.0);
+    let controls = ghost_controls(middle, None, false, &[palette], viewport, 1.0);
     assert!(
-        flagged.confirm.y >= middle.bottom(),
-        "below for a row pulled upward"
+        controls.confirm.bottom() <= middle.y,
+        "above when bottom chrome is in the way"
+    );
+    let aside = Rect::new(0.0, middle.bottom(), 100.0, 200.0);
+    let controls = ghost_controls(middle, None, false, &[aside], viewport, 1.0);
+    assert!(
+        controls.confirm.y >= middle.bottom(),
+        "chrome off to the side leaves room"
+    );
+
+    let flagged = ghost_controls(middle, None, true, &[], viewport, 1.0);
+    assert!(
+        flagged.confirm.bottom() <= middle.y,
+        "above for a row pulled downward"
+    );
+    let under_bar = Rect::new(500.0, TOP_BAR_H + 4.0, 32.0, 32.0);
+    let controls = ghost_controls(under_bar, None, true, &[], viewport, 1.0);
+    assert!(
+        controls.confirm.y >= under_bar.bottom(),
+        "but below when the bar leaves no room above"
     );
 
     for footprint in [
@@ -397,7 +416,14 @@ fn ghost_controls_hang_above_the_ghost_inside_the_window() {
         Rect::new(viewport.x - 10.0, 300.0, 32.0, 32.0),
         Rect::new(500.0, viewport.y - 20.0, 32.0, 32.0),
     ] {
-        let controls = ghost_controls(footprint, Some(footprint.center()), false, viewport, 1.0);
+        let controls = ghost_controls(
+            footprint,
+            Some(footprint.center()),
+            false,
+            &[],
+            viewport,
+            1.0,
+        );
         assert!(
             inside(controls.confirm) && inside(controls.cancel),
             "{footprint:?}"

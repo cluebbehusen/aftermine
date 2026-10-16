@@ -462,8 +462,9 @@ checks at the ghost's anchor; the ghost itself only moves, and the tap point is
 never the anchor. Its cross (`LayoutModel.ghost_cancel`) folds a row back or
 gives the building back to the palette. Either presses only for a finger that
 landed on it, since they sit closer than a still finger may wander. The two hang
-side by side above the ghost, or below it near the top bar or over a row pulled
-upward, and with the row handle they draw over the minimap and answer presses
+side by side below the ghost, or above it where the window's foot or the bottom
+HUD (panel, ribbon, minimap, QUEUE toggle) leaves no room or over a row pulled
+downward, and with the row handle they draw over the minimap and answer presses
 before it, the QUEUE toggle, and the ribbon. The row handle
 (`LayoutModel.ghost_handle`), which a trackpad drags as a finger does, pulls out
 a straight row along the axis the pointer leads on, a cell for each footprint it

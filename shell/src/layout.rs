@@ -123,13 +123,15 @@ pub(crate) struct GhostControls {
 }
 
 /// Where the touch ghost's controls hang beside its `footprint`: the cross
-/// and the check mark side by side above it, or below it when the top bar
-/// or a row pulled upward (`below`) is in the way, kept inside the window,
-/// and the row handle centered on `handle`.
+/// and the check mark side by side below it, or above it when the window's
+/// foot, the bottom `chrome`, or a row pulled downward (`row_down`) is in
+/// the way, kept inside the window, and the row handle centered on
+/// `handle`.
 pub(crate) fn ghost_controls(
     footprint: Rect,
     handle: Option<Vec2>,
-    below: bool,
+    row_down: bool,
+    chrome: &[Rect],
     viewport: Vec2,
     ui: f32,
 ) -> GhostControls {
@@ -141,8 +143,13 @@ pub(crate) fn ghost_controls(
         .max(gap);
     let top = TOP_BAR_H * ui + gap;
     let (above, under) = (footprint.y - gap - size, footprint.bottom() + gap);
-    let fits_under = under + size <= viewport.y - gap;
-    let y = if (below || above < top) && fits_under {
+    let pair_under = Rect::new(x, under, pair, size);
+    let fits_under = under + size <= viewport.y - gap
+        && !chrome
+            .iter()
+            .any(|rect| rect.w > 0.0 && rect.overlaps(&pair_under));
+    let fits_above = above >= top;
+    let y = if fits_under && (!row_down || !fits_above) {
         under
     } else {
         above.max(top)

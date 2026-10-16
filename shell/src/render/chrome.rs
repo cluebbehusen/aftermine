@@ -398,8 +398,8 @@ pub(super) fn queue_dock_lift(scale: f32) -> f32 {
 }
 
 /// The QUEUE toggle: a chain of queued waypoints, lit while queueing so
-/// the mode can't hide, dark like the orders dock otherwise. Locked on, it
-/// wears a bar under the chain, as a locked Shift key does.
+/// the mode can't hide, dark like the orders dock otherwise. Locked on, a
+/// bright ring stands off its edge.
 fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     use crate::input::QueueToggle;
     let on = toggle != QueueToggle::Off;
@@ -426,11 +426,17 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
         crate::render::prim::fill_circle(point, 3.5 * s, glyph);
     }
     if toggle == QueueToggle::Locked {
-        line_between(
-            c + vec2(-11.0, 13.0) * s,
-            c + vec2(11.0, 13.0) * s,
-            2.0 * s,
-            glyph,
+        // Within the 8 px the chip keeps clear on every side.
+        let out = 6.0 * s;
+        stroke_rect(
+            Rect::new(
+                rect.x - out,
+                rect.y - out,
+                rect.w + out * 2.0,
+                rect.h + out * 2.0,
+            ),
+            crate::theme::Stroke::Heavy.at(s),
+            crate::theme::TEXT_PRIMARY,
         );
     }
 }

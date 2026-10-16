@@ -136,23 +136,23 @@ fn a_pulled_row_previews_until_the_check_builds_it_whole() {
 
 #[test]
 fn a_row_runs_along_the_axis_the_finger_leads() {
-    let (mut game, mut input) = ghost_range(TilePos::new(6, 4));
-    pull_handle_to(&mut game, &mut input, TilePos::new(6, 1));
+    let (mut game, mut input) = ghost_range(TilePos::new(6, 1));
+    pull_handle_to(&mut game, &mut input, TilePos::new(6, 4));
     let rows = input.planned_stamps().to_vec();
     assert_eq!(
         rows,
         [
-            TilePos::new(6, 4),
-            TilePos::new(6, 3),
+            TilePos::new(6, 1),
             TilePos::new(6, 2),
-            TilePos::new(6, 1)
+            TilePos::new(6, 3),
+            TilePos::new(6, 4)
         ],
-        "north, one footprint a step"
+        "south, one footprint a step"
     );
-    assert!(row_runs_up(&input), "so the controls hang below");
+    assert!(row_runs_down(&input), "so the controls hang above");
     let controls = lay_out_ghost_controls(&game, &input);
     let ghost = ghost_footprint(&game.view(), &input).expect("a ghost is down");
-    assert!(controls.confirm.y > ghost.bottom(), "clear of the row");
+    assert!(controls.confirm.bottom() < ghost.y, "clear of the row");
 }
 
 #[test]
@@ -167,11 +167,11 @@ fn the_cross_folds_a_row_back_then_returns_the_building() {
         Some(TilePos::new(3, 2)),
         "the ghost stays"
     );
-    pull_handle_to(&mut game, &mut input, TilePos::new(3, 1));
-    assert!(row_runs_up(&input), "premise: a row pulled north");
+    pull_handle_to(&mut game, &mut input, TilePos::new(3, 3));
+    assert!(row_runs_down(&input), "premise: a row pulled south");
     dispatch_action(&mut game, &mut input, Action::Back);
     assert!(input.planned_stamps().is_empty(), "Back folds a row too");
-    assert!(!row_runs_up(&input), "leaving no direction behind");
+    assert!(!row_runs_down(&input), "leaving no direction behind");
     assert_eq!(input.ghost_anchor(), Some(TilePos::new(3, 2)));
     tap_cross(&mut game, &mut input);
     assert!(
@@ -210,27 +210,27 @@ fn a_cancelled_handle_drops_its_row_and_moving_the_ghost_leaves_it() {
 
 #[test]
 fn a_queued_chain_offers_its_next_spot_along_the_last_step() {
-    let (mut game, mut input) = ghost_range(TilePos::new(3, 2));
+    let (mut game, mut input) = ghost_range(TilePos::new(8, 3));
     input.queue_toggle = QueueToggle::Locked;
     tap_check(&mut game, &mut input);
     assert_eq!(
         input.ghost_anchor(),
-        Some(TilePos::new(4, 2)),
+        Some(TilePos::new(9, 3)),
         "one footprint east after the first"
     );
-    tap_world(&mut game, &mut input, vec2(2.5, 3.5));
+    tap_world(&mut game, &mut input, vec2(7.5, 2.5));
     tap_check(&mut game, &mut input);
     assert_eq!(
         input.ghost_anchor(),
-        Some(TilePos::new(1, 4)),
+        Some(TilePos::new(6, 1)),
         "then the step from the last site"
     );
 
-    pull_handle_to(&mut game, &mut input, TilePos::new(3, 4));
+    pull_handle_to(&mut game, &mut input, TilePos::new(8, 1));
     tap_check(&mut game, &mut input);
     assert_eq!(
         input.ghost_anchor(),
-        Some(TilePos::new(4, 4)),
+        Some(TilePos::new(9, 1)),
         "a row hands on its own step"
     );
     assert_eq!(builds(&game).len(), 5);

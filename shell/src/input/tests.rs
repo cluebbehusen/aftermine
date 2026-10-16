@@ -6430,7 +6430,8 @@ fn lay_out_ghost_controls(game: &Game, input: &InputState) -> crate::layout::Gho
     let controls = crate::layout::ghost_controls(
         footprint,
         row_handle_at(&view, input),
-        row_runs_up(input),
+        row_runs_down(input),
+        &[],
         vec2(1280.0, 800.0),
         input.ui,
     );
