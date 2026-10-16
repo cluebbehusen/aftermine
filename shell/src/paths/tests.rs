@@ -30,6 +30,8 @@ fn derived_dirs_hang_off_the_one_data_root() {
     if let Some(data) = data_dir() {
         assert_eq!(autosave_dir(), Some(data.join("autosaves")));
         assert_eq!(saves_dir(), Some(data.join("saves")));
+        assert_eq!(matches_dir(), Some(data.join("matches")));
+        assert_eq!(diagnostics_dir(), Some(data.join("diagnostics")));
     }
 }
 

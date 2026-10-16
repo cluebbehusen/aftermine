@@ -596,10 +596,13 @@ at the saved tick. Pending input remains pending until that tick executes. A
 save is self-contained. Named saves persist until explicitly deleted. Each match
 owns one autosave slot: its autosave or LAN autosave and its finished-match
 recording share an id, so a save replaces the match's earlier file and the
-finished recording replaces its autosave. Autosaves, LAN autosaves, and
-finished-match recordings rotate separately, so rotation keeps whole matches.
-Finished matches remain JSON recordings, containing the available history since
-the current segment began.
+finished recording replaces its autosave. Finished recordings go to their own
+matches folder. Autosaves, LAN autosaves, and finished-match recordings rotate
+separately, so rotation keeps whole matches. On iOS, named saves, finished
+recordings, replays, and diagnostics live in the app's Documents folder, which
+the Files app shows; autosaves, settings, and the LAN rejoin ticket stay in its
+Library. Finished matches remain JSON recordings, containing the available
+history since the current segment began.
 
 A match continued from an autosave keeps that slot and starts as already saved;
 any other load starts a new slot. A save records the slot and session content it
