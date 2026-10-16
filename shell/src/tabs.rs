@@ -15,16 +15,16 @@ use macroquad::prelude::{
 use oxide_protocol::RawEvent;
 
 /// The logical height a strip takes from the list beneath it, for
-/// [`crate::menu::Menu::band`].
+/// [`crate::menu::Heading::Page`].
 pub(crate) const BAND: f32 = 36.0;
 
-/// The segments of a `count`-tab strip, centred under the menu title.
+/// The segments of a `count`-tab strip, centred under a page title.
 pub(crate) fn rects(count: usize) -> Vec<Rect> {
     let s = crate::render::ui_scale();
     let view = crate::render::viewport();
     let width = (150.0 * s).min((view.x - 32.0 * s) / count.max(1) as f32);
     let left = (view.x - width * count as f32) * 0.5;
-    let top = view.y * 0.28 + 20.0 * s;
+    let top = crate::menu::page_title_baseline(s) + 20.0 * s;
     // Never shorter than a fingertip, however small the interface scale.
     let height = (MIN_TOUCH_TARGET * s).max(MIN_TOUCH_TARGET);
     (0..count)

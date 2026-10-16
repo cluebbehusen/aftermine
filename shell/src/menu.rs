@@ -236,6 +236,25 @@ pub struct Activation<R> {
     pub column: Option<usize>,
 }
 
+/// How a menu heads its list.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Heading {
+    /// A display-size title above a list centred in the space beneath.
+    Marquee,
+    /// A screen-title-size title along the top edge, as the setup and
+    /// browser pages draw theirs, leaving a long list the room to show
+    /// more rows. `band` logical px under the title are reserved for a
+    /// strip the screen draws there; the list hangs just below it, so
+    /// changing what the strip shows never moves the list.
+    Page { band: f32 },
+}
+
+/// The baseline of a [`Heading::Page`] title, level with the BACK
+/// button, at UI scale `s`.
+pub(crate) fn page_title_baseline(s: f32) -> f32 {
+    56.0 * s
+}
+
 /// What automation reads off a menu.
 pub struct MenuView {
     pub title: String,
@@ -293,10 +312,8 @@ pub struct Menu<R> {
     /// Draws the list at the Controls width, for rows whose labels outgrow
     /// the usual one.
     pub wide: bool,
-    /// Logical height reserved under the title for a strip the screen
-    /// draws there. A list with a band hangs just below it instead of
-    /// centring, so changing what the strip shows never moves the list.
-    pub band: f32,
+    /// How the title heads the list.
+    pub heading: Heading,
 }
 
 fn view_w() -> f32 {
@@ -345,7 +362,7 @@ impl<R: Clone> Menu<R> {
             carry: 0.0,
             shift: 0.0,
             wide: false,
-            band: 0.0,
+            heading: Heading::Marquee,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -489,13 +506,15 @@ impl<R: Clone> Menu<R> {
     /// around the selection instead of running off the screen.
     fn window(&self) -> ListWindow {
         let s = ui();
-        let top_bound = (view_h() * 0.36).max(view_h() * 0.28 + (64.0 + self.band) * s);
+        let (top_bound, centring) = match self.heading {
+            Heading::Marquee => ((view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s), 0.5),
+            Heading::Page { band } => (page_title_baseline(s) + (64.0 + band) * s, 0.0),
+        };
         let bottom_bound = view_h() - 64.0 * s;
         let avail = (bottom_bound - top_bound).max(ITEM_HEIGHT * s);
         let n = self.lines.len().max(1);
         let pitch = row_pitch(avail, n, s, crate::platform::TOUCH_ONLY);
         let visible = numeric::to_usize((avail / pitch).floor()).clamp(1, n);
-        let centring = if self.band > 0.0 { 0.0 } else { 0.5 };
         ListWindow {
             top: top_bound + (avail - visible as f32 * pitch) * centring,
             pitch,
@@ -664,12 +683,26 @@ impl<R: Clone> Menu<R> {
     fn draw_face(&self, subtitle: &str, coaching: Option<&str>, busy: bool) {
         let subtitle = binding_hint(subtitle);
         let s = ui();
-        let title_size = crate::theme::Type::Display.at(s);
+        let (title_size, title_y) = match self.heading {
+            Heading::Marquee => (crate::theme::Type::Display.at(s), view_h() * 0.28),
+            Heading::Page { .. } => {
+                // Level with the BACK button, so it shrinks to stay
+                // between that button and its mirror.
+                let room = view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s);
+                let size = crate::typography::fit(
+                    &self.title,
+                    crate::theme::Type::Title.at(s),
+                    room,
+                    crate::theme::Type::Heading.at(s),
+                );
+                (size, page_title_baseline(s))
+            }
+        };
         let dims = measure_text(&self.title, None, numeric::font_size(title_size), 1.0);
         draw_text(
             &self.title,
             (view_w() - dims.width) * 0.5,
-            view_h() * 0.28,
+            title_y,
             title_size,
             TEXT_TITLE,
         );
@@ -684,7 +717,7 @@ impl<R: Clone> Menu<R> {
         draw_text(
             &subtitle,
             (view_w() - sub_dims.width) * 0.5,
-            view_h() * 0.28 + 34.0 * s,
+            title_y + 34.0 * s,
             sub_size,
             TEXT_SECONDARY,
         );
