@@ -6,7 +6,7 @@
 use crate::action::{Action, BindingMap, Chord, Context};
 use crate::config::{Config, MarkerPrefs, PerformanceDisplay};
 use crate::game::SoundKind;
-use crate::menu::{Label, Line, Menu};
+use crate::menu::{Heading, Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
@@ -434,7 +434,9 @@ fn binding_lines(config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
 fn tab_menu(tab: Tab, config: &Config, selected_slot: usize) -> Menu<Item> {
     let mut menu = Menu::new("SETTINGS", tab_lines(tab, config, selected_slot));
     menu.wide = true;
-    menu.band = crate::tabs::BAND;
+    menu.heading = Heading::Page {
+        band: crate::tabs::BAND,
+    };
     menu
 }
 

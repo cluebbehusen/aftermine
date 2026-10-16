@@ -692,6 +692,41 @@ fn x_unbinds_and_reset_restores_the_classic_map() {
 }
 
 #[test]
+fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
+    for (width, height) in [(640.0, 400.0), (1180.0, 820.0), (1920.0, 1080.0)] {
+        for scale in SCALES {
+            crate::render::set_viewport(width, height);
+            crate::render::set_user_scale(scale);
+            let s = crate::render::ui_scale();
+            let page = on(Tab::Controls, &Config::default());
+            let strip = crate::tabs::rects(Tab::ALL.len());
+            let back = crate::button::corner_slot(0, s);
+            let first = page.menu.item_rect(0).expect("the list opens on its top");
+            let at = format!("{width}x{height} at {scale}");
+            assert!(
+                strip[0].y > crate::menu::page_title_baseline(s),
+                "the strip hangs under the title, {at}"
+            );
+            assert!(
+                strip.iter().all(|tab| !tab.overlaps(&back)),
+                "the strip stays clear of BACK, {at}"
+            );
+            assert!(
+                first.y >= strip[0].bottom(),
+                "the list starts under the strip, {at}"
+            );
+            let mut marquee = tab_menu(Tab::Controls, &Config::default(), 0);
+            marquee.heading = Heading::Marquee;
+            assert!(
+                page.menu.visible_range()[1] > marquee.visible_range()[1],
+                "a page title leaves the list more rows than a marquee, {at}"
+            );
+        }
+    }
+    crate::render::set_user_scale(1.0);
+}
+
+#[test]
 fn every_default_action_is_editable_and_secondary_edit_does_not_replace_primary() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
