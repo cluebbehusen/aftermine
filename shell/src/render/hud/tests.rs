@@ -108,3 +108,59 @@ fn a_resize_moves_the_minimap_before_the_next_click() {
     );
     assert!(crate::render::minimap_world_at(&view, center).is_some());
 }
+
+#[test]
+fn a_busy_builder_keeps_its_orders_dock_over_the_construction_palette() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap();
+    let (id, home) = (
+        harvester.id,
+        chassis::grid::TilePos::containing(harvester.pos),
+    );
+    for (dx, queue) in [(4, false), (6, true)] {
+        game.state.tick(&[oxide_sim::PlayerCommand {
+            player: human,
+            command: oxide_sim::Command::Run {
+                units: vec![id],
+                goal: chassis::grid::TilePos {
+                    x: home.x + dx,
+                    y: home.y,
+                },
+                queue,
+            },
+        }]);
+    }
+    game.presentation.selection.units.push(id);
+    let mut input = InputState::new();
+    input.build_menu = true;
+    // The layout floor, the Steam Deck, and a desktop window.
+    for (w, h) in [(1133.0, 744.0), (1280.0, 800.0), (1920.0, 1080.0)] {
+        let hud = layout(
+            &game.view(),
+            &input,
+            &BindingMap::classic(),
+            env(w, h),
+            None,
+            &fixed,
+        );
+        assert!(matches!(
+            hud.geometry.panel,
+            Some(panel_draw::PanelLayout::Catalog { .. })
+        ));
+        let model = hud.layout;
+        let band = model.panel_regions[1];
+        assert_eq!(model.queue_count, 2, "both runs show at {w}x{h}");
+        assert!(model.queue_stop.0.w > 0.0, "Stop shows at {w}x{h}");
+        assert!(model.orders.bottom() <= band.y, "{w}x{h}");
+        assert!(model.orders.y >= crate::layout::TOP_BAR_H, "{w}x{h}");
+        for (rect, _) in &model.queue_slots[..model.queue_count] {
+            assert!(rect.bottom() <= band.y && rect.y >= model.orders.y);
+        }
+    }
+}

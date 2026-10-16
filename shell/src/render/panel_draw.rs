@@ -806,12 +806,14 @@ fn selection_info_rect(viewport: Vec2, width: f32, content_height: f32, actions:
 /// Where the command panel's pieces sit this frame, laid out without
 /// drawing so input hit-tests exactly what the next draw shows.
 pub(crate) enum PanelLayout {
-    /// The construction palette: its band, one slot per card, and
-    /// whether the slots stand in their category columns beside Back.
+    /// The construction palette: its band, one slot per card, whether
+    /// the slots stand in their category columns beside Back, and the
+    /// builder's orders dock above the band.
     Catalog {
         band: Rect,
         slots: Vec<Rect>,
         grouped: bool,
+        dock: Option<DockLayout>,
     },
     /// A selection's information region, command cards, roster and
     /// orders dock.
@@ -833,7 +835,7 @@ pub(crate) struct SelectionLayout {
 
 /// The orders dock: its plate, the list beneath the Stop plate, the Stop
 /// plate and button, the visible chips, and how many more are hidden.
-struct DockLayout {
+pub(crate) struct DockLayout {
     dock: Rect,
     list: Rect,
     stop: Option<(Rect, Rect)>,
@@ -879,10 +881,13 @@ pub(crate) fn layout_panel(
             panel.cards.len(),
             crate::platform::TOUCH_ONLY,
         );
+        let dock = (!panel.queue.is_empty() || panel.stop.is_some())
+            .then(|| layout_dock(game, input, panel, viewport, s, band.y, measure));
         return PanelLayout::Catalog {
             band,
             slots,
             grouped,
+            dock,
         };
     }
     let small = viewport.x / s < 800.0 || viewport.y / s < 500.0;
@@ -1008,17 +1013,36 @@ fn layout_dock(
     }
 }
 
+impl DockLayout {
+    /// Publishes the dock's plate, chips, and Stop button for `panel`.
+    fn publish(&self, panel: &crate::panel::Panel, geometry: &mut PanelGeometry) {
+        geometry.orders = self.dock;
+        for (card, rect) in panel.queue.iter().zip(&self.chips) {
+            geometry.queue_slots[geometry.queue_count] = (*rect, card.action);
+            geometry.queue_count += 1;
+        }
+        if let (Some(card), Some((_, button))) = (&panel.stop, self.stop) {
+            geometry.queue_stop = (button, card.action);
+        }
+    }
+}
+
 impl PanelLayout {
     /// The clickable regions this layout publishes for `panel`.
     pub(super) fn geometry(&self, panel: &crate::panel::Panel) -> PanelGeometry {
         let mut geometry = PanelGeometry::empty();
         match self {
-            PanelLayout::Catalog { band, slots, .. } => {
+            PanelLayout::Catalog {
+                band, slots, dock, ..
+            } => {
                 geometry.actions = *band;
                 for (i, (card, rect)) in panel.cards.iter().zip(slots).enumerate() {
                     geometry.cards[i] = (*rect, published_action(card));
                 }
                 geometry.card_count = panel.cards.len();
+                if let Some(dock) = dock {
+                    dock.publish(panel, &mut geometry);
+                }
             }
             PanelLayout::Selection(selection) => {
                 geometry.info = selection.info_rect;
@@ -1033,14 +1057,7 @@ impl PanelLayout {
                     geometry.card_count += 1;
                 }
                 if let Some(dock) = &selection.dock {
-                    geometry.orders = dock.dock;
-                    for (card, rect) in panel.queue.iter().zip(&dock.chips) {
-                        geometry.queue_slots[geometry.queue_count] = (*rect, card.action);
-                        geometry.queue_count += 1;
-                    }
-                    if let (Some(card), Some((_, button))) = (&panel.stop, dock.stop) {
-                        geometry.queue_stop = (button, card.action);
-                    }
+                    dock.publish(panel, &mut geometry);
                 }
             }
         }
@@ -1181,8 +1198,12 @@ pub(crate) fn draw_panel(
             band,
             slots,
             grouped,
+            dock,
         } => {
             draw_catalog(panel, input, bindings, (*band, slots, *grouped), &draw_icon);
+            if let Some(dock) = dock {
+                draw_dock(panel, input, dock, s, &draw_icon);
+            }
             return;
         }
         PanelLayout::Selection(selection) => selection,
