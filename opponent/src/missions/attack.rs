@@ -9,7 +9,7 @@ use super::Scratch;
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
-    approach, breacher, hits, hunt, insert, mine, run, standing, value,
+    approach, breacher, distant_worth, hits, hunt, insert, mine, run, standing, value,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -155,22 +155,7 @@ impl Missions {
     ) -> Vec<(BuildingKind, TilePos)> {
         let now = observation.tick;
         let attacking: fn(&Task) -> bool = |task| matches!(task, Task::Attack { .. });
-        let mut plan = Plan {
-            observation,
-            map,
-            frame: scratch.frame,
-            memory,
-            minimum: minimum(profile.stance),
-            margin: margin(profile.difficulty),
-            retreat: outweighed(profile),
-            difficulty: profile.difficulty,
-            misjudge: misjudge(profile, observation.tick),
-            sappers: Vec::new(),
-            breachers: Vec::new(),
-            screens: Vec::new(),
-            rival: scratch.rival,
-            held: Vec::new(),
-        };
+        let mut plan = Plan::new(observation, map, profile, memory, scratch);
         let mut given_up: Vec<Objective> = Vec::new();
         for id in self.ids(attacking) {
             let Some(index) = self.index_of(id) else {
@@ -239,20 +224,8 @@ impl Missions {
         let attacking: fn(&Task) -> bool = |task| matches!(task, Task::Attack { .. });
         let held = self.held(attacking, None, &[]);
         let plan = Plan {
-            observation,
-            map,
-            frame: scratch.frame,
-            memory,
-            minimum: minimum(profile.stance),
-            margin: margin(profile.difficulty),
-            retreat: outweighed(profile),
-            difficulty: profile.difficulty,
-            misjudge: misjudge(profile, observation.tick),
-            sappers: Vec::new(),
-            breachers: Vec::new(),
-            screens: Vec::new(),
-            rival: scratch.rival,
             held: held.clone(),
+            ..Plan::new(observation, map, profile, memory, scratch)
         };
         // Remembered buildings share one id, so a defense is told apart by
         // where it stands.
@@ -721,6 +694,51 @@ fn keep_screens(plan: &Plan<'_>, mission: &Mission, ledger: &mut Ledger) {
 }
 
 impl<'a> Plan<'a> {
+    /// What a decision knows about attacking, with no target held and no
+    /// support counted yet.
+    fn new(
+        observation: &'a ObservationData,
+        map: &'a MapModel,
+        profile: &ResolvedProfile,
+        memory: &'a Memory,
+        scratch: &Scratch,
+    ) -> Self {
+        Self {
+            observation,
+            map,
+            frame: scratch.frame,
+            memory,
+            minimum: minimum(profile.stance),
+            margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
+            difficulty: profile.difficulty,
+            misjudge: misjudge(profile, observation.tick),
+            sappers: Vec::new(),
+            breachers: Vec::new(),
+            screens: Vec::new(),
+            rival: scratch.rival,
+            held: Vec::new(),
+        }
+    }
+
+    /// Those of `units` that can get to a target whose approach lies in
+    /// `component`, nearest `from` first, at most `room`.
+    fn nearest(
+        &self,
+        units: &[&UnitObs],
+        from: (i64, i64),
+        component: Option<u32>,
+        room: usize,
+    ) -> Vec<UnitId> {
+        let mut near: Vec<&UnitObs> = units
+            .iter()
+            .copied()
+            .filter(|unit| reaches(self.map, unit, component))
+            .collect();
+        near.sort_by_key(|unit| (self.frame.rank(from, doubled(unit.tile)), unit.id));
+        near.iter().take(room).map(|unit| unit.id).collect()
+    }
+
     /// `units` joined by the free point defenders nearest `rally` that can
     /// walk to a target whose approach lies in `component`, `room` units in
     /// all at most. The seat trains them in proportion to the enemy's known
@@ -732,15 +750,9 @@ impl<'a> Plan<'a> {
         component: Option<u32>,
         room: usize,
     ) -> Vec<UnitId> {
-        let mut screens: Vec<&UnitObs> = self
-            .screens
-            .iter()
-            .copied()
-            .filter(|unit| reaches(self.map, unit, component))
-            .collect();
-        screens.sort_by_key(|unit| (self.frame.rank(doubled(rally), doubled(unit.tile)), unit.id));
-        for screen in screens.iter().take(room.saturating_sub(units.len())) {
-            insert(&mut units, screen.id);
+        let room = room.saturating_sub(units.len());
+        for screen in self.nearest(&self.screens, doubled(rally), component, room) {
+            insert(&mut units, screen);
         }
         units
     }
@@ -758,14 +770,7 @@ impl<'a> Plan<'a> {
         if self.defenses(target).next().is_none() {
             return Vec::new();
         }
-        let mut sappers: Vec<&UnitObs> = self
-            .sappers
-            .iter()
-            .copied()
-            .filter(|unit| reaches(self.map, unit, component))
-            .collect();
-        sappers.sort_by_key(|unit| (self.frame.rank(doubled(rally), doubled(unit.tile)), unit.id));
-        let mut ids: Vec<UnitId> = sappers.iter().take(room).map(|unit| unit.id).collect();
+        let mut ids = self.nearest(&self.sappers, doubled(rally), component, room);
         ids.sort_unstable();
         ids
     }
@@ -879,21 +884,14 @@ impl<'a> Plan<'a> {
     fn target(&self, owner: PlayerId, building: BuildingKind, anchor: TilePos) -> Option<Target> {
         let approach = approach(self.map, self.observation.me, self.frame, building, anchor)?;
         let tiles = u64::from(self.map.distance(self.observation.me, approach)) / 10;
-        let cost = u64::from(
-            building
-                .base_stats()
-                .construction
-                .as_ref()
-                .map_or(0, |construction| construction.cost),
-        );
         let score = match self.difficulty {
             // The upper rungs go after the weakest valuable target: known
             // defense around it counts like distance to cover.
             BotDifficulty::Veteran | BotDifficulty::Prime => {
                 let guard = defense(self.observation, self.memory, approach);
-                cost * 1_000 / (100 + tiles + guard / GUARD_PER_TILE)
+                distant_worth(building, tiles + guard / GUARD_PER_TILE)
             }
-            BotDifficulty::Scrapheap | BotDifficulty::Standard => cost * 1_000 / (100 + tiles),
+            BotDifficulty::Scrapheap | BotDifficulty::Standard => distant_worth(building, tiles),
         };
         Some(Target {
             owner,
@@ -955,19 +953,7 @@ impl<'a> Plan<'a> {
     /// Idle free breachers, at most `room`, that can get to a target whose
     /// approach lies in `component`, nearest home first.
     fn breachers(&self, component: Option<u32>, room: usize) -> Vec<UnitId> {
-        let mut breachers: Vec<&UnitObs> = self
-            .breachers
-            .iter()
-            .copied()
-            .filter(|unit| reaches(self.map, unit, component))
-            .collect();
-        breachers.sort_by_key(|unit| {
-            (
-                self.frame.rank(self.frame.home, doubled(unit.tile)),
-                unit.id,
-            )
-        });
-        let mut ids: Vec<UnitId> = breachers.iter().take(room).map(|unit| unit.id).collect();
+        let mut ids = self.nearest(&self.breachers, self.frame.home, component, room);
         ids.sort_unstable();
         ids
     }
@@ -1176,14 +1162,27 @@ pub(crate) fn building_value(building: &BuildingObs) -> u64 {
     paid * u64::from(building.hp) / u64::from(max_hp.max(1))
 }
 
-/// Units nearest `rally` first until their value reaches `need`, at most
-/// `room` of them, by id.
+/// Units nearest `rally` first until what they bring against a building
+/// reaches `need`, at most `room` of them, by id.
 pub(super) fn recruit(
     frame: HomeFrame,
     fit: &[&UnitObs],
     rally: TilePos,
     need: u64,
     room: usize,
+) -> Vec<UnitId> {
+    recruit_by(frame, fit, rally, need, room, striking)
+}
+
+/// Units nearest `rally` first until their `worth` reaches `need`, at most
+/// `room` of them, by id.
+pub(super) fn recruit_by(
+    frame: HomeFrame,
+    fit: &[&UnitObs],
+    rally: TilePos,
+    need: u64,
+    room: usize,
+    worth: fn(&UnitObs) -> u64,
 ) -> Vec<UnitId> {
     let mut sorted = fit.to_vec();
     sorted.sort_by_key(|unit| (frame.rank(doubled(rally), doubled(unit.tile)), unit.id));
@@ -1193,7 +1192,7 @@ pub(super) fn recruit(
         if have >= need {
             break;
         }
-        have += striking(unit);
+        have += worth(unit);
         recruits.push(unit.id);
     }
     recruits.sort_unstable();

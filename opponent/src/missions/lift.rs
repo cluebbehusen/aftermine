@@ -5,12 +5,12 @@
 //! waits on a carrier that is not built.
 
 use super::Scratch;
-use super::air::{self, Hazard};
+use super::air::{self, Hazard, Legs};
 
 use super::attack::{FIT, healthy, margin, minimum, opposed, striking};
 use super::{
-    LiftPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, hunt, mine,
-    run, standing,
+    LiftPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, distant_worth,
+    hunt, mine, open, run, standing,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -319,16 +319,17 @@ impl<'a> Delivery<'a> {
         if let Some(first) = away.first()
             && let Some(pad) = self.pad(first.tile)
         {
-            let via = air::route(
+            let sent = ids(&away);
+            if air::fly_around(
                 self.observation,
                 self.scratch.frame,
                 &self.scratch.air,
+                sent.clone(),
                 first.tile,
                 pad,
-            );
-            if ledger.room() >= route_orders(via) {
-                let sent = ids(&away);
-                fly_to(sent.clone(), via, pad, false, ledger);
+                Legs::Run,
+                ledger,
+            ) {
                 released.extend(sent);
             }
         }
@@ -856,10 +857,9 @@ impl Missions {
             .filter(|unit| lifting.map.component(unit.tile) != Some(lifting.home))
             .map_or(pad, |unit| unit.tile);
         let via = lifting.route(from, landing);
-        if ledger.room() < route_orders(via) {
+        if !air::fly(ids(&flying), via, landing, Legs::Run, ledger) {
             return;
         }
-        fly_to(ids(&flying), via, landing, false, ledger);
         if !flight.grounded.is_empty() && ledger.room() > 0 {
             ledger.order(Command::Stop {
                 units: ids(&flight.grounded),
@@ -918,9 +918,7 @@ impl Missions {
         }
         if arrived && let Some(first) = following.first() {
             let via = lifting.route(first.tile, flight.landing);
-            if ledger.room() >= route_orders(via) {
-                fly_to(ids(&following), via, flight.landing, false, ledger);
-            }
+            air::fly(ids(&following), via, flight.landing, Legs::Run, ledger);
         }
         if !late {
             land(&away, flight.landing, ledger);
@@ -932,8 +930,7 @@ impl Missions {
             .collect();
         if late && let (Some(first), Some(pad)) = (away.first(), pad) {
             let via = lifting.route(first.tile, pad);
-            if ledger.room() >= route_orders(via) {
-                fly_to(ids(&away), via, pad, false, ledger);
+            if air::fly(ids(&away), via, pad, Legs::Run, ledger) {
                 self.list[flight.index].since = lifting.observation.tick;
             }
         }
@@ -951,9 +948,8 @@ impl Missions {
             (true, _) | (false, None) => true,
             (false, Some(pad)) => {
                 let via = lifting.route(flight.landing, pad);
-                let sent = ledger.room() >= route_orders(via);
+                let sent = air::fly(ids(&away), via, pad, Legs::Run, ledger);
                 if sent {
-                    fly_to(ids(&away), via, pad, false, ledger);
                     going.extend(ids(&away));
                 }
                 sent
@@ -1311,58 +1307,6 @@ impl<'a> Lifting<'a> {
     }
 }
 
-/// Orders [`fly_to`] issues.
-pub(super) fn route_orders(via: Option<TilePos>) -> u32 {
-    1 + u32::from(via.is_some())
-}
-
-/// Whether a ground unit could stand on `tile` of `island` as far as the seat
-/// knows: no known building, its own, an ally's or an enemy's, and no rock or
-/// scrap covers it.
-pub(super) fn open(
-    observation: &ObservationData,
-    map: &MapModel,
-    tile: TilePos,
-    island: u32,
-) -> bool {
-    map.component(tile) == Some(island)
-        && !observation.known_scrap_at(tile)
-        && !observation.known_rock_at(tile)
-        && !observation
-            .enemy_buildings
-            .iter()
-            .chain(&observation.my_buildings)
-            .chain(&observation.ally_buildings)
-            .any(|building| gap(building.anchor, building.kind.size(), tile, (1, 1)) < 0)
-}
-
-/// Sends `carriers` to `goal` in one group order, or around known anti-air by
-/// `via` first in two.
-pub(super) fn fly_to(
-    carriers: Vec<UnitId>,
-    via: Option<TilePos>,
-    goal: TilePos,
-    engage: bool,
-    ledger: &mut Ledger,
-) {
-    let movement = |units, goal, queue| {
-        if engage {
-            Command::Hunt { units, goal, queue }
-        } else {
-            Command::Run { units, goal, queue }
-        }
-    };
-    match via {
-        Some(via) => {
-            ledger.order(movement(carriers.clone(), via, false));
-            ledger.order(movement(carriers, goal, true));
-        }
-        None => {
-            ledger.order(movement(carriers, goal, false));
-        }
-    }
-}
-
 /// The targets no ground route reaches and not given up on, the rival's
 /// first, as attacks choose, then most valuable for their distance from home.
 fn targets(
@@ -1393,17 +1337,11 @@ fn targets(
             !memory.abandoned(objective.building, objective.anchor, observation.tick)
         })
         .map(|target| {
-            let cost = target
-                .building
-                .base_stats()
-                .construction
-                .as_ref()
-                .map_or(0, |construction| construction.cost);
             let distance = centre_distance(
                 footprint_centre(BuildingKind::Foundry, start),
                 footprint_centre(target.building, target.anchor),
             );
-            let score = u64::from(cost) * 1_000 / (100 + distance);
+            let score = distant_worth(target.building, distance);
             let rank = frame.rank(frame.home, footprint_centre(target.building, target.anchor));
             let other = rival.is_some_and(|rival| target.owner != rival);
             ((other, std::cmp::Reverse(score), rank), target)

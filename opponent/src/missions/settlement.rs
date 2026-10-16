@@ -4,7 +4,8 @@
 //! the saving target pays for and the landed worker raises, and its escort
 //! hands over to the site's local guard.
 
-use super::{MISSION_CAP, Mission, Missions, Phase, Task, carrier, force, hits, hunt, mine};
+use super::air::Legs;
+use super::{MISSION_CAP, Mission, Missions, Phase, Task, carrier, fill, force, hunt, mine};
 use super::{air, lift, reserve, strength};
 use crate::decision::{Ledger, Site, site};
 use crate::frame::{doubled, footprint_centre};
@@ -311,19 +312,7 @@ impl<'a> Settlement<'a> {
             )
         });
         let mut have = strength(self.observation, missions.members(target));
-        let mut escorts = Vec::new();
-        for unit in units {
-            if [Domain::Ground, Domain::Air]
-                .into_iter()
-                .enumerate()
-                .any(|(i, domain)| have[i] < need[i] && hits(unit, domain))
-            {
-                escorts.push(unit.id);
-                let added = force(unit.kind, unit.hp);
-                have = [have[0] + added[0], have[1] + added[1]];
-            }
-        }
-        escorts
+        fill(units, need, &mut have, usize::MAX)
     }
 
     /// What the selected `investment`'s escort still lacks against ground
@@ -753,21 +742,21 @@ impl Missions {
             let (gunships, others): (Vec<UnitId>, Vec<UnitId>) = flying.iter().partition(|id| {
                 mine(observation, **id).is_some_and(|u| crate::gunship::gunship(u.kind))
             });
-            let orders = lift::route_orders(via);
-            let sent = if gunships.is_empty() || others.is_empty() {
-                (ledger.room() >= orders).then(|| {
-                    lift::fly_to(flying, via, goal, gunships.is_empty(), ledger);
-                })
-            } else if ledger.room() >= 2 * orders {
-                lift::fly_to(gunships, via, goal, false, ledger);
-                lift::fly_to(others, via, goal, true, ledger);
-                Some(())
+            let legs = if gunships.is_empty() {
+                Legs::Hunt
             } else {
-                (ledger.room() >= orders).then(|| {
-                    lift::fly_to(flying, via, goal, false, ledger);
-                })
+                Legs::Run
             };
-            if sent.is_some() {
+            let sent = if gunships.is_empty() || others.is_empty() {
+                air::fly(flying, via, goal, legs, ledger)
+            } else if ledger.room() >= 2 * air::orders(via) {
+                air::fly(gunships, via, goal, Legs::Run, ledger);
+                air::fly(others, via, goal, Legs::Hunt, ledger);
+                true
+            } else {
+                air::fly(flying, via, goal, Legs::Run, ledger)
+            };
+            if sent {
                 self.settle_phase(index, SettlePhase::Fly, observation.tick);
             }
         } else if !carrying && riders.iter().all(|u| u.idle) {
@@ -788,22 +777,16 @@ impl Missions {
         let Some(pad) = context.delivery().pad(self.list[index].goal) else {
             return;
         };
-        let via = air::route(
+        air::fly_around(
             context.observation,
             context.scratch.frame,
             &context.scratch.air,
+            loaded.iter().map(|u| u.id).collect(),
             first.tile,
             pad,
+            Legs::Run,
+            ledger,
         );
-        if ledger.room() >= lift::route_orders(via) {
-            lift::fly_to(
-                loaded.iter().map(|u| u.id).collect(),
-                via,
-                pad,
-                false,
-                ledger,
-            );
-        }
     }
 
     fn settle_phase(&mut self, index: usize, phase: SettlePhase, now: u64) {

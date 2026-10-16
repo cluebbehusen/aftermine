@@ -533,7 +533,7 @@ impl ReactivityDetectors {
                             case: Case::new(
                                 now,
                                 u32::try_from(mission.id).expect("mission ids fit in u32"),
-                                kind_name(mission.kind),
+                                mission.kind.name(),
                             ),
                             engaged: mission.units,
                             last: mission.units,
@@ -799,19 +799,6 @@ fn attacker(kind: UnitKind) -> bool {
 fn armed_aircraft(unit: &Unit) -> bool {
     let stats = unit.kind.stats();
     stats.domain == Domain::Air && !stats.weapons.is_empty()
-}
-
-fn kind_name(kind: MissionKind) -> &'static str {
-    match kind {
-        MissionKind::Attack { .. } => "attack",
-        MissionKind::Strike { .. } => "strike",
-        MissionKind::Raid { .. } => "raid",
-        MissionKind::Lift { .. } => "lift",
-        MissionKind::Defend { .. } => "defend",
-        MissionKind::Settle { .. } => "settle",
-        MissionKind::Scout { .. } => "scout",
-        MissionKind::Clear { .. } => "clear",
-    }
 }
 
 /// Each seat's first Foundry, taken as its start.

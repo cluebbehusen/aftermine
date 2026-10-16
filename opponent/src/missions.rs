@@ -3,10 +3,11 @@
 //! Missions own only units that exist; production never works for one.
 //!
 //! Missions take units in a fixed order each decision: defense first, then
-//! lift, then attacks, anti-air clearing, strikes and raids, then scouting.
-//! Each takes from what [`Missions::available`] leaves free when it runs.
-//! Between defense and the rest, free wounded units go to a Repair Bay and
-//! sit out the other missions while they heal.
+//! island settlements and local guards, then lift, then attacks, anti-air
+//! clearing, strikes and raids, then scouting. Each takes from what
+//! [`Missions::available`] leaves free when it runs. Between defense and the
+//! rest, free wounded units go to a Repair Bay and sit out the other missions
+//! while they heal.
 
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, ring};
@@ -32,6 +33,7 @@ mod reserve;
 mod rival;
 mod scouting;
 mod settlement;
+mod sortie;
 mod strike;
 
 pub(crate) use air::{Hazard, hazards};
@@ -470,6 +472,18 @@ impl Task {
 }
 
 impl Mission {
+    /// Whether this is a quiet local guard: a defense mission in its Guard
+    /// phase.
+    fn guarding(&self) -> bool {
+        matches!(
+            self.task,
+            Task::Defend {
+                phase: DefendPhase::Guard,
+                ..
+            }
+        )
+    }
+
     /// Whether the mission keeps its units from a defense. A defense keeps
     /// them while it fights for one of the seat's own buildings. An attack
     /// keeps them once it is fighting, or while travelling in contact, since
@@ -894,6 +908,62 @@ fn insert(ids: &mut Vec<UnitId>, id: UnitId) {
     if let Err(index) = ids.binary_search(&id) {
         ids.insert(index, id);
     }
+}
+
+/// Takes `units` in order while one could still add to a domain, ground then
+/// air, where `have` falls short of `need`, at most `room` of them, adding
+/// to `have` the [`force`] each brings.
+fn fill<'a>(
+    units: impl IntoIterator<Item = &'a UnitObs>,
+    need: [u64; 2],
+    have: &mut [u64; 2],
+    room: usize,
+) -> Vec<UnitId> {
+    let mut taken = Vec::new();
+    for unit in units {
+        if taken.len() >= room || (have[0] >= need[0] && have[1] >= need[1]) {
+            break;
+        }
+        if [Domain::Ground, Domain::Air]
+            .into_iter()
+            .enumerate()
+            .any(|(index, domain)| have[index] < need[index] && hits(unit, domain))
+        {
+            let added = force(unit.kind, unit.hp);
+            *have = [have[0] + added[0], have[1] + added[1]];
+            taken.push(unit.id);
+        }
+    }
+    taken
+}
+
+/// What `building` is worth going after from `distance` away: its price per
+/// distance, a hundred added to the distance so near targets do not swamp
+/// the rest.
+fn distant_worth(building: BuildingKind, distance: u64) -> u64 {
+    let cost = building
+        .base_stats()
+        .construction
+        .as_ref()
+        .map_or(0, |construction| construction.cost);
+    u64::from(cost) * 1_000 / (100 + distance)
+}
+
+/// Whether a ground unit could stand on `tile` of `island` as far as the seat
+/// knows: no known building, its own, an ally's or an enemy's, and no rock or
+/// scrap covers it.
+fn open(observation: &ObservationData, map: &MapModel, tile: TilePos, island: u32) -> bool {
+    map.component(tile) == Some(island)
+        && !observation.known_scrap_at(tile)
+        && !observation.known_rock_at(tile)
+        && !observation
+            .enemy_buildings
+            .iter()
+            .chain(&observation.my_buildings)
+            .chain(&observation.ally_buildings)
+            .any(|building| {
+                crate::frame::gap(building.anchor, building.kind.size(), tile, (1, 1)) < 0
+            })
 }
 
 /// The tile beside the footprint of `building` at `anchor` nearest the

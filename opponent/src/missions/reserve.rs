@@ -4,7 +4,7 @@
 //! attacks, strikes, raids and lifts take away.
 
 use super::attack::{building_value, minimum};
-use super::{DefendPhase, Missions, Task, carrier, hits, mine, value};
+use super::{Missions, Task, carrier, hits, mine, value};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::{Memory, SeenUnit};
@@ -254,8 +254,8 @@ impl Missions {
             .list
             .iter()
             .filter(|mission| match mission.task {
-                Task::Defend { asset, phase } => {
-                    phase != DefendPhase::Guard
+                Task::Defend { asset, .. } => {
+                    !mission.guarding()
                         && observation.my_buildings.iter().any(|building| {
                             building.id == asset && map.component(building.anchor) == home
                         })

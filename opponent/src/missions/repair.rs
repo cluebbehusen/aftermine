@@ -3,9 +3,8 @@
 //! who is wounded, where the Bays stand, how many patients each already
 //! serves, and what wreck the seat knows of.
 
-use super::air::Hazard;
-use super::lift::{fly_to, open, route_orders};
-use super::{Missions, Scratch, mine, run};
+use super::air::{self, Hazard, Legs};
+use super::{Missions, Scratch, mine, open, run};
 use crate::decision::Ledger;
 use crate::defenses::Span;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
@@ -115,7 +114,7 @@ impl Missions {
             };
             room[index] -= 1;
             let via = if domain == Domain::Air {
-                super::air::route(
+                air::route(
                     observation,
                     frame,
                     &scratch.air,
@@ -145,11 +144,8 @@ impl Missions {
                 if !ledger.order(run(ids.clone(), goal)) {
                     return;
                 }
-            } else {
-                if ledger.room() < route_orders(via) {
-                    return;
-                }
-                fly_to(ids.clone(), via, bay.anchor, false, ledger);
+            } else if !air::fly(ids.clone(), via, bay.anchor, Legs::Run, ledger) {
+                return;
             }
             for id in ids {
                 ledger.dock(id);

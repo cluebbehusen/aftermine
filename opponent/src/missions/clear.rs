@@ -7,9 +7,10 @@
 //! carriers land, and withdraws when the anti-air around it outweighs it.
 
 use super::Scratch;
-use super::air::{self, Hazard};
+use super::air::{self, Hazard, Legs};
 use super::attack::{FIT, healthy, margin, minimum, outweighed, recruit, striking};
-use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, hunt, mine, run};
+use super::sortie::Sortie;
+use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, mine, run};
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled};
@@ -17,12 +18,9 @@ use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use chassis::grid::TilePos;
-use oxide_sim::Command;
+use oxide_sim::UnitId;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::stats::Domain;
-
-/// Tiles between a member and the aim at which the sweep begins.
-const CONTACT_TILES: i32 = 6;
 
 /// Tiles around another clearance's aim left to it.
 const HELD_TILES: i32 = 4;
@@ -46,8 +44,8 @@ pub(super) fn timeout(phase: StrikePhase) -> u64 {
 }
 
 /// What one decision knows about clearing anti-air.
-struct Sweep<'a> {
-    observation: &'a ObservationData,
+pub(super) struct Sweep<'a> {
+    pub(super) observation: &'a ObservationData,
     map: &'a MapModel,
     frame: HomeFrame,
     memory: &'a Memory,
@@ -55,9 +53,9 @@ struct Sweep<'a> {
     margin: u64,
     /// Per mille of its strength the enemies around it must reach before it
     /// withdraws.
-    retreat: u64,
+    pub(super) retreat: u64,
     /// Known fire against aircraft.
-    air: &'a [Hazard],
+    pub(super) air: &'a [Hazard],
     /// The start's ground.
     home: Option<u32>,
     /// What offense leaves at home.
@@ -81,31 +79,14 @@ impl Missions {
         scratch: &Scratch,
         ledger: &mut Ledger,
     ) {
-        let mut sweep = Sweep {
-            observation,
-            map,
-            frame: scratch.frame,
-            memory,
-            minimum: minimum(profile.stance),
-            margin: margin(profile.difficulty),
-            retreat: outweighed(profile),
-            air: &scratch.air,
-            home: map
-                .start(observation.me)
-                .and_then(|start| map.component(start)),
-            reserve: scratch.reserve,
-            held: Vec::new(),
-            focus: self
-                .lift_focus(observation, map, memory, scratch)
-                .map(|target| target.anchor),
-        };
+        let mut sweep = self.sweep(observation, map, profile, memory, scratch);
         let clearing: fn(&Task) -> bool = |task| matches!(task, Task::Clear { .. });
         for id in self.ids(clearing) {
             let Some(index) = self.index_of(id) else {
                 continue;
             };
             sweep.held = self.aims(Some(id));
-            self.advance_clear(index, &sweep, ledger);
+            self.advance_sortie(index, Sortie::Clear(&sweep), ledger);
         }
         if !scratch.severed {
             return;
@@ -158,7 +139,20 @@ impl Missions {
         if !scratch.severed {
             return None;
         }
-        let sweep = Sweep {
+        let sweep = self.sweep(observation, map, profile, memory, scratch);
+        sweep.focus.is_some().then_some(sweep)
+    }
+
+    /// What a decision knows about clearing anti-air, with no aim held.
+    fn sweep<'a>(
+        &self,
+        observation: &'a ObservationData,
+        map: &'a MapModel,
+        profile: &ResolvedProfile,
+        memory: &'a Memory,
+        scratch: &'a Scratch,
+    ) -> Sweep<'a> {
+        Sweep {
             observation,
             map,
             frame: scratch.frame,
@@ -175,8 +169,7 @@ impl Missions {
             focus: self
                 .lift_focus(observation, map, memory, scratch)
                 .map(|target| target.anchor),
-        };
-        sweep.focus.is_some().then_some(sweep)
+        }
     }
 
     /// Strength of the bombers out clearing the anti-air around `target`:
@@ -253,126 +246,6 @@ impl Missions {
         self.next += 1;
         true
     }
-
-    /// Moves the clearance at `index` through its phases.
-    fn advance_clear(&mut self, index: usize, sweep: &Sweep<'_>, ledger: &mut Ledger) {
-        let observation = sweep.observation;
-        let now = observation.tick;
-        let mission = &self.list[index];
-        let Task::Clear { aim, phase } = mission.task else {
-            unreachable!("the clear mission's task");
-        };
-        let members: Vec<&UnitObs> = mission
-            .units
-            .iter()
-            .filter_map(|id| mine(observation, *id))
-            .collect();
-        let all_idle = members.iter().all(|unit| unit.idle);
-        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
-        let age = now - mission.since;
-        let Some(rally) = air::pad(observation, sweep.map, sweep.frame, doubled(aim)) else {
-            self.list.remove(index);
-            return;
-        };
-        let goal = mission.goal;
-        let units = mission.units.clone();
-        let withdraw = |missions: &mut Self, ledger: &mut Ledger| {
-            if ledger.order(run(units.clone(), rally)) {
-                missions.list[index].set_clear(aim, StrikePhase::Withdraw, now, rally);
-            }
-        };
-        match phase {
-            StrikePhase::Gather => {
-                if !all_idle && age < GATHER_TICKS {
-                    return;
-                }
-                if strength < sweep.need(aim) {
-                    self.list.remove(index);
-                    return;
-                }
-                if self.sweep_at(index, sweep, rally, aim, ledger) {
-                    self.list[index].set_clear(aim, StrikePhase::Travel, now, aim);
-                }
-            }
-            StrikePhase::Travel => {
-                if members
-                    .iter()
-                    .any(|unit| unit.tile.chebyshev(goal) <= CONTACT_TILES)
-                {
-                    let engage = StrikePhase::Engage { focus: None };
-                    self.list[index].set_clear(aim, engage, now, goal);
-                    return;
-                }
-                if all_idle
-                    || age >= TRAVEL_TICKS
-                    || sweep.opposition(&members) * 1_000 > strength * sweep.retreat
-                {
-                    withdraw(self, ledger);
-                }
-            }
-            StrikePhase::Engage { .. } => {
-                if sweep.opposition(&members) * 1_000 > strength * sweep.retreat {
-                    withdraw(self, ledger);
-                    return;
-                }
-                if !all_idle && age < ENGAGE_TICKS {
-                    return;
-                }
-                match sweep.best(strength, Some(goal)) {
-                    Some(next) => {
-                        if self.sweep_at(index, sweep, goal, next, ledger) {
-                            self.list[index].set_clear(next, StrikePhase::Travel, now, next);
-                        }
-                    }
-                    None => withdraw(self, ledger),
-                }
-            }
-            StrikePhase::Withdraw => {
-                if all_idle || age >= WITHDRAW_TICKS {
-                    self.list.remove(index);
-                }
-            }
-        }
-    }
-
-    /// Sends the clearance at `index` from `from` to `aim`, around known
-    /// anti-air when the straight line crosses it. Returns whether it went.
-    fn sweep_at(
-        &mut self,
-        index: usize,
-        sweep: &Sweep<'_>,
-        from: TilePos,
-        aim: TilePos,
-        ledger: &mut Ledger,
-    ) -> bool {
-        let units = self.list[index].units.clone();
-        let others: Vec<Hazard> = sweep
-            .air
-            .iter()
-            .copied()
-            .filter(|hazard| !hazard.covers(doubled(aim)))
-            .collect();
-        let Some(via) = air::route(sweep.observation, sweep.frame, &others, from, aim) else {
-            return ledger.order(hunt(units, aim));
-        };
-        if ledger.room() < 2 {
-            return false;
-        }
-        ledger.order(run(units.clone(), via));
-        ledger.order(Command::Hunt {
-            units,
-            goal: aim,
-            queue: true,
-        })
-    }
-}
-
-impl Mission {
-    fn set_clear(&mut self, aim: TilePos, phase: StrikePhase, now: u64, goal: TilePos) {
-        self.task = Task::Clear { aim, phase };
-        self.since = now;
-        self.goal = goal;
-    }
 }
 
 impl Sweep<'_> {
@@ -400,7 +273,7 @@ impl Sweep<'_> {
     /// seat cannot walk to that it outweighs most easily, and once none is
     /// left, the target itself. Never near `skip` or an aim another
     /// clearance holds.
-    fn best(&self, strength: u64, skip: Option<TilePos>) -> Option<TilePos> {
+    pub(super) fn best(&self, strength: u64, skip: Option<TilePos>) -> Option<TilePos> {
         let focus = self.focus?;
         let near = |a: TilePos, b: TilePos| a.chebyshev(b) <= HELD_TILES;
         let anti_air: Vec<TilePos> = self
@@ -473,22 +346,46 @@ impl Sweep<'_> {
     /// Strength a sweep at `aim` needs: the known anti-air reaching over it
     /// times the margin, and never under the stance minimum.
     fn need(&self, aim: TilePos) -> u64 {
-        let cover: u64 = self
-            .air
-            .iter()
-            .filter(|hazard| hazard.covers(doubled(aim)))
-            .map(|hazard| hazard.value)
-            .sum();
-        (cover * self.margin / 1_000).max(self.minimum)
+        (air::cover(self.air, doubled(aim)) * self.margin / 1_000).max(self.minimum)
     }
 
-    /// Value of the known anti-air reaching any member.
-    fn opposition(&self, members: &[&UnitObs]) -> u64 {
-        self.air
+    /// Where a clearance at `aim` gathers and comes back to.
+    pub(super) fn rally(&self, aim: TilePos) -> Option<TilePos> {
+        air::pad(self.observation, self.map, self.frame, doubled(aim))
+    }
+
+    /// Whether a gathered clearance of `strength` still goes at `aim`.
+    pub(super) fn sets_out(&self, aim: TilePos, strength: u64) -> bool {
+        strength >= self.need(aim)
+    }
+
+    /// Sends `units` from `from` to `aim`, around the known anti-air that
+    /// does not cover `aim` when the straight line crosses it. Returns where
+    /// they went.
+    pub(super) fn send(
+        &self,
+        units: Vec<UnitId>,
+        from: TilePos,
+        aim: TilePos,
+        ledger: &mut Ledger,
+    ) -> Option<TilePos> {
+        let others: Vec<Hazard> = self
+            .air
             .iter()
-            .filter(|hazard| members.iter().any(|unit| hazard.covers(doubled(unit.tile))))
-            .map(|hazard| hazard.value)
-            .sum()
+            .copied()
+            .filter(|hazard| !hazard.covers(doubled(aim)))
+            .collect();
+        air::fly_around(
+            self.observation,
+            self.frame,
+            &others,
+            units,
+            from,
+            aim,
+            Legs::Strike,
+            ledger,
+        )
+        .then_some(aim)
     }
 }
 

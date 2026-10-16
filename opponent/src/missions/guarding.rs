@@ -4,7 +4,7 @@
 
 use super::reserve::{self, LOCAL_REACH};
 use super::{
-    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, force, hits, hunt, mine,
+    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hunt, mine,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
@@ -84,15 +84,7 @@ impl Missions {
     pub(crate) fn guarded_units(&self) -> Vec<UnitId> {
         self.list
             .iter()
-            .filter(|m| {
-                matches!(
-                    m.task,
-                    Task::Defend {
-                        phase: DefendPhase::Guard,
-                        ..
-                    }
-                )
-            })
+            .filter(|m| m.guarding())
             .flat_map(|m| m.units.iter().copied())
             .collect()
     }
@@ -133,15 +125,7 @@ impl Missions {
                 .list
                 .iter()
                 .position(|m| matches!(m.task, Task::Defend { asset: id, .. } if id == asset.id));
-            if index.is_some_and(|index| {
-                !matches!(
-                    self.list[index].task,
-                    Task::Defend {
-                        phase: DefendPhase::Guard,
-                        ..
-                    }
-                )
-            }) {
+            if index.is_some_and(|index| !self.list[index].guarding()) {
                 continue;
             }
             let need = reserve::need(observation, map, memory, stance, asset.kind, asset.anchor);
@@ -182,21 +166,7 @@ impl Missions {
                 )
             });
             let mut have = [0_u64; 2];
-            let mut kept = Vec::new();
-            for unit in pool {
-                if kept.len() >= UNIT_CAP {
-                    break;
-                }
-                if [Domain::Ground, Domain::Air]
-                    .into_iter()
-                    .enumerate()
-                    .any(|(i, domain)| have[i] < need[i] && hits(unit, domain))
-                {
-                    kept.push(unit.id);
-                    let added = force(unit.kind, unit.hp);
-                    have = [have[0] + added[0], have[1] + added[1]];
-                }
-            }
+            let mut kept = fill(pool, need, &mut have, UNIT_CAP);
             for (producer, queue) in observation.my_buildings.iter().zip(&observation.my_queues) {
                 if map.component(producer.anchor) == ground
                     && gap(
