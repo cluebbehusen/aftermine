@@ -137,8 +137,14 @@ fn a_seat_without_scouts_trains_one() {
     advance_to(&mut state, STALE, &[]);
     let foundry = foundries(&state, PlayerId(0))[0];
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    assert!(
-        trains(&commands).contains(&(foundry, UnitKind::Surveyor)),
+    // The scout queues behind the Harvester the worker step gave the only
+    // Foundry rather than wait for it to stand idle.
+    assert_eq!(
+        trains(&commands),
+        [
+            (foundry, UnitKind::Harvester),
+            (foundry, UnitKind::Surveyor)
+        ],
         "{commands:?}"
     );
 

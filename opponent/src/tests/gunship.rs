@@ -83,6 +83,7 @@ fn lift_flak(scenario: &Scenario, state: &State) -> u64 {
         frame,
         &memory,
         BotStance::Balanced,
+        middling(),
         &missions,
     );
     let profile = ResolvedProfile::resolve(BotConfig::new(
@@ -91,6 +92,56 @@ fn lift_flak(scenario: &Scenario, state: &State) -> u64 {
         1,
     ));
     missions.lift_flak(&observation, &model, &profile, &memory, &scratch)
+}
+
+/// Three islands in a row, West's start on the first, Mid's on the second
+/// and East's on the third, with an East Flak Turret beside its start that a
+/// West Kestrel overhead sees.
+fn three_islands() -> Scenario {
+    let map: Vec<String> = (0..11)
+        .map(|row| {
+            let mut tiles: Vec<char> = ".".repeat(40).chars().collect();
+            for x in [13, 14, 26, 27] {
+                tiles[x] = '~';
+            }
+            if row == 4 {
+                tiles[2] = '1';
+                tiles[19] = '2';
+                tiles[34] = '3';
+            }
+            tiles.into_iter().collect()
+        })
+        .collect();
+    let mut scenario = crate::tests::match_on(
+        map,
+        &["West", "Mid", "East"],
+        &[(0, UnitKind::Kestrel, 33, 6)],
+    );
+    scenario
+        .buildings
+        .push(building(2, BuildingKind::FlakTurret, 34, 7));
+    scenario
+}
+
+#[test]
+fn lift_support_prepares_for_the_rival_the_lift_goes_after() {
+    let mut scenario = three_islands();
+    let calm = scenario.build().unwrap();
+    assert_eq!(
+        lift_flak(&scenario, &calm),
+        0,
+        "premise: the lift goes after Mid's nearer start, which no anti-air guards"
+    );
+    // East's bombers pressing West's base make East the rival.
+    scenario.units.extend([
+        unit(2, UnitKind::Buzzard, 5, 7),
+        unit(2, UnitKind::Buzzard, 6, 7),
+    ]);
+    let pressed = scenario.build().unwrap();
+    assert!(
+        lift_flak(&scenario, &pressed) > 0,
+        "the anti-air guarding the rival's start"
+    );
 }
 
 #[test]

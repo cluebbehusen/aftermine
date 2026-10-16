@@ -75,11 +75,14 @@ the running total and mission state.
   Production capacity comes from the income working producers leave unspent
   while their army roles have need, and producers queue far enough to stay busy
   until the next decision. Small stocks such as scouts, Scuttlers, Sappers and
-  carriers never add a producer. Scouts and Scuttlers draw on the producers the
-  army leaves. Two train ahead of the army: carriers for a seat whose ground
-  reaches no enemy, since they are its army's only way there, and the Sappers
-  attacks want against known defenses, which cost more than any army unit their
-  producer trains and would otherwise never get one.
+  carriers never add a producer. Scuttlers draw on the producers the army
+  leaves. A scout for a stale point no scout can take joins its producer's queue
+  behind whatever is there, as worker recovery does, rather than wait for an
+  idle producer while workers and the army keep every one busy. Two train ahead
+  of the army: carriers for a seat whose ground reaches no enemy, since they are
+  its army's only way there, and the Sappers attacks want against known
+  defenses, which cost more than any army unit their producer trains and would
+  otherwise never get one.
 - The top investment is funded through its next purchasable step. The bot keeps
   one optional saving target with its price, reason and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank

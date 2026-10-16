@@ -294,10 +294,11 @@ pub(crate) struct Producer<'a> {
 /// workers, who also weld the wounded, then island settlements, local guards,
 /// lifts, attacks, anti-air clearing, strikes, raids, Spire launches, focus
 /// fire and scouting, then production: carriers for a severed seat and the
-/// Sappers attacks want first, then the army's roles, then scouts and
-/// Scuttlers on the producers they leave, then ground units on any still idle. A short defense instead buys an emergency static defense,
-/// trains no Harvester beyond worker recovery or scouts, and frees protected
-/// scrap for this decision's production.
+/// Sappers attacks want first, then the army's roles, then scouts queued
+/// behind whatever their producer has and Scuttlers on the producers the army
+/// leaves, then ground units on any still idle. A short defense instead buys
+/// an emergency static defense, trains no Harvester beyond worker recovery or
+/// scouts, and frees protected scrap for this decision's production.
 #[expect(
     clippy::too_many_lines,
     reason = "one decision in its documented priority order"
@@ -345,12 +346,13 @@ pub(crate) fn decide(
         crate::missions::stranded(unit, map, home)
     });
     crate::missions::look(observation, map, &mut persistent.memory);
-    let mut scratch = Scratch::new(
+    let scratch = Scratch::new(
         observation,
         map,
         frame,
         &persistent.memory,
         profile.stance,
+        profile.traits,
         &persistent.missions,
     );
     let meals = persistent
@@ -505,9 +507,6 @@ pub(crate) fn decide(
             .defend(observation, map, frame, &persistent.memory, &mut ledger);
     let short = !shortfalls.is_empty();
     ledger.hold(persistent.missions.held_workers(observation));
-    scratch.rival = persistent
-        .missions
-        .rival(&scratch, observation, map, profile.traits);
     workers::recover(observation, &foundries, &mut ledger);
     if short {
         ledger.protected = 0;
@@ -731,7 +730,8 @@ pub(crate) fn decide(
         }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
         if !short {
-            // Scouts and Scuttlers draw on the producers the army's roles leave.
+            // A scout joins its producer's queue behind whatever is there;
+            // Scuttlers draw on the producers the army's roles leave.
             if lacking > 0 {
                 train_scout(observation, &producers, lacking, &mut ledger);
             }
@@ -1082,7 +1082,9 @@ fn train_carriers(
 
 /// Trains a scout while fewer are in production than the `lacking` stale
 /// places no scout could take but the one it would train could reach: a
-/// Kestrel at a built Airworks, else a Surveyor at a Foundry.
+/// Kestrel at a built Airworks, else a Surveyor at a Foundry, queued behind
+/// whatever that producer already has: waiting for an idle one leaves stale
+/// points unseen while workers and the army keep every producer busy.
 /// Once an air scout can be trained a Surveyor no longer counts, since one
 /// that could reach a stale point would already be scouting.
 fn train_scout(

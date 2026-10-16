@@ -13,6 +13,7 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, ring};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
+use crate::profile::PersonalityTraits;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::scenario::BotStance;
@@ -1002,8 +1003,9 @@ pub(crate) struct Scratch {
     objectives: Vec<Objective>,
     /// Whether the seat knows of targets and ground reaches none of them.
     pub(crate) severed: bool,
-    /// The enemy attacks and strikes go after first, when there are several;
-    /// set once defense has taken its units.
+    /// The enemy attacks, strikes and lifts go after first, when there are
+    /// several, as the missions stood when the decision began: production
+    /// and investments prepare for the same enemy the missions go after.
     pub(crate) rival: Option<PlayerId>,
     /// Value against ground and against aircraft that offense leaves home,
     /// before the units out defending count.
@@ -1033,6 +1035,7 @@ impl Scratch {
         frame: HomeFrame,
         memory: &Memory,
         stance: BotStance,
+        traits: PersonalityTraits,
         missions: &Missions,
     ) -> Self {
         let reserve = reserve::reserve(observation, map, memory, stance);
@@ -1058,7 +1061,7 @@ impl Scratch {
         let payload = missions
             .liftable(observation, map, reserve, home)
             .max(elsewhere);
-        Self {
+        let mut scratch = Self {
             frame,
             air: hazards(observation, map, memory, Domain::Air),
             ground: hazards(observation, map, memory, Domain::Ground),
@@ -1074,7 +1077,9 @@ impl Scratch {
                 observation.tick,
                 Domain::Ground,
             ),
-        }
+        };
+        scratch.rival = missions.rival(&scratch, observation, map, traits);
+        scratch
     }
 }
 

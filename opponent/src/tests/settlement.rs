@@ -1006,6 +1006,7 @@ fn an_incoming_guard_counts_before_more_defenders_are_trained() {
         frame,
         &bot.persistent.memory,
         bot.profile.stance,
+        bot.profile.traits,
         &bot.persistent.missions,
     );
     let mut ledger = crate::decision::Ledger::new(PlayerId(0), observation.scrap, u32::MAX);

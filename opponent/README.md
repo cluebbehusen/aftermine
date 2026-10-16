@@ -11,14 +11,14 @@ Repair Bays, then workers, then island settlements, local guards, lifts,
 attacks, clearances, strikes and raids, focus fire and scouting, then
 production. Missions command only units that exist: production keeps the stocks
 and capabilities they draw on, such as scouts, carriers and local defense,
-without promising future units to a mission. Scouts and Scuttlers train on the
-producers the army's roles leave, while carriers for a seat whose ground reaches
-no enemy and the Sappers attacks want against known defenses train first. A
-producer is ready when its queue would run out before the next decision, so it
-queues its next unit as the last one finishes rather than after it stands empty;
-every ready producer left free trains toward the army's needs. Difficulty caps
-the unit orders one decision issues; purchases do not count against that
-allowance.
+without promising future units to a mission. Scuttlers train on the producers
+the army's roles leave, and a scout joins its producer's queue behind whatever
+is there, while carriers for a seat whose ground reaches no enemy and the
+Sappers attacks want against known defenses train first. A producer is ready
+when its queue would run out before the next decision, so it queues its next
+unit as the last one finishes rather than after it stands empty; every ready
+producer left free trains toward the army's needs. Difficulty caps the unit
+orders one decision issues; purchases do not count against that allowance.
 
 Public enemy buildings, the Deep Bores every seat knows of, join the seat's
 known enemy buildings each decision as memories of unknown condition: built and
@@ -284,11 +284,12 @@ knows of around it, remembered or seen, outweigh what it has left, and recovers
 there to go again or disband. Having taken its target it pushes on to the next
 only while strong enough for it. A target it withdrew from, could not reach,
 lost its army to, or stood idle beside is skipped for a while. With several
-enemies, attacks and strikes go after one rival's buildings first: the enemy
-pressing the seat hardest, then the nearest, less the army it shows, with guile
-favoring a small economy and a bonus for the owner of the oldest attack or
+enemies, attacks, strikes and lifts go after one rival's buildings first: the
+enemy pressing the seat hardest, then the nearest, less the army it shows, with
+guile favoring a small economy and a bonus for the owner of the oldest attack or
 strike's target so the seat does not flip between enemies. The rival is chosen
-once per decision, after defense.
+once, as each decision begins, so production and investments prepare for the
+enemy its missions go after.
 
 Free, healthy point defenders on the target's ground go along with an attack
 when it forms and join it wherever free units do. They never count toward its

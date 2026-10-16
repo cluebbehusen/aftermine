@@ -117,6 +117,7 @@ fn scratch(observation: &ObservationData, model: &MapModel) -> Scratch {
         frame,
         &Memory::default(),
         BotStance::Balanced,
+        middling(),
         &Missions::default(),
     )
 }
