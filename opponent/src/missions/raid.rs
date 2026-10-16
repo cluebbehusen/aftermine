@@ -7,7 +7,7 @@
 
 use super::Scratch;
 use super::air::{self, Hazard};
-use super::attack::{FIT, defense, fortified, healthy, margin, minimum, striking};
+use super::attack::{FIT, defense, fortified, healthy, margin, minimum, outweighed, striking};
 use super::{
     MISSION_CAP, Mission, Missions, Objective, RaidPhase, Task, approach, hunt, mine, run,
     standing, value,
@@ -26,9 +26,6 @@ use std::cmp::Reverse;
 
 /// Health, per mille, under which a Scuttler or bomber raid turns back.
 const WOUNDED: u32 = 500;
-
-/// Known defense, in scrap, around a building Sappers go after, at most.
-const LIGHT_DEFENSE: u64 = 200;
 
 /// Tiles between a raider and its goal at which the raid strikes.
 const CONTACT_TILES: i32 = 6;
@@ -95,15 +92,17 @@ struct Foray<'a> {
     held: Vec<Objective>,
     /// Per mille of a target's known guard a raid must bring.
     margin: u64,
-    /// The most known guard a Scuttler raid takes on: a line guarded beyond
-    /// it is an attack's work, not a raid's.
+    /// Per mille of its strength the enemies around it must reach before it
+    /// turns back.
+    retreat: u64,
+    /// The most known guard a Scuttler or Sapper raid takes on: a target
+    /// guarded beyond it is an attack's work, not a raid's.
     light: u64,
 }
 
-/// The most known guard a Scuttler raid takes on, as a share of the
-/// stance's attack minimum: a stance limit on what counts as lightly
-/// defended. Scuttlers sent at a real guard die before they reach the
-/// workers.
+/// The most known guard a raid takes on, as a share of the stance's attack
+/// minimum: a stance limit on what counts as lightly defended. Raiders sent
+/// at a real guard die before they reach their target.
 fn light(stance: BotStance) -> u64 {
     minimum(stance) / 4
 }
@@ -146,6 +145,7 @@ impl Missions {
             reserve: scratch.reserve,
             held: Vec::new(),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             light: light(profile.stance),
         };
         let mut done: Vec<Objective> = Vec::new();
@@ -189,6 +189,7 @@ impl Missions {
             reserve: scratch.reserve,
             held: Vec::new(),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             light: light(profile.stance),
         };
         foray
@@ -301,7 +302,7 @@ impl Missions {
         // losses and wounds.
         let spent = kind != Raider::Sapper && members.iter().any(|unit| !healthy(unit, WOUNDED));
         let strength: u64 = members.iter().map(|unit| value(unit)).sum();
-        let outweighed = foray.opposition(kind, &members) > strength;
+        let outweighed = foray.opposition(kind, &members) * 1_000 > strength * foray.retreat;
         let lost = target;
         let withdraw = |missions: &mut Self, ledger: &mut Ledger| {
             let turned = ledger.order(run(units.clone(), home));
@@ -408,7 +409,7 @@ impl Foray<'_> {
         };
         match kind {
             Raider::Sapper => candidates
-                .filter(|(_, goal)| defense(observation, self.memory, *goal) <= LIGHT_DEFENSE)
+                .filter(|(_, goal)| defense(observation, self.memory, *goal) <= self.light)
                 .filter_map(|(target, goal)| {
                     // Enough blasts for what is left of the building.
                     let hp = observation

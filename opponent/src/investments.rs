@@ -117,7 +117,6 @@ pub(crate) struct Situation<'a> {
 pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let observation = situation.observation;
     let traits = situation.traits;
-    let tick = u32::try_from(observation.tick).unwrap_or(u32::MAX);
     let saturated = situation.saturation >= 750;
     let owned = |kind| owned(observation, kind);
     let pull = |kind: BuildingKind| {
@@ -129,13 +128,15 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             .sum::<u32>()
     };
     let mut list = Vec::new();
+    // Tech grows wanted as income grows to feed it.
     if owned(BuildingKind::Fabricator) == 0 {
-        let score = 300 * u32::from(saturated) + (tick / 6).min(600);
+        let score = 300 * u32::from(saturated) + (situation.income / 2).min(600);
         let score = score + pull(BuildingKind::Fabricator);
         list.push((Investment::Tech(BuildingKind::Fabricator), score));
     }
     if owned(BuildingKind::Airworks) == 0 {
-        let score = u32::from(saturated) * (150 + 4 * u32::from(traits.air)) + (tick / 24).min(300);
+        let score = u32::from(saturated) * (150 + 4 * u32::from(traits.air))
+            + (situation.income / 4).min(300);
         let score = score + pull(BuildingKind::Airworks);
         list.push((Investment::Tech(BuildingKind::Airworks), score));
     }
@@ -194,7 +195,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         .iter()
         .any(|(investment, _)| matches!(investment, Investment::Expansion(_)));
     list.extend(growth);
-    if tick >= 2_400 {
+    // Once harvesting is saturated and home scrap has begun to run down, more
+    // workers add no income: salvage and deeper extraction grow it then.
+    if saturated && situation.depletion > 0 {
         let base = 150
             + 3 * u32::from(traits.greed)
             + situation.depletion * 400 / 1_000
@@ -243,7 +246,14 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             }
         }
     }
-    let settled = saturated || observation.tick >= defenses::SETTLE_TICKS;
+    // The opening economy is up once harvesting is saturated or income would
+    // pay for a Turret every minute.
+    let turret = BuildingKind::Turret
+        .base_stats()
+        .construction
+        .as_ref()
+        .map_or(u32::MAX, |construction| construction.cost);
+    let settled = saturated || situation.income >= turret;
     list.extend(defenses::investments(
         observation,
         situation.map,

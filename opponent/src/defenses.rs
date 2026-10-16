@@ -100,10 +100,6 @@ const UPGRADE_POINTS: u64 = 48;
 /// upgrading: the building is down to a fifth of its health until done.
 const UPGRADE_CLEARANCE: i32 = 3;
 
-/// Ticks after which the opening economy counts as up even if harvesting is
-/// not yet saturated.
-pub(crate) const SETTLE_TICKS: u64 = 600;
-
 /// Tiles around the nearest known enemy on an approach inside which its
 /// companions count toward the threat along it.
 const GROUP_TILES: i64 = 10;
@@ -1340,9 +1336,13 @@ fn upgrade(guard: &Guard<'_>, building: &BuildingObs, weight: u64) -> Option<(In
                     .map(|approach| approach.evidence.weight())
                     .max()
                     .unwrap_or(0);
-                let radar = radar(building.kind, building.tier + 1);
+                // Points the next tier brings into sight that this one only
+                // watches by radar, if at all.
+                let sight = |tier: u8| i64::from(building.kind.tier_stats(tier).vision);
+                let (now, then) = (sight(building.tier), sight(building.tier + 1));
                 let watched = Guard::watched(asset, |point, _| {
-                    distance2(centre, point) <= 4 * radar * radar
+                    let distance = distance2(centre, point);
+                    distance <= 4 * then * then && distance > 4 * now * now
                 });
                 asset.value * watched * evidence
             }

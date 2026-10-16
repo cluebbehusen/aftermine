@@ -8,7 +8,7 @@
 
 use super::Scratch;
 use super::air::{self, Hazard};
-use super::attack::{FIT, healthy, margin, minimum, recruit, striking};
+use super::attack::{FIT, healthy, margin, minimum, outweighed, recruit, striking};
 use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, hunt, mine, run};
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -53,6 +53,9 @@ struct Sweep<'a> {
     memory: &'a Memory,
     minimum: u64,
     margin: u64,
+    /// Per mille of its strength the enemies around it must reach before it
+    /// withdraws.
+    retreat: u64,
     /// Known fire against aircraft.
     air: &'a [Hazard],
     /// The start's ground.
@@ -85,6 +88,7 @@ impl Missions {
             memory,
             minimum: minimum(profile.stance),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             air: &scratch.air,
             home: map
                 .start(observation.me)
@@ -161,6 +165,7 @@ impl Missions {
             memory,
             minimum: minimum(profile.stance),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             air: &scratch.air,
             home: map
                 .start(observation.me)
@@ -298,12 +303,15 @@ impl Missions {
                     self.list[index].set_clear(aim, engage, now, goal);
                     return;
                 }
-                if all_idle || age >= TRAVEL_TICKS || sweep.opposition(&members) > strength {
+                if all_idle
+                    || age >= TRAVEL_TICKS
+                    || sweep.opposition(&members) * 1_000 > strength * sweep.retreat
+                {
                     withdraw(self, ledger);
                 }
             }
             StrikePhase::Engage { .. } => {
-                if sweep.opposition(&members) > strength {
+                if sweep.opposition(&members) * 1_000 > strength * sweep.retreat {
                     withdraw(self, ledger);
                     return;
                 }

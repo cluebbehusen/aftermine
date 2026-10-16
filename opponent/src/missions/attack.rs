@@ -100,6 +100,9 @@ struct Plan<'a> {
     memory: &'a Memory,
     minimum: u64,
     margin: u64,
+    /// Per mille of its strength the enemies around it must reach before it
+    /// withdraws.
+    retreat: u64,
     difficulty: BotDifficulty,
     /// Per mille of the enemy's known strength the seat believes it faces
     /// this decision.
@@ -159,6 +162,7 @@ impl Missions {
             memory,
             minimum: minimum(profile.stance),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
@@ -241,6 +245,7 @@ impl Missions {
             memory,
             minimum: minimum(profile.stance),
             margin: margin(profile.difficulty),
+            retreat: outweighed(profile),
             difficulty: profile.difficulty,
             misjudge: misjudge(profile, observation.tick),
             sappers: Vec::new(),
@@ -580,7 +585,7 @@ impl Missions {
                         })
                         .collect();
                     let opposition = plan.opposition(&members);
-                    if opposition * 1_000 > strength * outweighed(plan.difficulty) {
+                    if opposition * 1_000 > strength * plan.retreat {
                         if ledger.order(run(army.clone(), rally)) {
                             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
                             break 'phase Some(target.objective());
@@ -1273,14 +1278,16 @@ fn presses(difficulty: BotDifficulty) -> bool {
     matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
 }
 
-/// Per mille of an attack's strength the enemies around it must reach before
-/// it withdraws: the upper rungs give a fight up once clearly lost, the
-/// lower ones at even odds. A difficulty limit.
-fn outweighed(difficulty: BotDifficulty) -> u64 {
-    match difficulty {
+/// Per mille of a mission's strength the enemies around it must reach before
+/// it withdraws. The upper rungs give a fight up once clearly lost and the
+/// lower ones at even odds, a difficulty limit; guile gives it up up to a
+/// tenth sooner and its lack up to a tenth later, a personality limit.
+pub(super) fn outweighed(profile: &ResolvedProfile) -> u64 {
+    let odds: u64 = match profile.difficulty {
         BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
         BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
-    }
+    };
+    odds * (1_100 - 2 * u64::from(profile.traits.guile.min(100))) / 1_000
 }
 
 /// Stream of the lowest rung's misjudgments of enemy strength.

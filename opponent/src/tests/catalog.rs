@@ -47,7 +47,8 @@ fn offered_lifting(
         },
         saturation: 1_000,
         income: 1_000,
-        depletion: 0,
+        // Home scrap has begun to run down.
+        depletion: 1,
         pull: Vec::new(),
         exposed: true,
         stakes: defenses::Stakes::default(),
@@ -245,8 +246,15 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = built.build().unwrap();
     offer(&built, &state, 3_000);
 
-    // Bulwarks and Deep Arrays once a Crucible stands.
+    // Bulwarks and Deep Arrays once a Crucible stands, the Array moved to
+    // where the approach runs just beyond its sight today.
     let mut crucible = built.clone();
+    crucible
+        .buildings
+        .retain(|spec| spec.kind != BuildingKind::Array);
+    crucible
+        .buildings
+        .push(building(0, BuildingKind::Array, 8, 2));
     // Behind the Foundry, so the guns standing still face the base's edge.
     crucible
         .buildings

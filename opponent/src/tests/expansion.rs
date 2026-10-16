@@ -467,12 +467,11 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands() {
     let scenario = bore_arena(12);
     let mut state = scenario.build().unwrap();
     let extractor = own_extractor(&state);
-    // Reclaimers and Deep Bores wait for the Foundry drip to begin.
-    advance_to(&mut state, 2_400, &[]);
+    // Deep Bores wait for harvesting to saturate and home scrap to run down.
     let mut opponent = seat(&scenario, 0);
     let mut events = OwnEvents::default();
     let mut upgraded = false;
-    while state.current_tick() < 3_600 && !upgraded {
+    while state.current_tick() < 6_000 && !upgraded {
         let commands = opponent.act(&state, &mut events);
         upgraded = commands.iter().any(|command| {
             matches!(command.command, Command::UpgradeBuilding { building } if building == extractor)

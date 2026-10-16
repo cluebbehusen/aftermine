@@ -1089,6 +1089,13 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
         )),
         "{commands:?}"
     );
+    assert!(
+        !bot.missions()
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Settle { .. })),
+        "no settlement starts before its escort exists: {:?}",
+        bot.missions()
+    );
     let checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
     for mission in checkpoint["missions"]["list"].as_array().unwrap() {
         for id in mission["units"].as_array().unwrap() {

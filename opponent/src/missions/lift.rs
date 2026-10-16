@@ -23,7 +23,7 @@ use chassis::grid::TilePos;
 use oxide_sim::observation::{CarriedUnitObs, ObservationData, UnitObs};
 use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
+use oxide_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 
 const LOAD_TICKS: u64 = 1_200;
 const FLY_TICKS: u64 = 2_400;
@@ -393,6 +393,8 @@ struct Lifting<'a> {
     /// Known fire against aircraft, which carriers must avoid.
     air: &'a [Hazard],
     objectives: &'a [Objective],
+    /// The player offense goes after, if any.
+    rival: Option<PlayerId>,
     severed: bool,
     /// What offense leaves at home.
     reserve: [u64; 2],
@@ -1139,9 +1141,16 @@ impl Missions {
                 _ => None,
             })
             .or_else(|| {
-                targets(&scratch.objectives, observation, map, scratch.frame, memory)
-                    .into_iter()
-                    .next()
+                targets(
+                    &scratch.objectives,
+                    observation,
+                    map,
+                    scratch.frame,
+                    memory,
+                    scratch.rival,
+                )
+                .into_iter()
+                .next()
             })
     }
 }
@@ -1167,6 +1176,7 @@ impl<'a> Lifting<'a> {
             home,
             air: &scratch.air,
             objectives: &scratch.objectives,
+            rival: scratch.rival,
             severed: scratch.severed,
             reserve: scratch.reserve,
             held: Vec::new(),
@@ -1182,6 +1192,7 @@ impl<'a> Lifting<'a> {
             self.map,
             self.frame,
             self.memory,
+            self.rival,
         )
         .into_iter()
         .filter(|target| !self.held.contains(target))
@@ -1352,14 +1363,15 @@ pub(super) fn fly_to(
     }
 }
 
-/// The targets no ground route reaches and not given up on, most valuable for
-/// their distance from home first.
+/// The targets no ground route reaches and not given up on, the rival's
+/// first, as attacks choose, then most valuable for their distance from home.
 fn targets(
     objectives: &[Objective],
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     memory: &Memory,
+    rival: Option<PlayerId>,
 ) -> Vec<Objective> {
     let Some(start) = map.start(observation.me) else {
         return Vec::new();
@@ -1393,7 +1405,8 @@ fn targets(
             );
             let score = u64::from(cost) * 1_000 / (100 + distance);
             let rank = frame.rank(frame.home, footprint_centre(target.building, target.anchor));
-            ((std::cmp::Reverse(score), rank), target)
+            let other = rival.is_some_and(|rival| target.owner != rival);
+            ((other, std::cmp::Reverse(score), rank), target)
         })
         .collect::<Vec<_>>();
     ranked.sort_by_key(|(order, _)| *order);
@@ -1492,3 +1505,6 @@ fn unload(transport: UnitId, at: TilePos, queue: bool) -> Command {
         queue,
     }
 }
+
+#[cfg(test)]
+mod tests;

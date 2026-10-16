@@ -6,16 +6,19 @@
 working rules.
 
 Each decision spends through one running total in a fixed precedence: defense
-and other emergencies, then local guards and island settlements, then an
-affordable saving target, then the wounded to Repair Bays, then workers, then
-lifts, attacks, clearances, strikes and raids, focus fire and scouting, then
+and other emergencies, then an affordable saving target, then the wounded to
+Repair Bays, then workers, then island settlements, local guards, lifts,
+attacks, clearances, strikes and raids, focus fire and scouting, then
 production. Missions command only units that exist: production keeps the stocks
 and capabilities they draw on, such as scouts, carriers and local defense,
-without promising future units to a mission. A producer is ready when its queue
-would run out before the next decision, so it queues its next unit as the last
-one finishes rather than after it stands empty; every ready producer left free
-trains toward the army's needs. Difficulty caps the unit orders one decision
-issues; purchases do not count against that allowance.
+without promising future units to a mission. Scouts and Scuttlers train on the
+producers the army's roles leave, while carriers for a seat whose ground reaches
+no enemy and the Sappers attacks want against known defenses train first. A
+producer is ready when its queue would run out before the next decision, so it
+queues its next unit as the last one finishes rather than after it stands empty;
+every ready producer left free trains toward the army's needs. Difficulty caps
+the unit orders one decision issues; purchases do not count against that
+allowance.
 
 Public enemy buildings, the Deep Bores every seat knows of, join the seat's
 known enemy buildings each decision as memories of unknown condition: built and
@@ -305,11 +308,13 @@ after the weakest valuable target; send units freed while an attack travels or
 fights straight to its target; keep a fight they are still winning going past
 its time; and withdraw only once outweighed by a quarter. Standard and Scrapheap
 leave those units at home until the attack regroups, end a fight on time and
-withdraw at even odds. Scrapheap also attacks piecemeal, several attacks side by
-side each taking only what its own target needs; goes for a Foundry whenever it
-knows one, however well guarded; and misjudges the enemy's strength by up to two
-fifths either way, a misjudgment drawn from its personality seed that holds for
-600 ticks, both when setting out and when deciding to pull back.
+withdraw at even odds. Guile moves either threshold by up to a tenth, sooner for
+a guileful seat, and attacks, clearances, strikes and raids all withdraw by it.
+Scrapheap also attacks piecemeal, several attacks side by side each taking only
+what its own target needs; goes for a Foundry whenever it knows one, however
+well guarded; and misjudges the enemy's strength by up to two fifths either way,
+a misjudgment drawn from its personality seed that holds for 600 ticks, both
+when setting out and when deciding to pull back.
 
 An engaged mission focuses its fire: when every member that can hit an enemy
 near it already reaches that enemy in a straight line that terrain does not
@@ -329,14 +334,16 @@ aboard and air escorts flying beside while known enemies stand near the site; a
 gunship among its carriers flies on without stopping for what its guns reach.
 The expansion's next purchase is a Harvester while no Foundry's ground has a
 worker, then an Airworks, then a Skyhook, until carriers can take the builder
-and its ground escort. The settlement only delivers: once the builder lands it
-goes back to ordinary work, and the expansion is an ordinary build that worker
-raises. The escort holds the landing until the building is placed, or until no
-known enemy stands near, then joins the site's local guard, which it was sized
-to be. A flight that runs late turns home; a builder stranded on the island
-builds there on the next attempt. Settlements and combat lifts run side by side
-with separate members. Settlements move before guards each decision, so a
-released escort is guarded at once, and new ones recruit after guards.
+and its ground escort. A settlement starts only once free units already meet its
+escort's need; until then the shortfall raises production. The settlement only
+delivers: once the builder lands it goes back to ordinary work, and the
+expansion is an ordinary build that worker raises. The escort holds the landing
+until the building is placed, or until no known enemy stands near, then joins
+the site's local guard, which it was sized to be. A flight that runs late turns
+home; a builder stranded on the island builds there on the next attempt.
+Settlements and combat lifts run side by side with separate members. Settlements
+move before guards each decision, so a released escort is guarded at once, and
+new ones recruit after guards.
 
 ## Lift
 
@@ -414,9 +421,9 @@ beside home on the side facing their aim, go first at the anti-air whose known
 cover they outweigh most easily, sweep it and move on to the next, and once none
 is left sweep the building's surroundings, holding the defenders' attention
 while the carriers land. They fly around known anti-air when the straight line
-crosses it, and withdraw once the known anti-air reaching them outweighs them.
-Ordinary strikes leave splash bombers to clearances while ground reaches no
-enemy.
+crosses it, and withdraw once the known anti-air reaching them outweighs them by
+the withdrawal threshold. Ordinary strikes leave splash bombers to clearances
+while ground reaches no enemy.
 
 ## Strikes
 
@@ -427,9 +434,10 @@ are worth the stance's minimum and outweigh the known anti-air reaching over the
 target by the attack margin. They gather beside home on the side facing the
 target, fly at it around known anti-air, and fight; having taken it they go on
 to the next target they can, and otherwise fly home. They withdraw once the
-known anti-air reaching them outweighs them. A target a strike withdrew from,
-lost its aircraft to, or stood idle beside is skipped for a while. A defense may
-take a strike's aircraft while they gather or withdraw.
+known anti-air reaching them outweighs them by the withdrawal threshold. A
+target a strike withdrew from, lost its aircraft to, or stood idle beside is
+skipped for a while. A defense may take a strike's aircraft while they gather or
+withdraw.
 
 ## Warheads
 
@@ -468,12 +476,13 @@ go after the enemy Extractor or Foundry whose known defense they outweigh by the
 attack margin, least defended and then nearest first, Scuttlers only where no
 known, built enemy building's ground fire reaches and the known guard is light
 for the stance, the aircraft flying around known anti-air. Sappers go after the
-most valuable known enemy building for its distance with little known defense
-that they are enough to blow up. Scuttlers and aircraft turn back once one is
-badly hurt, once the known fire reaching them outweighs them, or once they have
-been at the target a while; Sappers ignore wounds, and fire once at the target.
-Raids skip a raided target for a while, which spaces them out, while attacks,
-lifts and strikes may still go after it.
+most valuable known enemy building for its distance whose known guard is light
+for the stance and that they are enough to blow up. Scuttlers and aircraft turn
+back once one is badly hurt, once the known fire reaching them outweighs them by
+the withdrawal threshold, or once they have been at the target a while; Sappers
+ignore wounds, and fire once at the target. Raids skip a raided target for a
+while, which spaces them out, while attacks, lifts and strikes may still go
+after it.
 
 Once its income reaches a level that falls with guile, the seat keeps the
 Scuttlers, alive or queued and out on no other mission, that a raid on the least

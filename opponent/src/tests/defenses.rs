@@ -728,9 +728,10 @@ fn an_array_watches_for_aircraft_where_no_ground_threat_is_known() {
 fn an_array_deepens_once_a_crucible_stands() {
     let staged = |crucible: bool, bombard: bool| {
         let mut scenario = settled(0);
+        // Where the approach runs just beyond the Array's sight today.
         scenario
             .buildings
-            .push(building(0, BuildingKind::Array, 7, 5));
+            .push(building(0, BuildingKind::Array, 7, 7));
         // Behind the Foundry, so the base's edge stays where it was.
         if crucible {
             scenario
@@ -1101,20 +1102,27 @@ fn a_seat_does_not_wall_itself_in() {
 fn an_exposed_opening_buys_no_tech_before_its_first_turret() {
     let mut scenario = arena(150);
     scenario.units.push(unit(0, UnitKind::Sentinel, 3, 10));
-    let built = |state: &State| -> Vec<BuildingKind> {
-        builds(&seat_with(&scenario, 0, thrifty()).act(state, &mut OwnEvents::default()))
+    let state = scenario.build().unwrap();
+    // A seat whose income is `per_minute`.
+    let built = |per_minute: u32| -> Vec<BuildingKind> {
+        let mut json =
+            serde_json::to_value(seat_with(&scenario, 0, thrifty()).checkpoint()).unwrap();
+        json["income"] = serde_json::json!({"previous": null, "per_minute": per_minute});
+        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+        let mut opponent =
+            Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+        builds(&opponent.act(&state, &mut OwnEvents::default()))
             .into_iter()
             .map(|(kind, _)| kind)
             .collect()
     };
-    let mut state = scenario.build().unwrap();
-    let opening = built(&state);
+    let opening = built(0);
     assert!(
         opening.iter().all(|kind| *kind != BuildingKind::Fabricator),
         "no Turret can be placed yet, so tech waits: {opening:?}"
     );
-    advance_to(&mut state, crate::defenses::SETTLE_TICKS, &[]);
-    let settled = built(&state);
+    // Income that would pay for a Turret every minute settles the opening.
+    let settled = built(600);
     assert!(
         settled.contains(&BuildingKind::Turret)
             && settled.iter().all(|kind| *kind != BuildingKind::Fabricator),

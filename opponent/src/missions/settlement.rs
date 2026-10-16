@@ -477,13 +477,17 @@ impl Missions {
         else {
             return;
         };
-        let (ground, air): (Vec<_>, Vec<_>) = context
-            .escorts(self, target, source)
-            .into_iter()
-            .partition(|id| {
-                mine(context.observation, *id)
-                    .is_some_and(|u| u.kind.stats().domain == Domain::Ground)
-            });
+        // Only escorts that already exist are taken: a site whose need the
+        // free army cannot meet waits for production instead of a promise.
+        let escorts = context.escorts(self, target, source);
+        let need = context.need(target);
+        let have = strength(context.observation, escorts.iter().copied());
+        if have[0] < need[0] || have[1] < need[1] {
+            return;
+        }
+        let (ground, air): (Vec<_>, Vec<_>) = escorts.into_iter().partition(|id| {
+            mine(context.observation, *id).is_some_and(|u| u.kind.stats().domain == Domain::Ground)
+        });
         let mut payload = vec![builder];
         payload.extend(ground);
         let mut units = Vec::new();
