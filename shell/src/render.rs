@@ -379,16 +379,21 @@ thread_local! {
     static USER_SCALE: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
 }
 
-/// Installs the user scale factor, clamped so a bad config cannot make
-/// chrome unusable.
+/// The smallest user scale: the Settings row's first step. Layouts are
+/// checked only between this and [`MAX_USER_SCALE`].
+pub const MIN_USER_SCALE: f32 = 0.75;
+
+/// The largest user scale: the Settings row's last step.
+pub const MAX_USER_SCALE: f32 = 1.5;
+
+/// Installs the user scale factor, clamped to the range the Settings row
+/// offers.
 pub fn set_user_scale(factor: f32) {
+    let factor = factor.clamp(MIN_USER_SCALE, MAX_USER_SCALE);
     #[cfg(not(test))]
-    USER_SCALE.store(
-        f32::to_bits(factor.clamp(0.5, 3.0)),
-        std::sync::atomic::Ordering::Relaxed,
-    );
+    USER_SCALE.store(f32::to_bits(factor), std::sync::atomic::Ordering::Relaxed);
     #[cfg(test)]
-    USER_SCALE.set(factor.clamp(0.5, 3.0));
+    USER_SCALE.set(factor);
 }
 
 static REDUCED_MOTION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

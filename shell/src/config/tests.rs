@@ -184,6 +184,22 @@ fn performance_modes_the_last_join_address_and_the_name_persist() {
 }
 
 #[test]
+fn a_hand_edited_ui_scale_loads_within_the_settings_range() {
+    let dir = std::env::temp_dir().join(format!("oxide-config-scale-{}", std::process::id()));
+    let path = dir.join("config.json");
+    for (stored, loaded) in [(0.5, 0.75), (1.25, 1.25), (3.0, 1.5)] {
+        let config = Config {
+            ui_scale: stored,
+            ..Config::default()
+        };
+        config.save_to(&path).unwrap();
+        assert_eq!(Config::load_from(Some(path.clone())).ui_scale, loaded);
+    }
+    assert_eq!(Config::sane_ui_scale(f32::INFINITY), 1.0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn any_trouble_at_all_falls_back_to_defaults() {
     // Missing file.
     let missing = Config::load_from(Some(PathBuf::from("/definitely/not/here.json")));

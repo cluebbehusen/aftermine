@@ -327,7 +327,7 @@ const CAPTURE_PROMPT: &str = "press the new chord (modifiers held count) - Escap
 /// Volume steps, low to high.
 const VOLUMES: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 /// Interface and marker scale steps, small to large.
-const SCALES: [f32; 4] = [0.75, 1.0, 1.25, 1.5];
+const SCALES: [f32; 4] = [render::MIN_USER_SCALE, 1.0, 1.25, render::MAX_USER_SCALE];
 
 impl Row {
     /// Every row, in the order its tab shows them.
@@ -872,6 +872,12 @@ impl SettingsScreen {
         // included: it cancels a rebind without binding anything.
         let (back, routed) = self.back.route(events);
         let events = routed.as_slice();
+        // The strip hears the pointer only over a tab's rows. A press it
+        // armed must not outlive them: lifted unseen, its finger would
+        // keep every later finger off the tabs.
+        if self.naming.is_some() || !matches!(self.face, Face::Tab(_)) {
+            self.tabs.cancel();
+        }
         if self.naming.is_some() {
             if back {
                 sounds.push((SoundKind::Click, None));
@@ -1002,7 +1008,8 @@ impl SettingsScreen {
     }
 
     /// Runs the dialog asking about `profile` for a frame. Cancel, the
-    /// BACK button, and Escape all leave the bindings be.
+    /// BACK button, and Escape all leave the bindings be; as in the pause
+    /// menu's dialogs, Escape outranks a row picked in the same frame.
     fn confirm(
         &mut self,
         profile: Profile,
@@ -1016,6 +1023,7 @@ impl SettingsScreen {
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
         match self.menu.handle(events, mouse).map(|picked| picked.value) {
+            _ if escaped => self.end_confirming(profile, config),
             Some(Item::Confirm) => {
                 sounds.push((SoundKind::Click, None));
                 config.bindings = profile.bindings();
@@ -1030,7 +1038,6 @@ impl SettingsScreen {
                 sounds.push((SoundKind::Click, None));
                 self.end_confirming(profile, config);
             }
-            None if escaped => self.end_confirming(profile, config),
             None => {}
         }
     }
