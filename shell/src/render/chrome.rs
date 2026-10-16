@@ -373,7 +373,9 @@ pub(super) fn queue_toggle_shown(
         .units
         .iter()
         .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human));
-    touch_only && !game.presentation.spectate && (commands_units || input.queue_toggle)
+    touch_only
+        && !game.presentation.spectate
+        && (commands_units || input.queue_toggle != crate::input::QueueToggle::Off)
 }
 
 /// Where the QUEUE toggle sits: over the panel's left corner, in the
@@ -396,8 +398,11 @@ pub(super) fn queue_dock_lift(scale: f32) -> f32 {
 }
 
 /// The QUEUE toggle: a chain of queued waypoints, lit while queueing so
-/// the mode can't hide, dark like the orders dock otherwise.
-fn draw_queue_toggle(rect: Rect, on: bool, s: f32) {
+/// the mode can't hide, dark like the orders dock otherwise. Locked on, it
+/// wears a bar under the chain, as a locked Shift key does.
+fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
+    use crate::input::QueueToggle;
+    let on = toggle != QueueToggle::Off;
     let glyph = if on { SURFACE_CARD } else { TEXT_BODY };
     if on {
         fill_rect(rect, TEXT_ACCENT);
@@ -419,6 +424,14 @@ fn draw_queue_toggle(rect: Rect, on: bool, s: f32) {
     line_between(points[1], points[2], 2.0 * s, glyph);
     for point in points {
         crate::render::prim::fill_circle(point, 3.5 * s, glyph);
+    }
+    if toggle == QueueToggle::Locked {
+        line_between(
+            c + vec2(-11.0, 13.0) * s,
+            c + vec2(11.0, 13.0) * s,
+            2.0 * s,
+            glyph,
+        );
     }
 }
 

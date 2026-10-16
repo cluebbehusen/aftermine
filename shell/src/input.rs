@@ -250,8 +250,8 @@ pub struct InputState {
     pub(crate) touches: Vec<(u64, TouchPoint)>,
     /// Wall-clock stamp of the last completed tap, for double-taps.
     pub(crate) last_tap: Option<(f64, macroquad::prelude::Vec2)>,
-    /// The QUEUE toggle: touch's sticky stand-in for a held Shift.
-    pub(crate) queue_toggle: bool,
+    /// The QUEUE toggle: touch's stand-in for a held Shift.
+    pub(crate) queue_toggle: QueueToggle,
     /// The live two-finger gesture, if two fingers are down.
     pub(crate) pair: Option<Pair>,
     /// The menu button was pressed this frame. Input cannot switch
@@ -274,6 +274,26 @@ pub(crate) struct Placement {
     /// Whether this placement has staged a build. Letting go of queue then
     /// ends it: the next plain build would replace the chain just queued.
     placed: bool,
+}
+
+/// The QUEUE toggle, which works like the iPad's Shift key.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum QueueToggle {
+    Off,
+    /// On for the action at hand, since the wall-clock `at`.
+    Latched {
+        at: f64,
+    },
+    /// On until tapped off.
+    Locked,
+}
+
+/// What a latched QUEUE's action could have changed during an input step.
+pub(crate) struct LatchProbe {
+    armed: bool,
+    staged: usize,
+    units: Vec<UnitId>,
+    buildings: Vec<oxide_sim::BuildingId>,
 }
 
 /// A live drag-to-place stroke: the anchors stamped so far, used to avoid
@@ -739,7 +759,7 @@ impl InputState {
             touch_prefs: crate::config::TouchPrefs::default(),
             touches: Vec::new(),
             last_tap: None,
-            queue_toggle: false,
+            queue_toggle: QueueToggle::Off,
             pair: None,
             menu_requested: false,
             bookmarks: [None; 4],
@@ -909,7 +929,7 @@ impl InputState {
         self.build_category = None;
         self.touches.clear();
         self.last_tap = None;
-        self.queue_toggle = false;
+        self.queue_toggle = QueueToggle::Off;
         self.pair = None;
         self.menu_requested = false;
     }
@@ -929,7 +949,7 @@ impl InputState {
     /// keep an armed mode for another target: a held Shift on a
     /// keyboard, the sticky QUEUE toggle on touch.
     pub(crate) fn queue_held(&self) -> bool {
-        self.queue_toggle || self.resolver.shift_held()
+        self.queue_toggle != QueueToggle::Off || self.resolver.shift_held()
     }
 
     /// Each control group's live own-unit count. Dead ids linger in a
@@ -1009,9 +1029,50 @@ impl InputState {
             .map(|slot| slot.fit::<u8>() + 1)
     }
 
-    /// Flips the QUEUE toggle.
+    /// A tap on QUEUE, as on the iPad's Shift key: off latches it for the
+    /// action at hand, a second tap inside the double-tap window locks it,
+    /// and any later tap turns it off.
     pub(crate) fn toggle_queue(&mut self) {
-        self.queue_toggle = !self.queue_toggle;
+        self.queue_toggle = match self.queue_toggle {
+            QueueToggle::Off => QueueToggle::Latched { at: self.now },
+            QueueToggle::Latched { at }
+                if (self.now - at) * 1000.0 < f64::from(self.touch_prefs.double_tap_ms) =>
+            {
+                QueueToggle::Locked
+            }
+            QueueToggle::Latched { .. } | QueueToggle::Locked => QueueToggle::Off,
+        };
+    }
+
+    /// What an input step may change that finishes a latched QUEUE's action,
+    /// taken only while QUEUE is latched, so ordinary input copies nothing.
+    pub(crate) fn latch_probe(&self, game: &Game) -> Option<LatchProbe> {
+        matches!(self.queue_toggle, QueueToggle::Latched { .. }).then(|| LatchProbe {
+            armed: self.armed_mode().is_some(),
+            staged: game.pending.len(),
+            units: game.presentation.selection.units.clone(),
+            buildings: game.presentation.selection.buildings.clone(),
+        })
+    }
+
+    /// A latched QUEUE covers one action. While a mode is armed that is the
+    /// whole mode, a placement chain or a patrol route, so it lets go when
+    /// the mode ends; otherwise it is the next order or selection change.
+    pub(crate) fn settle_latch(&mut self, game: &Game, before: Option<&LatchProbe>) {
+        let Some(before) = before else {
+            return;
+        };
+        if !matches!(self.queue_toggle, QueueToggle::Latched { .. }) {
+            return;
+        }
+        let armed = self.armed_mode().is_some();
+        let selection = &game.presentation.selection;
+        let acted = game.pending.len() != before.staged
+            || selection.units != before.units
+            || selection.buildings != before.buildings;
+        if !armed && (before.armed || acted) {
+            self.queue_toggle = QueueToggle::Off;
+        }
     }
 
     /// Consumes this frame's menu-button press, if any.
@@ -1476,7 +1537,9 @@ pub fn apply_events(
             relayout(game, input);
         }
         let queued = input.queue_held();
+        let probe = input.latch_probe(game);
         apply_event(game, input, bindings, event);
+        input.settle_latch(game, probe.as_ref());
         if queued && !input.queue_held() {
             input.queue_released();
         }

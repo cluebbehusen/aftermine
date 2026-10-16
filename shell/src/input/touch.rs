@@ -493,6 +493,13 @@ fn world_tap(game: &mut Game, input: &mut InputState, p: Vec2, double: bool) {
 /// inspects (tap-select), on ground it issues the context order for
 /// the current selection, exactly like a right-click.
 pub fn update_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action::BindingMap) {
+    let probe = input.latch_probe(game);
+    held_touch(game, input, bindings);
+    input.settle_latch(game, probe.as_ref());
+}
+
+/// What a resting finger or pair does as time passes.
+fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action::BindingMap) {
     // A pair emits no events while it rests either, so its box claim
     // rides the same clock.
     if let Some(pair) = &mut input.pair

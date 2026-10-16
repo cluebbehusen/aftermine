@@ -461,9 +461,14 @@ ghost, so no ghost outlives its mode. The mouse's hover preview draws only while
 the mouse is the last pointer. While placement or a patrol route is armed, a
 world finger never long-presses; other armed verbs stand down for a long-press
 as they do for a right-click. `InputState::queue_held` merges Shift with the
-sticky QUEUE toggle that touch-only builds show. Letting go of either after a
-placement has staged a build ends placement, so the next click selects instead
-of replacing the chain just queued; a live stroke still settles at its release.
+QUEUE toggle that touch-only builds show, which works like the iPad's Shift key:
+a tap latches it for the action at hand, a double-tap locks it, and a later tap
+turns it off. Latched, it lasts as long as an armed mode, a whole placement
+chain or patrol route, and otherwise the next order or selection change; the
+check runs after every input event and after the long-press timer. Letting go of
+either after a placement has staged a build ends placement, so the next click
+selects instead of replacing the chain just queued; a live stroke still settles
+at its release.
 
 A right-click with only scouts selected issues Scout to the clicked tile, enemy
 or ground, after the transport boarding check; Run is the deliberate way to send
@@ -490,7 +495,7 @@ unreachable doorstep refuses tints red too. The QUEUE toggle
 a selected unit or QUEUE is on. It sits over the panel's left corner in the
 orders dock's column, and the dock rises to stack above it, so queueing orders
 never moves the toggle. `ribbon_row_press` hit-tests both before every other
-target: the toggle flips QUEUE and the ribbon cancels its mode. The build
+target: the toggle takes its tap and the ribbon cancels its mode. The build
 palette's Back card (`CardAction::ClosePalette`) stands in its own column at the
 band's left edge and leaves construction in one press. The orders dock and its
 Stop button stay stacked above the palette's left corner, so a builder's queued
