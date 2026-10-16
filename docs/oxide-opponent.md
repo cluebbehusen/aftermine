@@ -75,7 +75,9 @@ the running total and mission state.
   Production capacity comes from the income working producers leave unspent
   while their army roles have need, and producers queue far enough to stay busy
   until the next decision. Small stocks such as carriers and Sappers draw on the
-  producers the army leaves, and never add one.
+  producers the army leaves, and never add one. The exception is a seat whose
+  ground reaches no enemy: carriers are its army's only way there, so they train
+  first.
 - The top investment is funded through its next purchasable step. The bot keeps
   one optional saving target with its price, reason and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
@@ -137,11 +139,14 @@ attempt.
 Checkpoints preserve all non-derivable state that affects future decisions. No
 other non-derivable state persists between decisions:
 
-- memory of enemy units and buildings, of failed objectives, and of own units
-  whose orders stalled for want of a route or a firing position;
-- missions and their phases;
-- the investment list and saving target;
-- the previous bank and spending used to estimate income;
+- memory of enemy units and buildings, of failed objectives, of raided targets,
+  of when each scouting point was last in sight, and of own units whose orders
+  stalled for want of a route or a firing position;
+- missions and their phases, and since when a free army that could attack has
+  waited, which lowers the margin an attack must bring;
+- the saving target; the investment list is rebuilt each decision;
+- the previous bank and spending used to estimate income, and the smoothed
+  estimate;
 - the position of any random stream;
 - the pending own-event buffer.
 
@@ -152,24 +157,26 @@ checkpoint field needs a design review.
 ## Own events
 
 The host session keeps each seat's own `OrderStalled` and `CommandRejected`
-events in a bounded, ordered buffer and passes it with the observation. It keeps
-one stall per unit and reason and one rejection per reason; when it is full, the
-oldest event is dropped. The buffer is saved with checkpoints. A background
-decision reads it without draining it; events are consumed when that decision's
-result is installed. A rejection that cannot be tied unambiguously to one
-command triggers a check of the observed outcome; it never marks a particular
-purchase as failed.
+events, and every other seat's machine standing up from its cradle, in a
+bounded, ordered buffer and passes it with the observation. A cradle is public
+once its crew starts, so every seat learns where its machine stands. The buffer
+keeps one stall per unit and reason and one rejection per reason; when it is
+full, the oldest event is dropped. The buffer is saved with checkpoints. A
+background decision reads it without draining it; events are consumed when that
+decision's result is installed. A rejection that cannot be tied unambiguously to
+one command triggers a check of the observed outcome; it never marks a
+particular purchase as failed.
 
 ## Map knowledge
 
 The simulation paths units itself, so the bot needs map knowledge only for
 reachability, distance, placement and danger. It builds a small static model
-once per match (ground-connected components, a region graph, distance fields
-from home and enemy starts, candidate sites, and the narrow passages every
-ground way from each start to a hostile start runs through) and shares it
-between clones. Danger is coarse known weapon coverage. Placement uses a
-fog-honest check over the observation. A stall or rejection triggers a re-plan
-instead of the order being proven in advance.
+once per match (ground-connected components, distance fields from home and enemy
+starts, candidate sites, and the narrow passages every ground way from each
+start to a hostile start runs through) and shares it between clones. Danger is
+coarse known weapon coverage. Placement uses a fog-honest check over the
+observation. A stall or rejection triggers a re-plan instead of the order being
+proven in advance.
 
 ## Computation
 
@@ -193,14 +200,14 @@ Each behavior is proven by a staged scenario test.
 | Enemy Airworks seen                                        | Raise the anti-air need before enemy air arrives                                                                                                      |
 | Ground threat at base or expansion                         | Defend                                                                                                                                                |
 | Air raid on base or expansion                              | Defend with anti-air or fighters                                                                                                                      |
-| Richer economy than the enemy                              | Build toward larger attacks, ground and air                                                                                                           |
+| Richer economy than the enemy                              | Larger attacks, ground and air, since each attack takes the whole free army                                                                           |
 | Known defenses at target or on route                       | Bring siege, or pick another target                                                                                                                   |
 | Ground-severed enemy                                       | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire |
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                          |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                       |
 | Won a defense with army left                               | Counterattack if the attack check passes                                                                                                              |
 | Enemy artillery shelling assets                            | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                  |
-| Assets under indirect fire                                 | Target visible likely spotters                                                                                                                        |
+| Assets under indirect fire                                 | Go for the guns, not the spotters overhead                                                                                                            |
 | Enemy unit mix                                             | Choose units by coarse suitability against seen enemies; anti-air that flies against enemy air that only fires at the ground                          |
 | Enemy shellfire known                                      | Point defenders in proportion to the heavy shots it fires, kept over the army                                                                         |
 | Expensive investment wanted                                | Save for it while keeping an army share                                                                                                               |
@@ -223,8 +230,9 @@ defense sized to hold off the known threat, Extractor restoration, expansion
 timing, tech prerequisites, memory of failed objectives, a response to stalled
 production, focus fire, and pulling wounded units back between fights. It does
 no other per-unit micro, except keeping point defenders over the army they
-travel with. It builds every building kind, reaches every upgrade tier, and
-trains or assembles every unit kind.
+travel with and sending a wounded Roc home from a lift's fight. It builds every
+building kind, reaches every upgrade tier, and trains or assembles every unit
+kind.
 
 ## Difficulty, stance and personality
 
