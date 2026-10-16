@@ -119,3 +119,43 @@ fn a_maw_first_seen_at_work_shows_that_work_at_once() {
     assert_eq!(idle.deploy(1.0), 0.0);
     assert_eq!(idle.loads(1.0).count(), 0);
 }
+
+#[test]
+fn the_drum_grinds_from_its_first_hit_and_falls_quiet_once_it_stops_cutting() {
+    let mut motion = MawMotion::new(0);
+    let tick = run(&mut motion, 1, 1, true, false);
+    assert_eq!(motion.grind(0.0), 0.0);
+    assert_eq!(motion.grind(1.0), 0.5, "it swells over two ticks");
+    let tick = run(&mut motion, tick, 1, true, false);
+    assert_eq!(motion.grind(1.0), 1.0);
+    let tick = run(&mut motion, tick, 30, true, true);
+    assert_eq!(motion.grind(1.0), 1.0, "it holds while the drum cuts");
+    let tick = run(&mut motion, tick, 1, false, true);
+    let fading = motion.grind(1.0);
+    assert!(fading > 0.0 && fading < 1.0, "it dies away: {fading}");
+    run(&mut motion, tick, 5, false, true);
+    assert_eq!(
+        motion.grind(1.0),
+        0.0,
+        "silent once it stops cutting, though the kiln still feeds"
+    );
+    assert_eq!(MawMotion::settled(0, true, false).grind(0.0), 1.0);
+    assert_eq!(MawMotion::settled(0, false, true).grind(0.0), 0.0);
+}
+
+#[test]
+fn the_belt_speed_eases_up_and_runs_on_until_its_last_load_is_in() {
+    let mut motion = MawMotion::new(0);
+    assert_eq!(motion.belt_speed(1.0), 0.0);
+    let tick = run(&mut motion, 1, 1, false, true);
+    let starting = motion.belt_speed(1.0);
+    assert!(starting > 0.0 && starting < 1.0, "it eases up: {starting}");
+    assert!(motion.belt_speed(0.5) < starting, "and between ticks");
+    let tick = run(&mut motion, tick, 40, false, true);
+    assert_eq!(motion.belt_speed(1.0), 1.0);
+    let tick = run(&mut motion, tick, 20, false, false);
+    assert_eq!(motion.belt_speed(1.0), 1.0, "it runs on while it carries");
+    run(&mut motion, tick, 60, false, false);
+    assert_eq!(motion.belt_speed(1.0), 0.0);
+    assert_eq!(MawMotion::settled(0, false, true).belt_speed(0.0), 1.0);
+}

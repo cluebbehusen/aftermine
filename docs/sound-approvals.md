@@ -122,3 +122,23 @@ launch is a clamp letting go into a hiss; each dock is a short hiss and a latch.
 The bay's cues sound at its host only where the viewer sees it. The launch's
 half-second repetition limit gives a bay's launch one cue for all its drones,
 and drones that dock together share one.
+
+## Maw
+
+Approved by Connor by ear on 2026-10-16 from a second audition of six loops per
+voice, each laid over native footage and faded with the work. The drum and kiln
+run continuously, so each is a four-second loop that fades in and out with the
+work rather than a repeated bite. The cut is a ring-modulated saw drone on D
+that sags slightly under load; the kiln is a warm D and A hum with sparse
+crackles.
+
+| Production clip | Duration | Mixer gain | SHA-256                                                            |
+| --------------- | -------- | ---------- | ------------------------------------------------------------------ |
+| `maw_cut.wav`   | 4.00 s   | 0.264      | `39815e65e830e5361bcfa9114e32aa625c75d9771ae93666b7da9d96d6c20265` |
+| `maw_kiln.wav`  | 4.00 s   | 0.211      | `53e12faa1a96a3c43fc5e71dadeaf19750a86d4534cef632b0687b6a1bf8c92b` |
+
+The cut swells over two ticks from the drum's first hit, holds while the drum
+cuts, and dies away over five ticks once eight pass without a hit. The kiln's
+hum follows the belt's speed: it eases up as the belt starts and runs on until
+the last load reaches the kiln. Both sound only where the viewer sees the Maw,
+and the Maw's hits make no report of their own.

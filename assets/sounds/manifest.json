@@ -318,6 +318,24 @@
       "paired_animation": null
     },
     {
+      "category": "machine-loop",
+      "filename": "maw_cut.wav",
+      "looped": true,
+      "min_gap": 0.2,
+      "mixer_volume": 0.264,
+      "name": "maw_cut",
+      "paired_animation": null
+    },
+    {
+      "category": "machine-loop",
+      "filename": "maw_kiln.wav",
+      "looped": true,
+      "min_gap": 0.2,
+      "mixer_volume": 0.211,
+      "name": "maw_kiln",
+      "paired_animation": null
+    },
+    {
       "category": "signature-weapon",
       "filename": "attack_bombard.wav",
       "min_gap": 0.2,

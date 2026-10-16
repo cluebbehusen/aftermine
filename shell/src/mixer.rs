@@ -111,6 +111,8 @@ pub(crate) const fn spec(kind: SoundKind) -> SoundSpec {
         SoundKind::Interception => row("interception", Effects, Heavy, true, true),
         SoundKind::WarheadMotor => row("warhead_flight", Effects, Heavy, true, false),
         SoundKind::InterceptorMotor => row("interceptor_flight", Effects, Standard, true, false),
+        SoundKind::MawCut => row("maw_cut", Effects, Standard, true, false),
+        SoundKind::MawKiln => row("maw_kiln", Effects, Detail, false, false),
     }
 }
 
@@ -167,6 +169,8 @@ pub(crate) struct Mixer {
         crate::strike_audio::StrikeLoops<{ crate::strike_audio::WARHEAD_VOICES }>,
     pub(crate) interceptor_loops:
         crate::strike_audio::StrikeLoops<{ crate::strike_audio::INTERCEPTOR_VOICES }>,
+    pub(crate) maw_cut_loops: crate::maw_audio::MawLoops,
+    pub(crate) maw_kiln_loops: crate::maw_audio::MawLoops,
     last_played: std::collections::HashMap<SoundKind, f64>,
     /// Alternates the basic zap between two clips so volleys read as
     /// many guns, not one sample looping.

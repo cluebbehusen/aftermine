@@ -1529,6 +1529,11 @@ fn approved_combatants_use_their_own_reports() {
     );
     assert_eq!(unit_fire_sound(UnitKind::Roc).unwrap(), SoundKind::RocFire);
     assert_eq!(
+        unit_fire_sound(UnitKind::Maw),
+        None,
+        "the Maw's drum is heard as a loop"
+    );
+    assert_eq!(
         unit_fire_sound(UnitKind::Drone).unwrap(),
         SoundKind::DroneFire
     );

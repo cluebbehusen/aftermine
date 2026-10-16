@@ -367,6 +367,10 @@ chassis::listed_enum! {
         WarheadMotor,
         /// An interceptor's motor while it climbs.
         InterceptorMotor,
+        /// A Maw's drum while it cuts.
+        MawCut,
+        /// A Maw's kiln while its belt carries wreck.
+        MawKiln,
     }
 }
 
@@ -488,9 +492,12 @@ fn unit_shot_origin(kind: oxide_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
     origin
 }
 
-/// The report a unit's weapon makes; an unarmed kind makes none.
+/// The report a unit's weapon makes; an unarmed kind, or one whose work is
+/// heard as a loop, makes none.
 fn unit_fire_sound(kind: oxide_sim::UnitKind) -> Option<SoundKind> {
-    crate::look::unit(kind).weapon.map(|weapon| weapon.sound)
+    crate::look::unit(kind)
+        .weapon
+        .and_then(|weapon| weapon.sound)
 }
 
 fn shell_fire_sound(shooter: oxide_sim::Target) -> SoundKind {

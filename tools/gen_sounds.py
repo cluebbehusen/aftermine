@@ -53,6 +53,7 @@ SFX_CATEGORY_BUDGETS = {
     "generic-weapon": (0.6, 0.50),
     "signature-weapon": (1.5, 0.50),
     "propulsion-loop": (4.0, 0.50),
+    "machine-loop": (4.0, 0.50),
     "destruction": (1.5, 0.50),
     "result": (3.0, 0.50),
     # The Spire's launch, warning, and detonation are rare, map-wide events
@@ -157,6 +158,8 @@ SFX_METADATA = (
     ("interception", "signature-weapon", 0.68, 0.20, None),
     ("warhead_flight", "propulsion-loop", 0.35, 0.20, None),
     ("interceptor_flight", "propulsion-loop", 0.30, 0.20, None),
+    ("maw_cut", "machine-loop", 0.264, 0.20, None),
+    ("maw_kiln", "machine-loop", 0.211, 0.20, None),
     (
         "attack_bombard",
         "signature-weapon",
@@ -242,6 +245,8 @@ EXPECTED_SFX_SHA256 = {
     "interception.wav": "d2c2412d0567d65108ce1096880ef576fde7029706ee36fd65ec7e77cb350293",
     "warhead_flight.wav": "b85c23aae2abfb1fc247c7e7e6998dcef0d4b71575057333b604aa7f6334f9c2",
     "interceptor_flight.wav": "077aab9f1523779c6ae787fef587eef67dc7dff11da3ca168eef4528f5d2f1c1",
+    "maw_cut.wav": "39815e65e830e5361bcfa9114e32aa625c75d9771ae93666b7da9d96d6c20265",
+    "maw_kiln.wav": "53e12faa1a96a3c43fc5e71dadeaf19750a86d4534cef632b0687b6a1bf8c92b",
 }
 SFX_ROUNDED_PCM = {
     "avalanche_launch",
@@ -255,7 +260,13 @@ SFX_ROUNDED_PCM = {
     "warhead_flight",
     "interceptor_flight",
 }
-SFX_LOOP_NAMES = {"avalanche_motor", "warhead_flight", "interceptor_flight"}
+SFX_LOOP_NAMES = {
+    "avalanche_motor",
+    "warhead_flight",
+    "interceptor_flight",
+    "maw_cut",
+    "maw_kiln",
+}
 SFX_META_BY_NAME = {row[0]: row for row in SFX_METADATA}
 
 
@@ -332,17 +343,17 @@ def validate_sfx_wav(name: str, data: bytes) -> dict[str, float]:
     if name in SFX_LOOP_NAMES:
         if frame_count != 4 * SFX_RATE:
             raise ValueError(
-                f"{name}: propulsion loop must contain exactly four seconds"
+                f"{name}: a loop must contain exactly four seconds"
             )
         if abs(float(normalized[0] - normalized[-1])) > 0.001:
-            raise ValueError(f"{name}: propulsion loop seam exceeds 0.001")
+            raise ValueError(f"{name}: loop seam exceeds 0.001")
         rms = float(np.sqrt(np.mean(normalized**2)))
         if rms > 0.16 or peak > 0.5:
             raise ValueError(
-                f"{name}: propulsion level exceeds the compact motor budget"
+                f"{name}: loop level exceeds the compact motor budget"
             )
         if audible < 0.98:
-            raise ValueError(f"{name}: propulsion has excessive low-frequency energy")
+            raise ValueError(f"{name}: loop has excessive low-frequency energy")
     return {
         "duration": duration,
         "peak": peak,
@@ -1708,6 +1719,105 @@ def sfx_interceptor_flight() -> np.ndarray:
     )
 
 
+# A machine's working loops repeat every four seconds: every tone, wobble
+# and tooth train closes a whole number of cycles in that span, and every
+# filter runs to its periodic steady state, so the loop has no seam.
+MACHINE_LOOP_SECONDS = 4.0
+MACHINE_LOOP_FRAMES = int(MACHINE_LOOP_SECONDS * SFX_RATE)
+
+
+def machine_hz(frequency: float) -> float:
+    """The nearest frequency with a whole number of cycles in the loop."""
+    return round(frequency * MACHINE_LOOP_SECONDS) / MACHINE_LOOP_SECONDS
+
+
+def machine_steady(filter_fn, samples: np.ndarray, *args) -> np.ndarray:
+    n = MACHINE_LOOP_FRAMES
+    return filter_fn(np.tile(samples, 3), *args)[n : 2 * n]
+
+
+def machine_wobble(rate: float, depth: float) -> np.ndarray:
+    t = sfx_axis(MACHINE_LOOP_FRAMES)
+    return 1 + depth * np.sin(2 * np.pi * machine_hz(rate) * t)
+
+
+def machine_teeth(rate: float, sharp: float, seed: int) -> np.ndarray:
+    """A train of tooth strikes of uneven weight."""
+    t = sfx_axis(MACHINE_LOOP_FRAMES)
+    count = int(round(rate * MACHINE_LOOP_SECONDS))
+    phase = (t * rate) % 1.0
+    index = np.floor(t * rate).astype(int) % count
+    weight = np.random.default_rng(seed).uniform(1 - 0.4, 1.0, count)
+    return weight[index] * (1 - np.exp(-phase * 60.0)) * np.exp(-sharp * phase)
+
+
+def machine_crackle(
+    rate: float, seed: int, low: float, high: float, length: float, sharp: float
+) -> np.ndarray:
+    """Short noise ticks at random places around the loop."""
+    n_loop = MACHINE_LOOP_FRAMES
+    rng = np.random.default_rng(seed)
+    out = np.zeros(n_loop)
+    count = int(rate * MACHINE_LOOP_SECONDS)
+    n = int(length * SFX_RATE)
+    burst = sfx_bandpass(sfx_noise(n * 4, seed), low, high)[n : 2 * n]
+    burst = burst * sfx_decay(n, sharp)
+    places = rng.uniform(0, n_loop, count).astype(int)
+    gains = rng.uniform(0.3, 1.0, count)
+    for at, gain in zip(places, gains):
+        out[(at + np.arange(n)) % n_loop] += burst * gain
+    return out
+
+
+def machine_unit(samples: np.ndarray) -> np.ndarray:
+    return samples / np.sqrt(np.mean(samples**2))
+
+
+def machine_loop(
+    samples: np.ndarray, highpass: float, bits: int = 10, hold: int = 2
+) -> np.ndarray:
+    """A loop at the motors' compact level, rolled to a quiet boundary."""
+    samples = machine_unit(machine_steady(sfx_highpass, samples, highpass, 2))
+    # Rounds off rare peaks so every loop reaches the same compact level.
+    samples = 3.2 * np.tanh(samples / 3.2)
+    samples = samples / np.max(np.abs(samples)) * 0.9
+    samples = sfx_crush(samples, bits, hold)
+    samples = machine_steady(sfx_highpass, samples, highpass * 0.8, 1)
+    samples = samples - samples.mean()
+    samples = samples * 0.5 / np.max(np.abs(samples))
+    samples *= min(1.0, 0.145 / np.sqrt(np.mean(samples**2)))
+    boundary = np.argmin(np.abs(samples) + np.abs(np.roll(samples, 1)))
+    return np.roll(samples, -boundary)
+
+
+def sfx_maw_cut() -> np.ndarray:
+    # The Maw's drum while it cuts: a ring-modulated saw drone on D that
+    # sags slightly under load, roughened by teeth far too fast to hear
+    # apart.
+    n = MACHINE_LOOP_FRAMES
+    voice = 0.7 * sfx_saw(np.full(n, 293.75) * machine_wobble(0.5, 0.012))
+    voice = voice + 0.3 * sfx_saw(np.full(n, machine_hz(588.5)))
+    voice = sfx_ringmod(voice, 587.25, 0.5)
+    voice = machine_steady(sfx_lowpass, voice, 3400.0)
+    grit = rocket_noise(MACHINE_LOOP_SECONDS, 85201, 900, 4200)
+    grit = grit * machine_teeth(22.0, 5.0, 85202)
+    return machine_loop(machine_unit(voice) + 0.3 * machine_unit(grit), highpass=190)
+
+
+def sfx_maw_kiln() -> np.ndarray:
+    # The Maw's kiln while its belt carries wreck: a warm D and A hum, the
+    # A a slow beat, with sparse crackles.
+    n = MACHINE_LOOP_FRAMES
+    hum = sfx_softsquare(np.full(n, 293.75), 1.6)
+    hum = hum + 0.6 * sfx_softsquare(np.full(n, 440.0), 1.6)
+    hum = hum + 0.6 * sfx_softsquare(np.full(n, 440.5), 1.6)
+    hum = machine_steady(sfx_lowpass, hum, 1800.0)
+    crackle = machine_crackle(6.0, 86301, 2200.0, 7500.0, 0.003, 2.0)
+    return machine_loop(
+        machine_unit(hum) + 0.8 * machine_unit(crackle), highpass=200, bits=11
+    )
+
+
 SFX_BUILDERS = {
     "piledriver_fold": sfx_piledriver_fold,
     "piledriver_deploy": sfx_piledriver_deploy,
@@ -1748,6 +1858,8 @@ SFX_BUILDERS = {
     "interception": sfx_interception,
     "warhead_flight": sfx_warhead_flight,
     "interceptor_flight": sfx_interceptor_flight,
+    "maw_cut": sfx_maw_cut,
+    "maw_kiln": sfx_maw_kiln,
     "attack_bombard": sfx_bombard,
     "attack_bastion": sfx_bastion,
     "artillery_launch": sfx_artillery_launch,

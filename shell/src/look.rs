@@ -95,8 +95,9 @@ pub(crate) const SMALL_AIRFRAME: Airframe = Airframe {
 /// How a unit's weapon reports.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct WeaponLook {
-    /// The report heard when it fires.
-    pub(crate) sound: SoundKind,
+    /// The report heard when it fires; none for a tool whose work is heard
+    /// as a loop instead.
+    pub(crate) sound: Option<SoundKind>,
     /// The direct-fire report drawn, and where the muzzle sits along the
     /// shot in tiles. Shells and charges draw their own way.
     pub(crate) shot: Option<(ShotStyle, f32)>,
@@ -162,13 +163,16 @@ pub(crate) fn fires(kind: UnitKind, payload: oxide_sim::ProjectileKind) -> bool 
 
 fn weapon(sound: SoundKind, shot: ShotStyle, muzzle: f32) -> WeaponLook {
     WeaponLook {
-        sound,
+        sound: Some(sound),
         shot: Some((shot, muzzle)),
     }
 }
 
 fn launcher(sound: SoundKind) -> WeaponLook {
-    WeaponLook { sound, shot: None }
+    WeaponLook {
+        sound: Some(sound),
+        shot: None,
+    }
 }
 
 fn rotor(hull_turn: f32) -> Gait {
@@ -382,12 +386,12 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             extent: 182.0 / 256.0,
             gait: Gait::Treads,
             // No shared belts: its rig draws its own treads on the same
-            // odometer and mechanics (`render::maw`).
-            weapon: Some(weapon(
-                SoundKind::ScuttlerFire,
-                ShotStyle::Contact,
-                GROUND_MUZZLE,
-            )),
+            // odometer and mechanics (`render::maw`). Its drum is heard as
+            // one loop while it cuts (`crate::maw_audio`), never per hit.
+            weapon: Some(WeaponLook {
+                sound: None,
+                shot: Some((ShotStyle::Contact, GROUND_MUZZLE)),
+            }),
             marker: M::Demolition,
             ..plain
         },
