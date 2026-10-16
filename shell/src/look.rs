@@ -403,7 +403,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             // Each gun turns on its own pivot, which the simulation
             // reports as its shot's origin.
             rig: true,
-            weapon: Some(weapon(SoundKind::BuzzardFire, kinetic, ROC_MUZZLE)),
+            weapon: Some(weapon(SoundKind::RocFire, kinetic, ROC_MUZZLE)),
             marker: M::Transport,
             ..plain
         },
@@ -413,7 +413,7 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
             gait: light_rotor(kind),
             rig: true,
             weapon: Some(weapon(
-                SoundKind::TalonFire,
+                SoundKind::DroneFire,
                 ShotStyle::ForgeSpot,
                 DRONE_MUZZLE,
             )),

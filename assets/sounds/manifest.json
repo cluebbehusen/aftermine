@@ -91,6 +91,38 @@
       "paired_animation": "38-buzzard-quad-fan-carriage-animated.gif"
     },
     {
+      "category": "generic-weapon",
+      "filename": "attack_roc.wav",
+      "min_gap": 0.1,
+      "mixer_volume": 0.3,
+      "name": "attack_roc",
+      "paired_animation": null
+    },
+    {
+      "category": "generic-weapon",
+      "filename": "attack_drone.wav",
+      "min_gap": 0.08,
+      "mixer_volume": 0.2,
+      "name": "attack_drone",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "drone_launch.wav",
+      "min_gap": 0.5,
+      "mixer_volume": 0.22,
+      "name": "drone_launch",
+      "paired_animation": null
+    },
+    {
+      "category": "signature-weapon",
+      "filename": "drone_dock.wav",
+      "min_gap": 0.12,
+      "mixer_volume": 0.22,
+      "name": "drone_dock",
+      "paired_animation": null
+    },
+    {
       "category": "signature-weapon",
       "filename": "attack_lancer.wav",
       "min_gap": 0.15,

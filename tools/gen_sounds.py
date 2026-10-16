@@ -105,6 +105,10 @@ SFX_METADATA = (
         0.10,
         "38-buzzard-quad-fan-carriage-animated.gif",
     ),
+    ("attack_roc", "generic-weapon", 0.30, 0.10, None),
+    ("attack_drone", "generic-weapon", 0.20, 0.08, None),
+    ("drone_launch", "signature-weapon", 0.22, 0.50, None),
+    ("drone_dock", "signature-weapon", 0.22, 0.12, None),
     (
         "attack_lancer",
         "signature-weapon",
@@ -210,6 +214,10 @@ EXPECTED_SFX_SHA256 = {
     "attack_scuttler.wav": "8ec9947be252a33d3b07955d3d0b76e840f7837cc74204882b0c167c7667f686",
     "attack_sentinel.wav": "2c72d99ac0ee6cca8c9e9a54e34ad0262fc69731e3d00e378f5b0ea93e352df1",
     "attack_talon.wav": "b0ef6f653c04484795e87cd880448d0035e78adc1ef19b38473fcae92580fbde",
+    "attack_roc.wav": "3c1b0a6f48788eb4d27cd3ebb609f6149ed242b27ea66040b9663091bb36e497",
+    "attack_drone.wav": "64b9d387a2f8d6dffa81ea048cc6289c543da03a41f759a459f69a5a0a7cfcdc",
+    "drone_launch.wav": "5c95724f5dc530d351ffe485db2e76fca7098239f599ce6de8c6071bcf2eea94",
+    "drone_dock.wav": "fa9550ccb7ac33af39773ec3259038baee5cf866cffeacf674b334c68ec324f0",
     "building_boom.wav": "47445ba8778ef6badf80ae326f55ccf5a3e65dd4931c320978ef620ceaeeef12",
     "click.wav": "8d148979dc943755b924611a63317e8e48830d0f6e0fe2a5277b97dc05301da4",
     "defeat.wav": "ae70d17788e2a91f63ebac69d0c302ba30d101ec157bd2a30caddff1342a387b",
@@ -1031,6 +1039,56 @@ def sfx_buzzard() -> np.ndarray:
     return sfx_finish(sfx_slapback(result, 0.09, 1, 0.25), highpass=70, peak=0.88)
 
 
+def sfx_roc() -> np.ndarray:
+    # Both guns fire on the same tick, so one report stands for the volley;
+    # its echo comes off the ground below the gunship.
+    shot = sfx_zap(
+        8241, 760.0, 170.0, 0.13, thump=0.75, snap=0.4, sync_gain=0.45, sharp=5.2
+    )
+    echoed = sfx_slapback(sfx_crush(shot, 10, 2), 0.07, 1, 0.3)
+    return sfx_finish(sfx_crush(echoed, 10, 2), highpass=85, peak=0.87)
+
+
+def sfx_drone() -> np.ndarray:
+    shot = sfx_zap(8411, 2350.0, 880.0, 0.05, thump=0.15, snap=0.2, sync_gain=0.3)
+    return sfx_finish(sfx_crush(shot, 10, 2), highpass=200, peak=0.8)
+
+
+def sfx_clamp(
+    pitch: float, seconds: float, sharp: float = 9.0, index: float = 1.6
+) -> np.ndarray:
+    """A small FM clank, the sound of a clamp closing or letting go."""
+    n = int(seconds * SFX_RATE)
+    phase = 2 * np.pi * pitch * sfx_axis(n)
+    return np.sin(phase + index * np.sin(phase * 2.96)) * sfx_decay(n, sharp)
+
+
+def sfx_hiss(
+    seconds: float, seed: int, low: float, high: float, sharp: float
+) -> np.ndarray:
+    n = int(seconds * SFX_RATE)
+    return sfx_bandpass(sfx_noise(n, seed), low, high) * sfx_decay(n, sharp)
+
+
+def sfx_drone_launch() -> np.ndarray:
+    # The bay's clamps let go and vent once for the whole launch.
+    canvas = SfxCanvas(0.4)
+    canvas.add(sfx_clamp(440.0, 0.06, sharp=10.0), 0.0, 0.6)
+    canvas.add(
+        sfx_attack(sfx_hiss(0.32, 8311, 1400.0, 7000.0, sharp=4.0), 3.0), 0.01, 0.75
+    )
+    return sfx_finish(sfx_crush(canvas.output(), 10, 2), highpass=150, peak=0.8)
+
+
+def sfx_drone_dock() -> np.ndarray:
+    canvas = SfxCanvas(0.14)
+    canvas.add(
+        sfx_attack(sfx_hiss(0.07, 8312, 1800.0, 7000.0, sharp=6.0), 2.0), 0.0, 0.5
+    )
+    canvas.add(sfx_clamp(587.33, 0.07, sharp=10.0), 0.045, 0.75)
+    return sfx_finish(sfx_crush(canvas.output(), 10, 2), highpass=160, peak=0.78)
+
+
 def sfx_lancer() -> np.ndarray:
     result = sfx_crush(
         sfx_zap(
@@ -1666,6 +1724,10 @@ SFX_BUILDERS = {
     "attack_sentinel": sfx_sentinel,
     "attack_talon": sfx_talon,
     "attack_buzzard": sfx_buzzard,
+    "attack_roc": sfx_roc,
+    "attack_drone": sfx_drone,
+    "drone_launch": sfx_drone_launch,
+    "drone_dock": sfx_drone_dock,
     "attack_lancer": sfx_lancer,
     "attack_scuttler": sfx_scuttler,
     "attack_flakhound": sfx_flakhound,

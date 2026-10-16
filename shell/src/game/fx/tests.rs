@@ -663,6 +663,53 @@ fn scheduled_crash_uses_sim_time_and_restores_after_a_seek() {
 }
 
 #[test]
+fn a_roc_s_bay_sounds_only_where_its_host_is_seen() {
+    let roc = |player, x, y| oxide_sim::scenario::UnitSpec {
+        player,
+        kind: UnitKind::Roc,
+        x,
+        y,
+    };
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.units = vec![roc(0, 4, 4), roc(1, 6, 4), roc(1, 30, 18)];
+    let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    let [own, seen, hidden] = [0, 1, 2].map(|index| game.state.units()[index].clone());
+    let vision = game.state.vision(oxide_sim::PlayerId(0));
+    assert!(
+        vision.sees_unit(&seen),
+        "premise: the near rival is in sight"
+    );
+    assert!(!vision.sees_unit(&hidden), "premise: the far rival is not");
+    for (host, heard) in [(&own, true), (&seen, true), (&hidden, false)] {
+        game.presentation.sounds_pending.clear();
+        game.presentation.spawn_fx(
+            &game.state,
+            &[
+                Event::DroneLaunched {
+                    host: host.id,
+                    drone: UnitId(98),
+                    player: host.player,
+                },
+                Event::DroneDocked {
+                    host: host.id,
+                    drone: UnitId(99),
+                    player: host.player,
+                },
+            ],
+        );
+        let expected = if heard {
+            vec![
+                (SoundKind::DroneLaunch, Some(world_vec(host.pos))),
+                (SoundKind::DroneDock, Some(world_vec(host.pos))),
+            ]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(game.presentation.sounds_pending, expected, "{:?}", host.id);
+    }
+}
+
+#[test]
 fn hidden_casualty_does_not_reveal_art_or_audio() {
     let mut game =
         Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
@@ -1479,6 +1526,11 @@ fn approved_combatants_use_their_own_reports() {
     assert_eq!(
         unit_fire_sound(UnitKind::Talon).unwrap(),
         SoundKind::TalonFire
+    );
+    assert_eq!(unit_fire_sound(UnitKind::Roc).unwrap(), SoundKind::RocFire);
+    assert_eq!(
+        unit_fire_sound(UnitKind::Drone).unwrap(),
+        SoundKind::DroneFire
     );
     assert_eq!(
         defense_report(BuildingKind::FlakTurret).sound,

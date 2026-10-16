@@ -314,6 +314,14 @@ chassis::listed_enum! {
         BuzzardFire,
         /// A Talon's interceptor burst.
         TalonFire,
+        /// A Roc's volley: both guns fire on the same tick.
+        RocFire,
+        /// A drone's needle shot.
+        DroneFire,
+        /// A Roc's bay letting its drones go.
+        DroneLaunch,
+        /// A drone clamping home in its bay.
+        DroneDock,
         /// A Bastion's emplaced artillery report.
         BastionFire,
         /// A Flak Turret's paired-yoke burst.
@@ -1504,6 +1512,23 @@ impl Presentation {
                     } else if state.hostile(self.human, *player) {
                         self.raise_cradle_alert(world_vec(*pos), *kind);
                         self.toast(format!("Enemy {name} has rolled out"));
+                    }
+                }
+                // A bay is heard only where its host is seen.
+                Event::DroneLaunched { host, .. } | Event::DroneDocked { host, .. } => {
+                    let Some(host) = state.unit(*host) else {
+                        continue;
+                    };
+                    if host.player == self.human
+                        || self.all_seeing()
+                        || state.vision(self.human).sees_unit(host)
+                    {
+                        let sound = if matches!(event, Event::DroneLaunched { .. }) {
+                            SoundKind::DroneLaunch
+                        } else {
+                            SoundKind::DroneDock
+                        };
+                        self.sounds_pending.push((sound, Some(world_vec(host.pos))));
                     }
                 }
                 Event::UnitTrained { unit, player, .. } if *player == self.human => {

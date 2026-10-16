@@ -103,3 +103,22 @@ The report and impact retain their approved PCM bytes. Anchor clips retain their
 approved PCM bytes and use the quieter manifest gains. Visible anchor direction
 changes trigger setup and folding once; the impact follows the cosmetic round's
 arrival on the simulation presentation clock. Seeking discards pending impacts.
+
+## Roc and drones
+
+Approved by Connor by ear on 2026-10-15 from an audition of six options per
+voice, each laid over native footage at the ticks its event fires. Both Roc guns
+fire on the same tick, so one report stands for the volley: a heavy zap with one
+dark echo off the ground below. A drone's shot is a tiny high zap. The bay's
+launch is a clamp letting go into a hiss; each dock is a short hiss and a latch.
+
+| Production clip    | Duration | Mixer gain | SHA-256                                                            |
+| ------------------ | -------- | ---------- | ------------------------------------------------------------------ |
+| `attack_roc.wav`   | 0.31 s   | 0.30       | `3c1b0a6f48788eb4d27cd3ebb609f6149ed242b27ea66040b9663091bb36e497` |
+| `attack_drone.wav` | 0.11 s   | 0.20       | `64b9d387a2f8d6dffa81ea048cc6289c543da03a41f759a459f69a5a0a7cfcdc` |
+| `drone_launch.wav` | 0.40 s   | 0.22       | `5c95724f5dc530d351ffe485db2e76fca7098239f599ce6de8c6071bcf2eea94` |
+| `drone_dock.wav`   | 0.14 s   | 0.22       | `fa9550ccb7ac33af39773ec3259038baee5cf866cffeacf674b334c68ec324f0` |
+
+The bay's cues sound at its host only where the viewer sees it. The launch's
+half-second repetition limit gives a bay's launch one cue for all its drones,
+and drones that dock together share one.
