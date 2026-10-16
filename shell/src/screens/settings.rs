@@ -872,6 +872,12 @@ impl SettingsScreen {
         // included: it cancels a rebind without binding anything.
         let (back, routed) = self.back.route(events);
         let events = routed.as_slice();
+        // The strip hears the pointer only over a tab's rows. A press it
+        // armed must not outlive them: lifted unseen, its finger would
+        // keep every later finger off the tabs.
+        if self.naming.is_some() || !matches!(self.face, Face::Tab(_)) {
+            self.tabs.cancel();
+        }
         if self.naming.is_some() {
             if back {
                 sounds.push((SoundKind::Click, None));

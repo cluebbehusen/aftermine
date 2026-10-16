@@ -829,6 +829,56 @@ fn escape_outranks_a_confirm_picked_in_the_same_frame() {
 }
 
 #[test]
+fn a_tab_held_while_settings_leaves_its_tabs_never_locks_the_strip() {
+    crate::render::set_viewport(1180.0, 820.0);
+    crate::render::set_user_scale(1.0);
+    let strip = crate::tabs::rects(Tab::ALL.len());
+    let held = strip[0].center();
+    for item in [Item::ResetBindings, Item::Binding(Action::PanUp)] {
+        let mut config = Config::default();
+        let mut s = on(Tab::Controls, &config);
+        let row = s
+            .menu
+            .item_rect(index(&s, item))
+            .expect("the row opens in view")
+            .center();
+        let finger = |id: u64, at: Vec2, down: bool| {
+            if down {
+                RawEvent::TouchDown {
+                    id,
+                    x: at.x,
+                    y: at.y,
+                }
+            } else {
+                RawEvent::TouchUp {
+                    id,
+                    x: at.x,
+                    y: at.y,
+                }
+            }
+        };
+        drive(&mut s, &mut config, &[finger(1, held, true)], false);
+        drive(
+            &mut s,
+            &mut config,
+            &[finger(2, row, true), finger(2, row, false)],
+            false,
+        );
+        assert_ne!(s.face, Face::Tab(Tab::Controls), "{item:?} left the tabs");
+        // The held finger lifts while the tabs are not listening.
+        drive(&mut s, &mut config, &[finger(1, held, false)], false);
+        drive(&mut s, &mut config, &press(Key::Escape), false);
+        assert_eq!(s.face, Face::Tab(Tab::Controls));
+        drive(&mut s, &mut config, &tap(strip[1].center()), false);
+        assert_eq!(
+            s.face,
+            Face::Tab(Tab::Audio),
+            "a later finger still switches tabs after {item:?}"
+        );
+    }
+}
+
+#[test]
 fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
     for (width, height) in [(640.0, 400.0), (1180.0, 820.0), (1920.0, 1080.0)] {
         for scale in SCALES {

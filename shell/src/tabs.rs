@@ -39,6 +39,12 @@ pub(crate) struct TabStrip {
 }
 
 impl TabStrip {
+    /// Drops a half-made press, as when the screen stops routing to the
+    /// strip.
+    pub(crate) fn cancel(&mut self) {
+        self.press.cancel();
+    }
+
     /// The tab this frame clicked or tapped among `count`, and the
     /// events left for the screen.
     pub(crate) fn route(
