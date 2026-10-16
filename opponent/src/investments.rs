@@ -653,3 +653,13 @@ pub(crate) fn met(observation: &ObservationData, need: Prerequisite) -> bool {
         .iter()
         .any(|building| building.kind == need.kind && building.built && building.tier >= need.tier)
 }
+
+/// Whether the seat meets every prerequisite for building `kind`.
+pub(crate) fn buildable(observation: &ObservationData, kind: BuildingKind) -> bool {
+    kind.base_stats()
+        .construction
+        .as_ref()
+        .map_or(&[][..], |construction| construction.requires)
+        .iter()
+        .all(|need| met(observation, *need))
+}

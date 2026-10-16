@@ -182,10 +182,7 @@ fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<
         .collect();
     let mut tiles: Vec<TilePos> = marks
         .iter()
-        .flat_map(|mark| {
-            let (width, height) = mark.kind.size();
-            (0..height).flat_map(move |dy| (0..width).map(move |dx| mark.anchor.offset(dx, dy)))
-        })
+        .flat_map(|mark| crate::frame::tiles_of(mark.anchor, mark.kind.size()))
         .collect();
     tiles.sort_unstable_by_key(|tile| frame.rank(frame.home, crate::frame::doubled(*tile)));
     tiles.dedup();

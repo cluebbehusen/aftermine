@@ -1104,9 +1104,8 @@ fn standing(observation: &ObservationData, target: Objective) -> bool {
         (building.player, building.kind, building.anchor)
             == (target.owner, target.building, target.anchor)
     });
-    let (width, height) = target.building.size();
-    let seen = (0..height)
-        .any(|dy| (0..width).any(|dx| observation.visible(target.anchor.offset(dx, dy))));
+    let seen = crate::frame::tiles_of(target.anchor, target.building.size())
+        .any(|tile| observation.visible(tile));
     known || !seen
 }
 

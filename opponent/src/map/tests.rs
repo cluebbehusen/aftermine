@@ -493,7 +493,7 @@ fn working_base_distance_fields_extend_the_start_field_exactly() {
     for extra in [TilePos::new(12, 5), TilePos::new(18, 8)] {
         let starts = [home, extra];
         let extended = model.distances_from(starts.into_iter());
-        let rebuilt = distance_fields(&model.components, &starts);
+        let rebuilt = extend_distances(&model.components, &starts, None);
         for y in 0..12 {
             for x in 0..24 {
                 let tile = TilePos::new(x, y);

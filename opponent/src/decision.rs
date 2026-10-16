@@ -897,7 +897,7 @@ fn buy(
                 // the next spot, a few a decision, and a Barricade, whose
                 // spot is its own, gives the scrap back.
                 if (packed || kind == BuildingKind::Barricade)
-                    && !defenses::keeps_paths(observation, map, kind, anchor, &ledger.planned)
+                    && !placement::keeps_paths(observation, map, kind, anchor, &ledger.planned)
                 {
                     persistent.memory.fail(kind, anchor, tick);
                     tried += 1;

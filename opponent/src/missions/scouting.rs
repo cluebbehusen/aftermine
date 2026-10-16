@@ -7,7 +7,7 @@ use super::air::{self, Hazard};
 use super::{MISSION_CAP, Mission, Missions, Task, approach, mine, run};
 use crate::decision::Ledger;
 use crate::events::OwnEvent;
-use crate::frame::{HomeFrame, doubled};
+use crate::frame::{HomeFrame, doubled, tiles_of};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use chassis::grid::TilePos;
@@ -35,8 +35,7 @@ pub(crate) struct Point {
 /// their best Foundry anchor. Starts are worth most, then sites nearer an
 /// enemy than home.
 pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
-    let footprint =
-        |anchor: TilePos| (0..2).flat_map(move |dy| (0..2).map(move |dx| anchor.offset(dx, dy)));
+    let footprint = |anchor: TilePos| tiles_of(anchor, BuildingKind::Foundry.size());
     let starts = map
         .hostiles(me)
         .filter_map(|owner| map.start(owner))
@@ -231,10 +230,9 @@ pub(crate) fn look(observation: &ObservationData, map: &MapModel, memory: &mut M
     let now = observation.tick;
     let points = points(map, observation.me);
     let scouted = memory.scouted(points.len());
-    let (width, height) = BuildingKind::Foundry.size();
     for (point, seen) in points.iter().zip(scouted.iter_mut()) {
-        let visible = (0..height)
-            .any(|dy| (0..width).any(|dx| observation.visible(point.anchor.offset(dx, dy))));
+        let visible = tiles_of(point.anchor, BuildingKind::Foundry.size())
+            .any(|tile| observation.visible(tile));
         if visible {
             *seen = now;
         }
@@ -297,10 +295,8 @@ impl Goals<'_> {
     /// order that stops short guarantees a view of its goal tile alone.
     fn of(&self, air: bool) -> &[Option<TilePos>] {
         let frame = self.frame;
-        let (width, height) = BuildingKind::Foundry.size();
         let nearest = move |point: &Point| {
-            (0..height)
-                .flat_map(|dy| (0..width).map(move |dx| point.anchor.offset(dx, dy)))
+            tiles_of(point.anchor, BuildingKind::Foundry.size())
                 .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
         };
         if air {

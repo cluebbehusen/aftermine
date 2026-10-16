@@ -462,7 +462,7 @@ fn a_charge_on_its_way_closes_no_path() {
         (BuildingKind::ScuttleCharge, TilePos::new(9, 7)),
     ];
     let keeps = |planned: &[(BuildingKind, TilePos)]| {
-        defenses::keeps_paths(
+        placement::keeps_paths(
             &observation,
             &model,
             BuildingKind::Reclaimer,
@@ -492,7 +492,7 @@ fn a_foundry_ringed_shut_keeps_no_path() {
     let model = map(&scenario);
     let state = scenario.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    assert!(!defenses::keeps_paths(
+    assert!(!placement::keeps_paths(
         &observation,
         &model,
         BuildingKind::Reclaimer,
@@ -543,7 +543,7 @@ fn a_footprint_that_closes_off_a_pocket_is_refused() {
     let state = scenario.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let keeps = |anchor: TilePos| {
-        defenses::keeps_paths(&observation, &model, BuildingKind::Reclaimer, anchor, &[])
+        placement::keeps_paths(&observation, &model, BuildingKind::Reclaimer, anchor, &[])
     };
     assert!(keeps(pocket.offset(0, 2)), "the pocket still opens below");
     assert!(!keeps(pocket.offset(0, 1)), "the last side closes it");
@@ -566,7 +566,7 @@ fn a_footprint_that_takes_a_buildings_last_side_is_refused() {
     let state = scenario.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let keeps = |anchor: TilePos| {
-        defenses::keeps_paths(&observation, &model, BuildingKind::Spire, anchor, &[])
+        placement::keeps_paths(&observation, &model, BuildingKind::Spire, anchor, &[])
     };
     assert!(
         keeps(walled.offset(0, 2)),

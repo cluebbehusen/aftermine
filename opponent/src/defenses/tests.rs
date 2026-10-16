@@ -1,4 +1,6 @@
+use super::guns::raises;
 use super::*;
+use crate::frame::doubled;
 
 #[test]
 fn a_gun_holds_off_what_its_firepower_and_health_match_not_its_price() {

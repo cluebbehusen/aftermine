@@ -1087,7 +1087,7 @@ fn a_seat_does_not_wall_itself_in() {
     let state = scrapped.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
-        !defenses::keeps_paths(
+        !crate::placement::keeps_paths(
             &observation,
             &map(&scrapped),
             BuildingKind::Barricade,

@@ -95,11 +95,23 @@ pub(crate) fn doubled(tile: TilePos) -> (i64, i64) {
 
 /// A building footprint's centre in doubled coordinates.
 pub(crate) fn footprint_centre(kind: BuildingKind, anchor: TilePos) -> (i64, i64) {
-    let (width, height) = kind.size();
+    centre_of(anchor, kind.size())
+}
+
+/// The centre of the footprint of `size` at `anchor`, in doubled coordinates.
+pub(crate) fn centre_of(anchor: TilePos, (width, height): (i32, i32)) -> (i64, i64) {
     (
         i64::from(anchor.x) * 2 + i64::from(width),
         i64::from(anchor.y) * 2 + i64::from(height),
     )
+}
+
+/// The tiles of the footprint of `size` at `anchor`, a row at a time.
+pub(crate) fn tiles_of(
+    anchor: TilePos,
+    (width, height): (i32, i32),
+) -> impl Iterator<Item = TilePos> + Clone {
+    (0..height).flat_map(move |dy| (0..width).map(move |dx| anchor.offset(dx, dy)))
 }
 
 /// Chebyshev distance in tiles, rounded down, between two points in doubled
