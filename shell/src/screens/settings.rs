@@ -327,7 +327,7 @@ const CAPTURE_PROMPT: &str = "press the new chord (modifiers held count) - Escap
 /// Volume steps, low to high.
 const VOLUMES: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 /// Interface and marker scale steps, small to large.
-const SCALES: [f32; 4] = [0.75, 1.0, 1.25, 1.5];
+const SCALES: [f32; 4] = [render::MIN_USER_SCALE, 1.0, 1.25, render::MAX_USER_SCALE];
 
 impl Row {
     /// Every row, in the order its tab shows them.

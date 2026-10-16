@@ -261,6 +261,16 @@ impl Config {
         (window.0.clamp(640, 16_384), window.1.clamp(400, 16_384))
     }
 
+    /// Clamps a persisted UI scale into the range the Settings row steps
+    /// through, so the row shows the scale the chrome actually uses.
+    fn sane_ui_scale(scale: f32) -> f32 {
+        if scale.is_finite() {
+            scale.clamp(crate::render::MIN_USER_SCALE, crate::render::MAX_USER_SCALE)
+        } else {
+            1.0
+        }
+    }
+
     fn load_from(path: Option<PathBuf>) -> Self {
         let Some(path) = path else {
             return Self::default();
@@ -274,6 +284,7 @@ impl Config {
                     config.bindings = BindingMap::classic();
                 }
                 config.window = Self::sane_window(config.window);
+                config.ui_scale = Self::sane_ui_scale(config.ui_scale);
                 config.touch = config.touch.clamped();
                 config.markers = config.markers.clamped();
                 // A hand-edited name that no longer passes is forgotten,
