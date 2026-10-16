@@ -149,7 +149,7 @@ fn a_locked_queue_outlasts_orders() {
 
 #[test]
 fn only_a_latched_queue_takes_a_snapshot() {
-    let (game, mut input, chip, _) = latch_range();
+    let (game, mut input, _, _) = latch_range();
     assert!(
         input.latch_probe(&game).is_none(),
         "QUEUE off copies nothing"
