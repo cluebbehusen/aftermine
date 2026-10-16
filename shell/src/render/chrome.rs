@@ -438,8 +438,8 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
 /// The armed-mode ribbon: where it sits and what it names.
 pub(crate) struct RibbonLayout {
     pub(super) rect: Rect,
-    label: String,
-    cost: Option<String>,
+    pub(super) label: String,
+    pub(super) cost: Option<String>,
     building: Option<oxide_sim::BuildingKind>,
     label_w: f32,
     icon_w: f32,
@@ -475,18 +475,24 @@ pub(super) fn ribbon_layout(
         crate::input::ArmedMode::Build(kind) => Some(kind),
         _ => None,
     };
-    let label = mode.label();
+    // A stroke's planned row counts itself and its total.
+    let planned = input.planned_stamps().len();
+    let label = if planned > 1 {
+        format!("{} \u{d7}{planned}", mode.label())
+    } else {
+        mode.label()
+    };
     let cost = building
         .and_then(|kind| kind.base_stats().construction)
-        .map(|construction| construction.cost.to_string());
+        .map(|construction| (construction.cost * planned.max(1).fit::<u32>()).to_string());
     let icon_w = if building.is_some() { 40.0 * s } else { 0.0 };
     let label_w = measure(Face::Body, &label, crate::theme::Type::Label.at(s));
     let cost_w = cost.as_deref().map_or(0.0, |cost| {
         12.0 * s + measure(Face::Body, cost, crate::theme::Type::Body.at(s))
     });
     let status_size = crate::theme::Type::Small.at(s);
-    let status = building.and_then(|kind| {
-        let mut status = placement_status(game, input, kind)?;
+    let status = building.and_then(|_| {
+        let mut status = placement_status(game, input)?;
         status.verdict_w = measure(Face::Body, &status.verdict, status_size);
         Some(status)
     });
@@ -521,15 +527,14 @@ pub(super) fn ribbon_layout(
     })
 }
 
-/// What placing `kind` would do at the ghost or under the cursor, if
-/// either names a spot.
+/// What placing would do at the ghost or under the cursor, if either
+/// names a spot.
 pub(crate) fn placement_status(
     game: &crate::game::Scene<'_>,
     input: &InputState,
-    kind: oxide_sim::BuildingKind,
 ) -> Option<RibbonStatus> {
     use crate::input::PlacementVerdict;
-    let (_, anchor) = crate::input::placement_preview_anchor(game, input)?;
+    let spot = crate::input::preview_spot(game, input)?;
     // Over chrome a click does something else; the row stays, blank, so
     // the ribbon holds still as the cursor reaches it.
     if crate::input::cursor_on_chrome(game, input) {
@@ -540,9 +545,7 @@ pub(crate) fn placement_status(
             verdict_w: 0.0,
         });
     }
-    let queue = input.stroke_live() || input.queue_held();
-    let verdict = crate::input::placement_verdict(game, kind, anchor, queue);
-    let (text, color) = match verdict {
+    let (text, color) = match spot.verdict {
         PlacementVerdict::Builds => ("Builds now".to_string(), TEXT_BODY),
         PlacementVerdict::BuildsOnArrival => ("Builds on arrival".to_string(), TEXT_ACCENT),
         PlacementVerdict::Refused(refusal) => (
@@ -558,17 +561,10 @@ pub(crate) fn placement_status(
         }
         PlacementVerdict::Unreachable => (UNREACHABLE.to_string(), crate::theme::TEXT_DANGER),
     };
-    let detail = if !verdict.builds() {
-        None
-    } else if queue {
-        crate::input::queued_position(game).map(|position| format!("Queues as #{position}"))
-    } else {
-        crate::input::placement_backlog(game).and_then(|backlog| backlog_detail(backlog, false))
-    };
     Some(RibbonStatus {
         verdict: text,
         color,
-        detail,
+        detail: spot.lands.map(lands_detail),
         verdict_w: 0.0,
     })
 }
@@ -576,16 +572,13 @@ pub(crate) fn placement_status(
 /// The status row's word for a site the founder cannot reach.
 const UNREACHABLE: &str = "Your builders can't reach it";
 
-/// Where a build lands in a builder already holding `backlog` orders.
-fn backlog_detail(backlog: usize, queue: bool) -> Option<String> {
-    if queue {
-        Some(format!("Queues as #{}", backlog + 1))
-    } else if backlog == 1 {
-        Some("Replaces 1 order".to_string())
-    } else if backlog > 1 {
-        Some(format!("Replaces {backlog} orders"))
-    } else {
-        None
+/// Where a build lands, as the status row says it.
+fn lands_detail(lands: crate::input::Lands) -> String {
+    use crate::input::Lands;
+    match lands {
+        Lands::Queues(position) => format!("Queues as #{position}"),
+        Lands::Replaces(1) => "Replaces 1 order".to_string(),
+        Lands::Replaces(orders) => format!("Replaces {orders} orders"),
     }
 }
 
@@ -595,11 +588,13 @@ fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str)
     let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
     // A builder holds at most the cap's worth of queue behind its order.
     let most = oxide_sim::stats::ORDER_QUEUE_CAP + 1;
-    let detail = [backlog_detail(most - 1, true), backlog_detail(most, false)]
-        .into_iter()
-        .flatten()
-        .map(|text| measure(&format!("{STATUS_SEPARATOR}{text}")))
-        .fold(0.0, f32::max);
+    let detail = [
+        crate::input::Lands::Queues(most),
+        crate::input::Lands::Replaces(most),
+    ]
+    .into_iter()
+    .map(|lands| measure(&format!("{STATUS_SEPARATOR}{}", lands_detail(lands))))
+    .fold(0.0, f32::max);
     let building = ["Builds now", "Builds on arrival"]
         .into_iter()
         .map(|text| measure(text) + detail)

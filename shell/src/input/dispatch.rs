@@ -275,7 +275,11 @@ pub(super) fn dispatch_action(
         }
         Action::ToggleOverlay => game.presentation.overlay = !game.presentation.overlay,
         Action::Back => {
-            // Arming something? Escape abandons that first.
+            // A planned row goes first, keeping placement armed; then
+            // anything armed.
+            if input.drop_stroke() {
+                return;
+            }
             if input.placing.is_some() {
                 input.stop_placing();
                 input.build_menu = true;

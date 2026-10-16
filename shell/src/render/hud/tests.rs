@@ -276,6 +276,74 @@ fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
 }
 
 #[test]
+fn a_planned_row_counts_itself_in_the_ribbon() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .anchor;
+    let mut input = InputState::new();
+    input.build_menu = true;
+    input.arm_placement(oxide_sim::BuildingKind::Barricade);
+    let at = |dx: i32| {
+        game.presentation.camera.to_screen(vec2(
+            (foundry.x + dx) as f32 + 0.5,
+            (foundry.y + 3) as f32 + 0.5,
+        ))
+    };
+    let (a, b, c) = (at(3), at(4), at(5));
+    let events = [
+        oxide_protocol::RawEvent::MouseDown {
+            button: oxide_protocol::MouseButton::Left,
+            x: a.x,
+            y: a.y,
+        },
+        oxide_protocol::RawEvent::MouseMove { x: b.x, y: b.y },
+        oxide_protocol::RawEvent::MouseMove { x: c.x, y: c.y },
+    ];
+    crate::input::apply_events(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        &events,
+        |_, _| {},
+    );
+    assert_eq!(input.planned_stamps().len(), 3, "premise: a row of three");
+    let ribbon = layout(
+        &game.view(),
+        &input,
+        &BindingMap::classic(),
+        env(1280.0, 800.0),
+        None,
+        &fixed,
+    )
+    .geometry
+    .ribbon
+    .expect("placement shows its ribbon");
+    let cost = oxide_sim::BuildingKind::Barricade
+        .base_stats()
+        .construction
+        .unwrap()
+        .cost;
+    assert_eq!(ribbon.label, "Barricade \u{d7}3");
+    assert_eq!(ribbon.cost, Some((3 * cost).to_string()));
+    let status = ribbon.status.expect("the cursor rests on the row's end");
+    assert_eq!(status.detail.as_deref(), Some("Queues as #3"));
+}
+
+#[test]
 fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
     let mut game = skirmish();
     let human = game.presentation.human;
