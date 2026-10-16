@@ -799,6 +799,36 @@ fn a_second_tap_on_a_profile_row_never_applies_it() {
 }
 
 #[test]
+fn escape_outranks_a_confirm_picked_in_the_same_frame() {
+    let escape = RawEvent::KeyDown { key: Key::Escape };
+    let enter = RawEvent::KeyDown { key: Key::Enter };
+    for events in [[escape, enter], [enter, escape]] {
+        let mut config = Config::default();
+        assert!(config.bindings.rebind_slot(
+            Action::Patrol,
+            1,
+            Chord {
+                key: Key::K,
+                ctrl: true,
+                shift: true
+            }
+        ));
+        let rebound = config.bindings.clone();
+        let mut s = on(Tab::Controls, &config);
+        focus(&mut s, Item::ResetBindings);
+        drive(&mut s, &mut config, &press(Key::Enter), false);
+        drive(&mut s, &mut config, &press(Key::Down), false);
+        assert_eq!(s.menu.value(), Some(&Item::Confirm));
+        let up = drive(&mut s, &mut config, &events, false);
+        assert_eq!(s.face, Face::Tab(Tab::Controls), "{events:?}");
+        assert!(
+            !up.dirty && config.bindings == rebound,
+            "{events:?} keeps the rebinds"
+        );
+    }
+}
+
+#[test]
 fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
     for (width, height) in [(640.0, 400.0), (1180.0, 820.0), (1920.0, 1080.0)] {
         for scale in SCALES {

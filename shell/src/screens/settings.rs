@@ -1002,7 +1002,8 @@ impl SettingsScreen {
     }
 
     /// Runs the dialog asking about `profile` for a frame. Cancel, the
-    /// BACK button, and Escape all leave the bindings be.
+    /// BACK button, and Escape all leave the bindings be; as in the pause
+    /// menu's dialogs, Escape outranks a row picked in the same frame.
     fn confirm(
         &mut self,
         profile: Profile,
@@ -1016,6 +1017,7 @@ impl SettingsScreen {
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
         match self.menu.handle(events, mouse).map(|picked| picked.value) {
+            _ if escaped => self.end_confirming(profile, config),
             Some(Item::Confirm) => {
                 sounds.push((SoundKind::Click, None));
                 config.bindings = profile.bindings();
@@ -1030,7 +1032,6 @@ impl SettingsScreen {
                 sounds.push((SoundKind::Click, None));
                 self.end_confirming(profile, config);
             }
-            None if escaped => self.end_confirming(profile, config),
             None => {}
         }
     }
