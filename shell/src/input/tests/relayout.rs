@@ -58,13 +58,13 @@ fn a_click_after_the_build_key_in_one_batch_arms_the_card_it_opened() {
     let mut game = builder_in_hand();
     let mut input = InputState::new();
     crate::input::apply_events(&mut game, &mut input, &classic(), &batch, relayout);
-    assert_eq!(input.placing, Some(kind));
+    assert_eq!(input.placing_kind(), Some(kind));
 
     // Hit-testing the layout from before the batch misses the card.
     let mut game = builder_in_hand();
     let mut input = InputState::new();
     crate::input::apply_events(&mut game, &mut input, &classic(), &batch, |_, _| {});
-    assert_ne!(input.placing, Some(kind));
+    assert_ne!(input.placing_kind(), Some(kind));
 }
 
 #[test]

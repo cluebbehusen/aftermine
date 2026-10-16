@@ -114,7 +114,7 @@ pub(crate) fn placement_preview_anchor(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<(oxide_sim::BuildingKind, TilePos)> {
-    let kind = input.placing?;
+    let kind = input.placing_kind()?;
     if let Some(anchor) = input.ghost_anchor() {
         return Some((kind, anchor));
     }
@@ -218,13 +218,8 @@ pub struct InputState {
     pub(crate) bookmarks: [Option<Vec2>; 4],
     /// Waypoints collected while arming a patrol (`R`), if any.
     pub(crate) patrol_route: Option<Vec<TilePos>>,
-    /// Building kind armed for placement, if any.
-    pub(crate) placing: Option<oxide_sim::BuildingKind>,
-    /// The live drag-to-place stroke, while the button stays down.
-    /// `None` when no stroke is live.
-    pub(crate) placing_stroke: Option<PlacingStroke>,
-    /// The touch placement's ghost, once a tap has dropped one.
-    pub(crate) touch_ghost: Option<PlacementGhost>,
+    /// The armed building placement, if any.
+    pub(crate) placing: Option<Placement>,
     /// The pointer used last: the mouse's hover only means something
     /// while the mouse is the one in use.
     pub(crate) last_pointer: Pointer,
@@ -267,9 +262,24 @@ pub struct InputState {
     pub(crate) resolver: ActionResolver,
 }
 
+/// An armed building placement and everything that lasts only while it is
+/// armed, so no stroke or ghost outlives its mode.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Placement {
+    pub(crate) kind: oxide_sim::BuildingKind,
+    /// The live drag-to-place stroke, while the button stays down.
+    stroke: Option<PlacingStroke>,
+    /// The touch placement's ghost, once a tap has dropped one.
+    ghost: Option<PlacementGhost>,
+    /// Whether this placement has staged a build. Letting go of queue then
+    /// ends it: the next plain build would replace the chain just queued.
+    placed: bool,
+}
+
 /// A live drag-to-place stroke: the anchors stamped so far, used to avoid
 /// overlapping the same gesture with itself. Queue headroom comes from the
 /// projected command phase so commands staged during the stroke take effect.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlacingStroke {
     anchors: Vec<TilePos>,
 }
@@ -469,8 +479,6 @@ impl InputState {
             last_recall: None,
             patrol_route: None,
             placing: None,
-            placing_stroke: None,
-            touch_ghost: None,
             last_pointer: crate::platform::Hands::BUILD.pointer,
             keys_seen: crate::platform::Hands::BUILD.keys,
             click_verb: None,
@@ -552,17 +560,50 @@ impl InputState {
         self.striking.clear();
     }
 
-    /// Drops placement: the armed kind, its stroke, and its ghost. The
-    /// one way placement ends, so no ghost outlives its mode.
+    /// Arms placement of `kind`, with no stroke or ghost yet.
+    pub(crate) fn arm_placement(&mut self, kind: oxide_sim::BuildingKind) {
+        self.placing = Some(Placement {
+            kind,
+            stroke: None,
+            ghost: None,
+            placed: false,
+        });
+    }
+
+    /// Drops placement: the armed kind, its stroke, and its ghost.
     pub(crate) fn stop_placing(&mut self) {
         self.placing = None;
-        self.placing_stroke = None;
-        self.touch_ghost = None;
+    }
+
+    /// The building kind armed for placement, if any.
+    pub(crate) fn placing_kind(&self) -> Option<oxide_sim::BuildingKind> {
+        self.placing.as_ref().map(|placement| placement.kind)
+    }
+
+    /// Whether a drag-to-place stroke is live.
+    pub(crate) fn stroke_live(&self) -> bool {
+        self.placing
+            .as_ref()
+            .is_some_and(|placement| placement.stroke.is_some())
     }
 
     /// The touch ghost's anchor, while placement is armed.
     pub(crate) fn ghost_anchor(&self) -> Option<TilePos> {
-        self.placing.and(self.touch_ghost).map(|ghost| ghost.anchor)
+        self.placing.as_ref()?.ghost.map(|ghost| ghost.anchor)
+    }
+
+    /// Queue was let go (Shift up, or QUEUE off). A placement that already
+    /// staged a build ends, as releasing Shift ends a chain in other RTS
+    /// games: the next plain build would replace everything just queued. A
+    /// live stroke is left to its release, which decides the same way.
+    fn queue_released(&mut self) {
+        if self
+            .placing
+            .as_ref()
+            .is_some_and(|placement| placement.placed && placement.stroke.is_none())
+        {
+            self.stop_placing();
+        }
     }
 
     /// Whether `verb` is the armed click verb.
@@ -576,7 +617,7 @@ impl InputState {
         (!self.striking.is_empty())
             .then_some(ArmedMode::Strike)
             .or_else(|| (!self.rallying.is_empty()).then_some(ArmedMode::Rally))
-            .or_else(|| self.placing.map(ArmedMode::Build))
+            .or_else(|| self.placing_kind().map(ArmedMode::Build))
             .or_else(|| {
                 self.click_verb.map(|verb| match verb {
                     ClickVerb::Salvage => ArmedMode::Salvage,
@@ -1187,7 +1228,11 @@ pub fn apply_events(
         if press && index > 0 {
             relayout(game, input);
         }
+        let queued = input.queue_held();
         apply_event(game, input, bindings, event);
+        if queued && !input.queue_held() {
+            input.queue_released();
+        }
     }
     let selection = &mut game.presentation.selection;
     if !selection.units.is_empty() || !selection.buildings.is_empty() {
@@ -1231,10 +1276,15 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // cells skip silently (the ghost tells that story),
             // and the stroke stops stamping at the order-queue
             // cap instead of firing doomed commands.
-            if let (Some(kind), Some(stroke)) = (input.placing, input.placing_stroke.as_mut())
+            if let Some(Placement {
+                kind,
+                stroke: Some(stroke),
+                ..
+            }) = input.placing.as_mut()
                 && !click_on_hud(game, vec2(x, y))
                 && crate::render::minimap_world_at(&game.view(), vec2(x, y)).is_none()
             {
+                let kind = *kind;
                 let world = game.presentation.camera.to_world(vec2(x, y));
                 let clicked = numeric::tile_at(world);
                 let anchor = placement_anchor(&game.view(), kind, clicked);
@@ -1346,7 +1396,11 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             input.minimap_drag = false;
             // The placement stroke ends at release; Shift decides
             // whether the mode stays armed.
-            if input.placing_stroke.take().is_some() && !input.queue_held() {
+            let stroke_ended = input
+                .placing
+                .as_mut()
+                .is_some_and(|placement| placement.stroke.take().is_some());
+            if stroke_ended && !input.queue_held() {
                 input.stop_placing();
             }
             if let Some(origin) = input.drag_origin.take() {
@@ -1568,7 +1622,7 @@ fn armed_click(
         }
         return true;
     }
-    if let Some(kind) = input.placing {
+    if let Some(kind) = input.placing_kind() {
         // The minimap keeps its meaning while placing: jump the
         // camera, never misread the click as world ground (that would
         // spend scrap on a bogus tile).
@@ -1580,19 +1634,21 @@ fn armed_click(
             if pointer == Pointer::Touch {
                 // A tap never builds on its own: it drops the ghost (or
                 // moves it here), and only a tap on the ghost confirms.
-                input.touch_ghost = Some(PlacementGhost {
-                    anchor: ghost_anchor_under(&game.view(), kind, world),
-                    grab: None,
-                });
+                let anchor = ghost_anchor_under(&game.view(), kind, world);
+                if let Some(placement) = &mut input.placing {
+                    placement.ghost = Some(PlacementGhost { anchor, grab: None });
+                }
                 return true;
             }
             let clicked = numeric::tile_at(world);
             let anchor = placement_anchor(&game.view(), kind, clicked);
-            if place_at(game, input, kind, anchor) {
+            if place_at(game, input, kind, anchor)
+                && let Some(placement) = &mut input.placing
+            {
                 // The stroke opens: dragging stamps more of the same
                 // kind, queued. Whether the MODE survives the release
                 // is still Shift's call, decided at MouseUp.
-                input.placing_stroke = Some(PlacingStroke {
+                placement.stroke = Some(PlacingStroke {
                     anchors: vec![anchor],
                 });
             }
@@ -1626,7 +1682,7 @@ pub(crate) fn ghost_touch_rect(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
-    let (kind, anchor) = (input.placing?, input.ghost_anchor()?);
+    let (kind, anchor) = (input.placing_kind()?, input.ghost_anchor()?);
     let (w, h) = kind.size();
     let zoom = game.presentation.camera.zoom;
     let corner = game
@@ -1640,7 +1696,11 @@ pub(crate) fn ghost_touch_rect(
 /// A finger landed on the ghost: it grabs it where it is.
 pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
     let world = game.presentation.camera.to_world(p);
-    if let Some(ghost) = &mut input.touch_ghost {
+    if let Some(ghost) = input
+        .placing
+        .as_mut()
+        .and_then(|placement| placement.ghost.as_mut())
+    {
         ghost.grab = Some((ghost.anchor, world));
     }
 }
@@ -1648,19 +1708,22 @@ pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
 /// A grabbing finger moved: the ghost follows by whole tiles, keeping
 /// the offset where the finger took hold.
 pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
-    let Some(kind) = input.placing else {
+    let Some(Placement {
+        kind,
+        ghost: Some(ghost),
+        ..
+    }) = input.placing.as_mut()
+    else {
         return;
     };
     let world = game.presentation.camera.to_world(p);
-    if let Some(ghost) = &mut input.touch_ghost
-        && let Some((anchor, grabbed)) = ghost.grab
-    {
+    if let Some((anchor, grabbed)) = ghost.grab {
         let shift = world - grabbed;
         let moved = TilePos::new(
             anchor.x + numeric::to_i32(shift.x.round()),
             anchor.y + numeric::to_i32(shift.y.round()),
         );
-        ghost.anchor = placement_anchor(game, kind, moved);
+        ghost.anchor = placement_anchor(game, *kind, moved);
     }
 }
 
@@ -1669,12 +1732,15 @@ pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
 /// it was dropped. A refusal keeps the ghost; a success clears it and
 /// disarms, unless QUEUE keeps placement armed for the next one.
 pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
-    let (Some(kind), Some(anchor)) = (input.placing, input.ghost_anchor()) else {
+    let (Some(kind), Some(anchor)) = (input.placing_kind(), input.ghost_anchor()) else {
         return;
     };
     if place_at(game, input, kind, anchor) {
-        input.touch_ghost = None;
-        if !input.queue_held() {
+        if input.queue_held() {
+            if let Some(placement) = &mut input.placing {
+                placement.ghost = None;
+            }
+        } else {
             input.stop_placing();
         }
     }
@@ -1685,7 +1751,7 @@ pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
 /// placed.
 fn place_at(
     game: &mut Game,
-    input: &InputState,
+    input: &mut InputState,
     kind: oxide_sim::BuildingKind,
     anchor: TilePos,
 ) -> bool {
@@ -1754,6 +1820,9 @@ fn place_at(
     });
     game.presentation
         .ping_order(placement_ping(kind, anchor), PingKind::Rally, queue);
+    if let Some(placement) = &mut input.placing {
+        placement.placed = true;
+    }
     true
 }
 
@@ -2086,7 +2155,7 @@ fn activate_card(
         crate::panel::CardAction::ArmBuild(kind) => {
             input.build_menu = true;
             input.disarm_click_verbs();
-            input.placing = Some(kind);
+            input.arm_placement(kind);
             input.build_category = Some(crate::action::building_category(kind));
         }
         crate::panel::CardAction::ArmRally => {

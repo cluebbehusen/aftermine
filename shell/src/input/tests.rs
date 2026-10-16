@@ -680,7 +680,7 @@ fn build_click(
     kind: oxide_sim::BuildingKind,
     anchor: TilePos,
 ) {
-    input.placing = Some(kind);
+    input.arm_placement(kind);
     let world = vec2(anchor.x as f32 + 0.5, anchor.y as f32 + 0.5);
     game.presentation.camera.center = world;
     game.presentation.camera.pan(Vec2::ZERO);
@@ -732,7 +732,7 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
                 .expect("fixture worker")
                 .id;
             game.presentation.selection.units = vec![worker];
-            input.placing = Some(oxide_sim::BuildingKind::Extractor);
+            input.arm_placement(oxide_sim::BuildingKind::Extractor);
             let clicked = frame.offset(dx, dy);
             let world = vec2(clicked.x as f32 + 0.5, clicked.y as f32 + 0.5);
             let point = game.presentation.camera.to_screen(world);
@@ -752,8 +752,9 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
             ));
             assert_eq!(
                 input
-                    .placing_stroke
+                    .placing
                     .as_ref()
+                    .and_then(|placement| placement.stroke.as_ref())
                     .expect("accepted click opens its placement stroke")
                     .anchors,
                 vec![frame]
@@ -841,7 +842,7 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
         .unwrap()
         .id;
     game.presentation.selection.units = vec![harvester];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
 
     // Skirmish's own foundry footprint is illegal ground: the
     // misclick toasts and stays armed, staging nothing.
@@ -882,7 +883,7 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
             .unwrap()
             .id,
     ];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(
         &mut game,
         &mut input,
@@ -1264,7 +1265,7 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
         setup.events
     );
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(kind);
+    input.arm_placement(kind);
 
     let goal = start.offset(0, 4);
     let point = game
@@ -1435,7 +1436,7 @@ fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
 #[test]
 fn every_targeting_mode_has_persistent_human_copy() {
     let mut input = InputState::new();
-    input.placing = Some(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(oxide_sim::BuildingKind::Bastion);
     assert_eq!(input.armed_mode().unwrap().label(), "Bastion");
     input.disarm_click_verbs();
     input.rallying = vec![oxide_sim::BuildingId(0)];
@@ -2006,7 +2007,7 @@ fn arming_run_stands_the_other_verbs_down() {
     // Placement armed, then G: exactly one verb may hold the cursor —
     // armed_click resolves placement before run, so both live at once
     // would stamp a building under a "run" toast.
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::G), key_up(Key::G)]);
     assert!(input.armed(ClickVerb::Run), "G arms Run");
     assert!(input.placing.is_none(), "and placement stood down");
@@ -2156,7 +2157,7 @@ fn a_paused_stroke_bills_each_kind_at_its_own_price() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(
         &mut game,
@@ -2166,7 +2167,7 @@ fn a_paused_stroke_bills_each_kind_at_its_own_price() {
     assert_eq!(staged_builds(&game), 1, "the turret staged");
     // The clock never ran (paused shell): the turret is still pending
     // when the palette switches kinds.
-    input.placing = Some(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(oxide_sim::BuildingKind::Bastion);
     let p2 = game.presentation.camera.to_screen(vec2(9.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(p2), left_up(p2)]);
     assert_eq!(
@@ -2182,7 +2183,7 @@ fn a_paused_stroke_refuses_ground_an_earlier_stroke_spoke_for() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     // Stroke A stamps a turret; the clock never runs, so the site
     // exists only in pending — live state still shows open ground.
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
@@ -2223,7 +2224,7 @@ fn queued_orders_count_against_the_stroke_prediction() {
             queue: true,
         });
     }
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     let mut tiles = Vec::new();
     for y in [2, 4, 6, 8] {
         for x in 4..=13 {
@@ -2247,7 +2248,7 @@ fn paused_strokes_share_one_queue_prediction() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     // Two Shift strokes with NO tick between them (paused shell): the
     // second must inherit the first's staged depth instead of
     // re-reading the untouched live queue and blowing past the cap.
@@ -2310,7 +2311,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     }
     game.state.tick(&fill);
 
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(first)]);
@@ -2333,7 +2334,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(first)]);
     for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
@@ -2632,7 +2633,7 @@ fn armed_placement(kind: oxide_sim::BuildingKind) -> (Game, InputState, oxide_si
         .unwrap()
         .id;
     game.presentation.selection.units = vec![harvester];
-    input.placing = Some(kind);
+    input.arm_placement(kind);
     input.build_menu = true;
     (game, input, harvester)
 }
@@ -2751,7 +2752,7 @@ fn queue_keeps_placement_armed_after_a_confirm() {
             .any(|c| matches!(c.command, Command::Build { queue: true, .. }))
     );
     assert_eq!(
-        input.placing,
+        input.placing_kind(),
         Some(oxide_sim::BuildingKind::Turret),
         "still armed"
     );
@@ -2769,18 +2770,18 @@ fn leaving_placement_leaves_no_ghost() {
     tap_world(&mut game, &mut input, open);
     dispatch_action(&mut game, &mut input, Action::Back);
     assert!(
-        input.placing.is_none() && input.touch_ghost.is_none(),
+        input.placing.is_none() && input.ghost_anchor().is_none(),
         "Back"
     );
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     tap_world(&mut game, &mut input, open);
     assert!(input.cancel_armed_mode());
-    assert!(input.touch_ghost.is_none(), "CANCEL");
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    assert!(input.ghost_anchor().is_none(), "CANCEL");
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     tap_world(&mut game, &mut input, open);
-    input.placing = Some(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(oxide_sim::BuildingKind::Bastion);
     input.disarm_click_verbs();
-    assert!(input.touch_ghost.is_none(), "switching kinds");
+    assert!(input.ghost_anchor().is_none(), "switching kinds");
 }
 
 #[test]
@@ -2818,7 +2819,7 @@ fn an_extractor_ghost_snaps_to_its_frame() {
         .expect("fixture worker")
         .id;
     game.presentation.selection.units = vec![worker];
-    input.placing = Some(oxide_sim::BuildingKind::Extractor);
+    input.arm_placement(oxide_sim::BuildingKind::Extractor);
     tap_world(&mut game, &mut input, vec2(8.5, 5.5));
     assert_eq!(input.ghost_anchor(), Some(frame));
     tap_world(&mut game, &mut input, vec2(7.5, 4.5));
@@ -3299,7 +3300,11 @@ fn a_cancelled_finger_on_the_ghost_builds_nothing() {
         game.pending
     );
     assert_eq!(input.ghost_anchor(), Some(ghost), "the ghost stays down");
-    assert_eq!(input.placing, Some(kind), "and placement stays armed");
+    assert_eq!(
+        input.placing_kind(),
+        Some(kind),
+        "and placement stays armed"
+    );
 }
 
 #[test]
@@ -3483,7 +3488,7 @@ fn a_pair_formed_mid_pan_or_while_armed_never_boxes() {
         .expect("a harvester")
         .id;
     game.presentation.selection.units = vec![harvester];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     input.build_menu = true;
     input.now = 5.0;
     apply_events(&mut game, &mut input, &[touch_down(3, a), touch_down(4, b)]);
@@ -3493,10 +3498,58 @@ fn a_pair_formed_mid_pan_or_while_armed_never_boxes() {
     apply_events(&mut game, &mut input, &[touch_up(4, b)]);
     assert_eq!(game.presentation.selection.units, vec![harvester]);
     assert_eq!(
-        input.placing,
+        input.placing_kind(),
         Some(oxide_sim::BuildingKind::Turret),
         "still armed"
     );
+}
+
+#[test]
+fn a_pair_formed_mid_pan_or_while_armed_still_pinches() {
+    let a = vec2(400.0, 300.0);
+    let squeezed = a + vec2(120.0, 0.0);
+
+    // While placing: the pair zooms, never boxes, and builds nothing.
+    let kind = oxide_sim::BuildingKind::Turret;
+    let (mut game, mut input, harvester) = armed_placement(kind);
+    let zoom = game.presentation.camera.zoom;
+    input.now = 1.0;
+    apply_events(
+        &mut game,
+        &mut input,
+        &[touch_down(1, a), touch_down(2, a + vec2(260.0, 0.0))],
+    );
+    apply_events(&mut game, &mut input, &[touch_move(2, squeezed)]);
+    game.presentation.camera.update(1.0);
+    assert_ne!(game.presentation.camera.zoom, zoom, "an armed pair zooms");
+    input.now = 3.0;
+    update_touch(&mut game, &mut input);
+    assert_eq!(touch_box(&input), None, "and never claims a box");
+    apply_events(
+        &mut game,
+        &mut input,
+        &[touch_up(2, squeezed), touch_up(1, a)],
+    );
+    assert!(game.pending.is_empty(), "a pinch builds nothing");
+    assert_eq!(input.ghost_anchor(), None, "nor drops a ghost");
+    assert_eq!(input.placing_kind(), Some(kind));
+    assert_eq!(game.presentation.selection.units, vec![harvester]);
+
+    // Mid-pan: a second finger joining a pan zooms too.
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let zoom = game.presentation.camera.zoom;
+    input.now = 1.0;
+    apply_events(&mut game, &mut input, &[touch_down(1, a)]);
+    apply_events(&mut game, &mut input, &[touch_move(1, a - vec2(40.0, 0.0))]);
+    apply_events(
+        &mut game,
+        &mut input,
+        &[touch_down(2, a + vec2(260.0, 0.0))],
+    );
+    apply_events(&mut game, &mut input, &[touch_move(2, squeezed)]);
+    game.presentation.camera.update(1.0);
+    assert_ne!(game.presentation.camera.zoom, zoom, "a mid-pan pair zooms");
 }
 
 #[test]
@@ -4501,6 +4554,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
 }
 
 mod order_chips;
+mod placement_chain;
 mod relayout;
 mod top_bar;
 
@@ -4646,7 +4700,7 @@ fn an_armed_mode_never_eats_the_menu_button() {
     let mut game = headless_game();
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
-    input.placing = Some(oxide_sim::BuildingKind::Fabricator);
+    input.arm_placement(oxide_sim::BuildingKind::Fabricator);
     let menu = game.presentation.layout.get().menu_button.center();
     apply_events(&mut game, &mut input, &click(menu.x, menu.y));
     assert!(input.take_menu_request());
@@ -4912,7 +4966,7 @@ fn a_placement_drag_stamps_a_row_of_queued_builds() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
 
     // Screen points at the centers of three adjacent open tiles.
     let at = |x: i32, y: i32| {
@@ -4944,7 +4998,7 @@ fn a_placement_drag_stamps_a_row_of_queued_builds() {
     let anchors: std::collections::BTreeSet<_> = builds.iter().map(|(a, _)| (a.x, a.y)).collect();
     assert_eq!(anchors.len(), 3, "no overlapping footprints");
     assert!(
-        input.placing.is_none() && input.placing_stroke.is_none(),
+        input.placing.is_none() && !input.stroke_live(),
         "release without Shift disarms the mode and closes the stroke"
     );
 
@@ -5400,7 +5454,7 @@ fn a_ticking_drag_spends_the_whole_bank() {
     let mut game = drag_arena(1000);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     // Two short rows bracketing the builder: every anchor stays inside
     // someone's sight even as the builder walks to its first site. A wall
     // drawn off into fog is a different test.
@@ -5431,7 +5485,7 @@ fn a_broke_opening_click_toasts_instead_of_pinging() {
     let mut game = drag_arena(50);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4)]);
     assert_eq!(staged_builds(&game), 0, "a broke seat stages nothing");
     assert!(
@@ -5445,7 +5499,7 @@ fn a_placement_drag_stops_at_the_bank() {
     let mut game = drag_arena(250);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4), (10, 4), (11, 4)]);
     assert_eq!(
         staged_builds(&game),
@@ -5468,7 +5522,7 @@ fn a_placement_drag_stops_at_the_bank() {
     let mut game = drag_arena(150);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4), (10, 4), (11, 4)]);
     assert_eq!(staged_builds(&game), 1, "150 scrap affords one turret");
 }
@@ -5502,7 +5556,7 @@ fn a_shift_stroke_spends_only_the_builders_headroom() {
     game.state.tick(&fill);
     assert_eq!(game.state.unit(builder).unwrap().queue.len(), 30);
 
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     drag_over(
         &mut game,
@@ -5550,7 +5604,7 @@ fn a_fresh_stroke_owns_the_cap_plus_the_active_slot() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     // Rows 2, 4, 6, 8 with free rows between: every site keeps a
     // doorstep, all inside the harvester's vision and clear of both
     // foundry footprints.
@@ -5601,7 +5655,7 @@ fn a_full_queue_refuses_the_opening_shift_stamp() {
         oxide_sim::stats::ORDER_QUEUE_CAP,
         "the fixture actually filled the queue"
     );
-    input.placing = Some(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(
         &mut game,
@@ -7022,7 +7076,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
         "queued construction cannot spend a retained site's refund"
     );
     apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
-    input.placing = Some(kind);
+    input.arm_placement(kind);
     game.presentation.camera.center = vec2(new_spot.x as f32 + 0.5, new_spot.y as f32 + 0.5);
     game.presentation.camera.pan(Vec2::ZERO);
     let p = game
@@ -7223,7 +7277,7 @@ fn construction_menu_shows_every_building_and_shortcuts_arm_the_visible_card() {
         controls_key(&mut game, &mut input, keys[index]);
         apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
         assert_eq!(
-            input.placing,
+            input.placing_kind(),
             card.enabled.then_some(kind),
             "{}",
             card.title
@@ -7329,9 +7383,12 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
                 click(x, 740.0).to_vec()
             };
             apply_events(&mut game, &mut input, &events);
-            assert_eq!(input.placing, Some(oxide_sim::BuildingKind::Reclaimer));
+            assert_eq!(
+                input.placing_kind(),
+                Some(oxide_sim::BuildingKind::Reclaimer)
+            );
             assert!(input.construction_open());
-            assert!(input.placing_stroke.is_none());
+            assert!(!input.stroke_live());
             assert!(game.pending.is_empty());
             assert_eq!(game.state.hash(), hash);
         }
@@ -7579,7 +7636,7 @@ fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
             placement_refusal(&game.view(), BuildingKind::Barricade, anchor, false),
             None
         );
-        input.placing = None;
+        input.stop_placing();
         let point = game.presentation.camera.to_screen(vec2(12.5, 4.5));
         apply_events(&mut game, &mut input, &click(point.x, point.y));
         assert_eq!(game.presentation.selection.buildings, vec![site]);
@@ -7741,7 +7798,7 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
             assert_eq!(card.enabled, enabled, "{}: {:?}", card.title, card.why);
             assert!(card.hotkey.contains("Ctrl+"));
             controls_key_with(&mut game, &mut input, &bindings, old.key);
-            assert_eq!(input.placing, enabled.then_some(*kind));
+            assert_eq!(input.placing_kind(), enabled.then_some(*kind));
             apply_events_with(
                 &mut game,
                 &mut input,

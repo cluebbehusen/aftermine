@@ -80,8 +80,10 @@ impl TouchPoint {
 /// What a two-finger pair is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PairState {
-    /// Neither a pinch nor a held box yet; a lift selects nothing.
-    Undecided,
+    /// Neither a pinch nor a held box yet; a lift selects nothing. A pair
+    /// that joined a pan, or landed while a mode waits for its target, may
+    /// still zoom but never boxes.
+    Undecided { boxable: bool },
     /// The spread changed past the threshold: zooming for the pair's
     /// whole lifetime, so lifting one finger commits no box.
     Pinch,
@@ -90,8 +92,8 @@ pub(crate) enum PairState {
     /// still while the other moves is also a common pinch grip, so the
     /// box must be claimed by resting before either finger drags.
     Box,
-    /// A finger landed off the battlefield, the pair formed mid-pan, or
-    /// a mode was armed: the pair neither zooms nor boxes.
+    /// A finger landed off the battlefield: the pair neither zooms nor
+    /// boxes.
     Inert,
 }
 
@@ -243,13 +245,14 @@ pub(super) fn down(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
         let [(_, a), (_, b)] = [input.touches[0], input.touches[1]];
         let both_world = a.born == TouchBorn::World && b.born == TouchBorn::World;
         // A second finger joining a pan, or landing while a mode waits
-        // for its target, must not turn the gesture into a selection.
-        let free = both_world && !a.moved && input.armed_mode().is_none();
+        // for its target, may zoom but must not turn the gesture into a
+        // selection.
+        let boxable = !a.moved && input.armed_mode().is_none();
         Pair {
             start_dist: (a.at - b.at).length(),
             formed_at: input.now,
-            state: if free {
-                PairState::Undecided
+            state: if both_world {
+                PairState::Undecided { boxable }
             } else {
                 PairState::Inert
             },
@@ -302,7 +305,7 @@ pub(super) fn moved(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
         2 => {
             let new_dist = (input.touches[0].1.at - input.touches[1].1.at).length();
             if let Some(pair) = &mut input.pair
-                && pair.state == PairState::Undecided
+                && matches!(pair.state, PairState::Undecided { .. })
                 && (new_dist - pair.start_dist).abs() > PAIR_PINCH_PX * input.ui
             {
                 pair.state = PairState::Pinch;
@@ -493,7 +496,7 @@ pub fn update_touch(game: &mut Game, input: &mut InputState, bindings: &crate::a
     // A pair emits no events while it rests either, so its box claim
     // rides the same clock.
     if let Some(pair) = &mut input.pair
-        && pair.state == PairState::Undecided
+        && pair.state == (PairState::Undecided { boxable: true })
         && (input.now - pair.formed_at) * 1000.0 >= BOX_REST_MS
     {
         pair.state = PairState::Box;

@@ -449,18 +449,20 @@ while rally, a strike, or patrol take minimap taps as targets. A two-finger
 rests for `BOX_REST_MS` claims a box whose corners follow the fingers. The box
 appears only when claimed, so any box on screen can be dragged and selects when
 a finger lifts; an undecided pair shows nothing and its lift selects nothing. A
-pair with a non-world finger, formed mid-pan, or formed while a mode is armed
-does neither.
+pair with a non-world finger does neither, and one formed mid-pan or while a
+mode is armed may zoom but never boxes.
 
 Touch placement drops a `PlacementGhost` centered under the finger instead of
 placing on the tap. Dragging the ghost moves it by whole tiles, and a still tap
 on it runs the shared `place_at` checks at the ghost's anchor; the tap point is
-never the anchor. `stop_placing` is the one way placement ends, so no ghost
-outlives its mode. The mouse's hover preview draws only while the mouse is the
-last pointer. While placement or a patrol route is armed, a world finger never
-long-presses; other armed verbs stand down for a long-press as they do for a
-right-click. `InputState::queue_held` merges Shift with the sticky QUEUE toggle
-that touch-only builds show.
+never the anchor. `InputState::placing` holds the armed kind with its stroke and
+ghost, so no ghost outlives its mode. The mouse's hover preview draws only while
+the mouse is the last pointer. While placement or a patrol route is armed, a
+world finger never long-presses; other armed verbs stand down for a long-press
+as they do for a right-click. `InputState::queue_held` merges Shift with the
+sticky QUEUE toggle that touch-only builds show. Letting go of either after a
+placement has staged a build ends placement, so the next click selects instead
+of replacing the chain just queued; a live stroke still settles at its release.
 
 A right-click with only scouts selected issues Scout to the clicked tile, enemy
 or ground, after the transport boarding check; Run is the deliberate way to send
