@@ -454,6 +454,9 @@ pub(crate) enum PlacementVerdict {
     Short(u32),
     /// No selected builder has room for the order.
     QueueFull,
+    /// The ground the player has seen leaves the founder no way to the
+    /// site's doorstep.
+    Unreachable,
 }
 
 impl PlacementVerdict {
@@ -522,11 +525,116 @@ pub(crate) fn placement_verdict(
         PlacementVerdict::QueueFull
     } else if defer {
         PlacementVerdict::BuildsOnArrival
+    } else if !founder_may_reach(game, kind, anchor) {
+        PlacementVerdict::Unreachable
     } else {
         PlacementVerdict::Builds
     };
     cache.replace(Some((key, verdict)));
     verdict
+}
+
+/// Whether the founder may reach a doorstep of `kind` at `anchor`, as far
+/// as the player can tell. Only ground the player can see blocked, or has
+/// explored as impassable terrain, counts: unexplored and fogged ground is
+/// taken as open, so this never calls reachable ground unreachable and
+/// never reads what fog hides. The sim's own path check still decides; this
+/// catches the walled-off pockets and plateaus the player can see. Moves
+/// run eight ways, a superset of any path the sim takes.
+fn founder_may_reach(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+) -> bool {
+    let human = game.presentation.human;
+    let Some(founder) = game
+        .presentation
+        .selection
+        .units
+        .iter()
+        .filter_map(|id| game.state.unit(*id))
+        .find(|unit| unit.player == human && unit.kind.stats().harvest.is_some())
+    else {
+        return true;
+    };
+    let (w, h) = kind.size();
+    let inside =
+        |t: TilePos| t.x >= anchor.x && t.x < anchor.x + w && t.y >= anchor.y && t.y < anchor.y + h;
+    let doorstep = |t: TilePos| {
+        !inside(t)
+            && t.x >= anchor.x - 1
+            && t.x <= anchor.x + w
+            && t.y >= anchor.y - 1
+            && t.y <= anchor.y + h
+    };
+    let from = founder.tile();
+    if inside(from) {
+        return true;
+    }
+    let map = game.state.map();
+    let vision = game.state.vision(human);
+    let open = |t: TilePos| {
+        if inside(t) {
+            return false;
+        }
+        let Some(tile) = map.tile(t) else {
+            return false;
+        };
+        if vision.visible(t) {
+            game.state.passable(t)
+        } else if vision.explored(t) {
+            !tile.terrain.blocks_ground()
+        } else {
+            true
+        }
+    };
+    let (width, height) = (map.width(), map.height());
+    let index = |t: TilePos| (t.y * width + t.x).fit::<usize>();
+    let mut seen = vec![false; (width * height).fit::<usize>()];
+    let mut frontier = std::collections::VecDeque::from([from]);
+    if map.tile(from).is_some() {
+        seen[index(from)] = true;
+    }
+    while let Some(at) = frontier.pop_front() {
+        if doorstep(at) && open(at) {
+            return true;
+        }
+        for (dx, dy) in [
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ] {
+            let next = at.offset(dx, dy);
+            if map.tile(next).is_some() && !seen[index(next)] && open(next) {
+                seen[index(next)] = true;
+                frontier.push_back(next);
+            }
+        }
+    }
+    false
+}
+
+/// The number a queued build takes in the dock's subject's program, if
+/// the subject will take it: a subject with a full queue is skipped while
+/// another selected builder may still accept the order.
+pub(crate) fn queued_position(game: &crate::game::Scene<'_>) -> Option<usize> {
+    placement_backlog(game)
+        .filter(|backlog| *backlog <= oxide_sim::stats::ORDER_QUEUE_CAP)
+        .map(|backlog| backlog + 1)
+}
+
+/// Whether the mouse is the pointer placing and it rests on chrome or the
+/// minimap, where a click does something other than place.
+pub(crate) fn cursor_on_chrome(game: &crate::game::Scene<'_>, input: &InputState) -> bool {
+    input.ghost_anchor().is_none()
+        && input.last_pointer == Pointer::Mouse
+        && (game.presentation.layout.get().chrome_owns(input.mouse)
+            || crate::render::minimap_world_at(game, input.mouse).is_some())
 }
 
 /// How many orders the placement's builder already has, counted as its
@@ -1968,6 +2076,9 @@ fn place_at(
             crate::typography::entity_name(kind.name())
         )),
         PlacementVerdict::QueueFull => Some("That builder's order queue is full".to_string()),
+        PlacementVerdict::Unreachable => {
+            Some("Can't build there: your builders can't reach it".to_string())
+        }
     };
     if let Some(toast) = refused {
         game.presentation.toast(toast);

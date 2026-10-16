@@ -35,9 +35,10 @@ pub(crate) fn draw_placement_ghost(
     let tint = match verdict {
         PlacementVerdict::Builds => Color::new(0.7, 1.0, 0.75, 0.55),
         PlacementVerdict::BuildsOnArrival => Color::new(1.0, 0.85, 0.45, 0.55),
-        PlacementVerdict::Refused(_) | PlacementVerdict::Short(_) | PlacementVerdict::QueueFull => {
-            Color::new(1.0, 0.45, 0.4, 0.55)
-        }
+        PlacementVerdict::Refused(_)
+        | PlacementVerdict::Short(_)
+        | PlacementVerdict::QueueFull
+        | PlacementVerdict::Unreachable => Color::new(1.0, 0.45, 0.4, 0.55),
     };
     sprites.draw(
         screen.x,
@@ -54,8 +55,8 @@ pub(crate) fn draw_placement_ghost(
         let s = ui_scale();
         fill_circle(corner, 10.0 * s, Color::new(0.08, 0.08, 0.1, 0.85));
         // The number its dock chip will carry once it stages.
-        if let Some(backlog) = crate::input::placement_backlog(game) {
-            let label = (backlog + 1).to_string();
+        if let Some(position) = crate::input::queued_position(game) {
+            let label = position.to_string();
             let size = crate::theme::Type::Small.at(s);
             let width = measure_text(&label, None, numeric::font_size(size), 1.0).width;
             draw_text(

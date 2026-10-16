@@ -530,6 +530,16 @@ pub(crate) fn placement_status(
 ) -> Option<RibbonStatus> {
     use crate::input::PlacementVerdict;
     let (_, anchor) = crate::input::placement_preview_anchor(game, input)?;
+    // Over chrome a click does something else; the row stays, blank, so
+    // the ribbon holds still as the cursor reaches it.
+    if crate::input::cursor_on_chrome(game, input) {
+        return Some(RibbonStatus {
+            verdict: String::new(),
+            color: TEXT_BODY,
+            detail: None,
+            verdict_w: 0.0,
+        });
+    }
     let queue = input.stroke_live() || input.queue_held();
     let verdict = crate::input::placement_verdict(game, kind, anchor, queue);
     let (text, color) = match verdict {
@@ -546,11 +556,14 @@ pub(crate) fn placement_status(
         PlacementVerdict::QueueFull => {
             ("Order queue is full".to_string(), crate::theme::TEXT_DANGER)
         }
+        PlacementVerdict::Unreachable => (UNREACHABLE.to_string(), crate::theme::TEXT_DANGER),
     };
-    let detail = if verdict.builds() {
-        crate::input::placement_backlog(game).and_then(|backlog| backlog_detail(backlog, queue))
-    } else {
+    let detail = if !verdict.builds() {
         None
+    } else if queue {
+        crate::input::queued_position(game).map(|position| format!("Queues as #{position}"))
+    } else {
+        crate::input::placement_backlog(game).and_then(|backlog| backlog_detail(backlog, false))
     };
     Some(RibbonStatus {
         verdict: text,
@@ -559,6 +572,9 @@ pub(crate) fn placement_status(
         verdict_w: 0.0,
     })
 }
+
+/// The status row's word for a site the founder cannot reach.
+const UNREACHABLE: &str = "Your builders can't reach it";
 
 /// Where a build lands in a builder already holding `backlog` orders.
 fn backlog_detail(backlog: usize, queue: bool) -> Option<String> {
@@ -606,6 +622,7 @@ fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str)
     .chain([
         format!("Needs {cost} more scrap"),
         "Order queue is full".to_string(),
+        UNREACHABLE.to_string(),
     ])
     .map(|text| measure(&text))
     .fold(0.0, f32::max);
