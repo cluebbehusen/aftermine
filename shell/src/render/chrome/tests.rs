@@ -46,7 +46,13 @@ fn the_ribbon_stays_on_screen_above_the_panel() {
         for panel_top in [f32::INFINITY, viewport.y - 120.0 * scale] {
             for label in [60.0, 180.0, 320.0] {
                 let w = ribbon_width(viewport, scale, label * scale);
-                let ribbon = ribbon_geometry(viewport, scale, panel_top, w, Rect::default());
+                let ribbon = ribbon_geometry(
+                    viewport,
+                    scale,
+                    panel_top,
+                    (w, ribbon_height(scale, false)),
+                    Rect::default(),
+                );
                 assert!(ribbon.x >= 0.0, "{viewport} @{scale}");
                 assert!(ribbon.x + ribbon.w <= viewport.x);
                 assert!(ribbon.y >= crate::layout::TOP_BAR_H * scale);
@@ -124,7 +130,13 @@ fn the_ribbon_row_slides_clear_of_the_minimap() {
     let scale = 1.5;
     let minimap = Rect::new(676.0, 520.0, 330.0, 230.0);
     let w = ribbon_width(viewport, scale, 200.0);
-    let ribbon = ribbon_geometry(viewport, scale, f32::INFINITY, w, minimap);
+    let ribbon = ribbon_geometry(
+        viewport,
+        scale,
+        f32::INFINITY,
+        (w, ribbon_height(scale, false)),
+        minimap,
+    );
     assert!(
         ribbon.x + ribbon.w <= minimap.x,
         "the row stops short of the minimap"
@@ -205,7 +217,13 @@ fn chrome_clear_of_the_toast_rows_leaves_the_window_edge_free() {
 fn toasts_stack_above_the_ribbon_row() {
     let viewport = vec2(1280.0, 800.0);
     let panel_top = 640.0;
-    let ribbon = ribbon_geometry(viewport, 1.0, panel_top, 240.0, Rect::default());
+    let ribbon = ribbon_geometry(
+        viewport,
+        1.0,
+        panel_top,
+        (240.0, ribbon_height(1.0, true)),
+        Rect::default(),
+    );
     for index in 0..3 {
         let origin = toast_origin(viewport, 1.0, panel_top, Rect::default(), ribbon, index);
         assert!(origin.y < ribbon.y, "toast {index} clears the row");

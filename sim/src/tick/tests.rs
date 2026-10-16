@@ -59,6 +59,17 @@ fn command_phase_inspection_is_pure_and_stops_before_the_tick() {
 }
 
 #[test]
+fn an_empty_command_phase_reads_the_state_without_a_copy() {
+    let state = crate::Scenario::skirmish()
+        .build()
+        .expect("embedded skirmish builds");
+    let borrowed = state.inspect_command_phase(&[], |view| {
+        std::ptr::eq(view.units().as_ptr(), state.units().as_ptr())
+    });
+    assert!(borrowed, "nothing staged, nothing to copy");
+}
+
+#[test]
 fn command_phase_inspection_honors_a_frozen_result() {
     let mut state = crate::Scenario::skirmish()
         .build()

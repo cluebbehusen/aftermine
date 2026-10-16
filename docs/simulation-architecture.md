@@ -53,8 +53,9 @@ All `State` fields are crate-private. External crates receive narrow immutable
 accessors and can change the world only by supplying commands to `tick`.
 `inspect_command_phase` is a deliberate exception for prediction: it clones the
 state, applies only command validation and command-phase effects, exposes a
-restricted read-only view to a callback, and discards the clone. It never
-advances or installs authoritative state.
+restricted read-only view to a callback, and discards the clone. With no
+commands it shows the state itself, since an empty command phase changes
+nothing. It never advances or installs authoritative state.
 
 Deserialization uses a private mirror type and then calls
 `State::validate_invariants`; there is no public unchecked deserialization path.
