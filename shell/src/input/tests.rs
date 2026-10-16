@@ -2720,13 +2720,19 @@ fn a_touch_placement_drops_a_ghost_then_builds_where_it_is_drawn() {
         "the ghost centers under the finger"
     );
 
-    // A confirming tap anywhere on the ghost builds where it is drawn,
-    // never where the fingertip happened to land.
+    // A tap on the ghost itself builds nothing: only the check mark does,
+    // and it builds where the ghost is drawn.
     let corner = vec2(
         ghost.x as f32 + w as f32 - 0.1,
         ghost.y as f32 + h as f32 - 0.1,
     );
     tap_world(&mut game, &mut input, corner);
+    assert!(
+        staged_anchors(&game).is_empty(),
+        "a tap on the ghost is a nudge"
+    );
+    assert_eq!(input.ghost_anchor(), Some(ghost));
+    tap_check(&mut game, &mut input);
     assert_eq!(staged_anchors(&game), vec![ghost]);
     assert!(input.placing.is_none(), "a plain confirm disarms");
     assert!(input.ghost_anchor().is_none());
@@ -2735,7 +2741,8 @@ fn a_touch_placement_drops_a_ghost_then_builds_where_it_is_drawn() {
 
 #[test]
 fn dragging_the_ghost_moves_it_by_whole_tiles_without_panning() {
-    let kind = oxide_sim::BuildingKind::Turret;
+    // Two tiles wide, so the ghost outsizes a fingertip and keeps its grip.
+    let kind = oxide_sim::BuildingKind::Fabricator;
     let (mut game, mut input, _) = armed_placement(kind);
     let foundry = game.state.buildings()[0].anchor;
     tap_world(
@@ -2747,7 +2754,7 @@ fn dragging_the_ghost_moves_it_by_whole_tiles_without_panning() {
     let grab = game
         .presentation
         .camera
-        .to_screen(vec2(ghost.x as f32 + 0.5, ghost.y as f32 + 0.5));
+        .to_screen(vec2(ghost.x as f32 + 0.5, ghost.y as f32 + 1.0));
     let camera = game.presentation.camera.center;
     let zoom = game.presentation.camera.zoom;
     input.now += 1.0;
@@ -2775,7 +2782,7 @@ fn a_refused_confirm_keeps_the_ghost_and_the_mode() {
     let on_foundry = vec2(foundry.x.to_num::<f32>(), foundry.y.to_num::<f32>());
     tap_world(&mut game, &mut input, on_foundry);
     let ghost = input.ghost_anchor().expect("a ghost is down");
-    tap_world(&mut game, &mut input, on_foundry);
+    tap_check(&mut game, &mut input);
     assert!(staged_anchors(&game).is_empty());
     assert_eq!(input.ghost_anchor(), Some(ghost));
     assert!(
@@ -2794,8 +2801,9 @@ fn queue_keeps_placement_armed_after_a_confirm() {
     let foundry = game.state.buildings()[0].anchor;
     let open = vec2(foundry.x as f32 + 3.5, foundry.y as f32 + 3.5);
     tap_world(&mut game, &mut input, open);
-    tap_world(&mut game, &mut input, open);
-    assert_eq!(staged_anchors(&game).len(), 1);
+    let first = input.ghost_anchor().expect("a ghost is down");
+    tap_check(&mut game, &mut input);
+    assert_eq!(staged_anchors(&game), vec![first]);
     assert!(
         game.pending
             .iter()
@@ -2806,9 +2814,10 @@ fn queue_keeps_placement_armed_after_a_confirm() {
         Some(oxide_sim::BuildingKind::Turret),
         "still armed"
     );
-    assert!(
-        input.ghost_anchor().is_none(),
-        "the next tap drops a fresh ghost"
+    assert_eq!(
+        input.ghost_anchor(),
+        Some(first.offset(1, 0)),
+        "the ghost moves on one footprint east"
     );
 }
 
@@ -2872,7 +2881,7 @@ fn an_extractor_ghost_snaps_to_its_frame() {
     input.arm_placement(oxide_sim::BuildingKind::Extractor);
     tap_world(&mut game, &mut input, vec2(8.5, 5.5));
     assert_eq!(input.ghost_anchor(), Some(frame));
-    tap_world(&mut game, &mut input, vec2(7.5, 4.5));
+    tap_check(&mut game, &mut input);
     assert_eq!(staged_anchors(&game), vec![frame]);
 }
 
@@ -4613,6 +4622,7 @@ mod placement_verdict;
 mod queue_latch;
 mod relayout;
 mod top_bar;
+mod touch_placement;
 
 #[test]
 fn the_alert_badge_jumps_the_camera_by_click_or_tap() {
@@ -6412,6 +6422,38 @@ fn tap_world(game: &mut Game, input: &mut InputState, world: Vec2) {
     tap(game, input, p);
 }
 
+/// Lays the touch ghost's controls out as a frame would, keeping the rest
+/// of the published layout, and returns them.
+fn lay_out_ghost_controls(game: &Game, input: &InputState) -> crate::layout::GhostControls {
+    let view = game.view();
+    let footprint = ghost_footprint(&view, input).expect("a ghost is down");
+    let controls = crate::layout::ghost_controls(
+        footprint,
+        row_handle_at(&view, input),
+        row_runs_up(input),
+        vec2(1280.0, 800.0),
+        input.ui,
+    );
+    let mut layout = game.presentation.layout.get();
+    layout.ghost_confirm = controls.confirm;
+    layout.ghost_cancel = controls.cancel;
+    layout.ghost_handle = controls.handle;
+    game.presentation.layout.set(layout);
+    controls
+}
+
+/// Taps the touch ghost's check mark.
+fn tap_check(game: &mut Game, input: &mut InputState) {
+    let controls = lay_out_ghost_controls(game, input);
+    tap(game, input, controls.confirm.center());
+}
+
+/// Taps the touch ghost's cross.
+fn tap_cross(game: &mut Game, input: &mut InputState) {
+    let controls = lay_out_ghost_controls(game, input);
+    tap(game, input, controls.cancel.center());
+}
+
 fn long_press_world(game: &mut Game, input: &mut InputState, world: Vec2) {
     let p = game.presentation.camera.to_screen(world);
     input.now += 1.0;
@@ -6481,7 +6523,7 @@ fn the_tutorial_survives_its_own_touch_instructions() {
     assert!(t.advance(game.demo));
     assert_eq!(t.step, 2, "income graduates the mining lesson");
 
-    // "Tap Build, then a building, then open ground."
+    // "Tap Build and a building: its ghost appears. Drag it into place."
     let (_, at) = own_unit(&game, UnitKind::Harvester, true);
     tap_world(&mut game, &mut input, at);
     tap_panel_card(&mut game, &mut input, |card| card.title == "Build");
@@ -6492,9 +6534,13 @@ fn the_tutorial_survives_its_own_touch_instructions() {
     tap_panel_card(&mut game, &mut input, |card| {
         card.action == crate::panel::CardAction::ArmBuild(oxide_sim::BuildingKind::Turret)
     });
+    assert!(
+        input.ghost_anchor().is_some(),
+        "the building's ghost appears"
+    );
     tap_world(&mut game, &mut input, vec2(10.5, 4.5));
-    assert!(game.pending.is_empty(), "open ground only drops the ghost");
-    tap_world(&mut game, &mut input, vec2(10.5, 4.5));
+    assert!(game.pending.is_empty(), "moving the ghost builds nothing");
+    tap_check(&mut game, &mut input);
     assert!(
         game.pending.iter().any(|c| matches!(
             &c.command,

@@ -435,6 +435,60 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     }
 }
 
+/// The touch ghost's controls: the cross, the check mark, lit while a tap
+/// would build, and the row handle.
+fn draw_ghost_controls(game: &crate::game::Scene<'_>, input: &InputState, s: f32) {
+    let layout = game.presentation.layout.get();
+    let plate = |rect: Rect| {
+        fill_rect(rect, crate::theme::SURFACE_PLATE);
+        stroke_rect(
+            rect,
+            crate::theme::Stroke::Edge.at(s),
+            crate::theme::BORDER_STRONG,
+        );
+    };
+    if layout.ghost_cancel.w > 0.0 {
+        let rect = layout.ghost_cancel;
+        plate(rect);
+        let (c, arm) = (rect.center(), 8.0 * s);
+        line_between(c - vec2(arm, arm), c + vec2(arm, arm), 2.5 * s, TEXT_BODY);
+        line_between(c + vec2(-arm, arm), c + vec2(arm, -arm), 2.5 * s, TEXT_BODY);
+    }
+    if layout.ghost_confirm.w > 0.0 {
+        let rect = layout.ghost_confirm;
+        plate(rect);
+        let builds = !input.planned_stamps().is_empty()
+            || crate::input::preview_spot(game, input).is_some_and(|spot| spot.verdict.builds());
+        let mark = if builds {
+            TEXT_ACCENT
+        } else {
+            crate::theme::TEXT_DISABLED
+        };
+        let c = rect.center();
+        let (start, knee, end) = (
+            c + vec2(-9.0, 0.0) * s,
+            c + vec2(-3.0, 7.0) * s,
+            c + vec2(10.0, -8.0) * s,
+        );
+        line_between(start, knee, 3.0 * s, mark);
+        line_between(knee, end, 3.0 * s, mark);
+    }
+    if layout.ghost_handle.w > 0.0 {
+        let c = layout.ghost_handle.center();
+        crate::render::prim::fill_circle(c, 11.0 * s, crate::theme::SURFACE_PLATE);
+        crate::render::prim::stroke_circle(c, 11.0 * s, 1.5 * s, crate::theme::BORDER_STRONG);
+        for dx in [-4.0, 0.0, 4.0] {
+            let x = c.x + dx * s;
+            line_between(
+                vec2(x, c.y - 5.0 * s),
+                vec2(x, c.y + 5.0 * s),
+                1.5 * s,
+                TEXT_BODY,
+            );
+        }
+    }
+}
+
 /// The armed-mode ribbon: where it sits and what it names.
 pub(crate) struct RibbonLayout {
     pub(super) rect: Rect,
@@ -955,6 +1009,7 @@ pub(crate) fn draw_hud(
     if let Some(rect) = hud.queue_toggle {
         draw_queue_toggle(rect, input.queue_toggle, s);
     }
+    draw_ghost_controls(game, input, s);
     if let (Some(view), Some(layout)) = (performance, &hud.performance) {
         super::performance::draw(view, layout);
     }

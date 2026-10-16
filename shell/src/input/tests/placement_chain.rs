@@ -148,7 +148,7 @@ fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
     assert!(input.ghost_anchor().is_some(), "and the ghost stays down");
 
     tap(&mut game, &mut input, chip.center());
-    tap_world(&mut game, &mut input, ground);
+    tap_check(&mut game, &mut input);
     assert_eq!(builds(&game).len(), 1, "premise: the queued confirm built");
     assert!(input.placing.is_some(), "QUEUE keeps placing");
 

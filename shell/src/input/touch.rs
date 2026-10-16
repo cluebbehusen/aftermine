@@ -18,9 +18,10 @@ pub(crate) enum TouchBorn {
     Minimap,
     /// Any other HUD chrome.
     Chrome,
-    /// The touch placement's ghost: dragging moves it, a still lift
-    /// builds it.
+    /// The touch placement's ghost: dragging moves it.
     Ghost,
+    /// The ghost's row handle: dragging pulls out a row.
+    Handle,
 }
 
 /// One live finger on the screen.
@@ -156,8 +157,11 @@ fn steer_minimap(game: &mut Game, p: Vec2) {
 
 /// Where a finger landing at `p` was born.
 fn born_at(game: &Game, input: &InputState, p: Vec2) -> TouchBorn {
+    let handle = game.presentation.layout.get().ghost_handle;
     if crate::render::minimap_world_at(&game.view(), p).is_some() {
         TouchBorn::Minimap
+    } else if handle.w > 0.0 && handle.contains(p) {
+        TouchBorn::Handle
     } else if click_on_hud(game, p)
         || crate::layout::group_slot_under(&game.presentation.layout.get(), p, Some(input.ui))
             .is_some()
@@ -292,6 +296,12 @@ pub(super) fn moved(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
         }
         return;
     }
+    if born == TouchBorn::Handle {
+        if input.touches.len() == 1 && input.touches[0].1.moved {
+            super::pull_row(&game.view(), input, p);
+        }
+        return;
+    }
     match input.touches.len() {
         // One moved finger drags the world under the hand —
         // unless it landed on chrome, whose ground it keeps.
@@ -358,12 +368,9 @@ pub(super) fn up(
         }
         0 => {
             input.pair = None;
-            if lifted.born == TouchBorn::Ghost {
-                // A still lift on the ghost builds it; a drag already
-                // moved it and leaves it there.
-                if lifted.still() {
-                    super::confirm_ghost(game, input);
-                }
+            if matches!(lifted.born, TouchBorn::Ghost | TouchBorn::Handle) {
+                // The ghost and its handle only move: building waits for
+                // the check mark, so a nudge never spends scrap.
                 input.last_tap = None;
                 return;
             }
@@ -446,13 +453,16 @@ pub(super) fn up(
 }
 
 /// The platform took a finger away. Nothing it started completes: no
-/// tap, box, ghost build, or card press. A pair partner left down is
-/// spent, as when its partner lifts.
+/// tap, box, row, or card press. A pair partner left down is spent, as
+/// when its partner lifts.
 pub(super) fn cancel(input: &mut InputState, id: u64) {
     let Some(pos) = input.touches.iter().position(|(tid, _)| *tid == id) else {
         return;
     };
-    input.touches.remove(pos);
+    let (_, finger) = input.touches.remove(pos);
+    if finger.born == TouchBorn::Handle {
+        super::drop_row(input);
+    }
     if let [(_, survivor)] = input.touches.as_mut_slice() {
         survivor.spent = true;
     }

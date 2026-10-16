@@ -357,3 +357,51 @@ fn a_wide_tooltip_slides_back_inside_the_window() {
     );
     assert_eq!(o.x, 0.0);
 }
+
+#[test]
+fn ghost_controls_hang_above_the_ghost_inside_the_window() {
+    let viewport = Vec2::new(1133.0, 744.0);
+    let size = MIN_TOUCH_TARGET;
+    let inside = |rect: Rect| {
+        rect.x >= 0.0
+            && rect.y >= TOP_BAR_H
+            && rect.right() <= viewport.x
+            && rect.bottom() <= viewport.y
+    };
+    let middle = Rect::new(500.0, 400.0, 32.0, 32.0);
+    let controls = ghost_controls(middle, None, false, viewport, 1.0);
+    assert!(controls.confirm.bottom() <= middle.y, "above the ghost");
+    assert_eq!(controls.cancel.y, controls.confirm.y, "side by side");
+    assert!(
+        controls.cancel.right() <= controls.confirm.x,
+        "the cross first"
+    );
+    assert_eq!(controls.confirm.w, size);
+    assert_eq!(controls.handle.w, 0.0, "no handle offered, none laid out");
+
+    let under_bar = Rect::new(500.0, TOP_BAR_H + 4.0, 32.0, 32.0);
+    let controls = ghost_controls(under_bar, None, false, viewport, 1.0);
+    assert!(
+        controls.confirm.y >= under_bar.bottom(),
+        "below when the bar is in the way"
+    );
+
+    let flagged = ghost_controls(middle, None, true, viewport, 1.0);
+    assert!(
+        flagged.confirm.y >= middle.bottom(),
+        "below for a row pulled upward"
+    );
+
+    for footprint in [
+        Rect::new(-20.0, 300.0, 32.0, 32.0),
+        Rect::new(viewport.x - 10.0, 300.0, 32.0, 32.0),
+        Rect::new(500.0, viewport.y - 20.0, 32.0, 32.0),
+    ] {
+        let controls = ghost_controls(footprint, Some(footprint.center()), false, viewport, 1.0);
+        assert!(
+            inside(controls.confirm) && inside(controls.cancel),
+            "{footprint:?}"
+        );
+        assert_eq!(controls.handle.center(), footprint.center());
+    }
+}

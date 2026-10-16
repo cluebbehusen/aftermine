@@ -114,7 +114,7 @@ fn a_latched_queue_lasts_a_whole_placement_chain() {
     for dx in [3.5, 5.5] {
         let ground = vec2(foundry.x as f32 + dx, foundry.y as f32 + 3.5);
         tap_world(&mut game, &mut input, ground);
-        tap_world(&mut game, &mut input, ground);
+        tap_check(&mut game, &mut input);
     }
     assert_eq!(staged_anchors(&game).len(), 2, "both ghosts built");
     assert!(

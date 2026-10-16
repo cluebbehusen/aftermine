@@ -52,6 +52,14 @@ pub struct LayoutModel {
     pub mode_ribbon: Rect,
     /// The QUEUE toggle beside the ribbon, on touch-only builds.
     pub queue_toggle: Rect,
+    /// The touch ghost's check mark, which builds it; zero-sized without
+    /// a ghost.
+    pub ghost_confirm: Rect,
+    /// The touch ghost's cross, which folds a row back or gives the
+    /// building back to the palette.
+    pub ghost_cancel: Rect,
+    /// The touch ghost's row handle.
+    pub ghost_handle: Rect,
     /// Mixed-selection roster filters, separate from command cards.
     pub roster_slots: [(Rect, CardAction); 8],
     /// How many roster filters are live this frame.
@@ -87,6 +95,9 @@ impl Default for LayoutModel {
             pause_status: Rect::new(0.0, 0.0, 0.0, 0.0),
             mode_ribbon: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
+            ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
+            ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
+            ghost_handle: Rect::new(0.0, 0.0, 0.0, 0.0),
             roster_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
             roster_count: 0,
             cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
@@ -101,6 +112,49 @@ impl Default for LayoutModel {
 /// Top-bar height in logical px at 1x scale, read by both hit-testing
 /// and drawing.
 pub const TOP_BAR_H: f32 = 40.0;
+
+/// The touch ghost's controls, each one fingertip square.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GhostControls {
+    pub(crate) confirm: Rect,
+    pub(crate) cancel: Rect,
+    /// Zero-sized when the ghost lays no rows.
+    pub(crate) handle: Rect,
+}
+
+/// Where the touch ghost's controls hang beside its `footprint`: the cross
+/// and the check mark side by side above it, or below it when the top bar
+/// or a row pulled upward (`below`) is in the way, kept inside the window,
+/// and the row handle centered on `handle`.
+pub(crate) fn ghost_controls(
+    footprint: Rect,
+    handle: Option<Vec2>,
+    below: bool,
+    viewport: Vec2,
+    ui: f32,
+) -> GhostControls {
+    let size = MIN_TOUCH_TARGET * ui;
+    let gap = 8.0 * ui;
+    let pair = size * 2.0 + gap;
+    let x = (footprint.center().x - pair * 0.5)
+        .min(viewport.x - pair - gap)
+        .max(gap);
+    let top = TOP_BAR_H * ui + gap;
+    let (above, under) = (footprint.y - gap - size, footprint.bottom() + gap);
+    let fits_under = under + size <= viewport.y - gap;
+    let y = if (below || above < top) && fits_under {
+        under
+    } else {
+        above.max(top)
+    };
+    GhostControls {
+        cancel: Rect::new(x, y, size, size),
+        confirm: Rect::new(x + size + gap, y, size, size),
+        handle: handle.map_or(Rect::new(0.0, 0.0, 0.0, 0.0), |center| {
+            Rect::new(center.x - size * 0.5, center.y - size * 0.5, size, size)
+        }),
+    }
+}
 
 use crate::theme::MIN_TOUCH_TARGET;
 
@@ -353,6 +407,9 @@ impl LayoutModel {
             || (self.orders.w > 0.0 && self.orders.contains(p))
             || (self.mode_ribbon.w > 0.0 && self.mode_ribbon.contains(p))
             || (self.queue_toggle.w > 0.0 && self.queue_toggle.contains(p))
+            || [self.ghost_confirm, self.ghost_cancel, self.ghost_handle]
+                .iter()
+                .any(|rect| rect.w > 0.0 && rect.contains(p))
             || (self.group_column.w > 0.0 && self.group_column.contains(p))
     }
 }
