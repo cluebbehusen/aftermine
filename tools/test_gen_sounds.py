@@ -53,7 +53,7 @@ class SfxPcmTests(unittest.TestCase):
             )
             for i in range(frames)
         )
-        with self.assertRaisesRegex(ValueError, "propulsion level"):
+        with self.assertRaisesRegex(ValueError, "loop level"):
             gen_sounds.validate_sfx_wav(
                 "avalanche_motor",
                 pcm_wav(frames=frames, rate=gen_sounds.SFX_RATE, samples=samples),

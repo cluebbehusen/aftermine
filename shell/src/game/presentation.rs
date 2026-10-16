@@ -239,6 +239,15 @@ impl<'a> Scene<'a> {
     pub fn my_vision(&self) -> &oxide_sim::Vision {
         self.state.vision(self.presentation.human)
     }
+    /// Whether the viewer sees `unit` now, as the renderer decides.
+    pub(crate) fn sees_unit(&self, unit: &oxide_sim::Unit) -> bool {
+        sees(
+            self.state,
+            self.presentation.human,
+            self.presentation.all_seeing(),
+            unit,
+        )
+    }
     /// What the local player knows of the salvage on `tile`.
     pub(crate) fn known_salvage(&self, tile: chassis::grid::TilePos) -> Option<Salvage> {
         known_salvage(

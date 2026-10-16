@@ -290,13 +290,14 @@ fit one band. Smaller windows, and UI scales above 100% on the smallest devices,
 are overflow stress cases. `layout::top_bar` places the top bar from measured
 text: the bank, income, and unit count run left to right, then the idle and
 under-attack badges, and the status hangs off the menu button. Touch-only builds
-hold the menu button and bank further from the corners, which iPad screens round
-and iPadOS safe areas leave out. `layout::group_column` stacks the control
-groups on a plate above the minimap's right edge, mirroring the orders dock, and
-wraps into more columns when the window is short. It shows once a group is saved
-or the selection can be saved, never while the minimap is hidden, and a setting
-hides it; its slots and plate are chrome. The top edge is left to taps because
-iPadOS takes a long-press there as a window move.
+hold the menu button, the bank, and the build palette's Back card further from
+the corners, which iPad screens round and iPadOS safe areas leave out.
+`layout::group_column` stacks the control groups on a plate above the minimap's
+right edge, mirroring the orders dock, and wraps into more columns when the
+window is short. It shows once a group is saved or the selection can be saved,
+never while the minimap is hidden, and a setting hides it; its slots and plate
+are chrome. The top edge is left to taps because iPadOS takes a long-press there
+as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated
@@ -956,6 +957,12 @@ Piledriver anchor cues follow visible deployment and folding transitions. Its
 direct-shot effect owns a single pending impact cue, consumed when the cosmetic
 round reaches its target on the presentation clock. Pausing holds that cue;
 effect expiry and timeline resets discard it. Reload is silent.
+
+A Maw's work is heard as loops rather than reports. Its drum's grind swells from
+the first hit, holds while it cuts and dies away once it stops; its kiln's hum
+follows the belt's speed, running on until the last load reaches the kiln. Both
+follow the machine's presented motion (`maw_motion`) and sound only while the
+viewer sees it. A heard cut raises combat music as a weapon report does.
 
 The tiny-skia renderer in `oxide-kit` produces whole-map CPU schematics. It does
 not share the native atlas, camera, HUD, animation, or visual polish. Screenshot

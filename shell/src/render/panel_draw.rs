@@ -413,14 +413,21 @@ fn category_columns(buildings: usize) -> usize {
 /// The construction palette for `count` cards: every building in its
 /// category's columns with Back last. Grouped, Back stands in its own
 /// column at the band's left edge and each category fills two rows under
-/// its header.
+/// its header. A touch-only build holds the bottom-left card clear of the
+/// rounded screen corner.
 fn catalog_geometry(
     viewport: Vec2,
     scale: f32,
     minimap: Rect,
     count: usize,
+    touch_only: bool,
 ) -> (Rect, Vec<Rect>, bool) {
     let left = 10.0 * scale;
+    let corner = if touch_only {
+        crate::layout::TOUCH_CORNER_INSET * scale
+    } else {
+        left
+    };
     let right = if minimap.w > 0.0 {
         minimap.x - 8.0 * scale
     } else {
@@ -456,7 +463,13 @@ fn catalog_geometry(
             }
             column += span;
         }
-        slots.push(Rect::new(left, top + header, back_w, 2.0 * cell_h + gap));
+        // Back gives up its corner side, so every other cell keeps its place.
+        slots.push(Rect::new(
+            corner,
+            top + header,
+            left + back_w - corner,
+            2.0 * cell_h + gap,
+        ));
         let band = Rect::new(
             0.0,
             top,
@@ -465,6 +478,8 @@ fn catalog_geometry(
         );
         return (band, slots, true);
     }
+    let left = corner;
+    let available = (right - left - 10.0 * scale).max(136.0 * scale);
     let max_columns = numeric::to_usize(
         ((available + 4.0 * scale) / (116.0 * scale))
             .floor()
@@ -539,7 +554,7 @@ fn draw_catalog(
     if !grouped {
         crate::typography::draw(
             "BUILD",
-            12.0 * s,
+            slots.first().map_or(band.x, |slot| slot.x) + 2.0 * s,
             band.y + 20.0 * s,
             crate::theme::Type::Body.at(s),
             TEXT_PRIMARY,
@@ -859,7 +874,13 @@ pub(crate) fn layout_panel(
         s,
     );
     if is_catalog(panel) {
-        let (band, slots, grouped) = catalog_geometry(viewport, s, mini, panel.cards.len());
+        let (band, slots, grouped) = catalog_geometry(
+            viewport,
+            s,
+            mini,
+            panel.cards.len(),
+            crate::platform::TOUCH_ONLY,
+        );
         let dock = (!panel.queue.is_empty() || panel.stop.is_some())
             .then(|| layout_dock(game, input, panel, viewport, s, band.y, measure));
         return PanelLayout::Catalog {

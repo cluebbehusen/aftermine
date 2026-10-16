@@ -2,9 +2,10 @@
 //!
 //! The simulation says only whether the Maw cut something lately and
 //! whether its kiln has wreck to eat. The drum lowers and spins while
-//! either holds; the belt runs while the kiln feeds and until the last
-//! load it carries reaches the kiln; the kiln glows while it burns.
-//! Distances and positions are in the unit canvas's pixels.
+//! either holds, and grinds while it cuts; the belt runs while the kiln
+//! feeds and until the last load it carries reaches the kiln; the kiln
+//! glows while it burns. Distances and positions are in the unit canvas's
+//! pixels.
 
 /// How far scrap rides from leaving the hood to dropping into the kiln.
 pub(crate) const BELT_RUN: f32 = 77.0;
@@ -19,6 +20,10 @@ const BELT_EASE: f32 = 0.15;
 const LOAD_SPACING: f32 = 12.0;
 const HEAT_UP_TICKS: f32 = 16.0;
 const COOL_TICKS: f32 = 40.0;
+/// How fast the drum's grind swells as it starts cutting and dies once it
+/// stops, per tick.
+const GRIND_RISE: f32 = 0.5;
+const GRIND_FALL: f32 = 0.2;
 
 /// One clump of scrap riding the belt.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,8 +39,9 @@ pub(crate) struct MawMotion {
     deploy: [f32; 2],
     spin: [f32; 2],
     spin_rate: f32,
+    grind: [f32; 2],
     belt: [f32; 2],
-    belt_rate: f32,
+    belt_rate: [f32; 2],
     heat: [f32; 2],
     loads: Vec<Load>,
     next_load: f32,
@@ -49,8 +55,9 @@ impl MawMotion {
             deploy: [0.0; 2],
             spin: [0.0; 2],
             spin_rate: 0.0,
+            grind: [0.0; 2],
             belt: [0.0; 2],
-            belt_rate: 0.0,
+            belt_rate: [0.0; 2],
             heat: [0.0; 2],
             loads: Vec::new(),
             next_load: 0.0,
@@ -68,8 +75,11 @@ impl MawMotion {
             motion.deploy = [1.0; 2];
         }
         motion.spin_rate = spin_target(cutting, feeding);
+        if cutting {
+            motion.grind = [1.0; 2];
+        }
         if feeding {
-            motion.belt_rate = BELT_SPEED;
+            motion.belt_rate = [BELT_SPEED; 2];
             motion.heat = [1.0; 2];
             let mut along = 0.0;
             while along + LOAD_SPACING < BELT_RUN {
@@ -107,11 +117,21 @@ impl MawMotion {
         ];
         self.spin_rate = approach(self.spin_rate, spin_target(cutting, feeding), SPIN_EASE);
         self.spin = [self.spin[1], self.spin[1] + self.spin_rate];
+        let grind = self.grind[1];
+        self.grind = [
+            grind,
+            if cutting {
+                (grind + GRIND_RISE).min(1.0)
+            } else {
+                (grind - GRIND_FALL).max(0.0)
+            },
+        ];
 
         let carrying = !self.loads.is_empty();
         let belt_target = if feeding || carrying { BELT_SPEED } else { 0.0 };
-        self.belt_rate = approach(self.belt_rate, belt_target, BELT_EASE);
-        let belt = self.belt[1] + self.belt_rate;
+        let belt_rate = approach(self.belt_rate[1], belt_target, BELT_EASE);
+        self.belt_rate = [self.belt_rate[1], belt_rate];
+        let belt = self.belt[1] + belt_rate;
         self.belt = [self.belt[1], belt];
         if feeding {
             while self.next_load <= belt {
@@ -149,8 +169,18 @@ impl MawMotion {
         lerp(self.spin, alpha)
     }
 
+    /// How hard the drum grinds, 0 silent to 1 cutting.
+    pub(crate) fn grind(&self, alpha: f32) -> f32 {
+        lerp(self.grind, alpha)
+    }
+
     pub(crate) fn belt(&self, alpha: f32) -> f32 {
         lerp(self.belt, alpha)
+    }
+
+    /// How fast the belt runs, 0 stopped to 1 at full speed.
+    pub(crate) fn belt_speed(&self, alpha: f32) -> f32 {
+        lerp(self.belt_rate, alpha) / BELT_SPEED
     }
 
     pub(crate) fn heat(&self, alpha: f32) -> f32 {

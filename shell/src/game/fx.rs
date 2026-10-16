@@ -314,6 +314,14 @@ chassis::listed_enum! {
         BuzzardFire,
         /// A Talon's interceptor burst.
         TalonFire,
+        /// A Roc's volley: both guns fire on the same tick.
+        RocFire,
+        /// A drone's needle shot.
+        DroneFire,
+        /// A Roc's bay letting its drones go.
+        DroneLaunch,
+        /// A drone clamping home in its bay.
+        DroneDock,
         /// A Bastion's emplaced artillery report.
         BastionFire,
         /// A Flak Turret's paired-yoke burst.
@@ -359,6 +367,10 @@ chassis::listed_enum! {
         WarheadMotor,
         /// An interceptor's motor while it climbs.
         InterceptorMotor,
+        /// A Maw's drum while it cuts.
+        MawCut,
+        /// A Maw's kiln while its belt carries wreck.
+        MawKiln,
     }
 }
 
@@ -480,9 +492,12 @@ fn unit_shot_origin(kind: oxide_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
     origin
 }
 
-/// The report a unit's weapon makes; an unarmed kind makes none.
+/// The report a unit's weapon makes; an unarmed kind, or one whose work is
+/// heard as a loop, makes none.
 fn unit_fire_sound(kind: oxide_sim::UnitKind) -> Option<SoundKind> {
-    crate::look::unit(kind).weapon.map(|weapon| weapon.sound)
+    crate::look::unit(kind)
+        .weapon
+        .and_then(|weapon| weapon.sound)
 }
 
 fn shell_fire_sound(shooter: oxide_sim::Target) -> SoundKind {
@@ -1504,6 +1519,23 @@ impl Presentation {
                     } else if state.hostile(self.human, *player) {
                         self.raise_cradle_alert(world_vec(*pos), *kind);
                         self.toast(format!("Enemy {name} has rolled out"));
+                    }
+                }
+                // A bay is heard only where its host is seen.
+                Event::DroneLaunched { host, .. } | Event::DroneDocked { host, .. } => {
+                    let Some(host) = state.unit(*host) else {
+                        continue;
+                    };
+                    if host.player == self.human
+                        || self.all_seeing()
+                        || state.vision(self.human).sees_unit(host)
+                    {
+                        let sound = if matches!(event, Event::DroneLaunched { .. }) {
+                            SoundKind::DroneLaunch
+                        } else {
+                            SoundKind::DroneDock
+                        };
+                        self.sounds_pending.push((sound, Some(world_vec(host.pos))));
                     }
                 }
                 Event::UnitTrained { unit, player, .. } if *player == self.human => {

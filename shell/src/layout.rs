@@ -180,10 +180,11 @@ pub fn touch_pad(rect: Rect, ui: f32) -> Rect {
     )
 }
 
-/// How far a touch-only build holds the menu button off the right edge.
-/// iPad screens round their corners, and iPadOS safe areas leave them
-/// out, so a button in the corner is clipped.
-const TOUCH_RIGHT_INSET: f32 = 20.0;
+/// How far a touch-only build holds a button in a screen corner off the
+/// side edge: the menu button at the top right and the build palette's
+/// Back card at the bottom left. iPad screens round their corners, and
+/// iPadOS safe areas leave them out, so a button in the corner is clipped.
+pub(crate) const TOUCH_CORNER_INSET: f32 = 20.0;
 /// How much further a touch-only build holds the top bar's left group
 /// in from the rounded corner.
 const TOUCH_LEFT_INSET: f32 = 6.0;
@@ -192,7 +193,7 @@ const TOUCH_LEFT_INSET: f32 = 6.0;
 /// edge, inside the bar so its padded touch target stays mostly chrome.
 pub fn menu_button_rect(viewport_w: f32, ui: f32, touch_only: bool) -> Rect {
     let size = 34.0 * ui;
-    let margin = if touch_only { TOUCH_RIGHT_INSET } else { 8.0 };
+    let margin = if touch_only { TOUCH_CORNER_INSET } else { 8.0 };
     Rect::new(viewport_w - size - margin * ui, 3.0 * ui, size, size)
 }
 
