@@ -102,6 +102,47 @@ fn no_raid_sets_out_while_a_defense_is_under_way() {
 }
 
 #[test]
+fn a_quiet_local_guard_leaves_raiders_free_to_raid() {
+    let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+    // A West expansion on the south of the field with Sentinels beside it,
+    // and an East Sentinel standing off it: near enough to post a guard, too
+    // far to defend against.
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 20,
+        y: 19,
+    });
+    for x in 25..28 {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, 20));
+    }
+    scenario.units.push(unit(1, UnitKind::Sentinel, 33, 21));
+    let state = scenario.build().unwrap();
+    let (_, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    let missions = trace.unwrap().missions;
+    assert!(
+        missions
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })
+                && mission.phase == Phase::Guard),
+        "premise: a quiet guard {missions:?}"
+    );
+    assert!(raid(&missions).is_some(), "{missions:?}");
+}
+
+#[test]
+fn anti_air_beside_a_harvest_line_does_not_guard_it_from_scuttlers() {
+    let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+    scenario
+        .units
+        .extend([7, 8, 14, 15].map(|y| unit(1, UnitKind::Flakhound, 20, y)));
+    let state = scenario.build().unwrap();
+    let (_, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    let missions = trace.unwrap().missions;
+    assert!(raid(&missions).is_some(), "{missions:?}");
+}
+
+#[test]
 fn an_outweighed_raid_turns_back_and_leaves_its_target_alone() {
     let scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
     let state = scenario.build().unwrap();
@@ -496,6 +537,22 @@ fn a_fighting_attack_s_sappers_keep_their_orders_when_it_regroups() {
             .iter()
             .all(|(units, _)| !units.contains(&sapper)),
         "the retreat leaves the Sapper to its target: {commands:?}"
+    );
+}
+
+#[test]
+fn an_attack_ending_its_focus_leaves_its_sappers_to_their_work() {
+    let (state, mut opponent, sapper, _) =
+        sapping(&serde_json::json!({"engage": {"focus": 999}}), true, 0);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let sent = hunts(&commands);
+    assert!(
+        sent.iter().any(|(units, _)| units.len() > 1),
+        "premise: the army hunts on once its focus is gone: {commands:?}"
+    );
+    assert!(
+        sent.iter().all(|(units, _)| !units.contains(&sapper)),
+        "{commands:?}"
     );
 }
 

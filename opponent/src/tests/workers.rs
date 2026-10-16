@@ -464,6 +464,7 @@ fn checkpoints_reject_malformed_stuck_units() {
             "units": [],
             "failures": [],
             "abandoned": [],
+            "raided": [],
             "scouted": [],
             "stuck": stuck,
         }))

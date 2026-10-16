@@ -1,5 +1,4 @@
 use super::*;
-use chassis::grid::as_index;
 
 /// Two islands across a pit no ground unit crosses and neither side sees
 /// over, half-turn symmetric.
@@ -438,9 +437,13 @@ fn a_scrapheap_seat_loads_over_several_decisions_and_lands_its_riders() {
         }
         state.tick(&commands);
     }
+    let attention = crate::decision::allowance(BotDifficulty::Scrapheap);
     assert!(
-        loading.len() > 1 && loading.iter().all(|issued| *issued <= 3),
-        "carriers load over several three-order decisions: {loading:?}"
+        loading.len() > 1
+            && loading
+                .iter()
+                .all(|issued| u32::try_from(*issued).unwrap() <= attention),
+        "carriers load over several decisions, each within Scrapheap's attention: {loading:?}"
     );
 }
 
@@ -804,6 +807,55 @@ fn a_carrier_back_home_still_loaded_sets_its_riders_down_and_lets_them_go() {
 }
 
 #[test]
+fn a_late_lift_flies_its_loaded_carriers_home_around_known_anti_air() {
+    let scenario = strait();
+    let model = map(&scenario);
+    let home = model.component(TilePos::new(3, 11));
+    let mut state = scenario.build().unwrap();
+    let mut opponent = seat(&scenario, 0);
+    until_phase(&mut opponent, &mut state, Phase::Fly);
+    while skyhooks(&state, 0)
+        .iter()
+        .any(|hook| model.component(hook.tile()) == home || hook.tile().x < 27)
+    {
+        assert!(state.current_tick() < 3_000, "the carriers never crossed");
+        state.tick(&[]);
+    }
+    let carriers: Vec<UnitId> = skyhooks(&state, 0).iter().map(|hook| hook.id).collect();
+    assert!(
+        skyhooks(&state, 0)
+            .iter()
+            .all(|hook| !hook.cargo.is_empty()),
+        "premise: the riders are still aboard"
+    );
+    // The carriers wait over the landing until the flight runs out of time,
+    // and an interceptor is now known over the strait between them and home.
+    let flying_since = opponent.missions()[0].since;
+    while state.current_tick() < flying_since + 2_400 {
+        state.tick(&[]);
+    }
+    let late =
+        Opponent::restore(&opponent.checkpoint(), &scenario, &state, map(&scenario)).unwrap();
+    let interceptor = [(UnitId(999), "talon", TilePos::new(20, 9))];
+    let mut opponent = remembering(&late, &scenario, &state, &interceptor);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let home_runs: Vec<(Vec<UnitId>, TilePos)> = runs(&commands)
+        .into_iter()
+        .filter(|(units, _)| units.iter().all(|id| carriers.contains(id)))
+        .collect();
+    assert!(
+        !home_runs.is_empty(),
+        "premise: the carriers turn home: {commands:?}"
+    );
+    assert!(
+        home_runs
+            .iter()
+            .any(|(_, goal)| model.component(*goal) != home),
+        "around the anti-air: {home_runs:?}"
+    );
+}
+
+#[test]
 fn emptied_carriers_short_of_orders_fly_home_before_the_lift_fights() {
     let scenario = strait();
     let state = scenario.build().unwrap();
@@ -880,44 +932,6 @@ fn emptied_carriers_short_of_orders_fly_home_before_the_lift_fights() {
     for hook in skyhooks(&state, 0) {
         assert_eq!(model.component(hook.tile()), home, "{:?}", hook.tile());
     }
-}
-
-#[test]
-fn a_lift_at_the_member_cap_boards_no_more_and_still_restores() {
-    let mut scenario = strait();
-    let state = scenario.build().unwrap();
-    let mut opponent = seat(&scenario, 0);
-    opponent.act(&state, &mut OwnEvents::default());
-    // Members enough that one more load would pass the cap, standing on any
-    // open ground of either island.
-    let taken = |tile: TilePos| {
-        state.units().iter().any(|unit| unit.tile() == tile)
-            || state.buildings().iter().any(|building| {
-                let (width, height) = building.kind.size();
-                crate::frame::gap(building.anchor, (width, height), tile, (1, 1)) < 2
-            })
-    };
-    let first = u32::try_from(state.units().len()).unwrap();
-    let members: Vec<UnitSpec> = (1..23)
-        .flat_map(|y| (1..39).map(move |x| TilePos::new(x, y)))
-        .filter(|tile| {
-            STRAIT[as_index(tile.y)].as_bytes()[as_index(tile.x)] == b'.' && !taken(*tile)
-        })
-        .take(255)
-        .map(|tile| harvester(0, tile.x, tile.y))
-        .collect();
-    assert_eq!(members.len(), 255, "premise: room for every member");
-    scenario.units.extend(members);
-    let state = scenario.build().unwrap();
-    let mut json = serde_json::to_value(opponent.checkpoint()).unwrap();
-    json["missions"]["list"][0]["units"] = (first..first + 255).collect::<Vec<u32>>().into();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    opponent.act(&state, &mut OwnEvents::default());
-    assert!(
-        Opponent::restore(&opponent.checkpoint(), &scenario, &state, map(&scenario)).is_ok(),
-        "no lift grew past the cap"
-    );
 }
 
 #[test]

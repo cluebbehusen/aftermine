@@ -671,7 +671,14 @@ pub(crate) fn decide(
         .collect();
     // Local guards rank ahead of lifts, so their gaps train before a lift
     // holds production for carriers.
-    arm(observation, map, &producers, guard_gaps, &mut ledger);
+    arm(
+        observation,
+        map,
+        &producers,
+        guard_gaps,
+        &mut needs,
+        &mut ledger,
+    );
     let carrying = lift
         && !short
         && train_carriers(
@@ -684,7 +691,7 @@ pub(crate) fn decide(
             &mut ledger,
         );
     if !carrying {
-        if lacking > 0 {
+        if lacking > 0 && !short {
             train_scout(observation, &producers, lacking, &mut ledger);
         }
         if !short {
@@ -728,7 +735,14 @@ pub(crate) fn decide(
         }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
         if short {
-            arm(observation, map, &producers, shortfalls, &mut ledger);
+            arm(
+                observation,
+                map,
+                &producers,
+                shortfalls,
+                &mut needs,
+                &mut ledger,
+            );
         }
     }
     if !short && exposed {
@@ -1258,6 +1272,7 @@ fn arm(
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
+    needs: &mut Needs,
     ledger: &mut Ledger,
 ) {
     const DOMAINS: [Domain; 2] = [Domain::Ground, Domain::Air];
@@ -1322,6 +1337,7 @@ fn arm(
         if let Some(kind) = kind
             && ledger.train(producer.building.id, kind)
         {
+            needs.queued(kind);
             cover(&mut shortfalls, kind, at);
         }
     }
@@ -1419,7 +1435,7 @@ const RAID_INCOME: u32 = 900;
 const LIFT_PULL: u32 = 600;
 
 /// Unit orders one decision may issue: a difficulty limit on attention.
-fn allowance(difficulty: BotDifficulty) -> u32 {
+pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
     match difficulty {
         BotDifficulty::Scrapheap => 2,
         BotDifficulty::Standard => 6,

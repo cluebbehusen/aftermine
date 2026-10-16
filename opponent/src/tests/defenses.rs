@@ -497,6 +497,27 @@ fn an_emergency_turret_guards_the_building_under_attack() {
 }
 
 #[test]
+fn an_air_raid_gets_its_emergency_flak_when_a_turret_is_out_of_reach() {
+    let expansion = TilePos::new(14, 8);
+    let mut scenario = arena(95);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
+    scenario.units.extend([
+        unit(1, UnitKind::Sentinel, 16, 10),
+        unit(1, UnitKind::Buzzard, 16, 9),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::FlakTurret),
+        "a Flak Turret, though no Turret is affordable: {commands:?}"
+    );
+}
+
+#[test]
 fn each_pressed_building_gets_its_own_emergency_turret() {
     let expansion = TilePos::new(14, 8);
     let mut scenario = arena(400);
@@ -878,7 +899,9 @@ fn remembered(kind: &str, count: usize) -> Memory {
         "units": army,
         "failures": [],
         "abandoned": [],
+        "raided": [],
         "scouted": [],
+        "stuck": [],
     }))
     .unwrap()
 }

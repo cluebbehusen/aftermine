@@ -203,10 +203,9 @@ impl Missions {
     /// no raid holds. Returns whether a raid formed.
     fn form_raid(&mut self, foray: &Foray<'_>, minimum: u64, ledger: &mut Ledger) -> bool {
         let observation = foray.observation;
-        let defending = self
-            .list
-            .iter()
-            .any(|mission| matches!(mission.task, Task::Defend { .. }));
+        let defending = self.list.iter().any(|mission| {
+            matches!(mission.task, Task::Defend { .. }) && mission.holds(observation)
+        });
         if self.list.len() >= MISSION_CAP || defending {
             return false;
         }

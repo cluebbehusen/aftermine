@@ -116,6 +116,44 @@ fn trained(scenario: &Scenario, tick: u64, kind: UnitKind) -> bool {
         .any(|(_, each)| *each == kind)
 }
 
+#[test]
+fn a_seat_in_an_emergency_trains_defenders_before_scouts() {
+    let mut pressed = field();
+    pressed.players[0].scrap = 1_000;
+    pressed
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 6, 16));
+    pressed.units.push(unit(1, UnitKind::Sentinel, 40, 12));
+    let mut state = pressed.build().unwrap();
+    let raider = at(&state, 40, 12);
+    // Scouting points go stale before an East Sentinel walks up to the West
+    // Foundry.
+    advance_to(&mut state, 1_800, &[]);
+    state.tick(&[run(1, vec![raider], 9, 12)]);
+    while state
+        .units()
+        .iter()
+        .any(|unit| unit.id == raider && unit.tile().x > 10)
+    {
+        state.tick(&[]);
+    }
+    let interval = crate::decision_interval(thrifty().difficulty);
+    while !state.current_tick().is_multiple_of(interval) {
+        state.tick(&[]);
+    }
+    let trained = trains(&seat_with(&pressed, 0, thrifty()).act(&state, &mut OwnEvents::default()));
+    assert!(
+        trained
+            .iter()
+            .any(|(_, kind)| kind.stats().can_target(oxide_sim::stats::Domain::Ground)),
+        "premise: the seat arms against the raider: {trained:?}"
+    );
+    assert!(
+        trained.iter().all(|(_, kind)| *kind != UnitKind::Surveyor),
+        "{trained:?}"
+    );
+}
+
 /// West with its tech, a Deep Bore and a standing army on the open field,
 /// facing a ring of East Bastions it sees, worth more than that army: ground
 /// its army cannot take.

@@ -1097,7 +1097,7 @@ pub(super) fn defense_around(
     let units: u64 = memory
         .units()
         .iter()
-        .filter(|unit| unit.kind.stats().can_fight())
+        .filter(|unit| crate::defenses::reach(unit.kind) > Fx::ZERO)
         .filter(|unit| {
             tiles
                 .iter()

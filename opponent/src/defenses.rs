@@ -1440,7 +1440,7 @@ pub(crate) fn emergency(
             };
             let centre = footprint_centre(kind, anchor);
             if ledger.spendable() < price {
-                return;
+                break;
             }
             if let Some(builder) = workers::builder(observation, map, frame, anchor, centre, ledger)
             {

@@ -923,16 +923,17 @@ impl Missions {
         if !late {
             land(&away, flight.landing, ledger);
         }
-        let away: Vec<UnitId> = loaded
+        let away: Vec<&UnitObs> = loaded
             .iter()
+            .copied()
             .filter(|unit| map.component(unit.tile) != Some(lifting.home))
-            .map(|unit| unit.id)
             .collect();
-        if late
-            && let (false, Some(pad)) = (away.is_empty(), pad)
-            && ledger.order(run(away, pad))
-        {
-            self.list[flight.index].since = lifting.observation.tick;
+        if late && let (Some(first), Some(pad)) = (away.first(), pad) {
+            let via = lifting.route(first.tile, pad);
+            if ledger.room() >= route_orders(via) {
+                fly_to(ids(&away), via, pad, false, ledger);
+                self.list[flight.index].since = lifting.observation.tick;
+            }
         }
         let (gunships, empty): (Vec<&UnitObs>, Vec<&UnitObs>) =
             empty.iter().partition(|unit| gunship(unit.kind));

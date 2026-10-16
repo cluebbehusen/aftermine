@@ -54,14 +54,12 @@ pub(crate) struct Memory {
     abandoned: Vec<Failure>,
     /// Raid targets raided, oldest first. Kept apart from abandoned targets
     /// so a raid leaves the target to larger missions.
-    #[serde(default)]
     raided: Vec<Failure>,
     /// Tick each scouting point was last in sight, by point; empty before
     /// the first decision.
     scouted: Vec<u64>,
     /// Own units whose orders stalled for want of a route or a firing
     /// position, by id.
-    #[serde(default)]
     stuck: Vec<Stuck>,
 }
 
