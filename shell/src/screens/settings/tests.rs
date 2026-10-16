@@ -70,6 +70,18 @@ fn click(at: Vec2) -> Vec<RawEvent> {
     ]
 }
 
+/// Activates the focused profile row, then confirms the dialog it
+/// raises.
+fn apply_focused_profile(s: &mut SettingsScreen, config: &mut Config) -> Update {
+    drive(s, config, &press(Key::Enter), false);
+    assert!(
+        matches!(s.face, Face::Confirming(_)),
+        "a profile row asks first"
+    );
+    drive(s, config, &press(Key::Down), false);
+    drive(s, config, &press(Key::Enter), false)
+}
+
 #[test]
 fn a_capture_prompt_is_information_and_key_help_is_coaching() {
     let config = Config::default();
@@ -638,7 +650,7 @@ fn the_left_handed_preset_moves_the_verbs_and_reset_walks_home() {
     for _ in 0..index(&s, Item::Setting(Row::LeftHandedPreset)) {
         drive(&mut s, &mut config, &press(Key::Down), false);
     }
-    let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let up = apply_focused_profile(&mut s, &mut config);
     assert!(up.dirty);
     assert!(
         s.notice.as_ref().is_some_and(|n| !n.danger),
@@ -671,7 +683,7 @@ fn the_left_handed_preset_moves_the_verbs_and_reset_walks_home() {
         Some(Chord::bare(Key::Y))
     );
     focus(&mut s, Item::ResetBindings);
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    apply_focused_profile(&mut s, &mut config);
     assert_eq!(config.bindings, BindingMap::classic());
 }
 
@@ -684,11 +696,106 @@ fn x_unbinds_and_reset_restores_the_classic_map() {
     assert!(up.dirty);
     assert_eq!(config.bindings.chord_for(Action::Patrol), None);
     focus(&mut s, Item::ResetBindings);
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    apply_focused_profile(&mut s, &mut config);
     assert_eq!(
         config.bindings.chord_for(Action::Patrol),
         BindingMap::classic().chord_for(Action::Patrol)
     );
+}
+
+#[test]
+fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
+    crate::render::set_viewport(1280.0, 800.0);
+    crate::render::set_user_scale(1.0);
+    for profile in [Profile::Classic, Profile::LeftHanded] {
+        let mut config = Config::default();
+        assert!(config.bindings.rebind_slot(
+            Action::Patrol,
+            1,
+            Chord {
+                key: Key::K,
+                ctrl: true,
+                shift: true
+            }
+        ));
+        let rebound = config.bindings.clone();
+        let mut s = on(Tab::Controls, &config);
+        for (way, events) in [
+            ("Enter on the preselected Cancel", press(Key::Enter)),
+            ("Escape", press(Key::Escape)),
+            ("the BACK button", crate::button::press_back(true)),
+        ] {
+            focus(&mut s, profile.item());
+            let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+            assert_eq!(s.face, Face::Confirming(profile));
+            assert_eq!(s.mode_name(), "confirm_bindings");
+            assert!(
+                s.edits_bindings(),
+                "the dialog answers the classic keys a broken map may lack"
+            );
+            assert_eq!(s.menu.value(), Some(&Item::Cancel), "Cancel is preselected");
+            assert!(
+                !up.dirty && config.bindings == rebound,
+                "asking changes nothing"
+            );
+            let up = drive(&mut s, &mut config, &events, false);
+            assert_eq!(s.face, Face::Tab(Tab::Controls), "{way} closes the dialog");
+            assert_eq!(up.out, Out::Stay, "{way} stays in Settings");
+            assert!(
+                !up.dirty && config.bindings == rebound,
+                "{way} keeps the rebinds"
+            );
+            assert_eq!(
+                s.menu.value(),
+                Some(&profile.item()),
+                "{way} returns to the row that asked"
+            );
+        }
+        let up = apply_focused_profile(&mut s, &mut config);
+        assert!(up.dirty);
+        assert_eq!(config.bindings, profile.bindings());
+        assert_eq!(s.face, Face::Tab(Tab::Controls));
+        assert_eq!(s.menu.value(), Some(&profile.item()));
+        assert_eq!(
+            s.notice.as_ref().map(|notice| notice.text.as_str()),
+            Some(profile.applied()),
+            "the notice line says the profile is in place"
+        );
+    }
+}
+
+#[test]
+fn a_second_tap_on_a_profile_row_never_applies_it() {
+    for (width, height) in [(1180.0, 820.0), (640.0, 400.0)] {
+        crate::render::set_viewport(width, height);
+        crate::render::set_user_scale(1.0);
+        for profile in [Profile::Classic, Profile::LeftHanded] {
+            let mut config = Config::default();
+            assert!(config.bindings.rebind_slot(
+                Action::Patrol,
+                1,
+                Chord {
+                    key: Key::K,
+                    ctrl: true,
+                    shift: true
+                }
+            ));
+            let rebound = config.bindings.clone();
+            let mut s = on(Tab::Controls, &config);
+            let row = s
+                .menu
+                .item_rect(index(&s, profile.item()))
+                .expect("the profile rows open in view")
+                .center();
+            drive(&mut s, &mut config, &tap(row), false);
+            assert_eq!(s.face, Face::Confirming(profile));
+            let up = drive(&mut s, &mut config, &tap(row), false);
+            assert!(
+                !up.dirty && config.bindings == rebound,
+                "the dialog's verb never sits under the row that raised it"
+            );
+        }
+    }
 }
 
 #[test]
