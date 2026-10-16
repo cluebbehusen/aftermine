@@ -332,7 +332,7 @@ fn anti_air_buildings_use_the_weapon_domain_at_every_tier_and_in_placement() {
     }
     let game = economy_support_game();
     let mut input = InputState::new();
-    input.placing = Some(kind);
+    input.arm_placement(kind);
     let mut indicators = Vec::new();
     visit_active_ranges(&game.view(), &input, |indicator| indicators.push(indicator));
     assert!(

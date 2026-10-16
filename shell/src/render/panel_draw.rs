@@ -592,7 +592,7 @@ fn draw_catalog(
     let hovered = slots.iter().position(|rect| hovers(input, *rect));
     for (i, (card, &rect)) in panel.cards.iter().zip(slots).enumerate() {
         let armed =
-            matches!(card.action, CardAction::ArmBuild(kind) if input.placing == Some(kind));
+            matches!(card.action, CardAction::ArmBuild(kind) if input.placing_kind() == Some(kind));
         let hot = hovered == Some(i);
         fill_rect(
             rect,
@@ -1409,7 +1409,7 @@ pub(crate) fn draw_panel(
     // Command cards, wrapping into as many rows as the width demands.
     for (card, &rect) in panel.cards.iter().zip(card_rects) {
         let hovered = hovers(input, rect);
-        let selected = matches!(card.action, CardAction::ArmBuild(kind) if input.placing == Some(kind))
+        let selected = matches!(card.action, CardAction::ArmBuild(kind) if input.placing_kind() == Some(kind))
             || (card.action == CardAction::ArmRally && !input.rallying.is_empty());
         let bg = if selected {
             crate::theme::CARD_ARMED
