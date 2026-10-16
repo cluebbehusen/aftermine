@@ -103,3 +103,42 @@ The report and impact retain their approved PCM bytes. Anchor clips retain their
 approved PCM bytes and use the quieter manifest gains. Visible anchor direction
 changes trigger setup and folding once; the impact follows the cosmetic round's
 arrival on the simulation presentation clock. Seeking discards pending impacts.
+
+## Roc and drones
+
+Approved by Connor by ear on 2026-10-15 from an audition of six options per
+voice, each laid over native footage at the ticks its event fires. Both Roc guns
+fire on the same tick, so one report stands for the volley: a heavy zap with one
+dark echo off the ground below. A drone's shot is a tiny high zap. The bay's
+launch is a clamp letting go into a hiss; each dock is a short hiss and a latch.
+
+| Production clip    | Duration | Mixer gain | SHA-256                                                            |
+| ------------------ | -------- | ---------- | ------------------------------------------------------------------ |
+| `attack_roc.wav`   | 0.31 s   | 0.30       | `3c1b0a6f48788eb4d27cd3ebb609f6149ed242b27ea66040b9663091bb36e497` |
+| `attack_drone.wav` | 0.11 s   | 0.20       | `64b9d387a2f8d6dffa81ea048cc6289c543da03a41f759a459f69a5a0a7cfcdc` |
+| `drone_launch.wav` | 0.40 s   | 0.22       | `5c95724f5dc530d351ffe485db2e76fca7098239f599ce6de8c6071bcf2eea94` |
+| `drone_dock.wav`   | 0.14 s   | 0.22       | `fa9550ccb7ac33af39773ec3259038baee5cf866cffeacf674b334c68ec324f0` |
+
+The bay's cues sound at its host only where the viewer sees it. The launch's
+half-second repetition limit gives a bay's launch one cue for all its drones,
+and drones that dock together share one.
+
+## Maw
+
+Approved by Connor by ear on 2026-10-16 from a second audition of six loops per
+voice, each laid over native footage and faded with the work. The drum and kiln
+run continuously, so each is a four-second loop that fades in and out with the
+work rather than a repeated bite. The cut is a ring-modulated saw drone on D
+that sags slightly under load; the kiln is a warm D and A hum with sparse
+crackles.
+
+| Production clip | Duration | Mixer gain | SHA-256                                                            |
+| --------------- | -------- | ---------- | ------------------------------------------------------------------ |
+| `maw_cut.wav`   | 4.00 s   | 0.264      | `39815e65e830e5361bcfa9114e32aa625c75d9771ae93666b7da9d96d6c20265` |
+| `maw_kiln.wav`  | 4.00 s   | 0.211      | `53e12faa1a96a3c43fc5e71dadeaf19750a86d4534cef632b0687b6a1bf8c92b` |
+
+The cut swells over two ticks from the drum's first hit, holds while the drum
+cuts, and dies away over five ticks once eight pass without a hit. The kiln's
+hum follows the belt's speed: it eases up as the belt starts and runs on until
+the last load reaches the kiln. Both sound only where the viewer sees the Maw,
+and the Maw's hits make no report of their own.

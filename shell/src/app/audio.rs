@@ -46,10 +46,22 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
             effects * crate::mixer::Mixer::base_volume(SoundKind::InterceptorMotor),
         ),
     );
+    let maw_combat = crate::maw_audio::update(
+        &mut app.mixer.maw_cut_loops,
+        &mut app.mixer.maw_kiln_loops,
+        &motor_game,
+        motor_running,
+        (&app.sounds.maw_cuts, &app.sounds.maw_kilns),
+        (
+            effects * crate::mixer::Mixer::base_volume(SoundKind::MawCut),
+            effects * crate::mixer::Mixer::base_volume(SoundKind::MawKiln),
+        ),
+    );
     let mixed = crate::audio_mix::frame_mix(queued, cam_center, cam_half_extents, cam_zoom);
-    let combat_impulse = mixed
-        .iter()
-        .any(|event| crate::mixer::spec(event.kind).combat);
+    let combat_impulse = maw_combat
+        || mixed
+            .iter()
+            .any(|event| crate::mixer::spec(event.kind).combat);
     for event in mixed {
         app.mixer
             .play(&app.sounds, event.kind, &app.config.volumes, event.gain);

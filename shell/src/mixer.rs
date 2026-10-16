@@ -85,6 +85,10 @@ pub(crate) const fn spec(kind: SoundKind) -> SoundSpec {
         SoundKind::FlakhoundFire => row("attack_flakhound", Effects, Standard, true, false),
         SoundKind::BuzzardFire => row("attack_buzzard", Effects, Standard, true, false),
         SoundKind::TalonFire => row("attack_talon", Effects, Detail, true, false),
+        SoundKind::RocFire => row("attack_roc", Effects, Standard, true, false),
+        SoundKind::DroneFire => row("attack_drone", Effects, Detail, true, false),
+        SoundKind::DroneLaunch => row("drone_launch", Effects, Standard, true, false),
+        SoundKind::DroneDock => row("drone_dock", Effects, Detail, false, false),
         SoundKind::BastionFire => row("attack_bastion", Effects, Heavy, true, false),
         SoundKind::FlakTurretFire => row("attack_flak_turret", Effects, Standard, true, false),
         SoundKind::WardenFire => row("attack_warden", Effects, Detail, true, false),
@@ -107,6 +111,8 @@ pub(crate) const fn spec(kind: SoundKind) -> SoundSpec {
         SoundKind::Interception => row("interception", Effects, Heavy, true, true),
         SoundKind::WarheadMotor => row("warhead_flight", Effects, Heavy, true, false),
         SoundKind::InterceptorMotor => row("interceptor_flight", Effects, Standard, true, false),
+        SoundKind::MawCut => row("maw_cut", Effects, Standard, true, false),
+        SoundKind::MawKiln => row("maw_kiln", Effects, Detail, false, false),
     }
 }
 
@@ -163,6 +169,8 @@ pub(crate) struct Mixer {
         crate::strike_audio::StrikeLoops<{ crate::strike_audio::WARHEAD_VOICES }>,
     pub(crate) interceptor_loops:
         crate::strike_audio::StrikeLoops<{ crate::strike_audio::INTERCEPTOR_VOICES }>,
+    pub(crate) maw_cut_loops: crate::maw_audio::MawLoops,
+    pub(crate) maw_kiln_loops: crate::maw_audio::MawLoops,
     last_played: std::collections::HashMap<SoundKind, f64>,
     /// Alternates the basic zap between two clips so volleys read as
     /// many guns, not one sample looping.

@@ -28,6 +28,7 @@ mod hints;
 mod input;
 mod layout;
 mod look;
+mod maw_audio;
 mod maw_motion;
 mod menu;
 mod mixer;
