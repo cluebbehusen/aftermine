@@ -397,23 +397,28 @@ pub(super) fn queue_dock_lift(scale: f32) -> f32 {
     (crate::theme::MIN_TOUCH_TARGET + 16.0) * scale
 }
 
-/// The QUEUE toggle: a chain of queued waypoints, lit while queueing so
-/// the mode can't hide, dark like the orders dock otherwise. Locked on, it
-/// wears a bar under the chain, as a locked Shift key does.
+/// The QUEUE toggle: a chain of queued waypoints, dark like the orders dock
+/// while off, outlined in amber while it covers the next action, and solid
+/// amber while locked on, so neither mode can hide.
 fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     use crate::input::QueueToggle;
-    let on = toggle != QueueToggle::Off;
-    let glyph = if on { SURFACE_CARD } else { TEXT_BODY };
-    if on {
-        fill_rect(rect, TEXT_ACCENT);
-    } else {
-        fill_rect(rect, crate::theme::SURFACE_PLATE);
-        stroke_rect(
-            rect,
-            crate::theme::Stroke::Edge.at(s),
-            crate::theme::BORDER_STRONG,
-        );
-    }
+    use crate::theme::{BORDER_STRONG, SURFACE_PLATE, Stroke};
+    let glyph = match toggle {
+        QueueToggle::Off => {
+            fill_rect(rect, SURFACE_PLATE);
+            stroke_rect(rect, Stroke::Edge.at(s), BORDER_STRONG);
+            TEXT_BODY
+        }
+        QueueToggle::Latched { .. } => {
+            fill_rect(rect, SURFACE_PLATE);
+            stroke_rect(rect, Stroke::Heavy.at(s), TEXT_ACCENT);
+            TEXT_ACCENT
+        }
+        QueueToggle::Locked => {
+            fill_rect(rect, TEXT_ACCENT);
+            SURFACE_CARD
+        }
+    };
     let c = rect.center();
     let points = [
         c + vec2(-11.0, 6.0) * s,
@@ -425,13 +430,61 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     for point in points {
         crate::render::prim::fill_circle(point, 3.5 * s, glyph);
     }
-    if toggle == QueueToggle::Locked {
-        line_between(
-            c + vec2(-11.0, 13.0) * s,
-            c + vec2(11.0, 13.0) * s,
-            2.0 * s,
-            glyph,
+}
+
+/// The touch ghost's controls: the cross, the check mark, lit while a tap
+/// would build, and the row handle. They draw last of the chrome, over the
+/// minimap too, since they answer presses first.
+pub(crate) fn draw_ghost_controls(game: &crate::game::Scene<'_>, input: &InputState) {
+    let s = ui_scale();
+    let layout = game.presentation.layout.get();
+    let plate = |rect: Rect| {
+        fill_rect(rect, crate::theme::SURFACE_PLATE);
+        stroke_rect(
+            rect,
+            crate::theme::Stroke::Edge.at(s),
+            crate::theme::BORDER_STRONG,
         );
+    };
+    if layout.ghost_cancel.w > 0.0 {
+        let rect = layout.ghost_cancel;
+        plate(rect);
+        let (c, arm) = (rect.center(), 8.0 * s);
+        line_between(c - vec2(arm, arm), c + vec2(arm, arm), 2.5 * s, TEXT_BODY);
+        line_between(c + vec2(-arm, arm), c + vec2(arm, -arm), 2.5 * s, TEXT_BODY);
+    }
+    if layout.ghost_confirm.w > 0.0 {
+        let rect = layout.ghost_confirm;
+        plate(rect);
+        let builds = !input.planned_stamps().is_empty()
+            || crate::input::preview_spot(game, input).is_some_and(|spot| spot.verdict.builds());
+        let mark = if builds {
+            TEXT_ACCENT
+        } else {
+            crate::theme::TEXT_DISABLED
+        };
+        let c = rect.center();
+        let (start, knee, end) = (
+            c + vec2(-9.0, 0.0) * s,
+            c + vec2(-3.0, 7.0) * s,
+            c + vec2(10.0, -8.0) * s,
+        );
+        line_between(start, knee, 3.0 * s, mark);
+        line_between(knee, end, 3.0 * s, mark);
+    }
+    if layout.ghost_handle.w > 0.0 {
+        let c = layout.ghost_handle.center();
+        crate::render::prim::fill_circle(c, 11.0 * s, crate::theme::SURFACE_PLATE);
+        crate::render::prim::stroke_circle(c, 11.0 * s, 1.5 * s, crate::theme::BORDER_STRONG);
+        for dx in [-4.0, 0.0, 4.0] {
+            let x = c.x + dx * s;
+            line_between(
+                vec2(x, c.y - 5.0 * s),
+                vec2(x, c.y + 5.0 * s),
+                1.5 * s,
+                TEXT_BODY,
+            );
+        }
     }
 }
 

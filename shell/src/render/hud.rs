@@ -114,6 +114,23 @@ pub(crate) fn layout(
     let ribbon = chrome::ribbon_layout(game, input, &panel_regions, minimap, env, measure);
     let queue_toggle = chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY)
         .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
+    let ghost_controls = crate::input::ghost_footprint(game, input).map(|footprint| {
+        let bottom_chrome = [
+            panel_regions[0],
+            panel_regions[1],
+            ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
+            minimap,
+            queue_toggle.unwrap_or(zero),
+        ];
+        crate::layout::ghost_controls(
+            footprint,
+            crate::input::row_handle_at(game, input),
+            crate::input::row_runs_down(input),
+            &bottom_chrome,
+            env.viewport,
+            env.ui,
+        )
+    });
     let performance = performance.and_then(|view| {
         performance::layout(
             view,
@@ -150,6 +167,9 @@ pub(crate) fn layout(
         pause_status: top_bar.as_ref().map_or(zero, |bar| bar.bar.pause_status),
         mode_ribbon: ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
         queue_toggle: queue_toggle.unwrap_or(zero),
+        ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
+        ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),
+        ghost_handle: ghost_controls.map_or(zero, |controls| controls.handle),
         roster_slots: geometry.roster_slots,
         roster_count: geometry.roster_count,
         cards: geometry.cards,

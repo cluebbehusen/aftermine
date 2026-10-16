@@ -274,30 +274,30 @@ Coordinates are logical throughout the input/layout pipeline; the hardware
 adapter applies DPI conversion once. Touches arrive through the same ordered
 input stream as mouse events. miniquad's iOS backend reports only the fingers
 that changed, and a finger iOS takes away, as for palm rejection or a system
-gesture, arrives as `TouchCancel` and completes no tap, long-press, box, ghost
-build, or card press. On iPad, `UIApplicationSupportsIndirectInputEvents` makes
-trackpad and mouse clicks arrive as mouse events rather than touches. The HUD
-lays out in a pure pass (`render::hud`) that measures text through a supplied
-function, so it runs headless. Each frame lays it out before input, again before
-each press or release that follows another event in the batch, and before
-drawing. Every pass publishes the `LayoutModel` whose rectangles drive hit
-testing together with the panel model, and drawing consumes the same pass, so a
-click always hits what the next frame shows. The HUD's supported layout floor is
-iPad mini in landscape, 1133×744 logical points at default UI scale; every
-modern iPad and Steam Deck (1280×800) sit above it. At the floor, a Harvester
-carrying scrap, a factory's rally controls with five products, and the grouped
-build palette each fit one band. Smaller windows, and UI scales above 100% on
-the smallest devices, are overflow stress cases. `layout::top_bar` places the
-top bar from measured text: the bank, income, and unit count run left to right,
-then the idle and under-attack badges, and the status hangs off the menu button.
-Touch-only builds hold the menu button, the bank, and the build palette's Back
-card further from the corners, which iPad screens round and iPadOS safe areas
-leave out. `layout::group_column` stacks the control groups on a plate above the
-minimap's right edge, mirroring the orders dock, and wraps into more columns
-when the window is short. It shows once a group is saved or the selection can be
-saved, never while the minimap is hidden, and a setting hides it; its slots and
-plate are chrome. The top edge is left to taps because iPadOS takes a long-press
-there as a window move.
+gesture, arrives as `TouchCancel` and completes no tap, long-press, box, row, or
+card press. On iPad, `UIApplicationSupportsIndirectInputEvents` makes trackpad
+and mouse clicks arrive as mouse events rather than touches. The HUD lays out in
+a pure pass (`render::hud`) that measures text through a supplied function, so
+it runs headless. Each frame lays it out before input, again before each press
+or release that follows another event in the batch, and before drawing. Every
+pass publishes the `LayoutModel` whose rectangles drive hit testing together
+with the panel model, and drawing consumes the same pass, so a click always hits
+what the next frame shows. The HUD's supported layout floor is iPad mini in
+landscape, 1133×744 logical points at default UI scale; every modern iPad and
+Steam Deck (1280×800) sit above it. At the floor, a Harvester carrying scrap, a
+factory's rally controls with five products, and the grouped build palette each
+fit one band. Smaller windows, and UI scales above 100% on the smallest devices,
+are overflow stress cases. `layout::top_bar` places the top bar from measured
+text: the bank, income, and unit count run left to right, then the idle and
+under-attack badges, and the status hangs off the menu button. Touch-only builds
+hold the menu button, the bank, and the build palette's Back card further from
+the corners, which iPad screens round and iPadOS safe areas leave out.
+`layout::group_column` stacks the control groups on a plate above the minimap's
+right edge, mirroring the orders dock, and wraps into more columns when the
+window is short. It shows once a group is saved or the selection can be saved,
+never while the minimap is hidden, and a setting hides it; its slots and plate
+are chrome. The top edge is left to taps because iPadOS takes a long-press there
+as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated
@@ -453,33 +453,57 @@ a finger lifts; an undecided pair shows nothing and its lift selects nothing. A
 pair with a non-world finger does neither, and one formed mid-pan or while a
 mode is armed may zoom but never boxes.
 
-Touch placement drops a `PlacementGhost` centered under the finger instead of
-placing on the tap. Dragging the ghost moves it by whole tiles, and a still tap
-on it runs the shared `place_at` checks at the ghost's anchor; the tap point is
-never the anchor. `InputState::placing` holds the armed kind with its stroke and
-ghost, so no ghost outlives its mode. The mouse's hover preview draws only while
-the mouse is the last pointer. While placement or a patrol route is armed, a
-world finger never long-presses; other armed verbs stand down for a long-press
-as they do for a right-click. `InputState::queue_held` merges Shift with the
-QUEUE toggle that touch-only builds show, which works like the iPad's Shift key:
-a tap latches it for the action at hand, a double-tap locks it, and a later tap
-turns it off. Latched, it lasts as long as an armed mode, a whole placement
-chain or patrol route, and otherwise the next order or selection change; the
-check runs after every input event and after the long-press timer. Letting go of
-either after a placement has staged a build ends placement, so the next click
-selects instead of replacing the chain just queued; a live stroke still settles
-at its release. A mouse drag in placement mode plans a row instead of staging
-it: every footprint the cursor crosses, sampled finely enough that a fast move
-leaves no gap and through the release point, joins the plan if it can still
-afford and fit it, judged after the staged batch and the stamps before it.
-Whether each stamp defers is derived from current sight whenever the plan is
-judged, never kept, so ground that falls into fog mid-drag is judged from
-memory. The planned stamps draw as tinted ghosts, and the ribbon counts the row
-and its total. The release stages the stamps in order, rechecking each against
-the exact pending phase; the first that stages opens the row, replacing the
-program unless the stroke queued, and the release toasts any it skips. Escape or
-a right-click drops the row and keeps placing. However a stroke ends, a queue
-let go during it then ends a chain that has staged.
+Touch placement shows a `PlacementGhost` instead of placing on the tap. Picking
+a building by finger drops it in the middle of the view, and a tap on open
+ground moves it there, centered under the finger; while it is down a click moves
+it too, so a trackpad taking over builds where the ghost shows. Dragging the
+ghost moves it by whole tiles; one smaller on screen than a fingertip rides a
+fingertip above the finger, so the spot and its tint stay in sight. Building
+waits for the ghost's check mark (`LayoutModel.ghost_confirm`), which runs the
+shared `place_at` checks at the ghost's anchor; the ghost itself only moves, and
+the tap point is never the anchor. Its cross (`LayoutModel.ghost_cancel`) folds
+a row back or gives the building back to the palette. Either presses only for a
+finger that landed on it, and a finger that landed on either presses nothing
+else, since they sit closer than a still finger may wander. The two hang side by
+side below the ghost, or above it where the window's foot or the bottom HUD
+(panel, ribbon, minimap, QUEUE toggle) leaves no room or over a row pulled
+downward, and with the row handle they draw over the minimap and answer presses
+before it, the QUEUE toggle, and the ribbon; the two also answer before the
+handle, whose fingertip target reaches onto them when zoomed out. The row handle
+(`LayoutModel.ghost_handle`), which a trackpad drags as a finger does, pulls out
+a straight row along the axis the pointer leads on, a cell for each footprint it
+travels past where the handle sits, so the handle's own offset adds nothing at
+any zoom. The row keeps its own plan, judged as a mouse stroke's is: again at
+once when the staged batch, the selection, or QUEUE moves, and twice a second as
+the world drifts, since judging a row replays every stamp before each one. The
+check mark judges it whole once more, with QUEUE as it stands, and builds it;
+moving the ghost or a cancelled finger drops it. With queueing held, a
+successful check moves the ghost on by the row's step, or by the chain's last
+step, or one footprint east after the first. `InputState::placing` holds the
+armed kind with its stroke and ghost, so no ghost outlives its mode. The mouse's
+hover preview draws only while the mouse is the last pointer. While placement or
+a patrol route is armed, a world finger never long-presses; other armed verbs
+stand down for a long-press as they do for a right-click.
+`InputState::queue_held` merges Shift with the QUEUE toggle that touch-only
+builds show, which works like the iPad's Shift key: a tap latches it for the
+action at hand, a double-tap locks it, and a later tap turns it off. Latched, it
+lasts as long as an armed mode, a whole placement chain or patrol route, and
+otherwise the next order or selection change; the check runs after every input
+event and after the long-press timer. Letting go of either after a placement has
+staged a build ends placement, so the next click selects instead of replacing
+the chain just queued; a live stroke still settles at its release. A mouse drag
+in placement mode plans a row instead of staging it: every footprint the cursor
+crosses, sampled finely enough that a fast move leaves no gap and through the
+release point, joins the plan if it can still afford and fit it, judged after
+the staged batch and the stamps before it. Whether each stamp defers is derived
+from current sight whenever the plan is judged, never kept, so ground that falls
+into fog mid-drag is judged from memory. The planned stamps draw as tinted
+ghosts, and the ribbon counts the row and its total. The release stages the
+stamps in order, rechecking each against the exact pending phase; the first that
+stages opens the row, replacing the program unless the stroke queued, and the
+release toasts any it skips. Escape or a right-click drops the row and keeps
+placing. However a stroke ends, a queue let go during it then ends a chain that
+has staged.
 
 A right-click with only scouts selected issues Scout to the clicked tile, enemy
 or ground, after the transport boarding check; Run is the deliberate way to send

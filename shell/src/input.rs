@@ -162,11 +162,72 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
 /// Touch has no hover, so the ghost stands in for the mouse's preview:
 /// dropped where the finger lands, dragged into place, and built only
 /// where it is drawn.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlacementGhost {
     pub(crate) anchor: TilePos,
     /// While a finger drags it: the anchor and the world point at grab.
     grab: Option<(TilePos, Vec2)>,
+    /// The straight row its handle has pulled out.
+    row: Option<GhostRow>,
+}
+
+/// A touch row: the step between its cells, how many cells from the ghost
+/// on it covers, and its plan, which lasts until the check mark builds it
+/// or the cross folds it back.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GhostRow {
+    pub(crate) step: (i32, i32),
+    count: usize,
+    plan: PlacingStroke,
+    judged: RowJudged,
+}
+
+/// What a touch row's plan was judged against. A change in the staged
+/// batch, the selection, or QUEUE judges it again at once; the world's own
+/// drift waits for [`ROW_RECHECK_TICKS`].
+#[derive(Debug, Clone, PartialEq)]
+struct RowJudged {
+    tick: oxide_sim::Tick,
+    pending: usize,
+    queue: bool,
+    units: Vec<UnitId>,
+}
+
+impl RowJudged {
+    fn now(game: &crate::game::Scene<'_>, queue: bool) -> Self {
+        Self {
+            tick: game.state.current_tick(),
+            pending: game.pending.len(),
+            queue,
+            units: game.presentation.selection.units.clone(),
+        }
+    }
+
+    /// Whether a plan judged against `self` must be judged again by `now`;
+    /// `strict` also counts any tick at all.
+    fn stale(&self, now: &Self, strict: bool) -> bool {
+        let wait = if strict { 1 } else { ROW_RECHECK_TICKS };
+        self.pending != now.pending
+            || self.queue != now.queue
+            || self.units != now.units
+            || now.tick >= self.tick + wait
+    }
+}
+
+/// How long a held row's plan stands before the world's drift judges it
+/// again: judging a row replays every stamp before each one, so a held
+/// row is rechecked twice a second rather than every tick. The check mark
+/// rechecks it whole before building.
+const ROW_RECHECK_TICKS: oxide_sim::Tick = (oxide_sim::TICKS_PER_SECOND / 2) as oxide_sim::Tick;
+
+impl PlacementGhost {
+    fn at(anchor: TilePos) -> Self {
+        Self {
+            anchor,
+            grab: None,
+            row: None,
+        }
+    }
 }
 
 /// A command verb armed for the next world click.
@@ -252,6 +313,8 @@ pub struct InputState {
     pub(crate) last_tap: Option<(f64, macroquad::prelude::Vec2)>,
     /// The QUEUE toggle: touch's stand-in for a held Shift.
     pub(crate) queue_toggle: QueueToggle,
+    /// Whether the mouse is dragging the touch ghost's row handle.
+    pub(crate) handle_drag: bool,
     /// The live two-finger gesture, if two fingers are down.
     pub(crate) pair: Option<Pair>,
     /// The menu button was pressed this frame. Input cannot switch
@@ -271,9 +334,18 @@ pub(crate) struct Placement {
     stroke: Option<PlacingStroke>,
     /// The touch placement's ghost, once a tap has dropped one.
     ghost: Option<PlacementGhost>,
-    /// Whether this placement has staged a build. Letting go of queue then
-    /// ends it: the next plain build would replace the chain just queued.
-    placed: bool,
+    /// The last site this placement staged, once one has. Letting go of
+    /// queue then ends it: the next plain build would replace the chain just
+    /// queued.
+    chain: Option<Chain>,
+}
+
+/// Where a placement chain stands: the last site staged and the step a
+/// queued touch chain offers its next ghost at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Chain {
+    last: TilePos,
+    step: (i32, i32),
 }
 
 /// The QUEUE toggle, which works like the iPad's Shift key.
@@ -794,8 +866,7 @@ pub(crate) fn preview_spot(
     let (kind, anchor) = placement_preview_anchor(game, input)?;
     let backlog = placement_backlog(game);
     let replaces = || backlog.filter(|orders| *orders > 0).map(Lands::Replaces);
-    let stroke = input.placing.as_ref().and_then(|p| p.stroke.as_ref());
-    let (verdict, lands) = if let Some(stroke) = stroke {
+    let (verdict, lands) = if let Some(stroke) = input.active_plan() {
         // A stroke that opened in place of the program starts it afresh. A
         // position past a full queue would skip the dock's subject.
         let base = if stroke.queue { backlog } else { Some(0) };
@@ -933,6 +1004,7 @@ impl InputState {
             touches: Vec::new(),
             last_tap: None,
             queue_toggle: QueueToggle::Off,
+            handle_drag: false,
             pair: None,
             menu_requested: false,
             bookmarks: [None; 4],
@@ -1006,7 +1078,7 @@ impl InputState {
             kind,
             stroke: None,
             ghost: None,
-            placed: false,
+            chain: None,
         });
     }
 
@@ -1020,22 +1092,33 @@ impl InputState {
         self.placing.as_ref().map(|placement| placement.kind)
     }
 
-    /// A live stroke's planned stamps.
-    pub(crate) fn planned_stamps(&self) -> &[TilePos] {
-        self.placing
+    /// The plan placement is previewing: a live mouse stroke, else the
+    /// touch ghost's row.
+    fn active_plan(&self) -> Option<&PlacingStroke> {
+        let placement = self.placing.as_ref()?;
+        placement
+            .stroke
             .as_ref()
-            .and_then(|placement| placement.stroke.as_ref())
-            .map_or(&[], |stroke| stroke.stamps.as_slice())
+            .or_else(|| placement.ghost.as_ref()?.row.as_ref().map(|row| &row.plan))
     }
 
-    /// Throws a live stroke's plan away, keeping placement armed unless
-    /// queue was let go during the stroke after a chain had staged. Returns
-    /// whether there was one.
+    /// The previewed plan's stamps.
+    pub(crate) fn planned_stamps(&self) -> &[TilePos] {
+        self.active_plan()
+            .map_or(&[], |plan| plan.stamps.as_slice())
+    }
+
+    /// Throws a live stroke's plan, or a touch ghost's row, away, keeping
+    /// placement armed unless queue was let go during the stroke after a
+    /// chain had staged. Returns whether there was one.
     pub(crate) fn drop_stroke(&mut self) -> bool {
-        let dropped = self
-            .placing
-            .as_mut()
-            .is_some_and(|placement| placement.stroke.take().is_some());
+        let dropped = self.placing.as_mut().is_some_and(|placement| {
+            placement.stroke.take().is_some()
+                || placement
+                    .ghost
+                    .as_mut()
+                    .is_some_and(|ghost| ghost.row.take().is_some())
+        });
         if dropped && !self.queue_held() {
             self.queue_released();
         }
@@ -1044,7 +1127,11 @@ impl InputState {
 
     /// The touch ghost's anchor, while placement is armed.
     pub(crate) fn ghost_anchor(&self) -> Option<TilePos> {
-        self.placing.as_ref()?.ghost.map(|ghost| ghost.anchor)
+        self.placing
+            .as_ref()?
+            .ghost
+            .as_ref()
+            .map(|ghost| ghost.anchor)
     }
 
     /// Queue was let go (Shift up, or QUEUE off). A placement that already
@@ -1055,7 +1142,7 @@ impl InputState {
         if self
             .placing
             .as_ref()
-            .is_some_and(|placement| placement.placed && placement.stroke.is_none())
+            .is_some_and(|placement| placement.chain.is_some() && placement.stroke.is_none())
         {
             self.stop_placing();
         }
@@ -1118,6 +1205,7 @@ impl InputState {
         self.touches.clear();
         self.last_tap = None;
         self.queue_toggle = QueueToggle::Off;
+        self.handle_drag = false;
         self.pair = None;
         self.menu_requested = false;
     }
@@ -1678,7 +1766,13 @@ pub(crate) use touch::{
 pub fn desired_cursor(game: &Game, input: &InputState) -> macroquad::miniquad::CursorIcon {
     use macroquad::miniquad::CursorIcon;
     let layout = game.presentation.layout.get();
-    let row = [layout.queue_toggle, layout.mode_ribbon];
+    let row = [
+        layout.queue_toggle,
+        layout.mode_ribbon,
+        layout.ghost_confirm,
+        layout.ghost_cancel,
+        layout.ghost_handle,
+    ];
     if row.iter().any(|r| r.w > 0.0 && r.contains(input.mouse)) {
         return CursorIcon::Pointer;
     }
@@ -1736,6 +1830,8 @@ pub fn apply_events(
     if !selection.units.is_empty() || !selection.buildings.is_empty() {
         selection.pile = None;
     }
+    // A QUEUE tap or a staged command moves what a held row would build.
+    refresh_row(&game.view(), input, false);
     if !events.is_empty() {
         relayout(game, input);
     }
@@ -1774,6 +1870,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // until the release, so a careless stroke costs nothing.
             // Refused cells skip silently (the ghost tells that story).
             extend_stroke(game, input, from, vec2(x, y));
+            if input.handle_drag {
+                pull_row(&game.view(), input, vec2(x, y));
+            }
         }
         RawEvent::Wheel { delta } => crate::camera::controls::wheel_zoom(
             &mut game.presentation.camera,
@@ -1787,6 +1886,17 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             y,
         } => {
             input.mouse = vec2(x, y);
+            // A trackpad drags the touch ghost's row handle as a finger does,
+            // where the cross and check mark don't claim the press first.
+            let layout = game.presentation.layout.get();
+            let handle = layout.ghost_handle;
+            if handle.w > 0.0
+                && handle.contains(vec2(x, y))
+                && ghost_control_at(&layout, vec2(x, y)).is_none()
+            {
+                input.handle_drag = true;
+                return;
+            }
             if ribbon_row_press(game, input, vec2(x, y), Pointer::Mouse)
                 || armed_click(game, input, bindings, vec2(x, y), Pointer::Mouse)
             {
@@ -1842,6 +1952,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         } => {
             let from = std::mem::replace(&mut input.mouse, vec2(x, y));
             input.minimap_drag = false;
+            if std::mem::take(&mut input.handle_drag) {
+                return;
+            }
             // The placement stroke ends at release, taking the ground
             // up to the release point; Shift decides whether the mode
             // stays armed, as letting go of it mid-stroke would have.
@@ -1851,7 +1964,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 .as_mut()
                 .and_then(|placement| placement.stroke.take());
             if let (Some(kind), Some(stroke)) = (input.placing_kind(), stroke) {
-                commit_stroke(game, input, kind, &stroke);
+                commit_stroke(game, input, kind, &stroke, None);
                 if !input.queue_held() {
                     input.queue_released();
                 }
@@ -1996,7 +2109,12 @@ pub(super) fn ribbon_row_press(
                 Pointer::Touch => crate::layout::touch_pad(rect, ui).contains(p),
             }
     };
-    if hits(layout.queue_toggle) {
+    // The ghost's controls draw over everything else, so they answer first.
+    if hits(layout.ghost_confirm) {
+        confirm_ghost(game, input);
+    } else if hits(layout.ghost_cancel) {
+        cancel_ghost(input);
+    } else if hits(layout.queue_toggle) {
         input.toggle_queue();
     } else if hits(layout.mode_ribbon) {
         if input.cancel_armed_mode() {
@@ -2089,12 +2207,16 @@ fn armed_click(
             game.presentation.camera.pan(Vec2::ZERO); // re-clamp
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            if pointer == Pointer::Touch {
+            if pointer == Pointer::Touch || input.ghost_anchor().is_some() {
                 // A tap never builds on its own: it drops the ghost (or
-                // moves it here), and only a tap on the ghost confirms.
+                // moves it here), and only the check mark builds. While a
+                // ghost is down a click does the same, so a trackpad that
+                // takes over from a finger builds where the ghost and the
+                // ribbon say, never at an unpreviewed cursor.
                 let anchor = ghost_anchor_under(&game.view(), kind, world);
                 if let Some(placement) = &mut input.placing {
-                    placement.ghost = Some(PlacementGhost { anchor, grab: None });
+                    // A moved ghost leaves its row behind.
+                    placement.ghost = Some(PlacementGhost::at(anchor));
                 }
                 return true;
             }
@@ -2139,20 +2261,241 @@ fn ghost_anchor_under(
     )
 }
 
-/// The ghost's footprint on screen, padded to a fingertip.
-pub(crate) fn ghost_touch_rect(
+/// The ghost's footprint on screen.
+pub(crate) fn ghost_footprint(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
     let (kind, anchor) = (input.placing_kind()?, input.ghost_anchor()?);
+    Some(footprint_on_screen(game, kind, anchor))
+}
+
+fn footprint_on_screen(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    anchor: TilePos,
+) -> macroquad::math::Rect {
     let (w, h) = kind.size();
     let zoom = game.presentation.camera.zoom;
     let corner = game
         .presentation
         .camera
         .to_screen(vec2(anchor.x as f32, anchor.y as f32));
-    let rect = macroquad::math::Rect::new(corner.x, corner.y, w as f32 * zoom, h as f32 * zoom);
-    Some(crate::layout::touch_pad(rect, input.ui))
+    macroquad::math::Rect::new(corner.x, corner.y, w as f32 * zoom, h as f32 * zoom)
+}
+
+/// The ghost's footprint on screen, padded to a fingertip.
+pub(crate) fn ghost_touch_rect(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+) -> Option<macroquad::math::Rect> {
+    Some(crate::layout::touch_pad(
+        ghost_footprint(game, input)?,
+        input.ui,
+    ))
+}
+
+/// Where the touch ghost's row handle sits on screen: past the far edge of
+/// the row it has pulled out, or the ghost's east edge before it has one.
+/// An Extractor snaps to frames and lays no rows.
+pub(crate) fn row_handle_at(game: &crate::game::Scene<'_>, input: &InputState) -> Option<Vec2> {
+    let placement = input.placing.as_ref()?;
+    let ghost = placement.ghost.as_ref()?;
+    if placement.kind == oxide_sim::BuildingKind::Extractor {
+        return None;
+    }
+    let row = ghost.row.as_ref();
+    // The handle rides the row's far cell, whether or not that cell builds.
+    let end = row.map_or(ghost.anchor, |row| {
+        row_cell(ghost.anchor, row.step, row.count - 1)
+    });
+    let rect = footprint_on_screen(game, placement.kind, end);
+    let (dx, dy) = row.map_or((1, 0), |row| (row.step.0.signum(), row.step.1.signum()));
+    let edge = match (dx, dy) {
+        (-1, _) => vec2(rect.x, rect.center().y),
+        (_, -1) => vec2(rect.center().x, rect.y),
+        (_, 1) => vec2(rect.center().x, rect.y + rect.h),
+        _ => vec2(rect.x + rect.w, rect.center().y),
+    };
+    // Just outside the edge, so the ghost keeps its own body to drag.
+    let reach = crate::theme::MIN_TOUCH_TARGET * input.ui * 0.5;
+    Some(edge + vec2(dx as f32, dy as f32) * reach)
+}
+
+/// Whether the touch ghost's row runs downward, where its controls would
+/// otherwise hang.
+pub(crate) fn row_runs_down(input: &InputState) -> bool {
+    input
+        .placing
+        .as_ref()
+        .and_then(|placement| placement.ghost.as_ref()?.row.as_ref())
+        .is_some_and(|row| row.step.1 > 0)
+}
+
+/// The longest row a handle pulls out: one order queue's worth bounds
+/// the cells judged per drag.
+const ROW_CAP: usize = oxide_sim::stats::ORDER_QUEUE_CAP;
+
+/// Cell `k` of a row from `origin`.
+fn row_cell(origin: TilePos, step: (i32, i32), k: usize) -> TilePos {
+    let k = k.fit::<i32>();
+    TilePos::new(origin.x + step.0 * k, origin.y + step.1 * k)
+}
+
+/// Plans cells `cells` of a row from `origin` into `plan`, each judged
+/// behind the stamps before it; refused cells are skipped as a mouse
+/// stroke skips them.
+fn plan_row_cells(
+    game: &crate::game::Scene<'_>,
+    kind: oxide_sim::BuildingKind,
+    origin: TilePos,
+    step: (i32, i32),
+    cells: std::ops::Range<usize>,
+    plan: &mut PlacingStroke,
+) {
+    for k in cells {
+        let anchor = row_cell(origin, step, k);
+        let verdict = if plan.stamps.is_empty() {
+            placement_verdict(game, kind, anchor, plan.queue)
+        } else {
+            stroke_verdict(game, kind, plan, anchor)
+        };
+        if verdict.builds() {
+            plan.stamps.push(anchor);
+        }
+    }
+}
+
+/// A finger or cursor dragging the row handle: the row runs from the ghost
+/// along whichever axis the pointer leads on, one footprint per step,
+/// growing a cell for each footprint the pointer travels past where the
+/// handle sits, so the handle's own offset adds nothing at any zoom.
+pub(crate) fn pull_row(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
+    let queue = input.queue_held();
+    let reach = crate::theme::MIN_TOUCH_TARGET * input.ui * 0.5 / game.presentation.camera.zoom;
+    let Some(Placement {
+        kind,
+        ghost: Some(ghost),
+        ..
+    }) = input.placing.as_mut()
+    else {
+        return;
+    };
+    let kind = *kind;
+    let (w, h) = kind.size();
+    let origin = ghost.anchor;
+    let center = vec2(
+        origin.x as f32 + w as f32 * 0.5,
+        origin.y as f32 + h as f32 * 0.5,
+    );
+    let lead = game.presentation.camera.to_world(p) - center;
+    let (step, along, size) = if lead.x.abs() >= lead.y.abs() {
+        (
+            (numeric::to_i32(lead.x.signum()) * w, 0),
+            lead.x.abs(),
+            w as f32,
+        )
+    } else {
+        (
+            (0, numeric::to_i32(lead.y.signum()) * h),
+            lead.y.abs(),
+            h as f32,
+        )
+    };
+    let travelled = ((along - size * 0.5 - reach) / size).round().max(0.0);
+    let count = (numeric::to_i32(travelled).fit::<usize>() + 1).min(ROW_CAP);
+    if count < 2 {
+        ghost.row = None;
+        return;
+    }
+    let now = RowJudged::now(game, queue);
+    match &mut ghost.row {
+        Some(row) if row.step == step && !row.judged.stale(&now, false) => {
+            if count < row.count {
+                let kept: Vec<_> = (0..count).map(|k| row_cell(origin, step, k)).collect();
+                row.plan.stamps.retain(|anchor| kept.contains(anchor));
+            } else if count > row.count {
+                plan_row_cells(game, kind, origin, step, row.count..count, &mut row.plan);
+            }
+            row.count = count;
+        }
+        _ => {
+            let mut plan = PlacingStroke {
+                queue,
+                stamps: Vec::new(),
+            };
+            plan_row_cells(game, kind, origin, step, 0..count, &mut plan);
+            ghost.row = Some(GhostRow {
+                step,
+                count,
+                plan,
+                judged: now,
+            });
+        }
+    }
+}
+
+/// Judges a held row again once the batch, the selection, or QUEUE has
+/// moved, or the world has run on (any tick when `strict`), so its check
+/// mark never promises sites that would all fail, nor builds with a queue
+/// mode the player has since changed.
+pub(crate) fn refresh_row(game: &crate::game::Scene<'_>, input: &mut InputState, strict: bool) {
+    let queue = input.queue_held();
+    let Some(Placement {
+        kind,
+        ghost: Some(ghost),
+        ..
+    }) = input.placing.as_mut()
+    else {
+        return;
+    };
+    let origin = ghost.anchor;
+    let Some(row) = &mut ghost.row else {
+        return;
+    };
+    let now = RowJudged::now(game, queue);
+    if !row.judged.stale(&now, strict) {
+        return;
+    }
+    let mut plan = PlacingStroke {
+        queue,
+        stamps: Vec::new(),
+    };
+    plan_row_cells(game, *kind, origin, row.step, 0..row.count, &mut plan);
+    row.plan = plan;
+    row.judged = now;
+}
+
+/// The touch ghost's buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GhostControl {
+    Confirm,
+    Cancel,
+}
+
+/// The ghost button under `p`, if any.
+pub(crate) fn ghost_control_at(
+    layout: &crate::layout::LayoutModel,
+    p: Vec2,
+) -> Option<GhostControl> {
+    let hit = |rect: macroquad::math::Rect| rect.w > 0.0 && rect.contains(p);
+    if hit(layout.ghost_confirm) {
+        Some(GhostControl::Confirm)
+    } else if hit(layout.ghost_cancel) {
+        Some(GhostControl::Cancel)
+    } else {
+        None
+    }
+}
+
+/// Drops the touch ghost's row, keeping the ghost. Returns whether there
+/// was one.
+pub(super) fn drop_row(input: &mut InputState) -> bool {
+    input
+        .placing
+        .as_mut()
+        .and_then(|placement| placement.ghost.as_mut())
+        .is_some_and(|ghost| ghost.row.take().is_some())
 }
 
 /// A finger landed on the ghost: it grabs it where it is.
@@ -2168,8 +2511,12 @@ pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
 }
 
 /// A grabbing finger moved: the ghost follows by whole tiles, keeping
-/// the offset where the finger took hold.
+/// the offset where the finger took hold. A ghost smaller on screen than
+/// a fingertip rides a fingertip above the finger instead, so the finger
+/// never hides the spot or its tint; either way it builds where it is
+/// drawn. Moving it leaves any row behind.
 pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
+    let lift = crate::theme::MIN_TOUCH_TARGET * input.ui;
     let Some(Placement {
         kind,
         ghost: Some(ghost),
@@ -2178,34 +2525,106 @@ pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
     else {
         return;
     };
-    let world = game.presentation.camera.to_world(p);
-    if let Some((anchor, grabbed)) = ghost.grab {
-        let shift = world - grabbed;
-        let moved = TilePos::new(
+    let Some((anchor, grabbed)) = ghost.grab else {
+        return;
+    };
+    let camera = &game.presentation.camera;
+    let (w, h) = kind.size();
+    let small = (w.max(h) as f32) * camera.zoom < lift;
+    let moved = if small {
+        let raised = camera.to_world(p - vec2(0.0, lift));
+        ghost_anchor_under(game, *kind, raised)
+    } else {
+        let shift = camera.to_world(p) - grabbed;
+        TilePos::new(
             anchor.x + numeric::to_i32(shift.x.round()),
             anchor.y + numeric::to_i32(shift.y.round()),
-        );
-        ghost.anchor = placement_anchor(game, *kind, moved);
+        )
+    };
+    let moved = placement_anchor(game, *kind, moved);
+    if moved != ghost.anchor {
+        ghost.anchor = moved;
+        ghost.row = None;
     }
 }
 
-/// A still tap on the ghost: build exactly where it is drawn, judged
-/// afresh, since scrap, fog, and the selection may have changed since
-/// it was dropped. A refusal keeps the ghost; a success clears it and
-/// disarms, unless QUEUE keeps placement armed for the next one.
+/// The ghost's check mark: build exactly where it is drawn, or the whole
+/// row it has pulled out, judged afresh, since scrap, fog, and the
+/// selection may have changed since it was dropped. A refusal keeps the
+/// ghost; a success disarms, unless queueing keeps placement armed, when
+/// the ghost moves on to offer the next spot.
 pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
-    let (Some(kind), Some(anchor)) = (input.placing_kind(), input.ghost_anchor()) else {
+    let Some(kind) = input.placing_kind() else {
         return;
     };
-    if place_at(game, input, kind, anchor) {
-        if input.queue_held() {
-            if let Some(placement) = &mut input.placing {
-                placement.ghost = None;
-            }
-        } else {
-            input.stop_placing();
-        }
+    // The row builds as the toggle stands now, judged against the world as
+    // it stands now.
+    refresh_row(&game.view(), input, true);
+    let row = input
+        .placing
+        .as_mut()
+        .and_then(|placement| placement.ghost.as_mut()?.row.take());
+    let placed = if let Some(row) = row {
+        commit_stroke(game, input, kind, &row.plan, Some(row.step))
+    } else if let Some(anchor) = input.ghost_anchor() {
+        place_at(game, input, kind, anchor)
+    } else {
+        false
+    };
+    if !placed {
+        return;
     }
+    if !input.queue_held() {
+        input.stop_placing();
+        return;
+    }
+    let view = game.view();
+    if let Some(placement) = &mut input.placing
+        && let Some(chain) = placement.chain
+    {
+        let next = TilePos::new(chain.last.x + chain.step.0, chain.last.y + chain.step.1);
+        placement.ghost = Some(PlacementGhost::at(placement_anchor(&view, kind, next)));
+    }
+}
+
+/// The ghost's cross: a pulled-out row folds back to the ghost; a lone
+/// ghost gives the building back to the palette.
+pub(crate) fn cancel_ghost(input: &mut InputState) {
+    if !drop_row(input) {
+        input.stop_placing();
+        input.build_menu = true;
+    }
+}
+
+/// Drops a fresh ghost where a finger arms placement: at the middle of
+/// the view, so the spot and its verdict show before the first tap.
+fn drop_ghost_in_view(game: &crate::game::Scene<'_>, input: &mut InputState) {
+    let Some(kind) = input.placing_kind() else {
+        return;
+    };
+    let anchor = ghost_anchor_under(game, kind, game.presentation.camera.center);
+    if let Some(placement) = &mut input.placing {
+        placement.ghost = Some(PlacementGhost::at(anchor));
+    }
+}
+
+/// Notes a staged site in the placement's chain. The step to the next
+/// spot is `step`, else the offset from the last site, else one
+/// footprint east.
+fn record_placed(input: &mut InputState, anchor: TilePos, step: Option<(i32, i32)>) {
+    let Some(placement) = &mut input.placing else {
+        return;
+    };
+    let east = (placement.kind.size().0, 0);
+    let step = step
+        .or_else(|| {
+            placement
+                .chain
+                .map(|chain| (anchor.x - chain.last.x, anchor.y - chain.last.y))
+                .filter(|step| *step != (0, 0))
+        })
+        .unwrap_or(east);
+    placement.chain = Some(Chain { last: anchor, step });
 }
 
 /// Stages `kind` at `anchor` for the selected builders, or says why
@@ -2221,9 +2640,7 @@ fn place_at(
     // queues the build behind the builder's current program.
     match stage_build(game, kind, anchor, input.queue_held()) {
         Ok(()) => {
-            if let Some(placement) = &mut input.placing {
-                placement.placed = true;
-            }
+            record_placed(input, anchor, None);
             true
         }
         Err(refusal) => {
@@ -2242,15 +2659,16 @@ fn commit_stroke(
     input: &mut InputState,
     kind: oxide_sim::BuildingKind,
     stroke: &PlacingStroke,
+    step: Option<(i32, i32)>,
 ) -> bool {
     let mut refusals = Vec::new();
-    let mut opened = false;
+    let mut staged = Vec::new();
     for &anchor in &stroke.stamps {
         // The first stamp that stages opens the row, replacing the
         // program unless the stroke queued, even when an earlier one
         // fails its recheck; the rest queue behind it.
-        match stage_build(game, kind, anchor, opened || stroke.queue) {
-            Ok(()) => opened = true,
+        match stage_build(game, kind, anchor, !staged.is_empty() || stroke.queue) {
+            Ok(()) => staged.push(anchor),
             Err(refusal) => refusals.push(refusal),
         }
     }
@@ -2266,12 +2684,17 @@ fn commit_stroke(
             },
         );
     }
-    if opened && let Some(placement) = &mut input.placing {
-        placement.placed = true;
+    // A row hands on its own step; a stroke, the step between its last two
+    // sites.
+    if let Some(&last) = staged.last() {
+        let step = step.or(match staged[..] {
+            [.., before, last] => Some((last.x - before.x, last.y - before.y)),
+            _ => None,
+        });
+        record_placed(input, last, step);
     }
-    opened
+    !staged.is_empty()
 }
-
 /// Plans the stamps a cursor dragged from `from` to `to` (screen points)
 /// crosses while a stroke is live, sampled finely enough that a fast move
 /// leaves no footprint out. Samples over chrome or the minimap plan nothing.
@@ -2693,6 +3116,9 @@ fn activate_card(
             input.disarm_click_verbs();
             input.arm_placement(kind);
             input.build_category = Some(crate::action::building_category(kind));
+            if input.last_pointer == Pointer::Touch {
+                drop_ghost_in_view(&game.view(), input);
+            }
         }
         crate::panel::CardAction::ArmRally => {
             let buildings = orders::selected_producers(game);

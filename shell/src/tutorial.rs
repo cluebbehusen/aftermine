@@ -122,14 +122,14 @@ pub const STEPS: [Step; 6] = [
         ],
         touch_keys: &[
             KEEP_MINING,
-            "Tap Build (or press {build}), then a building, then open ground.",
-            "That drops a ghost; tap it to build. Red tint means you can't build there.",
+            "Tap Build (or press {build}) and a building: its ghost appears.",
+            "Drag it into place and tap the check mark. Red means you can't build.",
             "Hold Shift to chain: keep placing, and each build queues up.",
         ],
         touch: &[
             KEEP_MINING,
-            "Tap Build, then a building, then open ground to place a ghost.",
-            "Tap the ghost to build it. Red tint means you can't build there.",
+            "Tap Build and a building: its ghost appears. Drag it into place.",
+            "Tap the check mark to build it. Red means you can't build there.",
             "Tap QUEUE first to place several; double-tap it to keep it on.",
         ],
     },
