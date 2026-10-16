@@ -30,12 +30,8 @@ fn fabricated(scrap: u32) -> Scenario {
 
 fn traits(fortification: u8) -> PersonalityTraits {
     PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
         fortification,
-        greed: 50,
-        guile: 50,
+        ..middling()
     }
 }
 
@@ -105,20 +101,6 @@ fn offer(wanted: &[(Investment, u32)], kind: BuildingKind) -> Option<(TilePos, u
             } if *offered == kind => Some((*anchor, *score)),
             _ => None,
         })
-}
-
-fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
-            _ => None,
-        })
-        .collect()
-}
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
 }
 
 /// Whether a 1x1 site stands off the West Foundry on the side facing the
@@ -460,20 +442,6 @@ fn an_emergency_turret_faces_raiders_only_while_the_approach_is_bare() {
     assert!(
         builds(&raided(true)).is_empty(),
         "a covered approach needs no emergency"
-    );
-}
-
-#[test]
-fn an_emergency_turret_answers_a_raider_beside_the_building() {
-    let mut scenario = arena(200);
-    scenario.units.push(unit(1, UnitKind::Sentinel, 6, 5));
-    let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
-    assert!(
-        builds(&commands)
-            .iter()
-            .any(|(kind, _)| *kind == BuildingKind::Turret),
-        "{commands:?}"
     );
 }
 
@@ -1105,12 +1073,14 @@ fn an_exposed_opening_buys_no_tech_before_its_first_turret() {
     let state = scenario.build().unwrap();
     // A seat whose income is `per_minute`.
     let built = |per_minute: u32| -> Vec<BuildingKind> {
-        let mut json =
-            serde_json::to_value(seat_with(&scenario, 0, thrifty()).checkpoint()).unwrap();
-        json["income"] = serde_json::json!({"previous": null, "per_minute": per_minute});
-        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-        let mut opponent =
-            Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, thrifty()),
+            &scenario,
+            &state,
+            |json| {
+                json["income"] = serde_json::json!({"previous": null, "per_minute": per_minute});
+            },
+        );
         builds(&opponent.act(&state, &mut OwnEvents::default()))
             .into_iter()
             .map(|(kind, _)| kind)

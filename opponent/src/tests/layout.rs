@@ -16,16 +16,6 @@ fn saturated(scrap: u32) -> Scenario {
     scenario
 }
 
-fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
-            _ => None,
-        })
-        .collect()
-}
-
 fn footprint(kind: BuildingKind, anchor: TilePos) -> impl Iterator<Item = TilePos> {
     let (width, height) = kind.size();
     (0..height).flat_map(move |dy| (0..width).map(move |dx| anchor.offset(dx, dy)))
@@ -304,7 +294,8 @@ fn no_building_goes_where_a_known_gun_or_army_reaches_it() {
         );
     }
 
-    let bombard = TilePos::new(8, 8);
+    // Out where it reaches the first spot without pressing the base.
+    let bombard = TilePos::new(3, 1);
     let reach = defenses::reach(UnitKind::Bombard);
     let centre = (2 * i64::from(bombard.x) + 1, 2 * i64::from(bombard.y) + 1);
     assert!(within(kind, first, centre, reach), "premise");
@@ -313,6 +304,7 @@ fn no_building_goes_where_a_known_gun_or_army_reaches_it() {
             .units
             .push(unit(1, UnitKind::Bombard, bombard.x, bombard.y));
     });
+    assert!(!shelled.is_empty(), "premise: a building is still bought");
     for (kind, anchor) in &shelled {
         assert!(
             !within(*kind, *anchor, centre, reach),

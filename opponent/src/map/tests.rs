@@ -457,7 +457,10 @@ fn open_ground_and_many_ways_have_no_cut() {
         .iter()
         .map(|row| row.replace("##########", ".........."))
         .collect();
-    let narrow: Vec<String> = ARENA_ROWS.iter().map(|row| (*row).to_owned()).collect();
+    let narrow: Vec<String> = crate::tests::ARENA
+        .iter()
+        .map(|row| (*row).to_owned())
+        .collect();
     for rows in [open, narrow, ways(&[2, 5, 9, 12])] {
         let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
         let model = model(&rows);
@@ -470,25 +473,9 @@ fn open_ground_and_many_ways_have_no_cut() {
     }
 }
 
-/// A field ten tiles across all the way: narrow, but no narrower anywhere.
-const ARENA_ROWS: [&str; 12] = [
-    "########################",
-    "#......................#",
-    "#...............s......#",
-    "#......s...............#",
-    "#......................#",
-    "#..1...............2...#",
-    "#......................#",
-    "#......................#",
-    "#...............s......#",
-    "#......s...............#",
-    "#......................#",
-    "########################",
-];
-
 #[test]
 fn working_base_distance_fields_extend_the_start_field_exactly() {
-    let model = model(&ARENA_ROWS);
+    let model = model(&crate::tests::ARENA);
     let home = model.start(PlayerId(0)).unwrap();
     for extra in [TilePos::new(12, 5), TilePos::new(18, 8)] {
         let starts = [home, extra];

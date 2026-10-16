@@ -4,12 +4,7 @@ use crate::expansion;
 use crate::frame::gap;
 use crate::investments::Investment;
 use crate::memory::Memory;
-use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
 
 /// `state` with `building` at `hp`.
 fn damaged(state: &State, building: BuildingId, hp: u32) -> State {
@@ -428,23 +423,22 @@ fn regrouping(scrap: u32) -> (State, Opponent, Vec<UnitId>) {
     while state.current_tick() < 12 {
         state.tick(&[]);
     }
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {
-                "task": "attack",
-                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 19, "y": 5}},
-                "phase": "recover",
-            },
-            "since": 12,
-            "units": squad,
-            "goal": {"x": 6, "y": 9},
-        }],
+    let opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 19, "y": 5}},
+                    "phase": "recover",
+                },
+                "since": 12,
+                "units": squad,
+                "goal": {"x": 6, "y": 9},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     (state, opponent, squad)
 }
 
@@ -466,17 +460,6 @@ fn workers_weld_a_regrouping_attack_at_its_rally_while_scrap_pays() {
     assert!(short.is_empty(), "{short:?}");
 }
 
-fn traits() -> PersonalityTraits {
-    PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    }
-}
-
 /// Where West would put a Repair Bay in `state`, if anywhere.
 fn bay(scenario: &Scenario, state: &State) -> Option<TilePos> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
@@ -484,7 +467,7 @@ fn bay(scenario: &Scenario, state: &State) -> Option<TilePos> {
         &observation,
         &map(scenario),
         &Memory::default(),
-        traits(),
+        middling(),
         true,
         false,
         defenses::Stakes::default(),

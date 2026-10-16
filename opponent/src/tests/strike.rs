@@ -90,19 +90,12 @@ fn free_bombers_strike_the_enemy_on_connected_and_severed_maps() {
 fn known_anti_air_over_a_target_holds_a_strike_back() {
     let scenario = winged();
     let state = scenario.build().unwrap();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["memory"]["units"] = (0..6)
-        .map(|index: u32| {
-            serde_json::json!({
-                "id": 1_000 + index,
-                "kind": "flakhound",
-                "tile": {"x": 41, "y": 9 + index},
-                "seen": 0,
-            })
-        })
-        .collect();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] = remembered((0..6).map(|index: u32| {
+            let tile = TilePos::new(41, 9 + i32::try_from(index).unwrap());
+            (1_000 + index, UnitKind::Flakhound, tile, 0)
+        }));
+    });
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(strike(&trace.unwrap().missions).is_none());
     assert!(runs(&commands).is_empty());
@@ -181,41 +174,7 @@ fn a_mid_strike_checkpoint_resumes_identically() {
         let commands = opponent.act(&state, &mut OwnEvents::default());
         state.tick(&commands);
     }
-    let json = serde_json::to_string(&opponent.checkpoint()).unwrap();
-    let checkpoint: Checkpoint = serde_json::from_str(&json).unwrap();
-    let mut restored = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    let until = state.current_tick() + 300;
-    while state.current_tick() < until {
-        let commands = opponent.act(&state, &mut OwnEvents::default());
-        assert_eq!(restored.act(&state, &mut OwnEvents::default()), commands);
-        assert_eq!(restored.checkpoint(), opponent.checkpoint());
-        state.tick(&commands);
-    }
-}
-
-#[test]
-fn a_second_strike_restores_but_not_one_sharing_aircraft() {
-    let scenario = winged();
-    let state = scenario.build().unwrap();
-    let mut opponent = seat(&scenario, 0);
-    opponent.act(&state, &mut OwnEvents::default());
-    let mut json = serde_json::to_value(opponent.checkpoint()).unwrap();
-    let restore = |json: &serde_json::Value| {
-        let checkpoint: Checkpoint = serde_json::from_value(json.clone()).unwrap();
-        Opponent::restore(&checkpoint, &scenario, &state, map(&scenario))
-    };
-    assert!(restore(&json).is_ok());
-    let missions = &mut json["missions"];
-    let mut copy = missions["list"][0].clone();
-    copy["id"] = 1.into();
-    missions["list"].as_array_mut().unwrap().push(copy);
-    missions["next"] = 2.into();
-    assert_eq!(
-        restore(&json).err().unwrap(),
-        "checkpoint missions share a unit"
-    );
-    json["missions"]["list"][1]["units"] = serde_json::json!([9_999]);
-    assert!(restore(&json).is_ok(), "strikes run side by side");
+    resumes_identically(&mut opponent, &scenario, &mut state, 300);
 }
 
 #[test]

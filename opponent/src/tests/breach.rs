@@ -1,11 +1,6 @@
 use super::*;
 use crate::investments::Investment;
-use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
 
 /// Ten East Bastions around East's start.
 const RING: [(i32, i32); 10] = [
@@ -66,14 +61,7 @@ fn wanted_with(
     memory: &crate::memory::Memory,
 ) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
-    let traits = PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    };
+    let traits = middling();
     crate::breach::investments(
         &observation,
         &map(scenario),

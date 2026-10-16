@@ -1,6 +1,5 @@
 use super::*;
 use oxide_sim::Scenario;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode};
 
 /// Three islands in a row, West's start on the first, then Mid's and East's.
 fn islands() -> Scenario {
@@ -18,24 +17,7 @@ fn islands() -> Scenario {
             tiles.into_iter().collect()
         })
         .collect();
-    Scenario {
-        mode: ScenarioMode::Match,
-        name: "islands".into(),
-        map,
-        players: ["West", "Mid", "East"]
-            .into_iter()
-            .map(|name| PlayerSpec {
-                name: name.into(),
-                team: None,
-                scrap: 0,
-                bot: false,
-                bot_config: None,
-            })
-            .collect(),
-        units: Vec::new(),
-        buildings: Vec::new(),
-        meta: None,
-    }
+    crate::tests::match_on(map, &["West", "Mid", "East"], &[])
 }
 
 #[test]

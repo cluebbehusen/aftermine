@@ -17,7 +17,7 @@ use oxide_sim::{BuildingKind, Command, PlayerId, StallReason, UnitKind};
 use std::cell::OnceCell;
 
 /// Ticks a point may go unseen before it is worth a look.
-const STALE_TICKS: u64 = 1_800;
+pub(crate) const STALE_TICKS: u64 = 1_800;
 
 /// Unseen ticks counted at most, so a point's value outweighs its age.
 const AGE_CAP: u64 = 7_200;

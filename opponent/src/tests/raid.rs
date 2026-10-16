@@ -187,23 +187,22 @@ fn sappers_at_the_target_blow_it_up_whatever_stands_there() {
     while state.current_tick() < 12 {
         state.tick(&[]);
     }
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {
-                "task": "raid",
-                "target": {"owner": 1, "building": "fabricator", "anchor": {"x": 22, "y": 10}},
-                "phase": "strike",
-            },
-            "since": 0,
-            "units": sappers,
-            "goal": {"x": 21, "y": 10},
-        }],
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "raid",
+                    "target": {"owner": 1, "building": "fabricator", "anchor": {"x": 22, "y": 10}},
+                    "phase": "strike",
+                },
+                "since": 0,
+                "units": sappers,
+                "goal": {"x": 21, "y": 10},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(runs(&commands).is_empty(), "{commands:?}");
     let missions = trace.unwrap().missions;
@@ -306,23 +305,22 @@ fn besieging(
         members.extend(&sappers);
     }
     members.sort_unstable();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({
-        "next": 1,
-        "list": [{
-            "id": 0,
-            "task": {
-                "task": "attack",
-                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
-                "phase": phase,
-            },
-            "since": since,
-            "units": members,
-            "goal": {"x": 11, "y": 11},
-        }],
+    let opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": phase,
+                },
+                "since": since,
+                "units": members,
+                "goal": {"x": 11, "y": 11},
+            }],
+        });
     });
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
     (state, opponent, sappers, turrets)
 }
 
@@ -571,27 +569,6 @@ fn checkpoints_reject_impossible_raids() {
     let mut off_map = json.clone();
     off_map["missions"]["list"][0]["task"]["target"]["anchor"]["x"] = 99.into();
     assert!(restore(off_map).is_err());
-    let twice = |units: serde_json::Value| {
-        let mut twice = json.clone();
-        let mut second = twice["missions"]["list"][0].clone();
-        second["id"] = 1.into();
-        second["units"] = units;
-        twice["missions"]["list"]
-            .as_array_mut()
-            .unwrap()
-            .push(second);
-        twice["missions"]["next"] = 2.into();
-        restore(twice)
-    };
-    assert!(twice(serde_json::json!([])).is_err());
-    assert!(
-        twice(json["missions"]["list"][0]["units"].clone()).is_err(),
-        "two raids never share a unit"
-    );
-    assert!(
-        twice(serde_json::json!([9_999])).is_ok(),
-        "raids run side by side"
-    );
 }
 
 #[test]

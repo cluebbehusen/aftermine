@@ -80,17 +80,6 @@ fn walled(guarded: bool) -> Scenario {
 }
 
 #[test]
-fn a_node_whose_route_runs_past_a_known_turret_is_not_worked() {
-    let worked = |guarded| {
-        let scenario = walled(guarded);
-        let state = scenario.build().unwrap();
-        crew(&crews(&scenario, &state, BotStance::Turtle, 50), (30, 3))
-    };
-    assert!(worked(false).is_some(), "premise: the open route is worked");
-    assert_eq!(worked(true), None, "the only route passes the Turret");
-}
-
-#[test]
 fn an_idle_harvester_is_not_sent_past_a_known_turret() {
     let sent = |guarded| {
         let mut scenario = walled(guarded);

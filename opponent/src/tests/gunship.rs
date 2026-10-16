@@ -3,7 +3,7 @@ use crate::frame::HomeFrame;
 use crate::investments::Investment;
 use crate::memory::Memory;
 use crate::missions::{Missions, Scratch};
-use crate::profile::{PersonalityTraits, ResolvedProfile};
+use crate::profile::ResolvedProfile;
 use oxide_sim::observation::ObservationData;
 use oxide_sim::scenario::{BotConfig, BotDifficulty};
 
@@ -14,10 +14,6 @@ const EAST_START: TilePos = TilePos::new(35, 11);
 
 /// East Flak Turrets around its start.
 const FLAK: [(i32, i32); 4] = [(32, 8), (32, 14), (38, 8), (38, 14)];
-
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
 
 /// The strait with West's lift force and tech, a Crucible and a Deep Bore
 /// frame, and East Flak Turrets at `flak` around its start.
@@ -57,14 +53,7 @@ fn wanted(
     severed: bool,
 ) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
-    let traits = PersonalityTraits {
-        air: 50,
-        siege: 50,
-        support: 50,
-        fortification: 50,
-        greed: 50,
-        guile: 50,
-    };
+    let traits = middling();
     crate::gunship::investments(
         &observation,
         &map(scenario),

@@ -2,7 +2,7 @@ use super::*;
 use crate::frame::gap;
 
 /// Ticks after which an unseen point is worth a scout.
-const STALE: u64 = 1_800;
+const STALE: u64 = crate::missions::STALE_TICKS;
 
 /// The field with a West Surveyor, at tick `tick`.
 fn scouting(tick: u64) -> (Scenario, State) {
@@ -120,11 +120,9 @@ fn a_stale_start_no_scout_holds_trains_another() {
 fn a_seen_point_waits_until_stale() {
     let (scenario, state) = scouting(3_600);
     let staged = |seen: u64| {
-        let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-        json["memory"]["scouted"] = serde_json::json!([seen]);
-        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-        let mut opponent =
-            Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["scouted"] = serde_json::json!([seen]);
+        });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
     };
     assert!(staged(3_600 - STALE + 12).is_empty(), "seen too recently");
@@ -533,10 +531,9 @@ fn the_mission_cap_holds_back_a_scout() {
             })
         })
         .collect();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({"next": cap, "list": list, "waiting": null});
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({"next": cap, "list": list, "waiting": null});
+    });
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let missions = trace.unwrap().missions;
     assert_eq!(missions.len(), cap);
@@ -573,10 +570,9 @@ fn a_scout_at_many_points_leaves_room_to_defend() {
             })
         })
         .collect();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["missions"] = serde_json::json!({"next": scouting, "list": list, "waiting": null});
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({"next": scouting, "list": list, "waiting": null});
+    });
     let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let missions = trace.unwrap().missions;
     assert!(
@@ -633,6 +629,15 @@ fn a_scout_lost_on_the_way_waits_out_its_point_before_another_goes() {
         assert!(trace.is_none_or(|trace| scouts(&trace.missions).is_empty()));
         state.tick(&commands);
     }
+    let mut goes = false;
+    while !goes && state.current_tick() < lost + STALE + 600 {
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        goes = runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&survivor));
+        state.tick(&commands);
+    }
+    assert!(goes, "once the point is stale again, the other scout goes");
 }
 
 #[test]
@@ -641,22 +646,14 @@ fn an_air_scout_flies_around_remembered_anti_air() {
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, STALE, &[]);
     let staged = |remember: bool| {
-        let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-        if remember {
-            json["memory"]["units"] = (9..=13)
-                .map(|y| {
-                    serde_json::json!({
-                        "id": at(&state, 24, y).0,
-                        "kind": "flakhound",
-                        "tile": {"x": 24, "y": y},
-                        "seen": STALE,
-                    })
-                })
-                .collect();
-        }
-        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-        let mut opponent =
-            Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            if remember {
+                json["memory"]["units"] = remembered((9..=13).map(|y| {
+                    let id = at(&state, 24, y).0;
+                    (id, UnitKind::Flakhound, TilePos::new(24, y), STALE)
+                }));
+            }
+        });
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let [mission] = scouts(&trace.unwrap().missions)[..] else {
             panic!("one scout");

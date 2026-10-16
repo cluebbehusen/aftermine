@@ -9,10 +9,6 @@ use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
 
-fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
-    BuildingSpec { player, kind, x, y }
-}
-
 /// What West would save for on `scenario` at `tick` once it scored best,
 /// with its economy up, no army to speak of, and every trait high: every
 /// investment that scores enough to be adopted.
@@ -361,10 +357,9 @@ fn raids() -> bool {
     scenario.players[0].scrap = 1_000;
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 120, &[]);
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    });
     trains(&opponent.act(&state, &mut OwnEvents::default()))
         .iter()
         .any(|(_, kind)| *kind == UnitKind::Scuttler)

@@ -1,8 +1,7 @@
 use super::*;
-use crate::defenses;
+use crate::composition;
 use crate::investments::{self, Investment, Situation};
 use crate::memory::Memory;
-use crate::{PersonalityTraits, composition};
 
 /// The arena with a built west Fabricator and a large west bank, plus
 /// whatever the enemy stages in sight of the west base.
@@ -193,29 +192,9 @@ fn working_producers_ask_for_another_while_unspent_income_and_need_last() {
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let wants = |income: u32, wanted: Vec<composition::Role>| {
         investments::candidates(&Situation {
-            observation: &observation,
-            map: &model,
-            memory: &memory,
-            traits: PersonalityTraits {
-                air: 50,
-                siege: 50,
-                support: 50,
-                fortification: 50,
-                greed: 50,
-                guile: 50,
-            },
-            saturation: 1_000,
             income,
-            depletion: 0,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
             wanted,
-            units: Vec::new(),
-            waiting: None,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            ..calm(&observation, &model, &memory)
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -324,19 +303,12 @@ fn the_most_wanted_role_takes_the_scrap_before_a_nearer_producer() {
     let state = scenario.build().unwrap();
     // Two Buzzards seen over the East base: anti-air is wanted, and nothing
     // is in sight to defend against.
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["memory"]["units"] = (0..2)
-        .map(|index: u32| {
-            serde_json::json!({
-                "id": 1_000 + index,
-                "kind": "buzzard",
-                "tile": {"x": 20, "y": 2 + index},
-                "seen": state.current_tick(),
-            })
-        })
-        .collect();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] = remembered((0..2).map(|index: u32| {
+            let tile = TilePos::new(20, 2 + i32::try_from(index).unwrap());
+            (1_000 + index, UnitKind::Buzzard, tile, state.current_tick())
+        }));
+    });
     let trained = trains(&opponent.act(&state, &mut OwnEvents::default()));
     let [(at, kind)] = trained[..] else {
         panic!("{trained:?}");
@@ -381,29 +353,9 @@ fn a_working_foundry_or_crucible_asks_for_another_at_home() {
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let wants = |wanted: Vec<composition::Role>| {
         investments::candidates(&Situation {
-            observation: &observation,
-            map: &model,
-            memory: &memory,
-            traits: PersonalityTraits {
-                air: 50,
-                siege: 50,
-                support: 50,
-                fortification: 50,
-                greed: 50,
-                guile: 50,
-            },
-            saturation: 1_000,
             income: 100_000,
-            depletion: 0,
-            pull: Vec::new(),
-            exposed: false,
-            stakes: defenses::Stakes::default(),
-            severed: false,
             wanted,
-            units: Vec::new(),
-            waiting: None,
-            margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-            lift_flak: 0,
+            ..calm(&observation, &model, &memory)
         })
         .into_iter()
         .map(|candidate| candidate.investment)
@@ -505,21 +457,15 @@ fn crucible_seat_banking(
         y: 8,
     });
     let state = scenario.build().unwrap();
-    let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    json["memory"]["units"] = remembered
-        .iter()
-        .zip(0..)
-        .map(|(kind, index): (&UnitKind, u32)| {
-            serde_json::json!({
-                "id": 1_000 + index,
-                "kind": kind,
-                "tile": {"x": 20, "y": 2 + index},
-                "seen": state.current_tick(),
-            })
-        })
-        .collect();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    let opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let now = state.current_tick();
+    let opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] = super::remembered(remembered.iter().zip(0..).map(
+            |(&kind, index): (&UnitKind, u32)| {
+                let tile = TilePos::new(20, 2 + i32::try_from(index).unwrap());
+                (1_000 + index, kind, tile, now)
+            },
+        ));
+    });
     (scenario, state, opponent)
 }
 
@@ -581,21 +527,14 @@ fn recalling(
     player: u8,
     seen: &[(UnitKind, TilePos)],
 ) -> Opponent {
-    let mut json = serde_json::to_value(seat(scenario, player).checkpoint()).unwrap();
-    json["memory"]["units"] = seen
-        .iter()
-        .zip(0_u32..)
-        .map(|((kind, tile), index)| {
-            serde_json::json!({
-                "id": 1_000 + index,
-                "kind": kind,
-                "tile": tile,
-                "seen": state.current_tick(),
-            })
-        })
-        .collect();
-    let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
-    Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap()
+    let now = state.current_tick();
+    restored_with(&seat(scenario, player), scenario, state, |json| {
+        json["memory"]["units"] = remembered(
+            seen.iter()
+                .zip(0_u32..)
+                .map(|(&(kind, tile), index)| (1_000 + index, kind, tile, now)),
+        );
+    })
 }
 
 /// The West seat at its first decision, remembering `seen` East units over

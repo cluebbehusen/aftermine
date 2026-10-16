@@ -32,6 +32,8 @@ mod repair;
 mod reserve;
 mod rival;
 mod scouting;
+#[cfg(test)]
+pub(crate) use scouting::STALE_TICKS;
 mod settlement;
 mod sortie;
 mod strike;

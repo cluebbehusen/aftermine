@@ -392,20 +392,15 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
     ]);
     let mut bot = seat_with(&scenario, 0, thrifty());
     let mut state = scenario.build().unwrap();
-    let mut checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
-    checkpoint["memory"]["units"] = state
-        .units()
-        .iter()
-        .filter(|u| u.player == PlayerId(1))
-        .map(|u| serde_json::json!({"id":u.id.0,"kind":u.kind,"tile":u.tile(),"seen":0}))
-        .collect();
-    bot = Opponent::restore(
-        &serde_json::from_value(checkpoint).unwrap(),
-        &scenario,
-        &state,
-        map(&scenario),
-    )
-    .unwrap();
+    bot = restored_with(&bot, &scenario, &state, |json| {
+        json["memory"]["units"] = remembered(
+            state
+                .units()
+                .iter()
+                .filter(|u| u.player == PlayerId(1))
+                .map(|u| (u.id.0, u.kind, u.tile(), 0)),
+        );
+    });
     let (commands, trace) = bot.act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
     let settlement = trace
