@@ -898,6 +898,12 @@ direct-shot effect owns a single pending impact cue, consumed when the cosmetic
 round reaches its target on the presentation clock. Pausing holds that cue;
 effect expiry and timeline resets discard it. Reload is silent.
 
+A Maw's work is heard as loops rather than reports. Its drum's grind swells from
+the first hit, holds while it cuts and dies away once it stops; its kiln's hum
+follows the belt's speed, running on until the last load reaches the kiln. Both
+follow the machine's presented motion (`maw_motion`) and sound only while the
+viewer sees it. A heard cut raises combat music as a weapon report does.
+
 The tiny-skia renderer in `oxide-kit` produces whole-map CPU schematics. It does
 not share the native atlas, camera, HUD, animation, or visual polish. Screenshot
 responses identify their producer. CPU goldens prove deterministic schematic
