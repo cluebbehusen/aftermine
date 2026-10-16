@@ -495,7 +495,7 @@ fn world_tap(game: &mut Game, input: &mut InputState, p: Vec2, double: bool) {
 pub fn update_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action::BindingMap) {
     let probe = input.latch_probe(game);
     held_touch(game, input, bindings);
-    input.settle_latch(game, &probe);
+    input.settle_latch(game, probe.as_ref());
 }
 
 /// What a resting finger or pair does as time passes.

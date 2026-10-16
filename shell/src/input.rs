@@ -1044,20 +1044,24 @@ impl InputState {
         };
     }
 
-    /// What an input step may change that finishes a latched QUEUE's action.
-    pub(crate) fn latch_probe(&self, game: &Game) -> LatchProbe {
-        LatchProbe {
+    /// What an input step may change that finishes a latched QUEUE's action,
+    /// taken only while QUEUE is latched, so ordinary input copies nothing.
+    pub(crate) fn latch_probe(&self, game: &Game) -> Option<LatchProbe> {
+        matches!(self.queue_toggle, QueueToggle::Latched { .. }).then(|| LatchProbe {
             armed: self.armed_mode().is_some(),
             staged: game.pending.len(),
             units: game.presentation.selection.units.clone(),
             buildings: game.presentation.selection.buildings.clone(),
-        }
+        })
     }
 
     /// A latched QUEUE covers one action. While a mode is armed that is the
     /// whole mode, a placement chain or a patrol route, so it lets go when
     /// the mode ends; otherwise it is the next order or selection change.
-    pub(crate) fn settle_latch(&mut self, game: &Game, before: &LatchProbe) {
+    pub(crate) fn settle_latch(&mut self, game: &Game, before: Option<&LatchProbe>) {
+        let Some(before) = before else {
+            return;
+        };
         if !matches!(self.queue_toggle, QueueToggle::Latched { .. }) {
             return;
         }
@@ -1535,7 +1539,7 @@ pub fn apply_events(
         let queued = input.queue_held();
         let probe = input.latch_probe(game);
         apply_event(game, input, bindings, event);
-        input.settle_latch(game, &probe);
+        input.settle_latch(game, probe.as_ref());
         if queued && !input.queue_held() {
             input.queue_released();
         }
