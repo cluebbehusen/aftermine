@@ -65,7 +65,8 @@ pub(crate) fn draw_placement_ghost(
                 PlacementVerdict::BuildsOnArrival => arrives,
                 PlacementVerdict::Refused(_)
                 | PlacementVerdict::Short(_)
-                | PlacementVerdict::QueueFull => refused,
+                | PlacementVerdict::QueueFull
+                | PlacementVerdict::Unreachable => refused,
             },
         );
     }

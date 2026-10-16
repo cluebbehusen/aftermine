@@ -482,12 +482,19 @@ The mode ribbon (`LayoutModel.mode_ribbon`) shows while a mode is armed,
 centered above the panel band. While placement has a spot to judge, under the
 cursor or at the touch ghost, the ribbon adds a status row: whether a click
 there builds now, builds on arrival, or why it would be refused, and whether it
-queues as the builder's next numbered order or replaces its orders. The row is
-as wide as its widest possible status, so the ribbon holds still as the verdict
-changes, and a queued ghost wears the same number as its dock chip will. One
-`PlacementVerdict`, cached for the tick, the staged-command count, the
-selection, and the candidate, feeds the ghost's tint, the ribbon, and the click,
-so a spot the bank or a full queue refuses tints red too. The QUEUE toggle
+queues as the builder's next numbered order or replaces its orders. A site the
+founder cannot reach is refused when the ground the player can see, or has
+explored as impassable terrain, leaves it no way to the doorstep; fogged and
+unexplored ground counts as open, so the check never reads what fog hides and
+never refuses reachable ground, and the sim's own path check still decides. A
+builder whose queue is full takes no number, since another selected builder may
+take the order. Over chrome or the minimap, where a click does something else,
+the row stays but goes blank. The row is as wide as its widest possible status,
+so the ribbon holds still as the verdict changes, and a queued ghost wears the
+same number as its dock chip will. One `PlacementVerdict`, cached for the tick,
+the staged-command count, the selection, and the candidate, feeds the ghost's
+tint, the ribbon, and the click, so a spot the bank, a full queue, or an
+unreachable doorstep refuses tints red too. The QUEUE toggle
 (`LayoutModel.queue_toggle`) shows on touch-only builds while the human commands
 a selected unit or QUEUE is on. It sits over the panel's left corner in the
 orders dock's column, and the dock rises to stack above it, so queueing orders

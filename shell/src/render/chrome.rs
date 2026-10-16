@@ -535,6 +535,16 @@ pub(crate) fn placement_status(
 ) -> Option<RibbonStatus> {
     use crate::input::PlacementVerdict;
     let spot = crate::input::preview_spot(game, input)?;
+    // Over chrome a click does something else; the row stays, blank, so
+    // the ribbon holds still as the cursor reaches it.
+    if crate::input::cursor_on_chrome(game, input) {
+        return Some(RibbonStatus {
+            verdict: String::new(),
+            color: TEXT_BODY,
+            detail: None,
+            verdict_w: 0.0,
+        });
+    }
     let (text, color) = match spot.verdict {
         PlacementVerdict::Builds => ("Builds now".to_string(), TEXT_BODY),
         PlacementVerdict::BuildsOnArrival => ("Builds on arrival".to_string(), TEXT_ACCENT),
@@ -549,6 +559,7 @@ pub(crate) fn placement_status(
         PlacementVerdict::QueueFull => {
             ("Order queue is full".to_string(), crate::theme::TEXT_DANGER)
         }
+        PlacementVerdict::Unreachable => (UNREACHABLE.to_string(), crate::theme::TEXT_DANGER),
     };
     Some(RibbonStatus {
         verdict: text,
@@ -557,6 +568,9 @@ pub(crate) fn placement_status(
         verdict_w: 0.0,
     })
 }
+
+/// The status row's word for a site the founder cannot reach.
+const UNREACHABLE: &str = "Your builders can't reach it";
 
 /// Where a build lands, as the status row says it.
 fn lands_detail(lands: crate::input::Lands) -> String {
@@ -603,6 +617,7 @@ fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str)
     .chain([
         format!("Needs {cost} more scrap"),
         "Order queue is full".to_string(),
+        UNREACHABLE.to_string(),
     ])
     .map(|text| measure(&text))
     .fold(0.0, f32::max);

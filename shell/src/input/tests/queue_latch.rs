@@ -146,3 +146,19 @@ fn a_locked_queue_outlasts_orders() {
     assert_eq!(queued, 2, "both orders queued");
     assert_eq!(input.queue_toggle, QueueToggle::Locked);
 }
+
+#[test]
+fn only_a_latched_queue_takes_a_snapshot() {
+    let (game, mut input, _, _) = latch_range();
+    assert!(
+        input.latch_probe(&game).is_none(),
+        "QUEUE off copies nothing"
+    );
+    input.queue_toggle = QueueToggle::Locked;
+    assert!(
+        input.latch_probe(&game).is_none(),
+        "nor does a locked QUEUE"
+    );
+    input.queue_toggle = QueueToggle::Latched { at: 0.0 };
+    assert!(input.latch_probe(&game).is_some());
+}

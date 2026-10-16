@@ -342,3 +342,55 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
     let status = ribbon.status.expect("the cursor rests on the row's end");
     assert_eq!(status.detail.as_deref(), Some("Queues as #3"));
 }
+
+#[test]
+fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .anchor;
+    let mut input = InputState::new();
+    input.build_menu = true;
+    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.mouse = game.presentation.camera.to_screen(vec2(
+        (foundry.x + 3) as f32 + 0.5,
+        (foundry.y + 3) as f32 + 0.5,
+    ));
+    let lay_out = |game: &Game, input: &InputState| {
+        let hud = layout(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1280.0, 800.0),
+            None,
+            &fixed,
+        );
+        let ribbon = hud.geometry.ribbon.expect("placement shows its ribbon");
+        game.presentation.layout.set(hud.layout);
+        ribbon
+    };
+    let over_ground = lay_out(&game, &input);
+    assert_eq!(
+        over_ground.status.as_ref().unwrap().verdict,
+        "Builds now",
+        "premise"
+    );
+    input.mouse = over_ground.rect.center();
+    let over_ribbon = lay_out(&game, &input);
+    let status = over_ribbon.status.expect("the row stays");
+    assert!(status.verdict.is_empty() && status.detail.is_none());
+    assert_eq!(over_ribbon.rect, over_ground.rect, "the ribbon holds still");
+}
