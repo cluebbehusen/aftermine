@@ -146,7 +146,7 @@ fn the_menu_button_sits_in_the_top_bar_with_a_full_touch_target() {
                 );
                 if touch_only {
                     assert!(
-                        button.x + button.w <= width - TOUCH_RIGHT_INSET * ui,
+                        button.x + button.w <= width - TOUCH_CORNER_INSET * ui,
                         "clear of a rounded screen corner"
                     );
                 }
