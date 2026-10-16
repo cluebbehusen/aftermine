@@ -397,23 +397,28 @@ pub(super) fn queue_dock_lift(scale: f32) -> f32 {
     (crate::theme::MIN_TOUCH_TARGET + 16.0) * scale
 }
 
-/// The QUEUE toggle: a chain of queued waypoints, lit while queueing so
-/// the mode can't hide, dark like the orders dock otherwise. Locked on, a
-/// bright ring stands off its edge.
+/// The QUEUE toggle: a chain of queued waypoints, dark like the orders dock
+/// while off, outlined in amber while it covers the next action, and solid
+/// amber while locked on, so neither mode can hide.
 fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     use crate::input::QueueToggle;
-    let on = toggle != QueueToggle::Off;
-    let glyph = if on { SURFACE_CARD } else { TEXT_BODY };
-    if on {
-        fill_rect(rect, TEXT_ACCENT);
-    } else {
-        fill_rect(rect, crate::theme::SURFACE_PLATE);
-        stroke_rect(
-            rect,
-            crate::theme::Stroke::Edge.at(s),
-            crate::theme::BORDER_STRONG,
-        );
-    }
+    use crate::theme::{BORDER_STRONG, SURFACE_PLATE, Stroke};
+    let glyph = match toggle {
+        QueueToggle::Off => {
+            fill_rect(rect, SURFACE_PLATE);
+            stroke_rect(rect, Stroke::Edge.at(s), BORDER_STRONG);
+            TEXT_BODY
+        }
+        QueueToggle::Latched { .. } => {
+            fill_rect(rect, SURFACE_PLATE);
+            stroke_rect(rect, Stroke::Heavy.at(s), TEXT_ACCENT);
+            TEXT_ACCENT
+        }
+        QueueToggle::Locked => {
+            fill_rect(rect, TEXT_ACCENT);
+            SURFACE_CARD
+        }
+    };
     let c = rect.center();
     let points = [
         c + vec2(-11.0, 6.0) * s,
@@ -424,20 +429,6 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
     line_between(points[1], points[2], 2.0 * s, glyph);
     for point in points {
         crate::render::prim::fill_circle(point, 3.5 * s, glyph);
-    }
-    if toggle == QueueToggle::Locked {
-        // Within the 8 px the chip keeps clear on every side.
-        let out = 6.0 * s;
-        stroke_rect(
-            Rect::new(
-                rect.x - out,
-                rect.y - out,
-                rect.w + out * 2.0,
-                rect.h + out * 2.0,
-            ),
-            crate::theme::Stroke::Heavy.at(s),
-            crate::theme::TEXT_PRIMARY,
-        );
     }
 }
 
