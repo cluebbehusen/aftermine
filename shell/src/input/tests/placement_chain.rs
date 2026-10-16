@@ -138,7 +138,7 @@ fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
     let ground = vec2(7.5, 3.5);
 
     // QUEUE off with a ghost down but nothing placed keeps placing.
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     tap_world(&mut game, &mut input, ground);
     tap(&mut game, &mut input, chip.center());
     assert!(input.placing.is_some(), "nothing was placed yet");
@@ -150,6 +150,6 @@ fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
     assert!(input.placing.is_some(), "QUEUE keeps placing");
 
     tap(&mut game, &mut input, chip.center());
-    assert!(!input.queue_toggle);
+    assert_eq!(input.queue_toggle, QueueToggle::Off);
     assert!(input.placing.is_none(), "turning QUEUE off ends the chain");
 }

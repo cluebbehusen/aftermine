@@ -118,7 +118,7 @@ pub const STEPS: [Step; 6] = [
             KEEP_MINING,
             "Click Build, choose a category and building,",
             "then click open ground. Red tint means you can't build there.",
-            "Light QUEUE to chain: keep placing, and each build queues up.",
+            "Click QUEUE first to place several; double-click it to keep it on.",
         ],
         touch_keys: &[
             KEEP_MINING,
@@ -130,6 +130,7 @@ pub const STEPS: [Step; 6] = [
             KEEP_MINING,
             "Tap Build, then a building, then open ground to place a ghost.",
             "Tap the ghost to build it. Red tint means you can't build there.",
+            "Tap QUEUE first to place several; double-tap it to keep it on.",
         ],
     },
     Step {

@@ -237,7 +237,7 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
     );
     assert_eq!(blocked.rect, builds.rect, "the ribbon holds still");
 
-    input.queue_toggle = true;
+    input.queue_toggle = crate::input::QueueToggle::Locked;
     let queued = ribbon(&game, &mut input, open);
     let status = queued.status.as_ref().expect("a spot under the cursor");
     assert_eq!(status.detail.as_deref(), Some("Queues as #3"));

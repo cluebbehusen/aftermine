@@ -1407,7 +1407,7 @@ fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
     layout.queue_toggle = chip;
     game.presentation.layout.set(layout);
     game.presentation.selection.units = vec![fighter];
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     tap_world(&mut game, &mut input, at + vec2(4.0, 2.0));
     assert_eq!(
         game.presentation.selection.units,
@@ -1417,7 +1417,11 @@ fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
 
     input.now += 1.0;
     tap(&mut game, &mut input, chip.center());
-    assert!(!input.queue_toggle, "one tap on the lit chip turns it off");
+    assert_eq!(
+        input.queue_toggle,
+        QueueToggle::Off,
+        "one tap on the lit chip turns it off"
+    );
     tap_world(&mut game, &mut input, at + vec2(4.0, 2.0));
     assert!(game.presentation.selection.units.is_empty());
 
@@ -2752,7 +2756,7 @@ fn a_refused_confirm_keeps_the_ghost_and_the_mode() {
 #[test]
 fn queue_keeps_placement_armed_after_a_confirm() {
     let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     let foundry = game.state.buildings()[0].anchor;
     let open = vec2(foundry.x as f32 + 3.5, foundry.y as f32 + 3.5);
     tap_world(&mut game, &mut input, open);
@@ -3579,7 +3583,7 @@ fn the_queue_toggle_makes_touch_queue_and_add() {
     let [(first, first_at), (second, second_at)] = own[..] else {
         panic!("two own units");
     };
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     tap_world(&mut game, &mut input, first_at);
     tap_world(&mut game, &mut input, second_at);
     let mut picked = game.presentation.selection.units.clone();
@@ -3625,6 +3629,9 @@ fn the_queue_chip_flips_by_tap_and_click() {
         game.presentation.toasts.is_empty(),
         "the lit chip speaks for itself"
     );
+    // Past the double-tap window, so the click turns it off rather than
+    // locking it.
+    input.now += 1.0;
     apply_events(
         &mut game,
         &mut input,
@@ -3635,7 +3642,7 @@ fn the_queue_chip_flips_by_tap_and_click() {
         game.presentation.selection.units.is_empty(),
         "the chip is chrome"
     );
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     input.reset_transient();
     assert!(!input.queue_held(), "leaving the screen drops it");
 }
@@ -3813,7 +3820,7 @@ fn a_ground_tap_deselects_and_a_long_press_orders() {
     assert_eq!(last_ping_queued(&game), Some(false));
 
     game.pending.clear();
-    input.queue_toggle = true;
+    input.queue_toggle = QueueToggle::Locked;
     long_press_world(&mut game, &mut input, at + vec2(4.0, -2.0));
     assert!(
         game.pending
@@ -4568,6 +4575,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
 mod order_chips;
 mod placement_chain;
 mod placement_verdict;
+mod queue_latch;
 mod relayout;
 mod top_bar;
 
@@ -5093,7 +5101,7 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
     for queue in [false, true] {
         game.presentation.selection.units = mine.clone();
         if queue {
-            input.queue_toggle = true;
+            input.queue_toggle = QueueToggle::Locked;
         } else {
             apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
         }
@@ -5106,7 +5114,7 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
             game.presentation.selection.units, without_harvesters,
             "queue {queue}: the kind drops out"
         );
-        input.queue_toggle = false;
+        input.queue_toggle = QueueToggle::Off;
         apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
     }
 
