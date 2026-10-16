@@ -238,10 +238,14 @@ fn scan_cancellable(
 /// Every known replay, newest first.
 pub fn discover(cancelled: impl Fn() -> bool) -> Vec<ReplayEntry> {
     let mut found = Vec::new();
-    if let Some(dir) = crate::paths::autosave_dir() {
-        scan_cancellable(&dir, &mut found, &cancelled);
-    }
-    if let Some(dir) = crate::paths::saves_dir() {
+    for dir in [
+        crate::paths::autosave_dir(),
+        crate::paths::matches_dir(),
+        crate::paths::saves_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    {
         scan_cancellable(&dir, &mut found, &cancelled);
     }
     scan_cancellable(&crate::paths::replays_dir(), &mut found, &cancelled);

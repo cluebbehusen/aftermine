@@ -26,7 +26,7 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
-/// Platform data root (autosaves, explicit saves), if resolvable.
+/// Platform data root (autosaves, the LAN rejoin ticket), if resolvable.
 pub fn data_dir() -> Option<PathBuf> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
@@ -45,6 +45,21 @@ pub fn data_dir() -> Option<PathBuf> {
     }
 }
 
+/// Root of the files a player keeps, sends or adds: named saves,
+/// finished-match records, replays and diagnostics. On iOS that is the
+/// app's Documents folder, the one the Files app shows; elsewhere it is
+/// the data root.
+fn player_files_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "ios")]
+    {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Documents"))
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        data_dir()
+    }
+}
+
 /// The ticket of a LAN seat this player may still take back.
 pub fn rejoin_ticket() -> Option<PathBuf> {
     data_dir().map(|d| d.join("rejoin.json"))
@@ -57,23 +72,29 @@ pub fn autosave_dir() -> Option<PathBuf> {
 
 /// Crash and freeze incident logs and exported diagnostic reports.
 pub fn diagnostics_dir() -> Option<PathBuf> {
-    data_dir().map(|directory| directory.join("diagnostics"))
+    player_files_dir().map(|directory| directory.join("diagnostics"))
 }
 
 /// Explicit, player-initiated saves. Autosave rotation never touches
 /// this directory — a save the player asked for is deleted only by
 /// the player.
 pub fn saves_dir() -> Option<PathBuf> {
-    data_dir().map(|d| d.join("saves"))
+    player_files_dir().map(|d| d.join("saves"))
+}
+
+/// Finished-match recordings, kept apart from the autosaves they
+/// replace so a player can find and share them.
+pub fn matches_dir() -> Option<PathBuf> {
+    player_files_dir().map(|d| d.join("matches"))
 }
 
 /// Where local replays are browsed. A packaged bundle's cwd is not a
 /// usable root (typically `/`), so a bundled shell resolves against
-/// the data root; a workspace run keeps the documented cwd-relative
-/// `replays/`.
+/// the player files root; a workspace run keeps the documented
+/// cwd-relative `replays/`.
 pub fn replays_dir() -> PathBuf {
     if bundled()
-        && let Some(dir) = data_dir()
+        && let Some(dir) = player_files_dir()
     {
         return dir.join("replays");
     }

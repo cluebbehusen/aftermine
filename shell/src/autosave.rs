@@ -173,7 +173,8 @@ fn now_unix() -> u64 {
 
 /// One match's place among the autosaves. Its autosave, LAN autosave and
 /// finished record share the id, so each write replaces the last instead of
-/// adding a file, and rotation keeps whole matches.
+/// adding a file, and rotation keeps whole matches. The finished record
+/// lands in the matches folder and removes the slot's autosaves.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SaveSlot(String);
 
@@ -216,8 +217,7 @@ impl SaveSlot {
         format!("{kind}-{}.{extension}", self.0)
     }
 
-    /// Removes this slot's autosaves other than `kept`; its finished
-    /// record stays.
+    /// Removes this slot's autosaves in `dir` other than `kept`.
     fn clear_autosaves(&self, dir: &Path, kept: &str) {
         for kind in AUTOSAVE_KINDS.into_iter().filter(|kind| *kind != kept) {
             std::fs::remove_file(dir.join(self.file(kind))).ok();
@@ -325,6 +325,8 @@ pub(crate) struct SaveJob {
     data: Option<SaveData>,
     meta: chassis::replay::ReplayMeta,
     dir: Option<PathBuf>,
+    /// Where the match's autosaves live, which an unnamed save replaces.
+    autosaves: Option<PathBuf>,
     /// Where an unnamed save lands and what it holds; a named save gets a
     /// fresh file in the saves folder instead.
     mark: Option<SaveMark>,
@@ -374,9 +376,12 @@ impl SaveJob {
             meta,
             dir: if named {
                 crate::paths::saves_dir()
+            } else if recording {
+                crate::paths::matches_dir()
             } else {
                 crate::paths::autosave_dir()
             },
+            autosaves: crate::paths::autosave_dir(),
             mark: (!named).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
@@ -406,6 +411,7 @@ impl SaveJob {
             } else {
                 crate::paths::autosave_dir()
             },
+            autosaves: crate::paths::autosave_dir(),
             mark: (!named).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
@@ -440,7 +446,9 @@ impl SaveJob {
                     path: path.clone(),
                     source,
                 })?;
-                mark.slot.clear_autosaves(&dir, kind);
+                if let Some(autosaves) = &self.autosaves {
+                    mark.slot.clear_autosaves(autosaves, kind);
+                }
                 rotate(&dir);
                 path
             } else {

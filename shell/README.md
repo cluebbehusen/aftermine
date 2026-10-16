@@ -154,7 +154,8 @@ commands to any seat, as in ordinary sessions.
 Continue resumes the newest autosave. A match autosaves every minute of play, as
 the window goes inactive, and when the player leaves or quits. Each match keeps
 one autosave, replaced in place, until its finished recording replaces it as
-soon as the match is decided.
+soon as the match is decided. On iPad, named saves, finished matches, replays
+and diagnostics appear in the Files app under On My iPad > Oxide.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only

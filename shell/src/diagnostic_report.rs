@@ -93,7 +93,12 @@ impl ReportJob {
                 let _ = std::fs::remove_dir_all(&report);
                 return Err(error);
             }
-            Ok("Diagnostic report exported. Open diagnostics folder to find it.".into())
+            Ok(if cfg!(target_os = "ios") {
+                "Diagnostic report exported to Files: On My iPad > Oxide > diagnostics."
+            } else {
+                "Diagnostic report exported. Open diagnostics folder to find it."
+            }
+            .into())
         })
     }
     pub(crate) fn poll(&mut self) -> Option<Result<String, String>> {
