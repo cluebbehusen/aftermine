@@ -1333,6 +1333,25 @@ impl Building {
         }
     }
 
+    /// The construction stage a site or upgrade has reached: the share of
+    /// its rung's `build_ticks` its progress has passed, the last stage
+    /// holding until it stands; none once built. A rung without a labor
+    /// budget counts as one tick long, and a zero-tick one stays at the
+    /// first stage.
+    pub fn construction_stage(&self) -> Option<u8> {
+        let progress = u64::from(self.construction_progress()?);
+        let total = u64::from(
+            self.stats()
+                .construction
+                .map_or(1, |stats| stats.build_ticks),
+        );
+        let stages = u64::from(crate::stats::CONSTRUCTION_STAGES);
+        let stage = (progress * stages)
+            .checked_div(total)
+            .map_or(0, |stage| stage.min(stages - 1));
+        Some(u8::try_from(stage).expect("stages fit in u8"))
+    }
+
     /// Ticks of training on the front of the queue; zero unless built.
     pub fn training_progress(&self) -> u32 {
         match self.phase {

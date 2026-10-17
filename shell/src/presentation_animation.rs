@@ -397,6 +397,9 @@ impl UnitAnimationFacts {
 pub(crate) struct ConstructionState {
     /// Normalized build completion.
     pub(crate) progress: f32,
+    /// The simulation's construction stage, which picks the scaffold art
+    /// on the same tick the site's contact outline changes.
+    pub(crate) stage: usize,
     /// Whether an assigned scrap worker is adjacent and advancing the site.
     pub(crate) active: bool,
     /// Authored machinery phase. Inactive and reduced-motion sites hold it.
@@ -451,6 +454,7 @@ pub(crate) struct BuildingAnimationFacts {
     built: bool,
     progress: u32,
     construction_total: Option<u32>,
+    construction_stage: usize,
     construction_active: bool,
     production: Option<(UnitKind, u32, u32)>,
     cooldown: u32,
@@ -477,6 +481,7 @@ impl BuildingAnimationFacts {
             built: building.built(),
             progress: building.construction_progress().unwrap_or(0),
             construction_total,
+            construction_stage: building.construction_stage().map_or(0, usize::from),
             construction_active: !building.built() && active_site_construction(state, building),
             production,
             cooldown: building.cooldown,
@@ -1049,6 +1054,7 @@ impl AnimationController {
             let total = facts.construction_total.unwrap_or(1);
             ConstructionState {
                 progress: ratio(facts.progress, total),
+                stage: facts.construction_stage,
                 active: facts.construction_active,
                 machinery_cycle: clock.cycle(
                     facts.id.0,

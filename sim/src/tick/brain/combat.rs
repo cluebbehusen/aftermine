@@ -1660,12 +1660,13 @@ pub(super) fn attack(
         sapper_attack(state, id, target, resume, events, hits);
         return;
     }
-    let (pos, tile, me, kind, cooldowns) = (
+    let (pos, tile, me, kind, cooldowns, routed) = (
         unit.pos,
         unit.tile(),
         unit.player,
         unit.kind,
         unit.cooldowns,
+        unit.path.is_some(),
     );
 
     // A hunter attacking a building stays alert: an enemy unit wandering
@@ -1731,7 +1732,10 @@ pub(super) fn attack(
             b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
         }),
     };
-    let in_range = within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point));
+    // A wide cutter cuts a building only once stopped where it chose to
+    // stand, not at a corner it passes within reach of on the way.
+    let in_range = within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
+        && !(routed && matches!(target, Target::Building(_)) && contact::square_cutter(kind));
     let full = traces_terrain(weapon, stats.domain, victim_domain);
     // The line trace skips endpoint tiles, but a building's
     // closest-footprint aim point is an exact edge coordinate that can
