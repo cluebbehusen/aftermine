@@ -69,7 +69,6 @@ fn flat_field(cells: i32) -> PitField {
             cells: CELLS,
             depth: vec![u8::MAX; as_index(cells * cells)],
         },
-        known: vec![true; as_index((cells / CELLS) * (cells / CELLS))],
     }
 }
 
@@ -85,28 +84,4 @@ fn chessboard_distance_is_exact_from_a_flat_field() {
             assert_eq!(field.field.cell(x, y), expected, "cell {x},{y}");
         }
     }
-}
-
-#[test]
-fn only_explored_standing_ground_seeds_a_rim() {
-    assert_eq!(seed(Some(Terrain::Ground), true), None);
-    assert_eq!(seed(Some(Terrain::Rock), true), None);
-    assert_eq!(seed(Some(Terrain::Peak), true), None);
-    assert_eq!(seed(Some(Terrain::Ground), false), Some(false));
-    assert_eq!(seed(Some(Terrain::Pit), false), Some(false));
-    assert_eq!(seed(Some(Terrain::Pit), true), Some(true));
-    assert_eq!(
-        seed(None, true),
-        Some(false),
-        "off-map is highwall, not floor"
-    );
-}
-
-#[test]
-fn unknown_ground_never_becomes_a_rim() {
-    // Unexplored tiles enter the field exactly like pit: with no explored
-    // standing cell anywhere, every cell stays void.
-    let mut field = flat_field(12);
-    field.field.relax();
-    assert!(field.field.depth.iter().all(|depth| *depth == u8::MAX));
 }

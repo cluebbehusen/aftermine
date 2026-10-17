@@ -12,12 +12,8 @@
 //! playfield the last bench fades into the dark; inside it, a peak's last
 //! bench runs on as its plateau.
 //!
-//! Neither reveals hidden terrain. The wall's field counts unexplored tiles
-//! as floor, so the boundary shows no spur until its peak is seen; each
-//! peak's field counts them as more peak, so it never shows an edge, a step,
-//! or a plateau the player has not seen. Explored terrain agrees in both, so
-//! a seen spur joins the wall seamlessly. Both fields are cached and rebuilt
-//! only when the exploration they read changes.
+//! The field reads the map alone, so a terrace never shifts as the fog lifts;
+//! the fog veil hides peaks the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
@@ -31,12 +27,9 @@ use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
 use oxide_sim::map::{Map, Terrain};
-use std::cell::RefCell;
 
 /// Tiles of field beyond the map edge: past the vignette's darkest step.
 const MARGIN: i32 = 8;
-/// Tiles of field around each peak: enough for its deepest plateau.
-const PEAK_PAD: i32 = 8;
 /// Upper plateaus narrower than about twice this many cells are dropped.
 const PLATEAU_RADIUS: u8 = 3;
 /// Cells the last off-playfield bench fades over before the void.
@@ -264,218 +257,29 @@ fn opened(
         .collect()
 }
 
-/// Whether a tile is wall for the boundary's field: everything off the
-/// playfield, and every explored peak. Unexplored tiles read as floor.
-fn wall(on_playfield: bool, terrain: Option<Terrain>, explored: bool) -> bool {
-    !on_playfield || (explored && terrain == Some(Terrain::Peak))
+/// Whether a tile is wall: everything off the playfield, and every peak.
+fn wall(on_playfield: bool, terrain: Option<Terrain>) -> bool {
+    !on_playfield || terrain == Some(Terrain::Peak)
 }
 
-/// Whether a tile is wall for a peak's field: unexplored tiles continue it.
-fn standing(on_playfield: bool, terrain: Option<Terrain>, explored: bool) -> bool {
-    !on_playfield || !explored || terrain == Some(Terrain::Peak)
-}
-
-/// One connected peak on the playfield and the tiles its terraces read.
-struct Peak {
-    tiles: Vec<TilePos>,
-    min: TilePos,
-    max: TilePos,
-}
-
-impl Peak {
-    fn window(&self) -> (TilePos, i32, i32) {
-        let origin = TilePos::new(self.min.x - PEAK_PAD, self.min.y - PEAK_PAD);
-        (
-            origin,
-            self.max.x - self.min.x + 1 + 2 * PEAK_PAD,
-            self.max.y - self.min.y + 1 + 2 * PEAK_PAD,
-        )
-    }
-}
-
-/// Eight-connected peaks on the playfield, in scan order.
-fn peaks(map: &Map, frame: &Frame) -> (Vec<Peak>, Vec<Option<usize>>) {
-    let (width, height) = (map.width(), map.height());
-    let mut owner: Vec<Option<usize>> = vec![None; as_index(width * height)];
-    let index = |pos: TilePos| as_index(pos.y * width + pos.x);
-    let is_peak = |pos: TilePos| {
-        frame.contains(pos)
-            && map
-                .tile(pos)
-                .is_some_and(|tile| tile.terrain == Terrain::Peak)
-    };
-    let mut peaks = Vec::new();
-    for y in 0..height {
-        for x in 0..width {
-            let start = TilePos::new(x, y);
-            if !is_peak(start) || owner[index(start)].is_some() {
-                continue;
-            }
-            let id = peaks.len();
-            let mut tiles = vec![start];
-            owner[index(start)] = Some(id);
-            let mut next = 0;
-            while next < tiles.len() {
-                let pos = tiles[next];
-                next += 1;
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        let near = pos.offset(dx, dy);
-                        if is_peak(near) && owner[index(near)].is_none() {
-                            owner[index(near)] = Some(id);
-                            tiles.push(near);
-                        }
-                    }
-                }
-            }
-            let min = TilePos::new(
-                tiles.iter().map(|p| p.x).min().unwrap_or(x),
-                tiles.iter().map(|p| p.y).min().unwrap_or(y),
-            );
-            let max = TilePos::new(
-                tiles.iter().map(|p| p.x).max().unwrap_or(x),
-                tiles.iter().map(|p| p.y).max().unwrap_or(y),
-            );
-            peaks.push(Peak { tiles, min, max });
-        }
-    }
-    (peaks, owner)
-}
-
-/// Exploration a field reads, so a cached field rebuilds only when it
-/// changes: a fingerprint of exactly which tiles are explored, so another
-/// session or seat with the same count never reuses a stale field.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Seen {
-    explored: u64,
-    all_seeing: bool,
-}
-
-/// An order-sensitive fingerprint of explored flags.
-fn explored_print(flags: impl Iterator<Item = bool>) -> u64 {
-    flags.fold(0xcbf2_9ce4_8422_2325, |acc, explored| {
-        (acc ^ u64::from(explored) ^ 0x9e).wrapping_mul(0x0000_0100_0000_01b3)
-    })
-}
-
-struct Cache {
-    fingerprint: u64,
+/// The wall and the peaks as one terraced field over the map and its margin.
+pub(super) struct Terraces {
     frame: Frame,
-    peaks: Vec<Peak>,
-    owner: Vec<Option<usize>>,
-    wall: Option<(Seen, CellField)>,
-    standing: Vec<Option<(Seen, CellField)>>,
+    field: CellField,
 }
 
-thread_local! {
-    static CACHE: RefCell<Option<Cache>> = const { RefCell::new(None) };
-}
-
-fn fingerprint(rows: &[String]) -> u64 {
-    rows.iter().fold(0xcbf2_9ce4_8422_2325, |acc, row| {
-        acc.rotate_left(5) ^ chassis::hash::fnv1a(row.as_bytes())
-    })
-}
-
-/// Explored tiles among `tiles`.
-fn seen(game: &Scene<'_>, tiles: impl Iterator<Item = TilePos>) -> Seen {
-    let all_seeing = game.presentation.all_seeing();
-    let vision = game.my_vision();
-    Seen {
-        explored: if all_seeing {
-            0
-        } else {
-            explored_print(tiles.map(|pos| vision.explored(pos)))
-        },
-        all_seeing,
-    }
-}
-
-fn build(
-    game: &Scene<'_>,
-    frame: &Frame,
-    origin: TilePos,
-    width: i32,
-    height: i32,
-    rule: fn(bool, Option<Terrain>, bool) -> bool,
-) -> CellField {
-    let map = game.state.map();
-    let vision = game.my_vision();
-    let all_seeing = game.presentation.all_seeing();
-    let mut field = CellField::seeded(origin, width, height, CELLS, |pos| {
-        rule(
-            frame.contains(pos),
-            map.tile(pos).map(|tile| tile.terrain),
-            all_seeing || vision.explored(pos),
-        )
-    });
-    terrace(&mut field, frame);
-    field
-}
-
-/// Brings the cache up to date for this frame: the wall's field whenever an
-/// explored peak changes, and each visible peak's field whenever exploration
-/// within its window changes.
-fn refresh(game: &Scene<'_>, cache: &mut Option<Cache>, min: TilePos, max: TilePos) {
-    let rows = &game.scenario.map;
-    let print = fingerprint(rows);
-    if cache
-        .as_ref()
-        .is_none_or(|cache| cache.fingerprint != print)
-    {
+impl Terraces {
+    pub(super) fn build(map: &Map, rows: &[String]) -> Self {
         let frame = Frame::from_rows(rows);
-        let (peaks, owner) = peaks(game.state.map(), &frame);
-        *cache = Some(Cache {
-            fingerprint: print,
-            frame,
-            standing: (0..peaks.len()).map(|_| None).collect(),
-            peaks,
-            owner,
-            wall: None,
-        });
-    }
-    let Some(cache) = cache.as_mut() else {
-        return;
-    };
-    let frame = cache.frame;
-    let wall_seen = seen(
-        game,
-        cache
-            .peaks
-            .iter()
-            .flat_map(|peak| peak.tiles.iter().copied()),
-    );
-    if cache
-        .wall
-        .as_ref()
-        .is_none_or(|(seen, _)| *seen != wall_seen)
-    {
-        let map = game.state.map();
-        let field = build(
-            game,
-            &frame,
+        let mut field = CellField::seeded(
             TilePos::new(-MARGIN, -MARGIN),
             map.width() + 2 * MARGIN,
             map.height() + 2 * MARGIN,
-            wall,
+            CELLS,
+            |pos| wall(frame.contains(pos), map.tile(pos).map(|tile| tile.terrain)),
         );
-        cache.wall = Some((wall_seen, field));
-    }
-    for (peak, slot) in cache.peaks.iter().zip(cache.standing.iter_mut()) {
-        if peak.max.x < min.x || peak.max.y < min.y || peak.min.x >= max.x || peak.min.y >= max.y {
-            continue;
-        }
-        let (origin, width, height) = peak.window();
-        let peak_seen = seen(
-            game,
-            (0..height).flat_map(|dy| (0..width).map(move |dx| origin.offset(dx, dy))),
-        );
-        if slot.as_ref().is_none_or(|(seen, _)| *seen != peak_seen) {
-            *slot = Some((
-                peak_seen,
-                build(game, &frame, origin, width, height, standing),
-            ));
-        }
+        terrace(&mut field, &frame);
+        Self { frame, field }
     }
 }
 
@@ -495,40 +299,12 @@ fn screen_tiles(game: &Scene<'_>) -> (TilePos, TilePos) {
     )
 }
 
-pub(super) fn draw_terraces(game: &Scene<'_>, fractured: bool) {
+pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bool) {
     let (min, max) = screen_tiles(game);
-    CACHE.with_borrow_mut(|cache| {
-        refresh(game, cache, min, max);
-        let Some(cache) = cache.as_ref() else {
-            return;
-        };
-        draw(game, cache, min, max, fractured);
-    });
-}
-
-fn draw(game: &Scene<'_>, cache: &Cache, min: TilePos, max: TilePos, fractured: bool) {
-    let frame = &cache.frame;
+    let Terraces { frame, field } = terraces;
     let map = game.state.map();
-    let vision = game.my_vision();
-    let all_seeing = game.presentation.all_seeing();
-    let Some((_, wall)) = cache.wall.as_ref() else {
-        return;
-    };
-    // The field a tile draws from: the wall's off the playfield, its own
-    // peak's for an explored peak tile, none for floor or unexplored ground.
-    let field_of = |pos: TilePos| -> Option<&CellField> {
-        if !frame.contains(pos) {
-            return Some(wall);
-        }
-        if !(all_seeing || vision.explored(pos)) {
-            return None;
-        }
-        let owner = cache.owner[as_index(pos.y * map.width() + pos.x)]?;
-        cache.standing[owner].as_ref().map(|(_, field)| field)
-    };
     let material_at = |cx: i32, cy: i32| -> Option<Material> {
         let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
-        let field = field_of(pos)?;
         material(
             field.at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS)),
             frame.widths(cx, cy),
@@ -539,10 +315,9 @@ fn draw(game: &Scene<'_>, cache: &Cache, min: TilePos, max: TilePos, fractured: 
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
         .filter(|&pos| {
             !frame.contains(pos)
-                || (map
+                || map
                     .tile(pos)
                     .is_some_and(|tile| tile.terrain == Terrain::Peak)
-                    && field_of(pos).is_some())
         })
         .collect();
     for &pos in &tiles {

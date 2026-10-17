@@ -1,41 +1,14 @@
 use super::*;
 
-/// Authored rows: `#` edge ring, `^` peak, `?` unexplored ground.
+/// Authored rows: `#` rock, `^` peak.
 fn rows(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|line| (*line).to_string()).collect()
 }
 
-fn terrain_at(rows: &[String], pos: TilePos) -> Option<(Terrain, bool)> {
-    let row = rows.get(usize::try_from(pos.y).ok()?)?;
-    let cell = *row.as_bytes().get(usize::try_from(pos.x).ok()?)?;
-    Some(match cell {
-        b'#' => (Terrain::Rock, true),
-        b'^' => (Terrain::Peak, true),
-        b'?' => (Terrain::Ground, false),
-        _ => (Terrain::Ground, true),
-    })
-}
-
-/// A field over the rows plus a margin, as the shell builds one.
-fn terraced(rows: &[String], rule: fn(bool, Option<Terrain>, bool) -> bool) -> (Frame, CellField) {
-    let frame = Frame::from_rows(rows);
-    let width = rows[0].len().fit::<i32>();
-    let height = rows.len().fit::<i32>();
-    let mut field = CellField::seeded(
-        TilePos::new(-MARGIN, -MARGIN),
-        width + 2 * MARGIN,
-        height + 2 * MARGIN,
-        CELLS,
-        |pos| {
-            let tile = terrain_at(rows, pos);
-            rule(
-                frame.contains(pos),
-                tile.map(|(terrain, _)| terrain),
-                tile.is_none_or(|(_, explored)| explored),
-            )
-        },
-    );
-    terrace(&mut field, &frame);
+/// The shell's terraced field over these rows.
+fn terraced(rows: &[String]) -> (Frame, CellField) {
+    let (map, _) = Map::parse(rows).expect("rows parse");
+    let Terraces { frame, field } = Terraces::build(&map, rows);
     (frame, field)
 }
 
@@ -138,27 +111,9 @@ fn benches_jog_by_side_and_playfield_cells_take_their_nearest_side() {
 }
 
 #[test]
-fn the_wall_ignores_fog_and_a_peak_continues_into_it() {
-    assert!(wall(false, None, false));
-    assert!(wall(true, Some(Terrain::Peak), true));
-    assert!(
-        !wall(true, Some(Terrain::Peak), false),
-        "an unseen spur stays floor"
-    );
-    assert!(!wall(true, Some(Terrain::Ground), true));
-    assert!(standing(false, None, true));
-    assert!(
-        standing(true, Some(Terrain::Ground), false),
-        "fog never shows an edge"
-    );
-    assert!(standing(true, Some(Terrain::Peak), true));
-    assert!(!standing(true, Some(Terrain::Rock), true));
-}
-
-#[test]
 fn floor_stays_bare() {
     let map = rows(&["######", "#....#", "#....#", "######"]);
-    let (frame, field) = terraced(&map, wall);
+    let (frame, field) = terraced(&map);
     for y in 1..3 {
         for x in 1..5 {
             assert!(levels(&frame, &field, TilePos::new(x, y)).is_empty());
@@ -182,7 +137,7 @@ fn a_spur_joins_every_level_of_the_wall() {
         "#..................#",
         "####################",
     ]);
-    let (frame, field) = terraced(&map, wall);
+    let (frame, field) = terraced(&map);
     let column = 9 * CELLS + 2;
     let ring_edge = material_of(&frame, &field, column, CELLS - 1);
     let spur_edge = material_of(&frame, &field, column, CELLS);
@@ -208,7 +163,7 @@ fn freestanding_peaks_step_up_from_about_five_tiles_thick() {
         "...^^^^...",
         "..........",
     ]);
-    let (frame, field) = terraced(&four, standing);
+    let (frame, field) = terraced(&four);
     assert_eq!(levels(&frame, &field, TilePos::new(4, 2)), [0].into());
     let five = rows(&[
         "...........",
@@ -219,7 +174,7 @@ fn freestanding_peaks_step_up_from_about_five_tiles_thick() {
         "...^^^^^...",
         "...........",
     ]);
-    let (frame, field) = terraced(&five, standing);
+    let (frame, field) = terraced(&five);
     assert!(levels(&frame, &field, TilePos::new(5, 3)).contains(&1));
 }
 
@@ -239,40 +194,7 @@ fn upper_levels_never_trace_a_thin_arm() {
         ".^^^^.......",
         "............",
     ]);
-    let (frame, field) = terraced(&map, standing);
+    let (frame, field) = terraced(&map);
     assert!(levels(&frame, &field, TilePos::new(5, 3)).contains(&1));
     assert_eq!(levels(&frame, &field, TilePos::new(2, 9)), [0].into());
-}
-
-#[test]
-fn a_peak_running_into_fog_shows_no_edge_there() {
-    let map = rows(&["........", ".^^^??..", ".^^^??..", ".^^^??..", "........"]);
-    let (frame, field) = terraced(&map, standing);
-    for sy in 0..CELLS {
-        assert_ne!(
-            material_of(&frame, &field, 3 * CELLS + CELLS - 1, 2 * CELLS + sy),
-            Some(Material::Riser(0))
-        );
-    }
-}
-
-#[test]
-fn peaks_are_eight_connected_playfield_regions() {
-    let map_rows = rows(&["#######", "#^^...#", "#..^..#", "#....^#", "#######"]);
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.map = map_rows.clone();
-    let (map, _) = Map::parse(&scenario.map).expect("rows parse");
-    let (found, owner) = peaks(&map, &Frame::from_rows(&map_rows));
-    assert_eq!(found.len(), 2);
-    assert_eq!(found[0].tiles.len(), 3);
-    assert_eq!(owner[as_index(7 + 1)], Some(0));
-    assert_eq!(owner[as_index(3 * 7 + 5)], Some(1));
-}
-
-#[test]
-fn the_cache_key_tells_exploration_apart_not_just_its_size() {
-    let a = explored_print([true, false, false, true].into_iter());
-    let b = explored_print([false, true, true, false].into_iter());
-    assert_ne!(a, b, "two masks with the same count must not share a field");
-    assert_eq!(a, explored_print([true, false, false, true].into_iter()));
 }

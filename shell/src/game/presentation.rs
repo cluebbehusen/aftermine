@@ -106,6 +106,9 @@ pub struct Presentation {
     /// only, lazily created by the first minimap draw (headless sessions
     /// never touch the GPU). A `RefCell` because drawing borrows presentation.
     pub minimap_layer: std::cell::RefCell<Option<crate::render::MinimapLayer>>,
+    /// Slabs, blockers, pits and terraces, laid out from the map by the
+    /// first draw. A Presentation never outlives its map.
+    ground: std::cell::OnceCell<crate::render::GroundLayout>,
     pub boundary_fog: crate::boundary_fog::BoundaryFog,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
@@ -249,6 +252,12 @@ impl<'a> Scene<'a> {
                 && b.kind == oxide_sim::BuildingKind::Foundry
         })
     }
+    /// The map's ground layouts, built by the first call.
+    pub(crate) fn ground(&self) -> &'a crate::render::GroundLayout {
+        self.presentation.ground.get_or_init(|| {
+            crate::render::GroundLayout::build(self.state.map(), &self.scenario.map)
+        })
+    }
     /// The local player's fog view (what rendering and targeting honor).
     pub fn my_vision(&self) -> &oxide_sim::Vision {
         self.state.vision(self.presentation.human)
@@ -342,6 +351,7 @@ impl Presentation {
             sounds_pending: Vec::new(),
             last_seen: std::cell::RefCell::new(HashMap::new()),
             minimap_layer: std::cell::RefCell::new(None),
+            ground: std::cell::OnceCell::new(),
             boundary_fog,
             toasts: Vec::new(),
             net_notice: None,

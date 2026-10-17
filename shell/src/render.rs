@@ -550,11 +550,14 @@ pub(crate) fn draw_with_performance(
     clear_background(OUTSIDE);
     environment::draw_backdrop(game);
     let alpha = game.clock.render_alpha();
+    let ground = game.ground();
+    let fractured = sprites.quarry_dressing(0).is_some();
     draw_tiles(game, sprites);
-    pits::draw_pits(game, sprites.quarry_dressing(0).is_some());
-    boulders::draw_boulders(game, sprites);
+    world::draw_blockers(game, sprites, &ground.blockers);
+    pits::draw_pits(game, &ground.pits, fractured);
+    boulders::draw_boulders(game, sprites, &ground.slabs);
     crate::render::world::draw_extractor_frames(game, sprites);
-    terraces::draw_terraces(game, sprites.quarry_dressing(0).is_some());
+    terraces::draw_terraces(game, &ground.terraces, fractured);
     draw_scorches(game, sprites);
     destruction::draw_ground_effects(game, sprites);
     draw_range_ground(game, input);
@@ -608,6 +611,28 @@ pub(crate) fn draw_with_performance(
 
 const FOG_UNEXPLORED: Color = color_u8!(13, 13, 17, 255);
 const FOG_EXPLORED: Color = color_u8!(13, 13, 17, 135);
+
+/// Ground layouts that read the map alone, built on a match's first draw and
+/// kept for it: terrain never changes once parsed, and the fog veil hides
+/// whatever the player has not explored.
+pub(crate) struct GroundLayout {
+    blockers: world::Blockers,
+    slabs: boulders::Slabs,
+    pits: pits::PitField,
+    terraces: terraces::Terraces,
+}
+
+impl GroundLayout {
+    pub(crate) fn build(map: &oxide_sim::map::Map, rows: &[String]) -> Self {
+        let blockers = world::Blockers::build(map, rows);
+        Self {
+            slabs: boulders::Slabs::build(map, rows, &blockers),
+            blockers,
+            pits: pits::PitField::build(map),
+            terraces: terraces::Terraces::build(map, rows),
+        }
+    }
+}
 
 fn visible_tiles(game: &crate::game::Scene<'_>) -> (TilePos, TilePos) {
     let (lo, hi) = game.presentation.camera.world_rect();
