@@ -34,6 +34,16 @@ Add the smallest behavioral regression test that fails for the reported case.
 For fog-sensitive behavior, pair the positive case with an unseen or
 remembered-world case so the fix cannot become an information oracle.
 
+## Building contact
+
+Workers and contact weapons meet a building at its contact outline in
+`sim/src/building_contact.rs`, one per kind, tier, and construction stage.
+`Building::construction_stage` selects it and the shell's site art alike, so
+both switch on the same tick. Each outline follows the art the field draws, and
+a shell fit test keeps them together. Fix a contact behavior in the approach,
+not by moving an outline off its art. Any outline edit moves state hashes; when
+art changes, follow the visual-assets skill to retrace it.
+
 ## Keep state deterministic
 
 - Use integers or `chassis::fx::Fx`; floats do not enter `chassis` or

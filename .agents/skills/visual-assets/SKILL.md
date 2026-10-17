@@ -254,20 +254,30 @@ nose.
    one reviewable change. Commit them together only when the user has explicitly
    authorized a commit. Leave every experiment in place and uncommitted until a
    separate cleanup is requested.
-4. Inspect the dirty tree and changed atlas keys before staging. Stage exact
+4. A building's static body is also its contact surface: the simulation's
+   outline for each kind, tier, and construction stage follows the hull, work
+   and action frames, the Array, Spire, or Lattice rig base the field draws, and
+   the site frames. When any of these change, run the ignored
+   `suggest_contact_outlines` test in
+   `shell/src/assets/contact_outline_tests.rs` with `--ignored --nocapture`,
+   review its proposal, and update `sim/src/building_contact.rs` in the same
+   change. Re-bless the hashes it moves under `AGENTS.md`. Moving parts such as
+   mounts, rotors, and cranes are not part of the outline.
+5. Inspect the dirty tree and changed atlas keys before staging. Stage exact
    production paths rather than `git add -A`; verify no review generator,
    capture harness, or alternate asset entered the index.
 
 ## Validate before handoff
 
-Run the generator tests and `--check`, atlas-key bijection tests, relevant Rust
-rendering tests, and any native capture harness needed for normal-scale visual
-inspection. Inspect the regenerated atlas and actual GPU shell, not just review
-cards or the CPU schematic renderer. Check every map shape when changing quarry
-boundaries. Before running broad quantitative gates, record the human fidelity
-verdict for the calibration set and stop if it has not passed. For a review-only
-bank, also prove that a representative candidate is ignored with
-`git check-ignore -v`, that the ledger has unique stable IDs, and that each
-session's supported-media count equals its intended candidate count. Required
-repository gates run locally or through CI under `AGENTS.md`, without
+Run the generator tests and `--check`, atlas-key bijection tests, the building
+contact-outline fit test (`every_building_body_sits_on_its_contact_outline`),
+relevant Rust rendering tests, and any native capture harness needed for
+normal-scale visual inspection. Inspect the regenerated atlas and actual GPU
+shell, not just review cards or the CPU schematic renderer. Check every map
+shape when changing quarry boundaries. Before running broad quantitative gates,
+record the human fidelity verdict for the calibration set and stop if it has not
+passed. For a review-only bank, also prove that a representative candidate is
+ignored with `git check-ignore -v`, that the ledger has unique stable IDs, and
+that each session's supported-media count equals its intended candidate count.
+Required repository gates run locally or through CI under `AGENTS.md`, without
 duplicating running checks.
