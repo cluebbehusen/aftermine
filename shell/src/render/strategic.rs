@@ -489,6 +489,19 @@ fn draw_trail(
     }
 }
 
+/// Every warhead this seat may know of: all of them for an all-seeing
+/// viewer, else those its team launched, tracked, or holds a contact on.
+fn warheads_known(game: &crate::game::Scene<'_>) -> Vec<oxide_sim::strike::KnownWarhead> {
+    let (state, human) = (game.state, game.presentation.human);
+    if state.warheads().is_empty() {
+        Vec::new()
+    } else if game.presentation.all_seeing() {
+        state.omniscient_warheads(human)
+    } else {
+        state.known_warheads(human)
+    }
+}
+
 /// Every warhead this seat may know of, drawn above the fog: a tracked
 /// or own warhead on its full climb, cruise and dive with its shadow on
 /// the ground and the strike ring where it will land; an untracked hostile
@@ -496,12 +509,7 @@ fn draw_trail(
 /// draw here too, since they happen in the same sky.
 pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     let state = game.state;
-    let human = game.presentation.human;
-    let warheads = if game.presentation.all_seeing() {
-        state.omniscient_warheads(human)
-    } else {
-        state.known_warheads(human)
-    };
+    let warheads = warheads_known(game);
     let camera = &game.presentation.camera;
     let zoom = camera.zoom;
     let tick = state.current_tick().saturating_sub(1) as f32 + game.presentation.tick_fraction();
@@ -542,14 +550,14 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             owner.b,
             if warhead.hostile { 0.85 } else { 0.5 },
         );
-        stroke_circle(impact, outer, 2.0, ring);
-        stroke_circle(
-            impact,
-            full,
-            1.5,
-            Color::new(ring.r, ring.g, ring.b, ring.a * 0.7),
-        );
         if warhead.hostile {
+            stroke_circle(impact, outer, 2.0, ring);
+            stroke_circle(
+                impact,
+                full,
+                1.5,
+                Color::new(ring.r, ring.g, ring.b, ring.a * 0.7),
+            );
             let tick_len = 0.6 * zoom;
             for dir in [
                 vec2(1.0, 0.0),
@@ -564,6 +572,10 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     ring,
                 );
             }
+        } else {
+            // A friendly strike keeps the look it was aimed with; its
+            // ground lies under the units in `draw_strike_ground`.
+            hazard_edges(impact, owner, IN_FLIGHT, zoom);
         }
         // Over its last moments a ring closes from beyond the blast onto
         // the full-damage core.
@@ -1063,17 +1075,34 @@ fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<St
     marks
 }
 
+/// How strongly a friendly warhead's ring draws while it flies.
+const IN_FLIGHT: f32 = 0.55;
+
 /// The strike preview's ground: a tinted core and warning stripes across
-/// the band the blast fades over. It lies under buildings, units, the fog,
-/// and the radar blips above it, so it never hides what it would hit.
+/// the band the blast fades over, for each aim and ordered target and
+/// under each friendly warhead in flight. It lies under buildings, units,
+/// the fog, and the radar blips above it, so it never hides what it would
+/// hit.
 pub(crate) fn draw_strike_ground(game: &crate::game::Scene<'_>, input: &InputState) {
-    let marks = strike_marks(game, input);
-    if marks.is_empty() {
+    let own = seat_identity_color(game, game.presentation.human);
+    let mut grounds: Vec<(Vec2, Color, f32)> = strike_marks(game, input)
+        .into_iter()
+        .map(|mark| (mark.center, own, mark.alpha))
+        .collect();
+    let camera = &game.presentation.camera;
+    for warhead in warheads_known(game) {
+        if let (false, Some(line)) = (warhead.hostile, warhead.line) {
+            grounds.push((
+                camera.to_screen(crate::game::world_vec(line.impact)),
+                warhead_tint(game, warhead.player, false),
+                IN_FLIGHT,
+            ));
+        }
+    }
+    if grounds.is_empty() {
         return;
     }
-    let zoom = game.presentation.camera.zoom;
     let blast = oxide_sim::stats::WARHEAD;
-    let own = seat_identity_color(game, game.presentation.human);
     let s = ui_scale();
     let step = HAZARD_STEP * s;
     let drift = if super::reduced_motion() {
@@ -1082,48 +1111,51 @@ pub(crate) fn draw_strike_ground(game: &crate::game::Scene<'_>, input: &InputSta
         game.presentation.fx_time() * HAZARD_DRIFT * s
     };
     let (outer, full) = (
-        blast.outer_radius.to_num::<f32>() * zoom,
-        blast.full_radius.to_num::<f32>() * zoom,
+        blast.outer_radius.to_num::<f32>() * camera.zoom,
+        blast.full_radius.to_num::<f32>() * camera.zoom,
     );
-    for mark in marks {
-        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * mark.alpha);
-        fill_circle(mark.center, outer, tint(0.16));
+    for (center, color, alpha) in grounds {
+        let tint = |a: f32| Color::new(color.r, color.g, color.b, a * alpha);
+        fill_circle(center, outer, tint(0.16));
         // Inset a pixel each side so a stripe's width stays within the edges.
         for (a, b) in hazard_stripes(full + 1.0, outer - 1.0, step, drift % step) {
-            line_between(mark.center + a, mark.center + b, step * 0.42, tint(0.55));
+            line_between(center + a, center + b, step * 0.42, tint(0.55));
         }
-        fill_circle(mark.center, full, tint(0.5));
+        fill_circle(center, full, tint(0.38));
     }
 }
 
+/// A striped blast's edges, drawn above the fog: its reach in `color` and
+/// its full-damage core in white.
+fn hazard_edges(center: Vec2, color: Color, alpha: f32, zoom: f32) {
+    let blast = oxide_sim::stats::WARHEAD;
+    stroke_circle(
+        center,
+        blast.outer_radius.to_num::<f32>() * zoom,
+        2.5,
+        Color::new(color.r, color.g, color.b, 1.25 * alpha),
+    );
+    stroke_circle(
+        center,
+        blast.full_radius.to_num::<f32>() * zoom,
+        2.0,
+        Color::new(0.92, 0.94, 0.98, 1.1 * alpha),
+    );
+}
+
 /// The strike preview's edges, above the fog with the player's other
-/// intent: the blast's reach, its full-damage core, and a line from each
-/// silo.
+/// intent, and a line from each silo.
 pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputState) {
     let camera = &game.presentation.camera;
-    let zoom = camera.zoom;
-    let blast = oxide_sim::stats::WARHEAD;
     let own = seat_identity_color(game, game.presentation.human);
     for mark in strike_marks(game, input) {
-        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * mark.alpha);
-        stroke_circle(
-            mark.center,
-            blast.outer_radius.to_num::<f32>() * zoom,
-            2.5,
-            tint(1.25),
-        );
-        stroke_circle(
-            mark.center,
-            blast.full_radius.to_num::<f32>() * zoom,
-            2.0,
-            Color::new(0.92, 0.94, 0.98, 1.1 * mark.alpha),
-        );
+        hazard_edges(mark.center, own, mark.alpha, camera.zoom);
         for b in mark.silos {
             line_between(
                 camera.to_screen(crate::game::world_vec(b.center())),
                 mark.center,
                 1.5,
-                tint(0.55),
+                Color::new(own.r, own.g, own.b, 0.55 * mark.alpha),
             );
         }
     }

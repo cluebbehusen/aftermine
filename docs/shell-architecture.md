@@ -259,9 +259,13 @@ magazine docks its ordered rounds like a production queue: one chip per paid
 round, the head wearing the assembly meter that also draws under the owner's
 building, and each own chip cancelling its own position; an ally's chips are
 read-only. Cancel refunds the latest round. A Launch click on the world or the
-minimap names any tile, seen or not, for every selected loaded Spire; while
-armed, and for a selected own Spire's held strike, the blast's two radii draw at
-the tile with a line from the silo. Stop calls a held strike off.
+minimap names any tile, seen or not, for every selected loaded Spire. A touch
+strike only aims: a tap or minimap tap moves the aim, a finger on its core drags
+it, and the placement ghost's check mark launches. While armed, and for a
+selected own Spire's held strike, the blast draws at the tile with a line from
+the silo: its tinted core and striped falloff band on the ground under units and
+fog, and its two radii above the fog. A friendly warhead in flight keeps that
+blast at its impact. Stop calls a held strike off.
 
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
@@ -443,16 +447,16 @@ cards publish `CardAction::Refused`, so a tap or click toasts the reason their
 hotkey gives.
 
 Gameplay touch lives in `input::touch`. Each finger records where it landed
-(`TouchBorn`: world, minimap, other chrome, or the placement ghost), and that
-decides what it may drive for its whole life. A minimap finger steers the camera
-through `render::minimap_world_clamped`, the same clamp the mouse uses, except
-while rally, a strike, or patrol take minimap taps as targets. A two-finger
-`Pair` starts undecided: a spread past `PAIR_PINCH_PX` zooms, and a pair that
-rests for `BOX_REST_MS` claims a box whose corners follow the fingers. The box
-appears only when claimed, so any box on screen can be dragged and selects when
-a finger lifts; an undecided pair shows nothing and its lift selects nothing. A
-pair with a non-world finger does neither, and one formed mid-pan or while a
-mode is armed may zoom but never boxes.
+(`TouchBorn`: world, minimap, other chrome, or the placement ghost or strike
+aim), and that decides what it may drive for its whole life. A minimap finger
+steers the camera through `render::minimap_world_clamped`, the same clamp the
+mouse uses, except while rally, a strike, or patrol take minimap taps as
+targets. A two-finger `Pair` starts undecided: a spread past `PAIR_PINCH_PX`
+zooms, and a pair that rests for `BOX_REST_MS` claims a box whose corners follow
+the fingers. The box appears only when claimed, so any box on screen can be
+dragged and selects when a finger lifts; an undecided pair shows nothing and its
+lift selects nothing. A pair with a non-world finger does neither, and one
+formed mid-pan or while a mode is armed may zoom but never boxes.
 
 Touch placement shows a `PlacementGhost` instead of placing on the tap. Picking
 a building by finger drops it in the middle of the view, and a tap on open

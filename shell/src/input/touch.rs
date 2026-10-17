@@ -18,7 +18,7 @@ pub(crate) enum TouchBorn {
     Minimap,
     /// Any other HUD chrome.
     Chrome,
-    /// The touch placement's ghost: dragging moves it.
+    /// The touch placement's ghost or strike aim: dragging moves it.
     Ghost,
     /// The ghost's row handle: dragging pulls out a row.
     Handle,
