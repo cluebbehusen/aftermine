@@ -1240,8 +1240,8 @@ pub(crate) struct HostLobby {
     advertiser: Option<Advertiser>,
     gathering: Gathering,
     connections: Vec<(MemberId, Connection)>,
-    /// Members refused or removed since the last flush, whose connections
-    /// finish once their last line is out.
+    /// Members refused, removed, or dropped since the last flush, whose
+    /// connections finish once their last line is out.
     farewells: Vec<MemberId>,
     /// Finished connections flushing their last line.
     leaving: Vec<(Connection, Duration)>,
@@ -1358,10 +1358,12 @@ impl HostLobby {
         let mut events = self.gathering.poll(now);
         for event in &events {
             match event {
-                LobbyEvent::Left { member, .. } => {
-                    self.connections.retain(|(id, _)| id != member);
+                // A member dropped in the poll that accepted it still gets
+                // the host's queued Hello, which tells another build why it
+                // cannot join; dropping the connection would abort that line.
+                LobbyEvent::Left { member, .. } | LobbyEvent::Turned { member } => {
+                    self.farewells.push(*member);
                 }
-                LobbyEvent::Turned { member } => self.farewells.push(*member),
                 LobbyEvent::Joined { .. } => {}
             }
         }
