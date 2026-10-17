@@ -218,25 +218,29 @@ impl Game {
     }
 
     /// Lifts fog for the local seat once it is out of an undecided match
-    /// and no human teammate plays on whom it could tip off. A bot ally
-    /// reads only its own fog-honest observation, and a free-for-all seat
-    /// leaves nobody fighting for its side. A spectator stays one.
+    /// and no LAN teammate plays on whom it could tip off. A local
+    /// session's other human seats are passive, a bot ally reads only its
+    /// own fog-honest observation, and a free-for-all seat leaves nobody
+    /// fighting for its side. A spectator stays one.
     fn refresh_fog_lift(&mut self) {
         if self.presentation.spectating() {
             return;
         }
         let (state, seat) = (&self.state, self.presentation.human);
-        let out = state.result().is_none()
-            && !state.accepts_commands(seat)
-            && !self
-                .scenario
-                .players
-                .iter()
-                .enumerate()
-                .any(|(index, player)| {
-                    let mate = PlayerId::from_index(index);
-                    !player.bot && !state.hostile(seat, mate) && state.accepts_commands(mate)
-                });
+        let lan_teammate_plays = || {
+            self.net.is_some()
+                && self
+                    .scenario
+                    .players
+                    .iter()
+                    .enumerate()
+                    .any(|(index, player)| {
+                        let mate = PlayerId::from_index(index);
+                        !player.bot && !state.hostile(seat, mate) && state.accepts_commands(mate)
+                    })
+        };
+        let out =
+            state.result().is_none() && !state.accepts_commands(seat) && !lan_teammate_plays();
         self.presentation.stance = if out { Stance::Out } else { Stance::Seat };
     }
 

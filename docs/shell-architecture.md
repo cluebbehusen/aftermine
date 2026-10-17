@@ -824,7 +824,7 @@ presentation-only exploration cache updates on every tick, including bulk
 advances, and rebuilds during explicit command-log reconstruction. Player
 checkpoints retain that cache directly. Map tiles show authoritative simulation
 fog. The replay viewer is fog-free, and so is a seat out of an undecided match
-once no human teammate plays on whom it could tip off; its chrome stays its own.
+once no LAN teammate plays on whom it could tip off; its chrome stays its own.
 Animation, heading, and weapon effects use the relevant simulation state rather
 than inventing movement or firing delays.
 

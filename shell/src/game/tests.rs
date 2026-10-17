@@ -814,29 +814,53 @@ fn a_team_concession_raises_the_surrender_overlay() {
     );
 }
 
+/// `concede_arena(seats)` after the local seat surrenders, in a local
+/// session or on `net`'s side of a LAN one.
+fn surrendered(seats: [(u8, bool); 4], net: Option<network::NetRole>) -> Game {
+    let mut game = concede_arena(seats);
+    game.net = net;
+    let surrender = PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Surrender,
+    };
+    game.execute(&[surrender], 1);
+    assert!(game.state.result().is_none(), "the match plays on");
+    game
+}
+
 #[test]
-fn fog_holds_while_a_human_teammate_plays_on() {
-    let mut game = concede_arena([(0, false), (0, false), (1, true), (1, true)]);
-    game.issue(Command::Surrender);
-    game.do_tick();
-    assert!(game.state.result().is_none());
+fn fog_holds_only_while_a_lan_teammate_plays_on() {
+    let team = [(0, false), (0, false), (1, true), (1, true)];
+    let mut lan = surrendered(team, Some(network::NetRole::Client));
     assert_eq!(
-        game.presentation.stance,
+        lan.presentation.stance,
         Stance::Seat,
-        "an out seat could tip off its human ally"
+        "an out seat could tip off its LAN ally"
     );
-    game.mirror_bot(PlayerId(1), oxide_sim::scenario::BotConfig::default());
+    lan.mirror_bot(PlayerId(1), oxide_sim::scenario::BotConfig::default());
     assert_eq!(
-        game.presentation.stance,
+        lan.presentation.stance,
         Stance::Out,
         "fog lifts the moment a bot takes the ally's seat"
+    );
+    assert_eq!(
+        surrendered(team, None).presentation.stance,
+        Stance::Out,
+        "a local session's second human seat is passive"
+    );
+    let free_for_all = [(0, false), (1, false), (2, true), (3, true)];
+    assert_eq!(
+        surrendered(free_for_all, Some(network::NetRole::Client))
+            .presentation
+            .stance,
+        Stance::Out,
+        "nobody plays on for a free-for-all seat's side"
     );
 }
 
 #[test]
-fn a_free_for_all_seat_sees_everything_once_out_through_save_and_resume() {
-    // Seat 1 is another human, but no seat fights for the out seat's side.
-    let mut game = concede_arena([(0, false), (1, false), (2, true), (3, true)]);
+fn an_out_seat_keeps_its_lifted_fog_through_save_and_resume() {
+    let mut game = concede_arena([(0, false), (1, true), (2, true), (3, true)]);
     game.issue(Command::Surrender);
     game.do_tick();
     assert!(game.state.result().is_none(), "three seats fight on");
