@@ -80,25 +80,6 @@ fn standing_slabs_never_overlap_and_ignore_input_order() {
 }
 
 #[test]
-fn a_slab_stands_by_its_neighbors_alone() {
-    // Clipping the candidate set to any window that keeps a slab's reach
-    // leaves that slab's fate unchanged, so panning never reshuffles rock.
-    let slabs = field_of(14);
-    let kept = standing(&slabs);
-    let window: Vec<Slab> = slabs
-        .iter()
-        .copied()
-        .filter(|slab| slab.x < 9.0 && slab.y < 9.0)
-        .collect();
-    let windowed = standing(&window);
-    for slab in &window {
-        if slab.x < 9.0 - REACH as f32 && slab.y < 9.0 - REACH as f32 {
-            assert_eq!(kept.contains(slab), windowed.contains(slab));
-        }
-    }
-}
-
-#[test]
 fn an_edge_slab_fits_on_its_tile_alone() {
     for y in -20..20 {
         for x in -20..20 {
@@ -146,42 +127,35 @@ fn no_rock_tile_on_a_shipped_map_reads_as_open_floor() {
     for path in paths {
         let scenario = oxide_sim::Scenario::load(&path).expect("shipped map loads");
         let rows = &scenario.map;
-        let ring = super::super::environment::boundary_ring(rows);
-        let height = i32::try_from(rows.len()).expect("small map");
-        let width = i32::try_from(rows[0].len()).expect("small map");
-        let cell = |pos: TilePos| {
-            usize::try_from(pos.y)
-                .ok()
-                .zip(usize::try_from(pos.x).ok())
-                .and_then(|(y, x)| rows.get(y)?.as_bytes().get(x).copied())
-        };
-        let rock = |pos: TilePos| cell(pos).is_none_or(|c| c == b'#') || ring(pos);
-        let field = CellField::seeded(
-            TilePos::new(-FIELD_PAD, -FIELD_PAD),
-            width + 2 * FIELD_PAD,
-            height + 2 * FIELD_PAD,
-            1,
-            rock,
-        );
-        let tiles: Vec<TilePos> = (0..height)
-            .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
-            .filter(|&pos| cell(pos) == Some(b'#') && !ring(pos))
-            .collect();
-        let slabs: Vec<Slab> = tiles
-            .iter()
-            .flat_map(|&pos| candidates(pos, field.at(pos, 0, 0)))
-            .filter(|slab| fits(slab, rock))
-            .collect();
-        let drawn = with_fallbacks(standing(&slabs), &tiles);
-        for pos in &tiles {
-            let (cx, cy) = (pos.x as f32 + 0.5, pos.y as f32 + 0.5);
-            assert!(
-                drawn
-                    .iter()
-                    .any(|slab| (slab.x - cx).hypot(slab.y - cy) <= slab.radius),
-                "{}: rock at {pos:?} reads as open floor",
-                path.display()
-            );
+        let (map, _) = Map::parse(rows).expect("shipped rows parse");
+        let ring = boundary_ring(rows);
+        let blockers = Blockers::build(&map, rows);
+        let Slabs(slabs) = Slabs::build(&map, rows, &blockers);
+        for y in 0..map.height() {
+            for x in 0..map.width() {
+                let pos = TilePos::new(x, y);
+                if map.tile(pos).map(|tile| tile.terrain) != Some(Terrain::Rock) || ring(pos) {
+                    continue;
+                }
+                let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+                if blockers.covers(pos) {
+                    assert!(
+                        !slabs
+                            .iter()
+                            .any(|slab| (tile_of(slab.x), tile_of(slab.y)) == (x, y)),
+                        "{}: a slab stands on the blocker at {pos:?}",
+                        path.display()
+                    );
+                } else {
+                    assert!(
+                        slabs
+                            .iter()
+                            .any(|slab| (slab.x - cx).hypot(slab.y - cy) <= slab.radius),
+                        "{}: rock at {pos:?} reads as open floor",
+                        path.display()
+                    );
+                }
+            }
         }
     }
 }

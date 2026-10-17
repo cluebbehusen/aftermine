@@ -342,25 +342,6 @@ fn obstacle_groups_never_cover_non_rock_or_overlap_neighbor_groups() {
 }
 
 #[test]
-fn incomplete_fog_knowledge_falls_back_to_slabs() {
-    for group_y in (0..20).step_by(2) {
-        for group_x in (0..30).step_by(3) {
-            let group = TilePos::new(group_x, group_y);
-            let Some(_) = placement_for_group(group, |_| true) else {
-                continue;
-            };
-            assert_eq!(
-                placement_for_group(group, |pos| pos == group),
-                None,
-                "a multi-tile silhouette must not disclose its hidden continuation"
-            );
-            return;
-        }
-    }
-    panic!("test grid did not find a decorated obstacle group");
-}
-
-#[test]
 fn shipped_maps_exercise_every_industrial_blocker() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
     let mut paths: Vec<_> = std::fs::read_dir(&root)
@@ -376,30 +357,16 @@ fn shipped_maps_exercise_every_industrial_blocker() {
     for path in paths {
         let scenario = oxide_sim::Scenario::load(&path)
             .unwrap_or_else(|error| panic!("loading {}: {error}", path.display()));
-        let height = scenario.map.len().fit::<i32>();
-        let width = scenario
-            .map
-            .first()
-            .expect("scenario row")
-            .len()
-            .fit::<i32>();
+        let (map, _) = oxide_sim::map::Map::parse(&scenario.map).expect("shipped rows parse");
         // Blockers keep off the edge ring, which the boundary draws over.
         let ring = super::super::environment::boundary_ring(&scenario.map);
-        let open_rock = |pos: TilePos| {
-            !ring(pos) && authored_tile(&scenario.map, pos).is_some_and(|cell| cell == b'#')
-        };
-        for y in (0..height).step_by(2) {
-            for x in (0..width).step_by(3) {
-                let Some(placement) = placement_for_group(TilePos::new(x, y), open_rock) else {
-                    continue;
-                };
-                for dy in 0..placement.footprint.1 {
-                    for dx in 0..placement.footprint.0 {
-                        assert!(!ring(placement.anchor.offset(dx, dy)), "{}", path.display());
-                    }
+        for placement in Blockers::build(&map, &scenario.map).placements {
+            for dy in 0..placement.footprint.1 {
+                for dx in 0..placement.footprint.0 {
+                    assert!(!ring(placement.anchor.offset(dx, dy)), "{}", path.display());
                 }
-                industrial.insert(placement.variant);
             }
+            industrial.insert(placement.variant);
         }
     }
     assert_eq!(industrial, (0..GROUND_BLOCKER_FOOTPRINTS.len()).collect());

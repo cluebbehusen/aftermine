@@ -235,15 +235,6 @@ struct ObstaclePlacement {
     variant: usize,
 }
 
-impl ObstaclePlacement {
-    fn covers(self, pos: TilePos) -> bool {
-        pos.x >= self.anchor.x
-            && pos.y >= self.anchor.y
-            && pos.x < self.anchor.x + self.footprint.0
-            && pos.y < self.anchor.y + self.footprint.1
-    }
-}
-
 fn coordinate_hash(x: i32, y: i32, salt: u32) -> u32 {
     let mut hash = 2_166_136_261u32;
     for word in [x.cast_unsigned(), y.cast_unsigned(), salt] {
@@ -257,7 +248,7 @@ fn coordinate_hash(x: i32, y: i32, salt: u32) -> u32 {
 
 fn placement_for_group(
     group: TilePos,
-    mut known_rock: impl FnMut(TilePos) -> bool,
+    mut rock: impl FnMut(TilePos) -> bool,
 ) -> Option<ObstaclePlacement> {
     let hash = coordinate_hash(group.x, group.y, 0x5155_4152);
     // Rock is slabs; about one 3x2 cell in six resolves into an abandoned
@@ -278,7 +269,7 @@ fn placement_for_group(
                 + ((hash / 71 + step.fit::<u32>()) % (y_slack.cast_unsigned() + 1)).cast_signed(),
         );
         let fits =
-            (0..footprint.1).all(|dy| (0..footprint.0).all(|dx| known_rock(anchor.offset(dx, dy))));
+            (0..footprint.1).all(|dy| (0..footprint.0).all(|dx| rock(anchor.offset(dx, dy))));
         if fits {
             return Some(ObstaclePlacement {
                 anchor,
@@ -290,36 +281,88 @@ fn placement_for_group(
     None
 }
 
-fn group_origin(pos: TilePos) -> TilePos {
-    TilePos::new(pos.x.div_euclid(3) * 3, pos.y.div_euclid(2) * 2)
+/// The map's industrial blockers. They stand only on rock inside the
+/// boundary's edge ring, which the boundary draws over.
+pub(super) struct Blockers {
+    placements: Vec<ObstaclePlacement>,
+    width: i32,
+    /// Map tiles a blocker stands on, row-major, so no slab does.
+    covered: Vec<bool>,
 }
 
-/// Whether an industrial blocker stands on this rock tile, so no slab does.
-pub(super) fn industrial_covers(
-    game: &crate::game::Scene<'_>,
-    pos: TilePos,
-    ring: &impl Fn(TilePos) -> bool,
-) -> bool {
-    visible_obstacle(game, group_origin(pos), ring).is_some_and(|placement| placement.covers(pos))
+impl Blockers {
+    pub(super) fn build(map: &oxide_sim::map::Map, rows: &[String]) -> Self {
+        let ring = super::environment::boundary_ring(rows);
+        let (width, height) = (map.width(), map.height());
+        let mut placements = Vec::new();
+        let mut covered = vec![false; as_index((width * height).max(0))];
+        for y in (0..height).step_by(2) {
+            for x in (0..width).step_by(3) {
+                let Some(placement) = placement_for_group(TilePos::new(x, y), |pos| {
+                    !ring(pos)
+                        && map
+                            .tile(pos)
+                            .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Rock)
+                }) else {
+                    continue;
+                };
+                for dy in 0..placement.footprint.1 {
+                    for dx in 0..placement.footprint.0 {
+                        let pos = placement.anchor.offset(dx, dy);
+                        covered[as_index(pos.y * width + pos.x)] = true;
+                    }
+                }
+                placements.push(placement);
+            }
+        }
+        Self {
+            placements,
+            width,
+            covered,
+        }
+    }
+
+    /// Whether a blocker stands on this tile.
+    pub(super) fn covers(&self, pos: TilePos) -> bool {
+        (0..self.width).contains(&pos.x)
+            && pos.y >= 0
+            && self
+                .covered
+                .get(as_index(pos.y * self.width + pos.x))
+                .copied()
+                .unwrap_or(false)
+    }
 }
 
-/// The blocker a 3x2 group shows, if any. Blockers stand only on explored
-/// rock inside the boundary's edge ring, which the boundary draws over.
-fn visible_obstacle(
-    game: &crate::game::Scene<'_>,
-    group: TilePos,
-    ring: &impl Fn(TilePos) -> bool,
-) -> Option<ObstaclePlacement> {
-    placement_for_group(group, |pos| {
-        let known = game.presentation.all_seeing() || game.my_vision().explored(pos);
-        known
-            && !ring(pos)
-            && game
-                .state
-                .map()
-                .tile(pos)
-                .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Rock)
-    })
+/// The blockers on screen, over the tiles and under the slabs.
+pub(super) fn draw_blockers(game: &crate::game::Scene<'_>, sprites: &Sprites, blockers: &Blockers) {
+    let zoom = game.presentation.camera.zoom;
+    let (min, max) = visible_tiles(game);
+    for placement in &blockers.placements {
+        let (anchor, (width, height)) = (placement.anchor, placement.footprint);
+        if anchor.x + width <= min.x
+            || anchor.y + height <= min.y
+            || anchor.x >= max.x
+            || anchor.y >= max.y
+        {
+            continue;
+        }
+        let source = sprites.ground_blocker(placement.variant);
+        let screen = game
+            .presentation
+            .camera
+            .to_screen(vec2(anchor.x as f32, anchor.y as f32));
+        sprites.draw(
+            screen.x.floor(),
+            screen.y.floor(),
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(width as f32 * zoom + 1.0, height as f32 * zoom + 1.0)),
+                source: Some(source),
+                ..Default::default()
+            },
+        );
+    }
 }
 
 fn theme_code(theme: &str) -> Option<u32> {
@@ -686,34 +729,6 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     },
                 );
             }
-        }
-    }
-
-    let start = group_origin(min);
-    let ring = super::environment::boundary_ring(&game.scenario.map);
-    for y in (start.y..max.y).step_by(2) {
-        for x in (start.x..max.x).step_by(3) {
-            let Some(placement) = visible_obstacle(game, TilePos::new(x, y), &ring) else {
-                continue;
-            };
-            let source = sprites.ground_blocker(placement.variant);
-            let screen = game
-                .presentation
-                .camera
-                .to_screen(vec2(placement.anchor.x as f32, placement.anchor.y as f32));
-            sprites.draw(
-                screen.x.floor(),
-                screen.y.floor(),
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(vec2(
-                        placement.footprint.0 as f32 * zoom + 1.0,
-                        placement.footprint.1 as f32 * zoom + 1.0,
-                    )),
-                    source: Some(source),
-                    ..Default::default()
-                },
-            );
         }
     }
 }

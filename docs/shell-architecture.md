@@ -811,23 +811,22 @@ color, told apart by shape: a hollow diamond for a ground contact and only its
 upper half for an air contact.
 
 Procedural quarry boundaries, pits, peaks, and rock walls derive from map
-geometry with fog-aware visibility. The boundary and peaks are one terrace
-system measured from the open floor: a peak is the wall left standing, stepping
-up once it is about five tiles thick, and a peak meeting the map edge is a spur
-whose levels join the wall's. The wall's field reads unexplored tiles as floor
-and each peak's as more peak, so neither discloses hidden terrain; both fields
-are cached until the exploration they read changes. Rock walls draw layered
-slabs from the generated library, sized by local rock thickness with unexplored
-tiles counted as more rock, and machinery blockers stay off the edge ring the
-boundary covers. The shell extends allied unit sight discs and
-completed-building footprint sight into a bounded off-map quarry margin. Its
-presentation-only exploration cache updates on every tick, including bulk
-advances, and rebuilds during explicit command-log reconstruction. Player
-checkpoints retain that cache directly. Map tiles show authoritative simulation
-fog. The replay viewer is fog-free, and so is a seat out of an undecided match
-once no LAN teammate plays on whom it could tip off; its chrome stays its own.
-Animation, heading, and weapon effects use the relevant simulation state rather
-than inventing movement or firing delays.
+geometry alone. `GroundLayout` lays them out on a match's first draw and the
+Presentation keeps it for that match, so revealed terrain never changes as the
+fog lifts; the fog veil hides what the seat has not explored. The boundary and
+peaks are one terrace field measured from the open floor: a peak is the wall
+left standing, stepping up once it is about five tiles thick, and a peak meeting
+the map edge is a spur whose levels join the wall's. Rock walls draw layered
+slabs from the generated library, sized by local rock thickness, and machinery
+blockers stay off the edge ring the boundary covers. The shell extends allied
+unit sight discs and completed-building footprint sight into a bounded off-map
+quarry margin. Its presentation-only exploration cache updates on every tick,
+including bulk advances, and rebuilds during explicit command-log
+reconstruction. Player checkpoints retain that cache directly. Map tiles show
+authoritative simulation fog. The replay viewer is fog-free, and so is a seat
+out of an undecided match once no LAN teammate plays on whom it could tip off;
+its chrome stays its own. Animation, heading, and weapon effects use the
+relevant simulation state rather than inventing movement or firing delays.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a

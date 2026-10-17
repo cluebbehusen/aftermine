@@ -4,10 +4,8 @@
 //!
 //! The terraces are a distance field over pit tiles measured in quarter-tile
 //! cells, so a wide cut carries several benches across tile boundaries before
-//! it vanishes. Only standing ground the player has explored can be a rim:
-//! unexplored tiles are unknown, so the cut is assumed to continue under the
-//! fog and no step is ever invented along a fog line or read from hidden
-//! terrain.
+//! it vanishes. The field reads the map alone, so a drop never shifts as the
+//! fog lifts; the fog veil hides pits the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
@@ -19,7 +17,7 @@ use crate::numeric::Fit;
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
-use oxide_sim::map::Terrain;
+use oxide_sim::map::{Map, Terrain};
 
 const SALT: u32 = 911;
 const VIGNETTE_CELLS: i32 = 4;
@@ -119,58 +117,29 @@ fn cell_color(material: Material, cx: i32, cy: i32) -> Color {
     }
 }
 
-/// How one tile enters the distance field: `None` seeds a rim (explored
-/// standing ground), `Some(known)` continues the cut, known only when the
-/// player has explored that pit tile. Off-map positions are the boundary's
-/// highwall, never explored floor, so they continue the cut like fog.
-fn seed(terrain: Option<Terrain>, explored: bool) -> Option<bool> {
-    match terrain {
-        None => Some(false),
-        Some(Terrain::Pit) => Some(explored),
-        Some(_) if explored => None,
-        Some(_) => Some(false),
-    }
-}
-
-/// Chebyshev cell distance from every pit cell to the nearest explored
-/// standing cell, over the visible tiles plus enough margin that every
-/// drawn cell sees its true nearest rim.
-struct PitField {
+/// Chebyshev cell distance from every pit cell to the nearest standing
+/// cell, over the map plus enough margin that a pit on the map edge sees its
+/// true nearest rim.
+pub(super) struct PitField {
     field: CellField,
-    /// Explored pit tiles: the only ones the pass draws.
-    known: Vec<bool>,
 }
 
 impl PitField {
-    fn build(game: &Scene<'_>, min: TilePos, max: TilePos) -> Self {
+    /// Off-map positions are the boundary's highwall, never floor, so the
+    /// cut continues into them.
+    pub(super) fn build(map: &Map) -> Self {
         let pad = (MAX_DEPTH + CELLS - 1) / CELLS + 1;
-        let origin = TilePos::new(min.x - pad, min.y - pad);
-        let width = max.x - min.x + 2 * pad;
-        let height = max.y - min.y + 2 * pad;
-        let mut known = vec![false; as_index((width * height).max(0))];
-        let map = game.state.map();
-        let vision = game.my_vision();
-        let all_seeing = game.presentation.all_seeing();
-        let field = CellField::seeded(origin, width, height, CELLS, |pos| {
-            let terrain = map.tile(pos).map(|tile| tile.terrain);
-            let explored = all_seeing || vision.explored(pos);
-            let Some(known_pit) = seed(terrain, explored) else {
-                return false;
-            };
-            known[as_index((pos.y - origin.y) * width + (pos.x - origin.x))] = known_pit;
-            true
-        });
-        Self { field, known }
-    }
-
-    fn known_pit(&self, pos: TilePos) -> bool {
-        let field = &self.field;
-        let (tx, ty) = (pos.x - field.origin.x, pos.y - field.origin.y);
-        tx >= 0
-            && ty >= 0
-            && tx < field.width
-            && ty < field.height
-            && self.known[as_index(ty * field.width + tx)]
+        let field = CellField::seeded(
+            TilePos::new(-pad, -pad),
+            map.width() + 2 * pad,
+            map.height() + 2 * pad,
+            CELLS,
+            |pos| {
+                map.tile(pos)
+                    .is_none_or(|tile| tile.terrain == Terrain::Pit)
+            },
+        );
+        Self { field }
     }
 
     fn at(&self, pos: TilePos, sx: i32, sy: i32) -> u8 {
@@ -304,24 +273,27 @@ fn draw_relief(game: &Scene<'_>, field: &PitField, pos: TilePos, zoom: f32, frac
     }
 }
 
-pub(super) fn draw_pits(game: &Scene<'_>, fractured: bool) {
+pub(super) fn draw_pits(game: &Scene<'_>, field: &PitField, fractured: bool) {
     let (min, max) = super::visible_tiles(game);
     if min.x >= max.x || min.y >= max.y {
         return;
     }
-    let field = PitField::build(game, min, max);
+    let map = game.state.map();
     let zoom = game.presentation.camera.zoom;
     let pit_tiles: Vec<TilePos> = (min.y..max.y)
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
-        .filter(|pos| field.known_pit(*pos))
+        .filter(|&pos| {
+            map.tile(pos)
+                .is_some_and(|tile| tile.terrain == Terrain::Pit)
+        })
         .collect();
     // Fills first, then relief: a decal that straddles two tiles must not
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
-        draw_fill(game, &field, *pos, zoom, fractured);
+        draw_fill(game, field, *pos, zoom, fractured);
     }
     for pos in &pit_tiles {
-        draw_relief(game, &field, *pos, zoom, fractured);
+        draw_relief(game, field, *pos, zoom, fractured);
     }
 }
 
