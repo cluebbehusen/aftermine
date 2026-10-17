@@ -668,6 +668,44 @@ fn poverty_and_capacity_disable_cards_with_reasons() {
 }
 
 #[test]
+fn the_patrol_card_promises_engagement_only_from_armed_machines() {
+    use oxide_sim::UnitKind;
+    let mut game = game();
+    let own = |kind| {
+        game.state
+            .units()
+            .iter()
+            .find(|u| u.player == game.presentation.human && u.kind == kind)
+            .expect("skirmish authors this starting unit")
+            .id
+    };
+    let (sentinel, harvester) = (own(UnitKind::Sentinel), own(UnitKind::Harvester));
+    for (selection, promise) in [
+        (
+            vec![sentinel],
+            "Machines engage whatever they meet along the way.",
+        ),
+        (
+            vec![harvester],
+            "Unarmed machines walk the route without engaging.",
+        ),
+        (
+            vec![sentinel, harvester],
+            "Armed machines engage what they meet; the rest walk on.",
+        ),
+    ] {
+        game.presentation.selection.units = selection;
+        let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+        let patrol = panel
+            .cards
+            .iter()
+            .find(|c| c.title == "Patrol")
+            .expect("patrol card");
+        assert_eq!(patrol.desc.last().map(String::as_str), Some(promise));
+    }
+}
+
+#[test]
 fn the_harvester_panel_is_the_same_grammar() {
     let mut game = game();
     let harvester = game
