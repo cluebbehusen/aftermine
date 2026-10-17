@@ -1052,6 +1052,16 @@ fn patrol_desc(hands: Hands) -> &'static str {
     }
 }
 
+/// What a patrol does with what it meets: armed machines hunt each leg,
+/// and unarmed ones only walk it.
+fn patrol_engagement(armed: usize, selected: usize) -> &'static str {
+    match armed {
+        0 => "Unarmed machines walk the route without engaging.",
+        n if n == selected => "Machines engage whatever they meet along the way.",
+        _ => "Armed machines engage what they meet; the rest walk on.",
+    }
+}
+
 /// How ground machines board a selected transport.
 fn transport_load_desc(touch_only: bool) -> &'static str {
     if touch_only {
@@ -1240,7 +1250,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     let first = units.iter().find(|u| u.id == subject_id)?;
     let owner = first.player;
     let has_builder = units.iter().any(|u| u.kind.stats().harvest.is_some());
-    let has_fighter = units.iter().any(|u| u.kind.stats().can_fight());
+    let armed = units.iter().filter(|u| u.kind.stats().can_fight()).count();
+    let has_fighter = armed > 0;
     let has_scout = units.iter().any(|u| u.kind.stats().scouts);
     let mut panel = Panel {
         info: info::SelectionInfo::default(),
@@ -1388,7 +1399,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         why: None,
         desc: vec![
             patrol_desc(crate::platform::hands()).into(),
-            "Machines engage whatever they meet along the way.".into(),
+            patrol_engagement(armed, units.len()).into(),
         ],
         progress: None,
     });
