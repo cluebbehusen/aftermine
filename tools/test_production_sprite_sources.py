@@ -1217,20 +1217,21 @@ def _bright_centroid_x(image: Image.Image) -> float:
 
 class MawSourceTests(unittest.TestCase):
     def test_maw_key_poses_preserve_the_approved_art(self):
-        # Digests of the approved Kilnjaw study's own drawing code at
-        # explicit poses: stowed, cutting with the kiln warming, stowing.
+        # Digests of the approved Kilnjaw study's own drawing code, its
+        # cutter lowered onto the hull's collision edge, at explicit poses:
+        # stowed, cutting with the kiln warming, stowing.
         poses = (
             (
                 ((0.0, 0.0), 0.0, 0.0, 0.0, 0.0),
-                "bd5ee62abd4a67fbac7aed4699e2cab53a330bf27ec8e5a1f8f67f9a0d5c0607",
+                "962c5c753a9956f1036016a8671134006fb4088b52928ef47609214acf34bfc7",
             ),
             (
                 ((-3.0, -3.0), 12.5, 0.4, 1.0, 0.7),
-                "6e1c642cef4ca055d80cb2688a1c0949a52e75b366b351c3c2df2122a77a62f2",
+                "81e3e63d48caa8779c605a148287bafa765e610df6c9f654db2870fdc6edaf46",
             ),
             (
                 ((-5.0, -5.0), 33.0, 1.0, 0.5, 2.9),
-                "1be2e18edee8ab7763ac1e2e89b8f546c72c1f2c6629c71d33bd62792fd07847",
+                "9fba240596a282429341e84a6edff55b237b005f03aa9f140cfa5dc27f962e69",
             ),
         )
         for pose, expected in poses:

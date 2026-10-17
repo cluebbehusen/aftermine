@@ -850,6 +850,10 @@ impl BuildingStats {
     }
 }
 
+/// The stages a site or upgrade passes through, one per equal share of its
+/// labor. Each stage has its own scaffold art and its own contact outline.
+pub const CONSTRUCTION_STAGES: u8 = 3;
+
 /// Parameters of a buildable kind.
 #[derive(Debug, Clone, Copy)]
 pub struct ConstructionStats {

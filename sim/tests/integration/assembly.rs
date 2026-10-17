@@ -8,11 +8,11 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index};
 use oxide_sim::command::RejectReason;
 use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
+use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
 use oxide_sim::stats::{BuildingKind, KILN_BITE_PERIOD, Mend};
 use oxide_sim::{
-    Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target, TickReport, UnitId,
-    UnitKind, UnitRepairSource,
+    AttackTarget, Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target,
+    TickReport, UnitId, UnitKind, UnitRepairSource,
 };
 
 const WIDTH: usize = 36;
@@ -820,6 +820,327 @@ fn a_maw_cutter_deals_structure_damage_to_structures() {
             vec![building(1, BuildingKind::Barricade, 26, 10)]
         ),
         cutter.building_damage.unwrap()
+    );
+}
+
+/// A Maw's first cut on a building.
+struct Cut {
+    /// Where the Maw stood.
+    stood: Vec2Fx,
+    /// What it aimed at.
+    aim: Vec2Fx,
+    /// The building's contact surface when the Maw came to rest.
+    rest: oxide_sim::building_contact::Surface,
+    /// The surface as the cut's tick began. An upgrade's clock can redraw
+    /// the outline under a Maw that has come to rest, and later in the
+    /// cut's own tick.
+    met: oxide_sim::building_contact::Surface,
+}
+
+/// A lone Maw ordered from `from` onto an enemy `kind` at `anchor`, on a
+/// sandbox field edited by `carve`, with the building's record edited by
+/// `forge`, run to its first cut.
+fn first_cut(
+    kind: BuildingKind,
+    anchor: TilePos,
+    from: TilePos,
+    carve: impl Fn(&mut Vec<Vec<char>>),
+    forge: impl Fn(&mut serde_json::Value),
+) -> Cut {
+    let mut scenario = open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, from.x, from.y)], carve);
+    scenario.mode = ScenarioMode::Sandbox;
+    scenario.buildings = vec![building(1, kind, anchor.x, anchor.y)];
+    let mut doc = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    for b in doc["buildings"].as_array_mut().unwrap() {
+        if b["anchor"] == serde_json::json!(anchor) {
+            forge(b);
+        }
+    }
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    let maw = ids(&state, 0, UnitKind::Maw)[0];
+    let target = state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == anchor)
+        .unwrap()
+        .id;
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![maw],
+            target: AttackTarget::Building(target),
+            queue: false,
+        },
+    )]);
+    let surface = |state: &State| state.contact_surface(state.building(target).unwrap());
+    let (mut rest, mut met) = (surface(&state), surface(&state));
+    let mut cut = None;
+    run_until(&mut state, 400, |state, events| {
+        cut = events.iter().find_map(|event| match event {
+            Event::AttackHit {
+                attacker,
+                attacker_pos,
+                target_pos,
+                ..
+            } if *attacker == maw => Some((*attacker_pos, *target_pos)),
+            _ => None,
+        });
+        if cut.is_none() {
+            met = surface(state);
+            if state.unit(maw).unwrap().path.is_some() {
+                rest = met;
+            }
+        }
+        cut.is_some()
+    });
+    let (stood, aim) = cut.unwrap();
+    Cut {
+        stood,
+        aim,
+        rest,
+        met,
+    }
+}
+
+#[test]
+fn a_maw_meets_a_building_square_to_the_middle_of_a_face_from_any_side() {
+    // Even driving in past a corner, it cuts no corner on the way: its drum
+    // meets the middle of a face, with the hull out along the face's normal,
+    // at every tier, built or raised to its first two construction stages.
+    let anchor = TilePos::new(15, 15);
+    for kind in BuildingKind::ALL {
+        if kind.is_stealthy() || kind.assembles().is_some() {
+            continue;
+        }
+        for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
+            let labor = kind
+                .tier_stats(tier)
+                .construction
+                .map_or(0, |construction| construction.build_ticks);
+            let phase = if tier == 0 { "site" } else { "upgrading" };
+            // A site no work has touched is abandoned without a builder.
+            for progress in [None, Some(1), Some(labor.div_ceil(3))] {
+                let forge = |b: &mut serde_json::Value| {
+                    b["tier"] = serde_json::json!(tier);
+                    if let Some(progress) = progress {
+                        b["phase"] = serde_json::json!({"phase": phase, "progress": progress});
+                    }
+                };
+                for (dx, dy) in [
+                    (5, 0),
+                    (4, 4),
+                    (0, 5),
+                    (-4, 4),
+                    (-5, 0),
+                    (-4, -4),
+                    (0, -5),
+                    (4, -4),
+                ] {
+                    let from = anchor.offset(dx, dy);
+                    let shown = format!("{kind:?} tier {tier} at {progress:?} from {from:?}");
+                    let cut = first_cut(kind, anchor, from, |_| {}, forge);
+                    let faces = |surface: oxide_sim::building_contact::Surface| {
+                        surface.square_stances(Fx::ZERO).collect::<Vec<_>>()
+                    };
+                    let square = |&(middle, outward): &(Vec2Fx, Vec2Fx)| {
+                        let out = cut.stood - middle;
+                        (out - outward * out.length()).length() < Fx::lit("0.01")
+                    };
+                    // It cuts the very middle of the face it stands square
+                    // to, unless the outline grew under it once it came to
+                    // rest: then it stays square to the face it came to.
+                    if faces(cut.rest) == faces(cut.met) {
+                        let face = faces(cut.met)
+                            .into_iter()
+                            .find(|(middle, _)| middle.dist_sq(cut.aim) < Fx::lit("0.0001"))
+                            .unwrap_or_else(|| {
+                                panic!("{shown} cut {:?}, no face's middle", cut.aim)
+                            });
+                        assert!(
+                            square(&face),
+                            "{shown} stood at {:?}, askew to its face",
+                            cut.stood
+                        );
+                    } else {
+                        assert!(
+                            faces(cut.rest).iter().any(square),
+                            "{shown} stood at {:?}, square to no face",
+                            cut.stood
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A lone Maw at `from` ordered onto an enemy Bastion at `anchor` climbing
+/// to its first upgrade, `progress` ticks into it.
+fn upgrading_bastion(
+    anchor: TilePos,
+    from: TilePos,
+    progress: u32,
+) -> (State, UnitId, oxide_sim::BuildingId) {
+    let mut scenario =
+        open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, from.x, from.y)], |_| {});
+    scenario.mode = ScenarioMode::Sandbox;
+    scenario.buildings = vec![building(1, BuildingKind::Bastion, anchor.x, anchor.y)];
+    let state = forge_upgrade(&scenario.build().unwrap(), anchor, progress);
+    let maw = ids(&state, 0, UnitKind::Maw)[0];
+    let target = state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == anchor)
+        .unwrap()
+        .id;
+    (state, maw, target)
+}
+
+/// `state` with the building at `anchor` `progress` ticks into an upgrade
+/// to tier one.
+fn forge_upgrade(state: &State, anchor: TilePos, progress: u32) -> State {
+    let mut doc = serde_json::to_value(state).unwrap();
+    for b in doc["buildings"].as_array_mut().unwrap() {
+        if b["anchor"] == serde_json::json!(anchor) {
+            b["tier"] = serde_json::json!(1);
+            b["phase"] = serde_json::json!({"phase": "upgrading", "progress": progress});
+        }
+    }
+    serde_json::from_value(doc).unwrap()
+}
+
+/// An upgrade's clock redraws the outline under a Maw already cutting it:
+/// at the upgrade's first construction stage, and again at completion. The
+/// Maw cuts on at its cadence, wherever its drum now meets, until the
+/// works fall.
+#[test]
+fn a_maw_cuts_on_while_an_upgrade_redraws_the_outline_under_it() {
+    let anchor = TilePos::new(15, 15);
+    let labor = BuildingKind::Bastion
+        .tier_stats(1)
+        .construction
+        .unwrap()
+        .build_ticks;
+    for redraw in [labor.div_ceil(3), labor] {
+        let (mut state, maw, target) = upgrading_bastion(anchor, TilePos::new(19, 19), 1);
+        let attack = Command::Attack {
+            units: vec![maw],
+            target: AttackTarget::Building(target),
+            queue: false,
+        };
+        state.tick(&[cmd(0, attack)]);
+        let hit = |events: &[Event]| {
+            events
+                .iter()
+                .any(|event| matches!(event, Event::AttackHit { attacker, .. } if *attacker == maw))
+        };
+        run_until(&mut state, 400, |_, events| hit(events));
+        // The clock redraws the outline two ticks from now.
+        let mut state = forge_upgrade(&state, anchor, redraw - 2);
+        let shown = state.building(target).unwrap().construction_stage();
+        let (mut hits, mut redrawn) = (vec![0], None);
+        for t in 1..200 {
+            let report = state.tick(&[]);
+            if hit(&report.events) {
+                hits.push(t);
+            }
+            let Some(b) = state.building(target) else {
+                break;
+            };
+            if redrawn.is_none() && b.construction_stage() != shown {
+                redrawn = Some(t);
+            }
+        }
+        assert!(
+            state.building(target).is_none(),
+            "the works stand: {hits:?}"
+        );
+        let redrawn = redrawn.unwrap_or_else(|| panic!("never redrawn: {hits:?}"));
+        assert!(hits.iter().any(|&t| t > redrawn), "{redrawn} {hits:?}");
+        assert!(
+            hits.windows(2).all(|pair| pair[1] - pair[0] == hits[1]),
+            "the cadence broke at {redrawn}: {hits:?}"
+        );
+    }
+}
+
+/// When an upgrade completes while a Maw drives in, the finished outline
+/// moves the face it was making for: it makes for one of the new outline's
+/// instead, and meets it square.
+#[test]
+fn a_maw_driving_in_makes_for_a_face_of_the_outline_an_upgrade_redraws() {
+    let anchor = TilePos::new(15, 15);
+    let labor = BuildingKind::Bastion
+        .tier_stats(1)
+        .construction
+        .unwrap()
+        .build_ticks;
+    let (mut state, maw, target) =
+        upgrading_bastion(anchor, TilePos::new(15, 10), labor * 2 / 3 + 1);
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![maw],
+            target: AttackTarget::Building(target),
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 400, |state, _| {
+        state
+            .unit(maw)
+            .unwrap()
+            .path
+            .as_ref()
+            .is_some_and(|path| path.final_point.is_some())
+    });
+    // The works stand up next tick.
+    let mut state = forge_upgrade(&state, anchor, labor - 1);
+    let mut cut = None;
+    run_until(&mut state, 400, |_, events| {
+        cut = events.iter().find_map(|event| match event {
+            Event::AttackHit {
+                attacker,
+                attacker_pos,
+                target_pos,
+                ..
+            } if *attacker == maw => Some((*attacker_pos, *target_pos)),
+            _ => None,
+        });
+        cut.is_some()
+    });
+    let (stood, aim) = cut.unwrap();
+    let b = state.building(target).unwrap();
+    assert!(b.built());
+    let (_, outward) = state
+        .contact_surface(b)
+        .square_stances(Fx::ZERO)
+        .find(|(middle, _)| middle.dist_sq(aim) < Fx::lit("0.0001"))
+        .unwrap_or_else(|| panic!("cut {aim:?}, no face's middle"));
+    let out = stood - aim;
+    assert!((out - outward * out.length()).length() < Fx::lit("0.01"));
+}
+
+#[test]
+fn a_maw_with_no_face_open_to_it_cuts_a_corner() {
+    // Rock off a Turret's north face and right under it leaves the Maw no
+    // room square to any face, so it cuts a corner rather than give up.
+    let anchor = TilePos::new(15, 15);
+    let cut = first_cut(
+        BuildingKind::Turret,
+        anchor,
+        TilePos::new(15, 10),
+        |rows| {
+            rows[12][15] = '#';
+            rows[16][15] = '#';
+        },
+        |_| {},
+    );
+    assert!(
+        cut.met
+            .square_stances(Fx::ZERO)
+            .all(|(middle, _)| middle.dist_sq(cut.aim) >= Fx::lit("0.0001")),
+        "cut {:?}",
+        cut.aim
     );
 }
 

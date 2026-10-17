@@ -353,21 +353,35 @@ body tiles are the centre tile alone, so these rules reduce exactly to the
 small-body rules.
 
 Workers and units with a contact weapon route to ordinary perimeter tiles, then
-make a short, collision-checked final approach to an authored building surface.
-These coarse fixed polygons capture major corners and recesses. They do not
-change tile passability or open travel passages between buildings. Work and
-contact weapons share perimeter candidate generation. Work, melee, and ranged
-building attacks share a crowd-aware position chooser: productive occupants win
-space, nearby arrivals carry soft claims, and distant routes do not reserve
-frontage. When arrivals' positions overlap, the unit nearer its own position
-keeps its claim, whatever seat it belongs to, so allied crowds cannot all yield
-to one another; an exact tie goes to the earlier unit of one seat. When
-productive units fill the legal positions, overflow approaches wait outside the
-interaction area. A worker that already reaches the surface works where it
-stands, and a held position is chosen again once new ground makes it
-unreachable. Ranged candidates respect their weapon's minimum and maximum range,
-line of fire, and movement layer. Fixed-wing aircraft attack with run-ins
-instead. Building artwork and its approximate contact outline keep their
+make a short, collision-checked final approach to the building's contact
+outline. Each kind has one outline per tier as built and one per construction
+stage, traced from the static body the field draws; moving parts such as turret
+mounts are not part of it. A shell test keeps every outline within a small gap
+and spill of its art. The simulation owns the construction stage the site art
+shows, so a stage change, a completion, or an upgrade redraws the outline under
+bodies at work: builders re-seat, and a Maw already cutting cuts on where its
+drum now meets. Outlines do not change tile passability or open travel passages
+between buildings. Work and contact weapons share perimeter candidate
+generation, except that a contact weapon on a wide hull, the Maw's drum, meets a
+building square to a face: it stands out along a face's normal from that face's
+middle and cuts only once it has stopped there, not at a corner it passes within
+reach of on the way. A bevel, a face under a quarter tile cut across a corner
+between two faces at least twice its length, is no face: a drum squared to it
+would meet the building at the corner. It takes a face only where that face is
+the nearest surface, not one beside a recess the hull would meet first, and only
+where its hull stays on open ground all the way in from its goal tile. Only a
+building with no face it can reach that way takes it to an ordinary perimeter
+position. Work, melee, and ranged building attacks share a crowd-aware position
+chooser: productive occupants win space, nearby arrivals carry soft claims, and
+distant routes do not reserve frontage. When arrivals' positions overlap, the
+unit nearer its own position keeps its claim, whatever seat it belongs to, so
+allied crowds cannot all yield to one another; an exact tie goes to the earlier
+unit of one seat. When productive units fill the legal positions, overflow
+approaches wait outside the interaction area. A worker that already reaches the
+surface works where it stands, and a held position is chosen again once new
+ground makes it unreachable. Ranged candidates respect their weapon's minimum
+and maximum range, line of fire, and movement layer. Fixed-wing aircraft attack
+with run-ins instead. Building artwork and its contact outline keep their
 authored facing, so asymmetric contact can differ under a map half-turn.
 Placement, travel, and ranged reach use the rectangular footprint.
 
@@ -542,8 +556,8 @@ map-relative half-turn frame.
 Scrap nodes block ground until exhausted. Harvesters work a bounded zone, carry
 a finite load, and deposit at a Foundry. Resource work uses a precise position
 in the selected doorstep tile with a chassis-overhang allowance. Construction,
-building repair, salvage, and unloading instead approach the coarse building
-surface with chassis clearance. Work starts only after the motor has stopped and
+building repair, salvage, and unloading instead approach the building's contact
+outline with chassis clearance. Work starts only after the motor has stopped and
 its path has ended; the shell uses the same building-work reach predicate. Field
 welds use the two bodies' combined radii plus `WORK_APPROACH_GAP` for approach
 and `WORK_REACH` for work, and settle both bodies' departures before billing.
@@ -642,14 +656,15 @@ Stop, failed travel, boarding, or death. Replacement construction can use these
 refunds atomically: rejection preserves the old sites and programs. Once work
 has started, an abandoned site follows the ordinary decay and health-based
 refund rules. Provisional scaffolds never decay. An upgrade pays up front and
-takes a completed building offline as a committed site on its new tier. The
-building refits itself at one progress tick per simulation tick: it cannot be
-accelerated by workers, paused, cancelled, or abandoned to decay. Its hp gain
-and completion use the shared damage-first work resolver, so lethal fire wins a
-completion-tick tie and nonlethal damage remains when it returns to service.
-Besides its tech prerequisites, a Deep Bore upgrade starts only while a
-completed same-owner Foundry stands within the Extractor support radius; losing
-that Foundry later only drops it to the remote yield.
+takes a completed building offline as a committed site on its new tier, drawn
+and outlined as a site through its construction stages. The building refits
+itself at one progress tick per simulation tick: it cannot be accelerated by
+workers, paused, cancelled, or abandoned to decay. Its hp gain and completion
+use the shared damage-first work resolver, so lethal fire wins a completion-tick
+tie and nonlethal damage remains when it returns to service. Besides its tech
+prerequisites, a Deep Bore upgrade starts only while a completed same-owner
+Foundry stands within the Extractor support radius; losing that Foundry later
+only drops it to the remote yield.
 
 An assembly cradle is a construction site that never stands finished. A
 `MawCradle` assembles a Maw: it is paid in full when placed and needs a built

@@ -671,7 +671,7 @@ const TREAD_SUFFIXES: [&str; 2] = ["_tread1", "_tread2"];
 const MOVE_SUFFIXES: [&str; 2] = ["_move1", "_move2"];
 const HARVESTER_CARGO_LEVELS: usize = 5;
 const EXCAVATOR_CARGO_LEVELS: usize = 5;
-const SITE_STAGES: usize = 3;
+const SITE_STAGES: usize = oxide_sim::stats::CONSTRUCTION_STAGES as usize;
 const SITE_PHASES: usize = 2;
 const SITE_FRAME_COUNT: usize = SITE_STAGES * SITE_PHASES;
 
@@ -2041,6 +2041,9 @@ impl Sounds {
     }
 }
 
+/// Every building's contact outline against the body art the field draws.
+#[cfg(test)]
+mod contact_outline_tests;
 /// The asset manifest, checked without a GPU.
 ///
 /// [`Sprites::load`] fails on a missing region, including any row a unit

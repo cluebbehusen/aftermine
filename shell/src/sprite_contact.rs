@@ -2,6 +2,9 @@
 
 use macroquad::prelude::{Image, Rect, Vec2, vec2};
 
+/// The alpha at which a sprite pixel counts as solid surface.
+pub(crate) const SOLID_ALPHA: u8 = 128;
+
 pub(crate) struct SpriteContact {
     regions: Vec<Rect>,
 }
@@ -13,7 +16,7 @@ impl SpriteContact {
         for y in 0..height {
             let solid = |x| {
                 let pixel = ((top + y) * u32::from(image.width) + left + x) as usize;
-                image.bytes[pixel * 4 + 3] >= 128
+                image.bytes[pixel * 4 + 3] >= SOLID_ALPHA
             };
             let mut current = Vec::new();
             let mut x = 0;

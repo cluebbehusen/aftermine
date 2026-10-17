@@ -623,6 +623,7 @@ fn construction_progress_and_real_activity_choose_the_site_frame() {
     let mut state = building_state();
     state.construction = Some(ConstructionState {
         progress: 0.7,
+        stage: 2,
         active: true,
         machinery_cycle: 0.75,
     });

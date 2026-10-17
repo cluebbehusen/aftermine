@@ -131,6 +131,31 @@ fn a_hull_backs_out_of_closed_ground_but_never_presses_further_in() {
 }
 
 #[test]
+fn a_hull_leg_is_open_only_if_every_tile_it_could_claim_is() {
+    use super::hull_leg_open;
+    let rock = TilePos::new(7, 7);
+    let open = |t: TilePos| t != rock;
+    let radius = Fx::lit("1.4");
+    let at = |x: &str, y: &str| Vec2Fx::new(Fx::lit(x), Fx::lit(y));
+    // Both ends clear the rock, but the corner of the block between them,
+    // which a diagonal leg sweeps, does not.
+    assert!(hull_open(TilePos::new(5, 6), radius, open));
+    assert!(hull_open(TilePos::new(6, 5), radius, open));
+    assert!(!hull_leg_open(
+        at("5.5", "6.5"),
+        at("6.5", "5.5"),
+        radius,
+        open
+    ));
+    assert!(hull_leg_open(
+        at("5.5", "5.5"),
+        at("5.5", "6.5"),
+        radius,
+        open
+    ));
+}
+
+#[test]
 fn the_widest_radius_and_excess_follow_the_roster() {
     use crate::stats::{MAX_HULL_EXCESS, MAX_UNIT_RADIUS, UnitKind, hull_excess};
     let widest = UnitKind::ALL

@@ -34,6 +34,7 @@ fn building_facts(kind: BuildingKind) -> BuildingAnimationFacts {
             .base_stats()
             .construction
             .map(|stats| stats.build_ticks),
+        construction_stage: 0,
         construction_active: false,
         production: None,
         cooldown: 0,
@@ -1160,8 +1161,8 @@ fn construction_progress_freezes_machinery_when_inactive_or_reduced() {
     ));
 }
 
-#[test]
-fn an_automatic_upgrade_animates_without_a_builder() {
+/// A Turret one tick into an automatic upgrade.
+fn upgrading_turret() -> (oxide_sim::State, oxide_sim::BuildingId) {
     let mut scenario = Scenario::skirmish();
     scenario.players[0].scrap = 500;
     scenario.units.clear();
@@ -1190,7 +1191,12 @@ fn an_automatic_upgrade_animates_without_a_builder() {
         player: PlayerId(0),
         command: oxide_sim::Command::UpgradeBuilding { building: turret },
     }]);
+    (state, turret)
+}
 
+#[test]
+fn an_automatic_upgrade_animates_without_a_builder() {
+    let (state, turret) = upgrading_turret();
     let building = state.building(turret).expect("upgrade lives");
     let facts = BuildingAnimationFacts::capture(&state, building);
     assert!(facts.construction_active);
@@ -1204,6 +1210,28 @@ fn an_automatic_upgrade_animates_without_a_builder() {
             .construction,
         Some(ConstructionState { active: true, .. })
     ));
+}
+
+#[test]
+fn the_scaffold_shows_the_construction_stage_the_simulation_reports() {
+    let (mut state, turret) = upgrading_turret();
+    let mut seen = Vec::new();
+    while let Some(building) = state.building(turret).filter(|building| !building.built()) {
+        let shown = AnimationController::default()
+            .building_state(
+                BuildingAnimationFacts::capture(&state, building),
+                AnimationClock::new(state.current_tick(), 0.5),
+                AnimationOptions::default(),
+            )
+            .construction
+            .map(|site| site.stage);
+        assert_eq!(shown, building.construction_stage().map(usize::from));
+        if seen.last() != shown.as_ref() {
+            seen.extend(shown);
+        }
+        state.tick(&[]);
+    }
+    assert_eq!(seen, [0, 1, 2], "the upgrade passed every stage once");
 }
 
 #[test]
