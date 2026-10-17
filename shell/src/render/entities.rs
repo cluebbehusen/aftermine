@@ -3387,10 +3387,13 @@ pub(crate) fn draw_long_press_ring(input: &InputState) {
     }
 }
 
-/// The same ring for a finger saving a control group. It draws after
-/// the HUD and minimap, which would otherwise cover it.
+/// The same ring for a finger saving a control group or switching a
+/// card's autocast. It draws after the HUD and minimap, which would
+/// otherwise cover it.
 pub(crate) fn draw_group_press_ring(input: &InputState) {
-    if let Some((at, progress)) = crate::input::group_press_progress(input) {
+    if let Some((at, progress)) = crate::input::group_press_progress(input)
+        .or_else(|| crate::input::autocast_press_progress(input))
+    {
         draw_press_ring(at, progress);
     }
 }

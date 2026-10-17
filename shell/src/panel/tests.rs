@@ -745,15 +745,34 @@ fn the_harvester_panel_is_the_same_grammar() {
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
     assert_eq!(
         titles,
-        [
-            "Patrol",
-            "Accompany",
-            "Salvage",
-            "Weld",
-            "Auto-weld: on",
-            "Retire",
-            "Build"
-        ]
+        ["Patrol", "Accompany", "Salvage", "Weld", "Retire", "Build"]
+    );
+    // Auto-weld rides on the Weld card as its autocast.
+    let weld = panel
+        .cards
+        .iter()
+        .find(|card| card.title == "Weld")
+        .unwrap();
+    assert_eq!(
+        weld.autocast,
+        Some(Autocast {
+            state: AutocastState::On,
+            toggle: Action::ToggleIdleWeld,
+        })
+    );
+    assert!(
+        weld.desc
+            .iter()
+            .any(|line| line.starts_with("Auto-weld on")),
+        "{:?}",
+        weld.desc
+    );
+    assert!(
+        panel
+            .cards
+            .iter()
+            .filter(|card| card.title != "Weld")
+            .all(|card| card.autocast.is_none())
     );
     assert!(
         !panel

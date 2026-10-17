@@ -3249,6 +3249,7 @@ fn a_card_that_changes_under_a_resting_finger_activates_nothing() {
         why: None,
         desc: Vec::new(),
         progress: None,
+        autocast: None,
     };
     let slot = macroquad::math::Rect::new(20.0, 600.0, 48.0, 48.0);
     let mut layout = bare_layout(680.0, 500.0);
@@ -4615,6 +4616,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
     );
 }
 
+mod autocast_card;
 mod order_chips;
 mod placement_chain;
 mod placement_plan;

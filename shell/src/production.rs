@@ -176,6 +176,7 @@ impl Production {
                     why: (count == 0).then_some(batch.reason).flatten(),
                     desc,
                     progress: None,
+                    autocast: None,
                 })
             })
             .collect()
@@ -286,6 +287,7 @@ impl Production {
                 why: None,
                 desc,
                 progress: None,
+                autocast: None,
             });
             groups.push(QueueGroup {
                 count,

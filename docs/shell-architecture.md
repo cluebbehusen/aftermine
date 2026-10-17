@@ -328,12 +328,13 @@ can fight, Scout a unit that scouts, and Run either, since a scout's right-click
 already scouts. Patrol and Accompany stay for every unit. Accompany (`E` by
 default) arms a click on any own unit, aircraft included; the rest of the
 selection escorts the picked unit, so picking one of the selection works. It is
-never a right-click meaning. A selection holding own workers adds the Auto-weld
-card after Weld (`H` by default), which reads on only while every selected
-worker welds while idle and otherwise switches them all on. The command band
-narrows its tiles where it is short, so a worker carrying scrap keeps its eight
-verbs on one row at every supported size, and Return cargo, arriving last, moves
-no card. Stop is not a card. `Panel.stop` is a button in its own box above the
+never a right-click meaning. A card may carry an autocast, an automatic mode it
+switches apart from its press: the Weld card's is the selected workers' idle
+welding. It draws an AUTO tag, lit with an accent border while every selected
+worker runs it, dim while some do and faint while none do. A right-click on the
+card, a long press with its own charge ring, or the toggle's hotkey (`H` by
+default) switches it, on unless all are already on; none of them arms the card's
+press. Stop is not a card. `Panel.stop` is a button in its own box above the
 orders or production dock, published as `LayoutModel.queue_stop` and hit-tested
 with the cards. It stops the selection while any selected unit has orders, even
 when the dock's subject is idle, and clears a defense's target preference. Over

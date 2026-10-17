@@ -16,10 +16,13 @@ fn workers(game: &Game, player: PlayerId) -> Vec<UnitId> {
         .collect()
 }
 
-fn title(game: &Game) -> Option<String> {
+fn state(game: &Game) -> Option<AutocastState> {
     SelectedWorkers::inspect(&game.view())
-        .card(&BindingMap::classic())
-        .map(|card| card.title)
+        .autocast()
+        .map(|autocast| {
+            assert_eq!(autocast.toggle, Action::ToggleIdleWeld);
+            autocast.state
+        })
 }
 
 fn switch(game: &Game) -> Option<(Vec<UnitId>, bool)> {
@@ -30,13 +33,13 @@ fn switch(game: &Game) -> Option<(Vec<UnitId>, bool)> {
 }
 
 #[test]
-fn the_card_reads_on_only_while_every_selected_worker_welds_idle() {
+fn the_autocast_reads_on_only_while_every_selected_worker_welds_idle() {
     let mut game = game();
     let human = game.presentation.human;
     let own = workers(&game, human);
     assert!(own.len() >= 2, "premise: the skirmish starts with a crew");
     game.presentation.selection.units = own.clone();
-    assert_eq!(title(&game).as_deref(), Some("Auto-weld: on"));
+    assert_eq!(state(&game), Some(AutocastState::On));
     assert_eq!(switch(&game), Some((own.clone(), false)));
 
     game.state.tick(&[PlayerCommand {
@@ -47,14 +50,14 @@ fn the_card_reads_on_only_while_every_selected_worker_welds_idle() {
         },
     }]);
     assert_eq!(
-        title(&game).as_deref(),
-        Some("Auto-weld: off"),
-        "one switched-off worker reads the mixed selection as off"
+        state(&game),
+        Some(AutocastState::Mixed),
+        "one switched-off worker leaves the selection mixed"
     );
     assert_eq!(
         switch(&game),
         Some((own, true)),
-        "and the card turns all on"
+        "and the switch turns all on"
     );
 }
 
@@ -65,7 +68,7 @@ fn a_staged_switch_shows_before_the_tick_runs() {
     game.presentation.selection.units = vec![own[0]];
     let command = SelectedWorkers::inspect(&game.view()).toggle().unwrap();
     game.issue(command);
-    assert_eq!(title(&game).as_deref(), Some("Auto-weld: off"));
+    assert_eq!(state(&game), Some(AutocastState::Off));
     assert_eq!(
         switch(&game),
         Some((vec![own[0]], true)),
@@ -82,6 +85,6 @@ fn only_the_viewers_own_workers_take_the_switch() {
     game.presentation.selection.units = vec![own, foreign];
     assert_eq!(switch(&game), Some((vec![own], false)));
     game.presentation.selection.units = vec![foreign];
-    assert_eq!(title(&game), None);
+    assert_eq!(state(&game), None);
     assert_eq!(switch(&game), None);
 }

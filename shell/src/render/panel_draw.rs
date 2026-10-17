@@ -18,8 +18,6 @@ const RALLY_CONTEXT_WIDTH: f32 = RALLY_ICON_SIZE + 6.0;
 struct PanelPacking {
     right: f32,
     available: f32,
-    /// A command tile's width, fitted to the band's room.
-    card_w: f32,
     per_row: usize,
     rally_count: usize,
     band_h: f32,
@@ -27,26 +25,15 @@ struct PanelPacking {
     hides_minimap: bool,
 }
 
-/// The info column's width, then a command tile's widest width, height,
-/// and gap. [`fitted_card_width`] narrows the tile where the band is short.
+/// The info column's width, then a command tile's width, height, and gap.
+/// Tiles are sized so a Harvester carrying scrap (seven verbs), or rally
+/// controls beside five products, fill one row at the 1133×744 layout
+/// floor.
 fn card_metrics(viewport: Vec2, scale: f32) -> (f32, f32, f32, f32) {
     let small = viewport.x / scale < 800.0 || viewport.y / scale < 500.0;
     let left = if small { 204.0 } else { 228.0 };
     let (width, height) = if small { (66.0, 76.0) } else { (84.0, 72.0) };
     (left * scale, width * scale, height * scale, 6.0 * scale)
-}
-
-/// Cards a band keeps on one row wherever the layout allows: a worker
-/// carrying scrap offers eight verbs.
-const ONE_ROW_CARDS: f32 = 8.0;
-
-/// The tile width at most `widest` that fits [`ONE_ROW_CARDS`] across
-/// `room`, but no narrower than a small layout's tile. The width holds
-/// whatever the band shows, so a card arriving last, such as Return cargo,
-/// moves none already drawn.
-fn fitted_card_width(widest: f32, room: f32, gap: f32, scale: f32) -> f32 {
-    let narrowest = (66.0 * scale).min(widest);
-    ((room - (ONE_ROW_CARDS - 1.0) * gap) / ONE_ROW_CARDS).clamp(narrowest, widest)
 }
 
 fn rally_group_width(card_width: f32, scale: f32) -> f32 {
@@ -62,15 +49,14 @@ fn panel_packing_at_right(
     rally_count: usize,
     hides_minimap: bool,
 ) -> PanelPacking {
-    let (cards_x, widest, card_h, gap) = card_metrics(viewport, scale);
-    let room = right - cards_x - (CARD_LEFT_INSET + CARD_RIGHT_INSET) * scale;
-    let card_w = fitted_card_width(widest, room, gap, scale);
+    let (cards_x, card_w, card_h, gap) = card_metrics(viewport, scale);
     let first_width = if rally_count > 0 {
         rally_group_width(card_w, scale)
     } else {
         card_w
     };
-    let available = room.max(first_width);
+    let available =
+        (right - cards_x - (CARD_LEFT_INSET + CARD_RIGHT_INSET) * scale).max(first_width);
     let per_row = 1 + numeric::to_usize(((available - first_width) / (card_w + gap)).floor());
     let cards_h = if cards_shown == 0 {
         0.0
@@ -81,7 +67,6 @@ fn panel_packing_at_right(
     PanelPacking {
         right,
         available,
-        card_w,
         per_row,
         rally_count,
         band_h,
@@ -190,8 +175,7 @@ fn command_card_geometry(
     packing: PanelPacking,
     cards: &[crate::panel::Card],
 ) -> (Vec<Rect>, f32) {
-    let (left, _, height, gap) = card_metrics(viewport, scale);
-    let width = packing.card_w;
+    let (left, width, height, gap) = card_metrics(viewport, scale);
     let shown = cards.len().min(16);
     let rally_count = packing.rally_count;
     let section_gap = grouped_card_gap(
@@ -306,7 +290,11 @@ fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> V
     let mut line = String::new();
     for word in title.split_whitespace() {
         for (index, part) in word.split_inclusive('-').enumerate() {
-            let glue = if line.is_empty() || index > 0 { "" } else { " " };
+            let glue = if line.is_empty() || index > 0 {
+                ""
+            } else {
+                " "
+            };
             let candidate = format!("{line}{glue}{part}");
             if !line.is_empty() && measure(&candidate) > width {
                 lines.push(std::mem::take(&mut line));
@@ -790,6 +778,27 @@ fn draw_palette_cell(
         footer,
         caption,
         TEXT_SECONDARY,
+    );
+}
+
+/// The AUTO tag in a command tile's top-right corner, level with its hotkey:
+/// lit while every selected unit runs the card's automatic mode, dim while
+/// some do, faint while none do, so the mode reads before the tooltip.
+fn draw_autocast_tag(tile: Rect, state: crate::panel::AutocastState, scale: f32) {
+    use crate::panel::AutocastState;
+    let size = crate::theme::Type::Caption.at(scale);
+    let width = measure_text("AUTO", None, numeric::font_size(size), 1.0).width;
+    let color = match state {
+        AutocastState::On => crate::theme::TEXT_ACCENT,
+        AutocastState::Mixed => crate::theme::TEXT_SECONDARY,
+        AutocastState::Off => crate::theme::TEXT_DISABLED,
+    };
+    draw_text(
+        "AUTO",
+        tile.x + tile.w - width - 4.0 * scale,
+        tile.y + TILE_HOTKEY_BASELINE * scale,
+        size,
+        color,
     );
 }
 
@@ -1453,12 +1462,17 @@ pub(crate) fn draw_panel(
             crate::theme::CARD_IDLE
         };
         fill_rect(rect, bg);
+        let autocast_on = card
+            .autocast
+            .is_some_and(|autocast| autocast.state == crate::panel::AutocastState::On);
         let border = if selected {
             SCRAP_COLOR
         } else if !card.enabled {
             crate::theme::BORDER_FAINT
         } else if hovered {
             crate::theme::EDGE_FOCUS
+        } else if autocast_on {
+            crate::theme::TEXT_ACCENT
         } else {
             crate::theme::EDGE_CARD
         };
@@ -1580,6 +1594,9 @@ pub(crate) fn draw_panel(
                 crate::theme::Type::Small.at(s),
                 TEXT_SECONDARY,
             );
+        }
+        if let Some(autocast) = card.autocast {
+            draw_autocast_tag(rect, autocast.state, s);
         }
         if let (CardAction::Dispatch(crate::action::Action::TrainSlot(_)), CardIcon::Unit(kind)) =
             (card.action, card.icon)

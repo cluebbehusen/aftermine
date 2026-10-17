@@ -198,6 +198,30 @@ pub struct Card {
     /// production head's bar and an order chip's own meter. The renderer
     /// draws this rather than reading the state itself.
     pub progress: Option<f32>,
+    /// The automatic mode the card switches beside its press, when it has
+    /// one: an RTS ability button's autocast.
+    pub autocast: Option<Autocast>,
+}
+
+/// A card's automatic mode: lit on the card, and switched by a right-click,
+/// a long press, or the toggle's own hotkey rather than by the press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Autocast {
+    /// How much of the selection runs it.
+    pub state: AutocastState,
+    /// What switching it dispatches.
+    pub toggle: Action,
+}
+
+/// How much of a selection runs a card's automatic mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutocastState {
+    /// Every unit it covers.
+    On,
+    /// Some of them; switching turns it on for all.
+    Mixed,
+    /// None.
+    Off,
 }
 
 /// Compact semantic mark paired with an always-visible capability fact.
@@ -555,6 +579,7 @@ fn magazine_queue(
             },
             progress: (index == 0)
                 .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
+            autocast: None,
         });
     }
     Some(tick_time_label(
@@ -866,6 +891,7 @@ fn order_card(
         why: None,
         desc,
         progress,
+        autocast: None,
     }
 }
 
@@ -976,6 +1002,7 @@ fn stop_card(action: CardAction, hotkey: String, desc: &str) -> Card {
         why: None,
         desc: vec![desc.into()],
         progress: None,
+        autocast: None,
     }
 }
 
@@ -1067,6 +1094,30 @@ fn patrol_desc(hands: Hands) -> &'static str {
         }
         (true, false) => "Arm a looping route, tap waypoints, then tap Patrol again to start it.",
     }
+}
+
+/// The Weld card's autocast lines: what auto-weld does and how far the
+/// selection runs it, then how to switch it.
+fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] {
+    let state = match state {
+        AutocastState::On => "on",
+        AutocastState::Mixed => "on for some",
+        AutocastState::Off => "off",
+    };
+    let how = if hands.touch() {
+        "Long-press"
+    } else {
+        "Right-click"
+    };
+    let key = if hands.keys && !key.is_empty() {
+        format!(" or press {key}")
+    } else {
+        String::new()
+    };
+    [
+        format!("Auto-weld {state}: idle workers mend machines near their post."),
+        format!("{how}{key} to switch it. Patrolling workers always weld."),
+    ]
 }
 
 /// What a patrol does with what it meets: armed machines hunt each leg,
@@ -1166,6 +1217,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     why: None,
                     desc: vec!["Read-only: allied buildings cannot be controlled.".into()],
                     progress: None,
+                    autocast: None,
                 });
                 if let Some(label) = magazine_queue(game, first, &mut panel.queue) {
                     panel.queue_label = label;
@@ -1228,6 +1280,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                         crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
                     )],
                     progress,
+                    autocast: None,
                 });
             }
         }
@@ -1353,6 +1406,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     why: None,
                     desc: roster_filter_desc(crate::platform::hands()),
                     progress: None,
+                    autocast: None,
                 });
             }
         }
@@ -1373,6 +1427,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 "Scouts stop short or wait rather than walk into fire.".into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     // Run and Hunt only differ from a plain move for a machine that can
@@ -1391,6 +1446,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 "or acquiring targets.".into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     if has_fighter {
@@ -1407,6 +1463,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 "Machines stop and chase targets along the route.".into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     panel.cards.push(Card {
@@ -1427,6 +1484,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             .into(),
         ],
         progress: None,
+        autocast: None,
     });
     panel.cards.push(Card {
         icon: CardIcon::Verb(VerbIcon::Accompany),
@@ -1441,6 +1499,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             "fight threats near it, and weld the group whenever it stops.".into(),
         ],
         progress: None,
+        autocast: None,
     });
     if has_builder {
         panel.cards.push(Card {
@@ -1456,9 +1515,22 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 "for a partial refund. Foundries cannot be salvaged.".into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     if has_builder {
+        let autocast = crate::idle_weld::SelectedWorkers::inspect(game).autocast();
+        let mut desc = vec![
+            "Select a damaged friendly ground unit to repair it.".into(),
+            "Each restored hit point consumes scrap.".into(),
+        ];
+        if let Some(autocast) = autocast {
+            desc.extend(auto_weld_desc(
+                crate::platform::hands(),
+                &chord(bindings, Action::ToggleIdleWeld),
+                autocast.state,
+            ));
+        }
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Repair),
             title: "Weld".into(),
@@ -1467,15 +1539,10 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             action: CardAction::Dispatch(Action::RepairUnit),
             enabled: true,
             why: None,
-            desc: vec![
-                "Select a damaged friendly ground unit to repair it.".into(),
-                "Each restored hit point consumes scrap.".into(),
-            ],
+            desc,
             progress: None,
+            autocast,
         });
-        panel
-            .cards
-            .extend(crate::idle_weld::SelectedWorkers::inspect(game).card(bindings));
     }
     // No Crucible takes an assembled machine apart.
     if first.player == game.presentation.human && units.iter().any(|u| !u.kind.assembled()) {
@@ -1498,6 +1565,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 "Refunds half the cost, scaled by remaining health.".into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     crate::unit_bays::SelectedBays::inspect(game).cards(bindings, &mut panel.cards);
@@ -1521,6 +1589,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 transport_load_desc(crate::platform::hands().touch()).into(),
             ],
             progress: None,
+            autocast: None,
         });
     }
     if has_builder {
@@ -1543,6 +1612,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 why: None,
                 desc: vec!["Open construction.".into()],
                 progress: None,
+                autocast: None,
             });
         }
         for kind in crate::action::BUILD_CATEGORIES
@@ -1587,6 +1657,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 why,
                 desc,
                 progress: None,
+                autocast: None,
             });
         }
         if build_menu_open {
@@ -1603,6 +1674,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 why: None,
                 desc: vec!["Close construction.".into()],
                 progress: None,
+                autocast: None,
             });
         }
     }
@@ -1623,6 +1695,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             why: None,
             desc: vec!["Cancel current and queued work, deliver scrap to the nearest reachable Foundry, then stay there.".into()],
             progress: None,
+            autocast: None,
         });
     }
     // The first unit's program: what it is doing and what comes next.

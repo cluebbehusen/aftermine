@@ -1,9 +1,9 @@
-//! The selected own workers' idle welding switch: what the Auto-weld card
-//! shows and what it and its hotkey send.
+//! The selected own workers' idle welding switch: the autocast the Weld
+//! card shows, and what switching it sends.
 
-use crate::action::{Action, BindingMap};
+use crate::action::Action;
 use crate::game::Scene;
-use crate::panel::{Card, CardAction, CardIcon, VerbIcon};
+use crate::panel::{Autocast, AutocastState};
 use oxide_sim::{Command, UnitId};
 
 /// The selected own workers, in id order, each with whether it welds while
@@ -31,8 +31,8 @@ impl SelectedWorkers {
         self.workers.iter().all(|(_, on)| *on)
     }
 
-    /// The switch the card sends: on unless every selected worker already
-    /// welds while idle.
+    /// The switch the autocast sends: on unless every selected worker
+    /// already welds while idle.
     pub fn toggle(&self) -> Option<Command> {
         (!self.workers.is_empty()).then(|| Command::SetIdleWeld {
             units: self.workers.iter().map(|(id, _)| *id).collect(),
@@ -40,22 +40,18 @@ impl SelectedWorkers {
         })
     }
 
-    /// The Auto-weld card, when the selection holds a worker of the
+    /// The Weld card's autocast, when the selection holds a worker of the
     /// viewer's.
-    pub fn card(&self, bindings: &BindingMap) -> Option<Card> {
-        (!self.workers.is_empty()).then(|| Card {
-            icon: CardIcon::Verb(VerbIcon::Repair),
-            title: format!("Auto-weld: {}", if self.all_on() { "on" } else { "off" }),
-            cost: None,
-            hotkey: bindings.labels(Action::ToggleIdleWeld),
-            action: CardAction::Dispatch(Action::ToggleIdleWeld),
-            enabled: true,
-            why: None,
-            desc: vec![
-                "Idle workers weld wounded machines near their post, then return.".into(),
-                "Patrolling workers always weld. Welding consumes scrap.".into(),
-            ],
-            progress: None,
+    pub fn autocast(&self) -> Option<Autocast> {
+        let on = self.workers.iter().filter(|(_, on)| *on).count();
+        let state = match on {
+            0 => AutocastState::Off,
+            n if n == self.workers.len() => AutocastState::On,
+            _ => AutocastState::Mixed,
+        };
+        (!self.workers.is_empty()).then_some(Autocast {
+            state,
+            toggle: Action::ToggleIdleWeld,
         })
     }
 }

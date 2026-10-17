@@ -244,6 +244,7 @@ impl SelectedBuildings {
                     "Stop calls off a strike that has not launched.".into(),
                 ],
                 progress: None,
+                autocast: None,
             });
         }
         let order = self.round_order();
@@ -260,6 +261,7 @@ impl SelectedBuildings {
                 tick_time_label(stats.round_ticks)
             )],
             progress: None,
+            autocast: None,
         });
         let cancel = self.round_cancel();
         cards.push(Card {
@@ -275,6 +277,7 @@ impl SelectedBuildings {
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
             progress: None,
+            autocast: None,
         });
         let on = magazines
             .iter()
@@ -291,6 +294,7 @@ impl SelectedBuildings {
                 "While on, orders the next {noun} whenever there is room and scrap."
             )],
             progress: None,
+            autocast: None,
         });
     }
 
@@ -385,6 +389,7 @@ impl SelectedBuildings {
                     "a friendly unit has every new unit escort it.".into(),
                 ],
                 progress: None,
+                autocast: None,
             });
             cards.push(Card {
                 icon: CardIcon::Verb(VerbIcon::Rally),
@@ -396,6 +401,7 @@ impl SelectedBuildings {
                 why: (!any_rally).then(|| "no rally points set".into()),
                 desc: vec!["Return new units to their producer doors.".into()],
                 progress: None,
+                autocast: None,
             });
         }
         self.magazine_cards(bindings, &mut cards);
@@ -412,6 +418,7 @@ impl SelectedBuildings {
                 why: None,
                 desc: vec!["Abandon fresh construction sites; full refund before work starts, partial refund afterward.".into(), "Committed upgrades cannot be cancelled.".into()],
                 progress: None,
+                autocast: None,
             });
         }
         // A single upgrading works retains its progress card. Group actions
@@ -433,6 +440,7 @@ impl SelectedBuildings {
                     (b.construction_progress().unwrap_or(0) as f32 / c.build_ticks.max(1) as f32)
                         .clamp(0.0, 1.0)
                 }),
+                autocast: None,
             });
         } else if let Some(batch) = self.upgrade_batch() {
             let first = self
@@ -501,6 +509,7 @@ impl SelectedBuildings {
                     .flatten(),
                 desc,
                 progress: None,
+                autocast: None,
             });
         }
         cards
