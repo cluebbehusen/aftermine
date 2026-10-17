@@ -281,11 +281,33 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
 }
 
 fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> Vec<String> {
-    if measure(title) > width && title.contains('-') {
-        wrap_words(&title.replace('-', "- "), measure, width)
-    } else {
-        wrap_words(title, measure, width)
+    if measure(title) <= width || !title.contains('-') {
+        return wrap_words(title, measure, width);
     }
+    // A hyphenated word may also break after its hyphen; halves that stay
+    // on one line keep no space between them.
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in title.split_whitespace() {
+        for (index, part) in word.split_inclusive('-').enumerate() {
+            let glue = if line.is_empty() || index > 0 {
+                ""
+            } else {
+                " "
+            };
+            let candidate = format!("{line}{glue}{part}");
+            if !line.is_empty() && measure(&candidate) > width {
+                lines.push(std::mem::take(&mut line));
+                line = part.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
 }
 
 /// Packs every visible queue chip above the command band: a single
@@ -756,6 +778,27 @@ fn draw_palette_cell(
         footer,
         caption,
         TEXT_SECONDARY,
+    );
+}
+
+/// The AUTO tag in a command tile's top-right corner, level with its hotkey:
+/// lit while every selected unit runs the card's automatic mode, dim while
+/// some do, faint while none do, so the mode reads before the tooltip.
+fn draw_autocast_tag(tile: Rect, state: crate::panel::AutocastState, scale: f32) {
+    use crate::panel::AutocastState;
+    let size = crate::theme::Type::Caption.at(scale);
+    let width = measure_text("AUTO", None, numeric::font_size(size), 1.0).width;
+    let color = match state {
+        AutocastState::On => crate::theme::TEXT_ACCENT,
+        AutocastState::Mixed => crate::theme::TEXT_SECONDARY,
+        AutocastState::Off => crate::theme::TEXT_DISABLED,
+    };
+    draw_text(
+        "AUTO",
+        tile.x + tile.w - width - 4.0 * scale,
+        tile.y + TILE_HOTKEY_BASELINE * scale,
+        size,
+        color,
     );
 }
 
@@ -1419,12 +1462,17 @@ pub(crate) fn draw_panel(
             crate::theme::CARD_IDLE
         };
         fill_rect(rect, bg);
+        let autocast_on = card
+            .autocast
+            .is_some_and(|autocast| autocast.state == crate::panel::AutocastState::On);
         let border = if selected {
             SCRAP_COLOR
         } else if !card.enabled {
             crate::theme::BORDER_FAINT
         } else if hovered {
             crate::theme::EDGE_FOCUS
+        } else if autocast_on {
+            crate::theme::TEXT_ACCENT
         } else {
             crate::theme::EDGE_CARD
         };
@@ -1546,6 +1594,9 @@ pub(crate) fn draw_panel(
                 crate::theme::Type::Small.at(s),
                 TEXT_SECONDARY,
             );
+        }
+        if let Some(autocast) = card.autocast {
+            draw_autocast_tag(rect, autocast.state, s);
         }
         if let (CardAction::Dispatch(crate::action::Action::TrainSlot(_)), CardIcon::Unit(kind)) =
             (card.action, card.icon)

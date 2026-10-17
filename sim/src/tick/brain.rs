@@ -145,6 +145,7 @@ pub(super) fn run(
     index.survey(state);
     let motion = MotionSnapshot::capture(state);
     let parties = escort::Parties::capture(state);
+    let wounded = tend::Wounded::capture(state);
     let fleets = combat::Fleets::capture(state);
     let mut docks: Vec<UnitId> = Vec::new();
     let mut hits: Vec<PendingHit> = Vec::new();
@@ -257,7 +258,7 @@ pub(super) fn run(
             }
             // An idle airframe stays parked and brace retraction moves
             // nothing, so the radar check's acquisition still holds here.
-            Order::Idle => idle(state, index, id, acquired),
+            Order::Idle => idle(state, index, &mut reach, &wounded, id, acquired),
             Order::Run { .. } => {
                 if !land_at_destination(state, index, &mut reach, id, events) {
                     walk(state, index, &mut reach, id, events);
@@ -349,6 +350,17 @@ pub(super) fn run(
                 });
                 scout::scout(state, index, &mut reach, danger, id, tile, events);
             }
+            Order::Tend { goal, weld } => tend::tend(
+                state,
+                index,
+                &mut reach,
+                &wounded,
+                id,
+                goal,
+                weld,
+                &mut field_welds,
+                events,
+            ),
         }
         if events[reported..]
             .iter()
@@ -414,6 +426,7 @@ pub(super) mod logistics;
 mod point_defense;
 pub(super) mod retire;
 mod scout;
+mod tend;
 mod warheads;
 
 use combat::{MotionSnapshot, advance, land_shells, retaliate, target_standing, turret_fire};

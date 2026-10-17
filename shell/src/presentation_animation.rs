@@ -314,6 +314,8 @@ impl UnitAnimationFacts {
             None
         } else if let Some(release) = unit.unloading() {
             Some(WorkTarget::Building(release.foundry))
+        } else if let Some(patient) = unit.order.torch() {
+            Some(WorkTarget::Unit(patient))
         } else {
             match unit.order {
                 Order::Harvest { node, .. } => Some(if state.map().scrap_at(node) > 0 {
@@ -325,10 +327,6 @@ impl UnitAnimationFacts {
                 Order::Repair { building } | Order::Salvage { building } => {
                     Some(WorkTarget::Building(building))
                 }
-                Order::RepairUnit { unit }
-                | Order::Accompany {
-                    weld: Some(unit), ..
-                } => Some(WorkTarget::Unit(unit)),
                 _ => None,
             }
         };
@@ -1486,6 +1484,17 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
     if unit.kind.stats().harvest.is_none() || unit.progress == 0 || !unit.work_stopped() {
         return None;
     }
+    if let Some(patient) = unit.order.torch() {
+        return state.unit(patient).and_then(|patient| {
+            (patient.id != unit.id
+                && patient.player == unit.player
+                && patient.hp > 0
+                && patient.hp < patient.kind.stats().max_hp
+                && patient.still_for_weld()
+                && unit.in_repair_reach(patient))
+            .then_some(patient.pos)
+        });
+    }
     match unit.order {
         Order::Repair { building } => state.building(building).and_then(|patient| {
             (patient.player == unit.player
@@ -1494,21 +1503,6 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
                 && patient.hp < patient.stats().max_hp
                 && state.in_building_work_reach(unit, patient.id))
             .then_some(patient.center())
-        }),
-        Order::RepairUnit { unit: patient }
-        | Order::Accompany {
-            weld: Some(patient),
-            ..
-        } => state.unit(patient).and_then(|patient| {
-            (patient.id != unit.id
-                && patient.player == unit.player
-                && patient.hp > 0
-                && patient.hp < patient.kind.stats().max_hp
-                && patient.path.is_none()
-                && !matches!(patient.order, Order::Found { .. })
-                && patient.drive_speed() == chassis::fx::Fx::ZERO
-                && unit.in_repair_reach(patient))
-            .then_some(patient.pos)
         }),
         _ => None,
     }

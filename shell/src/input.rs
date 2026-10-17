@@ -865,7 +865,13 @@ pub(crate) fn placement_backlog(game: &crate::game::Scene<'_>) -> Option<usize> 
         program
             .orders
             .iter()
-            .filter(|order| !matches!(order, oxide_sim::Order::Idle))
+            .filter(|order| match order {
+                oxide_sim::Order::Idle => false,
+                // A queued order replaces a trip from an idle post rather
+                // than waiting behind it.
+                oxide_sim::Order::Tend { .. } => program.looping,
+                _ => true,
+            })
             .count(),
     )
 }
@@ -1791,8 +1797,8 @@ use select::{
 };
 pub use touch::update_touch;
 pub(crate) use touch::{
-    Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, group_press_progress, long_press_progress,
-    touch_box,
+    Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, autocast_press_progress, group_press_progress,
+    long_press_progress, touch_box,
 };
 
 /// The cursor shape the current intent deserves: crosshair while
@@ -2030,6 +2036,12 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             y,
         } => {
             input.mouse = vec2(x, y);
+            // A card with an autocast owns its right-clicks: they switch the
+            // card's automatic mode, as on an RTS ability button.
+            if let Some(toggle) = autocast_toggle_under(game, vec2(x, y)) {
+                dispatch_action(game, input, bindings, toggle);
+                return;
+            }
             // A right-click mid-stroke throws the planned row away and
             // keeps placing; nothing was spent.
             if input.drop_stroke() {
@@ -3225,6 +3237,14 @@ pub(crate) fn activate_action_card(
     } else if let Action::TrainSlot(slot) = action {
         orders::train(game, slot as usize);
     }
+}
+
+/// The autocast toggle of the command card under the mouse at `p`, if that
+/// card has one.
+fn autocast_toggle_under(game: &Game, p: Vec2) -> Option<Action> {
+    let hit = crate::layout::card_under(&game.presentation.layout.get(), p, None)?;
+    let panel = game.presentation.panel_model.borrow();
+    Some(panel.as_ref()?.card(hit.row, hit.index)?.autocast?.toggle)
 }
 
 /// One panel card pressed — by mouse or fingertip, the same act its

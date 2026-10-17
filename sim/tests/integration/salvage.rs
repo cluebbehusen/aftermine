@@ -1426,7 +1426,7 @@ fn a_dry_source_with_no_neighbor_withdraws_the_harvester_instead_of_marching() {
 fn a_work_zone_cleans_up_neighboring_wrecks_without_another_order() {
     // A second wreck lands two tiles from the first. Local battlefield
     // salvage is part of the same anchored work contract.
-    let mut state = arena(vec![
+    let state = arena(vec![
         unit(0, UnitKind::Harvester, 5, 5),
         unit(0, UnitKind::Harvester, 7, 5),
         unit(1, UnitKind::Scuttler, 6, 5),
@@ -1442,6 +1442,8 @@ fn a_work_zone_cleans_up_neighboring_wrecks_without_another_order() {
         state.units()[3].id,
         state.units()[4].id,
     );
+    // The victims die where they stand rather than welding each other.
+    let mut state = common::idle_welds_off(&state, &[victim_a, victim_b, salvager]);
     let grave_a = kill_harvester(&mut state, killer, victim_a);
     let grave_b = kill_harvester(&mut state, killer, victim_b);
     execute(&mut state, executioner, killer);

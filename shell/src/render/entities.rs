@@ -179,6 +179,7 @@ pub(crate) fn breadcrumb_points(
         | oxide_sim::Order::Repair { .. }
         | oxide_sim::Order::Salvage { .. }
         | oxide_sim::Order::RepairUnit { .. }
+        | oxide_sim::Order::Tend { .. }
         | oxide_sim::Order::Found { .. } => Color::new(0.25, 0.58, 0.51, 0.55),
         oxide_sim::Order::Board { .. }
         | oxide_sim::Order::Unload { .. }
@@ -211,7 +212,11 @@ pub(crate) fn breadcrumb_points(
                 crucible: building, ..
             } => world_vec(game.state.building(*building)?.center()),
             // A repair patient is the viewer's own machine, so it is always seen.
-            oxide_sim::Order::RepairUnit { unit } => tile_center(game.state.unit(*unit)?.tile()),
+            oxide_sim::Order::RepairUnit { unit }
+            | oxide_sim::Order::Tend {
+                weld: Some(unit), ..
+            } => tile_center(game.state.unit(*unit)?.tile()),
+            oxide_sim::Order::Tend { goal, weld: None } => tile_center(goal.tile()),
             oxide_sim::Order::Board { transport } => {
                 tile_center(game.state.unit(*transport)?.tile())
             }
@@ -3403,10 +3408,13 @@ pub(crate) fn draw_long_press_ring(input: &InputState) {
     }
 }
 
-/// The same ring for a finger saving a control group. It draws after
-/// the HUD and minimap, which would otherwise cover it.
+/// The same ring for a finger saving a control group or switching a
+/// card's autocast. It draws after the HUD and minimap, which would
+/// otherwise cover it.
 pub(crate) fn draw_group_press_ring(input: &InputState) {
-    if let Some((at, progress)) = crate::input::group_press_progress(input) {
+    if let Some((at, progress)) = crate::input::group_press_progress(input)
+        .or_else(|| crate::input::autocast_press_progress(input))
+    {
         draw_press_ring(at, progress);
     }
 }

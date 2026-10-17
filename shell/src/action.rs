@@ -159,6 +159,8 @@ pub enum Action {
     CancelRound,
     /// Turn the selected magazines' autofill on or off.
     ToggleAutofill,
+    /// Turn the selected workers' idle welding on or off.
+    ToggleIdleWeld,
 }
 impl Action {
     pub fn label(self) -> String {
@@ -200,6 +202,7 @@ impl Action {
             Self::OrderRound => "Order round".into(),
             Self::CancelRound => "Cancel round".into(),
             Self::ToggleAutofill => "Toggle autofill".into(),
+            Self::ToggleIdleWeld => "Toggle auto-weld".into(),
             Self::ReplayPause => "Pause replay".into(),
             Self::ReplayBack => "Seek back 25 seconds".into(),
             Self::ReplayForward => "Seek forward 25 seconds".into(),
@@ -235,6 +238,7 @@ impl Action {
             }
             Self::Unload => 2,
             Self::ReturnCargo => 4096 | CATEGORIES,
+            Self::ToggleIdleWeld => 4096,
             Self::BuildCategory(_) => 16,
             Self::Build(kind) => Context::BuildCategory(building_category(kind)).bit(),
             Self::ReplayPause
@@ -323,8 +327,8 @@ impl BindingMap {
             OrderRound, PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark,
             RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
             ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SetBookmark, SetRally,
-            Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette, ToggleOverlay, TogglePause,
-            TrainSlot, Unload, Upgrade,
+            Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay,
+            TogglePause, TrainSlot, Unload, Upgrade,
         };
         let mut map = Self {
             bindings: Vec::new(),
@@ -350,6 +354,7 @@ impl BindingMap {
             (Hunt, Key::F),
             (Scout, Key::K),
             (RepairUnit, Key::C),
+            (ToggleIdleWeld, Key::H),
             (Upgrade, Key::U),
             (SetRally, Key::Y),
             (Unload, Key::U),

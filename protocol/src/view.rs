@@ -135,6 +135,11 @@ pub struct UnitView {
     /// A host's drone bay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bay: Option<BayView>,
+    /// Whether a worker goes out on its own, while idle, to weld wounded
+    /// machines near its post; `None` for a machine without harvest gear
+    /// and when intent is redacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_weld: Option<bool>,
 }
 
 /// A drone bay as the viewer sees it. Docked drones ride on the hull, so
@@ -581,12 +586,13 @@ fn unit_view(u: &Unit) -> UnitView {
             ordered: Some(bay.ordered),
             autofill: Some(bay.autofill),
         }),
+        idle_weld: u.worker.map(|_| u.idle_weld()),
     }
 }
 
 /// A hostile unit as the viewer sees it: body, position, wounds, visible
 /// cargo, point-defense charges and docked drones, but never its orders,
-/// queue, patrol flag or drone orders.
+/// queue, patrol flag, drone orders or idle-weld switch.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,
@@ -597,6 +603,7 @@ fn unit_view_redacted(u: &Unit) -> UnitView {
             ordered: None,
             autofill: None,
         }),
+        idle_weld: None,
         ..unit_view(u)
     }
 }

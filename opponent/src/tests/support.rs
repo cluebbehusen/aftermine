@@ -373,6 +373,89 @@ fn welding(state: &State, worker: UnitId, patient: UnitId) -> State {
     state
 }
 
+/// `state` with every worker's idle welding switched off, so a weld comes
+/// only from the bot's own orders.
+fn hands_off(state: &State) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    for entry in value["units"].as_array_mut().unwrap() {
+        if entry.get("worker").is_some() {
+            entry["worker"]["idle_weld_off"] = true.into();
+        }
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+/// `state` with `worker` out welding `patient` on its own, on a trip from
+/// where it stands.
+fn tending(state: &State, worker: UnitId, patient: UnitId) -> State {
+    let post = state.unit(worker).unwrap().tile();
+    let mut value = serde_json::to_value(state).unwrap();
+    let entry = value["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["id"] == worker.0)
+        .unwrap();
+    entry["order"] = serde_json::json!({
+        "order": "tend",
+        "goal": {"x": post.x, "y": post.y},
+        "weld": patient.0,
+    });
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn a_tending_welders_patient_at_home_takes_no_second_welder() {
+    let (scenario, state, hurt) = wounded_at(1_000, &[(3, 10)], 10);
+    let tender = harvesters(&state, 0)[0];
+    let state = tending(&state, tender, hurt[0]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        welds(&commands)
+            .iter()
+            .all(|(_, patient)| *patient != hurt[0]),
+        "{commands:?}"
+    );
+    assert!(
+        !commands.iter().any(
+            |command| matches!(&command.command, Command::Stop { units } if units.contains(&tender))
+        ),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_tending_welder_away_from_home_is_left_to_its_trip() {
+    let (scenario, state, hurt) = wounded_at(1_000, &[(14, 8)], 10);
+    let tender = harvesters(&state, 0)[0];
+    let state = tending(&state, tender, hurt[0]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        !commands.iter().any(
+            |command| matches!(&command.command, Command::Stop { units } if units.contains(&tender))
+        ),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_tending_worker_away_from_home_runs_from_an_armed_enemy() {
+    let mut scenario = arena(0);
+    scenario.units.extend([
+        harvester(0, 15, 9),
+        unit(0, UnitKind::Sentinel, 14, 9),
+        unit(1, UnitKind::Sentinel, 18, 10),
+    ]);
+    let state = scenario.build().unwrap();
+    let (worker, patient) = (at(&state, 15, 9), at(&state, 14, 9));
+    let state = tending(&wounded(&state, patient, 10), worker, patient);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands).iter().any(|(units, _)| *units == [worker]),
+        "{commands:?}"
+    );
+}
+
 #[test]
 fn a_second_wound_gets_its_own_welder_while_the_first_weld_runs() {
     let mut scenario = arena(5_000);
@@ -383,7 +466,9 @@ fn a_second_wound_gets_its_own_welder_while_the_first_weld_runs() {
         unit(0, UnitKind::Harvester, 1, 7),
         unit(0, UnitKind::Harvester, 1, 8),
     ]);
-    let state = scenario.build().unwrap();
+    // The spare hands would otherwise weld the second wound on their own
+    // before the bot decides.
+    let state = hands_off(&scenario.build().unwrap());
     let (first, second) = (at(&state, 2, 9), at(&state, 5, 10));
     let state = all_wounded(&state, &[first, second], 1);
     let welder = harvesters(&state, 0)[0];

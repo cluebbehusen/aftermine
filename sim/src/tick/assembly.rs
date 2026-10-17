@@ -86,7 +86,7 @@ impl State {
         for unit in &named {
             if holds(unit, kind, anchor, site) {
                 holding.push(unit.id);
-            } else if queue && unit.order != Order::Idle {
+            } else if queue && unit.order != Order::Idle && !unit.on_idle_trip() {
                 admission.admitted.push(unit.id);
             } else {
                 ranked.push((rank(unit, true), unit));

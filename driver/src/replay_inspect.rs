@@ -404,6 +404,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::OrderDrone { .. } => "order_drone",
         Command::CancelDrone { .. } => "cancel_drone",
         Command::SetDroneAutofill { .. } => "set_drone_autofill",
+        Command::SetIdleWeld { .. } => "set_idle_weld",
     }
 }
 

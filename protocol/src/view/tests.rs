@@ -745,3 +745,61 @@ fn both_views_count_docked_drones_and_name_hosts_but_only_the_owner_sees_orders(
         );
     }
 }
+
+#[test]
+fn the_fog_view_shows_a_workers_idle_weld_switch_to_its_side_only() {
+    use oxide_sim::scenario::{PlayerSpec, UnitSpec};
+    let player = |name: &str, team| PlayerSpec {
+        name: name.into(),
+        team: Some(team),
+        scrap: 100,
+        bot: false,
+        bot_config: None,
+    };
+    let unit = |player, kind, x, y| UnitSpec { player, kind, x, y };
+    let scenario = oxide_sim::Scenario {
+        mode: ScenarioMode::Match,
+        name: "idle-weld-fog".into(),
+        map: vec![
+            "########################".into(),
+            "#1..................3..#".into(),
+            "#......................#".into(),
+            "#......................#".into(),
+            "#......................#".into(),
+            "#......................#".into(),
+            "#......................#".into(),
+            "#...................2..#".into(),
+            "#......................#".into(),
+            "########################".into(),
+        ],
+        players: vec![player("West", 0), player("East", 1), player("North", 0)],
+        units: vec![
+            unit(0, oxide_sim::UnitKind::Harvester, 10, 4),
+            unit(0, oxide_sim::UnitKind::Sentinel, 9, 5),
+            unit(1, oxide_sim::UnitKind::Harvester, 13, 4),
+            unit(2, oxide_sim::UnitKind::Harvester, 11, 3),
+        ],
+        buildings: Vec::new(),
+        meta: None,
+    };
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["units"][3]["worker"]["idle_weld_off"] = true.into();
+    let state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let ids: Vec<u32> = state.units().iter().map(|u| u.id.0).collect();
+    let fog = FogView::capture(&state, oxide_sim::PlayerId(0));
+    let switch = |id: u32| {
+        fog.units
+            .iter()
+            .find(|u| u.id == id)
+            .unwrap_or_else(|| panic!("unit {id} in sight"))
+            .idle_weld
+    };
+    assert_eq!(switch(ids[0]), Some(true), "an own worker");
+    assert_eq!(switch(ids[1]), None, "no switch without harvest gear");
+    assert_eq!(switch(ids[2]), None, "a hostile's switch is intent");
+    assert_eq!(
+        switch(ids[3]),
+        Some(false),
+        "an ally's, as its bay would be"
+    );
+}

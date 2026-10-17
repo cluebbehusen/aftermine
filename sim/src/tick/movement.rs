@@ -98,6 +98,9 @@ fn work_aim(state: &State, unit: &crate::state::Unit) -> Option<Vec2Fx> {
             .building(release.foundry)
             .map(|b| state.contact_surface(b).closest(unit.pos));
     }
+    if let Some(patient) = unit.order.torch() {
+        return state.unit(patient).map(|u| u.pos);
+    }
     match unit.order {
         Order::ReturnCargo { foundry, .. } => state
             .building(foundry)
@@ -109,11 +112,6 @@ fn work_aim(state: &State, unit: &crate::state::Unit) -> Option<Vec2Fx> {
         Order::Repair { building } | Order::Salvage { building } => state
             .building(building)
             .map(|b| state.contact_surface(b).closest(unit.pos)),
-        Order::RepairUnit { unit: patient }
-        | Order::Accompany {
-            weld: Some(patient),
-            ..
-        } => state.unit(patient).map(|u| u.pos),
         _ => None,
     }
 }
@@ -711,18 +709,17 @@ fn is_anchored(unit: &crate::state::Unit) -> bool {
         || unit.kind.stats().turn_rate == 0
             && unit.path.is_none()
             && unit.drive_speed() == Fx::ZERO
-            && matches!(
-                unit.order,
-                Order::Harvest { .. }
-                    | Order::Attack { .. }
-                    | Order::Repair { .. }
-                    | Order::Build { .. }
-                    | Order::Salvage { .. }
-                    | Order::RepairUnit { .. }
-                    | Order::Accompany { weld: Some(_), .. }
-                    | Order::ReturnCargo { .. }
-                    | Order::Retire { .. }
-            )
+            && (unit.order.torch().is_some()
+                || matches!(
+                    unit.order,
+                    Order::Harvest { .. }
+                        | Order::Attack { .. }
+                        | Order::Repair { .. }
+                        | Order::Build { .. }
+                        | Order::Salvage { .. }
+                        | Order::ReturnCargo { .. }
+                        | Order::Retire { .. }
+                ))
 }
 
 /// Unit directions for perfectly stacked pairs, indexed by owner-local rank

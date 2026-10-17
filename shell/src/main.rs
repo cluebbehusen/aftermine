@@ -25,6 +25,7 @@ mod frame_profile;
 mod frame_time;
 mod game;
 mod hints;
+mod idle_weld;
 mod input;
 mod layout;
 mod look;

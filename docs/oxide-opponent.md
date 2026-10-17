@@ -56,7 +56,8 @@ selects actions in precedence order:
    greed choose, with workers left without a place salvaging other known wreck;
    until the army reaches the stance minimum, workers that would cost more than
    the army wait for army production, and a seat that exposed puts up a Turret
-   before any tech;
+   before any tech; a worker the simulation sent welding on its own stays free
+   for these orders and leaves known fire like an idle one;
 5. missions, advancing their phases and recruiting as needed;
 6. production toward composition needs, from scrap not protected for saving.
 

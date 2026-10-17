@@ -36,7 +36,7 @@ pub struct SelectedBays {
 
 /// `look` at the units, the viewer's bank and whether they may command,
 /// with the commands staged for the next tick already applied.
-fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, bool) -> R) -> R {
+pub(crate) fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, bool) -> R) -> R {
     let human = game.presentation.human;
     if game.pending.is_empty() {
         let state = game.state;
@@ -149,6 +149,7 @@ impl SelectedBays {
                 tick_time_label(first.stats.build_ticks)
             )],
             progress: None,
+            autocast: None,
         });
         let cancel = self.cancel();
         cards.push(Card {
@@ -164,6 +165,7 @@ impl SelectedBays {
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
             progress: None,
+            autocast: None,
         });
         let on = self.hosts.iter().all(|host| host.autofill);
         cards.push(Card {
@@ -176,6 +178,7 @@ impl SelectedBays {
             why: None,
             desc: vec!["While on, orders the next drone whenever there is room and scrap.".into()],
             progress: None,
+            autocast: None,
         });
     }
 }

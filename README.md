@@ -82,6 +82,7 @@ shortcuts cover the core loop:
 | `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                          |
 | `M`, then any tile, with a Spire         | Launch its warhead; the deck turns to face the tile first. `O` orders a round; Shift+`O` toggles autofill.                |
 | `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                   |
+| Right-click Weld, or `H`                 | Toggle auto-weld (the card's AUTO tag): idle workers weld wounded machines near their post. Patrols always weld.          |
 | `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                  |
 | `X`                                      | Stop selected units, or cancel a selected new construction site.                                                          |
 | Q/E/R/T/Z/X with a producer selected     | Train the unit in that card slot.                                                                                         |

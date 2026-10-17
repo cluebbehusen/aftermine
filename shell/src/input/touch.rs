@@ -57,19 +57,24 @@ pub(crate) struct TouchPoint {
 pub(crate) struct PressedCard {
     hit: crate::layout::CardHit,
     icon: Option<crate::panel::CardIcon>,
+    /// What a long press on it switches, for a card with an autocast.
+    autocast: Option<Action>,
 }
 
 /// The card under a fingertip at `p`, if any.
 fn pressed_card(game: &Game, p: Vec2, ui: f32) -> Option<PressedCard> {
     let hit = crate::layout::card_under(&game.presentation.layout.get(), p, Some(ui))?;
-    let icon = game
-        .presentation
-        .panel_model
-        .borrow()
+    let panel = game.presentation.panel_model.borrow();
+    let card = panel
         .as_ref()
-        .and_then(|panel| panel.card(hit.row, hit.index))
-        .map(|card| card.icon);
-    Some(PressedCard { hit, icon })
+        .and_then(|panel| panel.card(hit.row, hit.index));
+    Some(PressedCard {
+        hit,
+        icon: card.map(|card| card.icon),
+        autocast: card
+            .and_then(|card| card.autocast)
+            .map(|autocast| autocast.toggle),
+    })
 }
 
 impl TouchPoint {
@@ -144,6 +149,16 @@ fn group_hold(input: &InputState) -> Option<(TouchPoint, crate::layout::GroupSlo
     (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, slot))
 }
 
+/// A lone finger resting on a card with an autocast: a hold that fires,
+/// switching the card's automatic mode.
+fn autocast_hold(input: &InputState) -> Option<(TouchPoint, Action)> {
+    let [(_, finger)] = input.touches.as_slice() else {
+        return None;
+    };
+    let toggle = finger.card?.autocast?;
+    (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, toggle))
+}
+
 /// Whether an armed mode takes a minimap tap as its target (a rally
 /// point or a patrol waypoint), so the minimap must not steer under it.
 fn minimap_targets(input: &InputState) -> bool {
@@ -206,6 +221,11 @@ pub(crate) fn long_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
 /// Where a control-group slot's long-press is charging, and how far.
 pub(crate) fn group_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
     charge(input, &group_hold(input)?.0)
+}
+
+/// Where a long-press on an autocast card is charging, and how far.
+pub(crate) fn autocast_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
+    charge(input, &autocast_hold(input)?.0)
 }
 
 /// A held finger's charge: nothing while it may still be a tap, then
@@ -540,13 +560,22 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     {
         pair.state = PairState::Box;
     }
-    // A control-group slot is the one chrome a long-press serves: it
-    // saves the selection there. Spending the finger keeps its lift
-    // from also recalling.
+    // A control-group slot is one chrome a long-press serves: it saves
+    // the selection there. Spending the finger keeps its lift from also
+    // recalling.
     if let Some((finger, slot)) = group_hold(input) {
         if (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms) {
             input.touches[0].1.spent = true;
             super::press_group_slot(game, input, bindings, slot, true);
+        }
+        return;
+    }
+    // A card with an autocast is the other: the hold switches its automatic
+    // mode, and the spent finger's lift presses nothing.
+    if let Some((finger, toggle)) = autocast_hold(input) {
+        if (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms) {
+            input.touches[0].1.spent = true;
+            dispatch_action(game, input, bindings, toggle);
         }
         return;
     }

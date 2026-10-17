@@ -3249,6 +3249,7 @@ fn a_card_that_changes_under_a_resting_finger_activates_nothing() {
         why: None,
         desc: Vec::new(),
         progress: None,
+        autocast: None,
     };
     let slot = macroquad::math::Rect::new(20.0, 600.0, 48.0, 48.0);
     let mut layout = bare_layout(680.0, 500.0);
@@ -4615,6 +4616,7 @@ fn chrome_born_touches_never_drive_world_gestures() {
     );
 }
 
+mod autocast_card;
 mod order_chips;
 mod placement_chain;
 mod placement_plan;
@@ -8841,6 +8843,38 @@ fn a_selected_roc_offers_its_drone_bay() {
         ),
         "the second toggle undoes the first: {:?}",
         bays.autofill_toggle()
+    );
+}
+
+#[test]
+fn the_auto_weld_key_switches_the_selected_workers() {
+    let mut game = headless_game();
+    let worker = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.worker.is_some())
+        .unwrap()
+        .id;
+    game.presentation.selection.units = vec![worker];
+    let mut input = InputState::new();
+    let context = input.context(&game);
+    assert_eq!(context, crate::action::Context::Workers);
+    let bindings = classic();
+    let chord = bindings.chord_for(Action::ToggleIdleWeld).unwrap();
+    assert_eq!((chord.key, chord.ctrl, chord.shift), (Key::H, false, false));
+    assert_eq!(
+        bindings.resolve_in(chord.key, chord.ctrl, chord.shift, context),
+        Some(Action::ToggleIdleWeld)
+    );
+    controls_key(&mut game, &mut input, Key::H);
+    assert!(
+        game.pending.iter().any(|pending| matches!(
+            &pending.command,
+            oxide_sim::Command::SetIdleWeld { units, enabled: false } if *units == [worker]
+        )),
+        "{:?}",
+        game.pending
     );
 }
 

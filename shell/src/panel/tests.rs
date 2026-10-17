@@ -668,30 +668,52 @@ fn poverty_and_capacity_disable_cards_with_reasons() {
 }
 
 #[test]
-fn the_patrol_card_promises_engagement_only_from_armed_machines() {
+fn the_patrol_card_says_what_each_kind_of_machine_does_on_the_way() {
     use oxide_sim::UnitKind;
-    let mut game = game();
+    let mut scenario = Scenario::skirmish();
+    for kind in [UnitKind::Sentinel, UnitKind::Skyhook] {
+        scenario.units.push(oxide_sim::scenario::UnitSpec {
+            player: 0,
+            kind,
+            x: 10,
+            y: 7,
+        });
+    }
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
     let own = |kind| {
         game.state
             .units()
             .iter()
             .find(|u| u.player == game.presentation.human && u.kind == kind)
-            .expect("skirmish authors this starting unit")
+            .expect("the scenario fields this unit")
             .id
     };
-    let (sentinel, harvester) = (own(UnitKind::Sentinel), own(UnitKind::Harvester));
+    let (sentinel, harvester, skyhook) = (
+        own(UnitKind::Sentinel),
+        own(UnitKind::Harvester),
+        own(UnitKind::Skyhook),
+    );
     for (selection, promise) in [
         (
             vec![sentinel],
             "Machines engage whatever they meet along the way.",
         ),
+        (vec![harvester], "Workers weld wounded machines they pass."),
         (
-            vec![harvester],
+            vec![skyhook],
             "Unarmed machines walk the route without engaging.",
         ),
         (
-            vec![sentinel, harvester],
+            vec![harvester, skyhook],
+            "Workers weld wounded machines they pass; others walk on.",
+        ),
+        (
+            vec![sentinel, skyhook],
             "Armed machines engage what they meet; the rest walk on.",
+        ),
+        (
+            vec![sentinel, harvester],
+            "Armed machines engage what they meet; workers weld the wounded.",
         ),
     ] {
         game.presentation.selection.units = selection;
@@ -724,6 +746,33 @@ fn the_harvester_panel_is_the_same_grammar() {
     assert_eq!(
         titles,
         ["Patrol", "Accompany", "Salvage", "Weld", "Retire", "Build"]
+    );
+    // Auto-weld rides on the Weld card as its autocast.
+    let weld = panel
+        .cards
+        .iter()
+        .find(|card| card.title == "Weld")
+        .unwrap();
+    assert_eq!(
+        weld.autocast,
+        Some(Autocast {
+            state: AutocastState::On,
+            toggle: Action::ToggleIdleWeld,
+        })
+    );
+    assert!(
+        weld.desc
+            .iter()
+            .any(|line| line.starts_with("Auto-weld on")),
+        "{:?}",
+        weld.desc
+    );
+    assert!(
+        panel
+            .cards
+            .iter()
+            .filter(|card| card.title != "Weld")
+            .all(|card| card.autocast.is_none())
     );
     assert!(
         !panel
@@ -942,6 +991,7 @@ fn order_kind(order: &Order) -> usize {
         Order::Accompany { .. } => 15,
         Order::Retire { .. } => 16,
         Order::Scout { .. } => 17,
+        Order::Tend { .. } => 18,
     }
 }
 
@@ -1015,13 +1065,14 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
                 pad: None,
             },
             Order::Scout { tile },
+            Order::Tend { goal, weld: None },
         ],
         looping: false,
     };
     let mut kinds: Vec<usize> = program.orders.iter().map(order_kind).collect();
     kinds.sort_unstable();
     kinds.dedup();
-    assert_eq!(kinds, (0..18).collect::<Vec<_>>(), "every order has a chip");
+    assert_eq!(kinds, (0..19).collect::<Vec<_>>(), "every order has a chip");
 
     let view = game.view();
     let actions: Vec<CardAction> = (0..program.orders.len())
@@ -1039,11 +1090,11 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
         actions,
         [
             CardAction::None,
+            remove(walk, 6),
             remove(walk, 5),
             remove(walk, 4),
             remove(walk, 3),
             remove(walk, 2),
-            remove(walk, 1),
             remove(OrderKey::Land { pad: tile }, 0),
             remove(OrderKey::Attack { objective: contact }, 0),
             remove(OrderKey::Unload { tile }, 0),
@@ -1063,6 +1114,7 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             ),
             remove(OrderKey::Accompany { unit: harvester }, 0),
             remove(OrderKey::Retire { crucible: foundry }, 0),
+            remove(walk, 1),
             remove(walk, 0),
         ]
     );

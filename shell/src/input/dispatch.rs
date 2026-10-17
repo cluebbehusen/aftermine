@@ -182,6 +182,12 @@ pub(super) fn dispatch_action(
                 game.issue(command);
             }
         }
+        Action::ToggleIdleWeld => {
+            if let Some(command) = crate::idle_weld::SelectedWorkers::inspect(&game.view()).toggle()
+            {
+                game.issue(command);
+            }
+        }
         Action::TrainSlot(_)
         | Action::Upgrade
         | Action::SetRally

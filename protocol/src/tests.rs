@@ -123,10 +123,11 @@ fn command_tag(command: &Command) -> usize {
         Command::OrderDrone { .. } => 31,
         Command::CancelDrone { .. } => 32,
         Command::SetDroneAutofill { .. } => 33,
+        Command::SetIdleWeld { .. } => 34,
     }
 }
 
-const COMMAND_VARIANTS: usize = 34;
+const COMMAND_VARIANTS: usize = 35;
 
 #[test]
 fn an_omitted_screenshot_path_survives_the_roundtrip() {
@@ -406,6 +407,10 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::SetDroneAutofill {
             units: vec![UnitId(9)],
+            enabled: false,
+        },
+        Command::SetIdleWeld {
+            units: vec![UnitId(2)],
             enabled: false,
         },
     ];

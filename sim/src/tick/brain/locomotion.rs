@@ -16,7 +16,8 @@ use chassis::grid::TilePos;
 /// Idle combat units pick fights on their own — on a tether. The
 /// leash is set here (and refreshed by retaliation), never by player
 /// commands: an explicit attack is a commitment, and `assign` clears
-/// any tether the moment a command lands.
+/// any tether the moment a command lands. An idle worker with nothing to
+/// fight may set out instead to weld a wounded machine near its post.
 #[expect(
     clippy::option_option,
     reason = "`None` means no ordinary search ran; `Some(None)` means it found nothing"
@@ -24,6 +25,8 @@ use chassis::grid::TilePos;
 pub(super) fn idle(
     state: &mut State,
     index: &super::super::spatial::UnitIndex,
+    reach: &mut Reach,
+    wounded: &super::tend::Wounded,
     id: UnitId,
     acquired: Option<Option<Target>>,
 ) {
@@ -70,7 +73,7 @@ pub(super) fn idle(
                 cooldown: 0,
             });
         }
-    } else {
+    } else if !super::tend::start(state, reach, wounded, id) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.settled = unit.settled.saturating_add(1);
         // An airframe with nothing to do orbits for a while, then sets
@@ -419,12 +422,14 @@ pub(super) fn walk(
 
 /// Ends a walk: the program advances, and an order that ended short of its
 /// target reports it once. Patrol laps stay silent, since a looping leg
-/// would otherwise report on every pass.
+/// would otherwise report on every pass, and so does a tending walk, which
+/// no player aimed at that tile.
 fn finish(state: &mut State, id: UnitId, short: bool, events: &mut Vec<Event>) {
     let unit = state.unit_mut(id).expect("caller checked");
-    let (looping, player, pos) = (unit.looping, unit.player, unit.pos);
+    let silent = unit.looping || matches!(unit.order, Order::Tend { .. });
+    let (player, pos) = (unit.player, unit.pos);
     unit.advance_queue();
-    if short && !looping {
+    if short && !silent {
         events.push(Event::OrderStalled {
             unit: id,
             player,
