@@ -124,6 +124,37 @@ fn building_geometry() {
 }
 
 #[test]
+fn a_site_or_upgrade_passes_its_stages_at_equal_shares_of_its_rung_labor() {
+    let mut state = tiny_state();
+    let id = state.place_building(PlayerId(0), BuildingKind::Turret, TilePos::new(1, 1));
+    let mut building = state.building(id).unwrap().clone();
+    assert_eq!(building.construction_stage(), None, "a built rung has none");
+    building.phase = BuildingPhase::Provisional;
+    assert_eq!(building.construction_stage(), Some(0));
+    let site: fn(u32) -> BuildingPhase = |progress| BuildingPhase::Site { progress };
+    let upgrade: fn(u32) -> BuildingPhase = |progress| BuildingPhase::Upgrading { progress };
+    for (tier, phase) in [(0, site), (1, upgrade)] {
+        building.tier = tier;
+        let total = building.stats().construction.unwrap().build_ticks;
+        let stages = u32::from(crate::stats::CONSTRUCTION_STAGES);
+        let stage = |building: &mut Building, progress| {
+            building.phase = phase(progress);
+            building.construction_stage().unwrap()
+        };
+        assert_eq!(stage(&mut building, 0), 0);
+        for next in 1..stages {
+            let first = (next * total).div_ceil(stages);
+            assert_eq!(
+                stage(&mut building, first - 1),
+                u8::try_from(next - 1).unwrap()
+            );
+            assert_eq!(stage(&mut building, first), u8::try_from(next).unwrap());
+        }
+        assert_eq!(stage(&mut building, total), 2, "the last stage holds");
+    }
+}
+
+#[test]
 fn the_progress_ceiling_keeps_the_construction_ramp_in_u32() {
     // Unit welds ramp over the full max_hp — same product, same
     // ceiling, same obligation for every machine on the roster.

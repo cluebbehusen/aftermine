@@ -671,7 +671,7 @@ const TREAD_SUFFIXES: [&str; 2] = ["_tread1", "_tread2"];
 const MOVE_SUFFIXES: [&str; 2] = ["_move1", "_move2"];
 const HARVESTER_CARGO_LEVELS: usize = 5;
 const EXCAVATOR_CARGO_LEVELS: usize = 5;
-const SITE_STAGES: usize = 3;
+const SITE_STAGES: usize = oxide_sim::stats::CONSTRUCTION_STAGES as usize;
 const SITE_PHASES: usize = 2;
 const SITE_FRAME_COUNT: usize = SITE_STAGES * SITE_PHASES;
 

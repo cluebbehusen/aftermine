@@ -224,7 +224,7 @@ pub(crate) fn building_frame(kind: BuildingKind, state: BuildingAnimationState) 
     if let Some(site) = state.construction {
         return BuildingFrame {
             body: BuildingBodyFrame::Construction {
-                stage: cycle_index(site.progress, 3),
+                stage: site.stage,
                 phase: if site.active {
                     cycle_index(site.machinery_cycle, 2)
                 } else {
