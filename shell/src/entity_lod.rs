@@ -168,7 +168,8 @@ fn contact_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
                 || oxide_sim::BuildingKind::ALL.iter().any(|&kind| {
                     name.strip_prefix("rig_")
                         .unwrap_or(name)
-                        .starts_with(&format!("{}_", crate::assets::building_stem(kind)))
+                        .strip_prefix(crate::assets::building_stem(kind))
+                        .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('_'))
                 }))
                 && !name.contains("_accent")
         })

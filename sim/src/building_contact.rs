@@ -96,6 +96,18 @@ impl Surface {
         best.expect("nonempty outline").1
     }
 
+    /// Where a tool as wide as its hull meets each face square, `clearance`
+    /// out from the face's midpoint, with the face's outward normal. Outlines
+    /// wind clockwise on screen, so that normal is the face's direction
+    /// turned a quarter turn counterclockwise.
+    pub fn square_stances(self, clearance: Fx) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
+        self.edges().map(move |(a, b)| {
+            let along = b - a;
+            let outward = Vec2Fx::new(along.y, -along.x) / along.length();
+            ((a + b) / Fx::from_num(2) + outward * clearance, outward)
+        })
+    }
+
     /// Final contact point approached from an ordinary perimeter tile.
     pub fn stance(self, from: Vec2Fx, clearance: Fx) -> Vec2Fx {
         let hit = self.closest(from);

@@ -40,41 +40,71 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
         return true;
     }
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
-    let entries = pads.unwrap_or_else(|| {
-        crate::geometry::work_positions(
-            anchor,
-            size,
-            clearance(unit),
-            unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
-        )
-    });
-    let mut candidates: Vec<_> = entries
-        .into_iter()
-        .filter(|entry| state.passable(crate::geometry::work_tile(*entry, pos, b.center())))
-        .filter_map(|entry| {
-            endpoint(state, id, building, entry).map(|point| crowding::Position {
-                goal: crate::geometry::work_tile(entry, pos, b.center()),
-                point,
+    let choose = |entries: Vec<(Vec2Fx, Vec2Fx)>| {
+        let mut candidates: Vec<_> = entries
+            .into_iter()
+            .filter_map(|(entry, point)| {
+                let goal = crate::geometry::work_tile(entry, pos, b.center());
+                (state.passable(goal) && admissible(state, unit, b, goal, point))
+                    .then_some(crowding::Position { goal, point })
             })
+            .collect();
+        candidates.sort_by_key(|candidate| {
+            (
+                pos.dist_sq(candidate.point),
+                rect_approach_key_from(from, frame, anchor, size, candidate.goal),
+                (candidate.point.x - pos.x) * (frame.center().y - pos.y)
+                    - (candidate.point.y - pos.y) * (frame.center().x - pos.x),
+            )
+        });
+        crowding::choose(
+            state,
+            id,
+            candidates,
+            anchor.center()
+                + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
+            |tile| state.passable(tile),
+            |goal| route_for(state, kind, from, goal),
+        )
+    };
+    let surface = state.contact_surface(b);
+    // A wide cutter meets a face square wherever one is open to it; only a
+    // building it cannot face takes it to an ordinary position. Its route
+    // ends where an ordinary entry would, `clearance` clear of the footprint
+    // out along the face's normal: under a face inset deep in its footprint,
+    // the stance's own tile can sit too near the face to drive in from.
+    let square = square_cutter(kind)
+        .then(|| {
+            choose(
+                surface
+                    .square_stances(clearance(unit))
+                    .map(|(point, outward)| {
+                        let gap =
+                            point.dist(crate::geometry::footprint_contact(point, anchor, size));
+                        (
+                            point + outward * (clearance(unit) - gap).max(Fx::ZERO),
+                            point,
+                        )
+                    })
+                    .collect(),
+            )
         })
-        .collect();
-    candidates.sort_by_key(|candidate| {
-        (
-            pos.dist_sq(candidate.point),
-            rect_approach_key_from(from, frame, anchor, size, candidate.goal),
-            (candidate.point.x - pos.x) * (frame.center().y - pos.y)
-                - (candidate.point.y - pos.y) * (frame.center().x - pos.x),
+        .flatten();
+    let path = square.or_else(|| {
+        choose(
+            pads.unwrap_or_else(|| {
+                crate::geometry::work_positions(
+                    anchor,
+                    size,
+                    clearance(unit),
+                    unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+                )
+            })
+            .into_iter()
+            .map(|entry| (entry, surface.stance(entry, clearance(unit))))
+            .collect(),
         )
     });
-    let path = crowding::choose(
-        state,
-        id,
-        candidates,
-        anchor.center()
-            + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
-        |tile| state.passable(tile),
-        |goal| route_for(state, kind, from, goal),
-    );
     let reachable = path.is_some();
     state.unit_mut(id).expect("contact unit").path = path;
     reachable
@@ -102,6 +132,14 @@ fn crew_pad_entries(
             })
             .collect(),
     )
+}
+
+/// Whether `kind` cuts with a tool as wide as a hull broader than a small
+/// body, as the Maw's drum is: it meets a building square to a face, from
+/// the stance it chose.
+pub(in crate::tick) fn square_cutter(kind: crate::UnitKind) -> bool {
+    kind.stats().contact_reach.is_some()
+        && crate::stats::hull_excess(kind.stats().radius) > Fx::ZERO
 }
 
 pub(in crate::tick) fn clearance(unit: &crate::Unit) -> Fx {

@@ -8,11 +8,11 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index};
 use oxide_sim::command::RejectReason;
 use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
+use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
 use oxide_sim::stats::{BuildingKind, KILN_BITE_PERIOD, Mend};
 use oxide_sim::{
-    Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target, TickReport, UnitId,
-    UnitKind, UnitRepairSource,
+    AttackTarget, Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target,
+    TickReport, UnitId, UnitKind, UnitRepairSource,
 };
 
 const WIDTH: usize = 36;
@@ -820,6 +820,106 @@ fn a_maw_cutter_deals_structure_damage_to_structures() {
             vec![building(1, BuildingKind::Barricade, 26, 10)]
         ),
         cutter.building_damage.unwrap()
+    );
+}
+
+/// A lone Maw ordered from `from` onto an enemy `kind` at `anchor`, on a
+/// sandbox field edited by `carve`, run to its first cut: where it stood,
+/// what it aimed at, and the building's contact surface.
+fn first_cut(
+    kind: BuildingKind,
+    anchor: TilePos,
+    from: TilePos,
+    carve: impl Fn(&mut Vec<Vec<char>>),
+) -> (Vec2Fx, Vec2Fx, oxide_sim::building_contact::Surface) {
+    let mut scenario = open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, from.x, from.y)], carve);
+    scenario.mode = ScenarioMode::Sandbox;
+    scenario.buildings = vec![building(1, kind, anchor.x, anchor.y)];
+    let mut state = scenario.build().unwrap();
+    let maw = ids(&state, 0, UnitKind::Maw)[0];
+    let target = state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == anchor)
+        .unwrap()
+        .id;
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![maw],
+            target: AttackTarget::Building(target),
+            queue: false,
+        },
+    )]);
+    let mut cut = None;
+    run_until(&mut state, 400, |_, events| {
+        cut = events.iter().find_map(|event| match event {
+            Event::AttackHit {
+                attacker,
+                attacker_pos,
+                target_pos,
+                ..
+            } if *attacker == maw => Some((*attacker_pos, *target_pos)),
+            _ => None,
+        });
+        cut.is_some()
+    });
+    let (stood, aim) = cut.unwrap();
+    (
+        stood,
+        aim,
+        state.contact_surface(state.building(target).unwrap()),
+    )
+}
+
+#[test]
+fn a_maw_meets_a_building_square_to_the_middle_of_a_face_from_any_side() {
+    // Even driving in past a corner, it cuts no corner on the way: its drum
+    // meets the middle of a face, with the hull out along the face's normal.
+    let anchor = TilePos::new(15, 15);
+    for kind in BuildingKind::ALL {
+        if kind.is_stealthy() || kind.assembles().is_some() {
+            continue;
+        }
+        for (dx, dy) in [
+            (5, 0),
+            (4, 4),
+            (0, 5),
+            (-4, 4),
+            (-5, 0),
+            (-4, -4),
+            (0, -5),
+            (4, -4),
+        ] {
+            let from = anchor.offset(dx, dy);
+            let (stood, aim, surface) = first_cut(kind, anchor, from, |_| {});
+            let (_, outward) = surface
+                .square_stances(Fx::ZERO)
+                .find(|(middle, _)| middle.dist_sq(aim) < Fx::lit("0.0001"))
+                .unwrap_or_else(|| panic!("{kind:?} from {from:?} cut {aim:?}, no face's middle"));
+            let out = stood - aim;
+            assert!(
+                (out - outward * out.length()).length() < Fx::lit("0.01"),
+                "{kind:?} from {from:?} stood at {stood:?}, askew to its face"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_maw_with_no_face_open_to_it_cuts_a_corner() {
+    // Rock beside a Turret and off its east face leaves the Maw no room
+    // square to any face, so it cuts a corner rather than give up.
+    let anchor = TilePos::new(15, 15);
+    let (_, aim, surface) = first_cut(BuildingKind::Turret, anchor, TilePos::new(15, 9), |rows| {
+        rows[15][14] = '#';
+        rows[15][18] = '#';
+    });
+    assert!(
+        surface
+            .square_stances(Fx::ZERO)
+            .all(|(middle, _)| middle.dist_sq(aim) >= Fx::lit("0.0001")),
+        "cut {aim:?}"
     );
 }
 

@@ -59,3 +59,29 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
         "{blocked} blocked, {open} open"
     );
 }
+
+/// Every face's square stance stands outside its outline, out from that
+/// face's midpoint: the outward turn agrees with each outline's winding.
+#[test]
+fn square_stances_stand_out_from_each_face_midpoint() {
+    let clearance = Fx::lit("0.015625");
+    for kind in BuildingKind::ALL {
+        let surface = Surface {
+            kind,
+            anchor: TilePos::new(10, 20),
+            size: kind.size(),
+        };
+        for ((a, b), (stance, outward)) in surface.edges().zip(surface.square_stances(clearance)) {
+            let midpoint = (a + b) / Fx::from_num(2);
+            assert!(!surface.contains(stance), "{kind:?} {a:?} {b:?}");
+            assert!(
+                surface.closest(stance).dist_sq(midpoint) < Fx::lit("0.000001"),
+                "{kind:?} {a:?} {b:?}"
+            );
+            assert!(
+                (stance - midpoint - outward * clearance).length() < Fx::lit("0.001"),
+                "{kind:?} {a:?} {b:?}"
+            );
+        }
+    }
+}
