@@ -1012,63 +1012,36 @@ fn hazard_stripes(inner: f32, outer: f32, step: f32, phase: f32) -> Vec<(Vec2, V
     stripes
 }
 
-/// The blast a strike would bring: at the touch aim or under the cursor
-/// while a Launch is armed, and at each selected own Spire's ordered tile, with a line from
-/// the silo.
-pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputState) {
+/// One blast a strike preview marks: where it lands on screen, how
+/// strongly it draws, and the Spires it flies from.
+struct StrikeMark<'a> {
+    center: Vec2,
+    alpha: f32,
+    silos: Vec<&'a Building>,
+}
+
+/// The blasts a strike would bring: at the touch aim or under the cursor
+/// while a Launch is armed, and at each selected own Spire's ordered tile.
+fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<StrikeMark<'a>> {
     let camera = &game.presentation.camera;
-    let zoom = camera.zoom;
-    let blast = oxide_sim::stats::WARHEAD;
-    let human = game.presentation.human;
-    let own = seat_identity_color(game, human);
-    let (s, motion) = (ui_scale(), !super::reduced_motion());
-    let drift = if motion {
-        game.presentation.fx_time() * HAZARD_DRIFT * s
-    } else {
-        0.0
-    };
-    // The full-damage core is a solid disc; warning stripes fill the band
-    // the blast fades across. `alpha` is how strongly this ring speaks.
-    let ring = |center: Vec2, alpha: f32| {
-        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * alpha);
-        let (outer, full) = (
-            blast.outer_radius.to_num::<f32>() * zoom,
-            blast.full_radius.to_num::<f32>() * zoom,
-        );
-        fill_circle(center, outer, tint(0.16));
-        let step = HAZARD_STEP * s;
-        // Inset a pixel each side so a stripe's width stays within the edges.
-        for (a, b) in hazard_stripes(full + 1.0, outer - 1.0, step, drift % step) {
-            line_between(center + a, center + b, step * 0.42, tint(0.55));
-        }
-        fill_circle(center, full, tint(0.5));
-        stroke_circle(center, outer, 2.5, tint(1.25));
-        stroke_circle(center, full, 2.0, Color::new(0.92, 0.94, 0.98, 1.1 * alpha));
-    };
-    let silo_line = |b: &Building, to: Vec2, alpha: f32| {
-        line_between(
-            camera.to_screen(crate::game::world_vec(b.center())),
-            to,
-            1.5,
-            Color::new(own.r, own.g, own.b, alpha),
-        );
-    };
+    let state = game.state;
+    let mut marks = Vec::new();
     if let Some(strike) = &input.striking {
         // A touch aim, once down, is where it lands; else the mouse's hover.
         let tile = strike.aim().or_else(|| {
             (input.last_pointer == crate::input::Pointer::Mouse)
-                .then(|| crate::input::ground_tile(game.state, camera.to_world(input.mouse)))
+                .then(|| crate::input::ground_tile(state, camera.to_world(input.mouse)))
         });
         if let Some(tile) = tile {
-            let center = camera.to_screen(crate::input::tile_center(tile));
-            ring(center, 0.75);
-            for b in strike
-                .spires
-                .iter()
-                .filter_map(|id| game.state.building(*id))
-            {
-                silo_line(b, center, 0.4);
-            }
+            marks.push(StrikeMark {
+                center: camera.to_screen(crate::input::tile_center(tile)),
+                alpha: 0.75,
+                silos: strike
+                    .spires
+                    .iter()
+                    .filter_map(|id| state.building(*id))
+                    .collect(),
+            });
         }
     }
     for b in game
@@ -1076,13 +1049,82 @@ pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputSt
         .selection
         .buildings
         .iter()
-        .filter_map(|id| game.state.building(*id))
-        .filter(|b| b.player == human)
+        .filter_map(|id| state.building(*id))
+        .filter(|b| b.player == game.presentation.human)
     {
         if let Some(target) = b.launcher.and_then(|launcher| launcher.target) {
-            let center = camera.to_screen(crate::input::tile_center(target));
-            ring(center, 0.55);
-            silo_line(b, center, 0.35);
+            marks.push(StrikeMark {
+                center: camera.to_screen(crate::input::tile_center(target)),
+                alpha: 0.55,
+                silos: vec![b],
+            });
+        }
+    }
+    marks
+}
+
+/// The strike preview's ground: a tinted core and warning stripes across
+/// the band the blast fades over. It lies under buildings, units, the fog,
+/// and the radar blips above it, so it never hides what it would hit.
+pub(crate) fn draw_strike_ground(game: &crate::game::Scene<'_>, input: &InputState) {
+    let marks = strike_marks(game, input);
+    if marks.is_empty() {
+        return;
+    }
+    let zoom = game.presentation.camera.zoom;
+    let blast = oxide_sim::stats::WARHEAD;
+    let own = seat_identity_color(game, game.presentation.human);
+    let s = ui_scale();
+    let step = HAZARD_STEP * s;
+    let drift = if super::reduced_motion() {
+        0.0
+    } else {
+        game.presentation.fx_time() * HAZARD_DRIFT * s
+    };
+    let (outer, full) = (
+        blast.outer_radius.to_num::<f32>() * zoom,
+        blast.full_radius.to_num::<f32>() * zoom,
+    );
+    for mark in marks {
+        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * mark.alpha);
+        fill_circle(mark.center, outer, tint(0.16));
+        // Inset a pixel each side so a stripe's width stays within the edges.
+        for (a, b) in hazard_stripes(full + 1.0, outer - 1.0, step, drift % step) {
+            line_between(mark.center + a, mark.center + b, step * 0.42, tint(0.55));
+        }
+        fill_circle(mark.center, full, tint(0.5));
+    }
+}
+
+/// The strike preview's edges, above the fog with the player's other
+/// intent: the blast's reach, its full-damage core, and a line from each
+/// silo.
+pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputState) {
+    let camera = &game.presentation.camera;
+    let zoom = camera.zoom;
+    let blast = oxide_sim::stats::WARHEAD;
+    let own = seat_identity_color(game, game.presentation.human);
+    for mark in strike_marks(game, input) {
+        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * mark.alpha);
+        stroke_circle(
+            mark.center,
+            blast.outer_radius.to_num::<f32>() * zoom,
+            2.5,
+            tint(1.25),
+        );
+        stroke_circle(
+            mark.center,
+            blast.full_radius.to_num::<f32>() * zoom,
+            2.0,
+            Color::new(0.92, 0.94, 0.98, 1.1 * mark.alpha),
+        );
+        for b in mark.silos {
+            line_between(
+                camera.to_screen(crate::game::world_vec(b.center())),
+                mark.center,
+                1.5,
+                tint(0.55),
+            );
         }
     }
 }
