@@ -10,7 +10,7 @@ fn live_body_frames_have_cached_production_contact_sources() {
     let first = Image::from_file_with_format(&bytes, Some(ImageFormat::Png)).unwrap();
     let page_height = u32::from(first.height);
     let mut pages = vec![first];
-    // Every idle building body too: a hit on one lands on its art.
+    // Every idle building body and rig base too: a hit on one lands on its art.
     for name in [
         "rig_harvester_body_cargo5",
         "rig_excavator_body_move2",
@@ -18,6 +18,8 @@ fn live_body_frames_have_cached_production_contact_sources() {
         "rig_scuttler_body_move2",
         "rig_buzzard_hull_move2",
         "bombard_action2",
+        "rig_spire_foundation",
+        "rig_lattice_base",
     ]
     .into_iter()
     .chain(

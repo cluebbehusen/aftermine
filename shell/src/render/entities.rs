@@ -352,6 +352,27 @@ fn production_fraction(building: &oxide_sim::Building) -> Option<f32> {
     Some(magazine.progress as f32 / stats.round_ticks.max(1) as f32)
 }
 
+/// The body layer a hit lands on: a built Spire's or Lattice's fixed base,
+/// which the field draws from its rig in place of the hull, otherwise the
+/// body the field draws.
+fn contact_body_source(
+    sprites: &Sprites,
+    kind: oxide_sim::BuildingKind,
+    tier: u8,
+    body: super::motion::BuildingBodyFrame,
+) -> Rect {
+    if !matches!(body, super::motion::BuildingBodyFrame::Construction { .. })
+        && let Some(rigs) = sprites.strategic_rigs()
+    {
+        match kind {
+            oxide_sim::BuildingKind::Spire => return rigs.spire.foundation[0],
+            oxide_sim::BuildingKind::Lattice => return rigs.lattice.base,
+            _ => {}
+        }
+    }
+    building_body_sources(sprites, kind, tier, body).0
+}
+
 fn building_body_sources(
     sprites: &Sprites,
     kind: oxide_sim::BuildingKind,
@@ -622,7 +643,7 @@ pub(super) fn building_contact(
         },
     );
     let frame = super::motion::building_frame(hit.kind, animation);
-    let (source, _) = building_body_sources(sprites, hit.kind, hit.tier, frame.body);
+    let source = contact_body_source(sprites, hit.kind, hit.tier, frame.body);
     let (width, height) = hit.kind.size();
     let size = vec2(width as f32, height as f32);
     let aim = if (aim - from).length_squared() < f32::EPSILON {
