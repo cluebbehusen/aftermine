@@ -328,15 +328,20 @@ can fight, Scout a unit that scouts, and Run either, since a scout's right-click
 already scouts. Patrol and Accompany stay for every unit. Accompany (`E` by
 default) arms a click on any own unit, aircraft included; the rest of the
 selection escorts the picked unit, so picking one of the selection works. It is
-never a right-click meaning. Stop is not a card. `Panel.stop` is a button in its
-own box above the orders or production dock, published as
-`LayoutModel.queue_stop` and hit-tested with the cards. It stops the selection
-while any selected unit has orders, even when the dock's subject is idle, and
-clears a defense's target preference. Over production it cancels every selected
-producer's queue with full refunds, last job first, so each `CancelTrain` index
-still names its job when it runs. The button takes the chip column's width and
-names itself where the chips do. A single factory's dock is headed by the time
-left on its queue, or "Ready" while a finished head waits for an exit.
+never a right-click meaning. A selection holding own workers adds the Auto-weld
+card after Weld (`H` by default), which reads on only while every selected
+worker welds while idle and otherwise switches them all on. The command band
+narrows its tiles where it is short, so a worker carrying scrap keeps its eight
+verbs on one row at every supported size, and Return cargo, arriving last, moves
+no card. Stop is not a card. `Panel.stop` is a button in its own box above the
+orders or production dock, published as `LayoutModel.queue_stop` and hit-tested
+with the cards. It stops the selection while any selected unit has orders, even
+when the dock's subject is idle, and clears a defense's target preference. Over
+production it cancels every selected producer's queue with full refunds, last
+job first, so each `CancelTrain` index still names its job when it runs. The
+button takes the chip column's width and names itself where the chips do. A
+single factory's dock is headed by the time left on its queue, or "Ready" while
+a finished head waits for an exit.
 
 A unit's orders dock and the selection's waypoint chain show programs with every
 staged command applied. `Presentation` caches that projection for the tick, the

@@ -68,15 +68,22 @@ services at most `REPAIR_BAY_PATIENTS` machines, chosen by
 it. A unit damaged within `REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an
 aircraft that can land is serviced only on the ground.
 
+Workers also weld on their own initiative through `Order::Tend`: a patrol gives
+them tending legs, and an idle worker whose idle welding is on, the default,
+goes out from its post to weld an own wounded ground machine within
+`ESCORT_ENGAGE_RADIUS`, then walks back. The torch bills like any field weld; an
+empty bank, an unreachable patient or one walking away is let go without a
+stall, and no other order is ever interrupted.
+
 Tile routing and most geometric tie rules are also fair under a map half-turn.
 Building contact follows the fixed artwork, so asymmetric outlines can have
 different frontage after a map half-turn. Fixed-point vector scaling, equal-cost
 paths, group-goal snapping and spreading, footprint doorsteps, ground-production
-spawns, autonomous harvest replacement, Repair Bay patient choice, and perfectly
-stacked collision separation use owner-local ranks and query-, footprint-, or
-map-relative frames instead of global entity ids or an absolute screen corner.
-Airworks aircraft spawn at the authoritative center of the open roof bay, then
-obey their ordinary orders from there.
+spawns, autonomous harvest replacement, Repair Bay and tending patient choice,
+and perfectly stacked collision separation use owner-local ranks and query-,
+footprint-, or map-relative frames instead of global entity ids or an absolute
+screen corner. Airworks aircraft spawn at the authoritative center of the open
+roof bay, then obey their ordinary orders from there.
 
 ## Development
 

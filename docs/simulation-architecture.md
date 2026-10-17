@@ -229,13 +229,35 @@ stands. Dispatch refuses any escort the target already follows, directly or
 through other escorts in any program, so escort chains are loop-free; the
 validator refuses a state holding a loop.
 
-`Run`, `Hunt`, `Advance`, and `Unload`, and the march an `Attack` resumes, carry
-a `Goal`: the clicked tile, the spread slot the unit aims for around it, and an
-optional endpoint. A tile goal must lie on the map, and an off-map one is
-refused as `OutOfBounds`; a goal that cannot be reached is never refused. Each
-movement domain's half of a group snaps the clicked tile to the nearest open
-tile within `GOAL_SNAP_RADIUS` (air clamps onto the map and scans a wider
-radius), then gives its members, in id order, the open tiles ring-scanned
+`Tend` is a worker's walk that welds on its own initiative. A patrol gives each
+worker tending legs instead of plain runs. An idle worker with nothing queued
+that stands still sets out on a trip, whose goal is its post, when an eligible
+patient stands within `ESCORT_ENGAGE_RADIUS` of it and its idle welding is on: a
+per-worker switch that `SetIdleWeld` sets, on by default, carried through a
+transport ride. A patient is an own, living, wounded, repairable ground machine
+that is not retiring, read from a snapshot taken as the brain phase began. A new
+patient must stand still, be reachable at one of its approach points, and be
+payable: the phase-start bank covers the first weld tick that bills anything.
+The nearest is taken, an exact tie going to the bearing from the welder's facing
+and then to id, a key a half-turn of the scene preserves. A welder keeps its
+patient while it stays in range and payable and either stands still or is on its
+way to weld the welder back. A patrol leg searches around the welder, a trip
+around its post, so a trip never strays farther; a trip whose switch goes off
+lets its patient go. The torch is the ordinary field weld, its patient held in
+the order and owning the billing meter, but an empty bank only skips a tick, a
+patient that leaves the rules is let go without a stall, and a tending walk that
+ends short reports nothing. A finished leg rotates without a patient, and a trip
+ends idle at its post. The idle-worker count and the bot's observation treat a
+trip as busy, yet a queued command replaces it as it would an idle program. No
+other order is interrupted.
+
+`Run`, `Hunt`, `Advance`, `Tend`, and `Unload`, and the march an `Attack`
+resumes, carry a `Goal`: the clicked tile, the spread slot the unit aims for
+around it, and an optional endpoint. A tile goal must lie on the map, and an
+off-map one is refused as `OutOfBounds`; a goal that cannot be reached is never
+refused. Each movement domain's half of a group snaps the clicked tile to the
+nearest open tile within `GOAL_SNAP_RADIUS` (air clamps onto the map and scans a
+wider radius), then gives its members, in id order, the open tiles ring-scanned
 outward from that center; members past the last open tile share it, and with no
 open tile near the click every member's target stays the clicked tile. That
 resolution happens when the command is issued if the issuer's team has explored
@@ -688,30 +710,30 @@ bitten wreck is spent even when the machine dies that tick. Machines bite in
 unit order, reversed on alternate pulses, so neither of two sharing a wreck
 holds a standing first bite.
 
-Building repair and Harvester field welding are billed per accepted hp. Repair
-Bays feed the same unit-heal resolver as field welders and the same
-building-work resolver as repair crews. Their aura heals own wounded units and
-completed structures in range, but a Bay does not heal itself; overlapping Bays
-may repair one another. A Bay services at most `REPAIR_BAY_PATIENTS` units, the
-most damaged by missing fraction first and then by id. Bays choose in building
-id order and skip units an earlier Bay took, so overlapping Bays serve more
-units rather than healing the same ones faster. Both orders are owner-local
-because every patient, and every Bay that could take it, belongs to one owner. A
-Condor qualifies only while landed; aircraft that cannot land qualify in the
-air. Each unit carries the tick it last took damage. A patient that has been
-undamaged for `REPAIR_BAY_CALM_TICKS` heals a fixed share of its maximum hp per
-second, metered on the global pulse index so the share needs no stored
-remainder; one hit more recently heals `REPAIR_BAY_STEP` per pulse, which is
-also the floor of the fast step. A patient hit by the tick's own volley takes
-the slow step, and a Bay prices its step after any other heals already queued
-for the patient that tick. A step the bank cannot fully pay heals as much as it
-can, and the patient keeps its slot. Structures take the slow step outside the
-unit slots. Units retain first claim on limited aura scrap. A structure with an
-active or queued salvage commitment receives no automatic repair, preserving the
-command layer's mutual exclusion between repair and teardown. Concurrent sources
-are resolved against shared room, excess fully unusable paid work is refunded,
-and no repair source can resurrect a unit or building destroyed by that tick's
-volley.
+Building repair and field welding, whether commanded, on escort duty or tending,
+are billed per accepted hp. Repair Bays feed the same unit-heal resolver as
+field welders and the same building-work resolver as repair crews. Their aura
+heals own wounded units and completed structures in range, but a Bay does not
+heal itself; overlapping Bays may repair one another. A Bay services at most
+`REPAIR_BAY_PATIENTS` units, the most damaged by missing fraction first and then
+by id. Bays choose in building id order and skip units an earlier Bay took, so
+overlapping Bays serve more units rather than healing the same ones faster. Both
+orders are owner-local because every patient, and every Bay that could take it,
+belongs to one owner. A Condor qualifies only while landed; aircraft that cannot
+land qualify in the air. Each unit carries the tick it last took damage. A
+patient that has been undamaged for `REPAIR_BAY_CALM_TICKS` heals a fixed share
+of its maximum hp per second, metered on the global pulse index so the share
+needs no stored remainder; one hit more recently heals `REPAIR_BAY_STEP` per
+pulse, which is also the floor of the fast step. A patient hit by the tick's own
+volley takes the slow step, and a Bay prices its step after any other heals
+already queued for the patient that tick. A step the bank cannot fully pay heals
+as much as it can, and the patient keeps its slot. Structures take the slow step
+outside the unit slots. Units retain first claim on limited aura scrap. A
+structure with an active or queued salvage commitment receives no automatic
+repair, preserving the command layer's mutual exclusion between repair and
+teardown. Concurrent sources are resolved against shared room, excess fully
+unusable paid work is refunded, and no repair source can resurrect a unit or
+building destroyed by that tick's volley.
 
 ## Combat, weapons, and terrain
 
@@ -1046,23 +1068,23 @@ bot command sources.
 This table names the first source and focused suites to inspect. It is a routing
 map rather than an exhaustive test inventory.
 
-| Contract                                          | Primary source                                                                                                                          | Focused evidence                                                                                                                                                                                |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scenario build and authored map                   | `sim/src/scenario.rs`, `sim/src/map.rs`                                                                                                 | `sim/tests/integration/pits.rs`, `sim/tests/integration/extractors.rs`                                                                                                                          |
-| State, hashing, validation, and teams             | `sim/src/state.rs`, `chassis/src/hash.rs`                                                                                               | `sim/tests/integration/state_integrity.rs`, `sim/tests/integration/determinism.rs`, `sim/tests/integration/teams.rs`                                                                            |
-| Placement, deferred founding, and upgrades        | `sim/src/state/placement.rs`, `sim/src/tick/commands.rs`, `sim/src/tick/brain.rs`, `sim/src/tick/brain/economy.rs`                      | `sim/tests/integration/behavior_construction.rs`, `sim/tests/integration/extractors.rs`, `sim/tests/integration/upgrades.rs`, `sim/tests/integration/foundries.rs`                              |
-| Tick scheduling, production, cleanup, and charges | `sim/src/tick/mod.rs`, `sim/src/tick/production.rs`                                                                                     | `sim/tests/integration/behavior_rules.rs`, `sim/tests/integration/behavior_economy.rs`, `sim/tests/integration/field_kit.rs`                                                                    |
-| Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                   |
-| Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                        |
-| Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                           |
-| Scouting                                          | `sim/src/tick/brain/scout.rs`, `sim/src/vision.rs`                                                                                      | `sim/tests/integration/scout.rs`                                                                                                                                                                |
-| Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                            |
-| Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/production.rs`                                                                           | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
-| Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                               |
-| Assembly cradles, kilns, and breachers            | `sim/src/tick/assembly.rs`, `sim/src/tick/brain/kiln.rs`, `sim/src/tick/brain/combat.rs`                                                | `sim/tests/integration/assembly.rs`                                                                                                                                                             |
-| Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                        |
-| Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                             |
-| Mounted guns                                      | `sim/src/tick/brain/combat/mounts.rs`                                                                                                   | `sim/tests/integration/roc.rs`                                                                                                                                                                  |
-| Drone bays and drones                             | `sim/src/tick/drones.rs`, `sim/src/tick/brain/combat/drones.rs`                                                                         | `sim/tests/integration/drones.rs`                                                                                                                                                               |
-| Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                        |
-| Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                            |
+| Contract                                          | Primary source                                                                                                                          | Focused evidence                                                                                                                                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenario build and authored map                   | `sim/src/scenario.rs`, `sim/src/map.rs`                                                                                                 | `sim/tests/integration/pits.rs`, `sim/tests/integration/extractors.rs`                                                                                                                                                                |
+| State, hashing, validation, and teams             | `sim/src/state.rs`, `chassis/src/hash.rs`                                                                                               | `sim/tests/integration/state_integrity.rs`, `sim/tests/integration/determinism.rs`, `sim/tests/integration/teams.rs`                                                                                                                  |
+| Placement, deferred founding, and upgrades        | `sim/src/state/placement.rs`, `sim/src/tick/commands.rs`, `sim/src/tick/brain.rs`, `sim/src/tick/brain/economy.rs`                      | `sim/tests/integration/behavior_construction.rs`, `sim/tests/integration/extractors.rs`, `sim/tests/integration/upgrades.rs`, `sim/tests/integration/foundries.rs`                                                                    |
+| Tick scheduling, production, cleanup, and charges | `sim/src/tick/mod.rs`, `sim/src/tick/production.rs`                                                                                     | `sim/tests/integration/behavior_rules.rs`, `sim/tests/integration/behavior_economy.rs`, `sim/tests/integration/field_kit.rs`                                                                                                          |
+| Command vocabulary and set semantics              | `sim/src/command.rs`, `sim/src/tick/commands.rs`                                                                                        | `sim/tests/integration/command_canonicalization.rs`, `sim/tests/integration/cancel_order.rs`, `sim/tests/integration/fuzz.rs`                                                                                                         |
+| Unit programs, routing, movement, and collision   | `sim/src/tick/brain.rs`, `sim/src/tick/brain/locomotion.rs`, `sim/src/tick/reach.rs`, `sim/src/tick/movement.rs`, `chassis/src/path.rs` | `sim/tests/integration/behavior_movement.rs`, `sim/tests/integration/movement_lab.rs`, `sim/tests/integration/peaks.rs`, `sim/tests/integration/pits.rs`                                                                              |
+| Boarding and unloading                            | `sim/src/tick/brain/logistics.rs`                                                                                                       | `sim/tests/integration/transports.rs`                                                                                                                                                                                                 |
+| Scouting                                          | `sim/src/tick/brain/scout.rs`, `sim/src/vision.rs`                                                                                      | `sim/tests/integration/scout.rs`                                                                                                                                                                                                      |
+| Escort duty                                       | `sim/src/tick/brain/escort.rs`, `sim/src/tick/brain/combat.rs`                                                                          | `sim/tests/integration/accompany.rs`                                                                                                                                                                                                  |
+| Harvesting, income, salvage, and repair           | `sim/src/tick/brain/economy.rs`, `sim/src/tick/brain/tend.rs`, `sim/src/tick/production.rs`                                             | `sim/tests/integration/harvest_zones.rs`, `sim/tests/integration/salvage.rs`, `sim/tests/integration/repair_unit.rs`, `sim/tests/integration/auto_weld.rs`, `sim/tests/integration/repair_bay.rs`, `sim/tests/integration/smelter.rs` |
+| Retirement at a Crucible                          | `sim/src/tick/brain/retire.rs`, `sim/src/tick/mod.rs`                                                                                   | `sim/tests/integration/retire.rs`                                                                                                                                                                                                     |
+| Assembly cradles, kilns, and breachers            | `sim/src/tick/assembly.rs`, `sim/src/tick/brain/kiln.rs`, `sim/src/tick/brain/combat.rs`                                                | `sim/tests/integration/assembly.rs`                                                                                                                                                                                                   |
+| Weapons and simultaneous resolution               | `sim/src/stats.rs`, `sim/src/tick/brain/combat.rs`                                                                                      | `sim/tests/integration/behavior_combat.rs`, `sim/tests/integration/combat_edges.rs`, `sim/tests/integration/shells.rs`, `sim/tests/integration/peaks.rs`                                                                              |
+| Warheads, magazines, and interception             | `sim/src/strike.rs`, `sim/src/tick/ordnance.rs`, `sim/src/tick/brain/warheads.rs`                                                       | `sim/tests/integration/warheads.rs`                                                                                                                                                                                                   |
+| Mounted guns                                      | `sim/src/tick/brain/combat/mounts.rs`                                                                                                   | `sim/tests/integration/roc.rs`                                                                                                                                                                                                        |
+| Drone bays and drones                             | `sim/src/tick/drones.rs`, `sim/src/tick/brain/combat/drones.rs`                                                                         | `sim/tests/integration/drones.rs`                                                                                                                                                                                                     |
+| Point defense                                     | `sim/src/tick/brain/point_defense.rs`                                                                                                   | `sim/tests/integration/point_defense.rs`                                                                                                                                                                                              |
+| Fog, memory, radar, and stealth                   | `sim/src/vision.rs`, `sim/src/state.rs`                                                                                                 | `sim/tests/integration/bastion_acquisition.rs`, `sim/tests/integration/field_kit.rs`                                                                                                                                                  |
