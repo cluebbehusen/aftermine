@@ -18,8 +18,8 @@ centre:
   shell slides them back by `DRUM_STOW` canvas pixels as they stow.
 
 Every layer is the study's drawing moved `CENTRE` pixels toward the nose, so
-the hull is centred on the unit and the lowered drum's edge meets the hull's
-collision edge, where the cutter reaches.
+the hull is centred on the unit and the lowered drum's front edge, body and end
+plates alike, meets the hull's collision edge, where the cutter reaches.
 
 The cradle is a 3x3 bed between raised runways. Its site frames fade the
 stowed Maw in through the building opacity steps; a bridge crane and its
@@ -320,6 +320,12 @@ def kiln(d: Draw, heat: float) -> None:
 
 
 def drum_row(deploy: float) -> float:
+    return 65 + DRUM_STOW * (1 - deploy)
+
+
+def hood_row(deploy: float) -> float:
+    """The hood and side guards sit two rows behind the cutter, where the
+    shell's hood and belt constants expect them."""
     return 67 + DRUM_STOW * (1 - deploy)
 
 
@@ -332,6 +338,7 @@ def arms(d: Draw, deploy: float) -> None:
 
 def drum(d: Draw, spin: float, p, deploy: float = 1.0) -> None:
     cy = drum_row(deploy)
+    hood = hood_row(deploy)
     spin %= math.tau
     d.box((77, cy - 17, 179, cy + 18), VOID, 5)
     for z in range(-14, 15):
@@ -352,7 +359,7 @@ def drum(d: Draw, spin: float, p, deploy: float = 1.0) -> None:
             d.poly([(x - 1, z + 1), (x, z - h + 1), (x + 2, z - h), (x + 2, z)], STEEL)
             d.line([(x, z - h + 1), (x + 2, z - h)], LIGHT, 0.7)
     for x in (76, 180):
-        d.plate((x - 9, cy - 19, x + 9, cy + 20), IRON, 4)
+        d.plate((x - 9, cy - 17, x + 9, cy + 20), IRON, 4)
         d.box((x - 5, cy - 14, x + 5, cy - 8), p, 1)
         d.disk(x, cy, 6, VOID)
         d.disk(x, cy, 4, DARK)
@@ -362,15 +369,18 @@ def drum(d: Draw, spin: float, p, deploy: float = 1.0) -> None:
         for z in (-15, 16):
             d.bolt(x, cy + z, 1)
     # The hood hides the material's route from the cutter to the conveyor.
-    d.plate((83, cy + 12, 173, cy + 34), DARK, 6)
-    d.box((94, cy + 16, 162, cy + 21), p, 1)
+    d.plate((83, hood + 12, 173, hood + 34), DARK, 6)
+    d.box((94, hood + 16, 162, hood + 21), p, 1)
     for x in (94, 109, 147, 162):
-        d.bolt(x, cy + 26, 1)
-    d.line([(96, cy + 31), (160, cy + 31)], VOID, 3)
+        d.bolt(x, hood + 26, 1)
+    d.line([(96, hood + 31), (160, hood + 31)], VOID, 3)
     for side in (-1, 1):
         x = 128 + side * 57
-        d.poly([(x, cy + 18), (x + side * 13, cy - 9), (x + side * 19, cy - 6), (x + side * 13, cy + 29)], VOID)
-        d.line([(x + side * 4, cy + 18), (x + side * 14, cy - 5)], STEEL, 4)
+        d.poly(
+            [(x, hood + 18), (x + side * 13, hood - 9), (x + side * 19, hood - 6), (x + side * 13, hood + 29)],
+            VOID,
+        )
+        d.line([(x + side * 4, hood + 18), (x + side * 14, hood - 5)], STEEL, 4)
 
 
 def _centred(image: Image.Image) -> Image.Image:

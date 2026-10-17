@@ -450,6 +450,42 @@ pub(super) fn sprite_image(name: &str) -> macroquad::prelude::Image {
     .unwrap_or_else(|err| panic!("decoding {}: {err}", path.display()))
 }
 
+/// The simulation lets the Maw cut from its collision radius, so the lowered
+/// drum's front edge, body and end plates alike, sits on that edge in every
+/// spin frame the rig draws.
+#[test]
+fn the_lowered_maw_drum_meets_the_hull_collision_edge() {
+    let atlas = manifest();
+    let radius = oxide_sim::UnitKind::Maw.stats().radius.to_num::<f32>();
+    let frames: Vec<_> = atlas
+        .keys()
+        .filter(|name| {
+            name.strip_prefix("rig_maw_drum_")
+                .is_some_and(|frame| frame.parse::<u32>().is_ok())
+        })
+        .collect();
+    assert!(!frames.is_empty());
+    for name in frames {
+        let image = sprite_image(name);
+        let (width, height) = (usize::from(image.width), usize::from(image.height));
+        // A north-facing canvas four tiles wide, centred on the unit.
+        let edge = height as f32 / 2.0 - radius * width as f32 / 4.0;
+        // The drum body's middle, then each end plate's.
+        for column in [width / 2, 76, 180] {
+            let front = (0..height)
+                .find(|&row| {
+                    image.bytes[(row * width + column) * 4 + 3]
+                        >= crate::sprite_contact::SOLID_ALPHA
+                })
+                .unwrap_or_else(|| panic!("{name} column {column} is empty"));
+            assert!(
+                (front as f32 - edge).abs() <= 0.5,
+                "{name} column {column} starts at row {front}, the hull edge is row {edge}"
+            );
+        }
+    }
+}
+
 fn alpha_bytes(image: &macroquad::prelude::Image) -> impl Iterator<Item = u8> + '_ {
     image.bytes.as_chunks::<4>().0.iter().map(|pixel| pixel[3])
 }
