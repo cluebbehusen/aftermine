@@ -865,7 +865,13 @@ pub(crate) fn placement_backlog(game: &crate::game::Scene<'_>) -> Option<usize> 
         program
             .orders
             .iter()
-            .filter(|order| !matches!(order, oxide_sim::Order::Idle))
+            .filter(|order| match order {
+                oxide_sim::Order::Idle => false,
+                // A queued order replaces a trip from an idle post rather
+                // than waiting behind it.
+                oxide_sim::Order::Tend { .. } => program.looping,
+                _ => true,
+            })
             .count(),
     )
 }

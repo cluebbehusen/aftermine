@@ -2933,6 +2933,19 @@ pub fn unit_repair_debit(kind: UnitKind, progress: u32) -> u32 {
         .expect("one unit-repair tick debit fits u32")
 }
 
+/// Scrap charged at the first unit-repair tick from `progress` on that bills
+/// anything: what a bank must hold for a weld to make headway. A weld's
+/// opening ticks can bill nothing, so checking the next tick alone would let
+/// an empty bank light the torch for free and stall a moment later. Zero only
+/// for a kind whose repair never bills.
+pub fn next_paid_unit_repair_debit(kind: UnitKind, progress: u32) -> u32 {
+    let span = kind.stats().train_ticks.max(1);
+    (progress..progress.saturating_add(span))
+        .map(|p| unit_repair_debit(kind, p))
+        .find(|&due| due > 0)
+        .unwrap_or(0)
+}
+
 /// Per-mille of a building's cost refunded per hp drained by salvage
 /// (against `max_hp`). A full-health salvage banks cost * permille / 1000.
 pub const SALVAGE_REFUND_PERMILLE: u64 = 800;

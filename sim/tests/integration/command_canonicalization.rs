@@ -54,10 +54,11 @@ fn command_tag(command: &Command) -> usize {
         Command::OrderDrone { .. } => 31,
         Command::CancelDrone { .. } => 32,
         Command::SetDroneAutofill { .. } => 33,
+        Command::SetIdleWeld { .. } => 34,
     }
 }
 
-const COMMAND_VARIANTS: usize = 34;
+const COMMAND_VARIANTS: usize = 35;
 
 /// The verbs that carry a unit list — every one of them owes this file a
 /// duplicate-id row.
@@ -75,9 +76,10 @@ const SITE_ONLY_TAGS: [usize; 1] = [17];
 /// The verbs that address a single unit, with no list to canonicalize.
 const UNIT_ONLY_TAGS: [usize; 3] = [20, 31, 32];
 
-/// The one verb whose unit operand is a canonicalized set that writes no
-/// program: it settles a setting, so its repeated-id row compares settings.
-const UNIT_SETTING_TAGS: [usize; 1] = [33];
+/// The verbs whose unit operand is a canonicalized set that writes no
+/// program: each settles a setting, so its repeated-id row compares
+/// settings.
+const UNIT_SETTING_TAGS: [usize; 2] = [33, 34];
 
 /// The verbs that name no entity at all — nothing to canonicalize.
 const OPERANDLESS_TAGS: [usize; 1] = [13];
@@ -176,6 +178,8 @@ fn stage() -> Stage {
 
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][1]["worker"]["carrying"] = serde_json::json!(3);
+    // Every verb starts from an idle worker, not one welding the patient.
+    data["units"][1]["worker"]["idle_weld_off"] = serde_json::json!(true);
     state = serde_json::from_value(data).unwrap();
     let guard = state.units()[0].id;
     let worker = state.units()[1].id;
@@ -454,6 +458,33 @@ fn a_tripled_bay_in_a_refill_setting_lands_what_one_lands() {
         },
     )]);
     assert!(once.unit(roc).unwrap().bay.is_some_and(|bay| !bay.autofill));
+    assert_eq!(once.hash(), thrice.hash());
+}
+
+/// A repeated worker in an idle-weld setting sets its switch once, exactly
+/// as naming it once does.
+#[test]
+fn a_tripled_worker_in_an_idle_weld_setting_lands_what_one_lands() {
+    let scenario = common::open_arena(20, 12, vec![unit(0, UnitKind::Harvester, 6, 6)]);
+    let state = scenario.build().unwrap();
+    let worker = state.units()[0].id;
+    let mut once = state.clone();
+    once.tick(&[cmd(
+        0,
+        Command::SetIdleWeld {
+            units: vec![worker],
+            enabled: false,
+        },
+    )]);
+    let mut thrice = state.clone();
+    thrice.tick(&[cmd(
+        0,
+        Command::SetIdleWeld {
+            units: vec![worker; 3],
+            enabled: false,
+        },
+    )]);
+    assert!(!once.unit(worker).unwrap().idle_weld());
     assert_eq!(once.hash(), thrice.hash());
 }
 

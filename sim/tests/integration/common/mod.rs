@@ -159,6 +159,19 @@ pub fn commanded(order: Order) -> Order {
     }
 }
 
+/// `state` with idle welding switched off for each of `workers`, for a
+/// test whose premise is a worker standing idle beside a wounded machine.
+/// The switch rides in the snapshot, so no tick passes.
+pub fn idle_welds_off(state: &State, workers: &[oxide_sim::UnitId]) -> State {
+    let mut data = serde_json::to_value(state).unwrap();
+    for row in data["units"].as_array_mut().unwrap() {
+        if workers.iter().any(|id| row["id"] == serde_json::json!(id)) {
+            row["worker"]["idle_weld_off"] = serde_json::json!(true);
+        }
+    }
+    serde_json::from_value(data).unwrap()
+}
+
 /// Runs exactly `ticks` idle ticks, collecting every event.
 pub fn run(state: &mut State, ticks: u64) -> Vec<Event> {
     let mut all = Vec::new();

@@ -475,12 +475,14 @@ fn partial_scrap_heals_the_most_wounded_first_then_starves() {
         // so the raider never picks the chase back up.
         unit(1, UnitKind::Scuttler, 18, 10),
     ];
-    let mut state = arena(units, 5, true).build().unwrap();
+    let state = arena(units, 5, true).build().unwrap();
     let (a, b, raider) = (
         state.units()[0].id,
         state.units()[1].id,
         state.units()[2].id,
     );
+    // Only the Bay heals here: the wounded workers do not weld each other.
+    let mut state = common::idle_welds_off(&state, &[a, b]);
     let hurt_a = wound(&mut state, a, raider, 40);
     let hurt_b = {
         state.tick(&[walk(1, vec![raider], TilePos::new(FAR.x, FAR.y + 4))]);
@@ -606,12 +608,14 @@ fn an_unbuilt_bay_is_inert() {
         unit(0, UnitKind::Harvester, 2, 6),         // founder
         unit(1, UnitKind::Scuttler, 17, 10),
     ];
-    let mut state = arena(units, 500, false).build().unwrap();
+    let state = arena(units, 500, false).build().unwrap();
     let (patient, founder, raider) = (
         state.units()[0].id,
         state.units()[1].id,
         state.units()[2].id,
     );
+    // The idle founder must not weld the patient the scaffold fails to heal.
+    let mut state = common::idle_welds_off(&state, &[patient, founder]);
     // Begin work before abandoning the bay so its inert scaffold remains.
     state.tick(&[cmd(
         0,

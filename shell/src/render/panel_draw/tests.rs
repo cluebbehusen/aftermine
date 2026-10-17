@@ -319,7 +319,7 @@ fn a_carrying_harvester_and_a_full_factory_fill_one_row_at_supported_sizes() {
     use crate::action::Action;
     use crate::panel::CardAction;
 
-    let verbs: Vec<_> = (0..7)
+    let verbs: Vec<_> = (0..8)
         .map(|_| command(CardAction::Dispatch(Action::Patrol)))
         .collect();
     let mut factory = vec![
@@ -343,11 +343,11 @@ fn a_carrying_harvester_and_a_full_factory_fill_one_row_at_supported_sizes() {
             );
         }
         // Return cargo arrives last and moves no card already shown.
-        let packing = panel_packing(viewport, minimap, 1.0, 6, 0);
-        let (six, _) = command_card_geometry(viewport, 1.0, packing, &verbs[..6]);
         let packing = panel_packing(viewport, minimap, 1.0, 7, 0);
-        let (seven, _) = command_card_geometry(viewport, 1.0, packing, &verbs);
-        assert_eq!(six[..], seven[..6], "{w}x{h}");
+        let (seven, _) = command_card_geometry(viewport, 1.0, packing, &verbs[..7]);
+        let packing = panel_packing(viewport, minimap, 1.0, 8, 0);
+        let (eight, _) = command_card_geometry(viewport, 1.0, packing, &verbs);
+        assert_eq!(seven[..], eight[..7], "{w}x{h}");
     }
 }
 

@@ -240,6 +240,20 @@ pub enum Order {
         /// The tile to see.
         tile: TilePos,
     },
+    /// Walk toward a tile, welding wounded own ground machines met on the
+    /// way (workers only): a patrolling worker's leg, or, outside a looping
+    /// program, an idle worker's trip out from its post and back. The torch
+    /// works and bills like [`Order::RepairUnit`]'s, but a patient the
+    /// welder cannot pay for, reach, or find standing still is let go
+    /// without a stall.
+    Tend {
+        /// Where the walk ends: the patrol waypoint, or the post an idle
+        /// worker returns to.
+        goal: Goal,
+        /// The machine being welded, which owns the welder's billing meter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weld: Option<UnitId>,
+    },
 }
 
 /// Where a producer's finished units report.
@@ -306,10 +320,28 @@ impl Order {
         }
     }
 
-    /// The goal of a walking order: Run, Hunt, Advance, or Unload.
+    /// The machine this order field-welds: a commanded weld, or the
+    /// patient an escort or tending welder has taken on.
+    pub fn torch(&self) -> Option<UnitId> {
+        match *self {
+            Order::RepairUnit { unit }
+            | Order::Accompany {
+                weld: Some(unit), ..
+            }
+            | Order::Tend {
+                weld: Some(unit), ..
+            } => Some(unit),
+            _ => None,
+        }
+    }
+
+    /// The goal of a walking order: Run, Hunt, Advance, Unload, or Tend.
     pub(crate) fn walk_goal(&self) -> Option<Goal> {
         match *self {
-            Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => Some(goal),
+            Order::Run { goal }
+            | Order::Hunt { goal }
+            | Order::Advance { goal }
+            | Order::Tend { goal, .. } => Some(goal),
             Order::Unload { at, .. } => Some(at),
             _ => None,
         }
@@ -318,7 +350,10 @@ impl Order {
     /// [`Order::walk_goal`], for storing a resolved endpoint.
     pub(crate) fn walk_goal_mut(&mut self) -> Option<&mut Goal> {
         match self {
-            Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => Some(goal),
+            Order::Run { goal }
+            | Order::Hunt { goal }
+            | Order::Advance { goal }
+            | Order::Tend { goal, .. } => Some(goal),
             Order::Unload { at, .. } => Some(at),
             _ => None,
         }
@@ -506,6 +541,11 @@ pub struct Worker {
     /// [`crate::stats::HARVEST_DANGER_RETRY_TICKS`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub danger_retry_at: Option<crate::Tick>,
+    /// The owner switched idle welding off: an idle worker no longer goes
+    /// out on its own to weld wounded machines near its post. A patrol
+    /// welds either way.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub idle_weld_off: bool,
 }
 
 /// An uninterrupted cargo release at a completed Foundry.
@@ -705,6 +745,9 @@ pub struct Rider {
     /// The tick it last took damage, kept through the ride.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damaged_at: Option<Tick>,
+    /// A worker's idle welding switch, kept through the ride.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub idle_weld_off: bool,
 }
 
 impl Rider {
@@ -732,6 +775,7 @@ impl Rider {
             turret_heading,
             point_defense,
             damaged_at,
+            idle_weld_off: unit.worker.is_some_and(|worker| worker.idle_weld_off),
         }
     }
 
@@ -747,6 +791,7 @@ impl Rider {
         };
         if let Some(worker) = &mut unit.worker {
             worker.carrying = self.carrying;
+            worker.idle_weld_off = self.idle_weld_off;
         }
         unit
     }
@@ -761,6 +806,13 @@ impl Unit {
     /// The cargo release under way, if any.
     pub fn unloading(&self) -> Option<Unloading> {
         self.worker.and_then(|worker| worker.unloading)
+    }
+
+    /// Whether this worker goes out on its own, while idle, to weld wounded
+    /// machines near its post. Never true for a machine without harvest
+    /// gear.
+    pub fn idle_weld(&self) -> bool {
+        self.worker.is_some_and(|worker| !worker.idle_weld_off)
     }
 
     /// The tick a danger-held harvester searches again, if it is held.
@@ -962,6 +1014,12 @@ impl Unit {
         self.path.is_none() && self.drive_speed() == Fx::ZERO
     }
 
+    /// Whether this body holds still for a field weld: stopped, and not on
+    /// its way to found a site.
+    pub fn still_for_weld(&self) -> bool {
+        self.work_stopped() && !matches!(self.order, Order::Found { .. })
+    }
+
     /// The movement layer this body occupies right now: a landed airframe
     /// is a ground body for targeting, collision, charges, and footprints,
     /// whatever its kind flies as.
@@ -994,6 +1052,14 @@ impl Unit {
         matches!(self.order, Order::Retire { .. })
     }
 
+    /// Whether this worker is out welding on its own from an idle post: a
+    /// [`Order::Tend`] outside a looping program. The trip is busy work,
+    /// but no player's order waits behind it: a queued command replaces it
+    /// as it would an idle program.
+    pub fn on_idle_trip(&self) -> bool {
+        matches!(self.order, Order::Tend { .. }) && !self.looping
+    }
+
     /// Ends the active order cleanly: a looping program rotates it to the
     /// back (patrol), a plain queue drains, an empty queue idles. A rotated
     /// leg forgets its endpoint so the next lap resolves it afresh.
@@ -1002,6 +1068,9 @@ impl Unit {
         if self.looping {
             if let Some(goal) = finished.walk_goal_mut() {
                 goal.endpoint = None;
+            }
+            if let Order::Tend { weld, .. } = &mut finished {
+                *weld = None;
             }
             self.queue.push_back(finished);
         }
@@ -2137,7 +2206,7 @@ impl State {
             progress,
             order,
             queue,
-            looping: _,
+            looping,
             path,
             leash,
             settled: _,
@@ -2183,10 +2252,13 @@ impl State {
         if !mounts_in_range(*mounts, stats) {
             return Err(E::MountsOutOfRange(id));
         }
+        // The idle welding switch is an owner's preference with no
+        // invariant of its own; `Worker` exists only on harvest kinds.
         let Worker {
             carrying,
             unloading,
             danger_retry_at,
+            idle_weld_off: _,
         } = worker.unwrap_or_default();
         if carrying > stats.harvest.map_or(0, |harvest| harvest.capacity) {
             return Err(E::ScrapBeyondCapacity(id));
@@ -2324,6 +2396,20 @@ impl State {
         }) {
             return Err(E::InvalidEscort(id));
         }
+        // A tending walk is a worker's, either a leg of a patrol or a trip
+        // out from an idle post with nothing queued behind it. Only the
+        // active walk holds a patient, another own unit like an escort's.
+        let tends = |order: &Order| matches!(order, Order::Tend { .. });
+        if orders().any(|order| {
+            matches!(*order, Order::Tend { weld, .. } if stats.harvest.is_none()
+                || weld.is_some_and(|patient| !own_other(patient)))
+        }) || queue
+            .iter()
+            .any(|order| matches!(order, Order::Tend { weld: Some(_), .. }))
+            || (!*looping && (tends(order) && !queue.is_empty() || queue.iter().any(tends)))
+        {
+            return Err(E::InvalidTend(id));
+        }
         // A retirement names an own Crucible while it stands, lands only a
         // turn-limited airframe, and never rests on a full meter: cleanup
         // takes a unit apart the tick its meter fills.
@@ -2377,6 +2463,7 @@ impl State {
             turret_heading,
             point_defense,
             damaged_at,
+            idle_weld_off,
         } = rider;
         let rstats = kind.stats();
         if damaged_at.is_some_and(|at| at >= self.tick) {
@@ -2393,6 +2480,7 @@ impl State {
         }
         if (turret_heading.is_some() && !kind.has_ground_turret())
             || point_defense.is_some() != rstats.point_defense.is_some()
+            || (*idle_weld_off && rstats.harvest.is_none())
         {
             return Err(E::UnitPartMismatch(*id));
         }
@@ -3419,7 +3507,10 @@ fn goal_inside_envelope(goal: &Goal) -> bool {
 /// never stored, so each order has one serialized form.
 fn order_goals_canonical(order: &Order) -> bool {
     match order {
-        Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => goal.canonical(),
+        Order::Run { goal }
+        | Order::Hunt { goal }
+        | Order::Advance { goal }
+        | Order::Tend { goal, .. } => goal.canonical(),
         Order::Unload { at, .. } => at.canonical(),
         Order::Attack { resume, .. } => resume
             .and_then(|resume| resume.goal())
@@ -3440,9 +3531,10 @@ fn order_inside_envelope(order: &Order) -> bool {
         | Order::Salvage { .. }
         | Order::RepairUnit { .. }
         | Order::Accompany { .. } => true,
-        Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => {
-            goal_inside_envelope(goal)
-        }
+        Order::Run { goal }
+        | Order::Hunt { goal }
+        | Order::Advance { goal }
+        | Order::Tend { goal, .. } => goal_inside_envelope(goal),
         Order::Harvest { node, anchor, .. } => {
             tile_inside_envelope(*node) && tile_inside_envelope(*anchor)
         }
@@ -3504,6 +3596,7 @@ fn order_references(order: &Order) -> impl Iterator<Item = Target> {
             weld,
         } => [unit(escorted), weld.and_then(unit)],
         Order::Retire { crucible, .. } => [Some(Target::Building(crucible)), None],
+        Order::Tend { weld, .. } => [weld.and_then(unit), None],
     };
     names.into_iter().flatten()
 }
@@ -3709,6 +3802,11 @@ pub enum StateIntegrityError {
     /// harvest gear.
     #[error("unit {0} has an invalid escort duty")]
     InvalidEscort(UnitId),
+    /// A tending walk is given to a machine without harvest gear, welds the
+    /// welder itself or another seat's unit, holds a patient while queued,
+    /// or sits outside a patrol beside other queued orders.
+    #[error("unit {0} has an invalid tending walk")]
+    InvalidTend(UnitId),
     /// A retirement names a foreign building or one that is no Crucible,
     /// gives a pad to an airframe that cannot land, or holds a full meter.
     #[error("unit {0} has an invalid retirement")]

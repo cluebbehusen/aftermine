@@ -645,7 +645,10 @@ fn order_subject(
                 None,
             ))
         }
-        Order::RepairUnit { unit } => {
+        Order::RepairUnit { unit }
+        | Order::Tend {
+            weld: Some(unit), ..
+        } => {
             let u = game.state.unit(*unit)?;
             let frac = (u.hp as f32 / u.kind.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
             Some((
@@ -694,7 +697,8 @@ fn order_subject(
         | Order::Board { .. }
         | Order::Unload { .. }
         | Order::Land { .. }
-        | Order::Scout { .. } => None,
+        | Order::Scout { .. }
+        | Order::Tend { weld: None, .. } => None,
     }
 }
 
@@ -799,6 +803,16 @@ fn order_card(
             VerbIcon::Move,
             "Scout",
             "Scouting around known enemy reach: stops short where it can still see, or waits.",
+        ),
+        Order::Tend { weld: Some(_), .. } => (
+            VerbIcon::Repair,
+            "Weld",
+            "Welding a wounded machine it came across; consumes scrap.",
+        ),
+        Order::Tend { weld: None, .. } => (
+            VerbIcon::Repair,
+            "Tend",
+            "Walking on, welding wounded machines it passes; consumes scrap.",
         ),
     };
     let subject = if own {
@@ -935,7 +949,10 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
                 b.stats().max_hp
             ))
         }
-        Order::RepairUnit { unit } => {
+        Order::RepairUnit { unit }
+        | Order::Tend {
+            weld: Some(unit), ..
+        } => {
             let u = game.state.unit(*unit)?;
             Some(format!("{}/{} hp", u.hp, u.kind.stats().max_hp))
         }
@@ -1053,12 +1070,15 @@ fn patrol_desc(hands: Hands) -> &'static str {
 }
 
 /// What a patrol does with what it meets: armed machines hunt each leg,
-/// and unarmed ones only walk it.
-fn patrol_engagement(armed: usize, selected: usize) -> &'static str {
-    match armed {
-        0 => "Unarmed machines walk the route without engaging.",
-        n if n == selected => "Machines engage whatever they meet along the way.",
-        _ => "Armed machines engage what they meet; the rest walk on.",
+/// workers weld the wounded they pass, and other machines only walk it.
+fn patrol_engagement(armed: usize, welders: usize, selected: usize) -> &'static str {
+    match (armed, welders) {
+        (armed, _) if armed == selected => "Machines engage whatever they meet along the way.",
+        (0, welders) if welders == selected => "Workers weld wounded machines they pass.",
+        (0, 0) => "Unarmed machines walk the route without engaging.",
+        (0, _) => "Workers weld wounded machines they pass; others walk on.",
+        (_, 0) => "Armed machines engage what they meet; the rest walk on.",
+        _ => "Armed machines engage what they meet; workers weld the wounded.",
     }
 }
 
@@ -1399,7 +1419,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         why: None,
         desc: vec![
             patrol_desc(crate::platform::hands()).into(),
-            patrol_engagement(armed, units.len()).into(),
+            patrol_engagement(
+                armed,
+                units.iter().filter(|u| u.worker.is_some()).count(),
+                units.len(),
+            )
+            .into(),
         ],
         progress: None,
     });
@@ -1448,6 +1473,9 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
         });
+        panel
+            .cards
+            .extend(crate::idle_weld::SelectedWorkers::inspect(game).card(bindings));
     }
     // No Crucible takes an assembled machine apart.
     if first.player == game.presentation.human && units.iter().any(|u| !u.kind.assembled()) {

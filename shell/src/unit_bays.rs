@@ -36,7 +36,7 @@ pub struct SelectedBays {
 
 /// `look` at the units, the viewer's bank and whether they may command,
 /// with the commands staged for the next tick already applied.
-fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, bool) -> R) -> R {
+pub(crate) fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, bool) -> R) -> R {
     let human = game.presentation.human;
     if game.pending.is_empty() {
         let state = game.state;

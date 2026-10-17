@@ -327,6 +327,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
         } else {
             "Welds: repairs machines and raises buildings.".to_string()
         });
+        notes.push("Auto-weld: idle or patrolling, mends wounded machines nearby.".to_string());
     }
     if stats.transport_capacity > 0 {
         notes.push(format!(

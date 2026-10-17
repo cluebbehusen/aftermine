@@ -20,7 +20,7 @@ use std::cmp::Reverse;
 /// of [`crate::state::PROGRESS_ENVELOPE`], the ceiling the snapshot
 /// validator enforces. Saturated, the meter parks at the ceiling and the
 /// torch keeps billing and welding its marginal step forever.
-fn metered(progress: u32) -> u32 {
+pub(super) fn metered(progress: u32) -> u32 {
     progress.min(crate::state::PROGRESS_ENVELOPE - 1)
 }
 
@@ -408,16 +408,14 @@ pub(super) fn commit_unit_welds(
                 stationary[slot] = false;
                 continue;
             };
-            if t.path.is_none()
-                && t.drive_speed() == Fx::ZERO
-                && !matches!(t.order, Order::Found { .. })
+            if t.still_for_weld()
                 && !footprint_eviction_pending(state, weld.patient)
                 && unit.in_repair_reach(t)
             {
                 continue;
             }
             stationary[slot] = false;
-            // Escort welders hold their slot until the party stops again.
+            // Initiative welders decide their next step in their own brain.
             if welding(unit, weld.patient) == Some(Torch::Commanded) {
                 chase_patient(state, weld.welder, weld.patient, events);
                 changed = true;
@@ -459,9 +457,9 @@ pub(super) fn commit_unit_welds(
         let (ramp, ramp_ticks) = (stats.max_hp, stats.train_ticks);
         let due = crate::stats::unit_repair_debit(t_kind, p);
         let bank = state.player(me).scrap;
-        if due > bank && torch == Torch::Escort {
-            // An escort's torch is its own initiative: an empty bank only
-            // waits, and escort duty goes on.
+        if due > bank && torch == Torch::Initiative {
+            // A torch lit on the welder's own initiative never stalls its
+            // program: an empty bank only waits.
             continue;
         }
         if due > bank {
@@ -499,19 +497,19 @@ pub(super) fn commit_unit_welds(
 enum Torch {
     /// A `RepairUnit` order.
     Commanded,
-    /// Escort duty mending its party.
-    Escort,
+    /// The welder's own initiative: escort duty mending its party.
+    Initiative,
 }
 
 /// Whether `welder`'s program welds `patient`, and which program it is.
 fn welding(welder: &crate::state::Unit, patient: UnitId) -> Option<Torch> {
-    match welder.order {
-        Order::RepairUnit { unit } if unit == patient => Some(Torch::Commanded),
-        Order::Accompany {
-            weld: Some(unit), ..
-        } if unit == patient => Some(Torch::Escort),
-        _ => None,
+    if welder.order.torch() != Some(patient) {
+        return None;
     }
+    Some(match welder.order {
+        Order::RepairUnit { .. } => Torch::Commanded,
+        _ => Torch::Initiative,
+    })
 }
 
 /// Whether the movement pre-pass will give this pathless body an escape
@@ -546,29 +544,14 @@ fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Ve
 pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -> bool {
     let unit = state.unit(id).expect("caller checked");
     let target = state.unit(patient).expect("caller checked");
-    let gap =
-        unit.kind.stats().radius + target.kind.stats().radius + crate::stats::WORK_APPROACH_GAP;
-    let toward = unit
-        .path
-        .as_ref()
-        .and_then(|p| p.final_point)
-        .unwrap_or(unit.pos)
-        - target.pos;
-    let bearing = if toward == Vec2Fx::ZERO {
-        unit.heading.wrapping_add(128)
-    } else {
-        chassis::compass::heading_of(toward)
-    };
+    let approaches = patient_approaches(unit, target);
     let kind = unit.kind;
     let from = unit.tile();
-    // Search in the patient's query-relative frame, so mirrored scenes
-    // choose mirrored sides without using absolute entity ids.
-    for offset in [0_i8, 32, -32, 64, -64, 96, -96, -128] {
-        let point = target.pos + chassis::compass::dir(bearing.wrapping_add_signed(offset)) * gap;
-        let goal = TilePos::containing(point);
+    for (goal, point) in approaches {
         if !state.passable_for(kind.stats().domain, goal) {
             continue;
         }
+        let unit = state.unit(id).expect("caller checked");
         if unit.path.as_ref().is_some_and(|p| p.goal == goal) {
             state
                 .unit_mut(id)
@@ -587,6 +570,48 @@ pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -
         }
     }
     false
+}
+
+/// The order a welder takes on patients in: nearest first, with an exact
+/// distance tie going to the bearing from the welder, a key a half-turn of
+/// the scene preserves, and then id.
+pub(super) fn patient_rank(
+    welder: &crate::state::Unit,
+    patient: &crate::state::Unit,
+) -> (chassis::fx::Fx, u8, UnitId) {
+    (
+        welder.pos.dist_sq(patient.pos),
+        chassis::compass::heading_of(patient.pos - welder.pos).wrapping_sub(welder.heading),
+        patient.id,
+    )
+}
+
+/// The working positions against `patient`'s hull that `welder` tries,
+/// best first: the side it already approaches, then alternately either way
+/// round, each as its tile and exact point. The search runs in the
+/// patient's query-relative frame, so mirrored scenes choose mirrored sides
+/// without using absolute entity ids.
+pub(super) fn patient_approaches(
+    welder: &crate::state::Unit,
+    patient: &crate::state::Unit,
+) -> [(TilePos, Vec2Fx); 8] {
+    let gap =
+        welder.kind.stats().radius + patient.kind.stats().radius + crate::stats::WORK_APPROACH_GAP;
+    let toward = welder
+        .path
+        .as_ref()
+        .and_then(|p| p.final_point)
+        .unwrap_or(welder.pos)
+        - patient.pos;
+    let bearing = if toward == Vec2Fx::ZERO {
+        welder.heading.wrapping_add(128)
+    } else {
+        chassis::compass::heading_of(toward)
+    };
+    [0_i8, 32, -32, 64, -64, 96, -96, -128].map(|offset| {
+        let point = patient.pos + chassis::compass::dir(bearing.wrapping_add_signed(offset)) * gap;
+        (TilePos::containing(point), point)
+    })
 }
 
 /// Strip an own built building for scrap: walk adjacent, then drain hp

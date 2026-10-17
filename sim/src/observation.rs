@@ -77,10 +77,10 @@ pub struct UnitObs {
     /// A deferred intent without an associated paid site (own units only).
     /// Paid provisional construction is reported through `site`.
     pub founding: Option<(BuildingKind, TilePos)>,
-    /// Whether the current program is voluntary building or unit repair (own
-    /// units only; always false for allies and enemies).
-    #[serde(default)]
-    pub repairing: bool,
+    /// The repair work of the current program, if it is repair work (own
+    /// units only; always `None` for allies and enemies).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair: Option<RepairWork>,
     /// Whether the airframe is parked on the ground. Unlike `idle` or
     /// `cargo` this is a physical fact anyone in sight can see, so it is
     /// reported for allies and enemies too. Always false for kinds that
@@ -99,6 +99,19 @@ pub struct UnitObs {
     /// A host's drone bay.
     #[serde(default)]
     pub bay: Option<BayObs>,
+}
+
+/// What kind of repair work an own worker's program is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepairWork {
+    /// Voluntary building or unit repair: a weld or repair its owner
+    /// ordered, or an escort mending its party.
+    Ordered,
+    /// Tending on its own: walking a patrol leg or a trip out from an idle
+    /// post, welding the wounded machines it finds. Busy, but no command of
+    /// the owner's chose its patient.
+    Tending,
 }
 
 /// A drone bay as an observer sees it. Docked drones ride on the hull, so
@@ -197,8 +210,9 @@ pub struct ObservationData {
     /// player's existing program with a non-queued command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub my_queued_units: Vec<UnitId>,
-    /// Active repair targets of own workers, sorted by worker id. Allied and
-    /// hostile programs remain opaque even when their bodies are visible.
+    /// Active repair targets of own workers, tending welds included, sorted
+    /// by worker id. Allied and hostile programs remain opaque even when
+    /// their bodies are visible.
     pub my_repair_targets: Vec<(UnitId, Target)>,
     /// Teammates' units: always in team sight, never commandable. Their
     /// intent is as opaque as an enemy's.
@@ -665,11 +679,7 @@ impl ObservationData {
 fn own_repair_target(order: &Order) -> Option<Target> {
     match order {
         Order::Repair { building } => Some(Target::Building(*building)),
-        Order::RepairUnit { unit }
-        | Order::Accompany {
-            weld: Some(unit), ..
-        } => Some(Target::Unit(*unit)),
-        _ => None,
+        _ => order.torch().map(Target::Unit),
     }
 }
 
@@ -705,7 +715,11 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
             Order::Found { kind, anchor } if site.is_none() => Some((kind, anchor)),
             _ => None,
         },
-        repairing: own_repair_target(&u.order).is_some(),
+        repair: if matches!(u.order, Order::Tend { .. }) {
+            Some(RepairWork::Tending)
+        } else {
+            own_repair_target(&u.order).map(|_| RepairWork::Ordered)
+        },
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),
         host: u.host,
@@ -727,7 +741,7 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         site: None,       // nor their work orders
         salvaging: None,  // ditto
         founding: None,   // ditto
-        repairing: false,
+        repair: None,
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),
         host: u.host,

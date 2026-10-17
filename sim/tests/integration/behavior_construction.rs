@@ -232,7 +232,7 @@ fn construction_ramps_and_completes() {
 #[test]
 fn a_second_builder_resumes_a_dead_builders_site() {
     use oxide_sim::stats::BuildingKind;
-    let mut state = arena(vec![
+    let state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 6),
         unit(0, UnitKind::Harvester, 3, 2),
         unit(1, UnitKind::Scuttler, 6, 7),
@@ -244,6 +244,9 @@ fn a_second_builder_resumes_a_dead_builders_site() {
         state.units()[1].id,
         state.units()[2].id,
     );
+    // The relief waits idle while the builder is eaten, rather than
+    // welding it.
+    let mut state = common::idle_welds_off(&state, &[second]);
     let anchor = TilePos::new(5, 6);
     state.tick(&[cmd(
         0,

@@ -8845,6 +8845,38 @@ fn a_selected_roc_offers_its_drone_bay() {
 }
 
 #[test]
+fn the_auto_weld_key_switches_the_selected_workers() {
+    let mut game = headless_game();
+    let worker = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.worker.is_some())
+        .unwrap()
+        .id;
+    game.presentation.selection.units = vec![worker];
+    let mut input = InputState::new();
+    let context = input.context(&game);
+    assert_eq!(context, crate::action::Context::Workers);
+    let bindings = classic();
+    let chord = bindings.chord_for(Action::ToggleIdleWeld).unwrap();
+    assert_eq!((chord.key, chord.ctrl, chord.shift), (Key::H, false, false));
+    assert_eq!(
+        bindings.resolve_in(chord.key, chord.ctrl, chord.shift, context),
+        Some(Action::ToggleIdleWeld)
+    );
+    controls_key(&mut game, &mut input, Key::H);
+    assert!(
+        game.pending.iter().any(|pending| matches!(
+            &pending.command,
+            oxide_sim::Command::SetIdleWeld { units, enabled: false } if *units == [worker]
+        )),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn a_roc_s_bay_keys_work_with_a_worker_in_the_selection() {
     let (mut game, roc) = roc_with_drones();
     let worker = game

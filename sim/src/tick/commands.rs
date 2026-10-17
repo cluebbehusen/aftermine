@@ -270,6 +270,9 @@ pub(super) fn apply(state: &mut State, commands: &[PlayerCommand], events: &mut 
                 &canonical_units(state, units),
                 *enabled,
             ),
+            Command::SetIdleWeld { units, enabled } => {
+                apply_set_idle_weld(state, pc.player, &canonical_units(state, units), *enabled)
+            }
         };
         if let Err(reason) = outcome {
             events.push(Event::CommandRejected {
@@ -312,6 +315,38 @@ fn canonical_buildings(ids: &[BuildingId]) -> Vec<BuildingId> {
     ids.sort_unstable();
     ids.dedup();
     ids
+}
+
+/// `units` is the canonical set; every one must be the issuer's worker or
+/// nothing changes. The setting writes no program: a worker already out
+/// welding goes on until its next choice reads the switch.
+fn apply_set_idle_weld(
+    state: &mut State,
+    player: PlayerId,
+    units: &[UnitId],
+    enabled: bool,
+) -> Result<(), RejectReason> {
+    if units.is_empty()
+        || units
+            .iter()
+            .any(|id| state.unit(*id).is_none_or(|u| u.player != player))
+    {
+        return Err(RejectReason::NoValidUnits);
+    }
+    if units
+        .iter()
+        .any(|id| state.unit(*id).is_some_and(|u| u.worker.is_none()))
+    {
+        return Err(RejectReason::InvalidTarget);
+    }
+    for id in units {
+        state
+            .unit_mut(*id)
+            .and_then(|u| u.worker.as_mut())
+            .expect("validated")
+            .idle_weld_off = !enabled;
+    }
+    Ok(())
 }
 
 /// Iterates the subset of `ids` that exist and belong to `player`, applying
@@ -394,7 +429,7 @@ fn remove_active_order(unit: &mut crate::state::Unit) {
 /// stream of appends cannot grow memory forever). Returns whether the
 /// order landed; a full queue drops the append, and the caller reports it.
 fn assign(unit: &mut crate::state::Unit, order: Order, queue: bool) -> bool {
-    if queue && !matches!(unit.order, Order::Idle) {
+    if queue && !matches!(unit.order, Order::Idle) && !unit.on_idle_trip() {
         if unit.queue.len() >= ORDER_QUEUE_CAP {
             return false;
         }
@@ -663,8 +698,8 @@ fn apply_harvest(
 }
 
 /// Walk a looping circuit as one program: each leg spreads the group over
-/// its waypoint like a group move. Combat units hunt each leg; unarmed
-/// units walk them.
+/// its waypoint like a group move. Combat units hunt each leg, workers tend
+/// it, welding wounded machines they pass, and other unarmed units walk it.
 fn apply_patrol(
     state: &mut State,
     player: PlayerId,
@@ -703,11 +738,14 @@ fn apply_patrol(
             .collect();
         for (rank, id) in ids.into_iter().enumerate() {
             let unit = state.unit_mut(id).expect("filtered above");
-            let can_fight = unit.kind.stats().can_fight();
+            let stats = unit.kind.stats();
+            let (can_fight, welds) = (stats.can_fight(), stats.harvest.is_some());
             let legs = legs.iter().map(|leg| {
                 let goal = leg.goal(rank);
                 if can_fight {
                     Order::Hunt { goal }
+                } else if welds {
+                    Order::Tend { goal, weld: None }
                 } else {
                     Order::Run { goal }
                 }
@@ -878,7 +916,10 @@ fn apply_build_inner(
         }
         if !crew.iter().any(|id| {
             state.unit(*id).is_some_and(|unit| {
-                !queue || unit.order == Order::Idle || unit.queue.len() < ORDER_QUEUE_CAP
+                !queue
+                    || unit.order == Order::Idle
+                    || unit.on_idle_trip()
+                    || unit.queue.len() < ORDER_QUEUE_CAP
             })
         }) {
             return Err(RejectReason::QueueFull);

@@ -23,6 +23,7 @@
       {"chord": {"key": "f", "ctrl": false, "shift": false}, "action": "Hunt"},
       {"chord": {"key": "k", "ctrl": false, "shift": false}, "action": "Scout"},
       {"chord": {"key": "c", "ctrl": false, "shift": false}, "action": "RepairUnit"},
+      {"chord": {"key": "h", "ctrl": false, "shift": false}, "action": "ToggleIdleWeld"},
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "Upgrade"},
       {"chord": {"key": "y", "ctrl": false, "shift": false}, "action": "SetRally"},
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "Unload"},

@@ -61,6 +61,20 @@ fn cast() -> Vec<UnitSpec> {
     ]
 }
 
+/// `scenario` built with every worker's idle welding off: each weld this
+/// suite measures is one a command lit, and none may start on its own while
+/// a raider does the wounding.
+fn commanded_only(scenario: &oxide_sim::Scenario) -> State {
+    let state = scenario.build().unwrap();
+    let workers: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|u| u.worker.is_some())
+        .map(|u| u.id)
+        .collect();
+    common::idle_welds_off(&state, &workers)
+}
+
 #[derive(Clone, Copy, Debug)]
 enum DepartingWork {
     Attack,
@@ -171,7 +185,7 @@ fn departure_case(work: DepartingWork, tick: u64) -> (State, UnitId, UnitId, Pla
 
 #[test]
 fn harvesters_weld_wounded_machines_for_a_price() {
-    let mut state = arena(cast()).build().unwrap();
+    let mut state = commanded_only(&arena(cast()));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -208,7 +222,7 @@ fn harvesters_weld_wounded_machines_for_a_price() {
 fn the_torch_bills_its_first_scrap_before_free_hp_can_land() {
     // Billing lands at each interval's start: the first coin drops with
     // (or before) the first welded hp, so chip welds pay their coin.
-    let mut state = arena(cast()).build().unwrap();
+    let mut state = commanded_only(&arena(cast()));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -244,7 +258,7 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
     let mut units = cast();
     units.push(unit(0, UnitKind::Harvester, 2, 6));
     units.push(unit(0, UnitKind::Harvester, 2, 7));
-    let mut state = arena(units).build().unwrap();
+    let mut state = commanded_only(&arena(units));
     let (opener, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -317,7 +331,7 @@ fn a_walking_patient_is_chased_not_welded() {
     // retreat. The welder trails the walking patient and the wound
     // stays open until the patient stops — and the patient's own
     // program is never evicted by the weld.
-    let mut state = arena(cast()).build().unwrap();
+    let mut state = commanded_only(&arena(cast()));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -361,7 +375,7 @@ fn a_move_landing_mid_weld_rides_no_farewell_heal() {
     // parity where the welder thinks first, checking only path.is_none()
     // would let one heal ride the departure. Both parities must refuse it.
     for offset in [0u32, 1u32] {
-        let mut state = arena(cast()).build().unwrap();
+        let mut state = commanded_only(&arena(cast()));
         let (welder, patient, raider) = (
             state.units()[0].id,
             state.units()[1].id,
@@ -766,7 +780,7 @@ fn fire_wins_the_tick_and_the_dead_forfeit_their_welds() {
     // simply ends.
     let mut units = cast();
     units.push(unit(1, UnitKind::Scuttler, 12, 7));
-    let mut state = arena(units).build().unwrap();
+    let mut state = commanded_only(&arena(units));
     let (welder, patient, r1) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -819,7 +833,7 @@ fn reissued_welds_still_pay_for_the_torch_time() {
     // The no-op reissue rule: re-clicking the exact weld keeps the
     // billing meter, so a re-commanded welder never re-enters the
     // prepaid stretch and heals for free.
-    let mut state = arena(cast()).build().unwrap();
+    let mut state = commanded_only(&arena(cast()));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -856,7 +870,7 @@ fn reissued_welds_still_pay_for_the_torch_time() {
 
 #[test]
 fn a_queued_weld_waits_its_turn_then_welds() {
-    let mut state = arena(cast()).build().unwrap();
+    let mut state = commanded_only(&arena(cast()));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,
@@ -901,7 +915,7 @@ fn weld_refuses_the_healthy_the_foreign_the_flying_and_the_selfish() {
     units.push(unit(0, UnitKind::Buzzard, 4, 7)); // the future air patient
     units.push(unit(1, UnitKind::Sentinel, 12, 5)); // the poke that wounds it
     units.push(unit(1, UnitKind::Sentinel, 13, 5)); // its second gun
-    let mut state = arena(units).build().unwrap();
+    let mut state = commanded_only(&arena(units));
     let (welder, patient, raider) = (
         state.units()[0].id,
         state.units()[1].id,

@@ -11,7 +11,7 @@ use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use oxide_sim::TICKS_PER_SECOND;
 use oxide_sim::ids::Target;
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use oxide_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
 use oxide_sim::scenario::BotStance;
 use oxide_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
 use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
@@ -334,10 +334,10 @@ fn excavate(observation: &ObservationData, open: usize, greed: u8, ledger: &Ledg
         && ledger.spendable() >= UnitKind::Excavator.stats().cost + spare
 }
 
-/// Sends each harvesting or idle worker away from home that known enemy fire
-/// reaches back beside the nearest own Foundry on its ground. An explicit
-/// harvest order keeps a worker at its node under fire until it is told
-/// otherwise.
+/// Sends each harvesting, idle or tending worker away from home that known
+/// enemy fire reaches back beside the nearest own Foundry on its ground. An
+/// explicit harvest order keeps a worker at its node under fire until it is
+/// told otherwise.
 fn flee(
     observation: &ObservationData,
     map: &MapModel,
@@ -350,7 +350,8 @@ fn flee(
         return;
     }
     for unit in &observation.my_units {
-        let working = unit.idle || unit.harvesting.is_some();
+        let working =
+            unit.idle || unit.repair == Some(RepairWork::Tending) || unit.harvesting.is_some();
         if !worker(unit.kind) || !working || ledger.employs(unit.id) {
             continue;
         }
@@ -389,7 +390,7 @@ fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool
     worker(unit.kind)
         && unit.site.is_none()
         && unit.founding.is_none()
-        && !unit.repairing
+        && unit.repair != Some(RepairWork::Ordered)
         && map.component(unit.tile) == Some(ground)
         && !ledger.employs(unit.id)
         && !ledger.stuck(unit.id)
@@ -434,7 +435,7 @@ fn weld(
     let tended: Vec<oxide_sim::BuildingId> = observation
         .my_units
         .iter()
-        .filter(|unit| worker(unit.kind) && unit.repairing)
+        .filter(|unit| worker(unit.kind) && unit.repair == Some(RepairWork::Ordered))
         .filter_map(|unit| match observation.repair_target(unit.id)? {
             Target::Building(building) => Some(building),
             Target::Unit(_) => None,
@@ -517,7 +518,9 @@ pub(crate) fn calm(
 /// wounds at home call for, counting those already welding, one to a
 /// patient: the sturdiest workers first, so Excavators before Harvesters,
 /// then the idle before the harvesting, then the nearest. A worker welding a
-/// unit that has left home stops rather than follow it out.
+/// unit that has left home stops rather than follow it out; one tending on
+/// its own counts toward its patient at home and is otherwise left to the
+/// simulation, which ends its trip within reach of its post.
 fn weld_units(
     observation: &ObservationData,
     map: &MapModel,
@@ -540,16 +543,18 @@ fn weld_units(
     for unit in observation
         .my_units
         .iter()
-        .filter(|unit| worker(unit.kind) && unit.repairing)
+        .filter(|unit| worker(unit.kind) && unit.repair.is_some())
     {
         let Some(Target::Unit(patient)) = observation.repair_target(unit.id) else {
             continue;
         };
         if mine(&patient).is_some_and(|patient| home(patient.tile)) {
             welded.push(patient);
-        } else if !ledger.order(Command::Stop {
-            units: vec![unit.id],
-        }) {
+        } else if unit.repair == Some(RepairWork::Ordered)
+            && !ledger.order(Command::Stop {
+                units: vec![unit.id],
+            })
+        {
             return;
         }
     }

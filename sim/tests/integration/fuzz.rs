@@ -79,11 +79,12 @@ enum CommandTag {
     OrderDrone,
     CancelDrone,
     SetDroneAutofill,
+    SetIdleWeld,
 }
 
 /// The draw pool. Paired with the exhaustive matches below, the array and
 /// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 34] = [
+const COMMAND_TAGS: [CommandTag; 35] = [
     CommandTag::Run,
     CommandTag::Attack,
     CommandTag::Hunt,
@@ -118,6 +119,7 @@ const COMMAND_TAGS: [CommandTag; 34] = [
     CommandTag::OrderDrone,
     CommandTag::CancelDrone,
     CommandTag::SetDroneAutofill,
+    CommandTag::SetIdleWeld,
 ];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
@@ -168,6 +170,7 @@ fn tag_index(tag: CommandTag) -> usize {
         CommandTag::OrderDrone => 31,
         CommandTag::CancelDrone => 32,
         CommandTag::SetDroneAutofill => 33,
+        CommandTag::SetIdleWeld => 34,
     }
 }
 
@@ -208,6 +211,7 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::OrderDrone { .. } => CommandTag::OrderDrone,
         Command::CancelDrone { .. } => CommandTag::CancelDrone,
         Command::SetDroneAutofill { .. } => CommandTag::SetDroneAutofill,
+        Command::SetIdleWeld { .. } => CommandTag::SetIdleWeld,
     }
 }
 
@@ -417,6 +421,22 @@ fn bay_id(rng: &mut Pcg32, state: &State) -> UnitId {
         unit_id(rng, state)
     } else {
         bays[rng.next_index(bays.len())]
+    }
+}
+
+/// A unit for a worker verb: mostly a machine with harvest gear, and
+/// otherwise any id the roster draws, garbage included.
+fn worker_id(rng: &mut Pcg32, state: &State) -> UnitId {
+    let workers: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|u| u.worker.is_some())
+        .map(|u| u.id)
+        .collect();
+    if workers.is_empty() || rng.next_below(4) == 0 {
+        unit_id(rng, state)
+    } else {
+        workers[rng.next_index(workers.len())]
     }
 }
 
@@ -695,6 +715,19 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
                 enabled: rng.next_below(2) == 0,
             }
         }
+        CommandTag::SetIdleWeld => {
+            // A lone worker lands whenever its owner draws it; a mixed list
+            // meets the all-or-none refusal.
+            let units = if rng.next_below(2) == 0 {
+                vec![worker_id(rng, state)]
+            } else {
+                units(rng, state)
+            };
+            Command::SetIdleWeld {
+                units,
+                enabled: rng.next_below(2) == 0,
+            }
+        }
     }
 }
 
@@ -734,6 +767,10 @@ struct Reach {
     cancelled_order: u64,
     /// Ticks on which some unit was scouting.
     scouting: u64,
+    /// Ticks on which some worker had idle welding switched off, and on
+    /// which one was tending.
+    idle_welds_off: u64,
+    tending: u64,
     /// Ticks on which some parking radar was unfolding, and on which one
     /// was up.
     radar_unfolding: u64,
@@ -771,6 +808,8 @@ impl Reach {
         self.cancelled_found += other.cancelled_found;
         self.cancelled_order += other.cancelled_order;
         self.scouting += other.scouting;
+        self.idle_welds_off += other.idle_welds_off;
+        self.tending += other.tending;
         self.radar_unfolding += other.radar_unfolding;
         self.radar_up += other.radar_up;
         self.escorts = self.escorts.max(other.escorts);
@@ -1453,6 +1492,18 @@ fn fuzz_run(seed: u64) -> Run {
                 .iter()
                 .any(|u| matches!(u.order, oxide_sim::Order::Scout { .. })),
         );
+        reach.idle_welds_off += u64::from(
+            state
+                .units()
+                .iter()
+                .any(|u| u.worker.is_some() && !u.idle_weld()),
+        );
+        reach.tending += u64::from(
+            state
+                .units()
+                .iter()
+                .any(|u| matches!(u.order, oxide_sim::Order::Tend { .. })),
+        );
         let parking = |u: &&oxide_sim::Unit| {
             u.kind
                 .stats()
@@ -1629,6 +1680,11 @@ fn seeded_garbage_never_panics_and_reproduces() {
     );
     assert!(reach.salvaged > 0, "the sweep must strip a building");
     assert!(reach.scouting > 0, "the sweep must put a scout to work");
+    assert!(
+        reach.idle_welds_off > 0,
+        "the sweep must switch a worker's idle welding off"
+    );
+    assert!(reach.tending > 0, "the sweep must put a worker to tending");
     assert!(
         reach.radar_unfolding > 0 && reach.radar_up > 0,
         "the sweep must unfold a parking radar"

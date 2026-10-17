@@ -440,6 +440,67 @@ fn well_formed_additions_are_accepted() {
 }
 
 #[test]
+fn tending_walks_and_switched_off_workers_are_legal() {
+    let bombard = snapshot()["units"][1]["id"].clone();
+    // A trip from an idle post welding the Bombard, alone in its program.
+    let mut trip = snapshot();
+    trip["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": bombard});
+    trip["units"][0].as_object_mut().unwrap().remove("queue");
+    trip["units"][0]["worker"]["idle_weld_off"] = json!(true);
+    let state: State = serde_json::from_value(trip).expect("a trip is legal");
+    let worker = state.units()[0].id;
+    assert!(!state.unit(worker).unwrap().idle_weld());
+    assert!(state.unit(worker).unwrap().on_idle_trip());
+    // A patrol of tending legs, the active one welding.
+    let mut patrol = snapshot();
+    patrol["units"][0]["looping"] = json!(true);
+    patrol["units"][0]["order"] =
+        json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": bombard});
+    patrol["units"][0]["queue"] = json!([{"order": "tend", "goal": {"x": 3, "y": 3}}]);
+    let state: State = serde_json::from_value(patrol).expect("a tending patrol is legal");
+    assert!(!state.units()[0].on_idle_trip());
+    // A switched-off worker riding a transport, reached by play.
+    let mut scenario = arena();
+    scenario.buildings.clear();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Harvester,
+            x: 4,
+            y: 4,
+        },
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Skyhook,
+            x: 4,
+            y: 5,
+        },
+    ];
+    let mut state = scenario.build().unwrap();
+    let (rider, transport) = (state.units()[0].id, state.units()[1].id);
+    state.tick(&[cmd(
+        0,
+        Command::SetIdleWeld {
+            units: vec![rider],
+            enabled: false,
+        },
+    )]);
+    state.tick(&[cmd(
+        0,
+        Command::Load {
+            units: vec![rider],
+            transport,
+            queue: false,
+        },
+    )]);
+    run(&mut state, 100);
+    let ride = doc(&state);
+    assert_eq!(ride["units"][0]["cargo"][0]["idle_weld_off"], json!(true));
+    let restored: State = serde_json::from_value(ride).expect("a switched-off rider is legal");
+    assert_eq!(restored.hash(), state.hash());
+}
+
+#[test]
 fn a_decided_state_may_age_past_an_incident_expiry() {
     let mut base = snapshot();
     base["tick"] = json!(100);
@@ -556,10 +617,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::MountsOutOfRange(_) => 96,
         E::InvalidDroneBay(_) => 97,
         E::StrayDrone(_) => 98,
+        E::InvalidTend(_) => 99,
     }
 }
 
-const ROWS: usize = 99;
+const ROWS: usize = 100;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -671,6 +733,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::MountsOutOfRange(UnitId(0)),
         E::InvalidDroneBay(UnitId(0)),
         E::StrayDrone(UnitId(0)),
+        E::InvalidTend(UnitId(0)),
     ]
 }
 
@@ -1259,6 +1322,81 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 is ordered against an id the run never minted",
         ),
         (
+            "a tending walk without harvest gear",
+            |d| d["units"][1]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}}),
+            "has an invalid tending walk",
+        ),
+        (
+            "a tending weld on an enemy unit",
+            |d| {
+                let enemy = d["units"][2]["id"].clone();
+                d["units"][0]["order"] =
+                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": enemy});
+            },
+            "unit u0 has an invalid tending walk",
+        ),
+        (
+            "a tending weld on the welder itself",
+            |d| {
+                let own = d["units"][0]["id"].clone();
+                d["units"][0]["order"] =
+                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": own});
+            },
+            "has an invalid tending walk",
+        ),
+        (
+            "a queued patrol leg already holding a patient",
+            |d| {
+                let bombard = d["units"][1]["id"].clone();
+                d["units"][0]["looping"] = json!(true);
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}});
+                d["units"][0]["queue"] =
+                    json!([{"order": "tend", "goal": {"x": 3, "y": 3}, "weld": bombard}]);
+            },
+            "has an invalid tending walk",
+        ),
+        (
+            "an idle post's trip with an order queued behind it",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}});
+                d["units"][0]["queue"] = json!([{"order": "run", "goal": {"x": 3, "y": 3}}]);
+            },
+            "has an invalid tending walk",
+        ),
+        (
+            "a queued tending walk outside a patrol",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "run", "goal": {"x": 6, "y": 2}});
+                d["units"][0]["queue"] = json!([{"order": "tend", "goal": {"x": 3, "y": 3}}]);
+            },
+            "has an invalid tending walk",
+        ),
+        (
+            "a tending weld on an unminted unit",
+            |d| {
+                d["units"][0]["order"] =
+                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": 999});
+            },
+            "unit u0 is ordered against an id the run never minted",
+        ),
+        (
+            "a tending walk whose endpoint is its own target",
+            |d| {
+                d["units"][0]["order"] = json!({
+                    "order": "tend",
+                    "goal": {"x": 6, "y": 2, "endpoint": {"x": 6, "y": 2}},
+                });
+            },
+            "stores a slot or endpoint equal to its own goal",
+        ),
+        (
+            "a tending walk toward the far end of the coordinate space",
+            |d| {
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": i32::MIN, "y": 2}});
+            },
+            "unit u0 names a coordinate outside the envelope",
+        ),
+        (
             "a retirement at a building that is no Crucible",
             |d| {
                 let owner = d["units"][0]["player"].clone();
@@ -1536,6 +1674,16 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["cargo"] = json!([rider]);
             },
             "unit u0 carries parts that do not match its kind",
+        ),
+        (
+            "an idle welding switch on a rider without harvest gear",
+            |d| {
+                let mut rider = well_formed_rider(d);
+                rider["idle_weld_off"] = json!(true);
+                make_transport(d);
+                d["units"][0]["cargo"] = json!([rider]);
+            },
+            "carries parts that do not match its kind",
         ),
         (
             "a sling packed past its capacity",

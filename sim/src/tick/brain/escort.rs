@@ -6,7 +6,7 @@ use super::super::reach::Reach;
 use super::super::spatial::UnitIndex;
 use super::PendingFieldWeld;
 use super::combat::acquire_escort_target;
-use super::economy::approach_patient;
+use super::economy::{approach_patient, patient_rank};
 use crate::ids::{PlayerId, UnitId};
 use crate::state::{Order, PathFollow, Resume, State};
 use crate::stats::{Domain, ESCORT_ENGAGE_RADIUS};
@@ -232,21 +232,12 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
     if wounded(escorted).is_some() {
         return Some(escorted);
     }
-    // Nearest first; an exact distance tie goes to the bearing from the
-    // welder, a key a half-turn of the scene preserves.
     party
         .air
         .iter()
         .chain(&party.ground)
         .filter_map(|&candidate| wounded(candidate))
-        .min_by_key(|u| {
-            let toward = u.pos - welder.pos;
-            (
-                welder.pos.dist_sq(u.pos),
-                chassis::compass::heading_of(toward).wrapping_sub(welder.heading),
-                u.id,
-            )
-        })
+        .min_by_key(|u| patient_rank(welder, u))
         .map(|u| u.id)
 }
 

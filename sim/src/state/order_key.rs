@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "order", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OrderKey {
-    /// A Run, Hunt, Advance, or Scout to this clicked tile, the march an
-    /// engagement resumes, or the walk a landing took over.
+    /// A Run, Hunt, Advance, Scout, or Tend to this clicked tile, the march
+    /// an engagement resumes, or the walk a landing took over.
     Walk {
         /// The clicked tile.
         tile: TilePos,
@@ -106,9 +106,10 @@ impl Order {
     pub fn key(&self, state: &State, player: PlayerId) -> Option<OrderKey> {
         Some(match *self {
             Order::Idle => return None,
-            Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => {
-                OrderKey::Walk { tile: goal.tile() }
-            }
+            Order::Run { goal }
+            | Order::Hunt { goal }
+            | Order::Advance { goal }
+            | Order::Tend { goal, .. } => OrderKey::Walk { tile: goal.tile() },
             Order::Attack {
                 resume: Some(Resume::Hunt(goal)),
                 ..

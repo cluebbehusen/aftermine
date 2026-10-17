@@ -644,6 +644,13 @@ fn showcase_state() -> State {
             row["tier"] = serde_json::json!(1);
         }
     }
+    // The script stages every weld it draws: no idle worker sets out on its
+    // own to mend the battle line's wounds, which the scene must show.
+    for row in staged["units"].as_array_mut().unwrap() {
+        if row.get("worker").is_some() {
+            row["worker"]["idle_weld_off"] = serde_json::json!(true);
+        }
+    }
     state = serde_json::from_value(staged).unwrap();
     let mut avalanches_withdrew = false;
     let mut bombards_withdrew = false;

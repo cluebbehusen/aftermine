@@ -126,7 +126,7 @@ fn exact_repair_targets_are_owner_only_and_round_trip() {
         ObservationData::omniscient(&state, PlayerId(1)),
     ] {
         assert_eq!(other.repair_target(worker), None);
-        assert!(!other.enemy_units.iter().any(|unit| unit.repairing));
+        assert!(!other.enemy_units.iter().any(|unit| unit.repair.is_some()));
     }
     state.unit_mut(worker).unwrap().order = Order::Idle;
     assert_eq!(

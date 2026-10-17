@@ -224,6 +224,11 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
     if unit.unloading().is_some() {
         return true;
     }
+    if let Some(patient) = unit.order.torch() {
+        return state
+            .unit(patient)
+            .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p));
+    }
     match unit.order {
         crate::Order::Harvest {
             node,
@@ -244,13 +249,6 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
             unit.pos.dist_sq(b.closest_point_to(unit.pos))
                 <= crate::stats::RETIRE_REACH * crate::stats::RETIRE_REACH
         }),
-        crate::Order::RepairUnit { unit: patient }
-        | crate::Order::Accompany {
-            weld: Some(patient),
-            ..
-        } => state
-            .unit(patient)
-            .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p)),
         crate::Order::Attack { target, .. } => {
             state.attack_view(unit.player, target).is_some_and(|view| {
                 let aim = match view.entity {

@@ -68,8 +68,9 @@ pub enum Command {
     },
     /// Walk a looping circuit of waypoints. Armed units engage everything
     /// met on the way (their legs are hunt orders), scouts scout each
-    /// waypoint, and other machines run. The route repeats until another
-    /// command replaces it.
+    /// waypoint, workers weld wounded own machines they pass (tend legs),
+    /// and other machines run. The route repeats until another command
+    /// replaces it.
     Patrol {
         /// The units to commit.
         units: Vec<UnitId>,
@@ -377,6 +378,15 @@ pub enum Command {
         /// Own machines with a drone bay; all or none take the setting.
         units: Vec<UnitId>,
         /// Whether they refill.
+        enabled: bool,
+    },
+    /// Sets whether each worker goes out on its own, while idle, to weld
+    /// wounded own ground machines near its post. A patrolling worker welds
+    /// either way.
+    SetIdleWeld {
+        /// Own workers; all or none take the setting.
+        units: Vec<UnitId>,
+        /// Whether they weld while idle.
         enabled: bool,
     },
 }
