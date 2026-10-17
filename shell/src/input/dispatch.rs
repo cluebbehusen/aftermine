@@ -4,7 +4,7 @@
 
 use super::orders::digit_action;
 use super::select::{cycle_idle_worker, idle_harvesters};
-use super::{ClickVerb, InputState};
+use super::{ClickVerb, InputState, Pointer};
 use crate::action::Action;
 use crate::game::Game;
 use crate::numeric;
@@ -139,7 +139,10 @@ pub(super) fn dispatch_action(
                 return;
             }
             input.disarm_click_verbs();
-            input.striking = silos;
+            input.striking = Some(super::Strike::new(silos));
+            if input.last_pointer == Pointer::Touch {
+                super::drop_aim_in_view(&game.view(), input);
+            }
         }
         Action::OrderRound => {
             let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
@@ -300,8 +303,7 @@ pub(super) fn dispatch_action(
                 input.rallying.clear();
                 return;
             }
-            if !input.striking.is_empty() {
-                input.striking.clear();
+            if input.striking.take().is_some() {
                 return;
             }
             if input.patrol_route.take().is_some() {

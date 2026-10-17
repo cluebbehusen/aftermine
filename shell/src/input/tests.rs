@@ -8550,12 +8550,9 @@ fn a_round_chip_cancels_its_own_position() {
     );
 }
 
-#[test]
-fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
+/// A selected own Spire, loaded with one warhead.
+fn loaded_spire() -> (Game, oxide_sim::BuildingId) {
     let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
-    let mut input = InputState::new();
-    dispatch_action(&mut game, &mut input, Action::Launch);
-    assert!(input.striking.is_empty(), "an empty Spire arms nothing");
     let spire = game.presentation.selection.buildings[0];
     let mut json = serde_json::to_value(&*game.state).unwrap();
     for b in json["buildings"].as_array_mut().unwrap() {
@@ -8564,12 +8561,32 @@ fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
         }
     }
     *game.state = serde_json::from_value(json).unwrap();
+    (game, spire)
+}
+
+fn launches(game: &Game) -> Vec<(oxide_sim::BuildingId, TilePos)> {
+    game.pending
+        .iter()
+        .filter_map(|pc| match pc.command {
+            Command::Launch { building, target } => Some((building, target)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
+    let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
+    let mut input = InputState::new();
     dispatch_action(&mut game, &mut input, Action::Launch);
-    assert_eq!(input.striking, vec![spire]);
+    assert!(input.striking.is_none(), "an empty Spire arms nothing");
+    let (mut game, spire) = loaded_spire();
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    assert_eq!(input.striking, Some(Strike::new(vec![spire])));
     assert_eq!(input.armed_mode(), Some(ArmedMode::Strike));
     let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
     apply_events(&mut game, &mut input, &click(p.x, p.y));
-    assert!(input.striking.is_empty());
+    assert!(input.striking.is_none());
     assert!(
         game.pending.iter().any(|c| matches!(
             c.command,
@@ -8582,7 +8599,61 @@ fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
     // Back stands an armed strike down without striking.
     dispatch_action(&mut game, &mut input, Action::Launch);
     dispatch_action(&mut game, &mut input, Action::Back);
-    assert!(input.striking.is_empty());
+    assert!(input.striking.is_none());
+}
+
+#[test]
+fn a_touch_strike_aims_where_tapped_and_launches_only_on_the_check_mark() {
+    let (mut game, spire) = loaded_spire();
+    let mut input = InputState::new();
+    input.last_pointer = Pointer::Touch;
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    let mid = ground_tile(&game.state, game.presentation.camera.center);
+    let aim = |input: &InputState| input.striking.as_ref().and_then(Strike::aim);
+    assert_eq!(aim(&input), Some(mid), "arming by touch aims mid-view");
+    tap_world(&mut game, &mut input, vec2(20.5, 6.5));
+    assert_eq!(
+        aim(&input),
+        Some(TilePos::new(20, 6)),
+        "a tap moves the aim"
+    );
+    assert!(launches(&game).is_empty(), "and launches nothing");
+    // A finger on the core drags the aim by whole tiles.
+    let from = game.presentation.camera.to_screen(vec2(20.5, 6.5));
+    let to = game.presentation.camera.to_screen(vec2(23.5, 8.5));
+    input.now += 1.0;
+    apply_events(&mut game, &mut input, &[touch_down(3, from)]);
+    apply_events(&mut game, &mut input, &[touch_move(3, to)]);
+    apply_events(&mut game, &mut input, &[touch_up(3, to)]);
+    assert_eq!(aim(&input), Some(TilePos::new(23, 8)));
+    assert!(launches(&game).is_empty(), "a drag never launches");
+    let controls = lay_out_ghost_controls(&game, &input);
+    input.now += 1.0;
+    tap(&mut game, &mut input, controls.confirm.center());
+    assert_eq!(launches(&game), vec![(spire, TilePos::new(23, 8))]);
+    assert!(input.striking.is_none(), "the launch disarms");
+    // The cross stands a strike down without launching.
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    let controls = lay_out_ghost_controls(&game, &input);
+    input.now += 1.0;
+    tap(&mut game, &mut input, controls.cancel.center());
+    assert!(input.striking.is_none());
+    assert_eq!(launches(&game).len(), 1);
+}
+
+#[test]
+fn a_click_with_a_touch_aim_down_moves_the_aim_instead_of_launching() {
+    let (mut game, _) = loaded_spire();
+    let mut input = InputState::new();
+    input.last_pointer = Pointer::Touch;
+    dispatch_action(&mut game, &mut input, Action::Launch);
+    let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    assert_eq!(
+        input.striking.as_ref().and_then(Strike::aim),
+        Some(TilePos::new(20, 6))
+    );
+    assert!(launches(&game).is_empty());
 }
 
 /// Skirmish's starting Surveyor and a staged Sentinel beside it.

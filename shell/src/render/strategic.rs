@@ -980,8 +980,8 @@ pub(super) fn draw_warhead_burst(
     }
 }
 
-/// The blast a strike would bring: under the cursor while a Launch is
-/// armed, and at each selected own Spire's ordered tile, with a line from
+/// The blast a strike would bring: at the touch aim or under the cursor
+/// while a Launch is armed, and at each selected own Spire's ordered tile, with a line from
 /// the silo.
 pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputState) {
     let camera = &game.presentation.camera;
@@ -1012,16 +1012,22 @@ pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputSt
             Color::new(own.r, own.g, own.b, alpha),
         );
     };
-    if !input.striking.is_empty() && input.last_pointer == crate::input::Pointer::Mouse {
-        let tile = crate::input::ground_tile(game.state, camera.to_world(input.mouse));
-        let center = camera.to_screen(crate::input::tile_center(tile));
-        ring(center, 0.75);
-        for b in input
-            .striking
-            .iter()
-            .filter_map(|id| game.state.building(*id))
-        {
-            silo_line(b, center, 0.4);
+    if let Some(strike) = &input.striking {
+        // A touch aim, once down, is where it lands; else the mouse's hover.
+        let tile = strike.aim().or_else(|| {
+            (input.last_pointer == crate::input::Pointer::Mouse)
+                .then(|| crate::input::ground_tile(game.state, camera.to_world(input.mouse)))
+        });
+        if let Some(tile) = tile {
+            let center = camera.to_screen(crate::input::tile_center(tile));
+            ring(center, 0.75);
+            for b in strike
+                .spires
+                .iter()
+                .filter_map(|id| game.state.building(*id))
+            {
+                silo_line(b, center, 0.4);
+            }
         }
     }
     for b in game
