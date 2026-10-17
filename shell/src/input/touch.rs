@@ -18,7 +18,7 @@ pub(crate) enum TouchBorn {
     Minimap,
     /// Any other HUD chrome.
     Chrome,
-    /// The touch placement's ghost: dragging moves it.
+    /// The touch placement's ghost or strike aim: dragging moves it.
     Ghost,
     /// The ghost's row handle: dragging pulls out a row.
     Handle,
@@ -122,14 +122,15 @@ pub(crate) fn touch_box(input: &InputState) -> Option<(Vec2, Vec2)> {
     (pair.state == PairState::Box).then_some((a.at, b.at))
 }
 
-/// The lone finger that may charge a battlefield long-press. Placement
-/// and patrol claim every world press as a target, so nothing charges
-/// while either collects them.
+/// The lone finger that may charge a battlefield long-press. Placement,
+/// a strike, and patrol claim every world press as a target, so nothing
+/// charges while one collects them.
 fn world_hold(input: &InputState) -> Option<TouchPoint> {
     let [(_, finger)] = input.touches.as_slice() else {
         return None;
     };
-    let claimed = input.placing.is_some() || input.patrol_route.is_some();
+    let claimed =
+        input.placing.is_some() || input.striking.is_some() || input.patrol_route.is_some();
     (finger.born == TouchBorn::World && finger.still() && !claimed).then_some(*finger)
 }
 
@@ -146,7 +147,7 @@ fn group_hold(input: &InputState) -> Option<(TouchPoint, crate::layout::GroupSlo
 /// Whether an armed mode takes a minimap tap as its target (a rally
 /// point or a patrol waypoint), so the minimap must not steer under it.
 fn minimap_targets(input: &InputState) -> bool {
-    !input.rallying.is_empty() || !input.striking.is_empty() || input.patrol_route.is_some()
+    !input.rallying.is_empty() || input.striking.is_some() || input.patrol_route.is_some()
 }
 
 /// Points the camera at the minimap spot under a steering finger.

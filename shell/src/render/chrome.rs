@@ -433,7 +433,7 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
 }
 
 /// The touch ghost's controls: the cross, the check mark, lit while a tap
-/// would build, and the row handle. They draw last of the chrome, over the
+/// would build or launch, and the row handle. They draw last of the chrome, over the
 /// minimap too, since they answer presses first.
 pub(crate) fn draw_ghost_controls(game: &crate::game::Scene<'_>, input: &InputState) {
     let s = ui_scale();
@@ -456,7 +456,8 @@ pub(crate) fn draw_ghost_controls(game: &crate::game::Scene<'_>, input: &InputSt
     if layout.ghost_confirm.w > 0.0 {
         let rect = layout.ghost_confirm;
         plate(rect);
-        let builds = !input.planned_stamps().is_empty()
+        let builds = input.striking.is_some()
+            || !input.planned_stamps().is_empty()
             || crate::input::preview_spot(game, input).is_some_and(|spot| spot.verdict.builds());
         let mark = if builds {
             TEXT_ACCENT

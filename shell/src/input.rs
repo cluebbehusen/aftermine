@@ -230,6 +230,40 @@ impl PlacementGhost {
     }
 }
 
+/// An armed strike: the loaded Spires it launches and, on touch, the aim
+/// that stands in for the mouse's hover ring.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Strike {
+    pub(crate) spires: Vec<oxide_sim::BuildingId>,
+    aim: Option<StrikeAim>,
+}
+
+/// Where a touch strike will land until its check mark launches it. Like
+/// the placement ghost, a tap drops or moves it, a finger drags it, and
+/// only the check mark fires: a warhead is too costly to spend on a stray
+/// tap.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct StrikeAim {
+    tile: TilePos,
+    /// While a finger drags it: the tile and the world point at grab.
+    grab: Option<(TilePos, Vec2)>,
+}
+
+impl Strike {
+    pub(crate) fn new(spires: Vec<oxide_sim::BuildingId>) -> Self {
+        Self { spires, aim: None }
+    }
+
+    /// The tile the touch aim names, once one is down.
+    pub(crate) fn aim(&self) -> Option<TilePos> {
+        self.aim.map(|aim| aim.tile)
+    }
+
+    fn aim_at(&mut self, tile: TilePos) {
+        self.aim = Some(StrikeAim { tile, grab: None });
+    }
+}
+
 /// A command verb armed for the next world click.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClickVerb {
@@ -290,8 +324,8 @@ pub struct InputState {
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
     pub(crate) rallying: Vec<oxide_sim::BuildingId>,
-    /// Spires whose next world or minimap click names their strike.
-    pub(crate) striking: Vec<oxide_sim::BuildingId>,
+    /// The armed strike, while Spires wait for their target.
+    pub(crate) striking: Option<Strike>,
     /// Whether the build palette is open (`B`; digits pick a structure).
     pub(crate) build_menu: bool,
     pub(crate) build_category: Option<u8>,
@@ -994,7 +1028,7 @@ impl InputState {
             keys_seen: crate::platform::Hands::BUILD.keys,
             click_verb: None,
             rallying: Vec::new(),
-            striking: Vec::new(),
+            striking: None,
             build_menu: false,
             build_category: None,
             ui: 1.0,
@@ -1069,7 +1103,7 @@ impl InputState {
         self.patrol_route = None;
         self.click_verb = None;
         self.rallying.clear();
-        self.striking.clear();
+        self.striking = None;
     }
 
     /// Arms placement of `kind`, with no stroke or ghost yet.
@@ -1156,7 +1190,8 @@ impl InputState {
     /// Current persistent mode, in the same priority order the world
     /// click resolver uses.
     pub(crate) fn armed_mode(&self) -> Option<ArmedMode> {
-        (!self.striking.is_empty())
+        self.striking
+            .is_some()
             .then_some(ArmedMode::Strike)
             .or_else(|| (!self.rallying.is_empty()).then_some(ArmedMode::Rally))
             .or_else(|| self.placing_kind().map(ArmedMode::Build))
@@ -1199,7 +1234,7 @@ impl InputState {
         self.stop_placing();
         self.click_verb = None;
         self.rallying.clear();
-        self.striking.clear();
+        self.striking = None;
         self.build_menu = false;
         self.build_category = None;
         self.touches.clear();
@@ -1780,7 +1815,7 @@ pub fn desired_cursor(game: &Game, input: &InputState) -> macroquad::miniquad::C
         || input.patrol_route.is_some()
         || input.click_verb.is_some()
         || !input.rallying.is_empty()
-        || !input.striking.is_empty()
+        || input.striking.is_some()
     {
         return CursorIcon::Crosshair;
     }
@@ -2164,17 +2199,25 @@ fn armed_click(
     if click_on_hud(game, p) && crate::render::minimap_world_at(&game.view(), p).is_none() {
         return false;
     }
-    if !input.striking.is_empty() {
+    if let Some(strike) = &mut input.striking {
         // Any tile on the map may be struck, seen or not; the minimap
         // names one as well as the world.
-        let world = crate::render::minimap_world_at(&game.view(), p)
+        let minimap = crate::render::minimap_world_at(&game.view(), p);
+        let world = minimap
             .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
         if let Some(world) = world {
             let target = ground_tile(&game.state, world);
-            for building in std::mem::take(&mut input.striking) {
-                game.issue(Command::Launch { building, target });
+            if pointer == Pointer::Touch || strike.aim.is_some() {
+                // A tap only aims; the check mark launches. A minimap aim
+                // brings the camera along so its ring and controls show.
+                strike.aim_at(target);
+                if minimap.is_some() {
+                    game.presentation.camera.center = tile_center(target);
+                    game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                }
+            } else {
+                launch_strike(game, input, target);
             }
-            game.presentation.toast("Strike ordered");
         }
         return true;
     }
@@ -2266,8 +2309,24 @@ pub(crate) fn ghost_footprint(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
+    if let Some(strike) = &input.striking {
+        let blast = oxide_sim::stats::WARHEAD.outer_radius.to_num::<f32>();
+        return Some(strike_disc_on_screen(game, strike.aim()?, blast));
+    }
     let (kind, anchor) = (input.placing_kind()?, input.ghost_anchor()?);
     Some(footprint_on_screen(game, kind, anchor))
+}
+
+/// The screen square around a disc of `radius` tiles centred on `tile`.
+fn strike_disc_on_screen(
+    game: &crate::game::Scene<'_>,
+    tile: TilePos,
+    radius: f32,
+) -> macroquad::math::Rect {
+    let camera = &game.presentation.camera;
+    let center = camera.to_screen(tile_center(tile));
+    let r = radius * camera.zoom;
+    macroquad::math::Rect::new(center.x - r, center.y - r, r * 2.0, r * 2.0)
 }
 
 fn footprint_on_screen(
@@ -2289,10 +2348,17 @@ pub(crate) fn ghost_touch_rect(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
-    Some(crate::layout::touch_pad(
-        ghost_footprint(game, input)?,
-        input.ui,
-    ))
+    // A strike's aim is grabbed by its full-damage core, so a tap in its
+    // outer ring still moves it there.
+    let grip = match input.striking.as_ref() {
+        Some(strike) => strike_disc_on_screen(
+            game,
+            strike.aim()?,
+            oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
+        ),
+        None => ghost_footprint(game, input)?,
+    };
+    Some(crate::layout::touch_pad(grip, input.ui))
 }
 
 /// Where the touch ghost's row handle sits on screen: past the far edge of
@@ -2501,6 +2567,14 @@ pub(super) fn drop_row(input: &mut InputState) -> bool {
 /// A finger landed on the ghost: it grabs it where it is.
 pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
     let world = game.presentation.camera.to_world(p);
+    if let Some(aim) = input
+        .striking
+        .as_mut()
+        .and_then(|strike| strike.aim.as_mut())
+    {
+        aim.grab = Some((aim.tile, world));
+        return;
+    }
     if let Some(ghost) = input
         .placing
         .as_mut()
@@ -2517,6 +2591,14 @@ pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
 /// drawn. Moving it leaves any row behind.
 pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
     let lift = crate::theme::MIN_TOUCH_TARGET * input.ui;
+    if let Some(aim) = input
+        .striking
+        .as_mut()
+        .and_then(|strike| strike.aim.as_mut())
+    {
+        drag_aim(game, aim, p, lift);
+        return;
+    }
     let Some(Placement {
         kind,
         ghost: Some(ghost),
@@ -2548,12 +2630,56 @@ pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
     }
 }
 
+/// Launches every armed Spire at `target` and disarms the strike.
+fn launch_strike(game: &mut Game, input: &mut InputState, target: TilePos) {
+    let Some(strike) = input.striking.take() else {
+        return;
+    };
+    for building in strike.spires {
+        game.issue(Command::Launch { building, target });
+    }
+    game.presentation.toast("Strike ordered");
+}
+
+/// Drops a touch strike's aim at the middle of the view, so its ring and
+/// controls show before the first tap.
+pub(super) fn drop_aim_in_view(game: &crate::game::Scene<'_>, input: &mut InputState) {
+    let tile = ground_tile(game.state, game.presentation.camera.center);
+    if let Some(strike) = &mut input.striking {
+        strike.aim_at(tile);
+    }
+}
+
+/// A grabbing finger moved the strike aim, as [`drag_ghost`] moves a
+/// footprint: by whole tiles from the grab, or a fingertip above the finger
+/// while the full-damage core is smaller on screen than a fingertip.
+fn drag_aim(game: &crate::game::Scene<'_>, aim: &mut StrikeAim, p: Vec2, lift: f32) {
+    let Some((tile, grabbed)) = aim.grab else {
+        return;
+    };
+    let camera = &game.presentation.camera;
+    let core = oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>() * 2.0;
+    aim.tile = if core * camera.zoom < lift {
+        ground_tile(game.state, camera.to_world(p - vec2(0.0, lift)))
+    } else {
+        let shift = camera.to_world(p) - grabbed;
+        ground_tile(
+            game.state,
+            tile_center(tile) + vec2(shift.x.round(), shift.y.round()),
+        )
+    };
+}
+
 /// The ghost's check mark: build exactly where it is drawn, or the whole
 /// row it has pulled out, judged afresh, since scrap, fog, and the
 /// selection may have changed since it was dropped. A refusal keeps the
 /// ghost; a success disarms, unless queueing keeps placement armed, when
 /// the ghost moves on to offer the next spot.
 pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
+    if let Some(target) = input.striking.as_ref().and_then(Strike::aim) {
+        launch_strike(game, input, target);
+        return;
+    }
     let Some(kind) = input.placing_kind() else {
         return;
     };
@@ -2587,9 +2713,12 @@ pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
     }
 }
 
-/// The ghost's cross: a pulled-out row folds back to the ghost; a lone
-/// ghost gives the building back to the palette.
+/// The ghost's cross: a strike stands down; a pulled-out row folds back to
+/// the ghost; a lone ghost gives the building back to the palette.
 pub(crate) fn cancel_ghost(input: &mut InputState) {
+    if input.striking.take().is_some() {
+        return;
+    }
     if !drop_row(input) {
         input.stop_placing();
         input.build_menu = true;

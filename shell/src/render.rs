@@ -561,6 +561,7 @@ pub(crate) fn draw_with_performance(
     draw_scorches(game, sprites);
     destruction::draw_ground_effects(game, sprites);
     draw_range_ground(game, input);
+    strategic::draw_strike_ground(game, input);
     crate::strategic_markers::draw_resources(game);
     crate::strategic_markers::draw_extractor_frames(game);
     draw_buildings(game, sprites);
