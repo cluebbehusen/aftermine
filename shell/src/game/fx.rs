@@ -1848,7 +1848,7 @@ impl Presentation {
                     player,
                     pos,
                     reason,
-                } if *player == self.human && !self.spectate => {
+                } if *player == self.human && !self.spectating() => {
                     let scout = state
                         .unit(*unit)
                         .is_some_and(|unit| unit.kind.stats().scouts);

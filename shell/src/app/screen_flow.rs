@@ -116,7 +116,7 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
 fn exit(game: &mut Game, from: ScreenKind) {
     match from {
         // Inspection ends on every way out, not only the Back button.
-        ScreenKind::FinalMap => game.presentation.spectate = false,
+        ScreenKind::FinalMap => game.presentation.stance = crate::game::Stance::Seat,
         ScreenKind::Home
         | ScreenKind::Settings
         | ScreenKind::Codex
@@ -147,7 +147,7 @@ fn enter(game: &mut Game, screen: &Screen) {
         // The decided world, frozen and seen whole, with nothing selected.
         ScreenKind::FinalMap => {
             game.clock.paused = true;
-            game.presentation.spectate = true;
+            game.presentation.stance = crate::game::Stance::Spectator;
             game.presentation.selection.units.clear();
             game.presentation.selection.buildings.clear();
             game.presentation.selection.pile = None;

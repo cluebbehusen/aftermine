@@ -422,6 +422,7 @@ impl RestoredGame {
         if adopted || game.state.result().is_some() {
             game.saved = Some(game.save_key());
         }
+        game.refresh_fog_lift();
         game
     }
 }

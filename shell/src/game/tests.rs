@@ -736,16 +736,21 @@ fn a_decisive_concession_uses_the_result_flow_not_the_overlay() {
     );
 }
 
-#[test]
-fn a_team_concession_raises_the_surrender_overlay() {
-    use oxide_sim::scenario::PlayerSpec;
-    let seat = |name: &str, team, bot| PlayerSpec {
-        name: name.into(),
-        team: Some(team),
-        scrap: 100,
-        bot,
-        bot_config: bot.then_some(oxide_sim::scenario::BotConfig::default()),
-    };
+/// A four-seat arena whose seats, in spawn order, are `(team, bot)`; the
+/// first human seat plays locally.
+fn concede_arena(seats: [(u8, bool); 4]) -> Game {
+    let names = ["North West", "South West", "North East", "South East"];
+    let players = names
+        .iter()
+        .zip(seats)
+        .map(|(name, (team, bot))| oxide_sim::scenario::PlayerSpec {
+            name: (*name).into(),
+            team: Some(team),
+            scrap: 100,
+            bot,
+            bot_config: bot.then_some(oxide_sim::scenario::BotConfig::default()),
+        })
+        .collect();
     let scenario = Scenario {
         mode: ScenarioMode::Match,
         name: "concede-arena".into(),
@@ -759,24 +764,33 @@ fn a_team_concession_raises_the_surrender_overlay() {
             "#..................#".into(),
             "####################".into(),
         ],
-        players: vec![
-            seat("North West", 0, false),
-            seat("South West", 0, true),
-            seat("North East", 1, true),
-            seat("South East", 1, true),
-        ],
+        players,
         units: Vec::new(),
         buildings: Vec::new(),
         meta: None,
     };
-    let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
-        .expect("the concede arena builds");
+    Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
+        .expect("the concede arena builds")
+}
+
+#[test]
+fn a_team_concession_raises_the_surrender_overlay() {
+    let mut game = concede_arena([(0, false), (0, true), (1, true), (1, true)]);
+    assert!(
+        !game.presentation.all_seeing(),
+        "a seat in the match sees through its own fog"
+    );
     game.issue(Command::Surrender);
     game.do_tick();
     assert!(game.state.player(game.presentation.human).resigned);
     assert!(
         game.state.result().is_none(),
         "the ally's Foundry keeps the match running"
+    );
+    assert_eq!(
+        game.presentation.stance,
+        Stance::Out,
+        "fog lifts with only a bot ally playing on"
     );
     assert!(
         game.presentation.conceded_banner,
@@ -798,6 +812,72 @@ fn a_team_concession_raises_the_surrender_overlay() {
         !game.presentation.conceded_banner,
         "spectating stays unobstructed"
     );
+}
+
+/// `concede_arena(seats)` after the local seat surrenders, in a local
+/// session or on `net`'s side of a LAN one.
+fn surrendered(seats: [(u8, bool); 4], net: Option<network::NetRole>) -> Game {
+    let mut game = concede_arena(seats);
+    game.net = net;
+    let surrender = PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Surrender,
+    };
+    game.execute(&[surrender], 1);
+    assert!(game.state.result().is_none(), "the match plays on");
+    game
+}
+
+#[test]
+fn fog_holds_only_while_a_lan_teammate_plays_on() {
+    let team = [(0, false), (0, false), (1, true), (1, true)];
+    let mut lan = surrendered(team, Some(network::NetRole::Client));
+    assert_eq!(
+        lan.presentation.stance,
+        Stance::Seat,
+        "an out seat could tip off its LAN ally"
+    );
+    lan.mirror_bot(PlayerId(1), oxide_sim::scenario::BotConfig::default());
+    assert_eq!(
+        lan.presentation.stance,
+        Stance::Out,
+        "fog lifts the moment a bot takes the ally's seat"
+    );
+    assert_eq!(
+        surrendered(team, None).presentation.stance,
+        Stance::Out,
+        "a local session's second human seat is passive"
+    );
+    let free_for_all = [(0, false), (1, false), (2, true), (3, true)];
+    assert_eq!(
+        surrendered(free_for_all, Some(network::NetRole::Client))
+            .presentation
+            .stance,
+        Stance::Out,
+        "nobody plays on for a free-for-all seat's side"
+    );
+}
+
+#[test]
+fn an_out_seat_keeps_its_lifted_fog_through_save_and_resume() {
+    let mut game = concede_arena([(0, false), (1, true), (2, true), (3, true)]);
+    game.issue(Command::Surrender);
+    game.do_tick();
+    assert!(game.state.result().is_none(), "three seats fight on");
+    assert_eq!(game.presentation.stance, Stance::Out);
+
+    let saved = game
+        .capture_save()
+        .checkpoint()
+        .unwrap()
+        .restore()
+        .unwrap()
+        .install();
+    assert_eq!(saved.presentation.stance, Stance::Out, "a restored save");
+    let mut record = game.recorder.clone();
+    record.meta.ticks = Some(game.state.current_tick());
+    let resumed = Game::from_replay(record).expect("the record resumes");
+    assert_eq!(resumed.presentation.stance, Stance::Out, "a resumed record");
 }
 
 #[test]

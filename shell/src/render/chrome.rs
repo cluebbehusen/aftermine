@@ -374,7 +374,7 @@ pub(super) fn queue_toggle_shown(
         .iter()
         .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human));
     touch_only
-        && !game.presentation.spectate
+        && !game.presentation.spectating()
         && (commands_units || input.queue_toggle != crate::input::QueueToggle::Off)
 }
 

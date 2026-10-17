@@ -75,7 +75,7 @@ fn a_selected_foundry_lays_its_cards_inside_the_action_region() {
 #[test]
 fn a_spectator_has_no_top_bar_controls_but_keeps_the_minimap() {
     let mut game = skirmish();
-    game.presentation.spectate = true;
+    game.presentation.stance = crate::game::Stance::Spectator;
     let hud = layout(
         &game.view(),
         &InputState::new(),

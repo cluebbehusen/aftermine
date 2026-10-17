@@ -824,8 +824,10 @@ completed-building footprint sight into a bounded off-map quarry margin. Its
 presentation-only exploration cache updates on every tick, including bulk
 advances, and rebuilds during explicit command-log reconstruction. Player
 checkpoints retain that cache directly. Map tiles show authoritative simulation
-fog; the replay viewer is fog-free. Animation, heading, and weapon effects use
-the relevant simulation state rather than inventing movement or firing delays.
+fog. The replay viewer is fog-free, and so is a seat out of an undecided match
+once no LAN teammate plays on whom it could tip off; its chrome stays its own.
+Animation, heading, and weapon effects use the relevant simulation state rather
+than inventing movement or firing delays.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a

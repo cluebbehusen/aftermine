@@ -125,13 +125,27 @@ pub struct Presentation {
     /// Esc-to-menu exit) is up. Presentation only; opening the pause
     /// menu dismisses it so spectating the ally stays unobstructed.
     pub conceded_banner: bool,
-    /// Fog-free viewing without the debug chrome, used by the playback
-    /// viewer. `overlay` is the developer's F1 view (grid, ids, camera
-    /// internals) and implies this.
-    pub spectate: bool,
+    /// How the picture relates to the local seat. `overlay` is the
+    /// developer's F1 view (grid, ids, camera internals) and is fog-free
+    /// whatever the stance.
+    pub(crate) stance: Stance,
     /// Where between the last executed tick and the next the picture is
     /// drawn, set by the clock that paces it.
     tick_fraction: f32,
+}
+
+/// How the picture relates to the local seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stance {
+    /// The seat plays under its team's fog.
+    Seat,
+    /// The seat is out of an undecided match with no human teammate left
+    /// to tip off. `Game` re-derives this with every tick: fog lifts, but
+    /// the chrome stays the seat's.
+    Out,
+    /// Fog-free viewing with a spectator's chrome, for the playback viewer
+    /// and the final map.
+    Spectator,
 }
 
 /// Salvage the viewer knows lies on a tile.
@@ -341,14 +355,20 @@ impl Presentation {
             projection: std::cell::RefCell::default(),
             placement_verdict: crate::input::VerdictCache::default(),
             conceded_banner: false,
-            spectate: false,
+            stance: Stance::Seat,
             tick_fraction: 0.0,
         }
     }
-    /// Whether rendering should ignore fog: the debug overlay or a
-    /// spectator stance (playback). Chrome decides separately.
+    /// Whether rendering should ignore fog: the debug overlay or any
+    /// stance but a seat in play. Chrome decides separately.
     pub fn all_seeing(&self) -> bool {
-        self.overlay || self.spectate
+        self.overlay || self.stance != Stance::Seat
+    }
+
+    /// Whether the picture carries a spectator's chrome instead of the
+    /// seat's.
+    pub fn spectating(&self) -> bool {
+        self.stance == Stance::Spectator
     }
 
     /// The effect clock that aim holds and recoil age against.

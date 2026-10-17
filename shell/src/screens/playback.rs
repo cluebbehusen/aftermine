@@ -79,7 +79,7 @@ impl PlaybackSession {
         );
         // Spectator view: fog-free, but without the developer overlay, so
         // playback looks like the game.
-        presentation.spectate = true;
+        presentation.stance = crate::game::Stance::Spectator;
         Ok(Self {
             engine,
             presentation,

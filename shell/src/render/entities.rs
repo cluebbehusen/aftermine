@@ -2742,7 +2742,7 @@ fn repair_tethers(game: &crate::game::Scene<'_>) -> Vec<RepairTether> {
 /// line's shape rather than its color tells the two apart. A selected Bay
 /// also shows one pip per slot, filled for each patient.
 pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
-    if game.presentation.spectate {
+    if game.presentation.spectating() {
         return;
     }
     let scale = ui_scale();

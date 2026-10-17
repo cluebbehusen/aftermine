@@ -115,7 +115,7 @@ fn an_all_bot_record_opens_for_watching() {
     let mut replay = outcome.replay.expect("recorded");
     replay.meta.ticks = Some(60);
     let pb = PlaybackSession::from_replay(replay).expect("a spectator needs no command seat");
-    assert!(pb.presentation.spectate, "the viewer stays fog-free");
+    assert!(pb.presentation.spectating(), "the viewer stays fog-free");
 }
 
 #[test]
