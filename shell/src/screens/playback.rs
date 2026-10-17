@@ -124,13 +124,33 @@ impl PlaybackSession {
 enum Transport {
     Back,
     PlayPause,
+    /// Steps up the speed ladder, wrapping from the fastest step.
+    Speed,
 }
 
-fn transport_buttons(s: f32) -> [(macroquad::prelude::Rect, Transport); 2] {
+fn transport_buttons(s: f32) -> [(macroquad::prelude::Rect, Transport); 3] {
     [
         (crate::button::corner_slot(0, s), Transport::Back),
         (crate::button::corner_slot(1, s), Transport::PlayPause),
+        (crate::button::corner_slot(2, s), Transport::Speed),
     ]
+}
+
+/// The steps of the replay speed ladder, shared by the speed keys and the
+/// speed button: 0.5x doubling to 64x.
+const SPEED_STEPS: u8 = 8;
+
+fn speed_step(n: u8) -> f64 {
+    0.5 * 2_f64.powi(i32::from(n))
+}
+
+/// The first ladder step faster than `speed`, wrapping to the slowest.
+/// A debug client may have left the clock between steps.
+fn next_speed(speed: f64) -> f64 {
+    (0..SPEED_STEPS)
+        .map(speed_step)
+        .find(|&step| step > speed)
+        .unwrap_or_else(|| speed_step(0))
 }
 
 /// Where the scrub bar lives: a strip above the transport line,
@@ -149,11 +169,12 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     let size = crate::theme::Type::Label.at(s);
     for (rect, button) in transport_buttons(s) {
         let label = match button {
-            Transport::Back => "BACK",
-            Transport::PlayPause if pb.clock.paused => "PLAY",
-            Transport::PlayPause => "PAUSE",
+            Transport::Back => "BACK".into(),
+            Transport::PlayPause if pb.clock.paused => "PLAY".into(),
+            Transport::PlayPause => "PAUSE".into(),
+            Transport::Speed => format!("{}x", pb.clock.speed),
         };
-        crate::button::draw(rect, label, rect.contains(mouse), s);
+        crate::button::draw(rect, &label, rect.contains(mouse), s);
     }
     // The timeline: played track, live position, and the ghost of a
     // seek in flight.
@@ -399,9 +420,7 @@ impl PlaybackSession {
                             Action::ReplayForward => seek_to = Some(self.engine.position() + 500),
                             Action::ReplayStart => seek_to = Some(self.engine.start()),
                             Action::ReplayEnd => seek_to = Some(self.engine.total()),
-                            Action::ReplaySpeed(n) => {
-                                self.clock.speed = 0.5 * 2_f64.powi(i32::from(n));
-                            }
+                            Action::ReplaySpeed(n) => self.clock.speed = speed_step(n),
                             Action::ReplayStats => self.toggle_stats(),
                             _ => {}
                         }
@@ -424,6 +443,9 @@ impl PlaybackSession {
                         Fed::Activated(Transport::Back) => leave = true,
                         Fed::Activated(Transport::PlayPause) => {
                             self.clock.paused = !self.clock.paused;
+                        }
+                        Fed::Activated(Transport::Speed) => {
+                            self.clock.speed = next_speed(self.clock.speed);
                         }
                         Fed::Held => {}
                         Fed::Ignored => {
