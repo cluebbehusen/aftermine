@@ -262,7 +262,7 @@ fn click(p: Vec2) -> [RawEvent; 2] {
 
 #[test]
 fn the_corner_buttons_leave_and_toggle_by_click_and_by_tap() {
-    let [back, play] = transport_buttons(render::ui_scale()).map(|(rect, _)| rect.center());
+    let [back, play, _] = transport_buttons(render::ui_scale()).map(|(rect, _)| rect.center());
     let mut pb = session();
     assert!(!feed(&mut pb, &tap(1, play)));
     assert!(pb.clock.paused, "a tap pauses");
@@ -274,8 +274,35 @@ fn the_corner_buttons_leave_and_toggle_by_click_and_by_tap() {
 }
 
 #[test]
+fn the_speed_button_climbs_the_key_ladder_and_wraps() {
+    let [_, _, (speed_button, _)] = transport_buttons(render::ui_scale());
+    let speed_button = speed_button.center();
+    let mut pb = session();
+    for (id, speed) in (1..).zip([2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 0.5, 1.0]) {
+        assert!(!feed(&mut pb, &tap(id, speed_button)));
+        assert!(
+            (pb.clock.speed - speed).abs() < f64::EPSILON,
+            "tap {id} selects {speed}x"
+        );
+    }
+    assert!(!feed(&mut pb, &click(speed_button)));
+    assert!(
+        (pb.clock.speed - 2.0).abs() < f64::EPSILON,
+        "a click steps too"
+    );
+    assert!(!pb.clock.paused, "the speed button leaves pause alone");
+    // A debug client may leave the clock between steps.
+    pb.clock.speed = 3.0;
+    assert!(!feed(&mut pb, &tap(9, speed_button)));
+    assert!(
+        (pb.clock.speed - 4.0).abs() < f64::EPSILON,
+        "an off-ladder speed rounds up to the next step"
+    );
+}
+
+#[test]
 fn a_back_press_that_slides_off_stays() {
-    let [(back, _), _] = transport_buttons(render::ui_scale());
+    let [(back, _), _, _] = transport_buttons(render::ui_scale());
     let off = vec2(back.center().x, back.y + back.h + 200.0);
     let mut pb = session();
     let before = pb.presentation.camera.center;

@@ -403,25 +403,26 @@ top bar ends in a menu button that opens the pause menu, and its clock or PAUSED
 status toggles pause; both are `LayoutModel` chrome that `UiView` reports. The
 New Match steps, replay playback, the final map, Settings, the roster, and the
 replay shelf draw a top-left BACK button instead of a Back row, and playback
-adds Play/Pause. These ride `Press::feed`, which also tells the screen when a
-button claimed an event; the menus share `button::BackButton`, which acts as
-Escape does on each face. Settings splits its rows across tabs on a
-`tabs::TabStrip` under its title, which claims its own presses the same way; the
-Previous tab and Next tab menu actions step it from the keyboard, and on the
-Controls tab, which reads raw keys, the classic Q and E work too. Menu lists and
-the map grid scroll by a finger dragged past `press::DRAG_SLOP` (`ScrollPress`).
-Every cursor steps through `nav`: arrows wrap at the edges, Home and End land on
-the first and last live cell, and paging stops at the ends. Menu rows stand for
-typed values (`Menu<R>`), so a screen never maps a row index back to its
-meaning. Chrome colors, stroke weights and the eight type sizes come from
-`theme`; world colors stay with the renderer. The read-only viewers pan and
-pinch through `ViewerTouch`, within the shared `camera::controls::ViewerHands`.
-Text entry (the save name, the Settings name, and the Join form's name and host
-address) is a `text_field::Form`: labeled fields in one row above Cancel and a
-confirm button, each filtering what it accepts and checking its value before a
-commit. On touch-only builds the frame loop raises and hides the on-screen
-keyboard to follow the focused field and asks for the numbers-and-punctuation
-layout on the address.
+adds Play/Pause and a speed button that steps the speed keys' ladder. These ride
+`Press::feed`, which also tells the screen when a button claimed an event; the
+menus share `button::BackButton`, which acts as Escape does on each face.
+Settings splits its rows across tabs on a `tabs::TabStrip` under its title,
+which claims its own presses the same way; the Previous tab and Next tab menu
+actions step it from the keyboard, and on the Controls tab, which reads raw
+keys, the classic Q and E work too. Menu lists and the map grid scroll by a
+finger dragged past `press::DRAG_SLOP` (`ScrollPress`). Every cursor steps
+through `nav`: arrows wrap at the edges, Home and End land on the first and last
+live cell, and paging stops at the ends. Menu rows stand for typed values
+(`Menu<R>`), so a screen never maps a row index back to its meaning. Chrome
+colors, stroke weights and the eight type sizes come from `theme`; world colors
+stay with the renderer. The read-only viewers pan and pinch through
+`ViewerTouch`, within the shared `camera::controls::ViewerHands`. Text entry
+(the save name, the Settings name, and the Join form's name and host address) is
+a `text_field::Form`: labeled fields in one row above Cancel and a confirm
+button, each filtering what it accepts and checking its value before a commit.
+On touch-only builds the frame loop raises and hides the on-screen keyboard to
+follow the focused field and asks for the numbers-and-punctuation layout on the
+address.
 
 Hints, toasts, card descriptions, and the tutorial say tap or click for the last
 pointer and name keys only once a hardware key has been pressed; copy that mixes
