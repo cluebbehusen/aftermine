@@ -1,66 +1,177 @@
-//! Coarse, static work surfaces. Placement and travel still use rectangular tiles.
+//! Static work surfaces that follow each building's drawn body. Placement
+//! and travel still use rectangular tiles.
+use crate::stats::CONSTRUCTION_STAGES;
 use crate::{Building, BuildingKind, State};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
-/// A building's approximate ground surface, without a navigation mesh or cache.
+/// A contact outline: vertices on the footprint's 128-unit canvas,
+/// clockwise on screen.
+pub type Outline = &'static [(i32, i32)];
+
+/// One outline per construction stage of a site or upgrade.
+type Stages = [Outline; CONSTRUCTION_STAGES as usize];
+
+/// The outlines a kind's art shows.
+struct Outlines {
+    /// One per tier standing built; empty for a kind that never stands.
+    built: &'static [Outline],
+    /// One set of stages per tier.
+    site: &'static [Stages],
+}
+
+const FABRICATOR: Outline = &[
+    (11, 10),
+    (52, 10),
+    (52, 33),
+    (124, 33),
+    (124, 115),
+    (11, 115),
+];
+const FOUNDRY: Outline = &[
+    (8, 24),
+    (37, 24),
+    (37, 7),
+    (89, 7),
+    (89, 24),
+    (120, 24),
+    (120, 119),
+    (8, 119),
+];
+const BASTION: Outline = &[(18, 28), (109, 28), (109, 111), (18, 111)];
+const REPAIR_BAY: Outline = &[
+    (10, 25),
+    (29, 14),
+    (106, 14),
+    (119, 26),
+    (119, 105),
+    (100, 117),
+    (27, 117),
+    (10, 107),
+];
+const TURRET: Outline = &[(14, 25), (114, 25), (114, 110), (14, 110)];
+const FLAK_TURRET: Outline = &[(14, 21), (114, 21), (114, 114), (14, 114)];
+const ARRAY: Outline = &[(17, 19), (111, 19), (111, 110), (17, 110)];
+const BARRICADE: Outline = &[(0, 26), (128, 26), (128, 111), (0, 111)];
+const SCUTTLE_CHARGE: Outline = &[(23, 36), (105, 36), (105, 94), (23, 94)];
+const PLAIN: Outline = &[(8, 8), (120, 8), (120, 120), (8, 120)];
+
+/// Every stage showing one outline.
+const fn steady(outline: Outline) -> Stages {
+    [outline; CONSTRUCTION_STAGES as usize]
+}
+
+const FOUNDRY_ART: Outlines = Outlines {
+    built: &[FOUNDRY],
+    site: &[steady(FOUNDRY)],
+};
+const TURRET_ART: Outlines = Outlines {
+    built: &[TURRET, TURRET, TURRET],
+    site: &[steady(TURRET), steady(TURRET), steady(TURRET)],
+};
+const FABRICATOR_ART: Outlines = Outlines {
+    built: &[FABRICATOR],
+    site: &[steady(FABRICATOR)],
+};
+const FLAK_TURRET_ART: Outlines = Outlines {
+    built: &[FLAK_TURRET, FLAK_TURRET],
+    site: &[steady(FLAK_TURRET), steady(FLAK_TURRET)],
+};
+const BASTION_ART: Outlines = Outlines {
+    built: &[BASTION, BASTION],
+    site: &[steady(BASTION), steady(BASTION)],
+};
+const ARRAY_ART: Outlines = Outlines {
+    built: &[ARRAY, ARRAY],
+    site: &[steady(ARRAY), steady(ARRAY)],
+};
+const PLAIN_TWO_TIERS_ART: Outlines = Outlines {
+    built: &[PLAIN, PLAIN],
+    site: &[steady(PLAIN), steady(PLAIN)],
+};
+const REPAIR_BAY_ART: Outlines = Outlines {
+    built: &[REPAIR_BAY],
+    site: &[steady(REPAIR_BAY)],
+};
+const PLAIN_ART: Outlines = Outlines {
+    built: &[PLAIN],
+    site: &[steady(PLAIN)],
+};
+const BARRICADE_ART: Outlines = Outlines {
+    built: &[BARRICADE],
+    site: &[steady(BARRICADE)],
+};
+const SCUTTLE_CHARGE_ART: Outlines = Outlines {
+    built: &[SCUTTLE_CHARGE],
+    site: &[steady(SCUTTLE_CHARGE)],
+};
+const CRADLE_ART: Outlines = Outlines {
+    built: &[],
+    site: &[steady(PLAIN)],
+};
+
+/// The outlines of every tier and stage of `kind`. The match is exhaustive
+/// so a new kind cannot ship without them.
+fn outlines(kind: BuildingKind) -> Outlines {
+    match kind {
+        BuildingKind::Foundry => FOUNDRY_ART,
+        BuildingKind::Turret => TURRET_ART,
+        BuildingKind::Fabricator => FABRICATOR_ART,
+        BuildingKind::FlakTurret => FLAK_TURRET_ART,
+        BuildingKind::Bastion => BASTION_ART,
+        BuildingKind::Array => ARRAY_ART,
+        BuildingKind::Reclaimer | BuildingKind::Extractor => PLAIN_TWO_TIERS_ART,
+        BuildingKind::RepairBay => REPAIR_BAY_ART,
+        BuildingKind::Airworks
+        | BuildingKind::Crucible
+        | BuildingKind::Spire
+        | BuildingKind::Lattice => PLAIN_ART,
+        BuildingKind::Barricade => BARRICADE_ART,
+        BuildingKind::ScuttleCharge => SCUTTLE_CHARGE_ART,
+        BuildingKind::MawCradle | BuildingKind::RocCradle => CRADLE_ART,
+    }
+}
+
+/// The outline `kind`'s art shows at `tier`: standing built when `stage`
+/// is none, otherwise at that construction stage. Tier and stage clamp to
+/// the last authored, as a forged tier's stats do, and a kind that never
+/// stands built shows its last stage.
+pub fn outline(kind: BuildingKind, tier: u8, stage: Option<u8>) -> Outline {
+    let outlines = outlines(kind);
+    let tier = usize::from(tier);
+    let site = &outlines.site[tier.min(outlines.site.len() - 1)];
+    let last = site[site.len() - 1];
+    match stage {
+        Some(stage) => site[usize::from(stage).min(site.len() - 1)],
+        None => outlines
+            .built
+            .get(tier)
+            .or(outlines.built.last())
+            .copied()
+            .unwrap_or(last),
+    }
+}
+
+/// A building's contact surface, without a navigation mesh or cache.
 #[derive(Clone, Copy)]
 pub struct Surface {
-    kind: BuildingKind,
+    outline: Outline,
     anchor: TilePos,
     size: (i32, i32),
 }
 
 impl Surface {
-    /// Resolve the fixed outline at a building's world position.
+    /// The outline a building's art shows now, at its world position.
     pub fn new(building: &Building) -> Self {
-        let size = building.kind.size();
         Self {
-            kind: building.kind,
+            outline: outline(building.kind, building.tier, building.construction_stage()),
             anchor: building.anchor,
-            size,
+            size: building.kind.size(),
         }
     }
 
     fn vertices(self) -> impl Iterator<Item = Vec2Fx> + Clone {
-        let outline: &[(i32, i32)] = match self.kind {
-            BuildingKind::Fabricator => &[
-                (11, 10),
-                (52, 10),
-                (52, 33),
-                (124, 33),
-                (124, 115),
-                (11, 115),
-            ],
-            BuildingKind::Foundry => &[
-                (8, 24),
-                (37, 24),
-                (37, 7),
-                (89, 7),
-                (89, 24),
-                (120, 24),
-                (120, 119),
-                (8, 119),
-            ],
-            BuildingKind::Bastion => &[(18, 28), (109, 28), (109, 111), (18, 111)],
-            BuildingKind::RepairBay => &[
-                (10, 25),
-                (29, 14),
-                (106, 14),
-                (119, 26),
-                (119, 105),
-                (100, 117),
-                (27, 117),
-                (10, 107),
-            ],
-            BuildingKind::Turret => &[(14, 25), (114, 25), (114, 110), (14, 110)],
-            BuildingKind::FlakTurret => &[(14, 21), (114, 21), (114, 114), (14, 114)],
-            BuildingKind::Array => &[(17, 19), (111, 19), (111, 110), (17, 110)],
-            BuildingKind::Barricade => &[(0, 26), (128, 26), (128, 111), (0, 111)],
-            BuildingKind::ScuttleCharge => &[(23, 36), (105, 36), (105, 94), (23, 94)],
-            _ => &[(8, 8), (120, 8), (120, 120), (8, 120)],
-        };
-        outline.iter().map(move |&(x, y)| {
+        self.outline.iter().map(move |&(x, y)| {
             Vec2Fx::new(
                 Fx::from_num(self.anchor.x) + Fx::from_num(x * self.size.0) / 128,
                 Fx::from_num(self.anchor.y) + Fx::from_num(y * self.size.1) / 128,
