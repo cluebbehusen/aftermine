@@ -503,3 +503,114 @@ fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
     }
     assert!(arrived, "worker never left the dock: {:?}", state.unit(id));
 }
+
+/// A site's outline follows its scaffold, then the raised frame, then the
+/// finished building. Each redraw can leave the builder out of reach or
+/// pressed against the new face; it works on or re-seats within a moment,
+/// to completion.
+#[test]
+fn a_builder_raises_a_site_through_every_outline_it_shows() {
+    use oxide_sim::BuildingKind;
+    for kind in [BuildingKind::Bastion, BuildingKind::Foundry] {
+        let (mut state, _, site) = paid_site(kind, TilePos::new(14, 10), json!([]));
+        let (mut stages, mut idle, mut longest) = (vec![], 0, 0);
+        let mut done = 0;
+        for _ in 0..2000 {
+            state.tick(&[]);
+            let b = state.building(site).unwrap();
+            if b.built() {
+                break;
+            }
+            let progress = b.construction_progress().unwrap();
+            idle = if progress == done && progress > 0 {
+                idle + 1
+            } else {
+                0
+            };
+            longest = longest.max(idle);
+            done = progress;
+            if stages.last() != Some(&b.construction_stage()) {
+                stages.push(b.construction_stage());
+            }
+        }
+        assert!(
+            state.building(site).unwrap().built(),
+            "{kind:?} never built"
+        );
+        assert_eq!(stages, [Some(0), Some(1), Some(2)], "{kind:?}");
+        assert!(longest <= 30, "{kind:?} stood idle {longest} ticks");
+    }
+}
+
+/// A building that begins an upgrade is redrawn as a scaffold, which can
+/// reach past the face its welder pressed against. The welder's job ends
+/// and it can still drive off.
+#[test]
+fn a_welder_whose_building_begins_an_upgrade_stands_down_and_can_leave() {
+    let scenario: Scenario = serde_json::from_value(json!({
+        "name":"upgrade under a welder", "mode":"sandbox", "map":vec!["................................";24],
+        "players":[{"name":"Local","scrap":10000,"bot":false}],
+        "units":[{"player":0,"kind":"harvester","x":12,"y":9}],
+        "buildings":[
+            {"player":0,"kind":"turret","x":11,"y":10},
+            {"player":0,"kind":"fabricator","x":28,"y":20},
+        ]
+    }))
+    .unwrap();
+    let state = scenario.build().unwrap();
+    let id = state.units()[0].id;
+    let building = state.buildings()[0].id;
+    let mut data = serde_json::to_value(&state).unwrap();
+    data["buildings"][0]["hp"] = json!(100);
+    let mut state: State = serde_json::from_value(data).unwrap();
+    state.tick(&[command(Command::Repair {
+        units: vec![id],
+        building,
+        queue: false,
+    })]);
+    for _ in 0..250 {
+        state.tick(&[]);
+        if state.building(building).unwrap().hp > 100 {
+            break;
+        }
+    }
+    let welder = state.unit(id).unwrap();
+    assert!(state.in_building_work_reach(welder, building), "{welder:?}");
+    let built = state.contact_surface(state.building(building).unwrap());
+    assert!(welder.pos.dist(built.closest(welder.pos)) >= welder.kind.stats().radius);
+    let report = state.tick(&[command(Command::UpgradeBuilding { building })]);
+    assert!(
+        state.building(building).unwrap().upgrading(),
+        "{:?}",
+        report.events
+    );
+    let scaffold = state.contact_surface(state.building(building).unwrap());
+    let welder = state.unit(id).unwrap();
+    assert!(
+        welder.pos.dist(scaffold.closest(welder.pos)) < welder.kind.stats().radius,
+        "the scaffold reaches into the welder: {welder:?}"
+    );
+    state.tick(&[]);
+    assert!(
+        !matches!(
+            state.unit(id).unwrap().order,
+            oxide_sim::Order::Repair { .. }
+        ),
+        "{:?}",
+        state.unit(id)
+    );
+    let goal = TilePos::new(16, 6);
+    state.tick(&[command(Command::Run {
+        units: vec![id],
+        goal,
+        queue: false,
+    })]);
+    for _ in 0..250 {
+        state.tick(&[]);
+    }
+    assert!(
+        state.unit(id).unwrap().pos.dist_sq(goal.center()) < Fx::ONE,
+        "failed to leave: {:?}",
+        state.unit(id)
+    );
+}

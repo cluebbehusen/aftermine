@@ -21,8 +21,8 @@ an ordinary command source rather than a separate ruleset.
   memory. It owns information access, not controller policy or navigation
   caches.
 - `geometry` shares canonical command and production tie rules with predictors.
-- `building_contact` owns fixed approximate building surfaces for local
-  interaction.
+- `building_contact` owns the contact outlines, per kind, tier, and construction
+  stage, that follow the building art for local interaction.
 - `vision` provides visibility and explored-world state.
 
 Queued construction pays for one site immediately. Fogged footprints remain

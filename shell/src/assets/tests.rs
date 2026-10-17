@@ -74,7 +74,7 @@ fn defense_rungs() -> Vec<(String, String)> {
         .collect()
 }
 
-fn manifest() -> Manifest {
+pub(super) fn manifest() -> Manifest {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/sprites/atlas.json");
     let text = std::fs::read_to_string(&path)
@@ -437,7 +437,7 @@ fn defense_mounts_match_their_footprints_and_rotate_about_square_canvases() {
     }
 }
 
-fn sprite_image(name: &str) -> macroquad::prelude::Image {
+pub(super) fn sprite_image(name: &str) -> macroquad::prelude::Image {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../assets/sprites")
         .join(format!("{name}.png"));

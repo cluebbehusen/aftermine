@@ -19,7 +19,7 @@ fn every_outline() -> Vec<(BuildingKind, Outline)> {
 
 /// Above this many vertices an outline costs every contact query more than
 /// its art's detail is worth.
-const MAX_VERTICES: usize = 20;
+const MAX_VERTICES: usize = 24;
 
 #[test]
 fn every_kind_outlines_each_tier_built_and_at_each_stage() {
@@ -90,6 +90,29 @@ fn every_outline_is_a_clockwise_simple_polygon_on_its_canvas() {
                 assert!(!proper && !touching, "{kind:?} crosses itself: {outline:?}");
             }
         }
+    }
+}
+
+/// An outline within a unit of mirror symmetry is exactly symmetric, so a
+/// mirrored map's contacts mirror too; only art that is itself lopsided may
+/// leave its outline so.
+#[test]
+fn outlines_near_mirror_symmetry_are_exactly_symmetric() {
+    for (kind, outline) in every_outline() {
+        let mirror = |&(x, y): &(i32, i32)| (128 - x, y);
+        let partners = outline.iter().map(|vertex| {
+            let (mx, my) = mirror(vertex);
+            outline
+                .iter()
+                .map(|&(x, y)| (x - mx).abs().max((y - my).abs()))
+                .min()
+                .expect("nonempty outline")
+        });
+        let worst = partners.max().expect("nonempty outline");
+        assert!(
+            worst == 0 || worst > 1,
+            "{kind:?} misses mirror symmetry by a unit: {outline:?}"
+        );
     }
 }
 

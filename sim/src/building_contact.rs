@@ -1,5 +1,5 @@
-//! Static work surfaces that follow each building's drawn body. Placement
-//! and travel still use rectangular tiles.
+//! Static work surfaces that follow each building's drawn body, per tier and
+//! construction stage. Placement and travel still use rectangular tiles.
 use crate::stats::CONSTRUCTION_STAGES;
 use crate::{Building, BuildingKind, State};
 use chassis::fx::{Fx, Vec2Fx};
@@ -20,94 +20,532 @@ struct Outlines {
     site: &'static [Stages],
 }
 
-const FABRICATOR: Outline = &[
-    (11, 10),
-    (52, 10),
-    (52, 33),
-    (124, 33),
-    (124, 115),
-    (11, 115),
-];
-const FOUNDRY: Outline = &[
-    (8, 24),
-    (37, 24),
-    (37, 7),
-    (89, 7),
-    (89, 24),
-    (120, 24),
-    (120, 119),
-    (8, 119),
-];
-const BASTION: Outline = &[(18, 28), (109, 28), (109, 111), (18, 111)];
-const REPAIR_BAY: Outline = &[
-    (10, 25),
-    (29, 14),
-    (106, 14),
-    (119, 26),
-    (119, 105),
-    (100, 117),
-    (27, 117),
-    (10, 107),
-];
-const TURRET: Outline = &[(14, 25), (114, 25), (114, 110), (14, 110)];
-const FLAK_TURRET: Outline = &[(14, 21), (114, 21), (114, 114), (14, 114)];
-const ARRAY: Outline = &[(17, 19), (111, 19), (111, 110), (17, 110)];
-const BARRICADE: Outline = &[(0, 26), (128, 26), (128, 111), (0, 111)];
-const SCUTTLE_CHARGE: Outline = &[(23, 36), (105, 36), (105, 94), (23, 94)];
-const PLAIN: Outline = &[(8, 8), (120, 8), (120, 120), (8, 120)];
+// Traced from the body art the field draws, by the shell's ignored test
+// `suggest_contact_outlines`; its `every_building_body_sits_on_its_contact_outline`
+// fails when art and outline drift apart.
 
-/// Every stage showing one outline.
-const fn steady(outline: Outline) -> Stages {
-    [outline; CONSTRUCTION_STAGES as usize]
-}
+/// The scaffold every 128 px site shows at its first stage.
+const SCAFFOLD: Outline = &[(9, 16), (119, 16), (119, 117), (9, 117)];
+const FOUNDRY: Outline = &[
+    (8, 32),
+    (15, 24),
+    (36, 24),
+    (41, 7),
+    (85, 7),
+    (90, 12),
+    (90, 24),
+    (113, 24),
+    (121, 33),
+    (121, 116),
+    (116, 121),
+    (102, 121),
+    (98, 115),
+    (84, 115),
+    (83, 120),
+    (48, 120),
+    (47, 115),
+    (31, 115),
+    (26, 121),
+    (12, 121),
+    (8, 117),
+];
+const FOUNDRY_STAGE1: Outline = &[
+    (10, 16),
+    (37, 17),
+    (42, 7),
+    (84, 7),
+    (89, 17),
+    (120, 16),
+    (120, 117),
+    (117, 120),
+    (100, 117),
+    (29, 117),
+    (12, 120),
+    (8, 116),
+];
+const FOUNDRY_STAGE2: Outline = &[
+    (10, 16),
+    (37, 17),
+    (42, 7),
+    (85, 7),
+    (90, 17),
+    (120, 16),
+    (121, 116),
+    (116, 121),
+    (103, 121),
+    (99, 117),
+    (84, 117),
+    (82, 120),
+    (29, 117),
+    (26, 121),
+    (11, 120),
+    (8, 117),
+];
+const TURRET: Outline = &[
+    (97, 25),
+    (115, 43),
+    (113, 103),
+    (64, 111),
+    (15, 103),
+    (13, 43),
+    (31, 25),
+];
+const TURRET_T1: Outline = &[
+    (99, 22),
+    (117, 40),
+    (113, 103),
+    (98, 113),
+    (30, 113),
+    (15, 103),
+    (11, 40),
+    (29, 22),
+];
+const TURRET_T2: Outline = &[
+    (101, 29),
+    (116, 44),
+    (116, 101),
+    (100, 117),
+    (64, 119),
+    (28, 117),
+    (12, 101),
+    (12, 44),
+    (27, 29),
+];
+const FABRICATOR: Outline = &[
+    (9, 14),
+    (10, 10),
+    (46, 10),
+    (53, 17),
+    (53, 33),
+    (113, 34),
+    (126, 50),
+    (126, 86),
+    (110, 103),
+    (103, 116),
+    (16, 116),
+    (9, 109),
+];
+const FABRICATOR_STAGE1: Outline = &[
+    (9, 16),
+    (11, 10),
+    (45, 10),
+    (51, 17),
+    (120, 16),
+    (120, 44),
+    (125, 50),
+    (125, 87),
+    (120, 93),
+    (120, 117),
+    (10, 117),
+];
+const FLAK_TURRET: Outline = &[
+    (81, 38),
+    (97, 21),
+    (115, 25),
+    (92, 52),
+    (92, 81),
+    (115, 110),
+    (98, 115),
+    (85, 99),
+    (64, 105),
+    (43, 99),
+    (30, 115),
+    (13, 110),
+    (36, 81),
+    (36, 52),
+    (13, 25),
+    (31, 21),
+    (47, 38),
+];
+const FLAK_TURRET_T1: Outline = &[
+    (81, 38),
+    (97, 21),
+    (115, 25),
+    (98, 46),
+    (105, 52),
+    (98, 87),
+    (115, 110),
+    (98, 115),
+    (85, 99),
+    (64, 105),
+    (43, 99),
+    (30, 115),
+    (13, 110),
+    (30, 87),
+    (23, 52),
+    (30, 46),
+    (13, 25),
+    (31, 21),
+    (47, 38),
+];
+const BASTION: Outline = &[
+    (17, 47),
+    (24, 40),
+    (23, 28),
+    (107, 28),
+    (110, 31),
+    (107, 38),
+    (110, 41),
+    (108, 101),
+    (110, 107),
+    (106, 111),
+    (97, 110),
+    (24, 111),
+    (23, 99),
+    (17, 96),
+];
+const BASTION_STAGE1: Outline = &[
+    (10, 16),
+    (57, 17),
+    (58, 3),
+    (71, 3),
+    (71, 17),
+    (120, 16),
+    (120, 117),
+    (10, 117),
+];
+const BASTION_T1: Outline = &[
+    (116, 21),
+    (123, 32),
+    (122, 114),
+    (110, 122),
+    (18, 122),
+    (6, 114),
+    (5, 32),
+    (12, 21),
+];
+const BASTION_T1_STAGE1: Outline = &[
+    (6, 32),
+    (10, 25),
+    (10, 16),
+    (54, 17),
+    (55, 5),
+    (74, 5),
+    (74, 17),
+    (120, 16),
+    (120, 117),
+    (111, 121),
+    (13, 120),
+    (6, 109),
+];
+const ARRAY: Outline = &[
+    (103, 19),
+    (112, 28),
+    (112, 101),
+    (102, 111),
+    (26, 111),
+    (16, 101),
+    (16, 28),
+    (25, 19),
+];
+const RECLAIMER: Outline = &[
+    (117, 9),
+    (122, 16),
+    (120, 118),
+    (64, 121),
+    (8, 118),
+    (6, 16),
+    (11, 9),
+];
+const REPAIR_BAY: Outline = &[
+    (100, 13),
+    (116, 25),
+    (116, 105),
+    (97, 115),
+    (31, 115),
+    (12, 105),
+    (12, 25),
+    (28, 13),
+];
+const EXTRACTOR: Outline = &[
+    (114, 9),
+    (122, 17),
+    (122, 113),
+    (113, 122),
+    (15, 122),
+    (6, 113),
+    (6, 17),
+    (14, 9),
+];
+const EXTRACTOR_T1: Outline = &[
+    (82, 5),
+    (86, 13),
+    (120, 12),
+    (124, 16),
+    (124, 117),
+    (114, 125),
+    (14, 125),
+    (4, 117),
+    (4, 16),
+    (8, 12),
+    (42, 13),
+    (46, 5),
+];
+const AIRWORKS: Outline = &[
+    (111, 12),
+    (120, 21),
+    (120, 110),
+    (110, 120),
+    (18, 120),
+    (8, 110),
+    (8, 21),
+    (17, 12),
+];
+const AIRWORKS_STAGE1: Outline = &[
+    (9, 21),
+    (18, 12),
+    (110, 12),
+    (113, 16),
+    (120, 16),
+    (120, 117),
+    (10, 117),
+];
+const CRUCIBLE: Outline = &[
+    (112, 8),
+    (121, 17),
+    (121, 111),
+    (111, 121),
+    (17, 121),
+    (7, 111),
+    (7, 17),
+    (16, 8),
+];
+const CRUCIBLE_STAGE1: Outline = &[
+    (8, 17),
+    (17, 8),
+    (111, 8),
+    (120, 16),
+    (120, 117),
+    (114, 117),
+    (112, 120),
+    (10, 117),
+];
+const CRUCIBLE_STAGE2: Outline = &[
+    (8, 17),
+    (17, 8),
+    (112, 8),
+    (121, 18),
+    (120, 117),
+    (114, 117),
+    (111, 121),
+    (18, 121),
+    (14, 117),
+    (10, 117),
+];
+const BARRICADE: Outline = &[
+    (128, 26),
+    (128, 91),
+    (121, 92),
+    (121, 108),
+    (106, 112),
+    (102, 92),
+    (26, 92),
+    (22, 112),
+    (7, 108),
+    (7, 92),
+    (0, 91),
+    (0, 26),
+];
+const BARRICADE_STAGE1: Outline = &[
+    (120, 16),
+    (120, 26),
+    (128, 27),
+    (120, 117),
+    (8, 117),
+    (0, 27),
+    (8, 26),
+    (8, 16),
+];
+const SCUTTLE_CHARGE: Outline = &[
+    (92, 36),
+    (106, 50),
+    (106, 80),
+    (91, 95),
+    (37, 95),
+    (22, 80),
+    (22, 50),
+    (36, 36),
+];
+const SPIRE: Outline = &[
+    (64, 8),
+    (85, 11),
+    (101, 21),
+    (107, 21),
+    (123, 62),
+    (121, 82),
+    (110, 102),
+    (110, 107),
+    (86, 121),
+    (64, 125),
+    (42, 121),
+    (18, 107),
+    (18, 102),
+    (7, 82),
+    (5, 62),
+    (21, 21),
+    (27, 21),
+    (43, 11),
+];
+const SPIRE_STAGE1: Outline = &[
+    (6, 62),
+    (10, 47),
+    (10, 16),
+    (34, 17),
+    (60, 8),
+    (80, 10),
+    (94, 17),
+    (120, 16),
+    (120, 117),
+    (91, 117),
+    (72, 124),
+    (56, 124),
+    (37, 117),
+    (10, 117),
+    (10, 85),
+];
+const LATTICE: Outline = &[
+    (64, 12),
+    (93, 29),
+    (105, 26),
+    (107, 37),
+    (113, 39),
+    (113, 45),
+    (121, 60),
+    (120, 70),
+    (110, 82),
+    (107, 107),
+    (95, 108),
+    (64, 117),
+    (33, 108),
+    (21, 107),
+    (18, 82),
+    (8, 70),
+    (7, 60),
+    (15, 45),
+    (15, 39),
+    (21, 37),
+    (23, 26),
+    (35, 29),
+];
+const LATTICE_STAGE2: Outline = &[
+    (8, 58),
+    (10, 54),
+    (10, 16),
+    (56, 17),
+    (63, 12),
+    (72, 17),
+    (120, 16),
+    (120, 117),
+    (10, 117),
+    (10, 70),
+];
+const MAW_CRADLE_STAGE0: Outline = &[
+    (123, 0),
+    (127, 1),
+    (128, 5),
+    (127, 127),
+    (1, 127),
+    (0, 5),
+    (1, 1),
+    (5, 0),
+];
+const ROC_CRADLE_STAGE0: Outline = &[
+    (123, 0),
+    (127, 1),
+    (128, 5),
+    (127, 127),
+    (1, 127),
+    (0, 5),
+    (1, 1),
+    (5, 0),
+];
 
 const FOUNDRY_ART: Outlines = Outlines {
     built: &[FOUNDRY],
-    site: &[steady(FOUNDRY)],
+    site: &[[SCAFFOLD, FOUNDRY_STAGE1, FOUNDRY_STAGE2]],
 };
 const TURRET_ART: Outlines = Outlines {
-    built: &[TURRET, TURRET, TURRET],
-    site: &[steady(TURRET), steady(TURRET), steady(TURRET)],
+    built: &[TURRET, TURRET_T1, TURRET_T2],
+    site: &[
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+    ],
 };
 const FABRICATOR_ART: Outlines = Outlines {
     built: &[FABRICATOR],
-    site: &[steady(FABRICATOR)],
+    site: &[[SCAFFOLD, FABRICATOR_STAGE1, FABRICATOR_STAGE1]],
 };
 const FLAK_TURRET_ART: Outlines = Outlines {
-    built: &[FLAK_TURRET, FLAK_TURRET],
-    site: &[steady(FLAK_TURRET), steady(FLAK_TURRET)],
+    built: &[FLAK_TURRET, FLAK_TURRET_T1],
+    site: &[
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+    ],
 };
 const BASTION_ART: Outlines = Outlines {
-    built: &[BASTION, BASTION],
-    site: &[steady(BASTION), steady(BASTION)],
+    built: &[BASTION, BASTION_T1],
+    site: &[
+        [SCAFFOLD, BASTION_STAGE1, BASTION_STAGE1],
+        [SCAFFOLD, BASTION_T1_STAGE1, BASTION_T1_STAGE1],
+    ],
 };
 const ARRAY_ART: Outlines = Outlines {
     built: &[ARRAY, ARRAY],
-    site: &[steady(ARRAY), steady(ARRAY)],
+    site: &[
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+        [SCAFFOLD, SCAFFOLD, SCAFFOLD],
+    ],
 };
-const PLAIN_TWO_TIERS_ART: Outlines = Outlines {
-    built: &[PLAIN, PLAIN],
-    site: &[steady(PLAIN), steady(PLAIN)],
+const RECLAIMER_ART: Outlines = Outlines {
+    built: &[RECLAIMER, RECLAIMER],
+    site: &[
+        [SCAFFOLD, RECLAIMER, RECLAIMER],
+        [SCAFFOLD, RECLAIMER, RECLAIMER],
+    ],
 };
 const REPAIR_BAY_ART: Outlines = Outlines {
     built: &[REPAIR_BAY],
-    site: &[steady(REPAIR_BAY)],
+    site: &[[SCAFFOLD, SCAFFOLD, SCAFFOLD]],
 };
-const PLAIN_ART: Outlines = Outlines {
-    built: &[PLAIN],
-    site: &[steady(PLAIN)],
+const EXTRACTOR_ART: Outlines = Outlines {
+    built: &[EXTRACTOR, EXTRACTOR_T1],
+    site: &[
+        [SCAFFOLD, EXTRACTOR, EXTRACTOR],
+        [SCAFFOLD, EXTRACTOR_T1, EXTRACTOR_T1],
+    ],
+};
+const AIRWORKS_ART: Outlines = Outlines {
+    built: &[AIRWORKS],
+    site: &[[SCAFFOLD, AIRWORKS_STAGE1, AIRWORKS_STAGE1]],
+};
+const CRUCIBLE_ART: Outlines = Outlines {
+    built: &[CRUCIBLE],
+    site: &[[SCAFFOLD, CRUCIBLE_STAGE1, CRUCIBLE_STAGE2]],
 };
 const BARRICADE_ART: Outlines = Outlines {
     built: &[BARRICADE],
-    site: &[steady(BARRICADE)],
+    site: &[[SCAFFOLD, BARRICADE_STAGE1, BARRICADE_STAGE1]],
 };
 const SCUTTLE_CHARGE_ART: Outlines = Outlines {
     built: &[SCUTTLE_CHARGE],
-    site: &[steady(SCUTTLE_CHARGE)],
+    site: &[[SCAFFOLD, SCAFFOLD, SCAFFOLD]],
 };
-const CRADLE_ART: Outlines = Outlines {
+const SPIRE_ART: Outlines = Outlines {
+    built: &[SPIRE],
+    site: &[[SCAFFOLD, SPIRE_STAGE1, SPIRE_STAGE1]],
+};
+const LATTICE_ART: Outlines = Outlines {
+    built: &[LATTICE],
+    site: &[[SCAFFOLD, SCAFFOLD, LATTICE_STAGE2]],
+};
+const MAW_CRADLE_ART: Outlines = Outlines {
     built: &[],
-    site: &[steady(PLAIN)],
+    site: &[[MAW_CRADLE_STAGE0, MAW_CRADLE_STAGE0, MAW_CRADLE_STAGE0]],
+};
+const ROC_CRADLE_ART: Outlines = Outlines {
+    built: &[],
+    site: &[[ROC_CRADLE_STAGE0, ROC_CRADLE_STAGE0, ROC_CRADLE_STAGE0]],
 };
 
 /// The outlines of every tier and stage of `kind`. The match is exhaustive
@@ -120,15 +558,17 @@ fn outlines(kind: BuildingKind) -> Outlines {
         BuildingKind::FlakTurret => FLAK_TURRET_ART,
         BuildingKind::Bastion => BASTION_ART,
         BuildingKind::Array => ARRAY_ART,
-        BuildingKind::Reclaimer | BuildingKind::Extractor => PLAIN_TWO_TIERS_ART,
+        BuildingKind::Reclaimer => RECLAIMER_ART,
         BuildingKind::RepairBay => REPAIR_BAY_ART,
-        BuildingKind::Airworks
-        | BuildingKind::Crucible
-        | BuildingKind::Spire
-        | BuildingKind::Lattice => PLAIN_ART,
+        BuildingKind::Extractor => EXTRACTOR_ART,
+        BuildingKind::Airworks => AIRWORKS_ART,
+        BuildingKind::Crucible => CRUCIBLE_ART,
         BuildingKind::Barricade => BARRICADE_ART,
         BuildingKind::ScuttleCharge => SCUTTLE_CHARGE_ART,
-        BuildingKind::MawCradle | BuildingKind::RocCradle => CRADLE_ART,
+        BuildingKind::Spire => SPIRE_ART,
+        BuildingKind::Lattice => LATTICE_ART,
+        BuildingKind::MawCradle => MAW_CRADLE_ART,
+        BuildingKind::RocCradle => ROC_CRADLE_ART,
     }
 }
 
@@ -250,13 +690,13 @@ impl Surface {
         !self.contains(from)
             && !self.contains(to)
             && self.edges().all(|(a, b)| {
-                if segments_cross(from, to, a, b) {
-                    return false;
-                }
                 // Boxes this far apart keep every point of one segment
                 // farther than the radius from the other.
                 if box_gap(from, to, a, b) > radius.abs() + ROUNDING_MARGIN {
                     return true;
+                }
+                if segments_cross(from, to, a, b) {
+                    return false;
                 }
                 [
                     from.dist_sq(closest_on_segment(from, a, b)),

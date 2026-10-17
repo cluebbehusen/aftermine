@@ -2041,6 +2041,9 @@ impl Sounds {
     }
 }
 
+/// Every building's contact outline against the body art the field draws.
+#[cfg(test)]
+mod contact_outline_tests;
 /// The asset manifest, checked without a GPU.
 ///
 /// [`Sprites::load`] fails on a missing region, including any row a unit

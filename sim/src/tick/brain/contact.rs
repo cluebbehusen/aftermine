@@ -40,13 +40,27 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
         return true;
     }
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
-    let choose = |entries: Vec<(Vec2Fx, Vec2Fx)>| {
+    let choose = |entries: Vec<(Vec2Fx, Vec2Fx)>, square: bool| {
         let mut candidates: Vec<_> = entries
             .into_iter()
             .filter_map(|(entry, point)| {
                 let goal = crate::geometry::work_tile(entry, pos, b.center());
-                (state.passable(goal) && admissible(state, unit, b, goal, point))
-                    .then_some(crowding::Position { goal, point })
+                // A square stance keeps the hull wholly on open ground all
+                // the way in from its goal tile: outside the contact band
+                // the motor never presses a wide hull onto closed ground,
+                // so a leg that crossed any could halt short of the band.
+                let leg_open = || {
+                    crate::geometry::hull_leg_open(
+                        goal.center(),
+                        point,
+                        unit.kind.stats().radius,
+                        |tile| state.passable(tile),
+                    )
+                };
+                (state.passable(goal)
+                    && admissible(state, unit, b, goal, point)
+                    && (!square || leg_open()))
+                .then_some(crowding::Position { goal, point })
             })
             .collect();
         candidates.sort_by_key(|candidate| {
@@ -78,6 +92,15 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
             choose(
                 surface
                     .square_stances(clearance(unit))
+                    // A face meets the drum only where it is the nearest
+                    // surface: beside a recess the hull would touch, and
+                    // aim at, the neighbouring face instead.
+                    .filter(|&(point, outward)| {
+                        surface
+                            .closest(point)
+                            .dist_sq(point - outward * clearance(unit))
+                            < const { Fx::lit("0.0001") }
+                    })
                     .map(|(point, outward)| {
                         let gap =
                             point.dist(crate::geometry::footprint_contact(point, anchor, size));
@@ -87,6 +110,7 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
                         )
                     })
                     .collect(),
+                true,
             )
         })
         .flatten();
@@ -103,6 +127,7 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
             .into_iter()
             .map(|entry| (entry, surface.stance(entry, clearance(unit))))
             .collect(),
+            false,
         )
     });
     let reachable = path.is_some();
