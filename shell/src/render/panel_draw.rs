@@ -297,11 +297,29 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
 }
 
 fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> Vec<String> {
-    if measure(title) > width && title.contains('-') {
-        wrap_words(&title.replace('-', "- "), measure, width)
-    } else {
-        wrap_words(title, measure, width)
+    if measure(title) <= width || !title.contains('-') {
+        return wrap_words(title, measure, width);
     }
+    // A hyphenated word may also break after its hyphen; halves that stay
+    // on one line keep no space between them.
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in title.split_whitespace() {
+        for (index, part) in word.split_inclusive('-').enumerate() {
+            let glue = if line.is_empty() || index > 0 { "" } else { " " };
+            let candidate = format!("{line}{glue}{part}");
+            if !line.is_empty() && measure(&candidate) > width {
+                lines.push(std::mem::take(&mut line));
+                line = part.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
 }
 
 /// Packs every visible queue chip above the command band: a single

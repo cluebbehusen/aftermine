@@ -287,6 +287,19 @@ fn narrow_cards_keep_short_orders_on_one_line_and_wrap_long_names() {
         card_title_lines("Scuttle Charge", width, 8.0),
         ["Scuttle", "Charge"]
     );
+    assert_eq!(
+        card_title_lines("Auto-weld: on", width, 10.0),
+        ["Auto-weld:", "on"],
+        "halves of a hyphenated word that share a line keep no space"
+    );
+    assert_eq!(
+        card_title_lines("Auto-weld: off", width, 5.0),
+        ["Auto-", "weld:", "off"]
+    );
+    assert_eq!(
+        card_title_lines("Weld - Sentinel", width, 8.0),
+        ["Weld -", "Sentinel"]
+    );
 }
 
 /// The supported windows from the iPad mini floor up: iPad mini, iPad and
