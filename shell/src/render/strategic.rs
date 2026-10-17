@@ -980,6 +980,38 @@ pub(super) fn draw_warhead_burst(
     }
 }
 
+/// Screen pixels between a strike preview's warning stripes, before UI
+/// scale: the stripes keep their pitch at every zoom rather than turning to
+/// moiré when zoomed out.
+const HAZARD_STEP: f32 = 12.0;
+/// How fast the stripes crawl, in unscaled pixels a second.
+const HAZARD_DRIFT: f32 = 10.0;
+
+/// The 45-degree stripes, every `step` pixels shifted by `phase`, that
+/// cover the ring between radii `inner` and `outer` without entering the
+/// inner disc, as segments relative to the centre.
+fn hazard_stripes(inner: f32, outer: f32, step: f32, phase: f32) -> Vec<(Vec2, Vec2)> {
+    let (along, across) = (vec2(1.0, -1.0).normalize(), vec2(1.0, 1.0).normalize());
+    let half = |radius: f32, offset: f32| (radius * radius - offset * offset).max(0.0).sqrt();
+    let lines = numeric::to_usize((outer * 2.0 / step).ceil()).min(400) + 1;
+    let mut stripes = Vec::with_capacity(lines * 2);
+    for k in 0..lines {
+        let offset = -outer + phase + k as f32 * step;
+        if offset.abs() >= outer {
+            continue;
+        }
+        let (base, reach) = (across * offset, half(outer, offset));
+        if offset.abs() < inner {
+            let gap = half(inner, offset);
+            stripes.push((base - along * reach, base - along * gap));
+            stripes.push((base + along * gap, base + along * reach));
+        } else {
+            stripes.push((base - along * reach, base + along * reach));
+        }
+    }
+    stripes
+}
+
 /// The blast a strike would bring: at the touch aim or under the cursor
 /// while a Launch is armed, and at each selected own Spire's ordered tile, with a line from
 /// the silo.
@@ -989,20 +1021,29 @@ pub(crate) fn draw_strike_preview(game: &crate::game::Scene<'_>, input: &InputSt
     let blast = oxide_sim::stats::WARHEAD;
     let human = game.presentation.human;
     let own = seat_identity_color(game, human);
+    let (s, motion) = (ui_scale(), !super::reduced_motion());
+    let drift = if motion {
+        game.presentation.fx_time() * HAZARD_DRIFT * s
+    } else {
+        0.0
+    };
+    // The full-damage core is a solid disc; warning stripes fill the band
+    // the blast fades across. `alpha` is how strongly this ring speaks.
     let ring = |center: Vec2, alpha: f32| {
-        let color = Color::new(own.r, own.g, own.b, alpha);
-        stroke_circle(
-            center,
+        let tint = |a: f32| Color::new(own.r, own.g, own.b, a * alpha);
+        let (outer, full) = (
             blast.outer_radius.to_num::<f32>() * zoom,
-            2.0,
-            color,
-        );
-        stroke_circle(
-            center,
             blast.full_radius.to_num::<f32>() * zoom,
-            1.5,
-            Color::new(color.r, color.g, color.b, alpha * 0.8),
         );
+        fill_circle(center, outer, tint(0.16));
+        let step = HAZARD_STEP * s;
+        // Inset a pixel each side so a stripe's width stays within the edges.
+        for (a, b) in hazard_stripes(full + 1.0, outer - 1.0, step, drift % step) {
+            line_between(center + a, center + b, step * 0.42, tint(0.55));
+        }
+        fill_circle(center, full, tint(0.5));
+        stroke_circle(center, outer, 2.5, tint(1.25));
+        stroke_circle(center, full, 2.0, Color::new(0.92, 0.94, 0.98, 1.1 * alpha));
     };
     let silo_line = |b: &Building, to: Vec2, alpha: f32| {
         line_between(

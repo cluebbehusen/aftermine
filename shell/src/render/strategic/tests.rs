@@ -27,3 +27,20 @@ fn deck_rotation_puts_the_art_nose_on_the_compass_heading() {
         "east"
     );
 }
+
+#[test]
+fn hazard_stripes_fill_the_falloff_band_and_never_enter_the_core() {
+    let (inner, outer, step) = (36.0, 96.0, 12.0);
+    for phase in [0.0, 5.5, 11.9] {
+        let stripes = hazard_stripes(inner, outer, step, phase);
+        assert!(stripes.len() >= 14, "the band is covered");
+        for (a, b) in stripes {
+            for p in [a, b, (a + b) * 0.5] {
+                let r = p.length();
+                assert!(r <= outer + 1e-3, "{p} leaves the ring");
+                assert!(r >= inner - 1e-3, "{p} enters the core");
+            }
+        }
+    }
+    assert!(hazard_stripes(0.0, 0.0, step, 0.0).is_empty());
+}
