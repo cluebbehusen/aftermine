@@ -567,10 +567,11 @@ pub(crate) fn draw_with_performance(
     crate::strategic_markers::draw_markers(game, alpha);
     draw_fx(game, sprites);
     // The debug overlay is deliberately omniscient; the spectator
-    // stance (playback) skips the fog too but never the debug chrome.
+    // stance (playback) and a seat out of the match skip the fog too but
+    // never the debug chrome.
     if game.presentation.overlay {
         draw_overlay(game, alpha);
-    } else if !game.presentation.spectate {
+    } else if !game.presentation.all_seeing() {
         draw_fog(game);
     }
     // Own-order acknowledgments, rally flags, and radar blips sit above
@@ -586,7 +587,7 @@ pub(crate) fn draw_with_performance(
     draw_breadcrumbs(game, input);
     // Deferred claims are the player's own intent, like breadcrumbs; a
     // spectator has none.
-    if !game.presentation.spectate {
+    if !game.presentation.spectating() {
         draw_pending_founds(game, sprites);
     }
     draw_placement_ghost(game, sprites, input);

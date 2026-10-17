@@ -114,6 +114,8 @@ impl Game {
             player.bot = true;
             player.bot_config = Some(config);
         }
+        // A human teammate who left can no longer be tipped off.
+        self.refresh_fog_lift();
     }
 
     /// Orders staged since the last call, to hand to the session host.

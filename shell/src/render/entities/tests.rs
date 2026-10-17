@@ -139,7 +139,7 @@ fn production_progress_is_private_except_in_an_omniscient_view() {
     assert!(production_progress_visible(&game.view(), own));
     assert!(!production_progress_visible(&game.view(), hostile));
 
-    game.presentation.spectate = true;
+    game.presentation.stance = crate::game::Stance::Spectator;
     assert!(production_progress_visible(&game.view(), hostile));
 }
 
@@ -571,7 +571,7 @@ fn range_occluders_exclude_offscreen_and_unseen_buildings() {
         hostile.anchor.y as f32 + height as f32 * 0.5,
     );
     assert!(range_occluders(&game.view()).is_empty());
-    game.presentation.spectate = true;
+    game.presentation.stance = crate::game::Stance::Spectator;
     assert!(!range_occluders(&game.view()).is_empty());
     game.presentation.camera.center = vec2(-1000.0, -1000.0);
     assert!(range_occluders(&game.view()).is_empty());

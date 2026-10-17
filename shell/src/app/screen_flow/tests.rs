@@ -244,12 +244,12 @@ fn every_way_out_of_the_final_map_ends_inspection() {
     let final_map = Screen::FinalMap(FinalMapScreen::open());
     enter(&mut game, &final_map);
     assert!(game.clock.paused);
-    assert!(game.presentation.spectate);
+    assert!(game.presentation.spectating());
     assert!(game.presentation.selection.units.is_empty());
     // The step keys on the screen left, so a quit-save or a debug load
     // ends inspection as surely as the Back button.
     exit(&mut game, ScreenKind::FinalMap);
-    assert!(!game.presentation.spectate);
+    assert!(!game.presentation.spectating());
 }
 
 #[test]

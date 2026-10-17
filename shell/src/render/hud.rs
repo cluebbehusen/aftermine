@@ -77,8 +77,8 @@ pub(crate) fn layout(
     // A spectator commands nothing: no bank, unit count, or idle badge;
     // the viewer's transport bar is its own chrome. The minimap stays
     // clickable.
-    let top_bar =
-        (!game.presentation.spectate).then(|| chrome::top_bar_layout(game, bindings, env, measure));
+    let top_bar = (!game.presentation.spectating())
+        .then(|| chrome::top_bar_layout(game, bindings, env, measure));
     let panel = crate::panel::build_for_input(game, bindings, input);
     let panel_layout = panel
         .as_ref()
@@ -106,7 +106,7 @@ pub(crate) fn layout(
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     let panel_right = panel_regions.iter().map(|r| r.x + r.w).fold(0.0, f32::max);
-    let group_column = if game.presentation.spectate {
+    let group_column = if game.presentation.spectating() {
         None
     } else {
         chrome::group_column_layout(game, input, minimap, env.ui)

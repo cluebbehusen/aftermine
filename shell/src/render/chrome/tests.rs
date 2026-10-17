@@ -120,7 +120,7 @@ fn queue_is_offered_only_to_units_or_while_on() {
     game.presentation.selection.units.clear();
     input.queue_toggle = crate::input::QueueToggle::Locked;
     assert!(shown(&game, &input), "QUEUE on can always be turned off");
-    game.presentation.spectate = true;
+    game.presentation.stance = crate::game::Stance::Spectator;
     assert!(!shown(&game, &input), "never while spectating");
 }
 

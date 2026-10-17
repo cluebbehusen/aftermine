@@ -90,7 +90,7 @@ mod clock;
 mod fx;
 mod presentation;
 pub(crate) use clock::Clock;
-pub(crate) use presentation::{AlertKind, Presentation, Salvage, Scene};
+pub(crate) use presentation::{AlertKind, Presentation, Salvage, Scene, Stance};
 pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;
@@ -214,6 +214,30 @@ impl Game {
         self.bot_decision = None;
         self.state.0 = Arc::new(state.clone());
         self.presentation.reset_after_jump(&self.state);
+        self.refresh_fog_lift();
+    }
+
+    /// Lifts fog for the local seat once it is out of an undecided match
+    /// and no human teammate plays on whom it could tip off. A bot ally
+    /// reads only its own fog-honest observation, and a free-for-all seat
+    /// leaves nobody fighting for its side. A spectator stays one.
+    fn refresh_fog_lift(&mut self) {
+        if self.presentation.spectating() {
+            return;
+        }
+        let (state, seat) = (&self.state, self.presentation.human);
+        let out = state.result().is_none()
+            && !state.accepts_commands(seat)
+            && !self
+                .scenario
+                .players
+                .iter()
+                .enumerate()
+                .any(|(index, player)| {
+                    let mate = PlayerId::from_index(index);
+                    !player.bot && !state.hostile(seat, mate) && state.accepts_commands(mate)
+                });
+        self.presentation.stance = if out { Stance::Out } else { Stance::Seat };
     }
 
     /// Starts a session from a scenario. Local input uses the first non-bot
@@ -273,7 +297,7 @@ impl Game {
             Vec::new()
         };
         let presentation = Presentation::new(&state, human, viewport);
-        Ok(Self {
+        let mut game = Self {
             scenario,
             state: ReadOnlyState(Arc::new(state)),
             bots,
@@ -293,7 +317,9 @@ impl Game {
             outbox: Vec::new(),
             presentation,
             clock: Clock::default(),
-        })
+        };
+        game.refresh_fog_lift();
+        Ok(game)
     }
 
     /// Resumes a session from a recorded replay: rebuilds its scenario,
@@ -511,6 +537,7 @@ impl Game {
         self.tick_phase = TickPhase::Simulated;
         oxide_kit::controller::record_events(&mut self.bots, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
+        self.refresh_fog_lift();
         self.presentation
             .boundary_fog
             .observe(&self.state, self.presentation.human);
