@@ -758,6 +758,37 @@ fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
 }
 
 #[test]
+fn a_build_refused_in_the_poll_that_accepts_it_still_hears_the_hosts() {
+    let mut host = host_lobby(duel());
+    let mut client = Lobby::Client(ClientLobby::new(
+        &address(&host),
+        "other",
+        name("Alex"),
+        InstallId::new(1),
+    ));
+    {
+        let Lobby::Host(scenario_host) = &mut host else {
+            unreachable!("a host lobby")
+        };
+        let lobby = &mut scenario_host.lobby;
+        // A poll accepts, then reads; the client's Hello can already be
+        // waiting by then, so stage it between the two.
+        let member = wait(|| {
+            lobby.accept(Duration::ZERO);
+            lobby.connections.first().map(|&(member, _)| member)
+        });
+        let hello = oxide_net::JoinMessage::hello("other").encode();
+        lobby.gathering.receive(member, &hello, Duration::ZERO);
+    }
+    let reason = wait(|| {
+        assert!(host.poll(Duration::ZERO, viewport()).is_none());
+        assert!(client.poll(Duration::ZERO, viewport()).is_none());
+        client.failure().map(|(_, _, reason)| reason.to_owned())
+    });
+    assert!(reason.contains("host runs build lan-test"), "{reason}");
+}
+
+#[test]
 fn every_machine_sees_who_sits_where_and_a_leaver_frees_the_seat() {
     let mut host = host_lobby(three_humans());
     let mut client = Lobby::Client(ClientLobby::new(
