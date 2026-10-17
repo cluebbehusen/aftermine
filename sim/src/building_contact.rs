@@ -650,12 +650,31 @@ impl Surface {
     /// Where a tool as wide as its hull meets each face square, `clearance`
     /// out from the face's midpoint, with the face's outward normal. Outlines
     /// wind clockwise on screen, so that normal is the face's direction
-    /// turned a quarter turn counterclockwise.
+    /// turned a quarter turn counterclockwise. A bevel offers none.
     pub fn square_stances(self, clearance: Fx) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
-        self.edges().map(move |(a, b)| {
+        self.faces().map(move |(a, b)| {
             let along = b - a;
             let outward = Vec2Fx::new(along.y, -along.x) / along.length();
             ((a + b) / Fx::from_num(2) + outward * clearance, outward)
+        })
+    }
+
+    /// The edges a tool as wide as a hull can meet square: every edge but a
+    /// bevel, a face under a quarter tile cut across a corner between two
+    /// faces each at least twice its length. A drum squared to a bevel would
+    /// meet the building at that corner. A run of short faces, as round art
+    /// traces, stays.
+    fn faces(self) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
+        let vertices: Vec<Vec2Fx> = self.vertices().collect();
+        let n = vertices.len();
+        (0..n).filter_map(move |i| {
+            let at = |k: usize| vertices[k % n];
+            let (before, a, b, after) = (at(i + n - 1), at(i), at(i + 1), at(i + 2));
+            let length_sq = a.dist_sq(b);
+            let bevel = length_sq < const { Fx::lit("0.0625") }
+                && before.dist_sq(a) >= length_sq * 4
+                && b.dist_sq(after) >= length_sq * 4;
+            (!bevel).then_some((a, b))
         })
     }
 

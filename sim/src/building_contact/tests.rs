@@ -187,7 +187,7 @@ fn square_stances_stand_out_from_each_face_midpoint() {
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         };
-        for ((a, b), (stance, outward)) in surface.edges().zip(surface.square_stances(clearance)) {
+        for ((a, b), (stance, outward)) in surface.faces().zip(surface.square_stances(clearance)) {
             let midpoint = (a + b) / Fx::from_num(2);
             assert!(!surface.contains(stance), "{kind:?} {a:?} {b:?}");
             assert!(
@@ -200,4 +200,23 @@ fn square_stances_stand_out_from_each_face_midpoint() {
             );
         }
     }
+}
+
+#[test]
+fn only_a_bevel_across_a_corner_is_no_face() {
+    let faces = |kind: BuildingKind, outline: Outline| {
+        let surface = Surface {
+            outline,
+            anchor: TilePos::new(10, 20),
+            size: kind.size(),
+        };
+        (surface.edges().count(), surface.faces().count())
+    };
+    // Corner bevels cut between long sides: two on the Reclaimer and the
+    // Turret, all four on the Citadel.
+    assert_eq!(faces(BuildingKind::Reclaimer, RECLAIMER), (7, 5));
+    assert_eq!(faces(BuildingKind::Turret, TURRET), (7, 5));
+    assert_eq!(faces(BuildingKind::Bastion, BASTION_T1), (8, 4));
+    // The Flak's legs are a run of short faces, each still a face.
+    assert_eq!(faces(BuildingKind::FlakTurret, FLAK_TURRET), (17, 17));
 }

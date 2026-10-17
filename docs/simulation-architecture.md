@@ -343,23 +343,25 @@ between buildings. Work and contact weapons share perimeter candidate
 generation, except that a contact weapon on a wide hull, the Maw's drum, meets a
 building square to a face: it stands out along a face's normal from that face's
 middle and cuts only once it has stopped there, not at a corner it passes within
-reach of on the way. It takes a face only where that face is the nearest
-surface, not one beside a recess the hull would meet first, and only where its
-hull stays on open ground all the way in from its goal tile. Only a building
-with no face it can reach that way takes it to an ordinary perimeter position.
-Work, melee, and ranged building attacks share a crowd-aware position chooser:
-productive occupants win space, nearby arrivals carry soft claims, and distant
-routes do not reserve frontage. When arrivals' positions overlap, the unit
-nearer its own position keeps its claim, whatever seat it belongs to, so allied
-crowds cannot all yield to one another; an exact tie goes to the earlier unit of
-one seat. When productive units fill the legal positions, overflow approaches
-wait outside the interaction area. A worker that already reaches the surface
-works where it stands, and a held position is chosen again once new ground makes
-it unreachable. Ranged candidates respect their weapon's minimum and maximum
-range, line of fire, and movement layer. Fixed-wing aircraft attack with run-ins
-instead. Building artwork and its contact outline keep their authored facing, so
-asymmetric contact can differ under a map half-turn. Placement, travel, and
-ranged reach use the rectangular footprint.
+reach of on the way. A bevel, a face under a quarter tile cut across a corner
+between two faces at least twice its length, is no face: a drum squared to it
+would meet the building at the corner. It takes a face only where that face is
+the nearest surface, not one beside a recess the hull would meet first, and only
+where its hull stays on open ground all the way in from its goal tile. Only a
+building with no face it can reach that way takes it to an ordinary perimeter
+position. Work, melee, and ranged building attacks share a crowd-aware position
+chooser: productive occupants win space, nearby arrivals carry soft claims, and
+distant routes do not reserve frontage. When arrivals' positions overlap, the
+unit nearer its own position keeps its claim, whatever seat it belongs to, so
+allied crowds cannot all yield to one another; an exact tie goes to the earlier
+unit of one seat. When productive units fill the legal positions, overflow
+approaches wait outside the interaction area. A worker that already reaches the
+surface works where it stands, and a held position is chosen again once new
+ground makes it unreachable. Ranged candidates respect their weapon's minimum
+and maximum range, line of fire, and movement layer. Fixed-wing aircraft attack
+with run-ins instead. Building artwork and its contact outline keep their
+authored facing, so asymmetric contact can differ under a map half-turn.
+Placement, travel, and ranged reach use the rectangular footprint.
 
 Talon, Kestrel, and Roc cruise heading-first but can hover at rest. Their travel
 and fixed-gun traverse rates are independent of bomber flight; per-kind rates
