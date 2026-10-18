@@ -256,6 +256,28 @@ pub fn discover(cancelled: impl Fn() -> bool) -> Vec<ReplayEntry> {
     newest_first(found)
 }
 
+/// Continue's material in a newest-first catalog: the available autosaves,
+/// local or LAN, left since the player's newest finished match. A finished
+/// match withdraws the sessions left before it from Continue; the shelf
+/// still offers them.
+pub(crate) fn continuable(entries: &[ReplayEntry]) -> impl Iterator<Item = &ReplayEntry> {
+    continuable_since(entries, crate::paths::matches_dir())
+}
+
+/// Only the matches folder records what this player finished; a recording
+/// added to the replays folder says nothing about their last match.
+fn continuable_since(
+    entries: &[ReplayEntry],
+    matches: Option<PathBuf>,
+) -> impl Iterator<Item = &ReplayEntry> {
+    entries
+        .iter()
+        .take_while(move |entry| {
+            entry.kind != RecordKind::Match || entry.path.parent() != matches.as_deref()
+        })
+        .filter(|entry| entry.available() && entry.kind.continues())
+}
+
 fn newest_first(mut found: Vec<(RecordTime, ReplayEntry)>) -> Vec<ReplayEntry> {
     found.sort_by(|(left_time, left), (right_time, right)| {
         (right_time, &right.path).cmp(&(left_time, &left.path))

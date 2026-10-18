@@ -194,6 +194,87 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
 }
 
 #[test]
+fn continue_offers_only_sessions_left_since_the_last_finished_match() {
+    let root = std::env::temp_dir().join(format!(
+        "oxide-continue-last-match-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let [autosaves, matches, saves, replays] =
+        ["autosaves", "matches", "saves", "replays"].map(|name| root.join(name));
+    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let write = |dir: &std::path::Path, name: &str, kind: &str, saved_at: u64| {
+        std::fs::create_dir_all(dir).unwrap();
+        let mut meta = game.recorder.meta.clone();
+        meta.kind = Some(kind.into());
+        meta.ticks = Some(game.state.current_tick());
+        meta.saved_at = Some(saved_at);
+        let path = dir.join(name);
+        let capture = game.capture_save();
+        match kind {
+            "match" => {
+                let mut record = game.recorder.clone();
+                record.meta = meta;
+                record.save(path).unwrap();
+            }
+            "lan-autosave" => {
+                let manifest = crate::game::checkpoint::LanManifest::new(
+                    &game.scenario,
+                    game.presentation.human,
+                    &[],
+                );
+                let capture = capture.for_lan(Vec::new(), manifest);
+                crate::saved_game::write_capture(capture, meta, &path).unwrap();
+            }
+            _ => crate::saved_game::write_capture(capture, meta, &path).unwrap(),
+        }
+    };
+    let continuable = || {
+        let mut found = Vec::new();
+        for dir in [&autosaves, &matches, &saves, &replays] {
+            scan(dir, &mut found);
+        }
+        let entries = newest_first(found);
+        continuable_since(&entries, Some(matches.clone()))
+            .map(|entry| {
+                entry
+                    .path
+                    .file_stem()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    write(&autosaves, "autosave-1.oxsave", "autosave", 100);
+    assert_eq!(continuable(), ["autosave-1"]);
+    write(&matches, "match-2.json", "match", 200);
+    assert!(
+        continuable().is_empty(),
+        "a finished match withdraws the sessions left before it"
+    );
+    write(&saves, "save-0000000001.oxsave", "save", 300);
+    write(&replays, "shared.json", "match", 300);
+    assert!(
+        continuable().is_empty(),
+        "neither a named save nor an added recording is a session left"
+    );
+    write(&autosaves, "lan-autosave-3.oxsave", "lan-autosave", 400);
+    write(&autosaves, "autosave-4.oxsave", "autosave", 500);
+    write(&replays, "newer.json", "match", 600);
+    assert_eq!(
+        continuable(),
+        ["autosave-4", "lan-autosave-3"],
+        "sessions left since the last finished match stay, newest first"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn the_calendar_is_honest_without_a_time_crate() {
     assert_eq!(civil(0), (1970, 1, 1));
     assert_eq!(civil(86_399), (1970, 1, 1), "last second of day one");
