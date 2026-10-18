@@ -836,15 +836,26 @@ fn order_card(
             "Scout",
             "Scouting around known enemy reach: stops short where it can still see, or waits.",
         ),
-        Order::Tend { weld: Some(_), .. } => (
+        Order::Tend {
+            weld: Some(oxide_sim::Target::Unit(_)),
+            ..
+        } => (
             VerbIcon::Repair,
             "Weld",
             "Welding a wounded machine it came across; consumes scrap.",
         ),
+        Order::Tend {
+            weld: Some(oxide_sim::Target::Building(_)),
+            ..
+        } => (
+            VerbIcon::Repair,
+            "Repair",
+            "Repairing a damaged building it came across; consumes scrap.",
+        ),
         Order::Tend { weld: None, .. } => (
             VerbIcon::Repair,
             "Tend",
-            "Walking on, welding wounded machines it passes; consumes scrap.",
+            "Walking on, welding wounded machines and damaged buildings it passes; consumes scrap.",
         ),
     };
     let subject = if own {
@@ -966,7 +977,11 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
     let pct = |f: f32| numeric::to_u32((f * 100.0).round());
     match order {
         Order::Build { .. } => Some(format!("{}% raised", pct(progress?))),
-        Order::Repair { building } => {
+        Order::Repair { building }
+        | Order::Tend {
+            weld: Some(oxide_sim::Target::Building(building)),
+            ..
+        } => {
             let b = game.state.building(*building)?;
             Some(format!("{}/{} hp", b.hp, b.stats().max_hp))
         }
@@ -1123,7 +1138,7 @@ fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] 
         String::new()
     };
     [
-        format!("Auto-weld {state}: idle workers mend machines near their post."),
+        format!("Auto-weld {state}: idle workers mend machines and buildings near their post."),
         format!("{how}{key} to switch it. Patrolling workers always weld."),
     ]
 }
@@ -1133,11 +1148,13 @@ fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] 
 fn patrol_engagement(armed: usize, welders: usize, selected: usize) -> &'static str {
     match (armed, welders) {
         (armed, _) if armed == selected => "Machines engage whatever they meet along the way.",
-        (0, welders) if welders == selected => "Workers weld wounded machines they pass.",
+        (0, welders) if welders == selected => {
+            "Workers weld wounded machines and buildings they pass."
+        }
         (0, 0) => "Unarmed machines walk the route without engaging.",
-        (0, _) => "Workers weld wounded machines they pass; others walk on.",
+        (0, _) => "Workers weld wounded machines and buildings they pass; others walk on.",
         (_, 0) => "Armed machines engage what they meet; the rest walk on.",
-        _ => "Armed machines engage what they meet; workers weld the wounded.",
+        _ => "Armed machines engage what they meet; workers weld what is damaged.",
     }
 }
 

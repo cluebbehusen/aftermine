@@ -669,6 +669,50 @@ fn excavator_construction_activates_unit_and_site_machinery() {
 }
 
 #[test]
+fn a_worker_tending_a_building_shows_the_repair() {
+    let state = excavator_state(vec![BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Turret,
+        x: 7,
+        y: 6,
+    }]);
+    let excavator = state.units()[0].id;
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Turret)
+        .expect("turret stands");
+    let (turret, center) = (turret.id, turret.center());
+    let mut value = serde_json::to_value(&state).expect("state serializes");
+    for row in value["buildings"].as_array_mut().expect("buildings") {
+        if row["id"] == serde_json::json!(turret) {
+            row["hp"] = serde_json::json!(100);
+        }
+    }
+    let mut state: State = serde_json::from_value(value).expect("a damaged turret is legal");
+    let welding = |state: &State| {
+        let unit = state.unit(excavator).expect("Excavator survives");
+        unit.progress > 0
+            && unit.work_stopped()
+            && unit.order
+                == Order::Tend {
+                    goal: oxide_sim::Goal::at(TilePos::new(4, 6)),
+                    weld: Some(Target::Building(turret)),
+                }
+    };
+    for _ in 0..200 {
+        if welding(&state) {
+            break;
+        }
+        state.tick(&[]);
+    }
+    assert!(welding(&state), "premise: the Excavator tends the Turret");
+    let facts = UnitAnimationFacts::capture(&state, state.unit(excavator).unwrap(), false);
+    assert_eq!(facts.work, UnitWorkFact::Repairing(center));
+    assert_eq!(facts.work_target, Some(WorkTarget::Building(turret)));
+}
+
+#[test]
 fn excavator_mills_with_the_drum_and_welds_with_the_arm() {
     let target = point();
     for (work, tool) in [

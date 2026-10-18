@@ -63,35 +63,35 @@ weapons, and prerequisites.
 Most actions are available as clickable cards in the selection panel. These
 shortcuts cover the core loop:
 
-| Input                                    | Action                                                                                                                    |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| WASD / arrow keys                        | Pan the camera; both sets work together.                                                                                  |
-| Wheel / middle drag                      | Zoom / pan the camera.                                                                                                    |
-| `U` with a building / transport selected | Upgrade / unload here.                                                                                                    |
-| `Y` / Shift+`Y` with a producer selected | Set / clear rally. Rallying onto an own unit has new units escort it.                                                     |
-| Left click / drag                        | Select a unit, building, or group.                                                                                        |
-| Shift + click / drag                     | Add to or remove from the current selection. Shift-click a kind in the selection panel to drop that kind.                 |
-| Right click                              | Give the contextual order: harvest scrap, attack an enemy, repair an ally, or advance to ground.                          |
-| Shift + right click                      | Queue the contextual order.                                                                                               |
-| `F`, then ground                         | Hunt and engage along the route.                                                                                          |
-| `G`, then ground                         | Run without engaging.                                                                                                     |
-| `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.         |
-| `K`, then ground                         | Scout from outside known enemy reach; a right-click with only scouts selected does the same.                              |
-| `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                    |
-| `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                    |
-| `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                          |
-| `M`, then any tile, with a Spire         | Launch its warhead; the deck turns to face the tile first. `O` orders a round; Shift+`O` toggles autofill.                |
-| `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                   |
-| Right-click Weld, or `H`                 | Toggle auto-weld (the card's AUTO tag): idle workers weld wounded machines near their post. Patrols always weld.          |
-| `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                  |
-| `X`                                      | Stop selected units, or cancel a selected new construction site.                                                          |
-| Q/E/R/T/Z/X with a producer selected     | Train the unit in that card slot.                                                                                         |
-| Ctrl + `1`–`5` / `1`–`5`                 | Assign or recall a control group. In the column above the minimap, click recalls, Ctrl-click assigns, and + saves.        |
-| `N`                                      | Select and center the next idle Harvester.                                                                                |
-| `Space`                                  | Center the camera on your Foundry.                                                                                        |
-| `Tab`                                    | Jump to the last under-attack alert; the under-attack badge in the top bar does the same while it shows.                  |
-| `P`                                      | Pause immediately; clicking the clock at the top right does the same.                                                     |
-| `Esc`                                    | Cancel the active action, clear selection, or open the pause menu. The ≡ button at the top right opens the menu directly. |
+| Input                                    | Action                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| WASD / arrow keys                        | Pan the camera; both sets work together.                                                                                       |
+| Wheel / middle drag                      | Zoom / pan the camera.                                                                                                         |
+| `U` with a building / transport selected | Upgrade / unload here.                                                                                                         |
+| `Y` / Shift+`Y` with a producer selected | Set / clear rally. Rallying onto an own unit has new units escort it.                                                          |
+| Left click / drag                        | Select a unit, building, or group.                                                                                             |
+| Shift + click / drag                     | Add to or remove from the current selection. Shift-click a kind in the selection panel to drop that kind.                      |
+| Right click                              | Give the contextual order: harvest scrap, attack an enemy, repair an ally, or advance to ground.                               |
+| Shift + right click                      | Queue the contextual order.                                                                                                    |
+| `F`, then ground                         | Hunt and engage along the route.                                                                                               |
+| `G`, then ground                         | Run without engaging.                                                                                                          |
+| `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.              |
+| `K`, then ground                         | Scout from outside known enemy reach; a right-click with only scouts selected does the same.                                   |
+| `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                         |
+| `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                         |
+| `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                               |
+| `M`, then any tile, with a Spire         | Launch its warhead; the deck turns to face the tile first. `O` orders a round; Shift+`O` toggles autofill.                     |
+| `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                        |
+| Right-click Weld, or `H`                 | Toggle auto-weld (the card's AUTO tag): idle workers weld wounded machines and buildings near their post. Patrols always weld. |
+| `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                       |
+| `X`                                      | Stop selected units, or cancel a selected new construction site.                                                               |
+| Q/E/R/T/Z/X with a producer selected     | Train the unit in that card slot.                                                                                              |
+| Ctrl + `1`–`5` / `1`–`5`                 | Assign or recall a control group. In the column above the minimap, click recalls, Ctrl-click assigns, and + saves.             |
+| `N`                                      | Select and center the next idle Harvester.                                                                                     |
+| `Space`                                  | Center the camera on your Foundry.                                                                                             |
+| `Tab`                                    | Jump to the last under-attack alert; the under-attack badge in the top bar does the same while it shows.                       |
+| `P`                                      | Pause immediately; clicking the clock at the top right does the same.                                                          |
+| `Esc`                                    | Cancel the active action, clear selection, or open the pause menu. The ≡ button at the top right opens the menu directly.      |
 
 Settings is split into General, Audio, Display, and Controls tabs; click a tab
 or press Q and E to switch. Left and Right step a value, and Enter cycles it.
