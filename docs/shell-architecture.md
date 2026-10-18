@@ -416,28 +416,29 @@ Every screen offers a pointer path for what Escape does, on every platform. The
 top bar ends in a menu button that opens the pause menu, and its clock or PAUSED
 status toggles pause; both are `LayoutModel` chrome that `UiView` reports. The
 New Match steps, replay playback, the final map, Settings, the roster, and the
-replay shelf draw a top-left BACK button instead of a Back row. Playback leaves
-that corner to BACK and runs a transport row along the bottom edge, left of the
-timeline: Play/Pause, then a slower/faster stepper on the speed keys' ladder
-around a speed readout. These ride `Press::feed`, which also tells the screen
-when a button claimed an event; the menus share `button::BackButton`, which acts
-as Escape does on each face. Settings splits its rows across tabs on a
-`tabs::TabStrip` under its title, which claims its own presses the same way; the
-Previous tab and Next tab menu actions step it from the keyboard, and on the
-Controls tab, which reads raw keys, the classic Q and E work too. Menu lists and
-the map grid scroll by a finger dragged past `press::DRAG_SLOP` (`ScrollPress`).
-Every cursor steps through `nav`: arrows wrap at the edges, Home and End land on
-the first and last live cell, and paging stops at the ends. Menu rows stand for
-typed values (`Menu<R>`), so a screen never maps a row index back to its
-meaning. Chrome colors, stroke weights and the eight type sizes come from
-`theme`; world colors stay with the renderer. The read-only viewers pan and
-pinch through `ViewerTouch`, within the shared `camera::controls::ViewerHands`.
-Text entry (the save name, the Settings name, and the Join form's name and host
-address) is a `text_field::Form`: labeled fields in one row above Cancel and a
-confirm button, each filtering what it accepts and checking its value before a
-commit. On touch-only builds the frame loop raises and hides the on-screen
-keyboard to follow the focused field and asks for the numbers-and-punctuation
-layout on the address.
+saves and replays shelf draw a top-left BACK button instead of a Back row.
+Playback leaves that corner to BACK and runs a transport row along the bottom
+edge, left of the timeline: Play/Pause, then a slower/faster stepper on the
+speed keys' ladder around a speed readout. These ride `Press::feed`, which also
+tells the screen when a button claimed an event; the menus share
+`button::BackButton`, which acts as Escape does on each face. Settings and the
+shelf split their rows across tabs on a `tabs::TabStrip` under their title,
+which claims its own presses the same way; the Previous tab and Next tab menu
+actions step it from the keyboard, and on the Settings Controls tab, which reads
+raw keys, the classic Q and E work too. Menu lists and the map grid scroll by a
+finger dragged past `press::DRAG_SLOP` (`ScrollPress`). Every cursor steps
+through `nav`: arrows wrap at the edges, Home and End land on the first and last
+live cell, and paging stops at the ends. Menu rows stand for typed values
+(`Menu<R>`), so a screen never maps a row index back to its meaning. Chrome
+colors, stroke weights and the eight type sizes come from `theme`; world colors
+stay with the renderer. The read-only viewers pan and pinch through
+`ViewerTouch`, within the shared `camera::controls::ViewerHands`. Text entry
+(the save name, the Settings name, and the Join form's name and host address) is
+a `text_field::Form`: labeled fields in one row above Cancel and a confirm
+button, each filtering what it accepts and checking its value before a commit.
+On touch-only builds the frame loop raises and hides the on-screen keyboard to
+follow the focused field and asks for the numbers-and-punctuation layout on the
+address.
 
 Hints, toasts, card descriptions, and the tutorial say tap or click for the last
 pointer and name keys only once a hardware key has been pressed; copy that mixes
@@ -698,10 +699,11 @@ session. Authoritative session mutations are refused.
 
 Playback writes no recording, since a watched replay is already a file on disk.
 
-The ordinary shelf resumes unfinished records, preventing fog-free viewing from
-scouting a live match. Completed records can be watched. Developer `--watch` may
-inspect any compatible replay. Final Map is camera-only inspection of the final
-live state.
+The ordinary shelf lists unfinished records on its SAVES tab and completed ones
+on its REPLAYS tab. Saves resume rather than play back, preventing fog-free
+viewing from scouting a live match; completed records can be watched. Developer
+`--watch` may inspect any compatible replay. Final Map is camera-only inspection
+of the final live state.
 
 ## Performance and diagnostics
 

@@ -1,5 +1,6 @@
-//! The front door: Continue, Play, Tutorial, Replays, Settings, Quit.
-//! Windowless update; every row's session verb executes in the caller.
+//! The front door: Continue, Play, Tutorial, Saves & Replays, Settings,
+//! Quit. Windowless update; every row's session verb executes in the
+//! caller.
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
@@ -21,7 +22,7 @@ pub enum Out {
     Join,
     /// Start the tutorial match.
     Tutorial,
-    /// Open the replay shelf.
+    /// Open the saves and replays shelf.
     Replays,
     /// Open the codex: every machine and works, with figures.
     Roster,
@@ -106,7 +107,7 @@ impl HomeScreen {
                 ("Play", Out::Play),
                 ("Join Match", Out::Join),
                 ("Tutorial", Out::Tutorial),
-                ("Replays", Out::Replays),
+                ("Saves & Replays", Out::Replays),
                 ("Roster", Out::Roster),
                 ("Settings", Out::Settings),
             ])

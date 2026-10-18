@@ -14,6 +14,12 @@ use macroquad::prelude::{
 };
 use oxide_protocol::RawEvent;
 
+/// The keys that step tabs in menus now, while both have one.
+pub(crate) fn keys() -> Option<(String, String)> {
+    crate::menu::tab_key(crate::action::Action::PrevTab)
+        .zip(crate::menu::tab_key(crate::action::Action::NextTab))
+}
+
 /// The logical height a strip takes from the list beneath it, for
 /// [`crate::menu::Heading::Page`].
 pub(crate) const BAND: f32 = 36.0;

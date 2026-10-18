@@ -258,9 +258,11 @@ pub fn activate_labeled(client: &mut Client, needle: &str) -> Result<()> {
     press_key(client, Key::Enter)
 }
 
-/// Steps the Settings tabs with the classic Next tab key until the
-/// shell reports `mode`, the wanted tab's mode name.
+/// Steps a tabbed screen (Settings, the saves and replays shelf) with
+/// the classic Next tab key until the shell reports `mode`, the wanted
+/// tab's mode name.
 pub fn select_tab(client: &mut Client, mode: &str) -> Result<()> {
+    // The most tabs any screen has.
     const TABS: usize = 4;
     for _ in 0..TABS {
         if ui(client)?.mode == mode {
@@ -268,7 +270,7 @@ pub fn select_tab(client: &mut Client, mode: &str) -> Result<()> {
         }
         press_key(client, Key::E)?;
     }
-    assert_mode(client, mode, "stepping the Settings tabs")
+    assert_mode(client, mode, "stepping the tabs")
 }
 
 /// Fails loudly when the shell is not on the expected screen.

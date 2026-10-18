@@ -283,6 +283,11 @@ impl GameCheckpoint {
         self.session.metadata()
     }
 
+    /// Each seat's team tag, in seat order.
+    pub(crate) fn team_tags(&self) -> impl Iterator<Item = Option<u8>> + '_ {
+        self.session.team_tags()
+    }
+
     /// Whether this is a saved LAN match.
     pub(crate) fn is_lan(&self) -> bool {
         self.lan.is_some()
