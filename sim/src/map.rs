@@ -17,8 +17,8 @@
 //! ```
 //!
 //! A tiered map adds a levels layer: one row per map row, one glyph per
-//! tile, `0`-`9` then `a`-`z` for levels 0 to 35. A cliff tile carries the
-//! upper level it bounds and a ramp its lower one. A map with no levels
+//! tile, `0`-`9` then `a`-`z` for levels 0 to 35. A cliff tile and a ramp
+//! both carry the lower level they join. A map with no levels
 //! layer, or one at a single level throughout, is flat.
 
 use crate::ids::PlayerId;
@@ -64,7 +64,8 @@ pub enum Terrain {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Elevation {
-    /// A tile at one level. A cliff carries the upper level it bounds.
+    /// A tile at one level. A cliff carries the lower level it bounds, so it
+    /// stands as high as the ground at its foot.
     Level(u8),
     /// A ramp joining `low` and the level above it.
     Ramp {
@@ -200,9 +201,9 @@ pub enum MapError {
     #[error("a levels layer must hold more than one level")]
     FlatLevels,
     /// Touching ground shares no level, a ramp is off the ground, or a
-    /// cliff stands below the ground beside it.
+    /// cliff stands above the ground beside it.
     #[error(
-        "levels break at {0:?}: touching ground must share a level or meet at a ramp, and a cliff takes the upper level it bounds"
+        "levels break at {0:?}: touching ground must share a level or meet at a ramp, and a cliff takes the lower level it bounds"
     )]
     LevelBreak(TilePos),
 }
@@ -479,10 +480,10 @@ impl Map {
                         continue;
                     };
                     let both_ground = terrain == Terrain::Ground && tile.terrain == Terrain::Ground;
-                    let above_cliff = terrain == Terrain::Cliff
+                    let below_cliff = terrain == Terrain::Cliff
                         && tile.terrain == Terrain::Ground
-                        && there.span().1 > here.span().1;
-                    if (both_ground && !here.overlaps(there)) || above_cliff {
+                        && there.span().0 < here.span().0;
+                    if (both_ground && !here.overlaps(there)) || below_cliff {
                         return Some(MapError::LevelBreak(pos));
                     }
                 }
