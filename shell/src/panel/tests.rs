@@ -22,7 +22,7 @@ fn every_dock_chip_that_cancels_work_discards_it_and_nothing_else_does() {
     for action in [
         CardAction::Dispatch(Action::Hunt),
         CardAction::ArmRally,
-        CardAction::UnloadHere(oxide_sim::UnitId(1)),
+        CardAction::Unload,
         CardAction::FilterKind(UnitKind::Harvester),
         CardAction::None,
         CardAction::Refused,
@@ -41,6 +41,7 @@ fn card_copy_names_only_what_the_hands_in_use_have() {
             assert_copy_fits(hands, line);
         }
         assert_copy_fits(hands, patrol_desc(hands));
+        assert_copy_fits(hands, unload_queue_desc(hands));
         assert_copy_fits(hands, transport_load_desc(hands.touch()));
     }
     let patrols: std::collections::BTreeSet<_> = ALL_HANDS.map(patrol_desc).into();

@@ -132,8 +132,9 @@ pub enum CardAction {
     Upgrade,
     /// Abandon eligible selected fresh construction sites.
     ScrapSites,
-    /// Set a transport's cargo down around where it hovers.
-    UnloadHere(oxide_sim::UnitId),
+    /// Set the selected transports' cargo down around where each hovers,
+    /// or, queued, where each route ends.
+    Unload,
     /// Narrow the selection to one kind (Ctrl, Shift, or a lit QUEUE
     /// removes it instead) — the mixed-army type strip.
     FilterKind(UnitKind),
@@ -155,7 +156,7 @@ impl CardAction {
             Self::ArmRally => Some(Action::SetRally),
             Self::ClearRally => Some(Action::ClearRally),
             Self::Upgrade => Some(Action::Upgrade),
-            Self::UnloadHere(_) => Some(Action::Unload),
+            Self::Unload => Some(Action::Unload),
             _ => None,
         }
     }
@@ -1133,6 +1134,16 @@ fn patrol_engagement(armed: usize, welders: usize, selected: usize) -> &'static 
     }
 }
 
+/// How a queued drop waits for the route ahead. The lit QUEUE toggle stands
+/// in for Shift without a keyboard.
+fn unload_queue_desc(hands: Hands) -> &'static str {
+    match (hands.touch(), hands.keys) {
+        (false, true) => "Shift queues each drop where its current route ends.",
+        (true, true) => "Shift or a lit QUEUE queues each drop where its route ends.",
+        (_, false) => "With QUEUE lit, each drop is queued where its route ends.",
+    }
+}
+
 /// How ground machines board a selected transport.
 fn transport_load_desc(touch_only: bool) -> &'static str {
     if touch_only {
@@ -1569,24 +1580,29 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         });
     }
     crate::unit_bays::SelectedBays::inspect(game).cards(bindings, &mut panel.cards);
-    // A selected own transport offers its drop verb; the readout in
-    // the info column shows what the sling holds.
-    if units.len() == 1
-        && first.player == game.presentation.human
-        && first.kind.stats().transport_capacity > 0
-    {
-        let loaded = !first.cargo.is_empty();
+    // Selected own transports offer their drop verb; a lone one's info
+    // column shows what its sling holds.
+    let transports = crate::transports::SelectedTransports::inspect(game);
+    if !transports.is_empty() {
+        let loaded = transports.any_loaded();
+        let hands = crate::platform::hands();
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Move),
             title: "Unload here".into(),
             cost: None,
-            hotkey: chord(bindings, Action::Unload),
-            action: CardAction::UnloadHere(first.id),
+            // A worker in the selection takes the key for Return Cargo.
+            hotkey: if has_builder {
+                String::new()
+            } else {
+                chord(bindings, Action::Unload)
+            },
+            action: CardAction::Unload,
             enabled: loaded,
-            why: (!loaded).then(|| "the sling is empty".to_string()),
+            why: (!loaded).then(|| "nothing is aboard".to_string()),
             desc: vec![
-                "Sets every carried machine down on open ground around the airframe.".into(),
-                transport_load_desc(crate::platform::hands().touch()).into(),
+                "Sets every carried machine down on open ground around its airframe.".into(),
+                unload_queue_desc(hands).into(),
+                transport_load_desc(hands.touch()).into(),
             ],
             progress: None,
             autocast: None,
