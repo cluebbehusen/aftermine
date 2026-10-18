@@ -413,6 +413,49 @@ fn a_back_press_that_slides_off_stays() {
 }
 
 #[test]
+fn a_drag_from_between_the_transport_buttons_never_moves_the_camera() {
+    let row = transport_row(
+        vec2(1280.0, 800.0),
+        render::ui_scale(),
+        crate::platform::TOUCH_ONLY,
+    );
+    let readout = row.readout.center();
+    let gap = vec2(row.play.right() + 4.0, row.play.center().y);
+    for (id, at) in (1..).zip([readout, gap]) {
+        let mut pb = session();
+        let before = pb.presentation.camera.center;
+        let off = at - vec2(100.0, 0.0);
+        let events = [
+            RawEvent::TouchDown {
+                id,
+                x: at.x,
+                y: at.y,
+            },
+            RawEvent::TouchMove {
+                id,
+                x: off.x,
+                y: off.y,
+            },
+            RawEvent::TouchUp {
+                id,
+                x: off.x,
+                y: off.y,
+            },
+        ];
+        assert!(!feed(&mut pb, &events));
+        assert_eq!(
+            pb.presentation.camera.center, before,
+            "a finger born on the row at {at} never pans"
+        );
+        assert!(!feed(&mut pb, &tap(id + 10, at)));
+        assert!(
+            !pb.clock.paused && (pb.clock.speed - 1.0).abs() < f64::EPSILON,
+            "and a tap there is inert"
+        );
+    }
+}
+
+#[test]
 fn a_touch_on_the_scrub_band_seeks_and_a_drag_retargets() {
     let mut pb = session();
     let bar = scrub_rect(&pb.view(), vec2(1280.0, 800.0));

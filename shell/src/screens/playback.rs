@@ -30,7 +30,7 @@ pub struct PlaybackSession {
     /// frame so the render thread never freezes on a long jump.
     pub seeking: Option<u64>,
     /// The transport buttons' press.
-    buttons: Press<Transport>,
+    buttons: Press<Zone>,
     /// The finger scrubbing the timeline, if one landed on the bar.
     scrub_finger: Option<u64>,
     /// Middle-drag, wheel, minimap and finger camera control.
@@ -131,6 +131,16 @@ enum Transport {
     Faster,
 }
 
+/// What a press on the viewer's chrome lands on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Zone {
+    Button(Transport),
+    /// The transport row between and around its buttons: the readout and
+    /// the gaps. It claims a near miss, so a finger landing there never
+    /// drags or pinches the camera.
+    Row,
+}
+
 /// The transport row along the bottom edge, left of the timeline:
 /// play/pause, then the speed stepper around its readout.
 struct TransportRow {
@@ -139,6 +149,18 @@ struct TransportRow {
     /// The current speed; drawn, never pressed.
     readout: macroquad::prelude::Rect,
     faster: macroquad::prelude::Rect,
+}
+
+impl TransportRow {
+    /// The whole row, readout and gaps included.
+    fn bounds(&self) -> macroquad::prelude::Rect {
+        macroquad::prelude::Rect::new(
+            self.play.x,
+            self.play.y,
+            self.faster.right() - self.play.x,
+            self.play.h,
+        )
+    }
 }
 
 /// Where the transport row sits. Its buttons invite tap chains, so they
@@ -480,6 +502,7 @@ impl PlaybackSession {
         let mut leave = false;
         let ui = render::ui_scale();
         let buttons = transport_buttons(viewport, ui);
+        let row = transport_row(viewport, ui, crate::platform::TOUCH_ONLY).bounds();
         for e in events {
             match e {
                 RawEvent::KeyDown { key } => {
@@ -507,30 +530,32 @@ impl PlaybackSession {
                         .key_edge_in(bindings, *key, false, InputContext::Playback);
                 }
                 _ => {
-                    // The transport buttons see the pointer first; the
-                    // timeline, minimap, and battlefield get the rest.
+                    // The transport buttons, then the rest of their row,
+                    // see the pointer first; the timeline, minimap, and
+                    // battlefield get the rest.
                     let zone_at = |p: Vec2, _| {
                         buttons
                             .iter()
                             .find(|(rect, _)| rect.contains(p))
-                            .map(|(_, button)| *button)
+                            .map(|(_, button)| Zone::Button(*button))
+                            .or_else(|| row.contains(p).then_some(Zone::Row))
                     };
                     match self.buttons.feed(e, zone_at) {
-                        Fed::Activated(Transport::Back) => leave = true,
-                        Fed::Activated(Transport::PlayPause) => {
+                        Fed::Activated(Zone::Button(Transport::Back)) => leave = true,
+                        Fed::Activated(Zone::Button(Transport::PlayPause)) => {
                             self.clock.paused = !self.clock.paused;
                         }
-                        Fed::Activated(Transport::Slower) => {
+                        Fed::Activated(Zone::Button(Transport::Slower)) => {
                             if let Some(speed) = slower(self.clock.speed) {
                                 self.clock.speed = speed;
                             }
                         }
-                        Fed::Activated(Transport::Faster) => {
+                        Fed::Activated(Zone::Button(Transport::Faster)) => {
                             if let Some(speed) = faster(self.clock.speed) {
                                 self.clock.speed = speed;
                             }
                         }
-                        Fed::Held => {}
+                        Fed::Activated(Zone::Row) | Fed::Held => {}
                         Fed::Ignored => {
                             self.apply_pointer(e, viewport, ui, prefs, mouse, &mut seek_to);
                         }
