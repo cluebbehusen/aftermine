@@ -136,7 +136,7 @@ struct Approach {
     /// For each sample, whether own buildings see it.
     spotted: Vec<bool>,
     /// Points further along the way in, where an Array watches, and whether
-    /// own buildings already see or pick up each.
+    /// own buildings see or pick up each, or will once built.
     far: Vec<((i64, i64), bool)>,
     evidence: Evidence,
     /// The threat the samples lead to.
@@ -220,7 +220,8 @@ struct Asset {
     /// Points where a warhead from the nearest known enemy Spire crosses
     /// into the ring of an own Lattice guarding the asset, just outside,
     /// at and just inside it, and whether own buildings see or pick up
-    /// each: radar there tracks a warhead before the Lattice must stop it.
+    /// each, or will once built: radar there tracks a warhead before the
+    /// Lattice must stop it.
     missile: Vec<((i64, i64), bool)>,
 }
 
@@ -371,7 +372,7 @@ impl Guard<'_> {
     /// buildings see, since it fires no further than something spots for it.
     /// An Array adds
     /// two thousand for each point further along the way in that nothing
-    /// sees yet.
+    /// sees yet, nor will once built.
     fn gain(asset: &Asset, kind: BuildingKind, anchor: TilePos, reach: Option<Cover>) -> u64 {
         if kind == BuildingKind::Array {
             let centre = footprint_centre(kind, anchor);
