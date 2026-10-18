@@ -112,6 +112,18 @@ fn a_ramp_must_be_a_filled_rectangle() {
 }
 
 #[test]
+fn a_ramp_joins_one_pair_of_levels() {
+    // The centre tile joins levels 2 and 3, overlapping both neighbours, so
+    // the parser accepts it, but the ramp no longer climbs one cliff.
+    let levels = with(owned(&LEVELS), 6, 5, '2');
+    let faults = faults_of(&owned(&ROWS), &levels);
+    assert!(
+        faults.iter().any(|f| f.contains("more than one pair")),
+        "{faults:?}"
+    );
+}
+
+#[test]
 fn a_ramp_must_climb_through_a_cliff() {
     // A ramp laid on open floor joins nothing: the floor meets both ends.
     let mut rows = owned(&ROWS);

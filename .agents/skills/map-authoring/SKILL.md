@@ -55,9 +55,10 @@ a ramp to hold, a rim to shell from, a basin that pays for its exposure.
 
 The map gates add authoring rules the parser leaves open:
 
-- a ramp is a filled rectangle at least three tiles across that runs through one
-  cliff band, with its upper level along one end and its lower level along the
-  other, a tile clear of peaks, pits, and the edge ring;
+- a ramp is a filled rectangle at least three tiles across, every tile carrying
+  the same level, that runs through one cliff band, with its upper level along
+  one end and its lower level along the other, a tile clear of peaks, pits, and
+  the edge ring;
 - each peak and pit stands on a single level;
 - every cliff parts two levels, or it should be rock;
 - Foundries, Extractor frames, and starting structures stand off ramps on a
