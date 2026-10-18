@@ -829,18 +829,22 @@ geometry alone. `GroundLayout` lays them out on a match's first draw and the
 Presentation keeps it for that match, so revealed terrain never changes as the
 fog lifts; the fog veil hides what the seat has not explored. The boundary and
 peaks are one terrace field measured from the open floor: a peak is the wall
-left standing, stepping up once it is about five tiles thick, and a peak meeting
-the map edge is a spur whose levels join the wall's. Rock walls draw layered
-slabs from the generated library, sized by local rock thickness, and machinery
-blockers stay off the edge ring the boundary covers. The shell extends allied
-unit sight discs and completed-building footprint sight into a bounded off-map
-quarry margin. Its presentation-only exploration cache updates on every tick,
-including bulk advances, and rebuilds during explicit command-log
-reconstruction. Player checkpoints retain that cache directly. Map tiles show
-authoritative simulation fog. The replay viewer is fog-free, and so is a seat
-out of an undecided match once no LAN teammate plays on whom it could tip off;
-its chrome stays its own. Animation, heading, and weapon effects use the
-relevant simulation state rather than inventing movement or firing delays.
+left standing, and a peak meeting the map edge is a spur whose levels join the
+wall's. A freestanding peak steps its own way: each side is cut into short
+stretches whose first two benches vary, a corner's stretch wrapping both its
+sides; a peak two tiles thick or less stands at one of two heights per stretch
+instead. Peaks that mirror each other under the map's half-turn draw as mirror
+images. Rock walls draw layered slabs from the generated library, sized by local
+rock thickness, and machinery blockers stay off the edge ring the boundary
+covers. The shell extends allied unit sight discs and completed-building
+footprint sight into a bounded off-map quarry margin. Its presentation-only
+exploration cache updates on every tick, including bulk advances, and rebuilds
+during explicit command-log reconstruction. Player checkpoints retain that cache
+directly. Map tiles show authoritative simulation fog. The replay viewer is
+fog-free, and so is a seat out of an undecided match once no LAN teammate plays
+on whom it could tip off; its chrome stays its own. Animation, heading, and
+weapon effects use the relevant simulation state rather than inventing movement
+or firing delays.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a
