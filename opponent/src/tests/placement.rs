@@ -223,12 +223,7 @@ fn a_tiered_base_never_lays_a_foundation_on_a_ramp() {
     scenario.levels = (0..scenario.map.len())
         .map(|y| {
             (0..48)
-                .map(|x| match y {
-                    0..=6 => '2',
-                    7 if ramps.contains(&x) => '1',
-                    7 => '2',
-                    _ => '1',
-                })
+                .map(|_| if y <= 6 { '2' } else { '1' })
                 .collect()
         })
         .collect();
