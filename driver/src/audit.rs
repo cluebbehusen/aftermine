@@ -11,8 +11,10 @@ use oxide_sim::{Scenario, State};
 use serde::Serialize;
 use std::collections::BinaryHeap;
 
+mod levels;
 mod passages;
 
+pub use levels::level_faults;
 pub use passages::NarrowPassage;
 
 /// One seat's room and spacing.

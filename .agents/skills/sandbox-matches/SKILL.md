@@ -38,6 +38,9 @@ bypass terrain, placement, ownership, cost, or command validation.
   footprint must fit passable ground without overlapping another structure.
 - Optional map anchor bytes place Foundries. Omit them for a unit-only scene.
   Without sandbox mode, ordinary Foundry and victory requirements still apply.
+- An optional `levels` array stages a tiered scene; the map-authoring skill
+  gives its glyphs and rules. The parser's level checks still apply to a
+  sandbox, while the map gates' authoring rules do not.
 
 A minimal unit-only sandbox:
 

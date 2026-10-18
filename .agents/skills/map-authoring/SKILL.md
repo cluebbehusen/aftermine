@@ -26,6 +26,8 @@ The current authorable bytes are:
 - `#`: rock, which blocks ground and direct ground fire;
 - `^`: peak, which blocks ground, air, and every shot across it;
 - `~`: pit, which blocks ground while air and fire cross;
+- `=`: cliff between two levels, which blocks ground while air crosses;
+- `/`: ramp, ground joining a level to the one above it;
 - `s` / `S`: normal / rich scrap;
 - `E`: top-left tile of a derelict 2x2 Extractor frame;
 - `1`–`8`: top-left Foundry anchors for seats 1–8;
@@ -34,6 +36,32 @@ The current authorable bytes are:
 Do not author `w`; it is a rendered wreck marker. Keep every row the same width.
 An `E` needs a clear 2x2 ground footprint and represents one fixed build site,
 not four independent tiles.
+
+## Build levels with care
+
+A tiered map adds a `levels` array beside `map`: one row per map row, one glyph
+per tile, `0`–`9` then `a`–`z` for levels 0 to 35. A cliff carries the upper
+level it bounds and a ramp its lower one; every other tile carries the level it
+stands on. Leave `levels` out of a flat map. The parser refuses ground at two
+levels touching, diagonals included, unless one is a ramp joining them, and a
+cliff lower than the ground beside it. A cliff band may part levels more than
+one apart; a ramp always joins neighbouring levels.
+
+Levels change fights: ground units trade direct fire only on a shared level or
+from a ramp, higher ground between two units blocks their shots, artillery fires
+down but never up, and blasts stay on their own level. Aircraft ignore levels. A
+ramp holds only Barricades and Scuttle Charges. Make the high ground a decision:
+a ramp to hold, a rim to shell from, a basin that pays for its exposure.
+
+The map gates add authoring rules the parser leaves open:
+
+- a ramp is a filled rectangle at least three tiles across that runs through one
+  cliff band, with its upper level along one end and its lower level along the
+  other, a tile clear of peaks, pits, and the edge ring;
+- each peak and pit stands on a single level;
+- every cliff parts two levels, or it should be rock;
+- Foundries, Extractor frames, and starting structures stand off ramps on a
+  single level, and starting units stand off ramps.
 
 Fill maintained browser metadata: `hook`, `pace`, `mode`, `richness`, and
 `theme`. Accepted pace classes are `quick`, `standard`, `large`, `vast`, and
@@ -51,6 +79,7 @@ size `(w, h)` to `(width - w - x, height - h - y)`.
 Derive paired seats from rotated Foundry footprints, never from seat numbers.
 The relation must be an involution and pair hostile seats. Each pair needs:
 
+- mirrored terrain and levels, tile for tile;
 - equal starting scrap;
 - role-equivalent mirrored unit lists in stable order;
 - mirrored prebuilt structures using their real footprint dimensions;
