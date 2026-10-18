@@ -3314,14 +3314,12 @@ fn activate_card(
         }
         crate::panel::CardAction::Upgrade => crate::building_actions::upgrade(game),
         crate::panel::CardAction::ScrapSites => crate::building_actions::scrap_sites(game),
-        crate::panel::CardAction::UnloadHere(transport) => {
-            if let Some(t) = game.state.unit(transport) {
-                let at = t.tile();
-                game.issue(Command::Unload {
-                    transport,
-                    at,
-                    queue: false,
-                });
+        crate::panel::CardAction::Unload => {
+            let view = game.view();
+            let commands = crate::transports::SelectedTransports::inspect(&view)
+                .unload(&view, input.queue_held());
+            for command in commands {
+                game.issue(command);
             }
         }
         crate::panel::CardAction::ClearRally => {

@@ -387,15 +387,18 @@ army, and no right-click meaning; Shift queues it. A retiring own machine draws
 a gold dismantling meter under its health bar, as a building under salvage does.
 
 Loaded Harvesters and Excavators expose a Return Cargo card and shortcut (`U` by
-default). Worker selections use Return Cargo, a single selected transport uses
-Unload, and selected buildings use Upgrade on the same key. Mixed unit
-selections containing workers use Return Cargo. The action replaces current and
-queued work, deposits at a reachable owned Foundry, and leaves the worker there.
-A right-click on a completed owned Foundry sends loaded workers to that specific
-building; a damaged Foundry also receives repair after delivery. For empty
-welders the click repairs as usual, and on an unfinished site it constructs.
-Cargo returns replace work even when Shift is held; they never resume an
-interrupted harvest job.
+default). Worker selections use Return Cargo, other selections holding an own
+transport use Unload, and selected buildings use Upgrade on the same key. Mixed
+unit selections containing workers use Return Cargo; their Unload card still
+works when pressed. Unload sets each loaded selected transport's cargo down
+where it hovers; Shift queues each drop at the last fixed point of that
+transport's route, and empty transports keep their orders. Return Cargo replaces
+current and queued work, deposits at a reachable owned Foundry, and leaves the
+worker there. A right-click on a completed owned Foundry sends loaded workers to
+that specific building; a damaged Foundry also receives repair after delivery.
+For empty welders the click repairs as usual, and on an unfinished site it
+constructs. Cargo returns replace work even when Shift is held; they never
+resume an interrupted harvest job.
 
 ### Touch-only builds
 
