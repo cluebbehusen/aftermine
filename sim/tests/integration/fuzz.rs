@@ -767,10 +767,11 @@ struct Reach {
     cancelled_order: u64,
     /// Ticks on which some unit was scouting.
     scouting: u64,
-    /// Ticks on which some worker had idle welding switched off, and on
-    /// which one was tending.
+    /// Ticks on which some worker had idle welding switched off, on which
+    /// one was tending, and on which one was tending a building.
     idle_welds_off: u64,
     tending: u64,
+    tending_buildings: u64,
     /// Ticks on which some parking radar was unfolding, and on which one
     /// was up.
     radar_unfolding: u64,
@@ -810,6 +811,7 @@ impl Reach {
         self.scouting += other.scouting;
         self.idle_welds_off += other.idle_welds_off;
         self.tending += other.tending;
+        self.tending_buildings += other.tending_buildings;
         self.radar_unfolding += other.radar_unfolding;
         self.radar_up += other.radar_up;
         self.escorts = self.escorts.max(other.escorts);
@@ -1504,6 +1506,15 @@ fn fuzz_run(seed: u64) -> Run {
                 .iter()
                 .any(|u| matches!(u.order, oxide_sim::Order::Tend { .. })),
         );
+        reach.tending_buildings += u64::from(state.units().iter().any(|u| {
+            matches!(
+                u.order,
+                oxide_sim::Order::Tend {
+                    weld: Some(oxide_sim::Target::Building(_)),
+                    ..
+                }
+            )
+        }));
         let parking = |u: &&oxide_sim::Unit| {
             u.kind
                 .stats()
@@ -1685,6 +1696,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep must switch a worker's idle welding off"
     );
     assert!(reach.tending > 0, "the sweep must put a worker to tending");
+    assert!(
+        reach.tending_buildings > 0,
+        "the sweep must put a worker to tending a building"
+    );
     assert!(
         reach.radar_unfolding > 0 && reach.radar_up > 0,
         "the sweep must unfold a parking radar"

@@ -9,6 +9,7 @@ mod accompany;
 mod aircraft_turning;
 mod assembly;
 mod auto_weld;
+mod auto_weld_buildings;
 mod bastion_acquisition;
 mod behavior_combat;
 mod behavior_construction;

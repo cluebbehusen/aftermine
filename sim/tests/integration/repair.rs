@@ -12,12 +12,14 @@ use oxide_sim::{Command, Event, Order, PlayerId, State, UnitKind};
 /// Builds a turret at (3,3), lets an enemy ranged raid wound it (the
 /// builder is an accepted casualty; the turret wins), then trains a
 /// fresh harvester to do the welding. Returns (turret, welder, hp after
-/// the fight).
+/// the fight). Every worker it stages has idle welding switched off, so a
+/// test bills only the welders it commands.
 fn wounded_turret(
     state: &mut State,
     builder: oxide_sim::UnitId,
     raiders: &[oxide_sim::UnitId],
 ) -> (oxide_sim::BuildingId, oxide_sim::UnitId, u32) {
+    *state = common::idle_welds_off(state, &[builder]);
     state.tick(&[cmd(
         0,
         Command::Build {
@@ -86,7 +88,9 @@ fn wounded_turret(
             }
         })
     });
-    (turret, welder.expect("trained"), hp)
+    let welder = welder.expect("trained");
+    *state = common::idle_welds_off(state, &[welder]);
+    (turret, welder, hp)
 }
 
 #[test]
@@ -191,6 +195,8 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
             })
         });
         let torch = trained.expect("trained");
+        // Parked beside the wound, a torch waits for its Repair order.
+        state = common::idle_welds_off(&state, &[torch]);
         state.tick(&[cmd(
             0,
             Command::Run {

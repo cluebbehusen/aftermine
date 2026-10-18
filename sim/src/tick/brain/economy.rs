@@ -7,7 +7,7 @@ use super::PendingHpGain;
 use super::contact;
 use super::locomotion::approach_rect;
 use crate::event::{Event, StallReason};
-use crate::ids::{BuildingId, PlayerId, UnitId};
+use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, PathFollow, State};
 use crate::stats::HARVEST_ZONE_RADIUS;
 use crate::tick::crowding;
@@ -300,13 +300,23 @@ impl BuildingWeld {
     /// front (chip repairs pay their coin) and a completed weld totals within
     /// one scrap of exact. The meter surviving reissued orders is what keeps
     /// a re-clicked welder from re-entering the prepaid stretch.
-    pub(super) fn debit(self, p: u32) -> u64 {
+    fn debit(self, p: u32) -> u64 {
         let owed_millis = |ticks: u32| -> u64 {
             let welded = u64::from(self.ramp) * u64::from(ticks) / u64::from(self.ramp_ticks);
             welded * u64::from(self.basis) * crate::stats::REPAIR_COST_PERMILLE
                 / u64::from(self.max_hp)
         };
         owed_millis(p + 1).div_ceil(1000) - owed_millis(p).div_ceil(1000)
+    }
+
+    /// Scrap billed at the first weld tick from meter `p` on that bills
+    /// anything: what a bank must hold for a weld to make headway, as
+    /// [`crate::stats::next_paid_unit_repair_debit`] reads it for machines.
+    pub(super) fn next_paid(self, p: u32) -> u64 {
+        (p..p.saturating_add(self.ramp_ticks.max(1)))
+            .map(|p| self.debit(p))
+            .find(|&due| due > 0)
+            .unwrap_or(0)
     }
 }
 
@@ -613,18 +623,23 @@ pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -
     false
 }
 
-/// The order a welder takes on patients in: nearest first, with an exact
-/// distance tie going to the bearing from the welder, a key a half-turn of
-/// the scene preserves, and then id.
+/// The order a welder takes on patients in, each measured at `point`, a
+/// machine's position or the nearest point of a building's footprint:
+/// nearest first, with an exact distance tie going to the bearing from the
+/// welder, a key a half-turn of the scene preserves, then machines before
+/// buildings, then id. A welder standing on the point has no bearing to it.
 pub(super) fn patient_rank(
     welder: &crate::state::Unit,
-    patient: &crate::state::Unit,
-) -> (chassis::fx::Fx, u8, UnitId) {
-    (
-        welder.pos.dist_sq(patient.pos),
-        chassis::compass::heading_of(patient.pos - welder.pos).wrapping_sub(welder.heading),
-        patient.id,
-    )
+    point: Vec2Fx,
+    patient: Target,
+) -> (Fx, u8, Target) {
+    let toward = point - welder.pos;
+    let bearing = if toward == Vec2Fx::ZERO {
+        0
+    } else {
+        chassis::compass::heading_of(toward).wrapping_sub(welder.heading)
+    };
+    (welder.pos.dist_sq(point), bearing, patient)
 }
 
 /// The working positions against `patient`'s hull that `welder` tries,

@@ -70,10 +70,11 @@ aircraft that can land is serviced only on the ground.
 
 Workers also weld on their own initiative through `Order::Tend`: a patrol gives
 them tending legs, and an idle worker whose idle welding is on, the default,
-goes out from its post to weld an own wounded ground machine within
-`ESCORT_ENGAGE_RADIUS`, then walks back. The torch bills like any field weld; an
-empty bank, an unreachable patient or one walking away is let go without a
-stall, and no other order is ever interrupted.
+goes out from its post to weld an own wounded ground machine or damaged building
+within `ESCORT_ENGAGE_RADIUS`, the nearest first, then walks back. Buildings
+being salvaged and the stealthy Scuttle Charge are left alone. The torch bills
+like any field weld or crew repair; an empty bank, an unreachable patient or one
+walking away is let go without a stall, and no other order is ever interrupted.
 
 Tile routing and most geometric tie rules are also fair under a map half-turn.
 Building contact follows the fixed artwork, so asymmetric outlines can have

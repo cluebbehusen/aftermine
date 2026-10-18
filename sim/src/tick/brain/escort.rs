@@ -237,7 +237,7 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
         .iter()
         .chain(&party.ground)
         .filter_map(|&candidate| wounded(candidate))
-        .min_by_key(|u| patient_rank(welder, u))
+        .min_by_key(|u| patient_rank(welder, u.pos, crate::ids::Target::Unit(u.id)))
         .map(|u| u.id)
 }
 

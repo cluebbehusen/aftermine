@@ -350,15 +350,14 @@ pub(super) fn run(
                 });
                 scout::scout(state, index, &mut reach, danger, id, tile, events);
             }
-            Order::Tend { goal, weld } => tend::tend(
+            Order::Tend { .. } => tend::tend(
                 state,
                 index,
                 &mut reach,
                 &wounded,
                 id,
-                goal,
-                weld,
                 &mut field_welds,
+                &mut builds,
                 events,
             ),
         }

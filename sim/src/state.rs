@@ -240,10 +240,11 @@ pub enum Order {
         /// The tile to see.
         tile: TilePos,
     },
-    /// Walk toward a tile, welding wounded own ground machines met on the
-    /// way (workers only): a patrolling worker's leg, or, outside a looping
-    /// program, an idle worker's trip out from its post and back. The torch
-    /// works and bills like [`Order::RepairUnit`]'s, but a patient the
+    /// Walk toward a tile, welding wounded own ground machines and damaged
+    /// own buildings met on the way (workers only): a patrolling worker's
+    /// leg, or, outside a looping program, an idle worker's trip out from
+    /// its post and back. The torch works and bills like
+    /// [`Order::RepairUnit`]'s or [`Order::Repair`]'s, but a patient the
     /// welder cannot pay for, reach, or find standing still is let go
     /// without a stall.
     Tend {

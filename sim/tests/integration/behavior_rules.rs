@@ -329,8 +329,10 @@ fn eliminated_players_cannot_command_survivors() {
         buildings: Vec::new(),
         meta: None,
     };
-    let mut state = scenario.build().unwrap();
+    let state = scenario.build().unwrap();
     let survivor = state.units()[0].id;
+    // The harvester stands by rather than welding its Foundry back up.
+    let mut state = idle_welds_off(&state, &[survivor]);
     // p2's sentinels raze p1's foundry on their own.
     run_until(&mut state, 3000, |s, _| {
         !s.buildings().iter().any(|b| b.player == PlayerId(1))
