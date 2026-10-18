@@ -121,6 +121,24 @@ fn workers_weld_a_damaged_building_unless_an_enemy_stands_near() {
 }
 
 #[test]
+fn a_building_a_worker_tends_on_its_own_takes_no_second_welder() {
+    let scenario = arena(200);
+    let state = scenario.build().unwrap();
+    let foundry = foundries(&state, PlayerId(0))[0];
+    let max = BuildingKind::Foundry.base_stats().max_hp;
+    let state = damaged(&state, foundry, max / 2);
+    let tender = harvesters(&state, 0)[0];
+    let state = tending(&state, tender, Target::Building(foundry));
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        repairs(&commands)
+            .iter()
+            .all(|(_, patient)| *patient != foundry),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn each_damaged_building_gets_its_own_welder() {
     let mut scenario = arena(400);
     scenario.units.push(harvester(0, 5, 7));

@@ -53,23 +53,23 @@ A harvesting, idle or tending worker away from home runs back beside the nearest
 Foundry once known enemy fire reaches it. Paid sites nobody is building get the
 nearest free worker. While no armed enemy in sight stands near it, no known
 enemy weapon reaches it and the seat has scrap to pay, each damaged building
-nobody welds yet that has a free tile beside it gets the nearest free worker,
-most missing value first. Wounded armed ground units at home, free or in an
-attack regrouping there, come next under the same safety and scrap rules: one
-worker for so much missing health among them, less the more the seat leans on
-support, and at least one, each sent to the unit missing the most value,
-sturdiest workers first, so an Excavator before a Harvester, then idle before
-harvesting, then nearest. A worker welding a unit that has left home stops
-rather than follow it out; one the simulation sent tending on its own counts
-toward its patient at home and otherwise finishes its trip. Idle workers go to
-the reachable worked node or wreck with the most places open; with none open, to
-the nearest wreck with a clear route holding more salvage than the workers on it
-carry away in a load each, then to the most open worked source with something
-left, or with none worked to the nearest node with a clear route, never one
-inside the reach of known enemy weapons. A worker harvesting a node or wreck
-whose route has turned dangerous is sent elsewhere the same way, or home. A
-worker left with nowhere to go first delivers any scrap it carries to a Foundry
-on its ground.
+nobody welds yet, on order or on its own, that has a free tile beside it gets
+the nearest free worker, most missing value first. Wounded armed ground units at
+home, free or in an attack regrouping there, come next under the same safety and
+scrap rules: one worker for so much missing health among them, less the more the
+seat leans on support, and at least one, each sent to the unit missing the most
+value, sturdiest workers first, so an Excavator before a Harvester, then idle
+before harvesting, then nearest. A worker welding a unit that has left home
+stops rather than follow it out; one the simulation sent tending on its own
+counts toward its patient at home and otherwise finishes its trip. Idle workers
+go to the reachable worked node or wreck with the most places open; with none
+open, to the nearest wreck with a clear route holding more salvage than the
+workers on it carry away in a load each, then to the most open worked source
+with something left, or with none worked to the nearest node with a clear route,
+never one inside the reach of known enemy weapons. A worker harvesting a node or
+wreck whose route has turned dangerous is sent elsewhere the same way, or home.
+A worker left with nowhere to go first delivers any scrap it carries to a
+Foundry on its ground.
 
 ## Repair Bays
 
