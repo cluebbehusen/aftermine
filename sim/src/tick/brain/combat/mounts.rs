@@ -153,8 +153,13 @@ fn relative(pivot: Vec2Fx, aim: Vec2Fx, heading: u8) -> u8 {
 /// closest point can sit on its footprint's outer edge and so fall in the
 /// tile beside it, which flush against a peak is the peak itself.
 fn clear(state: &State, pivot: Vec2Fx, aim: Vec2Fx) -> bool {
-    shot_crosses(state, TilePos::containing(aim), false)
-        && !chassis::path::line_blocked(pivot, aim, |t| shot_crosses(state, t, false))
+    clear_line(
+        state,
+        Fire::Direct,
+        ShotEnd::new(pivot, Domain::Air),
+        ShotEnd::new(aim, Domain::Ground),
+        Landing::Checked,
+    )
 }
 
 /// Whether `candidate`, aimed at `aim`, is in `weapon`'s reach from `pivot`.

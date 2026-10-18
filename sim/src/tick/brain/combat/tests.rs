@@ -269,11 +269,6 @@ fn linear_sidearm_victim(
     shooter_domain: Domain,
     weapon: &WeaponStats,
 ) -> Option<(Fx, UnitId, Vec2Fx, Domain)> {
-    let shot_open = |t: TilePos, full: bool| {
-        state.map.tile(t).is_some_and(|tile| {
-            !tile.terrain.blocks_all_fire() && (!full || !tile.terrain.blocks_direct_fire())
-        })
-    };
     state
         .units
         .iter()
@@ -282,8 +277,13 @@ fn linear_sidearm_victim(
         .map(|u| (shooter_pos.dist_sq(u.pos), u.id, u.pos, u.domain()))
         .filter(|(d, ..)| within_weapon_reach(weapon, *d, Fx::ZERO))
         .filter(|(_, _, upos, dom)| {
-            let full = traces_terrain(weapon, shooter_domain, *dom);
-            !chassis::path::line_blocked(shooter_pos, *upos, |t| shot_open(t, full))
+            clear_line(
+                state,
+                Fire::of(weapon),
+                ShotEnd::new(shooter_pos, shooter_domain),
+                ShotEnd::new(*upos, *dom),
+                Landing::Unchecked,
+            )
         })
         .min_by_key(|&(d, uid, _, _)| (d, uid))
 }
