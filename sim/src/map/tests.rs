@@ -193,6 +193,27 @@ fn a_forged_levels_layer_is_inconsistent() {
 }
 
 #[test]
+fn an_extractor_frame_stays_off_ramps() {
+    assert_eq!(
+        Map::parse_tiered(&[".E..", "=//=", "....", "...."], &TIERED_LEVELS).unwrap_err(),
+        MapError::BadFrame(TilePos::new(1, 0))
+    );
+    let (map, _) = Map::parse_tiered(&["....", "=/==", "E...", "...."], &TIERED_LEVELS).unwrap();
+    assert!(map.is_consistent());
+    let mut forged = map;
+    *forged
+        .elevation
+        .as_mut()
+        .unwrap()
+        .get_mut(TilePos::new(0, 3))
+        .unwrap() = Elevation::Ramp { low: 1 };
+    assert!(
+        !forged.is_consistent(),
+        "a ramp under a frame loads no more than it parses"
+    );
+}
+
+#[test]
 fn wrecks_that_fall_on_a_cliff_are_gone() {
     let (mut map, _) = Map::parse_tiered(&TIERED, &TIERED_LEVELS).unwrap();
     let (cliff, ramp) = (TilePos::new(0, 1), TilePos::new(1, 1));
