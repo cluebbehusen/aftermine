@@ -3,8 +3,9 @@
 //! on what any seat has seen, and every seat of a match shares one model.
 
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, tiles_of};
+use chassis::fx::Vec2Fx;
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::map::Map;
+use oxide_sim::map::{Elevation, Map};
 use oxide_sim::scenario::ScenarioError;
 use oxide_sim::{BuildingKind, PlayerId, Scenario};
 use std::borrow::Cow;
@@ -74,10 +75,12 @@ pub struct MapModel {
     components: Grid<u32>,
     /// What terrain does to a shot crossing each tile.
     cover: Grid<Cover>,
+    /// Each tile's level on a tiered map; `None` on a flat one.
+    levels: Option<Grid<Elevation>>,
     /// Each seat's authored Foundry anchor, by player index.
     starts: Vec<Option<TilePos>>,
     /// Anchors of two-by-two footprints of open ground on one component,
-    /// off every frame and a tile clear of starting scrap.
+    /// off every frame and ramp and a tile clear of starting scrap.
     spot: Grid<bool>,
     /// The same for one-tile footprints.
     tile_spot: Grid<bool>,
@@ -98,6 +101,35 @@ pub struct MapModel {
     cuts: Vec<Vec<Cut>>,
     /// Each seat's gate tiles, sorted, where it never builds.
     gated: Vec<Vec<TilePos>>,
+}
+
+/// How a shot travels between its two bodies, for the fire rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Shot {
+    /// Direct fire between two ground bodies: rock covers, and levels part.
+    Ground,
+    /// A shell between two ground bodies: it arcs over cover but never lands
+    /// above its gun.
+    Arc,
+    /// Fire to or from an aircraft: rock and levels stop nothing.
+    Air,
+}
+
+impl Shot {
+    /// The shot of a `weapon` fired from a body in `shooter` at one in
+    /// `target`.
+    pub(crate) fn of(
+        weapon: &oxide_sim::stats::WeaponStats,
+        shooter: oxide_sim::stats::Domain,
+        target: oxide_sim::stats::Domain,
+    ) -> Self {
+        use oxide_sim::stats::Domain;
+        match (shooter, target) {
+            (Domain::Ground, Domain::Ground) if weapon.indirect => Self::Arc,
+            (Domain::Ground, Domain::Ground) => Self::Ground,
+            _ => Self::Air,
+        }
+    }
 }
 
 /// A few narrow passages that every ground route from a seat's start to a
@@ -221,6 +253,13 @@ impl MapModel {
                 };
             }
         }
+        let levels = map.tiered().then(|| {
+            let mut levels = Grid::new(map.width(), map.height(), Elevation::Level(0));
+            for (tile, slot) in levels.iter_mut() {
+                *slot = map.elevation(tile).unwrap_or(Elevation::Level(0));
+            }
+            levels
+        });
         let mut starts = vec![None; seats];
         let mut home_nodes = vec![Vec::new(); seats];
         let mut distances = vec![None; seats];
@@ -264,6 +303,7 @@ impl MapModel {
         let mut model = Self {
             components,
             cover,
+            levels,
             starts,
             spot,
             tile_spot,
@@ -742,12 +782,75 @@ impl MapModel {
 
     /// Whether a shot may cross `tile`: peaks stop every shot, and rock also
     /// stops `direct` fire between two ground units.
-    pub(crate) fn shot_crosses(&self, tile: TilePos, direct: bool) -> bool {
+    fn shot_crosses(&self, tile: TilePos, direct: bool) -> bool {
         match self.cover.get(tile) {
             Some(Cover::Open) => true,
             Some(Cover::Partial) => !direct,
             Some(Cover::Full) | None => false,
         }
+    }
+
+    /// The highest level a `shot` between bodies standing on `from` and `to`
+    /// may pass over, or `None` when their levels refuse it, as the
+    /// simulation's fire rules say: direct ground fire needs a shared level
+    /// and passes over nothing higher than both ends, and an arc never lands
+    /// above its gun.
+    fn ceiling(&self, from: TilePos, to: TilePos, shot: Shot) -> Option<u8> {
+        let Some(levels) = &self.levels else {
+            return Some(u8::MAX);
+        };
+        let (Some(shooter), Some(target)) = (levels.get(from), levels.get(to)) else {
+            return Some(u8::MAX);
+        };
+        let ((shooter_low, shooter_high), (target_low, target_high)) =
+            (shooter.span(), target.span());
+        match shot {
+            Shot::Air => Some(u8::MAX),
+            Shot::Arc => (target_low <= shooter_high).then_some(u8::MAX),
+            Shot::Ground => (shooter_low <= target_high && target_low <= shooter_high)
+                .then_some(shooter_high.max(target_high)),
+        }
+    }
+
+    /// Whether `tile` is a ramp, which holds no building but a wall or a
+    /// mine.
+    pub(crate) fn ramp(&self, tile: TilePos) -> bool {
+        self.levels
+            .as_ref()
+            .and_then(|levels| levels.get(tile))
+            .is_some_and(|level| matches!(level, Elevation::Ramp { .. }))
+    }
+
+    /// Whether the levels at the tiles bodies stand on let a `shot` pass
+    /// between them, wherever the line runs.
+    pub(crate) fn levels_allow(&self, from: TilePos, to: TilePos, shot: Shot) -> bool {
+        self.ceiling(from, to, shot).is_some()
+    }
+
+    /// Whether a `shot` from `from` reaches `to` as the simulation traces
+    /// it: terrain cover, and on a tiered map the levels of the tiles the
+    /// two bodies stand on, `footing`.
+    pub(crate) fn clear_shot(
+        &self,
+        from: Vec2Fx,
+        to: Vec2Fx,
+        footing: (TilePos, TilePos),
+        shot: Shot,
+    ) -> bool {
+        let Some(ceiling) = self.ceiling(footing.0, footing.1, shot) else {
+            return false;
+        };
+        let below = |tile: TilePos| {
+            ceiling == u8::MAX
+                || self
+                    .levels
+                    .as_ref()
+                    .and_then(|levels| levels.get(tile))
+                    .is_none_or(|level| level.span().0 <= ceiling)
+        };
+        !chassis::path::line_blocked(from, to, |tile| {
+            self.shot_crosses(tile, shot == Shot::Ground) && below(tile)
+        })
     }
 
     /// Whether a ground unit in `component` can stand beside `tile`, which is
@@ -762,7 +865,7 @@ impl MapModel {
 }
 
 /// Anchors of `size`-square footprints of open ground on one component, off
-/// every frame and a tile clear of starting scrap, where Harvesters still
+/// every frame and ramp and a tile clear of starting scrap, where Harvesters still
 /// get through.
 fn spot_grid(map: &Map, components: &Grid<u32>, size: i32) -> Grid<bool> {
     let mut spot = Grid::new(map.width(), map.height(), false);
@@ -776,6 +879,7 @@ fn spot_grid(map: &Map, components: &Grid<u32>, size: i32) -> Grid<bool> {
                     ground.is_some()
                         && components.get(tile).copied() == ground
                         && !map.tile_in_extractor_frame(tile)
+                        && !map.is_ramp(tile)
                 })
             });
             let clear = (-1..=size)

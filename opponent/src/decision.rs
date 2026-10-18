@@ -964,6 +964,7 @@ pub(crate) fn site(
         .filter(|anchor| defense || !danger.hits(kind, *anchor))
         .find_map(|anchor| {
             match placement::check(
+                map,
                 observation,
                 kind,
                 anchor,

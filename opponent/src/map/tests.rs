@@ -514,3 +514,75 @@ fn frame_only_sites_stop_at_the_site_cap() {
     assert!(model.sites().iter().all(|site| site.nodes.is_empty()));
     assert_eq!(model.sites().len(), SITE_CAP);
 }
+
+/// A plateau at level 2 over a floor at level 1, a ramp through the cliff.
+const LEDGE: [&str; 9] = [
+    "############",
+    "#1........2#",
+    "#..........#",
+    "#..........#",
+    "#====///===#",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "############",
+];
+const LEDGE_LEVELS: [&str; 9] = [
+    "222222222222",
+    "222222222222",
+    "222222222222",
+    "222222222222",
+    "222221112222",
+    "111111111111",
+    "111111111111",
+    "111111111111",
+    "111111111111",
+];
+
+fn ledge() -> MapModel {
+    let (map, anchors) = Map::parse_tiered(&LEDGE, &LEDGE_LEVELS).unwrap();
+    MapModel::new(&map, &anchors, vec![None; 2])
+}
+
+#[test]
+fn shots_follow_the_simulation_level_rules() {
+    let model = ledge();
+    let (high, ramp, low) = (TilePos::new(6, 2), TilePos::new(6, 4), TilePos::new(6, 6));
+    let shot = |from: TilePos, to: TilePos, shot| {
+        model.clear_shot(from.center(), to.center(), (from, to), shot)
+    };
+    assert!(!shot(high, low, Shot::Ground) && !shot(low, high, Shot::Ground));
+    assert!(shot(high, ramp, Shot::Ground) && shot(ramp, low, Shot::Ground));
+    assert!(shot(high, low, Shot::Arc), "a shell falls from the rim");
+    assert!(!shot(low, high, Shot::Arc), "and never rises to it");
+    assert!(shot(low, high, Shot::Air), "aircraft ignore levels");
+    assert!(shot(TilePos::new(2, 6), TilePos::new(9, 6), Shot::Ground));
+    assert!(!model.levels_allow(low, high, Shot::Ground));
+    assert!(model.levels_allow(low, ramp, Shot::Ground));
+}
+
+#[test]
+fn no_building_spot_covers_a_ramp() {
+    let model = ledge();
+    for x in 5..=7 {
+        let ramp = TilePos::new(x, 4);
+        assert!(!model.tile_spot.get(ramp).copied().unwrap_or(false));
+        for (dx, dy) in [(0, 0), (-1, 0), (0, -1), (-1, -1)] {
+            assert!(
+                !model
+                    .spot
+                    .get(ramp.offset(dx, dy))
+                    .copied()
+                    .unwrap_or(false)
+            );
+        }
+    }
+    assert!(
+        model
+            .tile_spot
+            .get(TilePos::new(6, 6))
+            .copied()
+            .unwrap_or(false),
+        "open floor below the ramp still takes a building"
+    );
+}

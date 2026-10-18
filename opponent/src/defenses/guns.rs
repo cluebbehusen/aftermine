@@ -92,7 +92,7 @@ impl Guard<'_> {
             for anchor in guard_sites(self.map, self.observation.me, asset, approach, kind) {
                 let centre = footprint_centre(kind, anchor);
                 let worth = asset.value
-                    * Self::gain(asset, kind, anchor, reach)
+                    * Self::gain(self.map, asset, kind, anchor, reach)
                     * self.weight(approach, kind)
                     / 1_000;
                 if worth > 0 {
@@ -195,7 +195,9 @@ pub(super) fn upgrade(
                         let short = approach.short(
                             |_, spotted| !next.indirect || spotted,
                             |point| {
-                                raises(cover, next, domain, point, |cover| approach.held(cover))
+                                raises(guard.map, cover, next, domain, point, |cover| {
+                                    approach.held(cover)
+                                })
                             },
                         );
                         asset.value * short * approach.evidence.weight() / 1_000
@@ -372,15 +374,16 @@ pub(super) fn strength(stats: &BuildingStats, targets: u64) -> u64 {
 /// each holding off what `held` says: all of it where the gun does not reach
 /// yet, the difference where it does, none beyond the next tier's reach.
 pub(super) fn raises(
+    map: &MapModel,
     cover: Cover,
     next: Cover,
     domain: Domain,
     point: (i64, i64),
     held: impl Fn(&Cover) -> u64,
 ) -> u64 {
-    if !next.covers(domain, point) {
+    if !next.covers(map, domain, point) {
         0
-    } else if cover.covers(domain, point) {
+    } else if cover.covers(map, domain, point) {
         held(&next).saturating_sub(held(&cover))
     } else {
         held(&next)

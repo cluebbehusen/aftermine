@@ -4,11 +4,10 @@
 //! refused order is re-planned.
 
 use crate::frame::{ring, tiles_of};
-use crate::map::MapModel;
+use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use chassis::path::line_blocked;
 use oxide_sim::BuildingKind;
 use oxide_sim::observation::{BuildingObs, ObservationData};
 use oxide_sim::stats::{Domain, HARVEST_INCIDENT_DANGER_RADIUS};
@@ -59,6 +58,7 @@ pub(crate) struct Allowed {
 /// this decision already planned, standing as `layout` allows. A buried own
 /// Scuttle Charge blocks nothing, so it keeps no other building away.
 pub(crate) fn check(
+    map: &MapModel,
     observation: &ObservationData,
     kind: BuildingKind,
     anchor: TilePos,
@@ -86,7 +86,10 @@ pub(crate) fn check(
     if on_frame {
         return Err(Refusal::Frame);
     }
-    if footprint.tiles().any(|tile| blocked(observation, tile)) {
+    if footprint
+        .tiles()
+        .any(|tile| blocked(observation, tile) || (map.ramp(tile) && !kind.fits_ramp()))
+    {
         return Err(Refusal::Terrain);
     }
     let known = observation
@@ -228,13 +231,13 @@ pub(crate) struct Danger<'a> {
 }
 
 /// A known enemy gun's weapon, by its centre and its reach either side,
-/// doubled, and whether rock in the way stops its fire, as it does a direct
-/// shot at a building.
+/// doubled, the anchor it stands on, and how its shot at a building travels.
 struct Gun {
     centre: (i64, i64),
     minimum: i64,
     range: i64,
-    direct: bool,
+    footing: TilePos,
+    shot: Shot,
 }
 
 impl<'a> Danger<'a> {
@@ -260,7 +263,8 @@ impl<'a> Danger<'a> {
                         centre,
                         minimum: doubled(weapon.minimum_range),
                         range: doubled(weapon.range),
-                        direct: !weapon.indirect,
+                        footing: building.anchor,
+                        shot: Shot::of(weapon, Domain::Ground, Domain::Ground),
                     })
             })
             .collect();
@@ -310,9 +314,12 @@ impl<'a> Danger<'a> {
             let distance = near(gun.centre);
             distance <= gun.range * gun.range
                 && distance >= gun.minimum * gun.minimum
-                && !line_blocked(world(gun.centre), world(nearest(gun.centre)), |tile| {
-                    self.map.shot_crosses(tile, gun.direct)
-                })
+                && self.map.clear_shot(
+                    world(gun.centre),
+                    world(nearest(gun.centre)),
+                    (gun.footing, anchor),
+                    gun.shot,
+                )
         });
         let unit = self
             .units

@@ -8,9 +8,8 @@
 use super::{Missions, Task, hunt, mine, walking_gun};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled};
-use crate::map::MapModel;
+use crate::map::{MapModel, Shot};
 use chassis::fx::Fx;
-use chassis::path::line_blocked;
 use oxide_sim::observation::{ObservationData, UnitObs};
 use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::{Domain, TargetPriority};
@@ -147,13 +146,16 @@ fn shooters(map: &MapModel, members: &[&UnitObs], enemy: &UnitObs) -> Vec<UnitId
         let dx = Fx::from_num(unit.tile.x - enemy.tile.x);
         let dy = Fx::from_num(unit.tile.y - enemy.tile.y);
         let distance_sq = dx * dx + dy * dy;
+        let shooter = unit.kind.stats().domain;
         let reaches = weapons.any(|weapon| {
-            let direct = !weapon.indirect && walks && domain == Domain::Ground;
             distance_sq <= weapon.range * weapon.range
                 && distance_sq >= weapon.minimum_range * weapon.minimum_range
-                && !line_blocked(unit.tile.center(), enemy.tile.center(), |tile| {
-                    map.shot_crosses(tile, direct)
-                })
+                && map.clear_shot(
+                    unit.tile.center(),
+                    enemy.tile.center(),
+                    (unit.tile, enemy.tile),
+                    Shot::of(weapon, shooter, domain),
+                )
         });
         if !reaches {
             return Vec::new();

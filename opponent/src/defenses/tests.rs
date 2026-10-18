@@ -68,9 +68,15 @@ fn an_upgrade_adds_its_whole_strength_where_the_gun_did_not_reach() {
     let near = (centre.0 + 4, centre.1);
     let edge = (centre.0 + 11, centre.1);
     let far = (centre.0 + 16, centre.1);
-    assert!(turret.covers(Domain::Ground, near) && !turret.covers(Domain::Ground, edge));
-    assert!(heavy.covers(Domain::Ground, edge) && !heavy.covers(Domain::Ground, far));
-    let raised = |point| raises(turret, heavy, Domain::Ground, point, |cover| cover.value[0]);
+    let map = MapModel::from_scenario(&oxide_sim::Scenario::skirmish()).unwrap();
+    let covers = |cover: Cover, point| cover.covers(&map, Domain::Ground, point);
+    assert!(covers(turret, near) && !covers(turret, edge));
+    assert!(covers(heavy, edge) && !covers(heavy, far));
+    let raised = |point| {
+        raises(&map, turret, heavy, Domain::Ground, point, |cover| {
+            cover.value[0]
+        })
+    };
     assert_eq!(raised(near), heavy.value[0] - turret.value[0]);
     assert_eq!(raised(edge), heavy.value[0]);
     assert_eq!(raised(far), 0);
@@ -110,4 +116,42 @@ fn a_defense_faces_the_domain_its_guns_can_hit() {
     ] {
         assert_eq!(domain(kind), Domain::Ground, "{kind:?}");
     }
+}
+
+#[test]
+fn a_rim_gun_covers_the_ramp_but_not_the_floor_below() {
+    let rows = [
+        "############",
+        "#1........2#",
+        "#..........#",
+        "#..........#",
+        "#====///===#",
+        "#..........#",
+        "#..........#",
+        "#..........#",
+        "############",
+    ];
+    let levels = [
+        "222222222222",
+        "222222222222",
+        "222222222222",
+        "222222222222",
+        "222221112222",
+        "111111111111",
+        "111111111111",
+        "111111111111",
+        "111111111111",
+    ];
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.map = rows.iter().map(|row| (*row).to_string()).collect();
+    scenario.levels = levels.iter().map(|row| (*row).to_string()).collect();
+    scenario.units.clear();
+    scenario.buildings.clear();
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let turret = Cover::of(BuildingKind::Turret, 0, TilePos::new(5, 3)).unwrap();
+    let centre = |tile: TilePos| (i64::from(2 * tile.x + 1), i64::from(2 * tile.y + 1));
+    assert!(turret.covers(&map, Domain::Ground, centre(TilePos::new(6, 4))));
+    assert!(!turret.covers(&map, Domain::Ground, centre(TilePos::new(5, 5))));
+    assert!(turret.covers(&map, Domain::Ground, centre(TilePos::new(3, 2))));
 }

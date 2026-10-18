@@ -120,7 +120,7 @@ impl<'a> Guard<'a> {
                     beside,
                     stakes,
                 );
-                cover(approach, domain, centre, &covers, &seen, &watched);
+                cover(map, approach, domain, centre, &covers, &seen, &watched);
             }
         }
         watch_missiles(observation, frame, &mut assets, &watched);
@@ -195,6 +195,7 @@ fn shared(
 /// further along where an Array watches, with those own buildings will
 /// watch once built.
 fn cover(
+    map: &MapModel,
     approach: &mut Approach,
     domain: Domain,
     centre: (i64, i64),
@@ -211,7 +212,7 @@ fn cover(
             let covered: u64 = covers
                 .iter()
                 .filter(|cover: &&Cover| {
-                    cover.covers(domain, *point) && (!cover.indirect || seen(*point))
+                    cover.covers(map, domain, *point) && (!cover.indirect || seen(*point))
                 })
                 .map(|cover| approach.held(cover))
                 .sum();
