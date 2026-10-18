@@ -2685,3 +2685,36 @@ fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
         assert_eq!(impacts(&game), 0, "a pruned report cannot repeat its sound");
     }
 }
+
+#[test]
+fn a_scout_that_stops_short_with_its_tile_in_sight_gets_no_stall_feedback() {
+    let mut game =
+        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
+    let human = game.presentation.human;
+    let stall = |reason| Event::OrderStalled {
+        unit: UnitId(999),
+        player: human,
+        pos: chassis::grid::TilePos::new(10, 10).center(),
+        reason,
+    };
+    let pinged = |game: &Game| {
+        game.presentation
+            .fx
+            .iter()
+            .any(|fx| matches!(fx.kind, EffectKind::Ping { .. }))
+    };
+    game.presentation
+        .spawn_fx(&game.state, &[stall(oxide_sim::StallReason::SafeVantage)]);
+    assert!(game.presentation.toasts.is_empty());
+    assert!(!pinged(&game));
+    // A scout that never got its view is still told so.
+    game.presentation
+        .spawn_fx(&game.state, &[stall(oxide_sim::StallReason::NoSafeVantage)]);
+    assert!(
+        game.presentation
+            .toasts
+            .iter()
+            .any(|toast| toast.text == "Scout found no safe way to see there")
+    );
+    assert!(pinged(&game));
+}

@@ -1854,7 +1854,7 @@ impl Presentation {
                         .is_some_and(|unit| unit.kind.stats().scouts);
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
-                    self.toast(match reason {
+                    let text = match reason {
                         oxide_sim::StallReason::NoRoute => "Can't reach that",
                         oxide_sim::StallReason::NoFiringPosition => "No ground to fire from there",
                         oxide_sim::StallReason::InsufficientScrap => "Out of scrap",
@@ -1870,13 +1870,14 @@ impl Presentation {
                         oxide_sim::StallReason::DangerHold => {
                             "Worker waiting for a safe route home"
                         }
-                        oxide_sim::StallReason::SafeVantage => {
-                            "Scout stopped short where it could safely see"
-                        }
+                        // The scout still has its tile in sight, so the
+                        // order did its job; the stop needs no feedback.
+                        oxide_sim::StallReason::SafeVantage => continue,
                         oxide_sim::StallReason::NoSafeVantage => {
                             "Scout found no safe way to see there"
                         }
-                    });
+                    };
+                    self.toast(text);
                     self.fx.push(Effect {
                         kind: EffectKind::Ping {
                             at: world_vec(*pos),
