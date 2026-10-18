@@ -32,6 +32,9 @@ const LIP: f32 = 0.22;
 /// How far a cliff looks for the ground above it, in tiles: far enough to
 /// see past a second tile of a taller cliff.
 const REACH: i32 = 2;
+/// How far past its own cells a step reads the ground around it, in cells.
+/// Its foot and top lie well inside this on any cliff a few tiles thick.
+const WINDOW: i32 = 8 * CELLS;
 const SIDES: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 
 /// What a tile is drawn as, which for a cliff and the ground above it is not
@@ -119,8 +122,8 @@ struct Op {
     color: Color,
 }
 
-/// A worn block on a step: the tile, the bench's colour, a token.
-type Decal = (TilePos, Color, u32);
+/// A worn block on a step: the tile's index, the bench's colour, a token.
+type Decal = (usize, Color, u32);
 
 /// The levels of one tiered map, laid out for drawing.
 pub(crate) struct Levels {
@@ -132,6 +135,7 @@ pub(crate) struct Levels {
     /// Every tile's fills, in draw order: tile `i`'s run from `starts[i]`.
     ops: Vec<Op>,
     starts: Vec<u32>,
+    /// Worn blocks, by tile index.
     decals: Vec<Decal>,
 }
 
@@ -536,18 +540,40 @@ impl Levels {
             .collect();
         pairs.sort_unstable();
         pairs.dedup();
-        for (upper, lower) in pairs {
+        // Each step's cells, bounded, so it reads only the ground around it.
+        let mut bounds = vec![(cw, ch, -1, -1); pairs.len()];
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let Class::Band { upper, lower } = class_c(cx, cy) else {
+                    continue;
+                };
+                if let Ok(p) = pairs.binary_search(&(upper, lower)) {
+                    let b = &mut bounds[p];
+                    *b = (b.0.min(cx), b.1.min(cy), b.2.max(cx), b.3.max(cy));
+                }
+            }
+        }
+        for (&(upper, lower), &(bx0, by0, bx1, by1)) in pairs.iter().zip(&bounds) {
+            let (wx0, wy0) = ((bx0 - WINDOW).max(0), (by0 - WINDOW).max(0));
+            let (wx1, wy1) = ((bx1 + WINDOW).min(cw - 1), (by1 + WINDOW).min(ch - 1));
+            let ww = wx1 - wx0 + 1;
             let top = f32::from(upper) - 0.25;
-            let up = distance(cw, ch, |cx, cy| surface(cx, cy).is_some_and(|h| h >= top));
-            let low = distance(cw, ch, |cx, cy| surface(cx, cy).is_some_and(|h| h < top));
+            let field = |seed: &dyn Fn(f32) -> bool| {
+                distance(ww, wy1 - wy0 + 1, |x, y| {
+                    surface(wx0 + x, wy0 + y).is_some_and(seed)
+                })
+            };
+            let up = field(&|h| h >= top);
+            let low = field(&|h| h < top);
             let span = upper - lower;
-            for cy in 0..ch {
-                for cx in 0..cw {
+            for cy in by0..=by1 {
+                for cx in bx0..=bx1 {
                     if class_c(cx, cy) != (Class::Band { upper, lower }) {
                         continue;
                     }
                     let i = as_index(cy * cw + cx);
-                    let (du, dl) = (i32::from(up[i]), i32::from(low[i]));
+                    let w = as_index((cy - wy0) * ww + cx - wx0);
+                    let (du, dl) = (i32::from(up[w]), i32::from(low[w]));
                     let thickness = (du + dl - 1).max(1);
                     let steps = i32::from(span).min((thickness / 2).max(1));
                     let segment = thickness as f32 / steps as f32;
@@ -789,7 +815,7 @@ impl Levels {
                 let value = hash(tx, ty, 850);
                 if bench && value.is_multiple_of(5) {
                     decals.push((
-                        TilePos::new(tx, ty),
+                        as_index(ty * self.width + tx),
                         self.level_flat(bench_level[i(0, 0)]),
                         value,
                     ));
@@ -799,41 +825,33 @@ impl Levels {
         (ops, decals)
     }
 
-    /// Draws the steps, ramps, and wear over the visible tiles.
-    pub(crate) fn draw(&self, game: &Scene<'_>) {
-        let camera = &game.presentation.camera;
-        let (lo, hi) = camera.world_rect();
-        let zoom = camera.zoom;
-        let cell = zoom / CELLS as f32;
-        let x0 = numeric::to_i32(lo.x.floor()).max(0);
-        let y0 = numeric::to_i32(lo.y.floor()).max(0);
-        let x1 = numeric::to_i32(hi.x.ceil()).min(self.width - 1);
-        let y1 = numeric::to_i32(hi.y.ceil()).min(self.height - 1);
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                let tile = as_index(y * self.width + x);
-                let (start, end) = (self.starts[tile], self.starts[tile + 1]);
-                if start == end {
-                    continue;
-                }
-                let (xs, ys) = cell_edges(game, TilePos::new(x, y));
-                for op in &self.ops[start.fit::<usize>()..end.fit::<usize>()] {
-                    let (sx, sy) = (usize::from(op.sx), usize::from(op.sy));
-                    let (w, h) = (xs[sx + 1] - xs[sx], ys[sy + 1] - ys[sy]);
-                    draw_rectangle(
-                        xs[sx] + (w * op.x).round(),
-                        ys[sy] + (h * op.y).round(),
-                        (w * op.w).round().max(1.0),
-                        (h * op.h).round().max(1.0),
-                        op.color,
-                    );
-                }
+    /// Draws one tile's steps, ramp, and wear: over its ground, under any
+    /// salvage or frame on it.
+    pub(crate) fn draw_tile(&self, game: &Scene<'_>, pos: TilePos) {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.width || pos.y >= self.height {
+            return;
+        }
+        let tile = as_index(pos.y * self.width + pos.x);
+        let ops = &self.ops[self.starts[tile].fit::<usize>()..self.starts[tile + 1].fit::<usize>()];
+        if !ops.is_empty() {
+            let (xs, ys) = cell_edges(game, pos);
+            for op in ops {
+                let (sx, sy) = (usize::from(op.sx), usize::from(op.sy));
+                let (w, h) = (xs[sx + 1] - xs[sx], ys[sy + 1] - ys[sy]);
+                draw_rectangle(
+                    xs[sx] + (w * op.x).round(),
+                    ys[sy] + (h * op.y).round(),
+                    (w * op.w).round().max(1.0),
+                    (h * op.h).round().max(1.0),
+                    op.color,
+                );
             }
         }
-        for &(pos, top, value) in &self.decals {
-            if pos.x < x0 || pos.x > x1 || pos.y < y0 || pos.y > y1 {
-                continue;
-            }
+        if let Ok(found) = self.decals.binary_search_by_key(&tile, |decal| decal.0) {
+            let (_, top, value) = self.decals[found];
+            let camera = &game.presentation.camera;
+            let zoom = camera.zoom;
+            let cell = zoom / CELLS as f32;
             let a = camera.to_screen(vec2(pos.x as f32, pos.y as f32));
             let rect = Rect::new(a.x.floor(), a.y.floor(), cell, cell);
             if value % 3 == 0 {

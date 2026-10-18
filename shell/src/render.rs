@@ -559,9 +559,6 @@ pub(crate) fn draw_with_performance(
     boulders::draw_boulders(game, sprites, &ground.slabs);
     crate::render::world::draw_extractor_frames(game, sprites);
     terraces::draw_terraces(game, &ground.terraces, fractured);
-    if let Some(levels) = &ground.levels {
-        levels.draw(game);
-    }
     draw_scorches(game, sprites);
     destruction::draw_ground_effects(game, sprites);
     draw_range_ground(game, input);

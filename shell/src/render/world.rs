@@ -690,6 +690,11 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     }
                 }
             }
+            // A tiered map's steps and ramps lie over the ground, under
+            // salvage and frames.
+            if let Some(levels) = levels {
+                levels.draw_tile(game, pos);
+            }
             // Scrap draws at its live amount only in sight; unseen ground
             // shows what the player remembers (frozen, like ghosts).
             let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
