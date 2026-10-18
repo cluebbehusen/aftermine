@@ -46,7 +46,7 @@ tile. The simulation does not limit how many levels a map has. Cliff tiles block
 ground movement like rock while aircraft cross them; ramp tiles are ground that
 joins a level to the one above it, and hold only Barricades and Scuttle Charges.
 Parsing and deserialization share one check: touching ground meets only at
-overlapping levels, a cliff stands no lower than the ground beside it, and a
+overlapping levels, a cliff stands no higher than the ground beside it, and a
 layer at a single level is stored as a flat map, so every map has one form.
 
 Scenario mode defaults to an ordinary match. Explicit sandbox mode makes Foundry

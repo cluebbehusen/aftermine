@@ -38,7 +38,7 @@ fn ramp_columns(band: i32) -> std::ops::Range<i32> {
 pub(crate) fn stair(count: i32, units: Vec<UnitSpec>) -> Scenario {
     let height = 4 * count + 1;
     let level_of_row = |y: i32| -> i32 {
-        // Border and cliff rows take the level of the band above them.
+        // Border rows take the level of the band above them.
         let band = ((y - 1).max(0) / 4).min(count - 1);
         count - 1 - band
     };
@@ -56,7 +56,7 @@ pub(crate) fn stair(count: i32, units: Vec<UnitSpec>) -> Scenario {
             } else if cliff && ramp_columns(band).contains(&x) {
                 ('/', level - 1)
             } else if cliff {
-                ('=', level)
+                ('=', level - 1)
             } else if (x, y) == (1, band_top(count - 1)) {
                 ('1', level)
             } else if (x, y) == (WIDTH - 3, band_top(count - 1)) {
@@ -103,7 +103,7 @@ fn the_levels_layer_parses_and_round_trips() {
     assert_eq!(map.elevation(TilePos::new(5, 6)), Some(Elevation::Level(0)));
     let cliff = TilePos::new(5, cliff_row(0));
     assert_eq!(map.tile(cliff).unwrap().terrain, Terrain::Cliff);
-    assert_eq!(map.elevation(cliff), Some(Elevation::Level(1)));
+    assert_eq!(map.elevation(cliff), Some(Elevation::Level(0)));
     assert_eq!(
         map.elevation(TilePos::new(10, cliff_row(0))),
         Some(Elevation::Ramp { low: 0 })
@@ -237,9 +237,8 @@ fn a_plateau_without_a_ramp_still_builds_through_the_sky() {
     for row in &mut scenario.map {
         *row = row.replace('/', "=");
     }
-    // Every former ramp tile becomes cliff, which stores the upper level.
-    let y = usize::try_from(cliff_row(0)).unwrap();
-    scenario.levels[y] = scenario.levels[y].replace('0', "1");
+    // Every former ramp tile becomes cliff, which stores the lower level a
+    // ramp already carries.
     // Raise the second Foundry onto the cut-off plateau.
     let top = usize::try_from(band_top(0)).unwrap();
     let bottom = usize::try_from(band_top(1)).unwrap();
