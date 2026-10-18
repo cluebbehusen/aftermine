@@ -1482,8 +1482,9 @@ fn minimap(state: &State) -> Vec<String> {
         cy.min(rows - 1) * cols + cx.min(cols - 1)
     };
 
-    // Terrain census: Ground, Rock, Peak, Pit (ties break in that order).
-    let mut terrain = vec![[0u32; 4]; cols * rows];
+    // Terrain census: Ground, Rock, Peak, Pit, Cliff (ties break in that
+    // order).
+    let mut terrain = vec![[0u32; 5]; cols * rows];
     let mut scrap = vec![false; cols * rows];
     for (tile, info) in map.iter() {
         let slot = &mut terrain[index(tile)];
@@ -1492,6 +1493,7 @@ fn minimap(state: &State) -> Vec<String> {
             oxide_sim::map::Terrain::Rock => slot[1] += 1,
             oxide_sim::map::Terrain::Peak => slot[2] += 1,
             oxide_sim::map::Terrain::Pit => slot[3] += 1,
+            oxide_sim::map::Terrain::Cliff => slot[4] += 1,
         }
         if info.scrap > 0 {
             scrap[index(tile)] = true;
@@ -1550,11 +1552,12 @@ fn minimap(state: &State) -> Vec<String> {
                         return '$';
                     }
                     let census = &terrain[at];
-                    let best = (0..4).max_by_key(|&kind| (census[kind], std::cmp::Reverse(kind)));
+                    let best = (0..5).max_by_key(|&kind| (census[kind], std::cmp::Reverse(kind)));
                     match best {
                         Some(1) => '#',
                         Some(2) => '^',
                         Some(3) => '~',
+                        Some(4) => '=',
                         _ => '·',
                     }
                 })

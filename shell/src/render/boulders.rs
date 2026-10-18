@@ -168,17 +168,18 @@ impl Slabs {
     /// rock.
     pub(super) fn build(map: &Map, rows: &[String], blockers: &Blockers) -> Self {
         let ring = boundary_ring(rows);
+        // Cliffs draw as rock until levels have their own art.
+        let solid = |terrain: Terrain| matches!(terrain, Terrain::Rock | Terrain::Cliff);
         let rock = |pos: TilePos| {
             map.tile(pos)
-                .is_none_or(|tile| tile.terrain == Terrain::Rock || ring(pos))
+                .is_none_or(|tile| solid(tile.terrain) || ring(pos))
         };
         // Past its window a field reads as deep inside, as off-map rock does.
         let field = CellField::seeded(TilePos::new(0, 0), map.width(), map.height(), 1, rock);
         let tiles: Vec<TilePos> = (0..map.height())
             .flat_map(|y| (0..map.width()).map(move |x| TilePos::new(x, y)))
             .filter(|&pos| {
-                map.tile(pos)
-                    .is_some_and(|tile| tile.terrain == Terrain::Rock)
+                map.tile(pos).is_some_and(|tile| solid(tile.terrain))
                     && !ring(pos)
                     && !blockers.covers(pos)
             })

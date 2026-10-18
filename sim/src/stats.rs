@@ -592,6 +592,12 @@ pub struct BuildingStats {
 }
 
 impl BuildingKind {
+    /// Whether the kind may stand on a ramp: a ramp may be walled or mined,
+    /// never built over.
+    pub const fn fits_ramp(self) -> bool {
+        matches!(self, BuildingKind::Barricade | BuildingKind::ScuttleCharge)
+    }
+
     /// Footprint in tiles (width, height), anchored top-left. Every tier
     /// of a kind shares it.
     pub const fn size(self) -> (i32, i32) {

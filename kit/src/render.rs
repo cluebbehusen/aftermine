@@ -104,7 +104,10 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
     for (pos, tile) in state.map().iter() {
         let (x, y) = (pos.x as f32 * TILE_PX, pos.y as f32 * TILE_PX);
         match (tile.terrain, tile.scrap) {
-            (Terrain::Rock, _) => fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, ROCK),
+            // Cliffs draw as rock until levels have their own art.
+            (Terrain::Rock | Terrain::Cliff, _) => {
+                fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, ROCK);
+            }
             // Peaks are uncut quarry mesas: a dark full-tile mass with a
             // south-facing cut and cap, distinct from the loose rock fill.
             (Terrain::Peak, _) => {

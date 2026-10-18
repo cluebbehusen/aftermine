@@ -8,11 +8,18 @@
 //! #    rock (blocks ground and direct ground fire)
 //! ^    peak (blocks ground, air, and all fire)
 //! ~    bottomless pit (blocks ground; air and fire cross)
+//! =    cliff between two levels (blocks ground; air and fire cross)
+//! /    ramp joining two levels (ground)
 //! s S  normal or rich scrap node (ground after depletion)
 //! E    derelict Extractor frame's top-left tile
 //! 1-8  Foundry anchors for seats 1-8
 //! a-h  Foundry anchors for seats 9-16
 //! ```
+//!
+//! A tiered map adds a levels layer: one row per map row, one glyph per
+//! tile, `0`-`9` then `a`-`z` for levels 0 to 35. A cliff tile carries the
+//! upper level it bounds and a ramp its lower one. A map with no levels
+//! layer, or one at a single level throughout, is flat.
 
 use crate::ids::PlayerId;
 use crate::stats::{RICH_SCRAP_NODE_AMOUNT, SCRAP_NODE_AMOUNT};
@@ -45,6 +52,40 @@ pub enum Terrain {
     /// A bottomless excavation: blocks ground, while aircraft and fire of
     /// every kind cross it. Wrecks that fall here are gone.
     Pit,
+    /// A sheer face between two levels of a tiered map: blocks ground,
+    /// while aircraft cross it. Wrecks that fall here are gone.
+    Cliff,
+}
+
+/// The height of a tile on a tiered map.
+///
+/// Variant order is hash-load-bearing: postcard serializes the declaration
+/// index, so new variants are appended, never inserted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Elevation {
+    /// A tile at one level. A cliff carries the upper level it bounds.
+    Level(u8),
+    /// A ramp joining `low` and the level above it.
+    Ramp {
+        /// The lower of the two levels the ramp joins.
+        low: u8,
+    },
+}
+
+impl Elevation {
+    /// The lowest and highest level the tile stands at.
+    pub fn span(self) -> (u8, u8) {
+        match self {
+            Self::Level(level) => (level, level),
+            Self::Ramp { low } => (low, low.saturating_add(1)),
+        }
+    }
+
+    fn overlaps(self, other: Self) -> bool {
+        let ((a_lo, a_hi), (b_lo, b_hi)) = (self.span(), other.span());
+        a_lo <= b_hi && b_lo <= a_hi
+    }
 }
 
 impl Terrain {
@@ -132,6 +173,36 @@ pub enum MapError {
     /// non-ground terrain.
     #[error("extractor frame at {0:?} needs a clear 2x2 ground footprint")]
     BadFrame(TilePos),
+    /// A cliff or ramp on a map with no levels layer.
+    #[error("the cliff or ramp at {0:?} needs a levels layer")]
+    Untiered(TilePos),
+    /// The levels layer is not the map's size.
+    #[error("the levels layer must be {width}x{height}, one glyph per tile")]
+    LevelRows {
+        /// The map's width.
+        width: i32,
+        /// The map's height.
+        height: i32,
+    },
+    /// A character outside the level glyphs.
+    #[error("unknown level {c:?} at ({x}, {y})")]
+    UnknownLevel {
+        /// The character.
+        c: char,
+        /// Column.
+        x: i32,
+        /// Row.
+        y: i32,
+    },
+    /// A stored levels layer holds a single level, which is a flat map.
+    #[error("a levels layer must hold more than one level")]
+    FlatLevels,
+    /// Touching ground shares no level, a ramp is off the ground, or a
+    /// cliff stands below the ground beside it.
+    #[error(
+        "levels break at {0:?}: touching ground must share a level or meet at a ramp, and a cliff takes the upper level it bounds"
+    )]
+    LevelBreak(TilePos),
 }
 
 /// The playfield. Owns terrain and scrap amounts; buildings and units live
@@ -144,12 +215,23 @@ pub struct Map {
     /// outlives every machine restored on it; the tiles beneath are plain
     /// ground and block nothing while unclaimed.
     extractor_frames: Vec<TilePos>,
+    /// Every tile's level on a tiered map; `None` on a flat one.
+    elevation: Option<Grid<Elevation>>,
 }
 
 impl Map {
-    /// Parses ASCII rows into a map plus the Foundry anchors found, sorted
-    /// by player.
+    /// Parses ASCII rows into a flat map plus the Foundry anchors found,
+    /// sorted by player.
     pub fn parse(rows: &[impl AsRef<str>]) -> Result<(Self, Vec<(PlayerId, TilePos)>), MapError> {
+        Self::parse_tiered(rows, &[] as &[&str])
+    }
+
+    /// Parses ASCII rows and an optional levels layer (empty for a flat
+    /// map) into a map plus the Foundry anchors found, sorted by player.
+    pub fn parse_tiered(
+        rows: &[impl AsRef<str>],
+        levels: &[impl AsRef<str>],
+    ) -> Result<(Self, Vec<(PlayerId, TilePos)>), MapError> {
         if rows.is_empty() || rows[0].as_ref().is_empty() {
             return Err(MapError::Empty);
         }
@@ -163,6 +245,7 @@ impl Map {
         let mut cells = Vec::with_capacity(rows.len() * expected);
         let mut anchors: Vec<(PlayerId, TilePos)> = Vec::new();
         let mut extractor_frames: Vec<TilePos> = Vec::new();
+        let mut ramps: Vec<TilePos> = Vec::new();
 
         for (y, row) in rows.iter().enumerate() {
             let row = row.as_ref();
@@ -207,6 +290,21 @@ impl Map {
                         wreck: 0,
                         cosmetic: 0,
                     },
+                    '=' => Tile {
+                        terrain: Terrain::Cliff,
+                        scrap: 0,
+                        wreck: 0,
+                        cosmetic: 0,
+                    },
+                    '/' => {
+                        ramps.push(pos);
+                        Tile {
+                            terrain: Terrain::Ground,
+                            scrap: 0,
+                            wreck: 0,
+                            cosmetic: 0,
+                        }
+                    }
                     'E' => {
                         extractor_frames.push(pos);
                         Tile {
@@ -259,14 +357,19 @@ impl Map {
             }
         }
         anchors.sort_by_key(|(p, _)| *p);
+        let (width, height) = (edge_coordinate(expected), edge_coordinate(rows.len()));
+        let elevation = Self::parse_levels(levels, width, height, &ramps)?;
+        if elevation.is_none()
+            && let Some(&ramp) = ramps.first()
+        {
+            return Err(MapError::Untiered(ramp));
+        }
         let map = Self {
-            grid: Grid::from_cells(
-                edge_coordinate(expected),
-                edge_coordinate(rows.len()),
-                cells,
-            ),
+            grid: Grid::from_cells(width, height, cells),
             extractor_frames,
+            elevation,
         };
+
         for &frame in &map.extractor_frames {
             for dy in 0..2 {
                 for dx in 0..2 {
@@ -280,13 +383,117 @@ impl Map {
                 }
             }
         }
+        if let Some(fault) = map.elevation_fault() {
+            return Err(fault);
+        }
         Ok((map, anchors))
     }
 
+    /// The levels layer as a grid, or `None` when it is absent or holds a
+    /// single level with no ramps: a flat map has only one form.
+    fn parse_levels(
+        levels: &[impl AsRef<str>],
+        width: i32,
+        height: i32,
+        ramps: &[TilePos],
+    ) -> Result<Option<Grid<Elevation>>, MapError> {
+        if levels.is_empty() {
+            return Ok(None);
+        }
+        let sized = levels.len() == as_index(height)
+            && levels
+                .iter()
+                .all(|row| row.as_ref().chars().count() == as_index(width));
+        if !sized {
+            return Err(MapError::LevelRows { width, height });
+        }
+        let mut cells = Vec::with_capacity(as_index(width) * as_index(height));
+        for (y, row) in levels.iter().enumerate() {
+            for (x, c) in row.as_ref().chars().enumerate() {
+                let level = (c.is_ascii_digit() || c.is_ascii_lowercase())
+                    .then(|| c.to_digit(36))
+                    .flatten()
+                    .ok_or(MapError::UnknownLevel {
+                        c,
+                        x: edge_coordinate(x),
+                        y: edge_coordinate(y),
+                    })?;
+                cells.push(Elevation::Level(
+                    u8::try_from(level).expect("base-36 digits fit a byte"),
+                ));
+            }
+        }
+        for ramp in ramps {
+            let cell = &mut cells[ramp.row_major(width)];
+            let (low, _) = cell.span();
+            *cell = Elevation::Ramp { low };
+        }
+        let uniform = cells.windows(2).all(|pair| pair[0] == pair[1]);
+        if uniform && matches!(cells.first(), Some(Elevation::Level(_))) {
+            return Ok(None);
+        }
+        Ok(Some(Grid::from_cells(width, height, cells)))
+    }
+
+    /// The first way the levels fail to hold together, if any. A flat map
+    /// has no cliffs; a tiered map's layer matches the map, holds more than
+    /// one level, keeps ramps on ground, joins touching ground only where
+    /// their levels overlap, and never puts a cliff below the ground beside
+    /// it.
+    fn elevation_fault(&self) -> Option<MapError> {
+        let Some(levels) = &self.elevation else {
+            return self
+                .grid
+                .iter()
+                .find(|(_, tile)| tile.terrain == Terrain::Cliff)
+                .map(|(pos, _)| MapError::Untiered(pos));
+        };
+        if !levels.is_consistent()
+            || levels.width() != self.width()
+            || levels.height() != self.height()
+        {
+            return Some(MapError::LevelRows {
+                width: self.width(),
+                height: self.height(),
+            });
+        }
+        let first = levels.get(TilePos::new(0, 0)).copied();
+        if matches!(first, Some(Elevation::Level(_)))
+            && levels.iter().all(|(_, level)| Some(*level) == first)
+        {
+            return Some(MapError::FlatLevels);
+        }
+        for (pos, &here) in levels.iter() {
+            let terrain = self.tile(pos)?.terrain;
+            if let Elevation::Ramp { low } = here
+                && (low == u8::MAX || terrain != Terrain::Ground)
+            {
+                return Some(MapError::LevelBreak(pos));
+            }
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let near = pos.offset(dx, dy);
+                    let (Some(tile), Some(&there)) = (self.tile(near), levels.get(near)) else {
+                        continue;
+                    };
+                    let both_ground = terrain == Terrain::Ground && tile.terrain == Terrain::Ground;
+                    let above_cliff = terrain == Terrain::Cliff
+                        && tile.terrain == Terrain::Ground
+                        && there.span().1 > here.span().1;
+                    if (both_ground && !here.overlaps(there)) || above_cliff {
+                        return Some(MapError::LevelBreak(pos));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Whether the deserialized grid holds together (see
-    /// [`chassis::grid::Grid::is_consistent`]).
+    /// [`chassis::grid::Grid::is_consistent`]), levels included.
     pub fn is_consistent(&self) -> bool {
         self.grid.is_consistent()
+            && self.elevation_fault().is_none()
             // Frames are a canonical row-major list. Fog views copy it
             // in order, so a reordered or duplicated list would give one
             // semantic map two hashes.
@@ -325,6 +532,38 @@ impl Map {
         self.extractor_frames.iter().any(|frame| {
             tile.x >= frame.x && tile.x < frame.x + 2 && tile.y >= frame.y && tile.y < frame.y + 2
         })
+    }
+
+    /// The elevation at `pos` on a tiered map; `None` on a flat map or off
+    /// the map.
+    pub fn elevation(&self, pos: TilePos) -> Option<Elevation> {
+        self.elevation.as_ref()?.get(pos).copied()
+    }
+
+    /// Whether `pos` is a ramp.
+    pub fn is_ramp(&self, pos: TilePos) -> bool {
+        matches!(self.elevation(pos), Some(Elevation::Ramp { .. }))
+    }
+
+    /// Whether the map has levels.
+    pub fn tiered(&self) -> bool {
+        self.elevation.is_some()
+    }
+
+    /// The levels layer in its authored glyphs; empty for a flat map. A
+    /// level past the last glyph, which no scenario can author, prints as
+    /// `?`.
+    pub fn level_rows(&self) -> Vec<String> {
+        let Some(levels) = &self.elevation else {
+            return Vec::new();
+        };
+        let mut rows = vec![String::with_capacity(as_index(self.width())); as_index(self.height())];
+        for (pos, elevation) in levels.iter() {
+            let (level, _) = elevation.span();
+            let glyph = char::from_digit(u32::from(level), 36).unwrap_or('?');
+            rows[as_index(pos.y)].push(glyph);
+        }
+        rows
     }
 
     /// Map width in tiles.
@@ -444,9 +683,11 @@ impl Map {
                     (Terrain::Rock, _) => '#',
                     (Terrain::Peak, _) => '^',
                     (Terrain::Pit, _) => '~',
+                    (Terrain::Cliff, _) => '=',
                     // Render-only: wrecks are never authored, so `w` stays
                     // out of the parse legend.
                     (Terrain::Ground, 0) if tile.wreck > 0 => 'w',
+                    (Terrain::Ground, 0) if self.is_ramp(pos) => '/',
                     (Terrain::Ground, 0) if tile.cosmetic == 1 => ',',
                     (Terrain::Ground, 0) => '.',
                     (Terrain::Ground, s) if s > SCRAP_NODE_AMOUNT => 'S',

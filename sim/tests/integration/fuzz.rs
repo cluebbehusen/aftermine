@@ -1722,6 +1722,61 @@ fn seeded_garbage_never_panics_and_reproduces() {
     assert!(reach.burst > 0, "the sweep must land a warhead");
 }
 
+/// Garbage on a three-level map, where every verb meets cliffs, ramps,
+/// and levels; the main sweep's arena is flat.
+#[test]
+fn tiered_garbage_never_panics_and_reproduces() {
+    let run = |seed: u64| {
+        let mut forces = Vec::new();
+        for (player, west) in [(0u8, true), (1u8, false)] {
+            let x = |x: i32| if west { x } else { 23 - x };
+            forces.extend([
+                common::unit(player, UnitKind::Harvester, x(4), 11),
+                common::unit(player, UnitKind::Excavator, x(3), 6),
+                common::unit(player, UnitKind::Sentinel, x(5), 6),
+                common::unit(player, UnitKind::Bombard, x(6), 2),
+                common::unit(player, UnitKind::Talon, x(8), 3),
+            ]);
+        }
+        let mut scenario = crate::levels::stair(3, forces);
+        for player in &mut scenario.players {
+            player.scrap = 100_000;
+        }
+        let mut state = scenario.build().expect("the tiered arena builds");
+        let mut rng = Pcg32::new(seed, 0x71E2);
+        for tick in 0..TICKS / 2 {
+            let commands: Vec<PlayerCommand> = (0..rng.next_below(4))
+                .map(|_| {
+                    let drawn = loop {
+                        let d = rng.next_index(COMMAND_TAGS.len());
+                        if COMMAND_TAGS[d] != CommandTag::Surrender {
+                            break d;
+                        }
+                    };
+                    PlayerCommand {
+                        player: PlayerId(u8::try_from(rng.next_below(2)).unwrap()),
+                        command: generate(COMMAND_TAGS[drawn], &mut rng, &state),
+                    }
+                })
+                .collect();
+            state.tick(&commands);
+            if tick.is_multiple_of(SAMPLE) {
+                state.validate_invariants().unwrap_or_else(|err| {
+                    panic!("seed {seed:#x}: tick {tick} is a state the validator refuses: {err}")
+                });
+            }
+        }
+        state.hash()
+    };
+    for seed in (0..4).map(seed_at) {
+        assert_eq!(
+            run(seed),
+            run(seed),
+            "seed {seed:#x}: the same garbage took two different paths"
+        );
+    }
+}
+
 /// The forcing chain, stated as a test: the draw pool is the whole tag
 /// list, and every tag generates the verb it names. A new [`Command`]
 /// variant stops `tag_of` compiling; its tag stops `tag_index` compiling;

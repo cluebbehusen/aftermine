@@ -235,13 +235,13 @@ pub struct ObservationData {
     /// omniscient builder, remembered amounts under the fog-honest one.
     /// Sorted by (y, x).
     pub known_scrap: Vec<(TilePos, u32)>,
-    /// Impassable terrain as known (rock, peaks, and pits) — all of it
+    /// Impassable terrain as known (rock, peaks, pits, and cliffs) — all of it
     /// omnisciently, explored tiles only fog-honestly (terrain is
     /// static, so once seen it is known forever). What placement and
     /// staging decisions steer around; sorted by (y, x).
     pub known_rock: Vec<TilePos>,
-    /// Explored pits, also in `known_rock`, which block travel but not fire.
-    /// Sorted by (y, x).
+    /// Explored pits and cliffs, also in `known_rock`, which block travel
+    /// but not fire. Sorted by (y, x).
     #[serde(default)]
     pub known_pits: Vec<TilePos>,
     /// Derelict Extractor frame anchors discovered through any footprint
@@ -433,7 +433,7 @@ impl ObservationData {
             if tile.terrain.blocks_ground() {
                 obs.known_rock.push(pos);
             }
-            if tile.terrain == crate::map::Terrain::Pit {
+            if tile.terrain.blocks_ground() && !tile.terrain.blocks_direct_fire() {
                 obs.known_pits.push(pos);
             }
             if state.map().is_extractor_frame(pos) {
@@ -573,7 +573,7 @@ impl ObservationData {
                     if tile.terrain.blocks_ground() {
                         obs.known_rock.push(pos);
                     }
-                    if tile.terrain == crate::map::Terrain::Pit {
+                    if tile.terrain.blocks_ground() && !tile.terrain.blocks_direct_fire() {
                         obs.known_pits.push(pos);
                     }
                     if tile.terrain.blocks_air() {

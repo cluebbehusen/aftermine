@@ -333,7 +333,7 @@ impl Scenario {
         if self.players.is_empty() || self.players.len() > MAX_PLAYERS {
             return Err(ScenarioError::PlayerCount(self.players.len()));
         }
-        let (map, anchors) = Map::parse(&self.map)?;
+        let (map, anchors) = Map::parse_tiered(&self.map, &self.levels)?;
         if let Some((player, _)) = anchors
             .iter()
             .find(|(player, _)| usize::from(player.0) >= self.players.len())
@@ -417,7 +417,7 @@ impl Scenario {
             let (w, h) = BuildingKind::Foundry.size();
             let footprint_ok = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
-                .all(|t| state.passable(t));
+                .all(|t| state.passable(t) && !state.map.is_ramp(t));
             if !footprint_ok {
                 return Err(ScenarioError::BadFootprint(player, anchor));
             }
@@ -433,7 +433,7 @@ impl Scenario {
             let (w, h) = spec.kind.size();
             let footprint_ok = (0..h)
                 .flat_map(|dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
-                .all(|t| state.passable(t));
+                .all(|t| state.passable(t) && (spec.kind.fits_ramp() || !state.map.is_ramp(t)));
             if (spec.player as usize) >= self.players.len()
                 || !footprint_ok
                 || spec.kind.assembles().is_some()

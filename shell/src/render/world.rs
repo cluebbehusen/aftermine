@@ -699,17 +699,22 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 1.0
             };
             let (overlay, flip) = match (tile.terrain, scrap) {
-                // Rock slabs, peak terraces, and pit drops are drawn by their
-                // own passes after the tiles.
+                // Rock slabs, cliffs, peak terraces, and pit drops are drawn
+                // by their own passes after the tiles.
                 (
                     oxide_sim::map::Terrain::Rock
                     | oxide_sim::map::Terrain::Peak
-                    | oxide_sim::map::Terrain::Pit,
+                    | oxide_sim::map::Terrain::Pit
+                    | oxide_sim::map::Terrain::Cliff,
                     _,
                 ) => (None, false),
-                (_, 0) if wreck > 0 => (Some(sprites.wreck_pile()), h % 5 < 2),
-                (_, 0) => (None, false),
-                (_, s) => (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false),
+                (oxide_sim::map::Terrain::Ground, 0) if wreck > 0 => {
+                    (Some(sprites.wreck_pile()), h % 5 < 2)
+                }
+                (oxide_sim::map::Terrain::Ground, 0) => (None, false),
+                (oxide_sim::map::Terrain::Ground, s) => {
+                    (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false)
+                }
             };
             if let Some(source) = overlay {
                 let overlay_tint = if mem_fade < 1.0 {

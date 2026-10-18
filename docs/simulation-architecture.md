@@ -41,6 +41,14 @@ The simulation never reads an event back.
 data, normalizes team ids, places Foundries and starting entities, and builds
 tick-zero vision.
 
+A tiered map adds a levels layer beside the terrain rows, one base-36 glyph per
+tile. The simulation does not limit how many levels a map has. Cliff tiles block
+ground movement like rock while aircraft cross them; ramp tiles are ground that
+joins a level to the one above it, and hold only Barricades and Scuttle Charges.
+Parsing and deserialization share one check: touching ground meets only at
+overlapping levels, a cliff stands no lower than the ground beside it, and a
+layer at a single level is stored as a flat map, so every map has one form.
+
 Scenario mode defaults to an ordinary match. Explicit sandbox mode makes Foundry
 anchors optional and permits allied-only or disconnected scenes. It disables
 automatic elimination and victory, but preserves ordinary command, placement,
@@ -1018,14 +1026,14 @@ and cloned to later seats.
 
 `ObservationData::fog_honest` copies both masks in canonical row-major order, so
 a policy distinguishes current sight from remembered terrain without consulting
-authoritative state. It distinguishes explored pits from fire-blocking rock and
-peaks, marks provisional footprints and paid deferred sites, and exposes
-team-shared contact tracks and each own carried unit's identity, kind, health,
-and carrier separately from available units. This is presence evidence, not
-permission to assign or command a passenger. Allied and enemy manifests remain
-opaque. The debug protocol's `FogView` projects the same knowledge for players
-and agents; a parity test in `protocol/src/view/tests.rs` keeps the two in
-agreement.
+authoritative state. It distinguishes explored pits and cliffs from
+fire-blocking rock and peaks, marks provisional footprints and paid deferred
+sites, and exposes team-shared contact tracks and each own carried unit's
+identity, kind, health, and carrier separately from available units. This is
+presence evidence, not permission to assign or command a passenger. Allied and
+enemy manifests remain opaque. The debug protocol's `FogView` projects the same
+knowledge for players and agents; a parity test in `protocol/src/view/tests.rs`
+keeps the two in agreement.
 
 Public buildings are the one hostile fact every seat holds regardless of fog: a
 Deep Bore's owner, kind, tier and footprint, from the moment its upgrade starts
