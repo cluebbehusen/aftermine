@@ -1084,8 +1084,8 @@ fn extend_distances(
 }
 
 /// Expansion sites: 8-connected fields of starting scrap more than
-/// [`SITE_CLEARANCE`] tiles from every start, each with Foundry anchors a tile
-/// or three from its nodes. Anchors rank by distance to the field's middle,
+/// [`SITE_CLEARANCE`] tiles from every start, each with Foundry anchors off
+/// every frame and ramp a tile or three from its nodes. Anchors rank by distance to the field's middle,
 /// with ties broken relative to the map centre so mirrored fields rank
 /// mirrored anchors alike.
 fn sites(map: &Map, components: &Grid<u32>, anchors: &[(PlayerId, TilePos)]) -> Vec<Site> {
@@ -1181,7 +1181,9 @@ fn site_anchors(map: &Map, components: &Grid<u32>, nodes: &[(TilePos, u32)]) -> 
                 continue;
             };
             let open = footprint.iter().all(|tile| {
-                components.get(*tile) == Some(&component) && !map.tile_in_extractor_frame(*tile)
+                components.get(*tile) == Some(&component)
+                    && !map.tile_in_extractor_frame(*tile)
+                    && !map.is_ramp(*tile)
             }) && components.get(nodes[0].0) == Some(&component);
             let clear =
                 (-1..=2).all(|dy| (-1..=2).all(|dx| map.scrap_at(anchor.offset(dx, dy)) == 0));
