@@ -173,8 +173,8 @@ pub enum MapError {
     #[error("duplicate foundry anchor for player {0}")]
     DuplicateAnchor(PlayerId),
     /// An extractor frame's 2x2 footprint runs off the map or overlaps
-    /// non-ground terrain.
-    #[error("extractor frame at {0:?} needs a clear 2x2 ground footprint")]
+    /// non-ground terrain or a ramp.
+    #[error("extractor frame at {0:?} needs a clear 2x2 ground footprint off any ramp")]
     BadFrame(TilePos),
     /// A cliff or ramp on a map with no levels layer.
     #[error("the cliff or ramp at {0:?} needs a levels layer")]
@@ -373,18 +373,12 @@ impl Map {
             elevation,
         };
 
-        for &frame in &map.extractor_frames {
-            for dy in 0..2 {
-                for dx in 0..2 {
-                    let tile = frame.offset(dx, dy);
-                    if !map
-                        .tile(tile)
-                        .is_some_and(|t| t.terrain == Terrain::Ground && t.scrap == 0)
-                    {
-                        return Err(MapError::BadFrame(frame));
-                    }
-                }
-            }
+        if let Some(&frame) = map
+            .extractor_frames
+            .iter()
+            .find(|&&frame| !map.frame_footprint_bare(frame))
+        {
+            return Err(MapError::BadFrame(frame));
         }
         if let Some(fault) = map.elevation_fault() {
             return Err(fault);
@@ -504,19 +498,26 @@ impl Map {
                 .extractor_frames
                 .windows(2)
                 .all(|pair| (pair[0].y, pair[0].x) < (pair[1].y, pair[1].x))
-            && self.extractor_frames.iter().all(|frame| {
-                (0..2).all(|dy| {
-                    (0..2).all(|dx| {
-                        // The full parse-side contract: a frame tile is
-                        // bare ground. A deserialized frame on a scrap node
-                        // would let restoration and harvesting stack on one
-                        // tile, a shape parse refuses and loading must
-                        // refuse too.
-                        self.tile(frame.offset(dx, dy))
-                            .is_some_and(|t| t.terrain == Terrain::Ground && t.scrap == 0)
-                    })
-                })
+            // The full parse-side contract. A deserialized frame on a scrap
+            // node would let restoration and harvesting stack on one tile, a
+            // shape parse refuses and loading must refuse too.
+            && self
+                .extractor_frames
+                .iter()
+                .all(|&frame| self.frame_footprint_bare(frame))
+    }
+
+    /// Whether a frame at `frame` stands on bare ground: no scrap under it
+    /// and no ramp, where an Extractor could never be rebuilt.
+    fn frame_footprint_bare(&self, frame: TilePos) -> bool {
+        (0..2).all(|dy| {
+            (0..2).all(|dx| {
+                let tile = frame.offset(dx, dy);
+                self.tile(tile)
+                    .is_some_and(|t| t.terrain == Terrain::Ground && t.scrap == 0)
+                    && !self.is_ramp(tile)
             })
+        })
     }
 
     /// Anchors of derelict Extractor frames, in authored (row-major)

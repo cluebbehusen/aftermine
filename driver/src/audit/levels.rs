@@ -2,7 +2,8 @@
 //! load one: ramps that read as ramps, peaks and pits standing on one
 //! level, cliffs that part levels, and starts that sit level.
 //!
-//! A ramp is a filled rectangle at least three tiles across. Ground at its
+//! A ramp is a filled rectangle at least three tiles across, every tile of
+//! it joining the same two levels. Ground at its
 //! upper level meets one end, ground at its lower level the other, and
 //! cliff runs along both sides, so it crosses exactly one cliff band. It
 //! keeps a tile clear of peaks, pits, and the map's edge ring, so the art
@@ -112,6 +113,15 @@ fn ramp_faults(map: &Map, faults: &mut Vec<String>) {
         let Some(Elevation::Ramp { low }) = map.elevation(group[0]) else {
             continue;
         };
+        if group
+            .iter()
+            .any(|&pos| map.elevation(pos) != Some(Elevation::Ramp { low }))
+        {
+            faults.push(format!(
+                "the ramp at {corner} joins more than one pair of levels"
+            ));
+            continue;
+        }
         let line = |from: TilePos, step: (i32, i32), count: i32| -> Vec<TilePos> {
             (0..count)
                 .map(|k| from.offset(step.0 * k, step.1 * k))

@@ -364,9 +364,8 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
         let Some(radius) = shell.splash else { continue };
         let radius_sq = radius * radius;
         // A blast spreads along the level it lands on, never up or down a
-        // cliff. A building's edge point can floor off its footprint, so a
-        // direct hit's blast stands on the building.
-        let footing = direct.map_or(TilePos::containing(shell.impact), |b| b.anchor);
+        // cliff, and a direct hit's blast stands on the building.
+        let footing = direct.map_or_else(|| landing_tile(shell.launch, shell.impact), |b| b.anchor);
         // Buried charges take splash, as in `buffer_shot`.
         if shell.targets.ground {
             for b in &state.buildings {
@@ -414,6 +413,23 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
 
 /// Whether a blast standing on `footing` reaches `u`: aircraft always, a
 /// ground body only on a level it shares.
+/// The tile a shell's blast stands on when no building takes the direct
+/// hit. A shell aimed at a building lands on the footprint's nearest edge,
+/// whose coordinate can floor into the tile beyond; reading the point a hair
+/// further along the flight keeps the blast on the footprint's side, where
+/// it was aimed, even once the building is gone.
+fn landing_tile(launch: Vec2Fx, impact: Vec2Fx) -> TilePos {
+    let along = |from: chassis::fx::Fx, to: chassis::fx::Fx| match to.cmp(&from) {
+        std::cmp::Ordering::Greater => chassis::fx::Fx::DELTA,
+        std::cmp::Ordering::Less => -chassis::fx::Fx::DELTA,
+        std::cmp::Ordering::Equal => chassis::fx::Fx::ZERO,
+    };
+    TilePos::containing(Vec2Fx::new(
+        impact.x + along(launch.x, impact.x),
+        impact.y + along(launch.y, impact.y),
+    ))
+}
+
 pub(super) fn grounded_with(state: &State, footing: TilePos, u: &crate::state::Unit) -> bool {
     u.domain() != Domain::Ground || state.map.shares_level(footing, u.tile())
 }
@@ -1019,7 +1035,12 @@ fn acquire_target_within(
             .min()
             .map(|(refused, _, bid)| (refused, Target::Building(bid)))
     };
-    if buildings_first && let Some((_, building)) = nearest_building(&mut accept) {
+    // A structure the levels refuse yields to a machine they allow, but
+    // still beats one they refuse.
+    let first_building = buildings_first
+        .then(|| nearest_building(&mut accept))
+        .flatten();
+    if let Some((false, building)) = first_building {
         return Some(building);
     }
     // An army at rest far from any enemy is the common case: the survey
@@ -1087,14 +1108,15 @@ fn acquire_target_within(
     match unit_target {
         Some((false, .., uid)) => Some(Target::Unit(uid)),
         // A victim the levels refuse yields to a building they allow.
+        Some((true, .., uid)) if buildings_first => {
+            Some(first_building.map_or(Target::Unit(uid), |(_, building)| building))
+        }
         Some((true, .., uid)) => Some(
-            (!buildings_first)
-                .then(|| nearest_building(&mut accept))
-                .flatten()
+            nearest_building(&mut accept)
                 .filter(|&(refused, _)| !refused)
                 .map_or(Target::Unit(uid), |(_, building)| building),
         ),
-        None if buildings_first => None,
+        None if buildings_first => first_building.map(|(_, building)| building),
         None => nearest_building(&mut accept).map(|(_, building)| building),
     }
 }
