@@ -62,7 +62,7 @@ pub(super) enum Screen {
         /// The screen that opened the viewer, restored wholesale on leave.
         back: Box<Screen>,
     },
-    /// The replay shelf.
+    /// The saves and replays shelf.
     Replays(Shelf),
     /// Decided-match report and next steps.
     Results(ResultsScreen),
@@ -355,7 +355,7 @@ impl Screen {
             Self::Playback { .. } => "playback",
             Self::FinalMap(_) => "final_map",
             Self::Results(_) => "results",
-            Self::Replays(_) => "replays",
+            Self::Replays(shelf) => shelf.mode_name(),
             Self::Lobby { screen, .. } => screen.mode_name(),
             Self::Busy(busy) => busy.mode(),
             Self::Pause(pause) => pause.mode_name(),

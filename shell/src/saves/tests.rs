@@ -94,20 +94,26 @@ fn kinds_read_the_metadata_tag() {
             .find(|e| e.path.file_stem().unwrap() == name)
             .expect("scanned")
     };
-    assert_eq!(entry("anything").kind, RecordKind::Save);
+    let named = entry("anything");
+    assert_eq!(named.kind, RecordKind::Save);
     assert_eq!(
         (
-            entry("anything").title.as_str(),
-            entry("anything").detail.as_str()
+            named.title.as_str(),
+            named.map.as_deref(),
+            named.format.as_str()
         ),
-        ("before the push", "Skirmish Basin"),
+        ("before the push", Some("Skirmish Basin"), "1v1"),
         "a named save leads with its name and keeps its map beside it"
     );
     let finished = entry("match-0000000099");
     assert_eq!(finished.kind, RecordKind::Match);
     assert_eq!(
-        (finished.title.as_str(), finished.detail.as_str()),
-        ("Skirmish Basin", "1v1"),
+        (
+            finished.title.as_str(),
+            finished.map.as_deref(),
+            finished.format.as_str()
+        ),
+        ("Skirmish Basin", None, "1v1"),
         "an unnamed match leads with its map and says its format"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -294,5 +300,24 @@ fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
         continues,
         [RecordKind::Autosave, RecordKind::LanAutosave],
         "Continue picks up the newest autosave, local or LAN"
+    );
+}
+
+#[test]
+fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
+    let tags: Vec<_> = [
+        RecordKind::Autosave,
+        RecordKind::Save,
+        RecordKind::Match,
+        RecordKind::LanSave,
+        RecordKind::LanAutosave,
+    ]
+    .into_iter()
+    .map(RecordKind::tag)
+    .collect();
+    assert_eq!(
+        tags,
+        [Some("AUTO"), None, None, Some("LAN"), Some("LAN AUTO")],
+        "a plain save and a finished match are what their tabs already say"
     );
 }

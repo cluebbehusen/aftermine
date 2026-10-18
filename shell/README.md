@@ -35,10 +35,10 @@ crate-level rustdoc.
   shares, with `ScrollPress` adding the finger drag that scrolls the menu lists
   and the map grid; `nav` is the one keyboard rule (arrows wrap, Home and End
   jump, paging stops at the ends); `menu::Menu` holds typed rows; `tabs` is the
-  tab strip Settings hangs under its title; and `button` draws the shared action
-  and BACK buttons. `camera::controls` holds the camera hands every view shares;
-  `viewer_touch` pans and pinches the read-only viewers. Key bindings live only
-  in the configuration.
+  tab strip Settings and the shelf hang under their titles; and `button` draws
+  the shared action and BACK buttons. `camera::controls` holds the camera hands
+  every view shares; `viewer_touch` pans and pinches the read-only viewers. Key
+  bindings live only in the configuration.
 - `platform` states whether the build is touch-only (iOS) and publishes the
   pointer and keys in use.
 - `building_actions` derives single and grouped building controls from their

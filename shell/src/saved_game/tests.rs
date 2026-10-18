@@ -229,6 +229,8 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
         ("version", serde_json::json!(999)),
         ("map", serde_json::json!("different")),
         ("seats", serde_json::json!(99)),
+        ("teams", serde_json::json!(99)),
+        ("teams", serde_json::json!(1)),
         ("decoded_bytes", serde_json::json!(1)),
         ("decoded_bytes", serde_json::json!(MAX_BYTES + 1)),
     ] {
@@ -242,6 +244,30 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
         std::fs::write(&path.0, file).unwrap();
         assert!(prepare_load(&path.0).is_err(), "{field}");
     }
+}
+
+#[test]
+fn a_save_header_counts_its_teams_for_the_shelf() {
+    let path = Fixture::new();
+    let duel = Game::new(Scenario::skirmish()).unwrap();
+    write(&duel, meta(&duel), &path.0).unwrap();
+    let info = inspect(&path.0).unwrap();
+    assert_eq!(
+        (info.seats, info.teams),
+        (2, 2),
+        "a duel's seats each stand alone"
+    );
+
+    let scenario = Scenario::load("../scenarios/bridge-town.json").expect("shipped map");
+    let pairs = Game::new(scenario).unwrap();
+    write(&pairs, meta(&pairs), &path.0).unwrap();
+    let info = inspect(&path.0).unwrap();
+    assert_eq!(
+        (info.seats, info.teams),
+        (4, 2),
+        "teammates count once, so a 2v2 save never reads as a free-for-all"
+    );
+    assert!(prepare_load(&path.0).is_ok());
 }
 
 #[test]

@@ -229,29 +229,73 @@ fn binding_rows_widen_the_list_and_report_the_clicked_chord() {
     assert_eq!(picked.and_then(|picked| picked.column), None);
 }
 
-#[test]
-fn record_rows_widen_the_list_and_keep_their_columns_in_order() {
-    crate::render::set_viewport(1280.0, 800.0);
-    let record = Label::Record {
-        title: "Long Causeway".to_string(),
-        detail: "Autosave".to_string(),
+fn record(title: &str, map: Option<&str>, tag: Option<&'static str>, format: &str) -> Label {
+    Label::Record {
+        title: title.to_string(),
+        map: map.map(str::to_string),
+        tag,
+        format: format.to_string(),
         clock: "28:58".to_string(),
         when: "12 min ago".to_string(),
         available: true,
-    };
-    let menu = Menu::rows("SHELF", [(record, 0)]);
+    }
+}
+
+#[test]
+fn record_rows_widen_the_list_and_read_their_map_and_chip_in_order() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let menu = Menu::rows(
+        "SHELF",
+        [
+            (record("Long Causeway", None, Some("AUTO"), "1v1"), 0),
+            (
+                record("before the push", Some("Bridge Town"), Some("LAN"), "2v2"),
+                1,
+            ),
+            (record("Isthmus", None, None, "1v1"), 2),
+        ],
+    );
     assert_eq!(
         menu.view().items,
-        vec!["Long Causeway | Autosave | 28:58 | 12 min ago"]
+        vec![
+            "Long Causeway [AUTO] | 1v1 | 28:58 | 12 min ago",
+            "before the push \u{b7} Bridge Town [LAN] | 2v2 | 28:58 | 12 min ago",
+            "Isthmus | 1v1 | 28:58 | 12 min ago",
+        ]
     );
     let plain = Menu::list("PLAIN", vec!["one".to_string()]);
     let row = menu.item_rect(0).expect("the record row shows");
     assert!(row.w > plain.item_rect(0).expect("a plain row").w);
-    let columns = RecordColumns::of(row, crate::render::ui_scale());
-    let spans = [columns.title, columns.detail, columns.clock, columns.when];
+}
+
+#[test]
+fn record_columns_take_their_widest_value_and_leave_the_title_the_rest() {
+    let lines = vec![
+        Line::Row(record("a", None, None, "1v1"), 0),
+        Line::Row(record("b", None, None, "4-way FFA"), 1),
+    ];
+    let widest = widest_record_values(&lines, |text| text.chars().count() as f32 * 10.0);
+    assert_eq!(widest, [90.0, 50.0, 100.0], "the widest of every record");
+
+    let row = Rect::new(100.0, 0.0, 760.0, 44.0);
+    let columns = RecordColumns::fit(row, 1.0, widest);
+    let spans = [columns.title, columns.format, columns.clock, columns.when];
     assert!(
         spans.windows(2).all(|pair| pair[0].right() <= pair[1].x),
         "columns never overlap: {spans:?}"
     );
     assert!(row.x < columns.title.x && columns.when.right() < row.right());
+    assert_eq!(
+        [columns.format.w, columns.clock.w, columns.when.w],
+        widest,
+        "a column that fits holds its widest value whole"
+    );
+    assert!(columns.title.w > row.w * RecordColumns::TITLE_SHARE);
+
+    let squeezed = RecordColumns::fit(row, 1.0, [400.0, 200.0, 300.0]);
+    assert!(
+        squeezed.title.w >= (row.w - 36.0) * RecordColumns::TITLE_SHARE - 0.01,
+        "oversized columns shrink together before the title gives way: {squeezed:?}"
+    );
+    assert!(squeezed.title.x < squeezed.format.x && squeezed.when.right() < row.right());
 }

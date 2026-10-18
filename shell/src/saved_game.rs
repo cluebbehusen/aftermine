@@ -23,6 +23,7 @@ struct Header {
     meta: ReplayMeta,
     map: String,
     seats: usize,
+    teams: usize,
     compressed_bytes: u64,
     decoded_bytes: u64,
 }
@@ -31,9 +32,8 @@ pub struct RecordInfo {
     pub meta: ReplayMeta,
     pub map: String,
     pub seats: usize,
-    /// The teams the seats form, where the record keeps its setup: a
-    /// finished match's recording does, a save's header does not.
-    pub teams: Option<usize>,
+    /// The teams the seats form.
+    pub teams: usize,
     pub problem: Option<Unavailable>,
 }
 
@@ -76,6 +76,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
     );
     // Metadata is obtained from the checkpoint itself, without restoring controllers.
     let (map, seats, tick) = checkpoint.metadata();
+    let teams = crate::menu::team_count(checkpoint.team_tags());
     ensure!(meta.ticks == Some(tick), "save metadata mismatch");
     let mut encoder = zstd::stream::Encoder::new(Vec::new(), 3)?;
     encoder.include_checksum(true)?;
@@ -86,6 +87,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
         meta,
         map: map.to_owned(),
         seats,
+        teams,
         compressed_bytes: compressed.len() as u64,
         decoded_bytes: payload.len() as u64,
     };
@@ -145,6 +147,10 @@ fn check_header(header: &Header) -> Result<()> {
         ),
         "invalid save kind"
     );
+    ensure!(
+        header.teams <= header.seats && (header.teams == 0) == (header.seats == 0),
+        "invalid save teams"
+    );
     Ok(())
 }
 
@@ -183,7 +189,9 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     ensure!(
         header.meta.ticks == Some(tick)
             && header.map == scenario.name
-            && header.seats == scenario.players.len(),
+            && header.seats == scenario.players.len()
+            && header.teams
+                == crate::menu::team_count(scenario.players.iter().map(|player| player.team)),
         "save metadata does not match session"
     );
     Ok(loaded)
@@ -257,7 +265,7 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
             meta: header.meta,
             map: header.map,
             seats: header.seats,
-            teams: None,
+            teams: header.teams,
             problem,
         })
     } else if path.extension().and_then(|extension| extension.to_str()) == Some("oxsave") {
@@ -283,7 +291,7 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
             meta,
             map: replay.setup.name,
             seats: replay.setup.players.len(),
-            teams: Some(teams),
+            teams,
             problem,
         })
     }
