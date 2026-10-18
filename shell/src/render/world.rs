@@ -537,6 +537,7 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     // Quarry props vary by map, not by anything in play.
     let quarry_salt = chassis::hash::fnv1a(game.scenario.name.as_bytes());
     let map_height = game.state.map().height();
+    let levels = game.ground().levels.as_ref();
     let (min, max) = visible_tiles(game);
     for y in min.y..max.y {
         for x in min.x..max.x {
@@ -562,6 +563,11 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 next.x.floor() - screen.x.floor(),
                 next.y.floor() - screen.y.floor(),
             );
+            // A tiered map tints each tile's ground layer by its level.
+            let paint = levels.and_then(|levels| levels.tile_paint(TilePos::new(x, y), variant));
+            let tint = paint.map_or(tint, |(f, _)| {
+                Color::new(tint.r * f, tint.g * f, tint.b * f, tint.a)
+            });
             sprites.draw(
                 screen.x.floor(),
                 screen.y.floor(),
@@ -572,6 +578,15 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     ..Default::default()
                 },
             );
+            if let Some((_, wash)) = paint.filter(|(_, wash)| *wash > 0.0) {
+                draw_rectangle(
+                    screen.x.floor(),
+                    screen.y.floor(),
+                    tile_size.x,
+                    tile_size.y,
+                    Color::new(1.0, 1.0, 1.0, wash),
+                );
+            }
             let detail_count = sprites.ground_detail_count();
             let orientation = detail / detail_count;
             sprites.draw(
@@ -590,19 +605,21 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             // veil. Static sprites use no wall clock, so reduced-motion mode
             // needs no alternate path.
             let pos = TilePos::new(x, y);
-            let prop_candidate =
-                if tile.cosmetic == 1 || tile.terrain != oxide_sim::map::Terrain::Ground {
-                    None
-                } else {
-                    symmetric_theme_prop(theme, pos, map_width, map_height)
-                };
+            // A ramp's ruts and walls are its dressing.
+            let dressed =
+                tile.terrain == oxide_sim::map::Terrain::Ground && !game.state.map().is_ramp(pos);
+            let prop_candidate = if tile.cosmetic == 1 || !dressed {
+                None
+            } else {
+                symmetric_theme_prop(theme, pos, map_width, map_height)
+            };
             let quarry = sprites.quarry_dressing(0).is_some();
             let placement = quarry
                 .then(|| quarry_dressing(pos, map_width, map_height, quarry_salt))
                 .flatten()
                 .filter(|_| {
                     tile.cosmetic != 1
-                        && tile.terrain == oxide_sim::map::Terrain::Ground
+                        && dressed
                         && symmetric_safe_theme_prop_tile(&game.scenario.map, pos)
                 });
             let dressing = if let Some(placement) = placement {
@@ -624,10 +641,7 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 } else {
                     None
                 }
-            } else if !themed
-                && tile.terrain == oxide_sim::map::Terrain::Ground
-                && h.is_multiple_of(23)
-            {
+            } else if !themed && dressed && h.is_multiple_of(23) {
                 Some((sprites.decal(h / 23 % 3), 0.0, tint))
             } else {
                 None
@@ -699,8 +713,9 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 1.0
             };
             let (overlay, flip) = match (tile.terrain, scrap) {
-                // Rock slabs, cliffs, peak terraces, and pit drops are drawn
-                // by their own passes after the tiles.
+                // Rock slabs, peak terraces, and pit drops are drawn by their
+                // own passes after the tiles. A cliff tile shows the ground at
+                // its foot, and the levels pass draws its face.
                 (
                     oxide_sim::map::Terrain::Rock
                     | oxide_sim::map::Terrain::Peak

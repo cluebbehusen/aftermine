@@ -6,8 +6,9 @@
 //! tiles, circles, hp bars); the shell owns presentation.
 
 use anyhow::{Context, Result};
-use oxide_sim::map::Terrain;
-use oxide_sim::{PlayerId, State, UnitKind};
+use chassis::grid::TilePos;
+use oxide_sim::map::{Elevation, Map, Terrain};
+use oxide_sim::{BuildingKind, PlayerId, State, UnitKind};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Shader, Transform};
 
 /// Whole pixels per tile.
@@ -30,6 +31,8 @@ const ROCK: u32 = 0x52_52_5E;
 const PEAK: u32 = 0x22_21_2A;
 const PEAK_FACE: u32 = 0x34_33_3D;
 const PEAK_LIP: u32 = 0x57_54_5F;
+const RUBBLE: u32 = 0x2C_2C_34;
+const CLIFF_FACE: u32 = 0x15_15_1A;
 const PIT: u32 = 0x0B_0B_10;
 const PIT_RIM: u32 = 0x1B_1B_22;
 const SCRAP_FULL: u32 = 0xD9_A4_41;
@@ -43,6 +46,151 @@ const HP_FRONT: u32 = 0xE8_E4_D8;
 const SEAT_COLORS: [u32; 8] = [
     0xC4_57_3B, 0x3F_94_82, 0x64_8C_E6, 0xC8_A0_3C, 0xA0_5A_C8, 0x78_B4_50, 0xD2_78_96, 0x5A_B4_D2,
 ];
+
+/// Brightness step between neighbouring levels of a tiered map.
+const LEVEL_STEP: f32 = 0.15;
+/// The darkest a level is drawn; deeper levels share it.
+const LEVEL_DARKEST: f32 = 0.7;
+/// The brightest a level is drawn; higher levels share it.
+const LEVEL_BRIGHTEST: f32 = 1.45;
+
+/// The level of a tiered map drawn at flat ground's brightness: the level
+/// most of `starts` stand on, else the level most ground stands on, ties
+/// going to the lower level.
+pub fn floor_level(map: &Map, starts: impl IntoIterator<Item = TilePos>) -> u8 {
+    let mut counts = [0u32; 256];
+    for pos in starts {
+        if let Some(Elevation::Level(level)) = map.elevation(pos) {
+            counts[usize::from(level)] += 1;
+        }
+    }
+    if counts.iter().all(|&count| count == 0) {
+        for (pos, tile) in map.iter() {
+            if tile.terrain == Terrain::Ground
+                && let Some(Elevation::Level(level)) = map.elevation(pos)
+            {
+                counts[usize::from(level)] += 1;
+            }
+        }
+    }
+    (0..=u8::MAX)
+        .rev()
+        .max_by_key(|&level| counts[usize::from(level)])
+        .unwrap_or(0)
+}
+
+/// How bright ground at `level` is drawn against flat ground, with `floor`
+/// at one: a fixed step per level, within a band.
+pub fn level_tone(level: f32, floor: u8) -> f32 {
+    (1.0 + LEVEL_STEP * (level - f32::from(floor))).clamp(LEVEL_DARKEST, LEVEL_BRIGHTEST)
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "each channel is clamped to a byte first"
+)]
+fn shade(hex: u32, tone: f32) -> u32 {
+    let channel = |shift: u32| {
+        let value = ((hex >> shift) & 0xff) as f32 * tone;
+        (value.round().clamp(0.0, 255.0) as u32) << shift
+    };
+    channel(16) | channel(8) | channel(0)
+}
+
+/// The tone of a tile's ground: a ramp halfway between its levels, a cliff
+/// the level at its foot.
+fn tile_tone(map: &Map, pos: TilePos, floor: u8) -> f32 {
+    match map.elevation(pos) {
+        Some(Elevation::Level(level)) => level_tone(f32::from(level), floor),
+        Some(Elevation::Ramp { low }) => level_tone(f32::from(low) + 0.5, floor),
+        None => 1.0,
+    }
+}
+
+/// A cliff seen from above: the lower ground at its foot, with the drop's
+/// dark face and lit lip along each side that meets higher ground. A cliff
+/// with no foot of its own, inside a taller band, is all face.
+fn draw_cliff(pixmap: &mut Pixmap, map: &Map, pos: TilePos, (x, y): (f32, f32), floor: u8) {
+    let Some(Elevation::Level(level)) = map.elevation(pos) else {
+        return;
+    };
+    let ground_at = |at: TilePos, higher: bool| {
+        map.tile(at).is_some_and(|t| t.terrain == Terrain::Ground)
+            && map.elevation(at).is_some_and(|e| {
+                if higher {
+                    e.span().0 > level
+                } else {
+                    e.span().0 == level
+                }
+            })
+    };
+    let footed = (-1..=1).any(|dy| (-1..=1).any(|dx| ground_at(pos.offset(dx, dy), false)));
+    if !footed {
+        fill_rect(pixmap, x, y, TILE_PX, TILE_PX, CLIFF_FACE);
+        return;
+    }
+    fill_rect(
+        pixmap,
+        x,
+        y,
+        TILE_PX,
+        TILE_PX,
+        shade(GROUND, level_tone(f32::from(level), floor)),
+    );
+    let face = TILE_PX / 4.0;
+    for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+        if !ground_at(pos.offset(dx, dy), true) {
+            continue;
+        }
+        let (fx, fy, fw, fh, lx, ly, lw, lh) = match (dx, dy) {
+            (0, -1) => (x, y, TILE_PX, face, x, y, TILE_PX, 1.0),
+            (0, _) => (
+                x,
+                y + TILE_PX - face,
+                TILE_PX,
+                face,
+                x,
+                y + TILE_PX - 1.0,
+                TILE_PX,
+                1.0,
+            ),
+            (-1, _) => (x, y, face, TILE_PX, x, y, 1.0, TILE_PX),
+            _ => (
+                x + TILE_PX - face,
+                y,
+                face,
+                TILE_PX,
+                x + TILE_PX - 1.0,
+                y,
+                1.0,
+                TILE_PX,
+            ),
+        };
+        fill_rect(pixmap, fx, fy, fw, fh, CLIFF_FACE);
+        fill_rect(pixmap, lx, ly, lw, lh, PEAK_LIP);
+    }
+}
+
+/// A ramp's walls: a dark edge along each side it shares with a cliff.
+fn draw_ramp_walls(pixmap: &mut Pixmap, map: &Map, pos: TilePos, (x, y): (f32, f32)) {
+    let wall = 2.0;
+    for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+        if !map
+            .tile(pos.offset(dx, dy))
+            .is_some_and(|t| t.terrain == Terrain::Cliff)
+        {
+            continue;
+        }
+        let (wx, wy, ww, wh) = match (dx, dy) {
+            (0, -1) => (x, y, TILE_PX, wall),
+            (0, _) => (x, y + TILE_PX - wall, TILE_PX, wall),
+            (-1, _) => (x, y, wall, TILE_PX),
+            _ => (x + TILE_PX - wall, y, wall, TILE_PX),
+        };
+        fill_rect(pixmap, wx, wy, ww, wh, CLIFF_FACE);
+    }
+}
 
 fn seat_color(player: PlayerId) -> u32 {
     SEAT_COLORS[usize::from(player.0) % SEAT_COLORS.len()]
@@ -100,13 +248,37 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
         u32::try_from(state.map().height()).expect("map extents are positive") * TILE_PIXELS;
     let mut pixmap = Pixmap::new(width, height).expect("nonzero map dimensions");
     pixmap.fill(rgb(GROUND));
+    let map = state.map();
+    // A tiered map tints each level's ground, brighter above the floor its
+    // Foundries stand on and darker below.
+    let floor = map.tiered().then(|| {
+        floor_level(
+            map,
+            state
+                .buildings()
+                .iter()
+                .filter(|b| b.kind == BuildingKind::Foundry)
+                .map(|b| b.anchor),
+        )
+    });
 
-    for (pos, tile) in state.map().iter() {
+    for (pos, tile) in map.iter() {
         let (x, y) = (pos.x as f32 * TILE_PX, pos.y as f32 * TILE_PX);
+        let tone = floor.map_or(1.0, |floor| tile_tone(map, pos, floor));
+        if tile.terrain == Terrain::Ground && tone != 1.0 {
+            fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, shade(GROUND, tone));
+        }
+        if map.is_ramp(pos) {
+            draw_ramp_walls(&mut pixmap, map, pos, (x, y));
+        }
         match (tile.terrain, tile.scrap) {
-            // Cliffs draw as rock until levels have their own art.
-            (Terrain::Rock | Terrain::Cliff, _) => {
+            (Terrain::Rock, _) => {
                 fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, ROCK);
+            }
+            (Terrain::Cliff, _) => {
+                if let Some(floor) = floor {
+                    draw_cliff(&mut pixmap, map, pos, (x, y), floor);
+                }
             }
             // Peaks are uncut quarry mesas: a dark full-tile mass with a
             // south-facing cut and cap, distinct from the loose rock fill.
@@ -137,7 +309,7 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
             }
             // Rubble: a faint lightening so the goldens register it.
             (Terrain::Ground, 0) if tile.cosmetic == 1 => {
-                fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, 0x2C_2C_34);
+                fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, shade(RUBBLE, tone));
             }
             (Terrain::Ground, 0) => {}
             (Terrain::Ground, scrap) => {

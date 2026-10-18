@@ -74,7 +74,9 @@ fn skirmish_opening_matches_golden() {
 
 /// The showcase playfield. Anchor `1` is seat 0's north-west base beside
 /// the worked node, `2` seat 1's south-east construction yard, `3` seat
-/// 2's south-west corner, a third seat hostile to both.
+/// 2's south-west corner, a third seat hostile to both. A plateau one level
+/// up stands on the south edge, ringed by cliff and joined to the floor by
+/// a ramp (see [`showcase_levels`]).
 const SHOWCASE_MAP: [&str; 30] = [
     "################################################",
     "#..............................................#",
@@ -99,14 +101,32 @@ const SHOWCASE_MAP: [&str; 30] = [
     "#..............................................#",
     "#..............................................#",
     "#..............................................#",
-    "#..............................................#",
-    "#..............................................#",
-    "#..............................................#",
-    "#.3........................................2...#",
-    "#..............................................#",
-    "#..............................................#",
+    "#.................===///====...................#",
+    "#.................=........=...................#",
+    "#.................=........=...................#",
+    "#.3...............=........=...............2...#",
+    "#.................=........=...................#",
+    "#.................==========...................#",
     "################################################",
 ];
+
+/// The showcase's levels: the plateau inside the cliff ring at level 1,
+/// everything else, its cliffs and ramp included, at level 0.
+fn showcase_levels() -> Vec<String> {
+    (0..30)
+        .map(|y| {
+            (0..48)
+                .map(|x| {
+                    if (19..=26).contains(&x) && (24..=27).contains(&y) {
+                        '1'
+                    } else {
+                        '0'
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
 
 /// The node the harvest crew works down past half.
 const WORKED_NODE: TilePos = TilePos { x: 5, y: 4 };
@@ -368,7 +388,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
     ];
 
     let scenario = Scenario {
-        levels: Vec::new(),
+        levels: showcase_levels(),
         mode: ScenarioMode::Match,
         name: "renderer showcase".into(),
         map: SHOWCASE_MAP.iter().map(|r| (*r).to_string()).collect(),
@@ -778,12 +798,22 @@ fn showcase_covers_every_rendered_feature() {
         state.result().is_none(),
         "the showcase pictures a live match; a decided one freezes production"
     );
-    for terrain in [Terrain::Ground, Terrain::Rock, Terrain::Peak, Terrain::Pit] {
+    for terrain in [
+        Terrain::Ground,
+        Terrain::Rock,
+        Terrain::Peak,
+        Terrain::Pit,
+        Terrain::Cliff,
+    ] {
         assert!(
             tiles().any(|t| t.terrain == terrain),
             "no {terrain:?} tile on the showcase map"
         );
     }
+    assert!(
+        state.map().iter().any(|(pos, _)| state.map().is_ramp(pos)),
+        "no ramp: the ramp branch goes unrendered"
+    );
     assert!(
         tiles().any(|t| t.cosmetic == 1),
         "no rubble: the cosmetic-ground branch goes unrendered"
