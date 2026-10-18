@@ -602,7 +602,7 @@ fn mesas(units: Vec<UnitSpec>) -> Scenario {
         let mut row = String::new();
         let mut glyphs = String::new();
         for x in 0..width {
-            let raised = x <= 7 || x >= 16;
+            let raised = !(7..=16).contains(&x);
             let ramp = (x == 7 && (2..=4).contains(&y)) || (x == 16 && (6..=8).contains(&y));
             row.push(if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
                 '#'

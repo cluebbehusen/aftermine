@@ -158,7 +158,7 @@ fn ledge() -> State {
         &[
             "222222222",
             "222222222",
-            "222122222",
+            "111111111",
             "111111111",
             "111111111",
         ],
@@ -206,7 +206,7 @@ fn arcs_fall_from_any_height_but_never_rise() {
 #[test]
 fn higher_ground_between_blocks_direct_fire_but_not_arcs() {
     let rows = ["...=...=...", "...=...=...", "...=...=..."];
-    let mesa = tiered(&rows, &["11122222111"; 3]);
+    let mesa = tiered(&rows, &["11112221111"; 3]);
     let (west, east) = (ground(1, 1), ground(9, 1));
     assert!(!clear_line(
         &mesa,
@@ -233,7 +233,7 @@ fn higher_ground_between_blocks_direct_fire_but_not_arcs() {
         levels_allow(&mesa, Fire::Direct, west, east),
         "the ends share a level; only the line is blocked"
     );
-    let basin = tiered(&rows, &["22221112222"; 3]);
+    let basin = tiered(&rows, &["22211111222"; 3]);
     assert!(
         clear_line(&basin, Fire::Direct, west, east, Landing::Checked),
         "fire crosses lower ground"
@@ -242,7 +242,7 @@ fn higher_ground_between_blocks_direct_fire_but_not_arcs() {
 
 #[test]
 fn a_tall_cliff_parts_levels_two_apart() {
-    let state = tiered(&["...", "===", "..."], &["333", "333", "111"]);
+    let state = tiered(&["...", "===", "..."], &["333", "111", "111"]);
     let (high, low) = (ground(1, 0), ground(1, 2));
     assert!(!clear_line(
         &state,
@@ -269,9 +269,9 @@ fn a_tall_cliff_parts_levels_two_apart() {
 
 #[test]
 fn a_building_stands_on_its_anchor_not_its_aim_tile() {
-    let state = tiered(&["....=....", "....=....", "....=...."], &["111122222"; 3]);
-    // A floor building's east edge floors into the cliff beside it.
-    let edge = ShotEnd::new(Vec2Fx::new(Fx::from_num(4), at(3, 1).y), Domain::Ground);
+    let state = tiered(&[".....=...", ".....=...", ".....=..."], &["222221111"; 3]);
+    // A plateau building's east edge floors into the cliff beside it.
+    let edge = ShotEnd::new(Vec2Fx::new(Fx::from_num(5), at(4, 1).y), Domain::Ground);
     let gun = ground(1, 1);
     assert!(
         !levels_allow(&state, Fire::Direct, gun, edge),
@@ -281,15 +281,15 @@ fn a_building_stands_on_its_anchor_not_its_aim_tile() {
         &state,
         Fire::Direct,
         gun,
-        edge.on(TilePos::new(3, 1))
+        edge.on(TilePos::new(4, 1))
     ));
 }
 
 #[test]
 fn levels_change_nothing_where_nothing_stands_higher() {
     // Rock, peaks, and pits on a level-1 field whose only plateau lies past
-    // row 12. Lines between ends above it never reach the plateau, so every
-    // verdict matches the flat map with the plateau paved.
+    // the cliff on row 13. Lines between ends above it never reach the
+    // plateau, so every verdict matches the flat map with the cliff paved.
     let mut rows: Vec<String> = Vec::new();
     let mut levels: Vec<String> = Vec::new();
     let mut rng = chassis::rng::Pcg32::new(0x1E7E_1505, 7);
@@ -302,7 +302,7 @@ fn levels_change_nothing_where_nothing_stands_higher() {
                 _ => ['.', '.', '.', '.', '.', '#', '^', '~'][rng.next_index(8)],
             });
         }
-        levels.push(if y >= 13 { "2" } else { "1" }.repeat(16));
+        levels.push(if y >= 14 { "2" } else { "1" }.repeat(16));
         rows.push(row);
     }
     let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
