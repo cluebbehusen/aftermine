@@ -57,19 +57,26 @@ impl SelectedTransports {
     /// keeps its orders.
     pub fn unload(&self, game: &Scene<'_>, queue: bool) -> Vec<Command> {
         let loaded = self.slings.iter().filter(|sling| sling.loaded);
-        let drop = |sling: &Sling, at| Command::Unload {
+        let drop = |sling: &Sling, at, queue| Command::Unload {
             transport: sling.id,
             at,
             queue,
         };
         if !queue {
-            return loaded.map(|sling| drop(sling, sling.here)).collect();
+            return loaded.map(|sling| drop(sling, sling.here, false)).collect();
         }
         crate::unit_bays::with_pending(game, |units, _, _| {
             loaded
                 .filter_map(|sling| {
                     let unit = units.iter().find(|u| u.id == sling.id)?;
-                    Some(drop(sling, route_end(unit)))
+                    // A patrol never ends, and a drop queued into one
+                    // rotates back in after every lap, so a patrolling
+                    // transport drops where it hovers and stops patrolling.
+                    Some(if unit.looping {
+                        drop(sling, sling.here, false)
+                    } else {
+                        drop(sling, route_end(unit), true)
+                    })
                 })
                 .collect()
         })

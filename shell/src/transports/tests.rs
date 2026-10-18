@@ -209,6 +209,51 @@ fn shift_u_queues_each_drop_where_its_route_ends() {
 }
 
 #[test]
+fn shift_u_drops_a_patrolling_sling_now_instead_of_joining_its_circuit() {
+    let Fleet {
+        mut game,
+        roc,
+        loaded,
+        ..
+    } = fleet();
+    let mut input = InputState::new();
+    game.issue(Command::Patrol {
+        units: vec![roc],
+        waypoints: vec![TilePos::new(9, 3), TilePos::new(5, 3)],
+    });
+    game.presentation.selection.units = vec![roc, loaded];
+    press(
+        &mut game,
+        &mut input,
+        &[
+            RawEvent::KeyDown { key: Key::Shift },
+            RawEvent::KeyDown { key: Key::U },
+        ],
+    );
+    assert_eq!(
+        staged(&game)[1..],
+        [
+            &unload(roc, here(&game, roc), false),
+            &unload(loaded, here(&game, loaded), true),
+        ]
+    );
+    let commands: Vec<_> = game.pending.drain(..).collect();
+    game.state.tick(&commands);
+    for _ in 0..200 {
+        if game.state.unit(roc).expect("alive").cargo.is_empty() {
+            break;
+        }
+        game.state.tick(&[]);
+    }
+    let roc = game.state.unit(roc).expect("alive");
+    assert!(roc.cargo.is_empty(), "premise: the Roc drops its rider");
+    assert!(
+        !roc.looping && roc.queue.is_empty(),
+        "no drop rotates back into a patrol"
+    );
+}
+
+#[test]
 fn empty_slings_offer_a_refused_card_and_order_nothing() {
     let Fleet {
         mut game, empty, ..

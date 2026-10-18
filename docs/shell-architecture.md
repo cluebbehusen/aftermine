@@ -392,7 +392,8 @@ transport use Unload, and selected buildings use Upgrade on the same key. Mixed
 unit selections containing workers use Return Cargo; their Unload card still
 works when pressed. Unload sets each loaded selected transport's cargo down
 where it hovers; Shift queues each drop at the last fixed point of that
-transport's route, and empty transports keep their orders. Return Cargo replaces
+transport's route, except that a patrolling transport drops where it hovers and
+stops patrolling. Empty transports keep their orders. Return Cargo replaces
 current and queued work, deposits at a reachable owned Foundry, and leaves the
 worker there. A right-click on a completed owned Foundry sends loaded workers to
 that specific building; a damaged Foundry also receives repair after delivery.
