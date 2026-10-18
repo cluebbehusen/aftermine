@@ -89,6 +89,7 @@ pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
             u.hp > 0
                 && state.hostile(b.player, u.player)
                 && u.domain() == Domain::Ground
+                && state.map.shares_level(b.anchor, u.tile())
                 && u.pos.dist_sq(b.center()) <= {
                     let trigger =
                         CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
@@ -103,7 +104,7 @@ pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
 
 fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
     let b = &state.buildings[slot];
-    let (id, owner, center) = (b.id, b.player, b.center());
+    let (id, owner, center, anchor) = (b.id, b.player, b.center(), b.anchor);
     let blast_sq = CHARGE_BLAST_RADIUS * CHARGE_BLAST_RADIUS;
     let now = state.current_tick();
     let units_blast = |u: &crate::state::Unit| {
@@ -117,11 +118,14 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
         player: owner,
         at: center,
     });
+    // A blast stays on the charge's level, like any other.
+    let map = &state.map;
     for u in &mut state.units {
         if u.hp > 0
             && state.players[owner.0 as usize].team != state.players[u.player.0 as usize].team
             && u.domain() == Domain::Ground
             && units_blast(u)
+            && map.shares_level(anchor, u.tile())
         {
             super::damage::unit(u, CHARGE_DAMAGE, now, events);
         }
@@ -132,6 +136,7 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
             && other.kind.is_stealthy()
             && state.players[owner.0 as usize].team != state.players[other.player.0 as usize].team
             && other.center().dist_sq(center) <= blast_sq
+            && map.shares_level(anchor, other.anchor)
         {
             super::damage::building(other, CHARGE_DAMAGE, events);
         }

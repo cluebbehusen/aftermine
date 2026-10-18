@@ -925,6 +925,18 @@ reported tile by distance to its center, then id. Remembered-building hitscan
 resolves against a footprint at the aim point. Both apply normal splash rules
 and report firing coordinates without a victim id, including on misses.
 
+On a tiered map, levels gate fire between ground parties; shots involving
+aircraft ignore them. Direct fire needs ends that share a level, which a ramp
+shares with the levels above and below it, and ground higher than both ends
+blocks the line. Indirect fire passes over any level but never lands above the
+shooter's highest level, a predicted lead included. A building stands at the
+level of its footprint, not of the edge point a shot aims at. Weapon splash,
+demolition rings, and Scuttle Charges reach only ground bodies on a level the
+blast shares; aircraft crashes and warheads ignore levels. Acquisition ranks a
+victim the levels allow ahead of one they refuse, so a unit shelled from a
+plateau still picks its attacker and climbs a ramp to answer. All of these rules
+live in `sim/src/tick/fire.rs`.
+
 Hitscan attacks buffer damage for same-tick resolution. Projectile weapons
 launch a serialized `Shell` toward a fixed fire-time aim point. Predictive aim
 samples ground motor speed and heading, including pathless coasting; air units

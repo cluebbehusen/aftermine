@@ -24,7 +24,7 @@ pub(super) fn solution(
             state,
             Fire::of(weapon),
             ShotEnd::new(from, shooter),
-            ShotEnd::new(aim, view.domain),
+            ShotEnd::new(aim, view.domain).on(view.footing()),
             Landing::Checked,
         )
 }
@@ -142,11 +142,15 @@ pub(super) fn buffer_blind(
     if let Some(victim) = direct {
         buffer_shot(state, shooter, victim, from, aim, weapon, hits);
     } else if let Some(radius) = weapon.splash {
+        let footing = view
+            .footprint
+            .map_or(TilePos::containing(aim), |(anchor, _)| anchor);
         for u in state.units().iter().filter(|u| {
             u.hp > 0
                 && state.hostile(player, u.player)
                 && weapon.targets.covers(u.domain())
                 && u.pos.dist_sq(aim) <= radius * radius
+                && grounded_with(state, footing, u)
         }) {
             hits.push(PendingHit::along(
                 state,
@@ -164,6 +168,7 @@ pub(super) fn buffer_blind(
                 && weapon.targets.ground
                 && b.kind.is_stealthy()
                 && b.center().dist_sq(aim) <= radius * radius
+                && state.map.shares_level(footing, b.anchor)
         }) {
             hits.push(PendingHit::along(
                 state,

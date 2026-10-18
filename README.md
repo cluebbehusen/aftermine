@@ -45,7 +45,8 @@ The main strategic layers:
 
 - real fog of war, remembered buildings, radar contacts, and shared team sight;
 - ground, air, direct-fire, artillery, stealth, transport, and repair roles;
-- terrain that distinguishes ordinary rock, impassable peaks, and open pits;
+- terrain that distinguishes ordinary rock, impassable peaks, open pits, and
+  levels joined by ramps;
 - buildable expansions, renewable Extractor claims strengthened by nearby
   Foundries, upgrades, and late-game recovery income;
 - persistent wreck salvage, so holding a battlefield has economic value;
@@ -144,8 +145,10 @@ their existing work.
 
 Rock blocks direct ground fire. Peaks block ground movement, aircraft, and all
 fire across them. Pits block ground movement, but aircraft and fire cross the
-gap. Some units can shoot beyond their own vision if another friendly machine
-provides sight.
+gap. Tiered maps stack levels parted by cliffs and joined by ramps: ground units
+fight only on a shared level or from a ramp, higher ground blocks direct fire,
+and artillery fires down but never up. Aircraft ignore levels. Some units can
+shoot beyond their own vision if another friendly machine provides sight.
 
 ## Architecture
 
