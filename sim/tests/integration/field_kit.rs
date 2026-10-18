@@ -16,6 +16,7 @@ use oxide_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitKi
 
 fn arena(map: Vec<String>, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "field-kit-arena".into(),
         map,

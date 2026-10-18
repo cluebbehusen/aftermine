@@ -752,6 +752,7 @@ fn concede_arena(seats: [(u8, bool); 4]) -> Game {
         })
         .collect();
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "concede-arena".into(),
         map: vec![

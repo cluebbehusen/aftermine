@@ -46,6 +46,7 @@ fn sandbox_cannot_restore_a_match_result_or_elimination_stamp() {
 /// siege.
 fn arena() -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "integrity-arena".into(),
         map: vec![

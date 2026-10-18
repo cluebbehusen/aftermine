@@ -16,6 +16,7 @@ fn field(
     top[28] = '2';
     map[2] = top.into_iter().collect();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ledger".into(),
         map,

@@ -23,6 +23,7 @@ fn field(
         map[13] = low.into_iter().collect();
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "reactivity".into(),
         map,

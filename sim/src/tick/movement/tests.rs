@@ -385,6 +385,7 @@ fn seat(name: &str) -> PlayerSpec {
 
 fn boundary_pair() -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "boundary-pair".into(),
         map: vec![
@@ -468,6 +469,7 @@ fn corner_shortcut_pair(
     );
 
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: name.into(),
         map,
@@ -565,6 +567,7 @@ fn corner_hugging_pair(offset: Vec2Fx, heading: u8, next: u32) -> State {
     let anchor = TilePos::new(6, 6);
     let mirrored_anchor = TilePos::new(width - 2 - anchor.x, height - 2 - anchor.y);
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "corner-hugging-pair".into(),
         map,
@@ -702,6 +705,7 @@ fn a_hull_overlapping_a_corner_never_steers_a_leg_across_it() {
 
 fn collision_trio() -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "collision-trio".into(),
         map: vec![
@@ -747,6 +751,7 @@ fn replay_center_crossing() -> State {
     map[5].replace_range(5..6, "1");
     map[24].replace_range(42..43, "2");
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "replay-center-crossing".into(),
         map,
@@ -912,6 +917,7 @@ fn perfectly_stacked_collision_is_equivariant_under_half_turns() {
 #[test]
 fn mirrored_seat_stacks_ignore_global_id_blocks() {
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "mirrored-seat-stacks".into(),
         map: vec![
@@ -1189,6 +1195,7 @@ fn oriented_collision_rows_reverse_x_groups_without_reversing_slot_order() {
 #[test]
 fn passed_waypoint_still_rejects_a_blocked_next_step() {
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "blocked-next-waypoint".into(),
         map: vec![

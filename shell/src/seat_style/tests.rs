@@ -11,6 +11,7 @@ fn scenario(count: usize, team: impl Fn(usize) -> Option<u8>) -> Scenario {
         map[3 + (seat / 4) * 16][3 + (seat % 4) * 16] = anchor;
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "Seat presentation".into(),
         map: map

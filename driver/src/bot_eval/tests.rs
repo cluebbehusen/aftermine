@@ -23,6 +23,7 @@ fn firing_squad() -> Scenario {
         }
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "firing-squad".into(),
         map: vec![

@@ -7,6 +7,7 @@ use crate::state::PathFollow;
 /// toward `waypoint`.
 fn against_ridge(waypoint: TilePos) -> (Unit, Map) {
     let state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ridge".into(),
         map: vec![

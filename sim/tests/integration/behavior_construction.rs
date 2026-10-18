@@ -393,6 +393,7 @@ fn sealed_apart_scenarios_refuse_to_build() {
     // A mesa wall: rock alone would leave the sky open, and an
     // air-connected map is legal.
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "sealed".into(),
         map: vec![
@@ -640,6 +641,7 @@ fn unreachable_sites_are_rejected_before_charging() {
     // The pocket interior is visible (vision is radius-based, rock does
     // not block sight) but no builder can path to any doorstep.
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "sealed-doorstep".into(),
         map: vec![
@@ -791,6 +793,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
     // flanking cardinals of an upcoming diagonal step. The waypoint
     // itself stays open — only the no-corner-cut invariant is at stake.
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "corner-cut".into(),
         map: vec![
@@ -876,6 +879,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
 fn a_rejected_build_leaves_no_trace_on_the_hash() {
     use oxide_sim::stats::BuildingKind;
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "sealed-doorstep".into(),
         map: vec![
@@ -1058,6 +1062,7 @@ fn a_doomed_site_never_comes_online() {
     // the volley lands on exactly that tick. The site must die without
     // ever completing: no online event, no free turret shot.
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "doomed-site".into(),
         map: vec![

@@ -19,6 +19,7 @@ fn arena(name: &str, units: Vec<UnitSpec>) -> Scenario {
     rows[1][1] = '1';
     rows[27][37] = '2';
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: name.into(),
         map: rows

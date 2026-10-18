@@ -330,6 +330,7 @@ fn a_decided_match_latches_its_result_and_keeps_ticking() {
         }
     }
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "firing-squad".into(),
         map,

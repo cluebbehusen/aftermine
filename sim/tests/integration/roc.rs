@@ -752,6 +752,7 @@ fn no_gun_fires_through_a_peak_at_a_building_flush_against_it() {
     }
     map.push("############^###########".to_string());
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: oxide_sim::scenario::ScenarioMode::Sandbox,
         name: "flush".into(),
         map,

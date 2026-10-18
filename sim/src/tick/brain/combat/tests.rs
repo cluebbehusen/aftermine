@@ -73,6 +73,7 @@ fn seat(name: &str) -> PlayerSpec {
 
 fn boundary_duel() -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "boundary-duel".into(),
         map: vec![
@@ -204,6 +205,7 @@ fn indexed_acquisition_matches_the_linear_scan() {
         });
     }
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "acquisition-differential".into(),
         map: rows.into_iter().map(|r| r.into_iter().collect()).collect(),
@@ -337,6 +339,7 @@ fn windowed_sidearm_victim_matches_the_linear_scan() {
         });
     }
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "sidearm-differential".into(),
         map: rows.into_iter().map(|r| r.into_iter().collect()).collect(),
@@ -516,6 +519,7 @@ fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
         })
         .collect();
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "unseen-edge".into(),
         map,
@@ -582,6 +586,7 @@ fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
 /// footprint's empty margin.
 fn overhanging(kind: UnitKind, pos: Vec2Fx) -> (State, UnitId, UnitId) {
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "overhang".into(),
         map: vec![

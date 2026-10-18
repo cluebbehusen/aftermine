@@ -28,6 +28,7 @@ fn wide_field(
     top[width - 4] = '2';
     map[2] = top.into_iter().collect();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "health".into(),
         map,
@@ -840,6 +841,7 @@ fn a_seat_earns_nothing_once_it_is_out_of_the_match() {
     top[36] = '3';
     map[2] = top.into_iter().collect();
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "teams".into(),
         map,

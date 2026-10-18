@@ -128,6 +128,7 @@ fn coasting_arrival_does_not_complete_a_neighbor_order() {
 /// A sandbox over `map` holding one seat and the given units.
 fn sandbox(map: &[&str], units: &[(crate::UnitKind, i32, i32)]) -> crate::State {
     crate::Scenario {
+        levels: Vec::new(),
         mode: crate::scenario::ScenarioMode::Sandbox,
         name: "locomotion".into(),
         map: map.iter().map(|row| (*row).to_owned()).collect(),

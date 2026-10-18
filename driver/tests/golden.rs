@@ -368,6 +368,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
     ];
 
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "renderer showcase".into(),
         map: SHOWCASE_MAP.iter().map(|r| (*r).to_string()).collect(),

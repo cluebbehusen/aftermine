@@ -1127,6 +1127,7 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
         bot_config: None,
     };
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "cradle".into(),
         map,

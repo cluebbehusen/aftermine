@@ -129,6 +129,7 @@ fn stage() -> Stage {
         bot_config: None,
     };
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "canonicalization-arena".into(),
         map: map(),

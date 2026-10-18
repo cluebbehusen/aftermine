@@ -167,6 +167,7 @@ fn direct_pairing_matches_sorting_every_candidate() {
             })
     };
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "converging-armies".into(),
         map: (0..13)

@@ -6,6 +6,7 @@ use std::path::Path;
 
 fn scenario(map: Vec<String>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "income".into(),
         map,

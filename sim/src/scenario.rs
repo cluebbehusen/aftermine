@@ -26,6 +26,10 @@ pub struct Scenario {
     pub name: String,
     /// The playfield as ASCII rows (see [`crate::map`] for the legend).
     pub map: Vec<String>,
+    /// The levels layer of a tiered map, one row per map row (see
+    /// [`crate::map`]); empty for a flat map.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<String>,
     /// One entry per player; matches require an anchor `1`..`8` or `a`..`h`
     /// per seat. Sandbox anchors are optional.
     pub players: Vec<PlayerSpec>,

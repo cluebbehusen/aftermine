@@ -603,6 +603,7 @@ fn the_zone_radius_covers_the_widest_connected_shipped_deposit() {
 #[test]
 fn replacement_preserves_worker_affinity_before_route_efficiency() {
     let state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "harvest-worker-affinity".into(),
         map: vec![
@@ -691,6 +692,7 @@ fn per_tick_danger_rechecks_are_constant_even_on_a_long_route() {
 #[test]
 fn danger_replan_cadence_uses_owner_local_rank() {
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "owner-local-replan-cadence".into(),
         map: vec![
@@ -780,6 +782,7 @@ fn danger_replan_cadence_uses_owner_local_rank() {
 #[test]
 fn unseen_wreck_selection_reads_frozen_memory_not_live_salvage() {
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "harvest-memory".into(),
         map: vec![
@@ -848,6 +851,7 @@ fn unseen_wreck_selection_reads_frozen_memory_not_live_salvage() {
 #[test]
 fn an_unscouted_enemy_building_cannot_bend_a_route_through_fog() {
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "harvest-route-belief".into(),
         map: vec![

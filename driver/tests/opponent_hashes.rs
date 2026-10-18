@@ -20,6 +20,7 @@ fn scenario(name: &str, scrap: u32, worker: bool) -> Scenario {
     map[12][24] = '2';
     map[4][6] = 's';
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: name.into(),
         map: map

@@ -717,6 +717,7 @@ fn team_range(kind: UnitKind, with_spotter: bool) -> Scenario {
         units.push(unit(2, UnitKind::Harvester, 9, 6));
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "team-shell-range".into(),
         map: vec![
@@ -857,6 +858,7 @@ fn assert_artillery_fires_through_shared_sight(
 
 fn peak_prediction_range() -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "peak-prediction-range".into(),
         map: vec![

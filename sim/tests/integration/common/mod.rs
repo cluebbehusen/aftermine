@@ -9,6 +9,7 @@ use oxide_sim::{
 /// A small arena: two Foundries in opposite corners, open ground between.
 pub fn arena(units: Vec<UnitSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "test-arena".into(),
         map: vec![
@@ -93,6 +94,7 @@ pub fn open_arena_with(
     rows[1][1] = '1';
     rows[height - 3][width - 3] = '2';
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "open-arena".into(),
         map: rows.into_iter().map(|r| r.into_iter().collect()).collect(),
