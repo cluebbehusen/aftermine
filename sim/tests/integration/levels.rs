@@ -5,7 +5,7 @@
 use crate::common;
 use common::{building, cmd, players, run, run_until, unit};
 
-use chassis::fx::Vec2Fx;
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use oxide_sim::map::{Elevation, Terrain};
 use oxide_sim::scenario::{ScenarioMode, UnitSpec};
@@ -667,5 +667,211 @@ fn mirrored_ramp_duels_end_in_mutual_annihilation() {
     assert!(
         state.unit(a).is_none() && state.unit(b).is_none(),
         "mirrored climbs meet as equals"
+    );
+}
+
+/// A floor at level 0 west of a cliff column at x = 19, a plateau at level 1
+/// east of it, and a ramp through the cliff in the north.
+fn east_plateau(units: Vec<UnitSpec>) -> Scenario {
+    let (width, height) = (40, 20);
+    let mut map = Vec::new();
+    let mut levels = Vec::new();
+    for y in 0..height {
+        let mut row = String::new();
+        let mut glyphs = String::new();
+        for x in 0..width {
+            row.push(if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                '#'
+            } else if x == 19 && (2..=4).contains(&y) {
+                '/'
+            } else if x == 19 {
+                '='
+            } else if (x, y) == (1, 15) {
+                '1'
+            } else if (x, y) == (36, 15) {
+                '2'
+            } else {
+                '.'
+            });
+            glyphs.push(if x > 19 { '1' } else { '0' });
+        }
+        map.push(row);
+        levels.push(glyphs);
+    }
+    Scenario {
+        levels,
+        mode: ScenarioMode::Match,
+        name: "east plateau".into(),
+        map,
+        players: players(300),
+        units,
+        buildings: Vec::new(),
+        meta: None,
+    }
+}
+
+#[test]
+fn an_escort_drops_a_victim_past_its_break_radius_on_another_level() {
+    // The escort stands six tiles from the unit it guards, within its own
+    // reach of a victim on the plateau eleven tiles from that unit. Past the
+    // break radius an escort fights only from where it stands, and the levels
+    // let it fire on nothing there, so it goes back to its duty instead of
+    // setting off for the ramp.
+    let mut state = east_plateau(vec![
+        unit(0, UnitKind::Harvester, 12, 10),
+        unit(0, UnitKind::Lancer, 18, 10),
+        unit(1, UnitKind::Harvester, 23, 10),
+    ])
+    .build()
+    .unwrap();
+    let [lead, escort, victim] = [0, 1, 2].map(|i| state.units()[i].id);
+    state.tick(&[cmd(
+        0,
+        Command::Accompany {
+            units: vec![escort],
+            target: lead,
+            queue: false,
+        },
+    )]);
+    let contact = state
+        .vision(PlayerId(0))
+        .tracks()
+        .iter()
+        .find(|track| track.visible_unit == Some(victim))
+        .expect("the escort sees the victim")
+        .id;
+    let mut staged = serde_json::to_value(&state).unwrap();
+    for row in staged["units"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(escort) {
+            row["order"] = serde_json::json!({
+                "order": "attack",
+                "resume": {"accompany": lead},
+                "target": {"kind": "contact", "id": contact},
+            });
+        }
+    }
+    let mut state: State = serde_json::from_value(staged).unwrap();
+    let stand = state.unit(escort).unwrap().pos;
+    state.tick(&[]);
+    let escort = state.unit(escort).unwrap();
+    assert!(
+        matches!(escort.order, oxide_sim::Order::Accompany { unit, .. } if unit == lead),
+        "the escort returned to its duty: {:?}",
+        escort.order
+    );
+    assert!(
+        escort.pos.dist_sq(stand) <= Fx::lit("0.01"),
+        "it never set off"
+    );
+}
+
+/// What `unit` is attacking, as its owner sees it.
+fn attacking(state: &State, unit: oxide_sim::UnitId) -> Option<Target> {
+    let u = state.unit(unit)?;
+    let oxide_sim::Order::Attack { target, .. } = u.order else {
+        return None;
+    };
+    state
+        .attack_view(u.player, target)
+        .and_then(|view| view.entity)
+}
+
+#[test]
+fn a_breacher_takes_a_machine_it_can_hit_before_a_structure_on_another_level() {
+    // A Maw on the floor sees a Barricade on the plateau above and a
+    // Harvester in contact with it on its own level.
+    let staged = |units| {
+        let mut scenario = stair(2, units);
+        scenario.buildings = vec![building(1, BuildingKind::Barricade, 6, 3)];
+        scenario.build().unwrap()
+    };
+    let mut state = staged(vec![
+        unit(0, UnitKind::Maw, 6, 6),
+        unit(1, UnitKind::Harvester, 7, 7),
+    ]);
+    let (maw, harvester) = (state.units()[0].id, state.units()[1].id);
+    state.tick(&[]);
+    assert_eq!(attacking(&state, maw), Some(Target::Unit(harvester)));
+    // Alone, the structure is still its pick, and it climbs to reach it.
+    let mut state = staged(vec![unit(0, UnitKind::Maw, 6, 6)]);
+    let maw = state.units()[0].id;
+    let barricade = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Barricade)
+        .unwrap()
+        .id;
+    state.tick(&[]);
+    assert_eq!(attacking(&state, maw), Some(Target::Building(barricade)));
+}
+
+#[test]
+fn a_shell_landing_on_a_footprint_edge_bursts_on_the_footprint_level() {
+    // Plateaus at level 1 face each other across a floor at level 0. A
+    // shell from the east lands on the east edge of a plateau tile whose
+    // building is gone; that edge floors into the cliff tile beside it, but
+    // the blast stays on the plateau it was aimed at.
+    let (width, height) = (30, 12);
+    let mut map = Vec::new();
+    let mut levels = Vec::new();
+    for y in 0..height {
+        let mut row = String::new();
+        let mut glyphs = String::new();
+        for x in 0..width {
+            row.push(if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                '#'
+            } else if x == 8 || x == 16 {
+                '='
+            } else {
+                '.'
+            });
+            glyphs.push(if (8..=16).contains(&x) { '0' } else { '1' });
+        }
+        map.push(row);
+        levels.push(glyphs);
+    }
+    let state = Scenario {
+        levels,
+        mode: ScenarioMode::Sandbox,
+        name: "facing plateaus".into(),
+        map,
+        players: players(0),
+        units: vec![
+            unit(0, UnitKind::Bombard, 20, 5),
+            unit(1, UnitKind::Sentinel, 6, 5),
+            unit(1, UnitKind::Sentinel, 9, 5),
+        ],
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let [gun, high, low] = [0, 1, 2].map(|i| state.units()[i].id);
+    let at = |x: &str, y: &str| serde_json::json!(Vec2Fx::new(Fx::lit(x), Fx::lit(y)));
+    let mut staged = serde_json::to_value(&state).unwrap();
+    let now = state.current_tick();
+    staged["shells"] = serde_json::json!([{
+        "kind": "shell",
+        "shooter": {"kind": "unit", "id": gun},
+        "player": 0,
+        "launch": at("20.5", "5.5"),
+        "impact": at("8", "5.5"),
+        "launched_at": now,
+        "arrival": now + 1,
+        "damage": 10,
+        "targets": {"ground": true, "air": false},
+        "splash": Fx::lit("2"),
+    }]);
+    let mut state: State = serde_json::from_value(staged).unwrap();
+    run(&mut state, 2);
+    let full = UnitKind::Sentinel.stats().max_hp;
+    assert!(
+        state.unit(high).unwrap().hp < full,
+        "the plateau takes the blast"
+    );
+    assert_eq!(
+        state.unit(low).unwrap().hp,
+        full,
+        "the floor below is spared"
     );
 }
