@@ -1,8 +1,8 @@
 //! Shapes that step their own way. Each eight-connected shape of one kind of
 //! terrain is cut into short stretches along its sides, and a corner's
-//! stretch wraps both its sides so the first bench meets itself square at
+//! stretch wraps both its sides so its benches meet themselves square at
 //! the corner. Shapes that mirror each other under the map's half-turn read
-//! their stretches from one canonical copy, so they draw as mirror images.
+//! their stretches from one canonical copy, so they step as mirror images.
 //! Peaks and pits share it; each turns a cell's [`Place`] into its own
 //! widths.
 
@@ -37,7 +37,9 @@ pub(super) struct Place {
     pub(super) thin: bool,
     /// The stretch of the cell's nearest side.
     pub(super) stretch: i32,
-    /// The same side cut into stretches half a stretch out of phase.
+    /// The same side cut into stretches half a stretch out of phase,
+    /// toward the nearer corner so each corner's stretch still wraps both its
+    /// sides.
     pub(super) offset: i32,
     /// A thin shape's stretch along its length, across its whole thickness.
     pub(super) length: i32,
@@ -185,11 +187,19 @@ impl Shapes {
         } else {
             long_part
         };
+        // Turning round at the side's middle keeps a half-turn's mirror image
+        // on the mirrored side, whichever side a cell on a corner's diagonal
+        // counts as.
+        let shift = if along < length / 2 {
+            -STRETCH / 2
+        } else {
+            STRETCH / 2
+        };
         Some(Place {
             seed: shape.seed,
             thin: shape.thin,
             stretch: stretch(along),
-            offset: stretch(along + STRETCH / 2),
+            offset: stretch(along + shift),
             length: 200 + long_part,
         })
     }

@@ -17,7 +17,7 @@
 //! vary, a corner's stretch wrapping both its sides so steps never seam on a
 //! diagonal. A peak too thin to step instead stands at one of two heights
 //! per stretch. Peaks that mirror each other under the map's half-turn
-//! draw as mirror images.
+//! step as mirror images; their wear marks fall independently.
 //!
 //! The field reads the map alone, so a terrace never shifts as the fog lifts;
 //! the fog veil hides peaks the player has not explored.
@@ -317,7 +317,7 @@ impl Peaks {
         }
         let first = hash(place.seed, place.stretch, SALT + 314) % 100;
         // The second bench jogs on the offset stretches, so the two levels
-        // never jog in lockstep.
+        // seldom jog together.
         let second = hash(place.seed, place.offset, SALT + 315) % 10;
         let own = hash(place.seed, 0, SALT + 316);
         let w0 = match first {

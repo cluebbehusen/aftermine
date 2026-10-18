@@ -256,7 +256,8 @@ fn a_corner_steps_alike_on_both_its_sides() {
     let (x0, y0) = (2 * CELLS, CELLS);
     let (x1, y1) = (10 * CELLS - 1, 9 * CELLS - 1);
     // Within a corner's stretch, a cell and its reflection across the
-    // corner's diagonal share the first bench, so it meets itself square.
+    // corner's diagonal share the first two benches, so each meets itself
+    // square.
     for a in 0..STRETCH {
         for b in 0..a {
             for (here, there) in [
@@ -265,12 +266,15 @@ fn a_corner_steps_alike_on_both_its_sides() {
                 ((x1 - a, y1 - b), (x1 - b, y1 - a)),
                 ((x0 + a, y1 - b), (x0 + b, y1 - a)),
             ] {
-                let first = |(cx, cy): (i32, i32)| {
-                    terraces.peaks.steps(cx, cy).map(|steps| steps.widths[0])
+                let benches = |(cx, cy): (i32, i32)| {
+                    terraces
+                        .peaks
+                        .steps(cx, cy)
+                        .map(|steps| (steps.widths[0], steps.widths[1]))
                 };
                 assert_eq!(
-                    first(here),
-                    first(there),
+                    benches(here),
+                    benches(there),
                     "a seam on the diagonal near {here:?}"
                 );
             }
