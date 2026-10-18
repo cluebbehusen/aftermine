@@ -240,19 +240,20 @@ pub enum Order {
         /// The tile to see.
         tile: TilePos,
     },
-    /// Walk toward a tile, welding wounded own ground machines met on the
-    /// way (workers only): a patrolling worker's leg, or, outside a looping
-    /// program, an idle worker's trip out from its post and back. The torch
-    /// works and bills like [`Order::RepairUnit`]'s, but a patient the
+    /// Walk toward a tile, welding wounded own ground machines and damaged
+    /// own buildings met on the way (workers only): a patrolling worker's
+    /// leg, or, outside a looping program, an idle worker's trip out from
+    /// its post and back. The torch works and bills like
+    /// [`Order::RepairUnit`]'s or [`Order::Repair`]'s, but a patient the
     /// welder cannot pay for, reach, or find standing still is let go
     /// without a stall.
     Tend {
         /// Where the walk ends: the patrol waypoint, or the post an idle
         /// worker returns to.
         goal: Goal,
-        /// The machine being welded, which owns the welder's billing meter.
+        /// The patient being welded, which owns the welder's billing meter.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        weld: Option<UnitId>,
+        weld: Option<Target>,
     },
 }
 
@@ -329,7 +330,8 @@ impl Order {
                 weld: Some(unit), ..
             }
             | Order::Tend {
-                weld: Some(unit), ..
+                weld: Some(Target::Unit(unit)),
+                ..
             } => Some(unit),
             _ => None,
         }
@@ -2417,11 +2419,18 @@ impl State {
         }
         // A tending walk is a worker's, either a leg of a patrol or a trip
         // out from an idle post with nothing queued behind it. Only the
-        // active walk holds a patient, another own unit like an escort's.
+        // active walk holds a patient: another own unit, as an escort's
+        // does, or an own building.
         let tends = |order: &Order| matches!(order, Order::Tend { .. });
+        let foreign = |patient: Target| match patient {
+            Target::Unit(unit) => !own_other(unit),
+            Target::Building(building) => self
+                .building(building)
+                .is_some_and(|building| building.player != *player),
+        };
         if orders().any(|order| {
             matches!(*order, Order::Tend { weld, .. } if stats.harvest.is_none()
-                || weld.is_some_and(|patient| !own_other(patient)))
+                || weld.is_some_and(foreign))
         }) || queue
             .iter()
             .any(|order| matches!(order, Order::Tend { weld: Some(_), .. }))
@@ -3615,7 +3624,7 @@ fn order_references(order: &Order) -> impl Iterator<Item = Target> {
             weld,
         } => [unit(escorted), weld.and_then(unit)],
         Order::Retire { crucible, .. } => [Some(Target::Building(crucible)), None],
-        Order::Tend { weld, .. } => [weld.and_then(unit), None],
+        Order::Tend { weld, .. } => [weld, None],
     };
     names.into_iter().flatten()
 }

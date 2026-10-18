@@ -7,7 +7,7 @@ use super::PendingHpGain;
 use super::contact;
 use super::locomotion::approach_rect;
 use crate::event::{Event, StallReason};
-use crate::ids::{BuildingId, PlayerId, UnitId};
+use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, PathFollow, State};
 use crate::stats::HARVEST_ZONE_RADIUS;
 use crate::tick::crowding;
@@ -206,10 +206,7 @@ pub(super) fn found(
 }
 
 /// Weld a damaged own built building: walk adjacent, then feed it hp
-/// along the same ramp construction climbs, billed per hp welded at
-/// [`crate::stats::REPAIR_COST_PERMILLE`] of proportional cost. Gains
-/// buffer like construction — fire wins ties — and an empty bank stalls
-/// the job. Several welders stack, each billing its own torch time.
+/// through [`weld_building`]. An empty bank stalls the job.
 pub(super) fn repair(
     state: &mut State,
     id: UnitId,
@@ -218,54 +215,17 @@ pub(super) fn repair(
     builds: &mut Vec<PendingHpGain>,
 ) {
     let me = state.unit(id).expect("caller checked").player;
-    let Some(b) = state
+    if state
         .building(building)
-        .filter(|b| b.player == me && b.built() && b.hp > 0 && b.hp < b.stats().max_hp)
-    else {
+        .is_none_or(|b| b.player != me || !b.built() || b.hp == 0 || b.hp >= b.stats().max_hp)
+    {
         // Healed, destroyed, or never a patient: the job is over.
         state.unit_mut(id).expect("caller checked").advance_queue();
         return;
-    };
-    let (kind, tier) = (b.kind, b.tier);
-    // The active tier's row: a Bulwark's weld ramp, ceiling, and billing
-    // basis are the Bulwark's, not the base Turret's.
-    let stats = kind.tier_stats(tier);
-    // The welding rate is the construction ramp, except for the Foundry,
-    // which uses its own ramp and billing basis so its construction price
-    // does not inflate the repair bill for the victory structure.
-    let (ramp_ticks, basis) = if kind == crate::stats::BuildingKind::Foundry {
-        (
-            crate::stats::FOUNDRY_REPAIR_TICKS,
-            crate::stats::FOUNDRY_REPAIR_PRICE,
-        )
-    } else {
-        stats.construction.map_or(
-            (
-                crate::stats::FOUNDRY_REPAIR_TICKS,
-                crate::stats::FOUNDRY_REPAIR_PRICE,
-            ),
-            |c| (c.build_ticks, c.cost),
-        )
-    };
+    }
     let unit = state.unit(id).expect("caller checked");
     if unit.work_stopped() && state.in_building_work_reach(unit, building) {
-        // Billing derives entirely from the welder's own tick meter:
-        // cumulative welded hp telescopes to ramp * p / ramp_ticks, and
-        // scrap owed is the ceiling of its milli-scrap price — so the
-        // first fraction of a scrap bills up front (chip repairs pay
-        // their coin) and a completed weld totals within one scrap of
-        // exact. The meter surviving reissued orders is what keeps a
-        // re-clicked welder from re-entering the prepaid stretch.
-        let start_hp = stats.max_hp / 5;
-        let ramp = stats.max_hp - start_hp;
-        let p = metered(state.unit(id).expect("caller checked").progress);
-        let owed_millis = |ticks: u32| -> u64 {
-            let welded = u64::from(ramp) * u64::from(ticks) / u64::from(ramp_ticks);
-            welded * u64::from(basis) * crate::stats::REPAIR_COST_PERMILLE / u64::from(stats.max_hp)
-        };
-        let due = owed_millis(p + 1).div_ceil(1000) - owed_millis(p).div_ceil(1000);
-        let bank = state.player(me).scrap;
-        let Some(due) = u32::try_from(due).ok().filter(|&due| due <= bank) else {
+        if !weld_building(state, id, building, builds) {
             // Broke stalls the torch.
             let unit = state.unit_mut(id).expect("caller checked");
             let (player, pos) = (unit.player, unit.pos);
@@ -275,24 +235,6 @@ pub(super) fn repair(
                 player,
                 pos,
                 reason: StallReason::InsufficientScrap,
-            });
-            return;
-        };
-        state.player_mut(me).scrap = bank - due;
-        let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = None;
-        unit.progress = p + 1;
-        let step = ramp_step(ramp, p, p + 1, ramp_ticks);
-        if step > 0 {
-            builds.push(PendingHpGain {
-                starts: false,
-                site: building,
-                step,
-                completes: false,
-                player: me,
-                kind,
-                paid: due,
-                repair_bay: None,
             });
         }
     } else if !contact::approach_worker(state, id, building) {
@@ -306,6 +248,115 @@ pub(super) fn repair(
             reason: StallReason::NoRoute,
         });
     }
+}
+
+/// How a building takes a weld: hp climbs from a fifth of the active
+/// tier's maximum along a ramp, billed per hp at
+/// [`crate::stats::REPAIR_COST_PERMILLE`] of a price basis. Repair crews and
+/// tending welders pay alike.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BuildingWeld {
+    ramp: u32,
+    ramp_ticks: u32,
+    basis: u32,
+    max_hp: u32,
+}
+
+impl BuildingWeld {
+    pub(super) fn of(kind: crate::stats::BuildingKind, tier: u8) -> Self {
+        // The active tier's row: a Bulwark's weld ramp, ceiling, and billing
+        // basis are the Bulwark's, not the base Turret's.
+        let stats = kind.tier_stats(tier);
+        // The welding rate is the construction ramp, except for the Foundry,
+        // which uses its own ramp and billing basis so its construction price
+        // does not inflate the repair bill for the victory structure.
+        let (ramp_ticks, basis) = if kind == crate::stats::BuildingKind::Foundry {
+            (
+                crate::stats::FOUNDRY_REPAIR_TICKS,
+                crate::stats::FOUNDRY_REPAIR_PRICE,
+            )
+        } else {
+            stats.construction.map_or(
+                (
+                    crate::stats::FOUNDRY_REPAIR_TICKS,
+                    crate::stats::FOUNDRY_REPAIR_PRICE,
+                ),
+                |c| (c.build_ticks, c.cost),
+            )
+        };
+        let start_hp = stats.max_hp / 5;
+        Self {
+            ramp: stats.max_hp - start_hp,
+            ramp_ticks,
+            basis,
+            max_hp: stats.max_hp,
+        }
+    }
+
+    /// Scrap billed for the weld tick read at meter `p`. Billing derives
+    /// entirely from the welder's own tick meter: cumulative welded hp
+    /// telescopes to `ramp * p / ramp_ticks`, and scrap owed is the ceiling of
+    /// its milli-scrap price — so the first fraction of a scrap bills up
+    /// front (chip repairs pay their coin) and a completed weld totals within
+    /// one scrap of exact. The meter surviving reissued orders is what keeps
+    /// a re-clicked welder from re-entering the prepaid stretch.
+    fn debit(self, p: u32) -> u64 {
+        let owed_millis = |ticks: u32| -> u64 {
+            let welded = u64::from(self.ramp) * u64::from(ticks) / u64::from(self.ramp_ticks);
+            welded * u64::from(self.basis) * crate::stats::REPAIR_COST_PERMILLE
+                / u64::from(self.max_hp)
+        };
+        owed_millis(p + 1).div_ceil(1000) - owed_millis(p).div_ceil(1000)
+    }
+
+    /// Scrap billed at the first weld tick from meter `p` on that bills
+    /// anything: what a bank must hold for a weld to make headway, as
+    /// [`crate::stats::next_paid_unit_repair_debit`] reads it for machines.
+    pub(super) fn next_paid(self, p: u32) -> u64 {
+        (p..p.saturating_add(self.ramp_ticks.max(1)))
+            .map(|p| self.debit(p))
+            .find(|&due| due > 0)
+            .unwrap_or(0)
+    }
+}
+
+/// One billed weld tick by `id`, standing still within work reach of the
+/// own damaged `building`: the bank pays the tick's coin and the hp gain
+/// buffers like construction, so fire wins ties. Several welders stack, each
+/// billing its own torch time. Returns false, changing nothing, when the
+/// bank cannot pay.
+pub(super) fn weld_building(
+    state: &mut State,
+    id: UnitId,
+    building: BuildingId,
+    builds: &mut Vec<PendingHpGain>,
+) -> bool {
+    let unit = state.unit(id).expect("caller checked");
+    let (me, p) = (unit.player, metered(unit.progress));
+    let b = state.building(building).expect("caller checked");
+    let (kind, weld) = (b.kind, BuildingWeld::of(b.kind, b.tier));
+    let bank = state.player(me).scrap;
+    let Some(due) = u32::try_from(weld.debit(p)).ok().filter(|&due| due <= bank) else {
+        return false;
+    };
+    state.player_mut(me).scrap = bank - due;
+    let unit = state.unit_mut(id).expect("caller checked");
+    unit.path = None;
+    unit.progress = p + 1;
+    let step = ramp_step(weld.ramp, p, p + 1, weld.ramp_ticks);
+    if step > 0 {
+        builds.push(PendingHpGain {
+            starts: false,
+            site: building,
+            step,
+            completes: false,
+            player: me,
+            kind,
+            paid: due,
+            repair_bay: None,
+        });
+    }
+    true
 }
 
 /// Weld a wounded own ground machine: chase it to body contact, then
@@ -572,18 +623,23 @@ pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -
     false
 }
 
-/// The order a welder takes on patients in: nearest first, with an exact
-/// distance tie going to the bearing from the welder, a key a half-turn of
-/// the scene preserves, and then id.
+/// The order a welder takes on patients in, each measured at `point`, a
+/// machine's position or the nearest point of a building's footprint:
+/// nearest first, with an exact distance tie going to the bearing from the
+/// welder, a key a half-turn of the scene preserves, then machines before
+/// buildings, then id. A welder standing on the point has no bearing to it.
 pub(super) fn patient_rank(
     welder: &crate::state::Unit,
-    patient: &crate::state::Unit,
-) -> (chassis::fx::Fx, u8, UnitId) {
-    (
-        welder.pos.dist_sq(patient.pos),
-        chassis::compass::heading_of(patient.pos - welder.pos).wrapping_sub(welder.heading),
-        patient.id,
-    )
+    point: Vec2Fx,
+    patient: Target,
+) -> (Fx, u8, Target) {
+    let toward = point - welder.pos;
+    let bearing = if toward == Vec2Fx::ZERO {
+        0
+    } else {
+        chassis::compass::heading_of(toward).wrapping_sub(welder.heading)
+    };
+    (welder.pos.dist_sq(point), bearing, patient)
 }
 
 /// The working positions against `patient`'s hull that `welder` tries,

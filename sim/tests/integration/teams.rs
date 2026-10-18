@@ -181,7 +181,7 @@ fn team_sight_is_shared() {
 
 #[test]
 fn victory_takes_every_enemy_foundry_and_spectators_stay_muted() {
-    let mut state = arena4(vec![
+    let state = arena4(vec![
         unit(0, UnitKind::Bombard, 16, 3),
         unit(0, UnitKind::Bombard, 17, 4),
         unit(0, UnitKind::Bombard, 16, 5),
@@ -196,6 +196,8 @@ fn victory_takes_every_enemy_foundry_and_spectators_stay_muted() {
     let guns: Vec<_> = state.units()[..6].iter().map(|u| u.id).collect();
     let survivor = state.units()[6].id;
     let scout = state.units()[7].id;
+    // The harvester stays clear of the shelled Foundry rather than welding it.
+    let mut state = common::idle_welds_off(&state, &[survivor]);
     let east_foundry = state
         .buildings()
         .iter()

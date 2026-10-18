@@ -324,9 +324,12 @@ impl UnitAnimationFacts {
                     WorkTarget::Wreck(node)
                 }),
                 Order::Build { site } => Some(WorkTarget::Building(site)),
-                Order::Repair { building } | Order::Salvage { building } => {
-                    Some(WorkTarget::Building(building))
-                }
+                Order::Repair { building }
+                | Order::Salvage { building }
+                | Order::Tend {
+                    weld: Some(oxide_sim::Target::Building(building)),
+                    ..
+                } => Some(WorkTarget::Building(building)),
                 _ => None,
             }
         };
@@ -1496,7 +1499,11 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
         });
     }
     match unit.order {
-        Order::Repair { building } => state.building(building).and_then(|patient| {
+        Order::Repair { building }
+        | Order::Tend {
+            weld: Some(oxide_sim::Target::Building(building)),
+            ..
+        } => state.building(building).and_then(|patient| {
             (patient.player == unit.player
                 && patient.built()
                 && patient.hp > 0

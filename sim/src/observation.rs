@@ -679,6 +679,7 @@ impl ObservationData {
 fn own_repair_target(order: &Order) -> Option<Target> {
     match order {
         Order::Repair { building } => Some(Target::Building(*building)),
+        Order::Tend { weld, .. } => *weld,
         _ => order.torch().map(Target::Unit),
     }
 }

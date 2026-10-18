@@ -792,13 +792,21 @@ fn destroying_the_supporting_foundry_returns_the_extractor_to_remote_yield() {
         .map(|offset| common::unit(1, UnitKind::Avalanche, 25, 4 + offset))
         .chain(std::iter::once(common::unit(1, UnitKind::Talon, 15, 5)))
         .collect();
-    let mut state = support_arena(
+    let state = support_arena(
         0,
         attackers,
         vec![building(0, BuildingKind::Foundry, SUPPORT_FOUNDRY)],
     )
     .build()
     .unwrap();
+    // The home Harvester stands by rather than welding the Foundry back up.
+    let workers: Vec<_> = state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Harvester)
+        .map(|unit| unit.id)
+        .collect();
+    let mut state = common::idle_welds_off(&state, &workers);
     let extractor = extractor_id(&state);
     let expansion = state
         .buildings()

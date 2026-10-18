@@ -10,7 +10,7 @@ use common::{cmd, open_arena, open_arena_with, run, run_until, unit};
 use chassis::grid::TilePos;
 use oxide_sim::command::RejectReason;
 use oxide_sim::scenario::UnitSpec;
-use oxide_sim::{Command, Event, Order, State, UnitId, UnitKind, UnitRepairSource};
+use oxide_sim::{Command, Event, Order, State, Target, UnitId, UnitKind, UnitRepairSource};
 use serde_json::json;
 
 fn build(units: Vec<UnitSpec>, scrap: u32) -> State {
@@ -389,7 +389,7 @@ fn a_moving_patient_is_taken_on_only_once_it_stops() {
         if unit.path.is_some() || unit.drive_speed() != chassis::fx::Fx::ZERO {
             assert!(
                 !matches!(state.unit(welder).unwrap().order,
-                    Order::Tend { weld: Some(p), .. } if p == patient && !stopped),
+                    Order::Tend { weld: Some(p), .. } if p == Target::Unit(patient) && !stopped),
                 "a walking patient is not taken on"
             );
         } else {
@@ -539,7 +539,7 @@ fn mirrored_seats_take_on_mirrored_patients() {
     run(&mut state, 2);
     let pick = |welder: UnitId| match state.unit(welder).unwrap().order {
         Order::Tend {
-            weld: Some(patient),
+            weld: Some(Target::Unit(patient)),
             ..
         } => state.unit(patient).unwrap().tile(),
         other => panic!("{other:?}"),

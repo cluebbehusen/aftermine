@@ -4,6 +4,7 @@ use crate::expansion;
 use crate::frame::gap;
 use crate::investments::Investment;
 use crate::memory::Memory;
+use oxide_sim::Target;
 use oxide_sim::observation::ObservationData;
 
 /// `state` with `building` at `hp`.
@@ -117,6 +118,24 @@ fn workers_weld_a_damaged_building_unless_an_enemy_stands_near() {
     assert_eq!(welders.len(), 1, "one worker at a time");
     let (_, raided) = welded(true);
     assert!(raided.is_empty(), "{raided:?}");
+}
+
+#[test]
+fn a_building_a_worker_tends_on_its_own_takes_no_second_welder() {
+    let scenario = arena(200);
+    let state = scenario.build().unwrap();
+    let foundry = foundries(&state, PlayerId(0))[0];
+    let max = BuildingKind::Foundry.base_stats().max_hp;
+    let state = damaged(&state, foundry, max / 2);
+    let tender = harvesters(&state, 0)[0];
+    let state = tending(&state, tender, Target::Building(foundry));
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        repairs(&commands)
+            .iter()
+            .all(|(_, patient)| *patient != foundry),
+        "{commands:?}"
+    );
 }
 
 #[test]
@@ -387,7 +406,7 @@ fn hands_off(state: &State) -> State {
 
 /// `state` with `worker` out welding `patient` on its own, on a trip from
 /// where it stands.
-fn tending(state: &State, worker: UnitId, patient: UnitId) -> State {
+fn tending(state: &State, worker: UnitId, patient: Target) -> State {
     let post = state.unit(worker).unwrap().tile();
     let mut value = serde_json::to_value(state).unwrap();
     let entry = value["units"]
@@ -399,7 +418,7 @@ fn tending(state: &State, worker: UnitId, patient: UnitId) -> State {
     entry["order"] = serde_json::json!({
         "order": "tend",
         "goal": {"x": post.x, "y": post.y},
-        "weld": patient.0,
+        "weld": patient,
     });
     serde_json::from_value(value).unwrap()
 }
@@ -408,7 +427,7 @@ fn tending(state: &State, worker: UnitId, patient: UnitId) -> State {
 fn a_tending_welders_patient_at_home_takes_no_second_welder() {
     let (scenario, state, hurt) = wounded_at(1_000, &[(3, 10)], 10);
     let tender = harvesters(&state, 0)[0];
-    let state = tending(&state, tender, hurt[0]);
+    let state = tending(&state, tender, Target::Unit(hurt[0]));
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         welds(&commands)
@@ -428,7 +447,7 @@ fn a_tending_welders_patient_at_home_takes_no_second_welder() {
 fn a_tending_welder_away_from_home_is_left_to_its_trip() {
     let (scenario, state, hurt) = wounded_at(1_000, &[(14, 8)], 10);
     let tender = harvesters(&state, 0)[0];
-    let state = tending(&state, tender, hurt[0]);
+    let state = tending(&state, tender, Target::Unit(hurt[0]));
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         !commands.iter().any(
@@ -448,7 +467,7 @@ fn a_tending_worker_away_from_home_runs_from_an_armed_enemy() {
     ]);
     let state = scenario.build().unwrap();
     let (worker, patient) = (at(&state, 15, 9), at(&state, 14, 9));
-    let state = tending(&wounded(&state, patient, 10), worker, patient);
+    let state = tending(&wounded(&state, patient, 10), worker, Target::Unit(patient));
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         runs(&commands).iter().any(|(units, _)| *units == [worker]),

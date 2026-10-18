@@ -699,14 +699,17 @@ fn the_patrol_card_says_what_each_kind_of_machine_does_on_the_way() {
             vec![sentinel],
             "Machines engage whatever they meet along the way.",
         ),
-        (vec![harvester], "Workers weld wounded machines they pass."),
+        (
+            vec![harvester],
+            "Workers weld wounded machines and buildings they pass.",
+        ),
         (
             vec![skyhook],
             "Unarmed machines walk the route without engaging.",
         ),
         (
             vec![harvester, skyhook],
-            "Workers weld wounded machines they pass; others walk on.",
+            "Workers weld wounded machines and buildings they pass; others walk on.",
         ),
         (
             vec![sentinel, skyhook],
@@ -714,7 +717,7 @@ fn the_patrol_card_says_what_each_kind_of_machine_does_on_the_way() {
         ),
         (
             vec![sentinel, harvester],
-            "Armed machines engage what they meet; workers weld the wounded.",
+            "Armed machines engage what they meet; workers weld what is damaged.",
         ),
     ] {
         game.presentation.selection.units = selection;
@@ -1118,6 +1121,39 @@ fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
             remove(walk, 1),
             remove(walk, 0),
         ]
+    );
+}
+
+#[test]
+fn a_tending_chip_names_the_building_it_repairs() {
+    let (game, _) = builder_game();
+    let foundry = human_foundry(&game);
+    let order = Order::Tend {
+        goal: oxide_sim::Goal::at(chassis::grid::TilePos::new(9, 9)),
+        weld: Some(oxide_sim::Target::Building(foundry)),
+    };
+    let card = order_card(&game.view(), &order, true, true, None);
+    assert!(
+        matches!(
+            card.icon,
+            CardIcon::Order {
+                subject: OrderSubject::Building(BuildingKind::Foundry, _),
+                verb: VerbIcon::Repair,
+                ghost: false,
+            }
+        ),
+        "{:?}",
+        card.icon
+    );
+    assert!(card.title.starts_with("Repair - Foundry"), "{}", card.title);
+    assert!(
+        card.desc.iter().any(|line| line.ends_with(" hp")),
+        "{:?}",
+        card.desc
+    );
+    assert!(
+        card.progress.is_some(),
+        "the chip meters the building's hull"
     );
 }
 

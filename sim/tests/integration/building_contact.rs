@@ -99,6 +99,8 @@ fn worker_repairs_at_the_surface_then_obeys_a_new_move() {
         );
         let id = state.units()[0].id;
         let building = state.buildings()[0].id;
+        // Sent away, the worker stays put rather than going back to weld.
+        let state = crate::common::idle_welds_off(&state, &[id]);
         let mut data = serde_json::to_value(&state).unwrap();
         data["buildings"][0]["hp"] = json!(100);
         let mut state: State = serde_json::from_value(data).unwrap();

@@ -431,11 +431,11 @@ fn weld(
     hazards: &[Hazard],
     ledger: &mut Ledger,
 ) {
-    // Buildings a worker already welds.
+    // Buildings a worker already welds, on order or on its own.
     let tended: Vec<oxide_sim::BuildingId> = observation
         .my_units
         .iter()
-        .filter(|unit| worker(unit.kind) && unit.repair == Some(RepairWork::Ordered))
+        .filter(|unit| worker(unit.kind) && unit.repair.is_some())
         .filter_map(|unit| match observation.repair_target(unit.id)? {
             Target::Building(building) => Some(building),
             Target::Unit(_) => None,

@@ -109,7 +109,12 @@ fn work_aim(state: &State, unit: &crate::state::Unit) -> Option<Vec2Fx> {
         Order::Build { site } => state
             .building(site)
             .map(|b| state.contact_surface(b).closest(unit.pos)),
-        Order::Repair { building } | Order::Salvage { building } => state
+        Order::Repair { building }
+        | Order::Salvage { building }
+        | Order::Tend {
+            weld: Some(crate::Target::Building(building)),
+            ..
+        } => state
             .building(building)
             .map(|b| state.contact_surface(b).closest(unit.pos)),
         _ => None,
@@ -239,6 +244,10 @@ pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Op
             | Order::Salvage { .. }
             | Order::ReturnCargo { .. }
             | Order::Harvest { .. }
+            | Order::Tend {
+                weld: Some(crate::Target::Building(_)),
+                ..
+            }
     ) {
         return None;
     }
@@ -719,6 +728,10 @@ fn is_anchored(unit: &crate::state::Unit) -> bool {
                         | Order::Salvage { .. }
                         | Order::ReturnCargo { .. }
                         | Order::Retire { .. }
+                        | Order::Tend {
+                            weld: Some(crate::Target::Building(_)),
+                            ..
+                        }
                 ))
 }
 

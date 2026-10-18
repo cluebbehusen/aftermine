@@ -350,15 +350,14 @@ pub(super) fn run(
                 });
                 scout::scout(state, index, &mut reach, danger, id, tile, events);
             }
-            Order::Tend { goal, weld } => tend::tend(
+            Order::Tend { .. } => tend::tend(
                 state,
                 index,
                 &mut reach,
                 &wounded,
                 id,
-                goal,
-                weld,
                 &mut field_welds,
+                &mut builds,
                 events,
             ),
         }
@@ -841,19 +840,8 @@ fn repair_bay_aura(
     // Structures compete for the remaining bank only after every Bay has
     // offered its unit pulses. Building gains share PendingHpGain with crew
     // repair and upgrades, so damage, clamping, and refunds keep one
-    // resolver. Automatic repair must not fight an explicit teardown: the
-    // aura has no order for a salvage command to purge, so skip every target
-    // of an active or queued salvage job.
-    let salvage_targets: std::collections::BTreeSet<BuildingId> = state
-        .units
-        .iter()
-        .filter(|unit| unit.hp > 0)
-        .flat_map(|unit| std::iter::once(&unit.order).chain(unit.queue.iter()))
-        .filter_map(|order| match order {
-            Order::Salvage { building } => Some(*building),
-            _ => None,
-        })
-        .collect();
+    // resolver.
+    let salvage_targets = salvage_commitments(state);
     let mut in_flight: std::collections::BTreeMap<BuildingId, u32> =
         std::collections::BTreeMap::new();
     for bay in bays {
@@ -921,6 +909,22 @@ fn repair_bay_aura(
             });
         }
     }
+}
+
+/// Every target of an active or queued salvage job. Automatic repair must
+/// not fight an explicit teardown, and it has no order for a salvage command
+/// to purge, so it skips these.
+fn salvage_commitments(state: &State) -> std::collections::BTreeSet<BuildingId> {
+    state
+        .units
+        .iter()
+        .filter(|unit| unit.hp > 0)
+        .flat_map(|unit| std::iter::once(&unit.order).chain(unit.queue.iter()))
+        .filter_map(|order| match order {
+            Order::Salvage { building } => Some(*building),
+            _ => None,
+        })
+        .collect()
 }
 
 fn building_distance_sq(a: &crate::state::Building, b: &crate::state::Building) -> chassis::fx::Fx {

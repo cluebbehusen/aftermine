@@ -160,7 +160,8 @@ pub fn commanded(order: Order) -> Order {
 }
 
 /// `state` with idle welding switched off for each of `workers`, for a
-/// test whose premise is a worker standing idle beside a wounded machine.
+/// test whose premise is a worker standing idle beside a wounded machine or
+/// a damaged building.
 /// The switch rides in the snapshot, so no tick passes.
 pub fn idle_welds_off(state: &State, workers: &[oxide_sim::UnitId]) -> State {
     let mut data = serde_json::to_value(state).unwrap();

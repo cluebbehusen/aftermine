@@ -231,7 +231,12 @@ pub(in crate::tick) fn surface_for(
                 _ => None,
             }),
         Order::Build { site } => Some(site),
-        Order::Repair { building } | Order::Salvage { building } => Some(building),
+        Order::Repair { building }
+        | Order::Salvage { building }
+        | Order::Tend {
+            weld: Some(Target::Building(building)),
+            ..
+        } => Some(building),
         Order::ReturnCargo { foundry, .. } => Some(foundry),
         Order::Harvest { .. } if unit.carrying() > 0 => {
             unit.unloading().map(|u| u.foundry).or_else(|| {
