@@ -306,13 +306,12 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
     }
 }
 
-/// Header-eligible autosaves, local and LAN, newest first. Loading must
-/// still validate the payload.
+/// Header-eligible autosaves Continue may resume, newest first. Loading
+/// must still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
-    crate::saves::discover(|| false)
-        .into_iter()
-        .filter(|entry| entry.available() && entry.kind.continues())
-        .map(|entry| entry.path)
+    let entries = crate::saves::discover(|| false);
+    crate::saves::continuable(&entries)
+        .map(|entry| entry.path.clone())
         .collect()
 }
 
