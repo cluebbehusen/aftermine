@@ -27,6 +27,7 @@ use super::environment::{
     BoundaryInsets, LAYERS, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab,
     draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
 };
+use super::stretches::Shapes;
 use crate::game::Scene;
 use crate::numeric;
 use crate::numeric::Fit;
@@ -41,8 +42,6 @@ const MARGIN: i32 = 8;
 const PLATEAU_RADIUS: u8 = 3;
 /// Cells the last off-playfield bench fades over before the void.
 const VIGNETTE_CELLS: i32 = 4;
-/// Cells of a peak's side that step alike.
-const STRETCH: i32 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Side {
@@ -283,176 +282,44 @@ struct Steps {
     lift: usize,
 }
 
-/// A freestanding peak: eight-connected peak tiles clear of the wall.
+/// The freestanding peaks. Spurs that meet the wall are left out and keep
+/// the wall's widths, so their levels join it.
 #[derive(Debug)]
-struct Peak {
-    min: TilePos,
-    max: TilePos,
-    /// Steps as its half-turn mirror does, read from the mirrored cell.
-    mirrored: bool,
-    /// Its own half-turn mirror, so opposite sides share their stretches.
-    folded: bool,
-    seed: i32,
-    /// At most two tiles across: too thin to step.
-    thin: bool,
-}
-
-/// The freestanding peaks and which one owns each map tile. Spurs that meet
-/// the wall keep the wall's widths so their levels join it.
-#[derive(Debug)]
-struct Peaks {
-    width: i32,
-    height: i32,
-    owner: Vec<Option<usize>>,
-    shapes: Vec<Peak>,
-}
+struct Peaks(Shapes);
 
 impl Peaks {
     fn find(map: &Map, frame: &Frame) -> Self {
-        let (width, height) = (map.width(), map.height());
-        let index = |pos: TilePos| as_index(pos.y * width + pos.x);
-        let is_peak = |pos: TilePos| {
-            frame.contains(pos)
-                && map
-                    .tile(pos)
-                    .is_some_and(|tile| tile.terrain == Terrain::Peak)
-        };
-        let mut seen = vec![false; as_index(width * height)];
-        let mut owner = vec![None; as_index(width * height)];
-        let mut shapes = Vec::new();
-        for y in 0..height {
-            for x in 0..width {
-                let start = TilePos::new(x, y);
-                if !is_peak(start) || seen[index(start)] {
-                    continue;
-                }
-                seen[index(start)] = true;
-                let mut tiles = vec![start];
-                let mut spur = false;
-                let mut next = 0;
-                while next < tiles.len() {
-                    let pos = tiles[next];
-                    next += 1;
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            let near = pos.offset(dx, dy);
-                            spur |= !frame.contains(near);
-                            if is_peak(near) && !seen[index(near)] {
-                                seen[index(near)] = true;
-                                tiles.push(near);
-                            }
-                        }
-                    }
-                }
-                if spur {
-                    continue;
-                }
-                let min = TilePos::new(
-                    tiles.iter().map(|p| p.x).min().unwrap_or(x),
-                    tiles.iter().map(|p| p.y).min().unwrap_or(y),
-                );
-                let max = TilePos::new(
-                    tiles.iter().map(|p| p.x).max().unwrap_or(x),
-                    tiles.iter().map(|p| p.y).max().unwrap_or(y),
-                );
-                let mirror_min = TilePos::new(width - 1 - max.x, height - 1 - max.y);
-                let mirror_max = TilePos::new(width - 1 - min.x, height - 1 - min.y);
-                let mirrored = (mirror_min.y, mirror_min.x, mirror_max.y, mirror_max.x)
-                    < (min.y, min.x, max.y, max.x);
-                let (low, high) = if mirrored {
-                    (mirror_min, mirror_max)
-                } else {
-                    (min, max)
-                };
-                let id = shapes.len();
-                for pos in &tiles {
-                    owner[index(*pos)] = Some(id);
-                }
-                shapes.push(Peak {
-                    min: low,
-                    max: high,
-                    mirrored,
-                    folded: (mirror_min, mirror_max) == (min, max),
-                    seed: hash(low.x + high.x * 257, low.y + high.y * 257, SALT + 313)
-                        .cast_signed(),
-                    thin: (max.x - min.x + 1).min(max.y - min.y + 1) <= 2,
-                });
-            }
-        }
-        Self {
-            width,
-            height,
-            owner,
-            shapes,
-        }
+        Self(Shapes::find(
+            map.width(),
+            map.height(),
+            |pos| {
+                frame.contains(pos)
+                    && map
+                        .tile(pos)
+                        .is_some_and(|tile| tile.terrain == Terrain::Peak)
+            },
+            |pos| frame.contains(pos),
+            SALT + 313,
+        ))
     }
 
     /// How a cell of a freestanding peak steps; `None` elsewhere.
     fn steps(&self, cx: i32, cy: i32) -> Option<Steps> {
-        let (tx, ty) = (cx.div_euclid(CELLS), cy.div_euclid(CELLS));
-        if tx < 0 || ty < 0 || tx >= self.width || ty >= self.height {
-            return None;
-        }
-        let peak = &self.shapes[self.owner[as_index(ty * self.width + tx)]?];
-        let (cx, cy) = if peak.mirrored {
-            (self.width * CELLS - 1 - cx, self.height * CELLS - 1 - cy)
-        } else {
-            (cx, cy)
-        };
-        let (x0, y0) = (peak.min.x * CELLS, peak.min.y * CELLS);
-        let (x1, y1) = ((peak.max.x + 1) * CELLS - 1, (peak.max.y + 1) * CELLS - 1);
-        let (across, down) = (x1 - x0 + 1, y1 - y0 + 1);
-        // The nearest side, and how far along it clockwise from its first
-        // corner.
-        let (_, side, along, length) = [
-            (cy - y0, 0, cx - x0, across),
-            (x1 - cx, 1, cy - y0, down),
-            (y1 - cy, 2, x1 - cx, across),
-            (cx - x0, 3, y1 - cy, down),
-        ]
-        .into_iter()
-        .min()
-        .unwrap_or((0, 0, 0, 1));
-        let fold = |n: i32| if peak.folded { n % 2 } else { n };
-        // A side's first and last stretches belong to its corners, so the
-        // first bench meets itself square at a corner.
-        let parts = ((length + STRETCH / 2) / STRETCH).max(2);
-        let stretch = |along: i32| {
-            let part = (along.clamp(0, length - 1) * parts / length).min(parts - 1);
-            if part == 0 {
-                100 + fold(side)
-            } else if part == parts - 1 {
-                100 + fold((side + 1) % 4)
-            } else {
-                fold(side) * 64 + part
-            }
-        };
-        if peak.thin {
-            // A thin peak changes height only along its length, across its
-            // whole thickness, in long stretches.
-            let (along, length) = if across >= down {
-                (cx - x0, across)
-            } else {
-                (cy - y0, down)
-            };
-            let parts = (length / (4 * STRETCH)).max(1);
-            let part = (along * parts / length).min(parts - 1);
-            let part = if peak.folded {
-                part.min(parts - 1 - part)
-            } else {
-                part
-            };
-            let height = hash(peak.seed, 200 + part, SALT + 314) % 100;
+        let place = self.0.place(cx, cy)?;
+        if place.thin {
+            // Too thin to step: each stretch of its length stands at one of
+            // two heights instead.
+            let height = hash(place.seed, place.length, SALT + 314) % 100;
             return Some(Steps {
                 widths: [2, 2, 2],
                 lift: usize::from(height >= 45),
             });
         }
-        let first = hash(peak.seed, stretch(along), SALT + 314) % 100;
-        // The second bench jogs on stretches offset by half a stretch, so
-        // the two levels never jog in lockstep.
-        let second = hash(peak.seed, stretch(along + STRETCH / 2), SALT + 315) % 10;
-        let own = hash(peak.seed, 0, SALT + 316);
+        let first = hash(place.seed, place.stretch, SALT + 314) % 100;
+        // The second bench jogs on the offset stretches, so the two levels
+        // never jog in lockstep.
+        let second = hash(place.seed, place.offset, SALT + 315) % 10;
+        let own = hash(place.seed, 0, SALT + 316);
         let w0 = match first {
             0..25 => 1,
             25..50 => 2,
@@ -476,11 +343,7 @@ impl Peaks {
     }
 
     fn owns(&self, pos: TilePos) -> bool {
-        pos.x >= 0
-            && pos.y >= 0
-            && pos.x < self.width
-            && pos.y < self.height
-            && self.owner[as_index(pos.y * self.width + pos.x)].is_some()
+        self.0.owns(pos)
     }
 }
 

@@ -69,7 +69,15 @@ fn flat_field(cells: i32) -> PitField {
             cells: CELLS,
             depth: vec![u8::MAX; as_index(cells * cells)],
         },
+        pits: Shapes::find(0, 0, |_| false, |_| true, SALT),
     }
+}
+
+/// The pit field over authored rows: `~` pit, `.` ground.
+fn pits(rows: &[&str]) -> PitField {
+    let rows: Vec<String> = rows.iter().map(|row| (*row).to_string()).collect();
+    let (map, _) = Map::parse(&rows).expect("rows parse");
+    PitField::build(&map)
 }
 
 #[test]
@@ -82,6 +90,77 @@ fn chessboard_distance_is_exact_from_a_flat_field() {
         for x in 0..12i32 {
             let expected = (x - 6).abs().max((y - 6).abs()).fit::<u8>();
             assert_eq!(field.field.cell(x, y), expected, "cell {x},{y}");
+        }
+    }
+}
+
+#[test]
+fn a_pit_clear_of_the_edge_steps_by_stretch_within_the_padding() {
+    let field = pits(&[
+        "..............................",
+        "..~~~~~~~~~~~~~~~~~~~~~~~~~~..",
+        "..~~~~~~~~~~~~~~~~~~~~~~~~~~..",
+        "..~~~~~~~~~~~~~~~~~~~~~~~~~~..",
+        "..~~~~~~~~~~~~~~~~~~~~~~~~~~..",
+        "..~~~~~~~~~~~~~~~~~~~~~~~~~~..",
+        "..............................",
+    ]);
+    let mut firsts = std::collections::BTreeSet::new();
+    for cy in CELLS..6 * CELLS {
+        for cx in 2 * CELLS..28 * CELLS {
+            let widths = field.widths(cx, cy);
+            assert!(widths.iter().all(|w| (1..=MAX_BENCH_CELLS).contains(w)));
+            let depth: i32 = widths.iter().map(|w| 1 + w).sum::<i32>() + VIGNETTE_CELLS;
+            assert!(depth <= MAX_DEPTH);
+            firsts.insert(widths[0]);
+        }
+    }
+    assert!(firsts.len() > 1, "the rim never varies");
+}
+
+#[test]
+fn a_pit_running_off_the_map_keeps_its_block_jogs() {
+    let field = pits(&["~~~.......", "~~~.......", "~~~.......", ".........."]);
+    for cy in 0..3 * CELLS {
+        for cx in 0..3 * CELLS {
+            assert_eq!(
+                field.widths(cx, cy),
+                bench_widths(cx / CELLS / BLOCK_TILES, cy / CELLS / BLOCK_TILES)
+            );
+        }
+    }
+}
+
+#[test]
+fn mirrored_pits_drop_as_mirror_images() {
+    let rows = [
+        "..................",
+        "..~~~~~~..........",
+        "..~~~~~~~~........",
+        "..~~~~~~~~........",
+        "..~~~~~~..........",
+        "..................",
+        "..........~~~~~~..",
+        "........~~~~~~~~..",
+        "........~~~~~~~~..",
+        "..........~~~~~~..",
+        "..................",
+    ];
+    let field = pits(&rows);
+    let (width, height) = (18, 11);
+    for ty in 0..height {
+        for tx in 0..width {
+            for sy in 0..CELLS {
+                for sx in 0..CELLS {
+                    let here = field.material_at(TilePos::new(tx, ty), sx, sy);
+                    let there = field.material_at(
+                        TilePos::new(width - 1 - tx, height - 1 - ty),
+                        CELLS - 1 - sx,
+                        CELLS - 1 - sy,
+                    );
+                    assert_eq!(here, there, "tile {tx},{ty} cell {sx},{sy}");
+                }
+            }
         }
     }
 }
