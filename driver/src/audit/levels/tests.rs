@@ -21,7 +21,7 @@ const LEVELS: [&str; 11] = [
     "22222222222222",
     "22222222222222",
     "22222111222222",
-    "22222111222222",
+    "11111111111111",
     "11111111111111",
     "11111111111111",
     "11111111111111",
@@ -91,7 +91,7 @@ fn a_narrow_ramp_is_refused() {
     let mut levels = owned(&LEVELS);
     for y in 4..=6 {
         rows = with(rows, 7, y, if y == 5 { '=' } else { '.' });
-        levels = with(levels, 7, y, if y == 6 { '1' } else { '2' });
+        levels = with(levels, 7, y, if y == 4 { '2' } else { '1' });
     }
     let faults = faults_of(&rows, &levels);
     assert!(

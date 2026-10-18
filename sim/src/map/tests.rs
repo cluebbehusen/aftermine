@@ -57,7 +57,7 @@ fn ascii_roundtrip() {
 /// A plateau at level 2 over a floor at level 1: a cliff between them and a
 /// ramp through it.
 const TIERED: [&str; 4] = ["....", "=/==", "....", "...."];
-const TIERED_LEVELS: [&str; 4] = ["2222", "2122", "1111", "1111"];
+const TIERED_LEVELS: [&str; 4] = ["2222", "1111", "1111", "1111"];
 
 #[test]
 fn tiered_rows_parse_and_round_trip() {
@@ -82,7 +82,7 @@ fn tiered_rows_parse_and_round_trip() {
 
 #[test]
 fn levels_past_nine_use_letters() {
-    let levels = ["bbbb", "baba", "aaaa", "aaaa"];
+    let levels = ["bbbb", "aaaa", "aaaa", "aaaa"];
     let (map, _) = Map::parse_tiered(&["....", "=/=/", "....", "...."], &levels).unwrap();
     assert_eq!(
         map.elevation(TilePos::new(0, 0)),
@@ -157,13 +157,13 @@ fn levels_meet_only_through_cliffs_and_ramps() {
         Map::parse_tiered(&["...", "./.", "..."], &["333", "313", "111"]),
         Err(MapError::LevelBreak(_))
     ));
-    // A cliff stands no lower than the ground beside it.
+    // A cliff stands no higher than the ground beside it.
     assert!(matches!(
-        Map::parse_tiered(&["...", "===", "..."], &["222", "111", "111"]),
+        Map::parse_tiered(&["...", "===", "..."], &["222", "222", "111"]),
         Err(MapError::LevelBreak(_))
     ));
     // Two levels apart behind one cliff is a taller cliff, which is fine.
-    assert!(Map::parse_tiered(&["...", "===", "..."], &["333", "333", "111"]).is_ok());
+    assert!(Map::parse_tiered(&["...", "===", "..."], &["333", "111", "111"]).is_ok());
 }
 
 #[test]
