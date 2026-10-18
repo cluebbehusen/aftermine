@@ -624,7 +624,12 @@ fn order_subject(
                 Some(frac),
             ))
         }
-        Order::Repair { building } | Order::Salvage { building } => {
+        Order::Repair { building }
+        | Order::Salvage { building }
+        | Order::Tend {
+            weld: Some(oxide_sim::Target::Building(building)),
+            ..
+        } => {
             let b = game.state.building(*building)?;
             let frac = (b.hp as f32 / b.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
             Some((
@@ -673,7 +678,8 @@ fn order_subject(
         }
         Order::RepairUnit { unit }
         | Order::Tend {
-            weld: Some(unit), ..
+            weld: Some(oxide_sim::Target::Unit(unit)),
+            ..
         } => {
             let u = game.state.unit(*unit)?;
             let frac = (u.hp as f32 / u.kind.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
@@ -978,7 +984,8 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
         }
         Order::RepairUnit { unit }
         | Order::Tend {
-            weld: Some(unit), ..
+            weld: Some(oxide_sim::Target::Unit(unit)),
+            ..
         } => {
             let u = game.state.unit(*unit)?;
             Some(format!("{}/{} hp", u.hp, u.kind.stats().max_hp))

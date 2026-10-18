@@ -129,6 +129,17 @@ fn run(state: &mut State, ticks: u32) {
 
 /// The base snapshot the forgeries are cut from: a few ticks in, so
 /// orders, walks, and memories are real rather than freshly assembled.
+/// The id of the Foundry `player` owns in the document `d`.
+fn foundry_of(d: &Value, player: &Value) -> Value {
+    d["buildings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| &b["player"] == player && b["kind"] == "foundry")
+        .unwrap()["id"]
+        .clone()
+}
+
 fn snapshot() -> Value {
     let mut state = arena().build().unwrap();
     let (harvester, bombard) = (state.units()[0].id, state.units()[1].id);
@@ -444,7 +455,8 @@ fn tending_walks_and_switched_off_workers_are_legal() {
     let bombard = snapshot()["units"][1]["id"].clone();
     // A trip from an idle post welding the Bombard, alone in its program.
     let mut trip = snapshot();
-    trip["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": bombard});
+    trip["units"][0]["order"] =
+        json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": {"kind": "unit", "id": bombard}});
     trip["units"][0].as_object_mut().unwrap().remove("queue");
     trip["units"][0]["worker"]["idle_weld_off"] = json!(true);
     let state: State = serde_json::from_value(trip).expect("a trip is legal");
@@ -455,10 +467,20 @@ fn tending_walks_and_switched_off_workers_are_legal() {
     let mut patrol = snapshot();
     patrol["units"][0]["looping"] = json!(true);
     patrol["units"][0]["order"] =
-        json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": bombard});
+        json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": {"kind": "unit", "id": bombard}});
     patrol["units"][0]["queue"] = json!([{"order": "tend", "goal": {"x": 3, "y": 3}}]);
     let state: State = serde_json::from_value(patrol).expect("a tending patrol is legal");
     assert!(!state.units()[0].on_idle_trip());
+    // A trip welding the worker's own Foundry.
+    let mut repair = snapshot();
+    let foundry = foundry_of(&repair, &repair["units"][0]["player"]);
+    repair["units"][0]["order"] = json!({
+        "order": "tend",
+        "goal": {"x": 6, "y": 2},
+        "weld": {"kind": "building", "id": foundry},
+    });
+    repair["units"][0].as_object_mut().unwrap().remove("queue");
+    serde_json::from_value::<State>(repair).expect("tending an own building is legal");
     // A switched-off worker riding a transport, reached by play.
     let mut scenario = arena();
     scenario.buildings.clear();
@@ -1330,8 +1352,19 @@ fn every_checklist_row_refuses_its_forgery() {
             "a tending weld on an enemy unit",
             |d| {
                 let enemy = d["units"][2]["id"].clone();
-                d["units"][0]["order"] =
-                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": enemy});
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": {"kind": "unit", "id": enemy}});
+            },
+            "unit u0 has an invalid tending walk",
+        ),
+        (
+            "a tending weld on an enemy building",
+            |d| {
+                let enemy = foundry_of(d, &d["units"][2]["player"]);
+                d["units"][0]["order"] = json!({
+                    "order": "tend",
+                    "goal": {"x": 6, "y": 2},
+                    "weld": {"kind": "building", "id": enemy},
+                });
             },
             "unit u0 has an invalid tending walk",
         ),
@@ -1339,8 +1372,7 @@ fn every_checklist_row_refuses_its_forgery() {
             "a tending weld on the welder itself",
             |d| {
                 let own = d["units"][0]["id"].clone();
-                d["units"][0]["order"] =
-                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": own});
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": {"kind": "unit", "id": own}});
             },
             "has an invalid tending walk",
         ),
@@ -1350,8 +1382,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 let bombard = d["units"][1]["id"].clone();
                 d["units"][0]["looping"] = json!(true);
                 d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}});
-                d["units"][0]["queue"] =
-                    json!([{"order": "tend", "goal": {"x": 3, "y": 3}, "weld": bombard}]);
+                d["units"][0]["queue"] = json!([{"order": "tend", "goal": {"x": 3, "y": 3}, "weld": {"kind": "unit", "id": bombard}}]);
             },
             "has an invalid tending walk",
         ),
@@ -1372,10 +1403,20 @@ fn every_checklist_row_refuses_its_forgery() {
             "has an invalid tending walk",
         ),
         (
+            "a tending weld on an unminted building",
+            |d| {
+                d["units"][0]["order"] = json!({
+                    "order": "tend",
+                    "goal": {"x": 6, "y": 2},
+                    "weld": {"kind": "building", "id": 999},
+                });
+            },
+            "unit u0 is ordered against an id the run never minted",
+        ),
+        (
             "a tending weld on an unminted unit",
             |d| {
-                d["units"][0]["order"] =
-                    json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": 999});
+                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": 6, "y": 2}, "weld": {"kind": "unit", "id": 999}});
             },
             "unit u0 is ordered against an id the run never minted",
         ),

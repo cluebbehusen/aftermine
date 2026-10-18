@@ -7,7 +7,7 @@ use super::PendingFieldWeld;
 use super::economy::{approach_patient, metered, patient_approaches, patient_rank};
 use super::locomotion::walk;
 use crate::event::Event;
-use crate::ids::UnitId;
+use crate::ids::{Target, UnitId};
 use crate::state::{Goal, Order, State, Unit};
 use crate::stats::UnitKind;
 use crate::stats::{Domain, ESCORT_ENGAGE_RADIUS, next_paid_unit_repair_debit};
@@ -81,7 +81,7 @@ pub(super) fn start(state: &mut State, reach: &mut Reach, wounded: &Wounded, id:
     let unit = state.unit_mut(id).expect("caller checked");
     unit.order = Order::Tend {
         goal: Goal::at(post),
-        weld: Some(patient),
+        weld: Some(Target::Unit(patient)),
     };
     unit.path = None;
     unit.progress = 0;
@@ -101,7 +101,7 @@ pub(super) fn tend(
     wounded: &Wounded,
     id: UnitId,
     goal: Goal,
-    weld: Option<UnitId>,
+    weld: Option<Target>,
     welds: &mut Vec<PendingFieldWeld>,
     events: &mut Vec<Event>,
 ) {
@@ -114,14 +114,14 @@ pub(super) fn tend(
     };
     let patient = if looping || unit.idle_weld() {
         weld.filter(|&patient| keeps(state, wounded, id, patient, center, meter))
-            .or_else(|| pick(state, reach, wounded, id, center))
+            .or_else(|| pick(state, reach, wounded, id, center).map(Target::Unit))
     } else {
         None
     };
     if patient != weld {
         set_weld(state, id, patient);
     }
-    if let Some(patient) = patient {
+    if let Some(Target::Unit(patient)) = patient {
         let (welder, wounded) = (
             state.unit(id).expect("caller checked"),
             state.unit(patient).expect("a captured patient lives"),
@@ -144,7 +144,7 @@ pub(super) fn tend(
 
 /// Writes the welder's patient, resetting its billing meter when the patient
 /// changes: the meter ramps along one patient's training clock.
-fn set_weld(state: &mut State, id: UnitId, patient: Option<UnitId>) {
+fn set_weld(state: &mut State, id: UnitId, patient: Option<Target>) {
     let unit = state.unit_mut(id).expect("caller checked");
     if let Order::Tend { weld, .. } = &mut unit.order
         && *weld != patient
@@ -181,12 +181,12 @@ fn keeps(
     state: &State,
     wounded: &Wounded,
     welder: UnitId,
-    patient: UnitId,
+    patient: Target,
     center: Vec2Fx,
     meter: u32,
 ) -> bool {
     in_range(state, wounded, welder, center, meter)
-        .any(|p| p.id == patient && (p.still || p.torch == Some(welder)))
+        .any(|p| Target::Unit(p.id) == patient && (p.still || p.torch == Some(welder)))
 }
 
 /// The patient `welder` takes on next: of those standing still in range,

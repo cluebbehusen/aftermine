@@ -210,11 +210,16 @@ pub(crate) fn breadcrumb_points(
             | oxide_sim::Order::Salvage { building }
             | oxide_sim::Order::Retire {
                 crucible: building, ..
+            }
+            | oxide_sim::Order::Tend {
+                weld: Some(oxide_sim::Target::Building(building)),
+                ..
             } => world_vec(game.state.building(*building)?.center()),
             // A repair patient is the viewer's own machine, so it is always seen.
             oxide_sim::Order::RepairUnit { unit }
             | oxide_sim::Order::Tend {
-                weld: Some(unit), ..
+                weld: Some(oxide_sim::Target::Unit(unit)),
+                ..
             } => tile_center(game.state.unit(*unit)?.tile()),
             oxide_sim::Order::Tend { goal, weld: None } => tile_center(goal.tile()),
             oxide_sim::Order::Board { transport } => {
