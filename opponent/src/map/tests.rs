@@ -586,3 +586,49 @@ fn no_building_spot_covers_a_ramp() {
         "open floor below the ramp still takes a building"
     );
 }
+
+#[test]
+fn expansion_anchors_stay_off_ramps() {
+    // A scrap field at the foot of a broad ramp: the nearest footprints
+    // above it would stand on the ramp.
+    let mut rows: Vec<String> = Vec::new();
+    let mut levels: Vec<String> = Vec::new();
+    for y in 0..32 {
+        let mut row = String::new();
+        let mut glyphs = String::new();
+        for x in 0..56 {
+            row.push(match (x, y) {
+                (0 | 55, _) | (_, 0 | 31) => '#',
+                (1, 1) => '1',
+                (53, 29) => '2',
+                (27 | 28, 15) => 's',
+                (20..=35, 12 | 13) => '/',
+                (_, 12 | 13) => '=',
+                _ => '.',
+            });
+            glyphs.push(if y <= 11 { '1' } else { '0' });
+        }
+        rows.push(row);
+        levels.push(glyphs);
+    }
+    let (map, anchors) = Map::parse_tiered(&rows, &levels).unwrap();
+    let model = MapModel::new(&map, &anchors, vec![None; 2]);
+    let site = model
+        .sites()
+        .iter()
+        .find(|site| {
+            site.nodes
+                .iter()
+                .any(|(node, _)| *node == TilePos::new(27, 15))
+        })
+        .expect("the field is a site");
+    assert!(!site.anchors.is_empty());
+    for anchor in &site.anchors {
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            assert!(
+                !map.is_ramp(anchor.offset(dx, dy)),
+                "{anchor:?} puts a Foundry on the ramp"
+            );
+        }
+    }
+}

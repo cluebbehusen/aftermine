@@ -422,19 +422,24 @@ pub(in crate::tick::brain) fn attack_known(
     };
     // Escort duty bounds the fight by the escorted unit. A victim within
     // the break radius of it is chased wherever the escort is. One past it is
-    // fought only from where the escort stands, in its own reach and while
-    // the escort is within the break radius itself. An escorted unit that
-    // has left play sends the escort back to its slot too.
+    // fought only from where the escort stands, in its own reach, on a level
+    // its weapon may fire at, and while the escort is within the break radius
+    // itself. An escorted unit that has left play sends the escort back to
+    // its slot too.
     if let Some(Resume::Accompany(escorted)) = resume {
         let bound = crate::stats::ESCORT_BREAK_RADIUS * crate::stats::ESCORT_BREAK_RADIUS;
+        let aim = view.aim_from(pos);
+        let shooter = ShotEnd::new(pos, kind.stats().domain);
+        let victim = ShotEnd::new(aim, view.domain).on(view.footing());
         let in_reach = kind.stats().weapons.iter().any(|weapon| {
             weapon.targets.covers(view.domain)
                 && within_weapon_reach(
                     weapon,
-                    pos.dist_sq(view.aim_from(pos)),
+                    pos.dist_sq(aim),
                     view.entity
                         .map_or(Fx::ZERO, |target| target_excess(state, target)),
                 )
+                && levels_allow(state, Fire::of(weapon), shooter, victim)
         });
         if state.escorted(escorted).is_none_or(|body| {
             view.position.dist_sq(body.pos) > bound && (!in_reach || pos.dist_sq(body.pos) > bound)
