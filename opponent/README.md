@@ -209,21 +209,21 @@ inside the base or not, whose approach nothing covers when attackers stand near
 it, one unfinished at a time beside each.
 
 Arrays watch the far part of those approaches: a site is worth the points out
-there that nothing the seat owns sees yet, and its radar lets Bastions fire that
-far. A Barricade goes a tile in front of a Turret or Bastion that has none, on
-the side of the threat; like a packed building, it is refused at purchase when
-it would close a way out. Guns, Arrays, Barricades and Repair Bays stand off the
-lanes of the base's layout. Once a Fabricator stands, Scuttle Charges mine the
-straight way in to each base and Extractor on its own: the lanes within a band
-about a blast wide, filled from a few tiles beyond the edge toward the threat,
-or across the gates of the cut it holds, each by its width and the share of its
-way on the guns leave open. On ground no Foundry lays out they may go anywhere.
-A buried charge blocks nothing and a blast never sets off the seat's own
-charges, so they stand side by side. A field holds enough charges to deal the
-health of the threat along the way divided by that margin, in the share of the
-approach the guns leave open, one body to a blast, the threat counting at least
-an army of Sentinels at the stance's minimum. Fortification weighs Barricades;
-fortification and guile weigh Arrays and charges.
+there that nothing the seat owns sees, or will once built, and its radar lets
+Bastions fire that far. A Barricade goes a tile in front of a Turret or Bastion
+that has none, on the side of the threat; like a packed building, it is refused
+at purchase when it would close a way out. Guns, Arrays, Barricades and Repair
+Bays stand off the lanes of the base's layout. Once a Fabricator stands, Scuttle
+Charges mine the straight way in to each base and Extractor on its own: the
+lanes within a band about a blast wide, filled from a few tiles beyond the edge
+toward the threat, or across the gates of the cut it holds, each by its width
+and the share of its way on the guns leave open. On ground no Foundry lays out
+they may go anywhere. A buried charge blocks nothing and a blast never sets off
+the seat's own charges, so they stand side by side. A field holds enough charges
+to deal the health of the threat along the way divided by that margin, in the
+share of the approach the guns leave open, one body to a blast, the threat
+counting at least an army of Sentinels at the stance's minimum. Fortification
+weighs Barricades; fortification and guile weigh Arrays and charges.
 
 A Repair Bay goes up beside a guarded base's building where its aura reaches the
 most missing value among the seat's resting units missing at least a tenth of

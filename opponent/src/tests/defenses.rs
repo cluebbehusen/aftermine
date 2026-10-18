@@ -678,6 +678,58 @@ fn an_array_watches_the_way_in_and_lets_a_bastion_fire_further() {
 }
 
 #[test]
+fn an_array_going_up_already_watches_the_way_in_but_spots_for_nothing_yet() {
+    let mut scenario = fabricated(90);
+    let state = scenario.build().unwrap();
+    let bare = wanted(&scenario, &state, &Memory::default(), 85);
+    let (array, _) = offer(&bare, BuildingKind::Array).expect("an Array is wanted");
+
+    // A Harvester standing on the site steps aside for it.
+    scenario
+        .units
+        .retain(|unit| (unit.x, unit.y) != (array.x, array.y));
+    let mut going_up = scenario.build().unwrap();
+    let builder = at(&going_up, 2, 6);
+    going_up.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![builder],
+            kind: BuildingKind::Array,
+            anchor: array,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    assert!(
+        going_up.buildings().iter().any(|building| {
+            building.kind == BuildingKind::Array
+                && building.anchor == array
+                && building.under_construction()
+                && !building.provisional()
+        }),
+        "premise: the Array is a site"
+    );
+    let unfinished = wanted(&scenario, &going_up, &Memory::default(), 85);
+    assert!(
+        offer(&unfinished, BuildingKind::Array).is_none(),
+        "an Array going up already watches the way in: {unfinished:?}"
+    );
+
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Array, array.x, array.y));
+    let built = scenario.build().unwrap();
+    let watched = wanted(&scenario, &built, &Memory::default(), 85);
+    let bastion = |wanted: &[(Investment, u32)]| {
+        offer(wanted, BuildingKind::Bastion).map_or(0, |(_, score)| score)
+    };
+    assert!(
+        bastion(&unfinished) < bastion(&watched),
+        "only a built Array spots for the Bastion: {unfinished:?} then {watched:?}"
+    );
+}
+
+#[test]
 fn an_array_watches_for_aircraft_where_no_ground_threat_is_known() {
     let mut scenario = settled(0);
     for row in &mut scenario.map[1..11] {

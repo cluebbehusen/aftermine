@@ -70,11 +70,16 @@ impl<'a> Guard<'a> {
             .filter_map(|building| Cover::of(building.kind, building.tier, building.anchor))
             .collect();
         let sight = sight(observation);
-        let seen = |point: (i64, i64)| {
-            sight
-                .iter()
-                .any(|(centre, reach2)| distance2(*centre, point) <= *reach2)
+        // An indirect gun fires only where something sees now, but an Array
+        // still going up will watch its ground: counting it keeps the next
+        // decision from buying another beside it.
+        let sees = |point: (i64, i64), unfinished: bool| {
+            sight.iter().any(|(centre, reach2, built)| {
+                (*built || unfinished) && distance2(*centre, point) <= *reach2
+            })
         };
+        let seen = |point| sees(point, false);
+        let watched = |point| sees(point, true);
         let current = in_sight(observation, map);
         let mut assets = match scope {
             Scope::Bases => bases(observation, map, frame),
@@ -115,10 +120,10 @@ impl<'a> Guard<'a> {
                     beside,
                     stakes,
                 );
-                cover(approach, domain, centre, &covers, &seen);
+                cover(approach, domain, centre, &covers, &seen, &watched);
             }
         }
-        watch_missiles(observation, frame, &mut assets, &seen);
+        watch_missiles(observation, frame, &mut assets, &watched);
         let crews = crews(observation, map);
         Some(Guard {
             observation,
@@ -136,20 +141,22 @@ impl<'a> Guard<'a> {
     }
 }
 
-/// Where own and allied buildings see or pick up by radar: each one's centre
-/// and its squared doubled reach.
-fn sight(observation: &ObservationData) -> Vec<((i64, i64), i64)> {
+/// Where own and allied buildings, built or with their ground verified, see
+/// or pick up by radar once built: each one's centre, its squared doubled
+/// reach, and whether it is built.
+fn sight(observation: &ObservationData) -> Vec<((i64, i64), i64, bool)> {
     observation
         .my_buildings
         .iter()
         .chain(&observation.ally_buildings)
-        .filter(|building| building.built)
+        .filter(|building| !building.provisional)
         .map(|building| {
             let vision = i64::from(building.kind.tier_stats(building.tier).vision);
             let reach = vision.max(radar(building.kind, building.tier));
             (
                 footprint_centre(building.kind, building.anchor),
                 4 * reach * reach,
+                building.built,
             )
         })
         .collect()
@@ -185,13 +192,15 @@ fn shared(
 /// How `approach`, a way in to the building at `centre` in `domain`, is
 /// covered: the cover that holds its threat off, how far short own `covers`
 /// fall at each sample, which samples own buildings see, and the points
-/// further along where an Array watches.
+/// further along where an Array watches, with those own buildings will
+/// watch once built.
 fn cover(
     approach: &mut Approach,
     domain: Domain,
     centre: (i64, i64),
     covers: &[Cover],
     seen: &impl Fn((i64, i64)) -> bool,
+    watched: &impl Fn((i64, i64)) -> bool,
 ) {
     let need = approach.threat.value * 1_000 / ATTACKER_MARGIN;
     approach.need = need;
@@ -221,16 +230,20 @@ fn cover(
             .collect(),
         None => along(centre, approach.source, approach.edge, &FAR),
     };
-    approach.far = far.into_iter().map(|point| (point, seen(point))).collect();
+    approach.far = far
+        .into_iter()
+        .map(|point| (point, watched(point)))
+        .collect();
 }
 
 /// Marks, for each asset an own Lattice guards, where a warhead from the
-/// nearest known Spire would cross into the Lattice's ring.
+/// nearest known Spire would cross into the Lattice's ring, and which of
+/// those points own buildings watch, or will once built.
 fn watch_missiles(
     observation: &ObservationData,
     frame: HomeFrame,
     assets: &mut [Asset],
-    seen: &impl Fn((i64, i64)) -> bool,
+    watched: &impl Fn((i64, i64)) -> bool,
 ) {
     let spires = spire_sources(observation);
     let ring = lattice_ring();
@@ -254,7 +267,7 @@ fn watch_missiles(
             let tiles = RING_WATCH.map(|offset| ring + offset);
             asset.missile = along(asset.centre, spire, 0, &tiles)
                 .into_iter()
-                .map(|point| (point, seen(point)))
+                .map(|point| (point, watched(point)))
                 .collect();
         }
     }
