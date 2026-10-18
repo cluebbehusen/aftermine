@@ -338,6 +338,9 @@ fn passive_income_matches_the_bank() {
         .position(|building| building["kind"] == "reclaimer")
         .unwrap();
     value["buildings"][reclaimer]["tier"] = serde_json::json!(1);
+    // The forged Refinery keeps its Reclaimer hull, short of its own
+    // maximum, and the harvester stands by rather than spending on it.
+    value["units"][0]["worker"]["idle_weld_off"] = serde_json::json!(true);
     let state: State = serde_json::from_value(value).unwrap();
     let before = state.players()[0].scrap;
     let (state, ledgers) = play(state, 3_000, Vec::new());
