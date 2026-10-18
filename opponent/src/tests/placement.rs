@@ -221,11 +221,7 @@ fn a_tiered_base_never_lays_a_foundation_on_a_ramp() {
         *row = cells;
     }
     scenario.levels = (0..scenario.map.len())
-        .map(|y| {
-            (0..48)
-                .map(|_| if y <= 6 { '2' } else { '1' })
-                .collect()
-        })
+        .map(|y| (0..48).map(|_| if y <= 6 { '2' } else { '1' }).collect())
         .collect();
     scenario.players[0].scrap = 3_000;
     scenario.units = (5..=7)
