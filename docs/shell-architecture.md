@@ -667,9 +667,11 @@ controller memory.
 A named save reserves a collision-free destination; an unnamed save replaces its
 slot's file. Both use the chassis atomic-write path. Failures are reported to
 the player. Checkpoint discovery reads metadata only: eligibility is not full
-validation. Continue tries eligible autosaves newest first on the worker,
-skipping corrupt payloads and installing the already restored result. Saves in
-an unsupported format are listed as unavailable and left on disk.
+validation. Continue considers only eligible autosaves written after the newest
+recording in the matches folder, so a finished match withdraws every session
+left before it. It tries them newest first on the worker, skipping corrupt
+payloads and installing the already restored result. Saves in an unsupported
+format are listed as unavailable and left on disk.
 
 `Game::from_replay` reconstructs state from the recorded commands. Bots observe
 reconstruction to restore their controller-local memory, but their regenerated

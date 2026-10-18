@@ -13,7 +13,7 @@ pub enum Out {
     Stay,
     /// Take back a seat in a running LAN match.
     Rejoin,
-    /// Resume the newest autosave.
+    /// Resume the match left since the last finished one.
     Continue,
     /// Open the New Match wizard.
     Play,
