@@ -41,7 +41,11 @@ while reusable game-independent primitives stay in `chassis`.
 - `build` describes the executable that recorded or wrote a file. The host
   supplies it; the kit never probes Git or embeds a sibling executable's
   revision.
-- `load_replay` owns bounded, strict Oxide replay loading.
+- `load_replay` and `load_recording` own bounded, strict Oxide replay loading;
+  `save_recording` writes the compressed `.oxreplay` container.
+- `keyframes` holds the worlds a recording stores every 1,024 ticks as a cache
+  over its command log, and encodes a live match's keyframes off the frame
+  thread.
 - `runner` executes scenarios and replays headlessly, recording each tick's
   commands before the tick runs. Its opt-in traced step returns player-facing
   bot diagnostics without changing replay input or the ordinary step path.
@@ -50,7 +54,8 @@ while reusable game-independent primitives stay in `chassis`.
   absolute ticks; their first available tick can be nonzero. Playback and replay
   statistics never execute controllers. A world-only segment cannot resume live
   play without its separate session checkpoint.
-- `playback` provides bounded seeking between the recording origin and its end.
+- `playback` provides exact seeking between the recording origin and its end,
+  restoring stored keyframes or the worlds a background fill keeps.
 - `stats` derives match summaries from simulation truth. Replay statistics cover
   the available segment; live checkpoint statistics retain earlier session
   totals.

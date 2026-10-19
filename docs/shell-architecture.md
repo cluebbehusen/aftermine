@@ -12,21 +12,22 @@ commands and review procedures belong in the
 ## Session ownership
 
 `Game` owns one live session: its starting `Scenario`, authoritative `State`,
-bot controllers, pending commands, replay recorder, clock, and presentation
-state. The `Clock` holds whether time runs, its speed, and the tick debt a frame
-carries; the live match and the replay viewer each own one. The `Presentation`
-member holds camera, selection, interpolation, effects, and audio cues, and
-learns only where between ticks its picture is drawn. Statistics, recording, and
-bot execution stay with the live session. Rendering and read-only UI queries
-receive a borrowed `Scene`: the active world, scenario, pending commands,
-presentation, and clock. Neither `Presentation` nor `Scene` owns or advances a
-simulation. Each view prepares a small stack-resident seat-style table from the
-current viewer, teams, and colorblind setting. Color means ownership only: the
-viewer's own seats wear a fixed self color, allies a cool family, and hostiles a
-warm family, each ranked by seat order. Sprite accent masks, selection rings,
-health bars, panel art, and minimap marks all wear the owner's color. World,
-minimap, and result rendering share those lookups; no per-entity player scan or
-mutable identity cache is needed. The table supports the scenario seat limit.
+bot controllers, pending commands, replay and keyframe recorders, clock, and
+presentation state. The `Clock` holds whether time runs, its speed, and the tick
+debt a frame carries; the live match and the replay viewer each own one. The
+`Presentation` member holds camera, selection, interpolation, effects, and audio
+cues, and learns only where between ticks its picture is drawn. Statistics,
+recording, and bot execution stay with the live session. Rendering and read-only
+UI queries receive a borrowed `Scene`: the active world, scenario, pending
+commands, presentation, and clock. Neither `Presentation` nor `Scene` owns or
+advances a simulation. Each view prepares a small stack-resident seat-style
+table from the current viewer, teams, and colorblind setting. Color means
+ownership only: the viewer's own seats wear a fixed self color, allies a cool
+family, and hostiles a warm family, each ranked by seat order. Sprite accent
+masks, selection rings, health bars, panel art, and minimap marks all wear the
+owner's color. World, minimap, and result rendering share those lookups; no
+per-entity player scan or mutable identity cache is needed. The table supports
+the scenario seat limit.
 
 `Game::do_tick` is the only local live-shell path that advances state. It
 collects pending human/debug commands and bot commands, records them at the
@@ -625,8 +626,22 @@ matches folder. Autosaves, LAN autosaves, and finished-match recordings rotate
 separately, so rotation keeps whole matches. On iOS, named saves, finished
 recordings, replays, and diagnostics live in the app's Documents folder, which
 the Files app shows; autosaves, settings, and the LAN rejoin ticket stay in its
-Library. Finished matches remain JSON recordings, containing the available
-history since the current segment began.
+Library. Finished matches are `.oxreplay` recordings, containing the available
+history since the current segment began and the keyframes the match kept.
+
+An `.oxreplay` file has eight-byte `OXIDEREP` magic, a little-endian 32-bit
+header length, a JSON header indexing its frames, one checksummed Zstandard
+frame containing the compact JSON replay, and the keyframes' frames in index
+order. A live match keeps the world at every 1,024th absolute tick: the frame
+thread clones it and a background thread encodes it as CBOR, compressing the
+first world of each chain of eight alone and each later one against its
+predecessor. A keyframe carries its tick and world hash, and keyframes are a
+cache over the command log, never a second source of truth. The loader bounds
+the header, the decoded replay, and each keyframe, and requires keyframes on the
+grid inside the recording's span; a restore checks each decoded world against
+its index entry and the recording's setup. Keyframes that would push a file past
+its size bound are left out. Plain JSON recordings, as diagnostics and the
+driver write them, load without keyframes.
 
 A match continued from an autosave keeps that slot and starts as already saved;
 any other load starts a new slot. A save records the slot and session content it
@@ -690,9 +705,16 @@ continues recording onto it.
 ### Read-only playback
 
 `oxide_kit::playback::Playback` owns replay-viewer state. It has no bots,
-recorder, or new commands. Forward playback feeds the log into `State::tick`;
-seeks restore an earlier in-memory checkpoint and replay the suffix. Checkpoint
-storage is bounded, and the shell slices seeks across frames.
+recorder, or new commands. Forward playback feeds the log into `State::tick`. A
+seek restores the latest world at or before its target, from the recording's
+keyframes, the background fill, or the recording origin, and replays the suffix.
+Opening a replay starts the fill: a thread that re-simulates the whole record,
+keeps compressed worlds at a power-of-two spacing of at least 128 ticks and at
+most 512 of them, and compares each stored keyframe's hash with the world the
+log produces. A mismatch drops the recording's keyframes, and a world that fails
+to decode is forgotten in favor of the next one back. Seeks are exact with or
+without the fill. The shell slices them by wall time, 16 ticks at a time within
+an 8 ms share of each frame.
 
 While Playback is visible, `App` retains a hidden live game. `PlaybackSession`
 owns the playback engine, its own `Clock`, and its own `Presentation`. Rendering

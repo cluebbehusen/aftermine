@@ -122,6 +122,8 @@ pub struct Game {
     bot_decision: Option<oxide_kit::bot_execution::PendingDecision>,
     /// Every command of the session, tick-stamped.
     pub recorder: GameReplay,
+    /// Worlds kept beside the recording so its replay seeks quickly.
+    pub(crate) keyframes: oxide_kit::keyframes::KeyframeRecorder,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
     /// Where this match's autosave and finished record go.
@@ -308,6 +310,7 @@ impl Game {
             bots,
             bot_decision: None,
             recorder,
+            keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
             pending: PendingCommands(Vec::new()),
             slot: crate::autosave::SaveSlot::fresh(),
             saved: None,
@@ -378,6 +381,7 @@ impl Game {
                 .collect();
             let report = state.tick(&commands);
             oxide_kit::controller::record_events(&mut bots, &report);
+            game.keyframes.observe(&state);
             boundary_fog.observe(&state, game.presentation.human);
             projectile_releases.observe(&state, &report.events);
             live_stats.observe(&state, &report.events);
@@ -538,6 +542,7 @@ impl Game {
             .tick(commands);
         drop(sim_stage);
         self.tick_phase = TickPhase::Simulated;
+        self.keyframes.observe(&self.state);
         oxide_kit::controller::record_events(&mut self.bots, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.refresh_fog_lift();

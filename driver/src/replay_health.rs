@@ -829,8 +829,8 @@ pub fn health(path: &Path, replay: &GameReplay) -> Result<MatchHealth> {
     Ok(pass.finish(&state, path, replay))
 }
 
-/// `paths` with each directory replaced by the `.json` files directly
-/// inside it, in name order: a `bot-eval --replay-dir` reads as its
+/// `paths` with each directory replaced by the `.json` and `.oxreplay` files
+/// directly inside it, in name order: a `bot-eval --replay-dir` reads as its
 /// replays.
 pub fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
@@ -844,9 +844,14 @@ pub fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
             .map(|entry| entry.map(|entry| entry.path()))
             .collect::<std::io::Result<_>>()
             .with_context(|| format!("reading {}", path.display()))?;
-        found.retain(|file| file.is_file() && file.extension().is_some_and(|ext| ext == "json"));
+        found.retain(|file| {
+            file.is_file()
+                && file
+                    .extension()
+                    .is_some_and(|ext| ext == "json" || ext == "oxreplay")
+        });
         if found.is_empty() {
-            bail!("{} holds no .json recordings", path.display());
+            bail!("{} holds no .json or .oxreplay recordings", path.display());
         }
         found.sort();
         out.extend(found);

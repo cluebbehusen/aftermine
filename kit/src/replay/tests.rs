@@ -98,3 +98,118 @@ fn current_replay_rejects_duplicate_bot_config_fields() {
 
     assert!(load_replay(&fixture.0).is_err());
 }
+
+/// A skirmish recorded for `ticks` with the keyframes a live recorder keeps.
+fn recording(ticks: u64) -> Recording {
+    let mut replay = GameReplay::new(SIM_VERSION, "test", Scenario::skirmish());
+    replay.meta.ticks = Some(ticks);
+    let mut state = replay.setup.build().unwrap();
+    let mut recorder = crate::keyframes::KeyframeRecorder::default();
+    while state.current_tick() < ticks {
+        let command = oxide_sim::PlayerCommand {
+            player: oxide_sim::PlayerId(0),
+            command: oxide_sim::Command::Surrender,
+        };
+        if state.current_tick() == ticks - 1 {
+            replay.record(state.current_tick(), command.clone());
+            state.tick(&[command]);
+        } else {
+            state.tick(&[]);
+        }
+        recorder.observe(&state);
+    }
+    Recording {
+        replay,
+        keyframes: recorder.pending().wait(),
+    }
+}
+
+fn saved(recording: &Recording) -> Vec<u8> {
+    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "oxide-kit-replay-{}-{id}.oxreplay",
+        std::process::id()
+    ));
+    save_recording(&path, &recording.replay, &recording.keyframes).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    bytes
+}
+
+#[test]
+fn a_recording_round_trips_with_its_keyframes() {
+    let original = recording(2_100);
+    let bytes = saved(&original);
+    assert_eq!(&bytes[..8], MAGIC);
+    let fixture = write_fixture(&bytes);
+    let loaded = load_recording(&fixture.0).unwrap();
+    assert_eq!(
+        serde_json::to_value(&loaded.replay).unwrap(),
+        serde_json::to_value(&original.replay).unwrap()
+    );
+    assert_eq!(loaded.keyframes.ticks().collect::<Vec<_>>(), [1_024, 2_048]);
+    let origin = loaded.replay.setup.build().unwrap();
+    let truth =
+        crate::runner::run_replay_observed(&loaded.replay, None, Some(2_048), false, |_, _| {})
+            .unwrap();
+    assert_eq!(
+        loaded.keyframes.decode(1, &origin).unwrap().hash(),
+        truth.hash()
+    );
+    assert_eq!(
+        serde_json::to_value(load_replay(&fixture.0).unwrap()).unwrap(),
+        serde_json::to_value(&original.replay).unwrap(),
+        "replay tools read a recording's record alone"
+    );
+}
+
+#[test]
+fn a_damaged_or_foreign_recording_is_refused() {
+    let bytes = saved(&recording(1_100));
+    let header_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let header: serde_json::Value = serde_json::from_slice(&bytes[12..12 + header_len]).unwrap();
+    let rewrite = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut header = header.clone();
+        change(&mut header);
+        let header = serde_json::to_vec(&header).unwrap();
+        let mut out = MAGIC.to_vec();
+        out.extend_from_slice(&u32::try_from(header.len()).unwrap().to_le_bytes());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&bytes[12 + header_len..]);
+        out
+    };
+    let mut cases = vec![
+        ("trailing bytes", [bytes.as_slice(), &[0]].concat()),
+        ("truncated", bytes[..bytes.len() - 1].to_vec()),
+        ("format", rewrite(&|h| h["version"] = json!(FORMAT + 1))),
+        ("unknown field", rewrite(&|h| h["extra"] = json!(1))),
+        (
+            "record length",
+            rewrite(&|h| h["record"]["decoded"] = json!(1)),
+        ),
+        (
+            "off the grid",
+            rewrite(&|h| h["keyframes"][0]["tick"] = json!(1_000)),
+        ),
+        (
+            "past the end",
+            rewrite(&|h| h["keyframes"][0]["tick"] = json!(2_048)),
+        ),
+    ];
+    let mut flipped = bytes.clone();
+    let last = flipped.len() - 1;
+    flipped[last] ^= 1;
+    cases.push(("keyframe checksum", flipped));
+    for (case, bytes) in cases {
+        let fixture = write_fixture(&bytes);
+        let result = load_recording(&fixture.0).and_then(|recording| {
+            let origin = recording.replay.setup.build().unwrap();
+            recording
+                .keyframes
+                .decode(0, &origin)
+                .map(|_| ())
+                .map_err(|error| ReplayError::Invalid(error.to_string()))
+        });
+        assert!(result.is_err(), "{case} was accepted");
+    }
+}

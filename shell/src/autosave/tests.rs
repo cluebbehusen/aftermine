@@ -257,7 +257,7 @@ fn rotation_touches_only_its_own_kind() {
     for n in 0..6 {
         std::fs::write(dir.join(format!("autosave-000000000{n}.oxsave")), b"{}").unwrap();
     }
-    std::fs::write(dir.join("match-0000000100.json"), b"{}").unwrap();
+    std::fs::write(dir.join("match-0000000100.oxreplay"), b"{}").unwrap();
     std::fs::write(dir.join("save-outpost.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-legacy.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-0000000001.tmp.42.0"), b"live").unwrap();
@@ -269,7 +269,7 @@ fn rotation_touches_only_its_own_kind() {
     for n in 1..6 {
         assert!(dir.join(format!("autosave-000000000{n}.oxsave")).exists());
     }
-    assert!(dir.join("match-0000000100.json").exists());
+    assert!(dir.join("match-0000000100.oxreplay").exists());
     assert!(dir.join("autosave-legacy.json").exists());
     assert!(
         dir.join("save-outpost.json").exists(),
@@ -287,12 +287,12 @@ fn matches_rotate_against_their_own_budget() {
     let dir = scratch("matches");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..=KEEP_MATCHES {
-        std::fs::write(dir.join(format!("match-{n:010}.json")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("match-{n:010}.oxreplay")), b"{}").unwrap();
     }
     rotate(&dir);
-    assert!(!dir.join(format!("match-{:010}.json", 0)).exists());
+    assert!(!dir.join(format!("match-{:010}.oxreplay", 0)).exists());
     for n in 1..=KEEP_MATCHES {
-        assert!(dir.join(format!("match-{n:010}.json")).exists());
+        assert!(dir.join(format!("match-{n:010}.oxreplay")).exists());
     }
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -426,7 +426,7 @@ fn only_an_autosave_in_the_autosave_folder_lends_its_slot() {
     for other in [
         "/data/saves/autosave-12.oxsave",
         "/data/autosaves/save-12.oxsave",
-        "/data/autosaves/match-12.json",
+        "/data/autosaves/match-12.oxreplay",
         "/data/autosaves/autosave-.oxsave",
         "/data/autosaves/autosave12.oxsave",
     ] {
@@ -474,7 +474,7 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
     let root = scratch("decided-slot");
     let (autosaves, matches) = (root.join("autosaves"), root.join("matches"));
     let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.advance_ticks(5);
+    game.advance_ticks(oxide_kit::keyframes::KEYFRAME_EVERY + 5);
     assert!(matches!(
         write_record(&mut game, &autosaves),
         Ok(SaveOutcome::Wrote(_))
@@ -496,13 +496,12 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
         "the record replaces the autosave"
     );
     assert_eq!(files(&matches), vec![game.slot.file("match")]);
+    let recording = oxide_kit::load_recording(&record).unwrap();
+    assert_eq!(recording.replay.meta.kind.as_deref(), Some("match"));
     assert_eq!(
-        oxide_kit::load_replay(&record)
-            .unwrap()
-            .meta
-            .kind
-            .as_deref(),
-        Some("match")
+        recording.keyframes.ticks().collect::<Vec<_>>(),
+        [oxide_kit::keyframes::KEYFRAME_EVERY],
+        "the record carries the keyframes the match kept"
     );
     assert!(matches!(
         write_record(&mut game, &matches),

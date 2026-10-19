@@ -175,7 +175,12 @@ fn roster(bots: &[SeatController]) -> Vec<PlayerId> {
 }
 
 pub(crate) fn validate_setup(scenario: &Scenario, state: &State) -> Result<()> {
-    let initial = scenario.build().context("checkpoint scenario")?;
+    same_setup(&scenario.build().context("checkpoint scenario")?, state)
+}
+
+/// Whether `state` can be a world of the match `initial` belongs to: the
+/// same mode, map dimensions, and seats on the same teams.
+pub(crate) fn same_setup(initial: &State, state: &State) -> Result<()> {
     ensure!(
         initial.mode() == state.mode(),
         "checkpoint scenario mode mismatch"

@@ -158,7 +158,7 @@ pub fn load(path: &Path) -> Result<GameReplay> {
     if save {
         bail!(
             "{} is a player save, which keeps no command history to re-execute; \
-             use the match recording (match-*.json) instead",
+             use the match recording (match-*.oxreplay) instead",
             path.display()
         );
     }

@@ -445,7 +445,12 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
     );
     let mut decisive: GameReplay = Replay::new(SIM_VERSION, "test", scenario);
     decisive.meta.ticks = Some(10 * MINUTE);
-    decisive.save(dir.join("b-decisive.json")).unwrap();
+    oxide_kit::save_recording(
+        dir.join("b-decisive.oxreplay"),
+        &decisive,
+        &oxide_kit::keyframes::Keyframes::default(),
+    )
+    .unwrap();
     crate::support_tests::replay_fixture()
         .save(dir.join("a-short.json"))
         .unwrap();
@@ -456,7 +461,7 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
         .iter()
         .map(|game| game.path.file_name().unwrap().to_owned())
         .collect();
-    assert_eq!(names, ["a-short.json", "b-decisive.json"]);
+    assert_eq!(names, ["a-short.json", "b-decisive.oxreplay"]);
     let [short, decisive] = &matches[..] else {
         unreachable!()
     };
@@ -483,7 +488,12 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
         std::env::temp_dir().join(format!("oxide-replay-health-empty-{}", std::process::id()));
     std::fs::create_dir_all(&empty).unwrap();
     let error = expand(std::slice::from_ref(&empty)).unwrap_err();
-    assert!(error.to_string().contains("no .json recordings"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("no .json or .oxreplay recordings"),
+        "{error}"
+    );
     std::fs::remove_dir_all(&empty).unwrap();
 }
 

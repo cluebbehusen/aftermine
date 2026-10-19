@@ -17,6 +17,13 @@ use oxide_protocol::Key;
 use oxide_protocol::{MouseButton, RawEvent};
 use oxide_sim::SIM_VERSION;
 
+/// Ticks a seek simulates between checks of its frame's time.
+const SEEK_SLICE: u64 = 16;
+
+/// Frame time a seek in flight may take, leaving the rest of a 60 Hz frame
+/// for drawing.
+const SEEK_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
+
 /// Replay engine, presentation, and viewer transport controls.
 pub struct PlaybackSession {
     pub engine: oxide_kit::playback::Playback,
@@ -26,9 +33,11 @@ pub struct PlaybackSession {
     resolver: ActionResolver,
     /// A held left press is dragging the timeline, seeking as it moves.
     pub scrubbing: bool,
-    /// A seek in flight: the target tick, chipped away a budget per
-    /// frame so the render thread never freezes on a long jump.
+    /// A seek in flight: the target tick, chipped away a slice of time
+    /// per frame so the render thread never freezes on a long jump.
     pub seeking: Option<u64>,
+    /// Wall time a frame spends on a seek in flight, past its first slice.
+    seek_budget: std::time::Duration,
     /// The transport buttons' press.
     buttons: Press<Zone>,
     /// The finger scrubbing the timeline, if one landed on the bar.
@@ -56,14 +65,34 @@ impl PlaybackSession {
     }
 
     pub fn open(path: &str) -> Result<Self> {
-        let replay =
-            oxide_kit::load_replay(path).with_context(|| format!("loading replay {path}"))?;
-        Self::from_replay(replay)
+        let recording =
+            oxide_kit::load_recording(path).with_context(|| format!("loading replay {path}"))?;
+        Self::watch(recording)
     }
 
+    /// A viewer over `recording` that fills in restorable worlds in the
+    /// background while it is watched.
+    pub fn watch(recording: oxide_kit::Recording) -> Result<Self> {
+        let mut session = Self::from_recording(recording)?;
+        session.engine.start_fill();
+        Ok(session)
+    }
+
+    /// A session whose seeks land in one frame however slow the machine,
+    /// so tests never depend on the wall-clock budget.
+    #[cfg(test)]
     pub fn from_replay(replay: GameReplay) -> Result<Self> {
-        let record = replay.clone();
-        let engine = oxide_kit::playback::Playback::load(replay)?;
+        let mut session = Self::from_recording(oxide_kit::Recording {
+            replay,
+            keyframes: oxide_kit::keyframes::Keyframes::default(),
+        })?;
+        session.seek_budget = std::time::Duration::MAX;
+        Ok(session)
+    }
+
+    fn from_recording(recording: oxide_kit::Recording) -> Result<Self> {
+        let record = recording.replay.clone();
+        let engine = oxide_kit::playback::Playback::open(recording)?;
         // The spectator door: an all-bot record (driver benchmark,
         // bot-vs-bot spectacle) is a perfectly watchable replay.
         let vantage = record
@@ -87,6 +116,7 @@ impl PlaybackSession {
             resolver: ActionResolver::default(),
             scrubbing: false,
             seeking: None,
+            seek_budget: SEEK_BUDGET,
             buttons: Press::default(),
             scrub_finger: None,
             hands: ViewerHands::default(),
@@ -645,10 +675,18 @@ impl PlaybackSession {
     /// live play.
     pub fn advance_frame(&mut self, time: FrameTime, viewport: Vec2) {
         if let Some(target) = self.seeking {
-            // Budgeted: a slice per frame keeps a long jump from hitching
-            // the render thread.
-            if self.engine.seek_step(target, 2_000) {
-                self.seeking = None;
+            // Budgeted by time, since a tick late in a big match costs many
+            // times one in an opening: slices run until the frame's share
+            // is spent, so a long jump never hitches the render thread.
+            let started = std::time::Instant::now();
+            loop {
+                if self.engine.seek_step(target, SEEK_SLICE) {
+                    self.seeking = None;
+                    break;
+                }
+                if started.elapsed() >= self.seek_budget {
+                    break;
+                }
             }
             // Every budgeted chunk is a bulk jump. Establish the new
             // destination as both interpolation endpoints instead of
