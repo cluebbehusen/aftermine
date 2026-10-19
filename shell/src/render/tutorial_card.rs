@@ -110,6 +110,7 @@ pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String
         ("{idle}", Action::CycleIdleWorker),
         ("{build}", Action::ToggleBuildPalette),
         ("{hunt}", Action::Hunt),
+        ("{run}", Action::Run),
         ("{back}", Action::Back),
         ("{rally}", Action::SetRally),
         ("{assign}", Action::AssignGroup(1)),

@@ -6,8 +6,9 @@
 
 use crate::game::Game;
 use anyhow::Result;
+use chassis::grid::TilePos;
 use macroquad::prelude::Vec2;
-use oxide_sim::{BuildingKind, Event, Order, PlayerId, Scenario, UnitKind};
+use oxide_sim::{BuildingKind, Event, Order, PlayerId, Scenario, UnitId, UnitKind};
 
 mod lessons;
 
@@ -21,11 +22,13 @@ pub enum Lesson {
     Scrap,
     /// Placement, queued builds, rally points, and control groups.
     Build,
+    /// Hunt, Advance, and Run, and fighting around rock and high ground.
+    Fight,
 }
 
 impl Lesson {
     /// Every lesson in teaching order.
-    pub const ALL: [Self; 3] = [Self::Command, Self::Scrap, Self::Build];
+    pub const ALL: [Self; 4] = [Self::Command, Self::Scrap, Self::Build, Self::Fight];
 
     /// The lesson's place in the course, from one.
     pub fn number(self) -> usize {
@@ -42,6 +45,7 @@ impl Lesson {
             Self::Command => "Command",
             Self::Scrap => "Scrap",
             Self::Build => "Build",
+            Self::Fight => "Fight",
         }
     }
 
@@ -53,6 +57,7 @@ impl Lesson {
             Self::Build => {
                 "build, queue several buildings, set rally points, and use control groups"
             }
+            Self::Fight => "use Hunt, Advance, and Run, and fight around rock and high ground",
         }
     }
 
@@ -67,6 +72,15 @@ impl Lesson {
             Self::Command => &lessons::COMMAND,
             Self::Scrap => &lessons::SCRAP,
             Self::Build => &lessons::BUILD,
+            Self::Fight => &lessons::FIGHT,
+        }
+    }
+
+    /// The enemy squads the scene places, which steps name by index.
+    pub fn squads(self) -> &'static [Squad] {
+        match self {
+            Self::Command | Self::Scrap | Self::Build => &[],
+            Self::Fight => &lessons::FIGHT_SQUADS,
         }
     }
 
@@ -76,6 +90,7 @@ impl Lesson {
             Self::Command => lessons::COMMAND_OUTRO,
             Self::Scrap => lessons::SCRAP_OUTRO,
             Self::Build => lessons::BUILD_OUTRO,
+            Self::Fight => lessons::FIGHT_OUTRO,
         }
     }
 
@@ -85,6 +100,7 @@ impl Lesson {
             Self::Command => include_str!("../lessons/command.json"),
             Self::Scrap => include_str!("../lessons/scrap.json"),
             Self::Build => include_str!("../lessons/build.json"),
+            Self::Fight => include_str!("../lessons/fight.json"),
         };
         Scenario::from_json(text).expect("embedded lesson scenes are validated by tests")
     }
@@ -98,6 +114,37 @@ pub struct Step {
     copy: Copy,
     /// What completes the step.
     pub goal: Goal,
+}
+
+/// Enemy machines the scene places together, by their places in its unit
+/// list, which are their ids. A squad stands guard until a step opens
+/// that sends it out.
+pub struct Squad {
+    units: &'static [u32],
+    sortie: Option<Sortie>,
+}
+
+/// Where a squad hunts to once a step opens. The order is an ordinary
+/// command for the enemy seat, sent on the player's progress alone.
+struct Sortie {
+    /// The step whose opening sends the squad.
+    step: usize,
+    /// The tile the squad hunts toward.
+    toward: TilePos,
+}
+
+impl Squad {
+    /// The squad's machines still standing.
+    fn standing<'a>(
+        &self,
+        state: &'a oxide_sim::State,
+    ) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+        let units = self.units;
+        units
+            .iter()
+            .filter_map(move |id| state.unit(UnitId(*id)))
+            .filter(|unit| unit.hp > 0)
+    }
 }
 
 /// A step's paragraphs for each pairing of pointer and keyboard: copy
@@ -146,6 +193,8 @@ pub enum Goal {
     Rally,
     /// The player has saved own machines to a control group.
     Group,
+    /// The lesson's squad at this index is destroyed.
+    Defeat(usize),
 }
 
 /// How far a zoom must move from the opening one to count as looking.
@@ -188,6 +237,10 @@ impl Goal {
             }
             Goal::Rally => seat.factories().any(|b| b.rally.is_some()),
             Goal::Group => tutorial.evidence.grouped,
+            Goal::Defeat(squad) => tutorial.lesson.squads()[squad]
+                .standing(seat.state)
+                .next()
+                .is_none(),
         }
     }
 
@@ -211,7 +264,8 @@ impl Goal {
             | Goal::Destroy
             | Goal::Deposit
             | Goal::Rally
-            | Goal::Group => None,
+            | Goal::Group
+            | Goal::Defeat(_) => None,
         }
     }
 
@@ -225,7 +279,7 @@ impl Goal {
             Goal::Look(_) => true,
             Goal::Select(count) => seat.units().count() >= count,
             Goal::Find => seat.units().next().is_some(),
-            Goal::Destroy => seat.units().any(|u| u.kind.stats().can_fight()),
+            Goal::Destroy | Goal::Defeat(_) => seat.can_field_fighter(),
             Goal::Deposit => seat.can_mine(),
             Goal::Train(kind) => {
                 let cost = kind.stats().cost;
@@ -314,6 +368,8 @@ pub struct Tutorial {
     evidence: Evidence,
     /// Whether the card shows only its heading and objective.
     collapsed: bool,
+    /// How many steps have opened and sent their squads out.
+    opened: usize,
 }
 
 impl Tutorial {
@@ -351,6 +407,7 @@ impl Tutorial {
             },
             evidence: Evidence::default(),
             collapsed: false,
+            opened: 0,
         });
         Ok(game)
     }
@@ -424,14 +481,43 @@ impl Tutorial {
         self.step != before && self.finished()
     }
 
-    /// Advances the lesson `game` stages, if any. Returns the lesson when
-    /// this call finished it.
+    /// Advances the lesson `game` stages, if any, and sends out the
+    /// squads of each step that opened. Returns the lesson when this call
+    /// finished it.
     pub fn advance_in(game: &mut Game) -> Option<Lesson> {
         let mut tutorial = game.tutorial.take()?;
         let finished = tutorial.advance(game);
+        tutorial.send_squads(game);
         let lesson = tutorial.lesson;
         game.tutorial = Some(tutorial);
         finished.then_some(lesson)
+    }
+
+    /// Stages the hunts of every squad whose step has opened since the
+    /// last call, for the next tick.
+    fn send_squads(&mut self, game: &mut Game) {
+        let open = (self.step + 1).min(self.lesson.steps().len());
+        for step in self.opened..open {
+            for squad in self.lesson.squads() {
+                let Some(sortie) = squad.sortie.as_ref().filter(|s| s.step == step) else {
+                    continue;
+                };
+                let mut standing = squad.standing(&game.state).peekable();
+                let Some(player) = standing.peek().map(|unit| unit.player) else {
+                    continue;
+                };
+                let units = standing.map(|unit| unit.id).collect();
+                game.stage(oxide_sim::PlayerCommand {
+                    player,
+                    command: oxide_sim::Command::Hunt {
+                        units,
+                        goal: sortie.toward,
+                        queue: false,
+                    },
+                });
+            }
+        }
+        self.opened = self.opened.max(open);
     }
 
     /// The card's live line: the retry when stuck, otherwise what the step
@@ -563,6 +649,20 @@ impl<'a> Seat<'a> {
         })
     }
 
+    /// Whether the player has a machine that can fight, or can pay for one
+    /// at a built factory.
+    fn can_field_fighter(&self) -> bool {
+        self.units().any(|u| u.kind.stats().can_fight())
+            || self.factories().any(|factory| {
+                factory.stats().produces.iter().any(|kind| {
+                    kind.stats().can_fight()
+                        && (self.queued(*kind)
+                            || self.bank() >= kind.stats().cost
+                            || self.can_earn())
+                })
+            })
+    }
+
     /// Whether a built own factory trains `kind`.
     fn produces(&self, kind: UnitKind) -> bool {
         self.factories().any(|b| b.stats().produces.contains(&kind))
@@ -582,7 +682,7 @@ impl<'a> Seat<'a> {
         let map = self.state.map();
         (0..map.height()).any(|y| {
             (0..map.width()).any(|x| {
-                let tile = chassis::grid::TilePos::new(x, y);
+                let tile = TilePos::new(x, y);
                 map.scrap_at(tile) > 0 || map.wreck_at(tile) > 0
             })
         })

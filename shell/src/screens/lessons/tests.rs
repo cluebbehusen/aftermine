@@ -17,7 +17,7 @@ fn the_list_marks_finished_lessons_and_opens_on_the_next_one() {
     assert_eq!(fresh.menu.title, "BASIC TRAINING");
     assert_eq!(
         fresh.menu.view().items,
-        ["1. Command: ", "2. Scrap: ", "3. Build: "]
+        ["1. Command: ", "2. Scrap: ", "3. Build: ", "4. Fight: "]
     );
     assert_eq!(fresh.menu.value(), Some(&Lesson::Command));
     assert_eq!(fresh.subtitle(), Lesson::Command.summary());
@@ -25,7 +25,7 @@ fn the_list_marks_finished_lessons_and_opens_on_the_next_one() {
     let next = LessonsScreen::open(&[Lesson::Command]);
     assert_eq!(
         next.menu.view().items,
-        ["1. Command: DONE", "2. Scrap: ", "3. Build: "]
+        ["1. Command: DONE", "2. Scrap: ", "3. Build: ", "4. Fight: "]
     );
     assert_eq!(next.menu.value(), Some(&Lesson::Scrap));
     assert_eq!(next.subtitle(), Lesson::Scrap.summary());

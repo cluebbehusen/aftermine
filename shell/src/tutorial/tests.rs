@@ -85,6 +85,94 @@ fn every_lesson_opens_on_a_sandbox_scene_with_each_step_ahead_and_in_reach() {
 }
 
 #[test]
+fn each_squad_names_enemy_machines_of_its_scene_and_each_step_a_real_squad() {
+    for lesson in Lesson::ALL {
+        let game = begin(lesson);
+        let human = game.presentation.human;
+        let mut named = Vec::new();
+        for squad in lesson.squads() {
+            assert_eq!(
+                squad.standing(&game.state).count(),
+                squad.units.len(),
+                "{lesson:?}: a squad names a machine its scene does not place"
+            );
+            assert!(
+                squad
+                    .standing(&game.state)
+                    .all(|unit| game.state.hostile(human, unit.player)),
+                "{lesson:?}: a squad is the enemy's"
+            );
+            named.extend_from_slice(squad.units);
+            if let Some(sortie) = &squad.sortie {
+                assert!(sortie.step < lesson.steps().len());
+            }
+        }
+        let count = named.len();
+        named.sort_unstable();
+        named.dedup();
+        assert_eq!(
+            named.len(),
+            count,
+            "{lesson:?}: no machine is in two squads"
+        );
+        for step in lesson.steps() {
+            if let Goal::Defeat(squad) = step.goal {
+                assert!(squad < lesson.squads().len(), "{}", step.title);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_squad_sets_out_once_when_its_step_opens() {
+    let sent = |game: &Game| -> Vec<(Vec<UnitId>, TilePos)> {
+        game.pending
+            .iter()
+            .filter_map(|c| match &c.command {
+                Command::Hunt { units, goal, .. } if c.player != game.presentation.human => {
+                    Some((units.clone(), *goal))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let squad = |index: usize| {
+        let squad = &Lesson::Fight.squads()[index];
+        let units = squad.units.iter().map(|id| UnitId(*id)).collect::<Vec<_>>();
+        (units, squad.sortie.as_ref().expect("it sets out").toward)
+    };
+    let mut game = begin(Lesson::Fight);
+    assert!(
+        sent(&game).is_empty(),
+        "nothing moves before the lesson runs"
+    );
+    Tutorial::advance_in(&mut game);
+    assert_eq!(
+        sent(&game),
+        [squad(0)],
+        "the raid leaves as the lesson opens"
+    );
+    Tutorial::advance_in(&mut game);
+    assert_eq!(sent(&game), [squad(0)], "and only once");
+    game.do_tick();
+    assert!(
+        Lesson::Fight.squads()[0]
+            .standing(&game.state)
+            .all(|unit| matches!(unit.order, Order::Hunt { .. })),
+        "the enemy seat's hunt is an ordinary command the world accepts"
+    );
+
+    let opened = tutorial(&game).clone().at_step(3);
+    game.tutorial = Some(opened);
+    Tutorial::advance_in(&mut game);
+    assert_eq!(
+        sent(&game),
+        [squad(3)],
+        "opening the Warden's step sends it, and the guards stay put"
+    );
+}
+
+#[test]
 fn steps_advance_in_order_and_skip_what_is_already_done() {
     let mut game = begin(Lesson::Command);
     game.presentation.selection.units = own(&game, None);
@@ -220,6 +308,29 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
         Some(Goal::Train(UnitKind::Lancer))
     );
     assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
+
+    // An army that is gone can be trained again while scrap allows.
+    let mut scene = Lesson::Fight.scenario();
+    scene.players[0].scrap = UnitKind::Scuttler.stats().cost;
+    scene
+        .units
+        .retain(|unit| unit.player != 0 || unit.kind == UnitKind::Harvester);
+    let mut game = Game::with_viewport(scene.clone(), vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Fight).tutorial;
+    assert_ne!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
+    scene.players[0].scrap = 0;
+    scene.units.retain(|unit| unit.player != 0);
+    let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Fight).tutorial;
+    for at in 0..Lesson::Fight.steps().len() {
+        tutorial_mut(&mut game).step = at;
+        assert_eq!(
+            tutorial(&game).coach(&game),
+            Some(CoachLine::Stuck),
+            "{}",
+            Lesson::Fight.steps()[at].title
+        );
+    }
 
     // A squad that has lost its fighters cannot destroy anything.
     let mut scene = Lesson::Command.scenario();
@@ -481,15 +592,22 @@ fn play(game: &mut Game) {
         Goal::Find | Goal::Destroy => {
             // The squad attacks a building in sight and walks toward one
             // otherwise; any fighter doing something else is ordered again.
+            // A squad that can still grow gathers first.
+            reinforce(game);
             let seat = Seat::of(game);
             let fighters: Vec<&oxide_sim::Unit> = seat
                 .units()
                 .filter(|u| u.kind.stats().can_fight())
                 .collect();
+            if fighters.len() < 4 && growing(&seat) {
+                return;
+            }
             let units: Vec<UnitId> = fighters.iter().map(|u| u.id).collect();
+            // Armed buildings first, since they shoot back.
             let target = seat
                 .hostile_buildings()
-                .find(|b| seen(game, b))
+                .filter(|b| seen(game, b))
+                .min_by_key(|b| b.stats().weapons.is_empty())
                 .map(|b| b.id);
             let goal = seat.hostile_buildings().next().map(|b| b.anchor);
             let (order, on_task): (Command, fn(&Order) -> bool) = match (target, goal) {
@@ -514,6 +632,10 @@ fn play(game: &mut Game) {
             if !fighters.iter().all(|u| on_task(&u.order)) {
                 game.issue(order);
             }
+        }
+        Goal::Defeat(squad) => {
+            defeat(game, squad);
+            reinforce(game);
         }
         Goal::Deposit => put_idle_workers_to_work(game),
         Goal::Train(kind) => {
@@ -548,6 +670,87 @@ fn play(game: &mut Game) {
         }
         // Saving a group is input's work, which reports it as this does.
         Goal::Group => tutorial_mut(game).note_group(),
+    }
+}
+
+/// Rebuilds a crew of three Harvesters, then trains Sentinels.
+fn reinforce(game: &mut Game) {
+    if Seat::of(game).workers().count() < 3 {
+        train(game, UnitKind::Harvester);
+    } else {
+        train(game, UnitKind::Sentinel);
+    }
+    put_idle_workers_to_work(game);
+}
+
+/// Whether the player can still add a Sentinel to the army.
+fn growing(seat: &Seat) -> bool {
+    seat.produces(UnitKind::Sentinel)
+        && (seat.bank() >= UnitKind::Sentinel.stats().cost || seat.can_earn())
+}
+
+/// Orders the army against the lesson's squad at `index`. A squad that
+/// marches on the base is met at home, beside the defenses, as the lesson
+/// says. One that stands guard is hunted once the army has gathered,
+/// since reinforcements sent one at a time only feed it.
+fn defeat(game: &mut Game, index: usize) {
+    let squad = &tutorial(game).lesson.squads()[index];
+    let seat = Seat::of(game);
+    let Some(target) = squad
+        .standing(seat.state)
+        .next()
+        .map(|unit| TilePos::containing(unit.pos))
+    else {
+        return;
+    };
+    let near = |a: TilePos, x: i32, y: i32| (x - a.x).pow(2) + (y - a.y).pow(2) <= 36;
+    let fighters: Vec<&oxide_sim::Unit> = seat
+        .units()
+        .filter(|u| u.kind.stats().can_fight())
+        .collect();
+    let home = squad.sortie.as_ref().map(|sortie| sortie.toward);
+    let command = match home {
+        Some(home) if !near(home, target.x, target.y) => {
+            let units: Vec<UnitId> = fighters
+                .iter()
+                .filter(|u| {
+                    let at = TilePos::containing(u.pos);
+                    !near(home, at.x, at.y) && !matches!(u.order, Order::Run { .. })
+                })
+                .map(|u| u.id)
+                .collect();
+            Command::Run {
+                units,
+                goal: home,
+                queue: false,
+            }
+        }
+        _ => {
+            let gathered = fighters.len() >= squad.standing(seat.state).count() + 3;
+            if home.is_none() && !gathered && growing(&seat) {
+                return;
+            }
+            let units: Vec<UnitId> = fighters
+                .iter()
+                .filter(|u| match u.order {
+                    Order::Attack { .. } => false,
+                    Order::Hunt { goal } => !near(target, goal.x, goal.y),
+                    _ => true,
+                })
+                .map(|u| u.id)
+                .collect();
+            Command::Hunt {
+                units,
+                goal: target,
+                queue: false,
+            }
+        }
+    };
+    let (Command::Run { units, .. } | Command::Hunt { units, .. }) = &command else {
+        unreachable!("only moves are built above");
+    };
+    if !units.is_empty() {
+        game.issue(command);
     }
 }
 
