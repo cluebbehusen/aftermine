@@ -7,7 +7,7 @@ use super::super::{
     flight, rect_adjacent_tiles, rect_approach_key_from, rect_approach_origin, route_for,
     route_for_position, tile_adjacent_to_rect,
 };
-use super::combat::{acquire_target, acquire_target_from};
+use super::combat::{acquire_reachable_target, acquire_target_from};
 use crate::event::{Event, StallReason};
 use crate::ids::{Target, UnitId};
 use crate::state::{Goal, Order, PathFollow, State};
@@ -51,7 +51,9 @@ pub(super) fn idle(
         }
         return;
     }
-    if let Some(target) = acquired.unwrap_or_else(|| acquire_target(state, index, id)) {
+    if let Some(target) =
+        acquired.unwrap_or_else(|| acquire_reachable_target(state, index, reach, id))
+    {
         let unit = state.unit_mut(id).expect("caller checked");
         let anchor = unit.tile();
         let stationed = unit.settled >= crate::stats::LEASH_STATION_TICKS;
@@ -302,7 +304,7 @@ pub(super) fn hunt(
     goal: Goal,
     events: &mut Vec<Event>,
 ) {
-    if let Some(target) = acquire_target(state, index, id) {
+    if let Some(target) = acquire_reachable_target(state, index, reach, id) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.order = Order::Attack {
             pursue: false,
