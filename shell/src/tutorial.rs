@@ -19,11 +19,13 @@ pub enum Lesson {
     Command,
     /// Mining, training workers, and Extractors.
     Scrap,
+    /// Placement, queued builds, rally points, and control groups.
+    Build,
 }
 
 impl Lesson {
     /// Every lesson in teaching order.
-    pub const ALL: [Self; 2] = [Self::Command, Self::Scrap];
+    pub const ALL: [Self; 3] = [Self::Command, Self::Scrap, Self::Build];
 
     /// The lesson's place in the course, from one.
     pub fn number(self) -> usize {
@@ -39,6 +41,7 @@ impl Lesson {
         match self {
             Self::Command => "Command",
             Self::Scrap => "Scrap",
+            Self::Build => "Build",
         }
     }
 
@@ -47,6 +50,9 @@ impl Lesson {
         match self {
             Self::Command => "move the camera, select units, move them, and attack",
             Self::Scrap => "collect scrap, train Harvesters, and restore Extractors",
+            Self::Build => {
+                "build, queue several buildings, set rally points, and use control groups"
+            }
         }
     }
 
@@ -60,6 +66,7 @@ impl Lesson {
         match self {
             Self::Command => &lessons::COMMAND,
             Self::Scrap => &lessons::SCRAP,
+            Self::Build => &lessons::BUILD,
         }
     }
 
@@ -68,6 +75,7 @@ impl Lesson {
         match self {
             Self::Command => lessons::COMMAND_OUTRO,
             Self::Scrap => lessons::SCRAP_OUTRO,
+            Self::Build => lessons::BUILD_OUTRO,
         }
     }
 
@@ -76,6 +84,7 @@ impl Lesson {
         let text = match self {
             Self::Command => include_str!("../lessons/command.json"),
             Self::Scrap => include_str!("../lessons/scrap.json"),
+            Self::Build => include_str!("../lessons/build.json"),
         };
         Scenario::from_json(text).expect("embedded lesson scenes are validated by tests")
     }
@@ -133,6 +142,10 @@ pub enum Goal {
     Harvest(usize),
     /// At least this many own buildings of this kind are complete.
     Build(BuildingKind, usize),
+    /// An own factory has a rally point.
+    Rally,
+    /// The player has saved own machines to a control group.
+    Group,
 }
 
 /// How far a zoom must move from the opening one to count as looking.
@@ -173,6 +186,8 @@ impl Goal {
             Goal::Build(kind, count) => {
                 seat.own_buildings(kind).filter(|b| b.built()).count() >= count
             }
+            Goal::Rally => seat.factories().any(|b| b.rally.is_some()),
+            Goal::Group => tutorial.evidence.grouped,
         }
     }
 
@@ -190,7 +205,13 @@ impl Goal {
                 let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
                 (kind.name(), cost)
             }),
-            Goal::Look(_) | Goal::Select(_) | Goal::Find | Goal::Destroy | Goal::Deposit => None,
+            Goal::Look(_)
+            | Goal::Select(_)
+            | Goal::Find
+            | Goal::Destroy
+            | Goal::Deposit
+            | Goal::Rally
+            | Goal::Group => None,
         }
     }
 
@@ -207,7 +228,18 @@ impl Goal {
             Goal::Destroy => seat.units().any(|u| u.kind.stats().can_fight()),
             Goal::Deposit => seat.can_mine(),
             Goal::Train(kind) => {
-                seat.produces(kind) && (seat.queued(kind) || affords(kind.stats().cost))
+                let cost = kind.stats().cost;
+                if seat.produces(kind) {
+                    seat.queued(kind) || affords(cost)
+                } else {
+                    // A factory for it can still go up, then pay for it.
+                    seat.workers().next().is_some()
+                        && seat.factory_for(kind).is_some_and(|factory| {
+                            let site = factory.base_stats().construction.map_or(0, |c| c.cost);
+                            let placed = seat.own_buildings(factory).next().is_some();
+                            affords(if placed { cost } else { site + cost })
+                        })
+                }
             }
             Goal::Harvest(count) => {
                 let harvester = UnitKind::Harvester;
@@ -222,6 +254,8 @@ impl Goal {
                 seat.workers().next().is_some()
                     && (placed >= count || (affords(cost) && seat.room_for(kind) >= count - placed))
             }
+            Goal::Rally => seat.factories().next().is_some(),
+            Goal::Group => seat.units().next().is_some(),
         }
     }
 }
@@ -233,6 +267,9 @@ struct Evidence {
     deposited: bool,
     /// The kinds own factories have finished.
     trained: Vec<UnitKind>,
+    /// Own machines have been saved to a control group, which lives in
+    /// input state the world does not hold.
+    grouped: bool,
 }
 
 /// Where the camera stood when the lesson opened.
@@ -363,6 +400,11 @@ impl Tutorial {
                 _ => {}
             }
         }
+    }
+
+    /// Notes that the human saved own machines to a control group.
+    pub(crate) fn note_group(&mut self) {
+        self.evidence.grouped = true;
     }
 
     /// Moves past every step the world already shows done. Returns true
@@ -503,13 +545,27 @@ impl<'a> Seat<'a> {
             .filter(move |b| state.hostile(human, b.player))
     }
 
-    /// Whether a built own factory trains `kind`.
-    fn produces(&self, kind: UnitKind) -> bool {
+    /// Built own buildings that train machines.
+    fn factories(&self) -> impl Iterator<Item = &'a oxide_sim::Building> + use<'a> {
         let human = self.human;
         self.state
             .buildings()
             .iter()
-            .any(|b| b.player == human && b.built() && b.stats().produces.contains(&kind))
+            .filter(move |b| b.player == human && b.built() && !b.stats().produces.is_empty())
+    }
+
+    /// A building kind the player may raise that trains `kind`.
+    fn factory_for(&self, kind: UnitKind) -> Option<BuildingKind> {
+        BuildingKind::ALL.into_iter().find(|factory| {
+            factory.base_stats().construction.is_some()
+                && factory.base_stats().produces.contains(&kind)
+                && self.state.prerequisites_met(self.human, *factory)
+        })
+    }
+
+    /// Whether a built own factory trains `kind`.
+    fn produces(&self, kind: UnitKind) -> bool {
+        self.factories().any(|b| b.stats().produces.contains(&kind))
     }
 
     /// Whether an own factory has `kind` paid for and in its queue.

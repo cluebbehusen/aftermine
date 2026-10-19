@@ -111,6 +111,9 @@ pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String
         ("{build}", Action::ToggleBuildPalette),
         ("{hunt}", Action::Hunt),
         ("{back}", Action::Back),
+        ("{rally}", Action::SetRally),
+        ("{assign}", Action::AssignGroup(1)),
+        ("{recall}", Action::Slot(1)),
     ] {
         out = out.replace(token, &bindings.label(action));
     }

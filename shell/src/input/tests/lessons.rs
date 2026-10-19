@@ -439,3 +439,203 @@ fn the_scrap_lesson_plays_as_its_touch_card_says() {
         run_to(&mut game, &input, next);
     }
 }
+
+/// Where the Build lesson's Fabricator goes: the middle of open ground
+/// south of the Foundry. The row of Barricades runs west to east north of
+/// it, clear of the card and the panel.
+const FABRICATOR_SPOT: Vec2 = Vec2::new(6.0, 14.0);
+const BARRICADES: [Vec2; 3] = [
+    Vec2::new(9.5, 8.5),
+    Vec2::new(10.5, 8.5),
+    Vec2::new(11.5, 8.5),
+];
+const RALLY_SPOT: Vec2 = Vec2::new(13.5, 9.5);
+
+fn own_building(game: &Game, kind: BuildingKind) -> Vec2 {
+    let c = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == game.presentation.human && b.kind == kind)
+        .expect("the building stands")
+        .center();
+    vec2(c.x.to_num::<f32>(), c.y.to_num::<f32>())
+}
+
+fn placed(game: &Game, kind: BuildingKind) -> usize {
+    game.pending
+        .iter()
+        .filter(|c| matches!(c.command, Command::Build { kind: k, .. } if k == kind))
+        .count()
+}
+
+#[test]
+fn the_build_lesson_plays_as_its_mouse_and_keys_card_says() {
+    let (mut game, mut input) = begin(Lesson::Build);
+
+    assert_eq!(objective(&game), Some("Build a Fabricator"));
+    assert!(copy(&game, Pointer::Mouse, true).contains("press B"));
+    let builder = on_screen(&game, own(&game, UnitKind::Harvester)[0].1);
+    click_at(&mut game, &mut input, builder);
+    press(&mut game, &mut input, Key::B);
+    let fabricator = card(&game, CardAction::ArmBuild(BuildingKind::Fabricator));
+    click_at(&mut game, &mut input, fabricator);
+    let spot = on_screen(&game, FABRICATOR_SPOT);
+    click_at(&mut game, &mut input, spot);
+    assert_eq!(
+        placed(&game, BuildingKind::Fabricator),
+        1,
+        "the click places it"
+    );
+    run_to(&mut game, &input, Some("Build three Barricades"));
+
+    assert!(copy(&game, Pointer::Mouse, true).contains("hold Shift"));
+    let builder = on_screen(&game, own(&game, UnitKind::Harvester)[0].1);
+    click_at(&mut game, &mut input, builder);
+    if !input.construction_open() {
+        press(&mut game, &mut input, Key::B);
+    }
+    let barricade = card(&game, CardAction::ArmBuild(BuildingKind::Barricade));
+    click_at(&mut game, &mut input, barricade);
+    send(&mut game, &mut input, &[key_down(Key::Shift)]);
+    for spot in BARRICADES {
+        let p = on_screen(&game, spot);
+        click_at(&mut game, &mut input, p);
+    }
+    send(&mut game, &mut input, &[key_up(Key::Shift)]);
+    assert_eq!(
+        placed(&game, BuildingKind::Barricade),
+        3,
+        "Shift chains them"
+    );
+    run_to(&mut game, &input, Some("Set a rally point"));
+
+    assert!(copy(&game, Pointer::Mouse, true).contains("press Y"));
+    let fabricator = on_screen(&game, own_building(&game, BuildingKind::Fabricator));
+    click_at(&mut game, &mut input, fabricator);
+    right_click_at(&mut game, &mut input, RALLY_SPOT);
+    assert!(
+        game.pending
+            .iter()
+            .any(|c| matches!(c.command, Command::SetRally { rally: Some(_), .. })),
+        "a right-click on ground with the Fabricator selected rallies it"
+    );
+    run_to(&mut game, &input, Some("Train a Lancer"));
+
+    assert!(copy(&game, Pointer::Mouse, true).contains("press Q"));
+    press(&mut game, &mut input, Key::Q);
+    run_to(&mut game, &input, Some("Make a control group"));
+
+    assert!(copy(&game, Pointer::Mouse, true).contains("press Ctrl+1"));
+    let lancer = on_screen(&game, own(&game, UnitKind::Lancer)[0].1);
+    click_at(&mut game, &mut input, lancer);
+    send(
+        &mut game,
+        &mut input,
+        &[
+            key_down(Key::Ctrl),
+            key_down(Key::Num1),
+            key_up(Key::Num1),
+            key_up(Key::Ctrl),
+        ],
+    );
+    assert_eq!(
+        objective(&game),
+        None,
+        "saving the group finishes the lesson"
+    );
+    game.presentation.selection.units.clear();
+    press(&mut game, &mut input, Key::Num1);
+    assert_eq!(
+        game.presentation.selection.units,
+        [own(&game, UnitKind::Lancer)[0].0],
+        "1 recalls the group, as the card says"
+    );
+}
+
+#[test]
+fn the_build_lesson_plays_as_its_touch_card_says() {
+    let (mut game, mut input) = begin(Lesson::Build);
+
+    assert_eq!(objective(&game), Some("Build a Fabricator"));
+    assert!(copy(&game, Pointer::Touch, false).contains("tap the check mark"));
+    let builder = on_screen(&game, own(&game, UnitKind::Harvester)[0].1);
+    tap_at(&mut game, &mut input, builder);
+    let build = card(
+        &game,
+        CardAction::Dispatch(crate::action::Action::ToggleBuildPalette),
+    );
+    tap_at(&mut game, &mut input, build);
+    let fabricator = card(&game, CardAction::ArmBuild(BuildingKind::Fabricator));
+    tap_at(&mut game, &mut input, fabricator);
+    let spot = on_screen(&game, FABRICATOR_SPOT);
+    tap_at(&mut game, &mut input, spot);
+    tap_check(&mut game, &mut input);
+    assert_eq!(
+        placed(&game, BuildingKind::Fabricator),
+        1,
+        "the check mark places it"
+    );
+    run_to(&mut game, &input, Some("Build three Barricades"));
+
+    assert!(copy(&game, Pointer::Touch, false).contains("Drag the handle"));
+    let builder = on_screen(&game, own(&game, UnitKind::Harvester)[0].1);
+    tap_at(&mut game, &mut input, builder);
+    if !input.construction_open() {
+        let build = card(
+            &game,
+            CardAction::Dispatch(crate::action::Action::ToggleBuildPalette),
+        );
+        tap_at(&mut game, &mut input, build);
+    }
+    let barricade = card(&game, CardAction::ArmBuild(BuildingKind::Barricade));
+    tap_at(&mut game, &mut input, barricade);
+    let first = on_screen(&game, BARRICADES[0]);
+    tap_at(&mut game, &mut input, first);
+    // The row ends on the tile under the last Barricade.
+    super::touch_placement::pull_handle_to(
+        &mut game,
+        &mut input,
+        chassis::grid::TilePos::new(11, 8),
+    );
+    tap_check(&mut game, &mut input);
+    assert_eq!(
+        placed(&game, BuildingKind::Barricade),
+        3,
+        "the handle lays a row"
+    );
+    run_to(&mut game, &input, Some("Set a rally point"));
+
+    assert!(copy(&game, Pointer::Touch, false).contains("long-press the ground"));
+    let fabricator = on_screen(&game, own_building(&game, BuildingKind::Fabricator));
+    tap_at(&mut game, &mut input, fabricator);
+    long_press_at(&mut game, &mut input, RALLY_SPOT);
+    run_to(&mut game, &input, Some("Train a Lancer"));
+
+    let lancer = card(
+        &game,
+        CardAction::Dispatch(crate::action::Action::TrainSlot(0)),
+    );
+    tap_at(&mut game, &mut input, lancer);
+    run_to(&mut game, &input, Some("Make a control group"));
+
+    assert!(copy(&game, Pointer::Touch, false).contains("tap the plus"));
+    let lancer = on_screen(&game, own(&game, UnitKind::Lancer)[0].1);
+    tap_at(&mut game, &mut input, lancer);
+    let plus = game
+        .presentation
+        .layout
+        .get()
+        .group_slots
+        .iter()
+        .flatten()
+        .find(|(_, slot)| matches!(slot, crate::layout::GroupSlot::Assign(_)))
+        .map(|(rect, _)| rect.center())
+        .expect("the bar offers to save the selection");
+    tap_at(&mut game, &mut input, plus);
+    assert_eq!(
+        objective(&game),
+        None,
+        "saving the group finishes the lesson"
+    );
+}
