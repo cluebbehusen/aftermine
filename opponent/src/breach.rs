@@ -194,7 +194,7 @@ pub(crate) fn exits(
 }
 
 /// Every tile under a building the seat knows: its own, its allies' and the
-/// enemy buildings it remembers.
+/// enemy buildings it remembers. A buried Scuttle Charge blocks nothing.
 fn known_footprints(map: &MapModel, observation: &ObservationData) -> Grid<bool> {
     let (width, height) = map.size();
     let mut blocked = Grid::new(width, height, false);
@@ -203,6 +203,7 @@ fn known_footprints(map: &MapModel, observation: &ObservationData) -> Grid<bool>
         .iter()
         .chain(&observation.ally_buildings)
         .chain(&observation.enemy_buildings)
+        .filter(|building| building.kind != BuildingKind::ScuttleCharge)
     {
         let (bw, bh) = building.kind.size();
         for dy in 0..bh {

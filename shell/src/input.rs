@@ -546,7 +546,9 @@ fn pending_build_projection_for(
         let own_footprints = state
             .buildings()
             .iter()
-            .filter(|b| b.player == game.presentation.human && !b.provisional())
+            .filter(|b| {
+                b.player == game.presentation.human && !b.provisional() && !b.kind.is_stealthy()
+            })
             .map(|b| (b.anchor, b.kind.size()))
             .collect();
         PendingBuildProjection {
@@ -717,7 +719,7 @@ fn judge(
 /// Whether the founder may reach a doorstep of `kind` at `anchor`, as far
 /// as the player can tell. Only ground the player can see blocked, has
 /// explored as impassable terrain, or holds under `own` footprints (the
-/// player's buildings once the staged and planned batch lands) counts:
+/// player's blocking buildings once the staged and planned batch lands) counts:
 /// unexplored and fogged ground is taken as open, so this never calls
 /// reachable ground unreachable and never reads what fog hides. The sim's
 /// own path check still decides; this catches the walled-off pockets,
