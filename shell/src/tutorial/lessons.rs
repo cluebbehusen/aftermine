@@ -1,7 +1,7 @@
 //! What each lesson says and what completes each of its steps. Paragraphs
 //! wrap to the card; `{token}`s name the player's current bindings.
 
-use super::{Copy, Goal, Sortie, Squad, Step};
+use super::{Copy, Goal, Sortie, Squad, Stance, Step};
 use chassis::grid::TilePos;
 use oxide_sim::{BuildingKind, UnitKind};
 
@@ -492,6 +492,7 @@ pub(super) const FIGHT_SQUADS: [Squad; 4] = [
         sortie: Some(Sortie {
             step: 0,
             toward: TilePos::new(5, 26),
+            stance: Stance::Hunt,
         }),
     },
     Squad {
@@ -507,9 +508,249 @@ pub(super) const FIGHT_SQUADS: [Squad; 4] = [
         sortie: Some(Sortie {
             step: 3,
             toward: TilePos::new(9, 21),
+            stance: Stance::Hunt,
         }),
     },
 ];
 
 pub(super) const FIGHT_OUTRO: &str = "You can now choose between Hunt, Advance, and Run, use \
     each machine for what it does best, and fight around rock and high ground.";
+
+const FOG: &str = "Ground you have never seen is dark. Ground you have seen but can't see \
+    right now is dimmed. It shows enemy buildings as you last saw them, but not enemy machines.";
+const SURVEYOR: &str = "The Surveyor is your fastest ground machine and sees 9 tiles, but it \
+    has no weapons. An enemy base is somewhere to the east.";
+const SCOUT_SAFE: &str = "A scouting Surveyor stays out of reach of enemies it has seen.";
+const SURVEYOR_RADAR: &str = "A Surveyor that stands still for 2 seconds also unfolds a \
+    short-range radar. Enemies up to 12 tiles away that it can't see show up as blips.";
+const ARRAY: &str = "An Array is a building with a long-range radar. It sees 9 tiles around \
+    itself and shows enemies up to 20 tiles away as blips.";
+const BLIPS: &str = "A blip shows where an enemy is, but not what it is. A full diamond means it \
+    is on the ground, and only the top half of a diamond means it is in the air.";
+const AIRCRAFT: &str = "Two Buzzards wait at the enemy base. Buzzards are aircraft. They fly \
+    over rock and attack only targets on the ground.";
+const ANTI_AIR: &str = "Most ground machines can't shoot aircraft. Flak Turrets and Flakhounds \
+    shoot only aircraft. Sentinels can shoot both, but are weak against aircraft.";
+const INBOUND: &str = "The Buzzards are flying to your base. Watch for their blips on your \
+    Array's radar before they come into sight.";
+const FLAK_FIRST: &str = "Your Flak Turret hits them from 5.5 tiles away. A Buzzard must come \
+    within 3 tiles to fire, so the turret shoots first.";
+const IN_HARMS_WAY: &str = "Buzzards attack the nearest target, so Harvesters left idle beside \
+    your new buildings are in danger.";
+const WELDING: &str = "Harvesters weld damaged buildings and ground machines back to full \
+    health. Welding costs scrap for each point of health it restores.";
+const IDLE_WELD: &str = "Idle Harvesters also weld damage near them on their own.";
+const REPAIR_BAY: &str = "A Repair Bay repairs your machines within 4 tiles of it, up to four \
+    at a time. It works quickly once they are out of combat. It also repairs nearby buildings \
+    slowly, and pays for all repairs with scrap.";
+const WRECKS: &str =
+    "A destroyed machine leaves a wreck that holds some of the scrap the machine cost.";
+const WRECKS_FADE: &str = "Wrecks deteriorate over time, so collect them soon.";
+
+pub(super) const SUSTAIN: [Step; 7] = [
+    Step {
+        title: "Scout the east",
+        copy: Copy {
+            mouse_keys: &[
+                FOG,
+                SURVEYOR,
+                "Select the Surveyor and right-click far to the east to scout there.",
+                SCOUT_SAFE,
+                SURVEYOR_RADAR,
+            ],
+            mouse: &[
+                FOG,
+                SURVEYOR,
+                "Select the Surveyor and right-click far to the east to scout there.",
+                SCOUT_SAFE,
+                SURVEYOR_RADAR,
+            ],
+            touch_keys: &[
+                FOG,
+                SURVEYOR,
+                "Select the Surveyor and long-press far to the east to scout there.",
+                SCOUT_SAFE,
+                SURVEYOR_RADAR,
+            ],
+            touch: &[
+                FOG,
+                SURVEYOR,
+                "Select the Surveyor and long-press far to the east to scout there.",
+                SCOUT_SAFE,
+                SURVEYOR_RADAR,
+            ],
+        },
+        goal: Goal::Find,
+    },
+    Step {
+        title: "Build an Array",
+        copy: Copy {
+            mouse_keys: &[
+                ARRAY,
+                BLIPS,
+                "Select a Harvester, click Build or press {build}, and choose Array in the Utility column. Click open ground east of your Foundry to place it.",
+            ],
+            mouse: &[
+                ARRAY,
+                BLIPS,
+                "Select a Harvester, click Build, and choose Array in the Utility column. Click open ground east of your Foundry to place it.",
+            ],
+            touch_keys: &[
+                ARRAY,
+                BLIPS,
+                "Select a Harvester, tap Build or press {build}, and choose Array in the Utility column. Drag its outline east of your Foundry and tap the check mark.",
+            ],
+            touch: &[
+                ARRAY,
+                BLIPS,
+                "Select a Harvester, tap Build, and choose Array in the Utility column. Drag its outline east of your Foundry and tap the check mark.",
+            ],
+        },
+        goal: Goal::Build(BuildingKind::Array, 1),
+    },
+    Step {
+        title: "Build a Flak Turret",
+        copy: Copy {
+            mouse_keys: &[
+                AIRCRAFT,
+                ANTI_AIR,
+                "Select a Harvester, click Build or press {build}, and choose Flak Turret in the Defense column. Click open ground east of your Foundry to place it.",
+            ],
+            mouse: &[
+                AIRCRAFT,
+                ANTI_AIR,
+                "Select a Harvester, click Build, and choose Flak Turret in the Defense column. Click open ground east of your Foundry to place it.",
+            ],
+            touch_keys: &[
+                AIRCRAFT,
+                ANTI_AIR,
+                "Select a Harvester, tap Build or press {build}, and choose Flak Turret in the Defense column. Drag its outline east of your Foundry and tap the check mark.",
+            ],
+            touch: &[
+                AIRCRAFT,
+                ANTI_AIR,
+                "Select a Harvester, tap Build, and choose Flak Turret in the Defense column. Drag its outline east of your Foundry and tap the check mark.",
+            ],
+        },
+        goal: Goal::Build(BuildingKind::FlakTurret, 1),
+    },
+    Step {
+        title: "Shoot down the Buzzards",
+        copy: Copy {
+            mouse_keys: &[
+                INBOUND,
+                FLAK_FIRST,
+                IN_HARMS_WAY,
+                "Click the badge or press {idle} to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
+            ],
+            mouse: &[
+                INBOUND,
+                FLAK_FIRST,
+                IN_HARMS_WAY,
+                "Click the badge to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
+            ],
+            touch_keys: &[
+                INBOUND,
+                FLAK_FIRST,
+                IN_HARMS_WAY,
+                "Tap the badge or press {idle} to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
+            ],
+            touch: &[
+                INBOUND,
+                FLAK_FIRST,
+                IN_HARMS_WAY,
+                "Tap the badge to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
+            ],
+        },
+        goal: Goal::Defeat(0),
+    },
+    Step {
+        title: "Weld the damage",
+        copy: Copy {
+            mouse_keys: &[
+                WELDING,
+                "Select a Harvester and right-click a damaged building or machine to weld it.",
+                IDLE_WELD,
+            ],
+            mouse: &[
+                WELDING,
+                "Select a Harvester and right-click a damaged building or machine to weld it.",
+                IDLE_WELD,
+            ],
+            touch_keys: &[
+                WELDING,
+                "Select a Harvester and long-press a damaged building or machine to weld it.",
+                IDLE_WELD,
+            ],
+            touch: &[
+                WELDING,
+                "Select a Harvester and long-press a damaged building or machine to weld it.",
+                IDLE_WELD,
+            ],
+        },
+        goal: Goal::Weld,
+    },
+    Step {
+        title: "Build a Repair Bay",
+        copy: Copy {
+            mouse_keys: &[
+                REPAIR_BAY,
+                "Select a Harvester, click Build or press {build}, and choose Repair Bay in the Utility column. Click open ground next to your Foundry to place it.",
+            ],
+            mouse: &[
+                REPAIR_BAY,
+                "Select a Harvester, click Build, and choose Repair Bay in the Utility column. Click open ground next to your Foundry to place it.",
+            ],
+            touch_keys: &[
+                REPAIR_BAY,
+                "Select a Harvester, tap Build or press {build}, and choose Repair Bay in the Utility column. Drag its outline next to your Foundry and tap the check mark.",
+            ],
+            touch: &[
+                REPAIR_BAY,
+                "Select a Harvester, tap Build, and choose Repair Bay in the Utility column. Drag its outline next to your Foundry and tap the check mark.",
+            ],
+        },
+        goal: Goal::Build(BuildingKind::RepairBay, 1),
+    },
+    Step {
+        title: "Collect the wrecks",
+        copy: Copy {
+            mouse_keys: &[
+                WRECKS,
+                "Select a Harvester and right-click a wreck to collect it, the same way as a scrap pile.",
+                WRECKS_FADE,
+            ],
+            mouse: &[
+                WRECKS,
+                "Select a Harvester and right-click a wreck to collect it, the same way as a scrap pile.",
+                WRECKS_FADE,
+            ],
+            touch_keys: &[
+                WRECKS,
+                "Select a Harvester and long-press a wreck to collect it, the same way as a scrap pile.",
+                WRECKS_FADE,
+            ],
+            touch: &[
+                WRECKS,
+                "Select a Harvester and long-press a wreck to collect it, the same way as a scrap pile.",
+                WRECKS_FADE,
+            ],
+        },
+        goal: Goal::CollectWreck,
+    },
+];
+
+/// The two Buzzards, which set out for the base once the Flak Turret
+/// stands. They run past a Surveyor left watching theirs and start to
+/// fight just short of the base.
+pub(super) const SUSTAIN_SQUADS: [Squad; 1] = [Squad {
+    units: &[4, 5],
+    sortie: Some(Sortie {
+        step: 3,
+        toward: TilePos::new(9, 12),
+        stance: Stance::RunTo(TilePos::new(17, 12)),
+    }),
+}];
+
+pub(super) const SUSTAIN_OUTRO: &str = "You can now scout, use radar, defend against aircraft, \
+    repair, and collect wrecks. That completes Basic Training.";

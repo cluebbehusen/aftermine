@@ -849,3 +849,219 @@ fn the_fight_lesson_plays_as_its_touch_card_says() {
     }
     run_to(&mut game, &input, None);
 }
+
+/// Where See and sustain's buildings go: the Array and the Flak Turret
+/// east of the Foundry, and the Repair Bay beside it.
+const ARRAY_SPOT: Vec2 = Vec2::new(9.5, 10.5);
+const FLAK_SPOT: Vec2 = Vec2::new(10.5, 12.5);
+const REPAIR_BAY_SPOT: Vec2 = Vec2::new(7.0, 15.0);
+/// Open ground far to the east, past the gap in the ridge.
+const FAR_EAST: Vec2 = Vec2::new(50.5, 12.5);
+/// The scrap pile north of the Foundry.
+const NORTH_PILE: Vec2 = Vec2::new(2.5, 6.5);
+
+/// The center of the first damaged own building, or else the first
+/// wounded own ground machine.
+fn damaged(game: &Game) -> Vec2 {
+    let human = game.presentation.human;
+    let building = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == human && b.built() && b.hp < b.stats().max_hp)
+        .map(oxide_sim::Building::center);
+    let machine = game
+        .state
+        .units()
+        .iter()
+        .find(|u| {
+            u.player == human
+                && u.hp < u.kind.stats().max_hp
+                && u.domain() == oxide_sim::stats::Domain::Ground
+        })
+        .map(|u| u.pos);
+    let at = building.or(machine).expect("the raid left damage");
+    vec2(at.x.to_num::<f32>(), at.y.to_num::<f32>())
+}
+
+/// The middle of the first wreck tile.
+fn wreck(game: &Game) -> Vec2 {
+    let map = game.state.map();
+    (0..map.height())
+        .flat_map(|y| (0..map.width()).map(move |x| chassis::grid::TilePos::new(x, y)))
+        .find(|tile| map.wreck_at(*tile) > 0)
+        .map(|tile| vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5))
+        .expect("the raid left a wreck")
+}
+
+/// Points the camera at `world` and picks the own machine standing there,
+/// with a click or a tap.
+fn select_at(game: &mut Game, input: &mut InputState, world: Vec2, touch: bool) {
+    look_at(game, input, world);
+    let p = on_screen(game, world);
+    if touch {
+        tap_at(game, input, p);
+    } else {
+        // Well apart from the last click, so it is no double-click.
+        input.now += 1.0;
+        click_at(game, input, p);
+    }
+    assert_eq!(
+        game.presentation.selection.units.len(),
+        1,
+        "the {} picks one machine",
+        if touch { "tap" } else { "click" }
+    );
+}
+
+/// Selects a Harvester, opens construction, picks `kind`, and places it
+/// at `spot` with a click, or with a drag of the outline and the check
+/// mark.
+fn place(game: &mut Game, input: &mut InputState, kind: BuildingKind, spot: Vec2, touch: bool) {
+    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    run_until(game, input, "the bank covering the building", |game| {
+        game.state.player(game.presentation.human).scrap >= cost
+    });
+    let builder = own(game, UnitKind::Harvester)[0].1;
+    select_at(game, input, builder, touch);
+    if !input.construction_open() {
+        if touch {
+            let build = card(
+                game,
+                CardAction::Dispatch(crate::action::Action::ToggleBuildPalette),
+            );
+            tap_at(game, input, build);
+        } else {
+            press(game, input, Key::B);
+        }
+    }
+    let armed = card(game, CardAction::ArmBuild(kind));
+    look_at(game, input, spot);
+    let p = on_screen(game, spot);
+    if touch {
+        tap_at(game, input, armed);
+        tap_at(game, input, p);
+        tap_check(game, input);
+    } else {
+        click_at(game, input, armed);
+        click_at(game, input, p);
+    }
+    assert_eq!(placed(game, kind), 1, "the {kind:?} is placed");
+}
+
+/// Plays See and sustain the way its cards word it, with a mouse and keys
+/// or with a finger.
+fn play_sustain(touch: bool) {
+    let (mut game, mut input) = begin(Lesson::Sustain);
+    let (pointer, order) = if touch {
+        (Pointer::Touch, "long-press")
+    } else {
+        (Pointer::Mouse, "right-click")
+    };
+    let order_at = |game: &mut Game, input: &mut InputState, world: Vec2| {
+        look_at(game, input, world);
+        if touch {
+            long_press_at(game, input, world);
+        } else {
+            right_click_at(game, input, world);
+        }
+    };
+
+    assert_eq!(objective(&game), Some("Scout the east"));
+    assert!(
+        copy(&game, pointer, !touch).contains(&format!("Surveyor and {order} far to the east"))
+    );
+    let surveyor = own(&game, UnitKind::Surveyor)[0].1;
+    select_at(&mut game, &mut input, surveyor, touch);
+    order_at(&mut game, &mut input, FAR_EAST);
+    assert!(
+        staged(&game, |c| matches!(c, Command::Scout { .. })),
+        "a lone Surveyor scouts where it is sent"
+    );
+    run_to(&mut game, &input, Some("Build an Array"));
+
+    assert!(copy(&game, pointer, !touch).contains("Array in the Utility column"));
+    place(
+        &mut game,
+        &mut input,
+        BuildingKind::Array,
+        ARRAY_SPOT,
+        touch,
+    );
+    run_to(&mut game, &input, Some("Build a Flak Turret"));
+
+    assert!(copy(&game, pointer, !touch).contains("Flak Turret in the Defense column"));
+    place(
+        &mut game,
+        &mut input,
+        BuildingKind::FlakTurret,
+        FLAK_SPOT,
+        touch,
+    );
+    run_to(&mut game, &input, Some("Shoot down the Buzzards"));
+
+    assert!(copy(&game, pointer, !touch).contains("select an idle Harvester"));
+    while hauling(&game) < 3 {
+        if touch {
+            let badge = game.presentation.layout.get().idle_badge;
+            tap_at(&mut game, &mut input, badge.center());
+        } else {
+            press(&mut game, &mut input, Key::N);
+        }
+        assert_eq!(game.presentation.selection.units.len(), 1);
+        order_at(&mut game, &mut input, NORTH_PILE);
+        game.do_tick();
+        relayout(&game, &input);
+    }
+    run_to(&mut game, &input, Some("Weld the damage"));
+    assert_eq!(
+        own(&game, UnitKind::Harvester).len(),
+        3,
+        "Harvesters sent back to collecting stay out of the fight"
+    );
+
+    assert!(copy(&game, pointer, !touch).contains(&format!("{order} a damaged building")));
+    let welder = own(&game, UnitKind::Harvester)[0].1;
+    select_at(&mut game, &mut input, welder, touch);
+    let patient = damaged(&game);
+    order_at(&mut game, &mut input, patient);
+    assert!(
+        staged(&game, |c| matches!(
+            c,
+            Command::Repair { .. } | Command::RepairUnit { .. }
+        )),
+        "a Harvester sent onto damage welds it"
+    );
+    run_to(&mut game, &input, Some("Build a Repair Bay"));
+
+    assert!(copy(&game, pointer, !touch).contains("Repair Bay in the Utility column"));
+    place(
+        &mut game,
+        &mut input,
+        BuildingKind::RepairBay,
+        REPAIR_BAY_SPOT,
+        touch,
+    );
+    run_to(&mut game, &input, Some("Collect the wrecks"));
+
+    assert!(copy(&game, pointer, !touch).contains(&format!("{order} a wreck")));
+    let collector = own(&game, UnitKind::Harvester)[0].1;
+    select_at(&mut game, &mut input, collector, touch);
+    let wreck = wreck(&game);
+    order_at(&mut game, &mut input, wreck);
+    assert!(
+        staged(&game, |c| matches!(c, Command::Harvest { .. })),
+        "a Harvester sent onto a wreck collects it"
+    );
+    run_to(&mut game, &input, None);
+}
+
+#[test]
+fn the_see_and_sustain_lesson_plays_as_its_mouse_and_keys_card_says() {
+    play_sustain(false);
+}
+
+#[test]
+fn the_see_and_sustain_lesson_plays_as_its_touch_card_says() {
+    play_sustain(true);
+}
