@@ -66,3 +66,61 @@ fn save_png_reports_a_parent_that_cannot_be_created() {
     assert_eq!(std::fs::read(&blocked).unwrap(), b"existing file");
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Level 2 over level 1 over level 0, each parted by a cliff at its foot.
+fn three_levels() -> Map {
+    Map::parse_tiered(
+        &["....", "====", "....", "....", "====", "....", "...."],
+        &["2222", "1111", "1111", "1111", "0000", "0000", "0000"],
+    )
+    .unwrap()
+    .0
+}
+
+#[test]
+fn the_floor_is_where_most_starts_stand_else_where_most_ground_lies() {
+    let map = three_levels();
+    let (top, middle, bottom) = (TilePos::new(0, 0), TilePos::new(0, 2), TilePos::new(0, 6));
+    assert_eq!(floor_level(&map, [top, bottom, bottom]), 0);
+    assert_eq!(floor_level(&map, [top, middle]), 1, "a tie goes lower");
+    assert_eq!(floor_level(&map, []), 0, "levels 0 and 1 tie on ground");
+}
+
+#[test]
+fn each_level_steps_its_tone_within_a_band() {
+    assert_eq!(level_tone(3.0, 3), 1.0);
+    assert!((level_tone(4.0, 3) - 1.15).abs() < 1e-6);
+    assert_eq!(level_tone(20.0, 3), LEVEL_BRIGHTEST);
+    assert_eq!(level_tone(0.0, 9), LEVEL_DARKEST);
+}
+
+#[test]
+fn a_tiered_map_draws_its_levels_cliffs_and_ramps() {
+    let mut scenario = oxide_sim::Scenario::skirmish();
+    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.map = vec!["....".into(), "=/==".into(), "....".into()];
+    scenario.levels = vec!["1111".into(), "0000".into(), "0000".into()];
+    scenario.players.truncate(1);
+    scenario.units.clear();
+    scenario.buildings.clear();
+    let state = scenario.build().unwrap();
+    let pixmap = render_state(&state);
+    let at = |x: u32, y: u32| {
+        let p = pixmap.pixel(x, y).unwrap();
+        (p.red(), p.green(), p.blue())
+    };
+    let tile = TILE_PIXELS;
+    let center = tile / 2;
+    let floor = at(center, 2 * tile + center);
+    let plateau = at(center, center);
+    assert!(plateau.0 > floor.0, "the upper level is brighter");
+    let cliff_face = at(center, tile + 2);
+    let cliff_foot = at(center, tile + tile - 1);
+    assert_eq!(cliff_foot, floor, "a cliff shows the ground at its foot");
+    assert!(cliff_face.0 < floor.0, "with the drop's face along its top");
+    let ramp = at(tile + center, tile + center);
+    assert!(
+        floor.0 < ramp.0 && ramp.0 < plateau.0,
+        "a ramp sits between"
+    );
+}

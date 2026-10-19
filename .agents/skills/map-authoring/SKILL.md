@@ -41,11 +41,14 @@ not four independent tiles.
 
 A tiered map adds a `levels` array beside `map`: one row per map row, one glyph
 per tile, `0`–`9` then `a`–`z` for levels 0 to 35. A cliff and a ramp both carry
-the lower level they join; every other tile carries the level it stands on.
-Leave `levels` out of a flat map. The parser refuses ground at two levels
-touching, diagonals included, unless one is a ramp joining them, and a cliff
-higher than the ground beside it. A cliff band may part levels more than one
-apart; a ramp always joins neighbouring levels.
+the lower level they join; every other tile carries the level it stands on. A
+cliff sits at the foot of its drop: the art draws the drop over the last tile of
+the upper ground, which stays buildable, and the cliff tile reads as the lower
+ground beneath it. A cliff two tiles thick reads as a taller drop. Leave
+`levels` out of a flat map. The parser refuses ground at two levels touching,
+diagonals included, unless one is a ramp joining them, and a cliff higher than
+the ground beside it. A cliff band may part levels more than one apart; a ramp
+always joins neighbouring levels.
 
 Levels change fights: ground units trade direct fire only on a shared level or
 from a ramp, higher ground between two units blocks their shots, artillery fires

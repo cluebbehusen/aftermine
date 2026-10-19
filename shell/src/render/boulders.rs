@@ -168,8 +168,7 @@ impl Slabs {
     /// rock.
     pub(super) fn build(map: &Map, rows: &[String], blockers: &Blockers) -> Self {
         let ring = boundary_ring(rows);
-        // Cliffs draw as rock until levels have their own art.
-        let solid = |terrain: Terrain| matches!(terrain, Terrain::Rock | Terrain::Cliff);
+        let solid = |terrain: Terrain| terrain == Terrain::Rock;
         let rock = |pos: TilePos| {
             map.tile(pos)
                 .is_none_or(|tile| solid(tile.terrain) || ring(pos))

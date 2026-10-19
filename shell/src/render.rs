@@ -87,6 +87,7 @@ pub(crate) mod entities;
 mod environment;
 pub(crate) mod hud;
 mod impacts;
+mod levels;
 pub(crate) mod maw;
 mod minimap;
 mod motion;
@@ -622,16 +623,25 @@ pub(crate) struct GroundLayout {
     slabs: boulders::Slabs,
     pits: pits::PitField,
     terraces: terraces::Terraces,
+    levels: Option<levels::Levels>,
 }
 
 impl GroundLayout {
-    pub(crate) fn build(map: &oxide_sim::map::Map, rows: &[String]) -> Self {
+    pub(crate) fn build(map: &oxide_sim::map::Map, scenario: &oxide_sim::Scenario) -> Self {
+        let rows = &scenario.map;
         let blockers = world::Blockers::build(map, rows);
+        // A tiered map draws the level its Foundries start on at flat
+        // ground's brightness.
+        let starts = scenario.parse_map_and_anchors().map_or_else(
+            |_| Vec::new(),
+            |(_, anchors)| anchors.into_iter().map(|(_, pos)| pos).collect(),
+        );
         Self {
             slabs: boulders::Slabs::build(map, rows, &blockers),
             blockers,
             pits: pits::PitField::build(map),
             terraces: terraces::Terraces::build(map, rows),
+            levels: levels::Levels::build(map, oxide_kit::render::floor_level(map, starts)),
         }
     }
 }

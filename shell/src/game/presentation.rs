@@ -254,9 +254,9 @@ impl<'a> Scene<'a> {
     }
     /// The map's ground layouts, built by the first call.
     pub(crate) fn ground(&self) -> &'a crate::render::GroundLayout {
-        self.presentation.ground.get_or_init(|| {
-            crate::render::GroundLayout::build(self.state.map(), &self.scenario.map)
-        })
+        self.presentation
+            .ground
+            .get_or_init(|| crate::render::GroundLayout::build(self.state.map(), self.scenario))
     }
     /// The local player's fog view (what rendering and targeting honor).
     pub fn my_vision(&self) -> &oxide_sim::Vision {

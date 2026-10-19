@@ -13,6 +13,17 @@ const MINI_GROUND: Color = color_u8!(44, 44, 52, 255);
 const MINI_ROCK: Color = color_u8!(84, 84, 96, 255);
 const MINI_PEAK: Color = color_u8!(48, 47, 57, 255);
 const MINI_PIT: Color = color_u8!(6, 6, 9, 255);
+/// How much darker a cliff is than the ground at its foot.
+const MINI_CLIFF: f32 = 0.55;
+
+fn toned(color: Color, tone: f32) -> Color {
+    Color::new(
+        (color.r * tone).min(1.0),
+        (color.g * tone).min(1.0),
+        (color.b * tone).min(1.0),
+        color.a,
+    )
+}
 
 /// Minimap identity color: the same seat accents the world renderer uses
 /// (own faction, cool allies, warm hostiles).
@@ -160,6 +171,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         game.state.map().width(),
         game.state.map().height(),
     );
+    let levels = game.ground().levels.as_ref();
     for (pos, tile) in game.state.map().iter() {
         let (explored, visible) = if omniscient {
             (true, true)
@@ -174,11 +186,16 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             } else {
                 vision.remembered_scrap(pos)
             };
+            // Ground on a tiered map takes its level's tone, and a cliff
+            // reads as a dark drop at the ground of its foot.
+            let tone = levels.and_then(|levels| levels.minimap_tone(game.state.map(), pos));
+            let ground = tone.map_or(MINI_GROUND, |tone| toned(MINI_GROUND, tone));
             let base = match (tile.terrain, scrap) {
-                (oxide_sim::map::Terrain::Rock | oxide_sim::map::Terrain::Cliff, _) => MINI_ROCK,
+                (oxide_sim::map::Terrain::Rock, _) => MINI_ROCK,
+                (oxide_sim::map::Terrain::Cliff, _) => toned(ground, MINI_CLIFF),
                 (oxide_sim::map::Terrain::Peak, _) => MINI_PEAK,
                 (oxide_sim::map::Terrain::Pit, _) => MINI_PIT,
-                (oxide_sim::map::Terrain::Ground, 0) => MINI_GROUND,
+                (oxide_sim::map::Terrain::Ground, 0) => ground,
                 (oxide_sim::map::Terrain::Ground, _) => SCRAP_COLOR,
             };
             if visible {

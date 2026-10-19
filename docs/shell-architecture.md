@@ -829,8 +829,8 @@ ring only while the radar is up. Radar blips draw above the fog in no faction's
 color, told apart by shape: a hollow diamond for a ground contact and only its
 upper half for an air contact.
 
-Procedural quarry boundaries, pits, peaks, and rock walls derive from map
-geometry alone. `GroundLayout` lays them out on a match's first draw and the
+Procedural quarry boundaries, pits, peaks, rock walls, and levels derive from
+map geometry alone. `GroundLayout` lays them out on a match's first draw and the
 Presentation keeps it for that match, so revealed terrain never changes as the
 fog lifts; the fog veil hides what the seat has not explored. The boundary and
 peaks are one terrace field measured from the open floor: a peak is the wall
@@ -844,15 +844,23 @@ block of tiles so it joins the boundary. Peaks and pits that mirror each other
 under the map's half-turn step as mirror images; their wear marks fall
 independently. Rock walls draw layered slabs from the generated library, sized
 by local rock thickness, and machinery blockers stay off the edge ring the
-boundary covers. The shell extends allied unit sight discs and
-completed-building footprint sight into a bounded off-map quarry margin. Its
-presentation-only exploration cache updates on every tick, including bulk
-advances, and rebuilds during explicit command-log reconstruction. Player
-checkpoints retain that cache directly. Map tiles show authoritative simulation
-fog. The replay viewer is fog-free, and so is a seat out of an undecided match
-once no LAN teammate plays on whom it could tip off; its chrome stays its own.
-Animation, heading, and weapon effects use the relevant simulation state rather
-than inventing movement or firing delays.
+boundary covers. On a tiered map the levels layer tints each level's ground a
+fixed step brighter or darker than the level the Foundries start on, within a
+band. A cliff tile stands at the foot of its drop: the drop is drawn as a
+terrace step over the last tile of the ground above, which stays buildable, with
+its face a quarter tile into the cliff tile, and the rest of the cliff tile
+shows the lower ground. A cliff spanning several levels steps once per level as
+its width allows. Ramps are graded cuts with ruts whose walls step down beside
+them and turn along the cliff's foot. The minimap tints ground by level and
+draws cliffs as a dark edge, and the CPU renderer shades levels the same way.
+The shell extends allied unit sight discs and completed-building footprint sight
+into a bounded off-map quarry margin. Its presentation-only exploration cache
+updates on every tick, including bulk advances, and rebuilds during explicit
+command-log reconstruction. Player checkpoints retain that cache directly. Map
+tiles show authoritative simulation fog. The replay viewer is fog-free, and so
+is a seat out of an undecided match once no LAN teammate plays on whom it could
+tip off; its chrome stays its own. Animation, heading, and weapon effects use
+the relevant simulation state rather than inventing movement or firing delays.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a
