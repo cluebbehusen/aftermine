@@ -156,6 +156,24 @@ fn lay_tip(tip: Tip, hands: Hands, w: f32) -> CardLayout {
 }
 
 #[test]
+fn both_cards_sit_in_the_top_left_corner_under_the_bar() {
+    let under_bar = crate::layout::TOP_BAR_H + 6.0;
+    for w in [320.0, 640.0, 1280.0] {
+        let cards = [
+            lay(&lesson(Lesson::Build, 3), None, MOUSE, w),
+            lay_tip(Tip::IdleHarvesters, MOUSE, w),
+        ];
+        for card in cards {
+            assert_eq!((card.rect.x, card.rect.y), (EDGE, under_bar), "{w}");
+            assert!(
+                card.rect.right() <= w - EDGE,
+                "{w}: the card fits the window"
+            );
+        }
+    }
+}
+
+#[test]
 fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
     for hands in crate::platform::ALL_HANDS {
         for tip in Tip::ALL {

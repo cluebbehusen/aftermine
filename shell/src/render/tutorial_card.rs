@@ -119,6 +119,17 @@ impl CardLayout {
 const CARD_W: f32 = 500.0;
 /// The tip card's width at most, in logical px.
 const TIP_W: f32 = 420.0;
+/// The gap between a card and the window's side, in logical px, as the
+/// performance panel keeps on the right.
+const EDGE: f32 = 12.0;
+
+/// Where a card at most `width` wide sits: the top-left corner under the
+/// top bar, narrowed to fit the window. Returns its x, y and width.
+fn corner(width: f32, env: HudEnv) -> (f32, f32, f32) {
+    let s = env.ui;
+    let w = (width * s).min(env.viewport.x - 2.0 * EDGE * s);
+    (EDGE * s, (crate::layout::TOP_BAR_H + 6.0) * s, w)
+}
 
 /// Expands the `{token}`s lesson copy uses into the player's bindings.
 pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String {
@@ -163,9 +174,7 @@ pub(crate) fn layout(
     measure: Measure,
 ) -> CardLayout {
     let s = env.ui;
-    let w = (CARD_W * s).min(env.viewport.x - 32.0 * s);
-    let x = (env.viewport.x - w) * 0.5;
-    let y = (crate::layout::TOP_BAR_H + 6.0) * s;
+    let (x, y, w) = corner(CARD_W, env);
     let pad = 12.0 * s;
     let fold = 24.0 * s;
     let text_w = w - pad * 2.0;
@@ -302,9 +311,7 @@ pub(crate) fn tip_layout(
     measure: Measure,
 ) -> CardLayout {
     let s = env.ui;
-    let w = (TIP_W * s).min(env.viewport.x - 32.0 * s);
-    let x = (env.viewport.x - w) * 0.5;
-    let y = (crate::layout::TOP_BAR_H + 6.0) * s;
+    let (x, y, w) = corner(TIP_W, env);
     let pad = 12.0 * s;
     let close = 24.0 * s;
     let mut column = Column {
