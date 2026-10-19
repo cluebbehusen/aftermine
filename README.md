@@ -144,11 +144,12 @@ a fixed timer: the building stays offline and vulnerable, but Harvesters keep
 their existing work.
 
 Rock blocks direct ground fire. Peaks block ground movement, aircraft, and all
-fire across them. Pits block ground movement, but aircraft and fire cross the
-gap. Tiered maps stack levels parted by cliffs and joined by ramps: ground units
-fight only on a shared level or from a ramp, higher ground blocks direct fire,
-and artillery fires down but never up. Aircraft ignore levels. Some units can
-shoot beyond their own vision if another friendly machine provides sight.
+fire and blasts across them. Pits block ground movement, but aircraft and fire
+cross the gap. Tiered maps stack levels parted by cliffs and joined by ramps:
+ground units fight only on a shared level or from a ramp, higher ground blocks
+direct fire, and artillery fires down but never up. Aircraft ignore levels. Some
+units can shoot beyond their own vision if another friendly machine provides
+sight.
 
 ## Architecture
 

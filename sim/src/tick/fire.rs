@@ -8,7 +8,13 @@
 //! it, and passes over nothing higher than both ends. Indirect fire arcs over
 //! anything but never lands above the shooter's highest level. Shots
 //! involving aircraft ignore levels.
+//!
+//! A blast spreads from where it bursts as an arc would: a peak between
+//! shelters a body, rock, cliffs and pits shelter none, and a ground body
+//! must share the blast's level. Weapon splash, demolition rings and buried
+//! charges all ask [`blast_reaches`].
 
+use crate::map::Map;
 use crate::state::State;
 use crate::stats::{Domain, WeaponStats};
 use chassis::fx::Vec2Fx;
@@ -140,6 +146,21 @@ pub(in crate::tick) fn clear_line(
     let open = |t: TilePos| crosses(state, t, full, ceiling);
     (landing == Landing::Unchecked || open(TilePos::containing(to.at)))
         && !chassis::path::line_blocked(from.at, to.at, open)
+}
+
+/// Whether a blast bursting at `at`, standing at the level of `footing`,
+/// reaches `body` (see the module docs).
+pub(in crate::tick) fn blast_reaches(
+    map: &Map,
+    at: Vec2Fx,
+    footing: TilePos,
+    body: ShotEnd,
+) -> bool {
+    (body.domain != Domain::Ground || map.shares_level(footing, body.footing))
+        && !chassis::path::line_blocked(at, body.at, |t| {
+            map.tile(t)
+                .is_some_and(|tile| !tile.terrain.blocks_all_fire())
+        })
 }
 
 #[cfg(test)]

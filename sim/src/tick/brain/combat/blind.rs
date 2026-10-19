@@ -150,7 +150,7 @@ pub(super) fn buffer_blind(
                 && state.hostile(player, u.player)
                 && weapon.targets.covers(u.domain())
                 && u.pos.dist_sq(aim) <= radius * radius
-                && grounded_with(state, footing, u)
+                && blast_catches(state, aim, footing, u)
         }) {
             hits.push(PendingHit::along(
                 state,
@@ -168,7 +168,7 @@ pub(super) fn buffer_blind(
                 && weapon.targets.ground
                 && b.kind.is_stealthy()
                 && b.center().dist_sq(aim) <= radius * radius
-                && state.map.shares_level(footing, b.anchor)
+                && blast_catches_charge(state, aim, footing, b)
         }) {
             hits.push(PendingHit::along(
                 state,

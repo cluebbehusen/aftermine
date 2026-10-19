@@ -268,6 +268,38 @@ fn a_tall_cliff_parts_levels_two_apart() {
 }
 
 #[test]
+fn a_blast_breaks_on_peaks_alone() {
+    for (between, shelters) in [('#', false), ('~', false), ('^', true)] {
+        let row = format!("..{between}..");
+        let scene = state(&[".....", ".....", &row, ".....", "....."]);
+        for domain in [Domain::Ground, Domain::Air] {
+            let body = ShotEnd::new(at(3, 2), domain);
+            assert_eq!(
+                blast_reaches(&scene.map, at(1, 2), TilePos::new(1, 2), body),
+                !shelters,
+                "{between} between a blast and a {domain:?} body"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_blast_keeps_to_its_level_except_against_aircraft() {
+    let state = ledge();
+    let blast = |x, y, body| blast_reaches(&state.map, at(x, y), TilePos::new(x, y), body);
+    assert!(blast(1, 4, ground(1, 3)), "the floor carries it");
+    assert!(
+        !blast(1, 3, ground(1, 1)) && !blast(1, 1, ground(1, 3)),
+        "a cliff parts it"
+    );
+    assert!(blast(1, 3, ShotEnd::new(at(1, 1), Domain::Air)));
+    assert!(
+        blast(3, 2, ground(3, 1)) && blast(3, 2, ground(3, 3)),
+        "a burst on a ramp reaches both levels"
+    );
+}
+
+#[test]
 fn a_building_stands_on_its_anchor_not_its_aim_tile() {
     let state = tiered(&[".....=...", ".....=...", ".....=..."], &["222221111"; 3]);
     // A plateau building's east edge floors into the cliff beside it.

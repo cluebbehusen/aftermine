@@ -13,7 +13,7 @@ pub(super) use mounts::{
     Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
 };
 
-use super::super::fire::{Fire, Landing, ShotEnd, clear_line, levels_allow};
+use super::super::fire::{Fire, Landing, ShotEnd, blast_reaches, clear_line, levels_allow};
 use super::super::flight;
 use super::super::landing;
 use super::super::route_for;
@@ -375,7 +375,7 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
                     || !state.hostile(shell.player, b.player)
                     || direct.is_some_and(|d| d.id == b.id)
                     || b.center().dist_sq(shell.impact) > radius_sq
-                    || !state.map.shares_level(footing, b.anchor)
+                    || !blast_catches_charge(state, shell.impact, footing, b)
                 {
                     continue;
                 }
@@ -395,7 +395,7 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
                 || !state.hostile(shell.player, u.player)
                 || !shell.targets.covers(u.domain())
                 || u.pos.dist_sq(shell.impact) > reach * reach
-                || !grounded_with(state, footing, u)
+                || !blast_catches(state, shell.impact, footing, u)
             {
                 continue;
             }
@@ -411,8 +411,6 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
     }
 }
 
-/// Whether a blast standing on `footing` reaches `u`: aircraft always, a
-/// ground body only on a level it shares.
 /// The tile a shell's blast stands on when no building takes the direct
 /// hit. A shell aimed at a building lands on the footprint's nearest edge,
 /// whose coordinate can floor into the tile beyond; reading the point a hair
@@ -430,8 +428,30 @@ fn landing_tile(launch: Vec2Fx, impact: Vec2Fx) -> TilePos {
     ))
 }
 
-pub(super) fn grounded_with(state: &State, footing: TilePos, u: &crate::state::Unit) -> bool {
-    u.domain() != Domain::Ground || state.map.shares_level(footing, u.tile())
+/// Whether a blast bursting at `at` on `footing` catches `u`.
+pub(super) fn blast_catches(
+    state: &State,
+    at: Vec2Fx,
+    footing: TilePos,
+    u: &crate::state::Unit,
+) -> bool {
+    blast_reaches(&state.map, at, footing, ShotEnd::new(u.pos, u.domain()))
+}
+
+/// Whether a blast bursting at `at` on `footing` catches the buried charge
+/// `b`, measured to its center.
+pub(super) fn blast_catches_charge(
+    state: &State,
+    at: Vec2Fx,
+    footing: TilePos,
+    b: &crate::state::Building,
+) -> bool {
+    blast_reaches(
+        &state.map,
+        at,
+        footing,
+        ShotEnd::new(b.center(), Domain::Ground).on(b.anchor),
+    )
 }
 
 /// Buffers a shot: the direct hit, plus, for splash weapons, one hit on
@@ -481,7 +501,7 @@ fn buffer_shot(
             || Target::Unit(u.id) == victim
             || !weapon.targets.covers(u.domain())
             || u.pos.dist_sq(aim) > reach * reach
-            || !grounded_with(state, footing, u)
+            || !blast_catches(state, aim, footing, u)
         {
             continue;
         }
@@ -504,7 +524,7 @@ fn buffer_shot(
                 || !state.hostile(attacker_owner, b.player)
                 || Target::Building(b.id) == victim
                 || b.center().dist_sq(aim) > radius * radius
-                || !state.map.shares_level(footing, b.anchor)
+                || !blast_catches_charge(state, aim, footing, b)
             {
                 continue;
             }
@@ -1378,7 +1398,7 @@ fn sapper_attack(
                 || Target::Unit(u.id) == target
                 || u.domain() != Domain::Ground
                 || u.pos.dist_sq(aim_point) > ring * ring
-                || !state.map.shares_level(tile, u.tile())
+                || !blast_catches(state, aim_point, tile, u)
             {
                 continue;
             }
