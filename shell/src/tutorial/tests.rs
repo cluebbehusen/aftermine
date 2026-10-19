@@ -63,13 +63,15 @@ fn every_lesson_opens_on_a_sandbox_scene_with_each_step_ahead_and_in_reach() {
         let t = tutorial(&game);
         assert_eq!(t.step_index(), 0, "{lesson:?} opens on its first step");
         for step in lesson.steps() {
+            // Welding and wrecks wait on a raid to leave damage behind, and
+            // pass on their own when it leaves none.
             assert!(
-                !step.goal.met(&game, t),
+                matches!(step.goal, Goal::Weld | Goal::CollectWreck) || !step.goal.met(&game, t),
                 "{lesson:?}: {} is done before the player acts",
                 step.title
             );
             assert!(
-                step.goal.reachable(&game),
+                step.goal.reachable(&game, t),
                 "{lesson:?}: {} is out of reach from the start",
                 step.title
             );
@@ -170,6 +172,109 @@ fn a_squad_sets_out_once_when_its_step_opens() {
         [squad(3)],
         "opening the Warden's step sends it, and the guards stay put"
     );
+}
+
+#[test]
+fn the_buzzards_run_past_the_scout_then_hunt_toward_the_base() {
+    let human = PlayerId(0);
+    let sent = |game: &Game| -> Vec<Command> {
+        game.pending
+            .iter()
+            .filter(|c| c.player != human)
+            .map(|c| c.command.clone())
+            .collect()
+    };
+    let mut game = begin(Lesson::Sustain);
+    Tutorial::advance_in(&mut game);
+    assert!(
+        sent(&game).is_empty(),
+        "the Buzzards wait while the player scouts and builds"
+    );
+    let opened = tutorial(&game).clone().at_step(3);
+    game.tutorial = Some(opened);
+    Tutorial::advance_in(&mut game);
+    let units: Vec<UnitId> = Lesson::Sustain.squads()[0]
+        .units
+        .iter()
+        .map(|id| UnitId(*id))
+        .collect();
+    assert_eq!(
+        sent(&game),
+        [
+            Command::Run {
+                units: units.clone(),
+                goal: TilePos::new(17, 12),
+                queue: false,
+            },
+            Command::Hunt {
+                units,
+                goal: TilePos::new(9, 12),
+                queue: true,
+            },
+        ]
+    );
+    game.do_tick();
+    assert!(
+        Lesson::Sustain.squads()[0]
+            .standing(&game.state)
+            .all(|unit| matches!(unit.order, Order::Run { .. }) && unit.queue.len() == 1),
+        "the enemy seat's run and queued hunt are ordinary commands the world accepts"
+    );
+}
+
+#[test]
+fn only_see_and_sustain_opens_with_its_harvesters_collecting() {
+    for lesson in Lesson::ALL {
+        let mut game = begin(lesson);
+        step(&mut game, []);
+        let seat = Seat::of(&game);
+        let expected = if lesson == Lesson::Sustain {
+            seat.workers().count()
+        } else {
+            0
+        };
+        assert_eq!(seat.harvesting(), expected, "{lesson:?}");
+    }
+}
+
+#[test]
+fn the_raid_leaves_damage_to_weld_and_wrecks_to_collect() {
+    let mut game = begin(Lesson::Sustain);
+    let goal = |game: &Game| tutorial(game).current().map(|step| step.goal);
+    let play_until = |game: &mut Game, until: Goal| {
+        for _ in 0..SOLVE_TICKS {
+            if goal(game) == Some(until) {
+                return;
+            }
+            play(game);
+            step(game, []);
+        }
+        panic!("{until:?} never opened");
+    };
+    play_until(&mut game, Goal::Weld);
+    let seat = Seat::of(&game);
+    assert!(seat.damaged(), "the Buzzards hit something");
+    assert!(seat.wreck_left(), "and left wrecks");
+    for _ in 0..20 {
+        step(&mut game, []);
+    }
+    assert_eq!(
+        goal(&game),
+        Some(Goal::Weld),
+        "the step waits for a weld order"
+    );
+    weld(&mut game);
+    step(&mut game, []);
+    assert_eq!(goal(&game), Some(Goal::Build(BuildingKind::RepairBay, 1)));
+
+    play_until(&mut game, Goal::CollectWreck);
+    assert!(Seat::of(&game).wreck_left());
+    for _ in 0..20 {
+        step(&mut game, []);
+    }
+    assert_eq!(goal(&game), Some(Goal::CollectWreck));
+    play(&mut game);
+    assert_eq!(step(&mut game, []), Some(Lesson::Sustain));
 }
 
 #[test]
@@ -309,17 +414,17 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     );
     assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
 
-    // An army that is gone can be trained again while scrap allows.
+    // An army that is gone can be trained again while scrap allows. A
+    // scene's ids are its unit list's order, so lost machines change hands
+    // rather than leave the list and renumber the squads.
     let mut scene = Lesson::Fight.scenario();
     scene.players[0].scrap = UnitKind::Scuttler.stats().cost;
-    scene
-        .units
-        .retain(|unit| unit.player != 0 || unit.kind == UnitKind::Harvester);
+    hand_over(&mut scene, |kind| kind != UnitKind::Harvester);
     let mut game = Game::with_viewport(scene.clone(), vec2(1280.0, 800.0)).unwrap();
     game.tutorial = begin(Lesson::Fight).tutorial;
     assert_ne!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
     scene.players[0].scrap = 0;
-    scene.units.retain(|unit| unit.player != 0);
+    hand_over(&mut scene, |_| true);
     let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
     game.tutorial = begin(Lesson::Fight).tutorial;
     for at in 0..Lesson::Fight.steps().len() {
@@ -331,6 +436,35 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
             Lesson::Fight.steps()[at].title
         );
     }
+
+    // Ground guns cannot reach aircraft, and a Flak Turret can.
+    let mut scene = Lesson::Sustain.scenario();
+    scene.players[0].scrap = 0;
+    hand_over(&mut scene, |_| true);
+    scene.units.push(oxide_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Lancer,
+        x: 10,
+        y: 12,
+    });
+    let mut game = Game::with_viewport(scene.clone(), vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Sustain).tutorial;
+    tutorial_mut(&mut game).step = 3;
+    assert_eq!(
+        tutorial(&game).current().map(|step| step.goal),
+        Some(Goal::Defeat(0))
+    );
+    assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
+    scene.buildings.push(oxide_sim::scenario::BuildingSpec {
+        player: 0,
+        kind: BuildingKind::FlakTurret,
+        x: 9,
+        y: 12,
+    });
+    let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Sustain).tutorial;
+    tutorial_mut(&mut game).step = 3;
+    assert_ne!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
 
     // A squad that has lost its fighters cannot destroy anything.
     let mut scene = Lesson::Command.scenario();
@@ -433,6 +567,18 @@ fn whatever_the_player_does_a_lesson_finishes_or_offers_a_retry() {
                 t.current().map(|step| step.title)
             );
         }
+    }
+}
+
+/// Gives the human's machines of the kinds `lost` picks to the enemy seat,
+/// which keeps every unit's place in the scene.
+fn hand_over(scene: &mut Scenario, lost: impl Fn(UnitKind) -> bool) {
+    for unit in scene
+        .units
+        .iter_mut()
+        .filter(|u| u.player == 0 && lost(u.kind))
+    {
+        unit.player = 1;
     }
 }
 
@@ -563,9 +709,19 @@ fn build(game: &mut Game, kind: BuildingKind, count: usize) {
     });
 }
 
-/// The spot nearest the home Foundry where `kind` can go up now.
+/// The spot nearest the home Foundry where `kind` can go up now, or for
+/// a defense, nearest where the lesson's raid is headed.
 fn open_ground(game: &Game, kind: BuildingKind) -> Option<TilePos> {
-    let home = TilePos::containing(game.home_foundry()?.center());
+    let raid = tutorial(game)
+        .lesson
+        .squads()
+        .iter()
+        .find_map(|squad| squad.sortie.as_ref().map(|sortie| sortie.toward))
+        .filter(|_| !kind.base_stats().weapons.is_empty());
+    let home = match raid {
+        Some(tile) => tile,
+        None => TilePos::containing(game.home_foundry()?.center()),
+    };
     let map = game.state.map();
     (0..map.height())
         .flat_map(|y| (0..map.width()).map(move |x| TilePos::new(x, y)))
@@ -589,6 +745,25 @@ fn play(game: &mut Game) {
     match goal {
         Goal::Look(_) => game.presentation.camera.zoom *= 2.0,
         Goal::Select(_) => game.presentation.selection.units = own(game, None),
+        Goal::Find if Seat::of(game).units().any(|u| u.kind.stats().scouts) => {
+            let seat = Seat::of(game);
+            let goal = seat.hostile_buildings().next().map(|b| b.anchor);
+            let scouts: Vec<UnitId> = seat
+                .units()
+                .filter(|u| {
+                    u.kind.stats().scouts
+                        && !matches!(u.order, Order::Scout { tile } if Some(tile) == goal)
+                })
+                .map(|u| u.id)
+                .collect();
+            if let Some(goal) = goal.filter(|_| !scouts.is_empty()) {
+                game.issue(Command::Scout {
+                    units: scouts,
+                    goal,
+                    queue: false,
+                });
+            }
+        }
         Goal::Find | Goal::Destroy => {
             // The squad attacks a building in sight and walks toward one
             // otherwise; any fighter doing something else is ordered again.
@@ -670,7 +845,76 @@ fn play(game: &mut Game) {
         }
         // Saving a group is input's work, which reports it as this does.
         Goal::Group => tutorial_mut(game).note_group(),
+        // The weld or wreck order comes last, so it is the one that stands.
+        Goal::Weld => {
+            reinforce(game);
+            weld(game);
+        }
+        Goal::CollectWreck => {
+            reinforce(game);
+            let seat = Seat::of(game);
+            let worker = seat.workers().find(|u| spare(u));
+            let order = worker.or_else(|| seat.workers().next()).and_then(|u| {
+                nearest_wreck(game, TilePos::containing(u.pos)).map(|node| Command::Harvest {
+                    units: vec![u.id],
+                    node,
+                    queue: false,
+                })
+            });
+            if let Some(order) = order {
+                game.issue(order);
+            }
+        }
     }
+}
+
+/// Orders a Harvester onto the first damaged own building, or else the
+/// first wounded own ground machine.
+fn weld(game: &mut Game) {
+    let seat = Seat::of(game);
+    let Some(worker) = seat.workers().next() else {
+        return;
+    };
+    let building = seat
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == seat.human && b.built() && b.hp < b.stats().max_hp)
+        .map(|b| b.id);
+    let machine = seat
+        .units()
+        .find(|u| {
+            u.id != worker.id
+                && u.hp < u.kind.stats().max_hp
+                && u.domain() == oxide_sim::stats::Domain::Ground
+        })
+        .map(|u| u.id);
+    let units = vec![worker.id];
+    let order = match (building, machine) {
+        (Some(building), _) => Some(Command::Repair {
+            units,
+            building,
+            queue: false,
+        }),
+        (None, Some(target)) => Some(Command::RepairUnit {
+            units,
+            target,
+            queue: false,
+        }),
+        (None, None) => None,
+    };
+    if let Some(order) = order {
+        game.issue(order);
+    }
+}
+
+/// The explored wreck nearest `from`.
+fn nearest_wreck(game: &Game, from: TilePos) -> Option<TilePos> {
+    let map = game.state.map();
+    let vision = game.state.vision(game.presentation.human);
+    tiles(map)
+        .filter(|tile| map.wreck_at(*tile) > 0 && vision.explored(*tile))
+        .min_by_key(|tile| (tile.x - from.x).pow(2) + (tile.y - from.y).pow(2))
 }
 
 /// Rebuilds a crew of three Harvesters, then trains Sentinels.

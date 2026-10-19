@@ -8,6 +8,7 @@ use crate::game::Game;
 use anyhow::Result;
 use chassis::grid::TilePos;
 use macroquad::prelude::Vec2;
+use oxide_sim::stats::{Domain, WeaponStats};
 use oxide_sim::{BuildingKind, Event, Order, PlayerId, Scenario, UnitId, UnitKind};
 
 mod lessons;
@@ -24,11 +25,19 @@ pub enum Lesson {
     Build,
     /// Hunt, Advance, and Run, and fighting around rock and high ground.
     Fight,
+    /// Scouting, radar, anti-air, welding, Repair Bays, and wrecks.
+    Sustain,
 }
 
 impl Lesson {
     /// Every lesson in teaching order.
-    pub const ALL: [Self; 4] = [Self::Command, Self::Scrap, Self::Build, Self::Fight];
+    pub const ALL: [Self; 5] = [
+        Self::Command,
+        Self::Scrap,
+        Self::Build,
+        Self::Fight,
+        Self::Sustain,
+    ];
 
     /// The lesson's place in the course, from one.
     pub fn number(self) -> usize {
@@ -46,6 +55,7 @@ impl Lesson {
             Self::Scrap => "Scrap",
             Self::Build => "Build",
             Self::Fight => "Fight",
+            Self::Sustain => "See and sustain",
         }
     }
 
@@ -58,6 +68,9 @@ impl Lesson {
                 "build, queue several buildings, set rally points, and use control groups"
             }
             Self::Fight => "use Hunt, Advance, and Run, and fight around rock and high ground",
+            Self::Sustain => {
+                "scout, use radar, defend against aircraft, repair, and collect wrecks"
+            }
         }
     }
 
@@ -73,6 +86,7 @@ impl Lesson {
             Self::Scrap => &lessons::SCRAP,
             Self::Build => &lessons::BUILD,
             Self::Fight => &lessons::FIGHT,
+            Self::Sustain => &lessons::SUSTAIN,
         }
     }
 
@@ -81,6 +95,7 @@ impl Lesson {
         match self {
             Self::Command | Self::Scrap | Self::Build => &[],
             Self::Fight => &lessons::FIGHT_SQUADS,
+            Self::Sustain => &lessons::SUSTAIN_SQUADS,
         }
     }
 
@@ -91,6 +106,7 @@ impl Lesson {
             Self::Scrap => lessons::SCRAP_OUTRO,
             Self::Build => lessons::BUILD_OUTRO,
             Self::Fight => lessons::FIGHT_OUTRO,
+            Self::Sustain => lessons::SUSTAIN_OUTRO,
         }
     }
 
@@ -101,8 +117,15 @@ impl Lesson {
             Self::Scrap => include_str!("../lessons/scrap.json"),
             Self::Build => include_str!("../lessons/build.json"),
             Self::Fight => include_str!("../lessons/fight.json"),
+            Self::Sustain => include_str!("../lessons/sustain.json"),
         };
         Scenario::from_json(text).expect("embedded lesson scenes are validated by tests")
+    }
+
+    /// Whether the scene opens with every Harvester collecting from its
+    /// nearest scrap pile, so none stands idle and welds on its own.
+    fn opens_collecting(self) -> bool {
+        matches!(self, Self::Sustain)
     }
 }
 
@@ -124,13 +147,25 @@ pub struct Squad {
     sortie: Option<Sortie>,
 }
 
-/// Where a squad hunts to once a step opens. The order is an ordinary
+/// Where a squad heads once a step opens. The order is an ordinary
 /// command for the enemy seat, sent on the player's progress alone.
 struct Sortie {
     /// The step whose opening sends the squad.
     step: usize,
-    /// The tile the squad hunts toward.
+    /// The tile the squad heads for.
     toward: TilePos,
+    /// How it gets there.
+    stance: Stance,
+}
+
+/// How a sortie moves.
+#[derive(Clone, Copy)]
+enum Stance {
+    /// Hunting all the way, fighting everything it meets.
+    Hunt,
+    /// Running to this tile without stopping to fight, then hunting the
+    /// rest of the way.
+    RunTo(TilePos),
 }
 
 impl Squad {
@@ -195,6 +230,11 @@ pub enum Goal {
     Group,
     /// The lesson's squad at this index is destroyed.
     Defeat(usize),
+    /// An own Harvester has been ordered to weld, or nothing own is
+    /// damaged.
+    Weld,
+    /// An own Harvester is collecting a wreck, or none is left.
+    CollectWreck,
 }
 
 /// How far a zoom must move from the opening one to count as looking.
@@ -241,6 +281,20 @@ impl Goal {
                 .standing(seat.state)
                 .next()
                 .is_none(),
+            Goal::Weld => {
+                !seat.damaged()
+                    || seat
+                        .workers()
+                        .any(|u| matches!(u.order, Order::Repair { .. } | Order::RepairUnit { .. }))
+            }
+            Goal::CollectWreck => {
+                let map = seat.state.map();
+                !seat.wreck_left()
+                    || seat.workers().any(|u| {
+                        matches!(u.order, Order::Harvest { node, anchor, .. }
+                            if map.wreck_at(node) > 0 || map.wreck_at(anchor) > 0)
+                    })
+            }
         }
     }
 
@@ -265,21 +319,43 @@ impl Goal {
             | Goal::Deposit
             | Goal::Rally
             | Goal::Group
-            | Goal::Defeat(_) => None,
+            | Goal::Defeat(_)
+            | Goal::Weld
+            | Goal::CollectWreck => None,
         }
     }
 
     /// Whether the world still holds what the step needs: machines to
     /// order, a factory and the scrap or income to pay for what it asks,
-    /// scrap to mine, and ground to build on.
-    fn reachable(self, game: &Game) -> bool {
+    /// scrap to mine, ground to build on, and weapons that reach the
+    /// squad to beat.
+    fn reachable(self, game: &Game, tutorial: &Tutorial) -> bool {
         let seat = Seat::of(game);
         let affords = |cost: u32| seat.bank() >= cost || seat.can_earn();
         match self {
             Goal::Look(_) => true,
             Goal::Select(count) => seat.units().count() >= count,
             Goal::Find => seat.units().next().is_some(),
-            Goal::Destroy | Goal::Defeat(_) => seat.can_field_fighter(),
+            Goal::Destroy => seat.can_field_fighter(),
+            Goal::Defeat(squad) => {
+                let air = |u: &oxide_sim::Unit| u.domain() == Domain::Air;
+                let mut standing = tutorial.lesson.squads()[squad].standing(seat.state);
+                standing.all(|u| {
+                    if air(u) {
+                        seat.can_hit_air()
+                    } else {
+                        seat.can_field_fighter()
+                    }
+                })
+            }
+            Goal::Weld | Goal::CollectWreck => {
+                let vacuous = if self == Goal::Weld {
+                    !seat.damaged()
+                } else {
+                    !seat.wreck_left()
+                };
+                vacuous || seat.can_field_worker()
+            }
             Goal::Deposit => seat.can_mine(),
             Goal::Train(kind) => {
                 let cost = kind.stats().cost;
@@ -397,6 +473,29 @@ impl Tutorial {
                 camera.pan(Vec2::ZERO);
             }
         }
+        if lesson.opens_collecting() {
+            let map = game.state.map();
+            let orders: Vec<oxide_sim::Command> = game
+                .state
+                .units()
+                .iter()
+                .filter(|u| u.player == human && u.kind.stats().harvest.is_some())
+                .filter_map(|u| {
+                    let from = u.tile();
+                    let node = tiles(map)
+                        .filter(|tile| map.scrap_at(*tile) > 0)
+                        .min_by_key(|tile| (tile.x - from.x).pow(2) + (tile.y - from.y).pow(2))?;
+                    Some(oxide_sim::Command::Harvest {
+                        units: vec![u.id],
+                        node,
+                        queue: false,
+                    })
+                })
+                .collect();
+            for order in orders {
+                game.issue(order);
+            }
+        }
         let camera = &game.presentation.camera;
         game.tutorial = Some(Self {
             lesson,
@@ -493,7 +592,7 @@ impl Tutorial {
         finished.then_some(lesson)
     }
 
-    /// Stages the hunts of every squad whose step has opened since the
+    /// Stages the orders of every squad whose step has opened since the
     /// last call, for the next tick.
     fn send_squads(&mut self, game: &mut Game) {
         let open = (self.step + 1).min(self.lesson.steps().len());
@@ -506,15 +605,26 @@ impl Tutorial {
                 let Some(player) = standing.peek().map(|unit| unit.player) else {
                     continue;
                 };
-                let units = standing.map(|unit| unit.id).collect();
-                game.stage(oxide_sim::PlayerCommand {
-                    player,
-                    command: oxide_sim::Command::Hunt {
-                        units,
-                        goal: sortie.toward,
-                        queue: false,
-                    },
-                });
+                let units: Vec<UnitId> = standing.map(|unit| unit.id).collect();
+                let hunt = |queue| oxide_sim::Command::Hunt {
+                    units: units.clone(),
+                    goal: sortie.toward,
+                    queue,
+                };
+                let commands = match sortie.stance {
+                    Stance::Hunt => vec![hunt(false)],
+                    Stance::RunTo(goal) => vec![
+                        oxide_sim::Command::Run {
+                            units: units.clone(),
+                            goal,
+                            queue: false,
+                        },
+                        hunt(true),
+                    ],
+                };
+                for command in commands {
+                    game.stage(oxide_sim::PlayerCommand { player, command });
+                }
             }
         }
         self.opened = self.opened.max(open);
@@ -525,7 +635,7 @@ impl Tutorial {
     /// when it is unaffordable and nothing earns.
     pub fn coach(&self, game: &Game) -> Option<CoachLine> {
         let step = self.current()?;
-        if !step.goal.reachable(game) {
+        if !step.goal.reachable(game, self) {
             return Some(CoachLine::Stuck);
         }
         let (item, cost) = step.goal.spend(game)?;
@@ -663,6 +773,62 @@ impl<'a> Seat<'a> {
             })
     }
 
+    /// Whether the player has something that can shoot aircraft, or can
+    /// pay for one: a machine from a built factory, or a building a
+    /// Harvester can raise.
+    fn can_hit_air(&self) -> bool {
+        let air = |weapons: &[WeaponStats]| weapons.iter().any(|w| w.targets.covers(Domain::Air));
+        let affords = |cost: u32| self.bank() >= cost || self.can_earn();
+        self.units().any(|u| u.kind.stats().can_target(Domain::Air))
+            || self
+                .state
+                .buildings()
+                .iter()
+                .any(|b| b.player == self.human && b.built() && air(b.stats().weapons))
+            || self.factories().any(|factory| {
+                factory.stats().produces.iter().any(|kind| {
+                    kind.stats().can_target(Domain::Air)
+                        && (self.queued(*kind) || affords(kind.stats().cost))
+                })
+            })
+            || (self.workers().next().is_some()
+                && BuildingKind::ALL.into_iter().any(|kind| {
+                    let stats = kind.base_stats();
+                    air(stats.weapons)
+                        && stats.construction.is_some_and(|c| {
+                            self.own_buildings(kind).next().is_some() || affords(c.cost)
+                        })
+                        && self.state.prerequisites_met(self.human, kind)
+                }))
+    }
+
+    /// Whether the player has a Harvester, or can pay for one at a built
+    /// factory.
+    fn can_field_worker(&self) -> bool {
+        let harvester = UnitKind::Harvester;
+        self.workers().next().is_some()
+            || (self.produces(harvester)
+                && (self.queued(harvester)
+                    || self.bank() >= harvester.stats().cost
+                    || self.can_earn()))
+    }
+
+    /// Whether an own ground machine or completed building could take a
+    /// weld.
+    fn damaged(&self) -> bool {
+        let human = self.human;
+        self.units().any(|u| {
+            let stats = u.kind.stats();
+            u.hp > 0 && u.hp < stats.max_hp && stats.repairable() && u.domain() == Domain::Ground
+        }) || self.state.buildings().iter().any(|b| {
+            b.player == human
+                && b.built()
+                && b.hp > 0
+                && b.hp < b.stats().max_hp
+                && !b.kind.is_stealthy()
+        })
+    }
+
     /// Whether a built own factory trains `kind`.
     fn produces(&self, kind: UnitKind) -> bool {
         self.factories().any(|b| b.stats().produces.contains(&kind))
@@ -680,12 +846,13 @@ impl<'a> Seat<'a> {
     /// Whether any scrap or wreck is left to mine.
     fn scrap_left(&self) -> bool {
         let map = self.state.map();
-        (0..map.height()).any(|y| {
-            (0..map.width()).any(|x| {
-                let tile = TilePos::new(x, y);
-                map.scrap_at(tile) > 0 || map.wreck_at(tile) > 0
-            })
-        })
+        tiles(map).any(|tile| map.scrap_at(tile) > 0 || map.wreck_at(tile) > 0)
+    }
+
+    /// Whether any wreck is left to collect.
+    fn wreck_left(&self) -> bool {
+        let map = self.state.map();
+        tiles(map).any(|tile| map.wreck_at(tile) > 0)
     }
 
     /// Whether a load can still reach the bank.
@@ -734,6 +901,12 @@ impl<'a> Seat<'a> {
             })
             .count()
     }
+}
+
+/// Every tile of `map`, row by row.
+fn tiles(map: &oxide_sim::map::Map) -> impl Iterator<Item = TilePos> + use<> {
+    let (width, height) = (map.width(), map.height());
+    (0..height).flat_map(move |y| (0..width).map(move |x| TilePos::new(x, y)))
 }
 
 #[cfg(test)]
