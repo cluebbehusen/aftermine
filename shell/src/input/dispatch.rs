@@ -79,6 +79,11 @@ pub(super) fn dispatch_action(
                     game.presentation
                         .toast("Only your own units join a control group");
                 }
+                if !own.is_empty()
+                    && let Some(tutorial) = game.tutorial.as_mut()
+                {
+                    tutorial.note_group();
+                }
                 input.groups[slot] = own;
             }
         }

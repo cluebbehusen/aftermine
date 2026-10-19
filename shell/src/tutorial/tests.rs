@@ -209,6 +209,18 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     assert_eq!(Seat::of(&game).bank(), 0);
     assert_ne!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
 
+    // A Lancer needs a Fabricator, and nobody is left to raise one.
+    let mut scene = Lesson::Build.scenario();
+    scene.units.clear();
+    let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Build).tutorial;
+    tutorial_mut(&mut game).step = 3;
+    assert_eq!(
+        tutorial(&game).current().map(|step| step.goal),
+        Some(Goal::Train(UnitKind::Lancer))
+    );
+    assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
+
     // A squad that has lost its fighters cannot destroy anything.
     let mut scene = Lesson::Command.scenario();
     scene.units.clear();
@@ -399,6 +411,9 @@ fn build(game: &mut Game, kind: BuildingKind, count: usize) {
     let site = placed.iter().find(|b| !b.built()).map(|b| b.anchor);
     let order = if let Some(anchor) = site {
         idle_worker.map(|worker| (worker, anchor))
+    } else if placed.len() < count && seat.bank() >= cost && kind != BuildingKind::Extractor {
+        let worker = idle_worker.or_else(|| seat.workers().next().map(|u| u.id));
+        worker.zip(open_ground(game, kind))
     } else if placed.len() < count && seat.bank() >= cost && kind == BuildingKind::Extractor {
         let frame = seat
             .state
@@ -435,6 +450,22 @@ fn build(game: &mut Game, kind: BuildingKind, count: usize) {
         queue: false,
         defer,
     });
+}
+
+/// The spot nearest the home Foundry where `kind` can go up now.
+fn open_ground(game: &Game, kind: BuildingKind) -> Option<TilePos> {
+    let home = TilePos::containing(game.home_foundry()?.center());
+    let map = game.state.map();
+    (0..map.height())
+        .flat_map(|y| (0..map.width()).map(move |x| TilePos::new(x, y)))
+        .filter(|tile| game.state.can_place(game.presentation.human, kind, *tile))
+        .min_by_key(|tile| {
+            (
+                (tile.x - home.x).pow(2) + (tile.y - home.y).pow(2),
+                tile.y,
+                tile.x,
+            )
+        })
 }
 
 /// Orders the current step the plain way, with commands any player
@@ -486,7 +517,11 @@ fn play(game: &mut Game) {
         }
         Goal::Deposit => put_idle_workers_to_work(game),
         Goal::Train(kind) => {
-            train(game, kind);
+            let seat = Seat::of(game);
+            match seat.factory_for(kind).filter(|_| !seat.produces(kind)) {
+                Some(factory) => build(game, factory, 1),
+                None => train(game, kind),
+            }
             put_idle_workers_to_work(game);
         }
         Goal::Harvest(count) => {
@@ -499,6 +534,20 @@ fn play(game: &mut Game) {
             build(game, kind, count);
             put_idle_workers_to_work(game);
         }
+        Goal::Rally => {
+            let factory = Seat::of(game)
+                .factories()
+                .next()
+                .map(|b| (b.id, TilePos::containing(b.center()).offset(0, 4)));
+            if let Some((building, tile)) = factory {
+                game.issue(Command::SetRally {
+                    building,
+                    rally: Some(oxide_sim::Rally::Tile(tile)),
+                });
+            }
+        }
+        // Saving a group is input's work, which reports it as this does.
+        Goal::Group => tutorial_mut(game).note_group(),
     }
 }
 

@@ -46,7 +46,7 @@ fn ghost_range(ghost: TilePos) -> (Game, InputState) {
 
 /// Drags the ghost's row handle until the row ends at `tile`: the handle
 /// rides a fingertip past the row's far edge, so the finger leads by that.
-fn pull_handle_to(game: &mut Game, input: &mut InputState, tile: TilePos) {
+pub(super) fn pull_handle_to(game: &mut Game, input: &mut InputState, tile: TilePos) {
     let handle = lay_out_ghost_controls(game, input).handle;
     assert!(handle.w > 0.0, "premise: the ghost offers a handle");
     let ghost = input.ghost_anchor().expect("a ghost is down");

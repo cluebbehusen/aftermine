@@ -15,12 +15,18 @@ fn key(key: Key) -> [RawEvent; 2] {
 fn the_list_marks_finished_lessons_and_opens_on_the_next_one() {
     let fresh = LessonsScreen::open(&[]);
     assert_eq!(fresh.menu.title, "BASIC TRAINING");
-    assert_eq!(fresh.menu.view().items, ["1. Command: ", "2. Scrap: "]);
+    assert_eq!(
+        fresh.menu.view().items,
+        ["1. Command: ", "2. Scrap: ", "3. Build: "]
+    );
     assert_eq!(fresh.menu.value(), Some(&Lesson::Command));
     assert_eq!(fresh.subtitle(), Lesson::Command.summary());
 
     let next = LessonsScreen::open(&[Lesson::Command]);
-    assert_eq!(next.menu.view().items, ["1. Command: DONE", "2. Scrap: "]);
+    assert_eq!(
+        next.menu.view().items,
+        ["1. Command: DONE", "2. Scrap: ", "3. Build: "]
+    );
     assert_eq!(next.menu.value(), Some(&Lesson::Scrap));
     assert_eq!(next.subtitle(), Lesson::Scrap.summary());
 
