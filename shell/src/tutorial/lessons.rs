@@ -1,7 +1,8 @@
 //! What each lesson says and what completes each of its steps. Paragraphs
 //! wrap to the card; `{token}`s name the player's current bindings.
 
-use super::{Copy, Goal, Step};
+use super::{Copy, Goal, Sortie, Squad, Step};
+use chassis::grid::TilePos;
 use oxide_sim::{BuildingKind, UnitKind};
 
 const ZOOM_WHEEL: &str = "Scroll the mouse wheel to zoom in and out.";
@@ -356,3 +357,159 @@ pub(super) const BUILD: [Step; 5] = [
 
 pub(super) const BUILD_OUTRO: &str = "You can now build, place several buildings at once, set \
     rally points, and use control groups.";
+
+const RAID: &str = "Five enemy Scuttlers are coming for your Harvesters. Scuttlers are fast \
+    and cheap and kill Harvesters quickly, but a Sentinel beats a Scuttler one on one.";
+const HUNTING: &str = "Hunting machines stop to chase and fight every enemy they meet.";
+const ADVANCE_CLICK: &str = "A right-click on the ground is an Advance instead. Advancing \
+    machines fire at enemies in range but never stop or chase, so a raid can slip past them.";
+const ADVANCE_PRESS: &str = "A long-press on the ground is an Advance instead. Advancing \
+    machines fire at enemies in range but never stop or chase, so a raid can slip past them.";
+const ROCK: &str = "Two enemy Lancers stand behind the rock line in the middle. Rock blocks \
+    shots between ground machines but not sight, so up close you can see them but can't hit \
+    them through it.";
+const AROUND: &str = "A Lancer can hit targets 5.5 tiles away, more than twice as far as a \
+    Sentinel, and kills a Sentinel with one shot. Send your fast Scuttlers around the end of the \
+    rock to reach them, with the rest of your army behind.";
+const LEVELS: &str = "Three enemy Sentinels hold the high ground in the northeast. Ground \
+    machines can only shoot machines on their own level, so neither side can shoot across \
+    the cliff.";
+const RAMP: &str = "A ramp at the west end of the cliff joins both levels, and machines on it \
+    can shoot up and down. Send your army up the ramp to fight.";
+const WARDEN: &str = "An enemy Warden is heading for your base. It has 340 HP, more than \
+    five Sentinels together.";
+const BESIDE_TURRETS: &str = "Running machines move without stopping to fight, so nothing \
+    holds them up on the way. Then fight the Warden beside your Turrets.";
+const OUTPOST: &str = "The enemy outpost in the east has a Fabricator and a Turret. Destroy both.";
+
+pub(super) const FIGHT: [Step; 5] = [
+    Step {
+        title: "Stop the raid",
+        copy: Copy {
+            mouse_keys: &[
+                RAID,
+                "Select your army, press {hunt}, and click near your Harvesters.",
+                HUNTING,
+                ADVANCE_CLICK,
+            ],
+            mouse: &[
+                RAID,
+                "Select your army, click Hunt in the bottom panel, and click near your Harvesters.",
+                HUNTING,
+                ADVANCE_CLICK,
+            ],
+            touch_keys: &[
+                RAID,
+                "Select your army, tap Hunt in the bottom panel or press {hunt}, and tap near your Harvesters.",
+                HUNTING,
+                ADVANCE_PRESS,
+            ],
+            touch: &[
+                RAID,
+                "Select your army, tap Hunt in the bottom panel, and tap near your Harvesters.",
+                HUNTING,
+                ADVANCE_PRESS,
+            ],
+        },
+        goal: Goal::Defeat(0),
+    },
+    Step {
+        title: "Get around the rocks",
+        copy: Copy {
+            mouse_keys: &[ROCK, AROUND],
+            mouse: &[ROCK, AROUND],
+            touch_keys: &[ROCK, AROUND],
+            touch: &[ROCK, AROUND],
+        },
+        goal: Goal::Defeat(1),
+    },
+    Step {
+        title: "Take the ramp",
+        copy: Copy {
+            mouse_keys: &[LEVELS, RAMP],
+            mouse: &[LEVELS, RAMP],
+            touch_keys: &[LEVELS, RAMP],
+            touch: &[LEVELS, RAMP],
+        },
+        goal: Goal::Defeat(2),
+    },
+    Step {
+        title: "Fall back",
+        copy: Copy {
+            mouse_keys: &[
+                WARDEN,
+                "Select your army, press {run}, and click near your Turrets.",
+                BESIDE_TURRETS,
+            ],
+            mouse: &[
+                WARDEN,
+                "Select your army, click Run in the bottom panel, and click near your Turrets.",
+                BESIDE_TURRETS,
+            ],
+            touch_keys: &[
+                WARDEN,
+                "Select your army, tap Run in the bottom panel or press {run}, and tap near your Turrets.",
+                BESIDE_TURRETS,
+            ],
+            touch: &[
+                WARDEN,
+                "Select your army, tap Run in the bottom panel, and tap near your Turrets.",
+                BESIDE_TURRETS,
+            ],
+        },
+        goal: Goal::Defeat(3),
+    },
+    Step {
+        title: "Destroy the outpost",
+        copy: Copy {
+            mouse_keys: &[
+                OUTPOST,
+                "Press {hunt} and click near the outpost to clear the way, then right-click each building to attack it.",
+            ],
+            mouse: &[
+                OUTPOST,
+                "Click Hunt and click near the outpost to clear the way, then right-click each building to attack it.",
+            ],
+            touch_keys: &[
+                OUTPOST,
+                "Tap Hunt or press {hunt} and tap near the outpost to clear the way, then long-press each building to attack it.",
+            ],
+            touch: &[
+                OUTPOST,
+                "Tap Hunt and tap near the outpost to clear the way, then long-press each building to attack it.",
+            ],
+        },
+        goal: Goal::Destroy,
+    },
+];
+
+/// The scene's enemy squads, which the steps above name by index: the
+/// raid, the Lancers behind the rock, the Sentinels on the high ground,
+/// and the Warden.
+pub(super) const FIGHT_SQUADS: [Squad; 4] = [
+    Squad {
+        units: &[15, 16, 17, 18, 19],
+        sortie: Some(Sortie {
+            step: 0,
+            toward: TilePos::new(5, 26),
+        }),
+    },
+    Squad {
+        units: &[20, 21],
+        sortie: None,
+    },
+    Squad {
+        units: &[22, 23, 24],
+        sortie: None,
+    },
+    Squad {
+        units: &[25],
+        sortie: Some(Sortie {
+            step: 3,
+            toward: TilePos::new(9, 21),
+        }),
+    },
+];
+
+pub(super) const FIGHT_OUTRO: &str = "You can now choose between Hunt, Advance, and Run, use \
+    each machine for what it does best, and fight around rock and high ground.";

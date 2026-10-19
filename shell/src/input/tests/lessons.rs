@@ -639,3 +639,213 @@ fn the_build_lesson_plays_as_its_touch_card_says() {
         "saving the group finishes the lesson"
     );
 }
+
+/// Open ground beside the Harvesters, where the raid is headed, and
+/// beside the Turrets, where the Warden is headed.
+const BY_HARVESTERS: Vec2 = Vec2::new(7.5, 25.5);
+const BY_TURRETS: Vec2 = Vec2::new(10.5, 20.5);
+/// Open ground on the high ground, beside the Sentinels holding it.
+const ON_THE_HEIGHTS: Vec2 = Vec2::new(50.5, 9.5);
+/// Open ground west of the enemy outpost.
+const BY_THE_OUTPOST: Vec2 = Vec2::new(50.5, 19.5);
+
+/// Selects every own machine that can fight. Selecting has its own
+/// lesson; this one is about what the army does once chosen.
+fn select_army(game: &mut Game) {
+    let human = game.presentation.human;
+    game.presentation.selection.units = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == human && u.kind.stats().can_fight())
+        .map(|u| u.id)
+        .collect();
+    game.presentation.selection.buildings.clear();
+}
+
+/// Centers the camera on `world`, as the camera keys or minimap would.
+fn look_at(game: &mut Game, input: &InputState, world: Vec2) {
+    game.presentation.camera.center = world;
+    game.presentation.camera.pan(Vec2::ZERO);
+    relayout(game, input);
+}
+
+/// The middle of the standing enemy machines of `kind`.
+fn enemy(game: &Game, kind: UnitKind) -> Option<Vec2> {
+    let squad: Vec<Vec2> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player != game.presentation.human && u.kind == kind)
+        .map(|u| vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()))
+        .collect();
+    (!squad.is_empty()).then(|| squad.iter().copied().sum::<Vec2>() / squad.len() as f32)
+}
+
+/// Sends the army after the enemy machines of `kind` until the card
+/// moves on to `next`, ordering again whenever the army has gone idle
+/// with some of them still standing.
+fn defeat(
+    game: &mut Game,
+    input: &mut InputState,
+    kind: UnitKind,
+    next: &str,
+    hunt_to: &dyn Fn(&mut Game, &mut InputState, Vec2),
+) {
+    for _ in 0..8 {
+        let Some(squad) = enemy(game, kind) else {
+            break;
+        };
+        hunt_to(game, input, squad);
+        for _ in 0..20 * 30 {
+            if objective(game) == Some(next) {
+                return;
+            }
+            game.do_tick();
+            relayout(game, input);
+            Tutorial::advance_in(game);
+        }
+    }
+    run_to(game, input, Some(next));
+}
+
+fn staged(game: &Game, stance: fn(&Command) -> bool) -> bool {
+    game.pending.iter().any(|c| stance(&c.command))
+}
+
+fn hunt(command: &Command) -> bool {
+    matches!(command, Command::Hunt { .. })
+}
+
+fn run(command: &Command) -> bool {
+    matches!(command, Command::Run { .. })
+}
+
+/// The enemy outpost's Fabricator, while it stands.
+fn outpost(game: &Game) -> Option<Vec2> {
+    game.state
+        .buildings()
+        .iter()
+        .find(|b| b.player != game.presentation.human && b.kind == BuildingKind::Fabricator)
+        .map(|b| {
+            let c = b.center();
+            vec2(c.x.to_num::<f32>(), c.y.to_num::<f32>())
+        })
+}
+
+#[test]
+fn the_fight_lesson_plays_as_its_mouse_and_keys_card_says() {
+    let (mut game, mut input) = begin(Lesson::Fight);
+    let hunt_to = |game: &mut Game, input: &mut InputState, world: Vec2| {
+        select_army(game);
+        look_at(game, input, world);
+        press(game, input, Key::F);
+        let p = on_screen(game, world);
+        click_at(game, input, p);
+        assert!(staged(game, hunt), "F and a click send the army hunting");
+    };
+
+    assert_eq!(objective(&game), Some("Stop the raid"));
+    assert!(copy(&game, Pointer::Mouse, true).contains("press F"));
+    hunt_to(&mut game, &mut input, BY_HARVESTERS);
+    run_to(&mut game, &input, Some("Get around the rocks"));
+
+    defeat(
+        &mut game,
+        &mut input,
+        UnitKind::Lancer,
+        "Take the ramp",
+        &hunt_to,
+    );
+
+    hunt_to(&mut game, &mut input, ON_THE_HEIGHTS);
+    run_to(&mut game, &input, Some("Fall back"));
+
+    assert!(copy(&game, Pointer::Mouse, true).contains("press G"));
+    select_army(&mut game);
+    look_at(&mut game, &input, BY_TURRETS);
+    press(&mut game, &mut input, Key::G);
+    let p = on_screen(&game, BY_TURRETS);
+    click_at(&mut game, &mut input, p);
+    assert!(staged(&game, run), "G and a click run the army home");
+    run_to(&mut game, &input, Some("Destroy the outpost"));
+
+    hunt_to(&mut game, &mut input, BY_THE_OUTPOST);
+    run_until(&mut game, &input, "the outpost Turret's fall", |game| {
+        !game
+            .state
+            .buildings()
+            .iter()
+            .any(|b| b.player != game.presentation.human && b.kind == BuildingKind::Turret)
+    });
+    if let Some(fabricator) = outpost(&game) {
+        select_army(&mut game);
+        look_at(&mut game, &input, fabricator);
+        right_click_at(&mut game, &mut input, fabricator);
+        assert!(
+            game.pending
+                .iter()
+                .any(|c| matches!(c.command, Command::Attack { .. })),
+            "a right-click on the Fabricator attacks it"
+        );
+    }
+    run_to(&mut game, &input, None);
+}
+
+#[test]
+fn the_fight_lesson_plays_as_its_touch_card_says() {
+    let (mut game, mut input) = begin(Lesson::Fight);
+    let order_to = |game: &mut Game, input: &mut InputState, action, world: Vec2| {
+        select_army(game);
+        look_at(game, input, world);
+        let verb = card(game, CardAction::Dispatch(action));
+        tap_at(game, input, verb);
+        let p = on_screen(game, world);
+        tap_at(game, input, p);
+    };
+    let hunt_to = |game: &mut Game, input: &mut InputState, world: Vec2| {
+        order_to(game, input, crate::action::Action::Hunt, world);
+        assert!(staged(game, hunt), "Hunt and a tap send the army hunting");
+    };
+
+    assert_eq!(objective(&game), Some("Stop the raid"));
+    assert!(copy(&game, Pointer::Touch, false).contains("tap Hunt"));
+    hunt_to(&mut game, &mut input, BY_HARVESTERS);
+    run_to(&mut game, &input, Some("Get around the rocks"));
+
+    defeat(
+        &mut game,
+        &mut input,
+        UnitKind::Lancer,
+        "Take the ramp",
+        &hunt_to,
+    );
+
+    hunt_to(&mut game, &mut input, ON_THE_HEIGHTS);
+    run_to(&mut game, &input, Some("Fall back"));
+
+    assert!(copy(&game, Pointer::Touch, false).contains("tap Run"));
+    order_to(
+        &mut game,
+        &mut input,
+        crate::action::Action::Run,
+        BY_TURRETS,
+    );
+    assert!(staged(&game, run), "Run and a tap run the army home");
+    run_to(&mut game, &input, Some("Destroy the outpost"));
+
+    hunt_to(&mut game, &mut input, BY_THE_OUTPOST);
+    run_until(&mut game, &input, "the outpost Turret's fall", |game| {
+        !game
+            .state
+            .buildings()
+            .iter()
+            .any(|b| b.player != game.presentation.human && b.kind == BuildingKind::Turret)
+    });
+    if let Some(fabricator) = outpost(&game) {
+        select_army(&mut game);
+        look_at(&mut game, &input, fabricator);
+        long_press_at(&mut game, &mut input, fabricator);
+    }
+    run_to(&mut game, &input, None);
+}
