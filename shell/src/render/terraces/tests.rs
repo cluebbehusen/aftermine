@@ -6,30 +6,20 @@ fn rows(lines: &[&str]) -> Vec<String> {
 }
 
 /// The shell's terraced field over these rows.
-fn terraced(rows: &[String]) -> (Frame, CellField) {
+fn terraced(rows: &[String]) -> Terraces {
     let (map, _) = Map::parse(rows).expect("rows parse");
-    let Terraces { frame, field } = Terraces::build(&map, rows);
-    (frame, field)
+    Terraces::build(&map, rows)
 }
 
-fn material_of(frame: &Frame, field: &CellField, cx: i32, cy: i32) -> Option<Material> {
-    let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
-    material(
-        field.at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS)),
-        frame.widths(cx, cy),
-        !frame.contains(pos),
-    )
-}
-
-fn levels(frame: &Frame, field: &CellField, pos: TilePos) -> std::collections::BTreeSet<usize> {
+fn levels(terraces: &Terraces, pos: TilePos) -> std::collections::BTreeSet<usize> {
     (0..CELLS)
         .flat_map(|sy| (0..CELLS).map(move |sx| (sx, sy)))
-        .filter_map(|(sx, sy)| {
-            match material_of(frame, field, pos.x * CELLS + sx, pos.y * CELLS + sy) {
+        .filter_map(
+            |(sx, sy)| match terraces.material(pos.x * CELLS + sx, pos.y * CELLS + sy) {
                 Some(Material::Riser(level) | Material::Bench(level)) => Some(level),
                 _ => None,
-            }
-        })
+            },
+        )
         .collect()
 }
 
@@ -113,10 +103,10 @@ fn benches_jog_by_side_and_playfield_cells_take_their_nearest_side() {
 #[test]
 fn floor_stays_bare() {
     let map = rows(&["######", "#....#", "#....#", "######"]);
-    let (frame, field) = terraced(&map);
+    let terraces = terraced(&map);
     for y in 1..3 {
         for x in 1..5 {
-            assert!(levels(&frame, &field, TilePos::new(x, y)).is_empty());
+            assert!(levels(&terraces, TilePos::new(x, y)).is_empty());
         }
     }
 }
@@ -137,10 +127,10 @@ fn a_spur_joins_every_level_of_the_wall() {
         "#..................#",
         "####################",
     ]);
-    let (frame, field) = terraced(&map);
+    let terraces = terraced(&map);
     let column = 9 * CELLS + 2;
-    let ring_edge = material_of(&frame, &field, column, CELLS - 1);
-    let spur_edge = material_of(&frame, &field, column, CELLS);
+    let ring_edge = terraces.material(column, CELLS - 1);
+    let spur_edge = terraces.material(column, CELLS);
     assert_eq!(ring_edge, spur_edge, "a seam at the map edge");
     assert!(
         matches!(spur_edge, Some(Material::Bench(level) | Material::Riser(level)) if level >= 1),
@@ -148,34 +138,49 @@ fn a_spur_joins_every_level_of_the_wall() {
     );
     // Its foot steps down to the floor through the first terrace.
     assert_eq!(
-        material_of(&frame, &field, column, 6 * CELLS - 1),
+        terraces.material(column, 6 * CELLS - 1),
         Some(Material::Riser(0))
     );
 }
 
 #[test]
-fn freestanding_peaks_step_up_from_about_five_tiles_thick() {
-    let four = rows(&[
-        "..........",
-        "...^^^^...",
-        "...^^^^...",
-        "...^^^^...",
-        "...^^^^...",
-        "..........",
+fn thin_peaks_stand_at_two_heights_and_broad_ones_step_up() {
+    let thin = rows(&[
+        "..............................",
+        ".^^^^^^^^^^^^^^^^^^^^^^^^.....",
+        ".^^^^^^^^^^^^^^^^^^^^^^^^.....",
+        "..............................",
     ]);
-    let (frame, field) = terraced(&four);
-    assert_eq!(levels(&frame, &field, TilePos::new(4, 2)), [0].into());
-    let five = rows(&[
-        "...........",
-        "...^^^^^...",
-        "...^^^^^...",
-        "...^^^^^...",
-        "...^^^^^...",
-        "...^^^^^...",
-        "...........",
+    let terraces = terraced(&thin);
+    let heights: std::collections::BTreeSet<usize> = (1..25)
+        .flat_map(|x| levels(&terraces, TilePos::new(x, 1)))
+        .collect();
+    assert_eq!(
+        heights,
+        [0, 1].into(),
+        "a thin peak's stretches stand at two heights"
+    );
+    // Each stretch stands at one height across the whole thickness.
+    for cx in CELLS..25 * CELLS {
+        let height = |cy: i32| terraces.peaks.steps(cx, cy).map(|steps| steps.lift);
+        assert_eq!(height(CELLS), height(3 * CELLS - 1), "split across at {cx}");
+    }
+    let six = rows(&[
+        "............",
+        "...^^^^^^...",
+        "...^^^^^^...",
+        "...^^^^^^...",
+        "...^^^^^^...",
+        "...^^^^^^...",
+        "...^^^^^^...",
+        "............",
     ]);
-    let (frame, field) = terraced(&five);
-    assert!(levels(&frame, &field, TilePos::new(5, 3)).contains(&1));
+    let terraces = terraced(&six);
+    assert!(
+        levels(&terraces, TilePos::new(5, 4))
+            .iter()
+            .any(|level| *level >= 1)
+    );
 }
 
 #[test]
@@ -188,13 +193,116 @@ fn upper_levels_never_trace_a_thin_arm() {
         ".^^^^^^^^^^.",
         ".^^^^^^^^^^.",
         ".^^^^^^^^^^.",
-        ".^^^^.......",
-        ".^^^^.......",
-        ".^^^^.......",
-        ".^^^^.......",
+        ".^^.........",
+        ".^^.........",
+        ".^^.........",
+        ".^^.........",
         "............",
     ]);
-    let (frame, field) = terraced(&map);
-    assert!(levels(&frame, &field, TilePos::new(5, 3)).contains(&1));
-    assert_eq!(levels(&frame, &field, TilePos::new(2, 9)), [0].into());
+    let terraces = terraced(&map);
+    assert!(
+        levels(&terraces, TilePos::new(5, 3))
+            .iter()
+            .any(|level| *level >= 1)
+    );
+    assert_eq!(levels(&terraces, TilePos::new(1, 9)), [0].into());
+}
+
+#[test]
+fn mirrored_peaks_draw_as_mirror_images() {
+    let map = rows(&[
+        "..................",
+        "..^^^^^^..........",
+        "..^^^^^^^^........",
+        "..^^^^^^^^........",
+        "..^^^^^^..........",
+        "..................",
+        "..........^^^^^^..",
+        "........^^^^^^^^..",
+        "........^^^^^^^^..",
+        "..........^^^^^^..",
+        "..................",
+    ]);
+    // The second peak is the first turned half a turn.
+    let (width, height) = (18 * CELLS, 11 * CELLS);
+    let terraces = terraced(&map);
+    for cy in 0..height {
+        for cx in 0..width {
+            assert_eq!(
+                terraces.material(cx, cy),
+                terraces.material(width - 1 - cx, height - 1 - cy),
+                "cell {cx},{cy} differs from its mirror"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_corner_steps_alike_on_both_its_sides() {
+    let map = rows(&[
+        "............",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "..^^^^^^^^..",
+        "............",
+    ]);
+    let terraces = terraced(&map);
+    let (x0, y0) = (2 * CELLS, CELLS);
+    let (x1, y1) = (10 * CELLS - 1, 9 * CELLS - 1);
+    // Within a corner's stretch, a cell and its reflection across the
+    // corner's diagonal share the first two benches, so each meets itself
+    // square.
+    for a in 0..STRETCH {
+        for b in 0..a {
+            for (here, there) in [
+                ((x0 + a, y0 + b), (x0 + b, y0 + a)),
+                ((x1 - a, y0 + b), (x1 - b, y0 + a)),
+                ((x1 - a, y1 - b), (x1 - b, y1 - a)),
+                ((x0 + a, y1 - b), (x0 + b, y1 - a)),
+            ] {
+                let benches = |(cx, cy): (i32, i32)| {
+                    terraces
+                        .peaks
+                        .steps(cx, cy)
+                        .map(|steps| (steps.widths[0], steps.widths[1]))
+                };
+                assert_eq!(
+                    benches(here),
+                    benches(there),
+                    "a seam on the diagonal near {here:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_long_side_varies_its_steps_and_spurs_keep_the_walls() {
+    let map = rows(&[
+        "##########################",
+        "#........................#",
+        "#..^^^^^^^^^^^^^^^^^^^^..#",
+        "#..^^^^^^^^^^^^^^^^^^^^..#",
+        "#..^^^^^^^^^^^^^^^^^^^^..#",
+        "#..^^^^^^^^^^^^^^^^^^^^..#",
+        "#..^^^^^^^^^^^^^^^^^^^^..#",
+        "#........................#",
+        "#.....^^^^...............#",
+        "######^^^^################",
+    ]);
+    let terraces = terraced(&map);
+    let firsts: std::collections::BTreeSet<i32> = (3 * CELLS..23 * CELLS)
+        .filter_map(|cx| terraces.peaks.steps(cx, 2 * CELLS))
+        .map(|steps| steps.widths[0])
+        .collect();
+    assert!(firsts.len() > 1, "the top side never varies: {firsts:?}");
+    assert!(
+        terraces.peaks.steps(7 * CELLS, 8 * CELLS).is_none(),
+        "a spur took its own steps"
+    );
 }
