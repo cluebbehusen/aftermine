@@ -781,28 +781,35 @@ fn a_breacher_takes_a_machine_it_can_hit_before_a_structure_on_another_level() {
     // A Maw on the floor sees a Barricade on the plateau above and a
     // Harvester in contact with it on its own level.
     let staged = |units| {
-        let mut scenario = stair(2, units);
-        scenario.buildings = vec![building(1, BuildingKind::Barricade, 6, 3)];
+        let mut scenario = east_plateau(units);
+        scenario.buildings = vec![building(1, BuildingKind::Barricade, 20, 10)];
         scenario.build().unwrap()
     };
     let mut state = staged(vec![
-        unit(0, UnitKind::Maw, 6, 6),
-        unit(1, UnitKind::Harvester, 7, 7),
+        unit(0, UnitKind::Maw, 17, 10),
+        unit(1, UnitKind::Harvester, 18, 11),
     ]);
     let (maw, harvester) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[]);
     assert_eq!(attacking(&state, maw), Some(Target::Unit(harvester)));
     // Alone, the structure is still its pick, and it climbs to reach it.
-    let mut state = staged(vec![unit(0, UnitKind::Maw, 6, 6)]);
+    let mut state = staged(vec![unit(0, UnitKind::Maw, 17, 10)]);
     let maw = state.units()[0].id;
     let barricade = state
         .buildings()
         .iter()
         .find(|b| b.kind == BuildingKind::Barricade)
-        .unwrap()
-        .id;
+        .unwrap();
+    let (barricade, full) = (barricade.id, barricade.hp);
     state.tick(&[]);
     assert_eq!(attacking(&state, maw), Some(Target::Building(barricade)));
+    for _ in 0..1_200 {
+        state.tick(&[]);
+        if state.building(barricade).is_none_or(|b| b.hp < full) {
+            return;
+        }
+    }
+    panic!("the Maw never reached the Barricade");
 }
 
 #[test]

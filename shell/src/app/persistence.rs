@@ -246,9 +246,7 @@ impl App {
             if let Ok(Output::Catalog(entries)) = result {
                 match screen {
                     Screen::Home(home) => {
-                        home.set_catalog(
-                            entries.iter().any(|e| e.available() && e.kind.continues()),
-                        );
+                        home.set_catalog(crate::saves::continuable(&entries).next().is_some());
                     }
                     Screen::Replays(shelf) => shelf.set_catalog(entries),
                     _ => {}

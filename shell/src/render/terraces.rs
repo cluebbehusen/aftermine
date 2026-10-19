@@ -12,6 +12,13 @@
 //! playfield the last bench fades into the dark; inside it, a peak's last
 //! bench runs on as its plateau.
 //!
+//! A freestanding peak steps its own way rather than borrowing the wall's
+//! widths: each side is cut into short stretches whose first two benches
+//! vary, a corner's stretch wrapping both its sides so steps never seam on a
+//! diagonal. A peak too thin to step instead stands at one of two heights
+//! per stretch. Peaks that mirror each other under the map's half-turn
+//! step as mirror images; their wear marks fall independently.
+//!
 //! The field reads the map alone, so a terrace never shifts as the fog lifts;
 //! the fog veil hides peaks the player has not explored.
 
@@ -20,6 +27,7 @@ use super::environment::{
     BoundaryInsets, LAYERS, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab,
     draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
 };
+use super::stretches::Shapes;
 use crate::game::Scene;
 use crate::numeric;
 use crate::numeric::Fit;
@@ -212,11 +220,15 @@ fn world_cell(field: &CellField, index: usize) -> (i32, i32) {
 
 /// Rewrites a field's depth so each upper level follows an opened plateau
 /// rather than the outline itself.
-fn terrace(field: &mut CellField, frame: &Frame) {
+fn terrace(field: &mut CellField, frame: &Frame, peaks: &Peaks) {
     let thresholds: Vec<(u8, u8)> = (0..field.depth.len())
         .map(|index| {
             let (cx, cy) = world_cell(field, index);
-            risers(frame.widths(cx, cy))
+            risers(
+                peaks
+                    .steps(cx, cy)
+                    .map_or_else(|| frame.widths(cx, cy), |steps| steps.widths),
+            )
         })
         .collect();
     let core1 = opened(field, |index, depth| depth >= thresholds[index].0, None);
@@ -262,15 +274,90 @@ fn wall(on_playfield: bool, terrain: Option<Terrain>) -> bool {
     !on_playfield || terrain == Some(Terrain::Peak)
 }
 
+/// How one cell of a freestanding peak steps: its bench widths, and how many
+/// levels a thin peak's stretch stands raised.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Steps {
+    widths: [i32; 3],
+    lift: usize,
+}
+
+/// The freestanding peaks. Spurs that meet the wall are left out and keep
+/// the wall's widths, so their levels join it.
+#[derive(Debug)]
+struct Peaks(Shapes);
+
+impl Peaks {
+    fn find(map: &Map, frame: &Frame) -> Self {
+        Self(Shapes::find(
+            map.width(),
+            map.height(),
+            |pos| {
+                frame.contains(pos)
+                    && map
+                        .tile(pos)
+                        .is_some_and(|tile| tile.terrain == Terrain::Peak)
+            },
+            |pos| frame.contains(pos),
+            SALT + 313,
+        ))
+    }
+
+    /// How a cell of a freestanding peak steps; `None` elsewhere.
+    fn steps(&self, cx: i32, cy: i32) -> Option<Steps> {
+        let place = self.0.place(cx, cy)?;
+        if place.thin {
+            // Too thin to step: each stretch of its length stands at one of
+            // two heights instead.
+            let height = hash(place.seed, place.length, SALT + 314) % 100;
+            return Some(Steps {
+                widths: [2, 2, 2],
+                lift: usize::from(height >= 45),
+            });
+        }
+        let first = hash(place.seed, place.stretch, SALT + 314) % 100;
+        // The second bench jogs on the offset stretches, so the two levels
+        // seldom jog together.
+        let second = hash(place.seed, place.offset, SALT + 315) % 10;
+        let own = hash(place.seed, 0, SALT + 316);
+        let w0 = match first {
+            0..25 => 1,
+            25..50 => 2,
+            50..75 => 3,
+            75..90 => 4,
+            _ => 5,
+        };
+        let w1 = (2
+            + (own % 3).fit::<i32>()
+            + match second {
+                0..3 => -1,
+                3..7 => 0,
+                _ => 1,
+            })
+        .clamp(1, 5);
+        let w2 = 3 + ((own >> 4) % 2).fit::<i32>();
+        Some(Steps {
+            widths: [w0, w1, w2],
+            lift: 0,
+        })
+    }
+
+    fn owns(&self, pos: TilePos) -> bool {
+        self.0.owns(pos)
+    }
+}
+
 /// The wall and the peaks as one terraced field over the map and its margin.
 pub(super) struct Terraces {
     frame: Frame,
     field: CellField,
+    peaks: Peaks,
 }
 
 impl Terraces {
     pub(super) fn build(map: &Map, rows: &[String]) -> Self {
         let frame = Frame::from_rows(rows);
+        let peaks = Peaks::find(map, &frame);
         let mut field = CellField::seeded(
             TilePos::new(-MARGIN, -MARGIN),
             map.width() + 2 * MARGIN,
@@ -278,8 +365,31 @@ impl Terraces {
             CELLS,
             |pos| wall(frame.contains(pos), map.tile(pos).map(|tile| tile.terrain)),
         );
-        terrace(&mut field, &frame);
-        Self { frame, field }
+        terrace(&mut field, &frame, &peaks);
+        Self {
+            frame,
+            field,
+            peaks,
+        }
+    }
+
+    /// The material drawn at a cell.
+    fn material(&self, cx: i32, cy: i32) -> Option<Material> {
+        let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
+        let steps = self.peaks.steps(cx, cy);
+        let found = material(
+            self.field
+                .at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS)),
+            steps.map_or_else(|| self.frame.widths(cx, cy), |steps| steps.widths),
+            !self.frame.contains(pos),
+        );
+        let lift = steps.map_or(0, |steps| steps.lift);
+        let top = LAYERS.len() - 1;
+        match found {
+            Some(Material::Riser(level)) => Some(Material::Riser((level + lift).min(top))),
+            Some(Material::Bench(level)) => Some(Material::Bench((level + lift).min(top))),
+            other => other,
+        }
     }
 }
 
@@ -301,16 +411,9 @@ fn screen_tiles(game: &Scene<'_>) -> (TilePos, TilePos) {
 
 pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bool) {
     let (min, max) = screen_tiles(game);
-    let Terraces { frame, field } = terraces;
+    let frame = &terraces.frame;
     let map = game.state.map();
-    let material_at = |cx: i32, cy: i32| -> Option<Material> {
-        let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
-        material(
-            field.at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS)),
-            frame.widths(cx, cy),
-            !frame.contains(pos),
-        )
-    };
+    let material_at = |cx: i32, cy: i32| terraces.material(cx, cy);
     let tiles: Vec<TilePos> = (min.y..max.y)
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
         .filter(|&pos| {
@@ -365,11 +468,17 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
         let value = hash(ix.div_euclid(CELLS), iy.div_euclid(CELLS), SALT + 503);
         let (xs, ys) = cell_edges(game, pos);
         let rect = rect_of(&xs, &ys, 0, 0);
-        if value.is_multiple_of(41) {
+        // A peak in the field is more weathered than the wall.
+        let (slab, fracture, rebar) = if terraces.peaks.owns(pos) {
+            (value.is_multiple_of(14), value % 5 == 2, value % 13 == 4)
+        } else {
+            (value.is_multiple_of(41), value % 17 == 3, value % 43 == 13)
+        };
+        if slab {
             draw_missing_slab(rect, cell, LAYERS[level].top, value);
-        } else if value % 17 == 3 {
+        } else if fracture {
             draw_fracture(rect, cell, zoom, LAYERS[level].top, value);
-        } else if value % 43 == 13 {
+        } else if rebar {
             draw_rebar(rect, cell, zoom);
         }
     }
@@ -386,6 +495,15 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
                 };
                 let rect = rect_of(&xs, &ys, sx, sy);
                 for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    // Where a peak's stretches meet at different heights, the
+                    // lower bench ends against a face and the higher is lit.
+                    if let Some(Material::Bench(other)) = material_at(cx + dx, cy + dy) {
+                        if other > level {
+                            draw_lip(rect, (dx, dy), lip * 2.0, LAYERS[other].riser);
+                        } else if other < level {
+                            draw_lip(rect, (dx, dy), lip, LAYERS[level].lip);
+                        }
+                    }
                     if material_at(cx + dx, cy + dy) != Some(Material::Riser(level)) {
                         continue;
                     }

@@ -605,7 +605,10 @@ fn the_strip_names_the_classic_tab_keys_while_the_tab_actions_are_unbound() {
     bindings.unbind_slot(Action::PrevTab, 0);
     bindings.unbind_slot(Action::NextTab, 0);
     crate::menu::set_bindings(&bindings);
-    assert_eq!(tab_keys(), Some(("Q".to_string(), "E".to_string())));
+    assert_eq!(
+        crate::tabs::keys(),
+        Some(("Q".to_string(), "E".to_string()))
+    );
     assert!(
         crate::menu::binding_hint(settings_hint(crate::platform::ALL_HANDS[0], true))
             .contains("Q/E switch tabs")

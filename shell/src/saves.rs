@@ -35,6 +35,17 @@ impl RecordKind {
     pub fn continues(self) -> bool {
         matches!(self, RecordKind::Autosave | RecordKind::LanAutosave)
     }
+
+    /// The chip a shelf row wears beside its title, for the kinds its
+    /// tab does not already imply.
+    pub fn tag(self) -> Option<&'static str> {
+        match self {
+            RecordKind::Autosave => Some("AUTO"),
+            RecordKind::LanSave => Some("LAN"),
+            RecordKind::LanAutosave => Some("LAN AUTO"),
+            RecordKind::Save | RecordKind::Match => None,
+        }
+    }
 }
 
 pub(crate) fn record_kind(meta: &chassis::replay::ReplayMeta) -> RecordKind {
@@ -53,9 +64,10 @@ pub struct ReplayEntry {
     pub path: PathBuf,
     /// The record's name, or its map when nobody named it.
     pub title: String,
-    /// What the record is, beside its title: a named save's map, the
-    /// kind of an unnamed one, or a finished match's format.
-    pub detail: String,
+    /// The map, when the title is a name the player gave instead.
+    pub map: Option<String>,
+    /// The match's format: `1v1`, `2v2`, `4-way FFA`.
+    pub format: String,
     /// Match time when the record was written.
     pub clock: String,
     /// When the record was saved, in unix seconds.
@@ -207,25 +219,17 @@ fn scan_cancellable(
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let name = replay.meta.description.clone();
-        let detail = match (kind, name.as_deref()) {
-            (RecordKind::Match, _) => {
-                crate::menu::match_format(replay.seats, replay.teams.unwrap_or(replay.seats))
-            }
-            (RecordKind::Autosave, _) => "Autosave".to_string(),
-            (RecordKind::LanAutosave, _) => "LAN autosave".to_string(),
-            (RecordKind::Save, Some(name)) if name != replay.map => replay.map.clone(),
-            (RecordKind::Save, _) => "Saved game".to_string(),
-            (RecordKind::LanSave, Some(name)) if name != replay.map => {
-                format!("LAN \u{b7} {}", replay.map)
-            }
-            (RecordKind::LanSave, _) => "LAN save".to_string(),
-        };
+        let map = name
+            .as_ref()
+            .is_some_and(|name| *name != replay.map)
+            .then(|| replay.map.clone());
         out.push((
             RecordTime { saved_at, modified },
             ReplayEntry {
                 path,
                 title: name.unwrap_or_else(|| replay.map.clone()),
-                detail,
+                map,
+                format: crate::menu::match_format(replay.seats, replay.teams),
                 clock: crate::clock_label::ticks(replay.meta.ticks.unwrap_or(0)),
                 saved_secs,
                 problem: replay.problem,
@@ -250,6 +254,28 @@ pub fn discover(cancelled: impl Fn() -> bool) -> Vec<ReplayEntry> {
     }
     scan_cancellable(&crate::paths::replays_dir(), &mut found, &cancelled);
     newest_first(found)
+}
+
+/// Continue's material in a newest-first catalog: the available autosaves,
+/// local or LAN, left since the player's newest finished match. A finished
+/// match withdraws the sessions left before it from Continue; the shelf
+/// still offers them.
+pub(crate) fn continuable(entries: &[ReplayEntry]) -> impl Iterator<Item = &ReplayEntry> {
+    continuable_since(entries, crate::paths::matches_dir())
+}
+
+/// Only the matches folder records what this player finished; a recording
+/// added to the replays folder says nothing about their last match.
+fn continuable_since(
+    entries: &[ReplayEntry],
+    matches: Option<PathBuf>,
+) -> impl Iterator<Item = &ReplayEntry> {
+    entries
+        .iter()
+        .take_while(move |entry| {
+            entry.kind != RecordKind::Match || entry.path.parent() != matches.as_deref()
+        })
+        .filter(|entry| entry.available() && entry.kind.continues())
 }
 
 fn newest_first(mut found: Vec<(RecordTime, ReplayEntry)>) -> Vec<ReplayEntry> {

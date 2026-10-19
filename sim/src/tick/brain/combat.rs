@@ -857,6 +857,28 @@ pub(super) fn acquire_target(
     acquire_target_from(state, index, id, pos)
 }
 
+/// [`acquire_target`] for a unit that sets out after what it picks. A
+/// contact weapon passes over a structure it has no reachable stance to
+/// meet: it could only set out, find no stance, give the fight up, and pick
+/// the same structure again the next tick.
+pub(super) fn acquire_reachable_target(
+    state: &State,
+    index: &super::super::spatial::UnitIndex,
+    reach: &mut super::super::reach::Reach,
+    id: UnitId,
+) -> Option<Target> {
+    let unit = state.unit(id).expect("caller checked");
+    if unit.kind.stats().contact_reach.is_none() {
+        return acquire_target(state, index, id);
+    }
+    acquire_target_within(state, index, id, unit.pos, None, |target| match target {
+        Target::Unit(_) => true,
+        Target::Building(b) => state
+            .building(b)
+            .is_some_and(|b| reach.reaches(state, id, contact::stance_goals(state, unit, b))),
+    })
+}
+
 /// The same pick judged as if the unit stood at `pos`: what a landing
 /// aircraft would find in reach once parked on its tile, not what it
 /// happens to pass on the way there.

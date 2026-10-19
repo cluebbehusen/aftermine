@@ -11,7 +11,7 @@ use macroquad::audio::{PlaySoundParams, play_sound, set_sound_volume};
 /// The presentation context the score reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Scene {
-    /// Home, setup, replay shelf, or Settings opened from Home.
+    /// Home, setup, the saves and replays shelf, or Settings opened from Home.
     Menu,
     /// A live or replayed match with no nearby combat.
     Match,

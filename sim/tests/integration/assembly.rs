@@ -1225,3 +1225,63 @@ fn a_pad_lost_to_a_building_returns_the_crew_to_the_ordinary_ring() {
     assert!(!tiles.contains(&blocked));
     assert_ne!(tiles, unblocked);
 }
+
+#[test]
+fn a_maw_passes_over_a_structure_it_cannot_reach() {
+    // A Barricade walled in by rock stands nearest the Maw, a second one in
+    // the open just as near. The Maw can meet only the second; with it gone,
+    // the Maw stands idle instead of picking the walled one every tick.
+    let scene = |open_barricade: bool| {
+        let mut scenario = open_arena_with(24, 16, vec![unit(0, UnitKind::Maw, 10, 9)], |rows| {
+            for (x, y) in [
+                (9, 5),
+                (10, 5),
+                (11, 5),
+                (9, 6),
+                (11, 6),
+                (9, 7),
+                (10, 7),
+                (11, 7),
+            ] {
+                rows[y][x] = '#';
+            }
+        });
+        scenario.buildings = vec![building(1, BuildingKind::Barricade, 10, 6)];
+        if open_barricade {
+            scenario
+                .buildings
+                .push(building(1, BuildingKind::Barricade, 13, 9));
+        }
+        scenario.build().unwrap()
+    };
+    let mut state = scene(true);
+    let maw = ids(&state, 0, UnitKind::Maw)[0];
+    let open = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Barricade && b.anchor == TilePos::new(13, 9))
+        .unwrap()
+        .id;
+    state.tick(&[]);
+    let Order::Attack { target, .. } = state.unit(maw).unwrap().order else {
+        panic!("the Maw picked no fight");
+    };
+    assert_eq!(
+        state
+            .attack_view(PlayerId(0), target)
+            .and_then(|view| view.entity),
+        Some(Target::Building(open))
+    );
+    let mut state = scene(false);
+    for _ in 0..30 {
+        let report = state.tick(&[]);
+        assert_eq!(state.unit(maw).unwrap().order, Order::Idle);
+        assert!(
+            !report
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == maw)),
+            "the Maw never sets out for what it cannot meet"
+        );
+    }
+}

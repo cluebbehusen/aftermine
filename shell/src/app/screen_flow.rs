@@ -253,7 +253,7 @@ pub(super) fn update_and_draw(
     }
     let mut profile_frame_active = false;
     // Menu backdrops are presentation worlds too. Home, setup, and
-    // the replay shelf animate even when `--paused` reserves the next
+    // the saves and replays shelf animate even when `--paused` reserves the next
     // match for driven control; Settings inherits its caller, so the
     // pause-menu path stays frozen. Playing and Playback advance their
     // own clocks below, while Pause deliberately advances neither.
@@ -1162,9 +1162,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
             &app.config.bindings,
         );
         veil();
-        shelf
-            .menu
-            .draw_with_coaching(&shelf.subtitle(), shelf.coaching().as_deref());
+        shelf.draw(app.input.mouse, app.menu_notice.is_some());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
     }

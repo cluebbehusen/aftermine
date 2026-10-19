@@ -99,6 +99,7 @@ pub(crate) mod prim;
 mod roc;
 pub(crate) mod sky;
 mod strategic;
+mod stretches;
 pub(crate) use sky::missile_seen_by;
 pub(crate) use strategic::lattice_pod_pivot;
 mod support_brackets;

@@ -52,6 +52,12 @@ impl SessionCheckpoint {
         )
     }
 
+    /// Each seat's team tag, in seat order, so a host can count teams
+    /// without restoring the session.
+    pub fn team_tags(&self) -> impl Iterator<Item = Option<u8>> + '_ {
+        self.scenario.players.iter().map(|player| player.team)
+    }
+
     /// Starts a world-only recording by `build` at this session boundary.
     pub fn recording(&self, build: &crate::build::BuildIdentity) -> Result<GameReplay> {
         self.validate_world()?;

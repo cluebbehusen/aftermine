@@ -94,20 +94,26 @@ fn kinds_read_the_metadata_tag() {
             .find(|e| e.path.file_stem().unwrap() == name)
             .expect("scanned")
     };
-    assert_eq!(entry("anything").kind, RecordKind::Save);
+    let named = entry("anything");
+    assert_eq!(named.kind, RecordKind::Save);
     assert_eq!(
         (
-            entry("anything").title.as_str(),
-            entry("anything").detail.as_str()
+            named.title.as_str(),
+            named.map.as_deref(),
+            named.format.as_str()
         ),
-        ("before the push", "Skirmish Basin"),
+        ("before the push", Some("Skirmish Basin"), "1v1"),
         "a named save leads with its name and keeps its map beside it"
     );
     let finished = entry("match-0000000099");
     assert_eq!(finished.kind, RecordKind::Match);
     assert_eq!(
-        (finished.title.as_str(), finished.detail.as_str()),
-        ("Skirmish Basin", "1v1"),
+        (
+            finished.title.as_str(),
+            finished.map.as_deref(),
+            finished.format.as_str()
+        ),
+        ("Skirmish Basin", None, "1v1"),
         "an unnamed match leads with its map and says its format"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -185,6 +191,87 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
         assert_eq!(candidates, ["newest", "b", "a", "older", "copied"]);
     }
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn continue_offers_only_sessions_left_since_the_last_finished_match() {
+    let root = std::env::temp_dir().join(format!(
+        "oxide-continue-last-match-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let [autosaves, matches, saves, replays] =
+        ["autosaves", "matches", "saves", "replays"].map(|name| root.join(name));
+    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let write = |dir: &std::path::Path, name: &str, kind: &str, saved_at: u64| {
+        std::fs::create_dir_all(dir).unwrap();
+        let mut meta = game.recorder.meta.clone();
+        meta.kind = Some(kind.into());
+        meta.ticks = Some(game.state.current_tick());
+        meta.saved_at = Some(saved_at);
+        let path = dir.join(name);
+        let capture = game.capture_save();
+        match kind {
+            "match" => {
+                let mut record = game.recorder.clone();
+                record.meta = meta;
+                record.save(path).unwrap();
+            }
+            "lan-autosave" => {
+                let manifest = crate::game::checkpoint::LanManifest::new(
+                    &game.scenario,
+                    game.presentation.human,
+                    &[],
+                );
+                let capture = capture.for_lan(Vec::new(), manifest);
+                crate::saved_game::write_capture(capture, meta, &path).unwrap();
+            }
+            _ => crate::saved_game::write_capture(capture, meta, &path).unwrap(),
+        }
+    };
+    let continuable = || {
+        let mut found = Vec::new();
+        for dir in [&autosaves, &matches, &saves, &replays] {
+            scan(dir, &mut found);
+        }
+        let entries = newest_first(found);
+        continuable_since(&entries, Some(matches.clone()))
+            .map(|entry| {
+                entry
+                    .path
+                    .file_stem()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    write(&autosaves, "autosave-1.oxsave", "autosave", 100);
+    assert_eq!(continuable(), ["autosave-1"]);
+    write(&matches, "match-2.json", "match", 200);
+    assert!(
+        continuable().is_empty(),
+        "a finished match withdraws the sessions left before it"
+    );
+    write(&saves, "save-0000000001.oxsave", "save", 300);
+    write(&replays, "shared.json", "match", 300);
+    assert!(
+        continuable().is_empty(),
+        "neither a named save nor an added recording is a session left"
+    );
+    write(&autosaves, "lan-autosave-3.oxsave", "lan-autosave", 400);
+    write(&autosaves, "autosave-4.oxsave", "autosave", 500);
+    write(&replays, "newer.json", "match", 600);
+    assert_eq!(
+        continuable(),
+        ["autosave-4", "lan-autosave-3"],
+        "sessions left since the last finished match stay, newest first"
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -294,5 +381,24 @@ fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
         continues,
         [RecordKind::Autosave, RecordKind::LanAutosave],
         "Continue picks up the newest autosave, local or LAN"
+    );
+}
+
+#[test]
+fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
+    let tags: Vec<_> = [
+        RecordKind::Autosave,
+        RecordKind::Save,
+        RecordKind::Match,
+        RecordKind::LanSave,
+        RecordKind::LanAutosave,
+    ]
+    .into_iter()
+    .map(RecordKind::tag)
+    .collect();
+    assert_eq!(
+        tags,
+        [Some("AUTO"), None, None, Some("LAN"), Some("LAN AUTO")],
+        "a plain save and a finished match are what their tabs already say"
     );
 }

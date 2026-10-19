@@ -35,10 +35,10 @@ crate-level rustdoc.
   shares, with `ScrollPress` adding the finger drag that scrolls the menu lists
   and the map grid; `nav` is the one keyboard rule (arrows wrap, Home and End
   jump, paging stops at the ends); `menu::Menu` holds typed rows; `tabs` is the
-  tab strip Settings hangs under its title; and `button` draws the shared action
-  and BACK buttons. `camera::controls` holds the camera hands every view shares;
-  `viewer_touch` pans and pinches the read-only viewers. Key bindings live only
-  in the configuration.
+  tab strip Settings and the shelf hang under their titles; and `button` draws
+  the shared action and BACK buttons. `camera::controls` holds the camera hands
+  every view shares; `viewer_touch` pans and pinches the read-only viewers. Key
+  bindings live only in the configuration.
 - `platform` states whether the build is touch-only (iOS) and publishes the
   pointer and keys in use.
 - `building_actions` derives single and grouped building controls from their
@@ -151,11 +151,13 @@ commands to any seat, as in ordinary sessions.
 
 ## Autosaves and diagnostics
 
-Continue resumes the newest autosave. A match autosaves every minute of play, as
-the window goes inactive, and when the player leaves or quits. Each match keeps
-one autosave, replaced in place, until its finished recording replaces it as
-soon as the match is decided. On iPad, named saves, finished matches, replays
-and diagnostics appear in the Files app under On My iPad > Oxide.
+Continue resumes the newest autosave written since the last finished match, so
+it disappears once the most recent match is finished; older autosaves stay on
+the Replays shelf. A match autosaves every minute of play, as the window goes
+inactive, and when the player leaves or quits. Each match keeps one autosave,
+replaced in place, until its finished recording replaces it as soon as the match
+is decided. On iPad, named saves, finished matches, replays and diagnostics
+appear in the Files app under On My iPad > Oxide.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only
