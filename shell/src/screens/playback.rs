@@ -78,12 +78,16 @@ impl PlaybackSession {
         Ok(session)
     }
 
+    /// A session whose seeks land in one frame however slow the machine,
+    /// so tests never depend on the wall-clock budget.
     #[cfg(test)]
     pub fn from_replay(replay: GameReplay) -> Result<Self> {
-        Self::from_recording(oxide_kit::Recording {
+        let mut session = Self::from_recording(oxide_kit::Recording {
             replay,
             keyframes: oxide_kit::keyframes::Keyframes::default(),
-        })
+        })?;
+        session.seek_budget = std::time::Duration::MAX;
+        Ok(session)
     }
 
     fn from_recording(recording: oxide_kit::Recording) -> Result<Self> {
