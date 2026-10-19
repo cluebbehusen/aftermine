@@ -161,7 +161,10 @@ struct App {
 fn live_playback(game: &Game) -> Result<PlaybackSession> {
     let mut replay = game.recorder.clone();
     replay.meta.ticks = Some(game.state.current_tick());
-    PlaybackSession::from_replay(replay)
+    PlaybackSession::watch(oxide_kit::Recording {
+        replay,
+        keyframes: game.keyframes.encoded(),
+    })
 }
 
 #[expect(clippy::too_many_lines, reason = "startup and the native frame loop")]

@@ -244,8 +244,10 @@ player-save import is not supported. Recorded-match playback remains separate.
 Recordings contain a starting scenario or world checkpoint and tick-stamped
 commands. Loading a player save starts a new recording segment at the saved
 tick. Finished matches remain watchable, but a segment contains only the history
-recorded since its origin. Saves require matching simulation and checkpoint
-revisions; there is no cross-version migration.
+recorded since its origin. Finished matches are saved as compressed `.oxreplay`
+files that also store the world every 1,024 ticks, so scrubbing restores a
+nearby world instead of replaying from the start. Saves require matching
+simulation and checkpoint revisions; there is no cross-version migration.
 
 The embedded scenario preserves each opponent's exact difficulty, stance, and
 personality seed. New Match creates new hidden identities; Restart, Rematch,

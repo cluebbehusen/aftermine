@@ -14,7 +14,9 @@ oxide-sim = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+ciborium = "0.2.2"
 tiny-skia = "0.11"
+zstd = "0.13"
 
 [lints]
 workspace = true

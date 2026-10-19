@@ -1,10 +1,32 @@
 //! Oxide's replay file boundary.
+//!
+//! A replay is plain JSON, as the driver writes for people and agents to
+//! read, or an `.oxreplay` recording: eight-byte `OXIDEREP` magic, a
+//! little-endian 32-bit header length, a JSON header, one checksummed
+//! Zstandard frame holding the same JSON replay, then the keyframe frames
+//! the header indexes, in order. Both load through the same strict wire.
 
 use crate::GameReplay;
-use chassis::replay::{Replay, ReplayError, ReplayMeta, TimedCommand};
+use crate::keyframes::{Encoding, Keyframe, Keyframes};
+use chassis::replay::{
+    MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS, Replay, ReplayError, ReplayMeta, TimedCommand,
+};
 use oxide_sim::{PlayerCommand, Scenario};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::Path;
+
+/// `.oxreplay` format revision.
+const FORMAT: u32 = 1;
+const MAGIC: &[u8; 8] = b"OXIDEREP";
+const MAX_HEADER: u64 = 1 << 20;
+/// Largest `.oxreplay` file accepted. Keyframes that would push a recording
+/// past it are left out when it is written.
+const MAX_RECORDING_BYTES: u64 = 256 << 20;
+/// The record compresses once, on a save worker. This level takes about a
+/// tenth of a second on a half-hour eight-seat match and saves a third over
+/// the fastest one; higher levels cost several times more for little.
+const RECORD_LEVEL: i32 = 15;
 
 /// The replay envelope, strict about unknown fields; [`Scenario`] is strict
 /// about its own.
@@ -93,11 +115,192 @@ impl<'a> ReplayPlayback<'a> {
     }
 }
 
-/// Loads an Oxide replay from disk.
+/// Loads an Oxide replay from disk, JSON or `.oxreplay`, without its
+/// keyframes.
 pub fn load_replay(path: impl AsRef<Path>) -> Result<GameReplay, ReplayError> {
-    GameReplay::load_with_decoder(path, |bytes| {
-        Ok(serde_json::from_slice::<ReplayWire>(bytes)?.into())
+    load_recording(path).map(|recording| recording.replay)
+}
+
+/// A replay with the keyframes stored beside it.
+pub struct Recording {
+    /// The authoritative record.
+    pub replay: GameReplay,
+    /// Worlds a viewer may restore instead of re-simulating: a cache over
+    /// `replay`, checked against it as it plays.
+    pub keyframes: Keyframes,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Header {
+    version: u32,
+    record: Frame,
+    keyframes: Vec<IndexEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Frame {
+    compressed: u64,
+    decoded: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IndexEntry {
+    tick: u64,
+    hash: u64,
+    encoding: Encoding,
+    compressed: u64,
+    decoded: u64,
+}
+
+fn invalid(error: impl std::fmt::Display) -> ReplayError {
+    ReplayError::Invalid(error.to_string())
+}
+
+/// Writes `replay` and as many of `keyframes` as fit the file's size bound
+/// as an `.oxreplay` recording, atomically.
+pub fn save_recording(
+    path: impl AsRef<Path>,
+    replay: &GameReplay,
+    keyframes: &Keyframes,
+) -> Result<(), ReplayError> {
+    let json = serde_json::to_vec(replay)?;
+    if json.len() > MAX_REPLAY_BYTES {
+        return Err(invalid("replay exceeds its byte bound"));
+    }
+    let record = crate::compression::compress(&json, None, RECORD_LEVEL).map_err(invalid)?;
+    let mut room = MAX_RECORDING_BYTES.saturating_sub(12 + MAX_HEADER + record.len() as u64);
+    let kept = keyframes
+        .frames()
+        .iter()
+        .take_while(|frame| {
+            let size = frame.bytes.len() as u64;
+            let fits = size <= room;
+            room = room.saturating_sub(size);
+            fits
+        })
+        .count();
+    let mut keyframes = keyframes.clone();
+    keyframes.truncate(kept);
+    let header = Header {
+        version: FORMAT,
+        record: Frame {
+            compressed: record.len() as u64,
+            decoded: json.len() as u64,
+        },
+        keyframes: keyframes
+            .frames()
+            .iter()
+            .map(|frame| IndexEntry {
+                tick: frame.tick,
+                hash: frame.hash,
+                encoding: frame.encoding,
+                compressed: frame.bytes.len() as u64,
+                decoded: frame.decoded,
+            })
+            .collect(),
+    };
+    let header = serde_json::to_vec(&header)?;
+    let header_len = u32::try_from(header.len())
+        .ok()
+        .filter(|len| u64::from(*len) <= MAX_HEADER)
+        .ok_or_else(|| invalid("replay header exceeds its byte bound"))?;
+    chassis::fsx::write_atomic(path, |writer| {
+        writer.write_all(MAGIC)?;
+        writer.write_all(&header_len.to_le_bytes())?;
+        writer.write_all(&header)?;
+        writer.write_all(&record)?;
+        for frame in keyframes.frames() {
+            writer.write_all(&frame.bytes)?;
+        }
+        Ok(())
     })
+}
+
+/// Loads a replay from disk with any keyframes it carries. JSON replays
+/// carry none.
+pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ReplayError> {
+    let path = path.as_ref();
+    let mut file = std::fs::File::open(path)?;
+    let mut magic = [0; 8];
+    if file.read_exact(&mut magic).is_err() || &magic != MAGIC {
+        let replay = GameReplay::load_with_decoder(path, |bytes| {
+            Ok(serde_json::from_slice::<ReplayWire>(bytes)?.into())
+        })?;
+        return Ok(Recording {
+            replay,
+            keyframes: Keyframes::default(),
+        });
+    }
+    let length = file.metadata()?.len();
+    if length > MAX_RECORDING_BYTES {
+        return Err(invalid(format!(
+            "file is {length} bytes, beyond the {MAX_RECORDING_BYTES}-byte limit"
+        )));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_RECORDING_BYTES).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 + 8 != length {
+        return Err(invalid("file changed while being read"));
+    }
+    read_recording(&bytes).map_err(invalid)
+}
+
+/// Splits the next `len` bytes off `rest`.
+fn take<'a>(rest: &mut &'a [u8], len: u64) -> anyhow::Result<&'a [u8]> {
+    let (frame, tail) = rest
+        .split_at_checked(usize::try_from(len)?)
+        .ok_or_else(|| anyhow::anyhow!("truncated replay"))?;
+    *rest = tail;
+    Ok(frame)
+}
+
+/// Decodes everything after the magic.
+fn read_recording(bytes: &[u8]) -> anyhow::Result<Recording> {
+    use anyhow::{Context, ensure};
+    let (length, rest) = bytes.split_first_chunk::<4>().context("truncated header")?;
+    let length = u64::from(u32::from_le_bytes(*length));
+    ensure!(length <= MAX_HEADER, "replay header exceeds its byte bound");
+    let (header, mut rest) = rest
+        .split_at_checked(usize::try_from(length)?)
+        .context("truncated header")?;
+    let header: Header = serde_json::from_slice(header)?;
+    ensure!(
+        header.version == FORMAT,
+        "unsupported replay format {} (this build reads {FORMAT})",
+        header.version
+    );
+    ensure!(
+        header.keyframes.len() <= crate::keyframes::MAX_KEYFRAMES,
+        "too many keyframes"
+    );
+    let json = crate::compression::decompress(
+        take(&mut rest, header.record.compressed)?,
+        header.record.decoded,
+        MAX_REPLAY_BYTES as u64,
+        None,
+    )?;
+    let replay: GameReplay = serde_json::from_slice::<ReplayWire>(&json)?.into();
+    ensure!(
+        replay.commands.len() <= MAX_REPLAY_COMMANDS,
+        "replay has too many commands"
+    );
+    let mut frames = Vec::with_capacity(header.keyframes.len());
+    for entry in header.keyframes {
+        frames.push(Keyframe {
+            tick: entry.tick,
+            hash: entry.hash,
+            encoding: entry.encoding,
+            decoded: entry.decoded,
+            bytes: take(&mut rest, entry.compressed)?.into(),
+        });
+    }
+    ensure!(rest.is_empty(), "trailing replay bytes");
+    let keyframes = Keyframes::new(frames);
+    keyframes.validate(replay.start_tick(), replay_duration(&replay))?;
+    Ok(Recording { replay, keyframes })
 }
 
 #[cfg(test)]

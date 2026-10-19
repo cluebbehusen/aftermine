@@ -796,6 +796,8 @@ fn seek_replacement_resets_interpolation_and_old_timeline_facing() {
 fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
     use oxide_protocol::DebugSession;
     let mut pb = long_session(5_000);
+    // A spent budget leaves each frame its first slice, whatever the clock.
+    pb.seek_budget = std::time::Duration::ZERO;
     let viewport = vec2(1280.0, 800.0);
     let mut mouse = Vec2::ZERO;
 
@@ -809,11 +811,23 @@ fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
     );
     assert_eq!(
         pb.engine.position(),
-        2_000,
-        "one frame consumes one seek budget"
+        SEEK_SLICE,
+        "a frame past its budget stops after one slice"
     );
     assert_eq!(pb.seeking, Some(5_000));
+    while pb.engine.position() < 2_000 {
+        pb.update(
+            &crate::action::BindingMap::classic(),
+            &[],
+            0.0,
+            viewport,
+            crate::config::CameraPrefs::default(),
+            &mut mouse,
+        );
+    }
+    assert_eq!(pb.seeking, Some(5_000), "the seek is still in flight");
 
+    pb.seek_budget = std::time::Duration::MAX;
     pb.update(
         &crate::action::BindingMap::classic(),
         &[RawEvent::KeyDown { key: Key::PageUp }],

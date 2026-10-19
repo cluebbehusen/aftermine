@@ -664,12 +664,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chassis",
+ "ciborium",
  "oxide-opponent",
  "oxide-sim",
  "rayon",
  "serde",
  "serde_json",
  "tiny-skia",
+ "zstd",
 ]
 
 [[package]]

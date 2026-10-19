@@ -213,7 +213,11 @@ impl SaveSlot {
     }
 
     fn file(&self, kind: &str) -> String {
-        let extension = if kind == "match" { "json" } else { "oxsave" };
+        let extension = if kind == "match" {
+            "oxreplay"
+        } else {
+            "oxsave"
+        };
         format!("{kind}-{}.{extension}", self.0)
     }
 
@@ -285,7 +289,11 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
         .map(|e| e.path())
         .filter(|p| {
             p.extension().and_then(|e| e.to_str())
-                == Some(if prefix == "match-" { "json" } else { "oxsave" })
+                == Some(if prefix == "match-" {
+                    "oxreplay"
+                } else {
+                    "oxsave"
+                })
         })
         .filter(|p| {
             p.file_name()
@@ -317,7 +325,12 @@ pub(crate) fn candidates() -> Vec<PathBuf> {
 
 pub(crate) enum SaveData {
     Checkpoint(crate::game::checkpoint::SaveCapture),
-    Recording(oxide_kit::GameReplay),
+    /// A finished match's record and the keyframes kept beside it, whose
+    /// encoding the worker waits out.
+    Recording(
+        oxide_kit::GameReplay,
+        oxide_kit::keyframes::PendingKeyframes,
+    ),
 }
 
 pub(crate) struct SaveJob {
@@ -365,7 +378,7 @@ impl SaveJob {
             if !named && recording {
                 let mut replay = game.recorder.clone();
                 replay.meta = meta.clone();
-                SaveData::Recording(replay)
+                SaveData::Recording(replay, game.keyframes.pending())
             } else {
                 SaveData::Checkpoint(game.capture_save())
             }
@@ -437,7 +450,9 @@ impl SaveJob {
                 SaveData::Checkpoint(capture) => {
                     crate::saved_game::write_capture(capture, meta, path)
                 }
-                SaveData::Recording(replay) => replay.save(path).map_err(Into::into),
+                SaveData::Recording(replay, keyframes) => {
+                    oxide_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
+                }
             };
             let path = if let Some(mark) = &self.mark {
                 let path = dir.join(mark.slot.file(kind));

@@ -403,6 +403,7 @@ impl RestoredGame {
             bots: core.bots,
             bot_decision: None,
             recorder,
+            keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
             pending: PendingCommands(core.pending),
             live_stats,
             end_stats,
