@@ -375,13 +375,16 @@ fn the_coach_prices_the_step_and_names_the_way_out_when_broke() {
 
 #[test]
 fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
-    // Without Harvesters or scrap, nothing can pay for a new Harvester.
+    // Without Harvesters or scrap, the Foundry's emergency package still
+    // pays for a new Harvester. Once it is spent, nothing can.
     let mut scene = Lesson::Scrap.scenario();
     scene.players[0].scrap = 0;
     scene.units.retain(|unit| unit.kind != UnitKind::Harvester);
     let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
     game.tutorial = begin(Lesson::Scrap).tutorial;
     tutorial_mut(&mut game).step = 1;
+    assert_ne!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
+    spend_recovery(&mut game);
     assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
 
     // A Harvester already paid for will still roll out.
@@ -427,6 +430,7 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     hand_over(&mut scene, |_| true);
     let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
     game.tutorial = begin(Lesson::Fight).tutorial;
+    spend_recovery(&mut game);
     for at in 0..Lesson::Fight.steps().len() {
         tutorial_mut(&mut game).step = at;
         assert_eq!(
@@ -454,6 +458,15 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
         tutorial(&game).current().map(|step| step.goal),
         Some(Goal::Defeat(0))
     );
+    assert_ne!(
+        tutorial(&game).coach(&game),
+        Some(CoachLine::Stuck),
+        "the emergency package can pay for a Sentinel"
+    );
+    let mut game = Game::with_viewport(scene.clone(), vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Sustain).tutorial;
+    spend_recovery(&mut game);
+    tutorial_mut(&mut game).step = 3;
     assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
     scene.buildings.push(oxide_sim::scenario::BuildingSpec {
         player: 0,
@@ -580,6 +593,29 @@ fn hand_over(scene: &mut Scenario, lost: impl Fn(UnitKind) -> bool) {
     {
         unit.player = 1;
     }
+}
+
+/// Lets a stranded seat's Foundry pay out its whole emergency package,
+/// spending it on Surveyors as it arrives. They neither fight nor collect,
+/// so only the slow income floor is left.
+fn spend_recovery(game: &mut Game) {
+    let foundry = game.home_foundry().expect("the lesson's Foundry").id;
+    let surveyor = UnitKind::Surveyor.stats().cost;
+    for _ in 0..SOLVE_TICKS {
+        if matches!(
+            game.state.player(PlayerId(0)).recovery,
+            Recovery::Active { allowance: 0, .. }
+        ) {
+            break;
+        }
+        let order = (Seat::of(game).bank() >= surveyor).then_some(Command::Train {
+            building: foundry,
+            kind: UnitKind::Surveyor,
+        });
+        step(game, order);
+    }
+    assert!(!Seat::of(game).recovering(), "the package is spent");
+    assert!(Seat::of(game).bank() < surveyor);
 }
 
 /// Ticks the reference play may take to finish what is left of a lesson.

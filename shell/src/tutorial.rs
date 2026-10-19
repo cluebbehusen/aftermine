@@ -9,7 +9,7 @@ use anyhow::Result;
 use chassis::grid::TilePos;
 use macroquad::prelude::Vec2;
 use oxide_sim::stats::{Domain, WeaponStats};
-use oxide_sim::{BuildingKind, Event, Order, PlayerId, Scenario, UnitId, UnitKind};
+use oxide_sim::{BuildingKind, Event, Order, PlayerId, Recovery, Scenario, UnitId, UnitKind};
 
 mod lessons;
 
@@ -877,9 +877,31 @@ impl<'a> Seat<'a> {
             .any(oxide_sim::Building::built)
     }
 
-    /// Whether the bank can still grow.
+    /// Whether the Foundry's emergency recovery will still pay: the sim
+    /// credits a seat with a built Foundry and no Harvester standing,
+    /// aboard, or in training, until that cycle's package runs out.
+    fn recovering(&self) -> bool {
+        let harvests = |kind: UnitKind| kind.stats().harvest.is_some();
+        let stranded = self.has_foundry()
+            && !self
+                .units()
+                .any(|u| harvests(u.kind) || u.cargo.iter().any(|r| r.hp > 0 && harvests(r.kind)))
+            && !self
+                .state
+                .buildings()
+                .iter()
+                .any(|b| b.player == self.human && b.queue.iter().any(|kind| harvests(*kind)));
+        stranded
+            && match self.state.player(self.human).recovery {
+                Recovery::Ready => true,
+                Recovery::Active { allowance, .. } => allowance > 0,
+            }
+    }
+
+    /// Whether the bank can still grow. The Foundry's slow income floor
+    /// doesn't count: waiting minutes on it isn't a lesson.
     fn can_earn(&self) -> bool {
-        self.extracting() || self.can_mine()
+        self.extracting() || self.can_mine() || self.recovering()
     }
 
     /// How many more buildings of `kind` the map leaves room for. Only an
