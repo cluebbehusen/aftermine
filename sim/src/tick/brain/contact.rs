@@ -40,29 +40,7 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
         return true;
     }
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
-    let choose = |entries: Vec<(Vec2Fx, Vec2Fx)>, square: bool| {
-        let mut candidates: Vec<_> = entries
-            .into_iter()
-            .filter_map(|(entry, point)| {
-                let goal = crate::geometry::work_tile(entry, pos, b.center());
-                // A square stance keeps the hull wholly on open ground all
-                // the way in from its goal tile: outside the contact band
-                // the motor never presses a wide hull onto closed ground,
-                // so a leg that crossed any could halt short of the band.
-                let leg_open = || {
-                    crate::geometry::hull_leg_open(
-                        goal.center(),
-                        point,
-                        unit.kind.stats().radius,
-                        |tile| state.passable(tile),
-                    )
-                };
-                (state.passable(goal)
-                    && admissible(state, unit, b, goal, point)
-                    && (!square || leg_open()))
-                .then_some(crowding::Position { goal, point })
-            })
-            .collect();
+    let choose = |mut candidates: Vec<crowding::Position>| {
         candidates.sort_by_key(|candidate| {
             (
                 pos.dist_sq(candidate.point),
@@ -81,58 +59,108 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
             |goal| route_for(state, kind, from, goal),
         )
     };
+    let path = choose(square_stances(state, unit, b))
+        .or_else(|| choose(ordinary_stances(state, unit, b, pads)));
+    let reachable = path.is_some();
+    state.unit_mut(id).expect("contact unit").path = path;
+    reachable
+}
+
+/// The positions from which `unit` may meet `b` square to a face: only a
+/// wide cutter has any. Each keeps the hull wholly on open ground all the way
+/// in from its goal tile: outside the contact band the motor never presses a
+/// wide hull onto closed ground, so a leg that crossed any could halt short
+/// of the band.
+fn square_stances(
+    state: &State,
+    unit: &crate::Unit,
+    b: &crate::Building,
+) -> Vec<crowding::Position> {
+    if !square_cutter(unit.kind) {
+        return Vec::new();
+    }
+    let (anchor, size) = (b.anchor, b.kind.size());
     let surface = state.contact_surface(b);
     // A wide cutter meets a face square wherever one is open to it; only a
     // building it cannot face takes it to an ordinary position. Its route
     // ends where an ordinary entry would, `clearance` clear of the footprint
     // out along the face's normal: under a face inset deep in its footprint,
     // the stance's own tile can sit too near the face to drive in from.
-    let square = square_cutter(kind)
-        .then(|| {
-            choose(
-                surface
-                    .square_stances(clearance(unit))
-                    // A face meets the drum only where it is the nearest
-                    // surface: beside a recess the hull would touch, and
-                    // aim at, the neighbouring face instead.
-                    .filter(|&(point, outward)| {
-                        surface
-                            .closest(point)
-                            .dist_sq(point - outward * clearance(unit))
-                            < const { Fx::lit("0.0001") }
-                    })
-                    .map(|(point, outward)| {
-                        let gap =
-                            point.dist(crate::geometry::footprint_contact(point, anchor, size));
-                        (
-                            point + outward * (clearance(unit) - gap).max(Fx::ZERO),
-                            point,
-                        )
-                    })
-                    .collect(),
-                true,
+    let entries = surface
+        .square_stances(clearance(unit))
+        // A face meets the drum only where it is the nearest surface: beside
+        // a recess the hull would touch, and aim at, the neighbouring face
+        // instead.
+        .filter(|&(point, outward)| {
+            surface
+                .closest(point)
+                .dist_sq(point - outward * clearance(unit))
+                < const { Fx::lit("0.0001") }
+        })
+        .map(|(point, outward)| {
+            let gap = point.dist(crate::geometry::footprint_contact(point, anchor, size));
+            (
+                point + outward * (clearance(unit) - gap).max(Fx::ZERO),
+                point,
+            )
+        });
+    positions(state, unit, b, entries, |goal, point| {
+        crate::geometry::hull_leg_open(goal.center(), point, unit.kind.stats().radius, |tile| {
+            state.passable(tile)
+        })
+    })
+}
+
+/// The ordinary positions from which `unit` may meet `b`: its crew pads, or
+/// work positions around the footprint.
+fn ordinary_stances(
+    state: &State,
+    unit: &crate::Unit,
+    b: &crate::Building,
+    pads: Option<Vec<Vec2Fx>>,
+) -> Vec<crowding::Position> {
+    let surface = state.contact_surface(b);
+    let entries = pads
+        .unwrap_or_else(|| {
+            crate::geometry::work_positions(
+                b.anchor,
+                b.kind.size(),
+                clearance(unit),
+                unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
             )
         })
-        .flatten();
-    let path = square.or_else(|| {
-        choose(
-            pads.unwrap_or_else(|| {
-                crate::geometry::work_positions(
-                    anchor,
-                    size,
-                    clearance(unit),
-                    unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
-                )
-            })
-            .into_iter()
-            .map(|entry| (entry, surface.stance(entry, clearance(unit))))
-            .collect(),
-            false,
-        )
-    });
-    let reachable = path.is_some();
-    state.unit_mut(id).expect("contact unit").path = path;
-    reachable
+        .into_iter()
+        .map(|entry| (entry, surface.stance(entry, clearance(unit))));
+    positions(state, unit, b, entries, |_, _| true)
+}
+
+/// The positions of `entries` (each an entry point and the point it meets
+/// the surface from) that `unit` could hold.
+fn positions(
+    state: &State,
+    unit: &crate::Unit,
+    b: &crate::Building,
+    entries: impl Iterator<Item = (Vec2Fx, Vec2Fx)>,
+    open: impl Fn(TilePos, Vec2Fx) -> bool,
+) -> Vec<crowding::Position> {
+    entries
+        .filter_map(|(entry, point)| {
+            let goal = crate::geometry::work_tile(entry, unit.pos, b.center());
+            (state.passable(goal) && admissible(state, unit, b, goal, point) && open(goal, point))
+                .then_some(crowding::Position { goal, point })
+        })
+        .collect()
+}
+
+/// The tiles a contact unit could set out for to meet `b`, before any
+/// route or crowd is weighed.
+pub(super) fn stance_goals(state: &State, unit: &crate::Unit, b: &crate::Building) -> Vec<TilePos> {
+    let pads = crew_pad_entries(state, unit, b);
+    square_stances(state, unit, b)
+        .into_iter()
+        .chain(ordinary_stances(state, unit, b, pads))
+        .map(|position| position.goal)
+        .collect()
 }
 
 /// Where a crew member raising an assembly cradle stands to work: off the
