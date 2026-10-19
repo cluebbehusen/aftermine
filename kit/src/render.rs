@@ -81,10 +81,9 @@ pub fn floor_level(map: &Map, starts: impl IntoIterator<Item = TilePos>) -> u8 {
 }
 
 /// How a tiered map shades its levels: the floor at flat ground's brightness
-/// and each level away from it a step brighter or darker. The step is
-/// [`LEVEL_STEP`] unless the map reaches deeper or higher than the band holds
-/// at that step; then the levels on that side share the band evenly, so every
-/// level keeps its own tone.
+/// and each level away from it a fixed step brighter or darker. When the map
+/// reaches deeper or higher than the band holds at that step, the levels on
+/// that side share the band evenly instead, so every level keeps its own tone.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shading {
     floor: u8,
