@@ -216,6 +216,71 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
 }
 
 #[test]
+fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
+    let scenario = oxide_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Mined Door",
+            "players": [
+                {"name": "Mason", "scrap": 1000, "bot": false},
+                {"name": "Idle", "scrap": 0, "bot": true}
+            ],
+            "map": [
+                "################",
+                "#1.............#",
+                "#..#####.......#",
+                "#..#...#.......#",
+                "#..#...#.....2.#",
+                "#..###.#.......#",
+                "#..............#",
+                "################"
+            ],
+            "units": [
+                {"player": 0, "kind": "harvester", "x": 5, "y": 3}
+            ],
+            "buildings": [
+                {"player": 0, "kind": "scuttle_charge", "x": 6, "y": 5}
+            ]
+        })
+        .to_string(),
+    )
+    .expect("mined door parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    game.presentation.selection.units = vec![game.state.units()[0].id];
+    let door = TilePos::new(6, 5);
+    assert!(
+        game.state.passable(door),
+        "premise: the charge leaves its tile open"
+    );
+    let outside = TilePos::new(10, 3);
+    assert_eq!(
+        placement_verdict(
+            &game.view(),
+            oxide_sim::BuildingKind::Barricade,
+            outside,
+            false
+        ),
+        PlacementVerdict::Builds
+    );
+    let report = game.state.clone().tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Build {
+            units: game.presentation.selection.units.clone(),
+            kind: oxide_sim::BuildingKind::Barricade,
+            anchor: outside,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. })),
+        "the sim agrees"
+    );
+}
+
+#[test]
 fn a_builder_with_a_full_queue_shows_no_queue_number() {
     let (mut game, _, builder) = builder_with(1000);
     let human = game.presentation.human;
