@@ -29,8 +29,8 @@ pub struct PlaybackSession {
     /// A seek in flight: the target tick, chipped away a budget per
     /// frame so the render thread never freezes on a long jump.
     pub seeking: Option<u64>,
-    /// The corner transport buttons' press.
-    buttons: Press<Transport>,
+    /// The transport buttons' press.
+    buttons: Press<Zone>,
     /// The finger scrubbing the timeline, if one landed on the bar.
     scrub_finger: Option<u64>,
     /// Middle-drag, wheel, minimap and finger camera control.
@@ -118,64 +118,178 @@ impl PlaybackSession {
     }
 }
 
-/// The viewer's corner buttons: the only way out, and the only
-/// transport, for a player without keys.
+/// The viewer's buttons: the only way out, and the only transport, for a
+/// player without keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Transport {
+    /// The top-left way out every screen shares.
     Back,
     PlayPause,
-    /// Steps up the speed ladder, wrapping from the fastest step.
-    Speed,
+    /// Steps down the speed ladder, holding at the slowest step.
+    Slower,
+    /// Steps up the speed ladder, holding at the fastest step.
+    Faster,
 }
 
-fn transport_buttons(s: f32) -> [(macroquad::prelude::Rect, Transport); 3] {
+/// What a press on the viewer's chrome lands on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Zone {
+    Button(Transport),
+    /// The transport row between and around its buttons: the readout and
+    /// the gaps. It claims a near miss, so a finger landing there never
+    /// drags or pinches the camera.
+    Row,
+}
+
+/// The transport row along the bottom edge, left of the timeline:
+/// play/pause, then the speed stepper around its readout.
+struct TransportRow {
+    play: macroquad::prelude::Rect,
+    slower: macroquad::prelude::Rect,
+    /// The current speed; drawn, never pressed.
+    readout: macroquad::prelude::Rect,
+    faster: macroquad::prelude::Rect,
+}
+
+impl TransportRow {
+    /// The whole row, readout and gaps included.
+    fn bounds(&self) -> macroquad::prelude::Rect {
+        macroquad::prelude::Rect::new(
+            self.play.x,
+            self.play.y,
+            self.faster.right() - self.play.x,
+            self.play.h,
+        )
+    }
+}
+
+/// Where the transport row sits. Its buttons invite tap chains, so they
+/// stay out of the top-left corner: iPadOS draws its window controls
+/// there, and repeated taps on them open the windowing view.
+fn transport_row(viewport: Vec2, s: f32, touch_only: bool) -> TransportRow {
+    let left = if touch_only {
+        crate::layout::TOUCH_CORNER_INSET
+    } else {
+        16.0
+    } * s;
+    let h = crate::theme::MIN_TOUCH_TARGET * s;
+    let y = viewport.y - 12.0 * s - h;
+    let play = macroquad::prelude::Rect::new(left, y, 80.0 * s, h);
+    let slower = macroquad::prelude::Rect::new(play.right() + 8.0 * s, y, h, h);
+    let readout = macroquad::prelude::Rect::new(slower.right() + 4.0 * s, y, 48.0 * s, h);
+    let faster = macroquad::prelude::Rect::new(readout.right() + 4.0 * s, y, h, h);
+    TransportRow {
+        play,
+        slower,
+        readout,
+        faster,
+    }
+}
+
+fn transport_buttons(viewport: Vec2, s: f32) -> [(macroquad::prelude::Rect, Transport); 4] {
+    let row = transport_row(viewport, s, crate::platform::TOUCH_ONLY);
     [
         (crate::button::corner_slot(0, s), Transport::Back),
-        (crate::button::corner_slot(1, s), Transport::PlayPause),
-        (crate::button::corner_slot(2, s), Transport::Speed),
+        (row.play, Transport::PlayPause),
+        (row.slower, Transport::Slower),
+        (row.faster, Transport::Faster),
     ]
 }
 
 /// The steps of the replay speed ladder, shared by the speed keys and the
-/// speed button: 0.5x doubling to 64x.
+/// speed stepper: 0.5x doubling to 64x.
 const SPEED_STEPS: u8 = 8;
 
 fn speed_step(n: u8) -> f64 {
     0.5 * 2_f64.powi(i32::from(n))
 }
 
-/// The first ladder step faster than `speed`, wrapping to the slowest.
+/// The nearest ladder step faster than `speed`; none past the fastest.
 /// A debug client may have left the clock between steps.
-fn next_speed(speed: f64) -> f64 {
-    (0..SPEED_STEPS)
-        .map(speed_step)
-        .find(|&step| step > speed)
-        .unwrap_or_else(|| speed_step(0))
+fn faster(speed: f64) -> Option<f64> {
+    (0..SPEED_STEPS).map(speed_step).find(|&step| step > speed)
 }
 
-/// Where the scrub bar lives: a strip above the transport line,
+/// The nearest ladder step slower than `speed`; none under the slowest.
+fn slower(speed: f64) -> Option<f64> {
+    (0..SPEED_STEPS)
+        .rev()
+        .map(speed_step)
+        .find(|&step| step < speed)
+}
+
+/// Where the scrub bar lives: a strip right of the transport row,
 /// stopping short of the minimap's corner. One geometry source for
 /// hit-testing and drawing, like all chrome.
 pub fn scrub_rect(game: &Scene<'_>, viewport: Vec2) -> macroquad::prelude::Rect {
     let s = render::ui_scale();
     let mini = render::minimap_rect(game);
+    let left = transport_row(viewport, s, crate::platform::TOUCH_ONLY)
+        .faster
+        .right()
+        + 12.0 * s;
     let right = (mini.x - 8.0 * s).min(viewport.x - 12.0 * s);
     let y = viewport.y - 46.0 * s;
-    macroquad::prelude::Rect::new(12.0 * s, y, (right - 12.0 * s).max(60.0 * s), 10.0 * s)
+    macroquad::prelude::Rect::new(left, y, (right - left).max(60.0 * s), 10.0 * s)
+}
+
+/// A caption plate's padding either side of its text.
+const CAPTION_PAD: f32 = 10.0;
+/// How far a caption plate may overhang either end of the timeline: the
+/// gap to the minimap, the narrower of the two.
+const CAPTION_OVERHANG: f32 = 8.0;
+
+fn caption_width(line: &str, size: f32) -> f32 {
+    measure_text(line, None, numeric::font_size(size), 1.0).width
+}
+
+/// Whether a caption's plate seats under the timeline.
+fn caption_fits(line: &str, bar: macroquad::prelude::Rect, size: f32, s: f32) -> bool {
+    caption_width(line, size) + 2.0 * CAPTION_PAD * s <= bar.w + 2.0 * CAPTION_OVERHANG * s
+}
+
+/// Draws one caption line on its plate under the timeline, centered on
+/// the bar. A line too long to seat runs right, under the minimap, rather
+/// than over the transport row's buttons.
+fn draw_caption(line: &str, bar: macroquad::prelude::Rect, size: f32, s: f32) {
+    let width = caption_width(line, size);
+    let x = (bar.center().x - width * 0.5).max(bar.x + (CAPTION_PAD - CAPTION_OVERHANG) * s);
+    let y = screen_height() - 14.0 * s;
+    draw_rectangle(
+        x - CAPTION_PAD * s,
+        y - size,
+        width + 2.0 * CAPTION_PAD * s,
+        size + 10.0 * s,
+        theme::SURFACE_CAPTION,
+    );
+    draw_text(line, x, y, size, crate::theme::TEXT_PRIMARY);
 }
 
 pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2, mouse: Vec2) {
     let s = render::ui_scale();
     let size = crate::theme::Type::Label.at(s);
-    for (rect, button) in transport_buttons(s) {
+    for (rect, button) in transport_buttons(viewport, s) {
         let label = match button {
-            Transport::Back => "BACK".into(),
-            Transport::PlayPause if pb.clock.paused => "PLAY".into(),
-            Transport::PlayPause => "PAUSE".into(),
-            Transport::Speed => format!("{}x", pb.clock.speed),
+            Transport::Back => "BACK",
+            Transport::PlayPause if pb.clock.paused => "PLAY",
+            Transport::PlayPause => "PAUSE",
+            Transport::Slower => "-",
+            Transport::Faster => "+",
         };
-        crate::button::draw(rect, &label, rect.contains(mouse), s);
+        crate::button::draw(rect, label, rect.contains(mouse), s);
     }
+    let readout = transport_row(viewport, s, crate::platform::TOUCH_ONLY).readout;
+    fill_rect(readout, theme::SURFACE_CAPTION);
+    let speed = format!("{}x", pb.clock.speed);
+    let body = crate::theme::Type::Body.at(s);
+    let speed_w = measure_text(&speed, None, numeric::font_size(body), 1.0).width;
+    draw_text(
+        &speed,
+        readout.center().x - speed_w * 0.5,
+        readout.y + readout.h * 0.62,
+        body,
+        crate::theme::TEXT_PRIMARY,
+    );
     // The timeline: played track, live position, and the ghost of a
     // seek in flight.
     let bar = scrub_rect(&pb.view(), viewport);
@@ -213,60 +327,44 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
             clock_label::ticks(pb.engine.position()),
             clock_label::ticks(target)
         );
-        let width = measure_text(&line, None, numeric::font_size(size), 1.0).width;
-        let x = (screen_width() - width) * 0.5;
-        let y = screen_height() - 14.0 * s;
-        draw_rectangle(
-            x - 10.0 * s,
-            y - size,
-            width + 20.0 * s,
-            size + 10.0 * s,
-            theme::SURFACE_CAPTION,
-        );
-        draw_text(&line, x, y, size, crate::theme::TEXT_PRIMARY);
+        draw_caption(&line, bar, size, s);
         return;
     }
-    let full = format!(
-        "PLAYBACK {} / {} | {}x{} | {} pause | {}/{} seek | {} stats | {} leave",
+    // The readout carries the speed, so no caption repeats it, and the
+    // PLAY label carries the pause, so the narrowest form drops that too.
+    // The caption takes the longest form the timeline seats: a 640px
+    // window holds only the bare clock, and a player without a keyboard
+    // has no keys to hint at.
+    let clock = format!(
+        "{} / {}",
         clock_label::ticks(pb.engine.position()),
         clock_label::ticks(pb.engine.total()),
-        pb.clock.speed,
-        if pb.clock.paused { " PAUSED" } else { "" },
-        bindings.label(Action::ReplayPause),
-        bindings.label(Action::ReplayBack),
-        bindings.label(Action::ReplayForward),
-        bindings.label(Action::ReplayStats),
-        bindings.label(Action::Back),
     );
-    // A 640px window cannot seat the controls hint; the transport
-    // numbers alone must never run off both edges. A player without a
-    // keyboard has no keys to hint at.
-    let line = if !crate::platform::hands().keys
-        || !crate::hints::showing()
-        || measure_text(&full, None, numeric::font_size(size), 1.0).width
-            > screen_width() - 16.0 * s
-    {
-        format!(
-            "PLAYBACK  {} / {}  |  {}x{}",
-            clock_label::ticks(pb.engine.position()),
-            clock_label::ticks(pb.engine.total()),
-            pb.clock.speed,
-            if pb.clock.paused { "  |  PAUSED" } else { "" },
-        )
-    } else {
-        full
-    };
-    let width = measure_text(&line, None, numeric::font_size(size), 1.0).width;
-    let x = (screen_width() - width) * 0.5;
-    let y = screen_height() - 14.0 * s;
-    draw_rectangle(
-        x - 10.0 * s,
-        y - size,
-        width + 20.0 * s,
-        size + 10.0 * s,
-        theme::SURFACE_CAPTION,
-    );
-    draw_text(&line, x, y, size, crate::theme::TEXT_PRIMARY);
+    let paused = pb.clock.paused;
+    let mut lines = Vec::with_capacity(3);
+    if crate::platform::hands().keys && crate::hints::showing() {
+        lines.push(format!(
+            "{clock}{} | {} pause | {}/{} seek | {} stats | {} leave",
+            if paused { " | PAUSED" } else { "" },
+            bindings.label(Action::ReplayPause),
+            bindings.label(Action::ReplayBack),
+            bindings.label(Action::ReplayForward),
+            bindings.label(Action::ReplayStats),
+            bindings.label(Action::Back),
+        ));
+    }
+    lines.push(format!(
+        "PLAYBACK  {clock}{}",
+        if paused { "  |  PAUSED" } else { "" },
+    ));
+    if paused {
+        lines.push(format!("{clock}  PAUSED"));
+    }
+    let line = lines
+        .into_iter()
+        .find(|line| caption_fits(line, bar, size, s))
+        .unwrap_or(clock);
+    draw_caption(&line, bar, size, s);
 }
 
 /// Distinct band colors; the ninth is the gray "other" fold.
@@ -403,7 +501,8 @@ impl PlaybackSession {
         let mut seek_to: Option<u64> = None;
         let mut leave = false;
         let ui = render::ui_scale();
-        let buttons = transport_buttons(ui);
+        let buttons = transport_buttons(viewport, ui);
+        let row = transport_row(viewport, ui, crate::platform::TOUCH_ONLY).bounds();
         for e in events {
             match e {
                 RawEvent::KeyDown { key } => {
@@ -431,23 +530,32 @@ impl PlaybackSession {
                         .key_edge_in(bindings, *key, false, InputContext::Playback);
                 }
                 _ => {
-                    // The corner buttons see the pointer first; the
-                    // timeline, minimap, and battlefield get the rest.
+                    // The transport buttons, then the rest of their row,
+                    // see the pointer first; the timeline, minimap, and
+                    // battlefield get the rest.
                     let zone_at = |p: Vec2, _| {
                         buttons
                             .iter()
                             .find(|(rect, _)| rect.contains(p))
-                            .map(|(_, button)| *button)
+                            .map(|(_, button)| Zone::Button(*button))
+                            .or_else(|| row.contains(p).then_some(Zone::Row))
                     };
                     match self.buttons.feed(e, zone_at) {
-                        Fed::Activated(Transport::Back) => leave = true,
-                        Fed::Activated(Transport::PlayPause) => {
+                        Fed::Activated(Zone::Button(Transport::Back)) => leave = true,
+                        Fed::Activated(Zone::Button(Transport::PlayPause)) => {
                             self.clock.paused = !self.clock.paused;
                         }
-                        Fed::Activated(Transport::Speed) => {
-                            self.clock.speed = next_speed(self.clock.speed);
+                        Fed::Activated(Zone::Button(Transport::Slower)) => {
+                            if let Some(speed) = slower(self.clock.speed) {
+                                self.clock.speed = speed;
+                            }
                         }
-                        Fed::Held => {}
+                        Fed::Activated(Zone::Button(Transport::Faster)) => {
+                            if let Some(speed) = faster(self.clock.speed) {
+                                self.clock.speed = speed;
+                            }
+                        }
+                        Fed::Activated(Zone::Row) | Fed::Held => {}
                         Fed::Ignored => {
                             self.apply_pointer(e, viewport, ui, prefs, mouse, &mut seek_to);
                         }

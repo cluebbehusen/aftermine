@@ -243,10 +243,11 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
     press_key(&mut client, Key::Escape)?;
     assert_mode(&mut client, "home", "Settings Controls tab > Esc")?;
 
-    activate_labeled(&mut client, "replays")?;
-    assert_mode(&mut client, "replays", "Home > Replays")?;
+    activate_labeled(&mut client, "saves & replays")?;
+    assert_mode(&mut client, "saves", "Home > Saves & Replays")?;
+    select_tab(&mut client, "replays")?;
     press_key(&mut client, Key::Escape)?;
-    assert_mode(&mut client, "home", "Replays > Esc")?;
+    assert_mode(&mut client, "home", "Shelf Replays tab > Esc")?;
 
     activate_labeled(&mut client, "join match")?;
     assert_mode(&mut client, "join_match", "Home > Join Match")?;

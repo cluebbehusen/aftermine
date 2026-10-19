@@ -260,9 +260,14 @@ fn click(p: Vec2) -> [RawEvent; 2] {
     ]
 }
 
+/// The transport buttons at the viewport `feed` drives.
+fn buttons() -> [(macroquad::prelude::Rect, Transport); 4] {
+    transport_buttons(vec2(1280.0, 800.0), render::ui_scale())
+}
+
 #[test]
-fn the_corner_buttons_leave_and_toggle_by_click_and_by_tap() {
-    let [back, play, _] = transport_buttons(render::ui_scale()).map(|(rect, _)| rect.center());
+fn the_transport_buttons_leave_and_toggle_by_click_and_by_tap() {
+    let [back, play, _, _] = buttons().map(|(rect, _)| rect.center());
     let mut pb = session();
     assert!(!feed(&mut pb, &tap(1, play)));
     assert!(pb.clock.paused, "a tap pauses");
@@ -274,35 +279,112 @@ fn the_corner_buttons_leave_and_toggle_by_click_and_by_tap() {
 }
 
 #[test]
-fn the_speed_button_climbs_the_key_ladder_and_wraps() {
-    let [_, _, (speed_button, _)] = transport_buttons(render::ui_scale());
-    let speed_button = speed_button.center();
+fn the_speed_stepper_walks_the_key_ladder_and_stops_at_its_ends() {
+    let [_, _, slower, faster] = buttons().map(|(rect, _)| rect.center());
     let mut pb = session();
-    for (id, speed) in (1..).zip([2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 0.5, 1.0]) {
-        assert!(!feed(&mut pb, &tap(id, speed_button)));
+    let mut id = 0;
+    let mut press = |pb: &mut PlaybackSession, at: Vec2, speed: f64, why: &str| {
+        id += 1;
+        assert!(!feed(pb, &tap(id, at)));
         assert!(
             (pb.clock.speed - speed).abs() < f64::EPSILON,
-            "tap {id} selects {speed}x"
+            "{why}: {speed}x"
         );
+    };
+    for speed in [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 64.0] {
+        press(&mut pb, faster, speed, "faster climbs, then holds");
     }
-    assert!(!feed(&mut pb, &click(speed_button)));
+    for speed in [32.0, 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.5] {
+        press(&mut pb, slower, speed, "slower descends, then holds");
+    }
+    assert!(!feed(&mut pb, &click(faster)));
     assert!(
-        (pb.clock.speed - 2.0).abs() < f64::EPSILON,
+        (pb.clock.speed - 1.0).abs() < f64::EPSILON,
         "a click steps too"
     );
-    assert!(!pb.clock.paused, "the speed button leaves pause alone");
+    assert!(!pb.clock.paused, "the stepper leaves pause alone");
     // A debug client may leave the clock between steps.
     pb.clock.speed = 3.0;
-    assert!(!feed(&mut pb, &tap(9, speed_button)));
-    assert!(
-        (pb.clock.speed - 4.0).abs() < f64::EPSILON,
-        "an off-ladder speed rounds up to the next step"
+    press(
+        &mut pb,
+        faster,
+        4.0,
+        "an off-ladder speed steps up to the next rung",
     );
+    pb.clock.speed = 3.0;
+    press(&mut pb, slower, 2.0, "and down to the one below");
+}
+
+#[test]
+fn the_transport_row_sits_bottom_left_clear_of_the_timeline() {
+    for viewport in [
+        vec2(640.0, 400.0),
+        vec2(1180.0, 820.0),
+        vec2(1366.0, 1024.0),
+        vec2(2560.0, 1440.0),
+    ] {
+        for s in [0.75, 1.0, 1.25, 1.5] {
+            for touch_only in [false, true] {
+                let row = transport_row(viewport, s, touch_only);
+                let finger = crate::theme::MIN_TOUCH_TARGET * s;
+                let cells = [row.play, row.slower, row.readout, row.faster];
+                for (i, cell) in cells.iter().enumerate() {
+                    assert!(
+                        cell.h >= finger,
+                        "{viewport} at {s}: cell {i} is fingertip tall"
+                    );
+                    assert!(
+                        cell.w >= finger,
+                        "{viewport} at {s}: cell {i} is fingertip wide"
+                    );
+                    assert!(
+                        cell.y > viewport.y * 0.5 && cell.bottom() < viewport.y,
+                        "{viewport} at {s}: cell {i} sits on screen, in the bottom half"
+                    );
+                    if let Some(next) = cells.get(i + 1) {
+                        assert!(
+                            cell.right() <= next.x,
+                            "{viewport} at {s}: cells {i} and {} overlap",
+                            i + 1
+                        );
+                    }
+                }
+                let inset = if touch_only {
+                    crate::layout::TOUCH_CORNER_INSET
+                } else {
+                    16.0
+                };
+                assert!(
+                    row.play.x >= inset * s,
+                    "{viewport} at {s}: clear of the rounded corner"
+                );
+            }
+        }
+    }
+    // The timeline starts past the stepper, and a finger landing on its
+    // padded band never lands on a button.
+    let pb = session();
+    let ui = render::ui_scale();
+    for viewport in [vec2(640.0, 400.0), vec2(1280.0, 800.0)] {
+        let bar = scrub_rect(&pb.view(), viewport);
+        let pad = crate::layout::touch_pad(bar, ui);
+        for (rect, button) in transport_buttons(viewport, ui) {
+            assert!(
+                !pad.overlaps(&rect),
+                "{viewport}: the scrub band meets {button:?}"
+            );
+        }
+        let row = transport_row(viewport, ui, crate::platform::TOUCH_ONLY);
+        assert!(
+            bar.x > row.faster.right(),
+            "{viewport}: the bar starts past the stepper"
+        );
+    }
 }
 
 #[test]
 fn a_back_press_that_slides_off_stays() {
-    let [(back, _), _, _] = transport_buttons(render::ui_scale());
+    let [(back, _), _, _, _] = buttons();
     let off = vec2(back.center().x, back.y + back.h + 200.0);
     let mut pb = session();
     let before = pb.presentation.camera.center;
@@ -328,6 +410,49 @@ fn a_back_press_that_slides_off_stays() {
         pb.presentation.camera.center, before,
         "a finger born on a button never pans"
     );
+}
+
+#[test]
+fn a_drag_from_between_the_transport_buttons_never_moves_the_camera() {
+    let row = transport_row(
+        vec2(1280.0, 800.0),
+        render::ui_scale(),
+        crate::platform::TOUCH_ONLY,
+    );
+    let readout = row.readout.center();
+    let gap = vec2(row.play.right() + 4.0, row.play.center().y);
+    for (id, at) in (1..).zip([readout, gap]) {
+        let mut pb = session();
+        let before = pb.presentation.camera.center;
+        let off = at - vec2(100.0, 0.0);
+        let events = [
+            RawEvent::TouchDown {
+                id,
+                x: at.x,
+                y: at.y,
+            },
+            RawEvent::TouchMove {
+                id,
+                x: off.x,
+                y: off.y,
+            },
+            RawEvent::TouchUp {
+                id,
+                x: off.x,
+                y: off.y,
+            },
+        ];
+        assert!(!feed(&mut pb, &events));
+        assert_eq!(
+            pb.presentation.camera.center, before,
+            "a finger born on the row at {at} never pans"
+        );
+        assert!(!feed(&mut pb, &tap(id + 10, at)));
+        assert!(
+            !pb.clock.paused && (pb.clock.speed - 1.0).abs() < f64::EPSILON,
+            "and a tap there is inert"
+        );
+    }
 }
 
 #[test]

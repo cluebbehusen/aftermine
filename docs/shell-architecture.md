@@ -416,14 +416,16 @@ Every screen offers a pointer path for what Escape does, on every platform. The
 top bar ends in a menu button that opens the pause menu, and its clock or PAUSED
 status toggles pause; both are `LayoutModel` chrome that `UiView` reports. The
 New Match steps, replay playback, the final map, Settings, the roster, and the
-replay shelf draw a top-left BACK button instead of a Back row, and playback
-adds Play/Pause and a speed button that steps the speed keys' ladder. These ride
-`Press::feed`, which also tells the screen when a button claimed an event; the
-menus share `button::BackButton`, which acts as Escape does on each face.
-Settings splits its rows across tabs on a `tabs::TabStrip` under its title,
+saves and replays shelf draw a top-left BACK button instead of a Back row.
+Playback leaves that corner to BACK and runs a transport row along the bottom
+edge, left of the timeline: Play/Pause, then a slower/faster stepper on the
+speed keys' ladder around a speed readout. These ride `Press::feed`, which also
+tells the screen when a button claimed an event; the menus share
+`button::BackButton`, which acts as Escape does on each face. Settings and the
+shelf split their rows across tabs on a `tabs::TabStrip` under their title,
 which claims its own presses the same way; the Previous tab and Next tab menu
-actions step it from the keyboard, and on the Controls tab, which reads raw
-keys, the classic Q and E work too. Menu lists and the map grid scroll by a
+actions step it from the keyboard, and on the Settings Controls tab, which reads
+raw keys, the classic Q and E work too. Menu lists and the map grid scroll by a
 finger dragged past `press::DRAG_SLOP` (`ScrollPress`). Every cursor steps
 through `nav`: arrows wrap at the edges, Home and End land on the first and last
 live cell, and paging stops at the ends. Menu rows stand for typed values
@@ -667,9 +669,11 @@ controller memory.
 A named save reserves a collision-free destination; an unnamed save replaces its
 slot's file. Both use the chassis atomic-write path. Failures are reported to
 the player. Checkpoint discovery reads metadata only: eligibility is not full
-validation. Continue tries eligible autosaves newest first on the worker,
-skipping corrupt payloads and installing the already restored result. Saves in
-an unsupported format are listed as unavailable and left on disk.
+validation. Continue considers only eligible autosaves written after the newest
+recording in the matches folder, so a finished match withdraws every session
+left before it. It tries them newest first on the worker, skipping corrupt
+payloads and installing the already restored result. Saves in an unsupported
+format are listed as unavailable and left on disk.
 
 `Game::from_replay` reconstructs state from the recorded commands. Bots observe
 reconstruction to restore their controller-local memory, but their regenerated
@@ -695,10 +699,11 @@ session. Authoritative session mutations are refused.
 
 Playback writes no recording, since a watched replay is already a file on disk.
 
-The ordinary shelf resumes unfinished records, preventing fog-free viewing from
-scouting a live match. Completed records can be watched. Developer `--watch` may
-inspect any compatible replay. Final Map is camera-only inspection of the final
-live state.
+The ordinary shelf lists unfinished records on its SAVES tab and completed ones
+on its REPLAYS tab. Saves resume rather than play back, preventing fog-free
+viewing from scouting a live match; completed records can be watched. Developer
+`--watch` may inspect any compatible replay. Final Map is camera-only inspection
+of the final live state.
 
 ## Performance and diagnostics
 
@@ -829,18 +834,25 @@ geometry alone. `GroundLayout` lays them out on a match's first draw and the
 Presentation keeps it for that match, so revealed terrain never changes as the
 fog lifts; the fog veil hides what the seat has not explored. The boundary and
 peaks are one terrace field measured from the open floor: a peak is the wall
-left standing, stepping up once it is about five tiles thick, and a peak meeting
-the map edge is a spur whose levels join the wall's. Rock walls draw layered
-slabs from the generated library, sized by local rock thickness, and machinery
-blockers stay off the edge ring the boundary covers. The shell extends allied
-unit sight discs and completed-building footprint sight into a bounded off-map
-quarry margin. Its presentation-only exploration cache updates on every tick,
-including bulk advances, and rebuilds during explicit command-log
-reconstruction. Player checkpoints retain that cache directly. Map tiles show
-authoritative simulation fog. The replay viewer is fog-free, and so is a seat
-out of an undecided match once no LAN teammate plays on whom it could tip off;
-its chrome stays its own. Animation, heading, and weapon effects use the
-relevant simulation state rather than inventing movement or firing delays.
+left standing, and a peak meeting the map edge is a spur whose levels join the
+wall's. A freestanding peak steps its own way: each side is cut into short
+stretches whose first two benches vary, a corner's stretch wrapping both its
+sides; a peak two tiles thick or less stands at one of two heights per stretch
+instead. Pits clear of the map edge step down the same way, a thin pit varying
+its first bench along its length; a pit running off the map keeps a jog per
+block of tiles so it joins the boundary. Peaks and pits that mirror each other
+under the map's half-turn step as mirror images; their wear marks fall
+independently. Rock walls draw layered slabs from the generated library, sized
+by local rock thickness, and machinery blockers stay off the edge ring the
+boundary covers. The shell extends allied unit sight discs and
+completed-building footprint sight into a bounded off-map quarry margin. Its
+presentation-only exploration cache updates on every tick, including bulk
+advances, and rebuilds during explicit command-log reconstruction. Player
+checkpoints retain that cache directly. Map tiles show authoritative simulation
+fog. The replay viewer is fog-free, and so is a seat out of an undecided match
+once no LAN teammate plays on whom it could tip off; its chrome stays its own.
+Animation, heading, and weapon effects use the relevant simulation state rather
+than inventing movement or firing delays.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a

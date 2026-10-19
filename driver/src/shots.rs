@@ -260,8 +260,10 @@ fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<
     auto::select_tab(suite.client, "controls")?;
     suite.shot("controls", "controls")?;
     auto::press_key(suite.client, Key::Escape)?;
-    auto::activate_labeled(suite.client, "replays")?;
-    suite.shot("replay-shelf", "replays")?;
+    auto::activate_labeled(suite.client, "saves & replays")?;
+    suite.shot("saves-shelf", "saves")?;
+    auto::select_tab(suite.client, "replays")?;
+    suite.shot("replays-shelf", "replays")?;
     auto::press_key(suite.client, Key::Escape)?;
     auto::activate_labeled(suite.client, "join match")?;
     suite.shot("join-form", "join_match")?;

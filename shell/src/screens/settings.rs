@@ -444,11 +444,6 @@ fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str 
     }
 }
 
-/// The keys that step tabs in menus now, while both have one.
-fn tab_keys() -> Option<(String, String)> {
-    crate::menu::tab_key(Action::PrevTab).zip(crate::menu::tab_key(Action::NextTab))
-}
-
 /// The rows `tab` offers on this build, in order.
 fn rows(tab: Tab, touch_only: bool) -> Vec<Row> {
     Row::ALL
@@ -755,7 +750,7 @@ impl SettingsScreen {
             }),
             Face::Tab(_) => Some(settings_hint(
                 crate::platform::hands(),
-                tab_keys().is_some(),
+                crate::tabs::keys().is_some(),
             )),
             // The dialog keeps the standard menu footer.
             Face::Capturing(_) | Face::Confirming(_) => None,
@@ -821,7 +816,7 @@ impl SettingsScreen {
             return;
         }
         self.menu.draw_with_coaching("", self.coaching());
-        let keys = tab_keys().filter(|_| crate::platform::hands().keys);
+        let keys = crate::tabs::keys().filter(|_| crate::platform::hands().keys);
         let labels = Tab::ALL.map(Tab::label);
         let active = Tab::ALL
             .iter()

@@ -15,8 +15,8 @@ use std::path::PathBuf;
 
 use crate::press::{ScrollPress, Swipe};
 use crate::theme::{
-    SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY,
-    TEXT_TITLE,
+    CHIP, EDGE_CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY,
+    TEXT_SECONDARY, TEXT_TITLE,
 };
 
 const ITEM_HEIGHT: f32 = 44.0;
@@ -117,14 +117,15 @@ impl BindingColumns {
     }
 }
 
-/// Where a shelf record's columns sit: its title, what it is, how long
-/// the match ran, and when it was saved. Drawing and tests share it.
+/// Where a shelf record's columns sit: its title, the match's format,
+/// how long the match ran, and when it was saved. Drawing and tests
+/// share it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RecordColumns {
-    /// The record's name, or its map.
+    /// The record's name, or its map, with its map aside and kind chip.
     pub title: Rect,
-    /// What kind of record it is.
-    pub detail: Rect,
+    /// The match's format.
+    pub format: Rect,
     /// Match time, right-aligned.
     pub clock: Rect,
     /// When it was saved, right-aligned.
@@ -132,24 +133,146 @@ pub struct RecordColumns {
 }
 
 impl RecordColumns {
-    /// The columns across `row` at UI scale `s`.
-    pub fn of(row: Rect, s: f32) -> Self {
+    /// The least share of a row the title column keeps.
+    const TITLE_SHARE: f32 = 0.4;
+
+    /// The columns across `row` at UI scale `s`, for a list whose widest
+    /// format, clock, and when values measure `widest`. Those columns
+    /// take the room their widest value needs, scaled down together when
+    /// that would leave the title less than [`Self::TITLE_SHARE`] of the
+    /// row; the title takes the rest.
+    pub fn fit(row: Rect, s: f32, widest: [f32; 3]) -> Self {
         let pad = 18.0 * s;
+        let gap = 20.0 * s;
         let inner = row.w - 2.0 * pad;
-        let column = |from: f32, to: f32| {
-            Rect::new(
-                row.x + pad + inner * from,
-                row.y,
-                inner * (to - from),
-                row.h,
-            )
-        };
+        let room = (inner * (1.0 - Self::TITLE_SHARE) - 3.0 * gap).max(0.0);
+        let need: f32 = widest.iter().sum();
+        let scale = if need > room { room / need } else { 1.0 };
+        let [format, clock, when] = widest.map(|width| width * scale);
+        let when = Rect::new(row.x + row.w - pad - when, row.y, when, row.h);
+        let clock = Rect::new(when.x - gap - clock, row.y, clock, row.h);
+        let format = Rect::new(clock.x - gap - format, row.y, format, row.h);
+        let title_x = row.x + pad;
         Self {
-            title: column(0.0, 0.42),
-            detail: column(0.45, 0.65),
-            clock: column(0.66, 0.78),
-            when: column(0.80, 1.0),
+            title: Rect::new(title_x, row.y, (format.x - gap - title_x).max(0.0), row.h),
+            format,
+            clock,
+            when,
         }
+    }
+}
+
+/// The widest format, clock, and when among `lines`' records, as
+/// `measure` sizes them, so every record row shares one set of columns.
+fn widest_record_values<R>(lines: &[Line<R>], measure: impl Fn(&str) -> f32) -> [f32; 3] {
+    lines.iter().fold([0.0; 3], |widest, line| match line {
+        Line::Row(
+            Label::Record {
+                format,
+                clock,
+                when,
+                ..
+            },
+            _,
+        ) => [
+            widest[0].max(measure(format)),
+            widest[1].max(measure(clock)),
+            widest[2].max(measure(when)),
+        ],
+        _ => widest,
+    })
+}
+
+/// Draws a shelf record in `columns` at UI scale `s`: the title in
+/// `color`, its map aside and kind chip after it, then the format, clock,
+/// and when. The chip always shows; the title outranks the map aside for
+/// the room left beside it.
+fn draw_record(
+    label: &Label,
+    columns: RecordColumns,
+    s: f32,
+    text_size: f32,
+    color: Color,
+    busy: bool,
+) {
+    let Label::Record {
+        title,
+        map,
+        tag,
+        format,
+        clock,
+        when,
+        available,
+    } = label
+    else {
+        return;
+    };
+    let dim = if busy { TEXT_DISABLED } else { TEXT_SECONDARY };
+    let cell = columns.title;
+    let baseline = cell.y + cell.h * 0.68;
+    let gap = 10.0 * s;
+    let chip_pad = 8.0 * s;
+    let row_measure =
+        |text: &str| measure_text(text, None, numeric::font_size(text_size), 1.0).width;
+    let aside_size = crate::theme::Type::Body.at(s).min(text_size);
+    let aside_measure =
+        |text: &str| measure_text(text, None, numeric::font_size(aside_size), 1.0).width;
+    let chip_size = crate::theme::Type::Small.at(s);
+    let chip = tag.map(|tag| {
+        let text = measure_text(tag, None, numeric::font_size(chip_size), 1.0).width;
+        (tag, text, text + 2.0 * chip_pad)
+    });
+
+    let text_room = (cell.w - chip.map_or(0.0, |(_, _, width)| width + gap)).max(0.0);
+    let aside_need = map.as_deref().map_or(0.0, |map| aside_measure(map) + gap);
+    let shown = crate::typography::elide_to_width(
+        title,
+        (text_room - aside_need).max(text_room * 0.5),
+        &row_measure,
+    );
+    draw_text(
+        &shown,
+        cell.x,
+        baseline,
+        text_size,
+        if *available { color } else { TEXT_DISABLED },
+    );
+    let mut end = cell.x + row_measure(&shown);
+    if let Some(map) = map {
+        let aside =
+            crate::typography::elide_to_width(map, cell.x + text_room - end - gap, &aside_measure);
+        if !aside.is_empty() {
+            draw_text(&aside, end + gap, baseline, aside_size, dim);
+            end += gap + aside_measure(&aside);
+        }
+    }
+    if let Some((tag, text, width)) = chip {
+        let height = (chip_size + 10.0 * s).min(cell.h - 4.0 * s);
+        let x = if shown.is_empty() { cell.x } else { end + gap };
+        let y = cell.y + (cell.h - height) * 0.5;
+        draw_rectangle(x, y, width, height, CHIP);
+        draw_rectangle_lines(x, y, width, height, Stroke::Hairline.at(s), EDGE_CHIP);
+        draw_text(
+            tag,
+            x + (width - text) * 0.5,
+            y + height * 0.5 + chip_size * 0.35,
+            chip_size,
+            if busy { TEXT_DISABLED } else { TEXT_BODY },
+        );
+    }
+
+    for (text, column, right) in [
+        (format, columns.format, false),
+        (clock, columns.clock, true),
+        (when, columns.when, true),
+    ] {
+        let size = crate::typography::fit(text, text_size, column.w, 1.0);
+        let x = if right {
+            column.x + column.w - measure_text(text, None, numeric::font_size(size), 1.0).width
+        } else {
+            column.x
+        };
+        draw_text(text, x, baseline, size, dim);
     }
 }
 
@@ -168,11 +291,14 @@ pub enum Label {
     },
     /// A Settings row: what the setting is, and its value right-aligned.
     Setting { name: String, value: String },
-    /// A saved game or replay on the shelf, drawn in [`RecordColumns`];
-    /// an unavailable record's title draws disabled.
+    /// A saved game or replay on the shelf, drawn in [`RecordColumns`]:
+    /// its title, then its map when the title is a given name, then its
+    /// kind's chip. An unavailable record's title draws disabled.
     Record {
         title: String,
-        detail: String,
+        map: Option<String>,
+        tag: Option<&'static str>,
+        format: String,
         clock: String,
         when: String,
         available: bool,
@@ -197,11 +323,22 @@ impl std::fmt::Display for Label {
             Label::Setting { name, value } => write!(f, "{name}: {value}"),
             Label::Record {
                 title,
-                detail,
+                map,
+                tag,
+                format,
                 clock,
                 when,
                 ..
-            } => write!(f, "{title} | {detail} | {clock} | {when}"),
+            } => {
+                f.write_str(title)?;
+                if let Some(map) = map {
+                    write!(f, " \u{b7} {map}")?;
+                }
+                if let Some(tag) = tag {
+                    write!(f, " [{tag}]")?;
+                }
+                write!(f, " | {format} | {clock} | {when}")
+            }
         }
     }
 }
@@ -732,6 +869,11 @@ impl<R: Clone> Menu<R> {
             crate::theme::Type::Label.at(s),
             crate::theme::Type::Row.at(s),
         );
+        // Measured over every record, not just the visible window, so the
+        // columns hold still while the list scrolls.
+        let record_widest = widest_record_values(&self.lines, |text| {
+            measure_text(text, None, numeric::font_size(text_size), 1.0).width
+        });
         for (index, line) in self.lines.iter().enumerate() {
             let Some(rect) = self.item_rect(index) else {
                 continue;
@@ -820,37 +962,9 @@ impl<R: Clone> Menu<R> {
                         if busy { TEXT_DISABLED } else { TEXT_ACCENT },
                     );
                 }
-                Label::Record {
-                    title,
-                    detail,
-                    clock,
-                    when,
-                    available,
-                } => {
-                    let columns = RecordColumns::of(rect, s);
-                    let dim = if busy { TEXT_DISABLED } else { TEXT_SECONDARY };
-                    let title_color = if *available { color } else { TEXT_DISABLED };
-                    let measure = |text: &str| {
-                        measure_text(text, None, numeric::font_size(text_size), 1.0).width
-                    };
-                    for (text, column, tint) in [
-                        (title, columns.title, title_color),
-                        (detail, columns.detail, dim),
-                    ] {
-                        let shown = crate::typography::elide_to_width(text, column.w, &measure);
-                        draw_text(&shown, column.x, rect.y + rect.h * 0.68, text_size, tint);
-                    }
-                    for (text, column) in [(clock, columns.clock), (when, columns.when)] {
-                        let size = crate::typography::fit(text, text_size, column.w, 1.0);
-                        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
-                        draw_text(
-                            text,
-                            column.x + column.w - width,
-                            rect.y + rect.h * 0.68,
-                            size,
-                            dim,
-                        );
-                    }
+                Label::Record { .. } => {
+                    let columns = RecordColumns::fit(rect, s, record_widest);
+                    draw_record(label, columns, s, text_size, color, busy);
                 }
                 Label::Text(text) => {
                     let room = rect.w - 36.0 * s;
