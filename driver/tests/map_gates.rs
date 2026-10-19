@@ -334,6 +334,15 @@ fn metric_fairness(name: &str, seats: &[oxide_driver::audit::SeatAudit]) {
 }
 
 #[test]
+fn tiered_maps_follow_the_level_rules() {
+    for (name, scenario) in shipped() {
+        let faults = oxide_driver::audit::level_faults(&scenario)
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert!(faults.is_empty(), "{name}: {}", faults.join("; "));
+    }
+}
+
+#[test]
 fn every_map_offers_a_home_extractor_and_expansion_value() {
     const NATURAL_EXTENSION: i32 = 8;
 
@@ -343,8 +352,9 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
         // can legitimately retain a standard pace while still needing value
         // beyond their starting pockets.
         const REMOTE_VALUE_AREA_FLOOR: i32 = 7_000;
-        let (map, foundries) =
-            Map::parse(&scenario.map).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let (map, foundries) = scenario
+            .parse_map_and_anchors()
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
         let frames = map.extractor_frames();
         assert!(
             frames.len() >= scenario.players.len(),
@@ -899,8 +909,9 @@ fn rotated_seat_partners_carry_opposite_compass_names() {
     let (fw, fh) = BuildingKind::Foundry.size();
     let mut mismatched = Vec::new();
     for (name, scenario) in shipped() {
-        let (map, anchors) =
-            Map::parse(&scenario.map).unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
+        let (map, anchors) = scenario
+            .parse_map_and_anchors()
+            .unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
         for (seat, at) in &anchors {
             let image = TilePos {
                 x: map.width() - fw - at.x,
@@ -971,8 +982,9 @@ fn every_map_mirrors_its_paired_seats_entry_by_entry() {
         {
             continue;
         }
-        let (map, anchors) =
-            Map::parse(&scenario.map).unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
+        let (map, anchors) = scenario
+            .parse_map_and_anchors()
+            .unwrap_or_else(|e| panic!("{name}: map parses ({e})"));
         let (w, h) = (map.width(), map.height());
 
         // Anchor digits are already ground by the time Map::parse is
@@ -987,6 +999,13 @@ fn every_map_mirrors_its_paired_seats_entry_by_entry() {
                 map.tile(image),
                 Some(tile),
                 "{name}: tile ({}, {}) is not the image of its mirror",
+                pos.x,
+                pos.y
+            );
+            assert_eq!(
+                map.elevation(image),
+                map.elevation(pos),
+                "{name}: tile ({}, {}) stands at another level than its mirror",
                 pos.x,
                 pos.y
             );
