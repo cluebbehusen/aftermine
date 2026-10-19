@@ -1,5 +1,5 @@
 {
- "name": "Twin Mesas",
+ "name": "Twin Rings",
  "map": [
   "################################################################################################",
   "#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#",
@@ -190,7 +190,7 @@
   }
  ],
  "meta": {
-  "hook": "Each team shares a ring mesa; the center mesa sits just out of rifle range of both.",
+  "hook": "Each team holds a ring of ground around a pit with no ground route to the other, and only aircraft reach the center plateau with frames and all the rich scrap.",
   "pace": "large",
   "mode": "2v2",
   "richness": "standard",

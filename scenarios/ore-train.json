@@ -1,5 +1,5 @@
 {
- "name": "Ore Train",
+ "name": "Crosscut",
  "map": [
   "####################~~~##################################################################~~~####################",
   "#....................~~~............................SS....SS............................~~~....................#",
@@ -200,7 +200,7 @@
   }
  ],
  "meta": {
-  "hook": "Cross at the junction for the fight, or bridge into the ore fields for the frames.",
+  "hook": "Pit lines cross the field in an X, so fight through the central junction or slip through a side gap to the frames in the north and south fields.",
   "pace": "vast",
   "mode": "2v2",
   "richness": "rich",

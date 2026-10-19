@@ -127,7 +127,9 @@ fn no_rock_tile_on_a_shipped_map_reads_as_open_floor() {
     for path in paths {
         let scenario = oxide_sim::Scenario::load(&path).expect("shipped map loads");
         let rows = &scenario.map;
-        let (map, _) = Map::parse(rows).expect("shipped rows parse");
+        let (map, _) = scenario
+            .parse_map_and_anchors()
+            .expect("shipped rows parse");
         let ring = boundary_ring(rows);
         let blockers = Blockers::build(&map, rows);
         let Slabs(slabs) = Slabs::build(&map, rows, &blockers);

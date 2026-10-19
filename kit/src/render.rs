@@ -47,11 +47,12 @@ const SEAT_COLORS: [u32; 8] = [
     0xC4_57_3B, 0x3F_94_82, 0x64_8C_E6, 0xC8_A0_3C, 0xA0_5A_C8, 0x78_B4_50, 0xD2_78_96, 0x5A_B4_D2,
 ];
 
-/// Brightness step between neighbouring levels of a tiered map.
+/// Brightness step between neighbouring levels of a tiered map that fits the
+/// band at this step.
 const LEVEL_STEP: f32 = 0.15;
-/// The darkest a level is drawn; deeper levels share it.
+/// The darkest a level is drawn.
 const LEVEL_DARKEST: f32 = 0.7;
-/// The brightest a level is drawn; higher levels share it.
+/// The brightest a level is drawn.
 const LEVEL_BRIGHTEST: f32 = 1.45;
 
 /// The level of a tiered map drawn at flat ground's brightness: the level
@@ -79,10 +80,52 @@ pub fn floor_level(map: &Map, starts: impl IntoIterator<Item = TilePos>) -> u8 {
         .unwrap_or(0)
 }
 
-/// How bright ground at `level` is drawn against flat ground, with `floor`
-/// at one: a fixed step per level, within a band.
-pub fn level_tone(level: f32, floor: u8) -> f32 {
-    (1.0 + LEVEL_STEP * (level - f32::from(floor))).clamp(LEVEL_DARKEST, LEVEL_BRIGHTEST)
+/// How a tiered map shades its levels: the floor at flat ground's brightness
+/// and each level away from it a fixed step brighter or darker. When the map
+/// reaches deeper or higher than the band holds at that step, the levels on
+/// that side share the band evenly instead, so every level keeps its own tone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shading {
+    floor: u8,
+    below: f32,
+    above: f32,
+}
+
+impl Shading {
+    /// The shading of `map` with `floor` at flat ground's brightness.
+    pub fn new(map: &Map, floor: u8) -> Self {
+        let (mut lowest, mut highest) = (floor, floor);
+        for (pos, _) in map.iter() {
+            if let Some(elevation) = map.elevation(pos) {
+                let (low, high) = elevation.span();
+                lowest = lowest.min(low);
+                highest = highest.max(high);
+            }
+        }
+        let step = |room: f32, levels: u8| {
+            if levels == 0 {
+                LEVEL_STEP
+            } else {
+                LEVEL_STEP.min(room / f32::from(levels))
+            }
+        };
+        Self {
+            floor,
+            below: step(1.0 - LEVEL_DARKEST, floor - lowest),
+            above: step(LEVEL_BRIGHTEST - 1.0, highest - floor),
+        }
+    }
+
+    /// How bright ground at `level` is drawn against flat ground.
+    pub fn tone(&self, level: f32) -> f32 {
+        let from_floor = level - f32::from(self.floor);
+        let step = if from_floor < 0.0 {
+            self.below
+        } else {
+            self.above
+        };
+        (1.0 + step * from_floor).clamp(LEVEL_DARKEST, LEVEL_BRIGHTEST)
+    }
 }
 
 #[expect(
@@ -100,10 +143,10 @@ fn shade(hex: u32, tone: f32) -> u32 {
 
 /// The tone of a tile's ground: a ramp halfway between its levels, a cliff
 /// the level at its foot.
-fn tile_tone(map: &Map, pos: TilePos, floor: u8) -> f32 {
+fn tile_tone(map: &Map, pos: TilePos, shading: &Shading) -> f32 {
     match map.elevation(pos) {
-        Some(Elevation::Level(level)) => level_tone(f32::from(level), floor),
-        Some(Elevation::Ramp { low }) => level_tone(f32::from(low) + 0.5, floor),
+        Some(Elevation::Level(level)) => shading.tone(f32::from(level)),
+        Some(Elevation::Ramp { low }) => shading.tone(f32::from(low) + 0.5),
         None => 1.0,
     }
 }
@@ -111,7 +154,7 @@ fn tile_tone(map: &Map, pos: TilePos, floor: u8) -> f32 {
 /// A cliff seen from above: the lower ground at its foot, with the drop's
 /// dark face and lit lip along each side that meets higher ground. A cliff
 /// with no foot of its own, inside a taller band, is all face.
-fn draw_cliff(pixmap: &mut Pixmap, map: &Map, pos: TilePos, (x, y): (f32, f32), floor: u8) {
+fn draw_cliff(pixmap: &mut Pixmap, map: &Map, pos: TilePos, (x, y): (f32, f32), shading: &Shading) {
     let Some(Elevation::Level(level)) = map.elevation(pos) else {
         return;
     };
@@ -136,7 +179,7 @@ fn draw_cliff(pixmap: &mut Pixmap, map: &Map, pos: TilePos, (x, y): (f32, f32), 
         y,
         TILE_PX,
         TILE_PX,
-        shade(GROUND, level_tone(f32::from(level), floor)),
+        shade(GROUND, shading.tone(f32::from(level))),
     );
     let face = TILE_PX / 4.0;
     for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
@@ -251,20 +294,21 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
     let map = state.map();
     // A tiered map tints each level's ground, brighter above the floor its
     // Foundries stand on and darker below.
-    let floor = map.tiered().then(|| {
-        floor_level(
+    let shading = map.tiered().then(|| {
+        let floor = floor_level(
             map,
             state
                 .buildings()
                 .iter()
                 .filter(|b| b.kind == BuildingKind::Foundry)
                 .map(|b| b.anchor),
-        )
+        );
+        Shading::new(map, floor)
     });
 
     for (pos, tile) in map.iter() {
         let (x, y) = (pos.x as f32 * TILE_PX, pos.y as f32 * TILE_PX);
-        let tone = floor.map_or(1.0, |floor| tile_tone(map, pos, floor));
+        let tone = shading.map_or(1.0, |shading| tile_tone(map, pos, &shading));
         if tile.terrain == Terrain::Ground && tone != 1.0 {
             fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, shade(GROUND, tone));
         }
@@ -276,8 +320,8 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
                 fill_rect(&mut pixmap, x, y, TILE_PX, TILE_PX, ROCK);
             }
             (Terrain::Cliff, _) => {
-                if let Some(floor) = floor {
-                    draw_cliff(&mut pixmap, map, pos, (x, y), floor);
+                if let Some(shading) = &shading {
+                    draw_cliff(&mut pixmap, map, pos, (x, y), shading);
                 }
             }
             // Peaks are uncut quarry mesas: a dark full-tile mass with a

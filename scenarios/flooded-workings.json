@@ -1,5 +1,5 @@
 {
- "name": "Flooded Workings",
+ "name": "Old Workings",
  "map": [
   "########################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~########################",
   "#.......................~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.......................#",
@@ -126,7 +126,7 @@
   }
  ],
  "meta": {
-  "hook": "Three dikes cross the flood; the shaft-head islands pay whoever flies out to them.",
+  "hook": "Three narrow ground routes wind through a pit field between the bases, and four plateaus with frames and rich scrap can only be reached by air.",
   "pace": "large",
   "mode": "1v1",
   "richness": "standard",

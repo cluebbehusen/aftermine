@@ -15,7 +15,7 @@ use crate::game::Scene;
 use crate::numeric::{self, Fit};
 use chassis::grid::{TilePos, as_index};
 use macroquad::prelude::*;
-use oxide_kit::render::level_tone;
+use oxide_kit::render::Shading;
 use oxide_sim::map::{Elevation, Map, Terrain};
 
 /// Mean brightness of each ground sprite variant, and their median. A tinted
@@ -129,7 +129,7 @@ type Decal = (usize, Color, u32);
 pub(crate) struct Levels {
     width: i32,
     height: i32,
-    floor: u8,
+    shading: Shading,
     class: Vec<Class>,
     ramps: Vec<Ramp>,
     /// Every tile's fills, in draw order: tile `i`'s run from `starts[i]`.
@@ -349,7 +349,7 @@ impl Levels {
         let mut levels = Self {
             width: map.width(),
             height: map.height(),
-            floor,
+            shading: Shading::new(map, floor),
             class,
             ramps,
             ops: Vec::new(),
@@ -375,7 +375,7 @@ impl Levels {
     }
 
     fn tone(&self, level: f32) -> f32 {
-        level_tone(level, self.floor)
+        self.shading.tone(level)
     }
 
     fn level_flat(&self, level: f32) -> Color {

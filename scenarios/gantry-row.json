@@ -52,55 +52,55 @@
  ],
  "players": [
   {
-   "name": "West Bank North",
+   "name": "West North",
    "team": 0,
    "scrap": 150,
    "bot": false
   },
   {
-   "name": "West Bank Mid North",
+   "name": "West Mid North",
    "team": 0,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "West Bank Mid South",
+   "name": "West Mid South",
    "team": 0,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "West Bank South",
+   "name": "West South",
    "team": 0,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "East Bank North",
+   "name": "East North",
    "team": 1,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "East Bank Mid North",
+   "name": "East Mid North",
    "team": 1,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "East Bank Mid South",
+   "name": "East Mid South",
    "team": 1,
    "scrap": 150,
    "bot": true,
    "bot_config": {}
   },
   {
-   "name": "East Bank South",
+   "name": "East South",
    "team": 1,
    "scrap": 150,
    "bot": true,
@@ -302,7 +302,7 @@
   }
  ],
  "meta": {
-  "hook": "One drowned seam, three gantries; every crossing is a knife fight under the guns.",
+  "hook": "A pit seam splits the teams with three narrow crossings, each with rich scrap at both ends.",
   "pace": "standard",
   "mode": "4v4",
   "richness": "standard",

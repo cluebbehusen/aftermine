@@ -1,5 +1,5 @@
 {
- "name": "Four Buttes",
+ "name": "Four Ledges",
  "map": [
   "####################################################################################",
   "#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#",
@@ -210,7 +210,7 @@
   }
  ],
  "meta": {
-  "hook": "Four corner buttes, an islet between each pair of neighbors, a center nobody can shoot across.",
+  "hook": "Four corner plateaus reached only by air, a smaller one between each pair of neighbors, and a rich center whose peak blocks every shot across it.",
   "pace": "large",
   "mode": "4-way FFA",
   "richness": "standard",

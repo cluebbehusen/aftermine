@@ -357,7 +357,9 @@ fn shipped_maps_exercise_every_industrial_blocker() {
     for path in paths {
         let scenario = oxide_sim::Scenario::load(&path)
             .unwrap_or_else(|error| panic!("loading {}: {error}", path.display()));
-        let (map, _) = oxide_sim::map::Map::parse(&scenario.map).expect("shipped rows parse");
+        let (map, _) = scenario
+            .parse_map_and_anchors()
+            .expect("shipped rows parse");
         // Blockers keep off the edge ring, which the boundary draws over.
         let ring = super::super::environment::boundary_ring(&scenario.map);
         for placement in Blockers::build(&map, &scenario.map).placements {

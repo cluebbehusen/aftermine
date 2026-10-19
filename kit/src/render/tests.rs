@@ -87,11 +87,36 @@ fn the_floor_is_where_most_starts_stand_else_where_most_ground_lies() {
 }
 
 #[test]
-fn each_level_steps_its_tone_within_a_band() {
-    assert_eq!(level_tone(3.0, 3), 1.0);
-    assert!((level_tone(4.0, 3) - 1.15).abs() < 1e-6);
-    assert_eq!(level_tone(20.0, 3), LEVEL_BRIGHTEST);
-    assert_eq!(level_tone(0.0, 9), LEVEL_DARKEST);
+fn each_level_steps_its_tone_from_the_floor() {
+    let shading = Shading::new(&three_levels(), 1);
+    assert_eq!(shading.tone(1.0), 1.0);
+    assert!((shading.tone(2.0) - (1.0 + LEVEL_STEP)).abs() < 1e-6);
+    assert!((shading.tone(0.0) - (1.0 - LEVEL_STEP)).abs() < 1e-6);
+}
+
+#[test]
+fn a_map_deeper_than_the_band_shares_it_so_every_level_keeps_its_tone() {
+    // Four levels under a floor at 4: a full step each would run past the
+    // darkest tone, so they divide the band below the floor evenly.
+    let (deep, _) = Map::parse_tiered(
+        &["..", "==", "..", "==", "..", "==", "..", "==", ".."],
+        &["44", "33", "33", "22", "22", "11", "11", "00", "00"],
+    )
+    .unwrap();
+    let shading = Shading::new(&deep, 4);
+    let tones: Vec<f32> = (0..=4u8)
+        .map(|level| shading.tone(f32::from(level)))
+        .collect();
+    assert!((tones[0] - LEVEL_DARKEST).abs() < 1e-6);
+    assert_eq!(tones[4], 1.0);
+    let step = (1.0 - LEVEL_DARKEST) / 4.0;
+    for pair in tones.windows(2) {
+        assert!((pair[1] - pair[0] - step).abs() < 1e-6, "{tones:?}");
+    }
+    // A climb past the band shares it the same way, its top level the
+    // brightest tone.
+    let (tall, _) = Map::parse_tiered(&["..", "==", ".."], &["99", "44", "44"]).unwrap();
+    assert!((Shading::new(&tall, 4).tone(9.0) - LEVEL_BRIGHTEST).abs() < 1e-6);
 }
 
 #[test]

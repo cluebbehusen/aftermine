@@ -1,5 +1,5 @@
 {
- "name": "Floodline",
+ "name": "Fault Line",
  "map": [
   "##########################################################################################",
   "#.........................................~~~~~~~~.......................................#",
@@ -248,7 +248,7 @@
   }
  ],
  "meta": {
-  "hook": "The flood took the middle road; three bridges ration the war.",
+  "hook": "A broken pit line splits the teams with three gaps to cross, and each team has a cluster of frames on its side of the line.",
   "pace": "large",
   "mode": "3v3",
   "richness": "standard",

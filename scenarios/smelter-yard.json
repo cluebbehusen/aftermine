@@ -106,7 +106,7 @@
   }
  ],
  "meta": {
-  "hook": "Defend the yard's two gates, or leave by the back road to claim the center.",
+  "hook": "Each base sits behind walls with two exits, one straight onto the center and one onto a back route that loops round to it.",
   "pace": "standard",
   "mode": "1v1",
   "richness": "standard",

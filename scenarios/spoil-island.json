@@ -1,5 +1,5 @@
 {
- "name": "Spoil Island",
+ "name": "Spoil Plateau",
  "map": [
   "################################################################################################",
   "#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#",
@@ -126,7 +126,7 @@
   }
  ],
  "meta": {
-  "hook": "Two small home islets and one huge island between them: ferry an army over and fight for it on foot.",
+  "hook": "Each base stands on its own pit-ringed plateau, so lift an army onto the large plateau in the middle or the two smaller corner ones and fight for them on foot.",
   "pace": "large",
   "mode": "1v1",
   "richness": "standard",

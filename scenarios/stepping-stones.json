@@ -1,5 +1,5 @@
 {
- "name": "Stepping Stones",
+ "name": "Plateau Chain",
  "map": [
   "################################################################################",
   "#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#",
@@ -116,7 +116,7 @@
   }
  ],
  "meta": {
-  "hook": "No ground route: land on the islets one channel at a time, each in range of the next.",
+  "hook": "No ground route joins the bases, so lift across five small plateaus in the middle, each a narrow pit from the next.",
   "pace": "large",
   "mode": "1v1",
   "richness": "standard",
