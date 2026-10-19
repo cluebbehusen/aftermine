@@ -15,6 +15,10 @@ const VERSION: u32 = 1;
 const MAGIC: &[u8; 8] = b"OXIDESAV";
 const MAX_HEADER: usize = 64 * 1024;
 const MAX_BYTES: usize = oxide_kit::checkpoint::MAX_BYTES;
+/// Saves compress on the save worker. Against the fastest level this takes
+/// about a tenth of a second on a 20-minute eight-seat match and saves about
+/// a quarter, most of what the match history adds.
+const LEVEL: i32 = 15;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -78,7 +82,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
     let (map, seats, tick) = checkpoint.metadata();
     let teams = crate::menu::team_count(checkpoint.team_tags());
     ensure!(meta.ticks == Some(tick), "save metadata mismatch");
-    let mut encoder = zstd::stream::Encoder::new(Vec::new(), 3)?;
+    let mut encoder = zstd::stream::Encoder::new(Vec::new(), LEVEL)?;
     encoder.include_checksum(true)?;
     encoder.write_all(&payload)?;
     let compressed = encoder.finish()?;

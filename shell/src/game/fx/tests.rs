@@ -2054,8 +2054,11 @@ fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
         let mut restored: Game =
             serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
         assert_eq!(game.state.hash(), restored.state.hash());
-        assert_eq!(restored.recorder.start_tick(), game.state.current_tick());
-        assert!(restored.recorder.commands.is_empty());
+        assert_eq!(
+            restored.recorder.commands.len(),
+            game.recorder.commands.len(),
+            "the record keeps the launch order; presentation does not replay it"
+        );
         assert!(
             restored
                 .presentation

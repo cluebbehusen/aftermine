@@ -211,6 +211,9 @@ pub struct KeyframeRecorder {
     shared: Arc<Shared>,
     queued: usize,
     last: Option<u64>,
+    /// Keyframes a resumed match rebuilt from its history, before any it
+    /// kept live.
+    rebuilt: Keyframes,
 }
 
 #[derive(Default)]
@@ -265,9 +268,15 @@ impl KeyframeRecorder {
             .map(|_| sender)
     }
 
+    /// Adds the keyframes a resumed match rebuilt from its saved history.
+    pub fn prepend(&mut self, rebuilt: Keyframes) {
+        self.rebuilt = rebuilt;
+    }
+
     /// Every keyframe kept so far, available once its encoding finishes.
     pub fn pending(&self) -> PendingKeyframes {
         PendingKeyframes {
+            rebuilt: self.rebuilt.clone(),
             shared: Arc::clone(&self.shared),
             count: self.queued,
         }
@@ -275,8 +284,24 @@ impl KeyframeRecorder {
 
     /// The keyframes already encoded, without waiting for the rest.
     pub fn encoded(&self) -> Keyframes {
-        Keyframes(lock(&self.shared).frames.clone())
+        joined(&self.rebuilt, &lock(&self.shared).frames)
     }
+}
+
+/// The rebuilt keyframes before the first live one, then the live ones.
+/// Dropping a tail keeps every chain whole from its start.
+fn joined(rebuilt: &Keyframes, live: &[Keyframe]) -> Keyframes {
+    let first = live.first().map_or(u64::MAX, |frame| frame.tick);
+    Keyframes(
+        rebuilt
+            .0
+            .iter()
+            .take_while(|frame| frame.tick < first)
+            .chain(live)
+            .take(MAX_KEYFRAMES)
+            .cloned()
+            .collect(),
+    )
 }
 
 /// Encodes worlds until the recorder hangs up. A failed encoding ends the
@@ -303,6 +328,7 @@ fn encode_all(worlds: &mpsc::Receiver<State>, shared: &Shared) {
 /// Keyframes a recorder kept, some possibly still encoding. Waiting moves
 /// off the frame thread with a save.
 pub struct PendingKeyframes {
+    rebuilt: Keyframes,
     shared: Arc<Shared>,
     count: usize,
 }
@@ -319,7 +345,8 @@ impl PendingKeyframes {
                 .wait(encoded)
                 .unwrap_or_else(PoisonError::into_inner);
         }
-        Keyframes(encoded.frames.iter().take(self.count).cloned().collect())
+        let count = self.count.min(encoded.frames.len());
+        joined(&self.rebuilt, &encoded.frames[..count])
     }
 }
 

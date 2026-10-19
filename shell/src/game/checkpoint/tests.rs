@@ -14,6 +14,35 @@ fn a_save_capture_leaves_the_live_world_free_to_tick() {
 }
 
 #[test]
+fn a_resumed_match_rebuilds_the_keyframes_before_its_save() {
+    use oxide_kit::keyframes::KEYFRAME_EVERY;
+    let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
+    game.advance_ticks(KEYFRAME_EVERY + 10);
+    let mut restored = game
+        .capture_save()
+        .checkpoint()
+        .unwrap()
+        .restore()
+        .unwrap()
+        .install();
+    // The check runs beside play and settles on the first tick after it.
+    for _ in 0..10_000 {
+        restored.do_tick();
+        if restored.history.is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(restored.history.is_none(), "the check finishes");
+    assert_eq!(restored.recorder.start_tick(), 0);
+    assert_eq!(
+        restored.keyframes.encoded().ticks().next(),
+        Some(KEYFRAME_EVERY),
+        "the keyframe before the save is rebuilt"
+    );
+}
+
+#[test]
 fn checkpoint_preserves_pending_input_memory_and_statistics() {
     let mut scenario = Scenario::skirmish();
     scenario.players[1].bot = true;
@@ -30,22 +59,17 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
     assert_eq!(before, restored.state.hash());
     assert_eq!(*original.pending, *restored.pending);
     assert!(restored.clock.paused);
-    let start = restored.state.current_tick();
-    assert_eq!(restored.recorder.start_tick(), start);
-    assert!(restored.recorder.commands.is_empty());
+    assert_eq!(
+        restored.recorder.start_tick(),
+        0,
+        "the save kept its history"
+    );
+    assert!(!restored.recorder.commands.is_empty());
     for _ in 0..240 {
         assert_eq!(original.do_tick().events, restored.do_tick().events);
         assert_eq!(original.state.hash(), restored.state.hash());
         assert_eq!(
-            serde_json::to_vec(
-                &original
-                    .recorder
-                    .commands
-                    .iter()
-                    .filter(|c| c.tick >= start)
-                    .collect::<Vec<_>>()
-            )
-            .unwrap(),
+            serde_json::to_vec(&original.recorder.commands).unwrap(),
             serde_json::to_vec(&restored.recorder.commands).unwrap()
         );
         assert_eq!(
@@ -169,6 +193,7 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
             concede_stats: None,
             boundary_fog: crate::boundary_fog::BoundaryFog::new(&state, PlayerId(0)),
             lan: None,
+            history: None,
         };
         let game = checkpoint.restore().unwrap().install();
         assert_eq!(game.presentation.human, PlayerId(0));

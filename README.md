@@ -242,12 +242,13 @@ replaying the opening. Player saves use the compact `.oxsave` format; legacy
 player-save import is not supported. Recorded-match playback remains separate.
 
 Recordings contain a starting scenario or world checkpoint and tick-stamped
-commands. Loading a player save starts a new recording segment at the saved
-tick. Finished matches remain watchable, but a segment contains only the history
-recorded since its origin. Finished matches are saved as compressed `.oxreplay`
-files that also store the world every 1,024 ticks, so scrubbing restores a
-nearby world instead of replaying from the start. Saves require matching
-simulation and checkpoint revisions; there is no cross-version migration.
+commands. A player save also keeps the match's commands, so a match resumed from
+a save still records its whole history. A segment that starts at a world, as a
+rejoined LAN client's does, contains only the history recorded since its origin.
+Finished matches are saved as compressed `.oxreplay` files that also store the
+world every 1,024 ticks, so scrubbing restores a nearby world instead of
+replaying from the start. Saves require matching simulation and checkpoint
+revisions; there is no cross-version migration.
 
 The embedded scenario preserves each opponent's exact difficulty, stance, and
 personality seed. New Match creates new hidden identities; Restart, Rematch,

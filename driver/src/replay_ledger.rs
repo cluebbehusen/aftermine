@@ -157,7 +157,7 @@ pub fn load(path: &Path) -> Result<GameReplay> {
         && head == SAVE_MAGIC;
     if save {
         bail!(
-            "{} is a player save, which keeps no command history to re-execute; \
+            "{} is a player save, not a recording; \
              use the match recording (match-*.oxreplay) instead",
             path.display()
         );

@@ -124,6 +124,9 @@ pub struct Game {
     pub recorder: GameReplay,
     /// Worlds kept beside the recording so its replay seeks quickly.
     pub(crate) keyframes: oxide_kit::keyframes::KeyframeRecorder,
+    /// A resumed match's saved history, until it is checked against the
+    /// saved world.
+    history: Option<oxide_kit::history::PendingHistory>,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
     /// Where this match's autosave and finished record go.
@@ -173,12 +176,13 @@ impl Game {
             bots,
             bot_decision,
             recorder,
+            history,
             live_stats,
             presentation,
             ..
         } = self;
         drop(presentation);
-        move || drop((state, bots, bot_decision, recorder, live_stats))
+        move || drop((state, bots, bot_decision, recorder, history, live_stats))
     }
 
     pub(crate) fn view(&self) -> Scene<'_> {
@@ -311,6 +315,7 @@ impl Game {
             bot_decision: None,
             recorder,
             keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
+            history: None,
             pending: PendingCommands(Vec::new()),
             slot: crate::autosave::SaveSlot::fresh(),
             saved: None,
@@ -543,6 +548,9 @@ impl Game {
         drop(sim_stage);
         self.tick_phase = TickPhase::Simulated;
         self.keyframes.observe(&self.state);
+        if let Some(history) = self.history.take() {
+            self.history = history.settle(&mut self.recorder, &mut self.keyframes);
+        }
         oxide_kit::controller::record_events(&mut self.bots, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.refresh_fog_lift();
