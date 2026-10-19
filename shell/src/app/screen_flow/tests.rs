@@ -1,11 +1,41 @@
 use super::*;
 
+/// A finished lesson's card, laid out headless at 1280x800.
+fn finished_card() -> CardLayout {
+    let game = Tutorial::begin_at(Lesson::Command, vec2(1280.0, 800.0)).unwrap();
+    let tutorial = game
+        .tutorial
+        .expect("begin stages the lesson")
+        .at_step(Lesson::Command.steps().len());
+    tutorial_card::layout(
+        &tutorial,
+        None,
+        &crate::action::BindingMap::classic(),
+        crate::platform::Hands {
+            pointer: crate::input::Pointer::Mouse,
+            keys: true,
+        },
+        render::hud::HudEnv {
+            viewport: vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        &|_, text, size| text.chars().count() as f32 * size * 0.5,
+    )
+}
+
 #[test]
-fn the_tutorial_card_keeps_its_presses_and_a_tap_dismisses_it() {
-    let card = macroquad::math::Rect::new(400.0, 36.0, 460.0, 120.0);
-    let dismiss = macroquad::math::Rect::new(834.0, 40.0, 22.0, 22.0);
-    let on_card = vec2(500.0, 100.0);
-    let world = vec2(500.0, 400.0);
+fn the_lesson_card_keeps_its_presses_and_its_buttons_act() {
+    let card = finished_card();
+    let button = |wanted| {
+        card.buttons
+            .iter()
+            .find(|(_, button)| *button == wanted)
+            .map(|(rect, _)| *rect)
+            .unwrap()
+    };
+    let on_card = vec2(card.rect.x + 2.0, card.rect.y + 2.0);
+    let world = vec2(640.0, 600.0);
+    assert!(!card.rect.contains(world));
 
     let mut events = vec![
         RawEvent::TouchDown {
@@ -24,8 +54,8 @@ fn the_tutorial_card_keeps_its_presses_and_a_tap_dismisses_it() {
             y: world.y,
         },
     ];
-    let filtered = filter_tutorial_pointer(&mut events, card, dismiss, 1.0);
-    assert_eq!(filtered, TutorialPointer::default());
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
+    assert_eq!(filtered, CardPointer::default());
     assert_eq!(
         events,
         vec![
@@ -43,24 +73,48 @@ fn the_tutorial_card_keeps_its_presses_and_a_tap_dismisses_it() {
         "the card eats its finger and leaves the world's alone"
     );
 
-    // A fingertip just outside the drawn box still reaches it.
-    let near = vec2(dismiss.right() + 6.0, dismiss.y + 4.0);
-    assert!(!dismiss.contains(near));
-    let mut events = vec![RawEvent::TouchDown {
-        id: 3,
+    // A fingertip just below the drawn button still reaches it; the
+    // mouse pointer there only meets the card.
+    let next = button(CardButton::Next);
+    let near = vec2(next.center().x, next.bottom() + 3.0);
+    let mut events = vec![
+        RawEvent::TouchDown {
+            id: 3,
+            x: near.x,
+            y: near.y,
+        },
+        RawEvent::MouseDown {
+            button: MouseButton::Left,
+            x: near.x,
+            y: near.y,
+        },
+    ];
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
+    assert_eq!(filtered.pressed, Some(CardButton::Next));
+    assert!(events.is_empty());
+    let mut events = vec![RawEvent::MouseDown {
+        button: MouseButton::Left,
         x: near.x,
         y: near.y,
     }];
-    let filtered = filter_tutorial_pointer(&mut events, card, dismiss, 1.0);
-    assert!(filtered.dismissed);
+    assert_eq!(
+        filter_card_pointer(&mut events, &card, 1.0),
+        CardPointer::default()
+    );
     assert!(events.is_empty());
 
-    let center = dismiss.center();
+    let fold = button(CardButton::Fold).center();
+    let lessons = button(CardButton::Lessons).center();
     let mut events = vec![
         RawEvent::MouseDown {
+            button: MouseButton::Right,
+            x: lessons.x,
+            y: lessons.y,
+        },
+        RawEvent::MouseDown {
             button: MouseButton::Left,
-            x: center.x,
-            y: center.y,
+            x: fold.x,
+            y: fold.y,
         },
         RawEvent::MouseUp {
             button: MouseButton::Left,
@@ -68,13 +122,14 @@ fn the_tutorial_card_keeps_its_presses_and_a_tap_dismisses_it() {
             y: on_card.y,
         },
     ];
-    let filtered = filter_tutorial_pointer(&mut events, card, dismiss, 1.0);
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(
         filtered,
-        TutorialPointer {
-            dismissed: true,
+        CardPointer {
+            pressed: Some(CardButton::Fold),
             swallowed_release: true,
-        }
+        },
+        "only the left button presses a card button"
     );
     assert!(events.is_empty());
 }
@@ -101,15 +156,22 @@ fn opening_pause_freezes_play_and_ends_the_concede_banner() {
     let mut game =
         Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     game.presentation.conceded_banner = true;
-    let screen = open_pause(&mut game, PauseCause::Player);
+    let screen = open_pause(&game, PauseCause::Player);
     assert!(matches!(screen, Screen::Pause(_)));
     enter(&mut game, &screen);
     assert!(game.clock.paused);
     assert!(!game.presentation.conceded_banner);
-    assert!(
-        game.demo.paused_menu,
-        "the menu button teaches the tutorial's pause lesson like Escape"
-    );
+}
+
+#[test]
+fn a_lessons_pause_menu_offers_the_lesson_list() {
+    let game = Tutorial::begin_at(Lesson::Scrap, vec2(1280.0, 800.0)).unwrap();
+    let Screen::Pause(pause) = open_pause(&game, PauseCause::Player) else {
+        panic!("the player opens the pause menu");
+    };
+    let items = pause.menu.view().items;
+    assert!(items.iter().any(|item| item == "Lessons"));
+    assert!(!items.iter().any(|item| item == "Save Game"));
 }
 
 #[test]
@@ -134,16 +196,15 @@ fn a_suspension_gap_pauses_only_a_running_live_match() {
 }
 
 #[test]
-fn a_suspension_pause_explains_itself_without_teaching_the_lesson() {
+fn a_suspension_pause_explains_itself() {
     let mut game =
         Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
-    let screen = open_pause(&mut game, PauseCause::Suspension);
+    let screen = open_pause(&game, PauseCause::Suspension);
     enter(&mut game, &screen);
     let Screen::Pause(pause) = screen else {
         panic!("a suspension opens the pause menu");
     };
     assert!(game.clock.paused);
-    assert!(!game.demo.paused_menu);
     assert_eq!(pause.subtitle("Skirmish"), "paused after an interruption");
 }
 

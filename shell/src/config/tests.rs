@@ -283,3 +283,29 @@ fn an_install_id_is_made_once_kept_and_a_bad_one_forgotten() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn finished_lessons_persist_once_each_in_course_order() {
+    use crate::tutorial::Lesson;
+    let mut config = Config::default();
+    assert!(config.finish_lesson(Lesson::Scrap));
+    assert!(config.finish_lesson(Lesson::Command));
+    assert!(!config.finish_lesson(Lesson::Scrap), "already finished");
+    assert_eq!(config.lessons_done, [Lesson::Command, Lesson::Scrap]);
+
+    let dir = std::env::temp_dir().join(format!(
+        "oxide-config-lessons-{}-{}",
+        std::process::id(),
+        crate::entropy::bits()
+    ));
+    let path = dir.join("config.json");
+    let mut edited = config.clone();
+    edited.lessons_done = vec![Lesson::Scrap, Lesson::Command, Lesson::Scrap];
+    edited.save_to(&path).unwrap();
+    let loaded = Config::load_from(Some(path));
+    assert_eq!(
+        loaded.lessons_done, config.lessons_done,
+        "a hand-edited list loads deduplicated and in course order"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

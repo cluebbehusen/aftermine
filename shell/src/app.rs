@@ -41,7 +41,7 @@ use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
 use crate::screens::wizard::launch::{PersonalitySeedSource, hosted_scenario, launch};
 use crate::screens::wizard::{NewMatchDraft, Out as WizardOut, Step as WizardStep, Wizard};
-use crate::{Args, assets, autosave, config, input, render, screens, theme, tutorial};
+use crate::{Args, assets, autosave, config, input, render, screens, theme};
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
 use oxide_kit::diagnostics::{Stage, StageGuard};
@@ -60,9 +60,6 @@ struct App {
     config: config::Config,
     /// The live (or backdrop) game session.
     game: Game,
-    /// The tutorial's lesson cards, while a tutorial runs. Lives here, not
-    /// in a screen, so it survives Playing -> Pause -> Playing.
-    tutorial: Option<tutorial::Tutorial>,
     /// The wizard's remembered choices. Lives here, not in the wizard, so
     /// Home -> Wizard -> Back -> Wizard keeps the map pick and dials.
     draft: NewMatchDraft,
@@ -334,7 +331,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         args,
         config,
         game,
-        tutorial: None,
         draft: NewMatchDraft::default(),
         personality_seeds,
         input: input::InputState::new(),
@@ -714,6 +710,8 @@ fn pause_menu(game: &Game) -> PauseScreen {
     let pause = PauseScreen::open(game.state.result().is_some(), can_surrender(game));
     if let Some(role) = game.net_role() {
         pause.for_lan_match(role == crate::game::network::NetRole::Host)
+    } else if game.tutorial.is_some() {
+        pause.for_lesson()
     } else {
         pause
     }
@@ -774,7 +772,6 @@ impl App {
             self.game.presentation.overlay = false;
             self.net = Some(link);
         }
-        self.tutorial = how.tutorial;
         self.performance.reset();
         self.input.reset_session();
     }
@@ -858,8 +855,6 @@ struct Notice {
 struct Install {
     /// Whether it opens paused.
     paused: bool,
-    /// The lesson cards riding on it, for the tutorial.
-    tutorial: Option<tutorial::Tutorial>,
     /// The link carrying a LAN match.
     net: Option<crate::netplay::Link>,
 }
@@ -867,11 +862,7 @@ struct Install {
 impl Install {
     /// A match on this machine.
     fn local(paused: bool) -> Self {
-        Self {
-            paused,
-            tutorial: None,
-            net: None,
-        }
+        Self { paused, net: None }
     }
 }
 

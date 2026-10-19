@@ -1,6 +1,5 @@
 use super::*;
 use crate::numeric::Fit;
-use crate::tutorial::Demo;
 use oxide_sim::scenario::BotConfig;
 
 #[test]
@@ -54,7 +53,6 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
             restored.live_stats.snapshot(&restored.state)
         );
     }
-    assert_eq!(original.demo, restored.demo);
     assert_eq!(
         original.presentation.boundary_fog,
         restored.presentation.boundary_fog
@@ -168,7 +166,6 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
         let checkpoint = GameCheckpoint {
             session,
             human: PlayerId(0),
-            demo: Demo::default(),
             concede_stats: None,
             boundary_fog: crate::boundary_fog::BoundaryFog::new(&state, PlayerId(0)),
             lan: None,

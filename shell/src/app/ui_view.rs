@@ -20,6 +20,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         Screen::Home(home) => (screen.mode(), Some(home.menu.view())),
         Screen::Settings { screen: sc, .. } => (screen.mode(), Some(sc.menu.view())),
         Screen::Codex { screen: codex, .. } => (screen.mode(), Some(codex.menu.view())),
+        Screen::Lessons { screen: list, .. } => (screen.mode(), Some(list.menu.view())),
         Screen::Wizard(w) => {
             // The wizard's custom screens (grid, setup) report the same
             // protocol surface the row menus do.

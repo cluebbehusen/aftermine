@@ -27,9 +27,8 @@ crate-level rustdoc.
   speed, and tick debt). `game::Presentation` holds camera, interpolation,
   effects, and UI state; rendering borrows the active live or replay world and
   its clock through `game::Scene`. Its checkpoint adapter restores the shared
-  session, tutorial progress, concession report, and decorative boundary
-  exploration. Restoration opens paused and rebuilds transient presentation at
-  the current viewport.
+  session, concession report, and decorative boundary exploration. Restoration
+  opens paused and rebuilds transient presentation at the current viewport.
 - `input` and `action` form the single hardware and injected-input funnel.
   `press` is the press-then-release-in-place gesture every pointer target
   shares, with `ScrollPress` adding the finger drag that scrolls the menu lists

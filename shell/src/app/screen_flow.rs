@@ -1,6 +1,9 @@
 //! Cross-screen transitions and drawing for one presented frame.
 
 use super::*;
+use crate::render::tutorial_card::{self, CardButton, CardLayout};
+use crate::screens::lessons::LessonsScreen;
+use crate::tutorial::{Lesson, Tutorial};
 
 pub(super) struct ScreenFrame {
     pub(super) screen: Screen,
@@ -49,17 +52,28 @@ fn gap_opens_pause(raw_dt: f32, live_streak: u8, running: bool, exempt: bool) ->
 }
 
 /// Opens the pause menu over the live match; entering it freezes the
-/// match (see [`enter`]). Only a player's choice teaches the tutorial's
-/// pause lesson.
-fn open_pause(game: &mut Game, cause: PauseCause) -> Screen {
+/// match (see [`enter`]).
+fn open_pause(game: &Game, cause: PauseCause) -> Screen {
     let pause = pause_menu(game);
     Screen::Pause(match cause {
-        PauseCause::Player => {
-            game.demo.paused_menu = true;
-            pause
-        }
+        PauseCause::Player => pause,
         PauseCause::Suspension => pause.with_notice("paused after an interruption"),
     })
+}
+
+/// Installs a fresh run of `lesson` and plays it.
+fn start_lesson(app: &mut App, lesson: Lesson) -> Result<Screen> {
+    let game = Tutorial::begin(lesson)?;
+    app.install(game, Install::local(app.args.paused));
+    Ok(Screen::Playing)
+}
+
+/// Basic Training's lesson list over `back`.
+fn open_lessons(app: &App, back: Screen) -> Screen {
+    Screen::Lessons {
+        screen: LessonsScreen::open(&app.config.lessons_done),
+        back: Box::new(back),
+    }
 }
 
 /// Resolves the wizard's semantic outcome for a local match and owns its
@@ -120,6 +134,7 @@ fn exit(game: &mut Game, from: ScreenKind) {
         ScreenKind::Home
         | ScreenKind::Settings
         | ScreenKind::Codex
+        | ScreenKind::Lessons
         | ScreenKind::Wizard
         | ScreenKind::Lobby
         | ScreenKind::Playing
@@ -155,6 +170,7 @@ fn enter(game: &mut Game, screen: &Screen) {
         ScreenKind::Home
         | ScreenKind::Settings
         | ScreenKind::Codex
+        | ScreenKind::Lessons
         | ScreenKind::Wizard
         | ScreenKind::Lobby
         | ScreenKind::Playing
@@ -206,6 +222,7 @@ pub(super) fn deliver_notices(
             Screen::Pause(pause) => pause.show_notice(text),
             Screen::Home(_)
             | Screen::Codex { .. }
+            | Screen::Lessons { .. }
             | Screen::Wizard(_)
             | Screen::Lobby { .. }
             | Screen::Replays(_)
@@ -276,7 +293,7 @@ pub(super) fn update_and_draw(
     // presenting, so the frame shows the destination.
     let mut rerun = false;
     screen = match screen {
-        Screen::Home(home) => home_frame(app, home, &events, time.presentation)?,
+        Screen::Home(home) => home_frame(app, home, &events, time.presentation),
         Screen::Settings { screen: sc, back } => settings_frame(
             app,
             sc,
@@ -289,6 +306,9 @@ pub(super) fn update_and_draw(
             screen: codex,
             back,
         } => codex_frame(app, codex, back, &events),
+        Screen::Lessons { screen: list, back } => {
+            lessons_frame(app, list, back, &events, &mut rerun)?
+        }
         Screen::Wizard(w) => wizard_frame(app, w, &events, &mut rerun),
         Screen::Lobby {
             screen: lobby,
@@ -421,7 +441,7 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
     }
 }
 
-fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Result<Screen> {
+fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {
     if !home.catalog_ready {
         app.request_catalog();
     }
@@ -443,44 +463,32 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
     let out = home.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    // Session verbs first — Continue and Tutorial swap the
-    // game this frame then draws under the menu. The menu
-    // draw needs `home`, so verbs that displace it (only
-    // Settings) build their screen after the draw below.
+    // Session verbs first: Continue swaps the game this frame
+    // then draws under the menu. The menu draw needs `home`,
+    // so verbs that displace it build their screen after the
+    // draw below.
     let mut next: Option<Screen> = None;
     match out {
         screens::home::Out::Stay
         | screens::home::Out::Settings
         | screens::home::Out::Roster
+        | screens::home::Out::Tutorial
         | screens::home::Out::Join
         | screens::home::Out::Rejoin => {}
         screens::home::Out::Continue => {
-            return Ok(app.persistence_screen(persistence::Intent::Continue, Screen::Home(home)));
+            return app.persistence_screen(persistence::Intent::Continue, Screen::Home(home));
         }
         screens::home::Out::Play => {
             next = Some(Screen::Wizard(Wizard::open(&app.draft)));
-        }
-        screens::home::Out::Tutorial => {
-            // The tutorial is a gentle real match with the
-            // lesson cards riding on top.
-            let fresh = Game::new(tutorial::tutorial_scenario())?;
-            app.install(
-                fresh,
-                Install {
-                    tutorial: Some(tutorial::Tutorial::new()),
-                    ..Install::local(app.args.paused)
-                },
-            );
-            next = Some(Screen::Playing);
         }
         screens::home::Out::Replays => {
             next = Some(Screen::Replays(Shelf::open()));
         }
         screens::home::Out::Quit => {
-            return Ok(app.persistence_screen(
+            return app.persistence_screen(
                 persistence::Intent::Leave(screens::pause::LeaveVerb::Quit, true),
                 Screen::Home(home),
-            ));
+            );
         }
     }
     render::draw(
@@ -491,7 +499,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
     );
     veil();
     home.menu.draw(home.subtitle());
-    Ok(if out == screens::home::Out::Settings {
+    if out == screens::home::Out::Settings {
         Screen::Settings {
             screen: SettingsScreen::open(&app.config),
             back: Box::new(Screen::Home(home)),
@@ -501,6 +509,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             screen: CodexScreen::open(),
             back: Box::new(Screen::Home(home)),
         }
+    } else if out == screens::home::Out::Tutorial {
+        open_lessons(app, Screen::Home(home))
     } else if out == screens::home::Out::Rejoin
         && let Some(ticket) = &app.offer
     {
@@ -525,7 +535,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         }
     } else {
         next.unwrap_or(Screen::Home(home))
-    })
+    }
 }
 
 fn settings_frame(
@@ -615,6 +625,37 @@ fn codex_frame(
             back,
         }
     }
+}
+
+fn lessons_frame(
+    app: &mut App,
+    mut list: LessonsScreen,
+    back: Box<Screen>,
+    events: &[RawEvent],
+    rerun: &mut bool,
+) -> Result<Screen> {
+    let input_scope = app
+        .game
+        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+    let out = list.update(events, &mut app.input.mouse, &mut app.ui_sounds);
+    drop(input_scope);
+    if let screens::lessons::Out::Start(lesson) = out {
+        *rerun = true;
+        return start_lesson(app, lesson);
+    }
+    render::draw(
+        &app.game.view(),
+        &app.sprites,
+        &app.input,
+        &app.config.bindings,
+    );
+    veil();
+    list.draw(app.input.mouse);
+    Ok(if out == screens::lessons::Out::Leave {
+        *back
+    } else {
+        Screen::Lessons { screen: list, back }
+    })
 }
 
 fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut bool) -> Screen {
@@ -742,46 +783,65 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     }
 }
 
-/// What the tutorial card did with a frame's pointer events.
+/// What the lesson card did with a frame's pointer events.
 #[derive(Debug, Default, PartialEq)]
-struct TutorialPointer {
-    /// A press landed on the dismiss box.
-    dismissed: bool,
+struct CardPointer {
+    /// The card button a press landed on.
+    pressed: Option<CardButton>,
     /// A mouse release landed on the card and was removed.
     swallowed_release: bool,
 }
 
-/// The tutorial card is chrome: presses on it never reach the world or
-/// consume an armed gameplay action, and a press on its dismiss box
-/// ends the tutorial. A finger landing on the card is dropped before
-/// the gesture funnel sees it, so its later moves and lift belong to no
-/// touch; the dismiss box takes the padded touch target.
-fn filter_tutorial_pointer(
-    events: &mut Vec<RawEvent>,
-    card: macroquad::math::Rect,
-    dismiss: macroquad::math::Rect,
-    ui: f32,
-) -> TutorialPointer {
-    let touch_dismiss = crate::layout::touch_pad(dismiss, ui);
-    let mut filtered = TutorialPointer::default();
+/// The lesson card is chrome: presses on it never reach the world or
+/// consume an armed gameplay action, and a press on one of its buttons
+/// acts. A finger landing on the card is dropped before the gesture
+/// funnel sees it, so its later moves and lift belong to no touch; the
+/// buttons take padded touch targets.
+fn filter_card_pointer(events: &mut Vec<RawEvent>, card: &CardLayout, ui: f32) -> CardPointer {
+    let mut filtered = CardPointer::default();
     events.retain(|e| match *e {
-        RawEvent::MouseDown { button, x, y } if card.contains(vec2(x, y)) => {
-            filtered.dismissed |= button == MouseButton::Left && dismiss.contains(vec2(x, y));
+        RawEvent::MouseDown { button, x, y } if card.covers(vec2(x, y), false, ui) => {
+            if button == MouseButton::Left {
+                filtered.pressed = filtered
+                    .pressed
+                    .or_else(|| card.button_at(vec2(x, y), false, ui));
+            }
             false
         }
-        RawEvent::MouseUp { x, y, .. } if card.contains(vec2(x, y)) => {
+        RawEvent::MouseUp { x, y, .. } if card.covers(vec2(x, y), false, ui) => {
             filtered.swallowed_release = true;
             false
         }
-        RawEvent::TouchDown { x, y, .. }
-            if card.contains(vec2(x, y)) || touch_dismiss.contains(vec2(x, y)) =>
-        {
-            filtered.dismissed |= touch_dismiss.contains(vec2(x, y));
+        RawEvent::TouchDown { x, y, .. } if card.covers(vec2(x, y), true, ui) => {
+            filtered.pressed = filtered
+                .pressed
+                .or_else(|| card.button_at(vec2(x, y), true, ui));
             false
         }
         _ => true,
     });
     filtered
+}
+
+/// Carries out a press on the lesson card: folding stays in the lesson,
+/// and every other button leaves it.
+fn press_card(app: &mut App, button: CardButton) -> Result<Option<Screen>> {
+    let Some(tutorial) = app.game.tutorial.as_mut() else {
+        return Ok(None);
+    };
+    let lesson = tutorial.lesson();
+    Ok(match button {
+        CardButton::Fold => {
+            tutorial.toggle_collapsed();
+            None
+        }
+        CardButton::Retry => Some(start_lesson(app, lesson)?),
+        CardButton::Next => match lesson.next() {
+            Some(next) => Some(start_lesson(app, next)?),
+            None => None,
+        },
+        CardButton::Lessons => Some(open_lessons(app, Screen::Home(HomeScreen::open()))),
+    })
 }
 
 fn playing_frame(
@@ -796,16 +856,11 @@ fn playing_frame(
     let input_scope = app
         .game
         .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
-    if let Some(t) = &app.tutorial {
-        let filtered = filter_tutorial_pointer(
-            events,
-            render::tutorial_card_rect(t),
-            render::tutorial_dismiss_rect(),
-            render::ui_scale(),
-        );
-        if filtered.dismissed {
-            app.tutorial = None;
-        }
+    let mut card_press = None;
+    if let Some(tutorial) = &app.game.tutorial {
+        let card = tutorial_card::current(tutorial, &app.game, &app.config.bindings);
+        let filtered = filter_card_pointer(events, &card, render::ui_scale());
+        card_press = filtered.pressed;
         // Swallowing a release whose press began in the world must
         // also end that drag, or a later release completes it.
         if filtered.swallowed_release {
@@ -872,19 +927,22 @@ fn playing_frame(
             app.game.presentation.conceded_banner,
         )
     {
-        next = Some(open_pause(&mut app.game, PauseCause::Player));
+        next = Some(open_pause(&app.game, PauseCause::Player));
     } else if gap_opens_pause(
         time.raw,
         app.live_streak,
         !app.game.clock.paused && app.game.state.result().is_none(),
         app.args.automation || app.args.debug_server || app.game.net_role().is_some(),
     ) {
-        next = Some(open_pause(&mut app.game, PauseCause::Suspension));
+        next = Some(open_pause(&app.game, PauseCause::Suspension));
     }
-    if let Some(t) = app.tutorial.as_mut()
-        && !t.advance(app.game.demo)
+    if next.is_none()
+        && let Some(button) = card_press
     {
-        app.tutorial = None;
+        match press_card(app, button) {
+            Ok(screen) => next = screen,
+            Err(err) => app.notify(format!("cannot start the lesson: {err:#}"), true),
+        }
     }
     drop(input_scope);
     let leaving = next.is_some();
@@ -906,6 +964,12 @@ fn playing_frame(
     if profile_stopped {
         app.game.clock.paused = true;
     }
+    if let Some(lesson) = Tutorial::advance_in(&mut app.game)
+        && app.config.finish_lesson(lesson)
+        && let Err(err) = app.config.save()
+    {
+        app.notify(format!("could not save settings: {err}"), true);
+    }
     if app.game.state.result().is_some() && app.game.end_stats.is_some() {
         next = Some(Screen::Results(ResultsScreen::open()));
         // Re-enter immediately so the first decided frame is
@@ -919,8 +983,9 @@ fn playing_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    if let Some(t) = &app.tutorial {
-        render::draw_tutorial(t, &app.game, &app.config.bindings);
+    if let Some(tutorial) = &app.game.tutorial {
+        let card = tutorial_card::current(tutorial, &app.game, &app.config.bindings);
+        tutorial_card::draw(&card, app.input.mouse);
     }
     next.unwrap_or(Screen::Playing)
 }
@@ -1282,6 +1347,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             screen: CodexScreen::open(),
             back: Box::new(Screen::Pause(ps)),
         },
+        screens::pause::Out::Lessons => open_lessons(app, Screen::Pause(ps)),
         screens::pause::Out::Surrender => {
             // The command lands on the next tick like any
             // other. A 1v1 decides on the spot and the
@@ -1303,17 +1369,12 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             }
         }
         screens::pause::Out::Restart => {
+            if let Some(tutorial) = &app.game.tutorial {
+                return start_lesson(app, tutorial.lesson());
+            }
             let fresh = rebuild_match(&app.game)?;
             app.discarded.push(app.game.slot.clone());
-            // Restarting a tutorial also restarts its lesson state.
-            let tutorial = app.tutorial.is_some().then(tutorial::Tutorial::new);
-            app.install(
-                fresh,
-                Install {
-                    tutorial,
-                    ..Install::local(app.args.paused)
-                },
-            );
+            app.install(fresh, Install::local(app.args.paused));
             Screen::Playing
         }
         screens::pause::Out::MainMenu => app.persistence_screen(

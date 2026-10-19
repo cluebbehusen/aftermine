@@ -25,6 +25,36 @@ fn a_lan_match_menu_offers_no_save_or_restart() {
 }
 
 #[test]
+fn a_lesson_menu_offers_the_lesson_list_and_never_saves_or_surrenders() {
+    let mut lesson = PauseScreen::open(false, true).for_lesson();
+    assert_eq!(lesson.menu.title, "PAUSED");
+    assert!(!lesson.rows.contains(&Row::SaveGame));
+    assert!(!lesson.rows.contains(&Row::Surrender));
+    let restart = lesson.rows.iter().position(|row| *row == Row::Restart);
+    assert_eq!(
+        lesson.rows.iter().position(|row| *row == Row::Lessons),
+        restart.map(|at| at + 1)
+    );
+    assert_eq!(lesson.rows.len(), lesson.menu.view().items.len());
+    assert_eq!(activate(&mut lesson, "Lessons"), Out::Lessons);
+    for (label, consequence, out) in [
+        ("Restart", "the lesson starts over", Out::Restart),
+        (
+            "Main Menu",
+            "your progress in this lesson is lost",
+            Out::MainMenu,
+        ),
+        ("Quit", "your progress in this lesson is lost", Out::Quit),
+    ] {
+        let mut p = PauseScreen::open(false, true).for_lesson();
+        activate(&mut p, label);
+        assert_eq!(p.subtitle("map"), consequence, "{label} consequence");
+        drive(&mut p, Key::Down);
+        assert_eq!(drive(&mut p, Key::Enter), out);
+    }
+}
+
+#[test]
 fn a_lan_menu_keeps_its_rows_through_every_dialog() {
     let lan_rows = |p: &PauseScreen| {
         assert_eq!(p.menu.title, "MENU");
@@ -495,7 +525,7 @@ fn every_confirmable_verb_asks_then_acts_or_returns_to_its_row() {
         );
         assert_eq!(drive(&mut p, Key::Enter), Out::Stay);
         assert_eq!(p.mode_name(), "confirm_pause");
-        assert_eq!(p.subtitle("map"), verb.consequence());
+        assert_eq!(p.subtitle("map"), verb.consequence(false));
         assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
         assert_eq!(p.menu.value(), Some(&Choice::Row(verb.row())));
         drive(&mut p, Key::Enter);
@@ -508,6 +538,7 @@ fn every_confirmable_verb_asks_then_acts_or_returns_to_its_row() {
         Row::WatchReplay,
         Row::Settings,
         Row::Roster,
+        Row::Lessons,
     ] {
         assert_eq!(row.confirmable(), None, "{row:?} acts without asking");
     }

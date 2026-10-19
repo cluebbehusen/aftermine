@@ -88,7 +88,9 @@ pub(super) fn soundtrack_scene(screen: &Screen, game: &Game) -> crate::soundtrac
         Screen::Busy(_) | Screen::Pause(_) | Screen::Waiting(_) => {
             crate::soundtrack::match_scene(&game.view(), true)
         }
-        Screen::Settings { .. } | Screen::Codex { .. } if screen.over_pause() => {
+        Screen::Settings { .. } | Screen::Codex { .. } | Screen::Lessons { .. }
+            if screen.over_pause() =>
+        {
             crate::soundtrack::match_scene(&game.view(), true)
         }
         Screen::Results(_) => crate::soundtrack::match_scene(&game.view(), false),
@@ -96,6 +98,7 @@ pub(super) fn soundtrack_scene(screen: &Screen, game: &Game) -> crate::soundtrac
         | Screen::Lobby { .. }
         | Screen::Settings { .. }
         | Screen::Codex { .. }
+        | Screen::Lessons { .. }
         | Screen::Wizard(_)
         | Screen::Replays(_) => crate::soundtrack::Scene::Menu,
     }

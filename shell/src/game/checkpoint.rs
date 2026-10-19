@@ -11,7 +11,6 @@ pub(crate) struct GameCheckpoint {
     session: SessionCheckpoint,
     /// The local seat; for a LAN match, the host's.
     human: PlayerId,
-    demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     /// Who played the other seats of a saved LAN match.
@@ -68,7 +67,6 @@ pub(crate) struct SaveCapture {
     pending: Vec<oxide_sim::PlayerCommand>,
     stats: oxide_kit::stats::LiveMatchStats,
     human: PlayerId,
-    demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     lan: Option<LanManifest>,
@@ -83,7 +81,6 @@ impl Game {
             pending: self.pending.to_vec(),
             stats: self.live_stats.clone(),
             human: self.presentation.human,
-            demo: self.demo,
             concede_stats: self.concede_stats.clone(),
             boundary_fog: self.presentation.boundary_fog.clone(),
             lan: None,
@@ -120,7 +117,6 @@ impl SaveCapture {
                 Some(&self.stats),
             )?,
             human: self.human,
-            demo: self.demo,
             concede_stats: self.concede_stats,
             boundary_fog: self.boundary_fog,
             lan: self.lan,
@@ -271,7 +267,6 @@ pub(crate) struct RestoredGame {
     core: oxide_kit::checkpoint::RestoredSession,
     recorder: GameReplay,
     human: PlayerId,
-    demo: crate::tutorial::Demo,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     /// The autosave slot the save came from, which the match keeps.
@@ -356,7 +351,6 @@ impl GameCheckpoint {
             core,
             recorder,
             human: checkpoint.human,
-            demo: checkpoint.demo,
             concede_stats: checkpoint.concede_stats,
             boundary_fog: checkpoint.boundary_fog,
             slot: None,
@@ -382,7 +376,6 @@ impl RestoredGame {
             core,
             recorder,
             human,
-            demo,
             concede_stats,
             boundary_fog,
             slot,
@@ -407,7 +400,7 @@ impl RestoredGame {
             live_stats,
             end_stats,
             concede_stats,
-            demo,
+            tutorial: None,
             presentation,
             // A restored match opens paused.
             clock: super::Clock {

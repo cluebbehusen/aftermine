@@ -304,7 +304,9 @@ impl App {
         let undecided = self.game.state.result().is_none();
         let unsaved = !self.game.is_saved();
         let local = self.game.net_role().is_none();
-        let resumable = local && undecided && !exempt;
+        // A lesson is never saved; leaving one keeps nothing.
+        let kept = self.game.tutorial.is_none();
+        let resumable = local && undecided && kept && !exempt;
         self.background.observe(super::background_save::Frame {
             played: if resumable {
                 crate::numeric::to_f32(
@@ -338,7 +340,11 @@ impl App {
         let decided = !undecided && self.game.end_stats.is_some() && unsaved;
         if self
             .background
-            .due(decided, local && undecided && unsaved, self.clock.elapsed())
+            .due(
+                decided,
+                local && undecided && kept && unsaved,
+                self.clock.elapsed(),
+            )
             .is_none()
         {
             return;

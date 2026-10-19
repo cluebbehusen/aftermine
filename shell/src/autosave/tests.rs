@@ -610,3 +610,19 @@ fn restarting_drops_the_slot_once_the_worker_is_idle() {
     assert!(files(&dir).is_empty());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn a_lesson_is_never_saved() {
+    let dir = scratch("lesson");
+    let mut game = crate::tutorial::Tutorial::begin_at(
+        crate::tutorial::Lesson::Scrap,
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .unwrap();
+    game.advance_ticks(20);
+    assert!(matches!(
+        write_record(&mut game, &dir),
+        Ok(SaveOutcome::NothingToSave)
+    ));
+    assert!(!dir.exists(), "nothing was written");
+}

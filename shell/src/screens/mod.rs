@@ -8,6 +8,7 @@ pub mod browser;
 pub mod codex;
 pub mod final_map;
 pub mod home;
+pub mod lessons;
 pub mod lobby;
 pub mod pause;
 pub mod playback;

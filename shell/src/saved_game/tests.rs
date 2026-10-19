@@ -82,7 +82,6 @@ fn save_restores_pending_input_and_exact_future_without_any_recording_history() 
         serde_json::to_value(&restored).unwrap()["session"]["stats"],
         serde_json::to_value(&original).unwrap()["session"]["stats"]
     );
-    assert_eq!(restored.demo, original.demo);
     assert_eq!(
         restored.presentation.boundary_fog,
         original.presentation.boundary_fog
