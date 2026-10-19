@@ -222,7 +222,7 @@
   }
  ],
  "meta": {
-  "hook": "Each edge works opens only to the two bases beside it; every claim there is a dispute with one neighbor.",
+  "hook": "Each edge has a walled pocket of frames that opens only toward the two bases beside it, and the rich scrap sits in a walled center.",
   "pace": "large",
   "mode": "4-way FFA",
   "richness": "standard",

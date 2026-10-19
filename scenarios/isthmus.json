@@ -1,5 +1,5 @@
 {
- "name": "Isthmus",
+ "name": "Long Neck",
  "map": [
   "########################################################################################################",
   "#..................~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~..................#",
@@ -110,7 +110,7 @@
   }
  ],
  "meta": {
-  "hook": "A 60-tile isthmus between two shores, and most of the salvage lies along it.",
+  "hook": "A long neck of ground crosses the pits between the bases, and all the rich scrap lies along it.",
   "pace": "large",
   "mode": "1v1",
   "richness": "rich",

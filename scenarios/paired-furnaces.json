@@ -190,7 +190,7 @@
   }
  ],
  "meta": {
-  "hook": "Hold your shared back district or push a lane past the furnace.",
+  "hook": "Each team's bases share a walled back area with frames, and the rich scrap lies in the two lanes past the central peaks.",
   "pace": "large",
   "mode": "2v2",
   "richness": "standard",

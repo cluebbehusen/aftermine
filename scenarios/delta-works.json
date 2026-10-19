@@ -1,5 +1,5 @@
 {
- "name": "Delta Works",
+ "name": "Offset Cuts",
  "map": [
   "##############################~~~###################~~~########################~~~##############################",
   "#.............................~~~...................~~~........................~~~.............................#",
@@ -272,7 +272,7 @@
   }
  ],
  "meta": {
-  "hook": "Offset drains and islands; pick which bridge or ford to force, and which island to hold.",
+  "hook": "Three pit cuts run the length of the field, the middle one offset, and seven gaps through them set where each team crosses.",
   "pace": "vast",
   "mode": "3v3",
   "richness": "standard",

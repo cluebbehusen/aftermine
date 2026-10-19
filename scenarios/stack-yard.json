@@ -190,7 +190,7 @@
   }
  ],
  "meta": {
-  "hook": "Choose a lane, cut across an aisle: the yard is all corridors.",
+  "hook": "The middle is a grid of rock blocks with seven lanes across and three aisles between them, so push a lane and cut across an aisle to switch.",
   "pace": "large",
   "mode": "2v2",
   "richness": "standard",

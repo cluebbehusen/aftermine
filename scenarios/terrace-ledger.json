@@ -1,5 +1,5 @@
 {
- "name": "terrace-ledger",
+ "name": "Terrace Ledger",
  "map": [
   "########################################################################################################",
   "#......................................................................................................#",
@@ -182,7 +182,7 @@
   }
  ],
  "meta": {
-  "hook": "Blast terraces stagger the old cut floor; three shelves of open ground, and the ledger settles in the middle.",
+  "hook": "Two staggered cliff lines split the map into three shelves, with both homes up and the rich scrap on the middle shelf a level down.",
   "pace": "vast",
   "mode": "1v1",
   "richness": "rich",

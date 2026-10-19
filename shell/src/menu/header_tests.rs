@@ -252,7 +252,7 @@ fn record_rows_widen_the_list_and_read_their_map_and_chip_in_order() {
                 record("before the push", Some("Bridge Town"), Some("LAN"), "2v2"),
                 1,
             ),
-            (record("Isthmus", None, None, "1v1"), 2),
+            (record("Long Neck", None, None, "1v1"), 2),
         ],
     );
     assert_eq!(
@@ -260,7 +260,7 @@ fn record_rows_widen_the_list_and_read_their_map_and_chip_in_order() {
         vec![
             "Long Causeway [AUTO] | 1v1 | 28:58 | 12 min ago",
             "before the push \u{b7} Bridge Town [LAN] | 2v2 | 28:58 | 12 min ago",
-            "Isthmus | 1v1 | 28:58 | 12 min ago",
+            "Long Neck | 1v1 | 28:58 | 12 min ago",
         ]
     );
     let plain = Menu::list("PLAIN", vec!["one".to_string()]);
