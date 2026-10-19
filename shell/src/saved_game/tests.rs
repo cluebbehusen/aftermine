@@ -29,7 +29,7 @@ fn meta(game: &Game) -> ReplayMeta {
 }
 
 #[test]
-fn save_restores_pending_input_and_exact_future_without_any_recording_history() {
+fn save_restores_pending_input_history_and_exact_future() {
     let path = Fixture::new();
     let mut original = Game::new(Scenario::skirmish()).unwrap();
     original.advance_ticks(121);
@@ -37,17 +37,21 @@ fn save_restores_pending_input_and_exact_future_without_any_recording_history() 
         building: BuildingId(0),
         kind: UnitKind::Harvester,
     });
-    let start = original.state.current_tick();
     let bank = original.state.player(original.presentation.human).scrap;
     write(&original, meta(&original), &path.0).unwrap();
     assert!(std::fs::read(&path.0).unwrap().starts_with(MAGIC));
-    // Missing historical commands cannot affect the saved continuation.
-    original.recorder.commands.clear();
     let mut restored = load(&path.0).unwrap();
     assert!(restored.clock.paused);
     assert_eq!(restored.state.hash(), original.state.hash());
-    assert_eq!(restored.recorder.start_tick(), start);
-    assert!(restored.recorder.commands.is_empty());
+    assert_eq!(
+        restored.recorder.start_tick(),
+        0,
+        "the save kept its history"
+    );
+    assert_eq!(
+        serde_json::to_value(&restored.recorder.commands).unwrap(),
+        serde_json::to_value(&original.recorder.commands).unwrap()
+    );
     assert_eq!(*restored.pending, *original.pending);
     assert_eq!(
         restored.state.player(restored.presentation.human).scrap,
@@ -91,12 +95,15 @@ fn save_restores_pending_input_and_exact_future_without_any_recording_history() 
     let mut playback = oxide_kit::playback::Playback::load(recording).unwrap();
     playback.seek(restored.state.current_tick());
     assert_eq!(playback.state.hash(), restored.state.hash());
-    // A second save needs neither the first save nor the suffix archive.
+    // A second save carries the whole history on, needing no other file.
     write(&restored, meta(&restored), &path.0).unwrap();
     let again = load(&path.0).unwrap();
     assert_eq!(again.state.hash(), restored.state.hash());
-    assert_eq!(again.recorder.start_tick(), restored.state.current_tick());
-    assert!(again.recorder.commands.is_empty());
+    assert_eq!(again.recorder.start_tick(), 0);
+    assert_eq!(
+        serde_json::to_value(&again.recorder.commands).unwrap(),
+        serde_json::to_value(&restored.recorder.commands).unwrap()
+    );
 }
 #[test]
 fn metadata_reads_stop_before_the_payload_and_corruption_is_checked_on_load() {
@@ -198,19 +205,12 @@ fn representative_checkpoints_stay_compact_and_continue_exactly() {
         );
         let mut restored = prepare_load(&path.0).unwrap().install();
         assert_eq!(game.hash_hex(), restored.hash_hex());
-        let start = game.state.current_tick();
         for _ in 0..24 {
             assert_eq!(game.do_tick().events, restored.do_tick().events);
             assert_eq!(game.hash_hex(), restored.hash_hex());
         }
-        let suffix: Vec<_> = game
-            .recorder
-            .commands
-            .iter()
-            .filter(|command| command.tick >= start)
-            .collect();
         assert_eq!(
-            serde_json::to_value(suffix).unwrap(),
+            serde_json::to_value(&game.recorder.commands).unwrap(),
             serde_json::to_value(&restored.recorder.commands).unwrap()
         );
     }

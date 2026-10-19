@@ -25,8 +25,13 @@ while reusable game-independent primitives stay in `chassis`.
   session, simulation, and controller revisions are checked independently. A
   fingerprint binds the captured scenario and world, rejecting later mismatches
   even if both scenario copies change. Capture trusts the host's pairing; the
-  fingerprint neither authenticates data nor proves historical origin. Player
-  saves use the core checkpoint without historical commands.
+  fingerprint neither authenticates data nor proves historical origin.
+- `history` carries a session's commands since its scenario's start beside the
+  checkpoint, so a resumed match keeps recording onto its whole record. Loading
+  checks only its shape; a background thread later replays it to the saved tick,
+  rebuilding the keyframes before the save and checking the saved world's hash.
+  A history that fails gives way to a recording from the saved world, and a
+  recording saved while the check runs waits for it.
 
 - `bot_execution` collects commands in input seat order, using a small shared
   worker pool when several bots are due. A busy or unavailable pool falls back

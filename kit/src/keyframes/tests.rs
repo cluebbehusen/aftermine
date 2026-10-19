@@ -145,3 +145,24 @@ fn the_recorder_keeps_each_grid_tick_once_and_hands_over_on_demand() {
     );
     assert!(u64::try_from(MAX_KEYFRAMES).unwrap() * KEYFRAME_EVERY >= crate::MAX_REPLAY_TICKS);
 }
+
+#[test]
+fn rebuilt_keyframes_come_before_the_live_ones() {
+    let worlds = worlds(4 * KEYFRAME_EVERY);
+    let mut recorder = KeyframeRecorder::default();
+    recorder.prepend(chain(&worlds[..3]));
+    recorder.observe(&worlds[2]);
+    recorder.observe(&worlds[3]);
+    let kept = recorder.pending().wait();
+    assert_eq!(
+        kept.ticks().collect::<Vec<_>>(),
+        [1, 2, 3, 4].map(|n| n * KEYFRAME_EVERY),
+        "a live keyframe replaces a rebuilt one at its tick"
+    );
+    kept.validate(0, 4 * KEYFRAME_EVERY).unwrap();
+    let origin = Scenario::skirmish().build().unwrap();
+    for (index, world) in worlds.iter().enumerate() {
+        assert_eq!(kept.decode(index, &origin).unwrap().hash(), world.hash());
+    }
+    assert_eq!(recorder.encoded().len(), 4);
+}

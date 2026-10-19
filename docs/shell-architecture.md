@@ -616,18 +616,26 @@ lengths and no trailing frames or checkpoint data, checks revisions, and
 validates metadata against the restored session. Controller payloads are CBOR
 byte strings. No old player-save import or format migration is provided.
 
-Restoration runs no historical ticks and starts a fresh world-origin recording
-at the saved tick. Pending input remains pending until that tick executes. A
-save is self-contained. Named saves persist until explicitly deleted. Each match
-owns one autosave slot: its autosave or LAN autosave and its finished-match
-recording share an id, so a save replaces the match's earlier file and the
-finished recording replaces its autosave. Finished recordings go to their own
-matches folder. Autosaves, LAN autosaves, and finished-match recordings rotate
-separately, so rotation keeps whole matches. On iOS, named saves, finished
-recordings, replays, and diagnostics live in the app's Documents folder, which
-the Files app shows; autosaves, settings, and the LAN rejoin ticket stay in its
-Library. Finished matches are `.oxreplay` recordings, containing the available
-history since the current segment began and the keyframes the match kept.
+Restoration runs no historical ticks. A save also carries the commands its
+recording holds since the scenario's start, and the resumed match keeps
+recording onto them. Loading checks their seats, order, and ticks; a background
+thread then replays them to the saved tick, rebuilding the keyframes before the
+save and comparing its world hash with the saved world's. A history that does
+not reproduce the saved world gives way to a world-origin recording at the saved
+tick, keeping the commands recorded since; so does a save without history, whose
+recording began at a world or which was made past the replay tick limit. A
+recording written while the check runs waits for it on the save worker. Pending
+input remains pending until that tick executes. A save is self-contained. Named
+saves persist until explicitly deleted. Each match owns one autosave slot: its
+autosave or LAN autosave and its finished-match recording share an id, so a save
+replaces the match's earlier file and the finished recording replaces its
+autosave. Finished recordings go to their own matches folder. Autosaves, LAN
+autosaves, and finished-match recordings rotate separately, so rotation keeps
+whole matches. On iOS, named saves, finished recordings, replays, and
+diagnostics live in the app's Documents folder, which the Files app shows;
+autosaves, settings, and the LAN rejoin ticket stay in its Library. Finished
+matches are `.oxreplay` recordings, containing the available history since the
+current segment began and the keyframes the match kept.
 
 An `.oxreplay` file has eight-byte `OXIDEREP` magic, a little-endian 32-bit
 header length, a JSON header indexing its frames, one checksummed Zstandard
@@ -767,10 +775,10 @@ writes a crash dump before unwinding continues: the commands through the last
 completed tick as a standard replay, and a manifest, written last, with the
 panic message, the build, how far the tick got, and the batch the simulation
 never finished. Bots decide from the world alone, so a panic while their orders
-are collected replays from that prefix. A match continued from a save records
-from a world-only origin without controller memory, so its dump reproduces
-simulation panics but not bot panics. The folder keeps the newest few dumps; the
-interrupted world is never saved.
+are collected replays from that prefix. A match whose recording begins at a
+world, such as a rejoined LAN client's, has no controller memory to rebuild, so
+its dump reproduces simulation panics but not bot panics. The folder keeps the
+newest few dumps; the interrupted world is never saved.
 
 Report export runs off the frame thread. A report holds the live match's command
 log as a standard replay when the match has played any ticks, the root incident

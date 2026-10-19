@@ -1,7 +1,9 @@
-//! Self-contained shell continuation; historical commands belong to recordings.
+//! Self-contained shell continuation. A save also carries the command
+//! history its recording holds, so a resumed match keeps its whole record.
 
 use super::*;
 use oxide_kit::checkpoint::SessionCheckpoint;
+use oxide_kit::history::{PendingHistory, SessionHistory};
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +17,9 @@ pub(crate) struct GameCheckpoint {
     boundary_fog: crate::boundary_fog::BoundaryFog,
     /// Who played the other seats of a saved LAN match.
     lan: Option<LanManifest>,
+    /// The commands recorded since the scenario's start, unless the
+    /// recording began at a world.
+    history: Option<SessionHistory>,
 }
 
 /// The joined players of a saved LAN match: each human seat other than the
@@ -70,6 +75,7 @@ pub(crate) struct SaveCapture {
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     lan: Option<LanManifest>,
+    history: Option<SessionHistory>,
 }
 
 impl Game {
@@ -84,6 +90,7 @@ impl Game {
             concede_stats: self.concede_stats.clone(),
             boundary_fog: self.presentation.boundary_fog.clone(),
             lan: None,
+            history: SessionHistory::capture(&self.recorder, self.state.current_tick()),
         }
     }
 }
@@ -120,6 +127,7 @@ impl SaveCapture {
             concede_stats: self.concede_stats,
             boundary_fog: self.boundary_fog,
             lan: self.lan,
+            history: self.history,
         })
     }
 }
@@ -266,6 +274,8 @@ impl LanSave {
 pub(crate) struct RestoredGame {
     core: oxide_kit::checkpoint::RestoredSession,
     recorder: GameReplay,
+    /// The saved history's check, while it runs.
+    history: Option<PendingHistory>,
     human: PlayerId,
     concede_stats: Option<oxide_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
@@ -312,7 +322,8 @@ impl GameCheckpoint {
 
     pub(crate) fn restore(self) -> Result<RestoredGame> {
         let checkpoint = self;
-        let recorder = checkpoint.session.recording(&crate::build_identity())?;
+        let build = crate::build_identity();
+        let from_save = checkpoint.session.recording(&build)?;
         let core = checkpoint.session.restore()?;
         match &checkpoint.lan {
             None => anyhow::ensure!(
@@ -347,9 +358,18 @@ impl GameCheckpoint {
             core.stats.is_some(),
             "shell checkpoint requires live statistics"
         );
+        let (recorder, history) = match checkpoint.history {
+            Some(history) => {
+                let recorder = history.recording(&core.scenario, &core.state, &build)?;
+                let check = PendingHistory::start(&recorder, &core.state, from_save);
+                (recorder, Some(check))
+            }
+            None => (from_save, None),
+        };
         Ok(RestoredGame {
             core,
             recorder,
+            history,
             human: checkpoint.human,
             concede_stats: checkpoint.concede_stats,
             boundary_fog: checkpoint.boundary_fog,
@@ -375,6 +395,7 @@ impl RestoredGame {
         let Self {
             core,
             recorder,
+            history,
             human,
             concede_stats,
             boundary_fog,
@@ -397,6 +418,7 @@ impl RestoredGame {
             bot_decision: None,
             recorder,
             keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
+            history,
             pending: PendingCommands(core.pending),
             live_stats,
             end_stats,
