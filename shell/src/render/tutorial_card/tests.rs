@@ -150,3 +150,41 @@ fn a_finger_reaches_a_button_just_past_its_drawn_edge() {
     let below = vec2(card.rect.center().x, card.rect.bottom() + 40.0);
     assert!(!card.covers(below, true, 1.0));
 }
+
+fn lay_tip(tip: Tip, hands: Hands, w: f32) -> CardLayout {
+    tip_layout(tip, 1.0, &BindingMap::classic(), hands, env(w), &fixed)
+}
+
+#[test]
+fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
+    for hands in crate::platform::ALL_HANDS {
+        for tip in Tip::ALL {
+            for w in [640.0, 1280.0] {
+                let card = lay_tip(tip, hands, w);
+                let text = card.text();
+                assert_eq!(text[0], "MATCH TIP");
+                assert_eq!(text[1], tip.title());
+                assert!(text.len() > 2, "{tip:?}: the tip says what to do");
+                assert!(card.rect.x >= 0.0 && card.rect.right() <= w);
+                for line in &card.lines {
+                    assert!(
+                        !line.text.contains('{') && !line.text.contains('}'),
+                        "{tip:?}: unexpanded token in {}",
+                        line.text
+                    );
+                    let width = fixed(line.face, &line.text, line.size);
+                    assert!(
+                        line.x >= card.rect.x && line.x + width <= card.rect.right(),
+                        "{w}: {} spills past the card",
+                        line.text
+                    );
+                    assert!(line.baseline <= card.rect.bottom());
+                }
+                assert_eq!(actions(&card), [CardButton::Dismiss]);
+                assert!(card.rect.contains(card.buttons[0].0.center()));
+            }
+        }
+    }
+    let keys = lay_tip(Tip::UnderAttack, MOUSE, 1280.0).text().join(" ");
+    assert!(keys.contains("press Tab"), "{keys}");
+}

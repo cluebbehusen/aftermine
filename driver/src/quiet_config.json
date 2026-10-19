@@ -120,6 +120,7 @@
   "reduced_motion": false,
   "colorblind": false,
   "control_groups": true,
+  "match_tips": false,
   "touch": {"double_tap_ms": 300, "long_press_ms": 350},
   "last_join_address": null,
   "player_name": null,

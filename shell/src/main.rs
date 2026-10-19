@@ -59,6 +59,7 @@ mod strike_audio;
 mod tabs;
 mod text_field;
 mod theme;
+mod tips;
 mod track_motion;
 mod transports;
 mod tutorial;

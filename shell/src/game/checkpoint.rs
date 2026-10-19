@@ -424,6 +424,7 @@ impl RestoredGame {
             end_stats,
             concede_stats,
             tutorial: None,
+            tips: crate::tips::Tips::default(),
             presentation,
             // A restored match opens paused.
             clock: super::Clock {

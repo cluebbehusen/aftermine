@@ -154,6 +154,15 @@ there. A step the world can no longer complete raises a retry on the lesson
 card. A session carrying a lesson is never saved; the configuration records
 which lessons are finished.
 
+Match tips ride on the session as `Game::tips`, outside its save, so a resumed
+match can show a tip again. Each tip's rule reads only the local seat's own
+forces, its current sight and remembered buildings, the danger its Harvesters
+steer around, and the HUD's attack alerts, and no tip stages a command. One tip
+shows at a time where the lesson card sits, at most one new tip appears every 45
+seconds of match time, and each shows once per session. Tips stay away during a
+lesson, after the result, from a seat that can no longer act, and whenever the
+Match tips setting is off.
+
 `app/screen.rs` answers every per-screen question in one place, each with one
 exhaustive match: the visible session (a replay viewer's own, or the live
 match), whether the screen is gameplay or a menu, whether it holds a live match,
@@ -448,23 +457,23 @@ On touch-only builds the frame loop raises and hides the on-screen keyboard to
 follow the focused field and asks for the numbers-and-punctuation layout on the
 address.
 
-Hints, toasts, card descriptions, and the tutorial say tap or click for the last
-pointer and name keys only once a hardware key has been pressed; copy that mixes
-both has a variant for each pairing, and panel cards drop their hotkeys until
-then. Card hover, the hover tooltip, and edge pan follow the mouse only while it
-is the last pointer. A finger resting on chrome for `TOUCH_REST_MS` previews the
-card beneath it with the hover tooltip. Chrome touches never fire a long-press,
-so lifting in place still activates the card, and a finger that lands on one
-card or group slot and lifts on another activates neither. The one exception is
-a control-group slot, where a long-press saves the selection to that group and
-spends the finger so its lift does not also recall. A dock chip that discards
-work, whether an order, a site, a planned foundation, or a production slot,
-ignores a lift after a hold: a finger held past the long-press threshold was
-reading its preview, so it lifts without cancelling anything. A world-born or
-group-slot finger draws a filling ring from the same rest threshold until its
-long-press fires; the slot's ring draws above the HUD and minimap. Disabled
-cards publish `CardAction::Refused`, so a tap or click toasts the reason their
-hotkey gives.
+Hints, toasts, card descriptions, the tutorial, and match tips say tap or click
+for the last pointer and name keys only once a hardware key has been pressed;
+copy that mixes both has a variant for each pairing, and panel cards drop their
+hotkeys until then. Card hover, the hover tooltip, and edge pan follow the mouse
+only while it is the last pointer. A finger resting on chrome for
+`TOUCH_REST_MS` previews the card beneath it with the hover tooltip. Chrome
+touches never fire a long-press, so lifting in place still activates the card,
+and a finger that lands on one card or group slot and lifts on another activates
+neither. The one exception is a control-group slot, where a long-press saves the
+selection to that group and spends the finger so its lift does not also recall.
+A dock chip that discards work, whether an order, a site, a planned foundation,
+or a production slot, ignores a lift after a hold: a finger held past the
+long-press threshold was reading its preview, so it lifts without cancelling
+anything. A world-born or group-slot finger draws a filling ring from the same
+rest threshold until its long-press fires; the slot's ring draws above the HUD
+and minimap. Disabled cards publish `CardAction::Refused`, so a tap or click
+toasts the reason their hotkey gives.
 
 Gameplay touch lives in `input::touch`. Each finger records where it landed
 (`TouchBorn`: world, minimap, other chrome, or the placement ghost or strike

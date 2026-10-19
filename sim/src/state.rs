@@ -2933,6 +2933,16 @@ impl State {
         self.vision(player).sees_unit(unit)
     }
 
+    /// A test of which tiles `player`'s Harvesters would judge too
+    /// dangerous to collect from on their own. It reads one snapshot of
+    /// what that player knows now: armed machines in sight, remembered
+    /// armed buildings, radar blips, and recent hits from unseen
+    /// attackers.
+    pub fn salvage_danger(&self, player: PlayerId) -> impl Fn(TilePos) -> bool + use<> {
+        let danger = crate::vision::GroundSalvageDanger::capture(self, player);
+        move |tile| danger.contains(tile)
+    }
+
     /// The movement domain of a live hostile target under the viewer's
     /// current true sight. Radar contacts and remembered buildings do not
     /// identify a target and therefore never satisfy this query.

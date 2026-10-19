@@ -516,6 +516,33 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
 }
 
 #[test]
+fn match_tips_start_on_and_switch_with_keyboard_mouse_and_touch() {
+    let mut config = Config::default();
+    assert!(config.match_tips);
+    assert!(rows(Tab::General, true).contains(&Row::MatchTips));
+    let mut screen = SettingsScreen::open(&config);
+    let row = Item::Setting(Row::MatchTips);
+    focus(&mut screen, row);
+    for (on, how) in [(false, 0), (true, 1), (false, 2)] {
+        let rect = screen
+            .menu
+            .item_rect(index(&screen, row))
+            .expect("selected row visible");
+        let events = match how {
+            0 => press(Key::Enter),
+            1 => click(rect.center()),
+            _ => tap(rect.center()),
+        };
+        assert!(drive(&mut screen, &mut config, &events, false).dirty);
+        assert_eq!(config.match_tips, on);
+        assert_eq!(
+            label(&screen, row),
+            format!("Match tips: {}", if on { "On" } else { "Off" })
+        );
+    }
+}
+
+#[test]
 fn a_held_modifier_from_another_screen_rides_into_the_captured_chord() {
     // Ctrl went down on another tab, so no Ctrl edge appears in this
     // frame's events; only the baseline knows. The capture must still
