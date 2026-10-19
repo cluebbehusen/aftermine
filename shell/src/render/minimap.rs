@@ -147,6 +147,16 @@ impl MinimapLayer {
     }
 }
 
+/// Sets one pixel, reporting whether its color changed.
+fn repaint(image: &mut Image, x: u32, y: u32, color: Color) -> bool {
+    let index = (y * u32::from(image.width) + x).fit::<usize>();
+    let pixel: [u8; 4] = color.into();
+    let slot = &mut image.get_image_data_mut()[index];
+    let changed = *slot != pixel;
+    *slot = pixel;
+    changed
+}
+
 /// Draws the minimap under the same fog rules as the world view
 /// (omniscient while the F1 overlay is up).
 pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
@@ -172,6 +182,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         game.state.map().height(),
     );
     let levels = game.ground().levels.as_ref();
+    let mut changed = false;
     for (pos, tile) in game.state.map().iter() {
         let (explored, visible) = if omniscient {
             (true, true)
@@ -223,11 +234,13 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         } else {
             MINI_VOID
         };
-        layer
-            .image
-            .set_pixel(pos.x.fit::<u32>(), pos.y.fit::<u32>(), color);
+        changed |= repaint(&mut layer.image, pos.x.fit(), pos.y.fit(), color);
     }
-    layer.texture.update(&layer.image);
+    // Replacing a texture the GPU may still be drawing from can stall the
+    // frame, and most frames change no tile.
+    if changed {
+        layer.texture.update(&layer.image);
+    }
     // Downscaled tiles (sub-pixel on grand maps) blend; upscaled tiles
     // stay crisp blocks.
     layer.texture.set_filter(if scale < 1.0 {

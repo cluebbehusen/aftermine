@@ -56,3 +56,13 @@ fn clicks_off_the_minimap_are_not_world_clicks() {
     assert!(minimap_world_in(rect, 40, vec2(rect.x - 1.0, rect.y)).is_none());
     assert!(minimap_world_in(rect, 40, vec2(0.0, 0.0)).is_none());
 }
+
+#[test]
+fn repainting_a_pixel_its_own_color_changes_nothing() {
+    let mut image = Image::gen_image_color(3, 2, MINI_VOID);
+    assert!(!repaint(&mut image, 2, 1, MINI_VOID));
+    assert!(repaint(&mut image, 2, 1, MINI_ROCK));
+    assert_eq!(image.get_pixel(2, 1), MINI_ROCK);
+    assert_eq!(image.get_pixel(1, 1), MINI_VOID);
+    assert!(!repaint(&mut image, 2, 1, MINI_ROCK));
+}
