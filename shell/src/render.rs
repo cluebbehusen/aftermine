@@ -104,6 +104,7 @@ pub(crate) use sky::missile_seen_by;
 pub(crate) use strategic::lattice_pod_pivot;
 mod support_brackets;
 mod terraces;
+pub(crate) mod tutorial_card;
 mod worker;
 mod world;
 use chrome::{
@@ -1620,98 +1621,6 @@ fn hp_bar(x: f32, y: f32, w: f32, hp: u32, max_hp: u32, owner: Color) {
 /// How many selected units draw their rings and programs, so a large
 /// selection does not stack dozens of overlapping circles.
 const DECOR_CAP: usize = 12;
-
-/// The tutorial card's full rectangle, shared by drawing and input; input
-/// treats the card as chrome so clicks on it never reach the world.
-pub fn tutorial_card_rect(t: &crate::tutorial::Tutorial) -> Rect {
-    let s = ui_scale();
-    let w = 460.0 * s;
-    let x = (viewport().x - w) * 0.5;
-    let lines = (crate::tutorial::STEPS
-        .get(t.step)
-        .map_or(0, |step| step.body(crate::platform::hands()).len())
-        + usize::from(t.coach_active())) as f32;
-    Rect::new(x, 36.0 * s, w, 34.0 * s + lines * 18.0 * s + 10.0 * s)
-}
-
-/// Where the tutorial card's dismiss box sits this frame.
-pub fn tutorial_dismiss_rect() -> Rect {
-    let s = ui_scale();
-    let w = 460.0 * s;
-    let x = (viewport().x - w) * 0.5;
-    Rect::new(x + w - 26.0 * s, 40.0 * s, 22.0 * s, 22.0 * s)
-}
-
-/// The tutorial card: headline, lesson, live coach line, dismiss box, and
-/// progress.
-pub fn draw_tutorial(
-    t: &crate::tutorial::Tutorial,
-    game: &crate::game::Game,
-    bindings: &crate::action::BindingMap,
-) {
-    let Some(step) = crate::tutorial::STEPS.get(t.step) else {
-        return;
-    };
-    let body = step.body(crate::platform::hands());
-    let s = ui_scale();
-    let rect = tutorial_card_rect(t);
-    let (x, y, w, h) = (rect.x, rect.y, rect.w, rect.h);
-    let line_h = 18.0 * s;
-    draw_rectangle(x, y, w, h, SURFACE_CARD);
-    draw_rectangle_lines(x, y, w, h, 1.5 * s, Color::new(0.85, 0.65, 0.35, 0.9));
-    draw_text(
-        format!(
-            "TUTORIAL {}/{}  |  {}",
-            t.step + 1,
-            crate::tutorial::STEPS.len(),
-            step.title
-        ),
-        x + 10.0 * s,
-        y + 22.0 * s,
-        18.0 * s,
-        SCRAP_COLOR,
-    );
-    for (i, line) in body.iter().enumerate() {
-        let line = line
-            .replace(
-                "{train}",
-                &bindings.label(crate::action::Action::TrainSlot(0)),
-            )
-            .replace(
-                "{idle}",
-                &bindings.label(crate::action::Action::CycleIdleWorker),
-            )
-            .replace(
-                "{build}",
-                &bindings.label(crate::action::Action::ToggleBuildPalette),
-            )
-            .replace("{hunt}", &bindings.label(crate::action::Action::Hunt))
-            .replace("{back}", &bindings.label(crate::action::Action::Back));
-        draw_text(
-            &line,
-            x + 10.0 * s,
-            y + 42.0 * s + i as f32 * line_h,
-            15.0 * s,
-            TEXT_BODY,
-        );
-    }
-    if let Some(coach) = t.coach(game) {
-        let color = match &coach {
-            crate::tutorial::CoachLine::Status(_) => SCRAP_COLOR,
-            crate::tutorial::CoachLine::Recovery(_) => DANGER,
-        };
-        draw_text(
-            coach.text(),
-            x + 10.0 * s,
-            y + 42.0 * s + body.len() as f32 * line_h,
-            15.0 * s,
-            color,
-        );
-    }
-    let d = tutorial_dismiss_rect();
-    draw_rectangle_lines(d.x, d.y, d.w, d.h, 1.2 * s, TEXT_SECONDARY);
-    draw_text("x", d.x + 7.0 * s, d.y + 16.0 * s, 16.0 * s, TEXT_SECONDARY);
-}
 
 #[cfg(test)]
 mod tests;

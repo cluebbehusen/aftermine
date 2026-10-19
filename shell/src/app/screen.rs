@@ -7,6 +7,7 @@ use crate::game::{Game, Presentation};
 use crate::screens::codex::CodexScreen;
 use crate::screens::final_map::FinalMapScreen;
 use crate::screens::home::HomeScreen;
+use crate::screens::lessons::LessonsScreen;
 use crate::screens::lobby::LobbyScreen;
 use crate::screens::pause::PauseScreen;
 use crate::screens::playback::PlaybackSession;
@@ -38,6 +39,14 @@ pub(super) enum Screen {
     Codex {
         /// The screen itself.
         screen: CodexScreen,
+        /// The displaced screen, restored wholesale on leave.
+        back: Box<Screen>,
+    },
+    /// Basic Training's lesson list, opened from Home or over a paused
+    /// lesson, which waits in `back` as it does under Settings.
+    Lessons {
+        /// The screen itself.
+        screen: LessonsScreen,
         /// The displaced screen, restored wholesale on leave.
         back: Box<Screen>,
     },
@@ -84,6 +93,7 @@ pub(super) enum ScreenKind {
     Home,
     Settings,
     Codex,
+    Lessons,
     Wizard,
     Lobby,
     Playing,
@@ -105,6 +115,7 @@ impl ScreenKind {
             Self::Home
             | Self::Settings
             | Self::Codex
+            | Self::Lessons
             | Self::Wizard
             | Self::Lobby
             | Self::Replays
@@ -124,6 +135,7 @@ impl ScreenKind {
             Self::Home
             | Self::Settings
             | Self::Codex
+            | Self::Lessons
             | Self::Wizard
             | Self::Lobby
             | Self::Replays
@@ -186,6 +198,7 @@ impl Screen {
             Self::Home(_) => ScreenKind::Home,
             Self::Settings { .. } => ScreenKind::Settings,
             Self::Codex { .. } => ScreenKind::Codex,
+            Self::Lessons { .. } => ScreenKind::Lessons,
             Self::Wizard(_) => ScreenKind::Wizard,
             Self::Lobby { .. } => ScreenKind::Lobby,
             Self::Playing => ScreenKind::Playing,
@@ -235,7 +248,9 @@ impl Screen {
     pub(super) fn over_pause(&self) -> bool {
         match self {
             Self::Pause(_) => true,
-            Self::Settings { back, .. } | Self::Codex { back, .. } => back.over_pause(),
+            Self::Settings { back, .. } | Self::Codex { back, .. } | Self::Lessons { back, .. } => {
+                back.over_pause()
+            }
             _ => false,
         }
     }
@@ -252,7 +267,7 @@ impl Screen {
             | Self::Pause(_)
             | Self::Waiting(_)
             | Self::Busy(_) => true,
-            Self::Settings { .. } | Self::Codex { .. } => self.over_pause(),
+            Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. } => self.over_pause(),
             Self::Playback { back, .. } => back.holds_live_match(),
             Self::Home(_) | Self::Wizard(_) | Self::Replays(_) | Self::Lobby { .. } => false,
         }
@@ -269,7 +284,7 @@ impl Screen {
             | Self::Replays(_)
             | Self::Results(_)
             | Self::Lobby { .. } => true,
-            Self::Settings { .. } | Self::Codex { .. } => !self.over_pause(),
+            Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. } => !self.over_pause(),
             Self::Playing
             | Self::Playback { .. }
             | Self::FinalMap(_)
@@ -289,6 +304,7 @@ impl Screen {
             Self::Wizard(wizard) => wizard.keyboard(),
             Self::Home(_)
             | Self::Codex { .. }
+            | Self::Lessons { .. }
             | Self::Playing
             | Self::Playback { .. }
             | Self::Replays(_)
@@ -314,6 +330,7 @@ impl Screen {
             Self::Wizard(wizard) => wizard.take_keyboard_request(),
             Self::Home(_)
             | Self::Codex { .. }
+            | Self::Lessons { .. }
             | Self::Playing
             | Self::Playback { .. }
             | Self::Replays(_)
@@ -330,6 +347,7 @@ impl Screen {
             Self::Home(_) => "home",
             Self::Settings { .. } => "settings",
             Self::Codex { .. } => "codex",
+            Self::Lessons { .. } => "lessons",
             Self::Wizard(_) => "wizard",
             Self::Lobby { .. } => "lobby",
             Self::Playing => "playing",
@@ -350,6 +368,7 @@ impl Screen {
             Self::Home(_) => "home",
             Self::Settings { screen, .. } => screen.mode_name(),
             Self::Codex { screen, .. } => screen.mode_name(),
+            Self::Lessons { screen, .. } => screen.mode_name(),
             Self::Wizard(wizard) => wizard.mode_name(),
             Self::Playing => "playing",
             Self::Playback { .. } => "playback",

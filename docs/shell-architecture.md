@@ -139,12 +139,19 @@ simulation boundary. Camera, audio, selection, and presentation caches cannot
 change authoritative state. Seeks clear or rebuild timeline-local presentation.
 
 `App` owns resources that outlive a screen: the live `Game`, configuration,
-input funnel, New Match draft, tutorial, assets, audio services, debug channels,
-and profiling collectors. Each `Screen` variant owns its local interaction
-state. Settings, the Codex, the lobby, a save or load in flight, and Playback
-hold the screen they displaced in `back` and restore it wholesale on leave, so a
-pause menu comes back with its cursor and notice. The live game supplies the
-backdrop for pause, results, and final-map inspection.
+input funnel, New Match draft, assets, audio services, debug channels, and
+profiling collectors. Each `Screen` variant owns its local interaction state.
+Settings, the Codex, the lesson list, the lobby, a save or load in flight, and
+Playback hold the screen they displaced in `back` and restore it wholesale on
+leave, so a pause menu comes back with its cursor and notice. The live game
+supplies the backdrop for pause, results, and final-map inspection.
+
+A Basic Training lesson rides on its session as `Game::tutorial`. Each lesson is
+a sandbox scene embedded from `shell/lessons/`, so it cannot be won or lost, and
+its steps advance on what the world shows rather than on the commands that got
+there. A step the world can no longer complete raises a retry on the lesson
+card. A session carrying a lesson is never saved; the configuration records
+which lessons are finished.
 
 `app/screen.rs` answers every per-screen question in one place, each with one
 exhaustive match: the visible session (a replay viewer's own, or the live
@@ -596,9 +603,9 @@ configured bot seat must supply exactly one controller checkpoint, and the
 restored roster must match the scenario's bot seats.
 
 The shell adapter captures the core checkpoint without a recorder. It also keeps
-the human seat, tutorial progress, concession statistics, and decorative
-boundary exploration. Camera, selection, effects, and interpolation rebuild, and
-the wall clock starts paused.
+the human seat, concession statistics, and decorative boundary exploration.
+Camera, selection, effects, and interpolation rebuild, and the wall clock starts
+paused.
 
 Player saves use `.oxsave`: eight-byte `OXIDESAV` magic, a little-endian 32-bit
 header length, a JSON metadata header, and one checksummed Zstandard frame

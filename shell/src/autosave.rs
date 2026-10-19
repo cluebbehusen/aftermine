@@ -339,9 +339,16 @@ impl SaveJob {
             !(named && game.net_role().is_some()),
             "LAN matches offer no named save"
         );
+        debug_assert!(
+            !(named && game.tutorial.is_some()),
+            "lessons offer no named save"
+        );
         let already_saved = game.is_saved();
-        let needed = named
-            || (!already_saved && (game.state.current_tick() != 0 || !game.pending.is_empty()));
+        // A lesson restarts in seconds, so it is never saved.
+        let needed = game.tutorial.is_none()
+            && (named
+                || (!already_saved
+                    && (game.state.current_tick() != 0 || !game.pending.is_empty())));
         // A LAN match cannot resume on one machine, so it keeps the
         // watch-only record a decided match keeps.
         let recording = game.state.result().is_some() || game.net_role().is_some();

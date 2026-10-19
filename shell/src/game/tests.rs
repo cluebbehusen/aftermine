@@ -473,52 +473,6 @@ fn admitted_attack_alert_queues_one_protected_audio_cue() {
 }
 
 #[test]
-fn demo_flags_read_only_the_humans_commands() {
-    let mut game = Game::with_viewport(
-        Scenario::skirmish(),
-        macroquad::prelude::vec2(1280.0, 800.0),
-    )
-    .expect("skirmish builds");
-    assert!(!game.demo.trained);
-    let foundry = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.player == game.presentation.human)
-        .unwrap()
-        .id;
-    game.issue(Command::Train {
-        building: foundry,
-        kind: UnitKind::Harvester,
-    });
-    game.do_tick();
-    assert!(game.demo.trained, "the human trained");
-    assert!(!game.demo.trained_fighter, "a harvester is not a fighter");
-    game.issue(Command::Train {
-        building: foundry,
-        kind: UnitKind::Sentinel,
-    });
-    game.do_tick();
-    assert!(
-        !game.demo.trained_fighter,
-        "an accepted order is not yet a fighter to select"
-    );
-    let mut ticks = 0;
-    while !game.demo.trained_fighter {
-        game.do_tick();
-        ticks += 1;
-        assert!(ticks < 1_000, "the Sentinel rolls out");
-    }
-    // Further ticks without human commands leave the unrelated flags
-    // unset: only the human's own commands grade the tutorial.
-    for _ in 0..20 {
-        game.do_tick();
-    }
-    assert!(!game.demo.advanced);
-    assert!(!game.demo.built);
-}
-
-#[test]
 fn presented_ticks_return_rejections_and_keep_their_toast() {
     let mut game = Game::with_viewport(
         Scenario::skirmish(),
@@ -824,7 +778,7 @@ fn surrendered(seats: [(u8, bool); 4], net: Option<network::NetRole>) -> Game {
         player: game.presentation.human,
         command: Command::Surrender,
     };
-    game.execute(&[surrender], 1);
+    game.execute(&[surrender]);
     assert!(game.state.result().is_none(), "the match plays on");
     game
 }
@@ -1018,7 +972,7 @@ fn a_panic_after_the_simulation_keeps_the_finished_tick() {
     game.advance_ticks(7);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         game.guard_tick(|game| {
-            game.execute(&[], 0);
+            game.execute(&[]);
             panic!("presentation exploded");
         })
     }));

@@ -200,7 +200,6 @@ fn a_hosted_match_with_bots_stays_in_sync() {
     assert!(lan.host.0.state.current_tick() >= 60);
     assert_eq!(lan.client.0.state.hash(), lan.host.0.state.hash());
     assert_eq!(recorded(&lan.client.0), recorded(&lan.host.0));
-    assert_eq!(lan.client.0.demo, lan.host.0.demo);
     assert!(
         recorded(&lan.host.0)
             .iter()

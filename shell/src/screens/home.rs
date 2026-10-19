@@ -20,7 +20,7 @@ pub enum Out {
     Play,
     /// Ask for a LAN host to join.
     Join,
-    /// Start the tutorial match.
+    /// Open Basic Training's lesson list.
     Tutorial,
     /// Open the saves and replays shelf.
     Replays,

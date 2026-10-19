@@ -143,8 +143,9 @@ pub struct Game {
     /// match, shown with the exit offer. Decided matches (a 1v1 surrender
     /// included) use `end_stats` instead.
     pub concede_stats: Option<oxide_kit::stats::MatchStats>,
-    /// What the player has demonstrably done, as evidence for the tutorial.
-    pub demo: crate::tutorial::Demo,
+    /// The Basic Training lesson this session stages, if any. A session
+    /// carrying one is never saved.
+    pub(crate) tutorial: Option<crate::tutorial::Tutorial>,
     /// True during bulk fast-forwards: presentation (fx, sounds, facing)
     /// is skipped instead of accumulated and discarded, so a long advance
     /// does not buffer every effect it passes.
@@ -315,7 +316,7 @@ impl Game {
             end_stats: None,
             live_stats,
             concede_stats: None,
-            demo: crate::tutorial::Demo::default(),
+            tutorial: None,
             suppress_presentation: false,
             net: None,
             outbox: Vec::new(),
@@ -425,9 +426,8 @@ impl Game {
         );
         self.guard_tick(|game| {
             let mut commands = std::mem::take(&mut game.pending.0);
-            let staged = commands.len();
             commands.extend(game.bot_commands());
-            game.execute(&commands, staged)
+            game.execute(&commands)
         })
     }
 
@@ -520,9 +520,8 @@ impl Game {
     }
 
     /// Records and executes one complete batch, then updates statistics,
-    /// tutorial evidence, and presentation. Only the first `graded` commands
-    /// can grade the tutorial, so bot orders for a bot-bound seat never do.
-    fn execute(&mut self, commands: &[PlayerCommand], graded: usize) -> oxide_sim::TickReport {
+    /// lesson evidence, and presentation.
+    fn execute(&mut self, commands: &[PlayerCommand]) -> oxide_sim::TickReport {
         // Interpolation cache; pointless during suppressed bulk advances
         // (advance_ticks rebuilds it once at the end).
         for command in commands {
@@ -550,23 +549,8 @@ impl Game {
             self.end_stats = Some(self.live_stats.snapshot(&self.state));
         }
 
-        // The mining lesson completes when a load actually lands, not when
-        // the order is accepted, so it reads the sim's event outside the
-        // command gate below.
-        if report
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ScrapDeposited { player, .. } if *player == self.presentation.human))
-        {
-            self.demo.deposited = true;
-        }
-        // Likewise the combat lesson completes when a fighter rolls out:
-        // the lesson after it needs one to select.
-        if report.events.iter().any(|e| {
-            matches!(e, Event::UnitTrained { player, kind, .. }
-                if *player == self.presentation.human && kind.stats().can_fight())
-        }) {
-            self.demo.trained_fighter = true;
+        if let Some(tutorial) = &mut self.tutorial {
+            tutorial.observe(self.presentation.human, &report.events);
         }
 
         // A concession that did not decide the match (a team game with the
@@ -584,33 +568,6 @@ impl Game {
         {
             self.concede_stats = Some(self.live_stats.snapshot(&self.state));
             self.presentation.conceded_banner = true;
-        }
-
-        // Tutorial evidence is what the human asked for and the sim
-        // accepted. A tick carrying any rejection for the human grades
-        // nothing, so the illegal placement the building lesson invites
-        // cannot complete it.
-        let human_rejected = report
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::CommandRejected { player, .. } if *player == self.presentation.human));
-        if !human_rejected {
-            let human = self.presentation.human;
-            for command in commands[..graded]
-                .iter()
-                .filter(|pc| pc.player == human)
-                .map(|pc| &pc.command)
-            {
-                match command {
-                    Command::Train { .. } => self.demo.trained = true,
-                    Command::Harvest { .. } => self.demo.harvested = true,
-                    Command::Build { .. } => self.demo.built = true,
-                    // The march lesson teaches the default zero-chase advance;
-                    // explicit hunt is a different stance.
-                    Command::Advance { .. } => self.demo.advanced = true,
-                    _ => {}
-                }
-            }
         }
 
         if self.suppress_presentation {

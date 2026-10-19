@@ -39,6 +39,8 @@ pub enum Row {
     Surrender,
     /// Rebuild the match (confirms).
     Restart,
+    /// Open Basic Training's lesson list over the paused lesson.
+    Lessons,
     /// Abandon to the front door (confirms).
     MainMenu,
     /// Leave the process (confirms).
@@ -53,7 +55,12 @@ impl Row {
             Row::Restart => Some(Confirmable::Restart),
             Row::MainMenu => Some(Confirmable::MainMenu),
             Row::Quit => Some(Confirmable::Quit),
-            Row::Resume | Row::SaveGame | Row::WatchReplay | Row::Settings | Row::Roster => None,
+            Row::Resume
+            | Row::SaveGame
+            | Row::WatchReplay
+            | Row::Settings
+            | Row::Roster
+            | Row::Lessons => None,
         }
     }
 
@@ -66,6 +73,7 @@ impl Row {
             Row::Roster => "Roster",
             Row::Surrender => "Surrender",
             Row::Restart => "Restart",
+            Row::Lessons => "Lessons",
             Row::MainMenu => "Main Menu",
             Row::Quit => "Quit",
         }
@@ -102,13 +110,18 @@ impl Confirmable {
         }
     }
 
-    /// The dialog's subtitle: what confirming costs.
-    fn consequence(self) -> &'static str {
-        match self {
-            Confirmable::Surrender => "this concedes the match",
-            Confirmable::Restart => "progress is discarded and the match starts over",
-            Confirmable::MainMenu => "the match is saved before returning home",
-            Confirmable::Quit => "the match is saved before quitting",
+    /// The dialog's subtitle: what confirming costs. A lesson is never
+    /// saved, so leaving one only loses its progress.
+    fn consequence(self, lesson: bool) -> &'static str {
+        match (self, lesson) {
+            (Confirmable::Surrender, _) => "this concedes the match",
+            (Confirmable::Restart, false) => "progress is discarded and the match starts over",
+            (Confirmable::Restart, true) => "the lesson starts over",
+            (Confirmable::MainMenu, false) => "the match is saved before returning home",
+            (Confirmable::Quit, false) => "the match is saved before quitting",
+            (Confirmable::MainMenu | Confirmable::Quit, true) => {
+                "your progress in this lesson is lost"
+            }
         }
     }
 }
@@ -187,6 +200,9 @@ pub enum Out {
     Settings,
     /// Open the codex over the paused match; this screen waits intact.
     Roster,
+    /// Open the lesson list over the paused lesson; this screen waits
+    /// intact.
+    Lessons,
     /// Confirmed: concede the human's seat. The caller issues the sim
     /// command and returns to the match — the result (or the team
     /// game's concede overlay) arrives with the next tick.
@@ -233,6 +249,9 @@ pub struct PauseScreen {
     /// Whether this is the menu over a LAN match (see
     /// [`PauseScreen::for_lan_match`]).
     lan: bool,
+    /// Whether this is the menu over a lesson (see
+    /// [`PauseScreen::for_lesson`]).
+    lesson: bool,
 }
 
 /// The state a save-failure dialog holds open.
@@ -278,6 +297,7 @@ impl PauseScreen {
             face: Face::Rows,
             notice: None,
             lan: false,
+            lesson: false,
         }
     }
 
@@ -320,6 +340,23 @@ impl PauseScreen {
         });
         self.lan = true;
         self.menu = pause_menu(&self.rows, true);
+        self
+    }
+
+    /// The menu over a Basic Training lesson, which is never saved and has
+    /// no opponent to concede to: no save or surrender, and a way back to
+    /// the lesson list.
+    pub fn for_lesson(mut self) -> Self {
+        self.rows
+            .retain(|row| !matches!(row, Row::SaveGame | Row::Surrender));
+        let at = self
+            .rows
+            .iter()
+            .position(|row| *row == Row::Restart)
+            .map_or(self.rows.len(), |at| at + 1);
+        self.rows.insert(at, Row::Lessons);
+        self.lesson = true;
+        self.menu = pause_menu(&self.rows, false);
         self
     }
 
@@ -422,7 +459,7 @@ impl PauseScreen {
         match &self.face {
             Face::SaveFailed(dialog) => &dialog.line,
             Face::Naming(_) => naming_hint(!crate::platform::hands().keys),
-            Face::Confirm(verb) => verb.consequence(),
+            Face::Confirm(verb) => verb.consequence(self.lesson),
             Face::Rows => self.notice.as_deref().unwrap_or(scenario_name),
         }
     }
@@ -500,6 +537,7 @@ impl PauseScreen {
                     Row::WatchReplay => Out::WatchReplay,
                     Row::Settings => Out::Settings,
                     Row::Roster => Out::Roster,
+                    Row::Lessons => Out::Lessons,
                     Row::Surrender | Row::Restart | Row::MainMenu | Row::Quit => Out::Stay,
                 }
             }

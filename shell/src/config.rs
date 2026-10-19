@@ -220,6 +220,9 @@ pub struct Config {
     /// so a resumed match can seat the player again; made up the first
     /// time it is needed.
     pub install_id: Option<String>,
+    /// The Basic Training lessons this player has finished, in course
+    /// order.
+    pub lessons_done: Vec<crate::tutorial::Lesson>,
 }
 
 impl Default for Config {
@@ -240,6 +243,7 @@ impl Default for Config {
             last_join_address: None,
             player_name: None,
             install_id: None,
+            lessons_done: Vec::new(),
         }
     }
 }
@@ -296,6 +300,7 @@ impl Config {
                 config.install_id = config
                     .install_id
                     .filter(|id| oxide_net::InstallId::from_hex(id).is_some());
+                config.lessons_done = in_course_order(&config.lessons_done);
                 config
             }
             _ => Self::default(),
@@ -317,6 +322,16 @@ impl Config {
         id
     }
 
+    /// Marks `lesson` finished; returns whether it was not already.
+    pub fn finish_lesson(&mut self, lesson: crate::tutorial::Lesson) -> bool {
+        if self.lessons_done.contains(&lesson) {
+            return false;
+        }
+        self.lessons_done.push(lesson);
+        self.lessons_done = in_course_order(&self.lessons_done);
+        true
+    }
+
     /// Persists atomically (temp + rename), creating the directory.
     pub fn save(&self) -> std::io::Result<()> {
         let Some(path) = config_path() else {
@@ -329,6 +344,14 @@ impl Config {
         let text = serde_json::to_string_pretty(self).expect("config serializes");
         chassis::fsx::write_atomic(path, |writer| writer.write_all(text.as_bytes()))
     }
+}
+
+/// Each lesson of `done` once, in course order.
+fn in_course_order(done: &[crate::tutorial::Lesson]) -> Vec<crate::tutorial::Lesson> {
+    crate::tutorial::Lesson::ALL
+        .into_iter()
+        .filter(|lesson| done.contains(lesson))
+        .collect()
 }
 
 #[cfg(test)]

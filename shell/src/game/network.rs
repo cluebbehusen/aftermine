@@ -193,7 +193,7 @@ impl Game {
             .filter(|command| command.player == seat)
             .count();
         self.pending.0.drain(..executed.min(self.pending.0.len()));
-        self.execute(batch, batch.len())
+        self.execute(batch)
     }
 }
 
