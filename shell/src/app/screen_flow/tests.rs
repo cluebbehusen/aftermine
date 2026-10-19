@@ -134,6 +134,63 @@ fn the_lesson_card_keeps_its_presses_and_its_buttons_act() {
     assert!(events.is_empty());
 }
 
+#[test]
+fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
+    let card = tutorial_card::tip_layout(
+        crate::tips::Tip::IdleHarvesters,
+        1.0,
+        &crate::action::BindingMap::classic(),
+        crate::platform::Hands {
+            pointer: crate::input::Pointer::Mouse,
+            keys: true,
+        },
+        render::hud::HudEnv {
+            viewport: vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        &|_, text, size| text.chars().count() as f32 * size * 0.5,
+    );
+    let close = card.buttons[0].0;
+    let mouse = |at: Vec2| {
+        vec![
+            RawEvent::MouseDown {
+                button: MouseButton::Left,
+                x: at.x,
+                y: at.y,
+            },
+            RawEvent::MouseUp {
+                button: MouseButton::Left,
+                x: at.x,
+                y: at.y,
+            },
+        ]
+    };
+    let mut events = mouse(close.center());
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
+    assert_eq!(filtered.pressed, Some(CardButton::Dismiss));
+    assert!(events.is_empty());
+
+    let near = vec2(close.center().x, close.bottom() + 3.0);
+    let mut events = vec![RawEvent::TouchDown {
+        id: 1,
+        x: near.x,
+        y: near.y,
+    }];
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
+    assert_eq!(
+        filtered.pressed,
+        Some(CardButton::Dismiss),
+        "a fingertip just below the cross still closes the tip"
+    );
+    assert!(events.is_empty());
+
+    let body = vec2(card.rect.x + 20.0, card.rect.bottom() - 4.0);
+    let mut events = mouse(body);
+    let filtered = filter_card_pointer(&mut events, &card, 1.0);
+    assert_eq!(filtered.pressed, None, "the tip's text is no button");
+    assert!(events.is_empty(), "and the world never sees the press");
+}
+
 fn configured_new_match_draft() -> NewMatchDraft {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(Scenario::skirmish(), None);

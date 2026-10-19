@@ -151,6 +151,8 @@ pub struct Game {
     /// The Basic Training lesson this session stages, if any. A session
     /// carrying one is never saved.
     pub(crate) tutorial: Option<crate::tutorial::Tutorial>,
+    /// The match tips this session has shown and is watching for.
+    pub(crate) tips: crate::tips::Tips,
     /// True during bulk fast-forwards: presentation (fx, sounds, facing)
     /// is skipped instead of accumulated and discarded, so a long advance
     /// does not buffer every effect it passes.
@@ -325,6 +327,7 @@ impl Game {
             live_stats,
             concede_stats: None,
             tutorial: None,
+            tips: crate::tips::Tips::default(),
             suppress_presentation: false,
             net: None,
             outbox: Vec::new(),

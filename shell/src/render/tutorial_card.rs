@@ -1,13 +1,15 @@
 //! The lesson card: heading, objective, the step's paragraphs, the coach
-//! line, and the card's buttons. [`layout`] measures through a supplied
+//! line, and the card's buttons; and the match tip card, which sits in the
+//! same place. [`layout`] and [`tip_layout`] measure through a supplied
 //! function, so input hit-tests the same rectangles the frame draws, and
-//! tests lay the card out headless.
+//! tests lay the cards out headless.
 
 use super::hud::{Face, HudEnv, Measure};
 use crate::theme::{
     EDGE_WARM, SURFACE_CARD, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DANGER, TEXT_PRIMARY,
     TEXT_SECONDARY, Type,
 };
+use crate::tips::Tip;
 use crate::tutorial::{CoachLine, Tutorial};
 use macroquad::prelude::*;
 
@@ -22,12 +24,14 @@ pub(crate) enum CardButton {
     Next,
     /// Leaves for the lesson list.
     Lessons,
+    /// Closes the match tip.
+    Dismiss,
 }
 
 impl CardButton {
     fn label(self) -> &'static str {
         match self {
-            Self::Fold => "",
+            Self::Fold | Self::Dismiss => "",
             Self::Retry => "RETRY",
             Self::Next => "NEXT LESSON",
             Self::Lessons => "LESSONS",
@@ -46,15 +50,39 @@ struct Line {
     baseline: f32,
 }
 
+/// Lines stacked down a card from its top padding.
+struct Column {
+    x: f32,
+    cursor: f32,
+    lines: Vec<Line>,
+}
+
+impl Column {
+    /// Sets `text` on the next baseline, `gap` below the line above.
+    fn push(&mut self, text: String, face: Face, size: f32, color: Color, gap: f32) {
+        self.cursor += gap + size;
+        self.lines.push(Line {
+            text,
+            face,
+            size,
+            color,
+            x: self.x,
+            baseline: self.cursor,
+        });
+    }
+}
+
 /// One frame's card: where it sits, what it says, and what it answers.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CardLayout {
     /// The whole card; presses on it never reach the world.
     pub rect: Rect,
-    /// The card's press targets, the fold toggle first.
+    /// The card's press targets, the corner toggle first.
     pub buttons: Vec<(Rect, CardButton)>,
     lines: Vec<Line>,
     folded: bool,
+    /// The card's opacity, below 1 while a tip fades out.
+    alpha: f32,
 }
 
 impl CardLayout {
@@ -89,6 +117,19 @@ impl CardLayout {
 
 /// The card's width at most, in logical px.
 const CARD_W: f32 = 500.0;
+/// The tip card's width at most, in logical px.
+const TIP_W: f32 = 420.0;
+/// The gap between a card and the window's side, in logical px, as the
+/// performance panel keeps on the right.
+const EDGE: f32 = 12.0;
+
+/// Where a card at most `width` wide sits: the top-left corner under the
+/// top bar, narrowed to fit the window. Returns its x, y and width.
+fn corner(width: f32, env: HudEnv) -> (f32, f32, f32) {
+    let s = env.ui;
+    let w = (width * s).min(env.viewport.x - 2.0 * EDGE * s);
+    (EDGE * s, (crate::layout::TOP_BAR_H + 6.0) * s, w)
+}
 
 /// Expands the `{token}`s lesson copy uses into the player's bindings.
 pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String {
@@ -115,6 +156,7 @@ pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String
         ("{rally}", Action::SetRally),
         ("{assign}", Action::AssignGroup(1)),
         ("{recall}", Action::Slot(1)),
+        ("{alert}", Action::JumpToLastAlert),
     ] {
         out = out.replace(token, &bindings.label(action));
     }
@@ -132,27 +174,17 @@ pub(crate) fn layout(
     measure: Measure,
 ) -> CardLayout {
     let s = env.ui;
-    let w = (CARD_W * s).min(env.viewport.x - 32.0 * s);
-    let x = (env.viewport.x - w) * 0.5;
-    let y = (crate::layout::TOP_BAR_H + 6.0) * s;
+    let (x, y, w) = corner(CARD_W, env);
     let pad = 12.0 * s;
     let fold = 24.0 * s;
     let text_w = w - pad * 2.0;
     let lesson = tutorial.lesson();
     let steps = lesson.steps().len();
     let folded = tutorial.collapsed();
-    let mut lines = Vec::new();
-    let mut cursor = y + pad;
-    let mut push = |text: String, face: Face, size: f32, color: Color, gap: f32| {
-        cursor += gap + size;
-        lines.push(Line {
-            text,
-            face,
-            size,
-            color,
-            x: x + pad,
-            baseline: cursor,
-        });
+    let mut column = Column {
+        x: x + pad,
+        cursor: y + pad,
+        lines: Vec::new(),
     };
 
     let progress = if tutorial.finished() {
@@ -161,7 +193,7 @@ pub(crate) fn layout(
         format!("STEP {} OF {steps}", tutorial.step_index() + 1)
     };
     let small = Type::Small.at(s);
-    push(
+    column.push(
         format!(
             "LESSON {}: {}  |  {progress}",
             lesson.number(),
@@ -175,7 +207,7 @@ pub(crate) fn layout(
     let title = tutorial
         .current()
         .map_or("Lesson complete", |step| step.title);
-    push(
+    column.push(
         title.to_string(),
         Face::Display,
         Type::Label.at(s),
@@ -209,7 +241,7 @@ pub(crate) fn layout(
         let mut gap = 8.0 * s;
         for paragraph in &paragraphs {
             for (i, line) in wrap(paragraph).into_iter().enumerate() {
-                push(
+                column.push(
                     line,
                     Face::Body,
                     body_size,
@@ -225,7 +257,7 @@ pub(crate) fn layout(
                 CoachLine::Recovery(_) | CoachLine::Stuck => TEXT_DANGER,
             };
             for (i, line) in wrap(coach.text()).into_iter().enumerate() {
-                push(
+                column.push(
                     line,
                     Face::Body,
                     body_size,
@@ -247,7 +279,7 @@ pub(crate) fn layout(
         };
         if !actions.is_empty() {
             let h = 32.0 * s;
-            let top = cursor + 12.0 * s;
+            let top = column.cursor + 12.0 * s;
             let mut left = x + pad;
             for action in actions {
                 let label_w = measure(Face::Body, action.label(), body_size);
@@ -255,15 +287,74 @@ pub(crate) fn layout(
                 buttons.push((Rect::new(left, top, bw, h), *action));
                 left += bw + 8.0 * s;
             }
-            cursor = top + h;
+            column.cursor = top + h;
         }
     }
-    let h = cursor + pad - y;
+    let h = column.cursor + pad - y;
     CardLayout {
         rect: Rect::new(x, y, w, h),
         buttons,
-        lines,
+        lines: column.lines,
         folded,
+        alpha: 1.0,
+    }
+}
+
+/// Lays out the card for match tip `tip` at opacity `alpha`, where the
+/// lesson card sits: its heading, what to do, and a close button.
+pub(crate) fn tip_layout(
+    tip: Tip,
+    alpha: f32,
+    bindings: &crate::action::BindingMap,
+    hands: crate::platform::Hands,
+    env: HudEnv,
+    measure: Measure,
+) -> CardLayout {
+    let s = env.ui;
+    let (x, y, w) = corner(TIP_W, env);
+    let pad = 12.0 * s;
+    let close = 24.0 * s;
+    let mut column = Column {
+        x: x + pad,
+        cursor: y + pad,
+        lines: Vec::new(),
+    };
+    column.push(
+        "MATCH TIP".to_string(),
+        Face::Display,
+        Type::Small.at(s),
+        TEXT_ACCENT,
+        0.0,
+    );
+    column.push(
+        tip.title().to_string(),
+        Face::Display,
+        Type::Label.at(s),
+        TEXT_PRIMARY,
+        6.0 * s,
+    );
+    let body_size = Type::Body.at(s);
+    let body = expand(tip.body(hands), bindings);
+    let lines = super::wrap_words(&body, |t| measure(Face::Body, t, body_size), w - pad * 2.0);
+    for (i, line) in lines.into_iter().enumerate() {
+        column.push(
+            line,
+            Face::Body,
+            body_size,
+            TEXT_BODY,
+            if i == 0 { 8.0 * s } else { 5.0 * s },
+        );
+    }
+    let h = column.cursor + pad - y;
+    CardLayout {
+        rect: Rect::new(x, y, w, h),
+        buttons: vec![(
+            Rect::new(x + w - pad - close, y + 6.0 * s, close, close),
+            CardButton::Dismiss,
+        )],
+        lines: column.lines,
+        folded: false,
+        alpha,
     }
 }
 
@@ -283,42 +374,69 @@ pub(crate) fn current(
     )
 }
 
+/// The match tip's card as this frame lays it out against the window's
+/// fonts, while a tip shows.
+pub(crate) fn current_tip(
+    game: &crate::game::Game,
+    bindings: &crate::action::BindingMap,
+) -> Option<CardLayout> {
+    let tip = game.tips.showing()?;
+    let alpha = game.tips.alpha(
+        game.state.current_tick(),
+        game.presentation.tick_fraction(),
+        super::reduced_motion(),
+    );
+    Some(tip_layout(
+        tip,
+        alpha,
+        bindings,
+        crate::platform::hands(),
+        HudEnv::current(),
+        &super::hud::window_measure,
+    ))
+}
+
 /// Draws a laid-out card; `mouse` lights the button under the pointer.
 pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
     let s = super::ui_scale();
     let r = card.rect;
-    draw_rectangle(r.x, r.y, r.w, r.h, SURFACE_CARD);
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, Stroke::Edge.at(s), EDGE_WARM);
+    let fade = |color: Color| Color {
+        a: color.a * card.alpha,
+        ..color
+    };
+    draw_rectangle(r.x, r.y, r.w, r.h, fade(SURFACE_CARD));
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, Stroke::Edge.at(s), fade(EDGE_WARM));
     for line in &card.lines {
+        let color = fade(line.color);
         match line.face {
             Face::Display => {
-                crate::typography::draw(&line.text, line.x, line.baseline, line.size, line.color);
+                crate::typography::draw(&line.text, line.x, line.baseline, line.size, color);
             }
             Face::Body => {
-                draw_text(&line.text, line.x, line.baseline, line.size, line.color);
+                draw_text(&line.text, line.x, line.baseline, line.size, color);
             }
         }
     }
     let hovered = crate::platform::hands().pointer == crate::input::Pointer::Mouse;
     for (rect, button) in &card.buttons {
         let lit = hovered && rect.contains(mouse);
-        if *button == CardButton::Fold {
-            draw_rectangle_lines(
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                // A hairline box at whole-pixel corners loses edges to
-                // rasterization; an icon this small needs every edge.
-                Stroke::Edge.at(s),
-                if lit { TEXT_PRIMARY } else { TEXT_SECONDARY },
-            );
-            // A bar folds the card; a cross of bars opens it again.
+        if matches!(button, CardButton::Fold | CardButton::Dismiss) {
+            let color = fade(if lit { TEXT_PRIMARY } else { TEXT_SECONDARY });
+            let stroke = Stroke::Edge.at(s);
+            // A hairline box at whole-pixel corners loses edges to
+            // rasterization; an icon this small needs every edge.
+            draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, stroke, color);
             let (cx, cy, arm) = (rect.center().x, rect.center().y, rect.w * 0.28);
-            let color = if lit { TEXT_PRIMARY } else { TEXT_SECONDARY };
-            draw_line(cx - arm, cy, cx + arm, cy, Stroke::Edge.at(s), color);
+            if *button == CardButton::Dismiss {
+                let arm = arm * std::f32::consts::FRAC_1_SQRT_2;
+                draw_line(cx - arm, cy - arm, cx + arm, cy + arm, stroke, color);
+                draw_line(cx - arm, cy + arm, cx + arm, cy - arm, stroke, color);
+                continue;
+            }
+            // A bar folds the card; a cross of bars opens it again.
+            draw_line(cx - arm, cy, cx + arm, cy, stroke, color);
             if card.folded {
-                draw_line(cx, cy - arm, cx, cy + arm, Stroke::Edge.at(s), color);
+                draw_line(cx, cy - arm, cx, cy + arm, stroke, color);
             }
         } else {
             crate::button::draw(*rect, button.label(), lit, s);

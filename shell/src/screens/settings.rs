@@ -304,6 +304,7 @@ pub(crate) enum Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Row {
     PlayerName,
+    MatchTips,
     PerformanceDisplay,
     OpenDiagnostics,
     ExportDiagnostics,
@@ -332,8 +333,9 @@ const SCALES: [f32; 4] = [render::MIN_USER_SCALE, 1.0, 1.25, render::MAX_USER_SC
 
 impl Row {
     /// Every row, in the order its tab shows them.
-    const ALL: [Row; 17] = [
+    const ALL: [Row; 18] = [
         Row::PlayerName,
+        Row::MatchTips,
         Row::PerformanceDisplay,
         Row::OpenDiagnostics,
         Row::ExportDiagnostics,
@@ -356,6 +358,7 @@ impl Row {
     fn tab(self) -> Tab {
         match self {
             Row::PlayerName
+            | Row::MatchTips
             | Row::PerformanceDisplay
             | Row::OpenDiagnostics
             | Row::ExportDiagnostics => Tab::General,
@@ -392,6 +395,7 @@ impl Row {
                     .clone()
                     .unwrap_or_else(|| "not set".to_string()),
             ),
+            Row::MatchTips => setting("Match tips", on(config.match_tips)),
             Row::PerformanceDisplay => setting(
                 "Performance readout",
                 config.performance_display.label().to_string(),
@@ -570,6 +574,7 @@ fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
             render::set_user_scale(config.ui_scale);
         }
         Row::EdgePan => config.camera.edge_pan = toggle(config.camera.edge_pan),
+        Row::MatchTips => config.match_tips = toggle(config.match_tips),
         Row::InvertZoom => config.camera.zoom_inverted = toggle(config.camera.zoom_inverted),
         Row::ReducedMotion => {
             config.reduced_motion = toggle(config.reduced_motion);

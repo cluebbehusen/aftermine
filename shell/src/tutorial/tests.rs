@@ -374,6 +374,39 @@ fn the_coach_prices_the_step_and_names_the_way_out_when_broke() {
 }
 
 #[test]
+fn the_coach_stops_pricing_a_machine_once_it_is_paid_for() {
+    let mut exact = Lesson::Scrap.scenario();
+    let cost = UnitKind::Harvester.stats().cost;
+    exact.players[0].scrap = cost;
+    let mut game = Game::with_viewport(exact, vec2(1280.0, 800.0)).unwrap();
+    game.tutorial = begin(Lesson::Scrap).tutorial;
+    tutorial_mut(&mut game).step = 1;
+    assert!(matches!(
+        tutorial(&game).coach(&game),
+        Some(CoachLine::Status(_))
+    ));
+    let foundry = game.home_foundry().expect("the lesson's Foundry").id;
+    step(
+        &mut game,
+        [Command::Train {
+            building: foundry,
+            kind: UnitKind::Harvester,
+        }],
+    );
+    assert_eq!(Seat::of(&game).bank(), 0);
+    assert_eq!(
+        tutorial(&game).current().map(|step| step.goal),
+        Some(Goal::Train(UnitKind::Harvester)),
+        "the step waits for the Harvester to roll out"
+    );
+    assert_eq!(
+        tutorial(&game).coach(&game),
+        None,
+        "a paid machine is no reason to say the bank is short"
+    );
+}
+
+#[test]
 fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     // Without Harvesters or scrap, the Foundry's emergency package still
     // pays for a new Harvester. Once it is spent, nothing can.

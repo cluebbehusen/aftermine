@@ -792,7 +792,7 @@ struct CardPointer {
     swallowed_release: bool,
 }
 
-/// The lesson card is chrome: presses on it never reach the world or
+/// The lesson or tip card is chrome: presses on it never reach the world or
 /// consume an armed gameplay action, and a press on one of its buttons
 /// acts. A finger landing on the card is dropped before the gesture
 /// funnel sees it, so its later moves and lift belong to no touch; the
@@ -823,9 +823,13 @@ fn filter_card_pointer(events: &mut Vec<RawEvent>, card: &CardLayout, ui: f32) -
     filtered
 }
 
-/// Carries out a press on the lesson card: folding stays in the lesson,
-/// and every other button leaves it.
+/// Carries out a press on the lesson or tip card: closing a tip and
+/// folding stay in the match, and every other button leaves the lesson.
 fn press_card(app: &mut App, button: CardButton) -> Result<Option<Screen>> {
+    if button == CardButton::Dismiss {
+        app.game.tips.dismiss();
+        return Ok(None);
+    }
     let Some(tutorial) = app.game.tutorial.as_mut() else {
         return Ok(None);
     };
@@ -841,6 +845,7 @@ fn press_card(app: &mut App, button: CardButton) -> Result<Option<Screen>> {
             None => None,
         },
         CardButton::Lessons => Some(open_lessons(app, Screen::Home(HomeScreen::open()))),
+        CardButton::Dismiss => None,
     })
 }
 
@@ -857,8 +862,7 @@ fn playing_frame(
         .game
         .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
     let mut card_press = None;
-    if let Some(tutorial) = &app.game.tutorial {
-        let card = tutorial_card::current(tutorial, &app.game, &app.config.bindings);
+    if let Some(card) = current_card(app) {
         let filtered = filter_card_pointer(events, &card, render::ui_scale());
         card_press = filtered.pressed;
         // Swallowing a release whose press began in the world must
@@ -970,6 +974,11 @@ fn playing_frame(
     {
         app.notify(format!("could not save settings: {err}"), true);
     }
+    crate::tips::Tips::advance_in(
+        &mut app.game,
+        app.config.match_tips,
+        render::reduced_motion(),
+    );
     if app.game.state.result().is_some() && app.game.end_stats.is_some() {
         next = Some(Screen::Results(ResultsScreen::open()));
         // Re-enter immediately so the first decided frame is
@@ -983,11 +992,23 @@ fn playing_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    if let Some(tutorial) = &app.game.tutorial {
-        let card = tutorial_card::current(tutorial, &app.game, &app.config.bindings);
+    if let Some(card) = current_card(app) {
         tutorial_card::draw(&card, app.input.mouse);
     }
     next.unwrap_or(Screen::Playing)
+}
+
+/// The card over the match this frame: the lesson's, or a match tip
+/// while one shows.
+fn current_card(app: &App) -> Option<CardLayout> {
+    match &app.game.tutorial {
+        Some(tutorial) => Some(tutorial_card::current(
+            tutorial,
+            &app.game,
+            &app.config.bindings,
+        )),
+        None => tutorial_card::current_tip(&app.game, &app.config.bindings),
+    }
 }
 
 /// Runs the ticks this frame owes a local match, unless the frame has

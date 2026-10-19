@@ -181,6 +181,10 @@ impl MarkerPrefs {
 }
 
 /// The whole persisted surface.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent player preferences"
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     /// Strategic marker timing and size.
@@ -209,6 +213,9 @@ pub struct Config {
     /// Show the control-group column above the minimap. Hiding it
     /// leaves keyboard groups working.
     pub control_groups: bool,
+    /// Show short tips during a match when something needs the player's
+    /// attention.
+    pub match_tips: bool,
     /// Touch gesture timing.
     pub touch: TouchPrefs,
     /// The host address the last LAN join used.
@@ -239,6 +246,7 @@ impl Default for Config {
             reduced_motion: false,
             colorblind: false,
             control_groups: true,
+            match_tips: true,
             touch: TouchPrefs::default(),
             last_join_address: None,
             player_name: None,

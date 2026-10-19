@@ -304,7 +304,7 @@ impl Goal {
         let seat = Seat::of(game);
         let harvester = UnitKind::Harvester;
         match self {
-            Goal::Train(kind) => Some((kind.name(), kind.stats().cost)),
+            Goal::Train(kind) => (!seat.queued(kind)).then(|| (kind.name(), kind.stats().cost)),
             Goal::Harvest(count) => {
                 (seat.workers().count() < count).then(|| (harvester.name(), harvester.stats().cost))
             }
