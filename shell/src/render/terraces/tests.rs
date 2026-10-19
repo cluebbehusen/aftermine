@@ -1,4 +1,5 @@
 use super::*;
+use crate::render::stretches::STRETCH;
 
 /// Authored rows: `#` rock, `^` peak.
 fn rows(lines: &[&str]) -> Vec<String> {

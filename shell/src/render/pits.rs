@@ -4,14 +4,18 @@
 //!
 //! The terraces are a distance field over pit tiles measured in quarter-tile
 //! cells, so a wide cut carries several benches across tile boundaries before
-//! it vanishes. The field reads the map alone, so a drop never shifts as the
-//! fog lifts; the fog veil hides pits the player has not explored.
+//! it vanishes. A pit clear of the map edge steps its own way, its benches
+//! varying by stretch along each side as a peak's do; a pit that runs off
+//! the map keeps a jog per block of tiles so it joins the boundary. The field
+//! reads the map alone, so a drop never shifts as the fog lifts; the fog veil
+//! hides pits the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
     Layer, Material, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
     draw_strata, hash, mixed, quarry_color, rgba, shifted,
 };
+use super::stretches::{Place, Shapes};
 use crate::game::Scene;
 use crate::numeric::Fit;
 use chassis::grid::TilePos;
@@ -57,6 +61,29 @@ const DROP: [Layer; 3] = [
         lip: rgba(31, 30, 35),
     },
 ];
+
+/// Bench widths for a cell of a pit clear of the map edge: the rim's first
+/// bench varies by stretch and the deeper benches keep one width round the
+/// pit, so a narrow cut never notches down its middle. A thin pit varies its
+/// first bench only along its length.
+fn stretch_widths(place: Place) -> [i32; DROP.len()] {
+    let own = hash(place.seed, 0, SALT + 316);
+    let deeper = [
+        1 + (own % 3).fit::<i32>(),
+        2 + ((own >> 4) % 2).fit::<i32>(),
+    ];
+    let key = if place.thin {
+        place.length
+    } else {
+        place.stretch
+    };
+    let first = match hash(place.seed, key, SALT + 314) % 10 {
+        0..3 => 1,
+        3..7 => 2,
+        _ => 3,
+    };
+    [first, deeper[0], deeper[1]]
+}
 
 /// Bench width per level for one block: the base width, one cell narrower
 /// about a third of the time, rarely one wider.
@@ -122,6 +149,7 @@ fn cell_color(material: Material, cx: i32, cy: i32) -> Color {
 /// true nearest rim.
 pub(super) struct PitField {
     field: CellField,
+    pits: Shapes,
 }
 
 impl PitField {
@@ -139,21 +167,40 @@ impl PitField {
                     .is_none_or(|tile| tile.terrain == Terrain::Pit)
             },
         );
-        Self { field }
+        let pits = Shapes::find(
+            map.width(),
+            map.height(),
+            |pos| {
+                map.tile(pos)
+                    .is_some_and(|tile| tile.terrain == Terrain::Pit)
+            },
+            |pos| map.tile(pos).is_some(),
+            SALT + 313,
+        );
+        Self { field, pits }
     }
 
     fn at(&self, pos: TilePos, sx: i32, sy: i32) -> u8 {
         self.field.at(pos, sx, sy)
     }
 
+    /// Bench widths at a cell: its pit's own stretches, or the per-block
+    /// jog for a pit that runs off the map.
+    fn widths(&self, cx: i32, cy: i32) -> [i32; DROP.len()] {
+        self.pits.place(cx, cy).map_or_else(
+            || {
+                bench_widths(
+                    cx.div_euclid(CELLS).div_euclid(BLOCK_TILES),
+                    cy.div_euclid(CELLS).div_euclid(BLOCK_TILES),
+                )
+            },
+            stretch_widths,
+        )
+    }
+
     fn material_at(&self, pos: TilePos, sx: i32, sy: i32) -> Option<Material> {
-        let tile_x = (pos.x * CELLS + sx).div_euclid(CELLS);
-        let tile_y = (pos.y * CELLS + sy).div_euclid(CELLS);
-        let widths = bench_widths(
-            tile_x.div_euclid(BLOCK_TILES),
-            tile_y.div_euclid(BLOCK_TILES),
-        );
-        material(self.at(pos, sx, sy), widths)
+        let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);
+        material(self.at(pos, sx, sy), self.widths(cx, cy))
     }
 }
 
