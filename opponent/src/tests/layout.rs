@@ -94,6 +94,7 @@ fn a_building_packs_beside_the_last_one_off_the_lanes() {
     for spot in beside {
         assert_eq!(
             placement::check(
+                &model,
                 &observation,
                 BuildingKind::Fabricator,
                 spot,
@@ -168,6 +169,7 @@ fn a_building_never_closes_the_way_out_of_the_base() {
     )
     .find(|anchor| {
         placement::check(
+            &model,
             &observation,
             BuildingKind::Fabricator,
             *anchor,
@@ -213,6 +215,7 @@ fn another_foundry_takes_an_empty_block_of_its_own() {
     .find(|anchor| {
         matches!(
             placement::check(
+                &model,
                 &observation,
                 BuildingKind::Foundry,
                 *anchor,

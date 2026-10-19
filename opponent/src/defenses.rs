@@ -16,7 +16,7 @@ use crate::composition;
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_of, footprint_centre, gap, tiles_of};
 use crate::investments::Investment;
-use crate::map::{Gate, MapModel};
+use crate::map::{Gate, MapModel, Shot};
 use crate::memory::Memory;
 use crate::placement::{self, Layout};
 use crate::profile::{PersonalityTraits, ResolvedProfile};
@@ -268,6 +268,10 @@ struct Cover {
     /// Fires shells beyond its own sight, so only where something spots
     /// for it.
     indirect: bool,
+    /// The anchor the gun stands on, and how its shots at ground travel,
+    /// for the levels it reaches on a tiered map.
+    footing: TilePos,
+    shot: Shot,
 }
 
 impl Cover {
@@ -284,6 +288,8 @@ impl Cover {
             ground: false,
             air: false,
             indirect: false,
+            footing: anchor,
+            shot: Shot::Arc,
         };
         for weapon in stats.weapons {
             let reach = (weapon.range + weapon.range).to_num::<i64>();
@@ -295,6 +301,9 @@ impl Cover {
             cover.ground |= weapon.targets.ground;
             cover.air |= weapon.targets.air;
             cover.indirect |= weapon.indirect;
+            if weapon.targets.ground && !weapon.indirect {
+                cover.shot = Shot::Ground;
+            }
         }
         (cover.ground || cover.air).then_some(cover)
     }
@@ -312,13 +321,22 @@ impl Cover {
         past >= Fx::ZERO && past * past * 4 >= corner && side + reach >= self.minimum
     }
 
-    fn covers(self, domain: Domain, point: (i64, i64)) -> bool {
+    /// Whether the gun reaches `point`, in doubled coordinates, in
+    /// `domain`: in range, and on a tiered map at a level it fires at.
+    fn covers(self, map: &MapModel, domain: Domain, point: (i64, i64)) -> bool {
         let fires = match domain {
             Domain::Ground => self.ground,
             Domain::Air => self.air,
         };
         let distance2 = (self.centre.0 - point.0).pow(2) + (self.centre.1 - point.1).pow(2);
-        fires && distance2 <= self.reach2 && distance2 >= self.min2
+        let tile = TilePos::new(
+            i32::try_from(point.0.div_euclid(2)).unwrap_or(i32::MAX),
+            i32::try_from(point.1.div_euclid(2)).unwrap_or(i32::MAX),
+        );
+        fires
+            && distance2 <= self.reach2
+            && distance2 >= self.min2
+            && (domain == Domain::Air || map.levels_allow(self.footing, tile, self.shot))
     }
 }
 
@@ -361,7 +379,7 @@ impl Guard<'_> {
     fn covered(&self, domain: Domain, point: (i64, i64)) -> usize {
         self.covers
             .iter()
-            .filter(|cover| cover.covers(domain, point))
+            .filter(|cover| cover.covers(self.map, domain, point))
             .count()
     }
 
@@ -373,7 +391,13 @@ impl Guard<'_> {
     /// An Array adds
     /// two thousand for each point further along the way in that nothing
     /// sees yet, nor will once built.
-    fn gain(asset: &Asset, kind: BuildingKind, anchor: TilePos, reach: Option<Cover>) -> u64 {
+    fn gain(
+        map: &MapModel,
+        asset: &Asset,
+        kind: BuildingKind,
+        anchor: TilePos,
+        reach: Option<Cover>,
+    ) -> u64 {
         if kind == BuildingKind::Array {
             let centre = footprint_centre(kind, anchor);
             let radar = radar(kind, 0);
@@ -387,6 +411,7 @@ impl Guard<'_> {
         };
         let cover = Cover {
             centre: footprint_centre(kind, anchor),
+            footing: anchor,
             ..reach
         };
         let domain = domain(kind);
@@ -394,7 +419,7 @@ impl Guard<'_> {
             return 0;
         };
         approach.short(
-            |point, spotted| cover.covers(domain, point) && (!cover.indirect || spotted),
+            |point, spotted| cover.covers(map, domain, point) && (!cover.indirect || spotted),
             |_| approach.held(&cover),
         )
     }
@@ -436,7 +461,8 @@ impl Guard<'_> {
             } else {
                 !laned() && tiles_of(anchor, kind.size()).all(|tile| !self.map.gated(me, tile))
             }
-            && placement::check(self.observation, kind, anchor, &[], Layout::Apart).is_ok()
+            && placement::check(self.map, self.observation, kind, anchor, &[], Layout::Apart)
+                .is_ok()
     }
 }
 
@@ -596,9 +622,14 @@ pub(crate) fn emergency(
             else {
                 continue;
             };
-            let Ok(allowed) =
-                placement::check(observation, kind, anchor, ledger.planned(), Layout::Apart)
-            else {
+            let Ok(allowed) = placement::check(
+                guard.map,
+                observation,
+                kind,
+                anchor,
+                ledger.planned(),
+                Layout::Apart,
+            ) else {
                 continue;
             };
             let centre = footprint_centre(kind, anchor);

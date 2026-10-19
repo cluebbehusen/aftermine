@@ -45,7 +45,14 @@ fn yard() -> Scenario {
 
 fn verdict(state: &State, kind: BuildingKind, x: i32, y: i32) -> Result<Allowed, Refusal> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
-    check(&observation, kind, TilePos::new(x, y), &[], Layout::Apart)
+    check(
+        &map(&yard()),
+        &observation,
+        kind,
+        TilePos::new(x, y),
+        &[],
+        Layout::Apart,
+    )
 }
 
 #[test]
@@ -84,6 +91,7 @@ fn each_known_obstacle_refuses_a_footprint_for_its_own_reason() {
     let planned = [(fabricator, TilePos::new(5, 1))];
     assert_eq!(
         check(
+            &map(&yard()),
             &observation,
             fabricator,
             TilePos::new(6, 1),
@@ -168,6 +176,7 @@ fn explored_ground_out_of_sight_is_claimed_as_a_scaffold() {
     let anchor = TilePos::new(6, 1);
     assert_eq!(
         check(
+            &map(&yard()),
             &observation,
             BuildingKind::Fabricator,
             anchor,
@@ -180,6 +189,7 @@ fn explored_ground_out_of_sight_is_claimed_as_a_scaffold() {
     observation.visible[index] = false;
     assert_eq!(
         check(
+            &map(&yard()),
             &observation,
             BuildingKind::Fabricator,
             anchor,
@@ -188,4 +198,50 @@ fn explored_ground_out_of_sight_is_claimed_as_a_scaffold() {
         ),
         Ok(Allowed { defer: true })
     );
+}
+
+#[test]
+fn a_tiered_base_never_lays_a_foundation_on_a_ramp() {
+    // A plateau across the field's north joins the floor by a ramp across
+    // a block of the west Foundry's base layout, where a building would go.
+    let mut scenario = field();
+    let ramps = 1..=5;
+    for y in 1..=7 {
+        let row = &mut scenario.map[y];
+        let cells: String = row
+            .chars()
+            .enumerate()
+            .map(|(x, c)| match (x, y) {
+                (0 | 47, _) => c,
+                (x, 7) if ramps.contains(&x) => '/',
+                (_, 7) => '=',
+                _ => c,
+            })
+            .collect();
+        *row = cells;
+    }
+    scenario.levels = (0..scenario.map.len())
+        .map(|y| (0..48).map(|_| if y <= 6 { '2' } else { '1' }).collect())
+        .collect();
+    scenario.players[0].scrap = 3_000;
+    scenario.units = (5..=7)
+        .flat_map(|x| [13, 14].map(|y| harvester(0, x, y)))
+        .collect();
+    let mut state = scenario.build().unwrap();
+    let mut bot = seat(&scenario, 0);
+    let mut built = Vec::new();
+    while state.current_tick() < 3_000 {
+        let commands = bot.act(&state, &mut OwnEvents::default());
+        built.extend(builds(&commands));
+        state.tick(&commands);
+    }
+    assert!(!built.is_empty(), "the base grew");
+    for (kind, anchor) in built {
+        let (w, h) = kind.size();
+        let on_ramp = (0..h).any(|dy| (0..w).any(|dx| state.map().is_ramp(anchor.offset(dx, dy))));
+        assert!(
+            !on_ramp || kind.fits_ramp(),
+            "{kind:?} ordered onto the ramp at {anchor:?}"
+        );
+    }
 }
