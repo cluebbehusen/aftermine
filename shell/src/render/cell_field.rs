@@ -3,7 +3,7 @@
 //! boulder passes share it so drops, terraces, and slab sizes all measure
 //! terrain the same way.
 
-use crate::game::Scene;
+use super::ground::GroundView;
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
@@ -123,15 +123,12 @@ pub(super) const CELLS: i32 = 4;
 
 /// Screen-space cell edges for one tile at [`CELLS`] resolution, floored so
 /// neighbors share exact edges and no hairline opens between cells.
-pub(super) fn cell_edges(game: &Scene<'_>, pos: TilePos) -> ([f32; 5], [f32; 5]) {
+pub(super) fn cell_edges(view: &GroundView, pos: TilePos) -> ([f32; 5], [f32; 5]) {
     let mut xs = [0.0; 5];
     let mut ys = [0.0; 5];
     for (i, (x, y)) in xs.iter_mut().zip(ys.iter_mut()).enumerate() {
         let frac = i as f32 / CELLS as f32;
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(pos.x as f32 + frac, pos.y as f32 + frac));
+        let screen = view.to_screen(vec2(pos.x as f32 + frac, pos.y as f32 + frac));
         *x = screen.x.floor();
         *y = screen.y.floor();
     }

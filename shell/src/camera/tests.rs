@@ -112,6 +112,17 @@ fn the_cursor_anchor_holds_through_a_multi_step_zoom_glide() {
 }
 
 #[test]
+fn a_zoom_glide_reports_itself_until_it_lands() {
+    let mut cam = camera();
+    assert!(!cam.zooming());
+    cam.zoom_at(vec2(640.0, 400.0), 1.0);
+    cam.update(1.0 / 60.0);
+    assert!(cam.zooming());
+    cam.update(1.0);
+    assert!(!cam.zooming());
+}
+
+#[test]
 fn panning_past_the_far_corner_stops_within_slack() {
     // `pan_clamps_to_map_with_slack` pins the lo corner; this pins the
     // hi corner. Shoved past the bottom-right, the visible rect reaches

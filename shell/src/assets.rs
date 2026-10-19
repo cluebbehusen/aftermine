@@ -14,6 +14,7 @@ use oxide_sim::{BuildingKind, UnitKind};
 pub struct Sprites {
     textures: Vec<Texture2D>,
     entity_lod: crate::entity_lod::EntityLod,
+    ground_blend: crate::render::GroundBlend,
     page_height: f32,
     harvester_body: Option<[[Rect; 2]; 6]>,
     excavator_body: Option<[[Rect; 2]; 3]>,
@@ -1369,6 +1370,7 @@ impl Sprites {
             burst,
         ] = pick(&rects, SINGLE_KEYS)?;
         let entity_lod = crate::entity_lod::EntityLod::load(&rects, page_height)?;
+        let ground_blend = crate::render::GroundBlend::load()?;
         Ok(Self {
             unit_rigs: unit_rigs(&rects)?,
             bombard_spades: bombard_spade_rows(&rects)?,
@@ -1382,6 +1384,7 @@ impl Sprites {
                 .map(|&[x, y, w, h]| Rect::new(x, y, w, h)),
             textures,
             entity_lod,
+            ground_blend,
             harvester_body: harvester_body_rows(&rects)?,
             excavator_body: worker_body_rows(&rects, "rig_excavator_body")?,
             scuttler_body: worker_body_rows(&rects, "rig_scuttler_body")?,
@@ -1448,6 +1451,11 @@ impl Sprites {
         size: Vec2,
     ) -> Option<Vec2> {
         self.entity_lod.contact(source, from, aim, origin, size)
+    }
+
+    /// The shaders the terrain cache bakes and composites with.
+    pub(crate) fn ground_blend(&self) -> &crate::render::GroundBlend {
+        &self.ground_blend
     }
 
     /// Draw an atlas region from its page while preserving its authored canvas.

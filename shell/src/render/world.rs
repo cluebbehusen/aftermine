@@ -1,6 +1,7 @@
 //! Ground layers: terrain tiles (fog-ruled), the fog veil, and battle
 //! scars.
 
+use super::ground::{Ground, GroundView};
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
@@ -11,8 +12,8 @@ const FOG_FEATHER: f32 = 0.45;
 
 /// Fog of war from the local player's perspective: unexplored is void,
 /// explored-but-unseen is dimmed.
-pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
-    let (lo, hi) = game.presentation.camera.world_rect();
+pub(super) fn draw_fog(game: &crate::game::Scene<'_>, view: &GroundView) {
+    let (lo, hi) = view.world_rect();
     let min = numeric::tile_at(lo);
     let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
     // One extra ring so every drawn tile sees all eight neighbors.
@@ -30,16 +31,8 @@ pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
             let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
             // Exact shared edges: translucent rects that overlap draw
             // double-dark seams, so each tile ends where the next begins.
-            let a = game
-                .presentation
-                .camera
-                .to_screen(vec2(x as f32, y as f32))
-                .floor();
-            let b = game
-                .presentation
-                .camera
-                .to_screen(vec2((x + 1) as f32, (y + 1) as f32))
-                .floor();
+            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
             draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
         }
     }
@@ -55,16 +48,8 @@ pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
             {
                 continue;
             }
-            let a = game
-                .presentation
-                .camera
-                .to_screen(vec2(x as f32, y as f32))
-                .floor();
-            let b = game
-                .presentation
-                .camera
-                .to_screen(vec2((x + 1) as f32, (y + 1) as f32))
-                .floor();
+            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
             draw_fog_feather(a, b, &neighborhood);
         }
     }
@@ -334,10 +319,12 @@ impl Blockers {
     }
 }
 
-/// The blockers on screen, over the tiles and under the slabs.
-pub(super) fn draw_blockers(game: &crate::game::Scene<'_>, sprites: &Sprites, blockers: &Blockers) {
-    let zoom = game.presentation.camera.zoom;
-    let (min, max) = visible_tiles(game);
+/// The blockers in view, over the tiles and under the slabs.
+pub(super) fn draw_blockers(view: &GroundView, sprites: &Sprites, blockers: &Blockers) {
+    let zoom = view.zoom();
+    let (lo, hi) = view.world_rect();
+    let min = numeric::tile_at(lo);
+    let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
     for placement in &blockers.placements {
         let (anchor, (width, height)) = (placement.anchor, placement.footprint);
         if anchor.x + width <= min.x
@@ -348,10 +335,7 @@ pub(super) fn draw_blockers(game: &crate::game::Scene<'_>, sprites: &Sprites, bl
             continue;
         }
         let source = sprites.ground_blocker(placement.variant);
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(anchor.x as f32, anchor.y as f32));
+        let screen = view.to_screen(vec2(anchor.x as f32, anchor.y as f32));
         sprites.draw(
             screen.x.floor(),
             screen.y.floor(),
@@ -527,7 +511,7 @@ fn quarry_dressing(pos: TilePos, width: i32, height: i32, seed: u64) -> Option<Q
     })
 }
 
-/// A visible tile and the screen square it covers.
+/// A tile in view and the square it covers.
 struct TileSpot<'a> {
     pos: TilePos,
     tile: &'a oxide_sim::map::Tile,
@@ -539,17 +523,20 @@ struct TileSpot<'a> {
     wave: usize,
 }
 
-fn for_each_visible_tile<'a>(game: &'a crate::game::Scene<'_>, mut draw: impl FnMut(TileSpot<'a>)) {
-    let camera = &game.presentation.camera;
-    let (min, max) = visible_tiles(game);
+fn for_each_tile<'a>(
+    map: &'a oxide_sim::map::Map,
+    view: &GroundView,
+    mut draw: impl FnMut(TileSpot<'a>),
+) {
+    let (min, max) = view.tiles(map);
     for y in min.y..max.y {
         for x in min.x..max.x {
             let pos = TilePos::new(x, y);
-            let Some(tile) = game.state.map().tile(pos) else {
+            let Some(tile) = map.tile(pos) else {
                 continue;
             };
-            let screen = camera.to_screen(vec2(x as f32, y as f32));
-            let next = camera.to_screen(vec2((x + 1) as f32, (y + 1) as f32));
+            let screen = view.to_screen(vec2(x as f32, y as f32));
+            let next = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32));
             draw(TileSpot {
                 pos,
                 tile,
@@ -564,38 +551,49 @@ fn for_each_visible_tile<'a>(game: &'a crate::game::Scene<'_>, mut draw: impl Fn
     }
 }
 
-/// Draws the terrain tiles one layer at a time: ground, the level washes,
-/// grit and dressing, the level steps, then salvage. Each layer crosses the
-/// whole view before the next starts, because a fill between two atlas
-/// sprites splits macroquad's batch, and macroquad keeps a buffer for every
-/// draw a frame has ever needed: drawn tile by tile, a zoomed-out tiered map
-/// took fourteen thousand draws and exhausted an iPad's memory.
-pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let zoom = game.presentation.camera.zoom;
-    let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
-    let theme = game.scenario.meta.as_ref().map_or("", |m| m.theme.as_str());
+/// How a tile's ground sprite is tinted, and the white wash that brightens
+/// it past what a tint can: a tiered map shades each tile by its level.
+fn ground_paint<'a>(ground: &Ground<'a>) -> impl Fn(&TileSpot<'_>) -> (Color, f32) + use<'a> {
+    let theme = ground
+        .scenario
+        .meta
+        .as_ref()
+        .map_or("", |m| m.theme.as_str());
     let base = theme_tint(theme);
+    let levels = ground.layout.levels.as_ref();
+    move |spot| match levels.and_then(|levels| levels.tile_paint(spot.pos, spot.wave % 6)) {
+        Some((f, wash)) => (Color::new(base.r * f, base.g * f, base.b * f, base.a), wash),
+        None => (base, 0.0),
+    }
+}
+
+/// Draws the floor one layer at a time: ground, the level washes, grit and
+/// dressing, then the level steps. Each layer crosses the whole view before
+/// the next starts, because a fill between two atlas sprites splits
+/// macroquad's batch, and macroquad keeps a buffer for every draw a frame has
+/// ever needed: drawn tile by tile, a zoomed-out tiered map took fourteen
+/// thousand draws and exhausted an iPad's memory.
+pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprites) {
+    let zoom = view.zoom();
+    let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
+    let theme = ground
+        .scenario
+        .meta
+        .as_ref()
+        .map_or("", |m| m.theme.as_str());
     let themed = theme_code(theme).is_some();
-    let map = game.state.map();
+    let map = ground.map;
     let (map_width, map_height) = (map.width(), map.height());
     // Quarry props vary by map, not by anything in play.
-    let quarry_salt = chassis::hash::fnv1a(game.scenario.name.as_bytes());
+    let quarry_salt = chassis::hash::fnv1a(ground.scenario.name.as_bytes());
     let quarry = sprites.quarry_dressing(0).is_some();
-    let levels = game.ground().levels.as_ref();
-    // A tiered map tints each tile's ground layer by its level, and washes
-    // ground brighter than its sprite toward white.
-    let paint =
-        |spot: &TileSpot<'_>| levels.and_then(|levels| levels.tile_paint(spot.pos, spot.wave % 6));
-    let tint = |spot: &TileSpot<'_>| {
-        paint(spot).map_or(base, |(f, _)| {
-            Color::new(base.r * f, base.g * f, base.b * f, base.a)
-        })
-    };
-    for_each_visible_tile(game, |spot| {
+    let levels = ground.layout.levels.as_ref();
+    let paint = ground_paint(ground);
+    for_each_tile(map, view, |spot| {
         sprites.draw(
             spot.screen.x.floor(),
             spot.screen.y.floor(),
-            tint(&spot),
+            paint(&spot).0,
             DrawTextureParams {
                 dest_size: Some(spot.size),
                 source: Some(sprites.ground(spot.wave % 6)),
@@ -604,8 +602,9 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         );
     });
     if levels.is_some() {
-        for_each_visible_tile(game, |spot| {
-            if let Some((_, wash)) = paint(&spot).filter(|(_, wash)| *wash > 0.0) {
+        for_each_tile(map, view, |spot| {
+            let wash = paint(&spot).1;
+            if wash > 0.0 {
                 draw_rectangle(
                     spot.screen.x.floor(),
                     spot.screen.y.floor(),
@@ -616,10 +615,10 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             }
         });
     }
-    for_each_visible_tile(game, |spot| {
+    for_each_tile(map, view, |spot| {
         let (x, y) = (spot.pos.x, spot.pos.y);
         let tile = spot.tile;
-        let tint = tint(&spot);
+        let tint = paint(&spot).0;
         // Grit and cracks use a mixed hash so no shade repeats one texture;
         // FNV's low bits track coordinate parity, so read its high bits.
         let detail = (coordinate_hash(x, y, 0x4752_4e44) >> 16) as usize;
@@ -653,7 +652,7 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             .filter(|_| {
                 tile.cosmetic != 1
                     && dressed
-                    && symmetric_safe_theme_prop_tile(&game.scenario.map, pos)
+                    && symmetric_safe_theme_prop_tile(&ground.scenario.map, pos)
             });
         let dressing = if let Some(placement) = placement {
             sprites
@@ -664,7 +663,7 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         } else if quarry {
             None
         } else if let Some(placement) = prop_candidate {
-            if symmetric_safe_theme_prop_tile(&game.scenario.map, pos) {
+            if symmetric_safe_theme_prop_tile(&ground.scenario.map, pos) {
                 let source = if placement.variant < 3 {
                     sprites.theme_prop(theme, placement.variant)
                 } else {
@@ -730,12 +729,23 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     // A tiered map's steps and ramps lie over the ground, under salvage and
     // frames.
     if let Some(levels) = levels {
-        for_each_visible_tile(game, |spot| levels.draw_tile(game, spot.pos));
+        for_each_tile(map, view, |spot| levels.draw_tile(view, spot.pos));
     }
-    for_each_visible_tile(game, |spot| {
+}
+
+/// Scrap nodes and wrecks on the floor in view. Scrap draws at its live
+/// amount only in sight; unseen ground shows what the player remembers
+/// (frozen, like ghosts).
+pub(super) fn draw_salvage(
+    game: &crate::game::Scene<'_>,
+    ground: &Ground<'_>,
+    view: &GroundView,
+    sprites: &Sprites,
+) {
+    let size = view.zoom().ceil() + 1.0;
+    let paint = ground_paint(ground);
+    for_each_tile(ground.map, view, |spot| {
         let (pos, tile) = (spot.pos, spot.tile);
-        // Scrap draws at its live amount only in sight; unseen ground shows
-        // what the player remembers (frozen, like ghosts).
         let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
         let scrap = if seen_now {
             tile.scrap
@@ -774,7 +784,7 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // Stamp what is on show; fade what is only remembered. The map stays
         // bounded: only tiles carrying salvage enter it.
         let fade = super::resource_memory_opacity(game, pos);
-        let tint = tint(&spot);
+        let tint = paint(&spot).0;
         let tint = if fade < 1.0 {
             Color::new(tint.r, tint.g, tint.b, tint.a * fade)
         } else {
@@ -798,16 +808,17 @@ pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
 /// collapsed 2x2 machine bed that says "rebuild here". A standing
 /// building on the anchor covers its frame; unexplored ground hides it
 /// like any other terrain fact.
-pub(crate) fn draw_extractor_frames(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let zoom = game.presentation.camera.zoom;
+pub(super) fn draw_extractor_frames(
+    game: &crate::game::Scene<'_>,
+    view: &GroundView,
+    sprites: &Sprites,
+) {
+    let zoom = view.zoom();
     for &frame in game.state.map().extractor_frames() {
         if !crate::strategic_markers::extractor_frame_visible(game, frame) {
             continue;
         }
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(frame.x as f32, frame.y as f32));
+        let screen = view.to_screen(vec2(frame.x as f32, frame.y as f32));
         sprites.draw(
             screen.x.floor(),
             screen.y.floor(),

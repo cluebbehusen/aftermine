@@ -15,8 +15,8 @@ use super::environment::{
     Layer, Material, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
     draw_strata, hash, mixed, quarry_color, rgba, shifted,
 };
+use super::ground::GroundView;
 use super::stretches::{Place, Shapes};
-use crate::game::Scene;
 use crate::numeric::Fit;
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
@@ -224,8 +224,8 @@ fn draw_glints(xs: &[f32; 5], ys: &[f32; 5], pos: TilePos, zoom: f32) {
     }
 }
 
-fn draw_fill(game: &Scene<'_>, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
-    let (xs, ys) = cell_edges(game, pos);
+fn draw_fill(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
+    let (xs, ys) = cell_edges(view, pos);
     let color = |sx: i32, sy: i32| {
         let material = field.material_at(pos, sx, sy).unwrap_or(Material::Void);
         let color = cell_color(material, pos.x * CELLS + sx, pos.y * CELLS + sy);
@@ -272,8 +272,8 @@ fn uniform_bench(field: &PitField, pos: TilePos, sx: i32, sy: i32) -> Option<usi
         .then_some(level)
 }
 
-fn draw_relief(game: &Scene<'_>, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
-    let (xs, ys) = cell_edges(game, pos);
+fn draw_relief(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
+    let (xs, ys) = cell_edges(view, pos);
     let lip = (zoom * 0.055).max(1.0);
     let cell = zoom / CELLS as f32;
     for sy in 0..CELLS {
@@ -320,13 +320,12 @@ fn draw_relief(game: &Scene<'_>, field: &PitField, pos: TilePos, zoom: f32, frac
     }
 }
 
-pub(super) fn draw_pits(game: &Scene<'_>, field: &PitField, fractured: bool) {
-    let (min, max) = super::visible_tiles(game);
+pub(super) fn draw_pits(map: &Map, view: &GroundView, field: &PitField, fractured: bool) {
+    let (min, max) = view.tiles(map);
     if min.x >= max.x || min.y >= max.y {
         return;
     }
-    let map = game.state.map();
-    let zoom = game.presentation.camera.zoom;
+    let zoom = view.zoom();
     let pit_tiles: Vec<TilePos> = (min.y..max.y)
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
         .filter(|&pos| {
@@ -337,10 +336,10 @@ pub(super) fn draw_pits(game: &Scene<'_>, field: &PitField, fractured: bool) {
     // Fills first, then relief: a decal that straddles two tiles must not
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
-        draw_fill(game, field, *pos, zoom, fractured);
+        draw_fill(view, field, *pos, zoom, fractured);
     }
     for pos in &pit_tiles {
-        draw_relief(game, field, *pos, zoom, fractured);
+        draw_relief(view, field, *pos, zoom, fractured);
     }
 }
 
