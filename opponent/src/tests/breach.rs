@@ -241,6 +241,18 @@ fn a_cradle_stands_only_where_its_machine_can_drive_out() {
         "a hull three tiles wide never squeezes out"
     );
     assert!(exits(&pocket(3)));
+    let across = |kind: BuildingKind| {
+        let mut scenario = pocket(3);
+        scenario
+            .buildings
+            .extend((11..=13).map(|y| building(0, kind, 14, y)));
+        scenario
+    };
+    assert!(
+        exits(&across(BuildingKind::ScuttleCharge)),
+        "a buried charge blocks nothing"
+    );
+    assert!(!exits(&across(BuildingKind::Barricade)));
 }
 
 #[test]
