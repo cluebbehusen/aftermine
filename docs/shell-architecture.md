@@ -622,19 +622,20 @@ recording onto them. Loading checks their seats, order, and ticks; a background
 thread then replays them to the saved tick, rebuilding the keyframes before the
 save and comparing its world hash with the saved world's. A history that does
 not reproduce the saved world gives way to a world-origin recording at the saved
-tick, keeping the commands recorded since; so does a save whose recording began
-at a world, which carries no history. Pending input remains pending until that
-tick executes. A save is self-contained. Named saves persist until explicitly
-deleted. Each match owns one autosave slot: its autosave or LAN autosave and its
-finished-match recording share an id, so a save replaces the match's earlier
-file and the finished recording replaces its autosave. Finished recordings go to
-their own matches folder. Autosaves, LAN autosaves, and finished-match
-recordings rotate separately, so rotation keeps whole matches. On iOS, named
-saves, finished recordings, replays, and diagnostics live in the app's Documents
-folder, which the Files app shows; autosaves, settings, and the LAN rejoin
-ticket stay in its Library. Finished matches are `.oxreplay` recordings,
-containing the available history since the current segment began and the
-keyframes the match kept.
+tick, keeping the commands recorded since; so does a save without history, whose
+recording began at a world or which was made past the replay tick limit. A
+recording written while the check runs waits for it on the save worker. Pending
+input remains pending until that tick executes. A save is self-contained. Named
+saves persist until explicitly deleted. Each match owns one autosave slot: its
+autosave or LAN autosave and its finished-match recording share an id, so a save
+replaces the match's earlier file and the finished recording replaces its
+autosave. Finished recordings go to their own matches folder. Autosaves, LAN
+autosaves, and finished-match recordings rotate separately, so rotation keeps
+whole matches. On iOS, named saves, finished recordings, replays, and
+diagnostics live in the app's Documents folder, which the Files app shows;
+autosaves, settings, and the LAN rejoin ticket stay in its Library. Finished
+matches are `.oxreplay` recordings, containing the available history since the
+current segment began and the keyframes the match kept.
 
 An `.oxreplay` file has eight-byte `OXIDEREP` magic, a little-endian 32-bit
 header length, a JSON header indexing its frames, one checksummed Zstandard

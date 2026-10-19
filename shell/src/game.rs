@@ -126,7 +126,7 @@ pub struct Game {
     pub(crate) keyframes: oxide_kit::keyframes::KeyframeRecorder,
     /// A resumed match's saved history, until it is checked against the
     /// saved world.
-    history: Option<oxide_kit::history::PendingHistory>,
+    pub(crate) history: Option<oxide_kit::history::PendingHistory>,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
     /// Where this match's autosave and finished record go.

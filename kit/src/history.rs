@@ -9,14 +9,16 @@
 
 use crate::GameReplay;
 use crate::build::BuildIdentity;
-use crate::keyframes::{ChainEncoder, KEYFRAME_EVERY, KeyframeRecorder, Keyframes, MAX_KEYFRAMES};
+use crate::keyframes::{
+    ChainEncoder, KEYFRAME_EVERY, KeyframeRecorder, Keyframes, MAX_KEYFRAMES, PendingKeyframes,
+};
 use anyhow::{Result, ensure};
 use chassis::replay::TimedCommand;
 use oxide_sim::scenario::PlayerSpec;
 use oxide_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::panic::AssertUnwindSafe;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 /// The commands a match recorded from its scenario's start.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,10 +31,11 @@ pub struct SessionHistory {
 }
 
 impl SessionHistory {
-    /// What `recorder` holds, when it records from its scenario's start; a
-    /// record that starts at a world has no history to save.
-    pub fn capture(recorder: &GameReplay) -> Option<Self> {
-        recorder.origin.is_none().then(|| Self {
+    /// What `recorder` holds at `tick`, when it records from its scenario's
+    /// start. A record that starts at a world has no history to save, and
+    /// one past the replay tick limit has none [`Self::recording`] accepts.
+    pub fn capture(recorder: &GameReplay, tick: u64) -> Option<Self> {
+        (recorder.origin.is_none() && tick <= crate::MAX_REPLAY_TICKS).then(|| Self {
             players: recorder.setup.players.clone(),
             commands: recorder.commands.clone(),
         })
@@ -89,8 +92,10 @@ impl SessionHistory {
 }
 
 /// A resumed match's history until a background thread has checked it.
+/// Clones wait on the same check, which stops once none remains.
+#[derive(Clone)]
 pub struct PendingHistory {
-    check: Check,
+    shared: Arc<Shared>,
     /// The record from the resume, for a history that does not reproduce
     /// the saved world.
     fallback: GameReplay,
@@ -103,28 +108,24 @@ type Outcome = Option<Keyframes>;
 #[derive(Default)]
 struct Shared {
     outcome: Mutex<Option<Outcome>>,
-    cancelled: AtomicBool,
+    finished: Condvar,
 }
 
 impl Shared {
     fn outcome(&self) -> MutexGuard<'_, Option<Outcome>> {
         self.outcome.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
 
-/// Stops the rebuild once nothing waits for it.
-struct Check(Arc<Shared>);
-
-impl Drop for Check {
-    fn drop(&mut self) {
-        self.0.cancelled.store(true, Ordering::Relaxed);
+    fn finish(&self, outcome: Outcome) {
+        *self.outcome() = Some(outcome);
+        self.finished.notify_all();
     }
 }
 
 impl PendingHistory {
     /// Starts re-simulating `recorder`, the history of a match resumed at
-    /// `saved`. Without a thread the history stays unchecked, as it does
-    /// for a match that ends before its check.
+    /// `saved`. Without a thread the history cannot be checked, so it gives
+    /// way as one that does not reproduce.
     pub fn start(recorder: &GameReplay, saved: &State, fallback: GameReplay) -> Self {
         let shared = Arc::new(Shared::default());
         let rebuild = Rebuild {
@@ -133,14 +134,14 @@ impl PendingHistory {
             hash: saved.hash(),
             shared: Arc::clone(&shared),
         };
-        std::thread::Builder::new()
+        if std::thread::Builder::new()
             .name("oxide-history".into())
             .spawn(move || rebuild.run())
-            .ok();
-        Self {
-            check: Check(shared),
-            fallback,
+            .is_err()
+        {
+            shared.finish(None);
         }
+        Self { shared, fallback }
     }
 
     /// Once the check has finished, hands a reproduced history's keyframes
@@ -152,29 +153,56 @@ impl PendingHistory {
         recorder: &mut GameReplay,
         keyframes: &mut KeyframeRecorder,
     ) -> Option<Self> {
-        let Some(outcome) = self.check.0.outcome().take() else {
+        let Some(outcome) = self.shared.outcome().clone() else {
             return Some(self);
         };
-        if let Some(rebuilt) = outcome {
+        if let Some(rebuilt) = self.resolve(outcome, recorder) {
             keyframes.prepend(rebuilt);
-        } else {
+        }
+        None
+    }
+
+    /// Blocks until the check finishes, then settles `replay` and
+    /// `keyframes`, a copy of the match's record and the keyframes kept
+    /// beside it, as [`Self::settle`] would.
+    pub fn wait(self, replay: &mut GameReplay, keyframes: &mut PendingKeyframes) {
+        let outcome = self
+            .shared
+            .finished
+            .wait_while(self.shared.outcome(), |outcome| outcome.is_none())
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .flatten();
+        if let Some(rebuilt) = self.resolve(outcome, replay) {
+            keyframes.prepend(rebuilt);
+        }
+    }
+
+    /// Swaps a history that did not reproduce the saved world for the record
+    /// from the resume, keeping `recorder`'s metadata and the commands it
+    /// recorded since. Returns a reproduced history's keyframes.
+    fn resolve(self, outcome: Outcome, recorder: &mut GameReplay) -> Option<Keyframes> {
+        if outcome.is_none() {
             let mut fallback = self.fallback;
             let resumed = fallback.start_tick();
             let since = recorder
                 .commands
                 .partition_point(|timed| timed.tick < resumed);
             fallback.commands = recorder.commands.split_off(since);
+            fallback.meta = recorder.meta.clone();
             *recorder = fallback;
         }
-        None
+        outcome
     }
 
     /// Waits for the check to finish.
     #[cfg(test)]
     fn finish(&self) {
-        while self.check.0.outcome().is_none() {
-            std::thread::yield_now();
-        }
+        drop(
+            self.shared
+                .finished
+                .wait_while(self.shared.outcome(), |outcome| outcome.is_none()),
+        );
     }
 }
 
@@ -186,14 +214,17 @@ struct Rebuild {
 }
 
 impl Rebuild {
+    /// A history whose replay panics does not reproduce the save, and its
+    /// check must still finish for a save waiting on it.
     fn run(self) {
-        if let Some(outcome) = self.rebuild() {
-            *self.shared.outcome() = Some(outcome);
+        let rebuilt = std::panic::catch_unwind(AssertUnwindSafe(|| self.rebuild()));
+        if let Some(outcome) = rebuilt.unwrap_or(Some(None)) {
+            self.shared.finish(outcome);
         }
     }
 
     /// Plays the history to the saved tick, keeping a keyframe at each grid
-    /// tick on the way. None when cancelled.
+    /// tick on the way. None once nothing waits for the check.
     fn rebuild(&self) -> Option<Outcome> {
         let Ok(mut state) = self.replay.setup.build() else {
             return Some(None);
@@ -202,7 +233,7 @@ impl Rebuild {
         let mut encoder = Some(ChainEncoder::default());
         let mut frames = Vec::new();
         while state.current_tick() < self.tick {
-            if self.shared.cancelled.load(Ordering::Relaxed) {
+            if Arc::strong_count(&self.shared) == 1 {
                 return None;
             }
             feed.step(&mut state);

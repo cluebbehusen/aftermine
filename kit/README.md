@@ -30,7 +30,8 @@ while reusable game-independent primitives stay in `chassis`.
   checkpoint, so a resumed match keeps recording onto its whole record. Loading
   checks only its shape; a background thread later replays it to the saved tick,
   rebuilding the keyframes before the save and checking the saved world's hash.
-  A history that fails gives way to a recording from the saved world.
+  A history that fails gives way to a recording from the saved world, and a
+  recording saved while the check runs waits for it.
 
 - `bot_execution` collects commands in input seat order, using a small shared
   worker pool when several bots are due. A busy or unavailable pool falls back

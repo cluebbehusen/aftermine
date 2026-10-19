@@ -40,7 +40,7 @@ fn settled(pending: PendingHistory, recorder: &mut GameReplay, keyframes: &mut K
 fn a_resumed_match_keeps_its_whole_record_and_rebuilds_its_keyframes() {
     let (scenario, saved, recorder) = played();
     assert!(!recorder.commands.is_empty(), "the bots must play");
-    let history = SessionHistory::capture(&recorder).unwrap();
+    let history = SessionHistory::capture(&recorder, SAVED).unwrap();
     let mut resumed = history.recording(&scenario, &saved, &build()).unwrap();
     assert_eq!(resumed.start_tick(), 0);
     assert_eq!(
@@ -80,7 +80,7 @@ fn a_resumed_match_keeps_its_whole_record_and_rebuilds_its_keyframes() {
 fn a_history_that_does_not_reproduce_the_save_gives_way_to_the_resume() {
     let (scenario, saved, mut recorder) = played();
     recorder.commands.retain(|timed| timed.tick < 600);
-    let mut resumed = SessionHistory::capture(&recorder)
+    let mut resumed = SessionHistory::capture(&recorder, SAVED)
         .unwrap()
         .recording(&scenario, &saved, &build())
         .expect("its shape is sound");
@@ -90,7 +90,22 @@ fn a_history_that_does_not_reproduce_the_save_gives_way_to_the_resume() {
         command: Command::Surrender,
     };
     resumed.record(SAVED + 5, surrender);
+    let mut finished = resumed.clone();
+    finished.meta.kind = Some("match".into());
     let mut keyframes = KeyframeRecorder::default();
+    pending
+        .clone()
+        .wait(&mut finished, &mut keyframes.pending());
+    assert_eq!(
+        finished.start_tick(),
+        SAVED,
+        "a save waits for the same check"
+    );
+    assert_eq!(
+        finished.meta.kind.as_deref(),
+        Some("match"),
+        "and keeps the record's metadata"
+    );
     settled(pending, &mut resumed, &mut keyframes);
     assert_eq!(
         resumed.start_tick(),
@@ -109,7 +124,7 @@ fn a_saved_history_must_fit_its_session() {
         let mut recorder = recorder.clone();
         let mut scenario = scenario.clone();
         change(&mut recorder, &mut scenario);
-        SessionHistory::capture(&recorder)
+        SessionHistory::capture(&recorder, SAVED)
             .unwrap()
             .recording(&scenario, &saved, &build())
     };
@@ -130,7 +145,31 @@ fn a_saved_history_must_fit_its_session() {
             .is_err()
     );
     assert!(
-        SessionHistory::capture(&from_resume(&scenario, &saved)).is_none(),
+        SessionHistory::capture(&from_resume(&scenario, &saved), SAVED).is_none(),
         "a record from a world has no history"
+    );
+    assert!(
+        SessionHistory::capture(&recorder, crate::MAX_REPLAY_TICKS + 1).is_none(),
+        "a match past the replay tick limit saves no history it could not load"
+    );
+}
+
+#[test]
+fn a_finished_match_waits_for_its_check_after_the_match_is_gone() {
+    let (scenario, saved, recorder) = played();
+    let mut finished = SessionHistory::capture(&recorder, SAVED)
+        .unwrap()
+        .recording(&scenario, &saved, &build())
+        .unwrap();
+    let pending = PendingHistory::start(&finished, &saved, from_resume(&scenario, &saved));
+    let saving = pending.clone();
+    drop(pending);
+    let mut keyframes = KeyframeRecorder::default().pending();
+    saving.wait(&mut finished, &mut keyframes);
+    assert_eq!(finished.start_tick(), 0, "a reproduced history stays");
+    assert_eq!(
+        keyframes.wait().ticks().collect::<Vec<_>>(),
+        [1_024, 2_048],
+        "beside the keyframes it rebuilt"
     );
 }

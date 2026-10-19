@@ -326,10 +326,12 @@ pub(crate) fn candidates() -> Vec<PathBuf> {
 pub(crate) enum SaveData {
     Checkpoint(crate::game::checkpoint::SaveCapture),
     /// A finished match's record and the keyframes kept beside it, whose
-    /// encoding the worker waits out.
+    /// encoding the worker waits out, as it does a resumed match's history
+    /// check.
     Recording(
         oxide_kit::GameReplay,
         oxide_kit::keyframes::PendingKeyframes,
+        Option<Box<oxide_kit::history::PendingHistory>>,
     ),
 }
 
@@ -385,7 +387,11 @@ impl SaveJob {
             if !named && recording {
                 let mut replay = game.recorder.clone();
                 replay.meta = meta.clone();
-                SaveData::Recording(replay, game.keyframes.pending())
+                SaveData::Recording(
+                    replay,
+                    game.keyframes.pending(),
+                    game.history.clone().map(Box::new),
+                )
             } else {
                 SaveData::Checkpoint(game.capture_save())
             }
@@ -457,7 +463,10 @@ impl SaveJob {
                 SaveData::Checkpoint(capture) => {
                     crate::saved_game::write_capture(capture, meta, path)
                 }
-                SaveData::Recording(replay, keyframes) => {
+                SaveData::Recording(mut replay, mut keyframes, history) => {
+                    if let Some(history) = history {
+                        history.wait(&mut replay, &mut keyframes);
+                    }
                     oxide_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
                 }
             };

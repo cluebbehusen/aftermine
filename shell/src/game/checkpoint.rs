@@ -90,7 +90,7 @@ impl Game {
             concede_stats: self.concede_stats.clone(),
             boundary_fog: self.presentation.boundary_fog.clone(),
             lan: None,
-            history: SessionHistory::capture(&self.recorder),
+            history: SessionHistory::capture(&self.recorder, self.state.current_tick()),
         }
     }
 }

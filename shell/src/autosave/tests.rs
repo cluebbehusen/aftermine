@@ -511,6 +511,39 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
 }
 
 #[test]
+fn a_match_decided_right_after_its_resume_records_its_whole_history() {
+    use oxide_kit::keyframes::KEYFRAME_EVERY;
+    let root = scratch("decided-resume");
+    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(KEYFRAME_EVERY + 5);
+    let mut resumed = game
+        .capture_save()
+        .checkpoint()
+        .unwrap()
+        .restore()
+        .unwrap()
+        .install();
+    resumed.issue(oxide_sim::Command::Surrender);
+    resumed.do_tick();
+    assert!(resumed.state.result().is_some());
+    let Ok(SaveOutcome::Wrote(record)) = write_record(&mut resumed, &root) else {
+        panic!("the finished record lands");
+    };
+    let recording = oxide_kit::load_recording(&record).unwrap();
+    assert_eq!(
+        recording.replay.start_tick(),
+        0,
+        "the record keeps the match"
+    );
+    assert_eq!(
+        recording.keyframes.ticks().next(),
+        Some(KEYFRAME_EVERY),
+        "with the keyframes rebuilt before the save"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
     let dir = scratch("late-mark");
     let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();

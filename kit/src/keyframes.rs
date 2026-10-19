@@ -334,6 +334,11 @@ pub struct PendingKeyframes {
 }
 
 impl PendingKeyframes {
+    /// Adds the keyframes a resumed match rebuilt from its saved history.
+    pub fn prepend(&mut self, rebuilt: Keyframes) {
+        self.rebuilt = rebuilt;
+    }
+
     /// Blocks until every keyframe kept before this was taken is encoded,
     /// or the encoder has stopped.
     pub fn wait(self) -> Keyframes {
