@@ -109,6 +109,9 @@ pub struct Presentation {
     /// Slabs, blockers, pits and terraces, laid out from the map by the
     /// first draw. A Presentation never outlives its map.
     ground: std::cell::OnceCell<crate::render::GroundLayout>,
+    /// The fixed ground baked into textures, filled by settled frames. A
+    /// `RefCell` because drawing borrows presentation.
+    pub(crate) ground_cache: std::cell::RefCell<crate::render::GroundCache>,
     pub boundary_fog: crate::boundary_fog::BoundaryFog,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
@@ -352,6 +355,7 @@ impl Presentation {
             last_seen: std::cell::RefCell::new(HashMap::new()),
             minimap_layer: std::cell::RefCell::new(None),
             ground: std::cell::OnceCell::new(),
+            ground_cache: std::cell::RefCell::default(),
             boundary_fog,
             toasts: Vec::new(),
             net_notice: None,

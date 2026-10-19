@@ -27,8 +27,8 @@ use super::environment::{
     BoundaryInsets, LAYERS, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab,
     draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
 };
+use super::ground::GroundView;
 use super::stretches::Shapes;
-use crate::game::Scene;
 use crate::numeric;
 use crate::numeric::Fit;
 use chassis::grid::TilePos;
@@ -37,7 +37,7 @@ use macroquad::prelude::*;
 use oxide_sim::map::{Map, Terrain};
 
 /// Tiles of field beyond the map edge: past the vignette's darkest step.
-const MARGIN: i32 = 8;
+pub(super) const MARGIN: i32 = 8;
 /// Upper plateaus narrower than about twice this many cells are dropped.
 const PLATEAU_RADIUS: u8 = 3;
 /// Cells the last off-playfield bench fades over before the void.
@@ -393,10 +393,9 @@ impl Terraces {
     }
 }
 
-/// Visible tiles, reaching past the map edge as far as the boundary draws.
-fn screen_tiles(game: &Scene<'_>) -> (TilePos, TilePos) {
-    let (lo, hi) = game.presentation.camera.world_rect();
-    let map = game.state.map();
+/// Tiles in view, reaching past the map edge as far as the boundary draws.
+fn screen_tiles(map: &Map, view: &GroundView) -> (TilePos, TilePos) {
+    let (lo, hi) = view.world_rect();
     (
         TilePos::new(
             (numeric::to_i32(lo.x.floor()) - 1).max(-MARGIN),
@@ -409,10 +408,9 @@ fn screen_tiles(game: &Scene<'_>) -> (TilePos, TilePos) {
     )
 }
 
-pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bool) {
-    let (min, max) = screen_tiles(game);
+pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, fractured: bool) {
+    let (min, max) = screen_tiles(map, view);
     let frame = &terraces.frame;
-    let map = game.state.map();
     let material_at = |cx: i32, cy: i32| terraces.material(cx, cy);
     let tiles: Vec<TilePos> = (min.y..max.y)
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
@@ -424,7 +422,7 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
         })
         .collect();
     for &pos in &tiles {
-        let (xs, ys) = cell_edges(game, pos);
+        let (xs, ys) = cell_edges(view, pos);
         for sy in 0..CELLS {
             for sx in 0..CELLS {
                 let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);
@@ -446,7 +444,7 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
             }
         }
     }
-    let zoom = game.presentation.camera.zoom;
+    let zoom = view.zoom();
     let cell = zoom / CELLS as f32;
     let rect_of = |xs: &[f32; 5], ys: &[f32; 5], sx: i32, sy: i32| {
         let (x, y) = (as_index(sx), as_index(sy));
@@ -466,7 +464,7 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
         }
         let (ix, iy) = frame.inner(cx, cy);
         let value = hash(ix.div_euclid(CELLS), iy.div_euclid(CELLS), SALT + 503);
-        let (xs, ys) = cell_edges(game, pos);
+        let (xs, ys) = cell_edges(view, pos);
         let rect = rect_of(&xs, &ys, 0, 0);
         // A peak in the field is more weathered than the wall.
         let (slab, fracture, rebar) = if terraces.peaks.owns(pos) {
@@ -486,7 +484,7 @@ pub(super) fn draw_terraces(game: &Scene<'_>, terraces: &Terraces, fractured: bo
     // also score the riser face.
     let lip = (zoom * 0.055).max(1.0);
     for &pos in &tiles {
-        let (xs, ys) = cell_edges(game, pos);
+        let (xs, ys) = cell_edges(view, pos);
         for sy in 0..CELLS {
             for sx in 0..CELLS {
                 let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);

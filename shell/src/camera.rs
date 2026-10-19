@@ -114,6 +114,11 @@ impl Camera {
         self.zoom_anchor = Some(cursor_px);
     }
 
+    /// Whether a zoom glide is underway.
+    pub fn zooming(&self) -> bool {
+        self.zoom != self.target_zoom
+    }
+
     /// Advances the zoom glide. Call once per frame.
     pub fn update(&mut self, dt: f32) {
         if self.shake > 0.0 {

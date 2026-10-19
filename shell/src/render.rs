@@ -85,6 +85,8 @@ mod chrome;
 mod destruction;
 pub(crate) mod entities;
 mod environment;
+mod ground;
+pub(crate) use ground::{GroundBlend, GroundCache};
 pub(crate) mod hud;
 mod impacts;
 mod levels;
@@ -117,7 +119,7 @@ use entities::{
 };
 pub use minimap::*;
 use panel_draw::{draw_panel, draw_panel_tooltip};
-use world::{draw_fog, draw_scorches, draw_tiles};
+use world::{draw_fog, draw_scorches};
 
 use crate::game::{EffectKind, Scene};
 use crate::input::InputState;
@@ -550,17 +552,18 @@ pub(crate) fn draw_with_performance(
         performance,
         &hud::window_measure,
     );
+    let ground = ground::Ground::of(game);
+    let view = ground::GroundView::live(&game.presentation.camera);
+    let mut ground_cache = game.presentation.ground_cache.borrow_mut();
+    ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
     clear_background(OUTSIDE);
     environment::draw_backdrop(game);
     let alpha = game.clock.render_alpha();
-    let ground = game.ground();
-    let fractured = sprites.quarry_dressing(0).is_some();
-    draw_tiles(game, sprites);
-    world::draw_blockers(game, sprites, &ground.blockers);
-    pits::draw_pits(game, &ground.pits, fractured);
-    boulders::draw_boulders(game, sprites, &ground.slabs);
-    crate::render::world::draw_extractor_frames(game, sprites);
-    terraces::draw_terraces(game, &ground.terraces, fractured);
+    ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
+    world::draw_salvage(game, &ground, &view, sprites);
+    ground_cache.draw(ground::Layer::Raised, &ground, &view, sprites);
+    drop(ground_cache);
+    world::draw_extractor_frames(game, &view, sprites);
     draw_scorches(game, sprites);
     destruction::draw_ground_effects(game, sprites);
     draw_range_ground(game, input);
@@ -579,7 +582,7 @@ pub(crate) fn draw_with_performance(
     if game.presentation.overlay {
         draw_overlay(game, alpha);
     } else if !game.presentation.all_seeing() {
-        draw_fog(game);
+        draw_fog(game, &view);
     }
     // Own-order acknowledgments, rally flags, and radar blips sit above
     // the fog: they are the player's intent and intel, not world state.
@@ -648,16 +651,7 @@ impl GroundLayout {
 }
 
 fn visible_tiles(game: &crate::game::Scene<'_>) -> (TilePos, TilePos) {
-    let (lo, hi) = game.presentation.camera.world_rect();
-    let min = TilePos::new(
-        numeric::to_i32(lo.x.floor()).max(0),
-        numeric::to_i32(lo.y.floor()).max(0),
-    );
-    let max = TilePos::new(
-        numeric::to_i32(hi.x.ceil()).min(game.state.map().width()),
-        numeric::to_i32(hi.y.ceil()).min(game.state.map().height()),
-    );
-    (min, max)
+    ground::GroundView::live(&game.presentation.camera).tiles(game.state.map())
 }
 
 /// Per-theme terrain grading: a subtle multiplier on ground-layer

@@ -1,6 +1,7 @@
 //! Ground layers: terrain tiles (fog-ruled), the fog veil, and battle
 //! scars.
 
+use super::ground::{Ground, GroundView};
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
@@ -11,8 +12,8 @@ const FOG_FEATHER: f32 = 0.45;
 
 /// Fog of war from the local player's perspective: unexplored is void,
 /// explored-but-unseen is dimmed.
-pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
-    let (lo, hi) = game.presentation.camera.world_rect();
+pub(super) fn draw_fog(game: &crate::game::Scene<'_>, view: &GroundView) {
+    let (lo, hi) = view.world_rect();
     let min = numeric::tile_at(lo);
     let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
     // One extra ring so every drawn tile sees all eight neighbors.
@@ -30,16 +31,8 @@ pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
             let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
             // Exact shared edges: translucent rects that overlap draw
             // double-dark seams, so each tile ends where the next begins.
-            let a = game
-                .presentation
-                .camera
-                .to_screen(vec2(x as f32, y as f32))
-                .floor();
-            let b = game
-                .presentation
-                .camera
-                .to_screen(vec2((x + 1) as f32, (y + 1) as f32))
-                .floor();
+            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
             draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
         }
     }
@@ -55,16 +48,8 @@ pub(crate) fn draw_fog(game: &crate::game::Scene<'_>) {
             {
                 continue;
             }
-            let a = game
-                .presentation
-                .camera
-                .to_screen(vec2(x as f32, y as f32))
-                .floor();
-            let b = game
-                .presentation
-                .camera
-                .to_screen(vec2((x + 1) as f32, (y + 1) as f32))
-                .floor();
+            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
             draw_fog_feather(a, b, &neighborhood);
         }
     }
@@ -334,10 +319,12 @@ impl Blockers {
     }
 }
 
-/// The blockers on screen, over the tiles and under the slabs.
-pub(super) fn draw_blockers(game: &crate::game::Scene<'_>, sprites: &Sprites, blockers: &Blockers) {
-    let zoom = game.presentation.camera.zoom;
-    let (min, max) = visible_tiles(game);
+/// The blockers in view, over the tiles and under the slabs.
+pub(super) fn draw_blockers(view: &GroundView, sprites: &Sprites, blockers: &Blockers) {
+    let zoom = view.zoom();
+    let (lo, hi) = view.world_rect();
+    let min = numeric::tile_at(lo);
+    let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
     for placement in &blockers.placements {
         let (anchor, (width, height)) = (placement.anchor, placement.footprint);
         if anchor.x + width <= min.x
@@ -348,10 +335,7 @@ pub(super) fn draw_blockers(game: &crate::game::Scene<'_>, sprites: &Sprites, bl
             continue;
         }
         let source = sprites.ground_blocker(placement.variant);
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(anchor.x as f32, anchor.y as f32));
+        let screen = view.to_screen(vec2(anchor.x as f32, anchor.y as f32));
         sprites.draw(
             screen.x.floor(),
             screen.y.floor(),
@@ -527,251 +511,314 @@ fn quarry_dressing(pos: TilePos, width: i32, height: i32, seed: u64) -> Option<Q
     })
 }
 
-pub(crate) fn draw_tiles(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let zoom = game.presentation.camera.zoom;
-    let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
-    let theme = game.scenario.meta.as_ref().map_or("", |m| m.theme.as_str());
-    let tint = theme_tint(theme);
-    let themed = theme_code(theme).is_some();
-    let map_width = game.state.map().width();
-    // Quarry props vary by map, not by anything in play.
-    let quarry_salt = chassis::hash::fnv1a(game.scenario.name.as_bytes());
-    let map_height = game.state.map().height();
-    let levels = game.ground().levels.as_ref();
-    let (min, max) = visible_tiles(game);
+/// A tile in view and the square it covers.
+struct TileSpot<'a> {
+    pos: TilePos,
+    tile: &'a oxide_sim::map::Tile,
+    /// The tile's top-left corner, unsnapped.
+    screen: Vec2,
+    /// The tile's size between snapped corners.
+    size: Vec2,
+    /// The linear hash that steps ground shades in diagonal waves.
+    wave: usize,
+}
+
+fn for_each_tile<'a>(
+    map: &'a oxide_sim::map::Map,
+    view: &GroundView,
+    mut draw: impl FnMut(TileSpot<'a>),
+) {
+    let (min, max) = view.tiles(map);
     for y in min.y..max.y {
         for x in min.x..max.x {
-            let Some(tile) = game.state.map().tile(TilePos::new(x, y)) else {
+            let pos = TilePos::new(x, y);
+            let Some(tile) = map.tile(pos) else {
                 continue;
             };
-            let screen = game.presentation.camera.to_screen(vec2(x as f32, y as f32));
-            // Position hashes drive all variety: deterministic, no state.
-            let h = x
-                .wrapping_mul(31)
-                .wrapping_add(y.wrapping_mul(17))
-                .cast_unsigned() as usize;
-            // The linear hash deliberately steps shades in diagonal waves.
-            // Grit and cracks use a mixed hash so no shade repeats one texture;
-            // FNV's low bits track coordinate parity, so read its high bits.
-            let variant = h % 6;
-            let detail = (coordinate_hash(x, y, 0x4752_4e44) >> 16) as usize;
-            let next = game
-                .presentation
-                .camera
-                .to_screen(vec2((x + 1) as f32, (y + 1) as f32));
-            let tile_size = vec2(
-                next.x.floor() - screen.x.floor(),
-                next.y.floor() - screen.y.floor(),
-            );
-            // A tiered map tints each tile's ground layer by its level.
-            let paint = levels.and_then(|levels| levels.tile_paint(TilePos::new(x, y), variant));
-            let tint = paint.map_or(tint, |(f, _)| {
-                Color::new(tint.r * f, tint.g * f, tint.b * f, tint.a)
+            let screen = view.to_screen(vec2(x as f32, y as f32));
+            let next = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32));
+            draw(TileSpot {
+                pos,
+                tile,
+                screen,
+                size: next.floor() - screen.floor(),
+                wave: x
+                    .wrapping_mul(31)
+                    .wrapping_add(y.wrapping_mul(17))
+                    .cast_unsigned() as usize,
             });
-            sprites.draw(
-                screen.x.floor(),
-                screen.y.floor(),
-                tint,
-                DrawTextureParams {
-                    dest_size: Some(tile_size),
-                    source: Some(sprites.ground(variant)),
-                    ..Default::default()
-                },
-            );
-            if let Some((_, wash)) = paint.filter(|(_, wash)| *wash > 0.0) {
+        }
+    }
+}
+
+/// How a tile's ground sprite is tinted, and the white wash that brightens
+/// it past what a tint can: a tiered map shades each tile by its level.
+fn ground_paint<'a>(ground: &Ground<'a>) -> impl Fn(&TileSpot<'_>) -> (Color, f32) + use<'a> {
+    let theme = ground
+        .scenario
+        .meta
+        .as_ref()
+        .map_or("", |m| m.theme.as_str());
+    let base = theme_tint(theme);
+    let levels = ground.layout.levels.as_ref();
+    move |spot| match levels.and_then(|levels| levels.tile_paint(spot.pos, spot.wave % 6)) {
+        Some((f, wash)) => (Color::new(base.r * f, base.g * f, base.b * f, base.a), wash),
+        None => (base, 0.0),
+    }
+}
+
+/// Draws the floor one layer at a time: ground, the level washes, grit and
+/// dressing, then the level steps. Each layer crosses the whole view before
+/// the next starts, because a fill between two atlas sprites splits
+/// macroquad's batch, and macroquad keeps a buffer for every draw a frame has
+/// ever needed: drawn tile by tile, a zoomed-out tiered map took fourteen
+/// thousand draws and exhausted an iPad's memory.
+pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprites) {
+    let zoom = view.zoom();
+    let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
+    let theme = ground
+        .scenario
+        .meta
+        .as_ref()
+        .map_or("", |m| m.theme.as_str());
+    let themed = theme_code(theme).is_some();
+    let map = ground.map;
+    let (map_width, map_height) = (map.width(), map.height());
+    // Quarry props vary by map, not by anything in play.
+    let quarry_salt = chassis::hash::fnv1a(ground.scenario.name.as_bytes());
+    let quarry = sprites.quarry_dressing(0).is_some();
+    let levels = ground.layout.levels.as_ref();
+    let paint = ground_paint(ground);
+    for_each_tile(map, view, |spot| {
+        sprites.draw(
+            spot.screen.x.floor(),
+            spot.screen.y.floor(),
+            paint(&spot).0,
+            DrawTextureParams {
+                dest_size: Some(spot.size),
+                source: Some(sprites.ground(spot.wave % 6)),
+                ..Default::default()
+            },
+        );
+    });
+    if levels.is_some() {
+        for_each_tile(map, view, |spot| {
+            let wash = paint(&spot).1;
+            if wash > 0.0 {
                 draw_rectangle(
-                    screen.x.floor(),
-                    screen.y.floor(),
-                    tile_size.x,
-                    tile_size.y,
+                    spot.screen.x.floor(),
+                    spot.screen.y.floor(),
+                    spot.size.x,
+                    spot.size.y,
                     Color::new(1.0, 1.0, 1.0, wash),
                 );
             }
-            let detail_count = sprites.ground_detail_count();
-            let orientation = detail / detail_count;
+        });
+    }
+    for_each_tile(map, view, |spot| {
+        let (x, y) = (spot.pos.x, spot.pos.y);
+        let tile = spot.tile;
+        let tint = paint(&spot).0;
+        // Grit and cracks use a mixed hash so no shade repeats one texture;
+        // FNV's low bits track coordinate parity, so read its high bits.
+        let detail = (coordinate_hash(x, y, 0x4752_4e44) >> 16) as usize;
+        let orientation = detail / sprites.ground_detail_count();
+        sprites.draw(
+            spot.screen.x.floor(),
+            spot.screen.y.floor(),
+            tint,
+            DrawTextureParams {
+                dest_size: Some(spot.size),
+                source: Some(sprites.ground_detail(detail)),
+                flip_x: orientation & 1 == 1,
+                flip_y: orientation & 2 == 2,
+                ..Default::default()
+            },
+        );
+        // Ground dressing stays under resources, entities, and the fog
+        // veil. Static sprites use no wall clock, so reduced-motion mode
+        // needs no alternate path.
+        let pos = spot.pos;
+        // A ramp's ruts and walls are its dressing.
+        let dressed = tile.terrain == oxide_sim::map::Terrain::Ground && !map.is_ramp(pos);
+        let prop_candidate = if tile.cosmetic == 1 || !dressed {
+            None
+        } else {
+            symmetric_theme_prop(theme, pos, map_width, map_height)
+        };
+        let placement = quarry
+            .then(|| quarry_dressing(pos, map_width, map_height, quarry_salt))
+            .flatten()
+            .filter(|_| {
+                tile.cosmetic != 1
+                    && dressed
+                    && symmetric_safe_theme_prop_tile(&ground.scenario.map, pos)
+            });
+        let dressing = if let Some(placement) = placement {
+            sprites
+                .quarry_dressing(placement.variant)
+                .map(|source| (source, placement.rotation, tint))
+        } else if tile.cosmetic == 1 {
+            Some((sprites.decal(3), 0.0, tint))
+        } else if quarry {
+            None
+        } else if let Some(placement) = prop_candidate {
+            if symmetric_safe_theme_prop_tile(&ground.scenario.map, pos) {
+                let source = if placement.variant < 3 {
+                    sprites.theme_prop(theme, placement.variant)
+                } else {
+                    Some(sprites.field_debris(placement.variant - 3))
+                };
+                source.map(|source| (source, placement.rotation(), WHITE))
+            } else {
+                None
+            }
+        } else if !themed && dressed && spot.wave.is_multiple_of(23) {
+            Some((sprites.decal(spot.wave / 23 % 3), 0.0, tint))
+        } else {
+            None
+        };
+        if let Some((source, rotation, dressing_tint)) = dressing {
+            let (offset, scale) = placement.map_or((Vec2::ZERO, 1.0), |p| (p.offset, p.scale));
+            let origin = spot.screen + (Vec2::splat((1.0 - scale) * 0.5) + offset) * zoom;
             sprites.draw(
-                screen.x.floor(),
-                screen.y.floor(),
-                tint,
+                origin.x.floor(),
+                origin.y.floor(),
+                dressing_tint,
                 DrawTextureParams {
-                    dest_size: Some(tile_size),
-                    source: Some(sprites.ground_detail(detail)),
-                    flip_x: orientation & 1 == 1,
-                    flip_y: orientation & 2 == 2,
+                    dest_size: Some(vec2(size * scale, size * scale)),
+                    source: Some(source),
+                    rotation,
                     ..Default::default()
                 },
             );
-            // Ground dressing stays under resources, entities, and the fog
-            // veil. Static sprites use no wall clock, so reduced-motion mode
-            // needs no alternate path.
-            let pos = TilePos::new(x, y);
-            // A ramp's ruts and walls are its dressing.
-            let dressed =
-                tile.terrain == oxide_sim::map::Terrain::Ground && !game.state.map().is_ramp(pos);
-            let prop_candidate = if tile.cosmetic == 1 || !dressed {
-                None
-            } else {
-                symmetric_theme_prop(theme, pos, map_width, map_height)
-            };
-            let quarry = sprites.quarry_dressing(0).is_some();
-            let placement = quarry
-                .then(|| quarry_dressing(pos, map_width, map_height, quarry_salt))
-                .flatten()
-                .filter(|_| {
-                    tile.cosmetic != 1
-                        && dressed
-                        && symmetric_safe_theme_prop_tile(&game.scenario.map, pos)
-                });
-            let dressing = if let Some(placement) = placement {
-                sprites
-                    .quarry_dressing(placement.variant)
-                    .map(|source| (source, placement.rotation, tint))
-            } else if tile.cosmetic == 1 {
-                Some((sprites.decal(3), 0.0, tint))
-            } else if quarry {
-                None
-            } else if let Some(placement) = prop_candidate {
-                if symmetric_safe_theme_prop_tile(&game.scenario.map, pos) {
-                    let source = if placement.variant < 3 {
-                        sprites.theme_prop(theme, placement.variant)
-                    } else {
-                        Some(sprites.field_debris(placement.variant - 3))
-                    };
-                    source.map(|source| (source, placement.rotation(), WHITE))
+        }
+        // Rocks cast a soft skirt onto neighboring ground. Each skirt fills
+        // its tile exactly: neighbouring skirts drawn in the same layer would
+        // otherwise overlap and leave a brighter seam. A quarter turn spins
+        // the quad about its centre, so it is drawn with its sides swapped.
+        if tile.terrain == oxide_sim::map::Terrain::Ground {
+            for (dx, dy, quarter_turns) in [(0, -1, 0u8), (1, 0, 1), (0, 1, 2), (-1, 0, 3)] {
+                let rocky = map
+                    .tile(pos.offset(dx, dy))
+                    .is_some_and(|t| t.terrain == oxide_sim::map::Terrain::Rock);
+                if !rocky {
+                    continue;
+                }
+                let corner = spot.screen.floor();
+                let dest = if quarter_turns % 2 == 1 {
+                    vec2(spot.size.y, spot.size.x)
                 } else {
-                    None
-                }
-            } else if !themed && dressed && h.is_multiple_of(23) {
-                Some((sprites.decal(h / 23 % 3), 0.0, tint))
-            } else {
-                None
-            };
-            if let Some((source, rotation, dressing_tint)) = dressing {
-                let (offset, scale) = placement.map_or((Vec2::ZERO, 1.0), |p| (p.offset, p.scale));
-                let origin = screen + (Vec2::splat((1.0 - scale) * 0.5) + offset) * zoom;
-                sprites.draw(
-                    origin.x.floor(),
-                    origin.y.floor(),
-                    dressing_tint,
-                    DrawTextureParams {
-                        dest_size: Some(vec2(size * scale, size * scale)),
-                        source: Some(source),
-                        rotation,
-                        ..Default::default()
-                    },
-                );
-            }
-            // Rocks cast a soft skirt onto neighboring ground.
-            if tile.terrain == oxide_sim::map::Terrain::Ground {
-                for (dx, dy, rotation) in [
-                    (0, -1, 0.0f32),
-                    (1, 0, std::f32::consts::FRAC_PI_2),
-                    (0, 1, std::f32::consts::PI),
-                    (-1, 0, 3.0 * std::f32::consts::FRAC_PI_2),
-                ] {
-                    let neighbor = TilePos::new(x + dx, y + dy);
-                    let rocky = game
-                        .state
-                        .map()
-                        .tile(neighbor)
-                        .is_some_and(|t| t.terrain == oxide_sim::map::Terrain::Rock);
-                    if rocky {
-                        sprites.draw(
-                            screen.x.floor(),
-                            screen.y.floor(),
-                            tint,
-                            DrawTextureParams {
-                                dest_size: Some(vec2(size, size)),
-                                source: Some(sprites.rock_skirt()),
-                                rotation,
-                                ..Default::default()
-                            },
-                        );
-                    }
-                }
-            }
-            // A tiered map's steps and ramps lie over the ground, under
-            // salvage and frames.
-            if let Some(levels) = levels {
-                levels.draw_tile(game, pos);
-            }
-            // Scrap draws at its live amount only in sight; unseen ground
-            // shows what the player remembers (frozen, like ghosts).
-            let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
-            let scrap = if seen_now {
-                tile.scrap
-            } else {
-                game.my_vision().remembered_scrap(pos)
-            };
-            // Wrecks follow the same sight rule; a live node or rock
-            // outranks the junk visually.
-            let wreck = if seen_now {
-                tile.wreck
-            } else {
-                game.my_vision().remembered_wreck(pos)
-            };
-            // Stamp what is on show; fade what is only remembered. The
-            // map stays bounded: only tiles carrying salvage enter it.
-            let mem_fade = if scrap > 0 || wreck > 0 {
-                super::resource_memory_opacity(game, pos)
-            } else {
-                1.0
-            };
-            let (overlay, flip) = match (tile.terrain, scrap) {
-                // Rock slabs, peak terraces, and pit drops are drawn by their
-                // own passes after the tiles. A cliff tile shows the ground at
-                // its foot, and the levels pass draws its face.
-                (
-                    oxide_sim::map::Terrain::Rock
-                    | oxide_sim::map::Terrain::Peak
-                    | oxide_sim::map::Terrain::Pit
-                    | oxide_sim::map::Terrain::Cliff,
-                    _,
-                ) => (None, false),
-                (oxide_sim::map::Terrain::Ground, 0) if wreck > 0 => {
-                    (Some(sprites.wreck_pile()), h % 5 < 2)
-                }
-                (oxide_sim::map::Terrain::Ground, 0) => (None, false),
-                (oxide_sim::map::Terrain::Ground, s) => {
-                    (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false)
-                }
-            };
-            if let Some(source) = overlay {
-                let overlay_tint = if mem_fade < 1.0 {
-                    Color::new(tint.r, tint.g, tint.b, tint.a * mem_fade)
-                } else {
-                    tint
+                    spot.size
                 };
+                let origin = corner + (spot.size - dest) * 0.5;
                 sprites.draw(
-                    screen.x.floor(),
-                    screen.y.floor(),
-                    overlay_tint,
+                    origin.x,
+                    origin.y,
+                    tint,
                     DrawTextureParams {
-                        dest_size: Some(vec2(size, size)),
-                        source: Some(source),
-                        flip_x: flip,
+                        dest_size: Some(dest),
+                        source: Some(sprites.rock_skirt()),
+                        rotation: f32::from(quarter_turns) * std::f32::consts::FRAC_PI_2,
                         ..Default::default()
                     },
                 );
             }
         }
+    });
+    // A tiered map's steps and ramps lie over the ground, under salvage and
+    // frames.
+    if let Some(levels) = levels {
+        for_each_tile(map, view, |spot| levels.draw_tile(view, spot.pos));
     }
+}
+
+/// Scrap nodes and wrecks on the floor in view. Scrap draws at its live
+/// amount only in sight; unseen ground shows what the player remembers
+/// (frozen, like ghosts).
+pub(super) fn draw_salvage(
+    game: &crate::game::Scene<'_>,
+    ground: &Ground<'_>,
+    view: &GroundView,
+    sprites: &Sprites,
+) {
+    let size = view.zoom().ceil() + 1.0;
+    let paint = ground_paint(ground);
+    for_each_tile(ground.map, view, |spot| {
+        let (pos, tile) = (spot.pos, spot.tile);
+        let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
+        let scrap = if seen_now {
+            tile.scrap
+        } else {
+            game.my_vision().remembered_scrap(pos)
+        };
+        // Wrecks follow the same sight rule; a live node or rock outranks the
+        // junk visually.
+        let wreck = if seen_now {
+            tile.wreck
+        } else {
+            game.my_vision().remembered_wreck(pos)
+        };
+        let (overlay, flip) = match (tile.terrain, scrap) {
+            // Rock slabs, peak terraces, and pit drops are drawn by their own
+            // passes after the tiles. A cliff tile shows the ground at its
+            // foot, and the levels pass draws its face.
+            (
+                oxide_sim::map::Terrain::Rock
+                | oxide_sim::map::Terrain::Peak
+                | oxide_sim::map::Terrain::Pit
+                | oxide_sim::map::Terrain::Cliff,
+                _,
+            ) => (None, false),
+            (oxide_sim::map::Terrain::Ground, 0) if wreck > 0 => {
+                (Some(sprites.wreck_pile()), spot.wave % 5 < 2)
+            }
+            (oxide_sim::map::Terrain::Ground, 0) => (None, false),
+            (oxide_sim::map::Terrain::Ground, s) => {
+                (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false)
+            }
+        };
+        let Some(source) = overlay else {
+            return;
+        };
+        // Stamp what is on show; fade what is only remembered. The map stays
+        // bounded: only tiles carrying salvage enter it.
+        let fade = super::resource_memory_opacity(game, pos);
+        let tint = paint(&spot).0;
+        let tint = if fade < 1.0 {
+            Color::new(tint.r, tint.g, tint.b, tint.a * fade)
+        } else {
+            tint
+        };
+        sprites.draw(
+            spot.screen.x.floor(),
+            spot.screen.y.floor(),
+            tint,
+            DrawTextureParams {
+                dest_size: Some(vec2(size, size)),
+                source: Some(source),
+                flip_x: flip,
+                ..Default::default()
+            },
+        );
+    });
 }
 
 /// Unclaimed derelict Extractor frames, drawn as part of the map: a
 /// collapsed 2x2 machine bed that says "rebuild here". A standing
 /// building on the anchor covers its frame; unexplored ground hides it
 /// like any other terrain fact.
-pub(crate) fn draw_extractor_frames(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let zoom = game.presentation.camera.zoom;
+pub(super) fn draw_extractor_frames(
+    game: &crate::game::Scene<'_>,
+    view: &GroundView,
+    sprites: &Sprites,
+) {
+    let zoom = view.zoom();
     for &frame in game.state.map().extractor_frames() {
         if !crate::strategic_markers::extractor_frame_visible(game, frame) {
             continue;
         }
-        let screen = game
-            .presentation
-            .camera
-            .to_screen(vec2(frame.x as f32, frame.y as f32));
+        let screen = view.to_screen(vec2(frame.x as f32, frame.y as f32));
         sprites.draw(
             screen.x.floor(),
             screen.y.floor(),

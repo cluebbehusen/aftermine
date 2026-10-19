@@ -7,9 +7,9 @@
 
 use super::cell_field::CellField;
 use super::environment::{boundary_ring, hash};
+use super::ground::GroundView;
 use super::world::Blockers;
 use crate::assets::{ROCK_SLAB_SIZES, Sprites};
-use crate::game::Scene;
 use chassis::grid::TilePos;
 use macroquad::prelude::*;
 use oxide_sim::map::{Map, Terrain};
@@ -27,7 +27,7 @@ const SPACING: f32 = 0.5;
 const REACH: i32 = 3;
 /// Tiles past the window edge whose slabs still draw, since a slab
 /// overhangs its tile.
-const DRAW_PAD: i32 = 2;
+pub(super) const DRAW_PAD: i32 = 2;
 const SALT: u32 = 0x534c_4142;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -198,12 +198,12 @@ impl Slabs {
     }
 }
 
-pub(super) fn draw_boulders(game: &Scene<'_>, sprites: &Sprites, slabs: &Slabs) {
-    let (min, max) = super::visible_tiles(game);
-    if min.x >= max.x || min.y >= max.y {
-        return;
-    }
-    let zoom = game.presentation.camera.zoom;
+pub(super) fn draw_boulders(view: &GroundView, sprites: &Sprites, slabs: &Slabs) {
+    // Unclamped: a slab on the map's edge overhangs past it.
+    let (lo, hi) = view.world_rect();
+    let min = TilePos::new(tile_of(lo.x), tile_of(lo.y));
+    let max = TilePos::new(tile_of(hi.x.ceil()), tile_of(hi.y.ceil()));
+    let zoom = view.zoom();
     for slab in &slabs.0 {
         let (tx, ty) = (tile_of(slab.x), tile_of(slab.y));
         if tx < min.x - DRAW_PAD
@@ -215,7 +215,7 @@ pub(super) fn draw_boulders(game: &Scene<'_>, sprites: &Sprites, slabs: &Slabs) 
         }
         let source = sprites.rock_slab(size_class(slab.radius), slab.rank.1 as usize);
         let size = vec2(source.w, source.h) * (zoom / 64.0);
-        let center = game.presentation.camera.to_screen(vec2(slab.x, slab.y));
+        let center = view.to_screen(vec2(slab.x, slab.y));
         sprites.draw(
             (center.x - size.x * 0.5).floor(),
             (center.y - size.y * 0.5).floor(),

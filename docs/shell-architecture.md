@@ -901,6 +901,23 @@ once no LAN teammate plays on whom it could tip off; its chrome stays its own.
 Animation, heading, and weapon effects use the relevant simulation state rather
 than inventing movement or firing delays.
 
+The terrain passes read only the map and its `GroundLayout`, and draw through a
+`GroundView`: the camera's view with world (0, 0) on a whole pixel, or one chunk
+of the `GroundCache`. Once the zoom settles, the cache bakes the passes into
+textures 256 logical pixels square at the display's physical resolution, and
+frames draw those textures. While a zoom glides, or while more chunks are
+missing than one frame bakes, the passes draw straight to the screen and land on
+the same pixels. Two layers keep the live overlays in place: the floor (ground,
+level washes, grit, dressing and level steps) lies under salvage, and the raised
+layer (blockers, pits, slabs and terraces) lies over salvage and under Extractor
+frames. Chunks hold premultiplied color and composite with a premultiplied
+blend. The cache keeps half again as many chunks as are on show, reuses the
+textures it evicts, and stores no texture for a raised chunk that only open
+floor can reach. Within a pass, untextured fills never sit between atlas
+sprites, because every macroquad draw call keeps a vertex buffer for the life of
+the app. The minimap's one-pixel-per-tile texture uploads only on frames that
+change a tile's color.
+
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a
 separate mount layer draws over its hull, its worker body, a large airframe's

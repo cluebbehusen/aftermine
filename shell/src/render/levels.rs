@@ -11,7 +11,7 @@
 
 use super::cell_field::{CELLS, cell_edges};
 use super::environment::{LAYERS, WAVE_LIFTS, draw_fracture, draw_missing_slab, hash, rgba};
-use crate::game::Scene;
+use super::ground::GroundView;
 use crate::numeric::{self, Fit};
 use chassis::grid::{TilePos, as_index};
 use macroquad::prelude::*;
@@ -827,14 +827,14 @@ impl Levels {
 
     /// Draws one tile's steps, ramp, and wear: over its ground, under any
     /// salvage or frame on it.
-    pub(crate) fn draw_tile(&self, game: &Scene<'_>, pos: TilePos) {
+    pub(super) fn draw_tile(&self, view: &GroundView, pos: TilePos) {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.width || pos.y >= self.height {
             return;
         }
         let tile = as_index(pos.y * self.width + pos.x);
         let ops = &self.ops[self.starts[tile].fit::<usize>()..self.starts[tile + 1].fit::<usize>()];
         if !ops.is_empty() {
-            let (xs, ys) = cell_edges(game, pos);
+            let (xs, ys) = cell_edges(view, pos);
             for op in ops {
                 let (sx, sy) = (usize::from(op.sx), usize::from(op.sy));
                 let (w, h) = (xs[sx + 1] - xs[sx], ys[sy + 1] - ys[sy]);
@@ -849,10 +849,9 @@ impl Levels {
         }
         if let Ok(found) = self.decals.binary_search_by_key(&tile, |decal| decal.0) {
             let (_, top, value) = self.decals[found];
-            let camera = &game.presentation.camera;
-            let zoom = camera.zoom;
+            let zoom = view.zoom();
             let cell = zoom / CELLS as f32;
-            let a = camera.to_screen(vec2(pos.x as f32, pos.y as f32));
+            let a = view.to_screen(vec2(pos.x as f32, pos.y as f32));
             let rect = Rect::new(a.x.floor(), a.y.floor(), cell, cell);
             if value % 3 == 0 {
                 draw_missing_slab(rect, cell, top, value);
