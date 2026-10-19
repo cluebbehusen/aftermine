@@ -67,7 +67,7 @@ impl State {
         for dy in 0..h {
             for dx in 0..w {
                 let t = anchor.offset(dx, dy);
-                if !self.map.terrain_passable(t) {
+                if !self.map.terrain_passable(t) || (self.map.is_ramp(t) && !kind.fits_ramp()) {
                     return Some(PlaceRefusal::Terrain);
                 }
                 if self.known_building_at_except(player, t, ignored) {
@@ -286,6 +286,11 @@ impl State {
         for dy in 0..h {
             for dx in 0..w {
                 let t = anchor.offset(dx, dy);
+                // Ramps are part of the public map, so this refuses with or
+                // without sight.
+                if self.map.is_ramp(t) && !kind.fits_ramp() {
+                    return Some(PlaceRefusal::Terrain);
+                }
                 if vision.visible(t) {
                     if !self.map.terrain_passable(t) {
                         return Some(PlaceRefusal::Terrain);

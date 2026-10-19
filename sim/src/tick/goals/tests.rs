@@ -19,6 +19,7 @@ const FIELD: [&str; 9] = [
 
 fn world(map: &[&str], units: &[(UnitKind, i32, i32)]) -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "goals".into(),
         map: map.iter().map(|row| (*row).to_owned()).collect(),

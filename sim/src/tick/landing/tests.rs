@@ -15,6 +15,7 @@ fn arena() -> State {
     rows[1] = "#1.....................#".to_string();
     rows[13] = "#....................2.#".to_string();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "mirror".into(),
         map: rows,

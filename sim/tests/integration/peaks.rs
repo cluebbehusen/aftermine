@@ -38,6 +38,7 @@ fn ridge(gap: bool, units: Vec<UnitSpec>) -> Scenario {
     }
     map.push(wall_row("############^###########"));
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ridge".into(),
         map,
@@ -376,6 +377,7 @@ fn a_building_flush_against_the_ridge_is_safe_from_the_far_side() {
     }
     map.push("############^###########".to_string());
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "flush".into(),
         map,

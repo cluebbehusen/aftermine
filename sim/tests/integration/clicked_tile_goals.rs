@@ -38,6 +38,7 @@ fn fill(rows: &mut [Vec<char>], (x0, y0): (usize, usize), (x1, y1): (usize, usiz
 /// A sandbox over `map` with one seat per team entry.
 fn sandbox(map: Vec<String>, teams: &[Option<u8>], units: &[(u8, UnitKind, i32, i32)]) -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "clicked-tile-goals".into(),
         map,

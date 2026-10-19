@@ -17,6 +17,7 @@ fn scene_with(kind: UnitKind, rocks: &[(usize, usize)]) -> crate::State {
     }
     let rows: Vec<String> = rows.into_iter().map(|r| r.into_iter().collect()).collect();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ground-motor".into(),
         map: rows,

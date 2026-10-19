@@ -19,6 +19,7 @@ fn arena4(units: Vec<UnitSpec>) -> Scenario {
         bot_config: None,
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "team-arena".into(),
         map: vec![

@@ -21,6 +21,7 @@ fn swarm(paired: bool) -> Scenario {
         buildings.push(building(0, BuildingKind::Foundry, 54, 45));
     }
     Scenario {
+        levels: Vec::new(),
         name: "scuttler-frontage".into(),
         mode: ScenarioMode::Sandbox,
         map: vec![".".repeat(80); 60],

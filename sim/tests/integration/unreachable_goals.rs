@@ -36,6 +36,7 @@ const ISLAND: TilePos = TilePos::new(24, 5);
 
 fn sandbox(map: &[&str], units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "unreachable-goals".into(),
         map: map.iter().map(|row| (*row).to_owned()).collect(),
@@ -297,6 +298,7 @@ fn mirrored_groups_sent_into_mirrored_enclosures_settle_symmetrically() {
         });
     }
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "mirrored-islands".into(),
         map,

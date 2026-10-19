@@ -192,6 +192,7 @@ fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
         bot_config: None,
     };
     let scenario = oxide_sim::Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "landing-fog".into(),
         map: vec![
@@ -758,6 +759,7 @@ fn the_fog_view_shows_a_workers_idle_weld_switch_to_its_side_only() {
     };
     let unit = |player, kind, x, y| UnitSpec { player, kind, x, y };
     let scenario = oxide_sim::Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "idle-weld-fog".into(),
         map: vec![

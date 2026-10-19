@@ -36,6 +36,7 @@ pub(super) fn trio(teams: [Option<u8>; 3]) -> Scenario {
         bot_config: Some(config()),
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "opponent trio".into(),
         map: TRIO.map(str::to_owned).to_vec(),

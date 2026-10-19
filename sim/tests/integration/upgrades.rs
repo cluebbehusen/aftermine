@@ -38,6 +38,7 @@ fn arena(scrap: u32, crucible: bool, reclaimer: bool) -> Scenario {
         buildings.push(common::building(0, BuildingKind::Crucible, 11, 5));
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "upgrade-arena".into(),
         map: vec![

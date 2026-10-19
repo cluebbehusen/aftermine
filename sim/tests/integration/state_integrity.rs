@@ -46,6 +46,7 @@ fn sandbox_cannot_restore_a_match_result_or_elimination_stamp() {
 /// siege.
 fn arena() -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "integrity-arena".into(),
         map: vec![
@@ -1103,6 +1104,52 @@ fn every_checklist_row_refuses_its_forgery() {
                 );
                 let width = usize::try_from(d["map"]["grid"]["width"].as_u64().unwrap()).unwrap();
                 d["map"]["grid"]["cells"][y * width + x]["scrap"] = json!(40);
+            },
+            "map grid dimensions disagree with its cells",
+        ),
+        (
+            "a cliff on a map with no levels",
+            |d| {
+                d["map"]["grid"]["cells"][0]["terrain"] = json!("cliff");
+            },
+            "map grid dimensions disagree with its cells",
+        ),
+        (
+            "a levels layer holding a single level",
+            |d| {
+                let (width, height) = (
+                    d["map"]["grid"]["width"].clone(),
+                    d["map"]["grid"]["height"].clone(),
+                );
+                let cells = d["map"]["grid"]["cells"].as_array().unwrap().len();
+                d["map"]["elevation"] = json!({"width": width, "height": height, "cells": vec![json!({"level": 1}); cells]});
+            },
+            "map grid dimensions disagree with its cells",
+        ),
+        (
+            "a levels layer smaller than the map",
+            |d| {
+                d["map"]["elevation"] =
+                    json!({"width": 1, "height": 2, "cells": [{"level": 1}, {"level": 2}]});
+            },
+            "map grid dimensions disagree with its cells",
+        ),
+        (
+            "ground at two levels touching with no cliff between",
+            |d| {
+                let (width, height) = (
+                    d["map"]["grid"]["width"].clone(),
+                    d["map"]["grid"]["height"].clone(),
+                );
+                let cells = d["map"]["grid"]["cells"].as_array().unwrap().len();
+                let mut levels = vec![json!({"level": 1}); cells];
+                // The middle of the map is open ground on every shipped
+                // arena, so one raised tile there touches lower ground.
+                let w = usize::try_from(width.as_u64().unwrap()).unwrap();
+                let h = usize::try_from(height.as_u64().unwrap()).unwrap();
+                let middle = (h / 2) * w + w / 2;
+                levels[middle] = json!({"level": 2});
+                d["map"]["elevation"] = json!({"width": width, "height": height, "cells": levels});
             },
             "map grid dimensions disagree with its cells",
         ),

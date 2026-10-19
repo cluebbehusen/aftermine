@@ -402,6 +402,7 @@ fn calibration_open() -> crate::Scenario {
     use crate::scenario::{PlayerSpec, UnitSpec};
 
     crate::Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "Calibration Open".into(),
         map: [
@@ -1388,6 +1389,7 @@ fn a_wide_hull_routes_only_through_ground_that_holds_it() {
     rows[1].replace_range(2..3, "1");
     rows[9].replace_range(19..20, "2");
     let state = crate::Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "rooms".into(),
         map: rows,

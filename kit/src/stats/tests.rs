@@ -12,6 +12,7 @@ fn record_activity(ticks: u64) -> GameReplay {
     map[17][27] = '2';
     map[3][5] = 's';
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "statistics activity".into(),
         map: map

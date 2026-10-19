@@ -10,6 +10,7 @@ fn field(rows: &[&str]) -> State {
     map.extend(rows.iter().map(|r| format!("#{r}#")));
     map.push("#".repeat(width + 2));
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "passages".into(),
         map,
@@ -134,6 +135,7 @@ fn hybrid(west_gap: usize) -> State {
     third.name = "East".into();
     players.push(third);
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "hybrid".into(),
         map,

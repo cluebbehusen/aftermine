@@ -14,6 +14,7 @@ fn player(name: &str, team: Option<u8>) -> PlayerSpec {
 
 fn allied_incident_state() -> State {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "allied-incidents".into(),
         map: vec![
@@ -69,6 +70,7 @@ fn screened_source(extra_hostile: bool) -> (State, TilePos) {
         });
     }
     let state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "screened-salvage".into(),
         map: vec![

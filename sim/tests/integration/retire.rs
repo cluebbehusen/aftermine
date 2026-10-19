@@ -63,6 +63,7 @@ fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>, scrap: u32) -> Scen
         })
         .collect();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "retire-field".into(),
         map,
@@ -716,6 +717,7 @@ fn mirrored_machines_retire_in_mirrored_steps() {
     let home = TilePos::new(10, 7);
     let away = TilePos::new(width - 2 - home.x, height - 2 - home.y);
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "retire-mirror".into(),
         map,

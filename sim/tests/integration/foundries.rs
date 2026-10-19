@@ -19,6 +19,7 @@ fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
         buildings.push(common::building(0, BuildingKind::Fabricator, 3, 6));
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "foundry-arena".into(),
         map: vec![

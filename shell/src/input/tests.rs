@@ -4079,6 +4079,7 @@ fn an_allied_site_under_fog_refuses_selection() {
         bot_config: None,
     };
     let mut scenario = oxide_sim::Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ally-site-arena".into(),
         map: vec![

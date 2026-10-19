@@ -22,6 +22,7 @@ fn an_obstruction_never_shrinks_the_reported_air_route() {
         }
         rows.push("####################".to_string());
         Scenario {
+            levels: Vec::new(),
             mode: ScenarioMode::Match,
             name: "detour".into(),
             map: rows,
@@ -64,6 +65,7 @@ fn a_peak_detour_never_reads_shorter_than_the_straight_line() {
     }
     rows.push("####################".to_string());
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "detour".into(),
         map: rows,

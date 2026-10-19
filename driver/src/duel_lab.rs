@@ -647,6 +647,7 @@ pub fn stage(
         bot_config: None,
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: format!("duel-{}-vs-{}", west.name(), east.name()),
         map: layout.map(),

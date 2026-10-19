@@ -175,11 +175,11 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
                 vision.remembered_scrap(pos)
             };
             let base = match (tile.terrain, scrap) {
-                (oxide_sim::map::Terrain::Rock, _) => MINI_ROCK,
+                (oxide_sim::map::Terrain::Rock | oxide_sim::map::Terrain::Cliff, _) => MINI_ROCK,
                 (oxide_sim::map::Terrain::Peak, _) => MINI_PEAK,
                 (oxide_sim::map::Terrain::Pit, _) => MINI_PIT,
-                (_, 0) => MINI_GROUND,
-                (_, _) => SCRAP_COLOR,
+                (oxide_sim::map::Terrain::Ground, 0) => MINI_GROUND,
+                (oxide_sim::map::Terrain::Ground, _) => SCRAP_COLOR,
             };
             if visible {
                 // Stamp what is on show. The world renderer stamps only

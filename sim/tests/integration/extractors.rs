@@ -18,6 +18,7 @@ use oxide_sim::{
 /// A 20x10 arena with one frame mid-field ('E' anchor at (9, 4)).
 fn arena(scrap: u32, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "extractor-arena".into(),
         map: vec![
@@ -92,6 +93,7 @@ fn support_arena(
         common::building(0, BuildingKind::Extractor, SUPPORT_FRAME.x, SUPPORT_FRAME.y),
     );
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "extractor-support-arena".into(),
         map: tiles
@@ -134,6 +136,7 @@ fn earnings_over(mut state: State, start: u64, ticks: u64) -> u32 {
 /// A wider field where the frame begins outside seat zero's Foundry sight.
 fn fog_arena(units: Vec<UnitSpec>) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "extractor-fog-arena".into(),
         map: vec![

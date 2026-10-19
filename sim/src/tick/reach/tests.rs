@@ -15,6 +15,7 @@ fn world_with_teams(
     units: &[(u8, UnitKind, i32, i32)],
 ) -> State {
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "reach".into(),
         map: map.iter().map(|row| (*row).to_owned()).collect(),

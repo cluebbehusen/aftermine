@@ -13,6 +13,7 @@ fn scenario(buildings: Vec<BuildingSpec>, scrap: u32) -> Scenario {
     let mut map = vec![ground.clone(); 12];
     map[2] = anchored.into_iter().collect();
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "detectors".into(),
         map,

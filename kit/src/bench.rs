@@ -66,6 +66,7 @@ pub fn mass_battle(per_side: u32) -> Scenario {
         });
     }
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: format!("mass-battle-{per_side}"),
         map,

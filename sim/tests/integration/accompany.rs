@@ -840,6 +840,7 @@ fn mirrored_escorts_take_mirrored_slots() {
         player.team = Some(0);
     }
     let mut state = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Sandbox,
         name: "escort-mirror".into(),
         map,

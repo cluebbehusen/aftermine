@@ -23,6 +23,7 @@ fn arena4() -> Scenario {
         bot_config: None,
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "surrender-arena".into(),
         map: vec![

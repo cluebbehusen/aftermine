@@ -56,6 +56,7 @@ pub(crate) fn match_on(
     units: &[(u8, UnitKind, i32, i32)],
 ) -> Scenario {
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "staged".into(),
         map,
@@ -195,6 +196,7 @@ fn arena(scrap: u32) -> Scenario {
         bot_config: Some(config()),
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "opponent arena".into(),
         map: ARENA.map(str::to_owned).to_vec(),

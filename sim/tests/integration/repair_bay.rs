@@ -40,6 +40,7 @@ fn arena(units: Vec<UnitSpec>, scrap: u32, bay: bool) -> Scenario {
         Vec::new()
     };
     Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "bay-arena".into(),
         map: vec![

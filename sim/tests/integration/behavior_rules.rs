@@ -86,6 +86,7 @@ fn ghost_memory_survives_unseen_demolition_until_revisited() {
         bot_config: None,
     });
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ghost-lab".into(),
         map: vec![
@@ -309,6 +310,7 @@ fn eliminated_players_cannot_command_survivors() {
         bot_config: None,
     });
     let scenario = Scenario {
+        levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "elimination".into(),
         map: vec![
