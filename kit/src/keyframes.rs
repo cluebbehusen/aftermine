@@ -177,6 +177,11 @@ impl ChainEncoder {
     pub(crate) fn encode(&mut self, state: &State) -> Result<Keyframe> {
         let mut raw = Vec::new();
         ciborium::into_writer(state, &mut raw)?;
+        // A loader refuses a record carrying a larger keyframe outright.
+        ensure!(
+            raw.len() as u64 <= MAX_DECODED,
+            "world exceeds the keyframe size bound"
+        );
         let delta = (1..CHAIN).contains(&self.run);
         let dictionary = delta.then_some(self.previous.as_slice());
         let bytes = compression::compress(&raw, dictionary, LEVEL)?;

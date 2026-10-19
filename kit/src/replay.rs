@@ -240,33 +240,26 @@ pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ReplayError> 
             "file is {length} bytes, beyond the {MAX_RECORDING_BYTES}-byte limit"
         )));
     }
-    let mut bytes = Vec::new();
-    file.take(MAX_RECORDING_BYTES).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 + 8 != length {
-        return Err(invalid("file changed while being read"));
-    }
-    read_recording(&bytes).map_err(invalid)
+    read_recording(&mut file, length - 8).map_err(invalid)
 }
 
-/// Splits the next `len` bytes off `rest`.
-fn take<'a>(rest: &mut &'a [u8], len: u64) -> anyhow::Result<&'a [u8]> {
-    let (frame, tail) = rest
-        .split_at_checked(usize::try_from(len)?)
-        .ok_or_else(|| anyhow::anyhow!("truncated replay"))?;
-    *rest = tail;
+/// Reads the next `len` of the `remaining` bytes the file holds. Each frame
+/// is read on its own, so loading never holds the whole file at once.
+fn take(reader: &mut impl Read, remaining: &mut u64, len: u64) -> anyhow::Result<Vec<u8>> {
+    anyhow::ensure!(len <= *remaining, "truncated replay");
+    *remaining -= len;
+    let mut frame = vec![0; usize::try_from(len)?];
+    reader.read_exact(&mut frame)?;
     Ok(frame)
 }
 
-/// Decodes everything after the magic.
-fn read_recording(bytes: &[u8]) -> anyhow::Result<Recording> {
-    use anyhow::{Context, ensure};
-    let (length, rest) = bytes.split_first_chunk::<4>().context("truncated header")?;
-    let length = u64::from(u32::from_le_bytes(*length));
+/// Decodes the `remaining` bytes after the magic.
+fn read_recording(reader: &mut impl Read, mut remaining: u64) -> anyhow::Result<Recording> {
+    use anyhow::ensure;
+    let length = take(reader, &mut remaining, 4)?;
+    let length = u64::from(u32::from_le_bytes(length.try_into().expect("four bytes")));
     ensure!(length <= MAX_HEADER, "replay header exceeds its byte bound");
-    let (header, mut rest) = rest
-        .split_at_checked(usize::try_from(length)?)
-        .context("truncated header")?;
-    let header: Header = serde_json::from_slice(header)?;
+    let header: Header = serde_json::from_slice(&take(reader, &mut remaining, length)?)?;
     ensure!(
         header.version == FORMAT,
         "unsupported replay format {} (this build reads {FORMAT})",
@@ -277,7 +270,7 @@ fn read_recording(bytes: &[u8]) -> anyhow::Result<Recording> {
         "too many keyframes"
     );
     let json = crate::compression::decompress(
-        take(&mut rest, header.record.compressed)?,
+        &take(reader, &mut remaining, header.record.compressed)?,
         header.record.decoded,
         MAX_REPLAY_BYTES as u64,
         None,
@@ -294,10 +287,11 @@ fn read_recording(bytes: &[u8]) -> anyhow::Result<Recording> {
             hash: entry.hash,
             encoding: entry.encoding,
             decoded: entry.decoded,
-            bytes: take(&mut rest, entry.compressed)?.into(),
+            bytes: take(reader, &mut remaining, entry.compressed)?.into(),
         });
     }
-    ensure!(rest.is_empty(), "trailing replay bytes");
+    ensure!(remaining == 0, "trailing replay bytes");
+    ensure!(reader.read(&mut [0])? == 0, "file changed while being read");
     let keyframes = Keyframes::new(frames);
     keyframes.validate(replay.start_tick(), replay_duration(&replay))?;
     Ok(Recording { replay, keyframes })
