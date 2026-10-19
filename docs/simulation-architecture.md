@@ -931,11 +931,12 @@ shares with the levels above and below it, and ground higher than both ends
 blocks the line. Indirect fire passes over any level but never lands above the
 shooter's highest level, a predicted lead included. A building stands at the
 level of its footprint, not of the edge point a shot aims at. Weapon splash,
-demolition rings, and Scuttle Charges reach only ground bodies on a level the
-blast shares; aircraft crashes and warheads ignore levels. Acquisition ranks a
-victim the levels allow ahead of one they refuse, so a unit shelled from a
-plateau still picks its attacker and climbs a ramp to answer. All of these rules
-live in `sim/src/tick/fire.rs`.
+demolition rings, and Scuttle Charge triggers and blasts spread as an arc would:
+a peak between the burst and a body shelters it, rock, cliffs and pits do not,
+and a ground body must share the blast's level. Aircraft crashes and warheads
+ignore peaks and levels. Acquisition ranks a victim the levels allow ahead of
+one they refuse, so a unit shelled from a plateau still picks its attacker and
+climbs a ramp to answer. All of these rules live in `sim/src/tick/fire.rs`.
 
 Hitscan attacks buffer damage for same-tick resolution. Projectile weapons
 launch a serialized `Shell` toward a fixed fire-time aim point. Predictive aim

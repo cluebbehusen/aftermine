@@ -1,5 +1,6 @@
 //! Buried-charge triggers and the lifecycle of construction over hidden mines.
 
+use super::fire::{ShotEnd, blast_reaches};
 use crate::stats::{
     BuildingKind, CHARGE_BLAST_RADIUS, CHARGE_DAMAGE, CHARGE_TRIGGER_RADIUS, Domain,
 };
@@ -85,16 +86,22 @@ pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
         if b.kind != BuildingKind::ScuttleCharge || !b.built() || b.hp == 0 {
             continue;
         }
+        // A charge trips only on a body its blast would reach.
         let tripped = state.units.iter().any(|u| {
             u.hp > 0
                 && state.hostile(b.player, u.player)
                 && u.domain() == Domain::Ground
-                && state.map.shares_level(b.anchor, u.tile())
                 && u.pos.dist_sq(b.center()) <= {
                     let trigger =
                         CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
                     trigger * trigger
                 }
+                && blast_reaches(
+                    &state.map,
+                    b.center(),
+                    b.anchor,
+                    ShotEnd::new(u.pos, Domain::Ground),
+                )
         });
         if tripped {
             detonate(state, slot, events);
@@ -118,14 +125,13 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
         player: owner,
         at: center,
     });
-    // A blast stays on the charge's level, like any other.
     let map = &state.map;
     for u in &mut state.units {
         if u.hp > 0
             && state.players[owner.0 as usize].team != state.players[u.player.0 as usize].team
             && u.domain() == Domain::Ground
             && units_blast(u)
-            && map.shares_level(anchor, u.tile())
+            && blast_reaches(map, center, anchor, ShotEnd::new(u.pos, Domain::Ground))
         {
             super::damage::unit(u, CHARGE_DAMAGE, now, events);
         }
@@ -136,7 +142,12 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
             && other.kind.is_stealthy()
             && state.players[owner.0 as usize].team != state.players[other.player.0 as usize].team
             && other.center().dist_sq(center) <= blast_sq
-            && map.shares_level(anchor, other.anchor)
+            && blast_reaches(
+                map,
+                center,
+                anchor,
+                ShotEnd::new(other.center(), Domain::Ground).on(other.anchor),
+            )
         {
             super::damage::building(other, CHARGE_DAMAGE, events);
         }

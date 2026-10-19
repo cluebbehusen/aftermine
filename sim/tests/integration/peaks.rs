@@ -1,17 +1,21 @@
 //! Peak terrain: the mountain that blocks everything. Ground can't walk
 //! it, air can't fly it, direct fire can't cross it in any domain
-//! pairing, and artillery arcs break on the ridge. Vision deliberately
-//! ignores it — cover is a firing rule, not a stealth system.
+//! pairing, artillery arcs break on the ridge, and blasts break on it too.
+//! Vision deliberately ignores it — cover is a firing rule, not a stealth
+//! system.
 
 use crate::common;
-use common::{cmd, players, run, unit};
+use common::{building, cmd, players, run, run_until, unit};
 use oxide_sim::scenario::ScenarioMode;
 
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use oxide_sim::map::Terrain;
-use oxide_sim::scenario::UnitSpec;
+use oxide_sim::scenario::{BuildingSpec, UnitSpec};
 use oxide_sim::stats::Domain;
-use oxide_sim::{Command, Event, PlayerId, Scenario, Target, UnitKind};
+use oxide_sim::{
+    BuildingKind, Command, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind,
+};
 
 /// A ridge wall at x=12. `gap` opens one corridor at y=2; without it the
 /// two halves share a map and nothing else. Both foundries sit west —
@@ -456,4 +460,158 @@ fn an_air_patrol_through_the_ridge_keeps_flying_its_legs() {
         home_again,
         "the patrol rotated to its second leg instead of deadlocking"
     );
+}
+
+/// Open ground around one peak at (12, 5). A blast bursting at the center
+/// of (11, 5) stands √2 from bodies at (10, 6) and (12, 6), but the line to
+/// the second crosses the peak's corner, and a corner crossing touches both
+/// tiles beside it.
+fn lone_peak(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
+    let map = (0..12)
+        .map(|y| {
+            (0..24)
+                .map(|x| match (x, y) {
+                    (0 | 23, _) | (_, 0 | 11) => '#',
+                    (12, 5) => '^',
+                    _ => '.',
+                })
+                .collect()
+        })
+        .collect();
+    Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Sandbox,
+        name: "lone peak".into(),
+        map,
+        players: players(0),
+        units,
+        buildings,
+        meta: None,
+    }
+    .build()
+    .unwrap()
+}
+
+/// `player`'s bystanders to a burst at (11, 5) of `lone_peak`: one in the
+/// open, one behind the peak.
+fn bystanders(player: u8) -> [UnitSpec; 2] {
+    [
+        unit(player, UnitKind::Harvester, 10, 6),
+        unit(player, UnitKind::Harvester, 12, 6),
+    ]
+}
+
+/// The open-side bystander took the blast and the one behind the peak did
+/// not.
+fn sheltered(state: &State, open: UnitId, behind: UnitId) {
+    let full = UnitKind::Harvester.stats().max_hp;
+    let hp = |id| state.unit(id).map_or(0, |u| u.hp);
+    assert!(hp(open) < full, "the open side takes the blast");
+    assert_eq!(hp(behind), full, "the peak shelters the far side");
+}
+
+#[test]
+fn a_shell_burst_breaks_on_a_peak() {
+    let [open, behind] = bystanders(1);
+    let state = lone_peak(
+        vec![unit(0, UnitKind::Bombard, 3, 5), open, behind],
+        Vec::new(),
+    );
+    let [gun, open, behind] = [0, 1, 2].map(|i| state.units()[i].id);
+    let at = |x: &str, y: &str| serde_json::json!(Vec2Fx::new(Fx::lit(x), Fx::lit(y)));
+    let mut staged = serde_json::to_value(&state).unwrap();
+    let now = state.current_tick();
+    staged["shells"] = serde_json::json!([{
+        "kind": "shell",
+        "shooter": {"kind": "unit", "id": gun},
+        "player": 0,
+        "launch": at("3.5", "5.5"),
+        "impact": at("11.5", "5.5"),
+        "launched_at": now,
+        "arrival": now + 1,
+        "damage": 10,
+        "targets": {"ground": true, "air": false},
+        "splash": Fx::lit("1.5"),
+    }]);
+    let mut state: State = serde_json::from_value(staged).unwrap();
+    run(&mut state, 2);
+    sheltered(&state, open, behind);
+}
+
+#[test]
+fn a_breaker_blast_breaks_on_a_peak() {
+    let [open, behind] = bystanders(1);
+    let mut state = lone_peak(
+        vec![
+            unit(0, UnitKind::Breaker, 8, 5),
+            unit(1, UnitKind::Harvester, 11, 5),
+            open,
+            behind,
+        ],
+        Vec::new(),
+    );
+    let [breaker, victim, open, behind] = [0, 1, 2, 3].map(|i| state.units()[i].id);
+    let fired = |events: &[Event]| {
+        events
+            .iter()
+            .any(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == breaker))
+    };
+    let first = state
+        .tick(&[cmd(
+            0,
+            Command::Attack {
+                units: vec![breaker],
+                target: Target::Unit(victim).into(),
+                queue: false,
+            },
+        )])
+        .events;
+    if !fired(&first) {
+        run_until(&mut state, 300, |_, events| fired(events));
+    }
+    sheltered(&state, open, behind);
+}
+
+#[test]
+fn a_sapper_ring_breaks_on_a_peak() {
+    let [open, behind] = bystanders(1);
+    let mut state = lone_peak(
+        vec![
+            unit(0, UnitKind::Sapper, 8, 5),
+            unit(1, UnitKind::Harvester, 11, 5),
+            open,
+            behind,
+        ],
+        Vec::new(),
+    );
+    let [sapper, victim, open, behind] = [0, 1, 2, 3].map(|i| state.units()[i].id);
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![sapper],
+            target: Target::Unit(victim).into(),
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 300, |state, _| state.unit(sapper).is_none());
+    sheltered(&state, open, behind);
+}
+
+#[test]
+fn a_scuttle_charge_blast_breaks_on_a_peak() {
+    // The walker standing on the charge trips it.
+    let [open, behind] = bystanders(0);
+    let mut state = lone_peak(
+        vec![open, behind, unit(0, UnitKind::Harvester, 11, 5)],
+        vec![building(1, BuildingKind::ScuttleCharge, 11, 5)],
+    );
+    let [open, behind] = [0, 1].map(|i| state.units()[i].id);
+    let events = run(&mut state, 2);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::ChargeDetonated { .. })),
+        "the charge went off"
+    );
+    sheltered(&state, open, behind);
 }
