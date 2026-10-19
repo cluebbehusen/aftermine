@@ -83,7 +83,9 @@ impl Elevation {
         }
     }
 
-    fn overlaps(self, other: Self) -> bool {
+    /// Whether the two share a level: equal levels, or a ramp and either
+    /// level it joins.
+    pub fn overlaps(self, other: Self) -> bool {
         let ((a_lo, a_hi), (b_lo, b_hi)) = (self.span(), other.span());
         a_lo <= b_hi && b_lo <= a_hi
     }
@@ -545,6 +547,15 @@ impl Map {
     /// Whether `pos` is a ramp.
     pub fn is_ramp(&self, pos: TilePos) -> bool {
         matches!(self.elevation(pos), Some(Elevation::Ramp { .. }))
+    }
+
+    /// Whether bodies standing on `a` and `b` share a level, as a blast
+    /// needs to reach one from the other. Always true on a flat map.
+    pub fn shares_level(&self, a: TilePos, b: TilePos) -> bool {
+        match (self.elevation(a), self.elevation(b)) {
+            (Some(a), Some(b)) => a.overlaps(b),
+            _ => true,
+        }
     }
 
     /// Whether the map has levels.

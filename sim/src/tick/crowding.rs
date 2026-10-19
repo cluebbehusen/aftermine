@@ -273,7 +273,7 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                             state,
                             super::fire::Fire::of(w),
                             super::fire::ShotEnd::new(unit.pos, unit.domain()),
-                            super::fire::ShotEnd::new(aim, view.domain),
+                            super::fire::ShotEnd::new(aim, view.domain).on(view.footing()),
                             super::fire::Landing::Checked,
                         )
                 })

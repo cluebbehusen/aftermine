@@ -13,7 +13,7 @@ pub(super) use mounts::{
     Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
 };
 
-use super::super::fire::{Fire, Landing, ShotEnd, clear_line};
+use super::super::fire::{Fire, Landing, ShotEnd, clear_line, levels_allow};
 use super::super::flight;
 use super::super::landing;
 use super::super::route_for;
@@ -363,6 +363,9 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
         }
         let Some(radius) = shell.splash else { continue };
         let radius_sq = radius * radius;
+        // A blast spreads along the level it lands on, never up or down a
+        // cliff, and a direct hit's blast stands on the building.
+        let footing = direct.map_or_else(|| landing_tile(shell.launch, shell.impact), |b| b.anchor);
         // Buried charges take splash, as in `buffer_shot`.
         if shell.targets.ground {
             for b in &state.buildings {
@@ -372,6 +375,7 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
                     || !state.hostile(shell.player, b.player)
                     || direct.is_some_and(|d| d.id == b.id)
                     || b.center().dist_sq(shell.impact) > radius_sq
+                    || !state.map.shares_level(footing, b.anchor)
                 {
                     continue;
                 }
@@ -391,6 +395,7 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
                 || !state.hostile(shell.player, u.player)
                 || !shell.targets.covers(u.domain())
                 || u.pos.dist_sq(shell.impact) > reach * reach
+                || !grounded_with(state, footing, u)
             {
                 continue;
             }
@@ -404,6 +409,29 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
             ));
         }
     }
+}
+
+/// Whether a blast standing on `footing` reaches `u`: aircraft always, a
+/// ground body only on a level it shares.
+/// The tile a shell's blast stands on when no building takes the direct
+/// hit. A shell aimed at a building lands on the footprint's nearest edge,
+/// whose coordinate can floor into the tile beyond; reading the point a hair
+/// further along the flight keeps the blast on the footprint's side, where
+/// it was aimed, even once the building is gone.
+fn landing_tile(launch: Vec2Fx, impact: Vec2Fx) -> TilePos {
+    let along = |from: chassis::fx::Fx, to: chassis::fx::Fx| match to.cmp(&from) {
+        std::cmp::Ordering::Greater => chassis::fx::Fx::DELTA,
+        std::cmp::Ordering::Less => -chassis::fx::Fx::DELTA,
+        std::cmp::Ordering::Equal => chassis::fx::Fx::ZERO,
+    };
+    TilePos::containing(Vec2Fx::new(
+        impact.x + along(launch.x, impact.x),
+        impact.y + along(launch.y, impact.y),
+    ))
+}
+
+pub(super) fn grounded_with(state: &State, footing: TilePos, u: &crate::state::Unit) -> bool {
+    u.domain() != Domain::Ground || state.map.shares_level(footing, u.tile())
 }
 
 /// Buffers a shot: the direct hit, plus, for splash weapons, one hit on
@@ -438,6 +466,13 @@ fn buffer_shot(
         aim,
     ));
     let Some(radius) = weapon.splash else { return };
+    // The blast stands where the victim does (see `land_shells`).
+    let footing = match victim {
+        Target::Building(id) => state
+            .building(id)
+            .map_or(TilePos::containing(aim), |b| b.anchor),
+        Target::Unit(_) => TilePos::containing(aim),
+    };
     for u in &state.units {
         // A wide hull is caught once the blast reaches its edge.
         let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
@@ -446,6 +481,7 @@ fn buffer_shot(
             || Target::Unit(u.id) == victim
             || !weapon.targets.covers(u.domain())
             || u.pos.dist_sq(aim) > reach * reach
+            || !grounded_with(state, footing, u)
         {
             continue;
         }
@@ -468,6 +504,7 @@ fn buffer_shot(
                 || !state.hostile(attacker_owner, b.player)
                 || Target::Building(b.id) == victim
                 || b.center().dist_sq(aim) > radius * radius
+                || !state.map.shares_level(footing, b.anchor)
             {
                 continue;
             }
@@ -587,26 +624,26 @@ pub(super) fn turret_fire(
                 })
                 .map(|target| {
                     let aim = target.closest_point_to(center);
-                    (center.dist_sq(aim), target.id, aim)
+                    (center.dist_sq(aim), target.id, aim, target.anchor)
                 })
-                .filter(|(distance, _, _)| within_weapon_reach(atk, *distance, Fx::ZERO))
-                .filter(|(_, _, aim)| {
+                .filter(|(distance, ..)| within_weapon_reach(atk, *distance, Fx::ZERO))
+                .filter(|(_, _, aim, anchor)| {
                     clear_line(
                         state,
                         Fire::of(atk),
                         ShotEnd::new(center, Domain::Ground),
-                        ShotEnd::new(*aim, Domain::Ground),
+                        ShotEnd::new(*aim, Domain::Ground).on(*anchor),
                         Landing::Checked,
                     )
                 })
-                .min_by_key(|&(distance, target, _)| (distance, target))
+                .min_by_key(|&(distance, target, ..)| (distance, target))
         })
         .flatten();
         let (victim, aim) = if let Some(focused) = focused_victim {
             focused
         } else if let Some((_, uid, position, _)) = unit_victim {
             (Target::Unit(uid), position)
-        } else if let Some((_, target, position)) = building_victim {
+        } else if let Some((_, target, position, _)) = building_victim {
             (Target::Building(target), position)
         } else {
             if let Some(view) = blind::radar_in_range(state, me, center, Domain::Ground, atk) {
@@ -711,13 +748,17 @@ fn retreat_to_firing_stand(
             Target::Unit(target) => state
                 .unit(target)
                 .filter(|unit| unit.hp > 0)
-                .map(|unit| unit.pos),
+                .map(|unit| ShotEnd::new(unit.pos, victim_domain)),
             Target::Building(target) => state
                 .building(target)
                 .filter(|building| building.hp > 0)
-                .map(|building| building.closest_point_to(position)),
+                .map(|building| {
+                    ShotEnd::new(building.closest_point_to(position), victim_domain)
+                        .on(building.anchor)
+                }),
         };
-        let Some(aim) = aim else { return false };
+        let Some(victim) = aim else { return false };
+        let aim = victim.at;
         let distance_sq = position.dist_sq(aim);
         if !within_weapon_reach(weapon, distance_sq, target_excess(state, target)) {
             return false;
@@ -726,7 +767,7 @@ fn retreat_to_firing_stand(
             state,
             Fire::of(weapon),
             ShotEnd::new(position, domain),
-            ShotEnd::new(aim, victim_domain),
+            victim,
             Landing::Checked,
         )
     };
@@ -908,17 +949,21 @@ pub(super) fn acquire_escort_target(
 }
 
 /// Whether a `kind` machine standing at `pos` has a weapon that reaches
-/// `target` now.
+/// `target` now, on a level that weapon may fire at.
 fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, target: Target) -> bool {
     let victim = target_domain(state, target);
     let aim = match target {
-        Target::Unit(u) => state.unit(u).map(|u| u.pos),
-        Target::Building(b) => state.building(b).map(|b| b.closest_point_to(pos)),
+        Target::Unit(u) => state.unit(u).map(|u| ShotEnd::new(u.pos, victim)),
+        Target::Building(b) => state
+            .building(b)
+            .map(|b| ShotEnd::new(b.closest_point_to(pos), victim).on(b.anchor)),
     };
+    let shooter = ShotEnd::new(pos, kind.stats().domain);
     aim.is_some_and(|aim| {
         kind.stats().weapons.iter().any(|weapon| {
             weapon.targets.covers(victim)
-                && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim))
+                && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim.at))
+                && levels_allow(state, Fire::of(weapon), shooter, aim)
         })
     })
 }
@@ -961,7 +1006,19 @@ fn acquire_target_within(
         crate::stats::TargetPriority::Nearest | crate::stats::TargetPriority::Buildings => 0,
         crate::stats::TargetPriority::Heaviest => u32::MAX - kind.stats().max_hp,
     };
-    let mut unit_target: Option<(u32, chassis::fx::Fx, UnitId)> = None;
+    // Ahead of every other rank, a victim the levels let some weapon fire on
+    // from where the unit stands. One they refuse stays a pick, so a unit
+    // shelled from a plateau still climbs to answer.
+    let shooter = ShotEnd::new(unit.pos, stats.domain);
+    let tiered = state.map.tiered();
+    let refused = |victim: ShotEnd| {
+        tiered
+            && !stats.weapons.iter().any(|weapon| {
+                weapon.targets.covers(victim.domain)
+                    && levels_allow(state, Fire::of(weapon), shooter, victim)
+            })
+    };
+    let mut unit_target: Option<(bool, u32, chassis::fx::Fx, UnitId)> = None;
     // A building in acquisition range covers a tile within `reach` of the
     // unit's tile, or the next one where its closest point sits on an edge.
     let hostiles = index.hostiles_near(team, home, reach + 1);
@@ -992,12 +1049,20 @@ fn acquire_target_within(
             // would leak its existence to the attacker's owner.
             .filter(|(_, b)| state.building_apparent(me, b))
             .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
-            .map(|(d, b)| (d, b.id))
-            .filter(|&(_, bid)| accept(Target::Building(bid)))
+            .map(|(d, b)| {
+                let aim = ShotEnd::new(b.closest_point_to(unit.pos), Domain::Ground).on(b.anchor);
+                (refused(aim), d, b.id)
+            })
+            .filter(|&(_, _, bid)| accept(Target::Building(bid)))
             .min()
-            .map(|(_, bid)| Target::Building(bid))
+            .map(|(refused, _, bid)| (refused, Target::Building(bid)))
     };
-    if buildings_first && let Some(building) = nearest_building(&mut accept) {
+    // A structure the levels refuse yields to a machine they allow, but
+    // still beats one they refuse.
+    let first_building = buildings_first
+        .then(|| nearest_building(&mut accept))
+        .flatten();
+    if let Some((false, building)) = first_building {
         return Some(building);
     }
     // An army at rest far from any enemy is the common case: the survey
@@ -1025,7 +1090,12 @@ fn acquire_target_within(
                         w.targets.covers(u.domain())
                             && within_unit_weapon_reach(state, unit.kind, Target::Unit(u.id), w, d)
                     });
-                let rank = (heft(u.kind), d, u.id);
+                let rank = (
+                    refused(ShotEnd::new(u.pos, u.domain())),
+                    heft(u.kind),
+                    d,
+                    u.id,
+                );
                 if !(d <= aggro * aggro
                     && in_reach
                     && outside_dead_zone
@@ -1057,13 +1127,20 @@ fn acquire_target_within(
             }
         }
     }
-    if let Some((_, _, uid)) = unit_target {
-        return Some(Target::Unit(uid));
+    match unit_target {
+        Some((false, .., uid)) => Some(Target::Unit(uid)),
+        // A victim the levels refuse yields to a building they allow.
+        Some((true, .., uid)) if buildings_first => {
+            Some(first_building.map_or(Target::Unit(uid), |(_, building)| building))
+        }
+        Some((true, .., uid)) => Some(
+            nearest_building(&mut accept)
+                .filter(|&(refused, _)| !refused)
+                .map_or(Target::Unit(uid), |(_, building)| building),
+        ),
+        None if buildings_first => first_building.map(|(_, building)| building),
+        None => nearest_building(&mut accept).map(|(_, building)| building),
     }
-    if buildings_first {
-        return None;
-    }
-    nearest_building(&mut accept)
 }
 
 /// Keeps an advance moving while the primary weapon takes a shot that is
@@ -1154,21 +1231,21 @@ pub(super) fn advance(
                 .filter(|b| state.building_apparent(me, b))
                 .map(|b| {
                     let aim = b.closest_point_to(pos);
-                    (pos.dist_sq(aim), b.id, aim)
+                    (pos.dist_sq(aim), b.id, aim, b.anchor)
                 })
-                .filter(|(dist, bid, aim)| {
+                .filter(|(dist, bid, aim, anchor)| {
                     within_unit_weapon_reach(state, kind, Target::Building(*bid), &weapon, *dist)
                         && super::super::movement::advancing_weapon_aligned(unit, *aim - pos)
                         && clear_line(
                             state,
                             Fire::of(&weapon),
                             ShotEnd::new(pos, stats.domain),
-                            ShotEnd::new(*aim, Domain::Ground),
+                            ShotEnd::new(*aim, Domain::Ground).on(*anchor),
                             Landing::Checked,
                         )
                 })
-                .min_by_key(|(dist, bid, _)| (*dist, *bid))
-                .map(|(_, bid, aim)| (Target::Building(bid), aim))
+                .min_by_key(|(dist, bid, ..)| (*dist, *bid))
+                .map(|(_, bid, aim, _)| (Target::Building(bid), aim))
         });
     let Some((target, aim)) = target else {
         automatic_radar(state, index, id, true, events, hits, launches, &mut None);
@@ -1301,6 +1378,7 @@ fn sapper_attack(
                 || Target::Unit(u.id) == target
                 || u.domain() != Domain::Ground
                 || u.pos.dist_sq(aim_point) > ring * ring
+                || !state.map.shares_level(tile, u.tile())
             {
                 continue;
             }
@@ -1469,7 +1547,7 @@ fn bomber_attack(
             state,
             Fire::of(weapon),
             ShotEnd::new(pos, stats.domain),
-            ShotEnd::new(aim_point, victim_domain),
+            ShotEnd::new(aim_point, victim_domain).on(target_tile),
             Landing::Checked,
         )
     {
@@ -1766,7 +1844,7 @@ pub(super) fn attack(
             state,
             Fire::of(weapon),
             ShotEnd::new(pos, stats.domain),
-            ShotEnd::new(aim_point, victim_domain),
+            ShotEnd::new(aim_point, victim_domain).on(target_tile),
             Landing::Checked,
         )
     {
@@ -2276,7 +2354,7 @@ fn approach_firing_area(
                 state,
                 Fire::of(weapon),
                 ShotEnd::new(point, domain),
-                ShotEnd::new(aim, Domain::Ground),
+                ShotEnd::new(aim, Domain::Ground).on(b.anchor),
                 Landing::Checked,
             )
     };

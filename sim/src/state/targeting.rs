@@ -29,6 +29,13 @@ impl AttackView {
         self.entity.is_none() && self.footprint.is_none()
     }
 
+    /// The tile whose level the objective stands at: a known footprint's
+    /// anchor, or the tile of the reported position.
+    pub fn footing(self) -> TilePos {
+        self.footprint
+            .map_or_else(|| TilePos::containing(self.position), |(anchor, _)| anchor)
+    }
+
     /// Closest point on a known footprint, or the reported contact position.
     pub fn aim_from(self, from: Vec2Fx) -> Vec2Fx {
         match self.footprint {
