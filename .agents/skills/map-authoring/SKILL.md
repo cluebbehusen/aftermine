@@ -56,6 +56,14 @@ down but never up, and blasts stay on their own level. Aircraft ignore levels. A
 ramp holds only Barricades and Scuttle Charges. Make the high ground a decision:
 a ramp to hold, a rim to shell from, a basin that pays for its exposure.
 
+A level change is not a reason to go somewhere. Raised or sunken ground needs
+something worth holding, such as frames one forward Foundry can support, rich
+scrap, or a route that saves time; an empty shelf plays like the empty ground it
+replaced. Keep a level's edge straight where a ramp crosses it or a frame stands
+at its lip, and jog it only in stretches of several tiles, never one. Levels may
+also part along an existing pit, peak, or rock wall, but those edges draw no
+cliff, only a change of shade.
+
 The map gates add authoring rules the parser leaves open:
 
 - a ramp is a filled rectangle at least three tiles across, every tile carrying
@@ -72,6 +80,14 @@ Fill maintained browser metadata: `hook`, `pace`, `mode`, `richness`, and
 `grand`; richness is `lean`, `standard`, or `rich`. Treat `duration` as an
 optional measured claim, not an estimate from dimensions. Add it only after the
 current opponent and real play have produced evidence worth publishing.
+
+Name the map like a place and write its `hook` as one plain sentence: what the
+map shows and the choice it offers. Name only what a player sees there: pits,
+rock walls, peaks, levels, ramps, lanes, gaps, frames, scrap, and ground that
+only aircraft reach. Pits are dry quarry workings, so never mention water.
+Numbers suit map features, such as two teams or three crossings, but give no
+sizes or tile counts and no counts of frames or scrap. Leave out slogans and
+dramatic turns of phrase.
 
 ## Choose the fairness class
 
