@@ -265,21 +265,17 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                     _ => view.aim_from(unit.pos),
                 };
                 unit.kind.stats().weapons.iter().any(|w| {
-                    let full = unit.domain() == crate::stats::Domain::Ground
-                        && view.domain == crate::stats::Domain::Ground
-                        && !w.indirect;
-                    let clear = |tile| {
-                        state.map().tile(tile).is_some_and(|t| {
-                            !t.terrain.blocks_all_fire()
-                                && (!full || !t.terrain.blocks_direct_fire())
-                        })
-                    };
                     let range = super::brain::unit_weapon_reach(state, unit.kind, view.entity, w);
                     w.targets.covers(view.domain)
                         && unit.pos.dist_sq(aim) <= range * range
                         && unit.pos.dist_sq(aim) >= w.minimum_range * w.minimum_range
-                        && clear(chassis::grid::TilePos::containing(aim))
-                        && !chassis::path::line_blocked(unit.pos, aim, clear)
+                        && super::fire::clear_line(
+                            state,
+                            super::fire::Fire::of(w),
+                            super::fire::ShotEnd::new(unit.pos, unit.domain()),
+                            super::fire::ShotEnd::new(aim, view.domain),
+                            super::fire::Landing::Checked,
+                        )
                 })
             })
         }

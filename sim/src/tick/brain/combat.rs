@@ -13,6 +13,7 @@ pub(super) use mounts::{
     Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
 };
 
+use super::super::fire::{Fire, Landing, ShotEnd, clear_line};
 use super::super::flight;
 use super::super::landing;
 use super::super::route_for;
@@ -33,23 +34,6 @@ fn target_domain(state: &State, target: Target) -> Domain {
             .map_or(Domain::Ground, crate::state::Unit::domain),
         Target::Building(_) => Domain::Ground,
     }
-}
-
-/// Whether full terrain cover applies to a shot: only direct fire between
-/// two ground parties traces rock; shots involving aircraft and indirect
-/// shells pass over it. Buildings never block fire. Peaks block every shot
-/// regardless (see the `shot_open` closures).
-fn traces_terrain(weapon: &WeaponStats, shooter: Domain, victim: Domain) -> bool {
-    !weapon.indirect && shooter == Domain::Ground && victim == Domain::Ground
-}
-
-/// Whether a shot's line may pass over `t`. Peaks wall every pairing and
-/// every arc; full-cover tracing (direct ground-vs-ground) additionally
-/// respects terrain that grants cover. Pits block neither.
-fn shot_crosses(state: &State, t: TilePos, full: bool) -> bool {
-    state.map.tile(t).is_some_and(|tile| {
-        !tile.terrain.blocks_all_fire() && (!full || !tile.terrain.blocks_direct_fire())
-    })
 }
 
 /// Whether `weapon` reaches a target `distance_sq` from it whose hull
@@ -174,11 +158,6 @@ impl MotionSnapshot {
     }
 }
 
-fn predicted_impact_open(state: &State, from: Vec2Fx, aim: Vec2Fx, full: bool) -> bool {
-    let shot_open = |tile: TilePos| shot_crosses(state, tile, full);
-    shot_open(TilePos::containing(aim)) && !chassis::path::line_blocked(from, aim, shot_open)
-}
-
 fn position_along_current_motion(
     motion: &MotionSnapshot,
     target: UnitId,
@@ -289,14 +268,17 @@ fn projectile_aim(
         }
         flight = next_flight;
     }
-    let full = traces_terrain(
-        weapon,
-        shooter.domain,
-        target_domain(state, Target::Unit(target)),
-    );
-    if predicted_impact_open(state, from, unhedged_aim, full)
-        && predicted_impact_open(state, from, aim, full)
-    {
+    let victim = target_domain(state, Target::Unit(target));
+    let lands = |at: Vec2Fx| {
+        clear_line(
+            state,
+            Fire::of(weapon),
+            ShotEnd::new(from, shooter.domain),
+            ShotEnd::new(at, victim),
+            Landing::Checked,
+        )
+    };
+    if lands(unhedged_aim) && lands(aim) {
         aim
     } else {
         current
@@ -546,7 +528,6 @@ pub(super) fn turret_fire(
                 continue;
             }
         }
-        let shot_open = |t: TilePos, full: bool| shot_crosses(state, t, full);
         let focused =
             focused.filter(|view| blind::solution(state, center, Domain::Ground, *view, atk));
         if let Some(view) = focused.filter(|view| view.entity.is_none()) {
@@ -577,8 +558,13 @@ pub(super) fn turret_fire(
                     })
                     .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()))
                     .filter(|(_, _, pos, dom)| {
-                        let full = traces_terrain(atk, Domain::Ground, *dom);
-                        !chassis::path::line_blocked(center, *pos, |t| shot_open(t, full))
+                        clear_line(
+                            state,
+                            Fire::of(atk),
+                            ShotEnd::new(center, Domain::Ground),
+                            ShotEnd::new(*pos, *dom),
+                            Landing::Unchecked,
+                        )
                     })
                     .min_by_key(|&(d, uid, _, _)| (d, uid))
             })
@@ -605,9 +591,13 @@ pub(super) fn turret_fire(
                 })
                 .filter(|(distance, _, _)| within_weapon_reach(atk, *distance, Fx::ZERO))
                 .filter(|(_, _, aim)| {
-                    let full = traces_terrain(atk, Domain::Ground, Domain::Ground);
-                    shot_open(TilePos::containing(*aim), full)
-                        && !chassis::path::line_blocked(center, *aim, |tile| shot_open(tile, full))
+                    clear_line(
+                        state,
+                        Fire::of(atk),
+                        ShotEnd::new(center, Domain::Ground),
+                        ShotEnd::new(*aim, Domain::Ground),
+                        Landing::Checked,
+                    )
                 })
                 .min_by_key(|&(distance, target, _)| (distance, target))
         })
@@ -712,7 +702,6 @@ fn retreat_to_firing_stand(
     weapon: &WeaponStats,
 ) -> bool {
     let domain = state.unit(id).expect("caller checked").kind.stats().domain;
-    let full = traces_terrain(weapon, domain, victim_domain);
     let legal = |state: &State, tile: TilePos| {
         if !state.passable_for(domain, tile) {
             return false;
@@ -733,9 +722,13 @@ fn retreat_to_firing_stand(
         if !within_weapon_reach(weapon, distance_sq, target_excess(state, target)) {
             return false;
         }
-        let shot_open = |tile| shot_crosses(state, tile, full);
-        shot_open(TilePos::containing(aim))
-            && !chassis::path::line_blocked(position, aim, shot_open)
+        clear_line(
+            state,
+            Fire::of(weapon),
+            ShotEnd::new(position, domain),
+            ShotEnd::new(aim, victim_domain),
+            Landing::Checked,
+        )
     };
 
     let footprint = match target {
@@ -1093,7 +1086,6 @@ pub(super) fn advance(
     }
     let (pos, home, me, kind) = (unit.pos, unit.tile(), unit.player, unit.kind);
     let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
-    let shot_open = |t: TilePos, full: bool| shot_crosses(state, t, full);
 
     let mut unit_target: Option<(chassis::fx::Fx, UnitId, Vec2Fx)> = None;
     for dy in -reach..=reach {
@@ -1109,10 +1101,14 @@ pub(super) fn advance(
                 continue;
             }
             let dist = pos.dist_sq(target.pos);
-            let full = traces_terrain(&weapon, stats.domain, domain);
             if !within_unit_weapon_reach(state, kind, Target::Unit(target.id), &weapon, dist)
-                || !shot_open(target.tile(), full)
-                || chassis::path::line_blocked(pos, target.pos, |t| shot_open(t, full))
+                || !clear_line(
+                    state,
+                    Fire::of(&weapon),
+                    ShotEnd::new(pos, stats.domain),
+                    ShotEnd::new(target.pos, domain),
+                    Landing::Checked,
+                )
             {
                 continue;
             }
@@ -1139,11 +1135,15 @@ pub(super) fn advance(
                     (pos.dist_sq(aim), b.id, aim)
                 })
                 .filter(|(dist, bid, aim)| {
-                    let full = traces_terrain(&weapon, stats.domain, Domain::Ground);
                     within_unit_weapon_reach(state, kind, Target::Building(*bid), &weapon, *dist)
                         && super::super::movement::advancing_weapon_aligned(unit, *aim - pos)
-                        && shot_open(TilePos::containing(*aim), full)
-                        && !chassis::path::line_blocked(pos, *aim, |t| shot_open(t, full))
+                        && clear_line(
+                            state,
+                            Fire::of(&weapon),
+                            ShotEnd::new(pos, stats.domain),
+                            ShotEnd::new(*aim, Domain::Ground),
+                            Landing::Checked,
+                        )
                 })
                 .min_by_key(|(dist, bid, _)| (*dist, *bid))
                 .map(|(_, bid, aim)| (Target::Building(bid), aim))
@@ -1427,8 +1427,6 @@ fn bomber_attack(
 
     // Release gate: cold bay, in range, spotted, clear arc, and the
     // victim dead ahead. The sight and trace rules are the shared ones.
-    let full = traces_terrain(weapon, stats.domain, victim_domain);
-    let shot_open = |t: TilePos| shot_crosses(state, t, full);
     let seen = match target {
         Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
         Target::Building(bid) => state.building(bid).is_some_and(|b| {
@@ -1445,8 +1443,13 @@ fn bomber_attack(
         && in_range
         && seen
         && ahead
-        && shot_open(TilePos::containing(aim_point))
-        && !chassis::path::line_blocked(pos, aim_point, shot_open)
+        && clear_line(
+            state,
+            Fire::of(weapon),
+            ShotEnd::new(pos, stats.domain),
+            ShotEnd::new(aim_point, victim_domain),
+            Landing::Checked,
+        )
     {
         let center = projectile_aim(
             state,
@@ -1718,11 +1721,10 @@ pub(super) fn attack(
     };
     let weapon = &stats.weapons[pi];
 
-    // In range only counts with a clear line and with sight (see
-    // `traces_terrain`). The owner must currently see the victim's tile, so
-    // a gun that outranges its own vision fires on a spotter's sight. Scrap
-    // piles do not block fire. With no shot, keep approaching.
-    let shot_open = |t: TilePos, full: bool| shot_crosses(state, t, full);
+    // In range only counts with a clear line (see `crate::tick::fire`) and
+    // with sight. The owner must currently see the victim's tile, so a gun
+    // that outranges its own vision fires on a spotter's sight. Scrap piles
+    // do not block fire. With no shot, keep approaching.
     // Sight of any footprint tile serves for a building (matching attack
     // validation); a unit is seen at its own tile. The line trace runs
     // only once in range — it is not built for cross-map endpoints.
@@ -1736,18 +1738,15 @@ pub(super) fn attack(
     // stand, not at a corner it passes within reach of on the way.
     let in_range = within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
         && !(routed && matches!(target, Target::Building(_)) && contact::square_cutter(kind));
-    let full = traces_terrain(weapon, stats.domain, victim_domain);
-    // The line trace skips endpoint tiles, but a building's
-    // closest-footprint aim point is an exact edge coordinate that can
-    // floor into the neighboring tile. Flush against a peak, that neighbor
-    // is the mountain itself, so the endpoint tile must be open too (a
-    // unit's aim point is its own standable tile, and a footprint tile
-    // stands on ground, which `shot_open` passes).
-    let endpoint_open = shot_open(chassis::grid::TilePos::containing(aim_point), full);
     if in_range
         && seen
-        && endpoint_open
-        && !chassis::path::line_blocked(pos, aim_point, |t| shot_open(t, full))
+        && clear_line(
+            state,
+            Fire::of(weapon),
+            ShotEnd::new(pos, stats.domain),
+            ShotEnd::new(aim_point, victim_domain),
+            Landing::Checked,
+        )
     {
         let projectile_aim = weapon.projectile.is_some().then(|| {
             projectile_aim(
@@ -2022,7 +2021,6 @@ fn sidearm_victim(
     shooter_domain: Domain,
     weapon: &WeaponStats,
 ) -> Option<(chassis::fx::Fx, UnitId, Vec2Fx, Domain)> {
-    let shot_open = |t: TilePos, full: bool| shot_crosses(state, t, full);
     // |Δpos| <= range on either axis puts the victim's tile within
     // floor(range) + 1 of the shooter's — the acquire_target bound.
     let home = TilePos::containing(shooter_pos);
@@ -2048,8 +2046,13 @@ fn sidearm_victim(
             if victim.is_some_and(|(best_d, best_id, ..)| (best_d, best_id) <= (d, u.id)) {
                 continue;
             }
-            let full = traces_terrain(weapon, shooter_domain, domain);
-            if chassis::path::line_blocked(shooter_pos, u.pos, |t| shot_open(t, full)) {
+            if !clear_line(
+                state,
+                Fire::of(weapon),
+                ShotEnd::new(shooter_pos, shooter_domain),
+                ShotEnd::new(u.pos, domain),
+                Landing::Unchecked,
+            ) {
                 continue;
             }
             victim = Some((d, u.id, u.pos, domain));
@@ -2242,14 +2245,18 @@ fn approach_firing_area(
     let b = state.building(building).expect("visible building");
     let (from, kind, player, pos) = (unit.tile(), unit.kind, unit.player, unit.pos);
     let domain = unit.domain();
-    let full = traces_terrain(weapon, domain, Domain::Ground);
     let legal = |point: Vec2Fx| {
         let aim = b.closest_point_to(point);
         state.passable_for(domain, TilePos::containing(point))
             && crate::tick::crowding::standable(state, unit, point)
             && within_weapon_reach(weapon, point.dist_sq(aim), Fx::ZERO)
-            && shot_crosses(state, TilePos::containing(aim), full)
-            && !chassis::path::line_blocked(point, aim, |t| shot_crosses(state, t, full))
+            && clear_line(
+                state,
+                Fire::of(weapon),
+                ShotEnd::new(point, domain),
+                ShotEnd::new(aim, Domain::Ground),
+                Landing::Checked,
+            )
     };
     if unit.path.as_ref().is_some_and(|path| {
         let point = path.final_point.unwrap_or(path.goal.center());

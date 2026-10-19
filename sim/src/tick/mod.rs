@@ -22,6 +22,7 @@ pub(crate) mod construction;
 pub(crate) mod crowding;
 mod damage;
 mod drones;
+mod fire;
 pub(crate) mod flight;
 mod goals;
 pub(crate) mod landing;

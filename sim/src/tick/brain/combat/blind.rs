@@ -20,11 +20,13 @@ pub(super) fn solution(
     let aim = view.aim_from(from);
     weapon.targets.covers(view.domain)
         && within_weapon_reach(weapon, from.dist_sq(aim), Fx::ZERO)
-        && predicted_impact_open(state, from, aim, terrain_cover(view, weapon, shooter))
-}
-
-fn terrain_cover(view: AttackView, weapon: &WeaponStats, shooter: Domain) -> bool {
-    traces_terrain(weapon, shooter, view.domain)
+        && clear_line(
+            state,
+            Fire::of(weapon),
+            ShotEnd::new(from, shooter),
+            ShotEnd::new(aim, view.domain),
+            Landing::Checked,
+        )
 }
 
 pub(super) fn radar_in_range(
@@ -82,7 +84,13 @@ fn predicted_aim(
         }
         flight = next_flight;
     }
-    if predicted_impact_open(state, from, aim, terrain_cover(view, weapon, domain)) {
+    if clear_line(
+        state,
+        Fire::of(weapon),
+        ShotEnd::new(from, domain),
+        ShotEnd::new(aim, view.domain),
+        Landing::Checked,
+    ) {
         aim
     } else {
         current

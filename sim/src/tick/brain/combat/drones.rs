@@ -171,7 +171,13 @@ fn engage(state: &mut State, id: UnitId, (victim, aim): (UnitId, Vec2Fx), shots:
     let weapon = &stats.weapons[0];
     let reaches =
         within_unit_weapon_reach(state, kind, Target::Unit(victim), weapon, pos.dist_sq(aim));
-    let clear = !chassis::path::line_blocked(pos, aim, |t| shot_crosses(state, t, false));
+    let clear = clear_line(
+        state,
+        Fire::Direct,
+        ShotEnd::new(pos, Domain::Air),
+        ShotEnd::new(aim, Domain::Air),
+        Landing::Unchecked,
+    );
     let unit = state.unit_mut(id).expect("caller checked");
     let aligned = super::super::super::movement::steer_bearing(
         &mut unit.heading,
