@@ -195,6 +195,15 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
     }
     let scale = prefs().scale;
     let (lo, hi) = game.presentation.camera.world_rect();
+    // A Spire's deck art is too small to read here, so its marker says
+    // whether it holds a warhead, as far as the viewer may know.
+    let loaded: Vec<_> = game
+        .state
+        .known_magazines(game.presentation.human)
+        .into_iter()
+        .filter(|known| known.heading.is_some() && known.loaded > 0)
+        .map(|known| known.building)
+        .collect();
     let mut markers = Vec::new();
     for b in game
         .state
@@ -209,6 +218,11 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
             b.built(),
             false,
             game.presentation.selection.buildings.contains(&b.id),
+            if game.presentation.all_seeing() {
+                b.launcher.is_some() && b.magazine.is_some_and(|m| m.loaded > 0)
+            } else {
+                loaded.contains(&b.id)
+            },
             1.0,
         ));
     }
@@ -234,6 +248,7 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
                 g.built,
                 true,
                 false,
+                false,
                 0.55 * (1.0 - crate::render::staleness_fade(age)),
             ));
         }
@@ -241,7 +256,7 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
     let viewport = game.presentation.camera.viewport();
     push_camera_state();
     set_camera(&marker_camera(viewport, scale));
-    for (kind, owner, anchor, built, memory, selected, fade) in markers {
+    for (kind, owner, anchor, built, memory, selected, armed, fade) in markers {
         let (w, h) = kind.size();
         let world = vec2(
             anchor.x as f32 + w as f32 * 0.5,
@@ -271,6 +286,13 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
         }
         if memory {
             draw_circle(p.x + 9.0, p.y - 9.0, 2.0, ink);
+        }
+        if armed {
+            let warhead = Color {
+                a: opacity,
+                ..crate::theme::TEXT_ACCENT
+            };
+            draw_circle(p.x - 8.5, p.y - 8.5, 2.6, warhead);
         }
         if selected {
             draw_poly_lines(p.x, p.y, 8, 13.0, 22.5, 1.4, ink);

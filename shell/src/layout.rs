@@ -50,6 +50,10 @@ pub struct LayoutModel {
     /// Persistent armed-command ribbon. It is chrome even away from
     /// the command band, and a press anywhere on it cancels the mode.
     pub mode_ribbon: Rect,
+    /// The strike ribbon's buttons that shrink and grow the salvo; they
+    /// answer before the ribbon's cancel.
+    pub salvo_less: Rect,
+    pub salvo_more: Rect,
     /// The QUEUE toggle beside the ribbon, on touch-only builds.
     pub queue_toggle: Rect,
     /// The touch ghost's check mark, which builds it; zero-sized without
@@ -94,6 +98,8 @@ impl Default for LayoutModel {
             menu_button: Rect::new(0.0, 0.0, 0.0, 0.0),
             pause_status: Rect::new(0.0, 0.0, 0.0, 0.0),
             mode_ribbon: Rect::new(0.0, 0.0, 0.0, 0.0),
+            salvo_less: Rect::new(0.0, 0.0, 0.0, 0.0),
+            salvo_more: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),

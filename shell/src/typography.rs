@@ -18,6 +18,20 @@ pub(crate) fn entity_name(name: &str) -> String {
     out
 }
 
+/// The plural of an entity name: "Foundry" to "Foundries", "Repair Bay"
+/// to "Repair Bays", and a name already ending in s, like "Airworks",
+/// unchanged.
+pub(crate) fn plural_name(name: &str) -> String {
+    let mut letters = name.chars().rev();
+    match (letters.next(), letters.next()) {
+        (Some('s'), _) => name.to_string(),
+        (Some('y'), Some(before)) if !"aeiou".contains(before) => {
+            format!("{}ies", &name[..name.len() - 1])
+        }
+        _ => format!("{name}s"),
+    }
+}
+
 /// `text` with its first letter capitalized. Refusal reasons are
 /// lowercase fragments so they also read inside longer messages; a
 /// surface that shows one alone starts it as a sentence.

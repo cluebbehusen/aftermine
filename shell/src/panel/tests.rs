@@ -1633,3 +1633,126 @@ fn the_top_bar_income_follows_the_tick_it_was_summed_at() {
         "another seat's sum"
     );
 }
+
+#[test]
+fn a_building_group_counts_what_stands_built_and_what_does_not() {
+    let game = crate::building_actions::tests::fixture(BuildingKind::Turret, &[0, 0, 1, 0], 0);
+    let mut turrets: Vec<_> = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| game.presentation.selection.buildings.contains(&b.id))
+        .cloned()
+        .collect();
+    assert_eq!(building_summary(&turrets), "4 built");
+    turrets[0].phase = oxide_sim::BuildingPhase::Site { progress: 0 };
+    turrets[2].phase = oxide_sim::BuildingPhase::Upgrading { progress: 0 };
+    turrets[3].focus = Some(oxide_sim::AttackTarget::Building(turrets[1].id));
+    assert_eq!(
+        building_summary(&turrets),
+        "2 built \u{b7} 1 building \u{b7} 1 upgrading \u{b7} 1 targeting"
+    );
+}
+
+#[test]
+fn a_spire_group_shows_its_warheads_under_its_buildings() {
+    let mut game = crate::building_actions::tests::fixture(BuildingKind::Spire, &[0, 0, 0], 2000);
+    let ids = game.presentation.selection.buildings.clone();
+    let mut json = serde_json::to_value(&*game.state).unwrap();
+    for b in json["buildings"].as_array_mut().unwrap() {
+        if b["id"] == serde_json::json!(ids[0]) {
+            b["magazine"]["loaded"] = 1.into();
+        }
+    }
+    *game.state = serde_json::from_value(json).unwrap();
+    game.issue(oxide_sim::Command::OrderRound { building: ids[1] });
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(
+        panel.info.status,
+        vec![
+            "3 built".to_string(),
+            "Warheads: 1 loaded \u{b7} 1 building \u{b7} 1 empty".to_string()
+        ]
+    );
+    assert!(
+        panel
+            .cards
+            .iter()
+            .any(|card| card.title == "Launch (1 loaded)"),
+        "{:?}",
+        panel
+            .cards
+            .iter()
+            .map(|card| &card.title)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_mixed_building_selection_offers_one_counted_chip_per_kind() {
+    let mut game =
+        crate::building_actions::tests::fixture(BuildingKind::Turret, &[2, 1, 2, 2, 1], 0);
+    let human = game.presentation.human;
+    game.presentation.selection.buildings = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| b.player == human && b.kind != BuildingKind::Foundry)
+        .map(|b| b.id)
+        .collect();
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.title, "7 BUILDINGS");
+    let chips: Vec<(&str, CardAction)> = panel
+        .roster
+        .iter()
+        .map(|card| (card.title.as_str(), card.action))
+        .collect();
+    assert_eq!(
+        chips,
+        [
+            (
+                "Crucible x1",
+                CardAction::FilterBuilding(BuildingKind::Crucible)
+            ),
+            (
+                "Fabricator x1",
+                CardAction::FilterBuilding(BuildingKind::Fabricator)
+            ),
+            (
+                "Turret x5",
+                CardAction::FilterBuilding(BuildingKind::Turret)
+            ),
+        ]
+    );
+    let turrets = &panel.roster[2];
+    assert_eq!(turrets.icon, CardIcon::Building(BuildingKind::Turret, 2));
+    assert_eq!(turrets.desc[0], "3 Bulwark, 2 Heavy Turret");
+    assert_eq!(
+        panel.roster[0].desc,
+        roster_filter_desc(crate::platform::hands()),
+        "one tier needs no breakdown"
+    );
+}
+
+#[test]
+fn a_single_kind_offers_every_one_you_own_until_all_are_selected() {
+    let mut game = crate::building_actions::tests::fixture(BuildingKind::Spire, &[0, 0, 0], 0);
+    let ids = game.presentation.selection.buildings.clone();
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert!(panel.roster.is_empty(), "every Spire is already selected");
+
+    game.presentation.selection.buildings = vec![ids[1]];
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    let [all] = panel.roster.as_slice() else {
+        panic!("one card: {:?}", panel.roster.len());
+    };
+    assert_eq!(all.title, "All Spires (3)");
+    assert_eq!(
+        all.action,
+        CardAction::SelectAllBuildings(BuildingKind::Spire)
+    );
+    assert_eq!(
+        all.desc,
+        ["Click: select all 3 of your Spires, built or not, anywhere on the map."]
+    );
+}

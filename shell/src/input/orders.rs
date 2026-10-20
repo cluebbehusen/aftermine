@@ -8,7 +8,7 @@ use crate::game::{Game, PingKind};
 use crate::numeric;
 use chassis::grid::TilePos;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{Command, Rally, Target, UnitId};
+use oxide_sim::{Command, Rally, Target};
 
 pub(super) fn selected_producers(game: &Game) -> Vec<oxide_sim::BuildingId> {
     crate::building_actions::SelectedBuildings::inspect(&game.view()).producers()
@@ -179,34 +179,19 @@ pub(super) fn digit_action(game: &mut Game, input: &mut InputState, slot: usize)
 /// Recall (or with Ctrl, assign) a control group; a quick double-tap on
 /// the same slot centers the camera on the group.
 fn group_action(game: &mut Game, input: &mut InputState, slot: usize) {
-    // Ownership, not mere existence: after a session change a stale id
-    // could name anyone's unit, should one survive `reset_session`.
-    let alive: Vec<UnitId> = input.groups[slot]
-        .iter()
-        .copied()
-        .filter(|id| {
-            game.state
-                .unit(*id)
-                .is_some_and(|u| u.player == game.presentation.human)
-        })
-        .collect();
+    let alive = input.groups[slot].live(&game.view());
     input.groups[slot].clone_from(&alive);
     if alive.is_empty() {
         return;
     }
-    game.presentation.selection.units.clone_from(&alive);
-    game.presentation.selection.buildings.clear();
+    alive.select(game);
     let now = input.now;
     if input
         .last_recall
         .is_some_and(|(s, t)| s == slot && now - t < 0.4)
+        && let Some(center) = alive.center(&game.view())
     {
-        let mut sum = vec2(0.0, 0.0);
-        for id in &alive {
-            let u = game.state.unit(*id).expect("pruned above");
-            sum += vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-        }
-        game.presentation.camera.center = sum / alive.len() as f32;
+        game.presentation.camera.center = center;
         game.presentation.camera.pan(Vec2::ZERO); // re-clamp
     }
     input.last_recall = Some((slot, now));

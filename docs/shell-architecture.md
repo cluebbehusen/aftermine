@@ -283,14 +283,22 @@ Autofill toggle, and on a Spire the armed Launch card. A single own or allied
 magazine docks its ordered rounds like a production queue: one chip per paid
 round, the head wearing the assembly meter that also draws under the owner's
 building, and each own chip cancelling its own position; an ally's chips are
-read-only. Cancel refunds the latest round. A Launch click on the world or the
-minimap names any tile, seen or not, for every selected loaded Spire. A touch
-strike only aims: a tap or minimap tap moves the aim, a finger on its core drags
-it, and the placement ghost's check mark launches. While armed, and for a
-selected own Spire's held strike, the blast draws at the tile with a line from
-the silo: its tinted core and striped falloff band on the ground under units and
-fog, and its two radii above the fog. A friendly warhead in flight keeps that
-blast at its impact. Stop calls a held strike off.
+read-only. Cancel refunds the latest round. Order buys a round for the emptiest
+selected magazine; with Shift held, or by right-click or long press, it becomes
+Fill, which orders one round for every empty slot, emptiest magazine first and
+lowest id breaking ties, while scrap lasts. A Launch pick on the world or the
+minimap names any tile, seen or not, and fires the salvo size the aim ribbon
+shows: the ready Spires whose decks turn least toward the tile, lowest id
+breaking ties. The size starts at 1, lasts for the session, and steps with the
+ribbon's − and + controls; Shift fires every ready warhead. Picks are resolved
+against pending commands, so a Spire already turning to fire is not ready, and
+aiming stays armed until no selected Spire is. A touch strike only aims: a tap
+or minimap tap moves the aim, a finger on its core drags it, and the placement
+ghost's check mark fires the salvo. While armed, and for a selected own Spire's
+held strike, the blast draws at the tile with a line from the silo: its tinted
+core and striped falloff band on the ground under units and fog, and its two
+radii above the fog. A friendly warhead in flight keeps that blast at its
+impact. Stop calls a held strike off.
 
 Production panels reserve a fixed-width rally group with one shared flag beside
 adjacent Set/Reset and Clear buttons. Clear stays visible but disabled until a
@@ -323,10 +331,11 @@ hold the menu button, the bank, and the build palette's Back card further from
 the corners, which iPad screens round and iPadOS safe areas leave out.
 `layout::group_column` stacks the control groups on a plate above the minimap's
 right edge, mirroring the orders dock, and wraps into more columns when the
-window is short. It shows once a group is saved or the selection can be saved,
-never while the minimap is hidden, and a setting hides it; its slots and plate
-are chrome. The top edge is left to taps because iPadOS takes a long-press there
-as a window move.
+window is short. A group holds own units or own buildings, never both, as a
+selection does, and its slot shows its lead kind and live count. It shows once a
+group is saved or the selection can be saved, never while the minimap is hidden,
+and a setting hides it; its slots and plate are chrome. The top edge is left to
+taps because iPadOS takes a long-press there as a window move.
 
 Selections contain units of one allegiance or buildings of one owner, ordered by
 id. Foreign entities can be inspected while visible, but commands remain gated
@@ -583,11 +592,14 @@ visible and cancelable while the next site is chosen. On touch a tap that picks
 no unit or building while the palette is open and nothing is armed closes it and
 keeps the selection, even over a scrap pile: dismissing never also acts. With
 QUEUE lit (or Shift or Ctrl held), a roster chip drops its kind instead of
-keeping only it. Taps and clicks select through `select::pick`, which gives a
-fingertip a wider reach than a cursor. A press that picks nothing on a tile with
-known salvage selects that tile as `Selection::pile`, read-only and exclusive:
-any other selection drops it, and `Game` drops it once the viewer knows of no
-salvage there. Its panel and the desktop hover readout share
+keeping only it. Mixed building selections get the same counted chips, one per
+kind across tiers. An own selection of one building kind that holds fewer than
+the seat owns offers one chip instead, which selects every one of that kind on
+the map, built or not. Taps and clicks select through `select::pick`, which
+gives a fingertip a wider reach than a cursor. A press that picks nothing on a
+tile with known salvage selects that tile as `Selection::pile`, read-only and
+exclusive: any other selection drops it, and `Game` drops it once the viewer
+knows of no salvage there. Its panel and the desktop hover readout share
 `Scene::known_salvage`, which reads live amounts on visible ground and
 remembered amounts under fog.
 

@@ -166,6 +166,14 @@ pub(crate) fn layout(
         menu_button: top_bar.as_ref().map_or(zero, |bar| bar.bar.menu_button),
         pause_status: top_bar.as_ref().map_or(zero, |bar| bar.bar.pause_status),
         mode_ribbon: ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
+        salvo_less: ribbon
+            .as_ref()
+            .and_then(|ribbon| ribbon.salvo)
+            .map_or(zero, |steppers| steppers.less),
+        salvo_more: ribbon
+            .as_ref()
+            .and_then(|ribbon| ribbon.salvo)
+            .map_or(zero, |steppers| steppers.more),
         queue_toggle: queue_toggle.unwrap_or(zero),
         ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
         ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),

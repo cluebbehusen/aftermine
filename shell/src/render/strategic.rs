@@ -1045,13 +1045,16 @@ fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<St
                 .then(|| crate::input::ground_tile(state, camera.to_world(input.mouse)))
         });
         if let Some(tile) = tile {
+            // The lines run from the Spires the next pick would fire.
+            let fires = crate::input::salvo_readout(game, input).map_or(0, |(fires, _)| fires);
             marks.push(StrikeMark {
                 center: camera.to_screen(crate::input::tile_center(tile)),
                 alpha: 0.75,
                 silos: strike
-                    .spires
-                    .iter()
-                    .filter_map(|id| state.building(*id))
+                    .silos(game)
+                    .salvo(tile, fires)
+                    .into_iter()
+                    .filter_map(|id| state.building(id))
                     .collect(),
             });
         }

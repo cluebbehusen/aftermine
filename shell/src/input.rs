@@ -230,8 +230,9 @@ impl PlacementGhost {
     }
 }
 
-/// An armed strike: the loaded Spires it launches and, on touch, the aim
-/// that stands in for the mouse's hover ring.
+/// An armed strike: the selected Spires it fires from, loaded when armed or
+/// since, and, on touch, the aim that stands in for the mouse's hover ring.
+/// It stays armed between picks until none is ready.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Strike {
     pub(crate) spires: Vec<oxide_sim::BuildingId>,
@@ -262,6 +263,40 @@ impl Strike {
     fn aim_at(&mut self, tile: TilePos) {
         self.aim = Some(StrikeAim { tile, grab: None });
     }
+
+    /// Its Spires as they stand once staged commands run, so a second pick
+    /// before the next tick never picks a Spire the first already fired.
+    pub(crate) fn silos(
+        &self,
+        game: &crate::game::Scene<'_>,
+    ) -> crate::building_actions::SelectedBuildings {
+        crate::building_actions::SelectedBuildings::inspect_ids(game, &self.spires)
+    }
+}
+
+/// The armed strike's salvo as the banner shows it: how many the next pick
+/// fires (all that are ready while Shift is held) and how many are ready.
+pub(crate) fn salvo_readout(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+) -> Option<(usize, usize)> {
+    let ready = input.striking.as_ref()?.silos(game).ready_silos().len();
+    let fires = if input.resolver.shift_held() {
+        ready
+    } else {
+        input.salvo.min(ready)
+    };
+    Some((fires, ready))
+}
+
+/// Steps the salvo size by one from what the banner shows, between one
+/// and every ready warhead.
+pub(super) fn step_salvo(game: &crate::game::Scene<'_>, input: &mut InputState, more: bool) {
+    let Some((_, ready)) = salvo_readout(game, input) else {
+        return;
+    };
+    let shown = input.salvo.min(ready).max(1);
+    input.salvo = if more { shown + 1 } else { shown - 1 }.clamp(1, ready.max(1));
 }
 
 /// A command verb armed for the next world click.
@@ -303,7 +338,7 @@ pub struct InputState {
     /// Middle-drag pan anchor: the world follows the hand.
     pub(crate) mmb_anchor: Option<Vec2>,
     /// Control groups 1..=5 (assigned with Ctrl+N, recalled with N).
-    groups: [Vec<UnitId>; crate::action::CONTROL_GROUPS],
+    groups: [Group; crate::action::CONTROL_GROUPS],
     /// Previous click, for double-click detection.
     last_click: Option<(f64, Vec2)>,
     /// Previous group recall, for double-tap camera centering.
@@ -326,6 +361,8 @@ pub struct InputState {
     pub(crate) rallying: Vec<oxide_sim::BuildingId>,
     /// The armed strike, while Spires wait for their target.
     pub(crate) striking: Option<Strike>,
+    /// How many warheads each strike pick fires, kept for the match.
+    pub(crate) salvo: usize,
     /// Whether the build palette is open (`B`; digits pick a structure).
     pub(crate) build_menu: bool,
     pub(crate) build_category: Option<u8>,
@@ -1037,6 +1074,7 @@ impl InputState {
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
+            salvo: 1,
             build_menu: false,
             build_category: None,
             ui: 1.0,
@@ -1271,80 +1309,49 @@ impl InputState {
         self.queue_toggle != QueueToggle::Off || self.resolver.shift_held()
     }
 
-    /// Each control group's live own-unit count. Dead ids linger in a
+    /// Each control group's live own member count. Dead ids linger in a
     /// group until its next recall, so the strip counts for itself.
     pub(crate) fn group_counts(
         &self,
         game: &crate::game::Scene<'_>,
     ) -> [usize; crate::action::CONTROL_GROUPS] {
-        std::array::from_fn(|slot| {
-            self.groups[slot]
-                .iter()
-                .filter(|id| {
-                    game.state
-                        .unit(**id)
-                        .is_some_and(|u| u.player == game.presentation.human)
-                })
-                .count()
-        })
+        std::array::from_fn(|slot| self.groups[slot].live(game).len())
+    }
+
+    /// Each control group's lead kind, as the icon its slot wears.
+    pub(crate) fn group_leads(
+        &self,
+        game: &crate::game::Scene<'_>,
+    ) -> [Option<crate::panel::CardIcon>; crate::action::CONTROL_GROUPS] {
+        std::array::from_fn(|slot| self.groups[slot].lead(game))
     }
 
     /// The group the selection already is, exactly.
     pub(crate) fn selected_group(&self, game: &crate::game::Scene<'_>) -> Option<u8> {
-        let human = game.presentation.human;
-        let mut own: Vec<UnitId> = game.presentation.selection.units.clone();
-        own.sort_unstable();
-        if own.is_empty()
-            || own
-                .iter()
-                .any(|id| game.state.unit(*id).is_none_or(|u| u.player != human))
-        {
+        let selection = &game.presentation.selection;
+        let own = Group::of_selection(game);
+        if own.is_empty() || own.len() < selection.units.len().max(selection.buildings.len()) {
             return None;
         }
         (0..self.groups.len())
-            .find(|slot| {
-                let mut ids: Vec<UnitId> = self.groups[*slot]
-                    .iter()
-                    .copied()
-                    .filter(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
-                    .collect();
-                ids.sort_unstable();
-                ids == own
-            })
+            .find(|slot| self.groups[*slot].live(game).same_members(&own))
             .map(|slot| slot.fit::<u8>() + 1)
     }
 
     /// The group the strip's "+" would save the selection to: the lowest
-    /// empty one, while the selection holds own units that no live group
-    /// already names exactly.
+    /// empty one, while the selection holds own units or buildings that no
+    /// live group already names exactly.
     pub(crate) fn group_on_offer(&self, game: &crate::game::Scene<'_>) -> Option<u8> {
-        let human = game.presentation.human;
-        let mut own: Vec<UnitId> = game
-            .presentation
-            .selection
-            .units
-            .iter()
-            .copied()
-            .filter(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
-            .collect();
+        let own = Group::of_selection(game);
         if own.is_empty() {
             return None;
         }
-        own.sort_unstable();
-        let live = |slot: usize| -> Vec<UnitId> {
-            let mut ids: Vec<UnitId> = self.groups[slot]
-                .iter()
-                .copied()
-                .filter(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
-                .collect();
-            ids.sort_unstable();
-            ids
-        };
-        if (0..self.groups.len()).any(|slot| live(slot) == own) {
+        let live: Vec<Group> = self.groups.iter().map(|group| group.live(game)).collect();
+        if live.iter().any(|group| group.same_members(&own)) {
             return None;
         }
-        (0..self.groups.len())
-            .find(|slot| live(*slot).is_empty())
+        live.iter()
+            .position(Group::is_empty)
             .map(|slot| slot.fit::<u8>() + 1)
     }
 
@@ -1408,6 +1415,7 @@ impl InputState {
         self.reset_transient();
         self.groups = Default::default();
         self.bookmarks = [None; 4];
+        self.salvo = 1;
         self.last_click = None;
         self.last_recall = None;
     }
@@ -1785,6 +1793,8 @@ fn modifier_edges(key: Key, a: KeyPoll, b: KeyPoll, events: &mut Vec<RawEvent>) 
 }
 
 mod dispatch;
+mod groups;
+pub(crate) use groups::Group;
 mod orders;
 mod select;
 #[cfg(test)]
@@ -1799,7 +1809,7 @@ use select::{
 };
 pub use touch::update_touch;
 pub(crate) use touch::{
-    Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, autocast_press_progress, group_press_progress,
+    Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, card_press_progress, group_press_progress,
     long_press_progress, touch_box,
 };
 
@@ -2038,10 +2048,11 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             y,
         } => {
             input.mouse = vec2(x, y);
-            // A card with an autocast owns its right-clicks: they switch the
-            // card's automatic mode, as on an RTS ability button.
-            if let Some(toggle) = autocast_toggle_under(game, vec2(x, y)) {
-                dispatch_action(game, input, bindings, toggle);
+            // A card with a second act owns its right-clicks: they switch the
+            // card's automatic mode, as on an RTS ability button, or do what
+            // its long press does.
+            if let Some(act) = second_act_under(game, vec2(x, y)) {
+                activate_card(game, input, bindings, act);
                 return;
             }
             // A right-click mid-stroke throws the planned row away and
@@ -2163,6 +2174,8 @@ pub(super) fn ribbon_row_press(
         confirm_ghost(game, input);
     } else if hits(layout.ghost_cancel) {
         cancel_ghost(input);
+    } else if hits(layout.salvo_less) || hits(layout.salvo_more) {
+        step_salvo(&game.view(), input, hits(layout.salvo_more));
     } else if hits(layout.queue_toggle) {
         input.toggle_queue();
     } else if hits(layout.mode_ribbon) {
@@ -2644,15 +2657,28 @@ pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
     }
 }
 
-/// Launches every armed Spire at `target` and disarms the strike.
+/// Fires the salvo at `target`, every ready Spire while Shift is held, and
+/// disarms the strike once none is left ready.
 fn launch_strike(game: &mut Game, input: &mut InputState, target: TilePos) {
-    let Some(strike) = input.striking.take() else {
+    let Some((fires, ready)) = salvo_readout(&game.view(), input) else {
         return;
     };
-    for building in strike.spires {
+    let salvo = input
+        .striking
+        .as_ref()
+        .map(|strike| strike.silos(&game.view()).salvo(target, fires))
+        .unwrap_or_default();
+    if salvo.is_empty() {
+        input.striking = None;
+        game.presentation.toast("No warhead loaded");
+        return;
+    }
+    for &building in &salvo {
         game.issue(Command::Launch { building, target });
     }
-    game.presentation.toast("Strike ordered");
+    if salvo.len() == ready {
+        input.striking = None;
+    }
 }
 
 /// Drops a touch strike's aim at the middle of the view, so its ring and
@@ -3241,12 +3267,12 @@ pub(crate) fn activate_action_card(
     }
 }
 
-/// The autocast toggle of the command card under the mouse at `p`, if that
+/// The second act of the command card under the mouse at `p`, if that
 /// card has one.
-fn autocast_toggle_under(game: &Game, p: Vec2) -> Option<Action> {
+fn second_act_under(game: &Game, p: Vec2) -> Option<crate::panel::CardAction> {
     let hit = crate::layout::card_under(&game.presentation.layout.get(), p, None)?;
     let panel = game.presentation.panel_model.borrow();
-    Some(panel.as_ref()?.card(hit.row, hit.index)?.autocast?.toggle)
+    panel.as_ref()?.card(hit.row, hit.index)?.second_act()
 }
 
 /// One panel card pressed — by mouse or fingertip, the same act its
@@ -3343,8 +3369,29 @@ fn activate_card(
                     .is_some_and(|u| (u.kind == kind) == keep)
             });
         }
+        crate::panel::CardAction::FilterBuilding(kind) => {
+            let keep = !(input.resolver.ctrl_held() || input.queue_held());
+            game.presentation.selection.buildings.retain(|id| {
+                game.state
+                    .building(*id)
+                    .is_some_and(|b| (b.kind == kind) == keep)
+            });
+        }
+        crate::panel::CardAction::SelectAllBuildings(kind) => {
+            let human = game.presentation.human;
+            game.presentation.selection.units.clear();
+            game.presentation.selection.buildings = game
+                .state
+                .buildings()
+                .iter()
+                .filter(|b| b.player == human && b.kind == kind)
+                .map(|b| b.id)
+                .collect();
+            game.presentation.selection.buildings.sort_unstable();
+        }
         crate::panel::CardAction::ClosePalette => input.close_construction(),
         crate::panel::CardAction::ClearQueues => crate::production::cancel_all(game),
+        crate::panel::CardAction::FillRounds => crate::building_actions::fill_rounds(game),
         crate::panel::CardAction::None | crate::panel::CardAction::Refused => {}
     }
 }

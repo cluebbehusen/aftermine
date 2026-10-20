@@ -58,26 +58,20 @@ pub(super) fn dispatch_action(
         | Action::NextTab => {}
         Action::Slot(n) => digit_action(game, input, (n - 1) as usize),
         Action::AssignGroup(n) => {
-            // Only own units enter a group: a recalled selection holding an
-            // ally would refuse every command under own-gating, so foreign
-            // picks drop at assign time.
+            // Only own units or buildings enter a group: a recalled
+            // selection holding an ally's would refuse every command under
+            // own-gating, so foreign picks drop at assign time.
             let slot = (n - 1) as usize;
             if slot < input.groups.len() {
-                let own: Vec<_> = game
-                    .presentation
-                    .selection
-                    .units
-                    .iter()
-                    .copied()
-                    .filter(|id| {
-                        game.state
-                            .unit(*id)
-                            .is_some_and(|u| u.player == game.presentation.human)
-                    })
-                    .collect();
-                if own.len() < game.presentation.selection.units.len() {
-                    game.presentation
-                        .toast("Only your own units join a control group");
+                let own = super::Group::of_selection(&game.view());
+                let selection = &game.presentation.selection;
+                if own.len() < selection.units.len().max(selection.buildings.len()) {
+                    game.presentation.toast(match own {
+                        super::Group::Units(_) => "Only your own units join a control group",
+                        super::Group::Buildings(_) => {
+                            "Only your own buildings join a control group"
+                        }
+                    });
                 }
                 if !own.is_empty()
                     && let Some(tutorial) = game.tutorial.as_mut()
@@ -137,20 +131,29 @@ pub(super) fn dispatch_action(
             }
         }
         Action::Launch => {
-            let silos =
-                crate::building_actions::SelectedBuildings::inspect(&game.view()).loaded_silos();
-            if silos.is_empty() {
+            let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+            if selected.ready_silos().is_empty() {
                 game.presentation.toast("No warhead loaded");
                 return;
             }
             input.disarm_click_verbs();
-            input.striking = Some(super::Strike::new(silos));
+            input.striking = Some(super::Strike::new(selected.silos()));
             if input.last_pointer == Pointer::Touch {
                 super::drop_aim_in_view(&game.view(), input);
             }
         }
         Action::OrderRound => {
             let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
+            // Shift fills every empty slot, as the card shows while it is held.
+            if bays.is_empty()
+                && input.resolver.shift_held()
+                && crate::building_actions::SelectedBuildings::inspect(&game.view())
+                    .fill()
+                    .is_some_and(|fill| fill.wanted > 1)
+            {
+                crate::building_actions::fill_rounds(game);
+                return;
+            }
             let order = if bays.is_empty() {
                 crate::building_actions::SelectedBuildings::inspect(&game.view())
                     .round_order()

@@ -551,6 +551,10 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         if !panel.summary.is_empty() {
             info.status.push(panel.summary.clone());
         }
+        if !game.presentation.selection.buildings.is_empty() {
+            info.status
+                .extend(crate::building_actions::SelectedBuildings::inspect(game).ammunition());
+        }
         if let Some(u) = subject_unit(game).and_then(|id| game.state.unit(id)) {
             info.ownership(game, u.player);
         } else if let Some(b) = game

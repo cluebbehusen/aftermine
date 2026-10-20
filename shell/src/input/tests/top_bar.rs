@@ -29,7 +29,7 @@ fn a_saved_group_recalls_by_click_and_a_quick_second_click_centers_it() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let (fighter, _) = own_fighter(&game);
-    input.groups[0] = vec![fighter];
+    input.groups[0] = Group::Units(vec![fighter]);
     let rects = publish_strip(
         &mut game,
         [Some(GroupSlot::Recall(1)), None, None, None, None],
@@ -82,13 +82,17 @@ fn ctrl_click_saves_the_selection_to_any_slot_and_plus_saves_it_plainly() {
     apply_events(&mut game, &mut input, &[key_up(Key::Ctrl)]);
     assert_eq!(
         input.groups[3],
-        vec![own[0]],
+        Group::Units(vec![own[0]]),
         "Ctrl-click saves to that slot"
     );
 
     let at = rects[1].center();
     apply_events(&mut game, &mut input, &click(at.x, at.y));
-    assert_eq!(input.groups[1], vec![own[0]], "the plus saves it too");
+    assert_eq!(
+        input.groups[1],
+        Group::Units(vec![own[0]]),
+        "the plus saves it too"
+    );
 }
 
 #[test]
@@ -103,7 +107,7 @@ fn the_strip_counts_live_own_units_and_offers_only_a_new_selection() {
         .find(|u| u.player != game.presentation.human)
         .expect("an enemy unit")
         .id;
-    input.groups[0] = vec![own[0], foreign];
+    input.groups[0] = Group::Units(vec![own[0], foreign]);
     assert_eq!(input.group_counts(&game.view()), [1, 0, 0, 0, 0]);
 
     assert_eq!(input.group_on_offer(&game.view()), None, "nothing selected");
@@ -128,7 +132,7 @@ fn a_tap_on_a_slot_recalls_like_a_click() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let (fighter, _) = own_fighter(&game);
-    input.groups[2] = vec![fighter];
+    input.groups[2] = Group::Units(vec![fighter]);
     let rects = publish_strip(
         &mut game,
         [None, None, Some(GroupSlot::Recall(3)), None, None],
@@ -147,7 +151,7 @@ fn a_long_press_on_a_slot_saves_the_selection_there_without_recalling() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let own = own_units(&game);
-    input.groups[0] = vec![own[0]];
+    input.groups[0] = Group::Units(vec![own[0]]);
     game.presentation.selection.units = vec![own[1]];
     let rects = publish_strip(
         &mut game,
@@ -166,7 +170,11 @@ fn a_long_press_on_a_slot_saves_the_selection_there_without_recalling() {
     );
     input.now = 6.0;
     update_touch(&mut game, &mut input);
-    assert_eq!(input.groups[0], vec![own[1]], "the selection took the slot");
+    assert_eq!(
+        input.groups[0],
+        Group::Units(vec![own[1]]),
+        "the selection took the slot"
+    );
     apply_events(&mut game, &mut input, &[touch_up(1, at)]);
     assert_eq!(
         input.last_recall, None,
