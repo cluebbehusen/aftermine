@@ -516,14 +516,14 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
 }
 
 #[test]
-fn match_tips_start_on_and_switch_with_keyboard_mouse_and_touch() {
+fn match_tips_start_off_and_switch_with_keyboard_mouse_and_touch() {
     let mut config = Config::default();
-    assert!(config.match_tips);
+    assert!(!config.match_tips);
     assert!(rows(Tab::General, true).contains(&Row::MatchTips));
     let mut screen = SettingsScreen::open(&config);
     let row = Item::Setting(Row::MatchTips);
     focus(&mut screen, row);
-    for (on, how) in [(false, 0), (true, 1), (false, 2)] {
+    for (on, how) in [(true, 0), (false, 1), (true, 2)] {
         let rect = screen
             .menu
             .item_rect(index(&screen, row))

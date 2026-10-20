@@ -208,8 +208,9 @@ fn the_idle_tip_needs_safe_scrap_in_sight_near_a_foundry() {
 }
 
 #[test]
-fn scrap_left_unspent_for_twenty_seconds_brings_the_spending_tip() {
-    let mut game = match_with(&[], 250, &[]);
+fn scrap_left_unspent_for_a_while_brings_the_spending_tip() {
+    // Enough that the bank still counts once a Harvester is paid for.
+    let mut game = match_with(&[], UNSPENT_BANK + UnitKind::Harvester.stats().cost, &[]);
     let mut watch = watched(&game);
     assert!(!due_after(
         &game,
