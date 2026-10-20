@@ -12,9 +12,7 @@ use crate::nav::{Nav, step_grid};
 use crate::numeric;
 use crate::press::{ScrollPress, Swipe};
 use crate::render::prim::{fill_rect, stroke_rect};
-use macroquad::prelude::{
-    DrawTextureParams, Rect, Vec2, draw_rectangle, draw_text, draw_texture_ex, measure_text, vec2,
-};
+use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text, vec2};
 use oxide_protocol::{Key, RawEvent};
 
 use crate::theme::{BORDER_FAINT, SURFACE_MENU, Stroke, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE};
@@ -516,19 +514,8 @@ impl Browser {
                 rect.w - 8.0 * ui,
                 rect.h - label_h - 8.0 * ui,
             );
-            if let Some(tex) = previews.get(entry) {
-                let scale = (thumb.w / tex.width()).min(thumb.h / tex.height());
-                let (pw, ph) = (tex.width() * scale, tex.height() * scale);
-                draw_texture_ex(
-                    tex,
-                    thumb.x + (thumb.w - pw) * 0.5,
-                    thumb.y + (thumb.h - ph) * 0.5,
-                    crate::render::theme_tint(&entry.theme),
-                    DrawTextureParams {
-                        dest_size: Some(vec2(pw, ph)),
-                        ..Default::default()
-                    },
-                );
+            if let Some(preview) = previews.get(entry, thumb) {
+                preview.draw(thumb, crate::render::theme_tint(&entry.theme));
             }
             let border = if selected {
                 TEXT_TITLE

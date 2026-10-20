@@ -12,7 +12,7 @@ use crate::game::SoundKind;
 use crate::game::checkpoint::LanSave;
 use crate::game::network::NetRole;
 use crate::menu::{Label, Menu};
-use crate::menu::{PreviewCache, ScenarioEntry, discover_scenarios};
+use crate::menu::{Preview, PreviewCache, ScenarioEntry, discover_scenarios};
 use crate::nav::{Axis, Nav, step_line};
 use crate::netplay::{HostLobby, Link, StartPoll, shown_host_name, start_failed_notice};
 use crate::numeric;
@@ -23,8 +23,8 @@ use crate::seating::{Occupant, Seating};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use anyhow::{Context, Result};
 use macroquad::prelude::{
-    DrawTextureParams, Rect, Texture2D, Vec2, draw_circle, draw_circle_lines, draw_rectangle,
-    draw_rectangle_lines, draw_text, draw_texture_ex, measure_text, vec2,
+    Rect, Vec2, draw_circle, draw_circle_lines, draw_rectangle, draw_rectangle_lines, draw_text,
+    measure_text, vec2,
 };
 use oxide_net::{InstallId, LobbyEvent, MemberId, PlayerName, RoomSeat, SeatHolder};
 use oxide_protocol::{Key, RawEvent};
@@ -1053,29 +1053,16 @@ pub(crate) fn draw_team_headings(layout: &SetupLayout, ui: f32) {
 
 /// Draws a map preview centered in `area`, graded with the map's theme,
 /// and returns where the map itself landed.
-pub(crate) fn draw_preview(tex: &Texture2D, theme: &str, area: Rect, ui: f32) -> Rect {
-    let scale = (area.w / tex.width()).min(area.h / tex.height());
-    let (pw, ph) = (tex.width() * scale, tex.height() * scale);
-    let x = area.x + (area.w - pw) * 0.5;
-    let y = area.y + (area.h - ph) * 0.5;
+pub(crate) fn draw_preview(preview: &Preview<'_>, theme: &str, area: Rect, ui: f32) -> Rect {
+    let rect = preview.rect(area);
     draw_rectangle(
-        x - 8.0 * ui,
-        y - 8.0 * ui,
-        pw + 16.0 * ui,
-        ph + 16.0 * ui,
+        rect.x - 8.0 * ui,
+        rect.y - 8.0 * ui,
+        rect.w + 16.0 * ui,
+        rect.h + 16.0 * ui,
         SURFACE_MENU,
     );
-    draw_texture_ex(
-        tex,
-        x,
-        y,
-        crate::render::theme_tint(theme),
-        DrawTextureParams {
-            dest_size: Some(vec2(pw, ph)),
-            ..Default::default()
-        },
-    );
-    Rect::new(x, y, pw, ph)
+    preview.draw(area, crate::render::theme_tint(theme))
 }
 
 /// Who a seat card's controller chip names.
@@ -1926,19 +1913,22 @@ impl Wizard {
 
         // A resumed match's map comes from its save, not from a file.
         let preview = if self.resume.is_some() {
-            previews.get_map(scenario).map(|tex| {
+            previews.get_map(scenario, layout.preview).map(|preview| {
                 let theme = scenario
                     .meta
                     .as_ref()
                     .map_or("", |meta| meta.theme.as_str());
-                (tex, theme)
+                (preview, theme)
             })
         } else {
-            self.picked_entry(draft)
-                .and_then(|(_, entry)| previews.get(entry).map(|tex| (tex, entry.theme.as_str())))
+            self.picked_entry(draft).and_then(|(_, entry)| {
+                previews
+                    .get(entry, layout.preview)
+                    .map(|preview| (preview, entry.theme.as_str()))
+            })
         };
-        if let Some((tex, theme)) = preview {
-            let drawn = draw_preview(tex, theme, layout.preview, ui);
+        if let Some((preview, theme)) = preview {
+            let drawn = draw_preview(&preview, theme, layout.preview, ui);
             let focus = (self.setup_sel < order.len()).then(|| order[self.setup_sel]);
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }

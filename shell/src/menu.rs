@@ -1073,17 +1073,16 @@ fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
     })
 }
 
-/// Fog-free map previews, one per scenario. The driver's software
-/// rasterizer draws the built state (the same pixels the golden tests pin).
-/// Loading, building, and rasterizing a map takes long enough to hitch a
-/// frame, so that runs on a worker; only the texture upload, which must stay
-/// on the window thread, happens here. Entries are keyed by scenario path
-/// because the discovery list can be rebuilt while the cache lives on; a
-/// map that arrived over the network is keyed by its content.
+/// Fog-free map previews, drawn for the box each screen shows them in. The
+/// driver's software rasterizer draws each one at the size it is shown, so
+/// nothing is shrunk on the GPU, where thin lines like a frame's rim would
+/// drop out. Loading, building, and rasterizing a map takes long enough to
+/// hitch a frame, so that runs on a worker; only the texture upload, which
+/// must stay on the window thread, happens here. Entries are keyed by
+/// scenario path because the discovery list can be rebuilt while the cache
+/// lives on; a map that arrived over the network is keyed by its content.
 pub struct PreviewCache {
-    /// Present once requested: `None` while the worker is still drawing it,
-    /// and for a scenario that failed to load or build.
-    slots: std::collections::HashMap<PreviewKey, Option<Texture2D>>,
+    slots: HashMap<PreviewKey, PreviewSlot<Texture2D>>,
     worker: PreviewWorker,
 }
 
@@ -1102,6 +1101,137 @@ enum PreviewSource {
     Map(Box<Scenario>),
 }
 
+/// The physical pixels a preview is drawn to fit, width by height.
+type PixelBox = (u32, u32);
+
+/// Boxes a map keeps previews for: the map list's and the setup screen's.
+const BOXES_KEPT: usize = 2;
+
+/// One map's previews.
+#[derive(Debug)]
+struct PreviewSlot<T> {
+    /// Drawn previews with the box each fits, most recently wanted first.
+    drawn: Vec<(PixelBox, T)>,
+    /// The box the worker is drawing for. One at a time, so a window being
+    /// resized queues one redraw per map, not one per frame.
+    drawing: Option<PixelBox>,
+    /// The map failed to load or build; it is not asked for again.
+    failed: bool,
+}
+
+impl<T> Default for PreviewSlot<T> {
+    fn default() -> Self {
+        Self {
+            drawn: Vec::new(),
+            drawing: None,
+            failed: false,
+        }
+    }
+}
+
+impl<T> PreviewSlot<T> {
+    /// Marks `size` as the box to show next, returning whether the worker
+    /// must draw it.
+    fn want(&mut self, size: PixelBox) -> bool {
+        if let Some(at) = self.drawn.iter().position(|(drawn, _)| *drawn == size) {
+            self.drawn[..=at].rotate_right(1);
+            return false;
+        }
+        if self.failed || self.drawing.is_some() {
+            return false;
+        }
+        self.drawing = Some(size);
+        true
+    }
+
+    /// Takes the worker's preview for `size`, or its failure.
+    fn finish(&mut self, size: PixelBox, drawn: Option<T>) {
+        if self.drawing == Some(size) {
+            self.drawing = None;
+        }
+        match drawn {
+            Some(preview) => {
+                self.drawn.insert(0, (size, preview));
+                self.drawn.truncate(BOXES_KEPT);
+            }
+            None => self.failed = true,
+        }
+    }
+
+    /// The preview to show: the one drawn for the box last wanted, else,
+    /// while that one is drawn, the most recently wanted.
+    fn shown(&self) -> Option<&(PixelBox, T)> {
+        self.drawn.first()
+    }
+}
+
+/// A preview ready to draw.
+pub struct Preview<'a> {
+    texture: &'a Texture2D,
+    /// The box it was drawn to fit.
+    fitted: PixelBox,
+    /// Physical pixels per logical one when it was fetched.
+    dpi: f32,
+}
+
+impl Preview<'_> {
+    /// Where the preview lands inside `area`.
+    pub fn rect(&self, area: Rect) -> Rect {
+        preview_rect(
+            (self.texture.width(), self.texture.height()),
+            self.fitted,
+            area,
+            self.dpi,
+        )
+    }
+
+    /// Draws the preview inside `area` with `tint`, returning where it
+    /// landed.
+    pub fn draw(&self, area: Rect, tint: Color) -> Rect {
+        let rect = self.rect(area);
+        draw_texture_ex(
+            self.texture,
+            rect.x,
+            rect.y,
+            tint,
+            DrawTextureParams {
+                dest_size: Some(vec2(rect.w, rect.h)),
+                ..Default::default()
+            },
+        );
+        rect
+    }
+}
+
+/// The whole physical pixels inside `area`, or `None` when it has none.
+fn pixel_box(area: Rect, dpi: f32) -> Option<PixelBox> {
+    let size = (
+        numeric::to_u32((area.w * dpi).floor()),
+        numeric::to_u32((area.h * dpi).floor()),
+    );
+    (size.0 > 0 && size.1 > 0).then_some(size)
+}
+
+/// Where a `texture`-pixel preview drawn to fit `fitted` lands in `area`,
+/// in logical units at `dpi`. Drawn for this box, it maps texel for pixel
+/// from a whole-pixel corner, so nothing is resampled. A preview from
+/// another box (one still showing while a resized window's is drawn) or one
+/// that stopped at full scale short of the box is scaled to fit instead.
+fn preview_rect(texture: (f32, f32), fitted: PixelBox, area: Rect, dpi: f32) -> Rect {
+    let (tw, th) = texture;
+    let (bw, bh) = (area.w * dpi, area.h * dpi);
+    let exact =
+        pixel_box(area, dpi) == Some(fitted) && (tw == fitted.0 as f32 || th == fitted.1 as f32);
+    let scale = if exact { 1.0 } else { (bw / tw).min(bh / th) };
+    let (pw, ph) = (tw * scale, th * scale);
+    Rect::new(
+        (area.x * dpi + (bw - pw) * 0.5).round() / dpi,
+        (area.y * dpi + (bh - ph) * 0.5).round() / dpi,
+        pw / dpi,
+        ph / dpi,
+    )
+}
+
 impl Default for PreviewCache {
     fn default() -> Self {
         Self {
@@ -1112,24 +1242,24 @@ impl Default for PreviewCache {
 }
 
 impl PreviewCache {
-    /// The preview for a scenario, requesting it on first sight. `None`
-    /// until it is drawn, and for good when it cannot be: the browser just
-    /// shows no panel for it.
-    pub fn get(&mut self, entry: &ScenarioEntry) -> Option<&Texture2D> {
-        self.slot(&PreviewKey::Path(entry.path.clone()), || {
+    /// The preview of a scenario to show in `area`, requesting it on first
+    /// sight. `None` until one is drawn, and for good when it cannot be:
+    /// the screen just shows no panel for it.
+    pub fn get(&mut self, entry: &ScenarioEntry, area: Rect) -> Option<Preview<'_>> {
+        self.slot(&PreviewKey::Path(entry.path.clone()), area, || {
             PreviewSource::Path(entry.path.clone())
         })
     }
 
     /// The preview of a map held in memory, such as one a LAN host sent,
     /// requested on first sight like [`PreviewCache::get`].
-    pub fn get_map(&mut self, scenario: &Scenario) -> Option<&Texture2D> {
+    pub fn get_map(&mut self, scenario: &Scenario, area: Rect) -> Option<Preview<'_>> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         serde_json::to_string(scenario)
             .unwrap_or_default()
             .hash(&mut hasher);
-        self.slot(&PreviewKey::Map(hasher.finish()), || {
+        self.slot(&PreviewKey::Map(hasher.finish()), area, || {
             PreviewSource::Map(Box::new(scenario.clone()))
         })
     }
@@ -1137,22 +1267,35 @@ impl PreviewCache {
     fn slot(
         &mut self,
         key: &PreviewKey,
+        area: Rect,
         source: impl FnOnce() -> PreviewSource,
-    ) -> Option<&Texture2D> {
-        for (finished, pixels) in self.worker.finished.try_iter() {
+    ) -> Option<Preview<'_>> {
+        for (finished, size, pixels) in self.worker.finished.try_iter() {
             let texture = pixels.map(|pixels| {
                 let texture = Texture2D::from_rgba8(pixels.width, pixels.height, &pixels.rgba);
                 texture.set_filter(FilterMode::Nearest);
                 texture
             });
-            self.slots.insert(finished, texture);
+            self.slots
+                .entry(finished)
+                .or_default()
+                .finish(size, texture);
         }
-        if !self.slots.contains_key(key) {
-            self.slots.insert(key.clone(), None);
-            // A dead worker leaves the slot empty, which draws as no panel.
-            self.worker.requests.send((key.clone(), source())).ok();
+        let dpi = screen_dpi_scale();
+        let size = pixel_box(area, dpi)?;
+        let slot = self.slots.entry(key.clone()).or_default();
+        // A dead worker leaves the slot empty, which draws as no panel.
+        if slot.want(size) {
+            self.worker
+                .requests
+                .send((key.clone(), size, source()))
+                .ok();
         }
-        self.slots.get(key)?.as_ref()
+        slot.shown().map(|(fitted, texture)| Preview {
+            texture,
+            fitted: *fitted,
+            dpi,
+        })
     }
 }
 
@@ -1165,23 +1308,23 @@ struct PreviewPixels {
 
 /// The thread that draws previews. It exits when the cache drops its sender.
 struct PreviewWorker {
-    requests: std::sync::mpsc::Sender<(PreviewKey, PreviewSource)>,
-    finished: std::sync::mpsc::Receiver<(PreviewKey, Option<PreviewPixels>)>,
+    requests: std::sync::mpsc::Sender<(PreviewKey, PixelBox, PreviewSource)>,
+    finished: std::sync::mpsc::Receiver<(PreviewKey, PixelBox, Option<PreviewPixels>)>,
 }
 
 impl PreviewWorker {
     fn spawn() -> Self {
-        let (requests, queue) = std::sync::mpsc::channel::<(PreviewKey, PreviewSource)>();
+        let (requests, queue) = std::sync::mpsc::channel::<(PreviewKey, PixelBox, PreviewSource)>();
         let (done, finished) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            for (key, source) in queue {
+            for (key, size, source) in queue {
                 let scenario = match source {
                     PreviewSource::Path(Some(path)) => Scenario::load(path).ok(),
                     PreviewSource::Path(None) => Some(Scenario::skirmish()),
                     PreviewSource::Map(scenario) => Some(*scenario),
                 };
-                let pixels = scenario.and_then(|scenario| render_preview(&scenario));
-                if done.send((key, pixels)).is_err() {
+                let pixels = scenario.and_then(|scenario| render_preview(&scenario, size));
+                if done.send((key, size, pixels)).is_err() {
                     break;
                 }
             }
@@ -1190,12 +1333,12 @@ impl PreviewWorker {
     }
 }
 
-/// Draws one scenario's preview.
-fn render_preview(scenario: &Scenario) -> Option<PreviewPixels> {
+/// Draws one scenario's preview to fit `size`.
+fn render_preview(scenario: &Scenario, (width, height): PixelBox) -> Option<PreviewPixels> {
     let state = scenario.build().ok()?;
     // Seats draw in one neutral tone: the setup screen's seat markers carry
     // ownership, and a preview has no viewer to be relative to.
-    let pixmap = oxide_kit::render::render_state_colored(&state, |_| 0x96_94_8C);
+    let pixmap = oxide_kit::render::render_thumbnail(&state, width, height, |_| 0x96_94_8C);
     Some(PreviewPixels {
         width: pixmap.width().fit::<u16>(),
         height: pixmap.height().fit::<u16>(),
