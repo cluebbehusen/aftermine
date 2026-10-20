@@ -268,12 +268,22 @@ fn movement_history_is_bounded_and_stationary_samples_remove_old_velocity() {
         observe(&mut tracks, &mut state, &[(x, 8)]);
     }
     assert!(tracks.tracks[0].velocity().x > Fx::ZERO);
-    assert!(tracks.tracks[0].velocity().length() <= movement_bound());
+    assert!(tracks.tracks[0].velocity().length() <= MOVEMENT_BOUND);
     for _ in 0..25 {
         observe(&mut tracks, &mut state, &[(10, 8)]);
     }
     assert_eq!(tracks.tracks[0].history.len(), 21);
     assert_eq!(tracks.tracks[0].velocity(), Vec2Fx::ZERO);
+}
+
+#[test]
+fn the_movement_bound_is_the_top_unit_speed_plus_the_largest_shove() {
+    let fastest = crate::stats::UnitKind::ALL
+        .iter()
+        .map(|kind| kind.stats().speed)
+        .max()
+        .expect("unit kinds exist");
+    assert_eq!(MOVEMENT_BOUND, fastest + crate::stats::COLLISION_MAX_STEP);
 }
 
 #[test]

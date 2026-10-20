@@ -46,23 +46,29 @@ impl ContactTrack {
             return Vec2Fx::ZERO;
         }
         let velocity = (last.tile.center() - first.tile.center()) / Fx::from_num(elapsed);
-        let limit = movement_bound();
-        if velocity.length() > limit {
-            Vec2Fx::ZERO.move_toward(velocity, limit)
+        if velocity.length() > MOVEMENT_BOUND {
+            Vec2Fx::ZERO.move_toward(velocity, MOVEMENT_BOUND)
         } else {
             velocity
         }
     }
 }
 
-fn movement_bound() -> Fx {
-    crate::stats::UnitKind::ALL
-        .iter()
-        .map(|kind| kind.stats().speed)
-        .max()
-        .unwrap_or(Fx::ZERO)
-        + crate::stats::COLLISION_MAX_STEP
-}
+/// The fastest any body can move in one tick: the top unit speed plus the
+/// largest collision shove.
+const MOVEMENT_BOUND: Fx = {
+    let kinds = crate::stats::UnitKind::ALL;
+    let mut fastest = kinds[0].stats().speed.to_bits();
+    let mut i = 1;
+    while i < kinds.len() {
+        let speed = kinds[i].stats().speed.to_bits();
+        if speed > fastest {
+            fastest = speed;
+        }
+        i += 1;
+    }
+    Fx::from_bits(fastest + crate::stats::COLLISION_MAX_STEP.to_bits())
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub(super) struct Tracking {
