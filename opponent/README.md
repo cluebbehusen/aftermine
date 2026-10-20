@@ -37,17 +37,18 @@ cannot fire yet) nor the surroundings of an enemy Foundry, known or presumed. A
 wreck near a recent allied loss, or whose route passes one, waits until the
 warning expires, as the simulation's own salvage does. Each node or wreck with a
 clear route belongs to the nearest built Foundry whose ground reaches it, and is
-worked when a Harvester hauling from there repays its price within a horizon
-that is longer the more the stance invests at home and stretched by greed. A
-worked source wants as many Harvesters as free tiles beside it hold and its
-remaining scrap or salvage repays, filled to a share that falls from Turtle to
-Aggressive, rises with greed and falls on lower rungs, and ready Foundries train
-workers until every worked source has its crew; workers and queues count only on
-the ground they can serve. Until the army reaches the stance's minimum, workers
-that would cost more than the army wait for army production and take only the
-Foundries it leaves. Once a Fabricator stands, an Excavator, worth two
-Harvesters, fills two open places when the seat can pay for it with scrap to
-spare, less the greedier it is.
+worked when no known enemy weapon reaches it, even beside a Foundry, and a
+Harvester hauling from there repays its price within a horizon that is longer
+the more the stance invests at home and stretched by greed. A worked source
+wants as many Harvesters as free tiles beside it hold and its remaining scrap or
+salvage repays, filled to a share that falls from Turtle to Aggressive, rises
+with greed and falls on lower rungs, and ready Foundries train workers until
+every worked source has its crew; workers and queues count only on the ground
+they can serve. Until the army reaches the stance's minimum, workers that would
+cost more than the army wait for army production and take only the Foundries it
+leaves. Once a Fabricator stands, an Excavator, worth two Harvesters, fills two
+open places when the seat can pay for it with scrap to spare, less the greedier
+it is.
 
 A harvesting, idle or tending worker away from home runs back beside the nearest
 Foundry once known enemy fire reaches it. Paid sites nobody is building get the

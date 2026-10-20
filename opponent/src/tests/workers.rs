@@ -673,6 +673,43 @@ fn a_seat_with_its_fields_dry_trains_harvesters_for_wreck_that_repays_them() {
 }
 
 #[test]
+fn wreck_at_home_under_known_fire_draws_and_trains_no_harvesters() {
+    // Whether West sends a Harvester to the wreck and trains another.
+    let decide = |guarded: bool| {
+        let mut scenario = field();
+        scenario.players[0].scrap = 1_000;
+        garrison(&mut scenario);
+        scenario.units.push(harvester(0, 5, 11));
+        // A Kestrel has seen the Turret.
+        scenario.units.push(unit(0, UnitKind::Kestrel, 9, 8));
+        if guarded {
+            scenario.buildings.push(BuildingSpec {
+                player: 1,
+                kind: BuildingKind::Turret,
+                x: 11,
+                y: 7,
+            });
+        }
+        let price = UnitKind::Harvester.stats().cost;
+        let state = wrecked(&scenario.build().unwrap(), &[(9, 9, 8 * price)]);
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        let sent = harvests(&commands)
+            .iter()
+            .any(|(source, _)| *source == TilePos::new(9, 9));
+        let trained = trains(&commands)
+            .iter()
+            .any(|(_, kind)| *kind == UnitKind::Harvester);
+        (sent, trained)
+    };
+    assert_eq!(
+        decide(false),
+        (true, true),
+        "premise: the wreck draws the Harvester and repays more"
+    );
+    assert_eq!(decide(true), (false, false));
+}
+
+#[test]
 fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does() {
     for scenario in [walled(true), staggered(true)] {
         let state = scenario.build().unwrap();
