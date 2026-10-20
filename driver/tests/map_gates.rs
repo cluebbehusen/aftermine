@@ -187,9 +187,7 @@ fn trafficked_passages_are_at_least_three_tiles_wide() {
 fn no_frame_cluster_locks_a_match() {
     // A big cluster of frames no base owns, which rival seats reach about
     // as soon as each other and little ground can shell, pays whoever lands
-    // first for the rest of the match. Known maps wait on their own fix and
-    // leave this list once they pass.
-    const KNOWN: [&str; 1] = ["spoil-island"];
+    // first for the rest of the match.
     for (name, scenario) in shipped() {
         let report = audit(&scenario).expect("audit builds");
         let locked: Vec<String> = report
@@ -205,13 +203,6 @@ fn no_frame_cluster_locks_a_match() {
                 )
             })
             .collect();
-        if KNOWN.contains(&name.as_str()) {
-            assert!(
-                !locked.is_empty(),
-                "{name} no longer locks; drop it from the known list"
-            );
-            continue;
-        }
         assert!(
             locked.is_empty(),
             "{name}: a contested prize no artillery can answer: {}",
