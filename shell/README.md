@@ -85,6 +85,9 @@ cargo test -p oxide-shell --locked
 cargo run -p oxide-driver -- smoke --spawn
 ```
 
+A workspace build binds F1 to the debug overlay, which shows the whole world
+through the fog. A packaged copy never offers it, and a LAN match refuses it.
+
 To play over a LAN or Tailscale, build the same commit on every machine. In the
 game, the host switches match setup to LAN, which opens every other chair and
 shows the address to join; the others pick Join Match, enter their name, and

@@ -67,24 +67,20 @@ pub(super) fn armed_skirmish() -> oxide_sim::Scenario {
     scenario
 }
 
-#[test]
-fn only_the_host_pauses_a_lan_match() {
-    use crate::game::network::NetRole;
+/// One seat of a two-human LAN duel on the embedded skirmish.
+fn lan_seat(seat: u8, role: crate::game::network::NetRole) -> Game {
     let mut duel = oxide_sim::Scenario::skirmish();
     for player in &mut duel.players {
         player.bot = false;
         player.bot_config = None;
     }
-    let lan = |seat, role| {
-        Game::networked(
-            duel.clone(),
-            oxide_sim::PlayerId(seat),
-            role,
-            vec2(1280.0, 800.0),
-        )
-        .unwrap()
-    };
-    let (mut host, mut client) = (lan(0, NetRole::Host), lan(1, NetRole::Client));
+    Game::networked(duel, oxide_sim::PlayerId(seat), role, vec2(1280.0, 800.0)).unwrap()
+}
+
+#[test]
+fn only_the_host_pauses_a_lan_match() {
+    use crate::game::network::NetRole;
+    let (mut host, mut client) = (lan_seat(0, NetRole::Host), lan_seat(1, NetRole::Client));
     let mut input = InputState::new();
     dispatch_action(&mut host, &mut input, Action::TogglePause);
     dispatch_action(&mut client, &mut input, Action::TogglePause);
@@ -97,6 +93,29 @@ fn only_the_host_pauses_a_lan_match() {
             .iter()
             .any(|toast| toast.text == "Only the host can pause")
     );
+}
+
+#[test]
+fn a_lan_match_refuses_the_debug_overlay() {
+    use crate::game::network::NetRole;
+    let mut input = InputState::new();
+    let mut local = headless_game();
+    dispatch_action(&mut local, &mut input, Action::ToggleOverlay);
+    assert!(
+        local.presentation.overlay,
+        "a workspace build keeps the tool"
+    );
+    for role in [NetRole::Host, NetRole::Client] {
+        let mut seat = lan_seat(0, role);
+        dispatch_action(&mut seat, &mut input, Action::ToggleOverlay);
+        assert!(!seat.presentation.overlay, "{role:?} saw through the fog");
+        assert!(
+            seat.presentation
+                .toasts
+                .iter()
+                .any(|toast| toast.text == "The debug overlay is off in LAN matches")
+        );
+    }
 }
 
 fn multi_producer_game() -> Game {
