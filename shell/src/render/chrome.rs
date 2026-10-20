@@ -853,12 +853,7 @@ pub(super) fn top_bar_layout(
             .unwrap_or_default()
     };
     let scrap = game.state.player(game.presentation.human).scrap;
-    let passive: u32 = game
-        .state
-        .buildings()
-        .iter()
-        .map(|building| crate::panel::building_income(game, building))
-        .sum();
+    let passive = crate::panel::passive_income(game);
     let my_units = game
         .state
         .units()
