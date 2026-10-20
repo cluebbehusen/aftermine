@@ -4,7 +4,8 @@ description:
   Create, edit, audit, and validate Oxide scenario maps and their player setups.
   Use for scenario JSON, terrain layout, quarry boundaries, pits, Extractor
   frames, scrap placement, Foundry anchors, teams, spawn rosters, map metadata,
-  symmetry, route fairness, artillery pressure, or shipped-map gate failures.
+  symmetry, route fairness, artillery pressure, contested frame clusters, or
+  shipped-map gate failures.
 ---
 
 # Oxide map authoring
@@ -129,6 +130,21 @@ The rule covers ground where hostile seats meet. An island whose ground joins no
 enemy keeps its authored shape, on an island map or beside contested ground. The
 audit reports the narrow passages it finds and the map gates enforce the rule.
 
+## Keep big frame clusters answerable
+
+A cluster of Extractor frames no starting base owns must not pay one seat for
+the whole match. When rival seats reach a big cluster about as soon as each
+other, enough ground outside it must be able to shell its frames: at their level
+or above, within the longest artillery reach, with no peak in the line.
+Artillery fires down, never up, so a raised bench behind a ramp and an air-only
+island across a wide pit are the usual traps; a sunken basin under an open rim
+pays for its exposure. Fix a trap by bringing ground into reach, lowering the
+cluster, or moving frames toward each base, and keep a reason to fight over the
+cluster rather than emptying it.
+
+The audit measures every cluster's doors, arrivals, and shelling ground, near
+misses included, and the map gates enforce the rule.
+
 ## Design for decisions
 
 Give every reachable region a reason to exist: salvage, a route, an expansion,
@@ -179,9 +195,10 @@ cargo run -q -p oxide-driver -- map-audit scenarios/<map>.json --json
 ```
 
 Inspect reachable room, nearest scrap, hostile ground and air routes, artillery
-pressure, narrow passages, spawn spacing, pairings, and Extractor access. The
-maintained bands and tolerances in `driver/tests/map_gates.rs` are
-authoritative; do not duplicate their current numbers in this skill.
+pressure, narrow passages, frame clusters, spawn spacing, pairings, and
+Extractor access. The maintained bands and tolerances in
+`driver/tests/map_gates.rs` are authoritative; do not duplicate their current
+numbers in this skill.
 
 Hold drafts to the same gates before promotion with
 `OXIDE_MAP_GATES_DIR=map-drafts cargo test -p oxide-driver --test map_gates --locked`.
