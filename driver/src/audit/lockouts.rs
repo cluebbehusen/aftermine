@@ -13,8 +13,8 @@
 //! A prize locks a match when it holds [`BIG_PRIZE`] frames or more, the
 //! nearest rival arrives about as soon as the first seat, and fewer than
 //! [`SHELLING_FLOOR`] ground tiles outside it can shell its frames at the
-//! longest artillery reach. Terrain alone decides routes, since scrap and
-//! buildings clear in play.
+//! longest artillery reach. Terrain alone decides routes and Foundry
+//! sites, since scrap and buildings clear in play.
 
 use super::longest_reach;
 use chassis::fx::{Fx, Vec2Fx};
@@ -45,7 +45,7 @@ const POCKET_REACH: u32 = 16;
 pub struct Arrival {
     /// Seat index.
     pub seat: u8,
-    /// Ground steps from its Foundry, or the straight air line when no
+    /// Ground steps from its Foundry, or the air route around peaks when no
     /// ground route exists.
     pub steps: usize,
     /// Whether the seat can only fly there.
@@ -84,8 +84,15 @@ impl Prize {
     }
 }
 
-/// Terrain-only ground: walkable tiles, ramps included, joined by the sim's
-/// steps (8-connected, no corner cutting).
+/// How a body crosses the map.
+#[derive(Clone, Copy)]
+enum Domain {
+    Ground,
+    Air,
+}
+
+/// Terrain-only routes: walkable or flyable tiles, ramps included, joined
+/// by the sim's steps (8-connected, no corner cutting).
 struct Ground<'a> {
     map: &'a Map,
     width: i32,
@@ -108,31 +115,38 @@ impl Ground<'_> {
 
     /// Ground terrain, scrap or not: scrap is mined out in play.
     fn open(&self, t: TilePos) -> bool {
-        self.map
-            .tile(t)
-            .is_some_and(|tile| !tile.terrain.blocks_ground())
+        self.passes(t, Domain::Ground)
     }
 
-    /// Ground steps out of `t` with their costs in tenths.
-    fn steps(&self, t: TilePos) -> impl Iterator<Item = (TilePos, u32)> + '_ {
+    fn passes(&self, t: TilePos, domain: Domain) -> bool {
+        self.map.tile(t).is_some_and(|tile| match domain {
+            Domain::Ground => !tile.terrain.blocks_ground(),
+            Domain::Air => !tile.terrain.blocks_air(),
+        })
+    }
+
+    /// Steps out of `t` with their costs in tenths.
+    fn steps(&self, t: TilePos, domain: Domain) -> impl Iterator<Item = (TilePos, u32)> + '_ {
         (-1..=1).flat_map(move |dy| {
             (-1..=1).filter_map(move |dx| {
                 let n = t.offset(dx, dy);
                 let diagonal = dx != 0 && dy != 0;
                 let legal = (dx, dy) != (0, 0)
-                    && self.open(n)
-                    && (!diagonal || (self.open(t.offset(dx, 0)) && self.open(t.offset(0, dy))));
+                    && self.passes(n, domain)
+                    && (!diagonal
+                        || (self.passes(t.offset(dx, 0), domain)
+                            && self.passes(t.offset(0, dy), domain)));
                 legal.then_some((n, if diagonal { 14 } else { 10 }))
             })
         })
     }
 
-    /// Ground distances in tenths from a source set.
-    fn distances(&self, sources: &[TilePos]) -> Vec<u32> {
+    /// Distances in tenths from a source set.
+    fn distances(&self, sources: &[TilePos], domain: Domain) -> Vec<u32> {
         let mut dist = vec![u32::MAX; self.cells()];
         let mut heap = BinaryHeap::new();
         for &s in sources {
-            if self.open(s) {
+            if self.passes(s, domain) {
                 dist[self.index(s)] = 0;
                 heap.push(Reverse((0, s.y, s.x)));
             }
@@ -142,7 +156,7 @@ impl Ground<'_> {
             if d > dist[self.index(t)] {
                 continue;
             }
-            for (n, cost) in self.steps(t) {
+            for (n, cost) in self.steps(t, domain) {
                 if d + cost < dist[self.index(n)] {
                     dist[self.index(n)] = d + cost;
                     heap.push(Reverse((d + cost, n.y, n.x)));
@@ -221,13 +235,19 @@ pub fn prizes(state: &State) -> Vec<Prize> {
         .iter()
         .flat_map(|&(_, s)| ring(&ground, s, foundry))
         .collect();
-    let home = ground.distances(&doorsteps);
+    let home = ground.distances(&doorsteps, Domain::Ground);
     let reach = Reach {
         ground: &ground,
         starts: &starts,
-        seat_distances: starts
+        walks: starts
             .iter()
-            .map(|&(_, s)| ground.distances(&ring(&ground, s, foundry)))
+            .map(|&(_, s)| ground.distances(&ring(&ground, s, foundry), Domain::Ground))
+            .collect(),
+        flights: starts
+            .iter()
+            .map(|&(_, s)| {
+                ground.distances(&footprint(s, foundry).collect::<Vec<_>>(), Domain::Air)
+            })
             .collect(),
         state,
     };
@@ -249,12 +269,13 @@ pub fn prizes(state: &State) -> Vec<Prize> {
             .filter(|&g| footprint(frames[g], frame).all(|t| island[ground.index(t)] == f))
             .collect();
         if seen.insert(tiles.clone()) {
-            out.push(reach.prize(&held, &tiles, 0, true));
+            out.extend(reach.prize(&held, &tiles, 0, true));
         }
     }
 
     // Seeds: the frames each Foundry site would support, kept when a site
-    // supports two or more and no larger seed contains them.
+    // supports two or more. A seed inside a larger one still gets its own
+    // pocket, since a holder can leave the extra frames outside the door.
     let mut seeds: BTreeSet<Vec<usize>> = BTreeSet::new();
     for y in 0..ground.height - 1 {
         for x in 0..ground.width - 1 {
@@ -262,7 +283,6 @@ pub fn prizes(state: &State) -> Vec<Prize> {
             let clear = ground.footing(site, foundry).is_some()
                 && footprint(site, foundry).all(|t| {
                     !map.tile_in_extractor_frame(t)
-                        && map.scrap_at(t) == 0
                         && state.buildings().iter().all(|b| !b.contains(t))
                 });
             if !clear {
@@ -279,15 +299,7 @@ pub fn prizes(state: &State) -> Vec<Prize> {
             }
         }
     }
-    let maximal: Vec<&Vec<usize>> = seeds
-        .iter()
-        .filter(|g| {
-            !seeds
-                .iter()
-                .any(|h| h.len() > g.len() && g.iter().all(|f| h.contains(f)))
-        })
-        .collect();
-    for group in maximal {
+    for group in &seeds {
         let sources: Vec<TilePos> = group
             .iter()
             .flat_map(|&f| footprint(frames[f], frame))
@@ -304,7 +316,7 @@ pub fn prizes(state: &State) -> Vec<Prize> {
         }
         let mut sealed = tiles.clone();
         sealed.extend(doors.iter().copied());
-        out.push(reach.prize(&held, &sealed, doors.len(), false));
+        out.extend(reach.prize(&held, &sealed, doors.len(), false));
     }
     out
 }
@@ -317,7 +329,7 @@ fn flood(ground: &Ground, start: TilePos, marks: &mut [usize], mark: usize) -> V
     let mut tiles = Vec::new();
     while let Some(t) = queue.pop_front() {
         tiles.push(ground.index(t));
-        for (n, _) in ground.steps(t) {
+        for (n, _) in ground.steps(t, Domain::Ground) {
             if marks[ground.index(n)] == usize::MAX {
                 marks[ground.index(n)] = mark;
                 queue.push_back(n);
@@ -363,7 +375,7 @@ fn pocket(
     sources: &[TilePos],
     doorsteps: &[TilePos],
 ) -> Option<(Vec<usize>, Vec<usize>)> {
-    let near = ground.distances(sources);
+    let near = ground.distances(sources, Domain::Ground);
     let cells = ground.cells();
     let mut sink = vec![false; cells];
     for (i, &d) in near.iter().enumerate() {
@@ -503,75 +515,60 @@ fn pocket(
 struct Reach<'a> {
     ground: &'a Ground<'a>,
     starts: &'a [(PlayerId, TilePos)],
-    seat_distances: Vec<Vec<u32>>,
+    /// Per start, ground distances from its doorstep ring.
+    walks: Vec<Vec<u32>>,
+    /// Per start, air distances from its footprint.
+    flights: Vec<Vec<u32>>,
     state: &'a State,
 }
 
 impl Reach<'_> {
     /// Measures the prize holding frames `held` (indices into the map's
-    /// frames) inside the sealed tiles `sealed`.
-    fn prize(&self, held: &[usize], sealed: &[usize], doors: usize, island: bool) -> Prize {
+    /// frames) inside the sealed tiles `sealed`; `None` when no seat can
+    /// reach it.
+    fn prize(&self, held: &[usize], sealed: &[usize], doors: usize, island: bool) -> Option<Prize> {
         let frames = self.ground.map.extractor_frames();
         let size = BuildingKind::Extractor.size();
+        let nearest = |dist: &[u32]| {
+            held.iter()
+                .flat_map(|&f| footprint(frames[f], size))
+                .map(|t| dist[self.ground.index(t)])
+                .min()
+                .filter(|&d| d != u32::MAX)
+                .map(|d| as_index(i32::try_from((d + 5) / 10).expect("steps fit")))
+        };
         let mut arrivals: Vec<(Arrival, PlayerId)> = self
             .starts
             .iter()
-            .zip(&self.seat_distances)
-            .map(|(&(player, anchor), dist)| {
-                let walk = held
-                    .iter()
-                    .flat_map(|&f| footprint(frames[f], size))
-                    .map(|t| dist[self.ground.index(t)])
-                    .min()
-                    .filter(|&d| d != u32::MAX);
-                let (steps, by_air) = walk.map_or_else(
-                    || {
-                        let fly = held
-                            .iter()
-                            .map(|&f| {
-                                let (dx, dy) = (frames[f].x - anchor.x, frames[f].y - anchor.y);
-                                f64::from(dx * dx + dy * dy).sqrt()
-                            })
-                            .fold(f64::INFINITY, f64::min);
-                        #[expect(
-                            clippy::cast_possible_truncation,
-                            clippy::cast_sign_loss,
-                            reason = "a flight across one map is short and positive"
-                        )]
-                        let fly = fly.round() as usize;
-                        (fly, true)
-                    },
-                    |d| {
-                        (
-                            as_index(i32::try_from((d + 5) / 10).expect("steps fit")),
-                            false,
-                        )
-                    },
-                );
-                (
+            .zip(self.walks.iter().zip(&self.flights))
+            .filter_map(|(&(player, _), (walk, flight))| {
+                let (steps, by_air) = nearest(walk)
+                    .map(|steps| (steps, false))
+                    .or_else(|| nearest(flight).map(|steps| (steps, true)))?;
+                Some((
                     Arrival {
                         seat: player.0,
                         steps,
                         by_air,
                     },
                     player,
-                )
+                ))
             })
             .collect();
         arrivals.sort_by_key(|(a, _)| (a.steps, a.seat));
-        let (first, leader) = arrivals[0];
+        let &(first, leader) = arrivals.first()?;
         let rival = arrivals
             .iter()
             .find(|(_, p)| self.state.hostile(leader, *p))
             .map(|(a, _)| *a);
-        Prize {
+        Some(Prize {
             frames: held.iter().map(|&f| (frames[f].x, frames[f].y)).collect(),
             island,
             doors,
             first,
             rival,
             shelling: self.shelling(held, sealed),
-        }
+        })
     }
 
     /// Ground outside `sealed` that can shell one of the `held` frames.

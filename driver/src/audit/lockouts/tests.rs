@@ -99,10 +99,10 @@ fn ground_within_artillery_reach_unlocks_an_island() {
     assert!(!prizes[0].locked());
 }
 
-#[test]
-fn a_peak_in_the_line_blocks_shelling() {
+/// [`sea`] with a closed peak ring one tile out from the island, inside the
+/// pit.
+fn ringed() -> State {
     let mut sketch = sea((4, 4), &PACKED, 3, 0);
-    // A peak ring one tile out from the island, inside the pit.
     let corner = (38, 23);
     sketch.paint(
         (corner.0 - 2, corner.1 - 2),
@@ -120,10 +120,44 @@ fn a_peak_in_the_line_blocks_shelling() {
     for (dx, dy) in PACKED {
         sketch.put((corner.0 + dx, corner.1 + dy), 'E');
     }
-    let prizes = prizes(&sketch.build());
-    assert_eq!(prizes.len(), 1, "{prizes:?}");
-    assert_eq!(prizes[0].shelling, 0);
-    assert!(prizes[0].locked());
+    sketch.build()
+}
+
+/// An island in a pit against the north edge, with ground in artillery
+/// reach west, east and south. With `walls`, a peak cup open to the north
+/// stands between the island and that ground; aircraft enter over its rim.
+fn cupped(walls: bool) -> State {
+    let mut sketch = Sketch::new(80, 40);
+    sketch.paint((30, 0), (49, 15), '~', '1');
+    sketch.paint((38, 3), (41, 6), '.', '1');
+    if walls {
+        sketch.paint((35, 2), (35, 9), '^', '1');
+        sketch.paint((44, 2), (44, 9), '^', '1');
+        sketch.paint((35, 9), (44, 9), '^', '1');
+    }
+    for (dx, dy) in PACKED {
+        sketch.put((38 + dx, 3 + dy), 'E');
+    }
+    sketch.put((4, 30), '1');
+    sketch.put((74, 30), '2');
+    sketch.build()
+}
+
+#[test]
+fn a_peak_in_the_line_blocks_shelling() {
+    let open = prizes(&cupped(false));
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert!(open[0].shelling >= SHELLING_FLOOR, "{open:?}");
+    let walled = prizes(&cupped(true));
+    assert_eq!(walled.len(), 1, "{walled:?}");
+    assert_eq!(walled[0].shelling, 0, "{walled:?}");
+    assert!(walled[0].locked(), "{walled:?}");
+}
+
+#[test]
+fn frames_no_seat_can_reach_are_no_prize() {
+    // A closed peak ring keeps aircraft out too.
+    assert_eq!(prizes(&ringed()), Vec::new());
 }
 
 #[test]
@@ -149,7 +183,7 @@ fn frames_spread_across_an_island_count_as_one_prize() {
 /// A 61x40 field with mirrored Foundries below a cliff-ringed bench
 /// holding four frames, reached by one ramp three tiles wide. The bench
 /// stands above the floor, or below it when `sunken`.
-fn bench(sunken: bool) -> State {
+fn bench_sketch(sunken: bool) -> Sketch {
     let (inner, outer) = if sunken { ('1', '2') } else { ('2', '1') };
     let mut sketch = Sketch::new(61, 40);
     sketch.paint((0, 0), (60, 39), '.', outer);
@@ -162,7 +196,11 @@ fn bench(sunken: bool) -> State {
     }
     sketch.put((4, 34), '1');
     sketch.put((55, 34), '2');
-    sketch.build()
+    sketch
+}
+
+fn bench(sunken: bool) -> State {
+    bench_sketch(sunken).build()
 }
 
 #[test]
@@ -200,4 +238,71 @@ fn scrap_never_walls_off_a_prize() {
     let prizes = prizes(&sketch.build());
     assert!(prizes.iter().all(|prize| !prize.island), "{prizes:?}");
     assert!(prizes.iter().all(|prize| !prize.locked()), "{prizes:?}");
+}
+
+#[test]
+fn a_map_without_foundries_has_no_prizes() {
+    let mut sketch = sea((4, 4), &PACKED, 15, 0);
+    sketch.put((4, 24), '.');
+    sketch.put((74, 24), '.');
+    let lines = |grid: Vec<Vec<char>>| grid.into_iter().map(String::from_iter).collect();
+    let state = Scenario {
+        levels: lines(sketch.levels),
+        mode: ScenarioMode::Sandbox,
+        name: "lockouts".into(),
+        map: lines(sketch.rows),
+        players: Scenario::skirmish().players,
+        units: Vec::new(),
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    assert_eq!(prizes(&state), Vec::new());
+}
+
+#[test]
+fn a_cluster_behind_a_door_counts_even_beside_an_outside_frame() {
+    // A fifth frame on the floor just below the ramp joins the bench
+    // frames in one site's support, but a holder can leave it outside.
+    let mut sketch = bench_sketch(false);
+    sketch.put((29, 19), 'E');
+    let prizes = prizes(&sketch.build());
+    assert!(
+        prizes
+            .iter()
+            .any(|prize| prize.frames.len() == 4 && prize.locked()),
+        "{prizes:?}"
+    );
+}
+
+#[test]
+fn scrap_never_blocks_a_foundry_site() {
+    // Scrap covers every site between two lone frames on the floor, yet a
+    // miner clears it, so the pair still seeds a pocket.
+    let mut sketch = Sketch::new(61, 40);
+    sketch.paint((23, 0), (37, 39), 'S', '1');
+    sketch.put((21, 12), 'E');
+    sketch.put((38, 12), 'E');
+    sketch.put((4, 34), '1');
+    sketch.put((55, 34), '2');
+    let prizes = prizes(&sketch.build());
+    assert!(
+        prizes
+            .iter()
+            .any(|prize| prize.frames == vec![(21, 12), (38, 12)]),
+        "{prizes:?}"
+    );
+}
+
+#[test]
+fn aircraft_arrive_by_their_route_around_peaks() {
+    // A peak wall in front of the west Foundry, open only at the south
+    // edge, sends its aircraft the long way round.
+    let mut sketch = sea((4, 4), &PACKED, 15, 0);
+    sketch.paint((10, 0), (10, 47), '^', '1');
+    let prizes = prizes(&sketch.build());
+    assert_eq!(prizes.len(), 1, "{prizes:?}");
+    assert_eq!(prizes[0].first.seat, 1);
+    assert!(!prizes[0].contested(), "{prizes:?}");
 }
