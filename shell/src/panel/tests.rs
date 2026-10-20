@@ -913,7 +913,7 @@ fn build_chips_wear_the_works_they_are_raising() {
     assert!(matches!(
         panel.queue[0].icon,
         CardIcon::Order {
-            subject: OrderSubject::Building(BuildingKind::Turret, _),
+            subject: OrderSubject::Building(BuildingKind::Turret, _, _),
             verb: VerbIcon::Build,
             ghost: true,
         }
@@ -921,7 +921,7 @@ fn build_chips_wear_the_works_they_are_raising() {
     assert!(matches!(
         panel.queue[1].icon,
         CardIcon::Order {
-            subject: OrderSubject::Building(BuildingKind::Array, _),
+            subject: OrderSubject::Building(BuildingKind::Array, _, _),
             verb: VerbIcon::Build,
             ghost: true,
         }
@@ -1137,7 +1137,7 @@ fn a_tending_chip_names_the_building_it_repairs() {
         matches!(
             card.icon,
             CardIcon::Order {
-                subject: OrderSubject::Building(BuildingKind::Foundry, _),
+                subject: OrderSubject::Building(BuildingKind::Foundry, _, _),
                 verb: VerbIcon::Repair,
                 ghost: false,
             }
@@ -1154,6 +1154,55 @@ fn a_tending_chip_names_the_building_it_repairs() {
     assert!(
         card.progress.is_some(),
         "the chip meters the building's hull"
+    );
+}
+
+#[test]
+fn a_repair_chip_wears_the_patients_tier() {
+    let spec = |kind, x| oxide_sim::scenario::BuildingSpec {
+        player: 0,
+        kind,
+        x,
+        y: 3,
+    };
+    let (mut game, _) = builder_game_with(&[
+        spec(BuildingKind::Fabricator, 9),
+        spec(BuildingKind::Turret, 12),
+    ]);
+    let turret = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Turret)
+        .expect("fixture has a turret")
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::UpgradeBuilding { building: turret },
+    }]);
+    let card = order_card(
+        &game.view(),
+        &Order::Repair { building: turret },
+        true,
+        true,
+        None,
+    );
+    assert!(
+        matches!(
+            card.icon,
+            CardIcon::Order {
+                subject: OrderSubject::Building(BuildingKind::Turret, 1, _),
+                verb: VerbIcon::Repair,
+                ..
+            }
+        ),
+        "{:?}",
+        card.icon
+    );
+    assert!(
+        card.title.starts_with("Repair - Heavy Turret"),
+        "{}",
+        card.title
     );
 }
 

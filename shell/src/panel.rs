@@ -59,8 +59,9 @@ pub enum CardIcon {
 pub enum OrderSubject {
     /// A machine: an attack victim.
     Unit(UnitKind, macroquad::prelude::Color),
-    /// Works: a site being raised, a patient, a strip job, a victim.
-    Building(BuildingKind, macroquad::prelude::Color),
+    /// Works at a tier: a site being raised, a patient, a strip job, a
+    /// victim.
+    Building(BuildingKind, u8, macroquad::prelude::Color),
 }
 
 /// The atlas's verb pictograms, in `Sprites::verb_icons` order.
@@ -638,7 +639,7 @@ fn order_subject(
             let frac =
                 (b.construction_progress().unwrap_or(0) as f32 / ticks as f32).clamp(0.0, 1.0);
             Some((
-                OrderSubject::Building(b.kind, owner_of(b.player)),
+                OrderSubject::Building(b.kind, b.tier, owner_of(b.player)),
                 entity_name(b.kind.tier_name(b.tier)),
                 !b.built(),
                 Some(frac),
@@ -653,7 +654,7 @@ fn order_subject(
             let b = game.state.building(*building)?;
             let frac = (b.hp as f32 / b.stats().max_hp.max(1) as f32).clamp(0.0, 1.0);
             Some((
-                OrderSubject::Building(b.kind, owner_of(b.player)),
+                OrderSubject::Building(b.kind, b.tier, owner_of(b.player)),
                 entity_name(b.kind.tier_name(b.tier)),
                 !b.built(),
                 Some(frac),
@@ -663,12 +664,25 @@ fn order_subject(
             .state
             .attack_objective(game.presentation.human, *target)?
         {
-            oxide_sim::AttackTarget::RememberedBuilding(memory) => Some((
-                OrderSubject::Building(memory.building_kind, owner_of(memory.owner)),
-                entity_name(memory.building_kind.name()),
-                false,
-                None,
-            )),
+            oxide_sim::AttackTarget::RememberedBuilding(memory) => {
+                // The tier as this player last saw it, never the live one.
+                let tier = game
+                    .my_vision()
+                    .ghosts()
+                    .iter()
+                    .find(|ghost| {
+                        ghost.anchor == memory.anchor
+                            && ghost.owner == memory.owner
+                            && ghost.kind == memory.building_kind
+                    })
+                    .map_or(0, |ghost| ghost.tier);
+                Some((
+                    OrderSubject::Building(memory.building_kind, tier, owner_of(memory.owner)),
+                    entity_name(memory.building_kind.tier_name(tier)),
+                    false,
+                    None,
+                ))
+            }
             oxide_sim::AttackTarget::Contact(id) => {
                 let track = game.my_vision().track(id)?;
                 if let Some(uid) = track.visible_unit {
@@ -690,8 +704,8 @@ fn order_subject(
         Order::ReturnCargo { foundry, .. } => {
             let building = game.state.building(*foundry)?;
             Some((
-                OrderSubject::Building(building.kind, owner_of(building.player)),
-                entity_name(building.kind.name()),
+                OrderSubject::Building(building.kind, building.tier, owner_of(building.player)),
+                entity_name(building.kind.tier_name(building.tier)),
                 false,
                 None,
             ))
@@ -727,7 +741,7 @@ fn order_subject(
         Order::Retire { crucible, .. } => {
             let b = game.state.building(*crucible)?;
             Some((
-                OrderSubject::Building(b.kind, owner_of(b.player)),
+                OrderSubject::Building(b.kind, b.tier, owner_of(b.player)),
                 entity_name(b.kind.tier_name(b.tier)),
                 false,
                 None,
@@ -736,7 +750,7 @@ fn order_subject(
         // A pending found's subject is the kind it will claim — drawn as
         // a ghost, since nothing stands yet.
         Order::Found { kind, .. } => Some((
-            OrderSubject::Building(*kind, owner_of(game.presentation.human)),
+            OrderSubject::Building(*kind, 0, owner_of(game.presentation.human)),
             entity_name(kind.name()),
             true,
             None,
