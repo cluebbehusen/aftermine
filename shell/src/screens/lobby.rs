@@ -608,9 +608,9 @@ fn draw_room(
         };
         wizard::draw_seat_card(card, &card_view, ui);
     }
-    if let Some(tex) = previews.get_map(map) {
+    if let Some(preview) = previews.get_map(map, layout.preview) {
         let theme = map.meta.as_ref().map_or("", |meta| meta.theme.as_str());
-        let drawn = wizard::draw_preview(tex, theme, layout.preview, ui);
+        let drawn = wizard::draw_preview(&preview, theme, layout.preview, ui);
         wizard::draw_seat_markers(map, &styles, drawn, you, None, ui);
     }
 }
