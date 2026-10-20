@@ -66,3 +66,35 @@ fn repainting_a_pixel_its_own_color_changes_nothing() {
     assert_eq!(image.get_pixel(1, 1), MINI_VOID);
     assert!(!repaint(&mut image, 2, 1, MINI_ROCK));
 }
+
+#[test]
+fn the_minimap_repaints_only_when_its_picture_can_change() {
+    const STRAY: Color = color_u8!(255, 0, 255, 255);
+    let mut game = crate::game::Game::with_viewport(oxide_sim::Scenario::skirmish(), VIEWPORT)
+        .expect("embedded skirmish builds");
+    let mut paint = MinimapPaint::new(&game.view());
+    assert!(paint.refresh(&game.view()), "the first refresh paints");
+    let mut stray_survives = |game: &crate::game::Game| {
+        paint.image.set_pixel(0, 0, STRAY);
+        let changed = paint.refresh(&game.view());
+        (changed, paint.image.get_pixel(0, 0) == STRAY)
+    };
+
+    assert_eq!(
+        stray_survives(&game),
+        (false, true),
+        "same tick, same picture"
+    );
+    game.do_tick();
+    assert_eq!(stray_survives(&game), (true, false), "a tick landed");
+    game.update_fx(0.1);
+    assert_eq!(
+        stray_survives(&game),
+        (false, true),
+        "fade still on its step"
+    );
+    game.update_fx(0.2);
+    assert_eq!(stray_survives(&game), (true, false), "fade took a step");
+    game.presentation.overlay = true;
+    assert_eq!(stray_survives(&game), (true, false), "the overlay sees all");
+}

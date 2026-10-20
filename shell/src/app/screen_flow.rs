@@ -256,12 +256,11 @@ pub(super) fn update_and_draw(
     // Controls capture and text editing keep their conventional recovery keys.
     let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())
         || screen.text_entry();
-    let classic = crate::action::BindingMap::classic();
-    crate::menu::set_bindings(if fixed_editor {
-        &classic
+    if fixed_editor {
+        crate::menu::set_bindings(&crate::action::BindingMap::classic());
     } else {
-        &app.config.bindings
-    });
+        crate::menu::set_bindings(&app.config.bindings);
+    }
     if !fixed_editor && !screen.kind().gameplay() {
         events =
             app.config

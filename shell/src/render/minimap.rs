@@ -128,22 +128,156 @@ pub fn minimap_world_in(rect: Rect, map_w: i32, screen: Vec2) -> Option<Vec2> {
 /// tile. Created lazily inside the draw so headless sessions never touch
 /// the GPU.
 pub(crate) struct MinimapLayer {
-    image: Image,
+    paint: MinimapPaint,
     texture: Texture2D,
+    filter: FilterMode,
 }
 
 impl MinimapLayer {
-    fn ensure(slot: &mut Option<Self>, w: i32, h: i32) -> &mut Self {
-        let (w, h) = (w.max(1).fit::<u16>(), h.max(1).fit::<u16>());
+    fn ensure<'a>(slot: &'a mut Option<Self>, game: &crate::game::Scene<'_>) -> &'a mut Self {
+        let map = game.state.map();
+        let (w, h) = (
+            map.width().max(1).fit::<u16>(),
+            map.height().max(1).fit::<u16>(),
+        );
         if slot
             .as_ref()
-            .is_none_or(|layer| layer.image.width != w || layer.image.height != h)
+            .is_none_or(|layer| layer.paint.image.width != w || layer.paint.image.height != h)
         {
-            let image = Image::gen_image_color(w, h, MINI_VOID);
-            let texture = Texture2D::from_image(&image);
-            *slot = Some(Self { image, texture });
+            let paint = MinimapPaint::new(game);
+            let texture = Texture2D::from_image(&paint.image);
+            *slot = Some(Self {
+                paint,
+                texture,
+                filter: FilterMode::Linear,
+            });
         }
         slot.as_mut().expect("just ensured")
+    }
+
+    /// Repaints on the next draw, for a world that changed without a tick.
+    pub(crate) fn forget(&mut self) {
+        self.paint.painted = None;
+    }
+}
+
+/// How often remembered salvage steps along its fade while nothing else
+/// changes. The fade takes 90 seconds, far below a color step per tick.
+const FADE_STEPS_PER_SECOND: f32 = 4.0;
+
+/// What the minimap image last showed. Tiles change only when a tick lands,
+/// the viewer changes, or a memory fades a step.
+#[derive(Clone, Copy, PartialEq)]
+struct Painted {
+    tick: u64,
+    viewer: oxide_sim::PlayerId,
+    omniscient: bool,
+    fade: u32,
+}
+
+/// The minimap's pixels, kept apart from the texture so tests can paint
+/// them headless.
+struct MinimapPaint {
+    image: Image,
+    /// Each tile's color when explored and bare. Terrain and level tones
+    /// never change during a match.
+    terrain: Vec<Color>,
+    painted: Option<Painted>,
+}
+
+impl MinimapPaint {
+    fn new(game: &crate::game::Scene<'_>) -> Self {
+        let map = game.state.map();
+        let levels = game.ground().levels.as_ref();
+        let terrain = map
+            .iter()
+            .map(|(pos, tile)| {
+                // Ground on a tiered map takes its level's tone, and a cliff
+                // reads as a dark drop at the ground of its foot.
+                let tone = levels.and_then(|levels| levels.minimap_tone(map, pos));
+                let ground = tone.map_or(MINI_GROUND, |tone| toned(MINI_GROUND, tone));
+                match tile.terrain {
+                    oxide_sim::map::Terrain::Rock => MINI_ROCK,
+                    oxide_sim::map::Terrain::Cliff => toned(ground, MINI_CLIFF),
+                    oxide_sim::map::Terrain::Peak => MINI_PEAK,
+                    oxide_sim::map::Terrain::Pit => MINI_PIT,
+                    oxide_sim::map::Terrain::Ground => ground,
+                }
+            })
+            .collect();
+        let (w, h) = (
+            map.width().max(1).fit::<u16>(),
+            map.height().max(1).fit::<u16>(),
+        );
+        Self {
+            image: Image::gen_image_color(w, h, MINI_VOID),
+            terrain,
+            painted: None,
+        }
+    }
+
+    /// Brings the pixels up to date, reporting whether any changed.
+    fn refresh(&mut self, game: &crate::game::Scene<'_>) -> bool {
+        let omniscient = game.presentation.all_seeing();
+        let now = Painted {
+            tick: game.state.current_tick(),
+            viewer: game.presentation.human,
+            omniscient,
+            fade: crate::numeric::to_u32(game.presentation.fx_time() * FADE_STEPS_PER_SECOND),
+        };
+        if self.painted == Some(now) {
+            return false;
+        }
+        self.painted = Some(now);
+        let vision = game.my_vision();
+        let mut changed = false;
+        for ((pos, tile), &bare) in game.state.map().iter().zip(&self.terrain) {
+            let (explored, visible) = if omniscient {
+                (true, true)
+            } else {
+                (vision.explored(pos), vision.visible(pos))
+            };
+            let color = if explored {
+                // Same memory rule as the world view: live scrap in sight,
+                // last-seen scrap under the dim.
+                let scrap = if visible {
+                    tile.scrap
+                } else {
+                    vision.remembered_scrap(pos)
+                };
+                let base = if tile.terrain == oxide_sim::map::Terrain::Ground && scrap > 0 {
+                    SCRAP_COLOR
+                } else {
+                    bare
+                };
+                if visible {
+                    // Stamp what is on show. The world renderer stamps only
+                    // camera-visible tiles, so without this a node re-scouted
+                    // off-camera would keep fading from its old timestamp.
+                    if tile.scrap > 0 || tile.wreck > 0 {
+                        game.presentation
+                            .last_seen
+                            .borrow_mut()
+                            .insert((pos.x, pos.y), game.presentation.fx_time());
+                    }
+                    base
+                } else if scrap > 0 {
+                    // Remembered salvage fades like the world view's but
+                    // never disappears.
+                    stale_toward(
+                        dim(base),
+                        dim(MINI_GROUND),
+                        memory_age(game, (pos.x, pos.y)),
+                    )
+                } else {
+                    dim(base)
+                }
+            } else {
+                MINI_VOID
+            };
+            changed |= repaint(&mut self.image, pos.x.fit(), pos.y.fit(), color);
+        }
+        changed
     }
 }
 
@@ -166,7 +300,6 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
     }
     let scale = rect.w / game.state.map().width() as f32;
     let omniscient = game.presentation.all_seeing();
-    let vision = game.my_vision();
     draw_rectangle(
         rect.x - 3.0,
         rect.y - 3.0,
@@ -176,78 +309,23 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
     );
 
     let mut layer_slot = game.presentation.minimap_layer.borrow_mut();
-    let layer = MinimapLayer::ensure(
-        &mut layer_slot,
-        game.state.map().width(),
-        game.state.map().height(),
-    );
-    let levels = game.ground().levels.as_ref();
-    let mut changed = false;
-    for (pos, tile) in game.state.map().iter() {
-        let (explored, visible) = if omniscient {
-            (true, true)
-        } else {
-            (vision.explored(pos), vision.visible(pos))
-        };
-        let color = if explored {
-            // Same memory rule as the world view: live scrap in sight,
-            // last-seen scrap under the dim.
-            let scrap = if visible {
-                tile.scrap
-            } else {
-                vision.remembered_scrap(pos)
-            };
-            // Ground on a tiered map takes its level's tone, and a cliff
-            // reads as a dark drop at the ground of its foot.
-            let tone = levels.and_then(|levels| levels.minimap_tone(game.state.map(), pos));
-            let ground = tone.map_or(MINI_GROUND, |tone| toned(MINI_GROUND, tone));
-            let base = match (tile.terrain, scrap) {
-                (oxide_sim::map::Terrain::Rock, _) => MINI_ROCK,
-                (oxide_sim::map::Terrain::Cliff, _) => toned(ground, MINI_CLIFF),
-                (oxide_sim::map::Terrain::Peak, _) => MINI_PEAK,
-                (oxide_sim::map::Terrain::Pit, _) => MINI_PIT,
-                (oxide_sim::map::Terrain::Ground, 0) => ground,
-                (oxide_sim::map::Terrain::Ground, _) => SCRAP_COLOR,
-            };
-            if visible {
-                // Stamp what is on show. The world renderer stamps only
-                // camera-visible tiles, so without this a node re-scouted
-                // off-camera would keep fading from its old timestamp.
-                if tile.scrap > 0 || tile.wreck > 0 {
-                    game.presentation
-                        .last_seen
-                        .borrow_mut()
-                        .insert((pos.x, pos.y), game.presentation.fx_time());
-                }
-                base
-            } else if scrap > 0 {
-                // Remembered salvage fades like the world view's but
-                // never disappears.
-                stale_toward(
-                    dim(base),
-                    dim(MINI_GROUND),
-                    memory_age(game, (pos.x, pos.y)),
-                )
-            } else {
-                dim(base)
-            }
-        } else {
-            MINI_VOID
-        };
-        changed |= repaint(&mut layer.image, pos.x.fit(), pos.y.fit(), color);
-    }
+    let layer = MinimapLayer::ensure(&mut layer_slot, game);
     // Replacing a texture the GPU may still be drawing from can stall the
-    // frame, and most frames change no tile.
-    if changed {
-        layer.texture.update(&layer.image);
+    // frame, so upload only after a pixel changed.
+    if layer.paint.refresh(game) {
+        layer.texture.update(&layer.paint.image);
     }
     // Downscaled tiles (sub-pixel on grand maps) blend; upscaled tiles
     // stay crisp blocks.
-    layer.texture.set_filter(if scale < 1.0 {
+    let filter = if scale < 1.0 {
         FilterMode::Linear
     } else {
         FilterMode::Nearest
-    });
+    };
+    if layer.filter != filter {
+        layer.texture.set_filter(filter);
+        layer.filter = filter;
+    }
     draw_texture_ex(
         &layer.texture,
         rect.x,
@@ -260,6 +338,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
     );
     drop(layer_slot);
 
+    let vision = game.my_vision();
     if !omniscient {
         for ghost in vision.ghosts() {
             let (w, h) = ghost.kind.size();

@@ -1539,6 +1539,8 @@ pub(crate) fn refresh(state: &mut State) {
         view.prune_salvage_incidents(state.tick);
         let my_team = state.players[index].team;
         let allied = |p: PlayerId| state.players[p.0 as usize].team == my_team;
+        let viewer = PlayerId::from_index(index);
+        let stealth = crate::state::ChargeLens::new(state, viewer);
         view.visible.fill(false);
         coverage.reset();
         // Team sight: every teammate's eyes stamp into this view. A disc
@@ -1587,18 +1589,18 @@ pub(crate) fn refresh(state: &mut State) {
             // that team cannot place over its own charge. Hostile scaffolds
             // can overlap a concealed mine and do not disprove the memory.
             ghost.kind.is_stealthy()
-                && !state.charge_detected_at(PlayerId::from_index(index), ghost.anchor)
+                && !stealth.detected_at(ghost.anchor)
                 && !state.buildings.iter().any(|b| {
                     b.contains(ghost.anchor)
                         && !state.hostile(ghost.owner, b.player)
-                        && state.building_apparent(PlayerId::from_index(index), b)
+                        && stealth.building_apparent(b)
                 })
         });
         for building in state.buildings.iter().filter(|b| !allied(b.player)) {
             // An undetected buried charge never enters memory: sight of
             // its tile alone is not knowledge of it (the one stealth
             // rule; see `State::building_apparent`).
-            if !state.building_apparent(PlayerId::from_index(index), building) {
+            if !stealth.building_apparent(building) {
                 continue;
             }
             if building.tiles().any(|t| view.visible(t)) {
@@ -1692,11 +1694,10 @@ pub(crate) fn refresh(state: &mut State) {
             // A building returns one blip, like a unit of any size. An
             // undetected charge or hostile provisional site is not apparent
             // and returns nothing.
-            let viewer = PlayerId::from_index(index);
             for b in state
                 .buildings
                 .iter()
-                .filter(|b| !allied(b.player) && state.building_apparent(viewer, b))
+                .filter(|b| !allied(b.player) && stealth.building_apparent(b))
             {
                 if b.tiles().any(|t| view.visible(t)) {
                     continue;
@@ -1712,7 +1713,7 @@ pub(crate) fn refresh(state: &mut State) {
             view.contacts.dedup();
         }
         let mut tracking = std::mem::take(&mut view.tracking);
-        tracking.refresh(view, state, PlayerId::from_index(index), &sightings);
+        tracking.refresh(view, state, viewer, &sightings);
         view.tracking = tracking;
         view.track_warheads(state, |p| !allied(p), |t| ring_distance(t).is_some());
     }

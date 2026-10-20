@@ -1471,3 +1471,57 @@ fn an_allied_magazine_docks_its_rounds_read_only() {
         "a teammate sees the order and its meter but cannot cancel it"
     );
 }
+
+#[test]
+fn the_top_bar_income_follows_the_tick_it_was_summed_at() {
+    let mut scenario = Scenario::skirmish();
+    scenario.players[0].scrap = 10_000;
+    scenario.buildings.extend([
+        oxide_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Reclaimer,
+            x: 9,
+            y: 3,
+        },
+        oxide_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Fabricator,
+            x: 12,
+            y: 3,
+        },
+    ]);
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let reclaimer = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Reclaimer)
+        .unwrap()
+        .id;
+    let summed = |game: &Game| -> u32 {
+        game.state
+            .buildings()
+            .iter()
+            .map(|building| building_income(&game.view(), building))
+            .sum()
+    };
+    assert_eq!(passive_income(&game.view()), 30);
+    assert_eq!(passive_income(&game.view()), summed(&game));
+    game.state.tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::UpgradeBuilding {
+            building: reclaimer,
+        },
+    }]);
+    assert_eq!(
+        passive_income(&game.view()),
+        0,
+        "an upgrading Reclaimer pays nothing"
+    );
+    game.presentation.human = oxide_sim::PlayerId(1);
+    assert_eq!(
+        passive_income(&game.view()),
+        summed(&game),
+        "another seat's sum"
+    );
+}

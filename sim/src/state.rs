@@ -1639,6 +1639,66 @@ impl<'a> GroundTerrain<'a> {
     }
 }
 
+/// One allied source of Scuttle Charge detection; the rule is
+/// [`State::building_apparent`]'s.
+#[derive(Debug, Clone, Copy)]
+enum ChargeDetector {
+    /// A live machine with charge detection: a Chebyshev square.
+    Scout(TilePos),
+    /// A built Array: a euclidean disc of its tier's radius.
+    Mast { anchor: TilePos, radius: i32 },
+}
+
+impl ChargeDetector {
+    fn covers(self, anchor: TilePos) -> bool {
+        match self {
+            Self::Scout(tile) => tile.chebyshev(anchor) <= crate::stats::CHARGE_SCOUT_DETECT_RADIUS,
+            Self::Mast {
+                anchor: mast,
+                radius,
+            } => {
+                let (dx, dy) = (anchor.x - mast.x, anchor.y - mast.y);
+                dx * dx + dy * dy <= radius * radius
+            }
+        }
+    }
+}
+
+/// [`State::building_apparent`] for one viewer over many buildings. The
+/// viewer's allied detectors are gathered at the first stealth test, so a
+/// pass over many charges reads every unit and building once rather than
+/// once per charge. The shared borrow keeps the state, and so the gathered
+/// list, unchanged for the lens's lifetime.
+pub(crate) struct ChargeLens<'a> {
+    state: &'a State,
+    viewer: PlayerId,
+    detectors: std::cell::OnceCell<Vec<ChargeDetector>>,
+}
+
+impl<'a> ChargeLens<'a> {
+    pub(crate) fn new(state: &'a State, viewer: PlayerId) -> Self {
+        Self {
+            state,
+            viewer,
+            detectors: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// [`State::charge_detected_at`] for this lens's viewer.
+    pub(crate) fn detected_at(&self, anchor: TilePos) -> bool {
+        self.detectors
+            .get_or_init(|| self.state.charge_detectors(self.viewer).collect())
+            .iter()
+            .any(|d| d.covers(anchor))
+    }
+
+    /// [`State::building_apparent`] for this lens's viewer.
+    pub(crate) fn building_apparent(&self, building: &Building) -> bool {
+        self.state
+            .apparent_unless_undetected(self.viewer, building, |anchor| self.detected_at(anchor))
+    }
+}
+
 impl State {
     /// Assembles a state from parts; [`crate::Scenario::build`] is the public
     /// entry point.
@@ -3319,6 +3379,19 @@ impl State {
     /// Every fog-honest surface — ghosts, targeting, views, rendering —
     /// must consult this before showing a hostile building.
     pub fn building_apparent(&self, viewer: PlayerId, building: &Building) -> bool {
+        self.apparent_unless_undetected(viewer, building, |anchor| {
+            self.charge_detected_at(viewer, anchor)
+        })
+    }
+
+    /// [`Self::building_apparent`] with the detection test supplied, so a
+    /// [`ChargeLens`] can answer it from its gathered detectors.
+    fn apparent_unless_undetected(
+        &self,
+        viewer: PlayerId,
+        building: &Building,
+        detected: impl FnOnce(TilePos) -> bool,
+    ) -> bool {
         if building.provisional() {
             return !self.hostile(viewer, building.player);
         }
@@ -3328,34 +3401,41 @@ impl State {
         {
             return true;
         }
-        self.charge_detected_at(viewer, building.anchor)
+        detected(building.anchor)
     }
 
     /// Detector coverage is independent of whether a charge still exists.
     pub(crate) fn charge_detected_at(&self, viewer: PlayerId, anchor: TilePos) -> bool {
-        let scout_r = crate::stats::CHARGE_SCOUT_DETECT_RADIUS;
-        let scouted = self.units.iter().any(|u| {
-            u.hp > 0
-                && !self.hostile(viewer, u.player)
-                && u.kind.stats().charge_detection
-                && u.tile().chebyshev(anchor) <= scout_r
-        });
-        if scouted {
-            return true;
-        }
-        let deep_r = crate::stats::CHARGE_ARRAY_DETECT_RADIUS;
-        let base_r = crate::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS;
-        self.buildings.iter().any(|b| {
-            b.hp > 0
-                && b.built()
-                && b.kind == BuildingKind::Array
-                && !self.hostile(viewer, b.player)
-                && {
-                    let r = if b.tier >= 1 { deep_r } else { base_r };
-                    let (dx, dy) = (anchor.x - b.anchor.x, anchor.y - b.anchor.y);
-                    dx * dx + dy * dy <= r * r
-                }
-        })
+        self.charge_detectors(viewer).any(|d| d.covers(anchor))
+    }
+
+    /// Every detector allied to `viewer`, scouts before masts.
+    fn charge_detectors(&self, viewer: PlayerId) -> impl Iterator<Item = ChargeDetector> + '_ {
+        let scouts = self
+            .units
+            .iter()
+            .filter(move |u| {
+                u.hp > 0 && !self.hostile(viewer, u.player) && u.kind.stats().charge_detection
+            })
+            .map(|u| ChargeDetector::Scout(u.tile()));
+        let masts = self
+            .buildings
+            .iter()
+            .filter(move |b| {
+                b.hp > 0
+                    && b.built()
+                    && b.kind == BuildingKind::Array
+                    && !self.hostile(viewer, b.player)
+            })
+            .map(|b| ChargeDetector::Mast {
+                anchor: b.anchor,
+                radius: if b.tier >= 1 {
+                    crate::stats::CHARGE_ARRAY_DETECT_RADIUS
+                } else {
+                    crate::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
+                },
+            });
+        scouts.chain(masts)
     }
 
     /// Spawns a unit at full health. Position is the caller's problem to

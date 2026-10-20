@@ -297,3 +297,127 @@ fn a_rider_keeps_its_damage_stamp_through_the_ride() {
     let landed = rider.disembark(PlayerId(0), walker.pos);
     assert_eq!(landed.damaged_at, Some(41), "a ride is no rest");
 }
+
+/// The full per-query scan [`ChargeLens`] replaced, kept as the reference.
+fn scanned_charge_detection(state: &State, viewer: PlayerId, anchor: TilePos) -> bool {
+    let scout_r = crate::stats::CHARGE_SCOUT_DETECT_RADIUS;
+    let scouted = state.units.iter().any(|u| {
+        u.hp > 0
+            && !state.hostile(viewer, u.player)
+            && u.kind.stats().charge_detection
+            && u.tile().chebyshev(anchor) <= scout_r
+    });
+    if scouted {
+        return true;
+    }
+    let deep_r = crate::stats::CHARGE_ARRAY_DETECT_RADIUS;
+    let base_r = crate::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS;
+    state.buildings.iter().any(|b| {
+        b.hp > 0
+            && b.built()
+            && b.kind == BuildingKind::Array
+            && !state.hostile(viewer, b.player)
+            && {
+                let r = if b.tier >= 1 { deep_r } else { base_r };
+                let (dx, dy) = (anchor.x - b.anchor.x, anchor.y - b.anchor.y);
+                dx * dx + dy * dy <= r * r
+            }
+    })
+}
+
+fn scanned_apparent(state: &State, viewer: PlayerId, building: &Building) -> bool {
+    if building.provisional() {
+        return !state.hostile(viewer, building.player);
+    }
+    if !building.kind.is_stealthy() || !building.built() || !state.hostile(viewer, building.player)
+    {
+        return true;
+    }
+    scanned_charge_detection(state, viewer, building.anchor)
+}
+
+/// Four seats on three teams over a 64-tile floor: live, dead and
+/// non-detecting machines, and Arrays at base tier, deep tier, mid-upgrade,
+/// under construction and destroyed, with every seat's charges, sites and
+/// provisional blueprints scattered between them.
+fn charge_detection_field() -> State {
+    let rows = vec![".".repeat(64); 64];
+    let (map, _) = Map::parse(&rows).unwrap();
+    let seat = |team| Player {
+        name: "p".into(),
+        team,
+        scrap: 0,
+        recovery: Recovery::Ready,
+        resigned: false,
+        eliminated_at: None,
+    };
+    let mut state = State::assemble(map, vec![seat(0), seat(1), seat(0), seat(2)]);
+    let at = |x, y| TilePos::new(x, y).center();
+    state.spawn_unit(PlayerId(0), UnitKind::Kestrel, at(9, 11));
+    state.spawn_unit(PlayerId(2), UnitKind::Surveyor, at(41, 13));
+    state.spawn_unit(PlayerId(1), UnitKind::Kestrel, at(30, 31));
+    state.spawn_unit(PlayerId(1), UnitKind::Surveyor, at(62, 1));
+    let dead = state.spawn_unit(PlayerId(3), UnitKind::Surveyor, at(50, 50));
+    state.unit_mut(dead).unwrap().hp = 0;
+    state.spawn_unit(PlayerId(3), UnitKind::Sentinel, at(20, 40));
+    state.place_building(PlayerId(1), BuildingKind::Array, TilePos::new(5, 40));
+    let deep = state.place_building(PlayerId(0), BuildingKind::Array, TilePos::new(40, 41));
+    let deep_far = state.place_building(PlayerId(3), BuildingKind::Array, TilePos::new(51, 24));
+    let upgrading = state.place_building(PlayerId(3), BuildingKind::Array, TilePos::new(25, 5));
+    let ruin = state.place_building(PlayerId(2), BuildingKind::Array, TilePos::new(12, 55));
+    state.place_site(PlayerId(3), BuildingKind::Array, TilePos::new(56, 6));
+    for id in [deep, deep_far, upgrading] {
+        state.building_mut(id).unwrap().tier = 1;
+    }
+    state.building_mut(upgrading).unwrap().phase = BuildingPhase::Upgrading { progress: 3 };
+    state.building_mut(ruin).unwrap().hp = 0;
+    for (n, y) in (2..64).step_by(5).enumerate() {
+        for (m, x) in (3..64).step_by(7).enumerate() {
+            let owner = PlayerId::from_index((n + m) % 4);
+            let anchor = TilePos::new(x, y);
+            match (n * 3 + m) % 5 {
+                0 => state.place_site(owner, BuildingKind::ScuttleCharge, anchor),
+                1 => state.place_provisional_site(owner, BuildingKind::ScuttleCharge, anchor),
+                _ => state.place_building(owner, BuildingKind::ScuttleCharge, anchor),
+            };
+        }
+    }
+    state
+}
+
+#[test]
+fn a_charge_lens_agrees_with_the_full_detection_scan() {
+    let state = charge_detection_field();
+    let mut detected = [0usize; 2];
+    for seat in 0..state.players.len() {
+        let viewer = PlayerId::from_index(seat);
+        let lens = ChargeLens::new(&state, viewer);
+        for y in -3..67 {
+            for x in -3..67 {
+                let anchor = TilePos::new(x, y);
+                let expected = scanned_charge_detection(&state, viewer, anchor);
+                assert_eq!(lens.detected_at(anchor), expected, "{viewer:?} {anchor:?}");
+                assert_eq!(
+                    state.charge_detected_at(viewer, anchor),
+                    expected,
+                    "{viewer:?} {anchor:?}"
+                );
+                detected[usize::from(expected)] += 1;
+            }
+        }
+        for building in &state.buildings {
+            let expected = scanned_apparent(&state, viewer, building);
+            assert_eq!(
+                lens.building_apparent(building),
+                expected,
+                "{viewer:?} {building:?}"
+            );
+            assert_eq!(
+                state.building_apparent(viewer, building),
+                expected,
+                "{viewer:?} {building:?}"
+            );
+        }
+    }
+    assert!(detected[0] > 0 && detected[1] > 0, "{detected:?}");
+}

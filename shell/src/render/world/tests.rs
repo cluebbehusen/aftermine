@@ -373,3 +373,39 @@ fn shipped_maps_exercise_every_industrial_blocker() {
     }
     assert_eq!(industrial, (0..GROUND_BLOCKER_FOOTPRINTS.len()).collect());
 }
+
+#[test]
+fn every_fog_neighborhood_and_step_count_keeps_its_own_feather() {
+    let mut keys = BTreeSet::new();
+    for pattern in 0..3_usize.pow(9) {
+        // Cell `row * 3 + col` holds the pattern's base-3 digit of that place.
+        let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
+            std::array::from_fn(|col| {
+                let place = (0..row * 3 + col).fold(1, |place, _| place * 3);
+                FOG_STATES[pattern / place % 3]
+            })
+        });
+        for steps in 1..=8 {
+            keys.insert(feather_key(&neighborhood, steps));
+        }
+    }
+    assert_eq!(keys.len(), 3_usize.pow(9) * 8);
+}
+
+#[test]
+fn feather_grid_lines_fall_on_the_band_edges() {
+    for steps in 1..=8 {
+        let side = 2 * (steps + 1);
+        let lines: Vec<f32> = (0..side).map(|index| feather_coord(index, steps)).collect();
+        let near = |line: f32, at: f32| (line - at).abs() < 1e-6;
+        assert_eq!(lines[0], 0.0);
+        assert!(near(lines[steps], FOG_FEATHER));
+        assert!(near(lines[steps + 1], 1.0 - FOG_FEATHER));
+        assert!(near(lines[side - 1], 1.0));
+        assert!(lines.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(
+            feather_alphas(&[[Fog::Explored; 3]; 3], steps).len(),
+            side * side
+        );
+    }
+}

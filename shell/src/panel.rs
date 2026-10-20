@@ -395,6 +395,26 @@ pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
     }
 }
 
+/// The viewer's recurring output across all their buildings, as the top bar
+/// shows it. Each Extractor's Foundry support scans every building, so the
+/// sum is kept until the next tick.
+pub(crate) fn passive_income(game: &Scene<'_>) -> u32 {
+    let key = (game.state.current_tick(), game.presentation.human);
+    if let Some((kept, income)) = game.presentation.passive_income.get()
+        && kept == key
+    {
+        return income;
+    }
+    let income = game
+        .state
+        .buildings()
+        .iter()
+        .map(|building| building_income(game, building))
+        .sum();
+    game.presentation.passive_income.set(Some((key, income)));
+    income
+}
+
 /// Current recurring output; harvesting and temporary recovery grants are separate.
 pub(crate) fn building_income(game: &Scene<'_>, building: &oxide_sim::state::Building) -> u32 {
     if building.player != game.presentation.human || !building.built() || building.hp == 0 {

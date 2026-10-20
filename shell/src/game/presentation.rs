@@ -117,6 +117,8 @@ pub struct Presentation {
     /// reads this same model so drawn and clickable regions cannot
     /// disagree. A `Cell` because drawing borrows presentation.
     pub layout: std::cell::Cell<crate::layout::LayoutModel>,
+    /// The top bar's passive income at a tick, for the seat it was summed for.
+    pub(crate) passive_income: std::cell::Cell<Option<((u64, PlayerId), u32)>>,
     /// The command panel of the latest HUD layout pass, published with
     /// `layout` and read by input and the tooltip pass.
     pub panel_model: std::cell::RefCell<Option<crate::panel::Panel>>,
@@ -365,6 +367,7 @@ impl Presentation {
             alert_gate: HashMap::new(),
             fx_clock: 0.0,
             layout: std::cell::Cell::new(crate::layout::LayoutModel::default()),
+            passive_income: std::cell::Cell::new(None),
             panel_model: std::cell::RefCell::new(None),
             projection: std::cell::RefCell::default(),
             placement_verdict: crate::input::VerdictCache::default(),
@@ -925,6 +928,11 @@ impl Presentation {
         // Nothing has moved across a jump, but a heading-first airframe
         // still has a heading to show, parked or flying.
         self.refresh_facing(state, &[]);
+        // A jump can land on the tick the minimap and top bar last showed.
+        if let Some(layer) = self.minimap_layer.get_mut() {
+            layer.forget();
+        }
+        self.passive_income.set(None);
     }
 }
 
