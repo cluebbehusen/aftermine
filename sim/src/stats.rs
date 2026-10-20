@@ -2435,8 +2435,8 @@ const LATTICE: BuildingStats = BuildingStats {
     weapons: &[],
     traverse: 0,
     construction: Some(ConstructionStats {
-        cost: 250,
-        build_ticks: 450,
+        cost: 400,
+        build_ticks: 750,
         requires: &[Prerequisite::built(BuildingKind::Fabricator)],
     }),
     radar: None,
@@ -2445,8 +2445,8 @@ const LATTICE: BuildingStats = BuildingStats {
 const LATTICE_ORDNANCE: Ordnance = Ordnance::Battery(BatteryStats {
     magazine: MagazineStats {
         capacity: 2,
-        round_cost: 150,
-        round_ticks: 500,
+        round_cost: 300,
+        round_ticks: 900,
         autofill: true,
     },
     ring: Fx::lit("15"),
