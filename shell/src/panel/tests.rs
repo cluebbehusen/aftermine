@@ -1158,6 +1158,65 @@ fn a_tending_chip_names_the_building_it_repairs() {
 }
 
 #[test]
+fn an_attack_chip_on_an_unseen_deep_bore_wears_its_public_tier() {
+    let mut scenario = Scenario::skirmish();
+    let mut rows = vec![vec!['.'; 40]; 30];
+    rows[1][1] = '1';
+    rows[27][37] = '2';
+    rows[24][30] = 'E';
+    scenario.map = rows.into_iter().map(|r| r.into_iter().collect()).collect();
+    scenario.players[1].scrap = 1_000;
+    // The Crucible unlocks the Deep Bore.
+    let spec = |kind, x, y| oxide_sim::scenario::BuildingSpec {
+        player: 1,
+        kind,
+        x,
+        y,
+    };
+    scenario.buildings = vec![
+        spec(BuildingKind::Extractor, 30, 24),
+        spec(BuildingKind::Crucible, 34, 22),
+    ];
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("fixture builds");
+    let bore = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Extractor)
+        .expect("fixture has an Extractor")
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: oxide_sim::PlayerId(1),
+        command: Command::UpgradeBuilding { building: bore },
+    }]);
+    assert_eq!(game.state.building(bore).unwrap().tier, 1, "premise");
+    assert!(game.my_vision().ghosts().is_empty(), "premise: never seen");
+    let target = oxide_sim::AttackTarget::RememberedBuilding(oxide_sim::RememberedBuilding {
+        owner: oxide_sim::PlayerId(1),
+        building_kind: BuildingKind::Extractor,
+        anchor: chassis::grid::TilePos::new(30, 24),
+    });
+    let order = Order::Attack {
+        target,
+        pursue: false,
+        resume: None,
+    };
+    let card = order_card(&game.view(), &order, true, true, None);
+    assert!(
+        matches!(
+            card.icon,
+            CardIcon::Order {
+                subject: OrderSubject::Building(BuildingKind::Extractor, 1, _),
+                ..
+            }
+        ),
+        "{:?}",
+        card.icon
+    );
+    assert!(card.title.contains("Deep Bore"), "{}", card.title);
+}
+
+#[test]
 fn a_repair_chip_wears_the_patients_tier() {
     let spec = |kind, x| oxide_sim::scenario::BuildingSpec {
         player: 0,

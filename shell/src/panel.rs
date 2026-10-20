@@ -665,17 +665,28 @@ fn order_subject(
             .attack_objective(game.presentation.human, *target)?
         {
             oxide_sim::AttackTarget::RememberedBuilding(memory) => {
-                // The tier as this player last saw it, never the live one.
+                // The tier this player knows, as the map draws it: a public
+                // building's own, else the tier last seen, never the live one.
+                let human = game.presentation.human;
                 let tier = game
-                    .my_vision()
-                    .ghosts()
-                    .iter()
-                    .find(|ghost| {
-                        ghost.anchor == memory.anchor
-                            && ghost.owner == memory.owner
-                            && ghost.kind == memory.building_kind
+                    .state
+                    .public_buildings()
+                    .find(|known| {
+                        game.state.hostile(human, known.owner) && known.target() == memory
                     })
-                    .map_or(0, |ghost| ghost.tier);
+                    .map(|known| known.tier)
+                    .or_else(|| {
+                        game.my_vision()
+                            .ghosts()
+                            .iter()
+                            .find(|ghost| {
+                                ghost.anchor == memory.anchor
+                                    && ghost.owner == memory.owner
+                                    && ghost.kind == memory.building_kind
+                            })
+                            .map(|ghost| ghost.tier)
+                    })
+                    .unwrap_or(0);
                 Some((
                     OrderSubject::Building(memory.building_kind, tier, owner_of(memory.owner)),
                     entity_name(memory.building_kind.tier_name(tier)),
