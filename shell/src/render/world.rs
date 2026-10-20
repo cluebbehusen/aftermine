@@ -13,71 +13,165 @@ const FOG_FEATHER: f32 = 0.45;
 /// Fog of war from the local player's perspective: unexplored is void,
 /// explored-but-unseen is dimmed.
 pub(super) fn draw_fog(game: &crate::game::Scene<'_>, view: &GroundView) {
-    let (lo, hi) = view.world_rect();
-    let min = numeric::tile_at(lo);
-    let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
-    // One extra ring so every drawn tile sees all eight neighbors.
-    let stride = as_index(max.x - min.x + 2);
-    let states: Vec<Fog> = (min.y - 1..=max.y)
-        .flat_map(|y| (min.x - 1..=max.x).map(move |x| tile_fog(game, TilePos::new(x, y))))
-        .collect();
-    let fog = |x: i32, y: i32| states[as_index(y - min.y + 1) * stride + as_index(x - min.x + 1)];
-    for y in min.y..max.y {
-        for x in min.x..max.x {
-            let alpha = fog(x, y).alpha();
-            if alpha == 0.0 {
-                continue;
-            }
-            let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
-            // Exact shared edges: translucent rects that overlap draw
-            // double-dark seams, so each tile ends where the next begins.
-            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
-            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
-            draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
-        }
-    }
-    // Feather inward into known ground. Unknown tiles retain their opaque veil.
-    for y in min.y..max.y {
-        for x in min.x..max.x {
-            let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
-                std::array::from_fn(|col| fog(x + col.fit::<i32>() - 1, y + row.fit::<i32>() - 1))
-            });
-            let current = neighborhood[1][1];
-            if current == Fog::Unexplored
-                || neighborhood.iter().flatten().all(|&state| state <= current)
-            {
-                continue;
-            }
-            let a = view.to_screen(vec2(x as f32, y as f32)).floor();
-            let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
-            draw_fog_feather(a, b, &neighborhood);
+    FOG_VEIL.with_borrow_mut(|veil| veil.draw(game, view));
+}
+
+thread_local! {
+    static FOG_VEIL: std::cell::RefCell<FogVeil> = std::cell::RefCell::new(FogVeil::default());
+}
+
+/// Most distinct feathers kept before the memo starts over. A frame's fog
+/// edge holds a few dozen; this bound only stops a long zoom session from
+/// collecting every step count of every pattern.
+const FEATHER_MEMO: usize = 4096;
+
+/// The fog veil's working memory. A tile's feather depends only on its
+/// fog neighborhood and its grid size, and the same few neighborhoods
+/// recur all along a fog edge, so their alphas are kept rather than
+/// recomputed every frame.
+struct FogVeil {
+    states: Vec<Fog>,
+    feathers: std::collections::HashMap<u32, Box<[f32]>>,
+    /// One tile's feather, its indices a triangle list over a
+    /// `side`×`side` grid of vertices.
+    mesh: Mesh,
+    side: usize,
+}
+
+impl Default for FogVeil {
+    fn default() -> Self {
+        Self {
+            states: Vec::new(),
+            feathers: std::collections::HashMap::new(),
+            mesh: Mesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                texture: None,
+            },
+            side: 0,
         }
     }
 }
 
-/// Samples [`fog_feather_alpha`] on a grid over one tile's screen rect.
-fn draw_fog_feather(a: Vec2, b: Vec2, neighborhood: &[[Fog; 3]; 3]) {
-    let band = (b - a).max_element() * FOG_FEATHER;
-    let steps = numeric::to_usize((band / 6.0).ceil().clamp(1.0, 8.0));
-    // Grid lines fall on the feather band boundaries so straight fades
-    // interpolate exactly; only the rounded corners are approximated.
-    let coords: Vec<f32> = (0..=steps)
-        .map(|i| FOG_FEATHER * i as f32 / steps as f32)
-        .chain((0..=steps).map(|i| 1.0 - FOG_FEATHER + FOG_FEATHER * i as f32 / steps as f32))
-        .collect();
-    let side = coords.len();
-    let vertices = coords
-        .iter()
-        .flat_map(|&v| {
-            coords.iter().map(move |&u| {
-                let p = a + (b - a) * vec2(u, v);
-                let alpha = fog_feather_alpha(neighborhood, u, v);
+impl FogVeil {
+    fn draw(&mut self, game: &crate::game::Scene<'_>, view: &GroundView) {
+        let (lo, hi) = view.world_rect();
+        let min = numeric::tile_at(lo);
+        let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
+        // One extra ring so every drawn tile sees all eight neighbors.
+        let stride = as_index(max.x - min.x + 2);
+        self.states.clear();
+        self.states
+            .extend((min.y - 1..=max.y).flat_map(|y| {
+                (min.x - 1..=max.x).map(move |x| tile_fog(game, TilePos::new(x, y)))
+            }));
+        let states = std::mem::take(&mut self.states);
+        let fog =
+            |x: i32, y: i32| states[as_index(y - min.y + 1) * stride + as_index(x - min.x + 1)];
+        for y in min.y..max.y {
+            for x in min.x..max.x {
+                let alpha = fog(x, y).alpha();
+                if alpha == 0.0 {
+                    continue;
+                }
+                let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
+                // Exact shared edges: translucent rects that overlap draw
+                // double-dark seams, so each tile ends where the next begins.
+                let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+                let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
+                draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
+            }
+        }
+        // Feather inward into known ground. Unknown tiles retain their opaque veil.
+        for y in min.y..max.y {
+            for x in min.x..max.x {
+                let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
+                    std::array::from_fn(|col| {
+                        fog(x + col.fit::<i32>() - 1, y + row.fit::<i32>() - 1)
+                    })
+                });
+                let current = neighborhood[1][1];
+                if current == Fog::Unexplored
+                    || neighborhood.iter().flatten().all(|&state| state <= current)
+                {
+                    continue;
+                }
+                let a = view.to_screen(vec2(x as f32, y as f32)).floor();
+                let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
+                self.draw_feather(a, b, &neighborhood);
+            }
+        }
+        self.states = states;
+    }
+
+    /// Samples [`fog_feather_alpha`] on a grid over one tile's screen rect.
+    fn draw_feather(&mut self, a: Vec2, b: Vec2, neighborhood: &[[Fog; 3]; 3]) {
+        let band = (b - a).max_element() * FOG_FEATHER;
+        let steps = numeric::to_usize((band / 6.0).ceil().clamp(1.0, 8.0));
+        let side = 2 * (steps + 1);
+        if self.side != side {
+            self.side = side;
+            self.mesh.indices = feather_indices(side);
+        }
+        if self.feathers.len() >= FEATHER_MEMO {
+            self.feathers.clear();
+        }
+        let alphas: &[f32] = self
+            .feathers
+            .entry(feather_key(neighborhood, steps))
+            .or_insert_with(|| feather_alphas(neighborhood, steps));
+        self.mesh.vertices.clear();
+        self.mesh.vertices.extend((0..side).flat_map(|row| {
+            (0..side).map(move |col| {
+                let p = a + (b - a) * vec2(feather_coord(col, steps), feather_coord(row, steps));
+                let alpha = alphas[row * side + col];
                 let color = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
                 Vertex::new(p.x, p.y, 0.0, 0.0, 0.0, color)
             })
+        }));
+        draw_mesh(&self.mesh);
+    }
+}
+
+/// Where grid line `index` of a feather with `steps` steps per band sits
+/// across a tile. Grid lines fall on the feather band boundaries so
+/// straight fades interpolate exactly; only the rounded corners are
+/// approximated.
+fn feather_coord(index: usize, steps: usize) -> f32 {
+    if index <= steps {
+        FOG_FEATHER * index as f32 / steps as f32
+    } else {
+        1.0 - FOG_FEATHER + FOG_FEATHER * (index - steps - 1) as f32 / steps as f32
+    }
+}
+
+/// A distinct key for each neighborhood and step count.
+fn feather_key(neighborhood: &[[Fog; 3]; 3], steps: usize) -> u32 {
+    let pattern = neighborhood
+        .iter()
+        .flatten()
+        .fold(0, |code, &state| code * 3 + state as u32);
+    pattern * 9 + steps.fit::<u32>()
+}
+
+/// A feather's alphas at its grid's vertices, row by row.
+fn feather_alphas(neighborhood: &[[Fog; 3]; 3], steps: usize) -> Box<[f32]> {
+    let side = 2 * (steps + 1);
+    (0..side)
+        .flat_map(|row| {
+            (0..side).map(move |col| {
+                fog_feather_alpha(
+                    neighborhood,
+                    feather_coord(col, steps),
+                    feather_coord(row, steps),
+                )
+            })
         })
-        .collect();
-    let indices = (0..side - 1)
+        .collect()
+}
+
+fn feather_indices(side: usize) -> Vec<u16> {
+    (0..side - 1)
         .flat_map(|row| {
             (0..side - 1).flat_map(move |col| {
                 let top = (row * side + col).fit::<u16>();
@@ -85,12 +179,7 @@ fn draw_fog_feather(a: Vec2, b: Vec2, neighborhood: &[[Fog; 3]; 3]) {
                 [top, top + 1, bottom + 1, top, bottom + 1, bottom]
             })
         })
-        .collect();
-    draw_mesh(&Mesh {
-        vertices,
-        indices,
-        texture: None,
-    });
+        .collect()
 }
 
 /// Veil alpha layered over a known tile's own cover at tile-local
