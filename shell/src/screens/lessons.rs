@@ -1,10 +1,10 @@
-//! Basic Training's lesson list: a row per lesson, marked once finished,
-//! and the BACK button home. Windowless update; the coordinator starts
-//! the lesson a row picks.
+//! Basic Training's lesson list: a row per lesson and one for the first
+//! match, each marked once finished, and the BACK button home. Windowless
+//! update; the coordinator starts what a row picks.
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
-use crate::tutorial::Lesson;
+use crate::tutorial::{Course, Lesson};
 use macroquad::prelude::Vec2;
 use oxide_protocol::{Key, RawEvent};
 
@@ -15,31 +15,35 @@ pub enum Out {
     Stay,
     /// Back to the front door.
     Leave,
-    /// Start this lesson.
-    Start(Lesson),
+    /// Start this lesson or the first match.
+    Start(Course),
 }
 
 /// The lesson list.
 pub struct LessonsScreen {
-    /// One row per lesson.
-    pub menu: Menu<Lesson>,
+    /// One row per lesson, then the first match.
+    pub menu: Menu<Course>,
     back: crate::button::BackButton,
 }
 
 impl LessonsScreen {
-    /// Opens with the cursor on the first lesson not yet finished.
-    pub fn open(done: &[Lesson]) -> Self {
-        let rows = Lesson::ALL.into_iter().map(|lesson| {
+    /// Opens with the cursor on the first row not yet finished.
+    pub fn open(done: &[Lesson], first_match_done: bool) -> Self {
+        let finished = |row: Course| match row {
+            Course::Lesson(lesson) => done.contains(&lesson),
+            Course::FirstMatch => first_match_done,
+        };
+        let rows = Course::ALL.into_iter().map(|row| {
             (
                 Label::Setting {
-                    name: format!("{}. {}", lesson.number(), lesson.title()),
-                    value: if done.contains(&lesson) { "DONE" } else { "" }.into(),
+                    name: format!("{}. {}", row.number(), row.title()),
+                    value: if finished(row) { "DONE" } else { "" }.into(),
                 },
-                lesson,
+                row,
             )
         });
         let mut menu = Menu::rows("BASIC TRAINING", rows);
-        menu.select_where(|lesson| !done.contains(lesson));
+        menu.select_where(|&row| !finished(row));
         Self {
             menu,
             back: crate::button::BackButton::default(),
@@ -55,9 +59,9 @@ impl LessonsScreen {
         "lessons"
     }
 
-    /// The subtitle: what the lesson under the cursor teaches.
+    /// The subtitle: what the row under the cursor teaches.
     pub fn subtitle(&self) -> &'static str {
-        self.menu.value().map_or("", |lesson| lesson.summary())
+        self.menu.value().map_or("", |row| row.summary())
     }
 
     /// Applies a frame's events.

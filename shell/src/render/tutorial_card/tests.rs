@@ -129,7 +129,20 @@ fn a_stuck_step_offers_a_retry_and_a_finished_lesson_the_next() {
 
     let last = Lesson::ALL[Lesson::ALL.len() - 1];
     let graduate = lay(&lesson(last, last.steps().len()), None, MOUSE, 1280.0);
-    assert_eq!(actions(&graduate), [CardButton::Fold, CardButton::Lessons]);
+    assert_eq!(
+        actions(&graduate),
+        [
+            CardButton::Fold,
+            CardButton::FirstMatch,
+            CardButton::Lessons
+        ]
+    );
+    assert!(
+        graduate
+            .text()
+            .iter()
+            .any(|line| line.starts_with("Next: First match."))
+    );
 }
 
 #[test]

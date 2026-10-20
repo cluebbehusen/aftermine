@@ -154,6 +154,13 @@ there. A step the world can no longer complete raises a retry on the lesson
 card. A session carrying a lesson is never saved; the configuration records
 which lessons are finished.
 
+The course closes with a first match, the lesson list's last row and the button
+on the final lesson's finished card. It launches the way New Match does, on
+embedded Smelter Yard against one Scrapheap Turtle with a fresh personality
+seed, and plays as an ordinary session with no lesson card. Its scenario name
+marks it, so a save of it resumes as the first match, and the configuration
+records it as finished once that match has a result, whichever it is.
+
 Match tips ride on the session as `Game::tips`, outside its save, so a resumed
 match can show a tip again. Each tip's rule reads only the local seat's own
 forces, its current sight and remembered buildings, the danger its Harvesters

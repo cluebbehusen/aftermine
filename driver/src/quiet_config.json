@@ -125,5 +125,6 @@
   "last_join_address": null,
   "player_name": null,
   "install_id": null,
-  "lessons_done": []
+  "lessons_done": [],
+  "first_match_done": false
 }

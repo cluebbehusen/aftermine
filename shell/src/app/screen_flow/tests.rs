@@ -311,6 +311,58 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
 }
 
 #[test]
+fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
+    let mut personality_seeds = PersonalitySeedSource::from_seed(41);
+    let base = personality_seeds.match_base();
+    let mut config = config::Config {
+        player_name: Some("Rook".into()),
+        ..config::Config::default()
+    };
+    let mut game = first_match_game(&config, &mut personality_seeds).unwrap();
+    assert_eq!(game.scenario.players[0].name, "Rook");
+    assert_eq!(
+        game.scenario.players[1]
+            .bot_config
+            .map(|c| c.personality_seed),
+        Some(base + 1)
+    );
+    assert_eq!(
+        personality_seeds.match_base(),
+        base.wrapping_add(crate::screens::wizard::launch::BOT_PERSONALITY_WINDOW),
+        "the launch spends one roster window, like New Match"
+    );
+    assert!(game.tutorial.is_none(), "no lesson card and no steps");
+
+    game.advance_ticks(5);
+    assert!(!mark_first_match(&mut config, &game), "still being played");
+    let mut resumed = game
+        .capture_save()
+        .checkpoint()
+        .unwrap()
+        .restore()
+        .unwrap()
+        .install();
+    resumed.issue(oxide_sim::Command::Surrender);
+    resumed.do_tick();
+    assert!(resumed.state.result().is_some());
+    assert!(
+        mark_first_match(&mut config, &resumed),
+        "a resumed first match counts when it ends, even as a loss"
+    );
+    assert!(config.first_match_done);
+    assert!(!mark_first_match(&mut config, &resumed), "it counts once");
+
+    let mut other = Game::new(Scenario::skirmish()).unwrap();
+    other.issue(oxide_sim::Command::Surrender);
+    other.do_tick();
+    let mut fresh = config::Config::default();
+    assert!(
+        !mark_first_match(&mut fresh, &other),
+        "another match ending is not the first match"
+    );
+}
+
+#[test]
 fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
     let mut personality_seeds = PersonalitySeedSource::from_seed(41);
     let draft = configured_new_match_draft();

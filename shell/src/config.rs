@@ -230,6 +230,9 @@ pub struct Config {
     /// The Basic Training lessons this player has finished, in course
     /// order.
     pub lessons_done: Vec<crate::tutorial::Lesson>,
+    /// Whether this player has finished Basic Training's first match,
+    /// whatever the result.
+    pub first_match_done: bool,
 }
 
 impl Default for Config {
@@ -252,6 +255,7 @@ impl Default for Config {
             player_name: None,
             install_id: None,
             lessons_done: Vec::new(),
+            first_match_done: false,
         }
     }
 }
@@ -339,6 +343,11 @@ impl Config {
         self.lessons_done.push(lesson);
         self.lessons_done = in_course_order(&self.lessons_done);
         true
+    }
+
+    /// Marks the first match finished; returns whether it was not already.
+    pub fn finish_first_match(&mut self) -> bool {
+        !std::mem::replace(&mut self.first_match_done, true)
     }
 
     /// Persists atomically (temp + rename), creating the directory.

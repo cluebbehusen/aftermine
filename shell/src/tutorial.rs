@@ -8,10 +8,93 @@ use crate::game::Game;
 use anyhow::Result;
 use chassis::grid::TilePos;
 use macroquad::prelude::Vec2;
+use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::stats::{Domain, WeaponStats};
 use oxide_sim::{BuildingKind, Event, Order, PlayerId, Recovery, Scenario, UnitId, UnitKind};
 
 mod lessons;
+
+/// One row of Basic Training: a staged lesson, or the real match that
+/// closes the course.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Course {
+    /// A staged lesson.
+    Lesson(Lesson),
+    /// A normal match against the gentlest opponent.
+    FirstMatch,
+}
+
+impl Course {
+    /// Every row in course order.
+    pub const ALL: [Self; 6] = [
+        Self::Lesson(Lesson::Command),
+        Self::Lesson(Lesson::Scrap),
+        Self::Lesson(Lesson::Build),
+        Self::Lesson(Lesson::Fight),
+        Self::Lesson(Lesson::Sustain),
+        Self::FirstMatch,
+    ];
+
+    /// The row's place in the course, from one.
+    pub fn number(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|row| *row == self)
+            .expect("every row is listed")
+            + 1
+    }
+
+    /// The row's name.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Lesson(lesson) => lesson.title(),
+            Self::FirstMatch => "First match",
+        }
+    }
+
+    /// One line on what the row has the player do.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Lesson(lesson) => lesson.summary(),
+            Self::FirstMatch => "play a full match against a computer opponent",
+        }
+    }
+}
+
+/// The first match's scenario name. Saves keep it, so a resumed first
+/// match still counts when it ends. It also prefills the save name, so it
+/// fits that field.
+pub const FIRST_MATCH_NAME: &str = "First match";
+
+/// Basic Training's closing match: Smelter Yard at its own starting
+/// scrap against one Scrapheap bot on Turtle, drafted the way New Match
+/// drafts a local match. The scenario records the bot's personality seed
+/// from `personality_seed_base`.
+pub fn first_match(
+    player_name: Option<oxide_net::PlayerName>,
+    personality_seed_base: u64,
+) -> Result<Scenario> {
+    let map = Scenario::from_json(include_str!("../../scenarios/smelter-yard.json"))?;
+    let mut draft = crate::screens::wizard::NewMatchDraft::default();
+    draft.set_scenario(map, None);
+    draft.player_name = player_name;
+    let human = draft.seat_choice;
+    for (seat, plan) in draft.seats.iter_mut().enumerate() {
+        if seat != human {
+            plan.difficulty = BotDifficulty::Scrapheap;
+            plan.stance = BotStance::Turtle;
+        }
+    }
+    let mut scenario =
+        crate::screens::wizard::launch::draft_scenario(&draft, personality_seed_base)?;
+    scenario.name = FIRST_MATCH_NAME.to_string();
+    Ok(scenario)
+}
+
+/// Whether `scenario` is Basic Training's first match, fresh or resumed.
+pub fn is_first_match(scenario: &Scenario) -> bool {
+    scenario.name == FIRST_MATCH_NAME
+}
 
 /// One lesson of Basic Training, in teaching order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -74,9 +157,11 @@ impl Lesson {
         }
     }
 
-    /// The lesson after this one.
-    pub fn next(self) -> Option<Self> {
-        Self::ALL.get(self.number()).copied()
+    /// The row after this lesson: the next lesson, or the first match.
+    pub fn next(self) -> Course {
+        Self::ALL
+            .get(self.number())
+            .map_or(Course::FirstMatch, |&lesson| Course::Lesson(lesson))
     }
 
     /// The demonstrations, in order.
