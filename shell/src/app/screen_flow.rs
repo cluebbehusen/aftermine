@@ -498,7 +498,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         &app.config.bindings,
     );
     veil();
-    home.menu.draw(home.subtitle());
+    home.draw();
     if out == screens::home::Out::Settings {
         Screen::Settings {
             screen: SettingsScreen::open(&app.config),
@@ -741,7 +741,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
                 &app.config.bindings,
             );
             veil();
-            home.menu.draw(home.subtitle());
+            home.draw();
             *rerun = true;
             next = Some(Screen::Home(home));
         }
@@ -1208,7 +1208,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
                 &app.config.bindings,
             );
             veil();
-            home.menu.draw(home.subtitle());
+            home.draw();
             *rerun = true;
             leave = Some(Screen::Home(home));
         }
