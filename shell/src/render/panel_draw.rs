@@ -1204,8 +1204,8 @@ pub(crate) fn draw_panel(
         };
         let mut layers = match subject {
             crate::panel::OrderSubject::Unit(kind, owner) => unit_layers(*kind, hull, *owner),
-            crate::panel::OrderSubject::Building(kind, owner) => {
-                building_layers(*kind, 0, !*ghost, hull, *owner)
+            crate::panel::OrderSubject::Building(kind, tier, owner) => {
+                building_layers(*kind, *tier, !*ghost, hull, *owner)
             }
         };
         if *ghost {
