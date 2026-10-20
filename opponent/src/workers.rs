@@ -991,7 +991,8 @@ fn horizon(profile: &ResolvedProfile) -> u64 {
 }
 
 /// Per mille of a node's places the seat fills: all of them for an economic
-/// stance, about half for an aggressive one, more the greedier it is.
+/// stance, about half for an aggressive one, more the greedier it is, and as
+/// much of that as the seat's difficulty builds of its economy.
 pub(crate) fn fill(profile: &ResolvedProfile) -> u64 {
     let base: i64 = match profile.stance {
         BotStance::Turtle => 1_000,
@@ -1001,6 +1002,8 @@ pub(crate) fn fill(profile: &ResolvedProfile) -> u64 {
     (base + (i64::from(profile.traits.greed) - 50) * 5)
         .clamp(250, 1_000)
         .cast_unsigned()
+        * crate::economy(profile.difficulty)
+        / 1_000
 }
 
 /// Free tiles a worker could stand on to work the footprint of `size` at

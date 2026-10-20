@@ -20,10 +20,21 @@ fn crews(
     stance: BotStance,
     greed: u8,
 ) -> Vec<(TilePos, usize)> {
+    crews_at(scenario, state, BotDifficulty::Standard, stance, greed)
+}
+
+/// As [`crews`], at `difficulty`.
+fn crews_at(
+    scenario: &Scenario,
+    state: &State,
+    difficulty: BotDifficulty,
+    stance: BotStance,
+    greed: u8,
+) -> Vec<(TilePos, usize)> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
     let model = map(scenario);
     let frame = HomeFrame::of(&observation, &model).unwrap();
-    let mut profile = ResolvedProfile::resolve(BotConfig::new(BotDifficulty::Standard, stance, 11));
+    let mut profile = ResolvedProfile::resolve(BotConfig::new(difficulty, stance, 11));
     profile.traits.greed = greed;
     let foundries: Vec<Producer<'_>> = observation
         .my_buildings
@@ -296,6 +307,28 @@ fn an_economic_seat_fills_its_nodes_fuller_than_an_aggressive_one() {
     };
     assert!(wanted(BotStance::Turtle, 50) > wanted(BotStance::Aggressive, 50));
     assert!(wanted(BotStance::Balanced, 100) > wanted(BotStance::Balanced, 0));
+}
+
+#[test]
+fn a_lower_rung_works_the_same_nodes_with_thinner_crews() {
+    let scenario = fielded((10, 11));
+    let state = scenario.build().unwrap();
+    let staffed: Vec<Vec<(TilePos, usize)>> = BotDifficulty::ALL
+        .into_iter()
+        .map(|difficulty| crews_at(&scenario, &state, difficulty, BotStance::Turtle, 50))
+        .collect();
+    let nodes =
+        |crews: &[(TilePos, usize)]| crews.iter().map(|(node, _)| *node).collect::<Vec<_>>();
+    let total = |crews: &[(TilePos, usize)]| crews.iter().map(|(_, crew)| crew).sum::<usize>();
+    assert_eq!(
+        nodes(&staffed[0]).len(),
+        2,
+        "premise: both nodes are worked"
+    );
+    for pair in staffed.windows(2) {
+        assert_eq!(nodes(&pair[0]), nodes(&pair[1]));
+        assert!(total(&pair[0]) < total(&pair[1]), "{staffed:?}");
+    }
 }
 
 #[test]

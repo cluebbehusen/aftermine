@@ -701,3 +701,84 @@ fn mirrored_seats_answer_heavies_alike() {
     );
     assert_eq!(mirror(&state, west), east);
 }
+
+/// The arena with a built west Fabricator, Harvesters on every west node and
+/// a west army of `sentinels` Sentinels, `wardens` Wardens and `lancers`
+/// Lancers, the line short of two fifths of it.
+fn lined(sentinels: i32, wardens: i32, lancers: i32) -> Scenario {
+    let mut scenario = armed(&[], &[]);
+    scenario.units.extend(workforce(0));
+    let line = std::iter::repeat_n(UnitKind::Sentinel, sentinels.unsigned_abs() as usize).chain(
+        std::iter::repeat_n(UnitKind::Warden, wardens.unsigned_abs() as usize),
+    );
+    scenario
+        .units
+        .extend(line.zip(3..).map(|(kind, x)| unit(0, kind, x, 10)));
+    scenario
+        .units
+        .extend((3..3 + lancers).map(|x| unit(0, UnitKind::Lancer, x, 1)));
+    scenario
+}
+
+/// What the west Foundry queues on the first decision after the Fabricator
+/// starts a Lancer.
+fn foundry_trains_beside_a_busy_fabricator(scenario: &Scenario) -> Vec<UnitKind> {
+    let mut state = scenario.build().unwrap();
+    let at = fabricator(&state);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Train {
+            building: at,
+            kind: UnitKind::Lancer,
+        },
+    }]);
+    advance_to(
+        &mut state,
+        crate::decision_interval(BotDifficulty::Standard),
+        &[],
+    );
+    let foundry = foundries(&state, PlayerId(0))[0];
+    trains(&seat(scenario, 0).act(&state, &mut OwnEvents::default()))
+        .into_iter()
+        .filter(|(building, _)| *building == foundry)
+        .map(|(_, kind)| kind)
+        .collect()
+}
+
+#[test]
+fn the_line_goes_to_the_producer_of_its_best_unit_before_a_nearer_one() {
+    // Scrap for a Warden beside the Airworks the seat saves for, and not for
+    // a Sentinel as well.
+    let mut scenario = lined(3, 0, 8);
+    scenario.players[0].scrap = 500;
+    let state = scenario.build().unwrap();
+    assert_eq!(
+        trains(&seat(&scenario, 0).act(&state, &mut OwnEvents::default())),
+        [(fabricator(&state), UnitKind::Warden)],
+        "the Foundry nearer home does not spend the scrap on a Sentinel first"
+    );
+}
+
+#[test]
+fn an_idle_foundry_waits_for_a_busy_producer_of_a_much_better_line_unit() {
+    let mut lone = lined(3, 0, 8);
+    lone.buildings
+        .retain(|building| building.kind != BuildingKind::Fabricator);
+    let state = lone.build().unwrap();
+    let foundry = foundries(&state, PlayerId(0))[0];
+    assert!(
+        trains(&seat(&lone, 0).act(&state, &mut OwnEvents::default()))
+            .contains(&(foundry, UnitKind::Sentinel)),
+        "premise: with nothing better to train, the Foundry trains its line"
+    );
+    assert_eq!(
+        foundry_trains_beside_a_busy_fabricator(&lined(3, 0, 8)),
+        [],
+        "a line of Sentinels waits for a Warden"
+    );
+    assert_eq!(
+        foundry_trains_beside_a_busy_fabricator(&lined(1, 2, 12)),
+        [UnitKind::Sentinel],
+        "a line mostly of Wardens, where a Warden is only a little better, does not"
+    );
+}

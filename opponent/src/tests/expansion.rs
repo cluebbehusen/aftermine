@@ -1,6 +1,6 @@
 use super::*;
 use crate::expansion;
-use crate::investments::Investment;
+use crate::investments::{ADOPT, Investment};
 use crate::map::Site;
 use crate::memory::Memory;
 
@@ -193,28 +193,31 @@ fn harvesters_work_the_field_of_a_new_foundry() {
 }
 
 #[test]
-fn a_free_frame_near_home_gets_an_extractor() {
+fn a_free_frame_near_home_gets_an_extractor_at_every_rung() {
     let mut scenario = arena(1_000);
     scenario.map[1].replace_range(6..7, "E");
     scenario
         .units
         .extend([harvester(0, 5, 7), harvester(0, 4, 7)]);
-    let mut state = scenario.build().unwrap();
-    let mut opponent = seat(&scenario, 0);
-    let mut events = OwnEvents::default();
     let frame = TilePos::new(6, 1);
-    let mut placed = false;
-    while state.current_tick() < 600 && !placed {
-        let commands = opponent.act(&state, &mut events);
-        placed = commands.iter().any(|command| {
-            matches!(
-                command.command,
-                Command::Build { kind: BuildingKind::Extractor, anchor, .. } if anchor == frame
-            )
-        });
-        events.record(PlayerId(0), &state.tick(&commands).events);
+    for difficulty in BotDifficulty::ALL {
+        let mut state = scenario.build().unwrap();
+        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let mut opponent = seat_with(&scenario, 0, config);
+        let mut events = OwnEvents::default();
+        let mut placed = false;
+        while state.current_tick() < 600 && !placed {
+            let commands = opponent.act(&state, &mut events);
+            placed = commands.iter().any(|command| {
+                matches!(
+                    command.command,
+                    Command::Build { kind: BuildingKind::Extractor, anchor, .. } if anchor == frame
+                )
+            });
+            events.record(PlayerId(0), &state.tick(&commands).events);
+        }
+        assert!(placed, "{difficulty:?}");
     }
-    assert!(placed);
 }
 
 #[test]
@@ -463,35 +466,39 @@ fn a_remote_extractor_is_never_deepened() {
 }
 
 #[test]
-fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands() {
+fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_rung() {
     let scenario = bore_arena(12);
-    let mut state = scenario.build().unwrap();
-    let extractor = own_extractor(&state);
-    // Deep Bores wait for harvesting to saturate and home scrap to run down.
-    let mut opponent = seat(&scenario, 0);
-    let mut events = OwnEvents::default();
-    let mut upgraded = false;
-    while state.current_tick() < 6_000 && !upgraded {
-        let commands = opponent.act(&state, &mut events);
-        upgraded = commands.iter().any(|command| {
-            matches!(command.command, Command::UpgradeBuilding { building } if building == extractor)
-        });
-        let report = state.tick(&commands);
-        assert!(
-            !report.events.iter().any(|event| matches!(
-                event,
-                Event::CommandRejected {
-                    reason: RejectReason::MissingFoundrySupport,
-                    ..
-                }
-            )),
-            "tick {}",
-            report.tick
-        );
-        events.record(PlayerId(0), &report.events);
+    for difficulty in BotDifficulty::ALL {
+        let mut state = scenario.build().unwrap();
+        let extractor = own_extractor(&state);
+        // Deep Bores wait for harvesting to saturate and home scrap to run
+        // down.
+        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let mut opponent = seat_with(&scenario, 0, config);
+        let mut events = OwnEvents::default();
+        let mut upgraded = false;
+        while state.current_tick() < 6_000 && !upgraded {
+            let commands = opponent.act(&state, &mut events);
+            upgraded = commands.iter().any(|command| {
+                matches!(command.command, Command::UpgradeBuilding { building } if building == extractor)
+            });
+            let report = state.tick(&commands);
+            assert!(
+                !report.events.iter().any(|event| matches!(
+                    event,
+                    Event::CommandRejected {
+                        reason: RejectReason::MissingFoundrySupport,
+                        ..
+                    }
+                )),
+                "{difficulty:?} tick {}",
+                report.tick
+            );
+            events.record(PlayerId(0), &report.events);
+        }
+        assert!(upgraded, "{difficulty:?}");
+        assert_eq!(state.building(extractor).unwrap().tier, 1, "{difficulty:?}");
     }
-    assert!(upgraded);
-    assert_eq!(state.building(extractor).unwrap().tier, 1);
 }
 
 #[test]
@@ -530,4 +537,43 @@ fn a_crucible_makes_a_site_worth_more_for_the_remote_extractor_it_would_deepen()
         y: 9,
     });
     assert!(worth(&scenario) > without);
+}
+
+#[test]
+fn a_lower_rung_wants_the_same_growth_in_the_same_order_but_less() {
+    let mut scenario = frontier(0);
+    scenario.map[4].replace_range(6..7, "E");
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let model = map(&scenario);
+    let memory = Memory::default();
+    let growth = |difficulty| -> Vec<(Investment, u32)> {
+        crate::investments::candidates(&crate::investments::Situation {
+            depletion: 500,
+            economy: crate::economy(difficulty),
+            ..calm(&observation, &model, &memory)
+        })
+        .into_iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.investment,
+                Investment::Expansion(_) | Investment::Extractor(_) | Investment::Reclaimer
+            )
+        })
+        .map(|candidate| (candidate.investment, candidate.score))
+        .collect()
+    };
+    let rungs: Vec<Vec<(Investment, u32)>> = BotDifficulty::ALL.map(growth).to_vec();
+    let investments =
+        |growth: &[(Investment, u32)]| growth.iter().map(|(each, _)| *each).collect::<Vec<_>>();
+    assert!(
+        rungs[3].iter().all(|(_, score)| *score > ADOPT),
+        "premise: every rung would adopt each: {rungs:?}"
+    );
+    for pair in rungs.windows(2) {
+        assert_eq!(investments(&pair[0]), investments(&pair[1]));
+        for ((_, lower), (_, higher)) in pair[0].iter().zip(&pair[1]) {
+            assert!(ADOPT < *lower && lower < higher, "{rungs:?}");
+        }
+    }
 }

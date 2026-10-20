@@ -161,7 +161,8 @@ pub(crate) fn middling() -> PersonalityTraits {
 }
 
 /// A saturated seat's situation, not exposed and not severed, with middling
-/// traits, nothing pulled, wanted or waited on, and Standard's margin.
+/// traits, nothing pulled, wanted or waited on, and Standard's margin and
+/// economy.
 fn calm<'a>(
     observation: &'a ObservationData,
     map: &'a MapModel,
@@ -183,6 +184,7 @@ fn calm<'a>(
         units: Vec::new(),
         waiting: None,
         margin: crate::missions::margin(BotDifficulty::Standard),
+        economy: crate::economy(BotDifficulty::Standard),
         lift_flak: 0,
     }
 }
