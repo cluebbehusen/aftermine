@@ -1,4 +1,7 @@
 #![doc = include_str!("../README.md")]
+// A release build on Windows opens no console window behind the game;
+// debug builds keep one for development output.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // The workspace's disallowed types guard simulation determinism. Shell state
 // (interpolation caches, input sets) is presentation and may hash.
 #![allow(clippy::disallowed_types)]
@@ -270,7 +273,9 @@ fn cli_args() -> Args {
 #[macroquad::main(window_conf)]
 async fn main() {
     if let Err(err) = Box::pin(app::run(cli_args())).await {
-        eprintln!("fatal: {err:#}");
+        let message = format!("{err:#}");
+        oxide_kit::diagnostics::fatal(&message);
+        eprintln!("fatal: {message}");
         std::process::exit(1);
     }
 }

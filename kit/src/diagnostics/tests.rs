@@ -221,6 +221,24 @@ fn panics_record_their_message_location_and_bounded_backtrace() {
 }
 
 #[test]
+fn a_fatal_error_lands_in_the_incident_log_with_its_message() {
+    let root = temp();
+    let monitor =
+        Monitor::start_with(Some(root.clone()), build(), Duration::from_secs(60)).unwrap();
+    monitor.frame(context(3));
+    monitor.fatal("loading the sprite atlas: not found");
+    let log = incidents(&root);
+    assert_eq!(log[0]["kind"], "fatal");
+    assert_eq!(
+        log[0]["fatal"]["message"],
+        "loading the sprite atlas: not found"
+    );
+    assert_eq!(log[0]["build"]["revision"], "diagnostic-host");
+    drop(monitor);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 #[ignore = "subprocess fixture; invoked by an_installed_monitor_records_a_panic_before_its_process_dies"]
 fn panicking_child() {
     let root = PathBuf::from(std::env::var_os("OXIDE_DIAGNOSTICS_TEST_ROOT").unwrap());

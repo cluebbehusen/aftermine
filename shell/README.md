@@ -164,12 +164,12 @@ appear in the Files app under On My iPad > Oxide.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only
-when a panic or stall occurs. A panic during a tick also leaves a crash dump
-with the match's commands up to it. Reports stay local and contain the current
-match's command log, the newest crash dump, and the incident log, whose panic
-and stall incidents carry recent frame timing. `diagnostic_report` runs exports
-and folder operations off the frame thread; `kit::diagnostics` owns the bounded
-incident log and crash dumps.
+when a panic, stall or fatal error occurs. A panic during a tick also leaves a
+crash dump with the match's commands up to it. Reports stay local and contain
+the current match's command log, the newest crash dump, and the incident log,
+whose panic and stall incidents carry recent frame timing. `diagnostic_report`
+runs exports and folder operations off the frame thread; `kit::diagnostics` owns
+the bounded incident log and crash dumps.
 
 See [the persistence contract](../docs/shell-architecture.md) for durability,
 retention, compatibility, and timing semantics.
