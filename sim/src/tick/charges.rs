@@ -5,6 +5,7 @@ use crate::stats::{
     BuildingKind, CHARGE_BLAST_RADIUS, CHARGE_DAMAGE, CHARGE_TRIGGER_RADIUS, Domain,
 };
 use crate::{BuildingId, Event, Order, PlayerId, State};
+use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
 
 fn known_charge_in(state: &State, player: PlayerId, kind: BuildingKind, anchor: TilePos) -> bool {
@@ -81,32 +82,68 @@ pub(super) fn detonate_under_construction(
 }
 
 pub(super) fn detonate_under_units(state: &mut State, events: &mut Vec<Event>) {
+    // A blast only lowers hp: nothing moves, lands or changes sides. So the
+    // ground bodies gathered before the first charge fires hold every body
+    // that can trip any charge later in this pass.
+    let mut grounded: Option<Vec<(TilePos, usize)>> = None;
     for slot in 0..state.buildings.len() {
         let b = &state.buildings[slot];
         if b.kind != BuildingKind::ScuttleCharge || !b.built() || b.hp == 0 {
             continue;
         }
-        // A charge trips only on a body its blast would reach.
-        let tripped = state.units.iter().any(|u| {
-            u.hp > 0
-                && state.hostile(b.player, u.player)
-                && u.domain() == Domain::Ground
-                && u.pos.dist_sq(b.center()) <= {
-                    let trigger =
-                        CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
-                    trigger * trigger
-                }
-                && blast_reaches(
-                    &state.map,
-                    b.center(),
-                    b.anchor,
-                    ShotEnd::new(u.pos, Domain::Ground),
-                )
-        });
+        let grounded = grounded.get_or_insert_with(|| ground_bodies(state));
+        let (low, high) = trigger_window(b.center());
+        let start = grounded.partition_point(|(t, _)| (t.y, t.x) < (low.y, low.x));
+        let tripped = grounded[start..]
+            .iter()
+            .take_while(|(t, _)| t.y <= high.y)
+            .filter(|(t, _)| (low.x..=high.x).contains(&t.x))
+            .any(|&(_, unit)| trips(state, b, &state.units[unit]));
         if tripped {
             detonate(state, slot, events);
         }
     }
+}
+
+/// A charge trips only on a body its blast would reach.
+fn trips(state: &State, charge: &crate::Building, u: &crate::state::Unit) -> bool {
+    u.hp > 0
+        && state.hostile(charge.player, u.player)
+        && u.domain() == Domain::Ground
+        && u.pos.dist_sq(charge.center()) <= {
+            let trigger = CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(u.kind.stats().radius);
+            trigger * trigger
+        }
+        && blast_reaches(
+            &state.map,
+            charge.center(),
+            charge.anchor,
+            ShotEnd::new(u.pos, Domain::Ground),
+        )
+}
+
+/// Every live ground body's tile and unit slot, sorted by tile.
+fn ground_bodies(state: &State) -> Vec<(TilePos, usize)> {
+    let mut bodies: Vec<(TilePos, usize)> = state
+        .units
+        .iter()
+        .enumerate()
+        .filter(|(_, u)| u.hp > 0 && u.domain() == Domain::Ground)
+        .map(|(slot, u)| (u.tile(), slot))
+        .collect();
+    bodies.sort_unstable_by_key(|&(t, slot)| (t.y, t.x, slot));
+    bodies
+}
+
+/// The tiles, inclusive, that can hold a body trip-close to `center`: the
+/// widest hull's trigger reach plus a tile against fixed-point rounding.
+fn trigger_window(center: Vec2Fx) -> (TilePos, TilePos) {
+    let reach = CHARGE_TRIGGER_RADIUS + crate::stats::hull_excess(crate::stats::MAX_UNIT_RADIUS);
+    let reach = Vec2Fx::new(reach, reach);
+    (
+        TilePos::containing(center - reach).offset(-1, -1),
+        TilePos::containing(center + reach).offset(1, 1),
+    )
 }
 
 fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
@@ -153,3 +190,6 @@ fn detonate(state: &mut State, slot: usize, events: &mut Vec<Event>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
