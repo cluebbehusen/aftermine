@@ -925,6 +925,10 @@ impl Presentation {
         // Nothing has moved across a jump, but a heading-first airframe
         // still has a heading to show, parked or flying.
         self.refresh_facing(state, &[]);
+        // A jump can land on the tick the minimap last showed.
+        if let Some(layer) = self.minimap_layer.get_mut() {
+            layer.forget();
+        }
     }
 }
 

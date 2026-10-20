@@ -915,8 +915,9 @@ blend. The cache keeps half again as many chunks as are on show, reuses the
 textures it evicts, and stores no texture for a raised chunk that only open
 floor can reach. Within a pass, untextured fills never sit between atlas
 sprites, because every macroquad draw call keeps a vertex buffer for the life of
-the app. The minimap's one-pixel-per-tile texture uploads only on frames that
-change a tile's color.
+the app. The minimap keeps each tile's terrain color for the match and repaints
+its one-pixel-per-tile image only when a tick lands, the viewer changes, or
+remembered salvage fades a step; the texture uploads only when a pixel changed.
 
 `look` declares each unit kind's presentation in one exhaustive match: draw
 scale, gait and tread belts, the atlas rows of its locomotion poses, whether a
