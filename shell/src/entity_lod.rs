@@ -44,10 +44,12 @@ fn has_stem(name: &str, stem: &str) -> bool {
             .strip_prefix(stem)
             .is_some_and(|rest| rest.starts_with('_'))
 }
+/// Units and the accessories drawn with them in the units' pass.
 fn unit_stems() -> impl Iterator<Item = &'static str> {
     oxide_sim::UnitKind::ALL
         .iter()
         .map(|&k| crate::assets::unit_stem(k))
+        .chain(["scout_radar"])
 }
 /// Everything drawn on the map but units: works, their defense mounts and
 /// the field.
@@ -61,7 +63,7 @@ fn field_stems() -> impl Iterator<Item = &'static str> {
                 .filter_map(|&k| crate::look::defense(k))
                 .map(|defense| defense.mount),
         )
-        .chain(["scrap", "wreck_pile", "extractor_frame", "scout_radar"])
+        .chain(["scrap", "wreck_pile", "extractor_frame"])
 }
 fn is_entity_source(name: &str) -> bool {
     let name = name.strip_prefix("rig_").unwrap_or(name);

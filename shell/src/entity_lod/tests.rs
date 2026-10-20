@@ -158,6 +158,10 @@ fn cradles_pack_with_the_works_and_rigged_hulls_with_the_units() {
     assert!(!is_unit_source("roc_cradle_accent"));
     assert!(is_unit_source("maw"));
     assert!(is_unit_source("rig_roc_hull"));
+    assert!(
+        is_unit_source("scout_radar"),
+        "a Kestrel draws it between units"
+    );
     assert!(!is_unit_source("turret"));
 }
 
