@@ -122,7 +122,9 @@ fn slots(kind: UnitKind) -> usize {
 
 /// Counts the worked nodes and wrecks with their crews and the worker slots
 /// filled by workers on each base's ground or queued there. Wreck a wounded kiln machine
-/// feeds on where it stands, or is bound for in `meals`, is left to it.
+/// feeds on where it stands, or is bound for in `meals`, is left to it. A
+/// source under known enemy fire wants no crew, even at home: no idle worker
+/// is sent there, so none is trained for it.
 pub(crate) fn staffing(
     observation: &ObservationData,
     map: &MapModel,
@@ -168,7 +170,7 @@ pub(crate) fn staffing(
         .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()
         .collect();
-    let worked = worked_nodes(
+    let worked: Vec<_> = worked_nodes(
         observation,
         map,
         frame,
@@ -176,7 +178,10 @@ pub(crate) fn staffing(
         foundries,
         &reachable,
         &wrecks,
-    );
+    )
+    .into_iter()
+    .filter(|(source, _)| !exposed(&scratch.ground, *source))
+    .collect();
     let mut components: Vec<_> = foundries
         .iter()
         .filter_map(|foundry| map.component(foundry.building.anchor))
@@ -1054,14 +1059,9 @@ fn assign_idle(
     hazards: &[Hazard],
     ledger: &mut Ledger,
 ) {
-    let safe = |node: &TilePos| {
-        let point = doubled(*node);
-        !hazards.iter().any(|hazard| hazard.covers(point))
-    };
     let mut miners: Vec<(TilePos, i64)> = staffing
         .worked
         .iter()
-        .filter(|(node, _)| safe(node))
         .map(|(node, crew)| {
             let working = observation
                 .my_units
@@ -1093,7 +1093,7 @@ fn assign_idle(
     let mut salvage: Vec<(TilePos, i64)> = staffing
         .wrecks
         .iter()
-        .filter(|(tile, _)| safe(tile))
+        .filter(|(tile, _)| !exposed(hazards, *tile))
         .map(|(tile, amount)| {
             let loads: u32 = observation
                 .my_units
@@ -1153,7 +1153,7 @@ fn assign_idle(
                     .reachable
                     .iter()
                     .copied()
-                    .filter(|node| map.touches(*node, component) && safe(node))
+                    .filter(|node| map.touches(*node, component) && !exposed(hazards, *node))
                     .min_by_key(|node| frame.rank(from, doubled(*node)));
                 let Some(node) = nearest else {
                     if unit.carrying > 0 {
@@ -1215,6 +1215,12 @@ fn assign_idle(
             return;
         }
     }
+}
+
+/// Whether known enemy ground fire covers `source`.
+fn exposed(hazards: &[Hazard], source: TilePos) -> bool {
+    let point = doubled(source);
+    hazards.iter().any(|hazard| hazard.covers(point))
 }
 
 /// Scrap a worker of `kind` carries in one load.
