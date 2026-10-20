@@ -96,12 +96,14 @@ pub(crate) fn volley(marks: &[Mark], tile: TilePos, hits: u64) -> u64 {
 }
 
 /// A tile a warhead could strike: the known enemy scrap one landing there
-/// takes, and the known hostile interceptors whose rings hold it.
+/// takes, the known hostile interceptors whose rings hold it, and what those
+/// interceptors cost their owner to replace once a volley draws them.
 #[derive(Clone, Copy)]
 struct Aim {
     tile: TilePos,
     value: u64,
     interceptors: u64,
+    drawn: u64,
 }
 
 /// What the seat knows to strike: known hostile buildings, seen, remembered
@@ -169,15 +171,17 @@ fn rounds(observation: &ObservationData, battery: &BuildingObs) -> u64 {
 /// there would take and the interceptors over it, in the seat's frame order
 /// from home.
 fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<Aim> {
-    let batteries: Vec<(Vec2Fx, Fx, u64)> = observation
+    let batteries: Vec<(Vec2Fx, Fx, u64, u64)> = observation
         .enemy_buildings
         .iter()
         .filter_map(|building| {
             let ring = building.kind.battery()?.ring;
+            let round_cost = building.kind.magazine()?.round_cost;
             let (width, height) = building.kind.size();
             let centre = building.anchor.center()
                 + Vec2Fx::new(Fx::from_num(width - 1) / 2, Fx::from_num(height - 1) / 2);
-            Some((centre, ring * ring, rounds(observation, building)))
+            let rounds = rounds(observation, building);
+            Some((centre, ring * ring, rounds, rounds * u64::from(round_cost)))
         })
         .collect();
     let mut tiles: Vec<TilePos> = marks
@@ -190,15 +194,17 @@ fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<
         .into_iter()
         .map(|tile| {
             let impact = tile.center();
-            let interceptors = batteries
+            let (interceptors, drawn) = batteries
                 .iter()
-                .filter(|(centre, ring_sq, _)| centre.dist_sq(impact) <= *ring_sq)
-                .map(|(_, _, rounds)| rounds)
-                .sum();
+                .filter(|(centre, ring_sq, _, _)| centre.dist_sq(impact) <= *ring_sq)
+                .fold((0, 0), |(rounds, scrap), (_, _, more, worth)| {
+                    (rounds + more, scrap + worth)
+                });
             Aim {
                 tile,
                 value: volley(marks, tile, 1),
                 interceptors,
+                drawn,
             }
         })
         .collect()
@@ -214,12 +220,13 @@ fn price(rounds: u64) -> u64 {
         )
 }
 
-/// The fewest Spires that could land a warhead worth every round spent
-/// somewhere the seat knows, past the interceptors over it, with that aim's
-/// worth; `None` while no strike is worth its rounds.
+/// The fewest Spires that could land a warhead somewhere the seat knows,
+/// past the interceptors over it, where the warhead and the interceptors it
+/// draws take every round's price, with what that warhead takes; `None`
+/// while no strike is worth its rounds.
 fn needed(aims: &[Aim]) -> Option<(u64, u64)> {
     aims.iter()
-        .filter(|aim| aim.value >= price(aim.interceptors + 1))
+        .filter(|aim| aim.value + aim.drawn >= price(aim.interceptors + 1))
         .map(|aim| (aim.interceptors + 1, aim.value))
         .min_by_key(|(spires, value)| (*spires, std::cmp::Reverse(*value)))
 }
@@ -310,9 +317,11 @@ pub(crate) fn round_step(observation: &ObservationData, spire: BuildingId) -> Op
 
 /// Launches loaded Spires with no strike pending at an aim more of them can
 /// reach past its known interceptors than those can stop, when the warheads
-/// landing take at least the price of every round spent. Upper rungs take
-/// the volley that takes the most beyond its price; lower ones the worthy
-/// aim nearest home. The Spires nearest the aim fire.
+/// landing and the interceptors drawn take at least the price of every round
+/// spent. Upper rungs take the volley that takes the most beyond its price;
+/// lower ones the worthy aim nearest home. The Spires nearest the aim fire,
+/// as one unit order: choosing an aim is one act of attention, however many
+/// Spires fire at it.
 pub(crate) fn fire(
     observation: &ObservationData,
     map: &MapModel,
@@ -343,13 +352,14 @@ pub(crate) fn fire(
     let careful = matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime);
     // Each worthy volley as (rounds spent, aim, scrap taken beyond their
     // price), in the aims' order nearest home first. A volley spends the
-    // fewest Spires that get its hits past the interceptors.
+    // fewest Spires that get its hits past the interceptors, and draws every
+    // one of them.
     let mut volleys = aims(observation, &marks, frame)
         .into_iter()
         .flat_map(|aim| {
             let marks = &marks;
             (aim.interceptors + 1..=ready).filter_map(move |spent| {
-                let taken = volley(marks, aim.tile, spent - aim.interceptors);
+                let taken = volley(marks, aim.tile, spent - aim.interceptors) + aim.drawn;
                 (taken >= price(spent)).then(|| (spent, aim.tile, taken - price(spent)))
             })
         });
@@ -367,20 +377,17 @@ pub(crate) fn fire(
     let Some((spent, tile, _)) = best else {
         return;
     };
-    if u64::from(ledger.room()) < spent {
-        return;
-    }
     let aim = crate::frame::doubled(tile);
     loaded.sort_by_key(|spire| frame.rank(aim, footprint_centre(spire.kind, spire.anchor)));
-    for spire in loaded
-        .into_iter()
-        .take(usize::try_from(spent).unwrap_or(usize::MAX))
-    {
-        ledger.order(Command::Launch {
-            building: spire.id,
-            target: tile,
-        });
-    }
+    ledger.salvo(
+        loaded
+            .into_iter()
+            .take(usize::try_from(spent).unwrap_or(usize::MAX))
+            .map(|spire| Command::Launch {
+                building: spire.id,
+                target: tile,
+            }),
+    );
 }
 
 #[cfg(test)]

@@ -157,6 +157,35 @@ fn a_strike_holds_until_it_can_get_past_the_known_interceptors() {
 }
 
 #[test]
+fn a_volley_overwhelms_a_full_lattice_over_works_worth_the_interceptors_it_draws() {
+    let lattice = [(BuildingKind::Lattice, 36, 9)];
+    let spires = [(6, 14), (6, 17), (9, 14)];
+    let two = strikes(&spires[..2], &BLOCK, &lattice, &[(31, 5)]);
+    let state = staged(&two, 2);
+    assert!(
+        launches(&decide(&two, &state, config())).is_empty(),
+        "two warheads would both be stopped"
+    );
+
+    let three = strikes(&spires, &BLOCK, &lattice, &[(31, 5)]);
+    let mut state = staged(&three, 2);
+    let fired = launches(&decide(&three, &state, config()));
+    assert_eq!(fired.len(), 3, "{fired:?}");
+    assert!(
+        fired
+            .iter()
+            .all(|(_, target)| *target == fired[0].1 && on(&BLOCK, *target)),
+        "one volley on one aim: {fired:?}"
+    );
+
+    // The whole volley is one order, so the narrowest attention fires it.
+    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    assert!(crate::decision::allowance(BotDifficulty::Scrapheap) < 3);
+    advance_to(&mut state, 24, &[]);
+    assert_eq!(launches(&decide(&three, &state, scrapheap)).len(), 3);
+}
+
+#[test]
 fn a_spire_with_a_strike_pending_is_not_ordered_again() {
     let scenario = strikes(&[(6, 14)], &PAIR, &[], &[(31, 4)]);
     let state = staged(&scenario, 0);
@@ -263,6 +292,20 @@ fn an_empty_spire_wants_a_round_and_known_interceptors_want_another_spire() {
     let state = staged(&guarded, 1);
     assert_eq!(
         wanted(&guarded, &state),
+        [Investment::Capacity(BuildingKind::Spire)]
+    );
+}
+
+#[test]
+fn spires_short_of_a_full_lattice_over_works_worth_its_interceptors_want_another() {
+    let lattice = [(BuildingKind::Lattice, 36, 9)];
+    let mut scenario = strikes(&[(6, 14), (6, 17)], &BLOCK, &lattice, &[(31, 5)]);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Crucible, 9, 17));
+    let state = staged(&scenario, 2);
+    assert_eq!(
+        wanted(&scenario, &state),
         [Investment::Capacity(BuildingKind::Spire)]
     );
 }

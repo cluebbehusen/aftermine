@@ -221,7 +221,7 @@ Each behavior is proven by a staged scenario test.
 | Expensive investment wanted                                | Save for it while keeping an army share                                                                                                               |
 | Several enemies                                            | Choose a target with hysteresis                                                                                                                       |
 | Wounded units and a calm Repair Bay                        | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                           |
-| Known strike worth a warhead                               | Build a Spire and its rounds; launch loaded Spires when the warheads past the known interceptors take at least their rounds' price                    |
+| Known strike worth a warhead                               | Build a Spire and its rounds; launch loaded Spires as one order when the warheads past known interceptors, plus those drawn, take their rounds' price |
 | Enemy Spire tech known                                     | A Lattice over the most valuable base for a Deep Bore or a seen Crucible; cover over every base when one enemy holds both                             |
 | Enemy Spire known                                          | Lattice cover over each base in proportion to known enemy Spires, and radar where a Spire's line enters a guarded ring                                |
 | Known guns the army cannot attack, or an attack given up   | Assemble a Maw where it can drive out of the base, crewed by the fastest free workers; it joins the next attack and cuts the nearest defense          |
