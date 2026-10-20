@@ -57,9 +57,11 @@ fn concede_hint(hands: crate::platform::Hands) -> &'static str {
 /// and an empty group is a faint outline. The group the selection
 /// already is wears an accent rim.
 fn draw_group_slot(
+    sprites: &Sprites,
     rect: Rect,
     slot: crate::layout::GroupSlot,
     count: usize,
+    lead: Option<&[(Rect, Color)]>,
     current: bool,
     s: f32,
 ) {
@@ -68,22 +70,47 @@ fn draw_group_slot(
         crate::layout::GroupSlot::Recall(_) => {
             fill_rect(rect, crate::theme::BADGE);
             let text = count.to_string();
-            let mut size = crate::theme::Type::Body.at(s);
-            while measure_text(&text, None, numeric::font_size(size), 1.0).width > rect.w - 14.0 * s
-                && size > 11.0 * s
-            {
-                size -= 1.0 * s;
+            if let Some(layers) = lead {
+                // The lead kind fills the slot under its number, and the
+                // count moves to the bottom-right corner.
+                let side = rect.h * 0.62;
+                sprites.draw_portrait(
+                    Rect::new(
+                        rect.x + (rect.w - side) * 0.5,
+                        rect.y + (rect.h - side) * 0.5,
+                        side,
+                        side,
+                    ),
+                    layers,
+                );
+                let size = crate::theme::Type::Small.at(s);
+                let dims = measure_text(&text, None, numeric::font_size(size), 1.0);
+                draw_text(
+                    &text,
+                    rect.x + rect.w - dims.width - 3.0 * s,
+                    rect.y + rect.h - 3.0 * s,
+                    size,
+                    SCRAP_COLOR,
+                );
+            } else {
+                let mut size = crate::theme::Type::Body.at(s);
+                while measure_text(&text, None, numeric::font_size(size), 1.0).width
+                    > rect.w - 14.0 * s
+                    && size > 11.0 * s
+                {
+                    size -= 1.0 * s;
+                }
+                // Centered on the glyphs' own box, not the baseline, so the
+                // count sits in the middle of the slot at any size.
+                let dims = measure_text(&text, None, numeric::font_size(size), 1.0);
+                draw_text(
+                    &text,
+                    rect.x + (rect.w - dims.width) * 0.5,
+                    rect.y + (rect.h - dims.height) * 0.5 + dims.offset_y,
+                    size,
+                    SCRAP_COLOR,
+                );
             }
-            // Centered on the glyphs' own box, not the baseline, so the
-            // count sits in the middle of the slot at any size.
-            let dims = measure_text(&text, None, numeric::font_size(size), 1.0);
-            draw_text(
-                &text,
-                rect.x + (rect.w - dims.width) * 0.5,
-                rect.y + (rect.h - dims.height) * 0.5 + dims.offset_y,
-                size,
-                SCRAP_COLOR,
-            );
         }
         crate::layout::GroupSlot::Assign(_) => {
             fill_rect(rect, crate::theme::SURFACE_PLATE);
@@ -122,6 +149,10 @@ fn draw_group_slot(
 pub(crate) struct GroupColumnLayout {
     pub(super) plate: Rect,
     pub(super) slots: [(Rect, crate::layout::GroupSlot, usize); crate::action::CONTROL_GROUPS],
+    /// Each group's lead kind, drawn in its slot.
+    leads: [Option<crate::panel::CardIcon>; crate::action::CONTROL_GROUPS],
+    /// The viewer's color, which the lead art wears.
+    owner: Color,
     current: Option<u8>,
 }
 
@@ -154,19 +185,50 @@ pub(super) fn group_column_layout(
     Some(GroupColumnLayout {
         plate: column.plate,
         slots,
+        leads: input.group_leads(game),
+        owner: crate::render::seat_identity_color(game, game.presentation.human),
         current: input.selected_group(game),
     })
 }
 
-fn draw_group_column(column: &GroupColumnLayout, s: f32) {
+fn draw_group_column(sprites: &Sprites, column: &GroupColumnLayout, s: f32) {
     fill_rect(column.plate, crate::theme::SURFACE_PLATE);
     stroke_rect(
         column.plate,
         crate::theme::Stroke::Edge.at(s),
         crate::theme::BORDER_STRONG,
     );
-    for (rect, slot, count) in column.slots {
-        draw_group_slot(rect, slot, count, column.current == Some(slot.number()), s);
+    for ((rect, slot, count), lead) in column.slots.into_iter().zip(column.leads) {
+        let lead = lead
+            .filter(|_| matches!(slot, crate::layout::GroupSlot::Recall(_)))
+            .and_then(|icon| match icon {
+                crate::panel::CardIcon::Unit(kind) => Some(super::panel_draw::unit_portrait(
+                    sprites,
+                    kind,
+                    WHITE,
+                    column.owner,
+                )),
+                crate::panel::CardIcon::Building(kind, tier) => {
+                    Some(super::panel_draw::building_portrait(
+                        sprites,
+                        kind,
+                        tier,
+                        true,
+                        WHITE,
+                        column.owner,
+                    ))
+                }
+                _ => None,
+            });
+        draw_group_slot(
+            sprites,
+            rect,
+            slot,
+            count,
+            lead.as_deref(),
+            column.current == Some(slot.number()),
+            s,
+        );
     }
 }
 
@@ -498,7 +560,21 @@ pub(crate) struct RibbonLayout {
     label_w: f32,
     icon_w: f32,
     pub(super) status: Option<RibbonStatus>,
+    pub(super) salvo: Option<SalvoSteppers>,
 }
+
+/// A strike ribbon's buttons that shrink and grow the salvo.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SalvoSteppers {
+    pub(crate) less: Rect,
+    pub(crate) more: Rect,
+    less_enabled: bool,
+    more_enabled: bool,
+}
+
+/// A salvo stepper's side, in logical px: the ribbon's touch row less a
+/// margin, so a fingertip's padded target still reaches a whole row.
+const STEPPER: f32 = crate::theme::MIN_TOUCH_TARGET - 8.0;
 
 /// A placement ribbon's status row: what a click at the ghost or cursor
 /// would do, then whether it joins the builder's queue or replaces it.
@@ -529,9 +605,14 @@ pub(super) fn ribbon_layout(
         crate::input::ArmedMode::Build(kind) => Some(kind),
         _ => None,
     };
+    let salvo = (mode == crate::input::ArmedMode::Strike)
+        .then(|| crate::input::salvo_readout(game, input))
+        .flatten();
     // A stroke's planned row counts itself and its total.
     let planned = input.planned_stamps().len();
-    let label = if planned > 1 {
+    let label = if let Some((fires, ready)) = salvo {
+        salvo_label(fires, ready)
+    } else if planned > 1 {
         format!("{} \u{d7}{planned}", mode.label())
     } else {
         mode.label()
@@ -558,7 +639,18 @@ pub(super) fn ribbon_layout(
         }
         _ => 0.0,
     };
-    let content = icon_w + (label_w + cost_w).max(status_w);
+    // The steppers hold still as the salvo changes: the label is measured
+    // at its widest digits for the warheads ready.
+    let steppers_w = salvo.map_or(0.0, |(_, ready)| {
+        let widest = "8".repeat(ready.max(1).to_string().len());
+        let widest = measure(
+            Face::Body,
+            &format!("Fire {widest} of {widest}"),
+            crate::theme::Type::Label.at(s),
+        );
+        (widest - label_w).max(0.0) + 8.0 * s + 2.0 * STEPPER * s + 4.0 * s
+    });
+    let content = icon_w + (label_w + cost_w).max(status_w) + steppers_w;
     let size = (
         ribbon_width(viewport, s, content),
         ribbon_height(s, status.is_some()),
@@ -570,15 +662,37 @@ pub(super) fn ribbon_layout(
         .filter(|r| r.w > 0.0 && r.x < open.x + open.w && r.x + r.w > open.x)
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
+    let rect = ribbon_geometry(viewport, s, panel_top, size, minimap);
     Some(RibbonLayout {
-        rect: ribbon_geometry(viewport, s, panel_top, size, minimap),
+        rect,
         label,
         cost,
         building,
         label_w,
         icon_w,
         status,
+        salvo: salvo.map(|(fires, ready)| {
+            let side = STEPPER * s;
+            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
+            let more = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
+            SalvoSteppers {
+                less: Rect::new(more.x - 4.0 * s - side, y, side, side),
+                more,
+                less_enabled: fires > 1,
+                more_enabled: fires < ready,
+            }
+        }),
     })
+}
+
+/// The strike ribbon's label: how many warheads the next pick fires, of
+/// those ready.
+pub(crate) fn salvo_label(fires: usize, ready: usize) -> String {
+    if ready == 0 {
+        "No warhead ready".to_string()
+    } else {
+        format!("Fire {fires} of {ready}")
+    }
 }
 
 /// What placing would do at the ghost or under the cursor, if either
@@ -678,7 +792,7 @@ fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str)
     building.max(refusals)
 }
 
-fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
+fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState, s: f32) {
     let RibbonLayout {
         rect: ribbon,
         label,
@@ -687,6 +801,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
         label_w,
         icon_w,
         status,
+        salvo,
     } = layout;
     let (ribbon, building, label_w, icon_w) = (*ribbon, *building, *label_w, *icon_w);
     // The label keeps the touch-target row; a status row hangs under it.
@@ -726,6 +841,9 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
             SCRAP_COLOR,
         );
     }
+    if let Some(steppers) = salvo {
+        draw_salvo_steppers(steppers, input, s);
+    }
     if let Some(status) = status {
         let size = crate::theme::Type::Small.at(s);
         let baseline = ribbon.y + ribbon.h - 8.0 * s;
@@ -738,6 +856,46 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, s: f32) {
                 size,
                 crate::theme::TEXT_SECONDARY,
             );
+        }
+    }
+}
+
+/// The salvo's minus and plus, faint where the size can go no further.
+fn draw_salvo_steppers(steppers: &SalvoSteppers, input: &InputState, s: f32) {
+    let hover = hover_point(input);
+    for (rect, enabled, plus) in [
+        (steppers.less, steppers.less_enabled, false),
+        (steppers.more, steppers.more_enabled, true),
+    ] {
+        let hovered = enabled && hover.is_some_and(|p| rect.contains(p));
+        fill_rect(
+            rect,
+            if hovered {
+                crate::theme::CARD_HOVER
+            } else {
+                crate::theme::CARD_IDLE
+            },
+        );
+        stroke_rect(
+            rect,
+            crate::theme::Stroke::Edge.at(s),
+            if !enabled {
+                crate::theme::BORDER_FAINT
+            } else if hovered {
+                crate::theme::EDGE_FOCUS
+            } else {
+                crate::theme::EDGE_CARD
+            },
+        );
+        let ink = if enabled {
+            TEXT_PRIMARY
+        } else {
+            crate::theme::TEXT_DISABLED
+        };
+        let (c, arm) = (rect.center(), 7.0 * s);
+        line_between(c - vec2(arm, 0.0), c + vec2(arm, 0.0), 2.5 * s, ink);
+        if plus {
+            line_between(c - vec2(0.0, arm), c + vec2(0.0, arm), 2.5 * s, ink);
         }
     }
 }
@@ -1011,10 +1169,10 @@ pub(crate) fn draw_hud(
         draw_panel(sprites, input, bindings, panel, layout);
     }
     if let Some(column) = &hud.group_column {
-        draw_group_column(column, s);
+        draw_group_column(sprites, column, s);
     }
     if let Some(ribbon) = &hud.ribbon {
-        draw_mode_ribbon(sprites, ribbon, s);
+        draw_mode_ribbon(sprites, ribbon, input, s);
     }
     if let Some(rect) = hud.queue_toggle {
         draw_queue_toggle(rect, input.queue_toggle, s);

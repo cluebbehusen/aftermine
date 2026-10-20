@@ -81,13 +81,14 @@ shortcuts cover the core loop:
 | `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                         |
 | `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                         |
 | `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                               |
-| `M`, then any tile, with a Spire         | Launch its warhead; the deck turns to face the tile first. `O` orders a round; Shift+`O` toggles autofill.                     |
+| `M`, then any tile, with Spires          | Fire the salvo size the aim bar shows; − and + change it, and Shift fires every loaded Spire.                                  |
+| `O` / Shift+`O` with Spires              | Order a warhead / toggle autofill. Shift-click Order to fill every empty Spire.                                                |
 | `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                        |
 | Right-click Weld, or `H`                 | Toggle auto-weld (the card's AUTO tag): idle workers weld wounded machines and buildings near their post. Patrols always weld. |
 | `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                       |
 | `X`                                      | Stop selected units, or cancel a selected new construction site.                                                               |
 | Q/E/R/T/Z/X with a producer selected     | Train the unit in that card slot.                                                                                              |
-| Ctrl + `1`–`5` / `1`–`5`                 | Assign or recall a control group. In the column above the minimap, click recalls, Ctrl-click assigns, and + saves.             |
+| Ctrl + `1`–`5` / `1`–`5`                 | Assign or recall a group of units or buildings. In the column above the minimap, click recalls, Ctrl-click assigns, + saves.   |
 | `N`                                      | Select and center the next idle Harvester.                                                                                     |
 | `Space`                                  | Center the camera on your Foundry.                                                                                             |
 | `Tab`                                    | Jump to the last under-attack alert; the under-attack badge in the top bar does the same while it shows.                       |

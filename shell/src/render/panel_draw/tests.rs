@@ -138,6 +138,7 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             desc: last.desc.clone(),
             progress: last.progress,
             autocast: None,
+            hold: None,
         };
         panel.cards.push(extra);
     }
@@ -326,6 +327,7 @@ fn command(action: crate::panel::CardAction) -> crate::panel::Card {
         desc: Vec::new(),
         progress: None,
         autocast: None,
+        hold: None,
     }
 }
 

@@ -177,6 +177,7 @@ impl Production {
                     desc,
                     progress: None,
                     autocast: None,
+                    hold: None,
                 })
             })
             .collect()
@@ -288,6 +289,7 @@ impl Production {
                 desc,
                 progress: None,
                 autocast: None,
+                hold: None,
             });
             groups.push(QueueGroup {
                 count,

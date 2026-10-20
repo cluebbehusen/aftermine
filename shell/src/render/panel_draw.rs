@@ -280,6 +280,28 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
     }
 }
 
+/// The words on a strip chip's face. A kind chip shows its count alone
+/// when chips are small; the select-all chip keeps "All (16)" either way,
+/// since its icon already names the kind.
+fn roster_face(card: &crate::panel::Card, small: bool) -> std::borrow::Cow<'_, str> {
+    if matches!(card.action, crate::panel::CardAction::SelectAllBuildings(_)) {
+        return card
+            .title
+            .rsplit_once(' ')
+            .map_or(card.title.as_str().into(), |(_, count)| {
+                format!("All {count}").into()
+            });
+    }
+    if small {
+        card.title
+            .rsplit_once(" x")
+            .map_or(card.title.as_str(), |(_, count)| count)
+            .into()
+    } else {
+        card.title.as_str().into()
+    }
+}
+
 fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> Vec<String> {
     if measure(title) <= width || !title.contains('-') {
         return wrap_words(title, measure, width);
@@ -1108,6 +1130,52 @@ impl PanelLayout {
     }
 }
 
+/// Card art wears its owner's color on the same accent masks the world
+/// tints, dimmed with the card.
+fn portrait_shade(owner: Color, tint: Color) -> Color {
+    Color::new(owner.r * tint.r, owner.g * tint.g, owner.b * tint.b, tint.a)
+}
+
+/// A building's card art. Defense art is authored as a base plus a
+/// north-facing live mount; with `mount`, static cards compose the same
+/// silhouette without inventing aim.
+pub(super) fn building_portrait(
+    sprites: &Sprites,
+    kind: oxide_sim::BuildingKind,
+    tier: u8,
+    mount: bool,
+    tint: Color,
+    owner: Color,
+) -> Vec<(Rect, Color)> {
+    let mut layers = vec![
+        (sprites.building_tiered(kind, tier), tint),
+        (
+            sprites.building_tiered_accent(kind, tier),
+            portrait_shade(owner, tint),
+        ),
+    ];
+    if mount && let Some(mount) = sprites.defense_mount(kind, tier) {
+        layers.push((mount, tint));
+        if let Some(accent) = sprites.defense_mount_accent(kind, tier) {
+            layers.push((accent, portrait_shade(owner, tint)));
+        }
+    }
+    layers
+}
+
+/// A unit's card art.
+pub(super) fn unit_portrait(
+    sprites: &Sprites,
+    kind: oxide_sim::UnitKind,
+    tint: Color,
+    owner: Color,
+) -> Vec<(Rect, Color)> {
+    vec![
+        (sprites.unit(kind), tint),
+        (sprites.unit_accent(kind), portrait_shade(owner, tint)),
+    ]
+}
+
 /// Draws the command panel band laid out by [`layout_panel`].
 #[expect(clippy::too_many_lines, reason = "draws the whole selection panel")]
 pub(crate) fn draw_panel(
@@ -1122,35 +1190,13 @@ pub(crate) fn draw_panel(
     let blit = |dest: Rect, source: Rect, tint: Color| {
         sprites.draw_canvas(dest, &[(source, tint)]);
     };
-    // Defense art is authored as a base plus a north-facing live mount.
-    // Static cards compose the same silhouette without inventing aim.
-    // Card art wears its owner's color on the same accent masks the world
-    // tints, dimmed with the card.
-    let shade = |owner: Color, tint: Color| {
-        Color::new(owner.r * tint.r, owner.g * tint.g, owner.b * tint.b, tint.a)
-    };
+    let shade = portrait_shade;
     let building_layers =
         |kind: oxide_sim::BuildingKind, tier: u8, mount: bool, tint: Color, owner: Color| {
-            let mut layers = vec![
-                (sprites.building_tiered(kind, tier), tint),
-                (
-                    sprites.building_tiered_accent(kind, tier),
-                    shade(owner, tint),
-                ),
-            ];
-            if mount && let Some(mount) = sprites.defense_mount(kind, tier) {
-                layers.push((mount, tint));
-                if let Some(accent) = sprites.defense_mount_accent(kind, tier) {
-                    layers.push((accent, shade(owner, tint)));
-                }
-            }
-            layers
+            building_portrait(sprites, kind, tier, mount, tint, owner)
         };
     let unit_layers = |kind: oxide_sim::UnitKind, tint: Color, owner: Color| {
-        vec![
-            (sprites.unit(kind), tint),
-            (sprites.unit_accent(kind), shade(owner, tint)),
-        ]
+        unit_portrait(sprites, kind, tint, owner)
     };
     // An order chip is two composed draws: the subject's own silhouette
     // (translucent under a scaffold while its site is still rising) and
@@ -1376,8 +1422,13 @@ pub(crate) fn draw_panel(
     // verbs. It reads as "what is in my hand" before "what can it do".
     if !roster.is_empty() {
         let label_y = top + measured.roster_y - 4.0 * s;
+        let heading = match panel.roster.first().map(|card| card.action) {
+            Some(CardAction::FilterBuilding(_)) => "SELECTED BUILDINGS",
+            Some(CardAction::SelectAllBuildings(_)) => "SELECT ALL",
+            _ => "SELECTED UNITS",
+        };
         draw_text(
-            "SELECTED UNITS",
+            heading,
             12.0 * s,
             label_y,
             crate::theme::Type::Small.at(s),
@@ -1418,13 +1469,8 @@ pub(crate) fn draw_panel(
                 &card.icon,
                 WHITE,
             );
-            let label = if small {
-                card.title
-                    .rsplit_once(" x")
-                    .map_or(card.title.as_str(), |(_, count)| count)
-            } else {
-                &card.title
-            };
+            let face = roster_face(card, small);
+            let label = face.as_ref();
             let mut size = crate::theme::Type::Caption.at(s);
             let mut dims = measure_text(label, None, numeric::font_size(size), 1.0);
             while dims.width > rect.w - 6.0 * s && size > 8.0 * s {

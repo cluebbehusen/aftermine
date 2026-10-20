@@ -70,7 +70,7 @@ fn a_long_press_on_the_weld_card_switches_auto_weld_and_its_lift_arms_nothing() 
     input.now = 5.0;
     apply_events(&mut game, &mut input, &[touch_down(1, at)]);
     input.now = 5.25;
-    let (_, progress) = autocast_press_progress(&input).expect("the card charges");
+    let (_, progress) = card_press_progress(&input).expect("the card charges");
     assert!(progress > 0.0 && progress < 1.0);
     assert_eq!(
         long_press_progress(&input),

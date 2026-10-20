@@ -361,11 +361,11 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
         CardAction::Dispatch(Action::ToggleAutofill)
     );
     load_selected(&mut game);
-    assert!(card(&game, "Launch").enabled);
+    assert!(card(&game, "Launch (1 loaded)").enabled);
     assert!(!card(&game, "Order").enabled, "one warhead fills a Spire");
     let selected = SelectedBuildings::inspect(&game.view());
     assert_eq!(
-        selected.loaded_silos(),
+        selected.ready_silos(),
         game.presentation.selection.buildings
     );
     assert!(matches!(
@@ -453,5 +453,172 @@ fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
         ),
         "{:?}",
         game.pending
+    );
+}
+
+/// Selected loaded Spires whose decks face `headings`, in selection order.
+fn spires_facing(headings: &[u8]) -> Game {
+    let mut game = fixture(BuildingKind::Spire, &vec![0; headings.len()], 0);
+    load_selected(&mut game);
+    let mut json = serde_json::to_value(&*game.state).unwrap();
+    for (id, &heading) in game.presentation.selection.buildings.iter().zip(headings) {
+        let b = json["buildings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|b| b["id"] == serde_json::json!(id))
+            .unwrap();
+        b["launcher"]["heading"] = heading.into();
+    }
+    *game.state = serde_json::from_value(json).unwrap();
+    game.state.validate_invariants().unwrap();
+    game
+}
+
+#[test]
+fn a_salvo_fires_the_decks_that_turn_least_then_the_lowest_ids() {
+    // Heading 0 faces east, 64 south, 128 west.
+    let game = spires_facing(&[128, 0, 64, 0]);
+    let ids = game.presentation.selection.buildings.clone();
+    let east = TilePos::new(38, 6);
+    let selected = SelectedBuildings::inspect(&game.view());
+    let sorted = |mut ids: Vec<BuildingId>| {
+        ids.sort_unstable();
+        ids
+    };
+    assert_eq!(sorted(selected.salvo(east, 2)), vec![ids[1], ids[3]]);
+    assert_eq!(
+        sorted(selected.salvo(east, 3)),
+        vec![ids[1], ids[2], ids[3]]
+    );
+    assert_eq!(
+        selected.salvo(east, 9).len(),
+        4,
+        "a salvo never exceeds the ready"
+    );
+    let west = TilePos::new(0, 6);
+    assert_eq!(selected.salvo(west, 1), vec![ids[0]]);
+    // A Spire already turning to fire is not ready for the next salvo.
+    let mut game = game;
+    game.issue(Command::Launch {
+        building: ids[0],
+        target: west,
+    });
+    let selected = SelectedBuildings::inspect(&game.view());
+    assert_eq!(selected.ready_silos(), ids[1..].to_vec());
+    assert_eq!(selected.salvo(west, 1).len(), 1);
+    assert_ne!(selected.salvo(west, 1), vec![ids[0]]);
+    assert_eq!(selected.silos(), ids, "it still belongs to the strike");
+}
+
+#[test]
+fn fill_buys_every_empty_slot_emptiest_first_while_scrap_lasts() {
+    let cost = BuildingKind::Spire.magazine().unwrap().round_cost;
+    let mut game = fixture(BuildingKind::Spire, &[0, 0, 0], 2 * cost);
+    let ids = game.presentation.selection.buildings.clone();
+    game.presentation.selection.buildings = vec![ids[1]];
+    load_selected(&mut game);
+    game.presentation.selection.buildings.clone_from(&ids);
+    let fill = SelectedBuildings::inspect(&game.view()).fill().unwrap();
+    assert_eq!(fill.wanted, 2);
+    assert_eq!(fill.recipients, vec![ids[0], ids[2]]);
+    assert_eq!(fill.cost, 2 * cost);
+    fill_rounds(&mut game);
+    assert_accepted(&mut game);
+    assert_eq!(
+        SelectedBuildings::inspect(&game.view())
+            .fill()
+            .unwrap()
+            .wanted,
+        0
+    );
+
+    // Two empty batteries take turns, as repeated Orders would, until the
+    // bank runs out.
+    let cost = BuildingKind::Lattice.magazine().unwrap().round_cost;
+    let mut game = fixture(BuildingKind::Lattice, &[0, 0], 3 * cost);
+    let ids = game.presentation.selection.buildings.clone();
+    let fill = SelectedBuildings::inspect(&game.view()).fill().unwrap();
+    assert_eq!(fill.wanted, 4);
+    assert_eq!(fill.recipients, vec![ids[0], ids[1], ids[0]]);
+    fill_rounds(&mut game);
+    assert_eq!(
+        game.presentation.toasts.last().map(|t| t.text.as_str()),
+        Some("Ordered 3 of 4 interceptors: out of scrap")
+    );
+    assert_accepted(&mut game);
+}
+
+#[test]
+fn the_order_card_offers_fill_only_while_more_than_one_slot_is_empty() {
+    let bindings = BindingMap::classic();
+    let order = |game: &Game| {
+        SelectedBuildings::inspect(&game.view())
+            .cards(&bindings)
+            .into_iter()
+            .find(|card| card.title == "Order")
+            .unwrap()
+    };
+    let cost = BuildingKind::Spire.magazine().unwrap().round_cost;
+    let game = fixture(BuildingKind::Spire, &[0, 0, 0], 2 * cost);
+    let card = order(&game);
+    assert_eq!(card.hold, Some(CardAction::FillRounds));
+    assert!(
+        card.desc
+            .iter()
+            .any(|line| line.contains("3 warheads, 1800 scrap")),
+        "{:?}",
+        card.desc
+    );
+    let fill = SelectedBuildings::inspect(&game.view())
+        .fill_card()
+        .unwrap();
+    assert_eq!(fill.title, "Fill 2/3", "the bank covers two");
+    assert_eq!(fill.cost, Some(2 * cost));
+    assert_eq!(fill.action, CardAction::Dispatch(Action::OrderRound));
+    let lone = fixture(BuildingKind::Spire, &[0], cost);
+    assert_eq!(order(&lone).hold, None, "one empty slot is just an Order");
+    assert!(
+        SelectedBuildings::inspect(&lone.view())
+            .fill_card()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_magazine_group_counts_its_rounds_and_its_buildings() {
+    let mut game = fixture(BuildingKind::Spire, &[0, 0, 0], 2000);
+    let ids = game.presentation.selection.buildings.clone();
+    game.presentation.selection.buildings = vec![ids[0]];
+    load_selected(&mut game);
+    game.presentation.selection.buildings.clone_from(&ids);
+    game.issue(Command::OrderRound { building: ids[1] });
+    assert_eq!(
+        SelectedBuildings::inspect(&game.view())
+            .ammunition()
+            .as_deref(),
+        Some("Warheads: 1 loaded \u{b7} 1 building \u{b7} 1 empty")
+    );
+    game.issue(Command::Launch {
+        building: ids[0],
+        target: chassis::grid::TilePos::new(0, 11),
+    });
+    assert_eq!(
+        SelectedBuildings::inspect(&game.view())
+            .ammunition()
+            .as_deref(),
+        Some("Warheads: 0 loaded \u{b7} 1 firing \u{b7} 1 building \u{b7} 1 empty")
+    );
+    let lattices = fixture(BuildingKind::Lattice, &[0, 0], 0);
+    assert_eq!(
+        SelectedBuildings::inspect(&lattices.view())
+            .ammunition()
+            .as_deref(),
+        Some("Interceptors: 0 loaded \u{b7} 0 building \u{b7} 4 empty")
+    );
+    let turrets = fixture(BuildingKind::Turret, &[0, 0], 0);
+    assert_eq!(
+        SelectedBuildings::inspect(&turrets.view()).ammunition(),
+        None
     );
 }

@@ -17,7 +17,7 @@ use crate::game::projection::{Program, Projection};
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::platform::Hands;
-use crate::typography::entity_name;
+use crate::typography::{entity_name, plural_name};
 use oxide_sim::stats::{BuildingKind, UnitKind, WeaponStats};
 use oxide_sim::{BuildingId, Order};
 use std::fmt::Write as _;
@@ -139,10 +139,16 @@ pub enum CardAction {
     /// Narrow the selection to one kind (Ctrl, Shift, or a lit QUEUE
     /// removes it instead) — the mixed-army type strip.
     FilterKind(UnitKind),
+    /// The same cut for a mixed building selection.
+    FilterBuilding(BuildingKind),
+    /// Select every own building of this kind, built or not, map-wide.
+    SelectAllBuildings(BuildingKind),
     /// Close the build palette in one press, keeping the selection.
     ClosePalette,
     /// Empty the selected producers' queues, every job refunded in full.
     ClearQueues,
+    /// Order a round into every empty slot of the selected magazines.
+    FillRounds,
     /// Display only.
     None,
     /// A disabled card: pressing it explains why instead of acting.
@@ -203,6 +209,19 @@ pub struct Card {
     /// The automatic mode the card switches beside its press, when it has
     /// one: an RTS ability button's autocast.
     pub autocast: Option<Autocast>,
+    /// A second act beside the press, for a card without an autocast: a
+    /// right-click or a long press performs it.
+    pub hold: Option<CardAction>,
+}
+
+impl Card {
+    /// What a right-click or a long press on the card does: switch its
+    /// autocast, else its second act.
+    pub(crate) fn second_act(&self) -> Option<CardAction> {
+        self.autocast
+            .map(|autocast| CardAction::Dispatch(autocast.toggle))
+            .or(self.hold)
+    }
 }
 
 /// A card's automatic mode: lit on the card, and switched by a right-click,
@@ -602,6 +621,7 @@ fn magazine_queue(
             progress: (index == 0)
                 .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
             autocast: None,
+            hold: None,
         });
     }
     Some(tick_time_label(
@@ -955,6 +975,7 @@ fn order_card(
         desc,
         progress,
         autocast: None,
+        hold: None,
     }
 }
 
@@ -1071,6 +1092,7 @@ fn stop_card(action: CardAction, hotkey: String, desc: &str) -> Card {
         desc: vec![desc.into()],
         progress: None,
         autocast: None,
+        hold: None,
     }
 }
 
@@ -1115,6 +1137,18 @@ pub(crate) fn build_for_input(
                 )
             };
         }
+    }
+    // Held Shift turns the Order card into the Fill a Shift-click buys, so
+    // the total shows before the press.
+    if input.resolver.shift_held()
+        && !game.presentation.selection.buildings.is_empty()
+        && let Some(fill) = crate::building_actions::SelectedBuildings::inspect(game).fill_card()
+        && let Some(card) = panel
+            .cards
+            .iter_mut()
+            .find(|card| card.action == CardAction::Dispatch(Action::OrderRound))
+    {
+        *card = fill;
     }
     if !crate::platform::hands().keys {
         strip_hotkeys(&mut panel);
@@ -1213,6 +1247,109 @@ fn unload_queue_desc(hands: Hands) -> &'static str {
     }
 }
 
+/// The strip row over an own building selection. A mixed selection
+/// offers one counted chip per kind, like a mixed army, with its tiers in
+/// the tooltip. A single kind offers to select every one you own when the
+/// selection holds fewer.
+fn building_roster(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Vec<Card> {
+    let Some(first) = buildings.first() else {
+        return Vec::new();
+    };
+    let hands = crate::platform::hands();
+    let mut kinds: Vec<(BuildingKind, Vec<u8>)> = Vec::new();
+    for b in buildings {
+        match kinds.iter_mut().find(|(kind, _)| *kind == b.kind) {
+            Some((_, tiers)) => tiers.push(b.tier),
+            None => kinds.push((b.kind, vec![b.tier])),
+        }
+    }
+    if kinds.len() == 1 {
+        let owned = game
+            .state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == game.presentation.human && b.kind == first.kind)
+            .count();
+        if owned <= buildings.len() {
+            return Vec::new();
+        }
+        let name = plural_name(&entity_name(first.kind.name()));
+        return vec![Card {
+            icon: CardIcon::Building(first.kind, first.tier),
+            title: format!("All {name} ({owned})"),
+            cost: None,
+            hotkey: String::new(),
+            action: CardAction::SelectAllBuildings(first.kind),
+            enabled: true,
+            why: None,
+            desc: vec![format!(
+                "{}: select all {owned} of your {name}, built or not, anywhere on the map.",
+                crate::platform::tap_or_click_capitalized(hands.touch()),
+            )],
+            progress: None,
+            autocast: None,
+            hold: None,
+        }];
+    }
+    kinds.sort_by_key(|(kind, _)| kind.name());
+    kinds
+        .into_iter()
+        .take(8)
+        .map(|(kind, mut tiers)| {
+            tiers.sort_unstable_by(|a, b| b.cmp(a));
+            let mut desc = Vec::new();
+            if tiers.first() != tiers.last() {
+                let mut named: Vec<String> = Vec::new();
+                for tier in tiers.chunk_by(|a, b| a == b) {
+                    named.push(format!(
+                        "{} {}",
+                        tier.len(),
+                        entity_name(kind.tier_name(tier[0]))
+                    ));
+                }
+                desc.push(named.join(", "));
+            }
+            desc.extend(roster_filter_desc(hands));
+            Card {
+                icon: CardIcon::Building(kind, tiers[0]),
+                title: format!("{} x{}", entity_name(kind.name()), tiers.len()),
+                cost: None,
+                hotkey: String::new(),
+                action: CardAction::FilterBuilding(kind),
+                enabled: true,
+                why: None,
+                desc,
+                progress: None,
+                autocast: None,
+                hold: None,
+            }
+        })
+        .collect()
+}
+
+/// A building group's state: how many stand built, how many are still
+/// going up or upgrading, and how many hold a target preference.
+fn building_summary(buildings: &[oxide_sim::Building]) -> String {
+    let built = buildings.iter().filter(|b| b.built()).count();
+    let upgrading = buildings
+        .iter()
+        .filter(|b| !b.built() && b.tier > 0)
+        .count();
+    let rising = buildings.len() - built - upgrading;
+    let focused = buildings.iter().filter(|b| b.focus.is_some()).count();
+    let mut summary = format!("{built} built");
+    for (count, what) in [
+        (rising, "building"),
+        (upgrading, "upgrading"),
+        (focused, "targeting"),
+    ] {
+        if count > 0 {
+            let _ = write!(summary, " \u{b7} {count} {what}");
+        }
+    }
+    summary
+}
+
 /// How ground machines board a selected transport.
 fn transport_load_desc(touch_only: bool) -> &'static str {
     if touch_only {
@@ -1298,6 +1435,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     desc: vec!["Read-only: allied buildings cannot be controlled.".into()],
                     progress: None,
                     autocast: None,
+                    hold: None,
                 });
                 if let Some(label) = magazine_queue(game, first, &mut panel.queue) {
                     panel.queue_label = label;
@@ -1307,20 +1445,9 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         }
         let selected = crate::building_actions::SelectedBuildings::inspect(game);
         panel.cards = selected.cards(bindings);
+        panel.roster = building_roster(game, &selected.buildings);
         if plural {
-            let offline = selected.buildings.iter().filter(|b| !b.built()).count();
-            let focused = selected
-                .buildings
-                .iter()
-                .filter(|b| b.focus.is_some())
-                .count();
-            panel.summary = format!(
-                "{} ready · {offline} offline",
-                selected.buildings.len() - offline
-            );
-            if focused > 0 {
-                let _ = write!(panel.summary, " · {focused} targeting");
-            }
+            panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
             if let Some(target) = building.focus {
                 panel.queue_label = "Target preference".into();
@@ -1361,6 +1488,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     )],
                     progress,
                     autocast: None,
+                    hold: None,
                 });
             }
         }
@@ -1487,6 +1615,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     desc: roster_filter_desc(crate::platform::hands()),
                     progress: None,
                     autocast: None,
+                    hold: None,
                 });
             }
         }
@@ -1508,6 +1637,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     // Run and Hunt only differ from a plain move for a machine that can
@@ -1527,6 +1657,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     if has_fighter {
@@ -1544,6 +1675,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     panel.cards.push(Card {
@@ -1565,6 +1697,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         ],
         progress: None,
         autocast: None,
+        hold: None,
     });
     panel.cards.push(Card {
         icon: CardIcon::Verb(VerbIcon::Accompany),
@@ -1580,6 +1713,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         ],
         progress: None,
         autocast: None,
+        hold: None,
     });
     if has_builder {
         panel.cards.push(Card {
@@ -1596,6 +1730,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     if has_builder {
@@ -1622,6 +1757,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             desc,
             progress: None,
             autocast,
+            hold: None,
         });
     }
     // No Crucible takes an assembled machine apart.
@@ -1646,6 +1782,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     crate::unit_bays::SelectedBays::inspect(game).cards(bindings, &mut panel.cards);
@@ -1675,6 +1812,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     if has_builder {
@@ -1698,6 +1836,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 desc: vec!["Open construction.".into()],
                 progress: None,
                 autocast: None,
+                hold: None,
             });
         }
         for kind in crate::action::BUILD_CATEGORIES
@@ -1743,6 +1882,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 desc,
                 progress: None,
                 autocast: None,
+                hold: None,
             });
         }
         if build_menu_open {
@@ -1760,6 +1900,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 desc: vec!["Close construction.".into()],
                 progress: None,
                 autocast: None,
+                hold: None,
             });
         }
     }
@@ -1781,6 +1922,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             desc: vec!["Cancel current and queued work, deliver scrap to the nearest reachable Foundry, then stay there.".into()],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
     // The first unit's program: what it is doing and what comes next.

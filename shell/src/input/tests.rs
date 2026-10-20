@@ -3270,6 +3270,7 @@ fn a_card_that_changes_under_a_resting_finger_activates_nothing() {
         desc: Vec::new(),
         progress: None,
         autocast: None,
+        hold: None,
     };
     let slot = macroquad::math::Rect::new(20.0, 600.0, 48.0, 48.0);
     let mut layout = bare_layout(680.0, 500.0);
@@ -4638,12 +4639,14 @@ fn chrome_born_touches_never_drive_world_gestures() {
 }
 
 mod autocast_card;
+mod building_groups;
 mod order_chips;
 mod placement_chain;
 mod placement_plan;
 mod placement_verdict;
 mod queue_latch;
 mod relayout;
+mod salvo;
 mod top_bar;
 mod touch_placement;
 
@@ -8334,14 +8337,15 @@ fn a_touch_strike_aims_where_tapped_and_launches_only_on_the_check_mark() {
     input.now += 1.0;
     tap(&mut game, &mut input, controls.confirm.center());
     assert_eq!(launches(&game), vec![(spire, TilePos::new(23, 8))]);
-    assert!(input.striking.is_none(), "the launch disarms");
+    assert!(input.striking.is_none(), "the last ready warhead disarms");
     // The cross stands a strike down without launching.
+    let (mut game, _) = loaded_spire();
     dispatch_action(&mut game, &mut input, Action::Launch);
     let controls = lay_out_ghost_controls(&game, &input);
     input.now += 1.0;
     tap(&mut game, &mut input, controls.cancel.center());
     assert!(input.striking.is_none());
-    assert_eq!(launches(&game).len(), 1);
+    assert!(launches(&game).is_empty());
 }
 
 #[test]

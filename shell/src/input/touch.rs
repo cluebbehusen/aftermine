@@ -57,8 +57,8 @@ pub(crate) struct TouchPoint {
 pub(crate) struct PressedCard {
     hit: crate::layout::CardHit,
     icon: Option<crate::panel::CardIcon>,
-    /// What a long press on it switches, for a card with an autocast.
-    autocast: Option<Action>,
+    /// What a long press on it does, for a card with a second act.
+    second_act: Option<crate::panel::CardAction>,
 }
 
 /// The card under a fingertip at `p`, if any.
@@ -71,9 +71,7 @@ fn pressed_card(game: &Game, p: Vec2, ui: f32) -> Option<PressedCard> {
     Some(PressedCard {
         hit,
         icon: card.map(|card| card.icon),
-        autocast: card
-            .and_then(|card| card.autocast)
-            .map(|autocast| autocast.toggle),
+        second_act: card.and_then(crate::panel::Card::second_act),
     })
 }
 
@@ -149,14 +147,14 @@ fn group_hold(input: &InputState) -> Option<(TouchPoint, crate::layout::GroupSlo
     (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, slot))
 }
 
-/// A lone finger resting on a card with an autocast: a hold that fires,
-/// switching the card's automatic mode.
-fn autocast_hold(input: &InputState) -> Option<(TouchPoint, Action)> {
+/// A lone finger resting on a card with a second act: a hold that fires
+/// it, switching the card's automatic mode or doing what Shift-click does.
+fn card_hold(input: &InputState) -> Option<(TouchPoint, crate::panel::CardAction)> {
     let [(_, finger)] = input.touches.as_slice() else {
         return None;
     };
-    let toggle = finger.card?.autocast?;
-    (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, toggle))
+    let act = finger.card?.second_act?;
+    (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, act))
 }
 
 /// Whether an armed mode takes a minimap tap as its target (a rally
@@ -223,9 +221,10 @@ pub(crate) fn group_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
     charge(input, &group_hold(input)?.0)
 }
 
-/// Where a long-press on an autocast card is charging, and how far.
-pub(crate) fn autocast_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
-    charge(input, &autocast_hold(input)?.0)
+/// Where a long-press on a card with a second act is charging, and how
+/// far.
+pub(crate) fn card_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
+    charge(input, &card_hold(input)?.0)
 }
 
 /// A held finger's charge: nothing while it may still be a tap, then
@@ -570,12 +569,12 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
         }
         return;
     }
-    // A card with an autocast is the other: the hold switches its automatic
-    // mode, and the spent finger's lift presses nothing.
-    if let Some((finger, toggle)) = autocast_hold(input) {
+    // A card with a second act is the other: the hold performs it, and the
+    // spent finger's lift presses nothing.
+    if let Some((finger, act)) = card_hold(input) {
         if (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms) {
             input.touches[0].1.spent = true;
-            dispatch_action(game, input, bindings, toggle);
+            super::activate_card(game, input, bindings, act);
         }
         return;
     }

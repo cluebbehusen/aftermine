@@ -150,6 +150,7 @@ impl SelectedBays {
             )],
             progress: None,
             autocast: None,
+            hold: None,
         });
         let cancel = self.cancel();
         cards.push(Card {
@@ -166,6 +167,7 @@ impl SelectedBays {
             ],
             progress: None,
             autocast: None,
+            hold: None,
         });
         let on = self.hosts.iter().all(|host| host.autofill);
         cards.push(Card {
@@ -179,6 +181,7 @@ impl SelectedBays {
             desc: vec!["While on, orders the next drone whenever there is room and scrap.".into()],
             progress: None,
             autocast: None,
+            hold: None,
         });
     }
 }
