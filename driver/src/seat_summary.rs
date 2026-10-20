@@ -1,15 +1,18 @@
 //! Seat evidence pooled over many legs: failure incidents, deliveries,
 //! reactivity, income, the impact ledger and attack calibration, with their
 //! text tables. The ladder pools it by rung; `bot-summary` pools any
-//! evaluation rows by team layout and difficulty.
+//! evaluation rows by team layout and difficulty, and how the legs ended by
+//! team layout and the difficulties that played them.
 
 use crate::bot_eval::{
     AttackCalibration, Deliveries, INCOME_CHECKPOINTS, IncomeSample, SeatFailures, SeatReactivity,
 };
 use crate::evaluation::MatchMode;
 use crate::ledger::{LedgerPool, SeatLedger};
+use crate::pacing::{Pacing, PacingSummary};
 use anyhow::{Context, Result, ensure};
-use oxide_sim::scenario::{BotConfig, BotDifficulty};
+use oxide_sim::GameResult;
+use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -17,6 +20,9 @@ use std::path::PathBuf;
 
 /// Unit and building kinds each ledger table shows.
 pub const LEDGER_KINDS: usize = 8;
+
+/// Ticks per minute.
+const MINUTE: u64 = oxide_sim::TICKS_PER_SECOND as u64 * 60;
 
 /// The fields of a seat's evidence a summary reads.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -407,6 +413,8 @@ fn render_reactivity(out: &mut String, groups: &[(String, &SeatSummary)]) {
 #[derive(Debug, Clone, Deserialize)]
 struct SummaryRow {
     duration_ticks: u64,
+    #[serde(default)]
+    result: Option<GameResult>,
     seats: Vec<SummarySeat>,
     evidence: Vec<SeatEvidence>,
 }
@@ -426,6 +434,117 @@ pub struct RowSummary {
     /// Each team layout and difficulty with its pooled seats, in layout and
     /// then difficulty order.
     pub groups: Vec<(String, SeatSummary)>,
+    /// How the legs ended, by team layout and then by the difficulties of
+    /// their controlled seats, lowest rung first.
+    pub outcomes: Vec<(String, OutcomeSummary)>,
+}
+
+/// How the legs of one team layout and set of difficulties ended.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OutcomeSummary {
+    /// Legs pooled.
+    pub legs: u32,
+    /// Legs that reached a result before the tick ceiling.
+    pub decided: u32,
+    /// Median length of the decided legs, in ticks.
+    pub median_decided_ticks: Option<u64>,
+    /// Legs a team won.
+    pub won: u32,
+    /// Of those, the legs seat 0's team won: about half when the maps and
+    /// seat swaps are fair.
+    pub first_seat_won: u32,
+    /// Each stance's record in won legs, every stance in player-facing
+    /// order.
+    pub stances: Vec<StanceRecord>,
+    /// Net-worth pacing of the legs whose every seat recorded a ledger.
+    pub pacing: PacingSummary,
+}
+
+/// A stance's record against other stances: a seat counts only when no
+/// opposing seat played the same stance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StanceRecord {
+    /// The stance.
+    pub stance: BotStance,
+    /// Seats in won legs.
+    pub seat_legs: u32,
+    /// Of those, the seats on the winning team.
+    pub won: u32,
+}
+
+/// Pools legs into an [`OutcomeSummary`].
+#[derive(Debug, Default)]
+struct OutcomeBuilder {
+    legs: u32,
+    decided_ticks: Vec<u64>,
+    won: u32,
+    first_seat_won: u32,
+    stances: [(u32, u32); BotStance::ALL.len()],
+    pacing: Vec<Pacing>,
+}
+
+impl OutcomeBuilder {
+    fn add(&mut self, row: &SummaryRow, teams: &[u8]) {
+        self.legs += 1;
+        if row.result.is_some() {
+            self.decided_ticks.push(row.duration_ticks);
+        }
+        let ledgers: Option<Vec<&SeatLedger>> = row
+            .evidence
+            .iter()
+            .map(|evidence| evidence.ledger.as_ref())
+            .collect();
+        if let Some(pacing) =
+            ledgers.and_then(|ledgers| crate::pacing::pacing(&ledgers, teams, row.result))
+        {
+            self.pacing.push(pacing);
+        }
+        let Some(GameResult::Victory { team: winner }) = row.result else {
+            return;
+        };
+        self.won += 1;
+        self.first_seat_won += u32::from(teams.first() == Some(&winner));
+        for seat in &row.seats {
+            let Some(config) = seat.config else {
+                continue;
+            };
+            let mirrored = row.seats.iter().any(|other| {
+                other.team != seat.team
+                    && other
+                        .config
+                        .is_some_and(|other| other.stance == config.stance)
+            });
+            if mirrored {
+                continue;
+            }
+            let index = BotStance::ALL
+                .iter()
+                .position(|stance| *stance == config.stance)
+                .expect("every stance is listed");
+            self.stances[index].0 += 1;
+            self.stances[index].1 += u32::from(seat.team == winner);
+        }
+    }
+
+    fn finish(self) -> OutcomeSummary {
+        OutcomeSummary {
+            legs: self.legs,
+            decided: u32::try_from(self.decided_ticks.len()).expect("legs fit in u32"),
+            median_decided_ticks: median(self.decided_ticks),
+            won: self.won,
+            first_seat_won: self.first_seat_won,
+            stances: BotStance::ALL
+                .iter()
+                .zip(self.stances)
+                .map(|(&stance, (seat_legs, won))| StanceRecord {
+                    stance,
+                    seat_legs,
+                    won,
+                })
+                .collect(),
+            pacing: crate::pacing::summarize(&self.pacing),
+        }
+    }
 }
 
 /// Reads evaluation rows from JSONL files and pools every controlled seat's
@@ -433,6 +552,7 @@ pub struct RowSummary {
 pub fn summarize(paths: &[PathBuf]) -> Result<RowSummary> {
     let mut legs = 0;
     let mut groups: BTreeMap<(String, usize), (String, SeatSummaryBuilder)> = BTreeMap::new();
+    let mut outcomes: BTreeMap<(String, Vec<usize>), (String, OutcomeBuilder)> = BTreeMap::new();
     for path in paths {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading evaluation rows {}", path.display()))?;
@@ -452,6 +572,26 @@ pub fn summarize(paths: &[PathBuf]) -> Result<RowSummary> {
             let teams: Vec<u8> = row.seats.iter().map(|seat| seat.team).collect();
             let mode = layout(&teams);
             legs += 1;
+            let mut rungs: Vec<BotDifficulty> = row
+                .seats
+                .iter()
+                .filter_map(|seat| seat.config.map(|config| config.difficulty))
+                .collect();
+            rungs.sort_by_key(|difficulty| rank(*difficulty));
+            rungs.dedup();
+            outcomes
+                .entry((mode.clone(), rungs.iter().copied().map(rank).collect()))
+                .or_insert_with(|| {
+                    let names: Vec<&str> = rungs.iter().map(|rung| rung.as_str()).collect();
+                    (
+                        format!("{mode} {}", names.join(" v "))
+                            .trim_end()
+                            .to_owned(),
+                        OutcomeBuilder::default(),
+                    )
+                })
+                .1
+                .add(&row, &teams);
             for (seat, evidence) in row.seats.iter().zip(&row.evidence) {
                 let Some(config) = seat.config else {
                     continue;
@@ -473,6 +613,10 @@ pub fn summarize(paths: &[PathBuf]) -> Result<RowSummary> {
     Ok(RowSummary {
         legs,
         groups: groups
+            .into_values()
+            .map(|(label, builder)| (label, builder.finish()))
+            .collect(),
+        outcomes: outcomes
             .into_values()
             .map(|(label, builder)| (label, builder.finish()))
             .collect(),
@@ -507,11 +651,80 @@ pub fn rank(difficulty: BotDifficulty) -> usize {
         .unwrap_or(0)
 }
 
+/// Each group's outcomes: legs, results, length and seat 0's share of wins,
+/// then each stance's record against the others and the net-worth pacing.
+fn render_outcomes(out: &mut String, outcomes: &[(String, OutcomeSummary)]) {
+    let _ = writeln!(
+        out,
+        "outcomes: legs, decided, median decided minutes, wins by seat 0's team"
+    );
+    let _ = writeln!(
+        out,
+        "  {:<24} {:>5} {:>8} {:>11} {:>15}",
+        "group", "legs", "decided", "median min", "seat 0 won"
+    );
+    for (label, outcome) in outcomes {
+        let minutes = outcome.median_decided_ticks.map_or_else(
+            || "-".to_owned(),
+            |ticks| format!("{:.1}", ticks as f64 / MINUTE as f64),
+        );
+        let _ = writeln!(
+            out,
+            "  {:<24} {:>5} {:>8} {:>11} {:>15}",
+            label,
+            outcome.legs,
+            outcome.decided,
+            minutes,
+            format!(
+                "{}/{} {}",
+                outcome.first_seat_won,
+                outcome.won,
+                percent(outcome.first_seat_won, outcome.won)
+            )
+        );
+    }
+    for (label, outcome) in outcomes {
+        if outcome.stances.iter().any(|record| record.seat_legs > 0) {
+            let _ = writeln!(
+                out,
+                "\nstances against other stances, {label}: {}",
+                outcome
+                    .stances
+                    .iter()
+                    .filter(|record| record.seat_legs > 0)
+                    .map(|record| format!(
+                        "{} won {}/{} {}",
+                        record.stance.as_str(),
+                        record.won,
+                        record.seat_legs,
+                        percent(record.won, record.seat_legs)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        if outcome.pacing.matches > 0 {
+            let _ = writeln!(out, "\nnet worth pacing, {label}:");
+            crate::pacing::render(out, &outcome.pacing, "  ");
+        }
+    }
+    let _ = writeln!(out);
+}
+
+fn percent(part: u32, whole: u32) -> String {
+    if whole == 0 {
+        "-".to_owned()
+    } else {
+        format!("({:.0}%)", f64::from(part) * 100.0 / f64::from(whole))
+    }
+}
+
 impl RowSummary {
     /// The summary as text.
     pub fn render(&self) -> String {
         let mut out = String::new();
         let _ = writeln!(out, "bot-summary: {} legs\n", self.legs);
+        render_outcomes(&mut out, &self.outcomes);
         let groups: Vec<(String, &SeatSummary)> = self
             .groups
             .iter()

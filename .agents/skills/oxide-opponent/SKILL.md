@@ -113,7 +113,10 @@ cargo run --release -p oxide-driver -- bot-summary <rows.jsonl>
 
 `bot-summary` pools the seats of any evaluation rows by team layout (`duel`,
 `teams`, `free-for-all`, or team sizes such as `2v1`) and difficulty; `--json`
-prints the same summary as JSON.
+prints the same summary as JSON. It opens with how the legs ended: decided legs,
+median length, wins by seat 0's team, each stance's record against other
+stances, and net-worth pacing (who was ahead at minutes 5, 10 and 15, comebacks,
+lead changes, and how much of a match played on after it was settled).
 
 Read the ladder report per comparison, overall and by stance and map family:
 

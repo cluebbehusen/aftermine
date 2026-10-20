@@ -12,6 +12,7 @@ pub mod duel_lab;
 pub mod evaluation;
 pub mod ios;
 pub mod ledger;
+pub mod pacing;
 pub mod pool;
 pub mod profile;
 pub mod replay_health;
