@@ -41,13 +41,13 @@ worked when a Harvester hauling from there repays its price within a horizon
 that is longer the more the stance invests at home and stretched by greed. A
 worked source wants as many Harvesters as free tiles beside it hold and its
 remaining scrap or salvage repays, filled to a share that falls from Turtle to
-Aggressive and rises with greed, and ready Foundries train workers until every
-worked source has its crew; workers and queues count only on the ground they can
-serve. Until the army reaches the stance's minimum, workers that would cost more
-than the army wait for army production and take only the Foundries it leaves.
-Once a Fabricator stands, an Excavator, worth two Harvesters, fills two open
-places when the seat can pay for it with scrap to spare, less the greedier it
-is.
+Aggressive, rises with greed and falls on lower rungs, and ready Foundries train
+workers until every worked source has its crew; workers and queues count only on
+the ground they can serve. Until the army reaches the stance's minimum, workers
+that would cost more than the army wait for army production and take only the
+Foundries it leaves. Once a Fabricator stands, an Excavator, worth two
+Harvesters, fills two open places when the seat can pay for it with scrap to
+spare, less the greedier it is.
 
 A harvesting, idle or tending worker away from home runs back beside the nearest
 Foundry once known enemy fire reaches it. Paid sites nobody is building get the
@@ -596,28 +596,32 @@ seat's own ground still call for line units. While ground reaches no enemy, air
 strikes are wanted with or without an Airworks, at least what a strike needs
 against the easiest known target the seat has not given up on, or what bombers
 need to clear the anti-air around the next lift's target, whichever is more. The
-most wanted role goes first to the nearest ready producer that can afford a unit
-for it, then the next; ready producers left with nothing wanted train, while
-ground units can reach an enemy, for whichever of line and siege they serve is
-furthest below its share, line alone when the army goes only by lift, unless
-another producer serves a wanted role: the scrap then waits for that producer.
-While the seat saves for a unit, the producers that train it wait for it and no
-other producer trains a cheaper unit of its role. Each chooses the unit it can
-afford now by coarse suitability: reach against the enemy's usual reach, what
-its role is for at the price (firepower for siege and anti-heavy, durability for
-the rest), covering both enemy domains, splash against clustered enemies,
-anti-air that flies in proportion to the known enemy air that fires only at the
-ground, affordability at the seat's income, variety (a kind that already makes
-up most of its role counts for less, so every kind of a role gets its turn), and
-personality. While ground reaches no enemy, a strike aircraft's splash is worth
-instead the targets one blast takes in the densest known clump of enemy ground
-units; the seat then saves for a splash bomber the more, within a cap, the more
-targets its blast takes than the cheaper strike aircraft, and pulls toward the
-tech building such a bomber requires. Scouts, carriers, Scuttlers and Sappers
-are bought only as the sections above describe. A role it needs but cannot train
-at all adds to the investment score of the cheapest building that would let it,
-and a role it can train adds to a producer it lacks whose unit would suit it
-better, as much as saving for that unit is worth.
+most wanted role goes first to the ready producer whose unit for it, within the
+scrap left, suits it best, the nearest on a tie, then the next. A role waits
+instead when the units ready producers can afford for it suit it less than three
+quarters as well as the best unit any of the seat's producers trains for it,
+busy or not and whatever it costs: the scrap waits for that producer, and the
+income left unspent calls for another. Ready producers left with nothing wanted
+train, while ground units can reach an enemy, for whichever of line and siege
+they serve is furthest below its share, line alone when the army goes only by
+lift, unless another producer serves a wanted role: the scrap then waits for
+that producer. While the seat saves for a unit, the producers that train it wait
+for it and no other producer trains a cheaper unit of its role. Each chooses the
+unit it can afford now by coarse suitability: reach against the enemy's usual
+reach, what its role is for at the price (firepower for siege and anti-heavy,
+durability for the rest), covering both enemy domains, splash against clustered
+enemies, anti-air that flies in proportion to the known enemy air that fires
+only at the ground, affordability at the seat's income, variety (a kind that
+already makes up most of its role counts for less, so every kind of a role gets
+its turn), and personality. While ground reaches no enemy, a strike aircraft's
+splash is worth instead the targets one blast takes in the densest known clump
+of enemy ground units; the seat then saves for a splash bomber the more, within
+a cap, the more targets its blast takes than the cheaper strike aircraft, and
+pulls toward the tech building such a bomber requires. Scouts, carriers,
+Scuttlers and Sappers are bought only as the sections above describe. A role it
+needs but cannot train at all adds to the investment score of the cheapest
+building that would let it, and a role it can train adds to a producer it lacks
+whose unit would suit it better, as much as saving for that unit is worth.
 
 ## Investments and saving
 
@@ -634,7 +638,11 @@ when it costs more than the scrap on hand and the role has a cheaper unit
 production would buy instead, worth more the more of two of it the role lacks,
 and Spires, their rounds and Lattices (see Warheads and Static defense).
 Saturated harvesting, time, income, home depletion, army needs, a needed lift
-and personality set the scores.
+and personality set the scores. Difficulty shrinks what growth scores past the
+bar for adoption, so lower rungs expand, claim frames, add Reclaimers, upgrade
+them and the Extractors, and add producers in the same order but later against
+everything else they want: Scrapheap keeps half of that excess, Standard seven
+tenths, Veteran 85% and Prime all of it.
 
 An expansion site's value weighs the scrap it still holds and its free frames,
 up with greed, against its ground distance from home, how much nearer a hostile

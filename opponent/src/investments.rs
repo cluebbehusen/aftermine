@@ -38,6 +38,15 @@ pub(crate) fn weighed(trait_value: u8, income: u32) -> u32 {
     (150 + 3 * u32::from(trait_value)) * income.min(360) / 360
 }
 
+/// `score` for an investment that grows the economy at a seat that builds
+/// `economy` per mille of it: what it scores past adoption shrinks in
+/// proportion, so every rung grows in the same ways and the same order, only
+/// later against what else it wants.
+fn grown(score: u32, economy: u64) -> u32 {
+    let past = u64::from(score.saturating_sub(ADOPT)) * economy / 1_000;
+    score.min(ADOPT) + u32::try_from(past).unwrap_or(u32::MAX)
+}
+
 /// A concrete investment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,6 +135,8 @@ pub(crate) struct Situation<'a> {
     pub(crate) waiting: Option<BuildingKind>,
     /// Per mille of the known defense an attack must bring.
     pub(crate) margin: u64,
+    /// Per mille of its full economy the seat builds.
+    pub(crate) economy: u64,
     /// The known anti-air around the next lift's target, at its value.
     pub(crate) lift_flak: u64,
 }
@@ -171,7 +182,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         if another(situation, kind) {
             list.push((
                 Investment::Capacity(kind),
-                400 + 2 * u32::from(traits.greed),
+                grown(400 + 2 * u32::from(traits.greed), situation.economy),
             ));
         }
     }
@@ -211,7 +222,11 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let stranded = !growth
         .iter()
         .any(|(investment, _)| matches!(investment, Investment::Expansion(_)));
-    list.extend(growth);
+    list.extend(
+        growth
+            .into_iter()
+            .map(|(investment, score)| (investment, grown(score, situation.economy))),
+    );
     // Once harvesting is saturated and home scrap has begun to run down, more
     // workers add no income: salvage and deeper extraction grow it then.
     if saturated && situation.depletion > 0 {
@@ -225,7 +240,10 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         let cut = 100 + 300 * (1_000 - situation.depletion.min(1_000)) / 1_000;
         list.push((
             Investment::Reclaimer,
-            base * 1_000 / (1_000_u32.saturating_add(cut.saturating_mul(reclaimers))),
+            grown(
+                base * 1_000 / (1_000_u32.saturating_add(cut.saturating_mul(reclaimers))),
+                situation.economy,
+            ),
         ));
         let unupgraded = observation.my_buildings.iter().find(|building| {
             building.kind == BuildingKind::Reclaimer && building.built && building.tier == 0
@@ -235,7 +253,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
                 building: reclaimer.id,
                 tier: 1,
             };
-            list.push((refinery, base * 7 / 5));
+            list.push((refinery, grown(base * 7 / 5, situation.economy)));
         }
         if built(observation, BuildingKind::Crucible) {
             // The supported Extractor nearest home in the seat's frame, so
@@ -259,7 +277,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
                     building: extractor.id,
                     tier: 1,
                 };
-                list.push((deep_bore, base * 2));
+                list.push((deep_bore, grown(base * 2, situation.economy)));
             }
         }
     }

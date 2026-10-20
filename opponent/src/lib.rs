@@ -175,5 +175,18 @@ pub(crate) fn decision_interval(difficulty: BotDifficulty) -> u64 {
     }
 }
 
+/// Per mille of its full economy a seat builds: Scrapheap half of it,
+/// Standard seven tenths, Veteran most and Prime all of it. It thins the crew
+/// on every scrap node and lowers how much each kind of growth is wanted,
+/// never whether it is. A difficulty limit on macro competence.
+pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap => 500,
+        BotDifficulty::Standard => 700,
+        BotDifficulty::Veteran => 850,
+        BotDifficulty::Prime => 1_000,
+    }
+}
+
 #[cfg(test)]
 mod tests;

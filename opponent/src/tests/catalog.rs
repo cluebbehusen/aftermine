@@ -10,8 +10,9 @@ use crate::profile::PersonalityTraits;
 use oxide_sim::observation::ObservationData;
 
 /// What West would save for on `scenario` at `tick` once it scored best,
-/// with its economy up, no army to speak of, and every trait high: every
-/// investment that scores enough to be adopted.
+/// with its economy up, no army to speak of, every trait high and the
+/// lowest rung's economy: every investment that scores enough to be adopted,
+/// which every rung then buys somewhere.
 fn offered(scenario: &Scenario, state: &State, tick: u64) -> Vec<Investment> {
     offered_lifting(scenario, state, tick, None)
 }
@@ -59,6 +60,7 @@ fn offered_lifting(
         units: Vec::new(),
         waiting: None,
         margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
+        economy: crate::economy(oxide_sim::scenario::BotDifficulty::Scrapheap),
         lift_flak: lift.unwrap_or(0),
     };
     candidates(&situation)

@@ -52,12 +52,12 @@ selects actions in precedence order:
 3. free wounded units to a calm Repair Bay with room, and wounded kiln machines
    to safe known wreck, where they sit out missions and welding while they heal;
 4. workers, to keep harvesting saturated: every known node or wreck whose trip
-   repays a Harvester within a stance and greed horizon, filled as stance and
-   greed choose, with workers left without a place salvaging other known wreck;
-   until the army reaches the stance minimum, workers that would cost more than
-   the army wait for army production, and a seat that exposed puts up a Turret
-   before any tech; a worker the simulation sent welding on its own stays free
-   for these orders and leaves known fire like an idle one;
+   repays a Harvester within a stance and greed horizon, filled as stance, greed
+   and difficulty choose, with workers left without a place salvaging other
+   known wreck; until the army reaches the stance minimum, workers that would
+   cost more than the army wait for army production, and a seat that exposed
+   puts up a Turret before any tech; a worker the simulation sent welding on its
+   own stays free for these orders and leaves known fire like an idle one;
 5. missions, advancing their phases and recruiting as needed;
 6. production toward composition needs, from scrap not protected for saving.
 
@@ -252,12 +252,14 @@ kind.
   behind while an enemy could reach home; defense takes every unit.
 - **Difficulty** sets cognitive and execution limits: how often a seat decides,
   which is its reaction time; how many unit orders one decision may give, which
-  is its attention; and how much strength an attack must bring over the known
-  defense. The lowest rung also misjudges the enemy's strength by a
-  deterministic draw from its seed. Memory fades at the same rate on every rung.
-  Difficulty also sets how well a seat carries out its repertoire: lower rungs
-  attack piecemeal, pick targets worse, focus fire on the nearest enemy or by a
-  rough read of its wounds, leave reinforcements at home, end fights on time
-  while winning, withdraw at even odds, and lift without a fresh look or without
-  counting bomber cover. Every rung keeps every capability. Lower rungs make
-  understandable mistakes, and higher rungs beat lower ones.
+  is its attention; how much strength an attack must bring over the known
+  defense; and how fully it builds its economy: lower rungs staff their scrap
+  nodes more thinly and want each kind of growth less, though never so little
+  that they stop growing. The lowest rung also misjudges the enemy's strength by
+  a deterministic draw from its seed. Memory fades at the same rate on every
+  rung. Difficulty also sets how well a seat carries out its repertoire: lower
+  rungs attack piecemeal, pick targets worse, focus fire on the nearest enemy or
+  by a rough read of its wounds, leave reinforcements at home, end fights on
+  time while winning, withdraw at even odds, and lift without a fresh look or
+  without counting bomber cover. Every rung keeps every capability. Lower rungs
+  make understandable mistakes, and higher rungs beat lower ones.

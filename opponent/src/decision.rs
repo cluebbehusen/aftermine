@@ -20,6 +20,7 @@ use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingId, BuildingKind, Command, PlayerCommand, PlayerId, UnitId, UnitKind};
+use std::cmp::Reverse;
 
 /// What one decision emits.
 #[derive(Default)]
@@ -454,6 +455,7 @@ pub(crate) fn decide(
         units,
         waiting,
         margin: crate::missions::margin(profile.difficulty),
+        economy: crate::economy(profile.difficulty),
         lift_flak: persistent.missions.lift_flak(
             observation,
             map,
@@ -1202,12 +1204,25 @@ fn producers(observation: &ObservationData, frame: HomeFrame, interval: u64) -> 
     producers
 }
 
+/// Per mille of how well the best unit for a role fills it, whatever its
+/// producer is doing and whatever it costs, that a ready producer's unit must
+/// reach for the role to take it rather than wait: a scoring shape under
+/// which a unit that fills the role a third better is worth waiting for and a
+/// slightly better one is not.
+const WAIT_FOR_BETTER: u64 = 750;
+
 /// Gives the most wanted role first claim on ready producers, from
-/// unprotected scrap: in turn, the nearest ready producer that can afford a
-/// unit for it queues the best one, and a role no ready producer can afford
-/// gives way to the next. While the seat saves for `saving`, a unit, the
-/// producers that train it wait for it and no other producer trains a
-/// cheaper unit of its role.
+/// unprotected scrap: in turn, of the ready producers that can afford a unit
+/// for it, the one whose best unit fills the role best queues it, the nearest
+/// on a tie. A role gives way to the next when no ready producer can afford a
+/// unit for it, or when the units they can afford fall short of
+/// [`WAIT_FOR_BETTER`] of the best one any producer trains: the role waits
+/// for that producer and the scrap, and the income it leaves unspent is what
+/// adds another producer. Otherwise every expansion Foundry fills the line
+/// with Sentinels while the Fabricators are busy, and that spending hides
+/// that the seat lacks a Fabricator. While the seat saves for `saving`, a
+/// unit, the producers that train it wait for it and no other producer trains
+/// a cheaper unit of its role.
 fn produce(
     observation: &ObservationData,
     producers: &[Producer<'_>],
@@ -1217,17 +1232,22 @@ fn produce(
 ) {
     let mut idle = idle(observation, producers, ledger, saving);
     while let Some((index, kind)) = needs.wanted().into_iter().find_map(|role| {
-        idle.iter().enumerate().find_map(|(index, producer)| {
-            needs
-                .unit(
-                    observation,
-                    producer.building.kind,
-                    role,
-                    ledger.spendable(),
-                )
-                .filter(|kind| !instead(saving, *kind))
-                .map(|kind| (index, kind))
-        })
+        let budget = ledger.spendable();
+        let bar = producers
+            .iter()
+            .filter_map(|producer| needs.unit(observation, producer.building.kind, role, u32::MAX))
+            .map(|kind| needs.suitability(kind, role))
+            .max()
+            .map_or(0, |best| best * WAIT_FOR_BETTER / 1_000);
+        idle.iter()
+            .enumerate()
+            .filter_map(|(index, producer)| {
+                needs
+                    .unit(observation, producer.building.kind, role, budget)
+                    .filter(|kind| !instead(saving, *kind) && needs.suitability(*kind, role) >= bar)
+                    .map(|kind| (index, kind))
+            })
+            .max_by_key(|(index, kind)| (needs.rank(*kind, role), Reverse(*index)))
     }) {
         let producer = idle.remove(index);
         if ledger.train(producer.building.id, kind) {

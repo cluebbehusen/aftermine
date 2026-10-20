@@ -607,6 +607,12 @@ impl Needs {
             .max_by_key(|role| (self.need[*role as usize], Reverse(*role as usize)))
     }
 
+    /// How well `kind` fills `role`, the cheaper first between equals: the
+    /// order every choice between units for a role follows.
+    pub(crate) fn rank(&self, kind: UnitKind, role: Role) -> (u64, Reverse<u32>) {
+        (self.suitability(kind, role), Reverse(kind.stats().cost))
+    }
+
     /// The best unit `producer` can train now for `role` within `budget`. A
     /// better unit it cannot afford yet gives way to the best one it can,
     /// since other producers spend the scrap meanwhile.
@@ -619,7 +625,7 @@ impl Needs {
     ) -> Option<UnitKind> {
         producible(observation, producer)
             .filter(|kind| self::role(*kind) == Some(role) && kind.stats().cost <= budget)
-            .max_by_key(|kind| (self.suitability(*kind, role), Reverse(kind.stats().cost)))
+            .max_by_key(|kind| self.rank(*kind, role))
     }
 
     /// For each wanted role, the unit any built producer could train that
@@ -654,7 +660,7 @@ impl Needs {
             let Some(best) = in_role
                 .iter()
                 .copied()
-                .max_by_key(|kind| (self.suitability(*kind, role), Reverse(kind.stats().cost)))
+                .max_by_key(|kind| self.rank(*kind, role))
             else {
                 continue;
             };
@@ -697,7 +703,7 @@ impl Needs {
         observation: &ObservationData,
         role: Role,
     ) -> Option<(BuildingKind, u32)> {
-        let rank = |kind: UnitKind| (self.suitability(kind, role), Reverse(kind.stats().cost));
+        let rank = |kind: UnitKind| self.rank(kind, role);
         let built = |kind: BuildingKind| {
             observation
                 .my_buildings
@@ -745,7 +751,7 @@ impl Needs {
         observation: &ObservationData,
         role: Role,
     ) -> Option<(BuildingKind, u32)> {
-        let rank = |kind: UnitKind| (self.suitability(kind, role), Reverse(kind.stats().cost));
+        let rank = |kind: UnitKind| self.rank(kind, role);
         let now = BuildingKind::ALL
             .into_iter()
             .filter(|building| {
@@ -809,7 +815,7 @@ impl Needs {
     /// that flies against enemy air that fires only at the ground,
     /// affordability at the seat's income, variety within the role, and
     /// personality.
-    fn suitability(&self, kind: UnitKind, role: Role) -> u64 {
+    pub(crate) fn suitability(&self, kind: UnitKind, role: Role) -> u64 {
         let stats = kind.stats();
         let reach = match (reach(kind), self.enemy.reach) {
             (Some(own), Some(enemy)) if own > enemy => 1_250,
