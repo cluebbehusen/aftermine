@@ -273,9 +273,9 @@
  ],
  "meta": {
   "hook": "A single crossing spans the central pit, its four arms meeting in a wide middle with frames and rich scrap.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "cold-circuitry",
   "symmetry": "metric"
  }

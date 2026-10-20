@@ -179,9 +179,9 @@
  ],
  "meta": {
   "hook": "The ground between two long pit seams has sunk a level and holds most of the frames and rich scrap, reached by four narrow ramps.",
-  "pace": "vast",
+  "size": "large",
   "mode": "1v1",
-  "richness": "rich",
+  "wealth": "standard",
   "symmetry": "",
   "theme": "slag"
  }

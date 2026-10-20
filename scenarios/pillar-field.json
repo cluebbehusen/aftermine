@@ -267,9 +267,9 @@
  ],
  "meta": {
   "hook": "Each team's three bases are joined by short necks of ground, and only aircraft reach the small plateaus of frames between the teams.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "basalt",
   "symmetry": "metric"
  }

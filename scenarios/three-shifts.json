@@ -207,9 +207,9 @@
  ],
  "meta": {
   "hook": "Three lanes, one per seat: a path between broken pits in the north, open ground in the middle and an alley between peaks in the south.",
-  "pace": "standard",
+  "size": "small",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "lean",
   "symmetry": "metric",
   "theme": "quarry-dust"
  }

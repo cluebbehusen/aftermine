@@ -71,11 +71,10 @@ pub struct ScenarioMeta {
     /// One-sentence strategic hook.
     #[serde(default)]
     pub hook: String,
-    /// Pace label: "quick", "standard", "large", or "vast": a claim about
-    /// map scale, checked against map-audit's route bands. It is not a
-    /// clock reading.
-    #[serde(default)]
-    pub pace: String,
+    /// Size badge: how far the nearest rival Foundry starts, which the map
+    /// gates check against the map audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<MapSize>,
     /// Optional measured duration band, e.g. "5-8 min". This is a
     /// presentation claim rather than a gate; leave it empty until the
     /// current opponent and human play support it.
@@ -84,9 +83,10 @@ pub struct ScenarioMeta {
     /// Mode support, e.g. "1v1" or "2v2".
     #[serde(default)]
     pub mode: String,
-    /// Resource richness in plain words ("lean", "standard", "rich").
-    #[serde(default)]
-    pub richness: String,
+    /// Wealth badge: scrap and Extractor frames per player, which the map
+    /// gates check against the map audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wealth: Option<MapWealth>,
     /// Fairness class. Empty (the default) claims exact 180-degree
     /// paired-seat mirroring, which the map gates verify tile by tile.
     /// "metric" claims measured fairness instead — equal room, route,
@@ -97,6 +97,56 @@ pub struct ScenarioMeta {
     /// Tileset/theme key for grading and previews.
     #[serde(default)]
     pub theme: String,
+}
+
+/// How far apart a map's rival Foundries start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapSize {
+    /// Rivals start close, so the first fights come early.
+    Small,
+    /// Rivals start a middling walk apart.
+    Medium,
+    /// Rivals start a long walk apart.
+    Large,
+    /// Rivals start furthest apart.
+    Huge,
+}
+
+impl MapSize {
+    /// The badge's word.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::Huge => "huge",
+        }
+    }
+}
+
+/// How much a map offers each player, judged against maps for the same
+/// number of players.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapWealth {
+    /// Less than most maps of its player count.
+    Lean,
+    /// About as much as most maps of its player count.
+    Standard,
+    /// More than most maps of its player count.
+    Rich,
+}
+
+impl MapWealth {
+    /// The badge's word.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Lean => "lean",
+            Self::Standard => "standard",
+            Self::Rich => "rich",
+        }
+    }
 }
 
 /// One player's starting conditions.

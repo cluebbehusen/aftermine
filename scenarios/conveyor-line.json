@@ -107,9 +107,9 @@
  ],
  "meta": {
   "hook": "A line of peaks with three gaps splits the field into a north and a south lane, with a base at each end.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "rusted-yard"
  }
 }

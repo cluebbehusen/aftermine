@@ -10,6 +10,7 @@ use crate::numeric::Fit;
 use macroquad::prelude::*;
 use oxide_protocol::{MouseButton, RawEvent};
 use oxide_sim::Scenario;
+use oxide_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -1357,7 +1358,7 @@ pub struct ScenarioEntry {
     /// free-for-all has one per seat.
     pub teams: usize,
     /// One-line browser blurb from the authored metadata, when present:
-    /// hook plus pace/mode/richness badges.
+    /// hook plus size/mode/wealth badges.
     pub blurb: Option<String>,
     /// File path; `None` means the embedded skirmish.
     pub path: Option<PathBuf>,
@@ -1380,23 +1381,7 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
         paths.sort();
         for path in paths {
             if let Ok(scenario) = Scenario::load(&path) {
-                let blurb = scenario.meta.as_ref().map(|m| {
-                    // The duration band shares one badge with the pace
-                    // label it qualifies.
-                    let pace = match (m.pace.is_empty(), m.duration.is_empty()) {
-                        (false, false) => format!("{} | {}", m.pace, m.duration),
-                        (false, true) => m.pace.clone(),
-                        (true, _) => m.duration.clone(),
-                    };
-                    // Only badges that exist: a missing field must
-                    // not render as a dangling separator.
-                    let badges: Vec<&str> = [&pace, &m.mode, &m.richness]
-                        .into_iter()
-                        .filter(|s| !s.is_empty())
-                        .map(String::as_str)
-                        .collect();
-                    format!("{}  [{}]", m.hook, badges.join(" - "))
-                });
+                let blurb = scenario.meta.as_ref().map(browser_blurb);
                 let theme = scenario
                     .meta
                     .as_ref()
@@ -1440,6 +1425,29 @@ pub(crate) fn match_format(seats: usize, teams: usize) -> String {
         (n, 2) if n % 2 == 0 => format!("{}v{}", n / 2, n / 2),
         (n, _) => format!("{n} seats"),
     }
+}
+
+/// The browser's line for a map: its hook, then its size, mode and wealth
+/// badges.
+pub(crate) fn browser_blurb(meta: &ScenarioMeta) -> String {
+    // The duration band shares one badge with the size it qualifies.
+    let size = meta.size.map_or("", MapSize::label);
+    let size = match (size.is_empty(), meta.duration.is_empty()) {
+        (false, false) => format!("{size} | {}", meta.duration),
+        (false, true) => size.to_owned(),
+        (true, _) => meta.duration.clone(),
+    };
+    // Only badges that exist: a missing field must not render as a
+    // dangling separator.
+    let badges: Vec<&str> = [
+        size.as_str(),
+        meta.mode.as_str(),
+        meta.wealth.map_or("", MapWealth::label),
+    ]
+    .into_iter()
+    .filter(|badge| !badge.is_empty())
+    .collect();
+    format!("{}  [{}]", meta.hook, badges.join(" - "))
 }
 
 /// Teams formed by seats with these team indices: seats sharing an index

@@ -181,9 +181,9 @@
  ],
  "meta": {
   "hook": "A wide pit splits the teams, and its three narrow crossings each pass a small patch of rich scrap in the middle.",
-  "pace": "large",
+  "size": "medium",
   "mode": "2v2",
-  "richness": "rich",
+  "wealth": "standard",
   "symmetry": "",
   "theme": "cold-circuitry"
  }

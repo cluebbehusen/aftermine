@@ -76,11 +76,15 @@ The map gates add authoring rules the parser leaves open:
 - Foundries, Extractor frames, and starting structures stand off ramps on a
   single level, and starting units stand off ramps.
 
-Fill maintained browser metadata: `hook`, `pace`, `mode`, `richness`, and
-`theme`. Accepted pace classes are `quick`, `standard`, `large`, `vast`, and
-`grand`; richness is `lean`, `standard`, or `rich`. Treat `duration` as an
-optional measured claim, not an estimate from dimensions. Add it only after the
-current opponent and real play have produced evidence worth publishing.
+Fill maintained browser metadata: `hook`, `size`, `mode`, `wealth`, and `theme`.
+Size and wealth are badges the map audit measures, so copy them from its
+`badges:` line rather than judging them by eye. Size (`small`, `medium`,
+`large`, or `huge`) reads the nearest enemy route. Wealth (`lean`, `standard`,
+or `rich`) reads scrap piles plus Extractor frames per player, compared with
+maps for as many players. The map gates reject a badge the audit disagrees with.
+Treat `duration` as an optional measured claim, not an estimate from dimensions.
+Add it only after the current opponent and real play have produced evidence
+worth publishing.
 
 Name the map like a place and write its `hook` as one plain sentence: what the
 map shows and the choice it offers. Name only what a player sees there: pits,
@@ -160,14 +164,13 @@ Check these questions while authoring:
   `EXTRACTOR_SUPPORT_RADIUS`? Overlapping support regions may expose more than
   one frame to a seat, but two seats cannot rely on the same opening claim.
 - On most maps, does each seat also have a nearby natural frame outside its
-  starting Foundry's support? Quick maps may instead make that second claim a
-  shared contested objective.
+  starting Foundry's support? Maps whose rivals start in close quarters may
+  instead make that second claim a shared contested objective.
 - Do maps with large physical footprints carry additional Extractor value beyond
-  the starting pockets, even when their pace label is only `standard`? This
-  always applies to `large`, `vast`, and `grand` maps. Use otherwise empty
-  regions deliberately: two or three frames that one well-placed forward Foundry
-  can support make a strong expansion objective and are preferable to decorative
-  dead acreage.
+  the starting pockets, even when rivals start close? This always applies once
+  the nearest enemy route is long. Use otherwise empty regions deliberately: two
+  or three frames that one well-placed forward Foundry can support make a strong
+  expansion objective and are preferable to decorative dead acreage.
 - Does every forward frame leave fair construction room for a new Foundry inside
   the support radius rather than prescribing one fragile anchor? Ground naturals
   need a builder route; transport-expansion islands need safe landing,
@@ -195,10 +198,10 @@ cargo run -q -p oxide-driver -- map-audit scenarios/<map>.json --json
 ```
 
 Inspect reachable room, nearest scrap, hostile ground and air routes, artillery
-pressure, narrow passages, frame clusters, spawn spacing, pairings, and
-Extractor access. The maintained bands and tolerances in
-`driver/tests/map_gates.rs` are authoritative; do not duplicate their current
-numbers in this skill.
+pressure, narrow passages, frame clusters, spawn spacing, pairings, Extractor
+access, and the size and wealth badges. The badge lines in `driver/src/audit.rs`
+and the maintained bands and tolerances in `driver/tests/map_gates.rs` are
+authoritative; do not duplicate their current numbers in this skill.
 
 Hold drafts to the same gates before promotion with
 `OXIDE_MAP_GATES_DIR=map-drafts cargo test -p oxide-driver --test map_gates --locked`.
@@ -214,7 +217,7 @@ cargo test -p oxide-driver --test headless --locked
 cargo run -q -p oxide-driver -- run scenarios/<map>.json --ticks 12000 --all-bots --map
 ```
 
-Use the longer window already established by the tests for vast and grand maps.
+Use the longer window the integrity tests use for maps that are not small.
 Inspect the replay summary and watch representative games. A connected,
 symmetric, decisive map can still be dull or confusing.
 

@@ -273,9 +273,9 @@
  ],
  "meta": {
   "hook": "Three pit cuts run the length of the field, the middle one offset, and seven gaps through them set where each team crosses.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "verdigris",
   "symmetry": "metric"
  }

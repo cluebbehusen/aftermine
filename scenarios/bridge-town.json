@@ -195,9 +195,9 @@
  ],
  "meta": {
   "hook": "A single bridge crosses the pit between the teams and opens onto a wide plateau of frames and rich scrap at its middle.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "2v2",
-  "richness": "rich",
+  "wealth": "rich",
   "theme": "rusted-yard"
  }
 }

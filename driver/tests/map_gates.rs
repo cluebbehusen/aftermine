@@ -1,18 +1,38 @@
-//! Map-audit gates: every shipped scenario must keep its pace label, spawn
-//! fairness, artillery pressure, passage widths, contestable frame
-//! clusters, and mirrored authoring, as measured by `driver map-audit`.
+//! Map-audit gates: every shipped scenario must keep its size and wealth
+//! badges, spawn fairness, artillery pressure, passage widths, contestable
+//! frame clusters, and mirrored authoring, as measured by `driver map-audit`.
 //!
 //! Set `OXIDE_MAP_GATES_DIR` to a directory of drafts, relative to the
 //! repository root, to hold them to the same gates before promotion.
 
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_driver::audit::audit;
+use oxide_driver::audit::{MapAudit, RouteAudit, audit};
 use oxide_sim::map::Map;
 use oxide_sim::scenario::BotConfig;
 use oxide_sim::{BuildingKind, PlayerId, Scenario, State};
 use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
+
+/// Nearest enemy routes, in effective steps, that set what a map owes
+/// beyond its badges. Close quarters may share the second frame claim and
+/// accept closer artillery; from the remote-value route on, a map needs
+/// frames beyond every starting pocket, and from the longer two it needs a
+/// remote cluster of two or three frames to expand into.
+const CLOSE_QUARTERS: usize = 28;
+const REMOTE_VALUE_FROM: usize = 53;
+const REMOTE_PAIR_FROM: usize = 91;
+const REMOTE_TRIO_FROM: usize = 151;
+
+/// The shortest route between hostile Foundries by the cheapest mover.
+fn nearest_enemy(report: &MapAudit) -> usize {
+    report
+        .routes
+        .iter()
+        .filter_map(RouteAudit::effective_steps)
+        .min()
+        .expect("a hostile pair routes")
+}
 
 fn shipped() -> Vec<(String, Scenario)> {
     let drafts = std::env::var("OXIDE_MAP_GATES_DIR").ok();
@@ -75,90 +95,44 @@ fn every_map_carries_complete_metadata() {
             .as_ref()
             .unwrap_or_else(|| panic!("{name}: shipped maps carry metadata"));
         assert!(!meta.hook.is_empty(), "{name}: hook missing");
-        assert!(
-            matches!(
-                meta.pace.as_str(),
-                "quick" | "standard" | "large" | "vast" | "grand"
-            ),
-            "{name}: pace '{}' is not a recognized label",
-            meta.pace
-        );
+        assert!(meta.size.is_some(), "{name}: size badge missing");
         assert!(!meta.mode.is_empty(), "{name}: mode missing");
-        assert!(
-            matches!(meta.richness.as_str(), "lean" | "standard" | "rich"),
-            "{name}: richness '{}' is not a recognized label (an empty \
-             one once rendered a dangling badge separator in the map list)",
-            meta.richness
-        );
+        assert!(meta.wealth.is_some(), "{name}: wealth badge missing");
         assert!(!meta.theme.is_empty(), "{name}: theme missing");
     }
 }
 
 #[test]
-fn routes_connect_and_pace_labels_hold() {
-    // Route bands per pace label, in effective steps between Foundry
-    // doorsteps: weighted ground steps, or the air detour on island pairs
-    // that no ground route serves (the sim's connectivity gate already
-    // guarantees some mover connects every pair). Disjoint on purpose:
-    // an overlapping band gates nothing.
+fn routes_connect_and_badges_hold() {
+    // The badges are measured claims. Size reads the nearest enemy route in
+    // effective steps between Foundry doorsteps: weighted ground steps, or
+    // the air detour on island pairs that no ground route serves (the sim's
+    // connectivity gate already guarantees some mover connects every pair).
+    // Wealth reads scrap and frames per player.
     for (name, scenario) in shipped() {
         let report = audit(&scenario).expect("audit builds");
         let meta = scenario.meta.as_ref().unwrap();
-        let pace = meta.pace.clone();
-        let metric = meta.symmetry == "metric";
         assert!(!report.routes.is_empty(), "{name}: no hostile pair routed");
-        let mut min_effective = usize::MAX;
         for route in &report.routes {
             route
                 .air_tiles
                 .unwrap_or_else(|| panic!("{name}: sky sealed"));
-            let effective = route
+            route
                 .effective_steps()
                 .unwrap_or_else(|| panic!("{name}: no mover routes the pair"));
-            // Bands in weighted tile-equivalents (the sim's 14/10
-            // diagonal costs).
-            let band = match pace.as_str() {
-                "quick" => 8..=28,
-                "standard" => 29..=52,
-                "large" => 53..=90,
-                // Vast maps deliberately support long travel and buildup.
-                "vast" => 91..=150,
-                // Grand maps cover island wars and very large FFAs.
-                "grand" => 151..=400,
-                other => panic!("{name}: unknown pace '{other}'"),
-            };
-            min_effective = min_effective.min(effective);
-            if metric {
-                // A free-for-all ring spans near and far neighbors by
-                // construction; the pace label is the first-contact
-                // clock, so the floor binds every pair and the band
-                // binds the nearest one (checked after the loop).
-                assert!(
-                    effective >= *band.start(),
-                    "{name}: pace '{pace}' floor {} broken by a {effective}-step pair",
-                    band.start()
-                );
-            } else {
-                assert!(
-                    band.contains(&effective),
-                    "{name}: pace '{pace}' promises {band:?} effective steps, measured {effective}"
-                );
-            }
         }
-        if metric {
-            let band = match pace.as_str() {
-                "quick" => 8..=28,
-                "standard" => 29..=52,
-                "large" => 53..=90,
-                "vast" => 91..=150,
-                "grand" => 151..=400,
-                other => panic!("{name}: unknown pace '{other}'"),
-            };
-            assert!(
-                band.contains(&min_effective),
-                "{name}: pace '{pace}' promises first contact in {band:?}, measured {min_effective}"
-            );
-        }
+        assert_eq!(
+            meta.size,
+            report.size_badge,
+            "{name}: the size badge disagrees with a nearest enemy route of {} steps",
+            nearest_enemy(&report)
+        );
+        assert_eq!(
+            meta.wealth,
+            Some(report.wealth_badge),
+            "{name}: the wealth badge disagrees with {} per player",
+            report.wealth_per_player
+        );
     }
 }
 
@@ -213,21 +187,24 @@ fn no_frame_cluster_locks_a_match() {
 
 #[test]
 fn artillery_pressure_stays_bounded() {
-    // The caps encode minimum ground routes (about 14.6 steps on quick
-    // maps, 19 elsewhere) for the longest artillery reach; a change to
+    // The caps encode minimum ground routes (about 14.6 steps in close
+    // quarters, 19 elsewhere) for the longest artillery reach; a change to
     // that reach rescales the caps, not the maps. A tier-three siege piece
-    // on a quick map is a late commitment, not an opening threat.
+    // in close quarters is a late commitment, not an opening threat.
     for (name, scenario) in shipped() {
         let report = audit(&scenario).expect("audit builds");
-        let pace = scenario.meta.as_ref().unwrap().pace.clone();
-        let cap = if pace == "quick" { 0.96 } else { 0.74 };
+        let cap = if nearest_enemy(&report) <= CLOSE_QUARTERS {
+            0.96
+        } else {
+            0.74
+        };
         for route in &report.routes {
             let Some(pressure) = route.artillery_pressure else {
                 continue;
             };
             assert!(
                 pressure <= cap,
-                "{name}: artillery pressure {pressure:.2} above the {cap} cap for '{pace}'"
+                "{name}: artillery pressure {pressure:.2} above the {cap} cap"
             );
         }
     }
@@ -376,9 +353,9 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
 
     let support_radius = oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
     for (name, scenario) in shipped() {
-        // Pace describes contact timing, not total acreage. Large FFA basins
-        // can legitimately retain a standard pace while still needing value
-        // beyond their starting pockets.
+        // The nearest enemy route measures contact timing, not total
+        // acreage. Large FFA basins can start rivals close while still
+        // needing value beyond their starting pockets.
         const REMOTE_VALUE_AREA_FLOOR: i32 = 7_000;
         let (map, foundries) = scenario
             .parse_map_and_anchors()
@@ -432,12 +409,7 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
                 frame.y
             );
         }
-        let pace = scenario
-            .meta
-            .as_ref()
-            .expect("shipped metadata exists")
-            .pace
-            .as_str();
+        let nearest = nearest_enemy(&audit(&scenario).expect("audit builds"));
         let mut opening_candidates = Vec::with_capacity(foundries.len());
         let mut seat_distances = Vec::with_capacity(foundries.len());
         for &(seat, foundry) in &foundries {
@@ -488,11 +460,11 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
             .flat_map(|(_, frames)| frames.iter().copied())
             .collect();
         for (seat, distances) in &seat_distances {
-            // Quick maps may make the second claim a shared contested center.
-            // Every longer format gives each seat a nearby natural beyond all
-            // viable opening claims so expansion adds renewable value. A
-            // natural may still be shared by teammates.
-            if pace == "quick" {
+            // Close quarters may make the second claim a shared contested
+            // center. Every longer map gives each seat a nearby natural
+            // beyond all viable opening claims so expansion adds renewable
+            // value. A natural may still be shared by teammates.
+            if nearest <= CLOSE_QUARTERS {
                 continue;
             }
             assert!(
@@ -565,7 +537,7 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
         }
 
         let physically_large = map.width() * map.height() >= REMOTE_VALUE_AREA_FLOOR;
-        if physically_large || matches!(pace, "large" | "vast" | "grand") {
+        if physically_large || nearest >= REMOTE_VALUE_FROM {
             let remote: Vec<_> = frames
                 .iter()
                 .copied()
@@ -578,18 +550,18 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
                 .collect();
             assert!(
                 !remote.is_empty(),
-                "{name}: a {pace} map with footprint {}x{} needs Extractor value beyond every starting pocket",
+                "{name}: a map with footprint {}x{} and rivals {nearest} steps apart needs Extractor value beyond every starting pocket",
                 map.width(),
                 map.height()
             );
 
-            let cluster_floor = match (name.as_str(), pace) {
+            let cluster_floor = match name.as_str() {
                 // Its remote ground is a set of tiny transport-only islands;
                 // preserving legible landing room matters more than packing
                 // overlapping frames onto one component.
-                ("skyhook-anchorage", _) => 1,
-                (_, "grand") => 3,
-                (_, "vast") => 2,
+                "skyhook-anchorage" => 1,
+                _ if nearest >= REMOTE_TRIO_FROM => 3,
+                _ if nearest >= REMOTE_PAIR_FROM => 2,
                 _ => 1,
             };
             let reachability: Vec<_> = foundries
@@ -606,7 +578,7 @@ fn every_map_offers_a_home_extractor_and_expansion_value() {
             );
             assert!(
                 cluster >= cluster_floor,
-                "{name}: a {pace} map with footprint {}x{} needs a reachable remote cluster of at least {cluster_floor} frame(s), found {cluster}",
+                "{name}: a map with footprint {}x{} and rivals {nearest} steps apart needs a reachable remote cluster of at least {cluster_floor} frame(s), found {cluster}",
                 map.width(),
                 map.height()
             );

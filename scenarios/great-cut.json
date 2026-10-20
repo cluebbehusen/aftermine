@@ -335,9 +335,9 @@
  ],
  "meta": {
   "hook": "Four bridges cross the cut, one beside each pair of seats, and a ledge with frames in the middle can only be reached by air.",
-  "pace": "vast",
+  "size": "large",
   "mode": "4v4",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "basalt",
   "symmetry": "metric"
  }

@@ -223,9 +223,9 @@
  ],
  "meta": {
   "hook": "Each base sits in a walled corner with exits onto two wide lanes, which cross at a center junction with frames and the rich scrap.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "rusted-yard",
   "symmetry": "metric"
  }

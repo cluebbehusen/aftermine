@@ -303,9 +303,9 @@
  ],
  "meta": {
   "hook": "Three lanes run between the bases, and the middle one stands a level above the others, reached by four ramps.",
-  "pace": "vast",
+  "size": "large",
   "mode": "3v3",
   "theme": "basalt",
-  "richness": "standard"
+  "wealth": "standard"
  }
 }

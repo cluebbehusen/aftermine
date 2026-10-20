@@ -335,9 +335,9 @@
  ],
  "meta": {
   "hook": "Pairs of frames stand across an open plain, each walled on one side, and half of them are shielded toward each team.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4v4",
-  "richness": "lean",
+  "wealth": "lean",
   "theme": "rusted-yard",
   "symmetry": "metric"
  }

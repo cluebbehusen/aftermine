@@ -337,9 +337,9 @@
  ],
  "meta": {
   "hook": "Six bases surround a basin that steps down twice, with frames on the middle step and rich scrap at the bottom.",
-  "pace": "standard",
+  "size": "small",
   "mode": "6-way FFA",
-  "richness": "rich",
+  "wealth": "rich",
   "theme": "slag",
   "symmetry": "metric"
  }

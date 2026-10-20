@@ -147,9 +147,9 @@
  ],
  "meta": {
   "hook": "A broken wall splits the teams, open at both ends with a gap in the middle, and a contested frame lies to its north and to its south.",
-  "pace": "standard",
+  "size": "small",
   "mode": "2v2",
-  "richness": "standard",
+  "wealth": "lean",
   "theme": "quarry-dust",
   "symmetry": "metric"
  }

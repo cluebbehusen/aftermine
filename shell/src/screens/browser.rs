@@ -1,11 +1,11 @@
 //! The map browser: a thumbnail grid, sectioned by format.
 //!
-//! Cards carry the fog-free preview, the map's name, and its pace
-//! badge; sections ("1v1", "2v2", "4-way FFA", …) are drawn bands, not
-//! rows, so the grouping is visible at a glance and the cursor only ever
-//! rests on a map. Layout is a pure function of (entries, viewport,
-//! scale), which keeps every hit-test headless-testable; drawing reads
-//! the same rects it publishes.
+//! Cards carry the fog-free preview and the map's name; the selected
+//! map's blurb carries its badges. Sections ("1v1", "2v2", "4-way FFA",
+//! …) are drawn bands, not rows, so the grouping is visible at a glance
+//! and the cursor only ever rests on a map. Layout is a pure function of
+//! (entries, viewport, scale), which keeps every hit-test
+//! headless-testable; drawing reads the same rects it publishes.
 
 use crate::menu::{PreviewCache, ScenarioEntry};
 use crate::nav::{Nav, step_grid};

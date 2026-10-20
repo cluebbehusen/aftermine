@@ -107,9 +107,9 @@
  ],
  "meta": {
   "hook": "A peak spine splits the field, with two ground passes and a rock-filled gap that only aircraft can cross.",
-  "pace": "standard",
+  "size": "small",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "lean",
   "theme": "basalt"
  }
 }

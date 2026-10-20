@@ -189,9 +189,9 @@
  ],
  "meta": {
   "hook": "All the rich scrap lies on the pit floor, two levels and two ramps below both bases.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "1v1",
-  "richness": "rich",
+  "wealth": "rich",
   "theme": "quarry-dust"
  }
 }

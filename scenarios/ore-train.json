@@ -201,9 +201,9 @@
  ],
  "meta": {
   "hook": "Pit lines cross the field in an X, so fight through the central junction or slip through a side gap to the frames in the north and south fields.",
-  "pace": "vast",
+  "size": "large",
   "mode": "2v2",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "rusted-yard"
  }
 }

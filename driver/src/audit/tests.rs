@@ -117,3 +117,66 @@ fn pressure_and_routes_are_sane_on_the_shipped_duel() {
     assert!(audit.free_tiles > 0);
     assert!(audit.scrap_total > 0);
 }
+
+#[test]
+fn size_badges_cut_the_nearest_route_at_60_80_and_100_steps() {
+    for (steps, size) in [
+        (0, MapSize::Small),
+        (59, MapSize::Small),
+        (60, MapSize::Medium),
+        (79, MapSize::Medium),
+        (80, MapSize::Large),
+        (99, MapSize::Large),
+        (100, MapSize::Huge),
+        (400, MapSize::Huge),
+    ] {
+        assert_eq!(size_for_route(steps), size, "{steps} steps");
+    }
+}
+
+#[test]
+fn wealth_lines_depend_on_how_many_players_share_the_map() {
+    for (players, lean_below, rich_from) in [
+        (2, 22_000, 27_000),
+        (4, 15_000, 20_000),
+        (8, 12_000, 14_500),
+    ] {
+        assert_eq!(
+            wealth_for(lean_below - 1, players),
+            MapWealth::Lean,
+            "{players} players"
+        );
+        assert_eq!(
+            wealth_for(lean_below, players),
+            MapWealth::Standard,
+            "{players} players"
+        );
+        assert_eq!(
+            wealth_for(rich_from - 1, players),
+            MapWealth::Standard,
+            "{players} players"
+        );
+        assert_eq!(
+            wealth_for(rich_from, players),
+            MapWealth::Rich,
+            "{players} players"
+        );
+    }
+    // The same share reads lean in a duel and rich in a big team game.
+    assert_eq!(wealth_for(14_500, 2), MapWealth::Lean);
+    assert_eq!(wealth_for(14_500, 8), MapWealth::Rich);
+}
+
+#[test]
+fn the_shipped_duel_counts_its_frames_into_its_badges() {
+    let scenario = Scenario::skirmish();
+    let audit = audit(&scenario).unwrap();
+    assert!(audit.extractor_frames > 0, "the shipped duel has frames");
+    let players = scenario.players.len() as u64;
+    assert_eq!(
+        audit.wealth_per_player,
+        (audit.scrap_total + FRAME_WEALTH * audit.extractor_frames as u64) / players
+    );
+    let nearest = audit.routes[0].effective_steps().expect("connected duel");
+    assert_eq!(audit.size_badge, Some(size_for_route(nearest)));
+}

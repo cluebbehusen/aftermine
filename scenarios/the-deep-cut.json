@@ -111,9 +111,9 @@
  ],
  "meta": {
   "hook": "Two interlocking pit arcs cut across the middle, so go round either end or thread the gaps between them to the frames along both rims.",
-  "pace": "large",
+  "size": "medium",
   "mode": "1v1",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "basalt"
  }
 }

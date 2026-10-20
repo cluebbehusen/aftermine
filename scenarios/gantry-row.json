@@ -303,9 +303,9 @@
  ],
  "meta": {
   "hook": "A pit seam splits the teams with three narrow crossings, each with rich scrap at both ends.",
-  "pace": "standard",
+  "size": "small",
   "mode": "4v4",
-  "richness": "standard",
+  "wealth": "lean",
   "symmetry": "metric",
   "theme": "rusted-yard"
  }

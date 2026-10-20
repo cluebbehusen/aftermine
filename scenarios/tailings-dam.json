@@ -117,9 +117,9 @@
  ],
  "meta": {
   "hook": "A narrow direct road runs between two pit rings, so take it, go round by the north or south road, or fly to the plateaus inside the rings.",
-  "pace": "large",
+  "size": "medium",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "verdigris"
  }
 }

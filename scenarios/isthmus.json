@@ -111,9 +111,9 @@
  ],
  "meta": {
   "hook": "A long neck of ground crosses the pits between the bases, and all the rich scrap lies along it.",
-  "pace": "large",
+  "size": "large",
   "mode": "1v1",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "rusted-yard"
  }
 }

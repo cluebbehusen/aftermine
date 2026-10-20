@@ -297,9 +297,9 @@
  ],
  "meta": {
   "hook": "Four corner plateaus reached only by air, a smaller one between each pair of neighbors, and a rich center whose peak blocks every shot across it.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "quarry-dust",
   "symmetry": "metric"
  }

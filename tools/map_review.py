@@ -70,7 +70,7 @@ def review_card(name: str, meta: dict, stats: dict, png: bytes) -> str:
     hook = html.escape(meta.get("hook", ""))
     badges = " · ".join(
         html.escape(str(meta.get(k, "")))
-        for k in ("mode", "pace", "richness", "theme")
+        for k in ("mode", "size", "wealth", "theme")
         if meta.get(k)
     )
     return f"""

@@ -244,9 +244,9 @@
  ],
  "meta": {
   "hook": "Three walled lanes each set a west seat against an east seat, with two gaps in each lane's center wall and more into the next lane.",
-  "pace": "vast",
+  "size": "large",
   "mode": "3v3",
-  "richness": "rich",
+  "wealth": "lean",
   "theme": "slag"
  }
 }
