@@ -252,11 +252,10 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
         ),
         (
             "Match",
-            if crate::paths::bundled() {
-                vec![TogglePause]
-            } else {
-                vec![TogglePause, ToggleOverlay]
-            },
+            [TogglePause, ToggleOverlay]
+                .into_iter()
+                .filter(|action| action.offered())
+                .collect(),
         ),
         (
             "Replay",

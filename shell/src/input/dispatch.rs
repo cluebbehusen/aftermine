@@ -288,12 +288,12 @@ pub(super) fn dispatch_action(
             }
         }
         // The overlay sees through fog, so it is a development tool: a
-        // LAN match refuses it, and a packaged copy never offers it.
+        // LAN match refuses it, and a packaged copy binds no key to it.
         Action::ToggleOverlay => {
             if game.net_role().is_some() {
                 game.presentation
                     .toast("The debug overlay is off in LAN matches");
-            } else if !crate::paths::bundled() {
+            } else {
                 game.presentation.overlay = !game.presentation.overlay;
             }
         }
