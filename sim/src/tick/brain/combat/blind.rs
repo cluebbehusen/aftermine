@@ -36,19 +36,17 @@ pub(super) fn radar_in_range(
     domain: Domain,
     weapon: &WeaponStats,
 ) -> Option<AttackView> {
-    state
+    // `solution` and the ranking never read velocity, so every track is
+    // judged on its still view and only the chosen one is estimated.
+    let (chosen, _) = state
         .vision(player)
         .tracks()
         .iter()
         .filter(|track| track.visible_unit.is_none())
-        .filter_map(|track| {
-            state
-                .attack_view(player, AttackTarget::Contact(track.id))
-                .map(|view| (track.id, view))
-        })
+        .map(|track| (track.id, AttackView::still_blip(track)))
         .filter(|(_, view)| solution(state, from, domain, *view, weapon))
-        .min_by_key(|(id, view)| (from.dist_sq(view.position), *id))
-        .map(|(_, view)| view)
+        .min_by_key(|(id, view)| (from.dist_sq(view.position), *id))?;
+    state.attack_view(player, AttackTarget::Contact(chosen))
 }
 
 fn predicted_aim(

@@ -3016,14 +3016,20 @@ impl State {
                 (unit.hp > 0 && self.hostile(viewer, unit.player) && self.sees_unit(viewer, unit))
                     .then_some(unit.domain())
             }),
-            Target::Building(id) => self.building(id).and_then(|building| {
-                (building.hp > 0
-                    && self.hostile(viewer, building.player)
-                    && building.tiles().any(|tile| self.can_see(viewer, tile))
-                    && self.building_apparent(viewer, building))
-                .then_some(crate::stats::Domain::Ground)
-            }),
+            Target::Building(id) => self
+                .building(id)
+                .filter(|building| self.sees_hostile_building(viewer, building))
+                .map(|_| crate::stats::Domain::Ground),
         }
+    }
+
+    /// Whether a building already in hand is a live hostile target under the
+    /// viewer's current true sight.
+    pub(crate) fn sees_hostile_building(&self, viewer: PlayerId, building: &Building) -> bool {
+        building.hp > 0
+            && self.hostile(viewer, building.player)
+            && building.tiles().any(|tile| self.can_see(viewer, tile))
+            && self.building_apparent(viewer, building)
     }
 
     /// Whether two seats are enemies. Every combat, targeting, and

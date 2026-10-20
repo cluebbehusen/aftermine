@@ -720,3 +720,153 @@ fn a_victim_overhanging_blocked_ground_is_acquired_by_a_contact_weapon() {
         Some(Target::Unit(avalanche))
     );
 }
+
+/// The building scan [`building_victim`] replaced: sight looked up by id
+/// first, then reach, then the line.
+fn scanned_building_victim(
+    state: &State,
+    me: PlayerId,
+    center: Vec2Fx,
+    atk: &WeaponStats,
+    candidates: &[crate::Building],
+) -> Option<(crate::ids::BuildingId, Vec2Fx)> {
+    candidates
+        .iter()
+        .filter(|target| {
+            state.building(target.id).is_some_and(|building| {
+                building.hp > 0
+                    && state.hostile(me, building.player)
+                    && building.tiles().any(|tile| state.can_see(me, tile))
+                    && state.building_apparent(me, building)
+            })
+        })
+        .map(|target| {
+            let aim = target.closest_point_to(center);
+            (center.dist_sq(aim), target.id, aim, target.anchor)
+        })
+        .filter(|(distance, ..)| within_weapon_reach(atk, *distance, Fx::ZERO))
+        .filter(|(_, _, aim, anchor)| {
+            clear_line(
+                state,
+                Fire::of(atk),
+                ShotEnd::new(center, Domain::Ground),
+                ShotEnd::new(*aim, Domain::Ground).on(*anchor),
+                Landing::Checked,
+            )
+        })
+        .min_by_key(|&(distance, target, ..)| (distance, target))
+        .map(|(_, target, aim, _)| (target, aim))
+}
+
+/// Seat 0 watches part of a walled field from scattered eyes and an Array,
+/// among a lattice of hostile, allied and own buildings, hidden charges and
+/// wrecks.
+fn building_field() -> State {
+    use crate::BuildingKind as Kind;
+    let mut rows = vec![".".repeat(40); 32];
+    for row in rows.iter_mut().take(26).skip(6) {
+        row.replace_range(20..21, "#");
+    }
+    let (map, _) = crate::map::Map::parse(&rows).unwrap();
+    let seat = |team: u8| crate::state::Player {
+        name: "p".into(),
+        team,
+        scrap: 0,
+        recovery: crate::state::Recovery::Ready,
+        resigned: false,
+        eliminated_at: None,
+    };
+    let mut state = State::assemble(map, vec![seat(0), seat(1), seat(0)]);
+    state.place_building(PlayerId(0), Kind::Array, TilePos::new(8, 15));
+    let kinds = [
+        Kind::Turret,
+        Kind::ScuttleCharge,
+        Kind::Fabricator,
+        Kind::Barricade,
+        Kind::ScuttleCharge,
+        Kind::Bastion,
+        Kind::Array,
+        Kind::MawCradle,
+    ];
+    let owners = [1, 1, 0, 1, 2, 1];
+    let mut placed = 0;
+    for y in (1..29).step_by(4) {
+        for x in (1..37).step_by(5) {
+            let kind = kinds[placed % kinds.len()];
+            let (w, _) = kind.size();
+            if (x..x + w).contains(&20) {
+                continue;
+            }
+            let owner = PlayerId::from_index(owners[placed % owners.len()]);
+            let id = state.place_building(owner, kind, TilePos::new(x, y));
+            if placed % 9 == 4 {
+                state.building_mut(id).unwrap().hp = 0;
+            }
+            placed += 1;
+        }
+    }
+    for (kind, x, y) in [
+        (UnitKind::Surveyor, 12, 6),
+        (UnitKind::Sentinel, 30, 9),
+        (UnitKind::Sentinel, 14, 25),
+        (UnitKind::Kestrel, 28, 25),
+    ] {
+        state.spawn_unit(PlayerId(0), kind, TilePos::new(x, y).center());
+    }
+    crate::vision::refresh(&mut state);
+    state
+}
+
+#[test]
+fn building_victim_matches_the_sight_first_scan() {
+    let state = building_field();
+    let weapons: Vec<WeaponStats> = crate::BuildingKind::ALL
+        .iter()
+        .flat_map(|kind| kind.tiers().iter())
+        .flat_map(|tier| tier.weapons.iter().copied())
+        .chain(
+            UnitKind::ALL
+                .iter()
+                .flat_map(|kind| kind.stats().weapons.iter().copied()),
+        )
+        .filter(|weapon| weapon.targets.covers(Domain::Ground))
+        .collect();
+    let all = state.buildings();
+    let since = &all[all.len() / 2..];
+    let quarter = Vec2Fx::new(Fx::lit("0.25"), Fx::lit("-0.375"));
+    let (mut picks, mut charges, mut misses, mut hidden) = (0, 0, 0, 0);
+    for y in 0..state.map.height() {
+        for x in 0..state.map.width() {
+            let tile = TilePos::new(x, y).center();
+            for center in [tile, tile + quarter] {
+                for atk in &weapons {
+                    for candidates in [all, since] {
+                        let fast = building_victim(&state, PlayerId(0), center, atk, candidates);
+                        let scanned =
+                            scanned_building_victim(&state, PlayerId(0), center, atk, candidates);
+                        assert_eq!(fast, scanned, "{center:?} {atk:?}");
+                        let Some((id, _)) = fast else {
+                            misses += 1;
+                            continue;
+                        };
+                        picks += 1;
+                        let chosen = state.building(id).unwrap();
+                        let reach = center.dist_sq(chosen.closest_point_to(center));
+                        charges += usize::from(chosen.kind == crate::BuildingKind::ScuttleCharge);
+                        // A nearer hostile building passed over unseen.
+                        hidden += usize::from(candidates.iter().any(|b| {
+                            b.hp > 0
+                                && state.hostile(PlayerId(0), b.player)
+                                && !state.sees_hostile_building(PlayerId(0), b)
+                                && center.dist_sq(b.closest_point_to(center)) < reach
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        picks > 0 && charges > 0 && misses > 0 && hidden > 0,
+        "{picks} picks, {charges} charges, {misses} misses, {hidden} past hidden"
+    );
+}

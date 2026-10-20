@@ -220,3 +220,149 @@ fn only_a_bevel_across_a_corner_is_no_face() {
     // The Flak's legs are a run of short faces, each still a face.
     assert_eq!(faces(BuildingKind::FlakTurret, FLAK_TURRET), (17, 17));
 }
+
+/// `low` plus `step` times `(dx, dy)`, pushed a random part of a step
+/// further along each axis so queries land between grid lines.
+fn jittered(rng: &mut chassis::rng::Pcg32, low: Vec2Fx, step: Fx, dx: i32, dy: i32) -> Vec2Fx {
+    let mut jitter = || Fx::from_bits(i64::from(rng.next_u32())) * step;
+    low + Vec2Fx::new(
+        Fx::from_num(dx) * step + jitter(),
+        Fx::from_num(dy) * step + jitter(),
+    )
+}
+
+/// [`State::in_building_work_reach`] rejects a body by the footprint's
+/// closest point before consulting the surface, which is exact only while
+/// every point the surface answers lies on the footprint.
+#[test]
+fn every_closest_surface_point_lies_on_the_footprint() {
+    let mut rng = chassis::rng::Pcg32::new(43, 9);
+    let anchor = TilePos::new(10, 20);
+    let low = Vec2Fx::new(Fx::from_num(anchor.x), Fx::from_num(anchor.y));
+    let eighth = Fx::lit("0.125");
+    for (kind, outline) in every_outline() {
+        let size = kind.size();
+        let surface = Surface {
+            outline,
+            anchor,
+            size,
+        };
+        let high = low + Vec2Fx::new(Fx::from_num(size.0), Fx::from_num(size.1));
+        for dy in -24..size.1 * 8 + 24 {
+            for dx in -24..size.0 * 8 + 24 {
+                let from = jittered(&mut rng, low, eighth, dx, dy);
+                let point = surface.closest(from);
+                assert!(
+                    (low.x..=high.x).contains(&point.x) && (low.y..=high.y).contains(&point.y),
+                    "{kind:?} {from:?} meets {point:?} off its footprint"
+                );
+                let footprint =
+                    Vec2Fx::new(from.x.clamp(low.x, high.x), from.y.clamp(low.y, high.y));
+                assert!(
+                    from.dist_sq(footprint) <= from.dist_sq(point),
+                    "{kind:?} {from:?}"
+                );
+            }
+        }
+    }
+}
+
+fn work_reach(unit: &crate::Unit) -> Fx {
+    unit.kind.stats().radius + crate::stats::WORK_FOOTPRINT_GAP + crate::stats::WORK_REACH
+        - crate::stats::WORK_APPROACH_GAP
+        + Fx::lit("0.04")
+}
+
+/// The reach test before its footprint reject: the surface alone.
+fn surface_work_reach(state: &State, unit: &crate::Unit, building: crate::BuildingId) -> bool {
+    let Some(b) = state.building(building) else {
+        return false;
+    };
+    let reach = work_reach(unit);
+    let surface = state.contact_surface(b);
+    unit.pos.dist_sq(surface.closest(unit.pos)) <= reach * reach
+        && surface.clear(unit.pos, unit.pos, unit.kind.stats().radius)
+        && state
+            .crew_pads_for(unit, b)
+            .is_none_or(|pads| pads.contains(&unit.tile()))
+}
+
+#[test]
+fn work_reach_matches_the_surface_alone() {
+    use crate::state::BuildingPhase;
+    let (map, _) = crate::map::Map::parse(&vec![".".repeat(24); 24]).unwrap();
+    let seat = crate::state::Player {
+        name: "p".into(),
+        team: 0,
+        scrap: 0,
+        recovery: crate::state::Recovery::Ready,
+        resigned: false,
+        eliminated_at: None,
+    };
+    let mut state = State::assemble(map, vec![seat]);
+    let anchor = TilePos::new(10, 10);
+    let low = Vec2Fx::new(Fx::from_num(anchor.x), Fx::from_num(anchor.y));
+    let site = state.place_building(crate::PlayerId(0), BuildingKind::Foundry, anchor);
+    let mut hulls: Vec<crate::stats::UnitKind> = crate::stats::UnitKind::ALL.to_vec();
+    hulls.sort_by_key(|kind| kind.stats().radius);
+    hulls.dedup_by_key(|kind| kind.stats().radius);
+    let workers: Vec<_> = hulls
+        .iter()
+        .map(|&kind| state.spawn_unit(crate::PlayerId(0), kind, anchor.center()))
+        .collect();
+    let mut rng = chassis::rng::Pcg32::new(47, 3);
+    let quarter = Fx::lit("0.25");
+    let (mut reached, mut missed, mut skipped) = (0, 0, 0);
+    for kind in BuildingKind::ALL {
+        for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
+            let b = state.building_mut(site).unwrap();
+            (b.kind, b.tier) = (kind, tier);
+            let total = b.stats().construction.map_or(1, |c| c.build_ticks);
+            let stages = (0..CONSTRUCTION_STAGES)
+                .map(|s| u32::from(s) * total / u32::from(CONSTRUCTION_STAGES));
+            let phases: Vec<BuildingPhase> = std::iter::once(BuildingPhase::Built { training: 0 })
+                .chain(
+                    stages
+                        .clone()
+                        .map(|progress| BuildingPhase::Site { progress }),
+                )
+                .chain(stages.map(|progress| BuildingPhase::Upgrading { progress }))
+                .collect();
+            let size = kind.size();
+            for phase in phases {
+                state.building_mut(site).unwrap().phase = phase;
+                for &worker in &workers {
+                    for dy in -8..size.1 * 4 + 8 {
+                        for dx in -8..size.0 * 4 + 8 {
+                            let pos = jittered(&mut rng, low, quarter, dx, dy);
+                            let unit = state.unit_mut(worker).unwrap();
+                            unit.pos = pos;
+                            unit.order = if (dx + dy) % 3 == 0 {
+                                crate::Order::Build { site }
+                            } else {
+                                crate::Order::Idle
+                            };
+                            let unit = state.unit(worker).unwrap();
+                            let fast = state.in_building_work_reach(unit, site);
+                            assert_eq!(
+                                fast,
+                                surface_work_reach(&state, unit, site),
+                                "{kind:?} {phase:?} {pos:?}"
+                            );
+                            let b = state.building(site).unwrap();
+                            let reach = work_reach(unit);
+                            skipped +=
+                                usize::from(pos.dist_sq(b.closest_point_to(pos)) > reach * reach);
+                            reached += usize::from(fast);
+                            missed += usize::from(!fast);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        reached > 0 && missed > 0 && skipped > 0,
+        "{reached} reached, {missed} missed, {skipped} beyond the footprint reject"
+    );
+}

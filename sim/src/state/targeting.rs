@@ -23,6 +23,19 @@ pub struct AttackView {
 }
 
 impl AttackView {
+    /// An unidentified track's view without its motion estimate. Only lead
+    /// prediction reads the velocity, so a search over many tracks can rank
+    /// them by this and estimate motion for the chosen one alone.
+    pub(crate) fn still_blip(track: &crate::vision::ContactTrack) -> Self {
+        Self {
+            entity: None,
+            position: track.tile.center(),
+            footprint: None,
+            domain: track.domain,
+            velocity: Vec2Fx::ZERO,
+        }
+    }
+
     /// Whether this is a radar blip: neither an identified victim nor a
     /// building's known footprint.
     pub fn is_blip(self) -> bool {
@@ -101,11 +114,8 @@ impl State {
                     })
                 } else {
                     Some(AttackView {
-                        entity: None,
-                        position: track.tile.center(),
-                        footprint: None,
-                        domain: track.domain,
                         velocity: track.velocity(),
+                        ..AttackView::still_blip(track)
                     })
                 }
             }

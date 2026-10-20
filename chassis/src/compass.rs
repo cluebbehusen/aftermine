@@ -274,6 +274,15 @@ pub const fn dir(step: u8) -> Vec2Fx {
     COMPASS_256[step as usize]
 }
 
+/// From this larger-axis magnitude, in raw bits, the two steps either side
+/// of a vector out-dot every other step by more than rounding can make up,
+/// so only they can win. The tests derive the margin from the table.
+const BRACKETED_FROM: u64 = 1 << 18;
+
+/// From this larger-axis magnitude, in raw bits, a scan's dot products can
+/// overflow, so the full scan answers there.
+const BRACKETED_BELOW: u64 = 1 << 61;
+
 /// The compass step maximizing the fixed-point dot product with `v`.
 /// Ties choose the lowest heading; the zero vector returns zero.
 pub fn heading_of(v: Vec2Fx) -> u8 {
@@ -284,12 +293,41 @@ pub fn heading_of(v: Vec2Fx) -> u8 {
     } else {
         128
     };
-    let mut best = 0;
-    let mut best_dot = v.x;
     // Reflecting either nonzero component into v's quadrant strictly improves
     // a mismatched sign, even after fixed-point rounding. Include both axes,
     // and keep heading zero as the earliest possible tied winner.
-    for k in first..=first.saturating_add(64) {
+    let last = first.saturating_add(64);
+    let span =
+        v.x.to_bits()
+            .unsigned_abs()
+            .max(v.y.to_bits().unsigned_abs());
+    if !(BRACKETED_FROM..BRACKETED_BELOW).contains(&span) {
+        return best_step(v, first..=last);
+    }
+    // Each step of the quadrant turns further toward +y than the last, so
+    // `v` lies on or past every step up to the one that brackets it, and
+    // short of the rest.
+    let (mut low, mut high) = (0_u8, 64);
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        if on_or_past(dir(first.wrapping_add(mid)), v) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    best_step(
+        v,
+        (low..=(low + 1).min(last - first)).map(|offset| first.wrapping_add(offset)),
+    )
+}
+
+/// The first of `steps` with the greatest fixed-point dot product with `v`,
+/// or heading zero unless one beats it.
+fn best_step(v: Vec2Fx, steps: impl IntoIterator<Item = u8>) -> u8 {
+    let mut best = 0;
+    let mut best_dot = v.x;
+    for k in steps {
         let d = dir(k);
         let dot = d.x * v.x + d.y * v.y;
         if dot > best_dot {
@@ -298,6 +336,13 @@ pub fn heading_of(v: Vec2Fx) -> u8 {
         }
     }
     best
+}
+
+/// Whether `v` points along `d` or turned from it toward +y, by the exact
+/// sign of their cross product.
+fn on_or_past(d: Vec2Fx, v: Vec2Fx) -> bool {
+    i128::from(d.x.to_bits()) * i128::from(v.y.to_bits())
+        >= i128::from(d.y.to_bits()) * i128::from(v.x.to_bits())
 }
 
 #[cfg(test)]

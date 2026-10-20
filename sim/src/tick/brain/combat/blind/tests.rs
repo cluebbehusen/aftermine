@@ -343,3 +343,127 @@ fn an_automatic_attack_drops_an_unseen_building_but_an_order_keeps_it() {
         Order::Attack { target: AttackTarget::RememberedBuilding(m), pursue: true, .. } if m == memory
     ));
 }
+
+/// The scan [`radar_in_range`] replaced: every unidentified track's full
+/// view, motion estimate included, built before the firing solution.
+fn scanned_radar_in_range(
+    state: &State,
+    player: PlayerId,
+    from: Vec2Fx,
+    domain: Domain,
+    weapon: &WeaponStats,
+) -> Option<AttackView> {
+    state
+        .vision(player)
+        .tracks()
+        .iter()
+        .filter(|track| track.visible_unit.is_none())
+        .filter_map(|track| {
+            state
+                .attack_view(player, AttackTarget::Contact(track.id))
+                .map(|view| (track.id, view))
+        })
+        .filter(|(_, view)| solution(state, from, domain, *view, weapon))
+        .min_by_key(|(id, view)| (from.dist_sq(view.position), *id))
+        .map(|(_, view)| view)
+}
+
+/// One mast's radar ring holding moving ground and air contacts beyond
+/// its sight, with a wall across part of the field for blocked lines.
+fn radar_field() -> State {
+    let mut scenario = crate::Scenario::skirmish();
+    let mut rows = vec![vec!['.'; 48]; 40];
+    rows[1][1] = '1';
+    rows[37][45] = '2';
+    for row in rows.iter_mut().take(26).skip(14) {
+        row[31] = '#';
+    }
+    scenario.map = rows
+        .into_iter()
+        .map(|row| row.into_iter().collect())
+        .collect();
+    scenario.buildings = vec![crate::scenario::BuildingSpec {
+        player: 0,
+        kind: crate::BuildingKind::Array,
+        x: 20,
+        y: 20,
+    }];
+    let kinds = [
+        UnitKind::Harvester,
+        UnitKind::Sentinel,
+        UnitKind::Kestrel,
+        UnitKind::Buzzard,
+        UnitKind::Bombard,
+        UnitKind::Talon,
+    ];
+    let offsets = [(12, 0), (0, 13), (-14, 2), (3, -15), (10, 10), (-11, -9)];
+    scenario.units = (0..18)
+        .map(|n: usize| {
+            let (dx, dy) = offsets[n % 6];
+            let ring = i32::try_from(n / 6).unwrap();
+            UnitSpec {
+                player: 1,
+                kind: kinds[n % 6],
+                x: 20 + dx + ring,
+                y: 20 + dy - ring,
+            }
+        })
+        .collect();
+    let mut state = scenario.build().unwrap();
+    for step in 0..12 {
+        for (n, unit) in state.units.iter_mut().enumerate() {
+            let drift = Fx::from_num(i32::try_from(n % 3).unwrap() - 1) * Fx::lit("0.125");
+            unit.pos += Vec2Fx::new(drift, Fx::lit("0.0625") * Fx::from_num(step % 2));
+        }
+        state.tick(&[]);
+    }
+    state
+}
+
+#[test]
+fn radar_in_range_matches_the_full_view_scan() {
+    let state = radar_field();
+    let unidentified = state
+        .vision(PlayerId(0))
+        .tracks()
+        .iter()
+        .filter(|track| track.visible_unit.is_none())
+        .count();
+    assert!(unidentified >= 6, "{unidentified} radar-only tracks");
+    let mut weapons: Vec<WeaponStats> = UnitKind::ALL
+        .iter()
+        .flat_map(|kind| kind.stats().weapons.iter().copied())
+        .collect();
+    weapons.extend(
+        crate::BuildingKind::ALL
+            .iter()
+            .flat_map(|kind| kind.tiers().iter())
+            .flat_map(|tier| tier.weapons.iter().copied()),
+    );
+    let (mut moving, mut chosen, mut empty) = (0, 0, 0);
+    for y in 0..40 {
+        for x in 0..48 {
+            let from = TilePos::new(x, y).center();
+            for weapon in &weapons {
+                for domain in [Domain::Ground, Domain::Air] {
+                    let fast = radar_in_range(&state, PlayerId(0), from, domain, weapon);
+                    let full = scanned_radar_in_range(&state, PlayerId(0), from, domain, weapon);
+                    assert_eq!(
+                        format!("{fast:?}"),
+                        format!("{full:?}"),
+                        "{x},{y} {domain:?} {weapon:?}"
+                    );
+                    match fast {
+                        Some(view) if view.velocity != Vec2Fx::ZERO => moving += 1,
+                        Some(_) => chosen += 1,
+                        None => empty += 1,
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        moving > 0 && chosen > 0 && empty > 0,
+        "{moving} moving, {chosen} still, {empty} empty"
+    );
+}

@@ -785,6 +785,11 @@ impl State {
             unit.kind.stats().radius + crate::stats::WORK_FOOTPRINT_GAP + crate::stats::WORK_REACH
                 - crate::stats::WORK_APPROACH_GAP
                 + const { Fx::lit("0.04") };
+        // Every outline point, rounding included, lies on the footprint, so
+        // the surface is never nearer than the footprint's closest point.
+        if unit.pos.dist_sq(b.closest_point_to(unit.pos)) > reach * reach {
+            return false;
+        }
         let surface = self.contact_surface(b);
         unit.pos.dist_sq(surface.closest(unit.pos)) <= reach * reach
             && surface.clear(unit.pos, unit.pos, unit.kind.stats().radius)

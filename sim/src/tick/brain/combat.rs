@@ -635,35 +635,14 @@ pub(super) fn turret_fire(
             } else {
                 index.buildings_since_survey(state.buildings())
             };
-            candidates
-                .iter()
-                .filter(|target| {
-                    state
-                        .visible_hostile_target_domain(me, Target::Building(target.id))
-                        .is_some()
-                })
-                .map(|target| {
-                    let aim = target.closest_point_to(center);
-                    (center.dist_sq(aim), target.id, aim, target.anchor)
-                })
-                .filter(|(distance, ..)| within_weapon_reach(atk, *distance, Fx::ZERO))
-                .filter(|(_, _, aim, anchor)| {
-                    clear_line(
-                        state,
-                        Fire::of(atk),
-                        ShotEnd::new(center, Domain::Ground),
-                        ShotEnd::new(*aim, Domain::Ground).on(*anchor),
-                        Landing::Checked,
-                    )
-                })
-                .min_by_key(|&(distance, target, ..)| (distance, target))
+            building_victim(state, me, center, atk, candidates)
         })
         .flatten();
         let (victim, aim) = if let Some(focused) = focused_victim {
             focused
         } else if let Some((_, uid, position, _)) = unit_victim {
             (Target::Unit(uid), position)
-        } else if let Some((_, target, position, _)) = building_victim {
+        } else if let Some((target, position)) = building_victim {
             (Target::Building(target), position)
         } else {
             if let Some(view) = blind::radar_in_range(state, me, center, Domain::Ground, atk) {
@@ -712,6 +691,38 @@ pub(super) fn turret_fire(
             });
         }
     }
+}
+
+/// The nearest of `candidates` a turret at `center` can strike with `atk`:
+/// a hostile building in reach and in true sight with a clear line to its
+/// closest point, and its aim point. Every test is pure, so the cheapest
+/// runs first.
+fn building_victim(
+    state: &State,
+    me: PlayerId,
+    center: Vec2Fx,
+    atk: &WeaponStats,
+    candidates: &[crate::Building],
+) -> Option<(crate::ids::BuildingId, Vec2Fx)> {
+    candidates
+        .iter()
+        .map(|target| {
+            let aim = target.closest_point_to(center);
+            (center.dist_sq(aim), target, aim)
+        })
+        .filter(|(distance, ..)| within_weapon_reach(atk, *distance, Fx::ZERO))
+        .filter(|(_, target, _)| state.sees_hostile_building(me, target))
+        .filter(|(_, target, aim)| {
+            clear_line(
+                state,
+                Fire::of(atk),
+                ShotEnd::new(center, Domain::Ground),
+                ShotEnd::new(*aim, Domain::Ground).on(target.anchor),
+                Landing::Checked,
+            )
+        })
+        .min_by_key(|(distance, target, _)| (*distance, target.id))
+        .map(|(_, target, aim)| (target.id, aim))
 }
 
 /// Firing positions for a chaser around an unstandable victim tile,
