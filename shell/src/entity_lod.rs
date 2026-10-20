@@ -38,29 +38,51 @@ fn source_key(rect: Rect) -> Source {
         numeric::to_u32(rect.h),
     ]
 }
-fn is_entity_source(name: &str) -> bool {
-    let name = name.strip_prefix("rig_").unwrap_or(name);
+fn has_stem(name: &str, stem: &str) -> bool {
+    name == stem
+        || name
+            .strip_prefix(stem)
+            .is_some_and(|rest| rest.starts_with('_'))
+}
+/// Units and the accessories drawn with them in the units' pass.
+fn unit_stems() -> impl Iterator<Item = &'static str> {
     oxide_sim::UnitKind::ALL
         .iter()
         .map(|&k| crate::assets::unit_stem(k))
-        .chain(
-            oxide_sim::BuildingKind::ALL
-                .iter()
-                .map(|&k| crate::assets::building_stem(k)),
-        )
+        .chain(["scout_radar"])
+}
+/// Everything drawn on the map but units: works, their defense mounts and
+/// the field.
+fn field_stems() -> impl Iterator<Item = &'static str> {
+    oxide_sim::BuildingKind::ALL
+        .iter()
+        .map(|&k| crate::assets::building_stem(k))
         .chain(
             oxide_sim::BuildingKind::ALL
                 .iter()
                 .filter_map(|&k| crate::look::defense(k))
                 .map(|defense| defense.mount),
         )
-        .chain(["scrap", "wreck_pile", "extractor_frame", "scout_radar"])
-        .any(|stem| {
-            name == stem
-                || name
-                    .strip_prefix(stem)
-                    .is_some_and(|rest| rest.starts_with('_'))
-        })
+        .chain(["scrap", "wreck_pile", "extractor_frame"])
+}
+fn is_entity_source(name: &str) -> bool {
+    let name = name.strip_prefix("rig_").unwrap_or(name);
+    unit_stems()
+        .chain(field_stems())
+        .any(|stem| has_stem(name, stem))
+}
+/// A unit's sprite, drawn in the units' own pass. A cradle's stem begins
+/// with its unit's, so the works' stems are checked first.
+fn is_unit_source(name: &str) -> bool {
+    let name = name.strip_prefix("rig_").unwrap_or(name);
+    !field_stems().any(|stem| has_stem(name, stem)) && unit_stems().any(|stem| has_stem(name, stem))
+}
+fn unit_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
+    manifest
+        .iter()
+        .filter(|(name, _)| is_unit_source(name))
+        .map(|(_, row)| row.map(numeric::to_u32))
+        .collect()
 }
 fn entity_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
     manifest
@@ -195,7 +217,6 @@ impl EntityLod {
                 "assets/sprites/{name}"
             ))?);
         }
-        let mut packer = Packer::new();
         let mut sprites = HashMap::new();
         let mut bounds = HashMap::new();
         let mut areas = BTreeMap::new();
@@ -231,16 +252,18 @@ impl EntityLod {
                 );
             }
         }
-        for (key, level) in packing_order(&areas) {
+        let (packer, regions) = pack(&areas, &unit_sources(manifest), |key, area, level| {
             let page = key[1] as usize / numeric::to_usize(page_height);
-            let area = areas[&key];
             let local = [
                 key[0] + area[0],
                 key[1] % numeric::to_u32(page_height) + area[1],
                 area[2],
                 area[3],
             ];
-            let region = packer.insert(&reduce(&originals[page], local, LEVELS[level]));
+            reduce(&originals[page], local, LEVELS[level])
+        });
+        for (key, level, region) in regions {
+            let area = areas[&key];
             sprites
                 .entry(key)
                 .or_insert(Packed {
@@ -323,18 +346,60 @@ impl EntityLod {
         true
     }
 }
-// Sort by shelf height first so small mip levels cannot waste full-size rows.
-fn packing_order(areas: &BTreeMap<Source, Source>) -> Vec<(Source, usize)> {
+/// Packs every sprite's levels in [`packing_order`], each reduced by
+/// `image` from the sprite and its packed area, with the region each level
+/// takes.
+fn pack(
+    areas: &BTreeMap<Source, Source>,
+    units: &BTreeSet<Source>,
+    mut image: impl FnMut(Source, Source, usize) -> Image,
+) -> (Packer, Vec<(Source, usize, Region)>) {
+    let order = packing_order(areas, units);
+    let block = |&(key, level): &(Source, usize)| (units.contains(&key), level);
+    let mut packer = Packer::new();
+    let mut regions = Vec::with_capacity(order.len());
+    for (index, entry) in order.iter().enumerate() {
+        let (key, level) = *entry;
+        if index == 0 || block(&order[index - 1]) != block(entry) {
+            let texels = order[index..]
+                .iter()
+                .take_while(|next| block(next) == block(entry))
+                .map(|(key, _)| {
+                    let factor = LEVELS[level].fit::<u32>();
+                    let area = areas[key];
+                    ((area[2] / factor) as usize + 4) * ((area[3] / factor) as usize + 4)
+                })
+                .sum();
+            packer.keep_together(texels);
+        }
+        let region = packer.insert(&image(key, areas[&key], level));
+        regions.push((key, level, region));
+    }
+    (packer, regions)
+}
+
+// A draw samples two adjacent levels, and a page change between
+// neighbouring sprites in a pass ends the batch, so each coarse level of the
+// works and field, and of the units, keeps to one page: zoomed out, every
+// sprite on screen draws from the same levels. Works and field first,
+// coarsest level first; the full-size level spans pages regardless. Within
+// a level, sort by shelf height so small sprites cannot waste tall rows.
+fn packing_order(
+    areas: &BTreeMap<Source, Source>,
+    units: &BTreeSet<Source>,
+) -> Vec<(Source, usize)> {
     let mut entries: Vec<_> = areas
         .iter()
         .flat_map(|(&key, &area)| (0..4).map(move |level| (key, area, level)))
         .collect();
     entries.sort_by_key(|&(key, area, level)| {
         (
+            level == 0,
+            units.contains(&key),
+            std::cmp::Reverse(level),
             std::cmp::Reverse(area[3] / LEVELS[level].fit::<u32>()),
             std::cmp::Reverse(area[2] / LEVELS[level].fit::<u32>()),
             key,
-            level,
         )
     });
     entries
@@ -459,6 +524,29 @@ impl Packer {
         }
     }
 
+    /// Starts a fresh page when `texels`, one pass's sprites at one level
+    /// with their margins, would fit on one page but not in the rows left
+    /// on this one: a level split across pages splits the batches of every
+    /// view drawn at that level.
+    fn keep_together(&mut self, texels: usize) {
+        let used = self.x > 2 || self.y > 2;
+        let left = PAGE.saturating_sub(self.y + self.row_height + 4) * PAGE;
+        if used && texels <= PAGE * PAGE && texels > left {
+            self.new_page();
+        }
+    }
+
+    fn new_page(&mut self) {
+        self.images.push(Image::gen_image_color(
+            PAGE.fit::<u16>(),
+            PAGE.fit::<u16>(),
+            BLANK,
+        ));
+        self.x = 2;
+        self.y = 2;
+        self.row_height = 0;
+    }
+
     fn insert(&mut self, image: &Image) -> Region {
         let (width, height) = (image.width as usize, image.height as usize);
         if self.x + width + 2 > PAGE {
@@ -467,14 +555,7 @@ impl Packer {
             self.row_height = 0;
         }
         if self.y + height + 2 > PAGE {
-            self.images.push(Image::gen_image_color(
-                PAGE.fit::<u16>(),
-                PAGE.fit::<u16>(),
-                BLANK,
-            ));
-            self.x = 2;
-            self.y = 2;
-            self.row_height = 0;
+            self.new_page();
         }
         let page = self.images.len() - 1;
         let output = &mut self.images[page];

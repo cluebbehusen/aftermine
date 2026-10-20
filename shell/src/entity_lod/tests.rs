@@ -92,8 +92,9 @@ fn atlas_pages() -> (Vec<Image>, u32) {
     (pages, height)
 }
 
-#[test]
-fn production_mips_fit_seven_pages_without_discarding_levels() {
+/// Packs every production entity sprite's levels as loading does, with
+/// the region each level takes.
+fn pack_production() -> (Packer, Vec<(Source, usize, Region)>) {
     let manifest: HashMap<String, [f32; 4]> =
         serde_json::from_str(include_str!("../../../assets/sprites/atlas.json")).unwrap();
     let (pages, height) = atlas_pages();
@@ -104,17 +105,22 @@ fn production_mips_fit_seven_pages_without_discarding_levels() {
             (key, packed_area(&pages[(key[1] / height) as usize], local))
         })
         .collect();
-    let order = packing_order(&areas);
-    assert_eq!(order.len(), areas.len() * LEVELS.len());
-    let mut packer = Packer::new();
-    for (key, level) in order {
+    let (packer, regions) = pack(&areas, &unit_sources(&manifest), |_, area, level| {
         let factor = LEVELS[level].fit::<u32>();
-        let area = areas[&key];
-        let region = packer.insert(&Image::gen_image_color(
+        Image::gen_image_color(
             (area[2] / factor).fit::<u16>(),
             (area[3] / factor).fit::<u16>(),
             WHITE,
-        ));
+        )
+    });
+    assert_eq!(regions.len(), areas.len() * LEVELS.len());
+    (packer, regions)
+}
+
+#[test]
+fn production_mips_fit_seven_pages_without_discarding_levels() {
+    let (packer, regions) = pack_production();
+    for (_, _, region) in regions {
         assert!(region.rect.right() < PAGE as f32);
         assert!(region.rect.bottom() < PAGE as f32);
     }
@@ -123,6 +129,40 @@ fn production_mips_fit_seven_pages_without_discarding_levels() {
         "{} mip pages exceed the seven-page budget",
         packer.images.len()
     );
+}
+
+#[test]
+fn each_coarse_level_of_a_pass_keeps_to_one_page() {
+    let manifest: HashMap<String, [f32; 4]> =
+        serde_json::from_str(include_str!("../../../assets/sprites/atlas.json")).unwrap();
+    let units = unit_sources(&manifest);
+    let (_, regions) = pack_production();
+    // A draw samples two adjacent levels; with each coarse level on one
+    // page, every sprite a pass draws at one zoom shares its batch.
+    for unit in [false, true] {
+        for level in 1..LEVELS.len() {
+            let pages: BTreeSet<usize> = regions
+                .iter()
+                .filter(|(key, packed, _)| *packed == level && units.contains(key) == unit)
+                .map(|(_, _, region)| region.page)
+                .collect();
+            assert_eq!(pages.len(), 1, "units {unit} level {level} spans {pages:?}");
+        }
+    }
+}
+
+#[test]
+fn cradles_pack_with_the_works_and_rigged_hulls_with_the_units() {
+    assert!(!is_unit_source("maw_cradle"));
+    assert!(!is_unit_source("rig_maw_cradle_frame"));
+    assert!(!is_unit_source("roc_cradle_accent"));
+    assert!(is_unit_source("maw"));
+    assert!(is_unit_source("rig_roc_hull"));
+    assert!(
+        is_unit_source("scout_radar"),
+        "a Kestrel draws it between units"
+    );
+    assert!(!is_unit_source("turret"));
 }
 
 #[test]
