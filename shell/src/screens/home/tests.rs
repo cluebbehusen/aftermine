@@ -68,3 +68,21 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
     assert_eq!(pick(&mut home, 0), Out::Continue);
     assert!(!home.menu.wide);
 }
+
+#[test]
+fn the_door_names_the_build_by_version_and_short_commit() {
+    use oxide_kit::build::BuildIdentity;
+    let commit = "228dd0e6ff22cd175b8f8ba27c718bcff896d6eb";
+    assert_eq!(
+        describe_build(&BuildIdentity::new("0.1.0", commit, "false")),
+        "v0.1.0 (228dd0e)"
+    );
+    assert_eq!(
+        describe_build(&BuildIdentity::new("0.1.0", commit, "true")),
+        "v0.1.0 (228dd0e-dirty)"
+    );
+    assert_eq!(
+        describe_build(&BuildIdentity::new("0.1.0", "unknown", "unknown")),
+        "v0.1.0"
+    );
+}

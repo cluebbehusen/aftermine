@@ -730,6 +730,19 @@ impl Monitor {
         Ok(PROCESS.get().expect("installed monitor"))
     }
 
+    /// Record an error that ends the process without a panic. A packaged
+    /// app has no console, so this log is the only place its reason lands.
+    pub fn fatal(&self, message: &str) {
+        let thread = std::thread::current();
+        let mut details = Map::new();
+        details.insert("fatal".into(), json!({ "message": message }));
+        self.inner.record(self.inner.incident(
+            "fatal",
+            thread.name().unwrap_or("unnamed"),
+            details,
+        ));
+    }
+
     /// Enter a main-thread stage until the guard drops. Other threads get `None`.
     pub fn stage(&self, stage: Stage, tick: u64) -> Option<StageGuard<'_>> {
         self.inner.on_main().then(|| StageGuard {
@@ -802,6 +815,13 @@ pub fn seat(seat: u8, tick: u64) -> Option<SeatGuard<'static>> {
 pub fn frame(context: FrameContext) {
     if let Some(monitor) = PROCESS.get() {
         monitor.frame(context);
+    }
+}
+
+/// Record a fatal error on the installed monitor before the process exits.
+pub fn fatal(message: &str) {
+    if let Some(monitor) = PROCESS.get() {
+        monitor.fatal(message);
     }
 }
 

@@ -287,7 +287,16 @@ pub(super) fn dispatch_action(
                 _ => {}
             }
         }
-        Action::ToggleOverlay => game.presentation.overlay = !game.presentation.overlay,
+        // The overlay sees through fog, so it is a development tool: a
+        // LAN match refuses it, and a packaged copy binds no key to it.
+        Action::ToggleOverlay => {
+            if game.net_role().is_some() {
+                game.presentation
+                    .toast("The debug overlay is off in LAN matches");
+            } else {
+                game.presentation.overlay = !game.presentation.overlay;
+            }
+        }
         Action::Back => {
             // A planned row goes first, keeping placement armed; then
             // anything armed.

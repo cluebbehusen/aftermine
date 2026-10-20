@@ -101,16 +101,18 @@ pub fn replays_dir() -> PathBuf {
     PathBuf::from("replays")
 }
 
-/// Whether this executable runs from a packaged bundle.
-fn bundled() -> bool {
-    bundle_resources().is_some()
+/// Whether this executable runs from a packaged bundle: the copy
+/// players run, as opposed to a workspace build. Probed once.
+pub fn bundled() -> bool {
+    static BUNDLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *BUNDLED.get_or_init(|| bundle_resources().is_some())
 }
 
 /// Where a packaged bundle keeps its read-only resources, if this
 /// executable runs from one: `Contents/Resources` beside
-/// `Contents/MacOS/<exe>` in a macOS .app, or the flat iOS app
-/// directory that holds the executable itself. Found by probing for
-/// the atlas, the one file no build ships without.
+/// `Contents/MacOS/<exe>` in a macOS .app, or the directory that holds
+/// the executable itself in an iOS app or a desktop release folder.
+/// Found by probing for the atlas, the one file no build ships without.
 pub fn bundle_resources() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     bundle_resources_beside(exe.parent()?)

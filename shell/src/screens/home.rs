@@ -4,7 +4,7 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
-use macroquad::prelude::Vec2;
+use macroquad::prelude::{Vec2, draw_text};
 use oxide_protocol::RawEvent;
 
 /// What a Home frame decided.
@@ -142,6 +142,38 @@ impl HomeScreen {
         sounds.push((SoundKind::Click, None));
         choice.value
     }
+
+    /// Draws the door, with the build in the bottom left corner where a
+    /// bug report can quote it, clear of the minimap behind the veil and
+    /// below the footer's key help.
+    pub fn draw(&self) {
+        self.menu.draw(self.subtitle());
+        let s = crate::render::ui_scale();
+        draw_text(
+            version_label(),
+            12.0 * s,
+            crate::render::viewport().y - 8.0 * s,
+            crate::theme::Type::Small.at(s),
+            crate::theme::TEXT_SECONDARY,
+        );
+    }
+}
+
+/// The running build as Home shows it.
+fn version_label() -> &'static str {
+    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LABEL.get_or_init(|| describe_build(&crate::build_identity()))
+}
+
+/// The package version and the short commit it was built from, marked
+/// when the build had local changes. A source archive has no commit.
+fn describe_build(build: &oxide_kit::build::BuildIdentity) -> String {
+    if build.revision == "unknown" {
+        return format!("v{}", build.version);
+    }
+    let commit: String = build.revision.chars().take(7).collect();
+    let dirty = if build.dirty == "true" { "-dirty" } else { "" };
+    format!("v{} ({commit}{dirty})", build.version)
 }
 
 #[cfg(test)]

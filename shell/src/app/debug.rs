@@ -71,7 +71,8 @@ pub(super) fn route(
 }
 
 /// What a LAN match refuses: its clock, speed, and roster belong to the
-/// session, only the host pauses, and a machine speaks only for its seat.
+/// session, only the host pauses, a machine speaks only for its seat,
+/// and the overlay that sees through fog stays off.
 pub(super) fn lockstep_refuses(
     role: crate::game::network::NetRole,
     seat: oxide_sim::PlayerId,
@@ -85,6 +86,7 @@ pub(super) fn lockstep_refuses(
             | Request::LoadScenario { .. }
             | Request::LoadReplay { .. }
             | Request::BeginPerformanceWindow { .. }
+            | Request::ToggleOverlay
     ) || (role == crate::game::network::NetRole::Client
         && matches!(request, Request::Pause | Request::Resume))
         || matches!(request, Request::SendCommand { player, .. } if *player != seat)
@@ -136,7 +138,7 @@ pub(super) fn handle_request(
             reply
                 .send(ResponseEnvelope::err(
                     id,
-                    "a LAN match owns its clock and seats; this machine cannot do that",
+                    "a LAN match owns its clock, seats and fog; this machine cannot do that",
                 ))
                 .ok();
             return;

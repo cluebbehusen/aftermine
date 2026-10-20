@@ -282,6 +282,14 @@ impl Action {
             _ => true,
         }
     }
+    /// Whether this build lets a player use the action at all. A packaged
+    /// copy leaves out the debug overlay, which sees through fog.
+    pub fn offered(self) -> bool {
+        self.offered_in(crate::paths::bundled())
+    }
+    fn offered_in(self, packaged: bool) -> bool {
+        !(packaged && self == Self::ToggleOverlay)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -444,7 +452,18 @@ impl BindingMap {
             assert!(map.rebind(SetBookmark(n.fit::<u8>()), Chord::ctrl(key)));
             assert!(map.rebind(RecallBookmark(n.fit::<u8>()), Chord::bare(key)));
         }
+        map.keep_offered();
         map
+    }
+    /// Drops the bindings of actions this build does not offer, so a key
+    /// that Controls never shows stays free to bind.
+    pub fn keep_offered(&mut self) {
+        self.keep_offered_in(crate::paths::bundled());
+    }
+    fn keep_offered_in(&mut self, packaged: bool) {
+        for rows in [&mut self.bindings, &mut self.secondary] {
+            rows.retain(|b| b.action.offered_in(packaged));
+        }
     }
     pub fn left_handed() -> Self {
         let mut map = Self::classic();

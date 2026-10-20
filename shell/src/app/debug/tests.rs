@@ -24,10 +24,10 @@ fn local_request_guards_follow_screen_ownership() {
     assert_eq!(route(false, false, None, &send), Route::Local);
 }
 
-/// A LAN match refuses the clock and other seats before shared
-/// dispatch, and only its host may pause.
+/// A LAN match refuses the clock, other seats and the debug overlay
+/// before shared dispatch, and only its host may pause.
 #[test]
-fn a_lan_match_refuses_its_clock_and_other_seats() {
+fn a_lan_match_refuses_its_clock_other_seats_and_the_overlay() {
     use crate::game::network::NetRole;
     let seat = oxide_sim::PlayerId(1);
     let host = Some((NetRole::Host, seat));
@@ -41,6 +41,7 @@ fn a_lan_match_refuses_its_clock_and_other_seats() {
             Request::AdvanceTicks { ticks: 1 },
             Request::PresentTicks { ticks: 1 },
             Request::SetSpeed { multiplier: 2.0 },
+            Request::ToggleOverlay,
             send(0),
         ] {
             assert_eq!(
@@ -63,6 +64,10 @@ fn a_lan_match_refuses_its_clock_and_other_seats() {
         route(true, false, client, &Request::Pause),
         Route::Local,
         "the viewer keeps its own clock"
+    );
+    assert_eq!(
+        route(false, false, None, &Request::ToggleOverlay),
+        Route::Local
     );
 }
 

@@ -246,3 +246,33 @@ fn unbound_tab_actions_keep_their_classic_keys_while_menus_leave_them_free() {
     );
     assert_eq!(map.tab_chord(Action::PrevTab), None);
 }
+
+/// A packaged copy hides the debug overlay from Controls, so its key must
+/// not stay reserved by a row the player can neither see nor clear.
+#[test]
+fn a_packaged_copy_leaves_the_overlay_key_free() {
+    let f1 = Chord::bare(Key::F1);
+    let mut workspace = BindingMap::classic();
+    workspace.keep_offered_in(false);
+    assert_eq!(workspace, BindingMap::classic());
+    assert_eq!(
+        workspace.conflict(Action::HomeCamera, 0, f1),
+        Some(Action::ToggleOverlay)
+    );
+
+    let mut packaged = BindingMap::classic();
+    packaged.keep_offered_in(true);
+    assert_eq!(packaged.chord_for(Action::ToggleOverlay), None);
+    assert_eq!(
+        packaged.resolve_in(Key::F1, false, false, Context::Empty),
+        None
+    );
+    assert!(packaged.rebind(Action::HomeCamera, f1));
+    assert_eq!(
+        packaged.resolve_in(Key::F1, false, false, Context::Empty),
+        Some(Action::HomeCamera)
+    );
+    assert!(packaged.valid());
+    assert!(!Action::ToggleOverlay.offered_in(true));
+    assert!(Action::ToggleOverlay.offered_in(false));
+}

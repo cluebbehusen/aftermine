@@ -200,6 +200,21 @@ jobs:
       - name: Review tool tests
         run: uv run -m unittest tools.test_map_review tools.test_asset_review tools.test_line_report
 
+  # The license notices every bundle ships must match Cargo.lock.
+  notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-07-16
+        with:
+          # Matches rust-toolchain.toml.
+          toolchain: "1.99.0"
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-about@0.9.2
+      - name: License notices
+        run: sh tools/gen_notices.sh --check
+
   # Supply-chain gate: advisories, bans, licenses, and source policy
   # live in deny.toml, including the triage list for macroquad's stale
   # corners.

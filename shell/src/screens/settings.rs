@@ -175,7 +175,8 @@ pub struct Update {
     pub dirty: bool,
 }
 
-/// Every keyboard action is exposed, including contextual cards and navigation.
+/// Every keyboard action a player can use is exposed, including contextual
+/// cards and navigation; a packaged copy leaves out the debug overlay.
 fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
     use Action::{
         Accompany, AssignGroup, Back, Build, BuildCategory, CancelRound, ClearRally, Confirm,
@@ -249,7 +250,13 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
                 .flat_map(|n| [RecallBookmark(n), SetBookmark(n)])
                 .collect(),
         ),
-        ("Match", vec![TogglePause, ToggleOverlay]),
+        (
+            "Match",
+            [TogglePause, ToggleOverlay]
+                .into_iter()
+                .filter(|action| action.offered())
+                .collect(),
+        ),
         (
             "Replay",
             vec![

@@ -769,9 +769,11 @@ main thread or a seat stops making progress, then records its resumption. A
 minimized window waiting for frames is not a stall, and a stall in the present
 wait can be OS or driver delay rather than a deadlock. The panic hook records
 the message, location, thread and a backtrace synchronously, then defers to the
-previous hook. Each incident carries every thread's stage, display context and
-recent per-stage frame timing, which otherwise stays in memory. Thresholds and
-log limits live in `kit::diagnostics`.
+previous hook. An error that ends the shell without a panic, such as an asset
+that fails to load, is recorded with its message before the process exits,
+because a packaged app has no console to show it. Each incident carries every
+thread's stage, display context and recent per-stage frame timing, which
+otherwise stays in memory. Thresholds and log limits live in `kit::diagnostics`.
 
 Incidents go to `incidents.json` in the diagnostics folder. A minimize reaches
 the watchdog when it happens, since a minimized window may run no further frame.

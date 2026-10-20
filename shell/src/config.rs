@@ -295,6 +295,7 @@ impl Config {
                 if !config.bindings.valid() {
                     config.bindings = BindingMap::classic();
                 }
+                config.bindings.keep_offered();
                 config.window = Self::sane_window(config.window);
                 config.ui_scale = Self::sane_ui_scale(config.ui_scale);
                 config.touch = config.touch.clamped();

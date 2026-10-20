@@ -85,6 +85,13 @@ cargo test -p oxide-shell --locked
 cargo run -p oxide-driver -- smoke --spawn
 ```
 
+A workspace build binds F1 to the debug overlay, which shows the whole world
+through the fog. A packaged copy never offers it, and a LAN match refuses it.
+
+`assets/licenses/third-party.txt` holds the license notices of every third-party
+crate the game links, and every bundle ships it with the rest of `assets/`.
+Regenerate it with `sh tools/gen_notices.sh` when `Cargo.lock` changes.
+
 To play over a LAN or Tailscale, build the same commit on every machine. In the
 game, the host switches match setup to LAN, which opens every other chair and
 shows the address to join; the others pick Join Match, enter their name, and
@@ -104,8 +111,9 @@ cargo run -p oxide-shell --release -- --join 192.168.1.20:4200
 
 `ios/` wraps the shell in an Xcode project with a script phase that runs Cargo
 for the device or simulator and places the binary where Xcode signs and packages
-it. Its resource phase copies `assets/` and `scenarios/` and compiles the
-app-icon catalog. It needs full Xcode (not only the Command Line Tools), the
+it. Its resource phase copies `assets/` and `scenarios/`, compiles the app-icon
+catalog, and adds the privacy manifest, which declares the file timestamps the
+saves shelf reads. It needs full Xcode (not only the Command Line Tools), the
 `aarch64-apple-ios` Rust target (plus `aarch64-apple-ios-sim` for the
 simulator), and an iPad with Developer Mode on. Set your signing team in the
 ignored `ios/Local.xcconfig`, never in Xcode's Signing pane, which writes it
@@ -160,12 +168,12 @@ appear in the Files app under On My iPad > Oxide.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only
-when a panic or stall occurs. A panic during a tick also leaves a crash dump
-with the match's commands up to it. Reports stay local and contain the current
-match's command log, the newest crash dump, and the incident log, whose panic
-and stall incidents carry recent frame timing. `diagnostic_report` runs exports
-and folder operations off the frame thread; `kit::diagnostics` owns the bounded
-incident log and crash dumps.
+when a panic, stall or fatal error occurs. A panic during a tick also leaves a
+crash dump with the match's commands up to it. Reports stay local and contain
+the current match's command log, the newest crash dump, and the incident log,
+whose panic and stall incidents carry recent frame timing. `diagnostic_report`
+runs exports and folder operations off the frame thread; `kit::diagnostics` owns
+the bounded incident log and crash dumps.
 
 See [the persistence contract](../docs/shell-architecture.md) for durability,
 retention, compatibility, and timing semantics.
