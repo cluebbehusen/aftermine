@@ -726,10 +726,11 @@ fn a_victim_overhanging_blocked_ground_is_acquired_by_a_contact_weapon() {
 fn scanned_building_victim(
     state: &State,
     me: PlayerId,
-    center: Vec2Fx,
+    gun: Gun,
     atk: &WeaponStats,
     candidates: &[crate::Building],
 ) -> Option<(crate::ids::BuildingId, Vec2Fx)> {
+    let center = gun.center;
     candidates
         .iter()
         .filter(|target| {
@@ -754,7 +755,7 @@ fn scanned_building_victim(
                 Landing::Checked,
             )
         })
-        .min_by_key(|&(distance, target, ..)| (distance, target))
+        .min_by_key(|&(distance, target, aim, _)| (gun.ready(aim), distance, target))
         .map(|(_, target, aim, _)| (target, aim))
 }
 
@@ -838,12 +839,22 @@ fn building_victim_matches_the_sight_first_scan() {
     for y in 0..state.map.height() {
         for x in 0..state.map.width() {
             let tile = TilePos::new(x, y).center();
+            // Guns point every way, and some reload long enough that every
+            // turn ties and the nearest wins.
+            let heading = u8::try_from((x * 37 + y * 11) % 256).unwrap();
+            let reload = if (x + y) % 3 == 0 { 200 } else { 0 };
             for center in [tile, tile + quarter] {
+                let gun = Gun {
+                    center,
+                    heading,
+                    traverse: 3,
+                    reload,
+                };
                 for atk in &weapons {
                     for candidates in [all, since] {
-                        let fast = building_victim(&state, PlayerId(0), center, atk, candidates);
+                        let fast = building_victim(&state, PlayerId(0), gun, atk, candidates);
                         let scanned =
-                            scanned_building_victim(&state, PlayerId(0), center, atk, candidates);
+                            scanned_building_victim(&state, PlayerId(0), gun, atk, candidates);
                         assert_eq!(fast, scanned, "{center:?} {atk:?}");
                         let Some((id, _)) = fast else {
                             misses += 1;

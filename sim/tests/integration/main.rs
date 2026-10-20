@@ -28,6 +28,7 @@ mod command_canonicalization;
 mod common;
 mod defense_focus;
 mod defense_roles;
+mod defense_turning;
 mod determinism;
 mod domains;
 mod drones;

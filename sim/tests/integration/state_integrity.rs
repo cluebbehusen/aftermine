@@ -641,10 +641,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidDroneBay(_) => 97,
         E::StrayDrone(_) => 98,
         E::InvalidTend(_) => 99,
+        E::GunMismatch(_) => 100,
     }
 }
 
-const ROWS: usize = 100;
+const ROWS: usize = 101;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -757,6 +758,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidDroneBay(UnitId(0)),
         E::StrayDrone(UnitId(0)),
         E::InvalidTend(UnitId(0)),
+        E::GunMismatch(BuildingId(0)),
     ]
 }
 
@@ -2241,6 +2243,25 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["buildings"][spire]["launcher"]["ready"] = json!(12);
             },
             "carries an invalid launch deck",
+        ),
+        (
+            "a gun bearing on a building that fires nothing",
+            |d| {
+                let foundry = kind_index(d, "foundry");
+                d["buildings"][foundry]["gun_heading"] = json!(3);
+            },
+            "has a gun bearing that does not match its kind",
+        ),
+        (
+            "a Turret without its gun bearing",
+            |d| {
+                let turret = kind_index(d, "turret");
+                d["buildings"][turret]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("gun_heading");
+            },
+            "has a gun bearing that does not match its kind",
         ),
         (
             "a launch deck on a battery",

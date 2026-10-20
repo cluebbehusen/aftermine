@@ -8,7 +8,7 @@ use oxide_sim::{
     BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitId, UnitKind,
 };
 
-use common::{building, cmd, open_arena, open_arena_with, run_until, unit};
+use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
 
 fn building_id(state: &State, player: u8, kind: BuildingKind, nth: usize) -> BuildingId {
     state
@@ -185,6 +185,7 @@ fn a_reachable_focus_preempts_the_nearest_ordinary_target() {
     let targets = unit_ids(&state, 1);
     let near_hp = state.unit(targets[0]).unwrap().hp;
     let focus_hp = state.unit(targets[1]).unwrap().hp;
+    aim_defense_at(&mut state, turret, Target::Unit(targets[1]));
 
     let report = state.tick(&[cmd(
         0,
@@ -315,6 +316,7 @@ fn a_bastion_focuses_a_visible_building_ahead_of_an_ordinary_unit() {
         .building(target)
         .unwrap()
         .closest_point_to(state.building(bastion).unwrap().center());
+    aim_defense_at(&mut state, bastion, Target::Building(target));
 
     let report = state.tick(&[cmd(
         0,
@@ -348,6 +350,7 @@ fn a_direct_fire_turret_can_focus_a_hostile_building() {
     let turret = building_id(&state, 0, BuildingKind::Turret, 0);
     let target = building_id(&state, 1, BuildingKind::Reclaimer, 0);
     let before = state.building(target).unwrap().hp;
+    aim_defense_at(&mut state, turret, Target::Building(target));
 
     let report = state.tick(&[cmd(
         0,
@@ -448,6 +451,7 @@ fn peak_obstruction_keeps_focus_but_allows_a_clear_fallback() {
     let mut state = scenario.build().unwrap();
     let turret = building_id(&state, 0, BuildingKind::Turret, 0);
     let targets = unit_ids(&state, 1);
+    aim_defense_at(&mut state, turret, Target::Unit(targets[0]));
 
     let report = state.tick(&[cmd(
         0,

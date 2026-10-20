@@ -951,7 +951,8 @@ weapon's projectile payload, which buildings fight or train, and upgrade
 ladders. A kind with mounted guns, the Roc, draws its mount layer once per gun
 at that gun's pivot on the hull, turned to the simulation's bearing for that gun
 and interpolated the short way between ticks; each gun recoils only for its own
-weapon slot's shots. The Roc's rig (`render::roc`) draws its hull's and guns'
+weapon slot's shots. A defense draws its mount the same way, at its gun's
+simulated bearing. The Roc's rig (`render::roc`) draws its hull's and guns'
 ground shadows in place of the shared airframe shadow, then a wall, the gun
 yokes and the guns under the hull, then the fans' blades and each of six drone
 docks above it. Drones fill the docks rear pair first and leave front pair

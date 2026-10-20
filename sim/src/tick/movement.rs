@@ -72,8 +72,40 @@ pub(in crate::tick) fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: 
     heading_aligned(*heading, desired)
 }
 
+/// Compass steps a weapon's bearing may stand off its target and still
+/// fire.
+const FIRING_TOLERANCE: u8 = 2;
+
 fn heading_aligned(current: u8, desired: u8) -> bool {
-    desired.wrapping_sub(current).cast_signed().unsigned_abs() <= 2
+    desired.wrapping_sub(current).cast_signed().unsigned_abs() <= FIRING_TOLERANCE
+}
+
+/// Ticks after this one before a bearing at `heading`, turning at `rate`
+/// through [`steer_bearing`], comes within firing tolerance of `direction`:
+/// zero when this tick's turn brings it there.
+pub(in crate::tick) fn ticks_to_bear(heading: u8, direction: Vec2Fx, rate: u8) -> u32 {
+    if rate == 0 || direction == Vec2Fx::ZERO {
+        return 0;
+    }
+    let off = chassis::compass::heading_of(direction)
+        .wrapping_sub(heading)
+        .cast_signed()
+        .unsigned_abs();
+    ticks_to_close(off, rate)
+}
+
+/// The most [`ticks_to_bear`] can return at `rate`: a half turn.
+pub(in crate::tick) fn longest_bear(rate: u8) -> u32 {
+    if rate == 0 {
+        return 0;
+    }
+    ticks_to_close(128, rate)
+}
+
+fn ticks_to_close(off: u8, rate: u8) -> u32 {
+    u32::from(off.saturating_sub(FIRING_TOLERANCE))
+        .div_ceil(u32::from(rate))
+        .saturating_sub(1)
 }
 
 pub(super) fn ground_weapon_aligned(unit: &crate::state::Unit, direction: Vec2Fx) -> bool {

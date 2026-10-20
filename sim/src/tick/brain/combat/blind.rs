@@ -180,6 +180,8 @@ pub(super) fn buffer_blind(
     }
 }
 
+/// Turns the defense `id` toward a known place it cannot see into and fires
+/// there once its gun bears and it has reloaded.
 pub(super) fn fire_building(
     state: &mut State,
     id: BuildingId,
@@ -192,7 +194,14 @@ pub(super) fn fire_building(
     let (player, from, kind, tier, weapon) =
         (b.player, b.center(), b.kind, b.tier, b.stats().weapons[0]);
     let aim = predicted_aim(state, from, Domain::Ground, view, &weapon);
-    state.building_mut(id).expect("live defense").cooldown = weapon.cooldown_ticks;
+    if !aim_gun(state, id, aim) {
+        return;
+    }
+    let b = state.building_mut(id).expect("live defense");
+    if b.cooldown > 0 {
+        return;
+    }
+    b.cooldown = weapon.cooldown_ticks;
     if weapon.projectile.is_some() {
         let flight = launch_shell(
             state,

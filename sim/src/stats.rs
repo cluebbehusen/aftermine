@@ -582,6 +582,9 @@ pub struct BuildingStats {
     /// Every weapon this building fires on its own; buildings have no aggro
     /// range separate from weapon range. Empty for unarmed buildings.
     pub weapons: &'static [WeaponStats],
+    /// Compass steps per tick the gun turns. Zero exactly when the tier
+    /// fires nothing.
+    pub traverse: u8,
     /// Price, build time, and prerequisites for placing this kind. Every
     /// current kind has one; for an upgrade tier it prices the upgrade.
     pub construction: Option<ConstructionStats>,
@@ -689,6 +692,12 @@ impl BuildingKind {
     /// upgrade starts. Each extra Deep Bore therefore means an expansion.
     pub const fn upgrade_needs_foundry_support(self, tier: u8) -> bool {
         matches!(self, BuildingKind::Extractor) && tier == 0
+    }
+
+    /// Whether this kind fires on its own, which every rung of its ladder
+    /// then does through a turning gun.
+    pub const fn fires(self) -> bool {
+        self.base_stats().can_fight()
     }
 
     /// The experimental a cradle of this kind assembles, if it is one.
@@ -2121,6 +2130,7 @@ const FOUNDRY: BuildingStats = BuildingStats {
     // The expansion base and comeback path. Its Fabricator prerequisite
     // makes a proxy Foundry a committed tech play, while its price keeps
     // expansion a credible mid-game choice.
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 600,
@@ -2144,6 +2154,7 @@ const TURRET: BuildingStats = BuildingStats {
         building_damage: None,
         projectile: None,
     }],
+    traverse: 8,
     construction: Some(ConstructionStats {
         cost: 100,
         build_ticks: 300, // 15 s of builder attention
@@ -2164,6 +2175,7 @@ const FABRICATOR: BuildingStats = BuildingStats {
         UnitKind::Sapper,
     ],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 120,
         build_ticks: 280, // 14 s — the tech window must fit inside the rush window
@@ -2187,6 +2199,7 @@ const FLAK_TURRET: BuildingStats = BuildingStats {
         building_damage: None,
         projectile: None,
     }],
+    traverse: 12,
     construction: Some(ConstructionStats {
         cost: 90,
         build_ticks: 250,
@@ -2219,6 +2232,7 @@ const BASTION: BuildingStats = BuildingStats {
     }],
     // Competes with the mobile Bombard by trading mobility for a durable
     // firing position rather than losing the comparison on price alone.
+    traverse: 3,
     construction: Some(ConstructionStats {
         cost: 210,
         build_ticks: 500,
@@ -2234,6 +2248,7 @@ const ARRAY: BuildingStats = BuildingStats {
     vision: 9, // the inner ring: true sight
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 90,
         build_ticks: 300,
@@ -2247,6 +2262,7 @@ const RECLAIMER: BuildingStats = BuildingStats {
     vision: 4,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 150,
         build_ticks: 350,
@@ -2260,6 +2276,7 @@ const REPAIR_BAY: BuildingStats = BuildingStats {
     vision: 5,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 200,
         build_ticks: 350,
@@ -2279,6 +2296,7 @@ const AIRWORKS: BuildingStats = BuildingStats {
         UnitKind::Skyhook,
     ],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 200,
         build_ticks: 350,
@@ -2300,6 +2318,7 @@ const CRUCIBLE: BuildingStats = BuildingStats {
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
     // a credible purchase.
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 400,
         build_ticks: 550,
@@ -2313,6 +2332,7 @@ const BARRICADE: BuildingStats = BuildingStats {
     vision: 1,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 40,
         build_ticks: 120,
@@ -2326,6 +2346,7 @@ const SCUTTLE_CHARGE: BuildingStats = BuildingStats {
     vision: 1,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 30,
         build_ticks: 60,
@@ -2339,6 +2360,7 @@ const SPIRE: BuildingStats = BuildingStats {
     vision: 5,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 500,
         build_ticks: 900,
@@ -2355,6 +2377,7 @@ const MAW_CRADLE: BuildingStats = BuildingStats {
     vision: 3,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: MAW.cost,
         // Four Excavators at two work a tick finish in about two minutes.
@@ -2372,6 +2395,7 @@ const ROC_CRADLE: BuildingStats = BuildingStats {
     vision: 3,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: ROC.cost,
         // Four Excavators at two work a tick finish in under two minutes.
@@ -2409,6 +2433,7 @@ const LATTICE: BuildingStats = BuildingStats {
     vision: 4,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 250,
         build_ticks: 450,
@@ -2434,6 +2459,7 @@ const EXTRACTOR: BuildingStats = BuildingStats {
     weapons: &[],
     // Cheap to restore but hard to hold: the price buys durable income on
     // map-authored ground every player can read.
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 100,
         build_ticks: 300,
@@ -2465,6 +2491,7 @@ const HEAVY_TURRET: BuildingStats = BuildingStats {
         building_damage: None,
         projectile: None,
     }],
+    traverse: 7,
     construction: Some(ConstructionStats {
         cost: 150,
         build_ticks: 300,
@@ -2488,6 +2515,7 @@ const BULWARK: BuildingStats = BuildingStats {
         building_damage: None,
         projectile: None,
     }],
+    traverse: 5,
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 500,
@@ -2511,6 +2539,7 @@ const BURST_FLAK: BuildingStats = BuildingStats {
         building_damage: None,
         projectile: None,
     }],
+    traverse: 14,
     construction: Some(ConstructionStats {
         cost: 120,
         build_ticks: 250,
@@ -2524,6 +2553,7 @@ const REFINERY: BuildingStats = BuildingStats {
     vision: 4,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 300,
         build_ticks: 600,
@@ -2537,6 +2567,7 @@ const DEEP_BORE: BuildingStats = BuildingStats {
     vision: 4,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 350,
         build_ticks: 600,
@@ -2550,6 +2581,7 @@ const DEEP_ARRAY: BuildingStats = BuildingStats {
     vision: 11,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     construction: Some(ConstructionStats {
         cost: 150,
         build_ticks: 300,
@@ -2579,6 +2611,7 @@ const CITADEL: BuildingStats = BuildingStats {
             speed: Fx::lit("0.30"),
         }),
     }],
+    traverse: 3,
     construction: Some(ConstructionStats {
         cost: 250,
         build_ticks: 400,

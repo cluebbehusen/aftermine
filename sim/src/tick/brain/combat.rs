@@ -540,11 +540,72 @@ fn buffer_shot(
     }
 }
 
-/// Built turrets pick their own fights: the nearest enemy unit in range with
-/// a clear line; out-of-line targets are ignored until they move.
-/// Ground-capable defenses with no eligible unit fall back to currently
-/// apparent hostile buildings. Target choice is re-evaluated every shot, in
-/// building-id order.
+/// A defense's gun as its target choice reads it.
+#[derive(Debug, Clone, Copy)]
+struct Gun {
+    center: Vec2Fx,
+    heading: u8,
+    traverse: u8,
+    /// Ticks of reload left after this one.
+    reload: u32,
+}
+
+impl Gun {
+    /// Ticks after this one before the gun could fire at `aim`: the later of
+    /// its reload and its turn onto it.
+    fn ready(self, aim: Vec2Fx) -> u32 {
+        use super::super::movement::{longest_bear, ticks_to_bear};
+        // Early in a long reload the gun can bear anywhere before it has
+        // reloaded, so the turn need not be measured.
+        if self.reload >= longest_bear(self.traverse) {
+            return self.reload;
+        }
+        ticks_to_bear(self.heading, aim - self.center, self.traverse).max(self.reload)
+    }
+}
+
+/// The candidate with the least `key` among those that pass `test`: the
+/// pick filtering first would make, but the costly test runs only on a
+/// candidate that would beat the best so far.
+fn least_passing<T, K: Ord>(
+    candidates: impl Iterator<Item = T>,
+    key: impl Fn(&T) -> K,
+    test: impl Fn(&T) -> bool,
+) -> Option<T> {
+    let mut best: Option<(K, T)> = None;
+    for candidate in candidates {
+        let rank = key(&candidate);
+        if best.as_ref().is_none_or(|(least, _)| rank < *least) && test(&candidate) {
+            best = Some((rank, candidate));
+        }
+    }
+    best.map(|(_, candidate)| candidate)
+}
+
+/// Turns the gun of the defense `id` toward `aim` at its tier's traverse;
+/// returns whether it now bears.
+fn aim_gun(state: &mut State, id: crate::ids::BuildingId, aim: Vec2Fx) -> bool {
+    let b = state.building_mut(id).expect("live defense");
+    let (center, traverse) = (b.center(), b.stats().traverse);
+    let heading = b
+        .gun_heading
+        .as_mut()
+        .expect("a building that fires carries a gun");
+    super::super::movement::steer_bearing(heading, aim - center, traverse)
+}
+
+/// Built defenses pick their own fights every tick, in building-id order.
+/// A focus the gun can fire on comes first. Otherwise the gun takes the
+/// seen enemy unit in range with a clear line that it can fire on soonest,
+/// counting both its reload and its turn, the nearest breaking a tie; a
+/// ground-capable defense with none falls back to apparent hostile buildings
+/// ranked the same way, and then to a radar contact. Out-of-line targets are
+/// ignored until they move. The gun turns toward its pick and fires once it
+/// bears and has reloaded; with no pick it holds its bearing.
+///
+/// Right after a shot, every target the gun can reach within its reload
+/// ties, so the nearest wins. The pick it turns toward only gets sooner, so
+/// the gun never swings back and forth between two targets that stand still.
 pub(super) fn turret_fire(
     state: &mut State,
     index: &super::super::spatial::UnitIndex,
@@ -564,27 +625,25 @@ pub(super) fn turret_fire(
         if !b.built() || b.hp == 0 {
             continue;
         }
-        let (me, center, cooling, kind, tier, focus) = (
-            b.player,
-            b.center(),
-            b.cooldown > 0,
-            b.kind,
-            b.tier,
-            b.focus,
+        let (me, center, kind, tier, focus) = (b.player, b.center(), b.kind, b.tier, b.focus);
+        let (heading, traverse) = (
+            b.gun_heading.expect("a building that fires carries a gun"),
+            b.stats().traverse,
         );
         let focused = focus
             .and_then(|target| state.attack_view(me, target))
             .filter(|view| atk.targets.covers(view.domain));
+        let b = state.building_mut(id).expect("just seen");
         if focus.is_some() && focused.is_none() {
-            state.building_mut(id).expect("just seen").focus = None;
+            b.focus = None;
         }
-        if cooling {
-            let b = state.building_mut(id).expect("just seen");
-            b.cooldown -= 1;
-            if b.cooldown > 0 {
-                continue;
-            }
-        }
+        b.cooldown = b.cooldown.saturating_sub(1);
+        let gun = Gun {
+            center,
+            heading,
+            traverse,
+            reload: b.cooldown,
+        };
         let focused =
             focused.filter(|view| blind::solution(state, center, Domain::Ground, *view, atk));
         if let Some(view) = focused.filter(|view| view.entity.is_none()) {
@@ -602,7 +661,7 @@ pub(super) fn turret_fire(
         let hostiles = index.hostiles_near(state.player(me).team, home, reach + 1);
         let unit_victim = (focused_victim.is_none() && hostiles.bodies)
             .then(|| {
-                (home.y - reach..=home.y + reach)
+                let in_reach = (home.y - reach..=home.y + reach)
                     .flat_map(|y| index.row_span(y, home.x - reach, home.x + reach))
                     .map(|&(_, slot)| &state.units[slot])
                     .filter(|u| {
@@ -613,8 +672,11 @@ pub(super) fn turret_fire(
                         let excess = crate::stats::hull_excess(u.kind.stats().radius);
                         within_weapon_reach(atk, center.dist_sq(u.pos), excess)
                     })
-                    .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()))
-                    .filter(|(_, _, pos, dom)| {
+                    .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()));
+                least_passing(
+                    in_reach,
+                    |&(d, uid, pos, _)| (gun.ready(pos), d, uid),
+                    |(_, _, pos, dom)| {
                         clear_line(
                             state,
                             Fire::of(atk),
@@ -622,8 +684,8 @@ pub(super) fn turret_fire(
                             ShotEnd::new(*pos, *dom),
                             Landing::Unchecked,
                         )
-                    })
-                    .min_by_key(|&(d, uid, _, _)| (d, uid))
+                    },
+                )
             })
             .flatten();
         let building_victim = (focused_victim.is_none()
@@ -635,7 +697,7 @@ pub(super) fn turret_fire(
             } else {
                 index.buildings_since_survey(state.buildings())
             };
-            building_victim(state, me, center, atk, candidates)
+            building_victim(state, me, gun, atk, candidates)
         })
         .flatten();
         let (victim, aim) = if let Some(focused) = focused_victim {
@@ -666,6 +728,9 @@ pub(super) fn turret_fire(
         } else {
             aim
         };
+        if !aim_gun(state, id, aim) || gun.reload > 0 {
+            continue;
+        }
         let b = state.building_mut(id).expect("just seen");
         b.cooldown = atk.cooldown_ticks;
         if atk.projectile.is_some() {
@@ -693,26 +758,30 @@ pub(super) fn turret_fire(
     }
 }
 
-/// The nearest of `candidates` a turret at `center` can strike with `atk`:
-/// a hostile building in reach and in true sight with a clear line to its
-/// closest point, and its aim point. Every test is pure, so the cheapest
-/// runs first.
+/// The hostile building among `candidates` that `gun` can strike with `atk`
+/// soonest, the nearest breaking a tie: one in reach and in true sight with
+/// a clear line to its closest point, and its aim point. Every test is pure,
+/// so the cheapest runs first.
 fn building_victim(
     state: &State,
     me: PlayerId,
-    center: Vec2Fx,
+    gun: Gun,
     atk: &WeaponStats,
     candidates: &[crate::Building],
 ) -> Option<(crate::ids::BuildingId, Vec2Fx)> {
-    candidates
+    let center = gun.center;
+    let in_reach = candidates
         .iter()
         .map(|target| {
             let aim = target.closest_point_to(center);
             (center.dist_sq(aim), target, aim)
         })
         .filter(|(distance, ..)| within_weapon_reach(atk, *distance, Fx::ZERO))
-        .filter(|(_, target, _)| state.sees_hostile_building(me, target))
-        .filter(|(_, target, aim)| {
+        .filter(|(_, target, _)| state.sees_hostile_building(me, target));
+    least_passing(
+        in_reach,
+        |(distance, target, aim)| (gun.ready(*aim), *distance, target.id),
+        |(_, target, aim)| {
             clear_line(
                 state,
                 Fire::of(atk),
@@ -720,9 +789,9 @@ fn building_victim(
                 ShotEnd::new(*aim, Domain::Ground).on(target.anchor),
                 Landing::Checked,
             )
-        })
-        .min_by_key(|(distance, target, _)| (*distance, target.id))
-        .map(|(_, target, aim)| (target.id, aim))
+        },
+    )
+    .map(|(_, target, aim)| (target.id, aim))
 }
 
 /// Firing positions for a chaser around an unstandable victim tile,

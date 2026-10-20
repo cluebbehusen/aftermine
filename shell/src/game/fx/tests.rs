@@ -173,10 +173,21 @@ fn blind_bulwark_scene(victim: UnitKind) -> Game {
         },
     ];
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    // The gun already bears on the victim's tile, where radar places it.
+    let gun_heading = {
+        let turret = game
+            .state
+            .buildings()
+            .iter()
+            .find(|building| building.kind == BuildingKind::Turret)
+            .unwrap();
+        chassis::compass::heading_of(game.state.units()[0].tile().center() - turret.center())
+    };
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     for building in wire["buildings"].as_array_mut().unwrap() {
         if building["kind"] == "turret" {
             building["tier"] = serde_json::json!(2);
+            building["gun_heading"] = serde_json::json!(gun_heading);
         }
     }
     let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
@@ -244,7 +255,6 @@ fn blind_hitscan_damage_alerts_only_its_owner_in_live_and_playback() {
             .observe_tick(&live.state, &report.events, &report.movement);
         assert_eq!(playback.presentation.alerts.len(), usize::from(human == 0));
         assert_eq!(playback.presentation.last_alert.is_some(), human == 0);
-        assert!(playback.presentation.aim_building_targets.is_empty());
         assert!(playback.presentation.aim_unit_targets.is_empty());
     }
 }
@@ -1176,6 +1186,19 @@ fn face_south(game: &mut crate::game::Game, id: UnitId) {
     game.replace_state_after_jump(&serde_json::from_value(value).unwrap());
 }
 
+/// Points the gun of the defense `id` along compass bearing `heading`.
+fn point_gun(game: &mut crate::game::Game, id: BuildingId, heading: u8) {
+    let mut value = serde_json::to_value(&*game.state).unwrap();
+    let building = value["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|building| building["id"] == serde_json::json!(id))
+        .unwrap();
+    building["gun_heading"] = serde_json::json!(heading);
+    game.replace_state_after_jump(&serde_json::from_value(value).unwrap());
+}
+
 fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
     let mut scenario = oxide_sim::Scenario::skirmish();
     scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
@@ -1664,65 +1687,27 @@ fn shot_visuals_begin_at_the_authored_muzzle_not_chassis_center() {
 }
 
 #[test]
-fn defense_mount_tracks_only_a_target_the_viewer_may_see() {
+fn defense_mount_turns_with_the_simulated_gun() {
     let (mut game, building, _) = defense_tracking_game();
-    let report = game.state.tick(&[]);
-    game.presentation.spawn_fx(&game.state, &report.events);
-    assert!(game.state.building(building).unwrap().cooldown > 0);
-    let hostile = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| {
-            game.state.hostile(game.presentation.human, unit.player)
-                && !game.my_vision().visible(unit.tile())
-        })
-        .expect("skirmish has a fogged hostile unit");
-    assert!(!game.my_vision().visible(hostile.tile()));
-    let target = Target::Unit(hostile.id);
-    game.presentation
-        .aim_building_targets
-        .insert(building.0, target);
-    game.presentation
-        .aim_buildings
-        .insert(building.0, (0.42, 0.0));
-    game.update_fx(crate::game::TICK_DT);
-
-    game.presentation.refresh_defense_aim(&game.state);
-    assert_eq!(game.presentation.aim_buildings[&building.0].0, 0.42);
-
-    game.presentation.overlay = true;
-    game.presentation.refresh_defense_aim(&game.state);
-    assert_ne!(game.presentation.aim_buildings[&building.0].0, 0.42);
+    point_gun(&mut game, building, 128);
+    game.presentation.remember_previous_tick(&game.state);
+    game.state.tick(&[]);
+    let traverse = BuildingKind::Turret.base_stats().traverse;
+    assert_eq!(
+        game.state.building(building).unwrap().gun_heading,
+        Some(128 - traverse),
+        "the gun turns toward the Harvester to its east"
+    );
+    let b = game.state.building(building).unwrap();
+    let bearing = |step: f32| step * std::f32::consts::TAU / 256.0 + std::f32::consts::FRAC_PI_2;
+    let drawn = |alpha| game.presentation.draw_gun_heading(b, alpha);
+    assert!((drawn(0.0) - bearing(128.0)).abs() < 1e-5);
+    assert!((drawn(0.5) - bearing(128.0 - f32::from(traverse) / 2.0)).abs() < 1e-5);
+    assert!((drawn(1.0) - bearing(f32::from(128 - traverse))).abs() < 1e-5);
 }
 
 #[test]
-fn defense_mount_follows_its_visible_target_during_reload() {
-    let (mut game, building, target) = defense_tracking_game();
-    face_south(&mut game, target);
-    let report = game.state.tick(&[]);
-    game.presentation.spawn_fx(&game.state, &report.events);
-    let first_angle = game.presentation.aim_buildings[&building.0].0;
-    let first_pos = game.state.unit(target).unwrap().pos;
-
-    game.update_fx(crate::game::TICK_DT);
-    let report = game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Run {
-            units: vec![target],
-            goal: chassis::grid::TilePos::new(14, 14),
-            queue: false,
-        },
-    }]);
-    game.presentation.spawn_fx(&game.state, &report.events);
-
-    assert_ne!(game.state.unit(target).unwrap().pos, first_pos);
-    assert_ne!(game.presentation.aim_buildings[&building.0].0, first_angle);
-    assert!(game.state.building(building).unwrap().cooldown > 0);
-}
-
-#[test]
-fn shell_report_keeps_predicted_heading_on_the_launch_frame() {
+fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
     let mut scenario = oxide_sim::Scenario::skirmish();
     scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
         player: 0,
@@ -1754,6 +1739,11 @@ fn shell_report_keeps_predicted_heading_on_the_launch_frame() {
         .unwrap()
         .id;
     face_south(&mut game, target);
+    let toward = chassis::compass::heading_of(
+        game.state.unit(target).unwrap().pos - game.state.building(shooter).unwrap().center(),
+    );
+    point_gun(&mut game, shooter, toward);
+    game.presentation.remember_previous_tick(&game.state);
     let report = game.state.tick(&[oxide_sim::PlayerCommand {
         player: oxide_sim::PlayerId(1),
         command: oxide_sim::Command::Run {
@@ -1787,8 +1777,15 @@ fn shell_report_keeps_predicted_heading_on_the_launch_frame() {
     assert!((expected_angle - current_angle).abs() > 1e-4);
 
     game.presentation.spawn_fx(&game.state, &report.events);
-    let angle = game.presentation.aim_buildings[&shooter.0].0;
-    assert!((angle - expected_angle).abs() < 1e-6);
+    let angle = game
+        .presentation
+        .draw_gun_heading(game.state.building(shooter).unwrap(), 1.0);
+    let off = (angle - expected_angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    assert!(
+        off.abs() <= 3.0 * std::f32::consts::TAU / 256.0,
+        "the mount stands within the firing tolerance of the shot: {off}"
+    );
 }
 
 #[test]

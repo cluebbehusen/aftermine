@@ -231,6 +231,34 @@ pub fn face_toward(state: &mut State, id: oxide_sim::UnitId, point: chassis::fx:
     *state = serde_json::from_value(value).unwrap();
 }
 
+/// Points the gun of the defense `id` at `point`, for a staged scene that
+/// starts with the gun already on its target: a new defense faces the map
+/// centre.
+pub fn aim_defense(state: &mut State, id: oxide_sim::BuildingId, point: chassis::fx::Vec2Fx) {
+    let heading = chassis::compass::heading_of(point - state.building(id).unwrap().center());
+    let mut value = serde_json::to_value(&*state).unwrap();
+    let row = value["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|b| b["id"] == serde_json::json!(id))
+        .unwrap();
+    row["gun_heading"] = serde_json::json!(heading);
+    *state = serde_json::from_value(value).unwrap();
+}
+
+/// [`aim_defense`] at a unit's position or a building's closest point.
+pub fn aim_defense_at(state: &mut State, id: oxide_sim::BuildingId, target: oxide_sim::Target) {
+    let center = state.building(id).unwrap().center();
+    let point = match target {
+        oxide_sim::Target::Unit(target) => state.unit(target).unwrap().pos,
+        oxide_sim::Target::Building(target) => {
+            state.building(target).unwrap().closest_point_to(center)
+        }
+    };
+    aim_defense(state, id, point);
+}
+
 pub fn face_target(state: &mut State, id: oxide_sim::UnitId, target: oxide_sim::Target) {
     let unit = state.unit(id).unwrap();
     let point = match target {

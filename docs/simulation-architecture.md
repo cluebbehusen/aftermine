@@ -909,12 +909,27 @@ cannot pursue, retreat, or start a bomber run. It does not change Run or
 Advance. A fireable explicit target takes priority. Defenses retain blocked or
 out-of-range focus while firing at fallback targets; Stop clears focus.
 
+Every kind that fires carries a serialized gun bearing, from placement on, that
+starts toward the map centre like a Spire's deck. Each tick a built defense
+picks a target and turns its gun toward it at its tier's `traverse`; it fires
+once the bearing is within the ground firing tolerance and its reload has ended,
+and with no target it holds its bearing. A fireable focus comes first, whatever
+the turn. Otherwise it takes the visible eligible unit in firing range with a
+clear shot that it could fire on soonest: the later of the end of its reload and
+the tick its gun would bear, then distance, then id. Right after a shot every
+target the gun can reach within the reload ties, so the nearest wins; the pick a
+gun turns toward only gets sooner, so it never swings between two targets that
+stand still. Validation rejects a bearing on a kind that fires nothing and a
+missing one on a kind that fires.
+
 Ground-capable defenses automatically acquire visible hostile buildings when no
 eligible visible unit is in firing range with a clear shot. Building acquisition
 uses the shared apparency gate, so concealed Scuttle Charges require detection.
-Candidates rank by distance to the closest footprint point, then building id;
-weapon range, minimum range, and terrain cover still apply. Air-only defenses
-never acquire buildings.
+Candidates rank by the same soonest-shot rule, measured to the closest footprint
+point, then by distance to that point and building id; weapon range, minimum
+range, and terrain cover still apply. Air-only defenses never acquire buildings.
+A defense with neither turns toward and fires on the nearest radar contact it
+has a solution on.
 
 Direct ground-to-ground fire traces terrain: rocks provide cover, while
 buildings and scrap do not. Fire involving aircraft and indirect weapons ignores

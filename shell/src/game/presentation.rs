@@ -34,6 +34,8 @@ pub struct Presentation {
     pub prev_heading: HashMap<u32, u8>,
     /// Mounted guns' world bearings at the previous tick, by weapon slot.
     pub(crate) prev_mounts: HashMap<u32, [Option<u8>; oxide_sim::stats::MAX_WEAPONS]>,
+    /// Defense guns' bearings at the previous tick.
+    pub(crate) prev_guns: HashMap<u32, u8>,
     /// Sprite rotation per unit (radians; 0 = up).
     pub facing: HashMap<u32, f32>,
     pub(super) hull_heading: HashMap<u32, (f32, f32)>,
@@ -42,11 +44,6 @@ pub struct Presentation {
     /// facing resumes when the hold expires. Presentation only.
     pub aim_units: HashMap<u32, (f32, f32)>,
     pub(crate) aim_unit_targets: HashMap<u32, Target>,
-    /// Same for buildings (turret mounts track their last victim).
-    pub aim_buildings: HashMap<u32, (f32, f32)>,
-    /// The live victims defense mounts follow between reports. The last
-    /// legal angle remains in `aim_buildings` after a target disappears.
-    pub(crate) aim_building_targets: HashMap<u32, Target>,
     /// The Lattice pods that fired: (battery id, pod) -> (angle, fx-clock
     /// stamp). A pod holds its shot's bearing briefly, then swings back
     /// north to reload. Presentation only.
@@ -332,12 +329,11 @@ impl Presentation {
             prev_pos: HashMap::new(),
             prev_heading: HashMap::new(),
             prev_mounts: HashMap::new(),
+            prev_guns: HashMap::new(),
             facing: HashMap::new(),
             hull_heading: HashMap::new(),
             aim_units: HashMap::new(),
             aim_unit_targets: HashMap::new(),
-            aim_buildings: HashMap::new(),
-            aim_building_targets: HashMap::new(),
             pod_shots: HashMap::new(),
             warned_warheads: std::collections::HashSet::new(),
             warned_cradles: std::collections::BTreeSet::new(),
@@ -497,10 +493,21 @@ impl Presentation {
 
     pub fn draw_heading(&self, id: UnitId, current: u8, alpha: f32) -> f32 {
         let previous = self.prev_heading.get(&id.0).copied().unwrap_or(current);
-        let delta = current.wrapping_sub(previous).cast_signed();
-        (f32::from(previous) + f32::from(delta) * alpha.clamp(0.0, 1.0)) * std::f32::consts::TAU
-            / 256.0
-            + std::f32::consts::FRAC_PI_2
+        bearing_between(previous, current, alpha)
+    }
+
+    /// The drawn bearing of a defense's gun, turning the short way from last
+    /// tick's; straight up for a building without a gun.
+    pub(crate) fn draw_gun_heading(&self, building: &oxide_sim::Building, alpha: f32) -> f32 {
+        let Some(current) = building.gun_heading else {
+            return 0.0;
+        };
+        let previous = self
+            .prev_guns
+            .get(&building.id.0)
+            .copied()
+            .unwrap_or(current);
+        bearing_between(previous, current, alpha)
     }
 
     /// The drawn world bearing of the mounted gun in `slot`, turning the
@@ -518,13 +525,7 @@ impl Presentation {
             .get(&unit.id.0)
             .and_then(|bearings| bearings[slot])
             .unwrap_or(current);
-        let delta = current.wrapping_sub(previous).cast_signed();
-        Some(
-            (f32::from(previous) + f32::from(delta) * alpha.clamp(0.0, 1.0))
-                * std::f32::consts::TAU
-                / 256.0
-                + std::f32::consts::FRAC_PI_2,
-        )
+        Some(bearing_between(previous, current, alpha))
     }
 
     pub(crate) fn chassis_turning(&self, unit: &oxide_sim::state::Unit) -> bool {
@@ -557,8 +558,6 @@ impl Presentation {
         self.aim_units.clear();
         self.aim_unit_targets.clear();
         self.hull_heading.clear();
-        self.aim_buildings.clear();
-        self.aim_building_targets.clear();
         self.pod_shots.clear();
         self.warned_warheads.clear();
         self.warned_cradles.clear();
@@ -857,6 +856,11 @@ impl Presentation {
                 )
             })
             .collect();
+        self.prev_guns = state
+            .buildings()
+            .iter()
+            .filter_map(|building| Some((building.id.0, building.gun_heading?)))
+            .collect();
         self.prev_pos = state
             .units()
             .iter()
@@ -904,15 +908,6 @@ impl Presentation {
             .retain(|id, _| state.unit(UnitId(*id)).is_some());
         self.aim_units
             .retain(|id, _| state.unit(UnitId(*id)).is_some());
-        self.aim_buildings
-            .retain(|id, _| state.building(oxide_sim::BuildingId(*id)).is_some());
-        self.aim_building_targets.retain(|id, target| {
-            state.building(oxide_sim::BuildingId(*id)).is_some()
-                && match target {
-                    Target::Unit(id) => state.unit(*id).is_some(),
-                    Target::Building(id) => state.building(*id).is_some(),
-                }
-        });
         self.animations.retain_live(state);
     }
 
@@ -934,6 +929,14 @@ impl Presentation {
         }
         self.passive_income.set(None);
     }
+}
+
+/// The sprite rotation `alpha` of the way from compass bearing `previous` to
+/// `current`, turning the short way.
+fn bearing_between(previous: u8, current: u8, alpha: f32) -> f32 {
+    let delta = current.wrapping_sub(previous).cast_signed();
+    (f32::from(previous) + f32::from(delta) * alpha.clamp(0.0, 1.0)) * std::f32::consts::TAU / 256.0
+        + std::f32::consts::FRAC_PI_2
 }
 
 /// Whether `human` sees `unit` now, as the renderer decides.

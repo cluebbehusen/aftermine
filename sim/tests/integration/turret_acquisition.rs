@@ -5,7 +5,7 @@ use crate::common;
 use chassis::grid::TilePos;
 use oxide_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitKind};
 
-use common::{building, cmd, open_arena, open_arena_with, run_until, unit};
+use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
 
 fn id(state: &State, kind: BuildingKind) -> BuildingId {
     state
@@ -50,6 +50,7 @@ fn ground_defenses_damage_buildings_without_commands_at_every_tier() {
                 .unwrap();
             row["tier"] = serde_json::json!(tier);
             state = serde_json::from_value(value).unwrap();
+            aim_defense_at(&mut state, defense, Target::Building(target));
             let before = state.building(target).unwrap().hp;
             let mut replayed = state.clone();
             let report = state.tick(&[]);
@@ -80,6 +81,8 @@ fn units_take_automatic_priority_but_explicit_building_focus_wins() {
         let target = id(&automatic, BuildingKind::Reclaimer);
         let victim = automatic.units()[0].id;
         let mut focused = automatic.clone();
+        aim_defense_at(&mut automatic, defense, Target::Unit(victim));
+        aim_defense_at(&mut focused, defense, Target::Building(target));
         assert_eq!(
             shot(&automatic.tick(&[]).events, defense),
             Some(Target::Unit(victim))
@@ -147,6 +150,7 @@ fn concealed_mines_are_skipped_until_detected() {
                 state.building_apparent(PlayerId(0), state.building(target).unwrap()),
                 detected
             );
+            aim_defense_at(&mut state, defense, Target::Building(target));
             let before = state.building(target).unwrap().hp;
             let report = state.tick(&[]);
             assert_eq!(
@@ -161,10 +165,14 @@ fn concealed_mines_are_skipped_until_detected() {
                     });
                 }
             } else {
+                // The gun was staged on the charge; it never follows one it
+                // cannot know of.
+                let bearing = state.building(defense).unwrap().gun_heading;
                 for _ in 0..120 {
                     assert_eq!(shot(&state.tick(&[]).events, defense), None);
                 }
                 assert_eq!(state.building(target).unwrap().hp, before);
+                assert_eq!(state.building(defense).unwrap().gun_heading, bearing);
             }
         }
     }
@@ -237,6 +245,7 @@ fn a_turret_engages_a_lone_hostile_exactly_within_its_range() {
             let expected = distance <= range * range
                 && distance >= minimum * minimum
                 && state.can_see(PlayerId(0), tile);
+            aim_defense_at(&mut state, defense, Target::Unit(victim));
             let fired = shot(&state.tick(&[]).events, defense) == Some(Target::Unit(victim));
             assert_eq!(fired, expected, "hostile at {tile:?}");
             engaged += usize::from(fired);
