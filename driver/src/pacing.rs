@@ -280,11 +280,11 @@ pub fn summarize<'a>(games: impl IntoIterator<Item = &'a Pacing>) -> PacingSumma
 pub fn render(out: &mut String, summary: &PacingSummary, indent: &str) {
     let _ = writeln!(
         out,
-        "{indent}{} of {} matches won; ahead means {}% of two sides' net worth, {} times an equal split",
+        "{indent}{} of {} matches won; ahead means {} times an equal split of net worth ({}% in a duel)",
         summary.won,
         summary.matches,
-        AHEAD_PER_MILLE / 20,
         per_mille(AHEAD_PER_MILLE),
+        AHEAD_PER_MILLE / 20,
     );
     for row in &summary.leads {
         let _ = writeln!(
@@ -298,11 +298,11 @@ pub fn render(out: &mut String, summary: &PacingSummary, indent: &str) {
     }
     let _ = writeln!(
         out,
-        "{indent}comebacks: {} of {} winners fell to {}% of two sides' worth ({} times an equal split) after minute {} ({})",
+        "{indent}comebacks: {} of {} winners fell to {} times an equal split ({}% in a duel) after minute {} ({})",
         summary.comebacks,
         summary.won,
-        COMEBACK_PER_MILLE / 20,
         per_mille(COMEBACK_PER_MILLE),
+        COMEBACK_PER_MILLE / 20,
         OPENING_TICKS / MINUTE,
         percent(summary.comebacks, summary.won),
     );

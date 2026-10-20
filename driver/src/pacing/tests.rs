@@ -244,9 +244,9 @@ fn the_summary_counts_held_leads_comebacks_changes_and_play_after_settling() {
     let mut text = String::new();
     render(&mut text, &summary, "  ");
     for expected in [
-        "  3 of 4 matches won; ahead means 55% of two sides' net worth, 1.1 times an equal split",
+        "  3 of 4 matches won; ahead means 1.1 times an equal split of net worth (55% in a duel)",
         "  ahead at minute 15: 3 won matches, the side ahead won 2 (67%)",
-        "  comebacks: 2 of 3 winners fell to 40% of two sides' worth (0.8 times an equal split) after minute 3 (67%)",
+        "  comebacks: 2 of 3 winners fell to 0.8 times an equal split (40% in a duel) after minute 3 (67%)",
         "  lead changes: 0.33 per won match; 1 of 3 had any (33%)",
         "  settled: 2 of 3 winners stayed ahead to the end; median 79% of the match played after that",
     ] {

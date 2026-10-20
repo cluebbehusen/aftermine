@@ -651,7 +651,7 @@ fn the_report_renders_every_section_and_a_line_per_match() {
         "trained  1 seat-games, entropy 0.00 bits (1.0 effective kinds): condor 100%",
         "at the loser's home",
         "  ahead at minute 10: 1 won matches, the side ahead won 1 (100%)",
-        "  comebacks: 1 of 1 winners fell to 40%",
+        "  comebacks: 1 of 1 winners fell to 0.8 times an equal split (40% in a duel)",
         "peak wreck 400; lead changes 1, winner's low 38%",
         "synthetic.json: synthetic, 30.0 min, team 0 won; 1 battles, 1 won, 1 converted; late kinds standing 2.0, trained 1.0",
     ] {
