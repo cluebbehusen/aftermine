@@ -168,6 +168,18 @@ impl Ledger {
         true
     }
 
+    /// Issues every launch of one volley as a single unit order while the
+    /// allowance lasts.
+    pub(crate) fn salvo(&mut self, launches: impl IntoIterator<Item = Command>) {
+        if self.decision.unit_orders == self.decision.allowance {
+            return;
+        }
+        self.decision.unit_orders += 1;
+        for launch in launches {
+            self.push(launch);
+        }
+    }
+
     /// Whether `unit` sits out orders after stalling for want of a route or a
     /// firing position.
     pub(crate) fn stuck(&self, unit: UnitId) -> bool {

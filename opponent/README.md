@@ -451,14 +451,15 @@ known health the simulation's own falloff and resistance would take there, after
 what the team's warheads already flying will take. Known hostile Lattices whose
 ring holds the tile count their loaded interceptors when seen and a full
 magazine when remembered. A volley is worth firing when the warheads that get
-past those interceptors take at least the price of every round it spends.
+past those interceptors, together with the price of the interceptors it draws,
+take at least the price of every round it spends: the defender pays again for
+each interceptor it fires.
 
 Loaded Spires with no strike pending launch at such a volley: Veteran and Prime
 at the one that takes the most beyond its price, Scrapheap and Standard at the
 worthy aim nearest home, each with the fewest Spires that get through, the
-Spires nearest the aim firing. Launches are unit orders and count against the
-decision's allowance; a volley the allowance cannot hold whole waits. Otherwise
-loaded Spires hold.
+Spires nearest the aim firing. A volley is one unit order against the decision's
+allowance, however many Spires fire. Otherwise loaded Spires hold.
 
 Once a Crucible stands and a known strike is worth a round, the seat wants a
 Spire, upgrading its own supported Extractor nearest home into a Deep Bore first
