@@ -14,25 +14,25 @@ use oxide_sim::{Building, BuildingKind, Order, PlayerId, State, Target, Tick, Un
 
 const SECOND: Tick = oxide_sim::TICKS_PER_SECOND as Tick;
 /// No tip shows this early: the opening belongs to the player.
-const OPENING: Tick = 20 * SECOND;
+const OPENING: Tick = 60 * SECOND;
 /// The least time from one tip appearing to the next.
-const GAP: Tick = 45 * SECOND;
+const GAP: Tick = 120 * SECOND;
 /// How long a tip stays up.
 const SHOWN: Tick = 15 * SECOND;
 /// How long a leaving tip takes to fade out.
 const FADE: Tick = SECOND;
 /// How long a Harvester stands idle before it is worth a tip.
-const IDLE_WAIT: Tick = 10 * SECOND;
+const IDLE_WAIT: Tick = 30 * SECOND;
 /// How long scrap sits unspent before it is worth a tip.
-const UNSPENT_WAIT: Tick = 20 * SECOND;
+const UNSPENT_WAIT: Tick = 45 * SECOND;
 /// The bank that counts as scrap to spend.
-const UNSPENT_BANK: u32 = 200;
+const UNSPENT_BANK: u32 = 400;
 /// How long without an enemy machine in sight before cleanup tips show.
-const QUIET: Tick = 10 * SECOND;
+const QUIET: Tick = 30 * SECOND;
 /// When an unclaimed Extractor frame near the Foundry is worth a tip.
 const FRAMES_AFTER: Tick = 120 * SECOND;
 /// When a player who has never seen an enemy building is told to scout.
-const SCOUT_AFTER: Tick = 180 * SECOND;
+const SCOUT_AFTER: Tick = 300 * SECOND;
 /// How far from a Foundry's center a frame counts as near, in tiles.
 const FRAME_REACH: i32 = 12;
 /// How far from an own building's footprint a wreck counts as near, in

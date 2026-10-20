@@ -165,10 +165,11 @@ Match tips ride on the session as `Game::tips`, outside its save, so a resumed
 match can show a tip again. Each tip's rule reads only the local seat's own
 forces, its current sight and remembered buildings, the danger its Harvesters
 steer around, and the HUD's attack alerts, and no tip stages a command. One tip
-shows at a time where the lesson card sits, at most one new tip appears every 45
-seconds of match time, and each shows once per session. Tips stay away during a
-lesson, after the result, from a seat that can no longer act, and whenever the
-Match tips setting is off.
+shows at a time where the lesson card sits. None appears in the first minute, at
+most one new tip appears every two minutes of match time, and each shows once
+per session. Tips always show in the first match. Elsewhere they show only when
+the Match tips setting is on, and it starts off. They stay away during a lesson,
+after the result, and from a seat that can no longer act.
 
 `app/screen.rs` answers every per-screen question in one place, each with one
 exhaustive match: the visible session (a replay viewer's own, or the live

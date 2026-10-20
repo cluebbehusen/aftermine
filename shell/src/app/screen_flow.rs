@@ -94,6 +94,12 @@ fn start_first_match(app: &mut App) -> Result<Screen> {
     Ok(Screen::Playing)
 }
 
+/// Whether match tips may show in `game`: always in Basic Training's first
+/// match, and elsewhere when the player turned them on.
+fn tips_on(config: &config::Config, game: &Game) -> bool {
+    config.match_tips || crate::tutorial::is_first_match(&game.scenario)
+}
+
 /// Marks Basic Training's first match finished once `game`, that match,
 /// is decided, whatever the result; returns whether `config` changed.
 fn mark_first_match(config: &mut config::Config, game: &Game) -> bool {
@@ -1017,11 +1023,8 @@ fn playing_frame(
     {
         app.notify(format!("could not save settings: {err}"), true);
     }
-    crate::tips::Tips::advance_in(
-        &mut app.game,
-        app.config.match_tips,
-        render::reduced_motion(),
-    );
+    let tips = tips_on(&app.config, &app.game);
+    crate::tips::Tips::advance_in(&mut app.game, tips, render::reduced_motion());
     if app.game.state.result().is_some() && app.game.end_stats.is_some() {
         next = Some(Screen::Results(ResultsScreen::open()));
         // Re-enter immediately so the first decided frame is

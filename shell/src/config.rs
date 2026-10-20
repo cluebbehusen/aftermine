@@ -214,7 +214,7 @@ pub struct Config {
     /// leaves keyboard groups working.
     pub control_groups: bool,
     /// Show short tips during a match when something needs the player's
-    /// attention.
+    /// attention. Basic Training's first match shows them either way.
     pub match_tips: bool,
     /// Touch gesture timing.
     pub touch: TouchPrefs,
@@ -249,7 +249,7 @@ impl Default for Config {
             reduced_motion: false,
             colorblind: false,
             control_groups: true,
-            match_tips: true,
+            match_tips: false,
             touch: TouchPrefs::default(),
             last_join_address: None,
             player_name: None,

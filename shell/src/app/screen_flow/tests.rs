@@ -363,6 +363,17 @@ fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
 }
 
 #[test]
+fn tips_show_in_the_first_match_and_elsewhere_only_when_turned_on() {
+    let mut config = config::Config::default();
+    let first = first_match_game(&config, &mut PersonalitySeedSource::from_seed(41)).unwrap();
+    let other = Game::new(Scenario::skirmish()).unwrap();
+    assert!(tips_on(&config, &first));
+    assert!(!tips_on(&config, &other), "off by default");
+    config.match_tips = true;
+    assert!(tips_on(&config, &other));
+}
+
+#[test]
 fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
     let mut personality_seeds = PersonalitySeedSource::from_seed(41);
     let draft = configured_new_match_draft();
