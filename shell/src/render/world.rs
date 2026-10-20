@@ -68,17 +68,25 @@ impl FogVeil {
         let states = std::mem::take(&mut self.states);
         let fog =
             |x: i32, y: i32| states[as_index(y - min.y + 1) * stride + as_index(x - min.x + 1)];
+        // One rect per run of equal fog along a row: zoomed out, the view
+        // holds thousands of tiles, most of them off the map.
         for y in min.y..max.y {
-            for x in min.x..max.x {
-                let alpha = fog(x, y).alpha();
+            let mut x = min.x;
+            while x < max.x {
+                let state = fog(x, y);
+                let start = x;
+                while x < max.x && fog(x, y) == state {
+                    x += 1;
+                }
+                let alpha = state.alpha();
                 if alpha == 0.0 {
                     continue;
                 }
                 let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
                 // Exact shared edges: translucent rects that overlap draw
-                // double-dark seams, so each tile ends where the next begins.
-                let a = view.to_screen(vec2(x as f32, y as f32)).floor();
-                let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
+                // double-dark seams, so each run ends where the next begins.
+                let a = view.to_screen(vec2(start as f32, y as f32)).floor();
+                let b = view.to_screen(vec2(x as f32, (y + 1) as f32)).floor();
                 draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
             }
         }
