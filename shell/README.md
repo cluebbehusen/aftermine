@@ -107,8 +107,9 @@ cargo run -p oxide-shell --release -- --join 192.168.1.20:4200
 
 `ios/` wraps the shell in an Xcode project with a script phase that runs Cargo
 for the device or simulator and places the binary where Xcode signs and packages
-it. Its resource phase copies `assets/` and `scenarios/` and compiles the
-app-icon catalog. It needs full Xcode (not only the Command Line Tools), the
+it. Its resource phase copies `assets/` and `scenarios/`, compiles the app-icon
+catalog, and adds the privacy manifest, which declares the file timestamps the
+saves shelf reads. It needs full Xcode (not only the Command Line Tools), the
 `aarch64-apple-ios` Rust target (plus `aarch64-apple-ios-sim` for the
 simulator), and an iPad with Developer Mode on. Set your signing team in the
 ignored `ios/Local.xcconfig`, never in Xcode's Signing pane, which writes it

@@ -10,6 +10,7 @@
 		0A1B00000000000000000011 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000021 /* assets */; };
 		0A1B00000000000000000012 /* scenarios in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000022 /* scenarios */; };
 		0A1B00000000000000000013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000026 /* Assets.xcassets */; };
+		0A1B00000000000000000014 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +21,7 @@
 		0A1B00000000000000000024 /* Oxide.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Oxide.xcconfig; sourceTree = "<group>"; };
 		0A1B00000000000000000025 /* build_rust.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build_rust.sh; sourceTree = "<group>"; };
 		0A1B00000000000000000026 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Oxide/Assets.xcassets; sourceTree = "<group>"; };
+		0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Oxide/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -30,6 +32,7 @@
 				0A1B00000000000000000025 /* build_rust.sh */,
 				0A1B00000000000000000023 /* Info.plist */,
 				0A1B00000000000000000026 /* Assets.xcassets */,
+				0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */,
 				0A1B00000000000000000021 /* assets */,
 				0A1B00000000000000000022 /* scenarios */,
 				0A1B00000000000000000031 /* Products */,
@@ -102,6 +105,7 @@
 				0A1B00000000000000000011 /* assets in Resources */,
 				0A1B00000000000000000012 /* scenarios in Resources */,
 				0A1B00000000000000000013 /* Assets.xcassets in Resources */,
+				0A1B00000000000000000014 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
