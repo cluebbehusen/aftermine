@@ -1,5 +1,7 @@
 //! Continuous exposed belt runs inside the existing track casings.
 
+use crate::numeric::Fit;
+use macroquad::models::Vertex;
 use macroquad::prelude::*;
 use oxide_sim::UnitKind;
 
@@ -34,13 +36,25 @@ pub(super) fn draw(
         let y = (y - 64.0) * factor;
         center + vec2(x * cos - y * sin, x * sin + y * cos)
     };
-    let rect = |x0: f32, y0: f32, x1: f32, y1: f32, color: Color| {
+    // Every link goes into one mesh: a draw call per triangle cost more
+    // than the rest of the unit together.
+    let mut mesh = Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+        texture: None,
+    };
+    let mut rect = |x0: f32, y0: f32, x1: f32, y1: f32, color: Color| {
         if y1 <= y0 {
             return;
         }
-        let (a, b, c, d) = (point(x0, y0), point(x1, y0), point(x1, y1), point(x0, y1));
-        draw_triangle(a, b, c, color);
-        draw_triangle(a, c, d, color);
+        let first = mesh.vertices.len().fit::<u16>();
+        for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+            let p = point(x, y);
+            mesh.vertices
+                .push(Vertex::new(p.x, p.y, 0.0, 0.0, 0.0, color));
+        }
+        mesh.indices
+            .extend([0, 1, 2, 0, 2, 3].map(|corner| first + corner));
     };
     // Links keep one size against the visible body, however much of the
     // canvas that body spans.
@@ -74,6 +88,7 @@ pub(super) fn draw(
             y += pitch;
         }
     }
+    draw_mesh(&mesh);
 }
 
 #[cfg(test)]
