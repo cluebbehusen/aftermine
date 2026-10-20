@@ -88,6 +88,10 @@ cargo run -p oxide-driver -- smoke --spawn
 A workspace build binds F1 to the debug overlay, which shows the whole world
 through the fog. A packaged copy never offers it, and a LAN match refuses it.
 
+`assets/licenses/third-party.txt` holds the license notices of every third-party
+crate the game links, and every bundle ships it with the rest of `assets/`.
+Regenerate it with `sh tools/gen_notices.sh` when `Cargo.lock` changes.
+
 To play over a LAN or Tailscale, build the same commit on every machine. In the
 game, the host switches match setup to LAN, which opens every other chair and
 shows the address to join; the others pick Join Match, enter their name, and

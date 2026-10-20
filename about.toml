@@ -1,0 +1,26 @@
+# License notices for the crates the shipped game links, written to
+# assets/licenses/third-party.txt by tools/gen_notices.sh. The accepted
+# list mirrors deny.toml's.
+accepted = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# Every platform a bundle is built for.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
+# Build and test tooling never ships.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# The workspace crates are the product, not a dependency.
+private = { ignore = true }

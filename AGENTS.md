@@ -216,6 +216,9 @@ uv run --with 'numpy==2.5.1' --with 'scipy==1.18.0' \
   -m unittest tools.test_gen_sounds
 ```
 
+When `Cargo.lock` changes, regenerate the license notices every bundle ships
+with `sh tools/gen_notices.sh` (cargo-about 0.9.2). CI runs it with `--check`.
+
 Use the real native shell for UI, input, animation, sound, and visual claims.
 CPU screenshots prove schematic state, not presentation quality.
 

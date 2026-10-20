@@ -1,0 +1,16 @@
+Third-party software
+
+Oxide includes the open source crates listed below. Each license names the
+crates it covers, followed by its full text.
+{{#each licenses}}
+
+================================================================================
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+
+{{{text}}}
+{{/each}}
