@@ -1,8 +1,8 @@
 //! `replay-health`: late-game health over recorded games. Bot evaluations
 //! and human playtest recordings answer the same questions: where income
 //! comes from minute by minute, how long matches run, how much wreck lies
-//! on the map, how varied late armies are, and what winning a battle turns
-//! into.
+//! on the map, how varied late armies are, what winning a battle turns
+//! into, and how the lead in net worth moved over the match.
 //!
 //! Each recording is re-executed once. The [`ImpactLedger`] supplies each
 //! tick's income credits and hit attribution, and `replay-summary`'s
@@ -11,7 +11,8 @@
 //! ground near its production buildings. Everything is omniscient QA
 //! evidence that never reaches a controller.
 
-use crate::ledger::{ImpactLedger, IncomeSource, Place};
+use crate::ledger::{ImpactLedger, IncomeSource, Place, SeatLedger};
+use crate::pacing::{Pacing, PacingSummary};
 use crate::replay_ledger::SeatPlayer;
 use crate::replay_summary::{
     BATTLE_QUIET_TICKS, BATTLE_RADIUS_TILES, BATTLE_VALUE_FLOOR, BattleClusterer, SeatLoss, Verdict,
@@ -81,6 +82,9 @@ pub struct MatchHealth {
     pub wrecks: Vec<WreckSample>,
     /// Every battle above `replay-summary`'s value floor, by first loss.
     pub battles: Vec<BattleHealth>,
+    /// Who was ahead in net worth as the match went on; absent when the
+    /// recording sampled no worth.
+    pub pacing: Option<Pacing>,
 }
 
 /// One seat's health over a match.
@@ -728,7 +732,13 @@ impl Pass {
         }
     }
 
-    fn finish(mut self, state: &State, path: &Path, replay: &GameReplay) -> MatchHealth {
+    fn finish(
+        mut self,
+        state: &State,
+        path: &Path,
+        replay: &GameReplay,
+        ledgers: &[SeatLedger],
+    ) -> MatchHealth {
         let end = state.current_tick();
         self.clusterer.close_all();
         self.close(end);
@@ -762,7 +772,9 @@ impl Pass {
                 }
             })
             .collect();
+        let ledgers: Vec<&SeatLedger> = ledgers.iter().collect();
         MatchHealth {
+            pacing: crate::pacing::pacing(&ledgers, &self.teams, state.result()),
             path: path.to_owned(),
             scenario: replay.setup.name.clone(),
             start: replay.start_tick(),
@@ -826,7 +838,8 @@ pub fn health(path: &Path, replay: &GameReplay) -> Result<MatchHealth> {
         ledger.observe(&state, &report);
         pass.observe(&state, &report, &ledger);
     }
-    Ok(pass.finish(&state, path, replay))
+    let ledgers = ledger.finish(&state);
+    Ok(pass.finish(&state, path, replay, &ledgers))
 }
 
 /// `paths` with each directory replaced by the `.json` and `.oxreplay` files
@@ -895,6 +908,8 @@ pub struct HealthSummary {
     pub late_trained: ArmySummary,
     /// What won battles turned into.
     pub follow_up: Vec<FollowUpRow>,
+    /// Who was ahead in net worth, over the matches that sampled it.
+    pub pacing: PacingSummary,
 }
 
 /// Income in one band of minutes.
@@ -981,6 +996,7 @@ pub fn summarize(matches: &[MatchHealth]) -> HealthSummary {
         late_army: pool(matches, |seat| seat.late_army.as_ref()),
         late_trained: pool(matches, |seat| seat.late_trained.as_ref()),
         follow_up: follow_up(matches),
+        pacing: crate::pacing::summarize(matches.iter().filter_map(|game| game.pacing.as_ref())),
     }
 }
 
@@ -1318,6 +1334,11 @@ pub fn render(matches: &[MatchHealth], summary: &HealthSummary) -> String {
             row.income_scrap,
         );
     }
+    let _ = writeln!(
+        out,
+        "\n== net worth pacing: the side ahead, comebacks, lead changes, play after the winner settled ahead"
+    );
+    crate::pacing::render(&mut out, &summary.pacing, "  ");
     let _ = writeln!(out, "\n== matches");
     for game in matches {
         let won: Vec<&FollowUp> = game
@@ -1348,9 +1369,15 @@ pub fn render(matches: &[MatchHealth], summary: &HealthSummary) -> String {
             kinds(|seat| seat.late_army.as_ref()),
             kinds(|seat| seat.late_trained.as_ref())
         );
+        let pacing = game.pacing.as_ref().map_or_else(String::new, |pacing| {
+            let low = pacing
+                .winner_low
+                .map_or_else(String::new, |low| format!(", winner's low {}%", low / 10));
+            format!("; lead changes {}{low}", pacing.lead_changes)
+        });
         let _ = writeln!(
             out,
-            "  {}: {}, {:.1} min, {result}; {} battles, {} won, {} converted; late kinds {armies}; peak wreck {}",
+            "  {}: {}, {:.1} min, {result}; {} battles, {} won, {} converted; late kinds {armies}; peak wreck {}{pacing}",
             game.path.file_name().map_or_else(
                 || game.path.display().to_string(),
                 |name| name.to_string_lossy().into_owned()

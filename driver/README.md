@@ -38,6 +38,13 @@ dirty status. Source archives report unknown provenance.
   emit nothing it can credit. `replay-ledger <replay>...` re-executes replays
   and match recordings, not player saves, through it and pools seats by
   controller; `--json` prints each game's ledgers.
+- `pacing` reads a match's pacing from the ledgers' net worth, one side per
+  team: the side ahead at minutes 5, 10 and 15, how often the lead changed hands
+  after the three-minute opening, the winner's lowest share of all worth after
+  it, and how much of the match played on once the winner was ahead for good. A
+  side is ahead with 1.1 times an equal split of all worth, 55% in a duel; a win
+  is a comeback when the winner fell to 0.8 times an equal split, 40% in a duel.
+  A side that falls back to even keeps the lead until another side is ahead.
 - `replay_health` (the `replay-health` command) measures late-game health from
   replays and match recordings, so bot evaluations and human playtests answer
   the same questions: each seat's income by source per minute, with worker
@@ -45,17 +52,17 @@ dirty status. Source archives report unknown provenance.
   reaching 30 minutes, wreck left on the map each minute and how much lies at a
   seat's home, the variety of standing and newly trained armed units from minute
   15 as entropy over unit kinds by value, and what each won battle turned into
-  over the next minute. The winning force is every body that hit something lost
-  in the battle; the follow-up counts the losers' production, income works and
-  workers that force destroyed, and whether the winner's armed units outweigh
-  the losers' near the battle a minute later. A win converts when the force
-  razes production, destroys at least 200 scrap of income, or holds ground
-  nearer the losers' buildings than its own; the report leads with pushes, the
-  wins away from the winner's home. A seat's home is the ground within 12 tiles
-  of its completed production buildings, and a seat earns nothing once it is out
-  of the match. Battles are `replay-summary`'s. It accepts directories such as a
-  `bot-eval --replay-dir`, prints a pooled report, and with `--json` prints each
-  match's row and the pooled summary.
+  over the next minute, and each match's net-worth `pacing`. The winning force
+  is every body that hit something lost in the battle; the follow-up counts the
+  losers' production, income works and workers that force destroyed, and whether
+  the winner's armed units outweigh the losers' near the battle a minute later.
+  A win converts when the force razes production, destroys at least 200 scrap of
+  income, or holds ground nearer the losers' buildings than its own; the report
+  leads with pushes, the wins away from the winner's home. A seat's home is the
+  ground within 12 tiles of its completed production buildings, and a seat earns
+  nothing once it is out of the match. Battles are `replay-summary`'s. It
+  accepts directories such as a `bot-eval --replay-dir`, prints a pooled report,
+  and with `--json` prints each match's row and the pooled summary.
 - `bot_eval` runs the player-facing controllers to a decision, tick ceiling, or
   stall-loop anomaly, and emits compact JSONL with candidate, scenario,
   tick-ceiling, exact-profile, and anomaly provenance. It can exchange complete
@@ -83,9 +90,12 @@ dirty status. Source archives report unknown provenance.
 - `seat_summary` pools the seats of evaluation rows: failure incidents,
   deliveries, reactivity, income, the impact ledger and attack calibration, with
   their tables. `bot-summary <rows.jsonl>...` pools any `bot-eval` or
-  `bot-ladder` rows by team layout and difficulty. Evaluation inputs live in
-  `evaluation/`, not `scenarios/`, whose every file the shell menu, map gates
-  and integrity tests read.
+  `bot-ladder` rows by team layout and difficulty. It first reports how the legs
+  ended, by team layout and the difficulties that played them: decided legs and
+  their median length, the share won by seat 0's team, each stance's record
+  where no opposing seat played the same stance, and net-worth `pacing`.
+  Evaluation inputs live in `evaluation/`, not `scenarios/`, whose every file
+  the shell menu, map gates and integrity tests read.
 - `bot_ladder` expands a manifest from `evaluation/ladder/` into pairs of
   `oxide-opponent` against itself at two difficulty rungs, the higher rung in
   seat zero and then in seat one, both seats sharing one personality seed so the

@@ -75,8 +75,9 @@ fn play(
         pass.observe(&state, &report, &ledger);
     }
     let replay: GameReplay = Replay::new(SIM_VERSION, "test", scenario.clone());
-    let health = pass.finish(&state, Path::new("staged.json"), &replay);
-    (health, ledger.finish(&state))
+    let ledgers = ledger.finish(&state);
+    let health = pass.finish(&state, Path::new("staged.json"), &replay, &ledgers);
+    (health, ledgers)
 }
 
 fn unit_at(state: &State, x: i32, y: i32) -> UnitId {
@@ -476,12 +477,25 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
     assert!(decisive.end < 10 * MINUTE, "{}", decisive.end);
     assert_eq!(decisive.seats[1].eliminated_at, Some(decisive.end - 1));
     assert_eq!(decisive.seats[0].controller, SeatPlayer::Human);
+    let pacing = decisive
+        .pacing
+        .as_ref()
+        .expect("worth is sampled to the decision");
+    assert_eq!(
+        (pacing.sides, pacing.winner, pacing.end),
+        (2, Some(0), decisive.end)
+    );
+    assert_eq!(
+        short.pacing.as_ref().map(|pacing| pacing.winner),
+        Some(None)
+    );
 
     let summary = summarize(&matches);
     assert_eq!(
         (summary.matches, summary.decided, summary.cut_short),
         (2, 1, 1)
     );
+    assert_eq!((summary.pacing.matches, summary.pacing.won), (2, 1));
     std::fs::remove_dir_all(&dir).unwrap();
 
     let empty =
@@ -526,6 +540,7 @@ fn game(end: u64, result: Option<GameResult>, seats: Vec<SeatHealth>) -> MatchHe
         seats,
         wrecks: Vec::new(),
         battles: Vec::new(),
+        pacing: None,
     }
 }
 
@@ -614,6 +629,18 @@ fn the_report_renders_every_section_and_a_line_per_match() {
             held: false,
         }),
     }];
+    late.pacing = Some(Pacing {
+        sides: 2,
+        winner: Some(0),
+        end: LONG_MINUTES * MINUTE,
+        leads: vec![crate::pacing::LeadAt {
+            minute: 10,
+            team: Some(0),
+        }],
+        lead_changes: 1,
+        winner_low: Some(380),
+        settled_at: Some(20 * MINUTE),
+    });
     let matches = [late];
     let report = render(&matches, &summarize(&matches));
     for expected in [
@@ -623,6 +650,9 @@ fn the_report_renders_every_section_and_a_line_per_match() {
         "standing 1 seat-games, entropy 1.00 bits (2.0 effective kinds): breaker 50%, condor 50%",
         "trained  1 seat-games, entropy 0.00 bits (1.0 effective kinds): condor 100%",
         "at the loser's home",
+        "  ahead at minute 10: 1 won matches, the side ahead won 1 (100%)",
+        "  comebacks: 1 of 1 winners fell to 0.8 times an equal split (40% in a duel)",
+        "peak wreck 400; lead changes 1, winner's low 38%",
         "synthetic.json: synthetic, 30.0 min, team 0 won; 1 battles, 1 won, 1 converted; late kinds standing 2.0, trained 1.0",
     ] {
         assert!(report.contains(expected), "{expected:?} in\n{report}");
