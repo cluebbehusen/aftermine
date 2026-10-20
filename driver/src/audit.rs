@@ -14,9 +14,11 @@ use serde::Serialize;
 use std::collections::BinaryHeap;
 
 mod levels;
+mod lockouts;
 mod passages;
 
 pub use levels::level_faults;
+pub use lockouts::{Arrival, Prize};
 pub use passages::NarrowPassage;
 
 /// One seat's room and spacing.
@@ -93,6 +95,9 @@ pub struct MapAudit {
     /// frames or starting units crosses, on ground where hostile seats
     /// meet.
     pub narrow_passages: Vec<NarrowPassage>,
+    /// Pockets of Extractor frames no starting base owns, each measured
+    /// whether or not it locks, so near misses stay visible.
+    pub prizes: Vec<Prize>,
     /// The size badge the nearest enemy route earns; `None` without a
     /// hostile pair.
     pub size_badge: Option<MapSize>,
@@ -504,6 +509,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         seats,
         routes,
         narrow_passages: passages::narrow_passages(&state),
+        prizes: lockouts::prizes(&state),
         size_badge,
         wealth_per_player,
         wealth_badge: wealth_for(wealth_per_player, players),
@@ -574,6 +580,27 @@ impl MapAudit {
                     .join(" ")
             }
         );
+        for prize in &self.prizes {
+            let arrival = |a: &Arrival| {
+                format!(
+                    "seat {} at {}{}",
+                    a.seat,
+                    a.steps,
+                    if a.by_air { " by air" } else { "" }
+                )
+            };
+            let _ = writeln!(
+                out,
+                "  prize of {} frames{}: {} doors, first {}, rival {}, shelled from {} tiles{}",
+                prize.frames.len(),
+                if prize.island { " (island)" } else { "" },
+                prize.doors,
+                arrival(&prize.first),
+                prize.rival.as_ref().map_or("none".into(), arrival),
+                prize.shelling,
+                if prize.locked() { " — LOCKED" } else { "" },
+            );
+        }
         out
     }
 }

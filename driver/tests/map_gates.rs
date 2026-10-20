@@ -1,6 +1,6 @@
 //! Map-audit gates: every shipped scenario must keep its size and wealth
-//! badges, spawn fairness, artillery pressure, passage widths, and
-//! mirrored authoring, as measured by `driver map-audit`.
+//! badges, spawn fairness, artillery pressure, passage widths, contestable
+//! frame clusters, and mirrored authoring, as measured by `driver map-audit`.
 //!
 //! Set `OXIDE_MAP_GATES_DIR` to a directory of drafts, relative to the
 //! repository root, to hold them to the same gates before promotion.
@@ -153,6 +153,34 @@ fn trafficked_passages_are_at_least_three_tiles_wide() {
             spots.is_empty(),
             "{name}: traffic squeezes through passages under three tiles wide at {}",
             spots.join(", ")
+        );
+    }
+}
+
+#[test]
+fn no_frame_cluster_locks_a_match() {
+    // A big cluster of frames no base owns, which rival seats reach about
+    // as soon as each other and little ground can shell, pays whoever lands
+    // first for the rest of the match.
+    for (name, scenario) in shipped() {
+        let report = audit(&scenario).expect("audit builds");
+        let locked: Vec<String> = report
+            .prizes
+            .iter()
+            .filter(|prize| prize.locked())
+            .map(|prize| {
+                format!(
+                    "{} frames at {:?}, shelled from {} tiles",
+                    prize.frames.len(),
+                    prize.frames,
+                    prize.shelling
+                )
+            })
+            .collect();
+        assert!(
+            locked.is_empty(),
+            "{name}: a contested prize no artillery can answer: {}",
+            locked.join("; ")
         );
     }
 }
