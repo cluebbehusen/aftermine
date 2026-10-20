@@ -3,7 +3,7 @@
 use super::*;
 use crate::render::tutorial_card::{self, CardButton, CardLayout};
 use crate::screens::lessons::LessonsScreen;
-use crate::tutorial::{Lesson, Tutorial};
+use crate::tutorial::{Course, Lesson, Tutorial};
 
 pub(super) struct ScreenFrame {
     pub(super) screen: Screen,
@@ -68,10 +68,52 @@ fn start_lesson(app: &mut App, lesson: Lesson) -> Result<Screen> {
     Ok(Screen::Playing)
 }
 
+/// Builds Basic Training's first match under the player's saved name.
+/// Like a New Match launch, a successful build spends one window of fresh
+/// personality seeds.
+fn first_match_game(
+    config: &config::Config,
+    personality_seeds: &mut PersonalitySeedSource,
+) -> Result<Game> {
+    let name = config
+        .player_name
+        .as_deref()
+        .and_then(|name| oxide_net::PlayerName::new(name).ok());
+    let game = Game::new(crate::tutorial::first_match(
+        name,
+        personality_seeds.match_base(),
+    )?)?;
+    personality_seeds.commit_launch();
+    Ok(game)
+}
+
+/// Installs Basic Training's first match and plays it.
+fn start_first_match(app: &mut App) -> Result<Screen> {
+    let game = first_match_game(&app.config, &mut app.personality_seeds)?;
+    app.install(game, Install::local(app.args.paused));
+    Ok(Screen::Playing)
+}
+
+/// Marks Basic Training's first match finished once `game`, that match,
+/// is decided, whatever the result; returns whether `config` changed.
+fn mark_first_match(config: &mut config::Config, game: &Game) -> bool {
+    game.state.result().is_some()
+        && crate::tutorial::is_first_match(&game.scenario)
+        && config.finish_first_match()
+}
+
+/// Starts a row of Basic Training.
+fn start_course(app: &mut App, row: Course) -> Result<Screen> {
+    match row {
+        Course::Lesson(lesson) => start_lesson(app, lesson),
+        Course::FirstMatch => start_first_match(app),
+    }
+}
+
 /// Basic Training's lesson list over `back`.
 fn open_lessons(app: &App, back: Screen) -> Screen {
     Screen::Lessons {
-        screen: LessonsScreen::open(&app.config.lessons_done),
+        screen: LessonsScreen::open(&app.config.lessons_done, app.config.first_match_done),
         back: Box::new(back),
     }
 }
@@ -638,9 +680,9 @@ fn lessons_frame(
         .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
     let out = list.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    if let screens::lessons::Out::Start(lesson) = out {
+    if let screens::lessons::Out::Start(row) = out {
         *rerun = true;
-        return start_lesson(app, lesson);
+        return start_course(app, row);
     }
     render::draw(
         &app.game.view(),
@@ -839,10 +881,7 @@ fn press_card(app: &mut App, button: CardButton) -> Result<Option<Screen>> {
             None
         }
         CardButton::Retry => Some(start_lesson(app, lesson)?),
-        CardButton::Next => match lesson.next() {
-            Some(next) => Some(start_lesson(app, next)?),
-            None => None,
-        },
+        CardButton::Next | CardButton::FirstMatch => Some(start_course(app, lesson.next())?),
         CardButton::Lessons => Some(open_lessons(app, Screen::Home(HomeScreen::open()))),
         CardButton::Dismiss => None,
     })
@@ -969,6 +1008,11 @@ fn playing_frame(
     }
     if let Some(lesson) = Tutorial::advance_in(&mut app.game)
         && app.config.finish_lesson(lesson)
+        && let Err(err) = app.config.save()
+    {
+        app.notify(format!("could not save settings: {err}"), true);
+    }
+    if mark_first_match(&mut app.config, &app.game)
         && let Err(err) = app.config.save()
     {
         app.notify(format!("could not save settings: {err}"), true);

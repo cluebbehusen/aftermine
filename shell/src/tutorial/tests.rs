@@ -38,11 +38,58 @@ fn step(game: &mut Game, commands: impl IntoIterator<Item = Command>) -> Option<
 }
 
 #[test]
-fn the_course_numbers_and_chains_its_lessons_in_order() {
+fn the_course_numbers_and_chains_its_lessons_in_order_then_the_first_match() {
     for (i, lesson) in Lesson::ALL.into_iter().enumerate() {
         assert_eq!(lesson.number(), i + 1);
-        assert_eq!(lesson.next(), Lesson::ALL.get(i + 1).copied());
+        assert_eq!(Course::ALL[i], Course::Lesson(lesson));
+        assert_eq!(lesson.next(), Course::ALL[i + 1]);
         assert!(!lesson.steps().is_empty(), "{lesson:?} teaches something");
+    }
+    for (i, row) in Course::ALL.into_iter().enumerate() {
+        assert_eq!(row.number(), i + 1);
+    }
+    assert_eq!(Course::ALL.last(), Some(&Course::FirstMatch));
+}
+
+#[test]
+fn the_first_match_is_smelter_yard_against_one_scrapheap_turtle() {
+    let map = Scenario::from_json(include_str!("../../../scenarios/smelter-yard.json")).unwrap();
+    let base = 0x40;
+    let name = oxide_net::PlayerName::new("Rook").unwrap();
+    let scenario = first_match(Some(name), base).unwrap();
+    assert_eq!(scenario.name, FIRST_MATCH_NAME);
+    assert!(
+        FIRST_MATCH_NAME.len() <= crate::screens::pause::PauseScreen::NAME_MAX,
+        "a save of it is offered the whole name"
+    );
+    assert!(is_first_match(&scenario));
+    assert!(
+        !is_first_match(&map),
+        "a New Match on the same map is not it"
+    );
+    assert_eq!(scenario.mode, map.mode);
+    assert_eq!((&scenario.map, &scenario.levels), (&map.map, &map.levels));
+    assert_eq!(
+        (&scenario.units, &scenario.buildings),
+        (&map.units, &map.buildings)
+    );
+    let [human, bot] = scenario.players.as_slice() else {
+        panic!("one player and one opponent");
+    };
+    assert_eq!(human.name, "Rook");
+    assert!(!human.bot && human.bot_config.is_none());
+    assert!(bot.bot);
+    assert_eq!(
+        bot.bot_config,
+        Some(oxide_sim::scenario::BotConfig::new(
+            BotDifficulty::Scrapheap,
+            BotStance::Turtle,
+            base + 1
+        )),
+        "the opponent's personality comes from the launch's seed window"
+    );
+    for (seat, player) in scenario.players.iter().enumerate() {
+        assert_eq!(player.scrap, map.players[seat].scrap, "no head start");
     }
 }
 

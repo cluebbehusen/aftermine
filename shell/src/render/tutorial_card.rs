@@ -10,7 +10,7 @@ use crate::theme::{
     TEXT_SECONDARY, Type,
 };
 use crate::tips::Tip;
-use crate::tutorial::{CoachLine, Tutorial};
+use crate::tutorial::{CoachLine, Course, Tutorial};
 use macroquad::prelude::*;
 
 /// A press target on the card.
@@ -22,6 +22,8 @@ pub(crate) enum CardButton {
     Retry,
     /// Starts the next lesson.
     Next,
+    /// Starts the match that closes the course.
+    FirstMatch,
     /// Leaves for the lesson list.
     Lessons,
     /// Closes the match tip.
@@ -34,6 +36,7 @@ impl CardButton {
             Self::Fold | Self::Dismiss => "",
             Self::Retry => "RETRY",
             Self::Next => "NEXT LESSON",
+            Self::FirstMatch => "FIRST MATCH",
             Self::Lessons => "LESSONS",
         }
     }
@@ -228,15 +231,15 @@ pub(crate) fn layout(
                 .map(|text| expand(text, bindings))
                 .collect()
         } else {
-            let mut outro = vec![lesson.outro().to_string()];
-            if let Some(next) = lesson.next() {
-                outro.push(format!(
-                    "Next lesson: {}. You will {}.",
-                    next.title(),
-                    next.summary()
-                ));
-            }
-            outro
+            let next = lesson.next();
+            let kind = match next {
+                Course::Lesson(_) => "Next lesson",
+                Course::FirstMatch => "Next",
+            };
+            vec![
+                lesson.outro().to_string(),
+                format!("{kind}: {}. You will {}.", next.title(), next.summary()),
+            ]
         };
         let mut gap = 8.0 * s;
         for paragraph in &paragraphs {
@@ -267,10 +270,9 @@ pub(crate) fn layout(
             }
         }
         let actions: &[CardButton] = if tutorial.finished() {
-            if lesson.next().is_some() {
-                &[CardButton::Next, CardButton::Lessons]
-            } else {
-                &[CardButton::Lessons]
+            match lesson.next() {
+                Course::Lesson(_) => &[CardButton::Next, CardButton::Lessons],
+                Course::FirstMatch => &[CardButton::FirstMatch, CardButton::Lessons],
             }
         } else if matches!(coach, Some(CoachLine::Stuck)) {
             &[CardButton::Retry]

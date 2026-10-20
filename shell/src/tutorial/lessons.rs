@@ -753,4 +753,4 @@ pub(super) const SUSTAIN_SQUADS: [Squad; 1] = [Squad {
 }];
 
 pub(super) const SUSTAIN_OUTRO: &str = "You can now scout, use radar, defend against aircraft, \
-    repair, and collect wrecks. That completes Basic Training.";
+    repair, and collect wrecks. That completes the lessons.";
