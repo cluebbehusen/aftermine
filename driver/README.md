@@ -144,7 +144,8 @@ dirty status. Source archives report unknown provenance.
   `bot-cost --save-replay` records a timed workload for both.
 - `audit` (the `map-audit` command) measures map geometry: room per seat, route
   lengths, resources, artillery pressure, and trafficked passages narrower than
-  three tiles.
+  three tiles. It also derives the size and wealth badges the map list shows,
+  which the map gates hold each scenario's metadata to.
 - `auto`, `smoke`, `shots`, and `profile` exercise the real shell where a
   headless run is not enough.
 - `ios` (aliased as `cargo ios`) builds, installs, and launches the iPad app on
@@ -215,7 +216,7 @@ quotas, or a particular command stream. With `OXIDE_SOAK_TRACE_DIR` set, each
 run also writes periodic state hashes and its replay into that directory; CI
 compares those hash files across operating systems without a checked-in golden.
 The exhaustive all-map soak is ignored by default and uses the same checks, with
-a longer horizon for large, vast, and grand maps. The opening image and renderer
+a longer horizon for maps that are not small. The opening image and renderer
 showcase cover drawing without depending on an autonomous midgame.
 
 Run the exhaustive soak explicitly:

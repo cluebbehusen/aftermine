@@ -131,9 +131,9 @@
  ],
  "meta": {
   "hook": "One wide causeway zigzags across the pit between the bases, with frames at its bends and more on ledges only aircraft reach.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "slag"
  }
 }

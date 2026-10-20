@@ -149,9 +149,9 @@
  ],
  "meta": {
   "hook": "Paired foundries back to back; hold the seam.",
-  "pace": "quick",
+  "size": "small",
   "mode": "2v2",
-  "richness": "standard",
+  "wealth": "lean",
   "theme": "quarry-dust"
  }
 }

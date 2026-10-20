@@ -191,9 +191,9 @@
  ],
  "meta": {
   "hook": "Each team's bases share a walled back area with frames, and the rich scrap lies in the two lanes past the central peaks.",
-  "pace": "large",
+  "size": "medium",
   "mode": "2v2",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "slag"
  }
 }

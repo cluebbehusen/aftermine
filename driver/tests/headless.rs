@@ -4,7 +4,7 @@
 
 use oxide_driver::pool;
 use oxide_kit::runner;
-use oxide_sim::scenario::ScenarioMode;
+use oxide_sim::scenario::{MapSize, ScenarioMode};
 use oxide_sim::{PlayerCommand, Scenario, State};
 use std::path::{Path, PathBuf};
 
@@ -184,9 +184,9 @@ const TRACE_HASH_INTERVAL: u64 = 20;
 const TRACE_DIR_VAR: &str = "OXIDE_SOAK_TRACE_DIR";
 
 fn integrity_horizon(scenario: &Scenario) -> u64 {
-    match scenario.meta.as_ref().map(|m| m.pace.as_str()) {
-        Some("vast" | "large" | "grand") => LARGE_MAP_INTEGRITY_TICKS,
-        _ => INTEGRITY_TICKS,
+    match scenario.meta.as_ref().and_then(|m| m.size) {
+        Some(MapSize::Medium | MapSize::Large | MapSize::Huge) => LARGE_MAP_INTEGRITY_TICKS,
+        Some(MapSize::Small) | None => INTEGRITY_TICKS,
     }
 }
 

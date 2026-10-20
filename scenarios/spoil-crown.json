@@ -321,9 +321,9 @@
  ],
  "meta": {
   "hook": "A stepped hill climbs to a crown of frames and rich scrap, and guns on top can reach the benches below.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "rich",
+  "wealth": "rich",
   "theme": "quarry-dust",
   "symmetry": "metric"
  }

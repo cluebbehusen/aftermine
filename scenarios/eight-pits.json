@@ -359,9 +359,9 @@
  ],
  "meta": {
   "hook": "Eight pits ring a rich middle, and each of the eight gaps between them lies between two neighboring bases.",
-  "pace": "standard",
+  "size": "small",
   "mode": "8-way FFA",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "verdigris",
   "symmetry": "metric"
  }

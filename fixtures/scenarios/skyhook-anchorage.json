@@ -407,9 +407,9 @@
  ],
  "meta": {
   "hook": "Eight anchorages over one gulf, no roads at all; every raid pays the corkscrew toll twice.",
-  "pace": "grand",
+  "size": "huge",
   "mode": "8-way FFA",
-  "richness": "rich",
+  "wealth": "lean",
   "symmetry": "metric",
   "theme": "verdigris"
  }

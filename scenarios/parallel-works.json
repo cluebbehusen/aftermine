@@ -183,9 +183,9 @@
  ],
  "meta": {
   "hook": "Each team has a base in the north lane and one in the south, each lane has frames at its middle, and a walled corridor between them holds the rich scrap.",
-  "pace": "large",
+  "size": "small",
   "mode": "2v2",
-  "richness": "rich",
+  "wealth": "lean",
   "theme": "cold-circuitry"
  }
 }

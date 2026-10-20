@@ -267,9 +267,9 @@
  ],
  "meta": {
   "hook": "Two raised shelves flank a broken rock wall, each a forward base with frames overlooking one team's homes.",
-  "pace": "standard",
+  "size": "small",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "rusted-yard",
   "symmetry": "metric"
  }

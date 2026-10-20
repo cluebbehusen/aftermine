@@ -289,9 +289,9 @@
  ],
  "meta": {
   "hook": "Five bases ring a star-shaped pit that steps down twice to a rich center, with neighbors close enough to fight from the start.",
-  "pace": "standard",
+  "size": "small",
   "mode": "5-way FFA",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "verdigris",
   "symmetry": "metric"
  }

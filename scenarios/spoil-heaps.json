@@ -107,9 +107,9 @@
  ],
  "meta": {
   "hook": "Rock outcrops fill the field, and most of its frames sit in pockets with a single way in.",
-  "pace": "large",
+  "size": "small",
   "mode": "1v1",
-  "richness": "lean",
+  "wealth": "lean",
   "theme": "slag"
  }
 }

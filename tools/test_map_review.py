@@ -33,7 +33,7 @@ class Rendering(unittest.TestCase):
     def test_the_card_escapes_and_inlines(self) -> None:
         card = review_card(
             "test<map>",
-            {"hook": "a & b", "pace": "grand"},
+            {"hook": "a & b", "size": "huge"},
             {"size": "10 x 5"},
             b"pngbytes",
         )
@@ -86,7 +86,7 @@ class ReviewBuild(unittest.TestCase):
             for name, hook in (("zeta", "second"), ("alpha", "first & best")):
                 (drafts / f"{name}.json").write_text(
                     "{\n"
-                    f'  "meta": {{"hook": "{hook}", "pace": "quick"}},\n'
+                    f'  "meta": {{"hook": "{hook}", "size": "small"}},\n'
                     '  "players": [{}, {}],\n'
                     '  "map": ["1..................S", "....................", '
                     '"...................2"]\n'

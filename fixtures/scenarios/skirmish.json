@@ -91,9 +91,9 @@
  ],
  "meta": {
   "hook": "Contest the middle or invest in the flanks.",
-  "pace": "standard",
+  "size": "small",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "lean",
   "theme": "rusted-yard"
  }
 }

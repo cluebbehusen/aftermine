@@ -268,9 +268,9 @@
  ],
  "meta": {
   "hook": "Two walls with three gaps each split the field into three lanes, and a walled area in the middle lane holds the rich scrap.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "slag",
   "symmetry": "metric"
  }

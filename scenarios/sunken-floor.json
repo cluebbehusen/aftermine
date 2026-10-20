@@ -321,9 +321,9 @@
  ],
  "meta": {
   "hook": "All the rich scrap and some of the frames lie on the floor a level down, so take your ramp down or shell it from the rim.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "rich",
+  "wealth": "standard",
   "theme": "quarry-dust",
   "symmetry": "metric"
  }

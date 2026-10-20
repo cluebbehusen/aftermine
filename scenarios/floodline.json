@@ -249,9 +249,9 @@
  ],
  "meta": {
   "hook": "A broken pit line splits the teams with three gaps to cross, and each team has a cluster of frames on its side of the line.",
-  "pace": "large",
+  "size": "medium",
   "mode": "3v3",
-  "richness": "standard",
+  "wealth": "standard",
   "symmetry": "metric",
   "theme": "verdigris"
  }

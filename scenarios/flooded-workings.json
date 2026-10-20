@@ -127,9 +127,9 @@
  ],
  "meta": {
   "hook": "Three narrow ground routes wind through a pit field between the bases, and four plateaus with frames and rich scrap can only be reached by air.",
-  "pace": "large",
+  "size": "large",
   "mode": "1v1",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "verdigris"
  }
 }

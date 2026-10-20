@@ -315,9 +315,9 @@
  ],
  "meta": {
   "hook": "Two teams of four face across an open field with a line of derelict frames down the middle.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4v4",
-  "richness": "standard",
+  "wealth": "lean",
   "symmetry": "metric",
   "theme": "rusted-yard"
  }

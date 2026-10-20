@@ -127,9 +127,9 @@
  ],
  "meta": {
   "hook": "Lone frames stand on each side among rock outcrops, so you can spread out to claim them or hold a few close to home.",
-  "pace": "large",
+  "size": "large",
   "mode": "1v1",
-  "richness": "rich",
+  "wealth": "rich",
   "theme": "slag"
  }
 }

@@ -327,9 +327,9 @@
  ],
  "meta": {
   "hook": "A long pit splits the middle into north and south fronts that meet only near each team's bases, and guns can fire across it.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "4v4",
-  "richness": "standard",
+  "wealth": "standard",
   "symmetry": "metric",
   "theme": "slag"
  }

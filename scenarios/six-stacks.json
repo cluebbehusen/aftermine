@@ -389,9 +389,9 @@
  ],
  "meta": {
   "hook": "Six bases with a peak between each pair of neighbors surround a sunken center holding frames and the rich scrap.",
-  "pace": "standard",
+  "size": "small",
   "mode": "6-way FFA",
-  "richness": "standard",
+  "wealth": "lean",
   "theme": "slag",
   "symmetry": "metric"
  }

@@ -373,9 +373,9 @@
  ],
  "meta": {
   "hook": "Both teams' benches look down on a sunken plate that holds the old frames and the rich scrap.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4v4",
-  "richness": "standard",
+  "wealth": "standard",
   "symmetry": "metric",
   "theme": "quarry-dust"
  }

@@ -289,9 +289,9 @@
  ],
  "meta": {
   "hook": "Two teams face each other across a wide open field, with a raised bench along each edge that overlooks both teams' bases.",
-  "pace": "vast",
+  "size": "huge",
   "mode": "2v2",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "basalt"
  }
 }

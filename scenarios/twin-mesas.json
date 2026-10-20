@@ -191,9 +191,9 @@
  ],
  "meta": {
   "hook": "Each team holds a ring of ground around a pit with no ground route to the other, and only aircraft reach the center plateau with frames and all the rich scrap.",
-  "pace": "large",
+  "size": "medium",
   "mode": "2v2",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "verdigris"
  }
 }

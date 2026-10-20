@@ -297,9 +297,9 @@
  ],
  "meta": {
   "hook": "Walled corner pockets open onto a raised shelf between each pair of neighbors, around a central peak that stops shots and aircraft.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "standard",
+  "wealth": "rich",
   "theme": "basalt",
   "symmetry": "metric"
  }

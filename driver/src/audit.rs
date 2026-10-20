@@ -1,11 +1,13 @@
 //! Map audit: usable room per seat, route lengths by movement domain,
-//! resource spread, artillery pressure, and spawn spacing. Pace bands use
-//! these figures instead of raw dimensions, since a large map with close
+//! resource spread, artillery pressure, and spawn spacing, plus the size
+//! and wealth badges those figures earn. The size badge reads the nearest
+//! enemy route instead of raw dimensions, since a large map with close
 //! bases still plays short.
 
 use anyhow::{Context, Result};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
+use oxide_sim::scenario::{MapSize, MapWealth};
 use oxide_sim::stats::BuildingKind;
 use oxide_sim::{Scenario, State};
 use serde::Serialize;
@@ -80,6 +82,8 @@ pub struct MapAudit {
     pub scrap_nodes: usize,
     /// Total scrap on the map.
     pub scrap_total: u64,
+    /// Derelict Extractor frames on the map.
+    pub extractor_frames: usize,
     /// Per-seat room and spacing.
     pub seats: Vec<SeatAudit>,
     /// Every cross-team Foundry pair.
@@ -89,6 +93,47 @@ pub struct MapAudit {
     /// frames or starting units crosses, on ground where hostile seats
     /// meet.
     pub narrow_passages: Vec<NarrowPassage>,
+    /// The size badge the nearest enemy route earns; `None` without a
+    /// hostile pair.
+    pub size_badge: Option<MapSize>,
+    /// Scrap piles plus [`FRAME_WEALTH`] per Extractor frame, shared among
+    /// the players.
+    pub wealth_per_player: u64,
+    /// The wealth badge that share earns among maps for as many players.
+    pub wealth_badge: MapWealth,
+}
+
+/// Scrap an Extractor frame adds to a map's wealth: about what one
+/// supported Extractor pays between minute 3 and minute 20. Frames outearn
+/// the piles by then, which are mostly mined out by minute 10.
+pub const FRAME_WEALTH: u64 = 3_000;
+
+/// The size badge for the nearest enemy route, in effective steps.
+fn size_for_route(steps: usize) -> MapSize {
+    match steps {
+        0..60 => MapSize::Small,
+        60..80 => MapSize::Medium,
+        80..100 => MapSize::Large,
+        _ => MapSize::Huge,
+    }
+}
+
+/// The wealth badge for a share of scrap and frames. Bigger matches leave
+/// less of both to each player, so each player count has its own lines:
+/// otherwise every big team map would read lean and no duel would.
+fn wealth_for(per_player: u64, players: usize) -> MapWealth {
+    let (lean_below, rich_from) = match players {
+        0..=2 => (22_000, 27_000),
+        3..=4 => (15_000, 20_000),
+        _ => (12_000, 14_500),
+    };
+    if per_player < lean_below {
+        MapWealth::Lean
+    } else if per_player < rich_from {
+        MapWealth::Standard
+    } else {
+        MapWealth::Rich
+    }
 }
 
 /// Longest artillery reach, read from the Bombard, Avalanche and Bastion
@@ -440,15 +485,28 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         })
         .collect();
 
+    let extractor_frames = map.extractor_frames().len();
+    // A built scenario seats at least one player.
+    let players = scenario.players.len();
+    let wealth_per_player = (scrap_total + FRAME_WEALTH * extractor_frames as u64) / players as u64;
+    let size_badge = routes
+        .iter()
+        .filter_map(RouteAudit::effective_steps)
+        .min()
+        .map(size_for_route);
     Ok(MapAudit {
         name: scenario.name.clone(),
         size: (w, h),
         free_tiles,
         scrap_nodes,
         scrap_total,
+        extractor_frames,
         seats,
         routes,
         narrow_passages: passages::narrow_passages(&state),
+        size_badge,
+        wealth_per_player,
+        wealth_badge: wealth_for(wealth_per_player, players),
     })
 }
 
@@ -459,13 +517,21 @@ impl MapAudit {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "{} — {}x{}, {} free tiles, {} nodes ({} scrap)",
+            "{} — {}x{}, {} free tiles, {} nodes ({} scrap), {} frames",
             self.name,
             self.size.0,
             self.size.1,
             self.free_tiles,
             self.scrap_nodes,
-            self.scrap_total
+            self.scrap_total,
+            self.extractor_frames
+        );
+        let _ = writeln!(
+            out,
+            "  badges: {} size, {} wealth ({} per player)",
+            self.size_badge.map_or("no", MapSize::label),
+            self.wealth_badge.label(),
+            self.wealth_per_player
         );
         for seat in &self.seats {
             let _ = writeln!(

@@ -223,9 +223,9 @@
  ],
  "meta": {
   "hook": "Each edge has a walled pocket of frames that opens only toward the two bases beside it, and the rich scrap sits in a walled center.",
-  "pace": "large",
+  "size": "medium",
   "mode": "4-way FFA",
-  "richness": "standard",
+  "wealth": "standard",
   "theme": "cold-circuitry",
   "symmetry": "metric"
  }
