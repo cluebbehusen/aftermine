@@ -691,9 +691,7 @@ fn draw_defense_mount(
     };
     let angle = game
         .presentation
-        .aim_buildings
-        .get(&building.id.0)
-        .map_or(0.0, |(angle, _)| *angle);
+        .draw_gun_heading(building, game.clock.render_alpha());
     draw(
         screen.x,
         screen.y,

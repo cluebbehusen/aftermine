@@ -6,7 +6,7 @@ use crate::common;
 use chassis::grid::TilePos;
 use oxide_sim::{BuildingKind, Command, Event, PlayerId, Scenario, Target, UnitId, UnitKind};
 
-use common::{cmd, open_arena, unit};
+use common::{aim_defense_at, cmd, open_arena, unit};
 
 const WIDTH: i32 = 48;
 const HEIGHT: i32 = 20;
@@ -589,6 +589,13 @@ fn changing_course_after_launch_can_dodge_an_unguided_bastion_shell() {
             .find(|unit| unit.player == PlayerId(attacker))
             .unwrap()
             .id;
+        let bastion = state
+            .buildings()
+            .iter()
+            .find(|building| building.kind == BuildingKind::Bastion)
+            .unwrap()
+            .id;
+        aim_defense_at(&mut state, bastion, Target::Unit(scuttler));
         let goal = if defender == 0 {
             TilePos::new(14, 15)
         } else {

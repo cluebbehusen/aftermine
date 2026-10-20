@@ -199,7 +199,7 @@ impl PreviousEffects {
                             kind: b.kind,
                             tier: b.tier,
                             player: b.player,
-                            rotation: game.aim_buildings.get(&b.id.0).map_or(0.0, |pose| pose.0),
+                            rotation: game.draw_gun_heading(b, 1.0),
                         }),
                         BuildingHit::capture(state, b),
                     )
@@ -1308,24 +1308,11 @@ impl Presentation {
                 Event::TurretFired {
                     kind,
                     tier,
-                    turret,
                     turret_pos,
                     target_pos,
                     target,
                     ..
                 } => {
-                    if let Some(target) = target {
-                        self.aim_building_targets.insert(turret.0, *target);
-                    } else {
-                        self.aim_building_targets.remove(&turret.0);
-                    }
-                    let d = world_vec(*target_pos) - world_vec(*turret_pos);
-                    if d.length_squared() > 1e-6 {
-                        self.aim_buildings.insert(
-                            turret.0,
-                            (d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2, self.fx_clock),
-                        );
-                    }
                     // The kind comes from the event because the turret may
                     // have been destroyed the tick it fired; its shot still
                     // gets the right report and burst. Only a direct-fire
@@ -1597,31 +1584,20 @@ impl Presentation {
                 }
                 Event::ShellLaunched {
                     shooter,
-                    target,
                     player,
                     from,
                     to,
                     unit_pose,
                     ..
                 } => {
-                    // The gun turns toward its target: a Bastion's mount as
-                    // well as a Bombard's chassis.
+                    // A firing machine faces its target. A defense's gun
+                    // already bears on it in the simulation.
                     let d = world_vec(*to) - world_vec(*from);
-                    if d.length_squared() > 1e-6 {
+                    if let oxide_sim::Target::Unit(uid) = shooter
+                        && d.length_squared() > 1e-6
+                    {
                         let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
-                        match shooter {
-                            oxide_sim::Target::Unit(uid) => {
-                                self.aim_units.insert(uid.0, (angle, self.fx_clock));
-                            }
-                            oxide_sim::Target::Building(bid) => {
-                                if let Some(target) = target {
-                                    self.aim_building_targets.insert(bid.0, *target);
-                                } else {
-                                    self.aim_building_targets.remove(&bid.0);
-                                }
-                                self.aim_buildings.insert(bid.0, (angle, self.fx_clock));
-                            }
-                        }
+                        self.aim_units.insert(uid.0, (angle, self.fx_clock));
                     }
                     // No effect spawned: in-flight shells render from
                     // `state.shells()` directly, aged by sim ticks, so pause,
@@ -2033,7 +2009,6 @@ impl Presentation {
         self.warn_of_warheads(state);
         self.warn_of_cradles(state);
         self.launch_interceptors(state);
-        self.refresh_defense_aim(state);
     }
 
     /// Starts each forecast stop its lead ahead: the pod swings onto the
@@ -2169,58 +2144,6 @@ impl Presentation {
                 .iter()
                 .any(|c| (c.owner.0, c.anchor.x, c.anchor.y) == (owner, x, y))
         });
-    }
-
-    fn refresh_defense_aim(&mut self, state: &State) {
-        let updates: Vec<_> = self
-            .aim_building_targets
-            .iter()
-            .filter_map(|(&building_id, &target)| {
-                if self
-                    .aim_buildings
-                    .get(&building_id)
-                    .is_some_and(|(_, fired_at)| *fired_at == self.fx_clock)
-                {
-                    return None;
-                }
-                let building = state.building(oxide_sim::BuildingId(building_id))?;
-                if building.cooldown == 0 {
-                    return None;
-                }
-                let target_pos = match target {
-                    oxide_sim::Target::Unit(id) => {
-                        let unit = state.unit(id)?;
-                        let visible = self.all_seeing()
-                            || !state.hostile(self.human, unit.player)
-                            || state.vision(self.human).sees_unit(unit);
-                        visible.then(|| world_vec(unit.pos))?
-                    }
-                    oxide_sim::Target::Building(id) => {
-                        let target = state.building(id)?;
-                        let visible = self.all_seeing()
-                            || !state.hostile(self.human, target.player)
-                            || target
-                                .tiles()
-                                .any(|tile| state.vision(self.human).visible(tile));
-                        visible.then(|| world_vec(target.center()))?
-                    }
-                };
-                let from = world_vec(building.center());
-                let delta = target_pos - from;
-                (delta.length_squared() > 1e-6).then(|| {
-                    (
-                        building_id,
-                        delta.y.atan2(delta.x) + std::f32::consts::FRAC_PI_2,
-                    )
-                })
-            })
-            .collect();
-        for (building_id, angle) in updates {
-            self.aim_buildings
-                .entry(building_id)
-                .and_modify(|aim| aim.0 = angle)
-                .or_insert((angle, self.fx_clock));
-        }
     }
 }
 

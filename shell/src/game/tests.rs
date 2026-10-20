@@ -56,7 +56,7 @@ fn multiple_bot_seats_rebuild_the_same_history_on_resume() {
     assert_eq!(original.hash_hex(), resumed.hash_hex());
 }
 
-use oxide_sim::{Command, Scenario, Target, UnitKind};
+use oxide_sim::{Command, Scenario, UnitKind};
 
 #[test]
 fn foundry_free_sandbox_accepts_local_input_and_restores_checkpoint() {
@@ -642,17 +642,10 @@ fn bulk_advance_drops_old_timeline_aim_and_facing() {
     )
     .expect("skirmish builds");
     let unit = game.state.units()[0].id.0;
-    let building = game.state.buildings()[0].id.0;
     game.presentation.facing.insert(unit, 1.25);
     game.presentation
         .aim_units
         .insert(unit, (2.5, game.presentation.fx_time()));
-    game.presentation
-        .aim_buildings
-        .insert(building, (0.75, game.presentation.fx_time()));
-    game.presentation
-        .aim_building_targets
-        .insert(building, Target::Unit(UnitId(unit)));
 
     game.advance_ticks(1);
 
@@ -661,8 +654,6 @@ fn bulk_advance_drops_old_timeline_aim_and_facing() {
             + std::f32::consts::FRAC_PI_2;
     assert_eq!(game.presentation.facing.get(&unit), Some(&expected));
     assert!(game.presentation.aim_units.is_empty());
-    assert!(game.presentation.aim_buildings.is_empty());
-    assert!(game.presentation.aim_building_targets.is_empty());
 }
 
 #[test]

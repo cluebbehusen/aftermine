@@ -1414,3 +1414,26 @@ fn an_anchored_body_holds_unless_a_wider_hull_shoves_it() {
         (Fx::ZERO, Fx::ONE)
     );
 }
+
+/// `ticks_to_bear` counts the turns `steer_bearing` takes after the current
+/// one, and no bearing takes longer than `longest_bear`.
+#[test]
+fn ticks_to_bear_matches_steering_and_its_bound() {
+    for rate in [1, 3, 5, 7, 8, 12, 14, 64, 127, 255] {
+        let mut longest = 0;
+        for start in [0_u8, 1, 37, 128, 201] {
+            for target in 0..=u8::MAX {
+                let direction = chassis::compass::dir(target);
+                let expected = ticks_to_bear(start, direction, rate);
+                let mut heading = start;
+                let mut turns = 1;
+                while !steer_bearing(&mut heading, direction, rate) {
+                    turns += 1;
+                }
+                assert_eq!(expected + 1, turns, "rate {rate} from {start} to {target}");
+                longest = longest.max(expected);
+            }
+        }
+        assert_eq!(longest, longest_bear(rate), "rate {rate}");
+    }
+}

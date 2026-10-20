@@ -1208,6 +1208,11 @@ pub struct Building {
     /// The launch deck, on exactly the kinds that launch warheads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launcher: Option<Launcher>,
+    /// The gun's bearing in compass steps, on exactly the kinds that fire.
+    /// It turns toward the gun's target at the tier's traverse, and the gun
+    /// fires only once it bears.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gun_heading: Option<u8>,
 }
 
 /// A building's prepaid rounds. Ordered rounds assemble one at a time,
@@ -2606,6 +2611,7 @@ impl State {
             salvage_credited,
             magazine,
             launcher,
+            gun_heading,
         } = b;
         let id = *id;
         if usize::from(player.0) >= self.players.len() {
@@ -2648,6 +2654,9 @@ impl State {
         }
         if !launcher_fits(self, *kind, b.built(), *magazine, *launcher) {
             return Err(E::InvalidLauncher(id));
+        }
+        if gun_heading.is_some() != kind.fires() {
+            return Err(E::GunMismatch(id));
         }
         let meter_overrun = match *phase {
             BuildingPhase::Provisional => false,
@@ -3479,6 +3488,14 @@ impl State {
     fn mint_building(&mut self, player: PlayerId, kind: BuildingKind, anchor: TilePos) -> Building {
         let id = BuildingId(self.next_building_id);
         self.next_building_id += 1;
+        // Decks and guns start toward the map centre, as units face on
+        // spawn, so mirrored works come about in mirrored time.
+        let facing_centre = chassis::compass::heading_of(
+            Vec2Fx::new(
+                Fx::from_num(self.map.width()) / 2,
+                Fx::from_num(self.map.height()) / 2,
+            ) - crate::geometry::footprint_center(anchor, kind.size()),
+        );
         Building {
             id,
             player,
@@ -3500,17 +3517,11 @@ impl State {
                 autofill: stats.autofill,
             }),
             launcher: kind.silo().map(|_| Launcher {
-                // Toward the map centre, as units face on spawn, so
-                // mirrored silos come about in mirrored time.
-                heading: chassis::compass::heading_of(
-                    Vec2Fx::new(
-                        Fx::from_num(self.map.width()) / 2,
-                        Fx::from_num(self.map.height()) / 2,
-                    ) - crate::geometry::footprint_center(anchor, kind.size()),
-                ),
+                heading: facing_centre,
                 target: None,
                 ready: 0,
             }),
+            gun_heading: kind.fires().then_some(facing_centre),
         }
     }
 
@@ -4099,6 +4110,10 @@ pub enum StateIntegrityError {
     /// tick it fires on.
     #[error("building {0} carries an invalid launch deck")]
     InvalidLauncher(BuildingId),
+    /// A gun bearing on a kind that fires nothing, or missing from one that
+    /// fires.
+    #[error("building {0} has a gun bearing that does not match its kind")]
+    GunMismatch(BuildingId),
     /// Warheads are not strictly ordered by id.
     #[error("warheads are out of id order")]
     UnsortedWarheads,

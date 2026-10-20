@@ -343,6 +343,7 @@ fn building_view_exposes_allied_focus_and_redacts_hostile_focus() {
         salvage_credited: 0,
         magazine: None,
         launcher: None,
+        gun_heading: Some(0),
     };
 
     assert_eq!(building_view(&building).focus, Some(target.into()));

@@ -68,6 +68,7 @@ fn array_true_sight_lets_a_bastion_shell_a_visible_building_footprint() {
         .building(target)
         .unwrap()
         .closest_point_to(state.building(bastion).unwrap().center());
+    aim_defense_at(&mut state, bastion, Target::Building(target));
     let before = state.building(target).unwrap().hp;
     let report = state.tick(&[]);
     assert_eq!(
@@ -154,11 +155,16 @@ fn an_eligible_visible_unit_keeps_priority_over_a_closer_building() {
     ];
     let mut state = scenario.build().unwrap();
     let bastion = building_id(&state, PlayerId(0), BuildingKind::Bastion);
+    let building = building_id(&state, PlayerId(1), BuildingKind::Reclaimer);
     let unit_position = state.units()[0].pos;
+    // The gun already bears on the building, so the unit costs a turn.
+    aim_defense_at(&mut state, bastion, Target::Building(building));
 
-    let report = state.tick(&[]);
+    let events = run_until(&mut state, 60, |_, events| {
+        bastion_launch(events, bastion).is_some()
+    });
     assert_eq!(
-        bastion_launch(&report.events, bastion),
+        bastion_launch(&events, bastion),
         Some(unit_position),
         "the existing visible-unit acquisition tier must remain ahead of buildings"
     );
@@ -176,6 +182,7 @@ fn bastion_does_not_read_a_path_established_later_this_tick() {
     let target = state.units()[0].id;
     let current = state.unit(target).unwrap().pos;
     let before = state.unit(target).unwrap().hp;
+    aim_defense_at(&mut state, bastion, Target::Unit(target));
 
     let report = state.tick(&[cmd(
         1,
@@ -214,6 +221,7 @@ fn bastion_keeps_a_legal_aim_when_prediction_enters_its_dead_zone() {
     let center = state.building(bastion).unwrap().center();
     let minimum = BuildingKind::Bastion.base_stats().weapons[0].minimum_range;
     assert!(center.dist_sq(current) >= minimum * minimum);
+    aim_defense_at(&mut state, bastion, Target::Unit(target));
 
     let report = state.tick(&[cmd(
         1,
