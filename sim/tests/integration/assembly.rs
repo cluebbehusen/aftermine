@@ -938,6 +938,11 @@ fn first_cut(
         .find(|b| b.anchor == anchor)
         .unwrap()
         .id;
+    cut_by(&mut state, maw, target)
+}
+
+/// The first cut of `maw` ordered onto `target`.
+fn cut_by(state: &mut State, maw: UnitId, target: oxide_sim::BuildingId) -> Cut {
     state.tick(&[cmd(
         0,
         Command::Attack {
@@ -947,9 +952,9 @@ fn first_cut(
         },
     )]);
     let surface = |state: &State| state.contact_surface(state.building(target).unwrap());
-    let mut met = surface(&state);
+    let mut met = surface(state);
     let mut cut = None;
-    run_until(&mut state, 400, |state, events| {
+    run_until(state, 400, |state, events| {
         cut = events.iter().find_map(|event| match event {
             Event::AttackHit {
                 attacker,
@@ -1155,6 +1160,32 @@ fn a_maw_askew_to_a_side_squares_up_before_it_cuts() {
         state.contact_surface(state.building(bastion).unwrap()),
         unit.heading
     ));
+}
+
+#[test]
+fn a_maw_off_a_corner_drives_to_a_side_before_it_cuts() {
+    // Stopped off a Barricade's corner, within reach of it but with no side
+    // under its drum, the Maw never cuts from there: it drives on until its
+    // drum presses flat against a side.
+    let stood = Vec2Fx::new(Fx::lit("14"), Fx::lit("14.203125"));
+    let mut scenario = open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, 8, 8)], |_| {});
+    scenario.mode = ScenarioMode::Sandbox;
+    scenario.buildings = vec![building(1, BuildingKind::Barricade, 15, 15)];
+    let mut doc = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    doc["units"][0]["pos"] = serde_json::json!(stood);
+    doc["units"][0]["heading"] = serde_json::json!(0);
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    let maw = ids(&state, 0, UnitKind::Maw)[0];
+    let barricade = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Barricade)
+        .unwrap()
+        .id;
+    let cut = cut_by(&mut state, maw, barricade);
+    assert_ne!(cut.stood, stood);
+    assert!(square_to(cut.met, cut.heading));
+    assert!(on_drum(cut.stood, cut.heading, cut.aim), "{:?}", cut.aim);
 }
 
 #[test]

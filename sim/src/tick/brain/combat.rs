@@ -2107,10 +2107,9 @@ pub(super) fn attack(
         None => (target, aim_point, target_tile, seen),
     };
     // Stopped within reach of its target but not pressed flat against it, a
-    // wide cutter first turns square to the side it stands out from, and
-    // only then cuts from where it stands. It never cuts at a corner it
-    // passes on the way.
-    let mut squared = None;
+    // wide cutter turns square to the side it stands out from. It cuts only
+    // once its drum presses flat: squared up off a corner, short of every
+    // side, it drives on to meet one.
     if drum.is_none()
         && !routed
         && seen
@@ -2126,13 +2125,10 @@ pub(super) fn attack(
         if !super::super::movement::steer_weapon_heading(unit, -outward) {
             return;
         }
-        squared = Some(-outward);
     }
     let in_range = drum.is_some()
         || (within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
-            && !(contact::square_cutter(kind)
-                && matches!(target, Target::Building(_))
-                && squared.is_none()));
+            && !(contact::square_cutter(kind) && matches!(target, Target::Building(_))));
     if in_range
         && seen
         && clear_line(
@@ -2169,10 +2165,9 @@ pub(super) fn attack(
             leash.patience = crate::stats::LEASH_PATIENCE;
         }
         unit.set_braces(previous_braces);
-        let facing = match (drum, squared) {
-            (Some((.., outward)), _) => -outward,
-            (None, Some(facing)) => facing,
-            (None, None) => projectile_aim.unwrap_or(aim_point) - pos,
+        let facing = match drum {
+            Some((.., outward)) => -outward,
+            None => projectile_aim.unwrap_or(aim_point) - pos,
         };
         if !super::super::movement::steer_weapon_heading(unit, facing) {
             return;
