@@ -1265,26 +1265,58 @@ fn a_maw_cuts_a_way_through_a_fence_it_cannot_pass() {
 }
 
 #[test]
-fn a_maw_drives_around_a_wall_it_can_pass() {
-    // A Barricade wall with open ends stands between the Maw and a Turret.
-    // The Maw takes the way around rather than ploughing into the wall.
-    let turret_at = TilePos::new(15, 16);
-    let mut buildings = vec![(1, BuildingKind::Turret, turret_at)];
-    buildings.extend((5..27).map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14))));
-    let (mut state, maw, turret) = maw_beside(
-        Vec2Fx::new(Fx::lit("15.5"), Fx::lit("11.5")),
-        64,
-        &buildings,
+fn a_maw_cuts_through_a_wall_in_its_way() {
+    // A Barricade wall stands between the Maw and a Turret, sealed against
+    // the arena's edges or open at both ends. Either way the Maw presses
+    // flat on the wall where its way meets it rather than driving around,
+    // cuts a way through, then cuts the Turret down.
+    for wall in [1..31, 5..27] {
+        let turret_at = TilePos::new(15, 16);
+        let mut buildings = vec![(1, BuildingKind::Turret, turret_at)];
+        buildings.extend(wall.map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14))));
+        let (mut state, maw, turret) = maw_beside(
+            Vec2Fx::new(Fx::lit("15.5"), Fx::lit("11.5")),
+            64,
+            &buildings,
+        );
+        let first = first_stroke(&mut state, maw, turret, 200);
+        let struck = state.building(first[0]).unwrap();
+        assert_eq!(struck.kind, BuildingKind::Barricade);
+        assert!((13..=17).contains(&struck.anchor.x), "{:?}", struck.anchor);
+        run_until(&mut state, 600, |state, _| state.building(turret).is_none());
+        let left = state
+            .buildings()
+            .iter()
+            .filter(|b| b.kind == BuildingKind::Barricade)
+            .count();
+        assert!(
+            left + 4 >= buildings.len() - 1,
+            "it cut a way through, not the wall: {left} left"
+        );
+    }
+}
+
+#[test]
+fn a_maw_ordered_at_a_wall_cuts_in_wherever_its_way_meets_it() {
+    // Ordered from a few tiles off at one Barricade of a sealed wall, the
+    // Maw may first press on a neighbour of its target. It meets every
+    // Barricade by its outline, so it cuts in there and on to its target.
+    let target_at = TilePos::new(15, 14);
+    let mut buildings = vec![(1, BuildingKind::Barricade, target_at)];
+    buildings.extend(
+        (1..31)
+            .filter(|&x| x != target_at.x)
+            .map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14))),
     );
-    let first = first_stroke(&mut state, maw, turret, 1_200);
-    assert_eq!(first, vec![turret]);
-    run_until(&mut state, 600, |state, _| state.building(turret).is_none());
-    let left = state
-        .buildings()
-        .iter()
-        .filter(|b| b.kind == BuildingKind::Barricade)
-        .count();
-    assert_eq!(left, buildings.len() - 1);
+    for (pos, heading) in [
+        (Vec2Fx::new(Fx::lit("15.5"), Fx::lit("9.5")), 64),
+        (Vec2Fx::new(Fx::lit("16.5"), Fx::lit("9.5")), 40),
+        (Vec2Fx::new(Fx::lit("15.5"), Fx::lit("8.5")), 72),
+    ] {
+        let (mut state, maw, target) = maw_beside(pos, heading, &buildings);
+        first_stroke(&mut state, maw, target, 300);
+        run_until(&mut state, 600, |state, _| state.building(target).is_none());
+    }
 }
 
 #[test]

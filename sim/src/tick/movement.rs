@@ -412,6 +412,15 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
         .iter()
         .map(|unit| super::brain::contact::surface_for(state, unit))
         .collect();
+    let outlines: Vec<_> = state
+        .units
+        .iter()
+        .zip(&contacts)
+        .map(|(unit, contact)| match contact {
+            Some(_) => super::brain::contact::cut_outlines(state, unit, unit.pos),
+            None => Vec::new(),
+        })
+        .collect();
     let work_aims: Vec<_> = state
         .units
         .iter()
@@ -454,7 +463,9 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
         if stats.domain == crate::stats::Domain::Ground {
             refused[slot] = ground::advance(
                 unit,
-                &terrain.with_contact(contacts[slot]),
+                &terrain
+                    .with_contact(contacts[slot])
+                    .with_outlines(&outlines[slot]),
                 &parked[unit.player.0 as usize],
             );
             if unit.drive_speed() == Fx::ZERO
@@ -719,9 +730,11 @@ fn envelope_bound(state: &State, domain: crate::stats::Domain, to: Vec2Fx) -> Ve
 fn contact_push_open(state: &State, slot: usize, to: Vec2Fx) -> bool {
     let unit = &state.units[slot];
     if let Some(surface) = super::brain::contact::surface_for(state, unit) {
+        let outlines = super::brain::contact::cut_outlines(state, unit, unit.pos);
         return state
             .ground_terrain()
             .with_contact(Some(surface))
+            .with_outlines(&outlines)
             .contact_clear(unit.pos, to, super::brain::contact::collision_radius(unit));
     }
     let radius = unit.kind.stats().radius;
