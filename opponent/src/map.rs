@@ -231,6 +231,62 @@ impl MapModel {
             .cloned();
         Cow::Owned(extend_distances(&self.components, &starts, initial))
     }
+
+    /// Ground distance back to `to`, in tenths of a tile, over the tiles a
+    /// walk from `player`'s start to it crosses when it is at most `slack`
+    /// tenths longer than the shortest; every other tile stays
+    /// [`UNREACHABLE`]. The search stays on those tiles, so its cost follows
+    /// the walk's length and slack rather than the map's size.
+    pub(crate) fn corridor(&self, player: PlayerId, to: TilePos, slack: u16) -> Grid<u16> {
+        let mut field = Grid::new(
+            self.components.width(),
+            self.components.height(),
+            UNREACHABLE,
+        );
+        let length = self.distance(player, to);
+        if length == UNREACHABLE {
+            return field;
+        }
+        let limit = u32::from(length) + u32::from(slack);
+        let open = |tile: TilePos| self.components.get(tile).is_some_and(|label| *label != 0);
+        // Every tile on a shortest way back from a tile within the slack is
+        // within it too, so the search need not pass through any other.
+        let within = |tile: TilePos, back: u32| {
+            let ahead = self.distance(player, tile);
+            ahead != UNREACHABLE && back + u32::from(ahead) <= limit
+        };
+        if let Some(cell) = field.get_mut(to) {
+            *cell = 0;
+        }
+        let mut queue = BinaryHeap::from([Reverse((0_u32, to.y, to.x))]);
+        while let Some(Reverse((cost, y, x))) = queue.pop() {
+            let tile = TilePos::new(x, y);
+            if field
+                .get(tile)
+                .is_some_and(|known| u32::from(*known) < cost)
+            {
+                continue;
+            }
+            for (dx, dy) in NEIGHBOURS {
+                let next = tile.offset(dx, dy);
+                let diagonal = dx != 0 && dy != 0;
+                if !open(next)
+                    || (diagonal && !(open(tile.offset(dx, 0)) && open(tile.offset(0, dy))))
+                {
+                    continue;
+                }
+                let reached = cost + if diagonal { 14 } else { 10 };
+                if within(next, reached)
+                    && let Some(cell) = field.get_mut(next)
+                    && reached < u32::from(*cell)
+                {
+                    *cell = u16::try_from(reached).unwrap_or(UNREACHABLE - 1);
+                    queue.push(Reverse((reached, next.y, next.x)));
+                }
+            }
+        }
+        field
+    }
     /// Builds the model from the scenario's authored map.
     pub fn from_scenario(scenario: &Scenario) -> Result<Self, ScenarioError> {
         let (map, anchors) = scenario.parse_map_and_anchors()?;

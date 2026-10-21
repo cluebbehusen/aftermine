@@ -515,10 +515,14 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
-    let shortfalls =
-        persistent
-            .missions
-            .defend(observation, map, frame, &persistent.memory, &mut ledger);
+    let shortfalls = persistent.missions.defend(
+        observation,
+        map,
+        frame,
+        &persistent.memory,
+        profile.difficulty,
+        &mut ledger,
+    );
     let short = !shortfalls.is_empty();
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);

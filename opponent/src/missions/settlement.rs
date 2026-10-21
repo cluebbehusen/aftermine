@@ -244,7 +244,7 @@ impl<'a> Settlement<'a> {
             .filter(|u| u.kind.stats().domain == Domain::Ground)
             .map(|u| usize::from(u.kind.stats().transport_size))
             .sum();
-        let free = missions.available(self.observation, false);
+        let free = missions.available(self.observation, None);
         let room = |kinds: &mut dyn Iterator<Item = UnitKind>| -> usize {
             kinds
                 .map(|kind| usize::from(kind.stats().transport_capacity))
@@ -282,7 +282,7 @@ impl<'a> Settlement<'a> {
         }
         let stuck = self.memory.stuck();
         let units: Vec<_> = missions
-            .available(self.observation, false)
+            .available(self.observation, None)
             .into_iter()
             .filter_map(|id| mine(self.observation, id))
             .filter(|u| !carrier(u.kind) && !workers::worker(u.kind) && u.kind.stats().can_fight())
@@ -504,7 +504,7 @@ impl Missions {
         members: &mut Vec<UnitId>,
         ledger: &mut Ledger,
     ) {
-        let free = self.available(context.observation, false);
+        let free = self.available(context.observation, None);
         let mut transports: Vec<_> = context
             .observation
             .my_units

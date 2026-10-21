@@ -1,7 +1,7 @@
 use super::*;
 
 /// West army spots near home.
-const WEST: [(i32, i32); 8] = [
+pub(super) const WEST: [(i32, i32); 8] = [
     (6, 9),
     (7, 9),
     (8, 9),
@@ -33,7 +33,7 @@ fn east_start() -> MissionKind {
     }
 }
 
-fn attack(missions: &[MissionStatus]) -> Option<MissionStatus> {
+pub(super) fn attack(missions: &[MissionStatus]) -> Option<MissionStatus> {
     missions
         .iter()
         .copied()
@@ -41,7 +41,7 @@ fn attack(missions: &[MissionStatus]) -> Option<MissionStatus> {
 }
 
 /// Attack phases in the order the traces show them.
-fn phases(traces: &[Trace]) -> Vec<Phase> {
+pub(super) fn phases(traces: &[Trace]) -> Vec<Phase> {
     let mut seen = Vec::new();
     for trace in traces {
         if let Some(mission) = attack(&trace.missions)
@@ -230,8 +230,10 @@ fn a_stalled_attack_gives_up_its_target_for_a_while() {
     assert!(hunts(&commands).is_empty(), "and no new one forms");
 }
 
-#[test]
-fn missions_live_their_lifecycle() {
+/// Runs a seat of `config` through a raid on home, an attack once the
+/// raiders leave, and a second raid while the attack travels. Returns the
+/// attack's units before and once the second raid is answered.
+fn lifecycle(config: BotConfig) -> (u32, u32) {
     // Scuttlers in sight that take more defenders than the reserve keeps, and
     // raiders out of sight that outweigh the army left home once it attacks.
     let first: Vec<(i32, i32)> = (10..=13).flat_map(|y| [(10, y), (11, y)]).collect();
@@ -248,7 +250,7 @@ fn missions_live_their_lifecycle() {
         spots.iter().map(|(x, y)| at(&state, *x, *y)).collect()
     };
     let (scuttlers, raiders) = (ids(&first), ids(&second));
-    let mut opponent = seat(&scenario, 0);
+    let mut opponent = seat_with(&scenario, 0, config);
     let mut traces: Vec<Trace> = Vec::new();
     let mut raided = None;
     while state.current_tick() < 2_400 {
@@ -303,8 +305,27 @@ fn missions_live_their_lifecycle() {
     let before = attack(&traces[answered - 1].missions).unwrap();
     assert_eq!(before.phase, Phase::Travel);
     let after = attack(&traces[answered].missions).map_or(0, |mission| mission.units);
+    (before.units, after)
+}
+
+#[test]
+fn missions_live_their_lifecycle() {
+    let (before, after) = lifecycle(config());
+    assert_eq!(
+        after, before,
+        "the travelling attack keeps its units from the defense"
+    );
+}
+
+#[test]
+fn the_lowest_rung_lends_a_travelling_attack_to_a_defense() {
+    let (before, after) = lifecycle(BotConfig::new(
+        BotDifficulty::Scrapheap,
+        BotStance::Balanced,
+        11,
+    ));
     assert!(
-        after < before.units,
+        after < before,
         "the travelling attack gave units to the defense"
     );
 }
@@ -355,7 +376,11 @@ fn staged(scenario: &Scenario, missions: serde_json::Value) -> (State, Opponent)
 
 /// West on `scenario` restored at `state` under the scenario's config, with
 /// `missions` staged.
-fn restaged(scenario: &Scenario, state: &State, missions: serde_json::Value) -> Opponent {
+pub(super) fn restaged(
+    scenario: &Scenario,
+    state: &State,
+    missions: serde_json::Value,
+) -> Opponent {
     let mut json = serde_json::to_value(seat(scenario, 0).checkpoint()).unwrap();
     json["missions"] = missions;
     let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();

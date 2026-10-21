@@ -266,7 +266,7 @@ impl Missions {
             .filter_map(|id| mine(observation, *id))
             .collect();
         let free: Vec<&UnitObs> = self
-            .available(observation, false)
+            .available(observation, None)
             .into_iter()
             .filter_map(|id| mine(observation, id))
             .filter(|unit| at_home(map, home, unit))

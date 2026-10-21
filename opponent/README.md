@@ -273,7 +273,9 @@ outweigh the known army it would meet by a margin set by difficulty; anti-air
 units recruited along the way escort the army but do not count toward that. The
 army it would meet is every armed enemy the seat remembers that hits ground, on
 the target's ground or in the air, and the known enemy buildings guarding the
-target. Remembered units count by confidence, except that a ground unit on
+target and, above the lowest rung, those whose ground fire reaches a way there:
+any ground walk from the seat's start at most three tiles longer than the
+shortest. Remembered units count by confidence, except that a ground unit on
 ground the seat's own does not reach counts in full; buildings that fire on
 ground count at their price with every upgrade they reached, discounted by
 missing health, and a building's weapons reach as far as its current tier's do.
@@ -294,17 +296,41 @@ strike's target so the seat does not flip between enemies. The rival is chosen
 once, as each decision begins, so production and investments prepare for the
 enemy its missions go after.
 
+Above the lowest rung, an army whose way passes the fire of a known defense does
+not walk in as a column. It sets out for a staging spot: the tile on the way
+nearest the target that stands short of where the first such defense's fire
+reaches the way, three tiles beyond the reach of each defense on the way that
+can fire, and three tiles from every known enemy building. Once a member
+arrives, the army goes in together, every member but its Sappers, with strength
+enough, once most of its moving value stands there or none of the rest is still
+walking there: a member stuck, fighting or standing still holds no one up. The
+wait has no fixed length, so a long walk waits for its slower units, which
+string out behind; what arrives first never goes in alone, even when it beats
+the known army on paper, since the known defense understates what it meets.
+Three minutes after setting out, the time any attack has to reach its target, it
+stops waiting. Without strength enough it returns to the rally. Veteran and
+Prime wait for 85% of that value, Standard for 70%. Units freed while the army
+is on its way to the spot or gathering there stay home for the next attack
+rather than keep it waiting; once it goes in they join it as before. Shells
+landing among the army from guns it is not already fighting, where they could
+reach the staging spot, send it to a new spot nearer home and three tiles beyond
+the guns' reach: the longest reach among the enemies in sight that could have
+fired them, or the longest artillery reach when none is in sight. With no such
+spot it returns to the rally. It withdraws from a losing fight there as from any
+other, and walks home when it cannot reach the spot.
+
 Free, healthy point defenders on the target's ground go along with an attack
 when it forms and join it wherever free units do. They never count toward its
 strength, its readiness, its arrival or contact, or the opposition it meets.
-While it travels or fights, a defender farther than half its reach from the
-fighting member nearest the army's middle runs back to that member's tile. An
-attack left with no fighting member sends its defenders home and ends.
+While it is out, a defender farther than half its reach from the fighting member
+nearest the army's middle runs back to that member's tile. An attack left with
+no fighting member sends its defenders home and ends.
 
-Badly wounded members leave between fights and run to the rally, and a defense
-may take the attack's units in any phase but a fight. While a free army that
-could attack does not, or every producer sits idle, the margin for the next
-attack falls step by step toward even.
+Badly wounded members leave between fights and run to the rally. A defense may
+take the attack's units while it gathers, withdraws or recovers, and at the
+lowest rung also while it travels out of contact. While a free army that could
+attack does not, or every producer sits idle, the margin for the next attack
+falls step by step toward even.
 
 Difficulty changes how well a seat attacks, never what it may do. Veteran and
 Prime count the known defense around a target like more distance, so they go
@@ -316,9 +342,10 @@ withdraw at even odds. Guile moves either threshold by up to a tenth, sooner for
 a guileful seat, and attacks, clearances, strikes and raids all withdraw by it.
 Scrapheap also attacks piecemeal, several attacks side by side each taking only
 what its own target needs; goes for a Foundry whenever it knows one, however
-well guarded; and misjudges the enemy's strength by up to two fifths either way,
-a misjudgment drawn from its personality seed that holds for 600 ticks, both
-when setting out and when deciding to pull back.
+well guarded; walks into known defenses as a column, counting only those around
+its target; and misjudges the enemy's strength by up to two fifths either way, a
+misjudgment drawn from its personality seed that holds for 600 ticks, both when
+setting out and when deciding to pull back.
 
 An engaged mission focuses its fire: when every member that can hit an enemy
 near it already reaches that enemy in a straight line that terrain does not

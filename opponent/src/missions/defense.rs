@@ -18,6 +18,7 @@ use crate::memory::Memory;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use oxide_sim::scenario::BotDifficulty;
 use oxide_sim::stats::{Domain, WeaponStats};
 use oxide_sim::{AttackTarget, BuildingKind, Command, UnitId, UnitKind};
 
@@ -51,8 +52,9 @@ impl Missions {
     /// the Foundry, else at a gun out of sight. A shelling building counts
     /// with the known defense around it, and only while the units the
     /// defense holds or could take would beat that defense by half again. A
-    /// defense that is only recovering lends its units, as does an attack not
-    /// yet fighting.
+    /// defense that is only recovering lends its units, as does an attack
+    /// regrouping at home, or travelling out of contact at a seat of
+    /// `difficulty` that calls such an army back.
     /// Returns each of the seat's own Foundries whose defense falls short of
     /// its attackers, home-nearest first.
     ///
@@ -68,10 +70,11 @@ impl Missions {
         map: &MapModel,
         frame: HomeFrame,
         memory: &Memory,
+        difficulty: BotDifficulty,
         ledger: &mut Ledger,
     ) -> Vec<Shortfall> {
         let now = observation.tick;
-        let lendable = self.available(observation, true);
+        let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame);
         for (foundry, siege, _) in &mut groups {
             let component = map.component(foundry.anchor);
@@ -134,7 +137,7 @@ impl Missions {
             ) || now < mission.since + QUIET_TICKS
         });
 
-        let mut free = self.available(observation, true);
+        let mut free = self.available(observation, Some(difficulty));
         let mut shortfalls = Vec::new();
         for (foundry, siege, own) in &groups {
             let centre = footprint_centre(foundry.kind, foundry.anchor);
@@ -548,7 +551,7 @@ fn built_foundries(buildings: &[BuildingObs], frame: HomeFrame) -> Vec<&Building
 }
 
 /// Whether `enemy` sends shells that could land on `impact`.
-fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
+pub(super) fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
     enemy
         .kind
         .stats()
@@ -574,7 +577,7 @@ fn shelled(observation: &ObservationData, buildings: &[BuildingObs]) -> Vec<Tile
 /// Whether the known enemy `building` could have sent a shell landing on
 /// `impact`. A site in sight cannot fire; a remembered one may have been
 /// finished since it was seen.
-fn battery(building: &BuildingObs, impact: TilePos) -> bool {
+pub(super) fn battery(building: &BuildingObs, impact: TilePos) -> bool {
     let centre = footprint_centre(building.kind, building.anchor);
     (building.built || !building.seen)
         && building
@@ -702,7 +705,7 @@ fn gun(
 
 /// The longest reach in tiles among ground units that shell ground from out
 /// of sight, and the lowest price among them.
-fn artillery() -> Option<(i64, u64)> {
+pub(super) fn artillery() -> Option<(i64, u64)> {
     let guns = UnitKind::ALL.iter().filter(|kind| {
         kind.stats().domain == Domain::Ground
             && kind

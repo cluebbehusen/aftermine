@@ -1,11 +1,13 @@
 //! The attack mission: when the free army, above a stance-bounded minimum,
 //! can beat the known army it would meet at a known or presumed enemy
 //! building, the army gathers near home, travels, fights, withdraws from a
-//! losing fight, and recovers to go again or disband. Against known defenses
-//! free Sappers join while it regroups, and each blows up the nearest defense
-//! once the fight begins.
+//! losing fight, and recovers to go again or disband. Above the lowest rung
+//! it stops short of known defenses on the way to gather again, then goes in
+//! together. Against known defenses free Sappers join while it regroups, and
+//! each blows up the nearest defense once the fight begins.
 
 use super::Scratch;
+use super::defense::{artillery, battery, lobs};
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
@@ -14,16 +16,18 @@ use super::{
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
-use crate::map::MapModel;
+use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use chassis::fx::Fx;
-use chassis::grid::TilePos;
+use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
 use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
+use std::borrow::Cow;
+use std::cmp::Reverse;
 
 /// Tiles between a member and an enemy that make contact.
 const CONTACT_TILES: i32 = 8;
@@ -37,6 +41,22 @@ const RALLY_REACH: u16 = 80;
 
 /// Tiles around the start searched for the rally point.
 const RALLY_SEARCH: i32 = 10;
+
+/// Tenths of a tile a walk to a target may be longer than the shortest and
+/// still count as a way there: which known defenses an attack expects to
+/// pass, not a count of anything it sends.
+const ROUTE_SLACK: u16 = 30;
+
+/// Empty tiles a staging spot keeps beyond the reach of known defenses and
+/// of the guns shelling the army, and from every known enemy building.
+const STAGE_SPACE: i32 = 3;
+
+/// Tiles from its staging spot within which a member has arrived there.
+const STAGE_TILES: i32 = 5;
+
+/// Tiles from a member within which a hostile shell's impact puts the army
+/// under fire.
+const SHELLED_TILES: i32 = 2;
 
 /// Ticks without an attack that lower the margin one step.
 const WAIT_STEP: u64 = 2_400;
@@ -65,7 +85,7 @@ const GUARD_PER_TILE: u64 = 10;
 pub(super) fn timeout(phase: AttackPhase) -> u64 {
     match phase {
         AttackPhase::Gather => GATHER_TICKS,
-        AttackPhase::Travel => TRAVEL_TICKS,
+        AttackPhase::Advance | AttackPhase::Stage | AttackPhase::Travel => TRAVEL_TICKS,
         AttackPhase::Engage { .. } => ENGAGE_TICKS,
         AttackPhase::Withdraw => WITHDRAW_TICKS,
         AttackPhase::Recover => RECOVER_TICKS,
@@ -167,10 +187,8 @@ impl Missions {
                 given_up.push(failed);
             }
             if let Some(mission) = self.list.iter().find(|mission| mission.id == id)
-                && let Task::Attack {
-                    phase: AttackPhase::Travel | AttackPhase::Engage { .. },
-                    ..
-                } = mission.task
+                && let Task::Attack { phase, .. } = mission.task
+                && afield(phase)
             {
                 keep_screens(&plan, mission, ledger);
             }
@@ -444,7 +462,7 @@ impl Missions {
         };
         let component = plan.map.component(target.approach);
         let mission = &mut self.list[index];
-        let need = plan.need(target, breaching(observation, &mission.units));
+        let breach = breaching(observation, &mission.units);
         mission.task = Task::Attack {
             target: target.objective(),
             phase,
@@ -470,6 +488,7 @@ impl Missions {
         let given_up = 'phase: {
             match phase {
                 AttackPhase::Gather | AttackPhase::Recover => {
+                    let need = plan.need(target, breach);
                     let room = UNIT_CAP - mission.units.len();
                     let fit: Vec<&UnitObs> = fit
                         .iter()
@@ -499,40 +518,40 @@ impl Missions {
                     // the army at home.
                     let ready = striking_strength >= need;
                     if ready && (age >= timeout(phase) || (all_idle && !recruited)) {
-                        if ledger.order(hunt(mission.units.clone(), target.approach)) {
-                            mission.attack_phase(
-                                target,
-                                AttackPhase::Travel,
-                                now,
-                                Some(target.approach),
-                            );
+                        // A seat that stages stops short of the known
+                        // defenses on the way, so the army goes in together
+                        // rather than as a column.
+                        let (next, goal) = match staging(plan.difficulty)
+                            .and_then(|_| plan.stage(target, &[], UNREACHABLE))
+                        {
+                            Some(stage) => (AttackPhase::Advance, stage),
+                            None => (AttackPhase::Travel, target.approach),
+                        };
+                        if ledger.order(hunt(mission.units.clone(), goal)) {
+                            mission.attack_phase(target, next, now, Some(goal));
                         }
                     } else if age >= timeout(phase) {
                         self.list.remove(index);
                     }
                     None
                 }
-                AttackPhase::Travel => {
-                    let arrived = members
-                        .iter()
-                        .any(|unit| unit.tile.chebyshev(target.approach) <= CONTACT_TILES);
-                    if arrived || contact(observation, &members) {
-                        mission.attack_phase(
-                            target,
-                            AttackPhase::Engage { focus: None },
-                            now,
-                            None,
-                        );
-                        break 'phase None;
-                    }
-                    if (all_idle || age >= TRAVEL_TICKS)
-                        && ledger.order(run(mission.units.clone(), rally))
-                    {
-                        mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
-                        break 'phase Some(target.objective());
-                    }
-                    None
-                }
+                AttackPhase::Advance | AttackPhase::Stage => stage_on(
+                    plan,
+                    mission,
+                    (target, rally),
+                    &members,
+                    breach,
+                    (strength, all_idle),
+                    ledger,
+                ),
+                AttackPhase::Travel => travel_on(
+                    observation,
+                    mission,
+                    (target, rally),
+                    &members,
+                    all_idle,
+                    ledger,
+                ),
                 AttackPhase::Engage { .. } => {
                     // Sappers sent at a defense keep that order whatever the rest
                     // of the army is told next.
@@ -608,7 +627,9 @@ impl Missions {
         };
         // Units freed since the attack left join it where it is rather than
         // waiting at home for it to regroup, unless this decision pulled it
-        // back or sent it on: they would only be turned around.
+        // back or sent it on: they would only be turned around. A staging
+        // army takes none: they would keep it waiting for them, and wait
+        // at home for the next attack instead.
         if reinforces(plan.difficulty)
             && matches!(phase, AttackPhase::Travel | AttackPhase::Engage { .. })
             && let Some(mission) = self.list.get_mut(index).filter(|mission| mission.id == id)
@@ -638,6 +659,214 @@ impl Missions {
         }
         given_up
     }
+}
+
+/// Moves a travelling attack on: it engages on arriving or meeting the
+/// enemy, and turns home when its army stands idle short of the target or
+/// its time is up. Returns the target when it gave up on it.
+fn travel_on(
+    observation: &ObservationData,
+    mission: &mut Mission,
+    (target, rally): (Target, TilePos),
+    members: &[&UnitObs],
+    all_idle: bool,
+    ledger: &mut Ledger,
+) -> Option<Objective> {
+    let now = observation.tick;
+    let arrived = members
+        .iter()
+        .any(|unit| unit.tile.chebyshev(target.approach) <= CONTACT_TILES);
+    if arrived || contact(observation, members) {
+        mission.attack_phase(target, AttackPhase::Engage { focus: None }, now, None);
+        return None;
+    }
+    if (all_idle || now - mission.since >= TRAVEL_TICKS)
+        && ledger.order(run(mission.units.clone(), rally))
+    {
+        mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
+        return Some(target.objective());
+    }
+    None
+}
+
+/// Whether an attack in `phase` has left home: on its way, staging or
+/// fighting.
+fn afield(phase: AttackPhase) -> bool {
+    matches!(
+        phase,
+        AttackPhase::Advance
+            | AttackPhase::Stage
+            | AttackPhase::Travel
+            | AttackPhase::Engage { .. }
+    )
+}
+
+/// Moves a staging attack on: it goes in once enough of it has gathered or
+/// none of the rest is still on its way, with strength enough; falls back
+/// out of reach when shelled where it gathers; withdraws from a losing
+/// fight; and turns home when it cannot reach its staging spot or is too
+/// weak to go in.
+/// Returns the target when it gave up on it.
+fn stage_on(
+    plan: &Plan<'_>,
+    mission: &mut Mission,
+    (target, rally): (Target, TilePos),
+    members: &[&UnitObs],
+    breach: u64,
+    (strength, all_idle): (u64, bool),
+    ledger: &mut Ledger,
+) -> Option<Objective> {
+    let observation = plan.observation;
+    let now = observation.tick;
+    let age = now - mission.since;
+    let Task::Attack { phase, .. } = mission.task else {
+        return None;
+    };
+    let need = plan.need(target, breach);
+    let stage = mission.goal;
+    let there = |unit: &UnitObs| unit.tile.chebyshev(stage) <= STAGE_TILES;
+    // Sappers wait at the staging spot until the fight begins,
+    // and breachers and Sappers never hold the army up.
+    let movers: Vec<&UnitObs> = members
+        .iter()
+        .copied()
+        .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
+        .collect();
+    let opposition = plan.opposition(members);
+    if opposition * 1_000 > strength * plan.retreat {
+        if ledger.order(run(mission.units.clone(), rally)) {
+            mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
+            return Some(target.objective());
+        }
+        return None;
+    }
+    let Some(share) = staging(plan.difficulty) else {
+        push(observation, mission, target, now, ledger);
+        return None;
+    };
+    // Shelled where it gathers before it can win, the army
+    // falls back out of the guns' reach and gathers there;
+    // members only passing through fire go on.
+    let shells = shelled(observation, members);
+    if shells
+        .iter()
+        .any(|(impact, reach)| stage.chebyshev(*impact) < reach + STAGE_SPACE)
+    {
+        let back = plan.stage(target, &shells, plan.map.distance(observation.me, stage));
+        let (next, goal) = match back {
+            Some(back) => (AttackPhase::Advance, back),
+            None => (AttackPhase::Recover, rally),
+        };
+        if ledger.order(run(mission.units.clone(), goal)) {
+            mission.attack_phase(target, next, now, Some(goal));
+        }
+        return None;
+    }
+    if phase == AttackPhase::Advance {
+        if members.iter().any(|unit| there(unit)) {
+            // The walk's clock keeps running while the army gathers.
+            mission.attack_phase(target, AttackPhase::Stage, mission.since, None);
+        } else if (all_idle || age >= TRAVEL_TICKS)
+            && ledger.order(run(mission.units.clone(), rally))
+        {
+            mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
+            return Some(target.objective());
+        }
+        return None;
+    }
+    let moving: u64 = movers.iter().map(|unit| value(unit)).sum();
+    let near: u64 = movers
+        .iter()
+        .filter(|unit| there(unit))
+        .map(|unit| value(unit))
+        .sum();
+    // What arrives first never goes in alone, even when it beats the known
+    // army on paper: the known defense understates what it meets. It waits
+    // for the rest while any of them still walks there; one that is stuck,
+    // fighting or standing still holds no one up. A walk past its time
+    // ends the wait as it ends any attack's travel.
+    let coming = movers.iter().any(|unit| {
+        !there(unit)
+            && !unit.idle
+            && !ledger.stuck(unit.id)
+            && !contact(observation, std::slice::from_ref(unit))
+    });
+    if near * 1_000 >= moving * share || !coming || age >= TRAVEL_TICKS {
+        let total: u64 = members.iter().map(|unit| striking(unit)).sum();
+        if total >= need {
+            push(observation, mission, target, now, ledger);
+        } else if ledger.order(run(mission.units.clone(), rally)) {
+            mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
+        }
+    }
+    None
+}
+
+/// Sends a staged attack in: every member but its Sappers, which wait to be
+/// sent at a defense once the fight begins.
+fn push(
+    observation: &ObservationData,
+    mission: &mut Mission,
+    target: Target,
+    now: u64,
+    ledger: &mut Ledger,
+) {
+    let going: Vec<UnitId> = mission
+        .units
+        .iter()
+        .copied()
+        .filter(|id| mine(observation, *id).is_none_or(|unit| unit.kind != UnitKind::Sapper))
+        .collect();
+    if ledger.order(hunt(going, target.approach)) {
+        mission.attack_phase(target, AttackPhase::Travel, now, Some(target.approach));
+    }
+}
+
+/// Hostile shells landing among `members` from guns they are not already
+/// fighting, each with how far from its impact the gun that fired it may
+/// stand. A shell any visible enemy within contact of a member could have
+/// fired belongs to a fight the army is in.
+fn shelled(observation: &ObservationData, members: &[&UnitObs]) -> Vec<(TilePos, i32)> {
+    let near = |tile: TilePos| {
+        members
+            .iter()
+            .any(|unit| unit.tile.chebyshev(tile) <= CONTACT_TILES)
+    };
+    observation
+        .incoming_shells
+        .iter()
+        .copied()
+        .filter(|impact| {
+            members
+                .iter()
+                .any(|unit| unit.tile.chebyshev(*impact) <= SHELLED_TILES)
+                && !observation
+                    .enemy_units
+                    .iter()
+                    .any(|enemy| near(enemy.tile) && lobs(enemy, *impact))
+        })
+        .map(|impact| (impact, gun_reach(observation, impact)))
+        .collect()
+}
+
+/// Tiles from `impact` the gun that fired it may stand: the longest reach of
+/// the visible enemies and known enemy buildings that could have fired it,
+/// or, with none of them, the longest artillery reach, since the gun is out
+/// of sight.
+fn gun_reach(observation: &ObservationData, impact: TilePos) -> i32 {
+    let units = observation
+        .enemy_units
+        .iter()
+        .filter(|enemy| lobs(enemy, impact))
+        .map(|enemy| crate::defenses::reach(enemy.kind).ceil().to_num::<i32>());
+    let buildings = observation
+        .enemy_buildings
+        .iter()
+        .filter(|building| battery(building, impact))
+        .filter_map(ground_reach);
+    units.chain(buildings).max().unwrap_or_else(|| {
+        artillery().map_or(0, |(reach, _)| i32::try_from(reach).unwrap_or(i32::MAX))
+    })
 }
 
 /// Sends the attack's point defenders that have drifted from its army back
@@ -905,12 +1134,102 @@ impl<'a> Plan<'a> {
     /// Army value the attack on `target` needs: the known army it would
     /// meet times the margin, and never under the stance minimum. What
     /// breachers bring against buildings, `breach`, answers the guarding
-    /// buildings before the army has to.
+    /// buildings before the army has to. Above the lowest rung, the known
+    /// defenses whose fire reaches the way there count with those around the
+    /// target.
     fn need(&self, target: Target, breach: u64) -> u64 {
-        let (units, buildings) =
+        let (units, mut buildings) =
             opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
+        if surveys(self.difficulty) {
+            buildings = self
+                .on_the_way(target, None)
+                .into_iter()
+                .map(building_value)
+                .sum();
+        }
         ((units + buildings.saturating_sub(breach)) * self.misjudge / 1_000 * self.margin / 1_000)
             .max(self.minimum)
+    }
+
+    /// Known enemy buildings that fire on ground and guard `target`, or whose
+    /// fire reaches a walk there, over `way` when the caller has it.
+    fn on_the_way(&self, target: Target, way: Option<&Grid<u16>>) -> Vec<&'a BuildingObs> {
+        let (mut guarding, beyond): (Vec<&BuildingObs>, Vec<&BuildingObs>) = self
+            .observation
+            .enemy_buildings
+            .iter()
+            .filter(|building| ground_reach(building).is_some())
+            .partition(|building| guards(building, target.approach));
+        if beyond.is_empty() {
+            return guarding;
+        }
+        let way = way.map_or_else(|| Cow::Owned(self.way(target)), Cow::Borrowed);
+        guarding.extend(beyond.into_iter().filter(|building| covers(building, &way)));
+        guarding
+    }
+
+    /// The walks from the seat's start to `target` that count as ways there:
+    /// each tile's ground distance back to the approach, unreachable off
+    /// them.
+    fn way(&self, target: Target) -> Grid<u16> {
+        self.map
+            .corridor(self.observation.me, target.approach, ROUTE_SLACK)
+    }
+
+    /// Where an attack on `target` gathers before going in: the tile on the
+    /// way nearest the target, nearer home than `within`, that stands short
+    /// of where the first known defense's fire reaches the way, beyond the
+    /// reach of every such defense and of the guns that fired `shells` by
+    /// `STAGE_SPACE`, and that far from every known enemy building. Of tiles
+    /// as near, the most direct walk wins, then the one nearest home. `None`
+    /// while no known defense's fire reaches the way, or no tile qualifies.
+    fn stage(&self, target: Target, shells: &[(TilePos, i32)], within: u16) -> Option<TilePos> {
+        let me = self.observation.me;
+        let way = self.way(target);
+        // A site in sight cannot fire; a remembered one may have been
+        // finished since it was seen.
+        let guns: Vec<(&BuildingObs, i32)> = self
+            .on_the_way(target, Some(&way))
+            .into_iter()
+            .filter(|building| building.built || !building.seen)
+            .filter_map(|building| Some((building, ground_reach(building)?)))
+            .collect();
+        let reached = |tile: TilePos, space: i32| {
+            guns.iter().any(|(building, reach)| {
+                gap(building.anchor, building.kind.size(), tile, (1, 1)) < reach + space
+            })
+        };
+        let on_way: Vec<(TilePos, u16, u16)> = way
+            .iter()
+            .filter(|(_, back)| **back != UNREACHABLE)
+            .map(|(tile, back)| (tile, self.map.distance(me, tile), *back))
+            .collect();
+        let first = on_way
+            .iter()
+            .copied()
+            .filter(|(tile, _, _)| reached(*tile, 0))
+            .map(|(_, ahead, _)| ahead)
+            .min()?;
+        on_way
+            .into_iter()
+            .filter(|(tile, ahead, _)| {
+                *ahead < first.min(within)
+                    && !reached(*tile, STAGE_SPACE)
+                    && shells
+                        .iter()
+                        .all(|(impact, reach)| tile.chebyshev(*impact) >= reach + STAGE_SPACE)
+                    && self.observation.enemy_buildings.iter().all(|building| {
+                        gap(building.anchor, building.kind.size(), *tile, (1, 1)) >= STAGE_SPACE
+                    })
+            })
+            .max_by_key(|(tile, ahead, back)| {
+                (
+                    *ahead,
+                    Reverse(u32::from(*ahead) + u32::from(*back)),
+                    Reverse(self.frame.rank(self.frame.home, doubled(*tile))),
+                )
+            })
+            .map(|(tile, _, _)| tile)
     }
 
     /// Brings support to a regrouping attack on `target`: a Sapper for each
@@ -1108,18 +1427,38 @@ pub(super) fn defense_around(
 /// Whether a known, built enemy building's ground fire reaches `tile`.
 pub(super) fn fortified(observation: &ObservationData, tile: TilePos) -> bool {
     observation.enemy_buildings.iter().any(|building| {
-        let reach = building
-            .kind
-            .tier_stats(building.tier)
-            .weapons
-            .iter()
-            .filter(|weapon| weapon.targets.ground)
-            .map(|weapon| weapon.range.ceil().to_num::<i32>())
-            .max();
         building.built
-            && reach.is_some_and(|reach| {
+            && ground_reach(building).is_some_and(|reach| {
                 gap(building.anchor, building.kind.size(), tile, (1, 1)) < reach
             })
+    })
+}
+
+/// Tiles a known building's ground fire reaches at its current tier, rounded
+/// up, or `None` when it cannot fire on ground.
+fn ground_reach(building: &BuildingObs) -> Option<i32> {
+    building
+        .kind
+        .tier_stats(building.tier)
+        .weapons
+        .iter()
+        .filter(|weapon| weapon.targets.ground)
+        .map(|weapon| weapon.range.ceil().to_num::<i32>())
+        .max()
+}
+
+/// Whether `building`'s ground fire reaches a tile of `way`.
+fn covers(building: &BuildingObs, way: &Grid<u16>) -> bool {
+    let Some(reach) = ground_reach(building) else {
+        return false;
+    };
+    let (anchor, (width, height)) = (building.anchor, building.kind.size());
+    (anchor.y - reach..anchor.y + height + reach).any(|y| {
+        (anchor.x - reach..anchor.x + width + reach).any(|x| {
+            let tile = TilePos::new(x, y);
+            way.get(tile).is_some_and(|back| *back != UNREACHABLE)
+                && gap(anchor, (width, height), tile, (1, 1)) < reach
+        })
     })
 }
 
@@ -1262,6 +1601,33 @@ pub(crate) fn minimum(stance: BotStance) -> u64 {
 /// at a time: a difficulty limit, the lowest rung's readable mistake.
 pub(crate) fn concentrates(difficulty: BotDifficulty) -> bool {
     difficulty != BotDifficulty::Scrapheap
+}
+
+/// Per mille of the value of its moving members that must stand at a
+/// staging spot before a seat's army goes in while the rest are still on
+/// their way, or `None` for the lowest rung, which walks straight in as a
+/// column: a difficulty limit on how well a seat attacks. Veteran and Prime
+/// wait for more of the army than Standard.
+fn staging(difficulty: BotDifficulty) -> Option<u64> {
+    match difficulty {
+        BotDifficulty::Scrapheap => None,
+        BotDifficulty::Standard => Some(700),
+        BotDifficulty::Veteran | BotDifficulty::Prime => Some(850),
+    }
+}
+
+/// Whether a seat counts the known defenses whose fire reaches its way to a
+/// target, not only those around it: a difficulty limit on estimate
+/// accuracy, which the lowest rung lacks.
+fn surveys(difficulty: BotDifficulty) -> bool {
+    difficulty != BotDifficulty::Scrapheap
+}
+
+/// Whether an attack travelling out of contact lends its units to a defense
+/// at home: the lowest rung's readable mistake, a difficulty limit. Higher
+/// rungs keep an army that has set out together.
+pub(super) fn lends(difficulty: BotDifficulty) -> bool {
+    difficulty == BotDifficulty::Scrapheap
 }
 
 /// Whether units freed while an attack travels or fights join it where it
