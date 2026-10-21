@@ -318,25 +318,6 @@ pub fn hull_step_open(
     body_tiles(to, radius).all(|t| open(t) || body_tiles(from, radius).any(|f| f == t))
 }
 
-/// Whether a body of `radius` driving straight from `from` to `to` finds
-/// every tile it could claim on the way open: the block spanning the tiles
-/// it claims at either end.
-pub fn hull_leg_open(
-    from: chassis::fx::Vec2Fx,
-    to: chassis::fx::Vec2Fx,
-    radius: chassis::fx::Fx,
-    open: impl Fn(TilePos) -> bool,
-) -> bool {
-    use chassis::fx::Vec2Fx;
-    let low = body_tiles(Vec2Fx::new(from.x.min(to.x), from.y.min(to.y)), radius)
-        .next()
-        .expect("a body claims its centre tile");
-    let high = body_tiles(Vec2Fx::new(from.x.max(to.x), from.y.max(to.y)), radius)
-        .last()
-        .expect("a body claims its centre tile");
-    BodyTiles::block(low, high).all(open)
-}
-
 /// Whether a chassis circle fits the adjacent passable tiles.
 pub fn circle_clear(
     point: chassis::fx::Vec2Fx,

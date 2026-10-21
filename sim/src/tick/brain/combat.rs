@@ -454,6 +454,121 @@ pub(super) fn blast_catches_charge(
     )
 }
 
+/// A machine a wide cutter's front goes over: a ground body of a radius
+/// under this.
+const CRUSHED_RADIUS: Fx = Fx::lit("0.5");
+
+/// Damage a wide cutter's front deals each tick to every small hostile
+/// machine under it: a Sentinel lasts about a second.
+const CRUSH_DAMAGE: u32 = 25;
+
+/// How far past touching a small machine still counts as under the front.
+const CRUSH_SLACK: Fx = Fx::lit("0.1");
+
+/// A wide cutter crushes every small hostile ground machine touching the
+/// front half of its hull, whatever its order. As with splash, no sight
+/// gate applies: the hull goes over whatever stands before it.
+pub(super) fn crush(
+    state: &State,
+    index: &super::super::spatial::UnitIndex,
+    id: UnitId,
+    hits: &mut Vec<PendingHit>,
+    events: &mut Vec<Event>,
+) {
+    let Some(cutter) = state
+        .unit(id)
+        .filter(|u| u.hp > 0 && contact::square_cutter(u.kind))
+    else {
+        return;
+    };
+    let forward = chassis::compass::dir(cutter.heading);
+    let radius = cutter.kind.stats().radius;
+    let reach = (radius + CRUSHED_RADIUS + CRUSH_SLACK)
+        .floor()
+        .to_num::<i32>()
+        + 1;
+    let home = cutter.tile();
+    for dy in -reach..=reach {
+        for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
+            let u = &state.units[slot];
+            let offset = u.pos - cutter.pos;
+            let small = u.kind.stats().radius;
+            let touch = radius + small + CRUSH_SLACK;
+            if u.hp == 0
+                || small >= CRUSHED_RADIUS
+                || u.domain() != Domain::Ground
+                || !state.hostile(cutter.player, u.player)
+                || offset.x * forward.x + offset.y * forward.y <= Fx::ZERO
+                || offset.length_sq() > touch * touch
+            {
+                continue;
+            }
+            let point = cutter.pos + offset * (radius / (radius + small));
+            let victim = Target::Unit(u.id);
+            hits.push(PendingHit::along(
+                state,
+                Target::Unit(id),
+                victim,
+                CRUSH_DAMAGE,
+                cutter.pos,
+                point,
+            ));
+            events.push(Event::AttackHit {
+                attacker: id,
+                attacker_kind: cutter.kind,
+                weapon: 0,
+                target: Some(victim),
+                attacker_pos: cutter.pos,
+                target_pos: point,
+            });
+        }
+    }
+}
+
+/// A wide cutter's stroke also cuts every other hostile building its drum
+/// presses flat against, each at full structure damage. As with splash, no
+/// sight gate applies: the drum cuts whatever it presses on.
+fn cut_alongside(
+    state: &State,
+    id: UnitId,
+    struck: Target,
+    weapon_index: usize,
+    hits: &mut Vec<PendingHit>,
+    events: &mut Vec<Event>,
+) {
+    let unit = state.unit(id).expect("a cutter that just struck");
+    let weapon = &unit.kind.stats().weapons[weapon_index];
+    let span = contact::drum_span(unit.kind);
+    for b in state.buildings() {
+        let victim = Target::Building(b.id);
+        if victim == struck
+            || !contact::cuts(state, unit.player, b)
+            || unit.pos.dist_sq(b.closest_point_to(unit.pos)) > span * span
+        {
+            continue;
+        }
+        let Some((point, _)) = contact::drum_contact(state, unit, b) else {
+            continue;
+        };
+        hits.push(PendingHit::along(
+            state,
+            Target::Unit(id),
+            victim,
+            damage_against(state, weapon, victim),
+            unit.pos,
+            point,
+        ));
+        events.push(Event::AttackHit {
+            attacker: id,
+            attacker_kind: unit.kind,
+            weapon: weapon_index,
+            target: Some(victim),
+            attacker_pos: unit.pos,
+            target_pos: point,
+        });
+    }
+}
+
 /// Buffers a shot: the direct hit, plus, for splash weapons, one hit on
 /// every other hostile unit inside the radius that the weapon can cover and
 /// on hostile buried charges. Other buildings only take the direct hit.
@@ -615,6 +730,12 @@ pub(super) fn turret_fire(
     launches: &mut Vec<crate::state::Shell>,
 ) {
     let ids: Vec<crate::ids::BuildingId> = state.buildings.iter().map(|b| b.id).collect();
+    let cutters: Vec<UnitId> = state
+        .units()
+        .iter()
+        .filter(|u| u.hp > 0 && contact::square_cutter(u.kind))
+        .map(|u| u.id)
+        .collect();
     for id in ids {
         let Some(b) = state.building(id) else {
             continue;
@@ -623,6 +744,16 @@ pub(super) fn turret_fire(
             continue;
         };
         if !b.built() || b.hp == 0 {
+            continue;
+        }
+        // A hostile drum pressed on a building jams its guns: it holds its
+        // fire and bearing, though its reload still runs down.
+        if cutters.iter().any(|&cutter| {
+            let cutter = state.unit(cutter).expect("listed this tick");
+            state.hostile(cutter.player, b.player) && contact::jams(state, cutter, b)
+        }) {
+            let b = state.building_mut(id).expect("just seen");
+            b.cooldown = b.cooldown.saturating_sub(1);
             continue;
         }
         let (me, center, kind, tier, focus) = (b.player, b.center(), b.kind, b.tier, b.focus);
@@ -1096,10 +1227,6 @@ fn acquire_target_within(
     let home = TilePos::containing(pos);
     let reach = acquisition_range.floor().to_num::<i32>() + 1 + index.wide_reach();
     let team = state.player(me).team;
-    // A breacher looks for a structure first, and strikes a machine only
-    // when none stands in reach and the machine is already within the
-    // weapon's own reach: it never sets off after one.
-    let buildings_first = stats.target_priority == crate::stats::TargetPriority::Buildings;
     // Lower ranks first: the nearest, or for a heavy-first gun the most
     // full health and then the nearest.
     let heft = |kind: crate::stats::UnitKind| match stats.target_priority {
@@ -1157,13 +1284,10 @@ fn acquire_target_within(
             .min()
             .map(|(refused, _, bid)| (refused, Target::Building(bid)))
     };
-    // A structure the levels refuse yields to a machine they allow, but
-    // still beats one they refuse.
-    let first_building = buildings_first
-        .then(|| nearest_building(&mut accept))
-        .flatten();
-    if let Some((false, building)) = first_building {
-        return Some(building);
+    // A breacher takes only structures: it never sets out after a machine,
+    // and crushes the small ones it drives into instead.
+    if stats.target_priority == crate::stats::TargetPriority::Buildings {
+        return nearest_building(&mut accept).map(|(_, building)| building);
     }
     // An army at rest far from any enemy is the common case: the survey
     // proves the window holds no hostile body before any row is walked.
@@ -1185,11 +1309,6 @@ fn acquire_target_within(
                 });
                 // A wide hull is in aggro range once its edge is.
                 let aggro = acquisition_range + crate::stats::hull_excess(u.kind.stats().radius);
-                let in_reach = !buildings_first
-                    || stats.weapons.iter().any(|w| {
-                        w.targets.covers(u.domain())
-                            && within_unit_weapon_reach(state, unit.kind, Target::Unit(u.id), w, d)
-                    });
                 let rank = (
                     refused(ShotEnd::new(u.pos, u.domain())),
                     heft(u.kind),
@@ -1197,7 +1316,6 @@ fn acquire_target_within(
                     u.id,
                 );
                 if !(d <= aggro * aggro
-                    && in_reach
                     && outside_dead_zone
                     && unit_target.is_none_or(|best| rank < best))
                 {
@@ -1230,15 +1348,11 @@ fn acquire_target_within(
     match unit_target {
         Some((false, .., uid)) => Some(Target::Unit(uid)),
         // A victim the levels refuse yields to a building they allow.
-        Some((true, .., uid)) if buildings_first => {
-            Some(first_building.map_or(Target::Unit(uid), |(_, building)| building))
-        }
         Some((true, .., uid)) => Some(
             nearest_building(&mut accept)
                 .filter(|&(refused, _)| !refused)
                 .map_or(Target::Unit(uid), |(_, building)| building),
         ),
-        None if buildings_first => first_building.map(|(_, building)| building),
         None => nearest_building(&mut accept).map(|(_, building)| building),
     }
 }
@@ -1889,6 +2003,28 @@ pub(super) fn attack(
         return;
     }
 
+    // A wide cutter whose way to its target runs through hostile buildings
+    // turns to cut the first of them out of its way, unless its drum already
+    // presses on the target.
+    let ordered = target;
+    let target = if contact::square_cutter(kind) {
+        let unit = state.unit(id).expect("caller checked");
+        match target {
+            Target::Unit(uid) => state
+                .unit(uid)
+                .filter(|u| u.hp > 0)
+                .map(crate::state::Unit::tile),
+            Target::Building(bid) => state
+                .building(bid)
+                .filter(|b| b.hp > 0 && contact::drum_contact(state, unit, b).is_none())
+                .map(|b| b.anchor),
+        }
+        .and_then(|goal| contact::plough_blocker(state, unit, goal))
+        .map_or(target, Target::Building)
+    } else {
+        target
+    };
+
     // Resolve the target's current position; None means it is gone. A
     // target outside every weapon mask ends the engagement the same way.
     let target_info: Option<(Vec2Fx, TilePos)> = match target {
@@ -1934,10 +2070,69 @@ pub(super) fn attack(
             b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
         }),
     };
-    // A wide cutter cuts a building only once stopped where it chose to
-    // stand, not at a corner it passes within reach of on the way.
-    let in_range = within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
-        && !(routed && matches!(target, Target::Building(_)) && contact::square_cutter(kind));
+    // A wide cutter cuts a building where its drum presses flat against one
+    // of its sides: its target's, or short of that, any other it cuts and
+    // sees. The stroke lands where the drum meets the side.
+    let drum = contact::square_cutter(kind)
+        .then(|| {
+            let unit = state.unit(id).expect("caller checked");
+            let pressed = |b: &crate::state::Building| {
+                contact::drum_contact(state, unit, b).map(|(point, outward)| {
+                    let rank = contact::nearest(unit, b, point);
+                    (rank, Target::Building(b.id), b.anchor, point, outward)
+                })
+            };
+            let span = contact::drum_span(kind);
+            match target {
+                Target::Building(bid) => state.building(bid).and_then(pressed),
+                Target::Unit(_) => None,
+            }
+            .or_else(|| {
+                state
+                    .buildings()
+                    .iter()
+                    .filter(|b| {
+                        Target::Building(b.id) != target
+                            && pos.dist_sq(b.closest_point_to(pos)) <= span * span
+                            && contact::ploughs(state, me, b)
+                    })
+                    .filter_map(pressed)
+                    .min_by_key(|&(rank, ..)| rank)
+            })
+            .map(|(_, stroke, anchor, point, outward)| (stroke, anchor, point, outward))
+        })
+        .flatten();
+    let (stroke, aim_point, target_tile, seen) = match drum {
+        Some((stroke, anchor, point, _)) => (stroke, point, anchor, seen || stroke != target),
+        None => (target, aim_point, target_tile, seen),
+    };
+    // Stopped within reach of its target but not pressed flat against it, a
+    // wide cutter first turns square to the side it stands out from, and
+    // only then cuts from where it stands. It never cuts at a corner it
+    // passes on the way.
+    let mut squared = None;
+    if drum.is_none()
+        && !routed
+        && seen
+        && contact::square_cutter(kind)
+        && let Target::Building(bid) = target
+        && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
+        && let Some(outward) = state.building(bid).and_then(|b| {
+            let forward = chassis::compass::dir(state.unit(id).expect("caller checked").heading);
+            state.contact_surface(b).side_facing(pos, forward)
+        })
+    {
+        let unit = state.unit_mut(id).expect("caller checked");
+        if !super::super::movement::steer_weapon_heading(unit, -outward) {
+            return;
+        }
+        squared = Some(-outward);
+    }
+    let in_range = drum.is_some()
+        || (within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim_point))
+            && !(contact::square_cutter(kind)
+                && matches!(target, Target::Building(_))
+                && squared.is_none()));
     if in_range
         && seen
         && clear_line(
@@ -1974,10 +2169,12 @@ pub(super) fn attack(
             leash.patience = crate::stats::LEASH_PATIENCE;
         }
         unit.set_braces(previous_braces);
-        if !super::super::movement::steer_weapon_heading(
-            unit,
-            projectile_aim.unwrap_or(aim_point) - pos,
-        ) {
+        let facing = match (drum, squared) {
+            (Some((.., outward)), _) => -outward,
+            (None, Some(facing)) => facing,
+            (None, None) => projectile_aim.unwrap_or(aim_point) - pos,
+        };
+        if !super::super::movement::steer_weapon_heading(unit, facing) {
             return;
         }
         if cooldowns[pi] == 0 {
@@ -2008,7 +2205,7 @@ pub(super) fn attack(
                 buffer_shot(
                     state,
                     Target::Unit(id),
-                    target,
+                    stroke,
                     pos,
                     aim_point,
                     weapon,
@@ -2018,10 +2215,13 @@ pub(super) fn attack(
                     attacker: id,
                     attacker_kind: kind,
                     weapon: pi,
-                    target: Some(target),
+                    target: Some(stroke),
                     attacker_pos: pos,
                     target_pos: aim_point,
                 });
+                if contact::square_cutter(kind) {
+                    cut_alongside(state, id, stroke, pi, hits, events);
+                }
             }
         }
         fire_sidearms(state, index, id, pi, hits, events);
@@ -2102,8 +2302,10 @@ pub(super) fn attack(
                     }
                 });
             if stale {
+                let unit = state.unit(id).expect("caller checked");
                 let routed = if direct {
-                    route_for(state, kind, tile, target_tile).map(|w| (target_tile, w))
+                    contact::route(state, unit, tile.center(), target_tile)
+                        .map(|w| (target_tile, w))
                 } else {
                     // Nearest ring first, then ranked in the chaser's
                     // approach frame so a mirrored chaser tries the mirrored
@@ -2118,9 +2320,9 @@ pub(super) fn attack(
                             crate::geometry::rect_approach_key(tile, target_tile, (1, 1), *goal),
                         )
                     });
-                    stand_ins
-                        .into_iter()
-                        .find_map(|goal| route_for(state, kind, tile, goal).map(|w| (goal, w)))
+                    stand_ins.into_iter().find_map(|goal| {
+                        contact::route(state, unit, tile.center(), goal).map(|w| (goal, w))
+                    })
                 };
                 match routed {
                     Some((goal, waypoints)) => {
@@ -2152,7 +2354,12 @@ pub(super) fn attack(
         }
         Target::Building(bid) => {
             let approached = if stats.contact_reach.is_some() {
+                // A building in the way that the cutter cannot reach leaves
+                // the way to the building it was sent for.
                 contact::approach(state, id, bid)
+                    || matches!(ordered, Target::Building(sent) if sent != bid
+                        && state.building(sent).is_some_and(|b| b.hp > 0)
+                        && contact::approach(state, id, sent))
             } else {
                 approach_firing_area(state, id, bid, weapon)
             };

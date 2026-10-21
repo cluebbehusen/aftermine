@@ -368,6 +368,7 @@ pub(super) fn run(
             reach.forget_ground();
         }
         combat::normalize_order(state, id);
+        combat::crush(state, index, id, &mut hits, events);
         if let Some(sight) = &sight
             && state.unit(id).is_some_and(|unit| unit.hp > 0)
         {

@@ -4,9 +4,8 @@ use super::*;
 use crate::geometry::rect_approach_key_from;
 use crate::stats::Domain;
 use crate::tick::crowding;
-use crate::tick::route_for;
 use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
+use chassis::grid::{TilePos, as_index, cell_count};
 
 pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> bool {
     approach_building(state, id, building)
@@ -16,7 +15,7 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
     let b = state.building(building).expect("live target");
     let (anchor, size) = (b.anchor, b.kind.size());
     let unit = state.unit(id).expect("contact unit");
-    let (from, pos, player, kind) = (unit.tile(), unit.pos, unit.player, unit.kind);
+    let (from, pos, player) = (unit.tile(), unit.pos, unit.player);
     if pos.dist_sq(crate::geometry::footprint_contact(pos, anchor, size))
         > const { Fx::lit("6.25") }
     {
@@ -56,63 +55,17 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
             |tile| state.passable(tile),
-            |goal| route_for(state, kind, from, goal),
+            |goal| route(state, unit, from.center(), goal),
         )
     };
-    let path = choose(square_stances(state, unit, b))
-        .or_else(|| choose(ordinary_stances(state, unit, b, pads)));
+    let path = choose(ordinary_stances(state, unit, b, pads));
     let reachable = path.is_some();
     state.unit_mut(id).expect("contact unit").path = path;
     reachable
 }
 
-/// The positions from which `unit` may meet `b` square to a face: only a
-/// wide cutter has any. Each keeps the hull wholly on open ground all the way
-/// in from its goal tile: outside the contact band the motor never presses a
-/// wide hull onto closed ground, so a leg that crossed any could halt short
-/// of the band.
-fn square_stances(
-    state: &State,
-    unit: &crate::Unit,
-    b: &crate::Building,
-) -> Vec<crowding::Position> {
-    if !square_cutter(unit.kind) {
-        return Vec::new();
-    }
-    let (anchor, size) = (b.anchor, b.kind.size());
-    let surface = state.contact_surface(b);
-    // A wide cutter meets a face square wherever one is open to it; only a
-    // building it cannot face takes it to an ordinary position. Its route
-    // ends where an ordinary entry would, `clearance` clear of the footprint
-    // out along the face's normal: under a face inset deep in its footprint,
-    // the stance's own tile can sit too near the face to drive in from.
-    let entries = surface
-        .square_stances(clearance(unit))
-        // A face meets the drum only where it is the nearest surface: beside
-        // a recess the hull would touch, and aim at, the neighbouring face
-        // instead.
-        .filter(|&(point, outward)| {
-            surface
-                .closest(point)
-                .dist_sq(point - outward * clearance(unit))
-                < const { Fx::lit("0.0001") }
-        })
-        .map(|(point, outward)| {
-            let gap = point.dist(crate::geometry::footprint_contact(point, anchor, size));
-            (
-                point + outward * (clearance(unit) - gap).max(Fx::ZERO),
-                point,
-            )
-        });
-    positions(state, unit, b, entries, |goal, point| {
-        crate::geometry::hull_leg_open(goal.center(), point, unit.kind.stats().radius, |tile| {
-            state.passable(tile)
-        })
-    })
-}
-
-/// The ordinary positions from which `unit` may meet `b`: its crew pads, or
-/// work positions around the footprint.
+/// The positions from which `unit` may meet `b`: its crew pads, or work
+/// positions around the footprint.
 fn ordinary_stances(
     state: &State,
     unit: &crate::Unit,
@@ -120,45 +73,30 @@ fn ordinary_stances(
     pads: Option<Vec<Vec2Fx>>,
 ) -> Vec<crowding::Position> {
     let surface = state.contact_surface(b);
-    let entries = pads
-        .unwrap_or_else(|| {
-            crate::geometry::work_positions(
-                b.anchor,
-                b.kind.size(),
-                clearance(unit),
-                unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
-            )
-        })
-        .into_iter()
-        .map(|entry| (entry, surface.stance(entry, clearance(unit))));
-    positions(state, unit, b, entries, |_, _| true)
-}
-
-/// The positions of `entries` (each an entry point and the point it meets
-/// the surface from) that `unit` could hold.
-fn positions(
-    state: &State,
-    unit: &crate::Unit,
-    b: &crate::Building,
-    entries: impl Iterator<Item = (Vec2Fx, Vec2Fx)>,
-    open: impl Fn(TilePos, Vec2Fx) -> bool,
-) -> Vec<crowding::Position> {
-    entries
-        .filter_map(|(entry, point)| {
-            let goal = crate::geometry::work_tile(entry, unit.pos, b.center());
-            (state.passable(goal) && admissible(state, unit, b, goal, point) && open(goal, point))
-                .then_some(crowding::Position { goal, point })
-        })
-        .collect()
+    pads.unwrap_or_else(|| {
+        crate::geometry::work_positions(
+            b.anchor,
+            b.kind.size(),
+            clearance(unit),
+            unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+        )
+    })
+    .into_iter()
+    .filter_map(|entry| {
+        let point = surface.stance(entry, clearance(unit));
+        let goal = crate::geometry::work_tile(entry, unit.pos, b.center());
+        (state.passable(goal) && admissible(state, unit, b, goal, point))
+            .then_some(crowding::Position { goal, point })
+    })
+    .collect()
 }
 
 /// The tiles a contact unit could set out for to meet `b`, before any
 /// route or crowd is weighed.
 pub(super) fn stance_goals(state: &State, unit: &crate::Unit, b: &crate::Building) -> Vec<TilePos> {
     let pads = crew_pad_entries(state, unit, b);
-    square_stances(state, unit, b)
+    ordinary_stances(state, unit, b, pads)
         .into_iter()
-        .chain(ordinary_stances(state, unit, b, pads))
         .map(|position| position.goal)
         .collect()
 }
@@ -187,12 +125,206 @@ fn crew_pad_entries(
     )
 }
 
-/// Whether `kind` cuts with a tool as wide as a hull broader than a small
-/// body, as the Maw's drum is: it meets a building square to a face, from
-/// the stance it chose.
+/// Whether `kind` cuts with a drum across the front of a hull broader than
+/// a small body, as the Maw does: it cuts a building only with the drum
+/// pressed flat against one of its sides.
 pub(in crate::tick) fn square_cutter(kind: crate::UnitKind) -> bool {
     kind.stats().contact_reach.is_some()
         && crate::stats::hull_excess(kind.stats().radius) > Fx::ZERO
+}
+
+/// Half the width of a wide cutter's drum, end plate to end plate, as the
+/// Maw's art draws it.
+const DRUM_HALF_WIDTH: Fx = Fx::lit("0.95");
+
+/// How far ahead of the drum's edge a side counts as under it: the contact
+/// reach, and a little slack for a hull that settles just short.
+const DRUM_SLACK: Fx = Fx::lit("0.03");
+
+/// The cosine of the largest angle between a drum and a side it presses
+/// flat against: about eight degrees.
+const FLAT: Fx = Fx::lit("0.99");
+
+/// How near a hostile building's outline must come to a wide cutter's drum
+/// to jam its guns.
+const JAM_REACH: Fx = Fx::lit("0.4");
+
+/// The edge of a wide cutter's drum, its hull at `pos` facing `forward`:
+/// it runs across the hull's front, square to its heading, where the hull's
+/// collision edge meets it.
+pub(in crate::tick) fn drum_edge(
+    kind: crate::UnitKind,
+    pos: Vec2Fx,
+    forward: Vec2Fx,
+) -> (Vec2Fx, Vec2Fx) {
+    let middle = pos + forward * kind.stats().radius;
+    let across = Vec2Fx::new(-forward.y, forward.x) * DRUM_HALF_WIDTH;
+    (middle - across, middle + across)
+}
+
+/// Where `unit`'s drum presses flat against a side of `b`, with that
+/// side's outward normal. `None` for a unit that is not a wide cutter, or a
+/// drum askew to every side it reaches.
+pub(in crate::tick) fn drum_contact(
+    state: &State,
+    unit: &crate::Unit,
+    b: &crate::Building,
+) -> Option<(Vec2Fx, Vec2Fx)> {
+    if !square_cutter(unit.kind) {
+        return None;
+    }
+    let forward = chassis::compass::dir(unit.heading);
+    let reach = unit.kind.stats().contact_reach? + DRUM_SLACK;
+    state.contact_surface(b).flat_contact(
+        drum_edge(unit.kind, unit.pos, forward),
+        forward,
+        reach,
+        FLAT,
+    )
+}
+
+/// Whether `unit`'s drum comes near enough `b`'s outline, at any angle, to
+/// jam its guns.
+pub(in crate::tick) fn jams(state: &State, unit: &crate::Unit, b: &crate::Building) -> bool {
+    let span = drum_span(unit.kind);
+    square_cutter(unit.kind) && unit.pos.dist_sq(b.closest_point_to(unit.pos)) <= span * span && {
+        let (from, to) = drum_edge(unit.kind, unit.pos, chassis::compass::dir(unit.heading));
+        state.contact_surface(b).meets(from, to, JAM_REACH)
+    }
+}
+
+/// Whether a wide cutter of `player`'s cuts `b` when its drum presses on
+/// it: any standing hostile building but a buried charge, which lies under
+/// the drum, not in its path.
+pub(in crate::tick) fn cuts(state: &State, player: crate::PlayerId, b: &crate::Building) -> bool {
+    b.hp > 0 && !b.provisional() && !b.kind.is_stealthy() && state.hostile(player, b.player)
+}
+
+/// A bound on how far from a wide cutter's position its drum reaches a
+/// footprint.
+pub(in crate::tick) fn drum_span(kind: crate::UnitKind) -> Fx {
+    kind.stats().radius + DRUM_HALF_WIDTH + Fx::ONE
+}
+
+/// How near a hostile building in a wide cutter's way must lie for it to
+/// turn to cut that building first. One farther along is left until the
+/// route, which may yet change, comes nearer.
+const PLOUGH_REACH: Fx = Fx::lit("20");
+
+/// A route for `unit` from `from` to `goal` over open ground. A wide
+/// cutter on the attack, hunting or attacking, that finds none plans
+/// through the hostile buildings its owner sees, which its drum cuts out of
+/// its way. It goes around a wall it can pass: halted short of a wall it
+/// cannot press flat, it would never cut its way through.
+pub(in crate::tick) fn route(
+    state: &State,
+    unit: &crate::Unit,
+    from: Vec2Fx,
+    goal: TilePos,
+) -> Option<Vec<TilePos>> {
+    crate::tick::route_for_position(state, unit.kind, from, goal).or_else(|| {
+        (square_cutter(unit.kind)
+            && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
+        .then(|| plough_route(state, unit, TilePos::containing(from), goal))
+        .flatten()
+    })
+}
+
+/// A wide cutter's route over open ground and through the buildings it
+/// ploughs. Like any route it keeps clear of buildings its owner does not
+/// see.
+fn plough_route(
+    state: &State,
+    unit: &crate::Unit,
+    from: TilePos,
+    goal: TilePos,
+) -> Option<Vec<TilePos>> {
+    let (width, height) = (state.map.width(), state.map.height());
+    let cell = |tile: TilePos| {
+        ((0..width).contains(&tile.x) && (0..height).contains(&tile.y))
+            .then(|| as_index(tile.y) * as_index(width) + as_index(tile.x))
+    };
+    let mut ploughed = vec![false; cell_count(width, height)];
+    for b in state
+        .buildings()
+        .iter()
+        .filter(|b| ploughs(state, unit.player, b))
+    {
+        for i in b.tiles().filter_map(cell) {
+            ploughed[i] = true;
+        }
+    }
+    let open = |tile: TilePos| {
+        state.passable(tile)
+            || (state.map.terrain_passable(tile) && cell(tile).is_some_and(|i| ploughed[i]))
+    };
+    let radius = unit.kind.stats().radius;
+    chassis::path::astar(
+        width,
+        height,
+        from,
+        goal,
+        |tile| crate::geometry::hull_open(tile, radius, open),
+        crate::stats::PATH_EXPANSION_CAP,
+    )
+}
+
+/// Whether a wide cutter of `player`'s ploughs through `b`: a building it
+/// cuts that its owner sees.
+pub(in crate::tick) fn ploughs(
+    state: &State,
+    player: crate::PlayerId,
+    b: &crate::Building,
+) -> bool {
+    cuts(state, player, b)
+        && b.tiles().any(|tile| state.can_see(player, tile))
+        && state.building_apparent(player, b)
+}
+
+/// The building a wide cutter turns to cut first on its way to `goal`: of
+/// the hostile buildings within [`PLOUGH_REACH`] that its route runs
+/// through, those its hull would cover at the first step blocked by any,
+/// the nearest.
+pub(in crate::tick) fn plough_blocker(
+    state: &State,
+    unit: &crate::Unit,
+    goal: TilePos,
+) -> Option<BuildingId> {
+    let blockers: Vec<&crate::Building> = state
+        .buildings()
+        .iter()
+        .filter(|b| {
+            unit.pos.dist_sq(b.closest_point_to(unit.pos)) <= PLOUGH_REACH * PLOUGH_REACH
+                && ploughs(state, unit.player, b)
+        })
+        .collect();
+    if blockers.is_empty() {
+        return None;
+    }
+    let radius = unit.kind.stats().radius;
+    plough_route(state, unit, unit.tile(), goal)?
+        .into_iter()
+        .find_map(|step| {
+            let hull: Vec<TilePos> = crate::geometry::body_tiles(step.center(), radius).collect();
+            blockers
+                .iter()
+                .filter(|b| b.tiles().any(|tile| hull.contains(&tile)))
+                .min_by_key(|b| nearest(unit, b, b.closest_point_to(unit.pos)))
+                .map(|b| b.id)
+        })
+}
+
+/// Ranks `b`, met at `point`, among buildings a wide cutter might cut:
+/// nearest first, then by side relative to its heading, so mirrored
+/// cutters choose mirrored buildings.
+pub(in crate::tick) fn nearest(
+    unit: &crate::Unit,
+    b: &crate::Building,
+    point: Vec2Fx,
+) -> (Fx, Fx, Fx, BuildingId) {
+    let forward = chassis::compass::dir(unit.heading);
+    let side = |at: Vec2Fx| forward.x * (at.y - unit.pos.y) - forward.y * (at.x - unit.pos.x);
+    (unit.pos.dist_sq(point), side(point), side(b.center()), b.id)
 }
 
 pub(in crate::tick) fn clearance(unit: &crate::Unit) -> Fx {

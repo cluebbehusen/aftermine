@@ -1960,7 +1960,7 @@ const MAW: UnitStats = UnitStats {
     turn_rate: 0,
     cruise_turn_rate: 0,
     turret_turn_rate: 0,
-    hull_turn_rate: Some(2),
+    hull_turn_rate: Some(3),
     brace: None,
     target_priority: TargetPriority::Buildings,
     crash: None,
