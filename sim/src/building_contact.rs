@@ -647,34 +647,129 @@ impl Surface {
         best.expect("nonempty outline").1
     }
 
-    /// Where a tool as wide as its hull meets each face square, `clearance`
-    /// out from the face's midpoint, with the face's outward normal. Outlines
-    /// wind clockwise on screen, so that normal is the face's direction
-    /// turned a quarter turn counterclockwise. A bevel offers none.
-    pub fn square_stances(self, clearance: Fx) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
-        self.faces().map(move |(a, b)| {
-            let along = b - a;
-            let outward = Vec2Fx::new(along.y, -along.x) / along.length();
-            ((a + b) / Fx::from_num(2) + outward * clearance, outward)
-        })
+    /// The straight sides a flat tool can press against, each from one end
+    /// to the other in the outline's winding: the edges of the outline's
+    /// convex hull, which is all a straight edge can meet, less any edge
+    /// under two fifths of the longer edge beside it. Such a short edge
+    /// bevels a corner: a tool squared to it would stand askew to both
+    /// sides it cuts across. Outlines wind clockwise on screen, as the hull
+    /// does.
+    pub fn sides(self) -> Vec<(Vec2Fx, Vec2Fx)> {
+        let mut points: Vec<(i64, i64)> = self
+            .outline
+            .iter()
+            .map(|&(x, y)| (i64::from(x * self.size.0), i64::from(y * self.size.1)))
+            .collect();
+        points.sort_unstable();
+        points.dedup();
+        // Andrew's monotone chain: the lower chain left to right, then the
+        // upper right to left, keeping only strict turns one way.
+        let turn = |o: (i64, i64), a: (i64, i64), b: (i64, i64)| {
+            (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+        };
+        let mut hull: Vec<(i64, i64)> = Vec::with_capacity(points.len() + 1);
+        for chain in [points.clone(), points.iter().rev().copied().collect()] {
+            let start = hull.len();
+            for point in chain {
+                while hull.len() >= start + 2
+                    && turn(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0
+                {
+                    hull.pop();
+                }
+                hull.push(point);
+            }
+            hull.pop();
+        }
+        let corners: Vec<Vec2Fx> = hull
+            .into_iter()
+            .map(|(x, y)| {
+                Vec2Fx::new(
+                    Fx::from_num(self.anchor.x) + Fx::from_num(x) / 128,
+                    Fx::from_num(self.anchor.y) + Fx::from_num(y) / 128,
+                )
+            })
+            .collect();
+        let n = corners.len();
+        let corner = |i: usize| corners[i % n];
+        let length_sq = |i: usize| corner(i).dist_sq(corner(i + 1));
+        (0..n)
+            .filter(|&i| length_sq(i) * 25 >= length_sq(i + n - 1).max(length_sq(i + 1)) * 4)
+            .map(|i| (corner(i), corner(i + 1)))
+            .collect()
     }
 
-    /// The edges a tool as wide as a hull can meet square: every edge but a
-    /// bevel, a face under a quarter tile cut across a corner between two
-    /// faces each at least twice its length. A drum squared to a bevel would
-    /// meet the building at that corner. A run of short faces, as round art
-    /// traces, stays.
-    fn faces(self) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
-        let vertices: Vec<Vec2Fx> = self.vertices().collect();
-        let n = vertices.len();
-        (0..n).filter_map(move |i| {
-            let at = |k: usize| vertices[k % n];
-            let (before, a, b, after) = (at(i + n - 1), at(i), at(i + 1), at(i + 2));
-            let length_sq = a.dist_sq(b);
-            let bevel = length_sq < const { Fx::lit("0.0625") }
-                && before.dist_sq(a) >= length_sq * 4
-                && b.dist_sq(after) >= length_sq * 4;
-            (!bevel).then_some((a, b))
+    /// Where the straight edge `from to` of a tool facing `forward` presses
+    /// flat against one of the [`sides`](Self::sides): the side faces the
+    /// tool within `tolerance`, the cosine of the largest angle between the
+    /// tool's heading and the side's inward normal; the edge's middle lies
+    /// within `reach` of the side's line, or at most a quarter tile past it
+    /// where the outline is recessed; and the side overlaps the edge. The
+    /// nearest such side's point nearest the edge's middle, with its
+    /// outward normal.
+    pub(crate) fn flat_contact(
+        self,
+        (from, to): (Vec2Fx, Vec2Fx),
+        forward: Vec2Fx,
+        reach: Fx,
+        tolerance: Fx,
+    ) -> Option<(Vec2Fx, Vec2Fx)> {
+        let middle = (from + to) / Fx::from_num(2);
+        let half = from.dist(to) / Fx::from_num(2);
+        let across = (to - from) / (half * 2);
+        self.sides()
+            .into_iter()
+            .filter_map(|(a, b)| {
+                let outward = outward(a, b);
+                if -dot(outward, forward) < tolerance {
+                    return None;
+                }
+                let gap = dot(middle - a, outward);
+                if gap > reach + ROUNDING_MARGIN || gap < -const { Fx::lit("0.25") } {
+                    return None;
+                }
+                let (pa, pb) = (dot(a - middle, across), dot(b - middle, across));
+                if pa.max(pb) < -half || pa.min(pb) > half {
+                    return None;
+                }
+                Some((gap.abs(), closest_on_segment(middle, a, b), outward))
+            })
+            .min_by_key(|&(gap, ..)| gap)
+            .map(|(_, point, outward)| (point, outward))
+    }
+
+    /// The outward normal of the side a body at `pos` stands farthest out
+    /// from, which a flat tool there squares up to: off a corner, the side
+    /// the body stands beyond rather than beside. Of two sides it stands as
+    /// far out from, the one a tool facing `forward` turns less to meet.
+    pub(crate) fn side_facing(self, pos: Vec2Fx, forward: Vec2Fx) -> Option<Vec2Fx> {
+        self.sides()
+            .into_iter()
+            .map(|(a, b)| {
+                let outward = outward(a, b);
+                (dot(pos - a, outward), -dot(forward, outward), outward)
+            })
+            .filter(|&(out, ..)| out > Fx::ZERO)
+            .max_by_key(|&(out, square, _)| (out, square))
+            .map(|(.., outward)| outward)
+    }
+
+    /// Whether the edge `from to` of a tool comes within `reach` of the
+    /// outline.
+    pub(crate) fn meets(self, from: Vec2Fx, to: Vec2Fx, reach: Fx) -> bool {
+        let reach = reach + ROUNDING_MARGIN;
+        self.edges().any(|(a, b)| {
+            // Boxes farther apart than this keep every point of one segment
+            // beyond the reach of the other.
+            box_gap(from, to, a, b) <= reach
+                && (segments_cross(from, to, a, b)
+                    || [
+                        from.dist_sq(closest_on_segment(from, a, b)),
+                        to.dist_sq(closest_on_segment(to, a, b)),
+                        a.dist_sq(closest_on_segment(a, from, to)),
+                        b.dist_sq(closest_on_segment(b, from, to)),
+                    ]
+                    .into_iter()
+                    .any(|d| d <= reach * reach))
         })
     }
 
@@ -753,6 +848,14 @@ fn box_gap(p: Vec2Fx, q: Vec2Fx, a: Vec2Fx, b: Vec2Fx) -> Fx {
         a.y.min(b.y),
         a.y.max(b.y),
     ))
+}
+
+/// The outward normal of the outline edge from `a` to `b`: outlines wind
+/// clockwise on screen, so it is the edge's direction turned a quarter turn
+/// counterclockwise.
+fn outward(a: Vec2Fx, b: Vec2Fx) -> Vec2Fx {
+    let along = b - a;
+    Vec2Fx::new(along.y, -along.x) / along.length()
 }
 
 fn cross(a: Vec2Fx, b: Vec2Fx) -> Fx {

@@ -166,6 +166,23 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
                 clear,
                 "{kind:?} {from:?} {to:?}"
             );
+            let reach = radius.abs() + ROUNDING_MARGIN;
+            let meets = surface.edges().any(|(a, b)| {
+                segments_cross(from, to, a, b)
+                    || [
+                        from.dist_sq(closest_on_segment(from, a, b)),
+                        to.dist_sq(closest_on_segment(to, a, b)),
+                        a.dist_sq(closest_on_segment(a, from, to)),
+                        b.dist_sq(closest_on_segment(b, from, to)),
+                    ]
+                    .into_iter()
+                    .any(|d| d <= reach * reach)
+            });
+            assert_eq!(
+                surface.meets(from, to, radius.abs()),
+                meets,
+                "{kind:?} {from:?}"
+            );
             blocked += usize::from(!clear);
             open += usize::from(clear);
         }
@@ -176,49 +193,107 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
     );
 }
 
-/// Every face's square stance stands outside its outline, out from that
-/// face's midpoint: the outward turn agrees with each outline's winding.
+/// Every outline's sides run around its convex hull, each turned out from
+/// the whole outline.
 #[test]
-fn square_stances_stand_out_from_each_face_midpoint() {
-    let clearance = Fx::lit("0.015625");
+fn sides_hull_each_outline_and_face_outward() {
     for (kind, outline) in every_outline() {
         let surface = Surface {
             outline,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         };
-        for ((a, b), (stance, outward)) in surface.faces().zip(surface.square_stances(clearance)) {
-            let midpoint = (a + b) / Fx::from_num(2);
-            assert!(!surface.contains(stance), "{kind:?} {a:?} {b:?}");
-            assert!(
-                surface.closest(stance).dist_sq(midpoint) < Fx::lit("0.000001"),
-                "{kind:?} {a:?} {b:?}"
-            );
-            assert!(
-                (stance - midpoint - outward * clearance).length() < Fx::lit("0.001"),
-                "{kind:?} {a:?} {b:?}"
-            );
+        let sides = surface.sides();
+        assert!(sides.len() >= 3, "{kind:?}");
+        for &(a, b) in &sides {
+            let outward = outward(a, b);
+            for v in surface.vertices() {
+                assert!(
+                    dot(v - a, outward) <= ROUNDING_MARGIN,
+                    "{kind:?} {a:?} {b:?}"
+                );
+            }
+            let beyond = (a + b) / Fx::from_num(2) + outward * Fx::lit("0.01");
+            assert!(!surface.contains(beyond), "{kind:?} {a:?} {b:?}");
         }
     }
-}
-
-#[test]
-fn only_a_bevel_across_a_corner_is_no_face() {
-    let faces = |kind: BuildingKind, outline: Outline| {
-        let surface = Surface {
+    let count = |kind: BuildingKind, outline: Outline| {
+        Surface {
             outline,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
-        };
-        (surface.edges().count(), surface.faces().count())
+        }
+        .sides()
+        .len()
     };
-    // Corner bevels cut between long sides: two on the Reclaimer and the
-    // Turret, all four on the Citadel.
-    assert_eq!(faces(BuildingKind::Reclaimer, RECLAIMER), (7, 5));
-    assert_eq!(faces(BuildingKind::Turret, TURRET), (7, 5));
-    assert_eq!(faces(BuildingKind::Bastion, BASTION_T1), (8, 4));
-    // The Flak's legs are a run of short faces, each still a face.
-    assert_eq!(faces(BuildingKind::FlakTurret, FLAK_TURRET), (17, 17));
+    // The Flak's legs hull to four sides. The Turret's corner bevels drop
+    // out, and its pointed base keeps two. The Fabricator's narrow east end
+    // stays a side between the bevels beside it.
+    assert_eq!(count(BuildingKind::FlakTurret, FLAK_TURRET), 4);
+    assert_eq!(count(BuildingKind::Turret, TURRET), 5);
+    assert_eq!(count(BuildingKind::Fabricator, FABRICATOR), 6);
+}
+
+/// A flat tool meets a side only facing it nearly square, within reach of
+/// its line and overlapping it, and takes the side's outward normal.
+#[test]
+fn a_flat_tool_meets_only_a_side_it_faces_square() {
+    let surface = Surface {
+        outline: SCAFFOLD,
+        anchor: TilePos::new(10, 20),
+        size: (2, 2),
+    };
+    // The west side runs at x = 10 + 18/128, from y = 20.25 to 21.83.
+    let west = Fx::lit("10.140625");
+    let (reach, tolerance) = (Fx::lit("0.08"), Fx::lit("0.99"));
+    let meet = |middle: Vec2Fx, forward: Vec2Fx| {
+        let across = Vec2Fx::new(-forward.y, forward.x) * Fx::lit("0.95");
+        surface.flat_contact(
+            (middle - across, middle + across),
+            forward,
+            reach,
+            tolerance,
+        )
+    };
+    let east = Vec2Fx::new(Fx::ONE, Fx::ZERO);
+    let at = |x: Fx, y: Fx| Vec2Fx::new(x, y);
+    let (point, outward) = meet(at(west - Fx::lit("0.05"), Fx::from_num(21)), east).unwrap();
+    assert!(point.dist(at(west, Fx::from_num(21))) < Fx::lit("0.001"));
+    assert_eq!(outward, Vec2Fx::new(-Fx::ONE, Fx::ZERO));
+    // A drum sunk into a recess still presses the side.
+    assert!(meet(at(west + Fx::lit("0.1"), Fx::from_num(21)), east).is_some());
+    // Too far out, askew by fifteen degrees, or beside the side's end.
+    assert_eq!(
+        meet(at(west - Fx::lit("0.2"), Fx::from_num(21)), east),
+        None
+    );
+    let askew = Vec2Fx::new(Fx::lit("0.966"), Fx::lit("0.259"));
+    assert_eq!(
+        meet(at(west - Fx::lit("0.05"), Fx::from_num(21)), askew),
+        None
+    );
+    let slight = Vec2Fx::new(Fx::lit("0.995"), Fx::lit("0.0998"));
+    assert!(meet(at(west - Fx::lit("0.05"), Fx::from_num(21)), slight).is_some());
+    assert_eq!(
+        meet(at(west - Fx::lit("0.05"), Fx::lit("19.2")), east),
+        None
+    );
+    // A body squares up to the side it stands farthest out from: off the
+    // north-west corner but beyond the west side, the west side, whichever
+    // way it faces.
+    let south = Vec2Fx::new(Fx::ZERO, Fx::ONE);
+    assert_eq!(
+        surface.side_facing(at(Fx::from_num(9), Fx::from_num(21)), east),
+        Some(Vec2Fx::new(-Fx::ONE, Fx::ZERO))
+    );
+    assert_eq!(
+        surface.side_facing(at(Fx::lit("8.9"), Fx::lit("19.8")), south),
+        Some(Vec2Fx::new(-Fx::ONE, Fx::ZERO))
+    );
+    assert_eq!(
+        surface.side_facing(at(Fx::from_num(11), Fx::from_num(23)), east),
+        Some(south)
+    );
 }
 
 /// `low` plus `step` times `(dx, dy)`, pushed a random part of a step

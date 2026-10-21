@@ -4,8 +4,8 @@
 use super::super::landing::{self, Pick};
 use super::super::reach::Reach;
 use super::super::{
-    flight, rect_adjacent_tiles, rect_approach_key_from, rect_approach_origin, route_for,
-    route_for_position, tile_adjacent_to_rect,
+    flight, rect_adjacent_tiles, rect_approach_key_from, rect_approach_origin,
+    tile_adjacent_to_rect,
 };
 use super::combat::{acquire_reachable_target, acquire_target_from};
 use crate::event::{Event, StallReason};
@@ -516,12 +516,11 @@ pub(super) fn steer(
             short: endpoint != target,
         };
     }
-    let (pos, kind) = (unit.pos, unit.kind);
     let from = match approach {
-        Approach::Settle => pos,
+        Approach::Settle => unit.pos,
         Approach::Exact => unit.tile().center(),
     };
-    match route_for_position(state, kind, from, endpoint) {
+    match super::contact::route(state, unit, from, endpoint) {
         Some(waypoints) => {
             state.unit_mut(id).expect("caller checked").path = Some(PathFollow {
                 final_point: None,
@@ -675,7 +674,8 @@ pub(super) fn approach_rect(
         candidates[..near].rotate_left(rank % near);
     }
     for goal in candidates {
-        if let Some(waypoints) = route_for(state, kind, tile, goal) {
+        let unit = state.unit(id).expect("caller checked");
+        if let Some(waypoints) = super::contact::route(state, unit, tile.center(), goal) {
             let unit = state.unit_mut(id).expect("caller checked");
             unit.path = Some(PathFollow {
                 final_point: None,

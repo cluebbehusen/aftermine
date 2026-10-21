@@ -1192,14 +1192,14 @@ fn sort_collision_pairs(
 /// evolve. Dead units are skipped: a corpse should not shove the living on
 /// its removal tick.
 /// How a pressing pair splits its overlap. A landed airframe is a fixture
-/// on its tile center and takes none of it. A body anchored at work in
-/// place takes none either, so movers flow around it, unless the mover's
-/// hull is wider than its own: a small worker cannot pin a machine that
-/// dwarfs it. Otherwise footprint area stands in for mass, so a heavy hull
-/// gives less ground than the light one shoving it, and equal radii split
-/// exactly in half. The division rounds, so it is always taken for the
-/// lighter body: keyed to pair order, a seat's mirror image would receive
-/// the other rounding.
+/// on its tile center and takes none of it. A body that holds its ground,
+/// anchored at work in place or built like a structure, takes none either,
+/// so movers flow around it, unless the mover's hull is wider than its
+/// own: a small worker cannot pin a machine that dwarfs it. Otherwise
+/// footprint area stands in for mass, so a heavy hull gives less ground
+/// than the light one shoving it, and equal radii split exactly in half.
+/// The division rounds, so it is always taken for the lighter body: keyed
+/// to pair order, a seat's mirror image would receive the other rounding.
 fn push_shares(
     (landed_i, landed_j): (bool, bool),
     (anchored_i, anchored_j): (bool, bool),
@@ -1294,8 +1294,10 @@ fn relaxation_pass(
         let (share_i, share_j) = push_shares(
             (state.units[i].landed(), state.units[j].landed()),
             (
-                is_anchored(&state.units[i]) && productive_i,
-                is_anchored(&state.units[j]) && productive_j,
+                is_anchored(&state.units[i]) && productive_i
+                    || state.units[i].kind.stats().structural,
+                is_anchored(&state.units[j]) && productive_j
+                    || state.units[j].kind.stats().structural,
             ),
             (radius_i, radius_j),
         );

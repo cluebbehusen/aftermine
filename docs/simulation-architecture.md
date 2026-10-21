@@ -374,28 +374,36 @@ shows, so a stage change, a completion, or an upgrade redraws the outline under
 bodies at work: builders re-seat, and a Maw already cutting cuts on where its
 drum now meets. Outlines do not change tile passability or open travel passages
 between buildings. Work and contact weapons share perimeter candidate
-generation, except that a contact weapon on a wide hull, the Maw's drum, meets a
-building square to a face: it stands out along a face's normal from that face's
-middle and cuts only once it has stopped there, not at a corner it passes within
-reach of on the way. A bevel, a face under a quarter tile cut across a corner
-between two faces at least twice its length, is no face: a drum squared to it
-would meet the building at the corner. It takes a face only where that face is
-the nearest surface, not one beside a recess the hull would meet first, and only
-where its hull stays on open ground all the way in from its goal tile. Only a
-building with no face it can reach that way takes it to an ordinary perimeter
-position. Work, melee, and ranged building attacks share a crowd-aware position
-chooser: productive occupants win space, nearby arrivals carry soft claims, and
-distant routes do not reserve frontage. When arrivals' positions overlap, the
-unit nearer its own position keeps its claim, whatever seat it belongs to, so
-allied crowds cannot all yield to one another; an exact tie goes to the earlier
-unit of one seat. When productive units fill the legal positions, overflow
-approaches wait outside the interaction area. A worker that already reaches the
-surface works where it stands, and a held position is chosen again once new
-ground makes it unreachable. Ranged candidates respect their weapon's minimum
-and maximum range, line of fire, and movement layer. Fixed-wing aircraft attack
-with run-ins instead. Building artwork and its contact outline keep their
-authored facing, so asymmetric contact can differ under a map half-turn.
-Placement, travel, and ranged reach use the rectangular footprint.
+generation. A contact weapon on a wide hull, the Maw's drum, cuts a building
+only with the drum pressed flat against one of its sides: the drum runs square
+across the hull's front, and must lie within a few degrees of a side and within
+its weapon's reach of it, overlapping it. A building's sides are the edges of
+its outline's convex hull; an edge under two fifths of a neighbouring edge, a
+bevel across a corner, is no side. A drum that reaches a building askew first
+pivots in place square to the side it faces, and one squared up off a corner,
+short of every side, drives on to meet one. One stroke cuts every hostile
+building the drum presses flat, and while a drum is within a short reach of a
+hostile building's outline, that building's guns hold fire and bearing as their
+reload runs down. A wide cutter on the attack takes the straight way to its
+target through the hostile buildings it sees, and turns to cut the first one in
+its way, unless its drum already presses on its target. It cannot press flat a
+building in a wall, since its hull halts at the whole tiles of the building's
+neighbours, so it drives around a wall it can pass and plans through buildings
+only where open ground offers no way around. Its front crushes small hostile
+ground machines it touches, whatever its order. Work, melee, and ranged building
+attacks share a crowd-aware position chooser: productive occupants win space,
+nearby arrivals carry soft claims, and distant routes do not reserve frontage.
+When arrivals' positions overlap, the unit nearer its own position keeps its
+claim, whatever seat it belongs to, so allied crowds cannot all yield to one
+another; an exact tie goes to the earlier unit of one seat. When productive
+units fill the legal positions, overflow approaches wait outside the interaction
+area. A worker that already reaches the surface works where it stands, and a
+held position is chosen again once new ground makes it unreachable. Ranged
+candidates respect their weapon's minimum and maximum range, line of fire, and
+movement layer. Fixed-wing aircraft attack with run-ins instead. Building
+artwork and its contact outline keep their authored facing, so asymmetric
+contact can differ under a map half-turn. Placement, travel, and ranged reach
+use the rectangular footprint.
 
 Talon, Kestrel, and Roc cruise heading-first but can hover at rest. Their travel
 and fixed-gun traverse rates are independent of bomber flight; per-kind rates
@@ -552,16 +560,16 @@ against an approaching unit; other stationary bodies receive ordinary
 separation. Same-owner contacts around productive work allow a compressed
 fraction of summed body radii, while moving and waiting crowds use full body
 spacing. Terrain wins over a proposed push, and a per-tick budget prevents dense
-groups from exploding outward. A worker anchored at its job holds against a
-mover only when the mover's hull is no wider than its own. Candidate pairs are
-gathered and ordered once per tick, and every pass walks that list; a hull wider
-than a tile scans as far as it can reach. An overlap within a small slop counts
-as resting contact and is not corrected, so rounding alone never keeps a parked
-crowd moving, and a tick with no deeper overlap runs no pass at all. Iteration
-direction alternates with tick parity to avoid a permanent id-order advantage.
-When bodies are perfectly stacked and geometry provides no separating vector,
-the deterministic owner-local-rank direction is rotated into the stack's
-map-relative half-turn frame.
+groups from exploding outward. A worker anchored at its job, or a body built
+like a structure, holds against a mover only when the mover's hull is no wider
+than its own. Candidate pairs are gathered and ordered once per tick, and every
+pass walks that list; a hull wider than a tile scans as far as it can reach. An
+overlap within a small slop counts as resting contact and is not corrected, so
+rounding alone never keeps a parked crowd moving, and a tick with no deeper
+overlap runs no pass at all. Iteration direction alternates with tick parity to
+avoid a permanent id-order advantage. When bodies are perfectly stacked and
+geometry provides no separating vector, the deterministic owner-local-rank
+direction is rotated into the stack's map-relative half-turn frame.
 
 ## Economy, construction, salvage, and repair
 
@@ -896,18 +904,17 @@ Automatic acquisition prefers visible eligible enemies over radar contacts and
 does not acquire building ghosts. Among visible machines in reach a unit takes
 the nearest, unless its stats rank targets heaviest first, as the Piledriver's
 do: the most full health, then the nearest. A breacher whose stats rank
-buildings first, as the Maw's do, takes the nearest visible hostile building in
-aggro range before any machine. It strikes a machine only when no building is in
-reach and the machine is already within its weapon's reach, lets a machine it
-found itself go once it leaves that reach, and answers fire only from a
-building. Weapon reach, aggro, splash, blast, trigger and crash radii measure to
-a wide hull's edge. A weapon may carry structure damage, which it deals
-buildings and machines built like structures; demolition charges deal those
-machines their structure damage too. Anonymous radar contacts are always taken
-nearest first. Automatic radar fire may stop Idle, Hunt, or Patrol to aim, but
-cannot pursue, retreat, or start a bomber run. It does not change Run or
-Advance. A fireable explicit target takes priority. Defenses retain blocked or
-out-of-range focus while firing at fallback targets; Stop clears focus.
+buildings first, as the Maw's do, takes only the nearest visible hostile
+building in aggro range: it never sets out after a machine, answers fire only
+from a building, and strikes a machine only on an explicit order. Weapon reach,
+aggro, splash, blast, trigger and crash radii measure to a wide hull's edge. A
+weapon may carry structure damage, which it deals buildings and machines built
+like structures; demolition charges deal those machines their structure damage
+too. Anonymous radar contacts are always taken nearest first. Automatic radar
+fire may stop Idle, Hunt, or Patrol to aim, but cannot pursue, retreat, or start
+a bomber run. It does not change Run or Advance. A fireable explicit target
+takes priority. Defenses retain blocked or out-of-range focus while firing at
+fallback targets; Stop clears focus.
 
 Every kind that fires carries a serialized gun bearing, from placement on, that
 starts toward the map centre like a Spire's deck. Each tick a built defense

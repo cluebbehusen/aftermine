@@ -777,23 +777,16 @@ fn attacking(state: &State, unit: oxide_sim::UnitId) -> Option<Target> {
 }
 
 #[test]
-fn a_breacher_takes_a_machine_it_can_hit_before_a_structure_on_another_level() {
+fn a_breacher_passes_a_machine_by_to_climb_to_a_structure() {
     // A Maw on the floor sees a Barricade on the plateau above and a
-    // Harvester in contact with it on its own level.
-    let staged = |units| {
-        let mut scenario = east_plateau(units);
-        scenario.buildings = vec![building(1, BuildingKind::Barricade, 20, 10)];
-        scenario.build().unwrap()
-    };
-    let mut state = staged(vec![
+    // Harvester in contact with it on its own level. It never turns on the
+    // machine: it takes the structure and climbs to reach it.
+    let mut scenario = east_plateau(vec![
         unit(0, UnitKind::Maw, 17, 10),
         unit(1, UnitKind::Harvester, 18, 11),
     ]);
-    let (maw, harvester) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[]);
-    assert_eq!(attacking(&state, maw), Some(Target::Unit(harvester)));
-    // Alone, the structure is still its pick, and it climbs to reach it.
-    let mut state = staged(vec![unit(0, UnitKind::Maw, 17, 10)]);
+    scenario.buildings = vec![building(1, BuildingKind::Barricade, 20, 10)];
+    let mut state = scenario.build().unwrap();
     let maw = state.units()[0].id;
     let barricade = state
         .buildings()
