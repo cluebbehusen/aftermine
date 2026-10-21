@@ -1576,6 +1576,9 @@ pub(crate) struct GroundTerrain<'a> {
     map: &'a Map,
     occupancy: &'a [u8],
     contact: Option<crate::building_contact::Surface>,
+    /// Outlines of other buildings that bound a body pressing on the
+    /// contact surface by their drawn shape rather than their whole tiles.
+    outlines: &'a [crate::building_contact::Surface],
 }
 
 impl<'a> GroundTerrain<'a> {
@@ -1584,6 +1587,7 @@ impl<'a> GroundTerrain<'a> {
             map,
             occupancy,
             contact: None,
+            outlines: &[],
         }
     }
 
@@ -1592,6 +1596,14 @@ impl<'a> GroundTerrain<'a> {
         contact: Option<crate::building_contact::Surface>,
     ) -> Self {
         self.contact = contact;
+        self
+    }
+
+    pub(crate) fn with_outlines(
+        mut self,
+        outlines: &'a [crate::building_contact::Surface],
+    ) -> Self {
+        self.outlines = outlines;
         self
     }
 
@@ -1620,10 +1632,14 @@ impl<'a> GroundTerrain<'a> {
 
     pub(crate) fn contact_clear(&self, from: Vec2Fx, to: Vec2Fx, radius: Fx) -> bool {
         self.contact.is_some_and(|surface| {
-            let open =
-                |tile| self.open(tile) || (surface.covers(tile) && self.map.terrain_passable(tile));
+            let open = |tile| {
+                self.open(tile)
+                    || ((surface.covers(tile) || self.outlines.iter().any(|s| s.covers(tile)))
+                        && self.map.terrain_passable(tile))
+            };
             crate::geometry::circle_clear(to, radius, open)
                 && surface.clear(from, to, radius)
+                && self.outlines.iter().all(|s| s.clear(from, to, radius))
                 && !chassis::path::swept_line_blocked(from, to, radius, open)
         })
     }

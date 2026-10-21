@@ -214,8 +214,7 @@ const PLOUGH_REACH: Fx = Fx::lit("20");
 /// A route for `unit` from `from` to `goal` over open ground. A wide
 /// cutter on the attack, hunting or attacking, that finds none plans
 /// through the hostile buildings its owner sees, which its drum cuts out of
-/// its way. It goes around a wall it can pass: halted short of a wall it
-/// cannot press flat, it would never cut its way through.
+/// its way.
 pub(in crate::tick) fn route(
     state: &State,
     unit: &crate::Unit,
@@ -362,11 +361,41 @@ fn admissible(
     goal: TilePos,
     point: Vec2Fx,
 ) -> bool {
-    point.dist_sq(goal.center()) <= const { Fx::lit("2.25") }
-        && state
-            .ground_terrain()
-            .with_contact(Some(state.contact_surface(building)))
-            .contact_clear(goal.center(), point, collision_radius(unit))
+    if point.dist_sq(goal.center()) > const { Fx::lit("2.25") } {
+        return false;
+    }
+    let outlines = cut_outlines(state, unit, point);
+    state
+        .ground_terrain()
+        .with_contact(Some(state.contact_surface(building)))
+        .with_outlines(&outlines)
+        .contact_clear(goal.center(), point, collision_radius(unit))
+}
+
+/// The outlines of the hostile buildings near `at` that a wide cutter
+/// would cut. Pressing on a building, it meets these at their drawn shape,
+/// as it meets its target, where their whole tiles would hold its hull off
+/// a building set in a wall. Every other body meets them at whole tiles.
+pub(in crate::tick) fn cut_outlines(
+    state: &State,
+    unit: &crate::Unit,
+    at: Vec2Fx,
+) -> Vec<crate::building_contact::Surface> {
+    if !square_cutter(unit.kind) {
+        return Vec::new();
+    }
+    // A stance lies within 1.5 tiles of the goal tile its admissibility
+    // sweep starts from, so this reaches every building the hull meets on
+    // the way.
+    let span = collision_radius(unit) + const { Fx::lit("2") };
+    state
+        .buildings()
+        .iter()
+        .filter(|b| {
+            cuts(state, unit.player, b) && at.dist_sq(b.closest_point_to(at)) <= span * span
+        })
+        .map(|b| state.contact_surface(b))
+        .collect()
 }
 
 pub(in crate::tick) fn collision_radius(unit: &crate::Unit) -> Fx {
