@@ -307,6 +307,52 @@ fn a_breacher_leads_the_army_in() {
     assert_eq!(maw_of(&state).tile(), TilePos::new(24, 18), "premise");
     let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(goes_in(&commands, &members), "{commands:?}");
+
+    // Two East Maws seen by the Foundry outweigh the army the first Maw drew
+    // in: the whole army turns home, that Maw with it.
+    let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+    scenario.units.push(unit(0, UnitKind::Maw, 24, 18));
+    scenario.units.push(unit(0, UnitKind::Kestrel, 42, 9));
+    scenario.units.push(unit(1, UnitKind::Maw, 44, 6));
+    scenario.units.push(unit(1, UnitKind::Maw, 44, 16));
+    let (state, mut opponent, _) = staging_with(scenario, "stage", 408, &THERE, false, &[(24, 18)]);
+    let maw = maw_of(&state).id;
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(
+        attack(&trace.unwrap().missions).unwrap().phase,
+        Phase::Recover,
+        "{commands:?}"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&maw)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_breacher_that_cannot_move_on_holds_no_one_up() {
+    // Seven of the eight Sentinels and a Maw stand at the staging spot, the
+    // Maw stalled for want of a route: the rest go in without it.
+    let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+    scenario.units.push(unit(0, UnitKind::Maw, 18, 14));
+    let (state, mut opponent, members) =
+        staging_with(scenario, "stage", 408, &THERE, false, &[(18, 14)]);
+    let maw = maw_of(&state);
+    let mut events = OwnEvents::default();
+    events.record(
+        PlayerId(0),
+        &[oxide_sim::Event::OrderStalled {
+            unit: maw.id,
+            player: PlayerId(0),
+            pos: maw.pos,
+            reason: oxide_sim::StallReason::NoRoute,
+        }],
+    );
+    let (commands, _) = opponent.act_traced(&state, &mut events);
+    let rest: Vec<UnitId> = members.iter().copied().filter(|id| *id != maw.id).collect();
+    assert!(goes_in(&commands, &rest), "{commands:?}");
 }
 
 #[test]

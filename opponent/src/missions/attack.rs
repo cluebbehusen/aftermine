@@ -693,7 +693,11 @@ fn engage_on(
     }
     // A fight still being won goes on past its time; with no
     // armed enemy left around the army, it is over.
-    if presses(plan.difficulty) && !all_idle && opposition > 0 && strength >= opposition {
+    if presses(plan.difficulty)
+        && !all_idle
+        && strength >= opposition
+        && plan.armed(members) != (0, 0)
+    {
         mission.since = now;
         return None;
     }
@@ -819,58 +823,60 @@ fn stage_on(
     }
     // Breachers sent ahead draw the guns' fire; the rest follow once each
     // is under it or has stopped.
-    let leading: Vec<&UnitObs> = members.iter().copied().filter(|unit| ahead(unit)).collect();
-    if !leading.is_empty() {
-        let drawing = leading.iter().any(|unit| {
-            !fortified(observation, unit.tile)
+    let leading = members.iter().any(|unit| ahead(unit));
+    let ready = if leading {
+        !members.iter().any(|unit| {
+            ahead(unit)
+                && !fortified(observation, unit.tile)
                 && !unit.idle
                 && !ledger.stuck(unit.id)
                 && !contact(observation, std::slice::from_ref(unit))
-        });
-        if !drawing || age >= TRAVEL_TICKS {
-            push(observation, mission, target, now, ledger);
-        }
+        })
+    } else {
+        let moving: u64 = movers.iter().map(|unit| value(unit)).sum();
+        let near: u64 = movers
+            .iter()
+            .filter(|unit| there(unit))
+            .map(|unit| value(unit))
+            .sum();
+        // What arrives first never goes in alone, even when it beats the
+        // known army on paper: the known defense understates what it meets.
+        // It waits for the rest while any of them still walks there; one
+        // that is stuck, fighting or standing still holds no one up. A
+        // breacher, slowest of all, is what breaks the defense open, so the
+        // army waits for each one still walking there however much of it
+        // has arrived.
+        let walking = |unit: &&UnitObs| {
+            !there(unit)
+                && !unit.idle
+                && !ledger.stuck(unit.id)
+                && !contact(observation, std::slice::from_ref(unit))
+        };
+        let coming = movers.iter().any(walking);
+        let breacher_coming = members
+            .iter()
+            .any(|unit| breacher(unit.kind) && walking(unit));
+        !breacher_coming && (near * 1_000 >= moving * share || !coming)
+    };
+    // A walk past its time ends the wait as it ends any attack's travel.
+    if !ready && age < TRAVEL_TICKS {
         return None;
     }
-    let moving: u64 = movers.iter().map(|unit| value(unit)).sum();
-    let near: u64 = movers
+    // What the breachers drew out may leave the army short of what it needs.
+    let total: u64 = members.iter().map(|unit| striking(unit)).sum();
+    // Breachers at the spot go in first, the hull built to take the guns'
+    // fire; one that cannot move on holds no one up.
+    let leaders: Vec<UnitId> = members
         .iter()
-        .filter(|unit| there(unit))
-        .map(|unit| value(unit))
-        .sum();
-    // What arrives first never goes in alone, even when it beats the known
-    // army on paper: the known defense understates what it meets. It waits
-    // for the rest while any of them still walks there; one that is stuck,
-    // fighting or standing still holds no one up. A breacher, slowest of
-    // all, is what breaks the defense open, so the army waits for each one
-    // still walking there however much of it has arrived. A walk past its
-    // time ends the wait as it ends any attack's travel.
-    let walking = |unit: &&UnitObs| {
-        !there(unit)
-            && !unit.idle
-            && !ledger.stuck(unit.id)
-            && !contact(observation, std::slice::from_ref(unit))
-    };
-    let coming = movers.iter().any(walking);
-    let breacher_coming = members
-        .iter()
-        .any(|unit| breacher(unit.kind) && walking(unit));
-    if (!breacher_coming && (near * 1_000 >= moving * share || !coming)) || age >= TRAVEL_TICKS {
-        let total: u64 = members.iter().map(|unit| striking(unit)).sum();
-        // Breachers at the spot go in first, the hull built to take the
-        // guns' fire.
-        let leaders: Vec<UnitId> = members
-            .iter()
-            .filter(|unit| breacher(unit.kind) && there(unit))
-            .map(|unit| unit.id)
-            .collect();
-        if total >= need && !leaders.is_empty() && age < TRAVEL_TICKS {
-            ledger.order(hunt(leaders, target.approach));
-        } else if total >= need {
-            push(observation, mission, target, now, ledger);
-        } else if ledger.order(run(mission.units.clone(), rally)) {
-            mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
-        }
+        .filter(|unit| !leading && breacher(unit.kind) && there(unit) && !ledger.stuck(unit.id))
+        .map(|unit| unit.id)
+        .collect();
+    if total >= need && !leaders.is_empty() && age < TRAVEL_TICKS {
+        ledger.order(hunt(leaders, target.approach));
+    } else if total >= need {
+        push(observation, mission, target, now, ledger);
+    } else if ledger.order(run(mission.units.clone(), rally)) {
+        mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
     }
     None
 }
@@ -1354,6 +1360,15 @@ impl<'a> Plan<'a> {
     /// members: remembered units by confidence, and known armed buildings by
     /// health.
     fn opposition(&self, members: &[&UnitObs]) -> u64 {
+        let (units, buildings) = self.armed(members);
+        // Breachers among the members answer the armed buildings first.
+        let breach: u64 = members.iter().map(|unit| against_buildings(unit)).sum();
+        (units + buildings.saturating_sub(breach)) * self.misjudge / 1_000
+    }
+
+    /// Value of the armed enemy units and armed buildings the seat knows of
+    /// within contact of the members, before any breacher answers them.
+    fn armed(&self, members: &[&UnitObs]) -> (u64, u64) {
         let now = self.observation.tick;
         let near = |tile: TilePos| {
             members
@@ -1379,9 +1394,7 @@ impl<'a> Plan<'a> {
             })
             .map(building_value)
             .sum();
-        // Breachers among the members answer the armed buildings first.
-        let breach: u64 = members.iter().map(|unit| against_buildings(unit)).sum();
-        (units + buildings.saturating_sub(breach)) * self.misjudge / 1_000
+        (units, buildings)
     }
 
     /// Where the army gathers against `owner`: the open tile within reach of

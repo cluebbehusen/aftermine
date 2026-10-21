@@ -308,6 +308,39 @@ fn a_maw_leaves_with_an_army_that_turns_home() {
 }
 
 #[test]
+fn a_maw_cutting_guns_keeps_a_winning_fight_going() {
+    // An East Turret in contact with the attack, outweighed by the Maw that
+    // answers it: still an armed enemy, so Prime presses on past its time.
+    let mut scenario = super::attack::advanced(BotDifficulty::Prime, &[]);
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Turret,
+        x: 30,
+        y: 11,
+    });
+    scenario.units.push(unit(0, UnitKind::Maw, 21, 15));
+    let mut state = scenario.build().unwrap();
+    let maw = at(&state, 21, 15);
+    advance_to(&mut state, 3_588, &[]);
+    let fighting = serde_json::json!({"engage": {"focus": null}});
+    let (mut members, mut missions) = super::attack::under_way(&state, &fighting, 0);
+    members.push(maw);
+    members.sort_unstable();
+    missions["list"][0]["units"] = serde_json::json!(members);
+    advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
+    let mut opponent = super::attack::restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = super::attack::attack(&trace.unwrap().missions).unwrap();
+    assert_eq!(mission.phase, Phase::Engage, "{commands:?}");
+    assert!(
+        !runs(&commands)
+            .iter()
+            .any(|(units, _)| units.iter().any(|id| members.contains(id))),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn a_given_up_attack_wants_a_cradle_even_against_no_known_guns() {
     let scenario = fortress(&[]);
     let state = bored(&scenario);
