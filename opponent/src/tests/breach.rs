@@ -273,6 +273,41 @@ fn a_free_maw_goes_with_an_attack() {
 }
 
 #[test]
+fn a_maw_leaves_with_an_army_that_turns_home() {
+    // Eighteen East Sentinels in contact with the attack outweigh it at
+    // once; with none, a fight at Standard ends on time.
+    let east: Vec<(UnitKind, i32, i32)> = (27..30)
+        .flat_map(|x| (7..13).map(move |y| (UnitKind::Sentinel, x + i32::from(y % 2 == 0), y)))
+        .collect();
+    for (east, ends, phase) in [
+        (&east[..], 12, Phase::Withdraw),
+        (&[][..], 3_600, Phase::Recover),
+    ] {
+        let mut scenario = super::attack::advanced(BotDifficulty::Standard, east);
+        scenario.units.push(unit(0, UnitKind::Maw, 21, 15));
+        let mut state = scenario.build().unwrap();
+        let maw = at(&state, 21, 15);
+        advance_to(&mut state, ends - 12, &[]);
+        let fighting = serde_json::json!({"engage": {"focus": null}});
+        let (mut members, mut missions) = super::attack::under_way(&state, &fighting, 0);
+        members.push(maw);
+        members.sort_unstable();
+        missions["list"][0]["units"] = serde_json::json!(members);
+        advance_to(&mut state, ends, &[run(0, members.clone(), 30, 11)]);
+        let mut opponent = super::attack::restaged(&scenario, &state, missions);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let mission = super::attack::attack(&trace.unwrap().missions).unwrap();
+        assert_eq!(mission.phase, phase);
+        assert!(
+            runs(&commands)
+                .iter()
+                .any(|(units, _)| units.contains(&maw)),
+            "{phase:?}: the Maw goes too: {commands:?}"
+        );
+    }
+}
+
+#[test]
 fn a_given_up_attack_wants_a_cradle_even_against_no_known_guns() {
     let scenario = fortress(&[]);
     let state = bored(&scenario);

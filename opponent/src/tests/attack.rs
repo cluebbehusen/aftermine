@@ -957,7 +957,7 @@ const ADVANCED: [(i32, i32); 7] = [
 
 /// The field with West's garrison and army at home, and an attack of seven
 /// Sentinels mid-field, `difficulty` deciding.
-fn advanced(difficulty: BotDifficulty, east: &[(UnitKind, i32, i32)]) -> Scenario {
+pub(super) fn advanced(difficulty: BotDifficulty, east: &[(UnitKind, i32, i32)]) -> Scenario {
     let mut scenario = armed(8, east);
     for (x, y) in ADVANCED {
         scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
@@ -968,7 +968,7 @@ fn advanced(difficulty: BotDifficulty, east: &[(UnitKind, i32, i32)]) -> Scenari
 
 /// An attack on East's Foundry in `phase` since `since`, of the Sentinels at
 /// `ADVANCED`.
-fn under_way(
+pub(super) fn under_way(
     state: &State,
     phase: &serde_json::Value,
     since: u64,
@@ -1029,16 +1029,27 @@ fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
 
 #[test]
 fn the_upper_rungs_press_a_fight_past_its_time() {
-    for (difficulty, presses) in [
-        (BotDifficulty::Prime, true),
-        (BotDifficulty::Standard, false),
+    // An East Turret in contact with the attack, short of its reach; without
+    // it no armed enemy is left around the army and the fight is over.
+    for (difficulty, guarded, presses) in [
+        (BotDifficulty::Prime, true, true),
+        (BotDifficulty::Standard, true, false),
+        (BotDifficulty::Prime, false, false),
     ] {
-        let scenario = advanced(difficulty, &[]);
+        let mut scenario = advanced(difficulty, &[]);
+        if guarded {
+            scenario.buildings.push(BuildingSpec {
+                player: 1,
+                kind: BuildingKind::Turret,
+                x: 30,
+                y: 11,
+            });
+        }
         let mut state = scenario.build().unwrap();
         advance_to(&mut state, 3_588, &[]);
         let (members, missions) =
             under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
-        advance_to(&mut state, 3_600, &[run(0, members.clone(), 30, 11)]);
+        advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let mission = attack(&trace.unwrap().missions).unwrap();
@@ -1056,7 +1067,7 @@ fn the_upper_rungs_press_a_fight_past_its_time() {
             assert_eq!(
                 mission.phase,
                 Phase::Recover,
-                "{difficulty:?} ends it on time"
+                "{difficulty:?}, guarded {guarded}: ends it on time"
             );
         }
     }

@@ -150,11 +150,24 @@ fn staging(
 
 /// `staging` on `scenario`.
 fn staging_on(
+    scenario: Scenario,
+    phase: &str,
+    since: u64,
+    there: &[(i32, i32)],
+    coming: bool,
+) -> (State, Opponent, Vec<UnitId>) {
+    staging_with(scenario, phase, since, there, coming, &[])
+}
+
+/// `staging_on` with the West units `scenario` places at `extra` among the
+/// members at home.
+fn staging_with(
     mut scenario: Scenario,
     phase: &str,
     since: u64,
     there: &[(i32, i32)],
     coming: bool,
+    extra: &[(i32, i32)],
 ) -> (State, Opponent, Vec<UnitId>) {
     for (x, y) in there {
         scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
@@ -162,6 +175,7 @@ fn staging_on(
     let mut state = scenario.build().unwrap();
     let home: Vec<UnitId> = WEST[..8 - there.len()]
         .iter()
+        .chain(extra)
         .map(|(x, y)| at(&state, *x, *y))
         .collect();
     let mut members: Vec<UnitId> = there
@@ -211,6 +225,15 @@ const THERE: [(i32, i32); 7] = [
     (22, 10),
 ];
 
+/// West's Maw on `state`.
+fn maw_of(state: &State) -> &oxide_sim::state::Unit {
+    let maw = state
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Maw);
+    maw.unwrap()
+}
+
 /// Whether `commands` send `members` in at East's Foundry.
 fn goes_in(commands: &[PlayerCommand], members: &[UnitId]) -> bool {
     hunts(commands)
@@ -237,6 +260,53 @@ fn a_staging_army_waits_while_the_rest_are_on_their_way() {
         attack(&trace.unwrap().missions).unwrap().phase,
         Phase::Travel
     );
+}
+
+#[test]
+fn a_staging_army_waits_for_a_breacher_on_its_way() {
+    // Seven of the eight Sentinels have arrived, more than the share that
+    // goes in; a Maw is still on its way, or stands still at home.
+    for (coming, goes) in [(true, false), (false, true)] {
+        let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+        scenario.units.push(unit(0, UnitKind::Maw, 8, 16));
+        let (state, mut opponent, members) =
+            staging_with(scenario, "stage", 408, &THERE, coming, &[(8, 16)]);
+        let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
+        assert_eq!(
+            goes_in(&commands, &members),
+            goes,
+            "coming {coming}: {commands:?}"
+        );
+    }
+}
+
+#[test]
+fn a_breacher_leads_the_army_in() {
+    // Seven of the eight Sentinels and a Maw stand at the staging spot: the
+    // Maw goes in alone, and the rest stay.
+    let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+    scenario.units.push(unit(0, UnitKind::Maw, 18, 14));
+    let (state, mut opponent, _) = staging_with(scenario, "stage", 408, &THERE, false, &[(18, 14)]);
+    let maw = maw_of(&state).id;
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let [(units, goal)] = &hunts(&commands)[..] else {
+        panic!("{commands:?}");
+    };
+    assert_eq!(*units, [maw], "{commands:?}");
+    assert!(goal.chebyshev(TilePos::new(43, 11)) <= 2, "{goal:?}");
+    assert_eq!(
+        attack(&trace.unwrap().missions).unwrap().phase,
+        Phase::Stage
+    );
+
+    // Once the Maw has come up to the Turrets, the rest follow it in.
+    let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+    scenario.units.push(unit(0, UnitKind::Maw, 24, 18));
+    let (state, mut opponent, members) =
+        staging_with(scenario, "stage", 408, &THERE, false, &[(24, 18)]);
+    assert_eq!(maw_of(&state).tile(), TilePos::new(24, 18), "premise");
+    let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(goes_in(&commands, &members), "{commands:?}");
 }
 
 #[test]
