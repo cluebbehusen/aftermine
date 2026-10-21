@@ -16,7 +16,7 @@ use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
 use chassis::grid::TilePos;
 use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::scenario::BotStance;
+use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
@@ -177,8 +177,14 @@ enum DefendPhase {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 enum AttackPhase {
     Gather,
+    /// On the way to a staging spot short of the known defenses' reach.
+    Advance,
+    /// Gathering at the staging spot before going in together.
+    Stage,
     Travel,
-    Engage { focus: Option<UnitId> },
+    Engage {
+        focus: Option<UnitId>,
+    },
     Withdraw,
     Recover,
 }
@@ -271,6 +277,8 @@ pub enum Phase {
     Gather,
     /// On the way to its target.
     Travel,
+    /// Gathering short of known defenses before going in together.
+    Stage,
     /// Fighting what it was formed for.
     Engage,
     /// Pulling back from a fight it was losing.
@@ -354,6 +362,7 @@ impl Phase {
             Self::Found => "found",
             Self::Gather => "gather",
             Self::Travel => "travel",
+            Self::Stage => "stage",
             Self::Engage => "engage",
             Self::Withdraw => "withdraw",
             Self::Recover => "recover",
@@ -406,7 +415,8 @@ impl Task {
             },
             Self::Attack { phase, .. } => match phase {
                 AttackPhase::Gather => Phase::Gather,
-                AttackPhase::Travel => Phase::Travel,
+                AttackPhase::Advance | AttackPhase::Travel => Phase::Travel,
+                AttackPhase::Stage => Phase::Stage,
                 AttackPhase::Engage { .. } => Phase::Engage,
                 AttackPhase::Withdraw => Phase::Withdraw,
                 AttackPhase::Recover => Phase::Recover,
@@ -489,8 +499,9 @@ impl Mission {
 
     /// Whether the mission keeps its units from a defense. A defense keeps
     /// them while it fights for one of the seat's own buildings. An attack
-    /// keeps them once it is fighting, or while travelling in contact, since
-    /// it may have met the enemy since the last decision. A scout keeps its
+    /// keeps them once it is fighting or staging, or while travelling in
+    /// contact, since it may have met the enemy since the last decision. A
+    /// scout keeps its
     /// scout, a lift its units once it has left the ground, a settlement
     /// its units while they fly, and a strike, clear or raid its units once
     /// they have set out and until they turn back.
@@ -505,7 +516,7 @@ impl Mission {
                         .any(|building| building.id == asset)
             }
             Task::Attack { phase, .. } => match phase {
-                AttackPhase::Engage { .. } => true,
+                AttackPhase::Advance | AttackPhase::Stage | AttackPhase::Engage { .. } => true,
                 AttackPhase::Travel => {
                     let members: Vec<&UnitObs> = self
                         .units
@@ -526,6 +537,18 @@ impl Mission {
         }
     }
 
+    /// Whether the mission is an attack travelling to its target at a seat
+    /// that does not call an army on its way back to defend.
+    fn travels(&self, difficulty: BotDifficulty) -> bool {
+        matches!(
+            self.task,
+            Task::Attack {
+                phase: AttackPhase::Travel,
+                ..
+            }
+        ) && !attack::lends(difficulty)
+    }
+
     /// Remembers losing every member at `now`: a target an attack, lift or
     /// strike was committed to is given up for a while, a raid's target is
     /// left to other raids for a while, and a scout's point counts as seen, so
@@ -534,7 +557,11 @@ impl Mission {
         match self.task {
             Task::Attack {
                 target,
-                phase: AttackPhase::Travel | AttackPhase::Engage { .. },
+                phase:
+                    AttackPhase::Advance
+                    | AttackPhase::Stage
+                    | AttackPhase::Travel
+                    | AttackPhase::Engage { .. },
             }
             | Task::Lift {
                 target,
@@ -627,13 +654,21 @@ impl Missions {
     }
 
     /// Units no mission holds, by id, never a drone, which flies for its host
-    /// alone. A defense may also `borrow` units that a recovering defense or
-    /// an attack out of contact would lend it.
-    fn available(&self, observation: &ObservationData, borrow: bool) -> Vec<UnitId> {
+    /// alone. A defense at a seat of `borrow` difficulty may also take units
+    /// that a recovering defense or an attack out of contact would lend it.
+    fn available(
+        &self,
+        observation: &ObservationData,
+        borrow: Option<BotDifficulty>,
+    ) -> Vec<UnitId> {
         let mut owned: Vec<UnitId> = self
             .list
             .iter()
-            .filter(|mission| !borrow || mission.holds(observation))
+            .filter(|mission| {
+                borrow.is_none_or(|difficulty| {
+                    mission.holds(observation) || mission.travels(difficulty)
+                })
+            })
             .flat_map(|mission| mission.units.iter().copied())
             .collect();
         owned.sort_unstable();
@@ -657,7 +692,7 @@ impl Missions {
     /// its order found no route joins no mission, since it would be sent
     /// nowhere, and a wounded unit at or bound for a Repair Bay stays there.
     fn free(&self, observation: &ObservationData, ledger: &Ledger) -> Vec<UnitId> {
-        let mut free = self.available(observation, false);
+        let mut free = self.available(observation, None);
         free.retain(|unit| !ledger.stuck(*unit) && !ledger.docked(*unit));
         free
     }
@@ -1055,7 +1090,7 @@ impl Scratch {
             .iter()
             .filter_map(|objective| map.component(objective.anchor))
             .collect();
-        let mut free = missions.available(observation, false);
+        let mut free = missions.available(observation, None);
         free.sort_unstable();
         let (home, elsewhere) = payload(observation, map, &targeted, &free);
         let payload = missions

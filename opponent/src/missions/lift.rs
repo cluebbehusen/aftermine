@@ -700,7 +700,7 @@ impl Missions {
         let mut lifting = Lifting::new(observation, map, profile, memory, scratch)?;
         lifting.held = self.held(|task| matches!(task, Task::Lift { .. }), None, &[]);
         let units: Vec<&UnitObs> = self
-            .available(observation, false)
+            .available(observation, None)
             .into_iter()
             .filter_map(|id| mine(observation, id))
             .collect();

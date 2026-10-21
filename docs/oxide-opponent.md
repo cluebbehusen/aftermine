@@ -121,9 +121,9 @@ the running total and mission state.
   its force while its purpose holds, and releases it when the purpose disappears
   or recovery finishes. At a safe transition it can yield suitable units to an
   emergency; loaded passengers are released only after landing.
-- Missions have phases (gather, travel, engage, withdraw, recover; load, fly,
-  land, fight) and hysteresis, so repeated scoring does not turn each decision
-  into a new plan.
+- Missions have phases (gather, advance, stage, travel, engage, withdraw,
+  recover; load, fly, land, fight) and hysteresis, so repeated scoring does not
+  turn each decision into a new plan.
 - Capability needs, such as "this objective requires lift" or "enemy air
   requires anti-air", raise production and investment priorities. They reserve
   nothing and promise nothing to a mission.
@@ -210,6 +210,7 @@ Each behavior is proven by a staged scenario test.
 | Air raid on base or expansion                              | Defend with anti-air or fighters                                                                                                                      |
 | Richer economy than the enemy                              | Larger attacks, ground and air, since each attack takes the whole free army                                                                           |
 | Known defenses at target or on route                       | Bring siege, or pick another target                                                                                                                   |
+| Known defenses on the way to a target                      | Gather out of their reach, then go in together; fall back out of reach when shelled there before strong enough                                        |
 | Ground-severed enemy                                       | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire |
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                          |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                       |
@@ -258,8 +259,10 @@ kind.
   that they stop growing. The lowest rung also misjudges the enemy's strength by
   a deterministic draw from its seed. Memory fades at the same rate on every
   rung. Difficulty also sets how well a seat carries out its repertoire: lower
-  rungs attack piecemeal, pick targets worse, focus fire on the nearest enemy or
-  by a rough read of its wounds, leave reinforcements at home, end fights on
-  time while winning, withdraw at even odds, and lift without a fresh look or
-  without counting bomber cover. Every rung keeps every capability. Lower rungs
-  make understandable mistakes, and higher rungs beat lower ones.
+  rungs attack piecemeal, pick targets worse, walk into known defenses as a
+  column or gather short of them only briefly, count only the defenses around a
+  target, let a defense call back an army on its way, focus fire on the nearest
+  enemy or by a rough read of its wounds, leave reinforcements at home, end
+  fights on time while winning, withdraw at even odds, and lift without a fresh
+  look or without counting bomber cover. Every rung keeps every capability.
+  Lower rungs make understandable mistakes, and higher rungs beat lower ones.
