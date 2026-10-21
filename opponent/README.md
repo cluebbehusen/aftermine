@@ -306,18 +306,22 @@ enough, once most of its moving value stands there or none of the rest is still
 walking there: a member stuck, fighting or standing still holds no one up. The
 wait has no fixed length, so a long walk waits for its slower units, which
 string out behind; what arrives first never goes in alone, even when it beats
-the known army on paper, since the known defense understates what it meets.
-Three minutes after setting out, the time any attack has to reach its target, it
-stops waiting. Without strength enough it returns to the rally. Veteran and
-Prime wait for 85% of that value, Standard for 70%. Units freed while the army
-is on its way to the spot or gathering there stay home for the next attack
-rather than keep it waiting; once it goes in they join it as before. Shells
-landing among the army from guns it is not already fighting, where they could
-reach the staging spot, send it to a new spot nearer home and three tiles beyond
-the guns' reach: the longest reach among the enemies in sight that could have
-fired them, or the longest artillery reach when none is in sight. With no such
-spot it returns to the rally. It withdraws from a losing fight there as from any
-other, and walks home when it cannot reach the spot.
+the known army on paper, since the known defense understates what it meets. A
+breacher, the slowest of all and what breaks the defense open, holds the army up
+while it still walks to the spot, however much of the army has arrived; once
+there it goes in first, to draw the guns' fire, and the rest follow once it is
+more than three tiles past the spot and under that fire, within contact of an
+enemy, or stopped. Three minutes after setting out, the time any attack has to
+reach its target, it stops waiting. Without strength enough it returns to the
+rally. Veteran and Prime wait for 85% of that value, Standard for 70%. Units
+freed while the army is on its way to the spot or gathering there stay home for
+the next attack rather than keep it waiting; once it goes in they join it as
+before. Shells landing among the army from guns it is not already fighting,
+where they could reach the staging spot, send it to a new spot nearer home and
+three tiles beyond the guns' reach: the longest reach among the enemies in sight
+that could have fired them, or the longest artillery reach when none is in
+sight. With no such spot it returns to the rally. It withdraws from a losing
+fight there as from any other, and walks home when it cannot reach the spot.
 
 Free, healthy point defenders on the target's ground go along with an attack
 when it forms and join it wherever free units do. They never count toward its
@@ -336,16 +340,17 @@ Difficulty changes how well a seat attacks, never what it may do. Veteran and
 Prime count the known defense around a target like more distance, so they go
 after the weakest valuable target; send units freed while an attack travels or
 fights straight to its target; keep a fight they are still winning going past
-its time; and withdraw only once outweighed by a quarter. Standard and Scrapheap
-leave those units at home until the attack regroups, end a fight on time and
-withdraw at even odds. Guile moves either threshold by up to a tenth, sooner for
-a guileful seat, and attacks, clearances, strikes and raids all withdraw by it.
-Scrapheap also attacks piecemeal, several attacks side by side each taking only
-what its own target needs; goes for a Foundry whenever it knows one, however
-well guarded; walks into known defenses as a column, counting only those around
-its target; and misjudges the enemy's strength by up to two fifths either way, a
-misjudgment drawn from its personality seed that holds for 600 ticks, both when
-setting out and when deciding to pull back.
+its time while an armed enemy remains around the army; and withdraw only once
+outweighed by a quarter. Standard and Scrapheap leave those units at home until
+the attack regroups, end a fight on time and withdraw at even odds. Guile moves
+either threshold by up to a tenth, sooner for a guileful seat, and attacks,
+clearances, strikes and raids all withdraw by it. Scrapheap also attacks
+piecemeal, several attacks side by side each taking only what its own target
+needs; goes for a Foundry whenever it knows one, however well guarded; walks
+into known defenses as a column, counting only those around its target; and
+misjudges the enemy's strength by up to two fifths either way, a misjudgment
+drawn from its personality seed that holds for 600 ticks, both when setting out
+and when deciding to pull back.
 
 An engaged mission focuses its fire: when every member that can hit an enemy
 near it already reaches that enemy in a straight line that terrain does not
@@ -546,15 +551,17 @@ full against buildings. Every free breacher that can get there joins an attack
 as it launches or regroups; what breachers bring against buildings answers the
 guarding buildings in the attack's need and in the opposition its fight weighs.
 In a fight an idle breacher cuts the nearest defense, staying at it while the
-rest of the army moves on, and nothing at home mends it, so wounds never send it
-back. Between fights a free, wounded Maw drives to the nearest place its whole
-hull can reach through known ground where its kiln would reach wreck its
-harvesters could safely salvage, one holding enough to mend it first, and sits
-out missions there while it is calm and its kiln has wreck to eat; harvesters
-leave that wreck to it, on its way and once there. A known enemy cradle counts
-as the machine it will stand up, a Maw's as a heavy machine and a Roc's as air,
-and the machine that stands up from it is remembered where it stood up, even out
-of sight, since every seat learns of a public cradle's rollout.
+rest of the army fights or moves on to another target, and leaves with the army
+when it withdraws or turns home. Nothing at home mends it, so wounds never send
+it back between fights. Between fights a free, wounded Maw drives to the nearest
+place its whole hull can reach through known ground where its kiln would reach
+wreck its harvesters could safely salvage, one holding enough to mend it first,
+and sits out missions there while it is calm and its kiln has wreck to eat;
+harvesters leave that wreck to it, on its way and once there. A known enemy
+cradle counts as the machine it will stand up, a Maw's as a heavy machine and a
+Roc's as air, and the machine that stands up from it is remembered where it
+stood up, even out of sight, since every seat learns of a public cradle's
+rollout.
 
 ## Gunships
 
