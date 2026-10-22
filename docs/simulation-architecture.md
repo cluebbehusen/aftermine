@@ -551,27 +551,35 @@ issued and kept with a goal still waiting for its tile to be explored, so
 mirrored groups whose clicks are explored on the same tick take mirrored slots
 however far their units have walked since.
 
-Units never make tiles impassable to pathfinding. They are physical bodies,
-however, and deterministic relaxation passes separate overlapping units after
-path movement. Ground collides only with ground and air only with air, and
-turn-limited aircraft take part in no collision at all: a committed arc that
-steering has already checked against the world cannot be shoved off it. A drone
-never collides with its own host, which it launches from and docks into. Moving
-bodies slide around contacts. A productive stationary unit holds its position
-against an approaching unit; other stationary bodies receive ordinary
+Units never make tiles impassable to pathfinding, with one exception for their
+own side: a small ground body's route that runs under a friendly structural hull
+standing still steps round it through open ground within the hull's own width,
+and keeps its stretch under the hull where there is none. A structural hull
+parked with no orders makes way when a friendly body presses on it with no such
+way round: it drives to the nearest ground ahead along that body's route that
+leaves every blocked route clear, then stops with its orders unchanged. Units
+are physical bodies, and deterministic relaxation passes separate overlapping
+units after path movement. Ground collides only with ground and air only with
+air, and turn-limited aircraft take part in no collision at all: a committed arc
+that steering has already checked against the world cannot be shoved off it. A
+drone never collides with its own host, which it launches from and docks into.
+Moving bodies slide around contacts. A productive stationary unit holds its
+position against an approaching unit; other stationary bodies receive ordinary
 separation. Same-owner contacts around productive work allow a compressed
 fraction of summed body radii, while moving and waiting crowds use full body
 spacing. Terrain wins over a proposed push, and a per-tick budget prevents dense
 groups from exploding outward. A worker anchored at its job, or a body built
 like a structure, holds against a mover only when the mover's hull is no wider
-than its own. Candidate pairs are gathered and ordered once per tick, and every
-pass walks that list; a hull wider than a tile scans as far as it can reach. An
-overlap within a small slop counts as resting contact and is not corrected, so
-rounding alone never keeps a parked crowd moving, and a tick with no deeper
-overlap runs no pass at all. Iteration direction alternates with tick parity to
-avoid a permanent id-order advantage. When bodies are perfectly stacked and
-geometry provides no separating vector, the deterministic owner-local-rank
-direction is rotated into the stack's map-relative half-turn frame.
+than its own. A body pressed into a structural hull that holds is put clear of
+it in full, outside the budget, so a crowd behind cannot squeeze it through.
+Candidate pairs are gathered and ordered once per tick, and every pass walks
+that list; a hull wider than a tile scans as far as it can reach. An overlap
+within a small slop counts as resting contact and is not corrected, so rounding
+alone never keeps a parked crowd moving, and a tick with no deeper overlap runs
+no pass at all. Iteration direction alternates with tick parity to avoid a
+permanent id-order advantage. When bodies are perfectly stacked and geometry
+provides no separating vector, the deterministic owner-local-rank direction is
+rotated into the stack's map-relative half-turn frame.
 
 ## Economy, construction, salvage, and repair
 
