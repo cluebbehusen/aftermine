@@ -214,28 +214,28 @@ its earliest Foundry stands on, then seat parity, so slots never reshuffle as
 the party moves and mirrored seats take mirrored slots. Escorts move at their
 own top speed and replan only once their slot drifts more than a tile from their
 route's end; nothing couples the escorted unit's speed to theirs. An armed
-escort chases the threat nearest the escorted unit within `ESCORT_ENGAGE_RADIUS`
-and its own aggro range, passing over any victim it can neither shoot from where
-it stands nor reach, including one over unstandable ground whose firing stands
-are all out of reach. Failing that, an escort within the engage radius of the
-escorted unit fires without moving at an enemy already in its own weapon reach,
-so a long gun escorts at full range from its slot; further out it is catching
-up. Either fight is an `Attack` that resumes escort duty. A victim within the
-wider `ESCORT_BREAK_RADIUS` of the escorted unit is chased wherever the escort
-is; one past it is fought only while it stays in the escort's reach and the
-escort stays within that radius. A stalled chase returns to duty without a stall
-report. Escorts answer fire from within the engage radius, or, while within it
-themselves, from anything their own guns reach. Weapon masks give each kind its
-role: a fighter escort rises only against aircraft. While the escorted unit
-stood still at the start of the brain phase, a welder escort mends the most
-urgent wounded ground member of the party, the escorted unit first, through the
-ordinary field weld. Its torch target lives in the order and owns the billing
-meter; an empty bank only pauses it. An escorted unit aboard a transport is
-followed through its carrier. When it leaves play, each escort drops the order
-without rotating a patrol and takes its next queued order or idles where it
-stands. Dispatch refuses any escort the target already follows, directly or
-through other escorts in any program, so escort chains are loop-free; the
-validator refuses a state holding a loop.
+escort chases the threat it ranks first, judged as if it stood at the escorted
+unit, within `ESCORT_ENGAGE_RADIUS` of it and its own aggro range, passing over
+any victim it can neither shoot from where it stands nor reach, including one
+over unstandable ground whose firing stands are all out of reach. Failing that,
+an escort within the engage radius of the escorted unit fires without moving at
+an enemy already in its own weapon reach, so a long gun escorts at full range
+from its slot; further out it is catching up. Either fight is an `Attack` that
+resumes escort duty. A victim within the wider `ESCORT_BREAK_RADIUS` of the
+escorted unit is chased wherever the escort is; one past it is fought only while
+it stays in the escort's reach and the escort stays within that radius. A
+stalled chase returns to duty without a stall report. Escorts answer fire from
+within the engage radius, or, while within it themselves, from anything their
+own guns reach. Weapon masks give each kind its role: a fighter escort rises
+only against aircraft. While the escorted unit stood still at the start of the
+brain phase, a welder escort mends the most urgent wounded ground member of the
+party, the escorted unit first, through the ordinary field weld. Its torch
+target lives in the order and owns the billing meter; an empty bank only pauses
+it. An escorted unit aboard a transport is followed through its carrier. When it
+leaves play, each escort drops the order without rotating a patrol and takes its
+next queued order or idles where it stands. Dispatch refuses any escort the
+target already follows, directly or through other escorts in any program, so
+escort chains are loop-free; the validator refuses a state holding a loop.
 
 `Tend` is a worker's walk that welds on its own initiative. A patrol gives each
 worker tending legs instead of plain runs. An idle worker with nothing queued
@@ -903,21 +903,38 @@ attacker cannot hit, as when a flyer lands. Contact loss also clears defense
 focus and advances queued orders.
 
 Automatic acquisition prefers visible eligible enemies over radar contacts and
-does not acquire building ghosts. Among visible machines in reach a unit takes
-the nearest, unless its stats rank targets heaviest first, as the Piledriver's
-do: the most full health, then the nearest. A breacher whose stats rank
-buildings first, as the Maw's do, takes only the nearest visible hostile
-building in aggro range: it never sets out after a machine, answers fire only
-from a building, and strikes a machine only on an explicit order. On a hunt it
-passes walls by, cutting them only where they stand in its way. Weapon reach,
-aggro, splash, blast, trigger and crash radii measure to a wide hull's edge. A
-weapon may carry structure damage, which it deals buildings and machines built
-like structures; demolition charges deal those machines their structure damage
-too. Anonymous radar contacts are always taken nearest first. Automatic radar
-fire may stop Idle, Hunt, or Patrol to aim, but cannot pursue, retreat, or start
-a bomber run. It does not change Run or Advance. A fireable explicit target
-takes priority. Defenses retain blocked or out-of-range focus while firing at
-fallback targets; Stop clears focus.
+does not acquire building ghosts. A unit takes a visible machine in reach before
+a building, unless the levels refuse every weapon at the machine and allow one
+at the building. Within machines, and then within buildings, enemies that can
+hit the unit from where they stand come first. Among those, and then among the
+rest, a victim in weapon reach ranks by how fast the unit's fire removes its
+danger: its damage rate against the unit, or half its raw rate when it cannot
+hit the unit's domain, times the unit's damage rate against it, over its health.
+The nearest of the others follow. A heavy-first unit, as the Piledriver's stats
+rank it, takes the most full health and then the nearest within each group. A
+breacher whose stats rank buildings first, as the Maw's do, takes only the
+nearest visible hostile building in aggro range: it never sets out after a
+machine, answers fire only from a building, and strikes a machine only on an
+explicit order. On a hunt it passes walls by, cutting them only where they stand
+in its way. Exact distance ties go by bearing from the unit's nose, then id, so
+a half turn of the field picks the turned twin. Weapon reach, aggro, splash,
+blast, trigger and crash radii measure to a wide hull's edge. A weapon may carry
+structure damage, which it deals buildings and machines built like structures;
+demolition charges deal those machines their structure damage too. Anonymous
+radar contacts are always taken nearest first. Automatic radar fire may stop
+Idle, Hunt, or Patrol to aim, but cannot pursue, retreat, or start a bomber run.
+It does not change Run or Advance. A fireable explicit target takes priority.
+Defenses retain blocked or out-of-range focus while firing at fallback targets;
+Stop clears focus.
+
+A unit fighting a victim it chose itself, not one an `Attack` order named, looks
+again on every tick that is a multiple of `TARGET_RECHECK_TICKS`, the same ticks
+for every unit so mirrored armies look alike. It takes what its program would
+pick afresh when that is in a better group, or a victim in reach worth more than
+half again as much, so equal victims never trade places. It switches at once
+when the hits already buffered this tick kill its victim, passing over every
+victim those hits kill; shells in flight never count, so a miss cannot leave a
+victim standing. A breacher keeps its structure.
 
 Every kind that fires carries a serialized gun bearing, from placement on, that
 starts toward the map centre like a Spire's deck. Each tick a built defense
@@ -926,20 +943,20 @@ once the bearing is within the ground firing tolerance and its reload has ended,
 and with no target it holds its bearing. A fireable focus comes first, whatever
 the turn. Otherwise it takes the visible eligible unit in firing range with a
 clear shot that it could fire on soonest: the later of the end of its reload and
-the tick its gun would bear, then distance, then id. Right after a shot every
-target the gun can reach within the reload ties, so the nearest wins; the pick a
-gun turns toward only gets sooner, so it never swings between two targets that
-stand still. Validation rejects a bearing on a kind that fires nothing and a
-missing one on a kind that fires.
+the tick its gun would bear, then distance, then bearing from the gun, then id.
+Right after a shot every target the gun can reach within the reload ties, so the
+nearest wins; the pick a gun turns toward only gets sooner, so it never swings
+between two targets that stand still. Validation rejects a bearing on a kind
+that fires nothing and a missing one on a kind that fires.
 
 Ground-capable defenses automatically acquire visible hostile buildings when no
 eligible visible unit is in firing range with a clear shot. Building acquisition
 uses the shared apparency gate, so concealed Scuttle Charges require detection.
 Candidates rank by the same soonest-shot rule, measured to the closest footprint
-point, then by distance to that point and building id; weapon range, minimum
-range, and terrain cover still apply. Air-only defenses never acquire buildings.
-A defense with neither turns toward and fires on the nearest radar contact it
-has a solution on.
+point, then by distance to that point, bearing from the gun, and building id;
+weapon range, minimum range, and terrain cover still apply. Air-only defenses
+never acquire buildings. A defense with neither turns toward and fires on the
+nearest radar contact it has a solution on.
 
 Direct ground-to-ground fire traces terrain: rocks provide cover, while
 buildings and scrap do not. Fire involving aircraft and indirect weapons ignores

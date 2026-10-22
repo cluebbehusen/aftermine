@@ -34,7 +34,7 @@ impl Missions {
                 .units
                 .iter()
                 .filter_map(|id| mine(observation, *id))
-                .filter(|unit| unit.kind.stats().target_priority == TargetPriority::Nearest)
+                .filter(|unit| unit.kind.stats().target_priority == TargetPriority::Danger)
                 .collect();
             let defending = matches!(mission.task, Task::Defend { .. });
             let Some(focus) = mission.task.focus() else {

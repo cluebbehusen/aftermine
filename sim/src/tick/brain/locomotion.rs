@@ -52,7 +52,7 @@ pub(super) fn idle(
         return;
     }
     if let Some(target) =
-        acquired.unwrap_or_else(|| acquire_reachable_target(state, index, reach, id))
+        acquired.unwrap_or_else(|| acquire_reachable_target(state, index, reach, id, &[]))
     {
         let unit = state.unit_mut(id).expect("caller checked");
         let anchor = unit.tile();
@@ -309,7 +309,7 @@ pub(super) fn hunt(
     goal: Goal,
     events: &mut Vec<Event>,
 ) {
-    let target = acquire_reachable_target(state, index, reach, id).or_else(|| {
+    let target = acquire_reachable_target(state, index, reach, id, &[]).or_else(|| {
         let unit = state.unit(id).expect("caller checked");
         let settling = goal.short() && unit.tile() == goal.destination();
         super::contact::square_cutter(unit.kind)

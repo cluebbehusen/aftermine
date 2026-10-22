@@ -441,13 +441,18 @@ pub struct KilnStats {
     pub reach: i32,
 }
 
-/// How a unit picks an enemy machine when nobody ordered a target. It ranks
-/// only machines it could engage now, so a unit with nothing better in reach
-/// still answers what it can.
+/// How a unit picks an enemy when nobody ordered a target. It ranks only
+/// enemies it could engage now, so a unit with nothing better in reach still
+/// answers what it can, and every kind but a breacher takes a machine before
+/// a building.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetPriority {
-    /// The nearest.
-    Nearest,
+    /// Machines, and then buildings, that can hit it from where they stand
+    /// come first. Within each group a victim in weapon reach ranks by how
+    /// fast the unit's fire removes its danger: its damage rate against the
+    /// unit, times the unit's damage rate against it, over its health. The
+    /// nearest of the rest follow.
+    Danger,
     /// The one with the most full health, then the nearest: a gun whose one
     /// slug a light machine would mostly waste.
     Heaviest,
@@ -1107,7 +1112,7 @@ const HARVESTER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1169,7 +1174,7 @@ const SENTINEL: UnitStats = UnitStats {
     turret_turn_rate: 8,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1213,7 +1218,7 @@ const SCUTTLER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1259,7 +1264,7 @@ const LANCER: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1310,7 +1315,7 @@ const BOMBARD: UnitStats = UnitStats {
         recoil_ticks: 8,
         retract_per_tick: 3,
     }),
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1354,7 +1359,7 @@ const FLAKHOUND: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1398,7 +1403,7 @@ const BUZZARD: UnitStats = UnitStats {
     turret_turn_rate: 6,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1442,7 +1447,7 @@ const TALON: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1490,7 +1495,7 @@ const WARDEN: UnitStats = UnitStats {
     turret_turn_rate: 5,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1527,7 +1532,7 @@ const EXCAVATOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1561,7 +1566,7 @@ const KESTREL: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: true,
     scouts: false,
@@ -1611,7 +1616,7 @@ const CONDOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: Some(CrashProfile {
         damage: 50,
         radius: Fx::lit("2"),
@@ -1662,7 +1667,7 @@ const BREAKER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(4),
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1763,7 +1768,7 @@ const AVALANCHE: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: Some(3),
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1797,7 +1802,7 @@ const SKYHOOK: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: Some(CrashProfile {
         damage: 40,
         radius: Fx::lit("2"),
@@ -1840,7 +1845,7 @@ const SAPPER: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1875,7 +1880,7 @@ const MANTLE: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -1913,7 +1918,7 @@ const SURVEYOR: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: true,
     scouts: true,
@@ -2022,7 +2027,7 @@ const ROC: UnitStats = UnitStats {
     turret_turn_rate: 0,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     // A pushed hull keeps its heading, so its guns' arcs never jump.
     crash: Some(CrashProfile {
         damage: 120,
@@ -2107,7 +2112,7 @@ const DRONE: UnitStats = UnitStats {
     turret_turn_rate: 8,
     hull_turn_rate: None,
     brace: None,
-    target_priority: TargetPriority::Nearest,
+    target_priority: TargetPriority::Danger,
     crash: None,
     charge_detection: false,
     scouts: false,
@@ -3392,6 +3397,11 @@ pub const LEASH_REACQUIRE_COOLDOWN: u16 = 60;
 /// re-acquires unleashed; otherwise unit-id ordering can decide which
 /// side's advancing army is tethered first.
 pub const LEASH_STATION_TICKS: u16 = 40;
+
+/// Ticks between the looks a unit fighting a victim it chose itself takes
+/// for a better one. Every unit looks on the same ticks, so mirrored armies
+/// look alike.
+pub const TARGET_RECHECK_TICKS: crate::Tick = 10;
 
 /// How far from the escorted unit an escort looks for a fight, in tiles,
 /// capped by its own aggro range. Welders mend escort-party members within

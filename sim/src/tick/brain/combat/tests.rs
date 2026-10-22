@@ -4,8 +4,9 @@ use crate::command::{Command, PlayerCommand};
 use crate::scenario::{PlayerSpec, Scenario, ScenarioMode, UnitSpec};
 use crate::stats::UnitKind;
 
-/// The reference acquisition: a full scan of the unit list. The indexed
-/// window prunes candidates and must never change the pick.
+/// The reference acquisition: a full scan of the unit and building lists,
+/// ranked by the same [`Pick`]. The indexed window prunes candidates and
+/// must never change the pick.
 fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
     let stats = unit.kind.stats();
@@ -14,7 +15,13 @@ fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
     }
     let (pos, me) = (unit.pos, unit.player);
     let aggro_sq = stats.aggro_range * stats.aggro_range;
-    let unit_target = state
+    let in_aggro = |d: Fx, domain: Domain| {
+        d <= aggro_sq
+            && stats.weapons.iter().any(|weapon| {
+                weapon.targets.covers(domain) && d >= weapon.minimum_range * weapon.minimum_range
+            })
+    };
+    let machines = state
         .units
         .iter()
         .filter(|u| {
@@ -22,43 +29,29 @@ fn linear_acquire(state: &State, id: UnitId) -> Option<Target> {
                 && u.hp > 0
                 && stats.can_target(u.domain())
                 && state.can_see(me, u.tile())
+                && in_aggro(pos.dist_sq(u.pos), u.domain())
         })
-        .map(|u| (pos.dist_sq(u.pos), u.id))
-        .filter(|(d, uid)| {
-            *d <= aggro_sq
-                && stats.weapons.iter().any(|weapon| {
-                    weapon.targets.covers(
-                        state
-                            .unit(*uid)
-                            .expect("candidate exists")
-                            .kind
-                            .stats()
-                            .domain,
-                    ) && *d >= weapon.minimum_range * weapon.minimum_range
-                })
-        })
-        .min();
-    if let Some((_, uid)) = unit_target {
-        return Some(Target::Unit(uid));
-    }
-    if !stats.can_target(Domain::Ground) {
-        return None;
-    }
-    state
+        .map(|u| {
+            let refused = levels_refuse(state, unit, ShotEnd::new(u.pos, u.domain()));
+            pick(state, unit, pos, (Target::Unit(u.id), u.pos), refused)
+        });
+    let buildings = state
         .buildings
         .iter()
-        .filter(|b| state.hostile(me, b.player) && b.hp > 0)
-        .filter(|b| b.tiles().any(|tile| state.can_see(me, tile)))
-        .map(|b| (pos.dist_sq(b.closest_point_to(pos)), b.id))
-        .filter(|(d, _)| {
-            *d <= aggro_sq
-                && stats.weapons.iter().any(|weapon| {
-                    weapon.targets.covers(Domain::Ground)
-                        && *d >= weapon.minimum_range * weapon.minimum_range
-                })
+        .filter(|b| {
+            stats.can_target(Domain::Ground)
+                && state.hostile(me, b.player)
+                && b.hp > 0
+                && b.tiles().any(|tile| state.can_see(me, tile))
+                && in_aggro(pos.dist_sq(b.closest_point_to(pos)), Domain::Ground)
         })
-        .min()
-        .map(|(_, bid)| Target::Building(bid))
+        .map(|b| {
+            let aim = b.closest_point_to(pos);
+            let footing = ShotEnd::new(aim, Domain::Ground).on(b.anchor);
+            let refused = levels_refuse(state, unit, footing);
+            pick(state, unit, pos, (Target::Building(b.id), aim), refused)
+        });
+    machines.chain(buildings).min().map(|pick| pick.target)
 }
 
 fn seat(name: &str) -> PlayerSpec {
@@ -264,7 +257,7 @@ fn indexed_acquisition_matches_the_linear_scan() {
 /// `sidearm_victim`'s windowed search against.
 fn linear_sidearm_victim(
     state: &State,
-    shooter_pos: Vec2Fx,
+    (shooter_pos, heading): (Vec2Fx, u8),
     me: PlayerId,
     shooter_domain: Domain,
     weapon: &WeaponStats,
@@ -285,7 +278,7 @@ fn linear_sidearm_victim(
                 Landing::Unchecked,
             )
         })
-        .min_by_key(|&(d, uid, _, _)| (d, uid))
+        .min_by_key(|&(d, uid, upos, _)| (d, bearing_from(shooter_pos, heading, upos), uid))
 }
 
 /// The same mixed-armies churn as the acquisition differential, but
@@ -381,11 +374,12 @@ fn windowed_sidearm_victim_matches_the_linear_scan() {
                 continue;
             }
             for weapon in stats.weapons {
+                let shooter = (unit.pos, unit.heading);
                 let windowed =
-                    sidearm_victim(&state, &index, unit.pos, unit.player, stats.domain, weapon);
+                    sidearm_victim(&state, &index, shooter, unit.player, stats.domain, weapon);
                 assert_eq!(
                     windowed,
-                    linear_sidearm_victim(&state, unit.pos, unit.player, stats.domain, weapon),
+                    linear_sidearm_victim(&state, shooter, unit.player, stats.domain, weapon),
                     "unit {:?} at tick {}",
                     unit.id,
                     state.tick
@@ -755,7 +749,14 @@ fn scanned_building_victim(
                 Landing::Checked,
             )
         })
-        .min_by_key(|&(distance, target, aim, _)| (gun.ready(aim), distance, target))
+        .min_by_key(|&(distance, target, aim, _)| {
+            (
+                gun.ready(aim),
+                distance,
+                bearing_from(center, gun.heading, aim),
+                target,
+            )
+        })
         .map(|(_, target, aim, _)| (target, aim))
 }
 

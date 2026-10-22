@@ -63,6 +63,7 @@ mod shells;
 mod smelter;
 mod state_integrity;
 mod surrender;
+mod targeting;
 mod teams;
 mod transports;
 mod turret_acquisition;

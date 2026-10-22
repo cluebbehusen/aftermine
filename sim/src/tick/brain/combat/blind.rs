@@ -403,15 +403,23 @@ fn complete(state: &mut State, id: UnitId, resume: Option<Resume>) {
         .complete_attack(resume);
 }
 
+/// Runs the `Attack` order of the unit `id`.
 pub(in crate::tick::brain) fn attack_known(
     state: &mut State,
     index: &super::super::super::spatial::UnitIndex,
+    reach: &mut super::super::super::reach::Reach,
     motion: &MotionSnapshot,
     id: UnitId,
-    program: (AttackTarget, Option<Resume>, bool),
     buffers: ShotBuffers<'_>,
 ) {
-    let (target, resume, pursue) = program;
+    let Order::Attack {
+        target,
+        resume,
+        pursue,
+    } = state.unit(id).expect("live unit").order
+    else {
+        return;
+    };
     let ShotBuffers {
         events,
         hits,
@@ -466,17 +474,39 @@ pub(in crate::tick::brain) fn attack_known(
         super::mounts::attack(state, id, view, resume, events);
         return;
     }
-    if !pursue
-        && view.is_blip()
-        && let Some(visible) = acquire_target(state, index, id)
+    // A victim the unit chose itself gives way to a seen one once only radar
+    // holds it, to any other once the tick's volley already kills it, and
+    // to a clearly better one at each look. A breacher keeps to its
+    // structures.
+    let switch = if pursue {
+        None
+    } else if view.is_blip() {
+        repick(state, index, reach, id, resume, hits)
+    } else if let Some(current) = view.entity
+        && kind.stats().target_priority != crate::stats::TargetPriority::Buildings
     {
+        if volley_kills(state, hits, current) {
+            repick(state, index, reach, id, resume, hits).filter(|&next| next != current)
+        } else if state
+            .current_tick()
+            .is_multiple_of(crate::stats::TARGET_RECHECK_TICKS)
+        {
+            repick(state, index, reach, id, resume, hits)
+                .filter(|&next| next != current && outranks(state, id, next, current))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(next) = switch {
         state.unit_mut(id).expect("live unit").order = Order::Attack {
-            target: visible.into(),
+            target: next.into(),
             resume,
             pursue: false,
         };
         attack(
-            state, index, motion, id, visible, resume, events, hits, launches,
+            state, index, motion, id, next, resume, events, hits, launches,
         );
         normalize_order(state, id);
         return;

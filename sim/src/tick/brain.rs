@@ -284,16 +284,12 @@ pub(super) fn run(
                 });
                 harvest(state, danger, id, node, anchor, withdrawing, events);
             }
-            Order::Attack {
-                target,
-                resume,
-                pursue,
-            } => combat::attack_known(
+            Order::Attack { .. } => combat::attack_known(
                 state,
                 index,
+                &mut reach,
                 &motion,
                 id,
-                (target, resume, pursue),
                 combat::ShotBuffers {
                     events,
                     hits: &mut hits,
