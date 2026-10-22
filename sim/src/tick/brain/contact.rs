@@ -224,19 +224,21 @@ pub(in crate::tick) fn route(
     crate::tick::route_for_position(state, unit.kind, from, goal).or_else(|| {
         (square_cutter(unit.kind)
             && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
-        .then(|| plough_route(state, unit, TilePos::containing(from), goal))
+        .then(|| plough_route(state, unit, TilePos::containing(from), goal, false))
         .flatten()
     })
 }
 
 /// A wide cutter's route over open ground and through the buildings it
 /// ploughs. Like any route it keeps clear of buildings its owner does not
-/// see.
+/// see, unless `unseen_open`, when ground out of its owner's sight counts
+/// as open.
 fn plough_route(
     state: &State,
     unit: &crate::Unit,
     from: TilePos,
     goal: TilePos,
+    unseen_open: bool,
 ) -> Option<Vec<TilePos>> {
     let (width, height) = (state.map.width(), state.map.height());
     let cell = |tile: TilePos| {
@@ -255,7 +257,9 @@ fn plough_route(
     }
     let open = |tile: TilePos| {
         state.passable(tile)
-            || (state.map.terrain_passable(tile) && cell(tile).is_some_and(|i| ploughed[i]))
+            || (state.map.terrain_passable(tile)
+                && (cell(tile).is_some_and(|i| ploughed[i])
+                    || (unseen_open && !state.can_see(unit.player, tile))))
     };
     let radius = unit.kind.stats().radius;
     chassis::path::astar(
@@ -283,11 +287,13 @@ pub(in crate::tick) fn ploughs(
 /// The building a wide cutter turns to cut first on its way to `goal`: of
 /// the hostile buildings within [`PLOUGH_REACH`] that its route runs
 /// through, those its hull would cover at the first step blocked by any,
-/// the nearest.
+/// the nearest. With `unseen_open`, when buildings out of its sight close
+/// every such route, it plans across their ground as open.
 pub(in crate::tick) fn plough_blocker(
     state: &State,
     unit: &crate::Unit,
     goal: TilePos,
+    unseen_open: bool,
 ) -> Option<BuildingId> {
     let blockers: Vec<&crate::Building> = state
         .buildings()
@@ -301,7 +307,12 @@ pub(in crate::tick) fn plough_blocker(
         return None;
     }
     let radius = unit.kind.stats().radius;
-    plough_route(state, unit, unit.tile(), goal)?
+    plough_route(state, unit, unit.tile(), goal, false)
+        .or_else(|| {
+            unseen_open
+                .then(|| plough_route(state, unit, unit.tile(), goal, true))
+                .flatten()
+        })?
         .into_iter()
         .find_map(|step| {
             let hull: Vec<TilePos> = crate::geometry::body_tiles(step.center(), radius).collect();

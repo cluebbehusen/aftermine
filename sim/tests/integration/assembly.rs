@@ -1364,6 +1364,37 @@ fn a_hunting_maw_cuts_a_way_through_a_wall_to_its_goal() {
 }
 
 #[test]
+fn a_hunting_maw_cuts_into_a_wall_with_another_out_of_sight_beyond() {
+    // Two sealed walls stand across a hunting Maw's way, the second out of
+    // its sight. Its way through the first counts the unseen ground beyond
+    // as open, so it cuts in rather than settling short of its goal.
+    let mut buildings: Vec<_> = (1..31)
+        .map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 9)))
+        .collect();
+    buildings.extend((1..31).map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 18))));
+    let (mut state, maw, _) =
+        maw_beside(Vec2Fx::new(Fx::lit("15.5"), Fx::lit("4.5")), 64, &buildings);
+    let goal = TilePos::new(15, 26);
+    state.tick(&[cmd(
+        0,
+        Command::Hunt {
+            units: vec![maw],
+            goal,
+            queue: false,
+        },
+    )]);
+    let events = run_until(&mut state, 1_200, |state, _| {
+        state.unit(maw).unwrap().tile() == goal
+    });
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == maw))
+    );
+    assert!(barricades_left(&state) + 10 >= buildings.len());
+}
+
+#[test]
 fn a_hunting_maw_passes_a_wall_beside_its_way() {
     let buildings: Vec<_> = (3..29)
         .map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14)))
