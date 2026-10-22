@@ -61,6 +61,7 @@ mod scuttler_contact;
 mod scuttler_crowd;
 mod shells;
 mod smelter;
+mod standing_hulls;
 mod state_integrity;
 mod surrender;
 mod targeting;

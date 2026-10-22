@@ -175,6 +175,7 @@ impl State {
             assembly::stand_up(self, &assembled, &mut events);
             drones::resolve(self, &docks, &mut events);
             movement::evict_claimed_ground(self);
+            movement::make_way(self);
             let air_positions = aircraft_crashes::capture_positions(self);
             let (travel, refused) = movement::run(self);
             let driven: Vec<_> = self.units.iter().map(|unit| unit.pos).collect();

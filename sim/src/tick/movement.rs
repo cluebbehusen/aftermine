@@ -8,9 +8,15 @@
 //! Collision resolution then pushes overlapping bodies apart until they fit:
 //! units are solid to each other, but tiles are only ever blocked by terrain
 //! and buildings, so pathfinding stays deadlock-free while crowds jostle.
+//! The one body that never gives way, a structural hull, is routed round by
+//! its own side where there is room and otherwise pulls aside when parked
+//! ([`make_way`]).
 
 mod cruise;
 mod ground;
+mod hulls;
+
+pub(in crate::tick) use hulls::{make_way, round_standing_hulls};
 
 use super::flight;
 use crate::map::Map;
@@ -1329,7 +1335,19 @@ fn relaxation_pass(
         } else {
             correction_dirs(away_i, travel[i], closing_j)
         };
-        let step_j = (overlap * share_j).min(COLLISION_MAX_STEP - spent[j]);
+        // A body pressed into a structural hull is put clear of it in full,
+        // past the per-tick budget: the crowd behind it spends that budget,
+        // and a capped correction would let the crowd squeeze it through.
+        let holds_i = share_i == Fx::ZERO && state.units[i].kind.stats().structural;
+        let holds_j = share_j == Fx::ZERO && state.units[j].kind.stats().structural;
+        let budget = |spent: Fx, held: bool| {
+            if held {
+                overlap
+            } else {
+                COLLISION_MAX_STEP - spent
+            }
+        };
+        let step_j = (overlap * share_j).min(budget(spent[j], holds_i));
         if step_j > Fx::ZERO {
             for cand in dirs_j.into_iter().flatten() {
                 let to = envelope_bound(state, dom_j, pos_j + cand * step_j);
@@ -1340,7 +1358,7 @@ fn relaxation_pass(
                 }
             }
         }
-        let step_i = (overlap * share_i).min(COLLISION_MAX_STEP - spent[i]);
+        let step_i = (overlap * share_i).min(budget(spent[i], holds_j));
         if step_i > Fx::ZERO {
             for cand in dirs_i.into_iter().flatten() {
                 let to = envelope_bound(state, dom_i, pos_i + cand * step_i);

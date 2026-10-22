@@ -211,8 +211,9 @@ pub(in crate::tick) fn drum_span(kind: crate::UnitKind) -> Fx {
 /// route, which may yet change, comes nearer.
 const PLOUGH_REACH: Fx = Fx::lit("20");
 
-/// A route for `unit` from `from` to `goal` over open ground. A wide
-/// cutter on the attack, hunting or attacking, that finds none plans
+/// A route for `unit` from `from` to `goal` over open ground, stepping
+/// round a friendly Maw standing in the way where there is room beside it.
+/// A wide cutter on the attack, hunting or attacking, that finds none plans
 /// through the hostile buildings its owner sees, which its drum cuts out of
 /// its way.
 pub(in crate::tick) fn route(
@@ -221,12 +222,14 @@ pub(in crate::tick) fn route(
     from: Vec2Fx,
     goal: TilePos,
 ) -> Option<Vec<TilePos>> {
-    crate::tick::route_for_position(state, unit.kind, from, goal).or_else(|| {
-        (square_cutter(unit.kind)
-            && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
-        .then(|| plough_route(state, unit, TilePos::containing(from), goal, false))
-        .flatten()
-    })
+    crate::tick::route_for_position(state, unit.kind, from, goal)
+        .map(|waypoints| crate::tick::movement::round_standing_hulls(state, unit, from, waypoints))
+        .or_else(|| {
+            (square_cutter(unit.kind)
+                && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
+            .then(|| plough_route(state, unit, TilePos::containing(from), goal, false))
+            .flatten()
+        })
 }
 
 /// A wide cutter's route over open ground and through the buildings it
