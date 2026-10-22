@@ -36,6 +36,18 @@ fn target_domain(state: &State, target: Target) -> Domain {
     }
 }
 
+/// The bearing of `aim` from `from` against `heading`: the frame an exact
+/// distance tie between victims goes round in, which a half turn of the
+/// field preserves.
+fn bearing_from(from: Vec2Fx, heading: u8, aim: Vec2Fx) -> u8 {
+    let toward = aim - from;
+    if toward == Vec2Fx::ZERO {
+        0
+    } else {
+        chassis::compass::heading_of(toward).wrapping_sub(heading)
+    }
+}
+
 /// Whether `weapon` reaches a target `distance_sq` from it whose hull
 /// reaches `excess` past a small body's, so a wide machine is hit at its
 /// edge rather than only at its centre.
@@ -806,7 +818,14 @@ pub(super) fn turret_fire(
                     .map(|u| (center.dist_sq(u.pos), u.id, u.pos, u.domain()));
                 least_passing(
                     in_reach,
-                    |&(d, uid, pos, _)| (gun.ready(pos), d, uid),
+                    |&(d, uid, pos, _)| {
+                        (
+                            gun.ready(pos),
+                            d,
+                            bearing_from(center, gun.heading, pos),
+                            uid,
+                        )
+                    },
                     |(_, _, pos, dom)| {
                         clear_line(
                             state,
@@ -911,7 +930,14 @@ fn building_victim(
         .filter(|(_, target, _)| state.sees_hostile_building(me, target));
     least_passing(
         in_reach,
-        |(distance, target, aim)| (gun.ready(*aim), *distance, target.id),
+        |(distance, target, aim)| {
+            (
+                gun.ready(*aim),
+                *distance,
+                bearing_from(center, gun.heading, *aim),
+                target.id,
+            )
+        },
         |(_, target, aim)| {
             clear_line(
                 state,
@@ -1077,8 +1103,8 @@ fn route_to_stand(
 /// Unit candidates come from the phase's spatial `index`: everything within
 /// that range of `pos` stands within `floor(range) + 1` tiles Chebyshev of
 /// its tile (the extra tile covers both bodies' sub-tile offsets), and the
-/// pick is a `min` over `(dist_sq, id)`, so window visit order cannot move
-/// it.
+/// pick is a `min` over a complete [`Pick`], so window visit order cannot
+/// move it.
 pub(super) fn acquire_target(
     state: &State,
     index: &super::super::spatial::UnitIndex,
@@ -1088,7 +1114,8 @@ pub(super) fn acquire_target(
     acquire_target_from(state, index, id, pos)
 }
 
-/// [`acquire_target`] for a unit that sets out after what it picks. A
+/// [`acquire_target`] for a unit that sets out after what it picks, passing
+/// over every victim the `volley` buffered this tick already kills. A
 /// contact weapon passes over a structure it has no reachable stance to
 /// meet: it could only set out, find no stance, give the fight up, and pick
 /// the same structure again the next tick.
@@ -1097,18 +1124,40 @@ pub(super) fn acquire_reachable_target(
     index: &super::super::spatial::UnitIndex,
     reach: &mut super::super::reach::Reach,
     id: UnitId,
+    volley: &[PendingHit],
 ) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
-    if unit.kind.stats().contact_reach.is_none() {
-        return acquire_target(state, index, id);
-    }
-    acquire_target_within(state, index, id, unit.pos, None, |target| match target {
-        Target::Unit(_) => true,
-        Target::Building(b) => state.building(b).is_some_and(|b| {
-            !contact::passes(unit, b)
-                && reach.reaches(state, id, contact::stance_goals(state, unit, b))
-        }),
+    let contact = unit.kind.stats().contact_reach.is_some();
+    acquire_target_within(state, index, id, unit.pos, None, |target| {
+        !volley_kills(state, volley, target)
+            && match target {
+                Target::Building(b) if contact => state.building(b).is_some_and(|b| {
+                    !contact::passes(unit, b)
+                        && reach.reaches(state, id, contact::stance_goals(state, unit, b))
+                }),
+                _ => true,
+            }
     })
+}
+
+/// What the unit `id`, fighting for its `resume` program, would pick afresh:
+/// the pick that program makes, passing over every victim the `volley`
+/// already kills.
+fn repick(
+    state: &State,
+    index: &super::super::spatial::UnitIndex,
+    reach: &mut super::super::reach::Reach,
+    id: UnitId,
+    resume: Option<Resume>,
+    volley: &[PendingHit],
+) -> Option<Target> {
+    match resume {
+        Some(Resume::Accompany(escorted)) => {
+            let center = state.escorted(escorted)?.pos;
+            acquire_escort_target(state, index, reach, id, center, volley)
+        }
+        _ => acquire_reachable_target(state, index, reach, id, volley),
+    }
 }
 
 /// The same pick judged as if the unit stood at `pos`: what a landing
@@ -1131,46 +1180,51 @@ pub(super) fn acquire_target_from(
 /// within the engage radius of the body fires without moving at an enemy
 /// already in its own weapon reach, so a long gun escorts at full range from
 /// its slot. Further out it is catching up: such a fight would be broken off
-/// at the break radius before it closed.
+/// at the break radius before it closed. Like [`acquire_reachable_target`],
+/// it passes over every victim the `volley` already kills.
 pub(super) fn acquire_escort_target(
     state: &State,
     index: &super::super::spatial::UnitIndex,
     reach: &mut super::super::reach::Reach,
     id: UnitId,
     center: chassis::fx::Vec2Fx,
+    volley: &[PendingHit],
 ) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
     let (kind, pos, domain) = (unit.kind, unit.pos, unit.kind.stats().domain);
-    let in_reach_now = |target: Target| in_weapon_reach_from(state, kind, pos, target);
+    let live = |target: Target| !volley_kills(state, volley, target);
+    let in_reach_now =
+        |target: Target| live(target) && in_weapon_reach_from(state, kind, pos, target);
     let cap = Some(crate::stats::ESCORT_ENGAGE_RADIUS);
     let near = acquire_target_within(state, index, id, center, cap, |target| {
         in_reach_now(target)
-            || match target {
-                Target::Unit(u) => state.unit(u).is_some_and(|victim| {
-                    let tile = victim.tile();
-                    if state.passable_for(domain, tile) {
-                        return reach.reaches(state, id, [tile]);
-                    }
-                    // A victim over ground the escort cannot stand on is a
-                    // fight only if a firing stand around it can be reached.
-                    let Some(weapon) = kind
-                        .stats()
-                        .weapons
-                        .iter()
-                        .find(|weapon| weapon.targets.covers(victim.domain()))
-                    else {
-                        return false;
-                    };
-                    let range = unit_weapon_reach(state, kind, Some(target), weapon);
-                    let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
-                    reach.reaches(state, id, stands)
-                }),
-                Target::Building(b) => state.building(b).is_some_and(|b| {
-                    let (w, h) = b.kind.size();
-                    let ring = (-1..=w).flat_map(move |dx| (-1..=h).map(move |dy| (dx, dy)));
-                    reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)))
-                }),
-            }
+            || live(target)
+                && match target {
+                    Target::Unit(u) => state.unit(u).is_some_and(|victim| {
+                        let tile = victim.tile();
+                        if state.passable_for(domain, tile) {
+                            return reach.reaches(state, id, [tile]);
+                        }
+                        // A victim over ground the escort cannot stand on is a
+                        // fight only if a firing stand around it can be reached.
+                        let Some(weapon) = kind
+                            .stats()
+                            .weapons
+                            .iter()
+                            .find(|weapon| weapon.targets.covers(victim.domain()))
+                        else {
+                            return false;
+                        };
+                        let range = unit_weapon_reach(state, kind, Some(target), weapon);
+                        let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
+                        reach.reaches(state, id, stands)
+                    }),
+                    Target::Building(b) => state.building(b).is_some_and(|b| {
+                        let (w, h) = b.kind.size();
+                        let ring = (-1..=w).flat_map(move |dx| (-1..=h).map(move |dy| (dx, dy)));
+                        reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)))
+                    }),
+                }
     });
     let engage = crate::stats::ESCORT_ENGAGE_RADIUS;
     near.or_else(|| {
@@ -1197,6 +1251,190 @@ fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, targe
                 && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim.at))
                 && levels_allow(state, Fire::of(weapon), shooter, aim)
         })
+    })
+}
+
+/// How a unit ranks a victim it picks for itself, least first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Pick {
+    /// The levels let no weapon fire on it from where the unit stands. Such
+    /// a victim stays a pick, so a unit shelled from a plateau still climbs
+    /// to answer.
+    refused: bool,
+    /// Machines come first.
+    building: bool,
+    /// It cannot hit the unit from where it stands.
+    harmless: bool,
+    /// How fast the unit's fire removes the danger a victim in weapon reach
+    /// poses: its damage rate, times the unit's damage rate against it, over
+    /// its health. Zero for the rest.
+    worth: std::cmp::Reverse<u64>,
+    /// A heavy-first gun's measure of a machine: its full health.
+    heft: std::cmp::Reverse<u32>,
+    distance: Fx,
+    /// See [`bearing_from`]: from the unit's nose.
+    bearing: u8,
+    target: Target,
+}
+
+/// How `unit`, picking from `pos`, ranks the live `target` aimed at `aim`.
+/// See [`crate::stats::TargetPriority`].
+fn pick(
+    state: &State,
+    unit: &crate::state::Unit,
+    pos: Vec2Fx,
+    (target, aim): (Target, Vec2Fx),
+    refused: bool,
+) -> Pick {
+    use crate::stats::TargetPriority;
+    let stats = unit.kind.stats();
+    let mut pick = Pick {
+        refused,
+        building: matches!(target, Target::Building(_)),
+        harmless: false,
+        worth: std::cmp::Reverse(0),
+        heft: std::cmp::Reverse(0),
+        distance: pos.dist_sq(aim),
+        bearing: bearing_from(pos, unit.heading, aim),
+        target,
+    };
+    match stats.target_priority {
+        TargetPriority::Buildings => return pick,
+        TargetPriority::Heaviest => {
+            if let Target::Unit(victim) = target {
+                pick.heft =
+                    std::cmp::Reverse(state.unit(victim).map_or(0, |v| v.kind.stats().max_hp));
+            }
+            return pick;
+        }
+        TargetPriority::Danger => {}
+    }
+    let me = Target::Unit(unit.id);
+    let domain = stats.domain;
+    // Damage per thousand ticks.
+    let rate = |weapon: &WeaponStats, damage: u32| {
+        u64::from(damage) * 1_000 / u64::from(weapon.cooldown_ticks.max(1))
+    };
+    let (weapons, harmless, hp) = match target {
+        Target::Unit(id) => {
+            let victim = state.unit(id).expect("a ranked victim stands");
+            let weapons = victim.kind.stats().weapons;
+            let distance = victim.pos.dist_sq(pos);
+            let harmless = !weapons.iter().any(|weapon| {
+                weapon.targets.covers(domain)
+                    && within_unit_weapon_reach(state, victim.kind, me, weapon, distance)
+            });
+            (weapons, harmless, victim.hp)
+        }
+        Target::Building(id) => {
+            let victim = state.building(id).expect("a ranked victim stands");
+            let weapons = if victim.built() {
+                victim.stats().weapons
+            } else {
+                &[]
+            };
+            let distance = victim.center().dist_sq(pos);
+            let excess = crate::stats::hull_excess(stats.radius);
+            let harmless = !weapons.iter().any(|weapon| {
+                weapon.targets.covers(domain) && within_weapon_reach(weapon, distance, excess)
+            });
+            (weapons, harmless, victim.hp)
+        }
+    };
+    pick.harmless = harmless;
+    let victim_domain = target_domain(state, target);
+    if in_weapon_reach_from(state, unit.kind, pos, target)
+        && let Some(weapon) = stats
+            .weapons
+            .iter()
+            .find(|weapon| weapon.targets.covers(victim_domain))
+    {
+        // A victim that cannot hit the unit's kind still counts for half its
+        // damage, as a danger to the unit's fellows.
+        let against: u64 = weapons
+            .iter()
+            .filter(|weapon| weapon.targets.covers(domain))
+            .map(|weapon| rate(weapon, damage_against(state, weapon, me)))
+            .sum();
+        let danger = if against > 0 {
+            against
+        } else {
+            weapons
+                .iter()
+                .map(|weapon| rate(weapon, weapon.damage))
+                .sum::<u64>()
+                / 2
+                + 1
+        };
+        let shot = rate(weapon, damage_against(state, weapon, target));
+        let removed = u128::from(danger) * u128::from(shot) * 1_000 / u128::from(hp.max(1));
+        pick.worth = std::cmp::Reverse(u64::try_from(removed).unwrap_or(u64::MAX).max(1));
+    }
+    pick
+}
+
+/// How the unit `id`, from where it stands, ranks a live `target`.
+fn pick_of(state: &State, id: UnitId, target: Target) -> Option<Pick> {
+    let unit = state.unit(id)?;
+    let (aim, victim) = match target {
+        Target::Unit(victim) => {
+            let victim = state.unit(victim).filter(|victim| victim.hp > 0)?;
+            (victim.pos, ShotEnd::new(victim.pos, victim.domain()))
+        }
+        Target::Building(victim) => {
+            let victim = state.building(victim).filter(|victim| victim.hp > 0)?;
+            let aim = victim.closest_point_to(unit.pos);
+            (aim, ShotEnd::new(aim, Domain::Ground).on(victim.anchor))
+        }
+    };
+    Some(pick(
+        state,
+        unit,
+        unit.pos,
+        (target, aim),
+        levels_refuse(state, unit, victim),
+    ))
+}
+
+/// Whether the levels let none of `unit`'s weapons fire on `victim` from
+/// where it stands.
+fn levels_refuse(state: &State, unit: &crate::state::Unit, victim: ShotEnd) -> bool {
+    let stats = unit.kind.stats();
+    let shooter = ShotEnd::new(unit.pos, stats.domain);
+    state.map.tiered()
+        && !stats.weapons.iter().any(|weapon| {
+            weapon.targets.covers(victim.domain)
+                && levels_allow(state, Fire::of(weapon), shooter, victim)
+        })
+}
+
+/// Whether the unit `id`, fighting `current`, should take `next` instead:
+/// a better group, or in the same group a victim in reach worth half again
+/// as much, so equal victims never trade places.
+fn outranks(state: &State, id: UnitId, next: Target, current: Target) -> bool {
+    let (Some(next), Some(current)) = (pick_of(state, id, next), pick_of(state, id, current))
+    else {
+        return false;
+    };
+    let group = |pick: Pick| (pick.refused, pick.building, pick.harmless);
+    if group(next) != group(current) {
+        return group(next) < group(current);
+    }
+    let (std::cmp::Reverse(next), std::cmp::Reverse(current)) = (next.worth, current.worth);
+    next > 0 && (current == 0 || u128::from(next) * 2 > u128::from(current) * 3)
+}
+
+/// Whether the hits this tick has buffered so far already kill `target`.
+/// Shells in flight never count, so a miss cannot leave a victim standing.
+pub(super) fn volley_kills(state: &State, hits: &[PendingHit], target: Target) -> bool {
+    let hp = match target {
+        Target::Unit(id) => state.unit(id).map_or(0, |unit| unit.hp),
+        Target::Building(id) => state.building(id).map_or(0, |building| building.hp),
+    };
+    let mut damage = 0_u32;
+    hits.iter().filter(|hit| hit.victim == target).any(|hit| {
+        damage = damage.saturating_add(hit.damage);
+        damage >= hp
     })
 }
 
@@ -1228,71 +1466,13 @@ fn acquire_target_within(
     let home = TilePos::containing(pos);
     let reach = acquisition_range.floor().to_num::<i32>() + 1 + index.wide_reach();
     let team = state.player(me).team;
-    // Lower ranks first: the nearest, or for a heavy-first gun the most
-    // full health and then the nearest.
-    let heft = |kind: crate::stats::UnitKind| match stats.target_priority {
-        crate::stats::TargetPriority::Nearest | crate::stats::TargetPriority::Buildings => 0,
-        crate::stats::TargetPriority::Heaviest => u32::MAX - kind.stats().max_hp,
-    };
-    // Ahead of every other rank, a victim the levels let some weapon fire on
-    // from where the unit stands. One they refuse stays a pick, so a unit
-    // shelled from a plateau still climbs to answer.
-    let shooter = ShotEnd::new(unit.pos, stats.domain);
-    let tiered = state.map.tiered();
-    let refused = |victim: ShotEnd| {
-        tiered
-            && !stats.weapons.iter().any(|weapon| {
-                weapon.targets.covers(victim.domain)
-                    && levels_allow(state, Fire::of(weapon), shooter, victim)
-            })
-    };
-    let mut unit_target: Option<(bool, u32, chassis::fx::Fx, UnitId)> = None;
-    // A building in acquisition range covers a tile within `reach` of the
-    // unit's tile, or the next one where its closest point sits on an edge.
+    let mut best: Option<Pick> = None;
     let hostiles = index.hostiles_near(team, home, reach + 1);
-    let nearest_building = |accept: &mut dyn FnMut(Target) -> bool| {
-        if !stats.can_target(Domain::Ground) {
-            return None;
-        }
-        let candidates = if hostiles.buildings {
-            state.buildings()
-        } else {
-            index.buildings_since_survey(state.buildings())
-        };
-        candidates
-            .iter()
-            .filter(|b| state.hostile(me, b.player) && b.hp > 0)
-            .map(|b| (pos.dist_sq(b.closest_point_to(pos)), b))
-            // Range gates run before the knowledge gates: apparency for a
-            // buried charge scans every friendly scout and radar mast. The
-            // filters commute, so ordering only saves work.
-            .filter(|(d, _)| {
-                *d <= aggro_sq
-                    && stats.weapons.iter().any(|weapon| {
-                        weapon.targets.covers(Domain::Ground)
-                            && *d >= weapon.minimum_range * weapon.minimum_range
-                    })
-            })
-            // An undetected buried charge must never be auto-attacked: that
-            // would leak its existence to the attacker's owner.
-            .filter(|(_, b)| state.building_apparent(me, b))
-            .filter(|(_, b)| b.tiles().any(|tile| state.can_see(me, tile)))
-            .map(|(d, b)| {
-                let aim = ShotEnd::new(b.closest_point_to(unit.pos), Domain::Ground).on(b.anchor);
-                (refused(aim), d, b.id)
-            })
-            .filter(|&(_, _, bid)| accept(Target::Building(bid)))
-            .min()
-            .map(|(refused, _, bid)| (refused, Target::Building(bid)))
-    };
     // A breacher takes only structures: it never sets out after a machine,
-    // and crushes the small ones it drives into instead.
-    if stats.target_priority == crate::stats::TargetPriority::Buildings {
-        return nearest_building(&mut accept).map(|(_, building)| building);
-    }
-    // An army at rest far from any enemy is the common case: the survey
-    // proves the window holds no hostile body before any row is walked.
-    if hostiles.bodies {
+    // and crushes the small ones it drives into instead. An army at rest far
+    // from any enemy is the common case: the survey proves the window holds
+    // no hostile body before any row is walked.
+    if hostiles.bodies && stats.target_priority != crate::stats::TargetPriority::Buildings {
         for dy in -reach..=reach {
             for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
                 let u = &state.units[slot];
@@ -1310,16 +1490,13 @@ fn acquire_target_within(
                 });
                 // A wide hull is in aggro range once its edge is.
                 let aggro = acquisition_range + crate::stats::hull_excess(u.kind.stats().radius);
-                let rank = (
-                    refused(ShotEnd::new(u.pos, u.domain())),
-                    heft(u.kind),
-                    d,
-                    u.id,
-                );
-                if !(d <= aggro * aggro
-                    && outside_dead_zone
-                    && unit_target.is_none_or(|best| rank < best))
-                {
+                if !(d <= aggro * aggro && outside_dead_zone) {
+                    continue;
+                }
+                let target = Target::Unit(u.id);
+                let refused = levels_refuse(state, unit, ShotEnd::new(u.pos, u.domain()));
+                let rank = pick(state, unit, pos, (target, u.pos), refused);
+                if best.is_some_and(|best| rank >= best) {
                     continue;
                 }
                 // A victim on ground the chaser cannot stand on needs a
@@ -1333,29 +1510,67 @@ fn acquire_target_within(
                         .iter()
                         .find(|w| w.targets.covers(u.domain()))
                         .map_or(chassis::fx::Fx::ZERO, |w| {
-                            unit_weapon_reach(state, unit.kind, Some(Target::Unit(u.id)), w)
+                            unit_weapon_reach(state, unit.kind, Some(target), w)
                         });
                     if chase_stand_ins(state, stats.domain, victim_tile, u.pos, range).is_empty() {
                         continue;
                     }
                 }
-                if !accept(Target::Unit(u.id)) {
+                if !accept(target) {
                     continue;
                 }
-                unit_target = Some(rank);
+                best = Some(rank);
             }
         }
     }
-    match unit_target {
-        Some((false, .., uid)) => Some(Target::Unit(uid)),
-        // A victim the levels refuse yields to a building they allow.
-        Some((true, .., uid)) => Some(
-            nearest_building(&mut accept)
-                .filter(|&(refused, _)| !refused)
-                .map_or(Target::Unit(uid), |(_, building)| building),
-        ),
-        None => nearest_building(&mut accept).map(|(_, building)| building),
+    // Every machine the levels allow outranks every building. A building in
+    // acquisition range covers a tile within `reach` of the unit's tile, or
+    // the next one where its closest point sits on an edge.
+    if stats.can_target(Domain::Ground) && best.is_none_or(|best| best.refused) {
+        let candidates = if hostiles.buildings {
+            state.buildings()
+        } else {
+            index.buildings_since_survey(state.buildings())
+        };
+        for b in candidates {
+            if !state.hostile(me, b.player) || b.hp == 0 {
+                continue;
+            }
+            let aim = b.closest_point_to(pos);
+            let d = pos.dist_sq(aim);
+            if !(d <= aggro_sq
+                && stats.weapons.iter().any(|weapon| {
+                    weapon.targets.covers(Domain::Ground)
+                        && d >= weapon.minimum_range * weapon.minimum_range
+                }))
+            {
+                continue;
+            }
+            let target = Target::Building(b.id);
+            let footing = ShotEnd::new(b.closest_point_to(unit.pos), Domain::Ground).on(b.anchor);
+            let rank = pick(
+                state,
+                unit,
+                pos,
+                (target, aim),
+                levels_refuse(state, unit, footing),
+            );
+            // Range and rank gates run before the knowledge gates:
+            // apparency for a buried charge scans every friendly scout and
+            // radar mast. The filters commute, so ordering only saves work.
+            // An undetected buried charge must never be auto-attacked: that
+            // would leak its existence to the attacker's owner.
+            if best.is_some_and(|best| rank >= best)
+                || !state.building_apparent(me, b)
+                || !b.tiles().any(|tile| state.can_see(me, tile))
+                || !accept(target)
+            {
+                continue;
+            }
+            best = Some(rank);
+        }
     }
+    best.map(|best| best.target)
 }
 
 /// Keeps an advance moving while the primary weapon takes a shot that is
@@ -2414,12 +2629,13 @@ fn stall_attack(
 
 /// The sidearm's opportunist victim: the nearest hostile unit the weapon
 /// can cover, in range, seen by the owner, and clear, chosen through the
-/// spatial index's reach window. Selection is keyed `(distance, id)`, so
-/// window visit order cannot change the answer.
+/// spatial index's reach window. Selection is keyed `(distance, bearing,
+/// id)`, the bearing taken against the shooter's `heading`, so window visit
+/// order cannot change the answer.
 fn sidearm_victim(
     state: &State,
     index: &super::super::spatial::UnitIndex,
-    shooter_pos: Vec2Fx,
+    (shooter_pos, heading): (Vec2Fx, u8),
     me: crate::ids::PlayerId,
     shooter_domain: Domain,
     weapon: &WeaponStats,
@@ -2428,7 +2644,7 @@ fn sidearm_victim(
     // floor(range) + 1 of the shooter's — the acquire_target bound.
     let home = TilePos::containing(shooter_pos);
     let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
-    let mut victim: Option<(chassis::fx::Fx, UnitId, Vec2Fx, Domain)> = None;
+    let mut victim: Option<((chassis::fx::Fx, u8, UnitId), Vec2Fx, Domain)> = None;
     for dy in -reach..=reach {
         for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
             let u = &state.units[slot];
@@ -2446,7 +2662,8 @@ fn sidearm_victim(
             }
             // Pay for the line trace only when the candidate would win;
             // a blocked better candidate never shadows a clear worse one.
-            if victim.is_some_and(|(best_d, best_id, ..)| (best_d, best_id) <= (d, u.id)) {
+            let rank = (d, bearing_from(shooter_pos, heading, u.pos), u.id);
+            if victim.is_some_and(|(best, ..)| best <= rank) {
                 continue;
             }
             if !clear_line(
@@ -2458,10 +2675,10 @@ fn sidearm_victim(
             ) {
                 continue;
             }
-            victim = Some((d, u.id, u.pos, domain));
+            victim = Some((rank, u.pos, domain));
         }
     }
-    victim
+    victim.map(|((d, _, id), pos, domain)| (d, id, pos, domain))
 }
 
 /// Weapons other than the one engaging the ordered target pick their own
@@ -2481,11 +2698,12 @@ fn fire_sidearms(
         return;
     }
     let (pos, me, kind, cooldowns) = (unit.pos, unit.player, unit.kind, unit.cooldowns);
+    let heading = unit.heading;
     for (wi, weapon) in stats.weapons.iter().enumerate() {
         if wi == primary || cooldowns[wi] > 0 {
             continue;
         }
-        let victim = sidearm_victim(state, index, pos, me, stats.domain, weapon);
+        let victim = sidearm_victim(state, index, (pos, heading), me, stats.domain, weapon);
         let Some((_, uid, upos, _)) = victim else {
             blind::sidearm_radar(state, id, wi, hits, events);
             continue;

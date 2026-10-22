@@ -545,7 +545,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             oxide_sim::stats::TargetPriority::Buildings => {
                 info.row("Targets", "Buildings first".into(), None);
             }
-            oxide_sim::stats::TargetPriority::Nearest => {}
+            oxide_sim::stats::TargetPriority::Danger => {}
         }
     } else {
         if !panel.summary.is_empty() {

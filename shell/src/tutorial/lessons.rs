@@ -535,8 +535,8 @@ const INBOUND: &str = "The Buzzards are flying to your base. Watch for their bli
     Array's radar before they come into sight.";
 const FLAK_FIRST: &str = "Your Flak Turret hits them from 5.5 tiles away. A Buzzard must come \
     within 3 tiles to fire, so the turret shoots first.";
-const IN_HARMS_WAY: &str = "Buzzards attack the nearest target, so Harvesters left idle beside \
-    your new buildings are in danger.";
+const IN_HARMS_WAY: &str = "Buzzards attack machines before buildings, so Harvesters left idle \
+    beside your new buildings are in danger.";
 const WELDING: &str = "Harvesters weld damaged buildings and ground machines back to full \
     health. Welding costs scrap for each point of health it restores.";
 const IDLE_WELD: &str = "Idle Harvesters also weld damage near them on their own.";

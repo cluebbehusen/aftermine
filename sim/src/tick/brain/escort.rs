@@ -144,7 +144,7 @@ pub(super) fn accompany(
     // Mounted guns pick their own fights on escort duty too.
     if stats.can_fight()
         && stats.mounts.is_none()
-        && let Some(target) = acquire_escort_target(state, index, reach, id, party.pos)
+        && let Some(target) = acquire_escort_target(state, index, reach, id, party.pos, &[])
     {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.order = Order::Attack {

@@ -583,6 +583,8 @@ fn opening_orders(cast: &Cast) -> Vec<PlayerCommand> {
         attack(1, cast.annex_e[6], cast.annex_w[5]),
         attack(0, cast.annex_w[8], cast.annex_e[7]),
         attack(1, cast.annex_e[8], cast.annex_w[7]),
+        attack(0, cast.annex_w[10], cast.annex_e[9]),
+        attack(1, cast.annex_e[10], cast.annex_w[9]),
     ]);
     commands
 }
