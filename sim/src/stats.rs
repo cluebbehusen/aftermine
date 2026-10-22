@@ -601,6 +601,11 @@ impl BuildingKind {
         matches!(self, BuildingKind::Barricade | BuildingKind::ScuttleCharge)
     }
 
+    /// Whether the kind is a wall, which only stands in the way.
+    pub const fn is_wall(self) -> bool {
+        matches!(self, BuildingKind::Barricade)
+    }
+
     /// Footprint in tiles (width, height), anchored top-left. Every tier
     /// of a kind shares it.
     pub const fn size(self) -> (i32, i32) {

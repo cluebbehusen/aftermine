@@ -386,23 +386,25 @@ building the drum presses flat, and while a drum is within a short reach of a
 hostile building's outline, that building's guns hold fire and bearing as their
 reload runs down. A wide cutter on the attack takes the straight way to its
 target through the hostile buildings it sees, and turns to cut the first one in
-its way, unless its drum already presses on its target. Pressing on a building,
-its hull meets the hostile buildings around it at their outlines, as it meets
-its target, rather than at their whole tiles, so it cuts into a wall where its
-way meets it. Its front crushes small hostile ground machines it touches,
-whatever its order. Work, melee, and ranged building attacks share a crowd-aware
-position chooser: productive occupants win space, nearby arrivals carry soft
-claims, and distant routes do not reserve frontage. When arrivals' positions
-overlap, the unit nearer its own position keeps its claim, whatever seat it
-belongs to, so allied crowds cannot all yield to one another; an exact tie goes
-to the earlier unit of one seat. When productive units fill the legal positions,
-overflow approaches wait outside the interaction area. A worker that already
-reaches the surface works where it stands, and a held position is chosen again
-once new ground makes it unreachable. Ranged candidates respect their weapon's
-minimum and maximum range, line of fire, and movement layer. Fixed-wing aircraft
-attack with run-ins instead. Building artwork and its contact outline keep their
-authored facing, so asymmetric contact can differ under a map half-turn.
-Placement, travel, and ranged reach use the rectangular footprint.
+its way, unless its drum already presses on its target. On a hunt it takes the
+straight way to its goal the same way, turning to cut the first building in its
+way that it can meet. Pressing on a building, its hull meets the hostile
+buildings around it at their outlines, as it meets its target, rather than at
+their whole tiles, so it cuts into a wall where its way meets it. Its front
+crushes small hostile ground machines it touches, whatever its order. Work,
+melee, and ranged building attacks share a crowd-aware position chooser:
+productive occupants win space, nearby arrivals carry soft claims, and distant
+routes do not reserve frontage. When arrivals' positions overlap, the unit
+nearer its own position keeps its claim, whatever seat it belongs to, so allied
+crowds cannot all yield to one another; an exact tie goes to the earlier unit of
+one seat. When productive units fill the legal positions, overflow approaches
+wait outside the interaction area. A worker that already reaches the surface
+works where it stands, and a held position is chosen again once new ground makes
+it unreachable. Ranged candidates respect their weapon's minimum and maximum
+range, line of fire, and movement layer. Fixed-wing aircraft attack with run-ins
+instead. Building artwork and its contact outline keep their authored facing, so
+asymmetric contact can differ under a map half-turn. Placement, travel, and
+ranged reach use the rectangular footprint.
 
 Talon, Kestrel, and Roc cruise heading-first but can hover at rest. Their travel
 and fixed-gun traverse rates are independent of bomber flight; per-kind rates
@@ -905,7 +907,8 @@ the nearest, unless its stats rank targets heaviest first, as the Piledriver's
 do: the most full health, then the nearest. A breacher whose stats rank
 buildings first, as the Maw's do, takes only the nearest visible hostile
 building in aggro range: it never sets out after a machine, answers fire only
-from a building, and strikes a machine only on an explicit order. Weapon reach,
+from a building, and strikes a machine only on an explicit order. On a hunt it
+passes walls by, cutting them only where they stand in its way. Weapon reach,
 aggro, splash, blast, trigger and crash radii measure to a wide hull's edge. A
 weapon may carry structure damage, which it deals buildings and machines built
 like structures; demolition charges deal those machines their structure damage

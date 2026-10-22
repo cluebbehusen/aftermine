@@ -1319,6 +1319,72 @@ fn a_maw_ordered_at_a_wall_cuts_in_wherever_its_way_meets_it() {
     }
 }
 
+/// The Barricades of `state` still standing.
+fn barricades_left(state: &State) -> usize {
+    state
+        .buildings()
+        .iter()
+        .filter(|b| b.kind == BuildingKind::Barricade)
+        .count()
+}
+
+#[test]
+fn a_hunting_maw_cuts_a_way_through_a_wall_to_its_goal() {
+    // A Barricade wall, sealed against the arena's edges or open at both
+    // ends, stands across a hunting Maw's way. It cuts a way through where
+    // its way meets the wall and drives on to its goal, rather than cutting
+    // along the wall one Barricade after another.
+    for wall in [1..31, 5..27] {
+        let buildings: Vec<_> = wall
+            .map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14)))
+            .collect();
+        let (mut state, maw, _) = maw_beside(
+            Vec2Fx::new(Fx::lit("15.5"), Fx::lit("11.5")),
+            64,
+            &buildings,
+        );
+        let goal = TilePos::new(15, 22);
+        state.tick(&[cmd(
+            0,
+            Command::Hunt {
+                units: vec![maw],
+                goal,
+                queue: false,
+            },
+        )]);
+        run_until(&mut state, 600, |state, _| {
+            state.unit(maw).unwrap().tile() == goal
+        });
+        let left = barricades_left(&state);
+        assert!(
+            left + 4 >= buildings.len(),
+            "it cut a way through, not the wall: {left} left"
+        );
+    }
+}
+
+#[test]
+fn a_hunting_maw_passes_a_wall_beside_its_way() {
+    let buildings: Vec<_> = (3..29)
+        .map(|x| (1, BuildingKind::Barricade, TilePos::new(x, 14)))
+        .collect();
+    let (mut state, maw, _) =
+        maw_beside(Vec2Fx::new(Fx::lit("2.5"), Fx::lit("11.5")), 0, &buildings);
+    let goal = TilePos::new(29, 11);
+    state.tick(&[cmd(
+        0,
+        Command::Hunt {
+            units: vec![maw],
+            goal,
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 900, |state, _| {
+        state.unit(maw).unwrap().tile() == goal
+    });
+    assert_eq!(barricades_left(&state), buildings.len());
+}
+
 #[test]
 fn a_maws_drum_jams_the_gun_it_presses_on() {
     // A Turret fires on the Maw driving in, and never again once the drum

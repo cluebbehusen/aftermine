@@ -1104,9 +1104,10 @@ pub(super) fn acquire_reachable_target(
     }
     acquire_target_within(state, index, id, unit.pos, None, |target| match target {
         Target::Unit(_) => true,
-        Target::Building(b) => state
-            .building(b)
-            .is_some_and(|b| reach.reaches(state, id, contact::stance_goals(state, unit, b))),
+        Target::Building(b) => state.building(b).is_some_and(|b| {
+            !contact::passes(unit, b)
+                && reach.reaches(state, id, contact::stance_goals(state, unit, b))
+        }),
     })
 }
 

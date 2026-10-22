@@ -313,6 +313,12 @@ pub(in crate::tick) fn plough_blocker(
         })
 }
 
+/// Whether a wide cutter on a hunt passes `b` by rather than setting out
+/// to cut it: a wall, which it cuts only where it stands in its way.
+pub(in crate::tick) fn passes(unit: &crate::Unit, b: &crate::Building) -> bool {
+    square_cutter(unit.kind) && matches!(unit.order, Order::Hunt { .. }) && b.kind.is_wall()
+}
+
 /// Ranks `b`, met at `point`, among buildings a wide cutter might cut:
 /// nearest first, then by side relative to its heading, so mirrored
 /// cutters choose mirrored buildings.
