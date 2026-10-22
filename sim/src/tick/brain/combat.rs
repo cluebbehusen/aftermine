@@ -1104,9 +1104,10 @@ pub(super) fn acquire_reachable_target(
     }
     acquire_target_within(state, index, id, unit.pos, None, |target| match target {
         Target::Unit(_) => true,
-        Target::Building(b) => state
-            .building(b)
-            .is_some_and(|b| reach.reaches(state, id, contact::stance_goals(state, unit, b))),
+        Target::Building(b) => state.building(b).is_some_and(|b| {
+            !contact::passes(unit, b)
+                && reach.reaches(state, id, contact::stance_goals(state, unit, b))
+        }),
     })
 }
 
@@ -2019,7 +2020,7 @@ pub(super) fn attack(
                 .filter(|b| b.hp > 0 && contact::drum_contact(state, unit, b).is_none())
                 .map(|b| b.anchor),
         }
-        .and_then(|goal| contact::plough_blocker(state, unit, goal))
+        .and_then(|goal| contact::plough_blocker(state, unit, goal, false))
         .map_or(target, Target::Building)
     } else {
         target

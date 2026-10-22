@@ -295,7 +295,12 @@ pub(super) fn fly_run_in(state: &mut State, id: UnitId, goal: TilePos) -> Touchd
 }
 
 /// March toward the goal, but engage anything that shows up on the way;
-/// the attack order remembers the goal and hands it back afterwards.
+/// the attack order remembers the goal and hands it back afterwards. A wide
+/// cutter takes the straight way to its goal through the hostile buildings
+/// it sees, turning to cut the first one in its way that it can meet. Come
+/// as near its goal as open ground allows, it counts ground out of its
+/// sight as open rather than settle short: a wall it has yet to see never
+/// keeps it from cutting into the one before it.
 pub(super) fn hunt(
     state: &mut State,
     index: &super::super::spatial::UnitIndex,
@@ -304,7 +309,19 @@ pub(super) fn hunt(
     goal: Goal,
     events: &mut Vec<Event>,
 ) {
-    if let Some(target) = acquire_reachable_target(state, index, reach, id) {
+    let target = acquire_reachable_target(state, index, reach, id).or_else(|| {
+        let unit = state.unit(id).expect("caller checked");
+        let settling = goal.short() && unit.tile() == goal.destination();
+        super::contact::square_cutter(unit.kind)
+            .then(|| super::contact::plough_blocker(state, unit, goal.target(), settling))
+            .flatten()
+            .filter(|&blocker| {
+                let b = state.building(blocker).expect("live blocker");
+                reach.reaches(state, id, super::contact::stance_goals(state, unit, b))
+            })
+            .map(Target::Building)
+    });
+    if let Some(target) = target {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.order = Order::Attack {
             pursue: false,
