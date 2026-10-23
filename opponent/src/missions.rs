@@ -184,6 +184,9 @@ enum AttackPhase {
     Travel,
     Engage {
         focus: Option<UnitId>,
+        /// What the fight last knew of the enemy, to tell whether it still
+        /// makes progress. `None` until its first decision.
+        tally: Option<attack::Tally>,
     },
     Withdraw,
     Recover,
@@ -464,7 +467,7 @@ impl Task {
                 ..
             }
             | Self::Attack {
-                phase: AttackPhase::Engage { focus },
+                phase: AttackPhase::Engage { focus, .. },
                 ..
             }
             | Self::Lift {

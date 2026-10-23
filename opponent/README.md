@@ -286,17 +286,19 @@ rally near home toward the target's owner, where free units join it while it
 gathers or recovers, travels, and fights; recruits still on their way go along
 once the time to regroup is up. It withdraws to the rally when the enemies it
 knows of around it, remembered or seen, outweigh what it has left, and recovers
-there to go again or disband. Having cleared what it met short of a target it
-knows, such as a line in front of a base, it goes on to shoot that target while
-the fight's time lasts. Having taken its target it pushes on to the next only
-while strong enough for it. A target it withdrew from, could not reach, lost its
-army to, or stood idle beside is skipped for a while. With several enemies,
-attacks, strikes and lifts go after one rival's buildings first: the enemy
-pressing the seat hardest, then the nearest, less the army it shows, with guile
-favoring a small economy and a bonus for the owner of the oldest attack or
-strike's target so the seat does not flip between enemies. The rival is chosen
-once, as each decision begins, so production and investments prepare for the
-enemy its missions go after.
+there to go again or disband. Its fight lasts until three minutes pass without
+progress: the target owner's known buildings losing health, or the health of the
+armed enemy units in sight around the army falling to a new low for the fight.
+Having cleared what it met short of a target it knows, such as a line in front
+of a base, it goes on to shoot that target while the fight's time lasts. Having
+taken its target it pushes on to the next only while strong enough for it. A
+target it withdrew from, could not reach, lost its army to, or stood idle beside
+is skipped for a while. With several enemies, attacks, strikes and lifts go
+after one rival's buildings first: the enemy pressing the seat hardest, then the
+nearest, less the army it shows, with guile favoring a small economy and a bonus
+for the owner of the oldest attack or strike's target so the seat does not flip
+between enemies. The rival is chosen once, as each decision begins, so
+production and investments prepare for the enemy its missions go after.
 
 Above the lowest rung, an army whose way passes the fire of a known defense does
 not walk in as a column. It sets out for a staging spot: the tile on the way
@@ -343,18 +345,18 @@ full once an attack sets out.
 Difficulty changes how well a seat attacks, never what it may do. Veteran and
 Prime count the known defense around a target like more distance, so they go
 after the weakest valuable target; send units freed while an attack travels or
-fights straight to its target; keep a fight they are still winning going past
-its time while an armed enemy remains around the army; and withdraw only once
+fights straight to its target; keep a fight they are still winning going without
+progress while an armed enemy remains around the army; and withdraw only once
 outweighed by a quarter. Standard and Scrapheap leave those units at home until
-the attack regroups, end a fight on time and withdraw at even odds. Guile moves
-either threshold by up to a tenth, sooner for a guileful seat, and attacks,
-clearances, strikes and raids all withdraw by it. Scrapheap also attacks
-piecemeal, several attacks side by side each taking only what its own target
-needs; goes for a Foundry whenever it knows one, however well guarded; walks
-into known defenses as a column, counting only those around its target; and
-misjudges the enemy's strength by up to two fifths either way, a misjudgment
-drawn from its personality seed that holds for 600 ticks, both when setting out
-and when deciding to pull back.
+the attack regroups, end a fight that stops making progress on time and withdraw
+at even odds. Guile moves either threshold by up to a tenth, sooner for a
+guileful seat, and attacks, clearances, strikes and raids all withdraw by it.
+Scrapheap also attacks piecemeal, several attacks side by side each taking only
+what its own target needs; goes for a Foundry whenever it knows one, however
+well guarded; walks into known defenses as a column, counting only those around
+its target; and misjudges the enemy's strength by up to two fifths either way, a
+misjudgment drawn from its personality seed that holds for 600 ticks, both when
+setting out and when deciding to pull back.
 
 An engaged mission focuses its fire: when every member that can hit an enemy
 near it already reaches that enemy in a straight line that terrain does not
