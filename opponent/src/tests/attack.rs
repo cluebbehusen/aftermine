@@ -1174,6 +1174,121 @@ fn an_army_that_cleared_its_way_goes_on_to_the_target_it_knows() {
     }
 }
 
+/// The attack of [`under_way`] fighting since tick 0 at tick 3,600, still
+/// busy, in contact with an East Turret short of its reach and an East
+/// Sentinel short of its aggro, with `tally` as what the fight last knew of
+/// them, offset from what West knows now.
+fn fighting(
+    difficulty: BotDifficulty,
+    tally: Option<(i64, i64)>,
+) -> (Scenario, State, Opponent, Vec<UnitId>) {
+    let mut scenario = advanced(difficulty, &[(UnitKind::Sentinel, 28, 15)]);
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Turret,
+        x: 30,
+        y: 11,
+    });
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 3_588, &[]);
+    let (members, mut missions) =
+        under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+    advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let known = |hp: u32| i64::from(hp);
+    let buildings: i64 = observation
+        .enemy_buildings
+        .iter()
+        .map(|building| known(building.hp))
+        .sum();
+    let units: i64 = observation
+        .enemy_units
+        .iter()
+        .map(|enemy| known(enemy.hp))
+        .sum();
+    assert!(
+        buildings > 0 && units > 0,
+        "premise: both in sight: {buildings} {units}"
+    );
+    if let Some((more_buildings, more_units)) = tally {
+        missions["list"][0]["task"]["phase"]["engage"]["tally"] = serde_json::json!({
+            "buildings": buildings + more_buildings,
+            "units": units + more_units,
+        });
+    }
+    let opponent = restaged(&scenario, &state, missions);
+    (scenario, state, opponent, members)
+}
+
+#[test]
+fn a_fight_goes_on_past_its_time_only_while_it_makes_progress() {
+    for (tally, goes_on, why) in [
+        (Some((1, 0)), true, "a building lost health"),
+        (
+            Some((0, 1)),
+            true,
+            "the units around the army reached a new low",
+        ),
+        (Some((0, 0)), false, "nothing lost"),
+        (Some((-1, -1)), false, "more than before, but no new low"),
+        (None, false, "the fight's first reading"),
+    ] {
+        for difficulty in [BotDifficulty::Scrapheap, BotDifficulty::Standard] {
+            let (_, state, mut opponent, members) = fighting(difficulty, tally);
+            let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+            let mission = attack(&trace.unwrap().missions).unwrap();
+            let ordered = runs(&commands)
+                .into_iter()
+                .chain(hunts(&commands))
+                .any(|(units, _)| units.iter().any(|id| members.contains(id)));
+            if goes_on {
+                assert_eq!(mission.phase, Phase::Engage, "{difficulty:?}: {why}");
+                assert!(!ordered, "{difficulty:?}: {why}: {commands:?}");
+            } else {
+                assert_eq!(mission.phase, Phase::Recover, "{difficulty:?}: {why}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_fight_keeps_the_lowest_units_it_saw_and_resumes_identically() {
+    let (scenario, mut state, mut opponent, _) = fighting(BotDifficulty::Standard, Some((1, -1)));
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    let tally = &json["missions"]["list"][0]["task"]["phase"]["engage"]["tally"];
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let units: u64 = observation
+        .enemy_units
+        .iter()
+        .map(|enemy| u64::from(enemy.hp))
+        .sum();
+    assert_eq!(tally["units"], units - 1, "the low holds");
+    state.tick(&commands);
+    resumes_identically(&mut opponent, &scenario, &mut state, 600);
+}
+
+#[test]
+fn progress_never_holds_an_outweighed_fight() {
+    // Twelve East Sentinels in contact with seven attackers, short of their
+    // aggro: clearly outweighed at any rung.
+    let east: Vec<(UnitKind, i32, i32)> = (28..30)
+        .flat_map(|x| (7..13).map(move |y| (UnitKind::Sentinel, x + i32::from(y % 2 == 0), y)))
+        .collect();
+    let scenario = advanced(BotDifficulty::Prime, &east);
+    let mut state = scenario.build().unwrap();
+    let (_, missions) = under_way(
+        &state,
+        &serde_json::json!({"engage": {"focus": null, "tally": {"buildings": u64::MAX, "units": u64::MAX}}}),
+        0,
+    );
+    advance_to(&mut state, 12, &[]);
+    let mut opponent = restaged(&scenario, &state, missions);
+    let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = attack(&trace.unwrap().missions).unwrap();
+    assert_eq!(mission.phase, Phase::Withdraw);
+}
+
 #[test]
 fn the_upper_rungs_hold_a_fight_they_are_only_slightly_outweighed_in() {
     // Eight East Sentinels in contact with seven attackers, short of their

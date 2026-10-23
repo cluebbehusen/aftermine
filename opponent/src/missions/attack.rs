@@ -26,6 +26,7 @@ use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::{BotDifficulty, BotStance};
 use oxide_sim::stats::Domain;
 use oxide_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Reverse;
 
@@ -632,7 +633,11 @@ fn travel_on(
         .iter()
         .any(|unit| unit.tile.chebyshev(target.approach) <= CONTACT_TILES);
     if arrived || contact(observation, members) {
-        mission.attack_phase(target, AttackPhase::Engage { focus: None }, now, None);
+        let engage = AttackPhase::Engage {
+            focus: None,
+            tally: None,
+        };
+        mission.attack_phase(target, engage, now, None);
         return None;
     }
     if (all_idle || now - mission.since >= TRAVEL_TICKS)
@@ -645,10 +650,11 @@ fn travel_on(
 }
 
 /// Moves a fighting attack on: its idle Sappers and breachers cut the
-/// nearest defense; it withdraws from a losing fight, goes on while it is
-/// still winning one past its time where its seat presses, pushes on to the
-/// next target while strong enough, and otherwise turns home. Returns the
-/// target when it gave up on it.
+/// nearest defense; it withdraws from a losing fight, starts the fight's
+/// time again while it makes progress, goes on while it is still winning one
+/// past its time where its seat presses, pushes on to the next target while
+/// strong enough, and otherwise turns home. Returns the target when it gave
+/// up on it.
 fn engage_on(
     plan: &Plan<'_>,
     mission: &mut Mission,
@@ -659,7 +665,6 @@ fn engage_on(
 ) -> Option<Objective> {
     let observation = plan.observation;
     let now = observation.tick;
-    let age = now - mission.since;
     // Sappers sent at a defense keep that order whatever the rest
     // of the army is told next.
     // Breachers, too, cut the nearest defense when idle, and stay
@@ -702,6 +707,20 @@ fn engage_on(
         }
         return None;
     }
+    // A fight ends once it has gone its time without progress, not after a
+    // fixed time.
+    let tally = Tally::of(observation, members, target.objective().owner);
+    if let Task::Attack {
+        phase: AttackPhase::Engage { tally: last, .. },
+        ..
+    } = &mut mission.task
+    {
+        if last.is_some_and(|last| tally.progresses(last)) {
+            mission.since = now;
+        }
+        *last = Some(last.map_or(tally, |last| tally.since(last)));
+    }
+    let age = now - mission.since;
     if !all_idle && age < ENGAGE_TICKS {
         return None;
     }
@@ -759,6 +778,55 @@ fn engage_on(
         }
     }
     None
+}
+
+/// What a fight knows of the enemy it fights: the health of the target
+/// owner's known buildings at its last decision, and the least health of
+/// the armed enemy units in sight around the army at any of its decisions.
+/// Buildings stay where they stand, so any loss of their health is progress;
+/// units step in and out of sight, so only a new low is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Tally {
+    buildings: u64,
+    units: u64,
+}
+
+impl Tally {
+    /// The enemy around `members` now, in a fight against `owner`.
+    fn of(observation: &ObservationData, members: &[&UnitObs], owner: PlayerId) -> Self {
+        let buildings = observation
+            .enemy_buildings
+            .iter()
+            .filter(|building| building.player == owner)
+            .map(|building| u64::from(building.hp))
+            .sum();
+        let units = observation
+            .enemy_units
+            .iter()
+            .filter(|enemy| {
+                enemy.kind.stats().can_fight()
+                    && members
+                        .iter()
+                        .any(|unit| unit.tile.chebyshev(enemy.tile) <= CONTACT_TILES)
+            })
+            .map(|enemy| u64::from(enemy.hp))
+            .sum();
+        Self { buildings, units }
+    }
+
+    /// Whether the fight made progress since `last`.
+    fn progresses(self, last: Self) -> bool {
+        self.buildings < last.buildings || self.units < last.units
+    }
+
+    /// What the fight knows after this decision, having known `last`.
+    fn since(self, last: Self) -> Self {
+        Self {
+            buildings: self.buildings,
+            units: self.units.min(last.units),
+        }
+    }
 }
 
 /// Whether an attack in `phase` has left home: on its way, staging or

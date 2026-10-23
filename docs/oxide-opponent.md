@@ -149,8 +149,10 @@ other non-derivable state persists between decisions:
 - memory of enemy units and buildings, of failed objectives, of raided targets,
   of when each scouting point was last in sight, and of own units whose orders
   stalled for want of a route or a firing position;
-- missions and their phases, and since when a free army that could attack has
-  waited, which lowers the margin an attack must bring until it sets out;
+- missions and their phases, what a fighting attack last knew of the enemy's
+  health, which tells whether the fight still makes progress, and since when a
+  free army that could attack has waited, which lowers the margin an attack must
+  bring until it sets out;
 - the saving target; the investment list is rebuilt each decision;
 - the previous bank and spending used to estimate income, and the smoothed
   estimate;
@@ -216,6 +218,7 @@ Each behavior is proven by a staged scenario test.
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                                                                                         |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                                                                                      |
 | Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                    |
+| Fight still making progress                                | Fight on; a fight ends once three minutes pass without the enemy losing building health or armed units around the army                                                                                               |
 | Won a defense with army left                               | Counterattack if the attack check passes                                                                                                                                                                             |
 | Enemy artillery shelling assets                            | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                                                                                 |
 | Assets under indirect fire                                 | Go for the guns, not the spotters overhead                                                                                                                                                                           |
@@ -265,7 +268,8 @@ kind.
   rungs attack piecemeal, pick targets worse, walk into known defenses as a
   column or gather short of them only briefly, count only the defenses around a
   target, let a defense call back an army on its way, focus fire on the nearest
-  enemy or by a rough read of its wounds, leave reinforcements at home, end
-  fights on time while winning, withdraw at even odds, and lift without a fresh
-  look or without counting bomber cover. Every rung keeps every capability.
-  Lower rungs make understandable mistakes, and higher rungs beat lower ones.
+  enemy or by a rough read of its wounds, leave reinforcements at home, end a
+  fight that stops making progress on time even while winning, withdraw at even
+  odds, and lift without a fresh look or without counting bomber cover. Every
+  rung keeps every capability. Lower rungs make understandable mistakes, and
+  higher rungs beat lower ones.
