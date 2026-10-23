@@ -871,15 +871,7 @@ fn repair_bay_aura(
             if step == 0 {
                 continue;
             }
-            let basis = if target.kind == BuildingKind::Foundry {
-                crate::stats::FOUNDRY_REPAIR_PRICE
-            } else {
-                stats
-                    .construction
-                    .map_or(crate::stats::FOUNDRY_REPAIR_PRICE, |construction| {
-                        construction.cost
-                    })
-            };
+            let basis = target.kind.repair_basis(target.tier);
             let millis = |hp: u32| -> u64 {
                 u64::from(hp) * u64::from(basis) * crate::stats::REPAIR_COST_PERMILLE
                     / u64::from(stats.max_hp)

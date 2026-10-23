@@ -177,6 +177,24 @@ impl Memory {
         &self.units
     }
 
+    /// Enemy units in sight on the tile they were last seen on, by id. Read
+    /// before this look refreshes the memory, they are those standing still
+    /// since the last.
+    pub(crate) fn standing(&self, observation: &ObservationData) -> Vec<UnitId> {
+        let mut still: Vec<UnitId> = observation
+            .enemy_units
+            .iter()
+            .filter(|unit| {
+                self.units
+                    .binary_search_by_key(&unit.id, |known| known.id)
+                    .is_ok_and(|index| self.units[index].tile == unit.tile)
+            })
+            .map(|unit| unit.id)
+            .collect();
+        still.sort_unstable();
+        still
+    }
+
     /// Remembers that `kind` could not be claimed at `anchor`.
     pub(crate) fn fail(&mut self, kind: BuildingKind, anchor: TilePos, now: u64) {
         record(&mut self.failures, kind, anchor, now);
