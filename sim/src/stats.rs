@@ -675,6 +675,19 @@ impl BuildingKind {
             .sum()
     }
 
+    /// Scrap a weld on a building at `tier` bills against: the active
+    /// tier's construction price, or [`FOUNDRY_REPAIR_PRICE`] for the
+    /// Foundry, whose construction price would inflate the bill for the
+    /// victory structure.
+    pub fn repair_basis(self, tier: u8) -> u32 {
+        if self == BuildingKind::Foundry {
+            return FOUNDRY_REPAIR_PRICE;
+        }
+        self.tier_stats(tier)
+            .construction
+            .map_or(FOUNDRY_REPAIR_PRICE, |construction| construction.cost)
+    }
+
     /// The upgrade that would lift a building at `tier` one rung, if
     /// the ladder continues: the next tier's construction row.
     pub fn upgrade_from(self, tier: u8) -> Option<&'static ConstructionStats> {

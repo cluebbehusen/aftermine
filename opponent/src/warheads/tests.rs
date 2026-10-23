@@ -50,9 +50,10 @@ fn owned(kind: BuildingKind, x: i32, y: i32) -> Mark {
     })
 }
 
-/// The repair bill for `missing` health of a building `paid` buys back.
-fn bill(paid: u64, missing: u32, max: u32) -> u64 {
-    paid * u64::from(missing) * stats::REPAIR_COST_PERMILLE / (1000 * u64::from(max))
+/// The repair bill for `missing` health of a building whose weld bills
+/// against `basis`.
+fn bill(basis: u64, missing: u32, max: u32) -> u64 {
+    basis * u64::from(missing) * stats::REPAIR_COST_PERMILLE / (1000 * u64::from(max))
 }
 
 #[test]
@@ -69,6 +70,35 @@ fn a_hit_costs_its_repair_bill_and_a_kill_the_rebuild_less_the_repair_owed() {
     assert_eq!(
         recovered(&[worn], &[], TilePos::new(10, 10), 1),
         [paid - bill(paid, max - 400, max)]
+    );
+}
+
+#[test]
+fn a_hit_bills_the_weld_the_simulation_charges_and_not_the_price_paid() {
+    let foundry = owned(BuildingKind::Foundry, 10, 10);
+    let max = BuildingKind::Foundry.base_stats().max_hp;
+    let taken = BuildingKind::Foundry.warhead_taken(WARHEAD.peak_damage);
+    let basis = u64::from(stats::FOUNDRY_REPAIR_PRICE);
+    assert_eq!(
+        recovered(&[foundry], &[], TilePos::new(11, 11), 1),
+        [bill(basis, taken, max)]
+    );
+    let bore = Mark::of(&BuildingObs {
+        kind: BuildingKind::Extractor,
+        tier: 1,
+        hp: BuildingKind::Extractor.tier_stats(1).max_hp,
+        ..crucible(10, 10)
+    });
+    let max = BuildingKind::Extractor.tier_stats(1).max_hp;
+    let basis = BuildingKind::Extractor
+        .tier_stats(1)
+        .construction
+        .unwrap()
+        .cost;
+    assert_ne!(u64::from(basis), bore.paid, "the upgrade alone bills");
+    assert_eq!(
+        recovered(&[bore], &[], TilePos::new(10, 10), 1),
+        [bill(u64::from(basis), WARHEAD.peak_damage.min(max), max)]
     );
 }
 
@@ -136,4 +166,47 @@ fn a_seat_s_only_known_foundry_carries_all_else_it_is_known_to_hold() {
     let crucible = u64::from(BuildingKind::Crucible.invested_cost(0));
     let lancer = u64::from(UnitKind::Lancer.stats().cost);
     assert_eq!(marks[0].extra, 2 * crucible + lancer);
+}
+
+#[test]
+fn the_volley_that_ends_a_seat_counts_nothing_else_of_it_from_the_fall_on() {
+    let mut marks = [
+        owned(BuildingKind::Foundry, 10, 10),
+        owned(BuildingKind::Crucible, 13, 10),
+    ];
+    recovery(&mut marks, &[]);
+    let tile = TilePos::new(11, 11);
+    let worth =
+        u64::from(BuildingKind::Foundry.invested_cost(0) + BuildingKind::Crucible.invested_cost(0));
+    let foundry = |hits: u32| {
+        bill(
+            u64::from(stats::FOUNDRY_REPAIR_PRICE),
+            hits * BuildingKind::Foundry.warhead_taken(WARHEAD.peak_damage),
+            BuildingKind::Foundry.base_stats().max_hp,
+        )
+    };
+    let crucible = u64::from(BuildingKind::Crucible.invested_cost(0));
+    let max = BuildingKind::Crucible.base_stats().max_hp;
+    let struck = bill(crucible, WARHEAD.peak_damage, max);
+    assert_eq!(
+        recovered(&marks, &[], tile, 4),
+        [
+            foundry(1) + struck,
+            foundry(2) + crucible,
+            foundry(3) + crucible,
+            worth,
+        ]
+    );
+    let body = Body {
+        kind: UnitKind::Excavator,
+        owner: oxide_sim::PlayerId(1),
+        tile: TilePos::new(12, 13),
+        hp: UnitKind::Excavator.stats().max_hp,
+    };
+    let (alone, beside) = (
+        recovered(&marks, &[], tile, 4),
+        recovered(&marks, &[body], tile, 4),
+    );
+    assert!(beside[0] > alone[0], "a unit counts until the seat falls");
+    assert_eq!(beside[3], alone[3], "and is the seat's from then on");
 }

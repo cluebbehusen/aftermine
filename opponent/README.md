@@ -491,10 +491,11 @@ taken. Felling a building also costs the income it stops until it stands again,
 with the Extractors only that Foundry supported falling to remote yield, and the
 rounds it held. An owner's only known Foundry carries instead the rest of what
 that seat is known to hold, buildings and units, since a seat with no Foundry is
-out. A Lattice carries a full magazine of rounds when something in its ring
-would be worth a warhead without it, and a Spire what one of its warheads could
-cost the seat where no own Lattice holding a round guards it. A standing unit
-costs its price when felled and its repair bill otherwise.
+out, and nothing else of that seat counts from the warhead that fells it. A
+Lattice carries a full magazine of rounds when something in its ring would be
+worth a warhead without it, and a Spire what one of its warheads could cost the
+seat where no own Lattice holding a round guards it. A standing unit costs its
+price when felled and its repair bill otherwise.
 
 Known hostile Lattices whose ring holds the tile count their loaded interceptors
 when seen and a full magazine when remembered. A volley is worth firing when

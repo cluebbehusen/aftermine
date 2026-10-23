@@ -269,6 +269,29 @@ fn units_seen_standing_still_draw_a_strike_and_units_on_the_move_do_not() {
 }
 
 #[test]
+fn units_a_warhead_already_flying_will_fell_draw_no_second_strike() {
+    let mut scenario = strikes(&[(6, 14), (6, 17)], &[(32, 8)], &[], &[(31, 4)]);
+    scenario
+        .units
+        .extend(PARK.map(|(x, y)| unit(1, UnitKind::Excavator, x, y)));
+    let mut opponent = seat(&scenario, 0);
+    let mut state = staged(&scenario, 0);
+    assert!(launches(&opponent.act(&state, &mut OwnEvents::default())).is_empty());
+    advance_to(&mut state, 24, &[]);
+    let fired: Vec<PlayerCommand> = opponent
+        .act(&state, &mut OwnEvents::default())
+        .into_iter()
+        .filter(|command| matches!(command.command, Command::Launch { .. }))
+        .collect();
+    assert_eq!(launches(&fired).len(), 1, "one warhead fells them all");
+    advance_to(&mut state, 36, &fired);
+    assert!(
+        launches(&opponent.act(&state, &mut OwnEvents::default())).is_empty(),
+        "the warhead in flight already takes them"
+    );
+}
+
+#[test]
 fn a_lattice_over_works_worth_a_strike_is_struck_and_a_lone_one_is_not() {
     let lattice = [(BuildingKind::Lattice, 36, 9)];
     let spires = [(6, 14), (6, 17), (9, 14)];

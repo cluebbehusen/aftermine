@@ -268,22 +268,16 @@ impl BuildingWeld {
         // basis are the Bulwark's, not the base Turret's.
         let stats = kind.tier_stats(tier);
         // The welding rate is the construction ramp, except for the Foundry,
-        // which uses its own ramp and billing basis so its construction price
-        // does not inflate the repair bill for the victory structure.
-        let (ramp_ticks, basis) = if kind == crate::stats::BuildingKind::Foundry {
-            (
-                crate::stats::FOUNDRY_REPAIR_TICKS,
-                crate::stats::FOUNDRY_REPAIR_PRICE,
-            )
+        // which uses its own ramp so its build time does not set the pace
+        // of repairing the victory structure.
+        let ramp_ticks = if kind == crate::stats::BuildingKind::Foundry {
+            crate::stats::FOUNDRY_REPAIR_TICKS
         } else {
-            stats.construction.map_or(
-                (
-                    crate::stats::FOUNDRY_REPAIR_TICKS,
-                    crate::stats::FOUNDRY_REPAIR_PRICE,
-                ),
-                |c| (c.build_ticks, c.cost),
-            )
+            stats
+                .construction
+                .map_or(crate::stats::FOUNDRY_REPAIR_TICKS, |c| c.build_ticks)
         };
+        let basis = kind.repair_basis(tier);
         let start_hp = stats.max_hp / 5;
         Self {
             ramp: stats.max_hp - start_hp,

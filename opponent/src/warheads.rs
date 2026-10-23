@@ -30,11 +30,15 @@ pub(crate) struct Mark {
     max_hp: u32,
     /// Scrap paid for it, upgrades included.
     paid: u64,
+    /// Scrap a weld bills against.
+    basis: u64,
     /// Rounds it could spend now (see [`rounds`]).
     rounds: u64,
     /// Scrap losing it costs its owner beyond the rebuild (see [`recovery`]
     /// and [`stakes`]).
     extra: u64,
+    /// Its owner's only known Foundry: losing it ends the seat.
+    last: bool,
 }
 
 impl Mark {
@@ -48,8 +52,10 @@ impl Mark {
             hp: building.hp,
             max_hp: building.kind.tier_stats(building.tier).max_hp,
             paid: u64::from(building.kind.invested_cost(building.tier)),
+            basis: u64::from(building.kind.repair_basis(building.tier)),
             rounds: 0,
             extra: 0,
+            last: false,
         }
     }
 
@@ -94,24 +100,27 @@ impl Mark {
             self.max_hp.saturating_sub(self.hp)
         };
         let after = if hp == 0 { 0 } else { hp + unbuilt };
-        loss(self.paid, self.extra, self.max_hp, self.hp + unbuilt, after)
+        let bill = |hp| repair(self.basis, self.max_hp, hp);
+        loss(self.paid + self.extra, bill, self.hp + unbuilt, after)
     }
 }
 
-/// What recovering from health falling from `before` to `after` of `max`
-/// costs, for something `paid` buys back and whose loss costs `extra` more:
-/// the rebuild and that loss, less the repair already owed, when it falls;
-/// the added repair bill when it survives.
-fn loss(paid: u64, extra: u64, max: u32, before: u32, after: u32) -> u64 {
-    let bill = |hp: u32| {
-        paid * u64::from(max.saturating_sub(hp)) * stats::REPAIR_COST_PERMILLE
-            / (1000 * u64::from(max.max(1)))
-    };
+/// What recovering from health falling from `before` to `after` costs, for
+/// something whose fall costs `fallen` and whose repair from a health costs
+/// `bill`: the fall less the repair already owed when it falls, the added
+/// repair bill when it survives.
+fn loss(fallen: u64, bill: impl Fn(u32) -> u64, before: u32, after: u32) -> u64 {
     if after == 0 {
-        paid + extra - bill(before)
+        fallen.saturating_sub(bill(before))
     } else {
         bill(after) - bill(before)
     }
+}
+
+/// What welding back up to `max` from `hp` bills, at `basis` for the whole.
+fn repair(basis: u64, max: u32, hp: u32) -> u64 {
+    basis * u64::from(max.saturating_sub(hp)) * stats::REPAIR_COST_PERMILLE
+        / (1000 * u64::from(max.max(1)))
 }
 
 /// An enemy unit seen standing still, which a warhead aimed now would find
@@ -119,7 +128,9 @@ fn loss(paid: u64, extra: u64, max: u32, before: u32, after: u32) -> u64 {
 #[derive(Clone, Copy)]
 struct Body {
     kind: UnitKind,
+    owner: PlayerId,
     tile: TilePos,
+    /// Health left once warheads already flying land.
     hp: u32,
 }
 
@@ -134,7 +145,8 @@ impl Body {
     /// What its owner must find to recover once its health falls to `hp`.
     fn lost(&self, hp: u32) -> u64 {
         let stats = self.kind.stats();
-        loss(u64::from(stats.cost), 0, stats.max_hp, self.hp, hp)
+        let cost = u64::from(stats.cost);
+        loss(cost, |hp| repair(cost, stats.max_hp, hp), self.hp, hp)
     }
 }
 
@@ -181,8 +193,29 @@ fn recovered(marks: &[Mark], bodies: &[Body], tile: TilePos, hits: usize) -> Vec
     let mut totals = vec![0; hits];
     let from = marks.partition_point(|mark| mark.anchor.x < tile.x - BLAST_COLUMNS);
     let to = marks.partition_point(|mark| mark.anchor.x <= tile.x + BLAST_COLUMNS);
-    for mark in &marks[from..to.max(from)] {
-        fall(&mut totals, mark.hp, mark.taken(impact), |hp| mark.lost(hp));
+    let marks = &marks[from..to.max(from)];
+    // A seat's last known Foundry falling costs its owner everything it
+    // holds, already in that Foundry's loss, so nothing else of that owner
+    // counts from the warhead that fells it on.
+    let ended: Vec<(PlayerId, usize)> = marks
+        .iter()
+        .filter(|mark| mark.last)
+        .filter_map(|mark| {
+            let taken = mark.taken(impact);
+            let felled = usize::try_from(mark.hp.div_ceil(taken.max(1))).ok()?;
+            (taken > 0 && felled <= hits).then_some((mark.owner, felled - 1))
+        })
+        .collect();
+    let until = |owner: PlayerId| {
+        ended
+            .iter()
+            .find(|(ender, _)| *ender == owner)
+            .map_or(hits, |(_, at)| *at)
+    };
+    for mark in marks {
+        let counted = if mark.last { hits } else { until(mark.owner) };
+        let totals = &mut totals[..counted];
+        fall(totals, mark.hp, mark.taken(impact), |hp| mark.lost(hp));
     }
     // A hull is struck from its edge, so the blast reaches the widest one
     // that much further.
@@ -192,7 +225,8 @@ fn recovered(marks: &[Mark], bodies: &[Body], tile: TilePos, hits: usize) -> Vec
     let from = bodies.partition_point(|body| body.tile.x < tile.x - reach);
     let to = bodies.partition_point(|body| body.tile.x <= tile.x + reach);
     for body in &bodies[from..to.max(from)] {
-        fall(&mut totals, body.hp, body.taken(impact), |hp| body.lost(hp));
+        let totals = &mut totals[..until(body.owner)];
+        fall(totals, body.hp, body.taken(impact), |hp| body.lost(hp));
     }
     totals
 }
@@ -249,8 +283,10 @@ fn marks(observation: &ObservationData, map: &MapModel) -> Vec<Mark> {
                 hp: foundry.max_hp,
                 max_hp: foundry.max_hp,
                 paid: u64::from(BuildingKind::Foundry.invested_cost(0)),
+                basis: u64::from(BuildingKind::Foundry.repair_basis(0)),
                 rounds: 0,
                 extra: 0,
+                last: false,
             });
         }
     }
@@ -304,7 +340,7 @@ fn recovery(marks: &mut [Mark], units: &[UnitObs]) {
             })
             .count()
     };
-    let extras: Vec<u64> = marks
+    let extras: Vec<(u64, bool)> = marks
         .iter()
         .map(|mark| {
             let (_, foundries, worth) = seats
@@ -313,10 +349,10 @@ fn recovery(marks: &mut [Mark], units: &[UnitObs]) {
                 .copied()
                 .expect("every mark's owner is counted");
             if mark.kind == BuildingKind::Foundry && foundries == 1 {
-                return worth - mark.paid;
+                return (worth - mark.paid, true);
             }
             let down = rebuild_ticks(mark.kind, mark.tier);
-            match mark.kind {
+            let extra = match mark.kind {
                 BuildingKind::Extractor => {
                     yields(mark.tier, supporters(mark.owner, mark.anchor) > 0, down)
                 }
@@ -342,11 +378,13 @@ fn recovery(marks: &mut [Mark], units: &[UnitObs]) {
                 }
                 BuildingKind::Spire => mark.rounds * price(1),
                 _ => 0,
-            }
+            };
+            (extra, false)
         })
         .collect();
-    for (mark, extra) in marks.iter_mut().zip(extras) {
+    for (mark, (extra, last)) in marks.iter_mut().zip(extras) {
         mark.extra = extra;
+        mark.last = last;
     }
 }
 
@@ -646,10 +684,22 @@ fn bodies(observation: &ObservationData, still: &[UnitId]) -> Vec<Body> {
         .filter(|unit| still.binary_search(&unit.id).is_ok())
         .map(|unit| Body {
             kind: unit.kind,
+            owner: unit.player,
             tile: unit.tile,
             hp: unit.hp,
         })
         .collect();
+    for line in observation
+        .warheads
+        .iter()
+        .filter(|warhead| !warhead.hostile)
+        .filter_map(|warhead| warhead.line)
+    {
+        for body in &mut bodies {
+            body.hp -= body.taken(line.impact).min(body.hp);
+        }
+    }
+    bodies.retain(|body| body.hp > 0);
     bodies.sort_by_key(|body| (body.tile.x, body.tile.y));
     bodies
 }
