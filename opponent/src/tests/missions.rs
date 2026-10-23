@@ -44,6 +44,42 @@ fn a_ground_threat_draws_the_nearest_sufficient_defenders() {
 }
 
 #[test]
+fn a_defense_takes_an_attack_gathering_at_home_last() {
+    let scenario = raided(
+        &[
+            (UnitKind::Sentinel, 5, 8),
+            (UnitKind::Sentinel, 6, 8),
+            (UnitKind::Sentinel, 10, 1),
+            (UnitKind::Sentinel, 11, 1),
+        ],
+        &[(UnitKind::Sentinel, 9, 5)],
+    );
+    let state = scenario.build().unwrap();
+    let mut gathering = vec![at(&state, 5, 8), at(&state, 6, 8)];
+    gathering.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 19, "y": 5}},
+                    "phase": "gather",
+                },
+                "since": 0,
+                "units": gathering,
+                "goal": {"x": 7, "y": 8},
+            }],
+        });
+    });
+    let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mut far = vec![at(&state, 10, 1), at(&state, 11, 1)];
+    far.sort_unstable();
+    assert_eq!(hunts(&commands), [(far, TilePos::new(9, 5))]);
+}
+
+#[test]
 fn a_sapper_walking_at_the_foundry_draws_defenders() {
     let scenario = raided(
         &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 10, 1)],

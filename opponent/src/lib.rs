@@ -188,5 +188,12 @@ pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
     }
 }
 
+/// Whether a seat takes the safe Extractor frames on its own half before it
+/// saves for tech. Scrapheap saves for tech first. A difficulty limit on macro
+/// competence.
+pub(crate) fn extractors_first(difficulty: BotDifficulty) -> bool {
+    difficulty != BotDifficulty::Scrapheap
+}
+
 #[cfg(test)]
 mod tests;

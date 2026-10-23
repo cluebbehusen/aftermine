@@ -120,7 +120,8 @@ the running total and mission state.
   free unit, and other missions take only the force they need. A mission keeps
   its force while its purpose holds, and releases it when the purpose disappears
   or recovery finishes. At a safe transition it can yield suitable units to an
-  emergency; loaded passengers are released only after landing.
+  emergency, though an attack regrouping at home yields its units only after
+  other suitable units; loaded passengers are released only after landing.
 - Missions have phases (gather, advance, stage, travel, engage, withdraw,
   recover; load, fly, land, fight) and hysteresis, so repeated scoring does not
   turn each decision into a new plan.
@@ -149,7 +150,7 @@ other non-derivable state persists between decisions:
   of when each scouting point was last in sight, and of own units whose orders
   stalled for want of a route or a firing position;
 - missions and their phases, and since when a free army that could attack has
-  waited, which lowers the margin an attack must bring;
+  waited, which lowers the margin an attack must bring until it sets out;
 - the saving target; the investment list is rebuilt each decision;
 - the previous bank and spending used to estimate income, and the smoothed
   estimate;
@@ -214,6 +215,7 @@ Each behavior is proven by a staged scenario test.
 | Ground-severed enemy                                       | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire                                                                |
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                                                                                         |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                                                                                      |
+| Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                    |
 | Won a defense with army left                               | Counterattack if the attack check passes                                                                                                                                                                             |
 | Enemy artillery shelling assets                            | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                                                                                 |
 | Assets under indirect fire                                 | Go for the guns, not the spotters overhead                                                                                                                                                                           |
@@ -256,8 +258,9 @@ kind.
   is its attention; how much strength an attack must bring over the known
   defense; and how fully it builds its economy: lower rungs staff their scrap
   nodes more thinly and want each kind of growth less, though never so little
-  that they stop growing. The lowest rung also misjudges the enemy's strength by
-  a deterministic draw from its seed. Memory fades at the same rate on every
+  that they stop growing. The lowest rung also saves for tech before it takes
+  the safe Extractor frames on its own half, and misjudges the enemy's strength
+  by a deterministic draw from its seed. Memory fades at the same rate on every
   rung. Difficulty also sets how well a seat carries out its repertoire: lower
   rungs attack piecemeal, pick targets worse, walk into known defenses as a
   column or gather short of them only briefly, count only the defenses around a

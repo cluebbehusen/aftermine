@@ -64,8 +64,8 @@ pub(crate) struct Missions {
     /// The id the next mission takes.
     next: u64,
     list: Vec<Mission>,
-    /// Since when a free army that could attack has not, or production has
-    /// sat idle, with no attack launching.
+    /// Since when a free army that could attack has not set out, an attack
+    /// has gathered at home, or production has sat idle.
     waiting: Option<u64>,
 }
 

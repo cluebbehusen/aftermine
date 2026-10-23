@@ -286,12 +286,14 @@ rally near home toward the target's owner, where free units join it while it
 gathers or recovers, travels, and fights; recruits still on their way go along
 once the time to regroup is up. It withdraws to the rally when the enemies it
 knows of around it, remembered or seen, outweigh what it has left, and recovers
-there to go again or disband. Having taken its target it pushes on to the next
-only while strong enough for it. A target it withdrew from, could not reach,
-lost its army to, or stood idle beside is skipped for a while. With several
-enemies, attacks, strikes and lifts go after one rival's buildings first: the
-enemy pressing the seat hardest, then the nearest, less the army it shows, with
-guile favoring a small economy and a bonus for the owner of the oldest attack or
+there to go again or disband. Having cleared what it met short of a target it
+knows, such as a line in front of a base, it goes on to shoot that target while
+the fight's time lasts. Having taken its target it pushes on to the next only
+while strong enough for it. A target it withdrew from, could not reach, lost its
+army to, or stood idle beside is skipped for a while. With several enemies,
+attacks, strikes and lifts go after one rival's buildings first: the enemy
+pressing the seat hardest, then the nearest, less the army it shows, with guile
+favoring a small economy and a bonus for the owner of the oldest attack or
 strike's target so the seat does not flip between enemies. The rival is chosen
 once, as each decision begins, so production and investments prepare for the
 enemy its missions go after.
@@ -332,9 +334,11 @@ no fighting member sends its defenders home and ends.
 
 Badly wounded members leave between fights and run to the rally. A defense may
 take the attack's units while it gathers, withdraws or recovers, and at the
-lowest rung also while it travels out of contact. While a free army that could
-attack does not, or every producer sits idle, the margin for the next attack
-falls step by step toward even.
+lowest rung also while it travels out of contact; it takes those of an attack
+gathering or recovering only after other suitable units. While a free army that
+could attack does not, an attack gathers, or every producer sits idle, the
+margin an attack must bring falls step by step toward even, and it returns to
+full once an attack sets out.
 
 Difficulty changes how well a seat attacks, never what it may do. Veteran and
 Prime count the known defense around a target like more distance, so they go
@@ -678,7 +682,10 @@ and personality set the scores. Difficulty shrinks what growth scores past the
 bar for adoption, so lower rungs expand, claim frames, add Reclaimers, upgrade
 them and the Extractors, and add producers in the same order but later against
 everything else they want: Scrapheap keeps half of that excess, Standard seven
-tenths, Veteran 85% and Prime all of it.
+tenths, Veteran 85% and Prime all of it. Above the lowest rung, while a free
+frame on the seat's own half of its home ground has no known danger near it,
+tech scores below the best such frame by the margin that switches a saving
+target, unless the seat's ground reaches no enemy.
 
 An expansion site's value weighs the scrap it still holds and its free frames,
 up with greed, against its ground distance from home, how much nearer a hostile
