@@ -477,16 +477,30 @@ withdraw.
 
 ## Warheads
 
-The seat values a warhead on each footprint tile of every known hostile
-building, seen, remembered or public, and on a hostile start it has never seen
-as the Foundry there: the scrap paid for each building times the share of its
-known health the simulation's own falloff and resistance would take there, after
-what the team's warheads already flying will take. Known hostile Lattices whose
-ring holds the tile count their loaded interceptors when seen and a full
-magazine when remembered. A volley is worth firing when the warheads that get
-past those interceptors, together with the price of the interceptors it draws,
-take at least the price of every round it spends: the defender pays again for
-each interceptor it fires.
+The seat values a warhead by what it would cost the owners of everything it hits
+to recover. It aims at each footprint tile of every known hostile building,
+seen, remembered or public, and at a hostile start it has never seen as the
+Foundry there. When firing, the blast also counts each enemy unit in sight
+standing on the tile where the seat last saw it; units in the open are no aim of
+their own, since they walk off before a warhead lands. The simulation's own
+falloff, resistance and hull reach measure what each warhead deals, after what
+the team's warheads already flying will take. A building it fells costs its
+price less the repair already owed, and a site its whole price; one it damages
+costs the repair bill for the health it loses, and a site only for the health
+taken. Felling a building also costs the income it stops until it stands again,
+with the Extractors only that Foundry supported falling to remote yield, and the
+rounds it held. An owner's only known Foundry carries instead the rest of what
+that seat is known to hold, buildings and units, since a seat with no Foundry is
+out. A Lattice carries a full magazine of rounds when something in its ring
+would be worth a warhead without it, and a Spire what one of its warheads could
+cost the seat where no own Lattice holding a round guards it. A standing unit
+costs its price when felled and its repair bill otherwise.
+
+Known hostile Lattices whose ring holds the tile count their loaded interceptors
+when seen and a full magazine when remembered. A volley is worth firing when
+what the warheads that get past those interceptors cost to recover, together
+with the price of the interceptors it draws, is at least the price of every
+round it spends: the defender pays again for each interceptor it fires.
 
 Loaded Spires with no strike pending launch at such a volley: Veteran and Prime
 at the one that takes the most beyond its price, Scrapheap and Standard at the
@@ -494,14 +508,15 @@ worthy aim nearest home, each with the fewest Spires that get through, the
 Spires nearest the aim firing. A volley is one unit order against the decision's
 allowance, however many Spires fire. Otherwise loaded Spires hold.
 
-Once a Crucible stands and a known strike is worth a round, the seat wants a
-Spire, upgrading its own supported Extractor nearest home into a Deep Bore first
-when it lacks one; a round for each empty Spire once, with the others stocked,
-it could land one where it is worth it; and another Spire when every Spire is
-stocked or going up and known interceptors over every worthy aim match the
-Spires it has. Siege weighs them, each more the more its best strike takes, and
-income scales them as it does the Crucible. Rounds are saved for like any
-investment and ordered once the bank covers one. Autofill stays as each kind
+Once a Crucible stands and a known volley on buildings, of up to as many
+warheads as the toughest building takes to fall, is worth its rounds and the
+Spires the seat would still have to build for it, the seat wants a Spire,
+upgrading its own supported Extractor nearest home into a Deep Bore first when
+it lacks one; a round for every empty Spire; and another Spire when every Spire
+is stocked or going up and fewer than that volley needs. Units move on, so only
+buildings justify buying. Siege weighs them, each more the more its best strike
+takes, and income scales them as it does the Crucible. Rounds are saved for like
+any investment and ordered once the bank covers one. Autofill stays as each kind
 starts: Lattices reload on their own and Spires do not. Every worker keeps idle
 welding on.
 

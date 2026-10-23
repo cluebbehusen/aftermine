@@ -352,6 +352,7 @@ pub(crate) fn decide(
     let home = map
         .start(observation.me)
         .and_then(|start| map.component(start));
+    let still = persistent.memory.standing(observation);
     persistent.memory.assembled(observation, events, |owner| {
         map.hostile(observation.me, owner)
     });
@@ -661,7 +662,14 @@ pub(crate) fn decide(
     ) {
         persistent.memory.raid(kind, anchor, tick);
     }
-    crate::warheads::fire(observation, map, frame, profile.difficulty, &mut ledger);
+    crate::warheads::fire(
+        observation,
+        map,
+        frame,
+        profile.difficulty,
+        &still,
+        &mut ledger,
+    );
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);

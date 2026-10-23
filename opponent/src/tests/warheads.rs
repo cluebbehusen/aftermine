@@ -231,6 +231,135 @@ fn mirrored_seats_strike_mirrored_aims() {
     assert_eq!(mirror(&state, west), east);
 }
 
+/// Four East Excavators packed beside an East Crucible, where one warhead
+/// on the Crucible fells them all.
+const PARK: [(i32, i32); 4] = [(30, 8), (31, 8), (30, 9), (31, 9)];
+
+/// The launches of West's second decision, with its one loaded Spire having
+/// seen a lone East Crucible, too little for a round, and East's Excavators
+/// at `first` one decision before and at `second` now.
+fn parked(first: [(i32, i32); 4], second: [(i32, i32); 4]) -> Vec<(BuildingId, TilePos)> {
+    let staging = |spots: [(i32, i32); 4]| {
+        let mut scenario = strikes(&[(6, 14)], &[(32, 8)], &[], &[(31, 4)]);
+        scenario
+            .units
+            .extend(spots.map(|(x, y)| unit(1, UnitKind::Excavator, x, y)));
+        scenario
+    };
+    let (before, after) = (staging(first), staging(second));
+    let mut opponent = seat(&before, 0);
+    let state = staged(&before, 0);
+    assert!(
+        launches(&opponent.act(&state, &mut OwnEvents::default())).is_empty(),
+        "units seen once may be on the move"
+    );
+    let mut state = staged(&after, 0);
+    advance_to(&mut state, 24, &[]);
+    launches(&opponent.act(&state, &mut OwnEvents::default()))
+}
+
+#[test]
+fn units_seen_standing_still_draw_a_strike_and_units_on_the_move_do_not() {
+    let fired = parked(PARK, PARK);
+    assert!(
+        fired.len() == 1 && on(&[(32, 8)], fired[0].1),
+        "the Crucible, for what stands beside it: {fired:?}"
+    );
+    assert!(parked(PARK, PARK.map(|(x, y)| (x - 4, y))).is_empty());
+}
+
+#[test]
+fn a_lattice_over_works_worth_a_strike_is_struck_and_a_lone_one_is_not() {
+    let lattice = [(BuildingKind::Lattice, 36, 9)];
+    let spires = [(6, 14), (6, 17), (9, 14)];
+    let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11);
+    let guarding = strikes(&spires, &BLOCK, &lattice, &[(31, 5)]);
+    let fired = launches(&decide(&guarding, &staged(&guarding, 2), prime));
+    assert_eq!(fired.len(), 3, "{fired:?}");
+    assert!(
+        fired
+            .iter()
+            .all(|(_, target)| *target == fired[0].1 && on(&[(36, 9)], *target)),
+        "one volley on the Lattice: {fired:?}"
+    );
+
+    let lone = strikes(&spires, &[], &lattice, &[(31, 5)]);
+    assert!(launches(&decide(&lone, &staged(&lone, 2), prime)).is_empty());
+}
+
+#[test]
+fn a_known_enemy_spire_is_struck_while_the_seat_lies_open_and_spared_once_it_is_guarded() {
+    let open = strikes(&[(6, 14)], &[], &[(BuildingKind::Spire, 30, 8)], &[(31, 4)]);
+    let fired = launches(&decide(&open, &staged(&open, 0), config()));
+    assert!(
+        fired.len() == 1 && on(&[(30, 8)], fired[0].1),
+        "an empty Spire, for what it threatens: {fired:?}"
+    );
+
+    let mut guarded = open.clone();
+    guarded
+        .buildings
+        .push(building(0, BuildingKind::Lattice, 5, 11));
+    let state = stocked(&staged(&guarded, 0), 0, BuildingKind::Lattice, 2);
+    assert!(launches(&decide(&guarded, &state, config())).is_empty());
+}
+
+/// East Crucibles spread so that no warhead reaches two.
+const SPREAD: [(i32, i32); 6] = [(20, 2), (28, 2), (36, 2), (20, 20), (28, 20), (36, 20)];
+
+/// West's launches from loaded `spires`, remembering East's spread
+/// Crucibles, and a second East Foundry when `second`, but never having
+/// seen East's start.
+fn last_stand(spires: &[(i32, i32)], second: bool) -> Vec<(BuildingId, TilePos)> {
+    let mut scenario = strikes(spires, &SPREAD, &[], &[]);
+    if second {
+        scenario
+            .buildings
+            .push(building(1, BuildingKind::Foundry, 43, 19));
+    }
+    let state = staged(&scenario, 0);
+    let mut east: Vec<&BuildingSpec> = scenario
+        .buildings
+        .iter()
+        .filter(|b| b.player == 1)
+        .collect();
+    east.sort_by_key(|b| (b.y, b.x));
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["vision"][0]["ghosts"] = east
+        .into_iter()
+        .map(|b| {
+            let hp = b.kind.base_stats().max_hp;
+            json!({"kind": b.kind, "owner": 1, "anchor": {"x": b.x, "y": b.y}, "hp": hp})
+        })
+        .collect();
+    let remembered: State = serde_json::from_value(value).unwrap();
+    launches(&decide(&scenario, &remembered, config()))
+}
+
+#[test]
+fn a_seat_s_last_known_foundry_draws_the_volley_that_fells_it() {
+    let spires = [(6, 14), (6, 17), (9, 14), (9, 17)];
+    let fired = last_stand(&spires, false);
+    assert_eq!(fired.len(), 4, "{fired:?}");
+    let start = map(&strikes(&[], &[], &[], &[]))
+        .start(PlayerId(1))
+        .unwrap();
+    assert!(
+        fired
+            .iter()
+            .all(|(_, target)| *target == fired[0].1 && on(&[(start.x, start.y)], *target)),
+        "one volley on the Foundry: {fired:?}"
+    );
+    assert!(
+        last_stand(&spires[..3], false).is_empty(),
+        "three warheads only damage it"
+    );
+    assert!(
+        last_stand(&spires, true).is_empty(),
+        "a second Foundry keeps the seat in the match"
+    );
+}
+
 /// West's warhead investments on `state`.
 fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
@@ -241,8 +370,8 @@ fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
 }
 
 #[test]
-fn a_spire_is_wanted_once_a_crucible_stands_and_a_known_strike_repays_a_round() {
-    let mut scenario = strikes(&[], &PAIR, &[], &[(31, 4)]);
+fn a_spire_is_wanted_once_a_crucible_stands_and_a_known_strike_repays_its_round_and_the_spire() {
+    let mut scenario = strikes(&[], &BLOCK, &[], &[(31, 5)]);
     let state = staged(&scenario, 0);
     assert!(wanted(&scenario, &state).is_empty(), "no Crucible yet");
     scenario
@@ -253,13 +382,13 @@ fn a_spire_is_wanted_once_a_crucible_stands_and_a_known_strike_repays_a_round() 
         wanted(&scenario, &state),
         [Investment::Tech(BuildingKind::Spire)]
     );
-    let mut lone = scenario.clone();
-    lone.buildings
-        .retain(|b| !(b.player == 1 && b.kind == BuildingKind::Crucible && b.x == 32));
-    let state = staged(&lone, 0);
+    let mut pair = scenario.clone();
+    pair.buildings
+        .retain(|b| !(b.player == 1 && b.kind == BuildingKind::Crucible && b.y == 10));
+    let state = staged(&pair, 0);
     assert!(
-        wanted(&lone, &state).is_empty(),
-        "one Crucible does not repay a round"
+        wanted(&pair, &state).is_empty(),
+        "a pair of Crucibles repays a round but not the Spire as well"
     );
 }
 
@@ -308,6 +437,26 @@ fn spires_short_of_a_full_lattice_over_works_worth_its_interceptors_want_another
         wanted(&scenario, &state),
         [Investment::Capacity(BuildingKind::Spire)]
     );
+}
+
+#[test]
+fn every_empty_spire_loads_toward_a_volley_past_a_full_lattice() {
+    let lattice = [(BuildingKind::Lattice, 36, 9)];
+    let mut scenario = strikes(&[(6, 14), (6, 17)], &BLOCK, &lattice, &[(31, 5)]);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Crucible, 9, 17));
+    let state = scenario.build().unwrap();
+    let mut state = stocked(&state, 1, BuildingKind::Lattice, 2);
+    advance_to(&mut state, 12, &[]);
+    let rounds: Vec<Investment> = state
+        .buildings()
+        .iter()
+        .filter(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Spire)
+        .map(|b| Investment::Round(b.id))
+        .collect();
+    assert_eq!(rounds.len(), 2);
+    assert_eq!(wanted(&scenario, &state), rounds);
 }
 
 #[test]

@@ -1,7 +1,7 @@
-//! Strategic warheads: what a strike on known enemy buildings would take,
-//! the Spires and rounds that worth calls for, and the pass that launches
-//! loaded Spires. Every estimate uses the simulation's own falloff and
-//! resistance; nothing here persists between decisions.
+//! Strategic warheads: what a strike on known enemy holdings would cost
+//! their owners to recover, the Spires and rounds that worth calls for, and
+//! the pass that launches loaded Spires. Every estimate uses the simulation's
+//! own falloff and resistance; nothing here persists between decisions.
 
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, footprint_centre};
@@ -10,21 +10,31 @@ use crate::map::MapModel;
 use crate::profile::PersonalityTraits;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData};
+use oxide_sim::geometry::{footprint_center, foundry_supports};
+use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::WARHEAD;
-use oxide_sim::{BuildingId, BuildingKind, Command};
+use oxide_sim::stats::{self, WARHEAD};
+use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
+use std::cmp::Reverse;
 
 /// A building a warhead could damage, as the seat knows it.
 #[derive(Clone, Copy)]
 pub(crate) struct Mark {
     kind: BuildingKind,
     anchor: TilePos,
+    owner: PlayerId,
+    tier: u8,
+    built: bool,
     /// Health left once warheads already flying land.
     hp: u32,
     max_hp: u32,
     /// Scrap paid for it, upgrades included.
     paid: u64,
+    /// Rounds it could spend now (see [`rounds`]).
+    rounds: u64,
+    /// Scrap losing it costs its owner beyond the rebuild (see [`recovery`]
+    /// and [`stakes`]).
+    extra: u64,
 }
 
 impl Mark {
@@ -32,9 +42,22 @@ impl Mark {
         Mark {
             kind: building.kind,
             anchor: building.anchor,
+            owner: building.player,
+            tier: building.tier,
+            built: building.built,
             hp: building.hp,
             max_hp: building.kind.tier_stats(building.tier).max_hp,
             paid: u64::from(building.kind.invested_cost(building.tier)),
+            rounds: 0,
+            extra: 0,
+        }
+    }
+
+    /// [`of`](Self::of), with the rounds the seat knows it holds.
+    fn known(observation: &ObservationData, building: &BuildingObs) -> Self {
+        Mark {
+            rounds: rounds(observation, building),
+            ..Mark::of(building)
         }
     }
 
@@ -59,6 +82,59 @@ impl Mark {
         let dealt = self.taken(impact).min(self.hp);
         let value = self.paid * u64::from(dealt) / u64::from(self.max_hp.max(1));
         (value, self.hp - dealt)
+    }
+
+    /// What its owner must find to recover once its health falls to `hp`.
+    /// A site's missing health is work not yet done rather than damage
+    /// owed, so a site counts only the health a strike takes.
+    fn lost(&self, hp: u32) -> u64 {
+        let unbuilt = if self.built {
+            0
+        } else {
+            self.max_hp.saturating_sub(self.hp)
+        };
+        let after = if hp == 0 { 0 } else { hp + unbuilt };
+        loss(self.paid, self.extra, self.max_hp, self.hp + unbuilt, after)
+    }
+}
+
+/// What recovering from health falling from `before` to `after` of `max`
+/// costs, for something `paid` buys back and whose loss costs `extra` more:
+/// the rebuild and that loss, less the repair already owed, when it falls;
+/// the added repair bill when it survives.
+fn loss(paid: u64, extra: u64, max: u32, before: u32, after: u32) -> u64 {
+    let bill = |hp: u32| {
+        paid * u64::from(max.saturating_sub(hp)) * stats::REPAIR_COST_PERMILLE
+            / (1000 * u64::from(max.max(1)))
+    };
+    if after == 0 {
+        paid + extra - bill(before)
+    } else {
+        bill(after) - bill(before)
+    }
+}
+
+/// An enemy unit seen standing still, which a warhead aimed now would find
+/// where it stands.
+#[derive(Clone, Copy)]
+struct Body {
+    kind: UnitKind,
+    tile: TilePos,
+    hp: u32,
+}
+
+impl Body {
+    /// Damage one warhead landing on `impact` deals it, as the simulation
+    /// measures: a wide hull from its edge.
+    fn taken(&self, impact: Vec2Fx) -> u32 {
+        let edge = self.tile.center().dist(impact) - stats::hull_excess(self.kind.stats().radius);
+        WARHEAD.damage_at(edge.max(Fx::ZERO))
+    }
+
+    /// What its owner must find to recover once its health falls to `hp`.
+    fn lost(&self, hp: u32) -> u64 {
+        let stats = self.kind.stats();
+        loss(u64::from(stats.cost), 0, stats.max_hp, self.hp, hp)
     }
 }
 
@@ -95,26 +171,65 @@ pub(crate) fn volley(marks: &[Mark], tile: TilePos, hits: u64) -> u64 {
     total
 }
 
-/// A tile a warhead could strike: the known enemy scrap one landing there
-/// takes, the known hostile interceptors whose rings hold it, and what those
-/// interceptors cost their owner to replace once a volley draws them.
+/// What warheads landing one after another on `tile` cost their owners to
+/// recover from, `marks` and `bodies` in [`by_column`] order: entry `k`
+/// after `k + 1` of them, for `hits` in all.
+fn recovered(marks: &[Mark], bodies: &[Body], tile: TilePos, hits: usize) -> Vec<u64> {
+    debug_assert!(marks.is_sorted_by_key(|mark| mark.anchor.x));
+    debug_assert!(bodies.is_sorted_by_key(|body| body.tile.x));
+    let impact = tile.center();
+    let mut totals = vec![0; hits];
+    let from = marks.partition_point(|mark| mark.anchor.x < tile.x - BLAST_COLUMNS);
+    let to = marks.partition_point(|mark| mark.anchor.x <= tile.x + BLAST_COLUMNS);
+    for mark in &marks[from..to.max(from)] {
+        fall(&mut totals, mark.hp, mark.taken(impact), |hp| mark.lost(hp));
+    }
+    // A hull is struck from its edge, so the blast reaches the widest one
+    // that much further.
+    let reach = (WARHEAD.outer_radius + stats::MAX_HULL_EXCESS)
+        .ceil()
+        .to_num::<i32>();
+    let from = bodies.partition_point(|body| body.tile.x < tile.x - reach);
+    let to = bodies.partition_point(|body| body.tile.x <= tile.x + reach);
+    for body in &bodies[from..to.max(from)] {
+        fall(&mut totals, body.hp, body.taken(impact), |hp| body.lost(hp));
+    }
+    totals
+}
+
+/// Adds to `totals` what something at `hp` costs to recover from after each
+/// of the warheads in turn deals it `taken`.
+fn fall(totals: &mut [u64], hp: u32, taken: u32, lost: impl Fn(u32) -> u64) {
+    if taken == 0 || hp == 0 {
+        return;
+    }
+    let mut left = hp;
+    for total in totals {
+        left -= taken.min(left);
+        *total += lost(left);
+    }
+}
+
+/// A tile a warhead could strike: the known hostile interceptors whose rings
+/// hold it, and what those interceptors cost their owner to replace once a
+/// volley draws them.
 #[derive(Clone, Copy)]
 struct Aim {
     tile: TilePos,
-    value: u64,
     interceptors: u64,
     drawn: u64,
 }
 
 /// What the seat knows to strike: known hostile buildings, seen, remembered
 /// or public, and a hostile start it has never seen as the Foundry there,
-/// each with what the team's warheads already flying will take from it.
+/// each with what the team's warheads already flying will take from it and
+/// what losing it costs its owner beyond the rebuild.
 fn marks(observation: &ObservationData, map: &MapModel) -> Vec<Mark> {
     let mut marks: Vec<Mark> = observation
         .enemy_buildings
         .iter()
         .filter(|building| !building.provisional)
-        .map(Mark::of)
+        .map(|building| Mark::known(observation, building))
         .collect();
     for owner in map.hostiles(observation.me) {
         let Some(start) = map.start(owner) else {
@@ -128,9 +243,14 @@ fn marks(observation: &ObservationData, map: &MapModel) -> Vec<Mark> {
             marks.push(Mark {
                 kind: BuildingKind::Foundry,
                 anchor: start,
+                owner,
+                tier: 0,
+                built: true,
                 hp: foundry.max_hp,
                 max_hp: foundry.max_hp,
                 paid: u64::from(BuildingKind::Foundry.invested_cost(0)),
+                rounds: 0,
+                extra: 0,
             });
         }
     }
@@ -145,10 +265,113 @@ fn marks(observation: &ObservationData, map: &MapModel) -> Vec<Mark> {
         }
     }
     marks.retain(|mark| mark.hp > 0);
+    recovery(&mut marks, &observation.enemy_units);
     by_column(marks)
 }
 
-/// Rounds a known hostile battery could spend now: what it shows in sight,
+/// Sets what losing each of `marks` costs its owner beyond the rebuild: the
+/// income it stops until it stands again, and the rounds lost with it. An
+/// owner's only known Foundry carries instead the rest of what its seat is
+/// known to hold, `units` included, since a seat with no Foundry is out.
+fn recovery(marks: &mut [Mark], units: &[UnitObs]) {
+    // Each owner's known Foundries, and the scrap it is known to hold.
+    let mut seats: Vec<(PlayerId, usize, u64)> = Vec::new();
+    let held = marks
+        .iter()
+        .map(|mark| (mark.owner, mark.kind == BuildingKind::Foundry, mark.paid))
+        .chain(
+            units
+                .iter()
+                .map(|unit| (unit.player, false, u64::from(unit.kind.stats().cost))),
+        );
+    for (owner, foundry, worth) in held {
+        match seats.iter_mut().find(|seat| seat.0 == owner) {
+            Some(seat) => {
+                seat.1 += usize::from(foundry);
+                seat.2 += worth;
+            }
+            None => seats.push((owner, usize::from(foundry), worth)),
+        }
+    }
+    let supporters = |owner: PlayerId, extractor: TilePos| {
+        marks
+            .iter()
+            .filter(|mark| {
+                mark.kind == BuildingKind::Foundry
+                    && mark.built
+                    && mark.owner == owner
+                    && foundry_supports(mark.anchor, extractor)
+            })
+            .count()
+    };
+    let extras: Vec<u64> = marks
+        .iter()
+        .map(|mark| {
+            let (_, foundries, worth) = seats
+                .iter()
+                .find(|seat| seat.0 == mark.owner)
+                .copied()
+                .expect("every mark's owner is counted");
+            if mark.kind == BuildingKind::Foundry && foundries == 1 {
+                return worth - mark.paid;
+            }
+            let down = rebuild_ticks(mark.kind, mark.tier);
+            match mark.kind {
+                BuildingKind::Extractor => {
+                    yields(mark.tier, supporters(mark.owner, mark.anchor) > 0, down)
+                }
+                BuildingKind::Reclaimer if mark.tier > 0 => down / stats::REFINERY_PERIOD,
+                BuildingKind::Reclaimer => down / stats::RECLAIMER_PERIOD,
+                BuildingKind::Foundry => {
+                    // Extractors only it supports fall to remote yield until
+                    // it stands again.
+                    let unsupported: u64 = marks
+                        .iter()
+                        .filter(|other| {
+                            mark.built
+                                && other.kind == BuildingKind::Extractor
+                                && other.owner == mark.owner
+                                && foundry_supports(mark.anchor, other.anchor)
+                                && supporters(other.owner, other.anchor) == 1
+                        })
+                        .map(|other| {
+                            yields(other.tier, true, down) - yields(other.tier, false, down)
+                        })
+                        .sum();
+                    unsupported + down / stats::FOUNDRY_DRIP_PERIOD
+                }
+                BuildingKind::Spire => mark.rounds * price(1),
+                _ => 0,
+            }
+        })
+        .collect();
+    for (mark, extra) in marks.iter_mut().zip(extras) {
+        mark.extra = extra;
+    }
+}
+
+/// Scrap an Extractor at `tier` earns over `ticks`, `supported` or remote.
+fn yields(tier: u8, supported: bool, ticks: u64) -> u64 {
+    let (amount, period) = match (tier > 0, supported) {
+        (false, false) => stats::EXTRACTOR_REMOTE_YIELD,
+        (false, true) => stats::EXTRACTOR_SUPPORTED_YIELD,
+        (true, false) => stats::DEEP_BORE_REMOTE_YIELD,
+        (true, true) => stats::DEEP_BORE_SUPPORTED_YIELD,
+    };
+    u64::from(amount) * ticks / period
+}
+
+/// Ticks raising `kind` again up to `tier` takes.
+fn rebuild_ticks(kind: BuildingKind, tier: u8) -> u64 {
+    kind.tiers()
+        .iter()
+        .take(usize::from(tier) + 1)
+        .filter_map(|stats| stats.construction.as_ref())
+        .map(|construction| u64::from(construction.build_ticks))
+        .sum()
+}
+
+/// Rounds a known battery or Spire could spend now: what it shows in sight,
 /// a full magazine for a remembered one, none while unbuilt.
 fn rounds(observation: &ObservationData, battery: &BuildingObs) -> u64 {
     let Some(stats) = battery.kind.magazine() else {
@@ -167,9 +390,9 @@ fn rounds(observation: &ObservationData, battery: &BuildingObs) -> u64 {
     u64::from(stats.capacity)
 }
 
-/// Every footprint tile of a known hostile building, with what a warhead
-/// there would take and the interceptors over it, in the seat's frame order
-/// from home.
+/// Every footprint tile of a known hostile building, with the interceptors
+/// over it, in the seat's frame order from home. Units standing in the open
+/// are no aim of their own: they walk off before a warhead lands.
 fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<Aim> {
     let batteries: Vec<(Vec2Fx, Fx, u64, u64)> = observation
         .enemy_buildings
@@ -177,9 +400,7 @@ fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<
         .filter_map(|building| {
             let ring = building.kind.battery()?.ring;
             let round_cost = building.kind.magazine()?.round_cost;
-            let (width, height) = building.kind.size();
-            let centre = building.anchor.center()
-                + Vec2Fx::new(Fx::from_num(width - 1) / 2, Fx::from_num(height - 1) / 2);
+            let centre = footprint_center(building.anchor, building.kind.size());
             let rounds = rounds(observation, building);
             Some((centre, ring * ring, rounds, rounds * u64::from(round_cost)))
         })
@@ -202,12 +423,85 @@ fn aims(observation: &ObservationData, marks: &[Mark], frame: HomeFrame) -> Vec<
                 });
             Aim {
                 tile,
-                value: volley(marks, tile, 1),
                 interceptors,
                 drawn,
             }
         })
         .collect()
+}
+
+/// What else rides on known enemy Lattices and Spires. Each interceptor a
+/// Lattice holds costs a strike under it another round, so while a warhead
+/// in its ring would be worth its round without it, felling it is worth a
+/// full magazine of rounds more. A Spire is worth what one of its warheads
+/// could cost the seat where the seat lies most exposed.
+fn stakes(observation: &ObservationData, marks: &mut [Mark], aims: &[Aim], bodies: &[Body]) {
+    let covers: Vec<(usize, u64)> = marks
+        .iter()
+        .enumerate()
+        .filter(|(_, mark)| mark.built)
+        .filter_map(|(index, mark)| {
+            let battery = mark.kind.battery()?;
+            let centre = footprint_center(mark.anchor, mark.kind.size());
+            let without: Vec<Mark> = marks
+                .iter()
+                .enumerate()
+                .filter(|(other, _)| *other != index)
+                .map(|(_, other)| *other)
+                .collect();
+            let drawn = mark.rounds * u64::from(battery.magazine.round_cost);
+            let guards = aims
+                .iter()
+                .filter(|aim| centre.dist_sq(aim.tile.center()) <= battery.ring * battery.ring)
+                .any(|aim| {
+                    let interceptors = aim.interceptors.saturating_sub(mark.rounds);
+                    recovered(&without, bodies, aim.tile, 1)[0] + aim.drawn.saturating_sub(drawn)
+                        >= price(interceptors + 1)
+                });
+            guards.then(|| (index, u64::from(battery.magazine.capacity) * price(1)))
+        })
+        .collect();
+    for (index, cover) in covers {
+        marks[index].extra += cover;
+    }
+    let spire = |mark: &Mark| mark.kind == BuildingKind::Spire && mark.built;
+    if marks.iter().any(spire) {
+        let threat = exposure(observation);
+        for mark in marks.iter_mut().filter(|mark| spire(mark)) {
+            mark.extra += threat;
+        }
+    }
+}
+
+/// The most one warhead could cost the seat, landing on its own buildings
+/// anywhere outside the ring of every own battery holding a round.
+fn exposure(observation: &ObservationData) -> u64 {
+    let mut own: Vec<Mark> = observation
+        .my_buildings
+        .iter()
+        .filter(|building| !building.provisional)
+        .map(|building| Mark::known(observation, building))
+        .collect();
+    recovery(&mut own, &observation.my_units);
+    let own = by_column(own);
+    let guards: Vec<(Vec2Fx, Fx)> = own
+        .iter()
+        .filter(|mark| mark.rounds > 0)
+        .filter_map(|mark| {
+            let ring = mark.kind.battery()?.ring;
+            Some((footprint_center(mark.anchor, mark.kind.size()), ring * ring))
+        })
+        .collect();
+    own.iter()
+        .flat_map(|mark| crate::frame::tiles_of(mark.anchor, mark.kind.size()))
+        .filter(|tile| {
+            !guards
+                .iter()
+                .any(|(centre, ring_sq)| centre.dist_sq(tile.center()) <= *ring_sq)
+        })
+        .map(|tile| recovered(&own, &[], tile, 1)[0])
+        .max()
+        .unwrap_or(0)
 }
 
 /// What `rounds` warheads cost.
@@ -220,21 +514,48 @@ fn price(rounds: u64) -> u64 {
         )
 }
 
-/// The fewest Spires that could land a warhead somewhere the seat knows,
-/// past the interceptors over it, where the warhead and the interceptors it
-/// draws take every round's price, with what that warhead takes; `None`
-/// while no strike is worth its rounds.
-fn needed(aims: &[Aim]) -> Option<(u64, u64)> {
-    aims.iter()
-        .filter(|aim| aim.value + aim.drawn >= price(aim.interceptors + 1))
-        .map(|aim| (aim.interceptors + 1, aim.value))
-        .min_by_key(|(spires, value)| (*spires, std::cmp::Reverse(*value)))
+/// The most warheads any building needs to fall to direct hits, which
+/// bounds the volleys a known strike could call for.
+fn most_hits() -> usize {
+    BuildingKind::ALL
+        .iter()
+        .flat_map(|kind| {
+            let taken = kind.warhead_taken(WARHEAD.peak_damage).max(1);
+            kind.tiers()
+                .iter()
+                .map(move |stats| stats.max_hp.div_ceil(taken))
+        })
+        .max()
+        .map_or(1, |hits| usize::try_from(hits).unwrap_or(usize::MAX))
 }
 
-/// Spires, rounds for empty Spires, and another Spire when known
-/// interceptors over every worthy aim match the Spires the seat has. Each
-/// needs a standing Crucible and a strike worth its round. Siege weighs them
-/// and income scales them, as it does the Crucible.
+/// The fewest Spires that could land a volley somewhere the seat knows, past
+/// the interceptors over it, where what the volley costs its owners to
+/// recover and the interceptors it draws pay for every round spent and every
+/// Spire the seat would still lack, `have` standing or rising; with what
+/// that volley costs them. `None` while no volley is worth it.
+fn needed(aims: &[Aim], marks: &[Mark], have: u64) -> Option<(u64, u64)> {
+    let spire = u64::from(BuildingKind::Spire.invested_cost(0));
+    let most = most_hits();
+    aims.iter()
+        .flat_map(|aim| {
+            recovered(marks, &[], aim.tile, most)
+                .into_iter()
+                .zip(aim.interceptors + 1..)
+                .filter(move |(value, spent)| {
+                    value + aim.drawn >= price(*spent) + spire * spent.saturating_sub(have)
+                })
+                .map(|(value, spent)| (spent, value))
+        })
+        .min_by_key(|(spires, value)| (*spires, Reverse(*value)))
+}
+
+/// Spires, a round for every empty Spire, and another Spire when those the
+/// seat has are all stocked or rising and fewer than a known strike needs.
+/// Each needs a standing Crucible and a strike worth its rounds and the
+/// Spires still lacking. Units move on, so only buildings justify buying
+/// toward a strike. Siege weighs them and income scales them, as it does the
+/// Crucible.
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
@@ -251,16 +572,18 @@ pub(crate) fn investments(
     if !crucible {
         return Vec::new();
     }
-    let aims = aims(observation, &marks(observation, map), frame);
-    let Some((need, worth)) = needed(&aims) else {
-        return Vec::new();
-    };
-    let base = crate::investments::weighed(traits.siege, income);
     let spires: Vec<&BuildingObs> = observation
         .my_buildings
         .iter()
         .filter(|building| building.kind == BuildingKind::Spire)
         .collect();
+    let mut marks = marks(observation, map);
+    let aims = aims(observation, &marks, frame);
+    stakes(observation, &mut marks, &aims, &[]);
+    let Some((need, worth)) = needed(&aims, &marks, spires.len() as u64) else {
+        return Vec::new();
+    };
+    let base = crate::investments::weighed(traits.siege, income);
     let stocked = |spire: &BuildingObs| {
         observation
             .magazines
@@ -284,17 +607,14 @@ pub(crate) fn investments(
     if busy && (spires.len() as u64) < need {
         list.push((Investment::Capacity(BuildingKind::Spire), scored));
     }
-    let stocked_count = spires.iter().filter(|spire| stocked(spire)).count() as u64;
-    // An empty Spire is worth a round once, with the others stocked, the
-    // seat could land one where it is worth it.
-    if stocked_count + 1 >= need {
-        list.extend(
-            spires
-                .iter()
-                .filter(|spire| spire.built && !stocked(spire))
-                .map(|spire| (Investment::Round(spire.id), scored)),
-        );
-    }
+    // A volley spends its rounds at once, so every empty Spire loads toward
+    // it, however many more it still needs.
+    list.extend(
+        spires
+            .iter()
+            .filter(|spire| spire.built && !stocked(spire))
+            .map(|spire| (Investment::Round(spire.id), scored)),
+    );
     list
 }
 
@@ -315,18 +635,39 @@ pub(crate) fn round_step(observation: &ObservationData, spire: BuildingId) -> Op
         .then_some((Step::Round(spire), stats.round_cost))
 }
 
+/// The enemy units in sight that `still` names, standing where the seat
+/// last saw them, in [`by_column`] order: a warhead aimed now finds only
+/// those where they stand.
+fn bodies(observation: &ObservationData, still: &[UnitId]) -> Vec<Body> {
+    debug_assert!(still.is_sorted());
+    let mut bodies: Vec<Body> = observation
+        .enemy_units
+        .iter()
+        .filter(|unit| still.binary_search(&unit.id).is_ok())
+        .map(|unit| Body {
+            kind: unit.kind,
+            tile: unit.tile,
+            hp: unit.hp,
+        })
+        .collect();
+    bodies.sort_by_key(|body| (body.tile.x, body.tile.y));
+    bodies
+}
+
 /// Launches loaded Spires with no strike pending at an aim more of them can
-/// reach past its known interceptors than those can stop, when the warheads
-/// landing and the interceptors drawn take at least the price of every round
-/// spent. Upper rungs take the volley that takes the most beyond its price;
-/// lower ones the worthy aim nearest home. The Spires nearest the aim fire,
-/// as one unit order: choosing an aim is one act of attention, however many
-/// Spires fire at it.
+/// reach past its known interceptors than those can stop, when what the
+/// warheads landing cost their owners to recover, the enemy units `still`
+/// names included, and the interceptors drawn take at least the price of
+/// every round spent. Upper rungs take the volley that takes the most beyond
+/// its price; lower ones the worthy aim nearest home. The Spires nearest the
+/// aim fire, as one unit order: choosing an aim is one act of attention,
+/// however many Spires fire at it.
 pub(crate) fn fire(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     difficulty: BotDifficulty,
+    still: &[UnitId],
     ledger: &mut Ledger,
 ) {
     let mut loaded: Vec<&BuildingObs> = observation
@@ -347,21 +688,28 @@ pub(crate) fn fire(
     if loaded.is_empty() {
         return;
     }
-    let marks = marks(observation, map);
+    let mut marks = marks(observation, map);
+    let bodies = bodies(observation, still);
+    let aims = aims(observation, &marks, frame);
+    stakes(observation, &mut marks, &aims, &bodies);
     let ready = loaded.len() as u64;
     let careful = matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime);
     // Each worthy volley as (rounds spent, aim, scrap taken beyond their
     // price), in the aims' order nearest home first. A volley spends the
     // fewest Spires that get its hits past the interceptors, and draws every
     // one of them.
-    let mut volleys = aims(observation, &marks, frame)
-        .into_iter()
+    let mut volleys = aims
+        .iter()
+        .filter(|aim| aim.interceptors < ready)
         .flat_map(|aim| {
-            let marks = &marks;
-            (aim.interceptors + 1..=ready).filter_map(move |spent| {
-                let taken = volley(marks, aim.tile, spent - aim.interceptors) + aim.drawn;
-                (taken >= price(spent)).then(|| (spent, aim.tile, taken - price(spent)))
-            })
+            let hits = usize::try_from(ready - aim.interceptors).unwrap_or(usize::MAX);
+            recovered(&marks, &bodies, aim.tile, hits)
+                .into_iter()
+                .zip(aim.interceptors + 1..)
+                .filter_map(|(value, spent)| {
+                    let taken = value + aim.drawn;
+                    (taken >= price(spent)).then(|| (spent, aim.tile, taken - price(spent)))
+                })
         });
     let best = if careful {
         volleys.fold(None, |best: Option<(u64, TilePos, u64)>, volley| {
