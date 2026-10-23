@@ -8,8 +8,8 @@
 
 use super::attack::{defense, defense_around};
 use super::{
-    DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt, insert, mine,
-    value, walking_gun,
+    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt,
+    insert, mine, value, walking_gun,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -138,6 +138,24 @@ impl Missions {
         });
 
         let mut free = self.available(observation, Some(difficulty));
+        // Units an attack regroups at home go last, so a call for defense
+        // does not take apart an army about to set out while other units can
+        // answer it.
+        let mut regrouping: Vec<UnitId> = self
+            .list
+            .iter()
+            .filter(|mission| {
+                matches!(
+                    mission.task,
+                    Task::Attack {
+                        phase: AttackPhase::Gather | AttackPhase::Recover,
+                        ..
+                    }
+                )
+            })
+            .flat_map(|mission| mission.units.iter().copied())
+            .collect();
+        regrouping.sort_unstable();
         let mut shortfalls = Vec::new();
         for (foundry, siege, own) in &groups {
             let centre = footprint_centre(foundry.kind, foundry.anchor);
@@ -223,7 +241,13 @@ impl Missions {
                     unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
                 })
                 .collect();
-            candidates.sort_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id));
+            candidates.sort_by_key(|unit| {
+                (
+                    regrouping.binary_search(&unit.id).is_ok(),
+                    frame.rank(centre, doubled(unit.tile)),
+                    unit.id,
+                )
+            });
             let mut recruits = fill(candidates, need, &mut have, room);
             let gap = [0, 1].map(|index| pressing[index].saturating_sub(have[index]));
             if *own && gap != [0, 0] {

@@ -311,6 +311,12 @@ fn contested(observation: &ObservationData, anchor: TilePos) -> bool {
     })
 }
 
+/// Whether no remembered armed enemy unit and no known armed enemy building
+/// stands near the two-by-two footprint at `anchor`.
+pub(crate) fn safe(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> bool {
+    danger(observation, memory, anchor) == 0
+}
+
 /// Remembered enemy units near the two-by-two footprint at `anchor`, weighted
 /// by confidence, plus known armed enemy buildings near it.
 fn danger(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> u64 {

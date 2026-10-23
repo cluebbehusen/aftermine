@@ -61,6 +61,7 @@ fn offered_lifting(
         waiting: None,
         margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
         economy: crate::economy(oxide_sim::scenario::BotDifficulty::Scrapheap),
+        extractors_first: crate::extractors_first(oxide_sim::scenario::BotDifficulty::Scrapheap),
         lift_flak: lift.unwrap_or(0),
     };
     candidates(&situation)

@@ -1016,3 +1016,71 @@ fn drones_out_of_a_bay_move_neither_the_threat_nor_the_army_behind_the_share() {
         );
     }
 }
+
+#[test]
+fn a_seat_saving_for_tech_turns_to_a_safe_extractor_frame_on_its_own_half() {
+    // A free frame beside West's Foundry, and an East Sentinel West once saw
+    // beside it.
+    let mut scenario = saturated(0);
+    scenario.map[1].replace_range(6..7, "E");
+    let frame = TilePos::new(6, 1);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let model = map(&scenario);
+    let mut sighted = scenario.clone();
+    sighted.units.push(unit(1, UnitKind::Sentinel, 8, 2));
+    let mut watched = Memory::default();
+    watched.observe(&ObservationData::fog_honest(
+        &sighted.build().unwrap(),
+        PlayerId(0),
+    ));
+    assert!(
+        !watched.units().is_empty(),
+        "premise: West saw the Sentinel"
+    );
+    let fabricator = Investment::Tech(BuildingKind::Fabricator);
+    let target = |memory: &Memory, difficulty, severed| {
+        let candidates = investments::candidates(&Situation {
+            extractors_first: crate::extractors_first(difficulty),
+            severed,
+            ..calm(&observation, &model, memory)
+        });
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.investment == Investment::Extractor(frame)),
+            "premise: the frame is wanted"
+        );
+        let mut saving = Saving::default();
+        let mut scratch = Memory::default();
+        let tech: Vec<Candidate> = candidates
+            .iter()
+            .copied()
+            .filter(|candidate| candidate.investment == fabricator)
+            .collect();
+        saving.settle(&observation, &tech, 500, 0, &mut scratch);
+        assert_eq!(saving.investment(), Some(fabricator), "premise");
+        saving.settle(&observation, &candidates, 500, 0, &mut scratch);
+        saving.investment()
+    };
+    let quiet = Memory::default();
+    assert_eq!(
+        target(&quiet, BotDifficulty::Standard, false),
+        Some(Investment::Extractor(frame))
+    );
+    assert_eq!(
+        target(&quiet, BotDifficulty::Scrapheap, false),
+        Some(fabricator),
+        "the lowest rung keeps saving for tech"
+    );
+    assert_eq!(
+        target(&watched, BotDifficulty::Standard, false),
+        Some(fabricator),
+        "a frame with an enemy remembered beside it does not hold tech back"
+    );
+    assert_eq!(
+        target(&quiet, BotDifficulty::Standard, true),
+        Some(fabricator),
+        "a severed seat's tech is how its army reaches anyone"
+    );
+}

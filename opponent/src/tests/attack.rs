@@ -144,6 +144,54 @@ fn known_defenses_hold_an_attack_until_waiting_lowers_the_margin() {
 }
 
 #[test]
+fn a_gathering_attack_keeps_the_margin_its_wait_earned_until_it_sets_out() {
+    let scenario = armed(8, &[]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 9_600, &[]);
+    let now = state.current_tick();
+    let mut members: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    let staged = |waiting: Option<u64>| {
+        restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["units"] = remembered((0..5).map(|index: u32| {
+                let tile = TilePos::new(41, 10 + i32::try_from(index).unwrap());
+                (1_000 + index, UnitKind::Sentinel, tile, now)
+            }));
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {
+                        "task": "attack",
+                        "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                        "phase": "gather",
+                    },
+                    "since": now,
+                    "units": members,
+                    "goal": {"x": 11, "y": 11},
+                }],
+                "waiting": waiting,
+            });
+        })
+    };
+    let decide = |mut opponent: Opponent| {
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let phase = attack(&trace.unwrap().missions).unwrap().phase;
+        let waiting =
+            serde_json::to_value(opponent.checkpoint()).unwrap()["missions"]["waiting"].as_u64();
+        (phase, hunts(&commands), waiting)
+    };
+    let (phase, sent, _) = decide(staged(None));
+    assert_eq!(phase, Phase::Gather, "{sent:?}");
+    assert!(sent.is_empty(), "twice the remembered defenders hold it");
+    let (phase, sent, waiting) = decide(staged(Some(0)));
+    assert_ne!(phase, Phase::Gather, "the wait that launched it lets it go");
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, members);
+    assert_ne!(waiting, Some(0), "setting out spends the wait");
+}
+
+#[test]
 fn a_losing_attack_withdraws_to_its_rally() {
     let east: Vec<(UnitKind, i32, i32)> = (8..=15)
         .flat_map(|y| [(UnitKind::Sentinel, 40, y), (UnitKind::Sentinel, 41, y)])
@@ -1069,6 +1117,59 @@ fn the_upper_rungs_press_a_fight_past_its_time() {
                 Phase::Recover,
                 "{difficulty:?}, guarded {guarded}: ends it on time"
             );
+        }
+    }
+}
+
+#[test]
+fn an_army_that_cleared_its_way_goes_on_to_the_target_it_knows() {
+    // Seven Sentinels idle in sight of East's Foundry, short of their aggro,
+    // with nothing armed left around them.
+    let spots: Vec<(i32, i32)> = (10..=12)
+        .flat_map(|y| [(36, y), (37, y)])
+        .chain([(36, 13)])
+        .collect();
+    let mut scenario = armed(8, &[]);
+    for (x, y) in &spots {
+        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+    }
+    let mut state = scenario.build().unwrap();
+    let foundry = foundries(&state, PlayerId(1))[0];
+    let mut members: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    advance_to(&mut state, 3_600, &[]);
+    for (since, goes_on) in [(3_588, true), (0, false)] {
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": {"engage": {"focus": null}},
+                },
+                "since": since,
+                "units": members,
+                "goal": {"x": 42, "y": 11},
+            }],
+        });
+        let mut opponent = restaged(&scenario, &state, missions);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let phase = attack(&trace.unwrap().missions).unwrap().phase;
+        let shot = commands.iter().any(|command| {
+            command.command
+                == Command::Attack {
+                    units: members.clone(),
+                    target: AttackTarget::Building(foundry),
+                    queue: false,
+                }
+        });
+        if goes_on {
+            assert_eq!(phase, Phase::Engage);
+            assert!(shot, "{commands:?}");
+        } else {
+            assert_eq!(phase, Phase::Recover, "the fight's time bounds it");
+            assert!(!shot);
         }
     }
 }

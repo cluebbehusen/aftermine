@@ -176,6 +176,11 @@ impl Missions {
         let now = observation.tick;
         let attacking: fn(&Task) -> bool = |task| matches!(task, Task::Attack { .. });
         let mut plan = Plan::new(observation, map, profile, memory, scratch);
+        // Attacks under way are judged at the margin the wait has earned too,
+        // so an army launched at a lowered margin is not held at home again
+        // by the full one while it gathers.
+        let full = plan.margin;
+        plan.margin = relieved(full, self.waiting, now);
         let mut given_up: Vec<Objective> = Vec::new();
         for id in self.ids(attacking) {
             let Some(index) = self.index_of(id) else {
@@ -205,16 +210,21 @@ impl Missions {
             })
             .peekable();
         let idle = producers.peek().is_some() && producers.all(|(_, queue)| queue.is_empty());
-        if free >= plan.minimum || idle {
+        let gathering = self.list.iter().any(|mission| {
+            matches!(
+                mission.task,
+                Task::Attack {
+                    phase: AttackPhase::Gather,
+                    ..
+                }
+            )
+        });
+        if free >= plan.minimum || idle || gathering {
             self.waiting.get_or_insert(now);
         } else {
             self.waiting = None;
         }
-        let waited = self.waiting.map_or(0, |since| (now - since) / WAIT_STEP);
-        plan.margin = plan
-            .margin
-            .saturating_sub(waited * WAIT_RELIEF)
-            .max(MARGIN_FLOOR);
+        plan.margin = relieved(full, self.waiting, now);
         loop {
             plan.held = self.held(attacking, None, &given_up);
             if !self.launch(&plan, &fit, ledger) {
@@ -383,7 +393,6 @@ impl Missions {
             },
         });
         self.next += 1;
-        self.waiting = None;
         true
     }
 
@@ -484,6 +493,7 @@ impl Missions {
             .map(|unit| value(unit))
             .sum();
         let age = now - mission.since;
+        let mut set_out = false;
 
         let given_up = match phase {
             AttackPhase::Gather | AttackPhase::Recover => {
@@ -528,6 +538,7 @@ impl Missions {
                     };
                     if ledger.order(hunt(mission.units.clone(), goal)) {
                         mission.attack_phase(target, next, now, Some(goal));
+                        set_out = true;
                     }
                 } else if age >= timeout(phase) {
                     self.list.remove(index);
@@ -566,6 +577,9 @@ impl Missions {
                 None
             }
         };
+        if set_out {
+            self.waiting = None;
+        }
         // Units freed since the attack left join it where it is rather than
         // waiting at home for it to regroup, unless this decision pulled it
         // back or sent it on: they would only be turned around. A staging
@@ -702,6 +716,31 @@ fn engage_on(
         return None;
     }
     let standing = standing(observation, target.objective());
+    // An army that cleared everything in reach short of its target, such as
+    // a line in front of a base, goes on to the target it still knows of
+    // instead of counting the attack as failed. The fight's time still
+    // bounds it.
+    if all_idle && standing && age < ENGAGE_TICKS {
+        let objective = target.objective();
+        let building = observation.enemy_buildings.iter().find(|building| {
+            (building.player, building.kind, building.anchor)
+                == (objective.owner, objective.building, objective.anchor)
+        });
+        if let Some(building) = building {
+            let shooters: Vec<UnitId> = members
+                .iter()
+                .filter(|unit| {
+                    unit.kind != UnitKind::Sapper
+                        && !breacher(unit.kind)
+                        && hits(unit, Domain::Ground)
+                })
+                .map(|unit| unit.id)
+                .collect();
+            if !shooters.is_empty() && ledger.order(blast(shooters, aim(building))) {
+                return None;
+            }
+        }
+    }
     let next = plan.best(Some(target)).filter(|next| {
         !standing
             && members.iter().map(|unit| striking(unit)).sum::<u64>()
@@ -1769,6 +1808,15 @@ fn misjudge(profile: &ResolvedProfile, tick: u64) -> u64 {
         MISJUDGE_STREAM,
     );
     u64::from(1_000 - MISJUDGE + rng.next_below(2 * MISJUDGE + 1))
+}
+
+/// `margin` less one relief for each waiting step since `waiting`, never
+/// under the floor.
+fn relieved(margin: u64, waiting: Option<u64>, now: u64) -> u64 {
+    let waited = waiting.map_or(0, |since| (now - since) / WAIT_STEP);
+    margin
+        .saturating_sub(waited * WAIT_RELIEF)
+        .max(MARGIN_FLOOR)
 }
 
 /// Per mille of the known opposition at a target that a mission must bring.
