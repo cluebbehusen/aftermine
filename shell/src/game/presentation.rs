@@ -1,7 +1,7 @@
 //! Presentation shared by live play and replay playback. World state is borrowed.
 use super::{
-    Effect, PingKind, SoundKind, Toast, angle_delta, fx, projectiles, rotor_hull_turn_rate,
-    world_vec,
+    Effect, PingKind, SoundKind, Toast, angle_delta, fx, gun_turns_off_hull, projectiles,
+    rotor_hull_turn_rate, world_vec,
 };
 use super::{EffectKind, Selection};
 use crate::camera::Camera;
@@ -532,7 +532,7 @@ impl Presentation {
         if unit.kind.ground_turn_rate() == 0 {
             return false;
         }
-        if unit.kind.has_ground_turret() {
+        if gun_turns_off_hull(unit.kind) {
             self.hull_heading
                 .get(&unit.id.0)
                 .is_some_and(|(previous, current)| angle_delta(*previous, *current).abs() > 1e-6)
@@ -743,7 +743,7 @@ impl Presentation {
                 let angle = f32::from(unit.heading) * std::f32::consts::TAU / 256.0;
                 self.facing
                     .insert(unit.id.0, angle + std::f32::consts::FRAC_PI_2);
-                if unit.kind.has_ground_turret() {
+                if gun_turns_off_hull(unit.kind) {
                     let target = angle + std::f32::consts::FRAC_PI_2;
                     let entry = self
                         .hull_heading

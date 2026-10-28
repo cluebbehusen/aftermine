@@ -1262,7 +1262,12 @@ fn every_checklist_row_refuses_its_forgery() {
         (
             "spades planted past their deployment",
             |d| d["units"][1]["motor"] = json!({"motor": "braced", "ticks": 255}),
-            "unit u1 carries invalid spade deployment",
+            "unit u1 carries an invalid braced stance",
+        ),
+        (
+            "a Bombard's gun swung off its hull",
+            |d| d["units"][1]["motor"] = json!({"motor": "braced", "ticks": 1, "traverse": 1}),
+            "unit u1 carries an invalid braced stance",
         ),
         (
             "a stall counter at its replan bound",

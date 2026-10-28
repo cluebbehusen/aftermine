@@ -299,7 +299,7 @@ fn showcase_scenario() -> (Scenario, Cast) {
     let sentinel_mantle_w = roster.add(0, UnitKind::Sentinel, 42, 22);
     let mantle_e = roster.add(1, UnitKind::Mantle, 43, 22);
     // Over eight tiles from every enemy, in no enemy's reach.
-    let piledriver = roster.add(0, UnitKind::Piledriver, 32, 4);
+    let piledriver = roster.add(0, UnitKind::Piledriver, 14, 6);
     let maw = roster.add(0, UnitKind::Maw, 26, 5);
     // Beside the corner of East's yard where it raises a Maw cradle.
     let cradle_crew = roster.add(1, UnitKind::Harvester, 37, 27);

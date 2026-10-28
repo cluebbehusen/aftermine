@@ -766,7 +766,17 @@ pub(crate) fn rotor_hull_turn_rate(kind: UnitKind) -> Option<f32> {
     }
 }
 
-fn angle_delta(from: f32, to: f32) -> f32 {
+/// Whether a kind's gun can stand off its hull, so the hull's heading is
+/// drawn apart from its aim: a ground turret, or a planted gun that swings.
+pub(crate) fn gun_turns_off_hull(kind: UnitKind) -> bool {
+    kind.has_ground_turret()
+        || kind
+            .stats()
+            .brace
+            .is_some_and(|brace| brace.traverse.is_some())
+}
+
+pub(crate) fn angle_delta(from: f32, to: f32) -> f32 {
     (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 

@@ -59,21 +59,22 @@ impl UnitBody {
         reduced_motion: bool,
     ) -> Self {
         let kind = unit.kind;
-        let rotation = if kind.has_ground_turret() || super::rotor_hull_turn_rate(kind).is_some() {
-            game.draw_hull_heading(state, unit.id, 1.0)
-        } else if kind.stats().turn_rate > 0
-            || kind.ground_turn_rate() > 0
-            || kind.stats().cruise_turn_rate > 0
-            || kind.stats().turret_turn_rate > 0
-        {
-            game.draw_heading(unit.id, unit.weapon_heading(), 1.0)
-        } else {
-            game.aim_units
-                .get(&unit.id.0)
-                .map(|pose| pose.0)
-                .or_else(|| game.facing.get(&unit.id.0).copied())
-                .unwrap_or(0.0)
-        };
+        let rotation =
+            if super::gun_turns_off_hull(kind) || super::rotor_hull_turn_rate(kind).is_some() {
+                game.draw_hull_heading(state, unit.id, 1.0)
+            } else if kind.stats().turn_rate > 0
+                || kind.ground_turn_rate() > 0
+                || kind.stats().cruise_turn_rate > 0
+                || kind.stats().turret_turn_rate > 0
+            {
+                game.draw_heading(unit.id, unit.weapon_heading(), 1.0)
+            } else {
+                game.aim_units
+                    .get(&unit.id.0)
+                    .map(|pose| pose.0)
+                    .or_else(|| game.facing.get(&unit.id.0).copied())
+                    .unwrap_or(0.0)
+            };
         let rotation = if super::rotor_hull_turn_rate(kind).is_some() {
             rotation
         } else {

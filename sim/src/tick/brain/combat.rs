@@ -21,7 +21,7 @@ use super::PendingHit;
 use super::locomotion::{approach_rect, walk};
 use crate::event::{Event, StallReason, UnitLaunchPose};
 use crate::ids::{PlayerId, Target, UnitId};
-use crate::state::{Order, PathFollow, Resume, State};
+use crate::state::{Motor, Order, PathFollow, Resume, State};
 use crate::stats::{Domain, WeaponStats};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -2177,7 +2177,7 @@ pub(super) fn attack(
     hits: &mut Vec<PendingHit>,
     launches: &mut Vec<crate::state::Shell>,
 ) {
-    let previous_braces = state.unit(id).expect("caller checked").braces();
+    let stance = state.unit(id).expect("caller checked").motor;
     state.unit_mut(id).expect("caller checked").retract_braces();
     let unit = state.unit(id).expect("caller checked");
     let stats = unit.kind.stats();
@@ -2380,7 +2380,11 @@ pub(super) fn attack(
         {
             leash.patience = crate::stats::LEASH_PATIENCE;
         }
-        unit.set_braces(previous_braces);
+        // A gun keeping its firing stance keeps its spades and its swing as
+        // they stood; the retraction above was for a gun leaving it.
+        if matches!(stance, Motor::Braced { .. }) {
+            unit.motor = stance;
+        }
         let facing = match drum {
             Some((.., outward)) => -outward,
             None => projectile_aim.unwrap_or(aim_point) - pos,

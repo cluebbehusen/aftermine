@@ -182,7 +182,7 @@ fn bombard_retracts_before_retargeting_or_moving_and_resumes_mid_deployment() {
         serde_json::from_value::<oxide_sim::State>(forged)
             .unwrap_err()
             .to_string()
-            .contains("invalid spade deployment")
+            .contains("invalid braced stance")
     );
     for tick in 6..12 {
         let report = state.tick(&[]);
