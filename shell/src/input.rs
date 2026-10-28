@@ -3389,6 +3389,18 @@ fn activate_card(
                 .collect();
             game.presentation.selection.buildings.sort_unstable();
         }
+        crate::panel::CardAction::SelectAllUnits(kind) => {
+            let human = game.presentation.human;
+            game.presentation.selection.buildings.clear();
+            game.presentation.selection.units = game
+                .state
+                .units()
+                .iter()
+                .filter(|u| u.player == human && u.kind == kind && u.host.is_none())
+                .map(|u| u.id)
+                .collect();
+            game.presentation.selection.units.sort_unstable();
+        }
         crate::panel::CardAction::ClosePalette => input.close_construction(),
         crate::panel::CardAction::ClearQueues => crate::production::cancel_all(game),
         crate::panel::CardAction::FillRounds => crate::building_actions::fill_rounds(game),

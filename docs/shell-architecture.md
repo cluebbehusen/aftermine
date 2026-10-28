@@ -593,15 +593,17 @@ no unit or building while the palette is open and nothing is armed closes it and
 keeps the selection, even over a scrap pile: dismissing never also acts. With
 QUEUE lit (or Shift or Ctrl held), a roster chip drops its kind instead of
 keeping only it. Mixed building selections get the same counted chips, one per
-kind across tiers. An own selection of one building kind that holds fewer than
-the seat owns offers one chip instead, which selects every one of that kind on
-the map, built or not. Taps and clicks select through `select::pick`, which
-gives a fingertip a wider reach than a cursor. A press that picks nothing on a
-tile with known salvage selects that tile as `Selection::pile`, read-only and
-exclusive: any other selection drops it, and `Game` drops it once the viewer
-knows of no salvage there. Its panel and the desktop hover readout share
-`Scene::known_salvage`, which reads live amounts on visible ground and
-remembered amounts under fog.
+kind across tiers. An own selection of one unit or building kind that holds
+fewer than the seat owns shows an "All N" button in the info box's title row
+(`LayoutModel.select_all`, `CardRow::SelectAll`), which selects every one of
+that kind on the map: buildings built or not, units except a transport's riders,
+which are cargo rather than machines on the map. Taps and clicks select through
+`select::pick`, which gives a fingertip a wider reach than a cursor. A press
+that picks nothing on a tile with known salvage selects that tile as
+`Selection::pile`, read-only and exclusive: any other selection drops it, and
+`Game` drops it once the viewer knows of no salvage there. Its panel and the
+desktop hover readout share `Scene::known_salvage`, which reads live amounts on
+visible ground and remembered amounts under fog.
 
 Coaching text waits for a stuck player. `hints::HintClock`, fed each frame's
 screen mode and presses, fades coaching in after a delay without a press and

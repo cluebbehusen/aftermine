@@ -394,3 +394,55 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
     assert!(status.verdict.is_empty() && status.detail.is_none());
     assert_eq!(over_ribbon.rect, over_ground.rect, "the ribbon holds still");
 }
+
+#[test]
+fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
+    let mut game =
+        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Turret, &[0, 0, 0], 0);
+    game.presentation.selection.buildings.truncate(1);
+    for (w, h) in [(1133.0, 744.0), (1280.0, 800.0)] {
+        let hud = layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            env(w, h),
+            None,
+            &fixed,
+        );
+        let (rect, action) = hud.layout.select_all;
+        assert_eq!(
+            action,
+            crate::panel::CardAction::SelectAllBuildings(oxide_sim::BuildingKind::Turret)
+        );
+        let info = hud.layout.panel_regions[0];
+        assert_eq!(
+            rect.right(),
+            info.right() - 12.0,
+            "flush with the stat values"
+        );
+        assert!(
+            rect.y >= info.y + 5.0 && rect.x > info.x + 52.0,
+            "{rect:?} clears the edge and the portrait in {info:?} at {w}x{h}"
+        );
+    }
+    game.presentation.selection.buildings = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| b.kind == oxide_sim::BuildingKind::Turret)
+        .map(|b| b.id)
+        .collect();
+    let hud = layout(
+        &game.view(),
+        &InputState::new(),
+        &BindingMap::classic(),
+        env(1280.0, 800.0),
+        None,
+        &fixed,
+    );
+    assert_eq!(
+        hud.layout.select_all.1,
+        crate::panel::CardAction::None,
+        "nothing left to gather"
+    );
+}

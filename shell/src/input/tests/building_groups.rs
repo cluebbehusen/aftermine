@@ -1,11 +1,11 @@
 //! Building selections: the kind strip trims a mixed selection, the
-//! select-all chip gathers every one of a kind, and control groups save
-//! and recall buildings as they do units.
+//! select-all button gathers every one of a kind, units included, and
+//! control groups save and recall buildings as they do units.
 
 use super::*;
 use crate::panel::CardAction;
 use macroquad::math::Rect;
-use oxide_sim::BuildingKind;
+use oxide_sim::{BuildingKind, Command};
 
 /// The fixture's own buildings all selected: `turrets` Turrets, a
 /// Fabricator, a Crucible, and the starting Foundry.
@@ -109,15 +109,27 @@ fn a_tap_with_queue_lit_drops_a_kind() {
     );
 }
 
+/// Publishes the selection's select-all button where drawing might put
+/// it and returns its centre.
+fn publish_select_all(game: &mut Game, input: &InputState) -> Vec2 {
+    let panel = crate::panel::build_for_input(&game.view(), &classic(), input).expect("a panel");
+    let all = panel.select_all.as_ref().expect("the button is offered");
+    let rect = Rect::new(400.0, 620.0, 52.0, 26.0);
+    let mut layout = bare_layout(600.0, 1200.0);
+    layout.select_all = (rect, all.card.action);
+    game.presentation.layout.set(layout);
+    *game.presentation.panel_model.borrow_mut() = Some(panel);
+    rect.center()
+}
+
 #[test]
-fn the_all_chip_selects_every_one_you_own_by_click_or_tap() {
+fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
     let mut game = base(3);
     let turrets = own_buildings(&game, Some(BuildingKind::Turret));
-    let all = CardAction::SelectAllBuildings(BuildingKind::Turret);
     for touch in [false, true] {
         let mut input = InputState::new();
         game.presentation.selection.buildings = vec![turrets[2]];
-        let at = chip(&publish_strip(&mut game, &input), all);
+        let at = publish_select_all(&mut game, &input);
         if touch {
             tap(&mut game, &mut input, at);
         } else {
@@ -128,8 +140,76 @@ fn the_all_chip_selects_every_one_you_own_by_click_or_tap() {
             "touch {touch}"
         );
         let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
-        assert!(panel.roster.is_empty(), "nothing more to gather");
+        assert!(panel.select_all.is_none(), "nothing more to gather");
     }
+    assert!(game.pending.is_empty(), "gathering issues no command");
+}
+
+#[test]
+fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
+    let scenario = oxide_sim::Scenario::from_json(
+        r#"{
+        "name":"Select all riders",
+        "players":[{"name":"F","scrap":0,"bot":false},
+                   {"name":"C","scrap":0,"bot":true}],
+        "map":["....................", "..1..............2..", "....................",
+               "....................", "....................", "...................."],
+        "units":[
+          {"player":0,"kind":"sentinel","x":6,"y":4},
+          {"player":0,"kind":"sentinel","x":7,"y":4},
+          {"player":0,"kind":"sentinel","x":8,"y":4},
+          {"player":0,"kind":"skyhook","x":10,"y":4},
+          {"player":1,"kind":"sentinel","x":16,"y":4}]
+    }"#,
+    )
+    .expect("inline rider scenario parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("rider game builds");
+    let human = game.presentation.human;
+    let own = |game: &Game, kind| -> Vec<oxide_sim::UnitId> {
+        game.state
+            .units()
+            .iter()
+            .filter(|u| u.player == human && u.kind == kind)
+            .map(|u| u.id)
+            .collect()
+    };
+    let sentinels = own(&game, UnitKind::Sentinel);
+    let skyhook = own(&game, UnitKind::Skyhook)[0];
+    game.issue(Command::Load {
+        units: vec![sentinels[2]],
+        transport: skyhook,
+        queue: false,
+    });
+    for _ in 0..180 {
+        game.do_tick();
+    }
+    assert!(
+        game.state.unit(sentinels[2]).is_none()
+            && game.state.unit(skyhook).unwrap().cargo.len() == 1,
+        "premise: one Sentinel rides as cargo"
+    );
+    let mut input = InputState::new();
+    game.presentation.selection.units = vec![sentinels[1]];
+    let at = publish_select_all(&mut game, &input);
+    let title = game
+        .presentation
+        .panel_model
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .select_all
+        .as_ref()
+        .unwrap()
+        .card
+        .title
+        .clone();
+    assert_eq!(
+        title, "Select all 2 Sentinels",
+        "the rider and the enemy's do not count"
+    );
+    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    assert_eq!(game.presentation.selection.units, sentinels[..2]);
+    assert!(game.pending.is_empty(), "gathering issues no command");
 }
 
 #[test]

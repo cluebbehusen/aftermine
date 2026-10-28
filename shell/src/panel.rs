@@ -143,6 +143,9 @@ pub enum CardAction {
     FilterBuilding(BuildingKind),
     /// Select every own building of this kind, built or not, map-wide.
     SelectAllBuildings(BuildingKind),
+    /// Select every own machine of this kind on the map. Riders are a
+    /// transport's cargo, not machines on the map, so they stay aboard.
+    SelectAllUnits(UnitKind),
     /// Close the build palette in one press, keeping the selection.
     ClosePalette,
     /// Empty the selected producers' queues, every job refunded in full.
@@ -287,6 +290,9 @@ pub struct Panel {
     /// command cards so choosing a roster slice can never crowd out a
     /// verb or make the verb row look like more selected units.
     pub roster: Vec<Card>,
+    /// The title row's offer to select every own one of a one-kind
+    /// selection's kind; absent once the selection holds them all.
+    pub select_all: Option<SelectAll>,
     /// Command cards.
     pub cards: Vec<Card>,
     /// Queue thumbnails (production or orders).
@@ -306,11 +312,57 @@ impl Panel {
     /// The card drawn in `row` at `index`.
     pub(crate) fn card(&self, row: crate::layout::CardRow, index: usize) -> Option<&Card> {
         match row {
+            crate::layout::CardRow::SelectAll => self
+                .select_all
+                .as_ref()
+                .filter(|_| index == 0)
+                .map(|all| &all.card),
             crate::layout::CardRow::Roster => self.roster.get(index),
             crate::layout::CardRow::Cards => self.cards.get(index),
             crate::layout::CardRow::Queue => self.queue.get(index),
             crate::layout::CardRow::Stop => self.stop.as_ref().filter(|_| index == 0),
         }
+    }
+}
+
+/// The title row's select-all button.
+pub struct SelectAll {
+    /// How many of the kind the seat owns: the button reads "All 5".
+    pub owned: usize,
+    /// Its tooltip heading and press.
+    pub card: Card,
+}
+
+impl SelectAll {
+    /// Offers the seat's `owned` of a kind when the selection holds fewer.
+    fn offer(
+        icon: CardIcon,
+        name: &str,
+        owned: usize,
+        selected: usize,
+        action: CardAction,
+    ) -> Option<Self> {
+        (owned > selected).then(|| Self {
+            owned,
+            card: Card {
+                icon,
+                title: format!("Select all {owned} {}", plural_name(&entity_name(name))),
+                cost: None,
+                hotkey: String::new(),
+                action,
+                enabled: true,
+                why: None,
+                desc: Vec::new(),
+                progress: None,
+                autocast: None,
+                hold: None,
+            },
+        })
+    }
+
+    /// The words on the button.
+    pub fn label(&self) -> String {
+        format!("All {}", self.owned)
     }
 }
 
@@ -1247,14 +1299,9 @@ fn unload_queue_desc(hands: Hands) -> &'static str {
     }
 }
 
-/// The strip row over an own building selection. A mixed selection
-/// offers one counted chip per kind, like a mixed army, with its tiers in
-/// the tooltip. A single kind offers to select every one you own when the
-/// selection holds fewer.
-fn building_roster(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Vec<Card> {
-    let Some(first) = buildings.first() else {
-        return Vec::new();
-    };
+/// The strip row over a mixed own building selection: one counted chip
+/// per kind, like a mixed army, with its tiers in the tooltip.
+fn building_roster(buildings: &[oxide_sim::Building]) -> Vec<Card> {
     let hands = crate::platform::hands();
     let mut kinds: Vec<(BuildingKind, Vec<u8>)> = Vec::new();
     for b in buildings {
@@ -1263,33 +1310,8 @@ fn building_roster(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Vec<C
             None => kinds.push((b.kind, vec![b.tier])),
         }
     }
-    if kinds.len() == 1 {
-        let owned = game
-            .state
-            .buildings()
-            .iter()
-            .filter(|b| b.player == game.presentation.human && b.kind == first.kind)
-            .count();
-        if owned <= buildings.len() {
-            return Vec::new();
-        }
-        let name = plural_name(&entity_name(first.kind.name()));
-        return vec![Card {
-            icon: CardIcon::Building(first.kind, first.tier),
-            title: format!("All {name} ({owned})"),
-            cost: None,
-            hotkey: String::new(),
-            action: CardAction::SelectAllBuildings(first.kind),
-            enabled: true,
-            why: None,
-            desc: vec![format!(
-                "{}: select all {owned} of your {name}, built or not, anywhere on the map.",
-                crate::platform::tap_or_click_capitalized(hands.touch()),
-            )],
-            progress: None,
-            autocast: None,
-            hold: None,
-        }];
+    if kinds.len() < 2 {
+        return Vec::new();
     }
     kinds.sort_by_key(|(kind, _)| kind.name());
     kinds
@@ -1325,6 +1347,28 @@ fn building_roster(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Vec<C
             }
         })
         .collect()
+}
+
+/// A one-kind own building selection offers every building of its kind
+/// the seat owns, built or not.
+fn building_select_all(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Option<SelectAll> {
+    let first = buildings.first()?;
+    if buildings.iter().any(|b| b.kind != first.kind) {
+        return None;
+    }
+    let owned = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| b.player == game.presentation.human && b.kind == first.kind)
+        .count();
+    SelectAll::offer(
+        CardIcon::Building(first.kind, first.tier),
+        first.kind.name(),
+        owned,
+        buildings.len(),
+        CardAction::SelectAllBuildings(first.kind),
+    )
 }
 
 /// A building group's state: how many stand built, how many are still
@@ -1370,6 +1414,7 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
         portrait: CardIcon::Salvage { wreck },
         owner: crate::render::seat_identity_color(game, game.presentation.human),
         roster: Vec::new(),
+        select_all: None,
         cards: Vec::new(),
         queue: Vec::new(),
         queue_groups: Vec::new(),
@@ -1413,6 +1458,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             portrait: CardIcon::Building(first.kind, first.tier),
             owner: crate::render::seat_identity_color(game, owner),
             roster: Vec::new(),
+            select_all: None,
             cards: Vec::new(),
             queue: Vec::new(),
             queue_groups: Vec::new(),
@@ -1445,7 +1491,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         }
         let selected = crate::building_actions::SelectedBuildings::inspect(game);
         panel.cards = selected.cards(bindings);
-        panel.roster = building_roster(game, &selected.buildings);
+        panel.roster = building_roster(&selected.buildings);
+        panel.select_all = building_select_all(game, &selected.buildings);
         if plural {
             panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
@@ -1563,6 +1610,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         portrait: CardIcon::Unit(first.kind),
         owner: crate::render::seat_identity_color(game, owner),
         roster: Vec::new(),
+        select_all: None,
         cards: Vec::new(),
         queue: Vec::new(),
         queue_groups: Vec::new(),
@@ -1619,6 +1667,23 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 });
             }
         }
+    }
+    // A one-kind selection offers every machine of its kind the seat owns
+    // on the map, by the marquee's rule: drones fly for their host alone.
+    if units.iter().all(|u| u.kind == first.kind) {
+        let owned = game
+            .state
+            .units()
+            .iter()
+            .filter(|u| u.player == owner && u.kind == first.kind && u.host.is_none())
+            .count();
+        panel.select_all = SelectAll::offer(
+            CardIcon::Unit(first.kind),
+            first.kind.name(),
+            owned,
+            units.len(),
+            CardAction::SelectAllUnits(first.kind),
+        );
     }
     // A scout's right-click already scouts, so Scout's card is for mixed
     // selections and Run's for sending a scout anywhere on purpose.
@@ -1821,6 +1886,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         if build_menu_open {
             panel.cards.clear();
             panel.roster.clear();
+            panel.select_all = None;
             panel.title = "CONSTRUCTION".into();
             panel.summary.clear();
             panel.portrait = CardIcon::Verb(VerbIcon::Build);

@@ -58,6 +58,31 @@ fn card_hits_pad_for_fingertips_and_search_roster_first() {
     );
 }
 
+#[test]
+fn the_select_all_button_hits_like_a_card_and_only_while_offered() {
+    let mut model = LayoutModel::default();
+    let all = CardAction::SelectAllUnits(oxide_sim::UnitKind::Sentinel);
+    assert_eq!(
+        card_under(&model, vec2(0.0, 0.0), Some(1.0)),
+        None,
+        "no button, no hit"
+    );
+    let button = Rect::new(150.0, 400.0, 52.0, 26.0);
+    model.select_all = (button, all);
+    let hit = card_under(&model, button.center(), None).expect("the drawn button");
+    assert_eq!(
+        (hit.row, hit.index, hit.action),
+        (CardRow::SelectAll, 0, all)
+    );
+    let below = vec2(button.center().x, button.bottom() + 6.0);
+    assert_eq!(card_under(&model, below, None), None);
+    assert_eq!(
+        card_under(&model, below, Some(1.0)).map(|hit| hit.row),
+        Some(CardRow::SelectAll),
+        "a fingertip reaches its pad"
+    );
+}
+
 /// A 1280x800 layout whose only chrome is the top bar and a full-width
 /// band from `panel_top` down.
 fn compute_at(panel_top: f32, ui: f32) -> LayoutModel {

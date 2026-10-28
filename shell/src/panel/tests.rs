@@ -1739,20 +1739,96 @@ fn a_single_kind_offers_every_one_you_own_until_all_are_selected() {
     let mut game = crate::building_actions::tests::fixture(BuildingKind::Spire, &[0, 0, 0], 0);
     let ids = game.presentation.selection.buildings.clone();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
-    assert!(panel.roster.is_empty(), "every Spire is already selected");
+    assert!(
+        panel.select_all.is_none(),
+        "every Spire is already selected"
+    );
 
     game.presentation.selection.buildings = vec![ids[1]];
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
-    let [all] = panel.roster.as_slice() else {
-        panic!("one card: {:?}", panel.roster.len());
-    };
-    assert_eq!(all.title, "All Spires (3)");
+    assert!(panel.roster.is_empty(), "one kind needs no roster strip");
+    let all = panel
+        .select_all
+        .as_ref()
+        .expect("two Spires sit unselected");
+    assert_eq!(all.owned, 3);
+    assert_eq!(all.label(), "All 3");
+    assert_eq!(all.card.title, "Select all 3 Spires");
+    assert!(all.card.desc.is_empty(), "the heading says it all");
     assert_eq!(
-        all.action,
+        all.card.action,
         CardAction::SelectAllBuildings(BuildingKind::Spire)
     );
     assert_eq!(
-        all.desc,
-        ["Click: select all 3 of your Spires, built or not, anywhere on the map."]
+        panel
+            .card(crate::layout::CardRow::SelectAll, 0)
+            .map(|card| card.title.as_str()),
+        Some("Select all 3 Spires"),
+        "the button's hover text comes from its card"
+    );
+    assert!(panel.card(crate::layout::CardRow::SelectAll, 1).is_none());
+}
+
+#[test]
+fn a_single_unit_kind_offers_every_one_you_own_until_all_are_selected() {
+    let scenario = Scenario::from_json(
+        r#"{
+        "name":"Select all units",
+        "map":["................", "..1.........2...", "................", "................"],
+        "players":[{"name":"You","scrap":0,"bot":false},
+                   {"name":"Target","scrap":0,"bot":true}],
+        "units":[
+          {"player":0,"kind":"sentinel","x":3,"y":3},
+          {"player":0,"kind":"sentinel","x":4,"y":3},
+          {"player":0,"kind":"sentinel","x":5,"y":3},
+          {"player":0,"kind":"lancer","x":6,"y":3},
+          {"player":1,"kind":"sentinel","x":12,"y":3}],
+        "buildings":[]
+    }"#,
+    )
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let human = game.presentation.human;
+    let sentinels: Vec<_> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == human && u.kind == UnitKind::Sentinel)
+        .map(|u| u.id)
+        .collect();
+    game.presentation.selection.units = vec![sentinels[0]];
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    let all = panel
+        .select_all
+        .as_ref()
+        .expect("two Sentinels sit unselected");
+    assert_eq!(
+        all.card.title, "Select all 3 Sentinels",
+        "the Lancer and the enemy's Sentinel do not count"
+    );
+    assert_eq!(
+        all.card.action,
+        CardAction::SelectAllUnits(UnitKind::Sentinel)
+    );
+
+    let lancer = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.kind == UnitKind::Lancer)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(lancer);
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert!(
+        panel.select_all.is_none(),
+        "a mixed selection has its strip"
+    );
+
+    game.presentation.selection.units = sentinels;
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert!(
+        panel.select_all.is_none(),
+        "every Sentinel is already selected"
     );
 }

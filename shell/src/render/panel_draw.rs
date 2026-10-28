@@ -280,18 +280,9 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
     }
 }
 
-/// The words on a strip chip's face. A kind chip shows its count alone
-/// when chips are small; the select-all chip keeps "All (16)" either way,
-/// since its icon already names the kind.
+/// The words on a strip chip's face: its count alone when chips are
+/// small.
 fn roster_face(card: &crate::panel::Card, small: bool) -> std::borrow::Cow<'_, str> {
-    if matches!(card.action, crate::panel::CardAction::SelectAllBuildings(_)) {
-        return card
-            .title
-            .rsplit_once(' ')
-            .map_or(card.title.as_str().into(), |(_, count)| {
-                format!("All {count}").into()
-            });
-    }
     if small {
         card.title
             .rsplit_once(" x")
@@ -330,6 +321,34 @@ fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> V
         lines.push(line);
     }
     lines
+}
+
+/// The title row's select-all button, framed like a strip chip.
+fn draw_select_all(label: &str, rect: Rect, hovered: bool, s: f32) {
+    let (fill, stroke, edge) = if hovered {
+        (
+            crate::theme::CARD_HOVER,
+            crate::theme::Stroke::Focus,
+            crate::theme::EDGE_FOCUS,
+        )
+    } else {
+        (
+            crate::theme::CHIP,
+            crate::theme::Stroke::Edge,
+            crate::theme::EDGE_CHIP,
+        )
+    };
+    fill_rect(rect, fill);
+    stroke_rect(rect, stroke.at(s), edge);
+    let size = crate::theme::Type::Small.at(s);
+    let width = measure_text(label, None, numeric::font_size(size), 1.0).width;
+    draw_text(
+        label,
+        rect.x + (rect.w - width) * 0.5,
+        rect.y + rect.h * 0.5 + size * 0.35,
+        size,
+        TEXT_PRIMARY,
+    );
 }
 
 /// Packs every visible queue chip above the command band: a single
@@ -893,6 +912,7 @@ pub(crate) struct SelectionLayout {
     action_rect: Rect,
     card_rects: Vec<Rect>,
     rally_count: usize,
+    select_all: Option<Rect>,
     roster: Vec<Rect>,
     dock: Option<DockLayout>,
     hides_minimap: bool,
@@ -964,12 +984,29 @@ pub(crate) fn layout_panel(
         rally_card_count(&panel.cards),
     );
     let (cards_x, _, _, _) = card_metrics(viewport, s);
-    let measured = measure_info(panel, cards_x, s, small, measure);
+    let measured = measure_info(
+        panel,
+        cards_x,
+        s,
+        small,
+        crate::platform::TOUCH_ONLY,
+        measure,
+    );
     let packing = flush_band(packing, measured.height, viewport.y, s);
     let (card_rects, cards_w) = command_card_geometry(viewport, s, packing, &panel.cards);
     let action_rect = action_panel_rect(packing, cards_x, cards_w, !panel.cards.is_empty());
     let info_rect = selection_info_rect(viewport, cards_x, measured.height, action_rect);
     let top = info_rect.y;
+    // The select-all button's right edge lines up with the stat values,
+    // its middle with the title's first line.
+    let select_all = measured.select_all.map(|size| {
+        Rect::new(
+            cards_x - 12.0 * s - size.x,
+            top + measured.header_pad + 21.0 * s - size.y * 0.5,
+            size.x,
+            size.y,
+        )
+    });
     let (size, gap) = (measured.roster_size, 4.0 * s);
     let roster = (0..panel.roster.len().min(8))
         .map(|index| {
@@ -993,6 +1030,7 @@ pub(crate) fn layout_panel(
         action_rect,
         card_rects,
         rally_count: packing.rally_count,
+        select_all,
         roster,
         dock,
         hides_minimap: packing.hides_minimap,
@@ -1113,6 +1151,9 @@ impl PanelLayout {
                 geometry.info = selection.info_rect;
                 geometry.actions = selection.action_rect;
                 geometry.hides_minimap = selection.hides_minimap;
+                if let (Some(all), Some(rect)) = (&panel.select_all, selection.select_all) {
+                    geometry.select_all = (rect, all.card.action);
+                }
                 for (card, rect) in panel.roster.iter().zip(&selection.roster) {
                     geometry.roster_slots[geometry.roster_count] = (*rect, card.action);
                     geometry.roster_count += 1;
@@ -1305,6 +1346,7 @@ pub(crate) fn draw_panel(
         action_rect,
         card_rects,
         rally_count,
+        select_all,
         roster,
         dock,
         hides_minimap: _,
@@ -1319,8 +1361,9 @@ pub(crate) fn draw_panel(
         fill_rect(rect, crate::theme::SURFACE_BAND);
         draw_rectangle(rect.x, rect.y, rect.w, s, crate::theme::EDGE_WARM);
     }
+    let header = top + measured.header_pad;
     draw_icon(
-        Rect::new(10.0 * s, top + 6.0 * s, 32.0 * s, 32.0 * s),
+        Rect::new(10.0 * s, header + 6.0 * s, 32.0 * s, 32.0 * s),
         &panel.portrait,
         WHITE,
     );
@@ -1328,10 +1371,13 @@ pub(crate) fn draw_panel(
         crate::typography::draw(
             title,
             52.0 * s,
-            top + (24.0 + index as f32 * 17.0) * s,
+            header + (24.0 + index as f32 * 17.0) * s,
             crate::theme::Type::Body.at(s),
             TEXT_PRIMARY,
         );
+    }
+    if let (Some(all), Some(rect)) = (&panel.select_all, *select_all) {
+        draw_select_all(&all.label(), rect, hovers(input, rect), s);
     }
     for (index, status) in measured.status.iter().enumerate() {
         draw_text(
@@ -1424,7 +1470,6 @@ pub(crate) fn draw_panel(
         let label_y = top + measured.roster_y - 4.0 * s;
         let heading = match panel.roster.first().map(|card| card.action) {
             Some(CardAction::FilterBuilding(_)) => "SELECTED BUILDINGS",
-            Some(CardAction::SelectAllBuildings(_)) => "SELECT ALL",
             _ => "SELECTED UNITS",
         };
         draw_text(
