@@ -662,11 +662,15 @@ pub enum Motor {
         #[serde(default, skip_serializing_if = "crate::is_default")]
         stall_ticks: u8,
     },
-    /// A Bombard's spades deploying or planted: it stands still until they
-    /// stow.
+    /// A braced gun's spades deploying or planted: it stands still until
+    /// they stow.
     Braced {
         /// Deployment, up to fully planted.
         ticks: core::num::NonZeroU8,
+        /// The gun's bearing off the hull in compass steps, within its kind's
+        /// planted traverse. It swings back as the spades retract.
+        #[serde(default, skip_serializing_if = "crate::is_default")]
+        traverse: i8,
     },
     /// An aircraft in flight.
     Airborne {
@@ -875,7 +879,28 @@ impl Unit {
 
     /// Compass bearing used to aim this unit's primary weapon.
     pub fn weapon_heading(&self) -> u8 {
-        self.turret_heading.unwrap_or(self.heading)
+        self.turret_heading
+            .unwrap_or_else(|| self.heading.wrapping_add_signed(self.gun_traverse()))
+    }
+
+    /// The planted gun's bearing off the hull in compass steps: zero unless
+    /// the spades are out.
+    pub fn gun_traverse(&self) -> i8 {
+        match self.motor {
+            Motor::Braced { traverse, .. } => traverse,
+            Motor::Ground { .. } | Motor::Airborne { .. } | Motor::Landed => 0,
+        }
+    }
+
+    /// Turns a planted gun to `value` compass steps off the hull.
+    pub(crate) fn set_gun_traverse(&mut self, value: i8) {
+        debug_assert!(
+            matches!(self.motor, Motor::Braced { .. }),
+            "only a planted gun swings"
+        );
+        if let Motor::Braced { traverse, .. } = &mut self.motor {
+            *traverse = value;
+        }
     }
 
     /// The world bearing of the mounted gun in weapon slot `slot`, if this
@@ -892,7 +917,18 @@ impl Unit {
         if let Some(brace) = stats.brace
             && self.cooldowns[0] <= stats.weapons[0].cooldown_ticks - brace.recoil_ticks
         {
-            self.set_braces(self.braces().saturating_sub(brace.retract_per_tick));
+            let (before, after) = (
+                self.braces(),
+                self.braces().saturating_sub(brace.retract_per_tick),
+            );
+            // The gun swings back with the spades, so it is square to the
+            // hull once they stow.
+            if before > 0 {
+                let traverse =
+                    i16::from(self.gun_traverse()) * i16::from(after) / i16::from(before);
+                self.set_gun_traverse(i8::try_from(traverse).expect("shrinks toward the hull"));
+            }
+            self.set_braces(after);
         }
     }
 
@@ -923,19 +959,21 @@ impl Unit {
     /// Spade deployment, from stowed zero to fully planted.
     pub fn braces(&self) -> u8 {
         match self.motor {
-            Motor::Braced { ticks } => ticks.get(),
+            Motor::Braced { ticks, .. } => ticks.get(),
             Motor::Ground { .. } | Motor::Airborne { .. } | Motor::Landed => 0,
         }
     }
 
-    /// Deploys or stows a standing Bombard's spades. Stowing them returns
-    /// it to its motor at rest; deploying drops any stall count, which a
-    /// body standing braced never keeps.
+    /// Deploys or stows a standing gun's spades, leaving a planted gun's
+    /// bearing where it is. Stowing them returns it to its motor at rest;
+    /// deploying drops any stall count, which a body standing braced never
+    /// keeps.
     pub(crate) fn set_braces(&mut self, ticks: u8) {
         match core::num::NonZeroU8::new(ticks) {
             Some(ticks) => {
                 debug_assert_eq!(self.drive_speed(), Fx::ZERO, "only a stopped body braces");
-                self.motor = Motor::Braced { ticks };
+                let traverse = self.gun_traverse();
+                self.motor = Motor::Braced { ticks, traverse };
             }
             None if matches!(self.motor, Motor::Braced { .. }) => {
                 self.motor = Motor::at_rest(self.kind);
@@ -2046,7 +2084,8 @@ impl State {
     /// - Entity lists: strictly sorted by id, both id counters ahead of
     ///   every live id.
     /// - Units: owner in the table, a motor, harvest gear, turret bearing
-    ///   and cargo hold only where the kind has them, hp inside
+    ///   and cargo hold only where the kind has them, a planted gun's
+    ///   bearing within its traverse, hp inside
     ///   `(0, max_hp]`, meters and per-weapon cooldowns bounded, queue within
     ///   [`crate::stats::ORDER_QUEUE_CAP`], every coordinate inside the
     ///   envelope, every anchored Harvest source inside its work zone,
@@ -2412,8 +2451,14 @@ impl State {
                     return Err(E::InvalidStallTicks(id));
                 }
             }
-            Motor::Braced { ticks } => {
-                if ticks.get() > stats.brace.map_or(0, |brace| brace.deploy_ticks) {
+            Motor::Braced { ticks, traverse } => {
+                let arc = stats
+                    .brace
+                    .and_then(|brace| brace.traverse)
+                    .map_or(0, |traverse| traverse.arc);
+                if ticks.get() > stats.brace.map_or(0, |brace| brace.deploy_ticks)
+                    || traverse.unsigned_abs() > arc
+                {
                     return Err(E::InvalidUnitBraces(id));
                 }
             }
@@ -3908,8 +3953,9 @@ pub enum StateIntegrityError {
     /// slot past its roster is armed.
     #[error("unit {0} carries a cooldown no weapon of its kind sets")]
     UnitCooldownOutOfRange(UnitId),
-    /// Spade deployment exceeds its range or belongs to a non-siege unit.
-    #[error("unit {0} carries invalid spade deployment")]
+    /// Spade deployment exceeds its range or belongs to a non-siege unit, or
+    /// a planted gun stands off its hull beyond its kind's traverse.
+    #[error("unit {0} carries an invalid braced stance")]
     InvalidUnitBraces(UnitId),
     /// A stall counter at or past its replan bound, or on a body that is not
     /// walking a ground route.

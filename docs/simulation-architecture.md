@@ -892,13 +892,17 @@ unit's intent, shown to its owner (and, in the fog view, its allies).
 A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
 braced motor while its spades are out, counting deployment ticks up to the
 brace's deployment. It turns with the spades stowed, then deploys over that many
-aligned ticks; its heading stays fixed inside the firing tolerance while
-planted. After a shot, a short recoil window precedes retraction, which runs
-faster than deployment. A new aim, lost firing solution, or movement order
-retracts the spades before further turning or translation. Reloading at an
-unchanged firing stance keeps them planted. A braced gun never fires potshots on
-Advance. Deserialization bounds the deployment counter and rejects a braced
-motor on kinds without a brace; a transported rider keeps no motor at all.
+aligned ticks; its hull stays fixed while planted. A brace with a planted
+traverse, the Piledriver's, lets the gun swing off the hull within that arc at
+its rate once deployment starts; the motor holds that bearing, and the gun
+swings back in step with the spades as they retract. After a shot, a short
+recoil window precedes retraction, which runs faster than deployment. An aim
+beyond the firing tolerance plus any traverse, a lost firing solution, or a
+movement order retracts the spades before further turning or translation.
+Reloading at an unchanged firing stance keeps them planted. A braced gun never
+fires potshots on Advance. Deserialization bounds the deployment counter and the
+gun's bearing, and rejects a braced motor on kinds without a brace; a
+transported rider keeps no motor at all.
 
 `AttackTarget` resolves through team knowledge to a visible entity, remembered
 or public building footprint, or mobile contact. Explicit attacks approach

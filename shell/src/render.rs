@@ -1288,8 +1288,8 @@ fn draw_air_shadow(
     }
 }
 
-/// A rig's single mount over its hull: a turret at its aim, a weaponless or
-/// piledriving mechanism with the hull.
+/// A rig's single mount over its hull: a turret at its aim, a weaponless
+/// mechanism with the hull, a Piledriver's gun swung off it.
 fn draw_rig_mount(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -1297,6 +1297,7 @@ fn draw_rig_mount(
     rig: &crate::assets::UnitRig,
     (body, body_size, rotation, body_rotation): (Vec2, Vec2, f32, f32),
     animation: crate::presentation_animation::UnitAnimationState,
+    alpha: f32,
 ) {
     let zoom = game.presentation.camera.zoom;
     let dest = body_size.x;
@@ -1309,23 +1310,29 @@ fn draw_rig_mount(
         (mount, WHITE),
         (accent, seat_identity_color(game, unit.player)),
     ] {
-        let mount_rotation = if unit.kind.stats().weapons.is_empty()
-            || unit.kind == oxide_sim::UnitKind::Piledriver
-        {
+        let mount_rotation = if unit.kind.stats().weapons.is_empty() {
             body_rotation
+        } else if unit.kind == oxide_sim::UnitKind::Piledriver {
+            // The gun rides the hull's drawn lean, swung off it by its
+            // planted traverse.
+            body_rotation
+                + crate::game::angle_delta(game.draw_hull_heading(unit.id, alpha), rotation)
         } else {
             rotation
         };
         let (center, size) = if unit.kind == oxide_sim::UnitKind::Piledriver {
-            // The cropped mechanism retains its position on the 128-pixel chassis.
-            let offset = vec2(4.0, -8.0) * (dest / 128.0);
-            let (sin, cos) = mount_rotation.sin_cos();
+            // The cropped mechanism retains its position on the 128-pixel
+            // chassis and swings about its breech.
+            let scale = dest / 128.0;
+            let turn = |v: Vec2, angle: f32| {
+                let (sin, cos) = angle.sin_cos();
+                vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
+            };
+            let breech = vec2(4.0, 0.0) * scale;
+            let mount = vec2(4.0, -8.0) * scale;
             (
-                body + vec2(
-                    offset.x * cos - offset.y * sin,
-                    offset.x * sin + offset.y * cos,
-                ),
-                vec2(source.w, source.h) * (dest / 128.0),
+                body + turn(breech, body_rotation) + turn(mount - breech, mount_rotation),
+                vec2(source.w, source.h) * scale,
             )
         } else {
             (body, body_size)
@@ -1535,6 +1542,7 @@ fn draw_unit_pass(
                 rig,
                 (body, body_size, rotation, body_rotation),
                 animation,
+                alpha,
             );
         }
         if let Some(roc) = roc_rig {

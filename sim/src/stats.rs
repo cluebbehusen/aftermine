@@ -471,6 +471,18 @@ pub struct BraceStats {
     pub recoil_ticks: u32,
     /// Deployment lost per tick while retracting.
     pub retract_per_tick: u8,
+    /// How far the gun turns off the hull while the spades are out; `None`
+    /// keeps it fixed to the hull.
+    pub traverse: Option<PlantedTraverse>,
+}
+
+/// A planted gun's swing off its hull.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlantedTraverse {
+    /// Compass steps the gun may stand off the hull either way; at most 127.
+    pub arc: u8,
+    /// Compass steps the gun turns per tick.
+    pub rate: u8,
 }
 
 /// A machine's radar: hostile units and buildings inside its ring but out
@@ -1327,6 +1339,7 @@ const BOMBARD: UnitStats = UnitStats {
         deploy_ticks: 12,
         recoil_ticks: 8,
         retract_per_tick: 3,
+        traverse: None,
     }),
     target_priority: TargetPriority::Danger,
     crash: None,
@@ -1730,6 +1743,9 @@ const PILEDRIVER: UnitStats = UnitStats {
         deploy_ticks: 20,
         recoil_ticks: 8,
         retract_per_tick: 2,
+        // Planted, the gun follows a target drifting up to 22.5 degrees
+        // either way at 28 degrees a second before the spades must come up.
+        traverse: Some(PlantedTraverse { arc: 16, rate: 1 }),
     }),
     target_priority: TargetPriority::Heaviest,
     crash: None,
@@ -3351,6 +3367,23 @@ const _: () = {
                 );
                 m += 1;
             }
+        }
+        u += 1;
+    }
+};
+
+// A planted gun's bearing off its hull is a signed compass step, and a gun
+// that cannot turn would hold its spades down for aims it never meets.
+const _: () = {
+    let mut u = 0;
+    while u < UnitKind::ALL.len() {
+        if let Some(BraceStats {
+            traverse: Some(traverse),
+            ..
+        }) = UnitKind::ALL[u].stats().brace
+        {
+            assert!(traverse.arc < 128, "a planted arc fits a signed bearing");
+            assert!(traverse.rate > 0, "a planted gun turns");
         }
         u += 1;
     }

@@ -43,7 +43,21 @@ pub(super) fn steer_weapon_heading(unit: &mut crate::state::Unit, direction: Vec
         return false;
     }
     if let Some(brace) = unit.kind.stats().brace {
-        if !ground_weapon_aligned(unit, direction) {
+        // Stowed, the hull squares up to its aim before the spades go down, so
+        // a planted gun starts centred. Planted, the gun swings within its
+        // traverse and the spades come up only for an aim beyond it.
+        let arc = brace
+            .traverse
+            .filter(|_| unit.braces() > 0)
+            .map_or(0, |traverse| traverse.arc);
+        let off = if direction == Vec2Fx::ZERO {
+            0
+        } else {
+            chassis::compass::heading_of(direction)
+                .wrapping_sub(unit.heading)
+                .cast_signed()
+        };
+        if off.unsigned_abs() > arc.saturating_add(FIRING_TOLERANCE) {
             if unit.braces() > 0 {
                 unit.retract_braces();
             } else {
@@ -52,7 +66,14 @@ pub(super) fn steer_weapon_heading(unit: &mut crate::state::Unit, direction: Vec
             return false;
         }
         unit.set_braces((unit.braces() + 1).min(brace.deploy_ticks));
-        return unit.braces() == brace.deploy_ticks;
+        if let Some(traverse) = brace.traverse {
+            let arc = i16::from(traverse.arc);
+            let gun = i16::from(unit.gun_traverse());
+            let step = (i16::from(off).clamp(-arc, arc) - gun)
+                .clamp(-i16::from(traverse.rate), i16::from(traverse.rate));
+            unit.set_gun_traverse(i8::try_from(gun + step).expect("the arc fits a bearing"));
+        }
+        return unit.braces() == brace.deploy_ticks && ground_weapon_aligned(unit, direction);
     }
     let rate = unit
         .kind
