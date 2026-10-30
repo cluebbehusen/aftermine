@@ -158,6 +158,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             .sum::<u32>()
     };
     let mut list = Vec::new();
+    // A Deep Bore wanted before the Crucible it needs stands. Its first step
+    // is the Crucible, so until then it waits wherever tech waits.
+    let mut early_bore = None;
     // Tech grows wanted as income grows to feed it.
     if owned(BuildingKind::Fabricator) == 0 {
         let score = 300 * u32::from(saturated) + (situation.income / 2).min(600);
@@ -257,32 +260,38 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             };
             list.push((refinery, grown(base * 7 / 5, situation.economy)));
         }
-        if built(observation, BuildingKind::Crucible) {
-            // The supported Extractor nearest home in the seat's frame, so
-            // mirrored seats deepen mirrored frames.
-            let frame = HomeFrame::of(observation, situation.map);
-            let bore = observation
-                .my_buildings
-                .iter()
-                .filter(|building| {
-                    building.kind == BuildingKind::Extractor
-                        && building.built
-                        && building.tier == 0
-                        && expansion::supported(observation, building.anchor)
-                })
-                .min_by_key(|building| {
-                    let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
-                    frame.map(|frame| frame.rank(frame.home, centre))
-                });
-            if let Some(extractor) = bore {
-                let deep_bore = Investment::Upgrade {
-                    building: extractor.id,
-                    tier: 1,
-                };
-                list.push((deep_bore, grown(base * 2, situation.economy)));
+        // The supported Extractor nearest home in the seat's frame, so
+        // mirrored seats deepen mirrored frames. Its Deep Bore is wanted
+        // before the Crucible stands, so its worth pulls the Crucible
+        // forward as the first step.
+        let frame = HomeFrame::of(observation, situation.map);
+        let bore = observation
+            .my_buildings
+            .iter()
+            .filter(|building| {
+                building.kind == BuildingKind::Extractor
+                    && building.built
+                    && building.tier == 0
+                    && expansion::supported(observation, building.anchor)
+            })
+            .min_by_key(|building| {
+                let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
+                frame.map(|frame| frame.rank(frame.home, centre))
+            });
+        if let Some(extractor) = bore {
+            let deep_bore = Investment::Upgrade {
+                building: extractor.id,
+                tier: 1,
+            };
+            list.push((deep_bore, grown(base * 2, situation.economy)));
+            if !built(observation, BuildingKind::Crucible) {
+                early_bore = Some(deep_bore);
             }
         }
     }
+    let tech = |investment: &Investment| {
+        matches!(investment, Investment::Tech(_)) || Some(*investment) == early_bore
+    };
     // The opening economy is up once harvesting is saturated or income would
     // pay for a Turret every minute.
     let turret = BuildingKind::Turret
@@ -304,13 +313,13 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     // one gun holds an early rush that a tech building still going up would
     // not. It leads the best tech by the margin that switches a saving target.
     if situation.exposed && owned(BuildingKind::Turret) == 0 {
-        let tech = list
+        let best = list
             .iter()
-            .filter(|(investment, _)| matches!(investment, Investment::Tech(_)))
+            .filter(|(investment, _)| tech(investment))
             .map(|(_, score)| *score)
             .max()
             .unwrap_or(0);
-        let lead = (tech + (tech / 4).max(150) + 1).max(ADOPT);
+        let lead = (best + (best / 4).max(150) + 1).max(ADOPT);
         let mut offered = false;
         for (investment, score) in &mut list {
             if matches!(
@@ -331,7 +340,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         // a rush can only come by landing.
         if !settled && !offered && !situation.severed {
             for (investment, score) in &mut list {
-                if matches!(investment, Investment::Tech(_)) {
+                if tech(investment) {
                     *score = (*score).min(ADOPT - 1);
                 }
             }
@@ -362,7 +371,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         if let Some(best) = safe {
             let cap = (best * 4 / 5).min(best.saturating_sub(150));
             for (investment, score) in &mut list {
-                if matches!(investment, Investment::Tech(_)) {
+                if tech(investment) {
                     *score = (*score).min(cap);
                 }
             }

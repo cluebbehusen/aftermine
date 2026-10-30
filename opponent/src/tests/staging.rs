@@ -129,6 +129,56 @@ fn known_defenses_on_the_way_count_toward_an_attack_s_need() {
     );
 }
 
+#[test]
+fn an_attack_launched_on_a_long_wait_goes_in_at_the_margin_it_launched_on() {
+    // East's Sentinels by its Foundry, which a second Kestrel watches from
+    // out of their reach, and the Turrets on the way ask more than West's
+    // army at the full margin, but not at the margin a long wait has earned.
+    let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
+    scenario.units.push(unit(0, UnitKind::Kestrel, 41, 4));
+    for y in 10..15 {
+        scenario.units.push(unit(1, UnitKind::Sentinel, 41, y));
+    }
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 9_600, &[]);
+    let now = state.current_tick();
+    let mut members: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    let staged = |waiting: Option<u64>| {
+        restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {
+                        "task": "attack",
+                        "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                        "phase": "gather",
+                    },
+                    "since": now,
+                    "units": members,
+                    "goal": {"x": 11, "y": 11},
+                }],
+                "waiting": waiting,
+            });
+        })
+    };
+    let seen = |waiting: Option<u64>| {
+        let mut state = state.clone();
+        phases(&play(&mut staged(waiting), &mut state, now + 2_400, &[]))
+    };
+    assert_eq!(
+        seen(None),
+        [Phase::Gather],
+        "premise: the full margin holds it"
+    );
+    let seen = seen(Some(0));
+    assert!(
+        seen.starts_with(&[Phase::Travel, Phase::Stage, Phase::Travel, Phase::Engage]),
+        "it sets out, gathers short of the Turrets, then goes in: {seen:?}"
+    );
+}
+
 /// The guarded field at tick 408 with an attack on East's Foundry `phase`
 /// since `since`: Sentinels at `there` beside `STAGE`, and the rest of the
 /// army's eight at home, on their way since the decision before when

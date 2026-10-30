@@ -280,25 +280,29 @@ ground the seat's own does not reach counts in full; buildings that fire on
 ground count at their price with every upgrade they reached, discounted by
 missing health, and a building's weapons reach as far as its current tier's do.
 The target is the most valuable known enemy building for its distance by ground,
-or a hostile start when none is known; a better one replaces it only while the
-army gathers or recovers, and only when clearly better. The army gathers at a
-rally near home toward the target's owner, where free units join it while it
-gathers or recovers, travels, and fights; recruits still on their way go along
-once the time to regroup is up. It withdraws to the rally when the enemies it
-knows of around it, remembered or seen, outweigh what it has left, and recovers
-there to go again or disband. Its fight lasts until three minutes pass without
-progress: the target owner's known buildings losing health, or the health of the
-armed enemy units in sight around the army falling to a new low for the fight.
-Having cleared what it met short of a target it knows, such as a line in front
-of a base, it goes on to shoot that target while the fight's time lasts. Having
-taken its target it pushes on to the next only while strong enough for it. A
-target it withdrew from, could not reach, lost its army to, or stood idle beside
-is skipped for a while. With several enemies, attacks, strikes and lifts go
-after one rival's buildings first: the enemy pressing the seat hardest, then the
-nearest, less the army it shows, with guile favoring a small economy and a bonus
-for the owner of the oldest attack or strike's target so the seat does not flip
-between enemies. The rival is chosen once, as each decision begins, so
-production and investments prepare for the enemy its missions go after.
+or a hostile start when none is known. Above the lowest rung, while the free
+army falls short of that target, it goes after the most valuable known building
+for its distance that it can beat at the full margin instead. A better one
+replaces the target only while the army gathers or recovers, only when clearly
+better, and, above the lowest rung, only once the army can beat it. The army
+gathers at a rally near home toward the target's owner, where free units join it
+while it gathers or recovers, travels, and fights; recruits still on their way
+go along once the time to regroup is up. It withdraws to the rally when the
+enemies it knows of around it, remembered or seen, outweigh what it has left,
+and recovers there to go again or disband. Its fight lasts until three minutes
+pass without progress: the target owner's known buildings losing health, or the
+health of the armed enemy units in sight around the army falling to a new low
+for the fight. Having cleared what it met short of a target it knows, such as a
+line in front of a base, it goes on to shoot that target while the fight's time
+lasts. Having taken its target it pushes on to the next only while strong enough
+for it. A target it withdrew from, could not reach, lost its army to, or stood
+idle beside is skipped for a while. With several enemies, attacks, strikes and
+lifts go after one rival's buildings first: the enemy pressing the seat hardest,
+then the nearest, less the army it shows, with guile favoring a small economy
+and a bonus for the owner of the oldest attack or strike's target so the seat
+does not flip between enemies. The rival is chosen once, as each decision
+begins, so production and investments prepare for the enemy its missions go
+after.
 
 Above the lowest rung, an army whose way passes the fire of a known defense does
 not walk in as a column. It sets out for a staging spot: the tile on the way
@@ -338,9 +342,9 @@ Badly wounded members leave between fights and run to the rally. A defense may
 take the attack's units while it gathers, withdraws or recovers, and at the
 lowest rung also while it travels out of contact; it takes those of an attack
 gathering or recovering only after other suitable units. While a free army that
-could attack does not, an attack gathers, or every producer sits idle, the
-margin an attack must bring falls step by step toward even, and it returns to
-full once an attack sets out.
+could attack does not, an attack gathers or is on its way to its fight, or every
+producer sits idle, the margin an attack must bring falls step by step toward
+even, and it returns to full once none of these holds.
 
 Difficulty changes how well a seat attacks, never what it may do. Veteran and
 Prime count the known defense around a target like more distance, so they go
@@ -712,17 +716,19 @@ depletion raises every expansion. Disconnected sites use flight distance and
 include frame-only fields. Sites near another seat's building or its own
 Foundry, or failed at every anchor are skipped. An Extractor is worth more
 beside one of the seat's Foundries and less where it has seen danger, and none
-is bought on a frame while an armed enemy in sight stands near it. Once a
-Crucible stands, the supported Extractor nearest home is offered a Deep Bore
-upgrade, which needs that Foundry support to start, and an expansion site is
-also worth a frame for each own remote Extractor a Foundry there would support.
-A Deep Bore is guarded as worth more than a Crucible. The seat saves for one
-target at a time. It starts saving only for an investment that scores well and
-could stand somewhere it knows of or could look, keeps it while it still scores,
-and switches only for one that scores clearly higher. Prerequisites come first:
-saving for Airworks buys a Fabricator, and one needing an upgraded tier, such as
-a Spire's Deep Bore, upgrades the seat's own building one rung short, nearest
-home and with the support its upgrade needs, or waits while that upgrade runs.
+is bought on a frame while an armed enemy in sight stands near it. The supported
+Extractor nearest home is offered a Deep Bore upgrade, which needs that Foundry
+support to start. Before a Crucible stands, the Crucible is its first step, so
+its worth pulls the Crucible forward, and it waits wherever tech waits. Once a
+Crucible stands, an expansion site is also worth a frame for each own remote
+Extractor a Foundry there would support. A Deep Bore is guarded as worth more
+than a Crucible. The seat saves for one target at a time. It starts saving only
+for an investment that scores well and could stand somewhere it knows of or
+could look, keeps it while it still scores, and switches only for one that
+scores clearly higher. Prerequisites come first: saving for Airworks buys a
+Fabricator, and one needing an upgraded tier, such as a Spire's Deep Bore,
+upgrades the seat's own building one rung short, nearest home and with the
+support its upgrade needs, or waits while that upgrade runs.
 
 When it adopts a target a share of its bank is protected from ordinary spending,
 and while it saves a share of its estimated income is added, up to the next

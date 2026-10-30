@@ -84,8 +84,10 @@ the running total and mission state.
   its army's only way there, and the Sappers attacks want against known
   defenses, which cost more than any army unit their producer trains and would
   otherwise never get one.
-- The top investment is funded through its next purchasable step. The bot keeps
-  one optional saving target with its price, reason and cancel conditions.
+- The top investment is funded through its next purchasable step. The Deep Bore
+  upgrade is wanted before the Crucible it needs stands, so its worth funds the
+  Crucible as that step. The bot keeps one optional saving target with its
+  price, reason and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
   since the previous decision plus its own spending in between.
 - While saving, a share of income is protected for the target, capped by the
@@ -152,7 +154,7 @@ other non-derivable state persists between decisions:
 - missions and their phases, what a fighting attack last knew of the enemy's
   health, which tells whether the fight still makes progress, and since when a
   free army that could attack has waited, which lowers the margin an attack must
-  bring until it sets out;
+  bring until it reaches its fight;
 - the saving target; the investment list is rebuilt each decision;
 - the previous bank and spending used to estimate income, and the smoothed
   estimate;
@@ -216,6 +218,7 @@ Each behavior is proven by a staged scenario test.
 | Known defenses on the way to a target                      | Gather out of their reach, then go in together; fall back out of reach when shelled there before strong enough                                                                                                       |
 | Ground-severed enemy                                       | Splash bombers clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire                                                                |
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                                                                                         |
+| Best target out of the army's reach                        | Attack the best known target the free army beats at the full margin, and keep it while the best stays out of reach                                                                                                   |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                                                                                      |
 | Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                    |
 | Fight still making progress                                | Fight on; a fight ends once three minutes pass without the enemy losing building health or armed units around the army                                                                                               |
