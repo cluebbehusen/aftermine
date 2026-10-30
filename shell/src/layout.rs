@@ -64,6 +64,9 @@ pub struct LayoutModel {
     pub ghost_cancel: Rect,
     /// The touch ghost's row handle.
     pub ghost_handle: Rect,
+    /// The info box title row's select-all button; zero-sized while there
+    /// is none.
+    pub select_all: (Rect, CardAction),
     /// Mixed-selection roster filters, separate from command cards.
     pub roster_slots: [(Rect, CardAction); 8],
     /// How many roster filters are live this frame.
@@ -104,6 +107,7 @@ impl Default for LayoutModel {
             ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_handle: Rect::new(0.0, 0.0, 0.0, 0.0),
+            select_all: (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None),
             roster_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
             roster_count: 0,
             cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
@@ -431,6 +435,8 @@ impl LayoutModel {
 /// The panel row a card sits in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CardRow {
+    /// The select-all button in the info box's title row.
+    SelectAll,
     Roster,
     Cards,
     Queue,
@@ -447,11 +453,13 @@ pub(crate) struct CardHit {
     pub(crate) action: CardAction,
 }
 
-/// The card under `p`, searching the roster, then command cards, then
-/// the queue and its Stop button. A fingertip (`touch_ui`) hits through each card's padded
-/// touch target; a mouse hits the drawn rect.
+/// The card under `p`, searching the select-all button and the roster,
+/// then command cards, then the queue and its Stop button. A fingertip
+/// (`touch_ui`) hits through each card's padded touch target; a mouse
+/// hits the drawn rect.
 pub(crate) fn card_under(layout: &LayoutModel, p: Vec2, touch_ui: Option<f32>) -> Option<CardHit> {
-    let rows: [(CardRow, &[(Rect, CardAction)]); 4] = [
+    let rows: [(CardRow, &[(Rect, CardAction)]); 5] = [
+        (CardRow::SelectAll, std::slice::from_ref(&layout.select_all)),
         (CardRow::Roster, &layout.roster_slots[..layout.roster_count]),
         (CardRow::Cards, &layout.cards[..layout.card_count]),
         (CardRow::Queue, &layout.queue_slots[..layout.queue_count]),

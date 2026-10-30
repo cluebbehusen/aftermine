@@ -152,9 +152,14 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             rally_card_count(&panel.cards),
         );
         let (left, _, _, _) = card_metrics(viewport, scale);
-        let measured = measure_info(&panel, left, scale, false, &|_, text: &str, size: f32| {
-            text.len() as f32 * size * 0.5
-        });
+        let measured = measure_info(
+            &panel,
+            left,
+            scale,
+            false,
+            false,
+            &|_, text: &str, size: f32| text.len() as f32 * size * 0.5,
+        );
         let (cards, right) = command_card_geometry(viewport, scale, packing, &panel.cards);
         let actions = action_panel_rect(packing, left, right, !panel.cards.is_empty());
         assert!(cards.iter().any(|card| card.y > cards[0].y));
@@ -687,9 +692,14 @@ fn a_mixed_small_window_selection_keeps_roster_and_queue_in_the_corner() {
     let panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
-    let info = measure_info(&panel, 204.0, 1.0, true, &|_, text: &str, size: f32| {
-        text.len() as f32 * size * 0.5
-    });
+    let info = measure_info(
+        &panel,
+        204.0,
+        1.0,
+        true,
+        false,
+        &|_, text: &str, size: f32| text.len() as f32 * size * 0.5,
+    );
     assert_eq!(panel.roster.len(), 8);
     assert_eq!(info.roster_columns, 4);
     let (dock, slots, count) = queue_grid(8, 400.0 - info.height, 1.0, 0.0);
@@ -748,4 +758,40 @@ fn a_tile_icon_drops_below_a_hotkey_that_reaches_its_column() {
     let chord = Rect::new(104.0, 603.0, 45.0, 10.0);
     let floor = tile_icon_floor(tile, 22.0, Some(chord), 1.0);
     assert!(floor > chord.bottom(), "the icon clears Shift+O");
+}
+
+#[test]
+fn the_select_all_button_widens_the_title_row_and_grows_for_fingertips() {
+    let mut game =
+        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Turret, &[0, 0, 0], 0);
+    game.presentation.selection.buildings.truncate(1);
+    let mut panel =
+        crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
+            .unwrap();
+    let measure = |touch, panel: &crate::panel::Panel| {
+        measure_info(
+            panel,
+            228.0,
+            1.0,
+            false,
+            touch,
+            &|_, text: &str, size: f32| text.len() as f32 * size * 0.5,
+        )
+    };
+    let desk = measure(false, &panel);
+    let touch = measure(true, &panel);
+    // "All 3" measures 32.5 here: 11 to either side on a desk, and a
+    // fingertip's floor on touch.
+    assert_eq!(desk.select_all, Some(vec2(54.5, 26.0)));
+    assert_eq!(touch.select_all, Some(vec2(60.0, 36.0)));
+    panel.select_all = None;
+    let bare = measure(false, &panel);
+    assert_eq!(bare.header_pad, 0.0);
+    assert_eq!(
+        desk.height - bare.height,
+        10.0,
+        "5 above the title, 5 below"
+    );
+    assert_eq!(touch.height - bare.height, 12.0);
+    assert_eq!(desk.health_y - bare.health_y, 10.0);
 }

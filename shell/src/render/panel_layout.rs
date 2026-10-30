@@ -23,6 +23,17 @@ pub(super) struct InfoLayout {
     pub line_h: f32,
     pub roster_size: f32,
     pub roster_columns: usize,
+    /// How far the title row sits below the box's top edge: room the
+    /// select-all button keeps above it, and again below.
+    pub header_pad: f32,
+    /// The select-all button's size, when the title row carries one.
+    pub select_all: Option<Vec2>,
+}
+
+/// The select-all button for `label`, a fingertip's taller and wider.
+fn select_all_size(touch: bool, scale: f32, label_width: f32) -> Vec2 {
+    let (min_w, h) = if touch { (60.0, 36.0) } else { (52.0, 26.0) };
+    vec2((label_width + 22.0 * scale).max(min_w * scale), h * scale)
 }
 
 pub(super) fn measure_info(
@@ -30,6 +41,7 @@ pub(super) fn measure_info(
     width: f32,
     scale: f32,
     compact: bool,
+    touch: bool,
     measure: super::hud::Measure<'_>,
 ) -> InfoLayout {
     use super::hud::Face;
@@ -38,12 +50,27 @@ pub(super) fn measure_info(
     let font = if compact { Type::Small } else { Type::Body }.at(scale);
     let line_h = if compact { 18.0 } else { 22.0 } * scale;
     let inner = width - 24.0 * scale;
+    // The select-all button shares the title row, which grows a little so
+    // the button clears both the box's top edge and the Health line.
+    let select_all = panel.select_all.as_ref().map(|all| {
+        select_all_size(
+            touch,
+            scale,
+            measure(Face::Body, &all.label(), Type::Small.at(scale)),
+        )
+    });
+    let header_pad = if select_all.is_some() {
+        (if touch { 6.0 } else { 5.0 }) * scale
+    } else {
+        0.0
+    };
     let title = wrap_words(
         &panel.title,
         |s| measure(Face::Display, s, Type::Body.at(scale)),
-        width - 64.0 * scale,
+        width - 64.0 * scale - select_all.map_or(0.0, |size| size.x + 6.0 * scale),
     );
-    let mut y = (44.0 * scale).max(14.0 * scale + title.len() as f32 * 17.0 * scale);
+    let mut y =
+        (44.0 * scale).max(14.0 * scale + title.len() as f32 * 17.0 * scale) + 2.0 * header_pad;
     let status: Vec<_> = panel
         .info
         .status
@@ -120,6 +147,8 @@ pub(super) fn measure_info(
         line_h,
         roster_size,
         roster_columns,
+        header_pad,
+        select_all,
     }
 }
 
@@ -128,6 +157,7 @@ pub(super) struct PanelGeometry {
     pub info: Rect,
     pub actions: Rect,
     pub orders: Rect,
+    pub select_all: (Rect, crate::panel::CardAction),
     pub roster_slots: [(Rect, crate::panel::CardAction); 8],
     pub roster_count: usize,
     pub cards: [(Rect, crate::panel::CardAction); crate::panel::MAX_CARDS],
@@ -147,6 +177,7 @@ impl PanelGeometry {
             info: zero,
             actions: zero,
             orders: zero,
+            select_all: (zero, CardAction::None),
             roster_slots: [(zero, CardAction::None); 8],
             roster_count: 0,
             cards: [(zero, CardAction::None); crate::panel::MAX_CARDS],

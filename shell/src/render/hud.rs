@@ -178,6 +178,7 @@ pub(crate) fn layout(
         ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
         ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),
         ghost_handle: ghost_controls.map_or(zero, |controls| controls.handle),
+        select_all: geometry.select_all,
         roster_slots: geometry.roster_slots,
         roster_count: geometry.roster_count,
         cards: geometry.cards,
