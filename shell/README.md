@@ -136,9 +136,10 @@ iPadOS 27 requires the `UIScene` lifecycle, so the workspace pins a miniquad
 fork that carries unreleased upstream work; see the workspace `Cargo.toml` for
 why.
 
-`uv run tools/gen_icon.py` reproduces the shared desktop and iOS icon. The iOS
-catalog receives an opaque square master; desktop window icons and the macOS
-bundle use the same artwork with transparent outer corners. Commit both sets of
+`uv run tools/gen_icon.py` exports the approved artwork and desktop silhouette
+from `tools/production_icon_sources/`. The iOS catalog receives an opaque square
+master; desktop window icons and the macOS bundle use the same artwork with the
+approved transparent corners. Commit the source artwork, mask, and both sets of
 generated files when changing the icon.
 
 ## Sandbox sessions

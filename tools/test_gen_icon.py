@@ -75,6 +75,11 @@ class IconGenerationTests(unittest.TestCase):
                         )
 
     def test_ios_catalog_uses_the_approved_opaque_master(self) -> None:
+        self.assertEqual(
+            hashlib.sha256(gen_icon.SOURCE.read_bytes()).hexdigest(),
+            "08899d0cf3e97da368e82f2568a7946b79d83228a5691f651099e01abd8ee009",
+            "the original approved artwork must be preserved byte-for-byte",
+        )
         catalog = json.loads((gen_icon.IOS_OUT / "Contents.json").read_text())
         self.assertEqual(len(catalog["images"]), 1)
         entry = catalog["images"][0]
@@ -90,11 +95,11 @@ class IconGenerationTests(unittest.TestCase):
             self.assertEqual(image.size, (1024, 1024))
             self.assertEqual(
                 hashlib.sha256(image.tobytes()).hexdigest(),
-                "a28bb9efbbd7d63bd633d9ac6d59d8c6124e42c71265a1d22813b1c4d987ad1f",
+                "02fdfaee4efd570a80b81e1664061b330facecee57e0bd6cec0f7bbb631cc80d",
                 "the approved icon artwork must remain unchanged across exports",
             )
 
-    def test_desktop_mask_only_removes_background(self) -> None:
+    def test_desktop_mask_preserves_artwork_and_approved_corners(self) -> None:
         with (
             Image.open(gen_icon.OUT / "aftermine_1024.png") as master,
             Image.open(gen_icon.OUT / "aftermine_desktop_1024.png") as desktop,
@@ -102,14 +107,11 @@ class IconGenerationTests(unittest.TestCase):
             self.assertEqual(desktop.mode, "RGBA")
             self.assertEqual(desktop.size, master.size)
             self.assertEqual(desktop.convert("RGB").tobytes(), master.tobytes())
-            removed_colors = {
-                rgb
-                for rgb, rgba in zip(
-                    master.get_flattened_data(), desktop.get_flattened_data()
-                )
-                if rgba[3] != 255
-            }
-            self.assertEqual(removed_colors, {(28, 28, 34)})
+            self.assertEqual(
+                hashlib.sha256(desktop.getchannel("A").tobytes()).hexdigest(),
+                "016346cb3aa77ef1b424525ead9507d067738f3a914482faebdeb3a4f1b912b3",
+                "desktop exports must retain the approved corner silhouette",
+            )
 
     def test_raw_window_icons_have_exact_rgba_dimensions(self) -> None:
         with tempfile.TemporaryDirectory(prefix="aftermine-icon-format-") as temp:

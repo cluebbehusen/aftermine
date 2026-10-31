@@ -49,7 +49,7 @@ cat > "$APP/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# Icon, best effort: an iconset from the real mark (tools/gen_icon.py).
+# Icon, best effort: an iconset from the shared artwork (tools/gen_icon.py).
 # Missing tools or assets just mean a default-icon app.
 if command -v sips > /dev/null && command -v iconutil > /dev/null \
     && [ -f assets/icon/aftermine_desktop_1024.png ]; then
