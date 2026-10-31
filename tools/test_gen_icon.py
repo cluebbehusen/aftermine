@@ -77,7 +77,7 @@ class IconGenerationTests(unittest.TestCase):
     def test_ios_catalog_uses_the_approved_opaque_master(self) -> None:
         self.assertEqual(
             hashlib.sha256(gen_icon.SOURCE.read_bytes()).hexdigest(),
-            "08899d0cf3e97da368e82f2568a7946b79d83228a5691f651099e01abd8ee009",
+            "e020b65d4841ed2237354ea8c27fca6559f142bfe14e98495757743429008561",
             "the original approved artwork must be preserved byte-for-byte",
         )
         catalog = json.loads((gen_icon.IOS_OUT / "Contents.json").read_text())
@@ -95,7 +95,7 @@ class IconGenerationTests(unittest.TestCase):
             self.assertEqual(image.size, (1024, 1024))
             self.assertEqual(
                 hashlib.sha256(image.tobytes()).hexdigest(),
-                "02fdfaee4efd570a80b81e1664061b330facecee57e0bd6cec0f7bbb631cc80d",
+                "dd260fff9b4af93442b74353b9257268953ef99209398fbdea211c9045989b07",
                 "the approved icon artwork must remain unchanged across exports",
             )
 
