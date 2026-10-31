@@ -8,10 +8,10 @@ use crate::investments::{ADOPT, Investment};
 use crate::map::{MapModel, Site, UNREACHABLE};
 use crate::memory::Memory;
 use crate::workers::worker;
+use aftermine_sim::geometry::foundry_supports;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::geometry::foundry_supports;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::{BuildingKind, PlayerId, UnitKind};
 
 /// Chebyshev reach around a site or frame that counts toward its danger.
 const DANGER_REACH: i32 = 10;

@@ -4,7 +4,7 @@ use crate::investments::{self, ADOPT, Candidate, Investment, Situation};
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
-use oxide_sim::scenario::{BotConfig, BotDifficulty};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty};
 
 /// The arena with both seats' Harvesters saturating their nodes, so a
 /// Fabricator is worth saving for from the first decision.
@@ -695,7 +695,7 @@ fn a_harvester_sealed_off_from_the_site_never_builds_it() {
             _ => None,
         })
         .expect("the target is bought");
-    let nearest = |unit: &oxide_sim::state::Unit| unit.tile().chebyshev(anchor);
+    let nearest = |unit: &aftermine_sim::state::Unit| unit.tile().chebyshev(anchor);
     let sealed_distance = nearest(state.unit(sealed).unwrap());
     assert!(
         state
@@ -962,7 +962,7 @@ fn checkpoints_reject_state_off_the_map_and_survive_extreme_samples() {
 #[test]
 fn drones_out_of_a_bay_move_neither_the_threat_nor_the_army_behind_the_share() {
     let mut scenario = saturated(0);
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: UnitKind::Roc,
         x: 8,
@@ -984,7 +984,7 @@ fn drones_out_of_a_bay_move_neither_the_threat_nor_the_army_behind_the_share() {
     let mut next = 10_000;
     let mut unit = |kind, player, host| {
         next += 1;
-        oxide_sim::observation::UnitObs {
+        aftermine_sim::observation::UnitObs {
             id: UnitId(next),
             kind,
             player,

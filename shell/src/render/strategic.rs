@@ -10,7 +10,7 @@ use crate::render::prim::{fill_circle, line_between, stroke_circle};
 use crate::render::sky::{
     Flight, INTERCEPTOR_TAIL, InterceptorPath, SCALE_PER_TILE, SHADOW_PER_TILE, WARHEAD_TAIL,
 };
-use oxide_sim::Building;
+use aftermine_sim::Building;
 
 /// Where a Lattice pod turns, as a share of the footprint.
 const POD_PIVOTS: [Vec2; 2] = [vec2(0.25, 62.0 / 128.0), vec2(0.75, 62.0 / 128.0)];
@@ -346,7 +346,7 @@ const HEAT: Color = Color::new(1.0, 0.95, 0.82, 1.0);
 /// allied warheads, the danger colour for a hostile one.
 fn warhead_tint(
     game: &crate::game::Scene<'_>,
-    player: Option<oxide_sim::PlayerId>,
+    player: Option<aftermine_sim::PlayerId>,
     hostile: bool,
 ) -> Color {
     match player {
@@ -491,7 +491,7 @@ fn draw_trail(
 
 /// Every warhead this seat may know of: all of them for an all-seeing
 /// viewer, else those its team launched, tracked, or holds a contact on.
-fn warheads_known(game: &crate::game::Scene<'_>) -> Vec<oxide_sim::strike::KnownWarhead> {
+fn warheads_known(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::strike::KnownWarhead> {
     let (state, human) = (game.state, game.presentation.human);
     if state.warheads().is_empty() {
         Vec::new()
@@ -527,7 +527,7 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     .find(|flying| flying.id == warhead.id)
             });
             if let Some(Some(flying)) = seen {
-                let line = oxide_sim::strike::WarheadLine {
+                let line = aftermine_sim::strike::WarheadLine {
                     launch: flying.launch,
                     impact: flying.impact,
                     arrival: flying.arrival,
@@ -541,7 +541,7 @@ pub(crate) fn draw_warheads(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let flight = Flight::of(line);
         // The strike ring: where it falls and how far the blast reaches.
         let impact = camera.to_screen(flight.impact);
-        let blast = oxide_sim::stats::WARHEAD;
+        let blast = aftermine_sim::stats::WARHEAD;
         let outer = blast.outer_radius.to_num::<f32>() * zoom;
         let full = blast.full_radius.to_num::<f32>() * zoom;
         let ring = Color::new(
@@ -695,7 +695,8 @@ fn draw_contact(center: Vec2, zoom: f32, exposure: Option<u8>, tint: Color) {
     ] {
         line_between(center + a, center + b, 2.0, tint);
     }
-    let held = f32::from(exposure.unwrap_or(0)) / f32::from(oxide_sim::stats::WARHEAD_TRACK_TICKS);
+    let held =
+        f32::from(exposure.unwrap_or(0)) / f32::from(aftermine_sim::stats::WARHEAD_TRACK_TICKS);
     crate::render::prim::stroke_arc(center, r * 1.6, 2.0, 360.0 * held.clamp(0.0, 1.0), tint);
 }
 
@@ -887,7 +888,7 @@ pub(super) fn draw_warhead_burst(
     let camera = &game.presentation.camera;
     let zoom = camera.zoom;
     let center = camera.to_screen(at);
-    let blast = oxide_sim::stats::WARHEAD;
+    let blast = aftermine_sim::stats::WARHEAD;
     let outer = blast.outer_radius.to_num::<f32>() * zoom;
     let full = blast.full_radius.to_num::<f32>() * zoom;
     let life = crate::game::WARHEAD_BURST;
@@ -1105,7 +1106,7 @@ pub(crate) fn draw_strike_ground(game: &crate::game::Scene<'_>, input: &InputSta
     if grounds.is_empty() {
         return;
     }
-    let blast = oxide_sim::stats::WARHEAD;
+    let blast = aftermine_sim::stats::WARHEAD;
     let s = ui_scale();
     let step = HAZARD_STEP * s;
     let drift = if super::reduced_motion() {
@@ -1131,7 +1132,7 @@ pub(crate) fn draw_strike_ground(game: &crate::game::Scene<'_>, input: &InputSta
 /// A striped blast's edges, drawn above the fog: its reach in `color` and
 /// its full-damage core in white.
 fn hazard_edges(center: Vec2, color: Color, alpha: f32, zoom: f32) {
-    let blast = oxide_sim::stats::WARHEAD;
+    let blast = aftermine_sim::stats::WARHEAD;
     stroke_circle(
         center,
         blast.outer_radius.to_num::<f32>() * zoom,

@@ -5,7 +5,7 @@
 //! ends. Screens decode a frame's keys with [`Nav::decode`] and step their
 //! cursor with [`step_line`] or [`step_grid`].
 
-use oxide_protocol::{Key, RawEvent};
+use aftermine_protocol::{Key, RawEvent};
 
 /// What a canonical menu key asks of a cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

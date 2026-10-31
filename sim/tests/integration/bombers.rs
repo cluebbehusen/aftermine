@@ -4,10 +4,10 @@
 use crate::common;
 use common::{cmd, players, unit};
 
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, Target, UnitKind};
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, Target, UnitKind};
 
 fn arena(scrap: u32, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
@@ -94,7 +94,7 @@ fn the_condor_bombs_on_passes_and_never_hovers_to_strafe() {
         0,
         Command::Attack {
             units: vec![condor],
-            target: oxide_sim::AttackTarget::Building(turret),
+            target: aftermine_sim::AttackTarget::Building(turret),
             queue: false,
         },
     )]);
@@ -181,7 +181,7 @@ fn a_condor_replans_when_its_wide_turn_meets_a_peak() {
         let terrain = state.map().tile(unit.tile()).unwrap().terrain;
         assert_ne!(
             terrain,
-            oxide_sim::map::Terrain::Peak,
+            aftermine_sim::map::Terrain::Peak,
             "the turn never enters the mountain"
         );
         let delta = i16::from(unit.heading.wrapping_sub(last_heading).cast_signed()).abs();
@@ -424,7 +424,7 @@ fn turret(player: u8, x: i32, y: i32) -> BuildingSpec {
     common::building(player, BuildingKind::Turret, x, y)
 }
 
-fn enemy_building(state: &oxide_sim::State, x: i32, y: i32) -> oxide_sim::ids::BuildingId {
+fn enemy_building(state: &aftermine_sim::State, x: i32, y: i32) -> aftermine_sim::ids::BuildingId {
     state
         .buildings()
         .iter()
@@ -433,7 +433,7 @@ fn enemy_building(state: &oxide_sim::State, x: i32, y: i32) -> oxide_sim::ids::B
         .id
 }
 
-fn attack(player: u8, unit: oxide_sim::ids::UnitId, target: Target) -> PlayerCommand {
+fn attack(player: u8, unit: aftermine_sim::ids::UnitId, target: Target) -> PlayerCommand {
     cmd(
         player,
         Command::Attack {
@@ -456,8 +456,8 @@ struct Flight {
 /// Runs `ticks` ticks, asserting every tick that the aircraft stays inside
 /// the world envelope, and reports how the flight went.
 fn fly_and_watch(
-    state: &mut oxide_sim::State,
-    condor: oxide_sim::ids::UnitId,
+    state: &mut aftermine_sim::State,
+    condor: aftermine_sim::ids::UnitId,
     ticks: u32,
     stop_after_releases: usize,
 ) -> Flight {
@@ -708,12 +708,12 @@ fn an_idle_bomber_orbits_then_lands_itself() {
     let mut heading = state.unit(condor).unwrap().heading;
     let mut last_pos = start;
     // The idle orbit: a constant-rate turn that never hangs in place.
-    for _ in 0..u32::from(oxide_sim::stats::AUTO_LAND_IDLE_TICKS) - 5 {
+    for _ in 0..u32::from(aftermine_sim::stats::AUTO_LAND_IDLE_TICKS) - 5 {
         state.tick(&[]);
         let unit = state.unit(condor).unwrap();
         assert_eq!(
             unit.order,
-            oxide_sim::state::Order::Idle,
+            aftermine_sim::state::Order::Idle,
             "premise: nothing to fight"
         );
         assert_ne!(unit.pos, last_pos, "an idle airframe never hangs in place");
@@ -743,7 +743,7 @@ fn an_idle_bomber_orbits_then_lands_itself() {
         parked
             .tile()
             .chebyshev(chassis::grid::TilePos::containing(start))
-            <= oxide_sim::stats::AUTO_LAND_SCAN_RADIUS + 4,
+            <= aftermine_sim::stats::AUTO_LAND_SCAN_RADIUS + 4,
         "auto-land wandered to {:?}",
         parked.tile()
     );
@@ -793,7 +793,7 @@ fn a_bomber_whose_target_dies_keeps_flying() {
     );
     assert_ne!(
         state.unit(condor).unwrap().order,
-        oxide_sim::state::Order::Attack {
+        aftermine_sim::state::Order::Attack {
             pursue: false,
             target: Target::Unit(harvester).into(),
             resume: None,

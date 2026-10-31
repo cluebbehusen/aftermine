@@ -7,10 +7,10 @@ use crate::common;
 use chassis::grid::as_index;
 use common::open_arena;
 
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{BuildingKind, CRUCIBLE_SMELT_PERIOD};
+use aftermine_sim::{PlayerId, Scenario, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingKind, CRUCIBLE_SMELT_PERIOD};
-use oxide_sim::{PlayerId, Scenario, State, UnitKind};
 
 /// A walled yard: seat 0 owns a Crucible with a Turret beside it and a
 /// second Turret far outside the smelter ring; seat 1's two doomed

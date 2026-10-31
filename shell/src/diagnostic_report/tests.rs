@@ -14,7 +14,7 @@ fn finished(job: &mut ReportJob) -> Result<String, String> {
 
 fn scratch(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "oxide-report-{name}-{}-{}",
+        "aftermine-report-{name}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -29,14 +29,14 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn a_report_holds_the_live_matchs_commands_and_the_incident_log() {
     let root = scratch("live");
     std::fs::write(
-        root.join(oxide_kit::diagnostics::INCIDENTS),
+        root.join(aftermine_kit::diagnostics::INCIDENTS),
         br#"{"incidents":[]}"#,
     )
     .unwrap();
-    let mut game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.issue(oxide_sim::Command::Train {
-        building: oxide_sim::BuildingId(0),
-        kind: oxide_sim::UnitKind::Harvester,
+    let mut game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.issue(aftermine_sim::Command::Train {
+        building: aftermine_sim::BuildingId(0),
+        kind: aftermine_sim::UnitKind::Harvester,
     });
     game.advance_ticks(3);
 
@@ -54,14 +54,14 @@ fn a_report_holds_the_live_matchs_commands_and_the_incident_log() {
         .unwrap()
         .unwrap()
         .path();
-    let replay = oxide_kit::load_replay(report.join("replay.json")).unwrap();
+    let replay = aftermine_kit::load_replay(report.join("replay.json")).unwrap();
     assert_eq!(replay.meta.ticks, Some(3));
     assert_eq!(
         serde_json::to_value(&replay.commands).unwrap(),
         serde_json::to_value(&game.recorder.commands).unwrap()
     );
     assert_eq!(
-        std::fs::read(report.join(oxide_kit::diagnostics::INCIDENTS)).unwrap(),
+        std::fs::read(report.join(aftermine_kit::diagnostics::INCIDENTS)).unwrap(),
         br#"{"incidents":[]}"#
     );
     let manifest: serde_json::Value =
@@ -76,7 +76,7 @@ fn a_report_holds_the_live_matchs_commands_and_the_incident_log() {
 #[test]
 fn an_unplayed_match_without_incidents_has_nothing_to_export() {
     let root = scratch("empty");
-    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let mut job = ReportJob::default();
     job.start(&game, Some(root.clone())).unwrap();
     assert!(
@@ -90,20 +90,20 @@ fn an_unplayed_match_without_incidents_has_nothing_to_export() {
 
 #[test]
 fn a_report_needs_a_diagnostics_folder() {
-    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     assert!(ReportJob::default().start(&game, None).is_err());
 }
 
 #[test]
 fn a_report_carries_the_newest_crash_dump() {
     let root = scratch("crash");
-    let mut crashed = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut crashed = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     crashed.advance_ticks(2);
     let mut replay = crashed.recorder.clone();
     replay.meta.ticks = Some(2);
-    oxide_kit::diagnostics::write_crash_dump(
+    aftermine_kit::diagnostics::write_crash_dump(
         &root,
-        &oxide_kit::diagnostics::CrashDump {
+        &aftermine_kit::diagnostics::CrashDump {
             replay: &replay,
             phase: "collection",
             unfinished: &[],
@@ -112,7 +112,7 @@ fn a_report_carries_the_newest_crash_dump() {
         },
     )
     .unwrap();
-    let relaunched = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let relaunched = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let mut job = ReportJob::default();
     job.start(&relaunched, Some(root.clone())).unwrap();
     finished(&mut job).unwrap();
@@ -129,7 +129,7 @@ fn a_report_carries_the_newest_crash_dump() {
         serde_json::json!(["crash-replay.json", "crash.json"])
     );
     assert_eq!(
-        oxide_kit::load_replay(report.join("crash-replay.json"))
+        aftermine_kit::load_replay(report.join("crash-replay.json"))
             .unwrap()
             .meta
             .ticks,
@@ -145,7 +145,7 @@ fn a_failed_export_leaves_no_partial_report() {
     std::fs::create_dir_all(&broken).unwrap();
     // A finished dump whose replay went missing cannot be copied.
     std::fs::write(broken.join("crash.json"), b"{}").unwrap();
-    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let mut job = ReportJob::default();
     job.start(&game, Some(root.clone())).unwrap();
     assert!(

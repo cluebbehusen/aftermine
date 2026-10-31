@@ -1,7 +1,7 @@
 use super::*;
+use aftermine_sim::vision::PublicBuilding;
+use aftermine_sim::{BuildingKind, PlayerId, Scenario};
 use chassis::grid::TilePos;
-use oxide_sim::vision::PublicBuilding;
-use oxide_sim::{BuildingKind, PlayerId, Scenario};
 
 #[test]
 fn a_public_building_joins_as_a_memory_and_a_remembered_one_is_brought_up_to_date() {

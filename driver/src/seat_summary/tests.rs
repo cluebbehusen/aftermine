@@ -44,7 +44,7 @@ fn row(teams: &[u8], difficulties: &[&str], idle: u64) -> String {
 
 #[test]
 fn rows_pool_by_layout_and_difficulty_from_the_lowest_rung_up() {
-    let dir = std::env::temp_dir().join(format!("oxide-seat-summary-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-seat-summary-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("rows.jsonl");
     let rows = [
@@ -138,7 +138,7 @@ fn duel(difficulties: [&str; 2], stances: [&str; 2], winner: Option<u8>, minutes
 
 #[test]
 fn outcomes_pool_by_layout_and_difficulties_with_seat_stance_and_pacing_records() {
-    let dir = std::env::temp_dir().join(format!("oxide-seat-outcomes-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-seat-outcomes-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("rows.jsonl");
     let rows = [

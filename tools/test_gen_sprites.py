@@ -11,7 +11,7 @@ from tools import gen_sprites
 
 class SpriteReproducibilityTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(prefix="oxide-sprite-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="aftermine-sprite-test-")
         root = Path(self.temp.name)
         self.expected = root / "expected"
         self.actual = root / "actual"

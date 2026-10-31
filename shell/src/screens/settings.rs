@@ -13,9 +13,9 @@ use crate::numeric::Fit;
 use crate::render;
 use crate::tabs::TabStrip;
 use crate::text_field::{Edit, Field, Form, Keyboard};
+use aftermine_net::{NameError, PlayerName};
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
-use oxide_net::{NameError, PlayerName};
-use oxide_protocol::{Key, RawEvent};
 
 /// A Settings tab.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

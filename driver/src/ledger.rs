@@ -16,15 +16,15 @@
 //! buildings, radar warning and the harvester recovery trickle report
 //! nothing the ledger can credit.
 
-use chassis::grid::TilePos;
-use oxide_sim::stats::{
+use aftermine_sim::stats::{
     BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
     CRUCIBLE_SMELT_PERIOD, CRUCIBLE_SMELT_RADIUS, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK,
     RECLAIMER_PERIOD, REFINERY_PERIOD, UnitKind,
 };
-use oxide_sim::{
+use aftermine_sim::{
     Building, BuildingId, Event, Order, State, Target, TickReport, UnitId, UnitRepairSource,
 };
+use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -37,7 +37,7 @@ pub const WORTH_PERIOD: u64 = 1_000;
 const PLACE_TILES: i32 = 12;
 
 /// Ticks per minute.
-const MINUTE: u64 = oxide_sim::TICKS_PER_SECOND as u64 * 60;
+const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
 
 /// Minutes at which the spending phases begin, after the first.
 const PHASES: [u64; 3] = [5, 10, 20];
@@ -408,7 +408,7 @@ pub struct ImpactLedger {
     worth: Vec<Vec<u64>>,
     shells: Vec<Shell>,
     /// Warheads in flight, with the Spire that launched each.
-    warheads: BTreeMap<oxide_sim::WarheadId, Source>,
+    warheads: BTreeMap<aftermine_sim::WarheadId, Source>,
     /// The Crucibles and wreck in their reach as a smelting tick begins.
     hearths: Hearths,
     /// Extractor payouts as the coming tick begins.
@@ -427,7 +427,7 @@ pub struct ImpactLedger {
 }
 
 fn snapshot(state: &State) -> Vec<Body> {
-    let team = |player: oxide_sim::PlayerId| state.players()[usize::from(player.0)].team;
+    let team = |player: aftermine_sim::PlayerId| state.players()[usize::from(player.0)].team;
     let mut bodies: Vec<Body> = state
         .units()
         .iter()
@@ -828,7 +828,7 @@ impl ImpactLedger {
                     }
                     sources.splash.push((
                         TilePos::containing(*at),
-                        tiles(oxide_sim::stats::WARHEAD.outer_radius),
+                        tiles(aftermine_sim::stats::WARHEAD.outer_radius),
                         source,
                     ));
                 }
@@ -1997,7 +1997,9 @@ fn life(totals: &KindLedger) -> String {
     } else {
         format!(
             "{:.0}",
-            totals.lifetime as f64 / totals.deaths as f64 / f64::from(oxide_sim::TICKS_PER_SECOND)
+            totals.lifetime as f64
+                / totals.deaths as f64
+                / f64::from(aftermine_sim::TICKS_PER_SECOND)
         )
     }
 }

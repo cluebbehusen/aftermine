@@ -1,7 +1,7 @@
 //! Fresh randomness for secrets that decide no outcome, such as rejoin
 //! tokens. Nothing here may feed the simulation.
 
-use oxide_net::Token;
+use aftermine_net::Token;
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

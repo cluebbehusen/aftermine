@@ -8,13 +8,13 @@ use crate::frame::{HomeFrame, footprint_centre};
 use crate::investments::{Investment, Step};
 use crate::map::MapModel;
 use crate::profile::PersonalityTraits;
+use aftermine_sim::geometry::{footprint_center, foundry_supports};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::BotDifficulty;
+use aftermine_sim::stats::{self, WARHEAD};
+use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::geometry::{footprint_center, foundry_supports};
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::{self, WARHEAD};
-use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use std::cmp::Reverse;
 
 /// A building a warhead could damage, as the seat knows it.

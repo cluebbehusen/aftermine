@@ -3,8 +3,8 @@
 use crate::common;
 use chassis::grid::as_index;
 
+use aftermine_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, Target, UnitKind};
 
 use common::*;
 
@@ -12,7 +12,7 @@ fn bastion_and_target(
     target: TilePos,
     spotter: Option<TilePos>,
     peak: Option<TilePos>,
-) -> oxide_sim::State {
+) -> aftermine_sim::State {
     let mut scenario = open_arena_with(32, 22, Vec::new(), |rows| {
         if let Some(peak) = peak {
             rows[as_index(peak.y)][as_index(peak.x)] = '^';
@@ -30,7 +30,7 @@ fn bastion_and_target(
     scenario.build().unwrap()
 }
 
-fn building_id(state: &oxide_sim::State, player: PlayerId, kind: BuildingKind) -> BuildingId {
+fn building_id(state: &aftermine_sim::State, player: PlayerId, kind: BuildingKind) -> BuildingId {
     state
         .buildings()
         .iter()

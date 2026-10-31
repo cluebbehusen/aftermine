@@ -18,7 +18,7 @@ fn rejected(player: u8, reason: RejectReason) -> Event {
 
 fn assembled(player: u8, unit: u32) -> Event {
     Event::UnitAssembled {
-        cradle: oxide_sim::BuildingId(9),
+        cradle: aftermine_sim::BuildingId(9),
         unit: UnitId(unit),
         kind: UnitKind::Maw,
         player: PlayerId(player),
@@ -35,8 +35,8 @@ fn a_buffer_keeps_the_seats_own_failures_and_other_seats_rollouts_in_order() {
             rejected(0, RejectReason::NotEnoughScrap),
             stalled(1, 7),
             Event::ScrapDeposited {
-                unit: oxide_sim::UnitId(0),
-                foundry: oxide_sim::BuildingId(0),
+                unit: aftermine_sim::UnitId(0),
+                foundry: aftermine_sim::BuildingId(0),
                 player: PlayerId(1),
                 amount: 5,
             },

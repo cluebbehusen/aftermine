@@ -1,16 +1,16 @@
 //! The Skyhook: boarding, riding, landing, stranding, and dying.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::wide_open_map as open_map;
 use common::{cmd, players, unit};
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::state::Order;
+use aftermine_sim::{Command, Event, Scenario, State, Target, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::state::Order;
-use oxide_sim::{Command, Event, Scenario, State, Target, UnitId, UnitKind};
 
 fn arena(map: Vec<String>, units: Vec<UnitSpec>) -> Scenario {
     Scenario {
@@ -139,7 +139,7 @@ fn a_full_sling_stalls_the_straggler() {
                 e,
                 Event::OrderStalled {
                     unit,
-                    reason: oxide_sim::event::StallReason::TransportFull,
+                    reason: aftermine_sim::event::StallReason::TransportFull,
                     ..
                 } if *unit == straggler
             )
@@ -339,7 +339,7 @@ fn unload_over_the_pit_strands_the_cargo_until_open_ground() {
             matches!(
                 e,
                 Event::OrderStalled {
-                    reason: oxide_sim::event::StallReason::NoOpenGround,
+                    reason: aftermine_sim::event::StallReason::NoOpenGround,
                     ..
                 }
             )
@@ -408,7 +408,7 @@ fn a_boarder_stands_down_when_the_sling_has_no_ground_route() {
         event,
         Event::OrderStalled {
             unit,
-            reason: oxide_sim::event::StallReason::NoRoute,
+            reason: aftermine_sim::event::StallReason::NoRoute,
             ..
         } if *unit == rider
     )));
@@ -446,7 +446,7 @@ fn a_boarder_walks_to_reachable_ground_beside_a_sling_over_a_building() {
         event,
         Event::OrderStalled {
             unit,
-            reason: oxide_sim::event::StallReason::NoRoute,
+            reason: aftermine_sim::event::StallReason::NoRoute,
             ..
         } if *unit == rider
     )));
@@ -457,7 +457,7 @@ fn a_boarder_walks_to_reachable_ground_beside_a_sling_over_a_building() {
             event,
             Event::OrderStalled {
                 unit,
-                reason: oxide_sim::event::StallReason::NoRoute,
+                reason: aftermine_sim::event::StallReason::NoRoute,
                 ..
             } if *unit == rider
         )));
@@ -527,7 +527,7 @@ fn a_sling_sealed_in_by_peaks_unloads_as_close_as_it_can_get() {
                 event,
                 Event::OrderStalled {
                     unit,
-                    reason: oxide_sim::event::StallReason::NoRoute,
+                    reason: aftermine_sim::event::StallReason::NoRoute,
                     ..
                 } if *unit == sky
             )
@@ -569,7 +569,7 @@ fn a_boarding_walk_that_cannot_be_routed_yields_to_the_queued_move() {
             unit(0, UnitKind::Sentinel, 4, 3),
         ],
     );
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     let mut state = scenario.build().unwrap();
     let sky = state.units()[0].id;
     let rider = state.units()[1].id;
@@ -611,7 +611,7 @@ fn a_boarding_walk_that_cannot_be_routed_yields_to_the_queued_move() {
                 event,
                 Event::OrderStalled {
                     unit,
-                    reason: oxide_sim::event::StallReason::NoRoute,
+                    reason: aftermine_sim::event::StallReason::NoRoute,
                     ..
                 } if *unit == rider
             ))
@@ -809,7 +809,7 @@ fn a_rider_that_stalled_on_its_way_boards_dormant() {
     assert!(state.units()[slot].path.is_some(), "walking to the sling");
     let mut doc = serde_json::to_value(&state).unwrap();
     doc["units"][slot]["motor"]["stall_ticks"] = serde_json::json!(1);
-    let mut state: oxide_sim::State = serde_json::from_value(doc).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(doc).unwrap();
     let mut boarded = false;
     for _ in 0..300 {
         let report = state.tick(&[]);
@@ -868,7 +868,7 @@ fn mirrored_boarders_take_mirrored_tiles() {
         })
         .collect();
     let mut scenario = arena(map, units);
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     let mut state = scenario.build().unwrap();
     let pairs: Vec<(UnitId, UnitId)> = state
         .units()

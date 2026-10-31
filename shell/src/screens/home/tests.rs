@@ -1,6 +1,6 @@
 use super::*;
+use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
-use oxide_protocol::Key;
 
 fn pick(home: &mut HomeScreen, row: usize) -> Out {
     home.menu.select(row);
@@ -71,7 +71,7 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
 
 #[test]
 fn the_door_names_the_build_by_version_and_short_commit() {
-    use oxide_kit::build::BuildIdentity;
+    use aftermine_kit::build::BuildIdentity;
     let commit = "228dd0e6ff22cd175b8f8ba27c718bcff896d6eb";
     assert_eq!(
         describe_build(&BuildIdentity::new("0.1.0", commit, "false")),

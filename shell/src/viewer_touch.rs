@@ -3,8 +3,8 @@
 //! finger drags the world under the hand, two fingers pinch to zoom.
 
 use crate::camera::Camera;
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_protocol::RawEvent;
 
 /// A pair's spread must change this much, in logical px at 1x, before it
 /// reads as a pinch rather than two resting fingers.

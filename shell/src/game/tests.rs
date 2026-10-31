@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
 /// The watch-back loop replays every re-executed tick through the seat
 /// bots so they rebuild their cross-tick memory. Without it the resume
@@ -8,8 +8,8 @@ use oxide_sim::scenario::ScenarioMode;
 #[test]
 fn a_resumed_session_plays_the_same_future_as_an_unsaved_one() {
     // Seat 1 is a bot whose memory the watch-back rebuilds.
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    oxide_kit::bench::all_bots(&mut scenario);
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    aftermine_kit::bench::all_bots(&mut scenario);
     scenario.players[0].bot = false;
     scenario.players[0].bot_config = None;
     let mut original = Game::new(scenario).expect("game builds");
@@ -37,9 +37,9 @@ fn a_resumed_session_plays_the_same_future_as_an_unsaved_one() {
 #[test]
 fn multiple_bot_seats_rebuild_the_same_history_on_resume() {
     let mut scenario =
-        oxide_sim::Scenario::from_json(include_str!("../../../scenarios/compass-grand.json"))
+        aftermine_sim::Scenario::from_json(include_str!("../../../scenarios/compass-grand.json"))
             .unwrap();
-    oxide_kit::bench::all_bots(&mut scenario);
+    aftermine_kit::bench::all_bots(&mut scenario);
     scenario.players[0].bot = false;
     scenario.players[0].bot_config = None;
     let mut original = Game::new(scenario).unwrap();
@@ -56,12 +56,12 @@ fn multiple_bot_seats_rebuild_the_same_history_on_resume() {
     assert_eq!(original.hash_hex(), resumed.hash_hex());
 }
 
-use oxide_sim::{Command, Scenario, UnitKind};
+use aftermine_sim::{Command, Scenario, UnitKind};
 
 #[test]
 fn foundry_free_sandbox_accepts_local_input_and_restores_checkpoint() {
     let mut scenario = Scenario::skirmish();
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     for row in &mut scenario.map {
         *row = row.replace(['1', '2'], ".");
     }
@@ -111,7 +111,7 @@ fn local_sessions_accept_any_bot_roster_and_resume() {
         let mut scenario = Scenario::skirmish();
         for (player, bot) in scenario.players.iter_mut().zip(bot_flags) {
             player.bot = bot;
-            player.bot_config = bot.then(oxide_sim::scenario::BotConfig::default);
+            player.bot_config = bot.then(aftermine_sim::scenario::BotConfig::default);
         }
         let mut original = Game::with_viewport(scenario, vec2(1280.0, 800.0))
             .expect("bot assignment does not constrain the local session");
@@ -335,7 +335,7 @@ fn collision_slides_are_drawn_eased_and_leaned_then_settle_on_the_simulation_pos
             game.presentation.draw_pos(id, unit.pos, 1.0),
             world_vec(unit.pos)
         );
-        assert_eq!(unit.order, oxide_sim::Order::Idle);
+        assert_eq!(unit.order, aftermine_sim::Order::Idle);
     }
 }
 
@@ -596,9 +596,9 @@ fn wall_clock_profile_bound_cannot_overshoot_inside_a_multi_tick_frame() {
 #[test]
 fn playback_and_seeks_face_a_parked_airframe_by_its_heading() {
     let mut scenario = Scenario::skirmish();
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
-        kind: oxide_sim::UnitKind::Condor,
+        kind: aftermine_sim::UnitKind::Condor,
         x: 20,
         y: 12,
     }];
@@ -607,7 +607,11 @@ fn playback_and_seeks_face_a_parked_airframe_by_its_heading() {
     let condor = game.state.units()[0].id;
     for _ in 0..600 {
         game.advance_ticks(1);
-        if game.state.unit(condor).is_some_and(oxide_sim::Unit::landed) {
+        if game
+            .state
+            .unit(condor)
+            .is_some_and(aftermine_sim::Unit::landed)
+        {
             break;
         }
     }
@@ -688,12 +692,12 @@ fn concede_arena(seats: [(u8, bool); 4]) -> Game {
     let players = names
         .iter()
         .zip(seats)
-        .map(|(name, (team, bot))| oxide_sim::scenario::PlayerSpec {
+        .map(|(name, (team, bot))| aftermine_sim::scenario::PlayerSpec {
             name: (*name).into(),
             team: Some(team),
             scrap: 100,
             bot,
-            bot_config: bot.then_some(oxide_sim::scenario::BotConfig::default()),
+            bot_config: bot.then_some(aftermine_sim::scenario::BotConfig::default()),
         })
         .collect();
     let scenario = Scenario {
@@ -783,7 +787,7 @@ fn fog_holds_only_while_a_lan_teammate_plays_on() {
         Stance::Seat,
         "an out seat could tip off its LAN ally"
     );
-    lan.mirror_bot(PlayerId(1), oxide_sim::scenario::BotConfig::default());
+    lan.mirror_bot(PlayerId(1), aftermine_sim::scenario::BotConfig::default());
     assert_eq!(
         lan.presentation.stance,
         Stance::Out,
@@ -842,9 +846,9 @@ fn angular_interpolation_crosses_zero_by_the_short_arc() {
 #[test]
 fn a_mounted_gun_turns_the_short_way_between_ticks() {
     let mut scenario = Scenario::skirmish();
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 0,
-        kind: oxide_sim::UnitKind::Roc,
+        kind: aftermine_sim::UnitKind::Roc,
         x: 12,
         y: 10,
     });
@@ -853,7 +857,7 @@ fn a_mounted_gun_turns_the_short_way_between_ticks() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.kind == oxide_sim::UnitKind::Roc)
+        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
         .unwrap()
         .clone();
     let step = std::f32::consts::TAU / 256.0;
@@ -880,7 +884,7 @@ fn a_mounted_gun_turns_the_short_way_between_ticks() {
 
 fn crash_root(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "oxide-crash-{name}-{}-{}",
+        "aftermine-crash-{name}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -891,8 +895,8 @@ fn crash_root(name: &str) -> std::path::PathBuf {
 
 /// The dump a panicking tick left, as its replay and manifest.
 fn crash_dump(root: &std::path::Path) -> (GameReplay, serde_json::Value) {
-    let dump = oxide_kit::diagnostics::newest_crash_dump(root).expect("the panic left a dump");
-    let replay = oxide_kit::load_replay(dump.join("replay.json")).unwrap();
+    let dump = aftermine_kit::diagnostics::newest_crash_dump(root).expect("the panic left a dump");
+    let replay = aftermine_kit::load_replay(dump.join("replay.json")).unwrap();
     let manifest =
         serde_json::from_slice(&std::fs::read(dump.join("crash.json")).unwrap()).unwrap();
     (replay, manifest)
@@ -905,7 +909,7 @@ fn a_simulation_panic_dump_resumes_the_world_it_interrupted() {
     game.crash_dumps = Some(root.clone());
     game.advance_ticks(40);
     let train = Command::Train {
-        building: oxide_sim::BuildingId(0),
+        building: aftermine_sim::BuildingId(0),
         kind: UnitKind::Harvester,
     };
     game.issue(train.clone());

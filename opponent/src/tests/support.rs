@@ -4,8 +4,8 @@ use crate::expansion;
 use crate::frame::gap;
 use crate::investments::Investment;
 use crate::memory::Memory;
-use oxide_sim::Target;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::Target;
+use aftermine_sim::observation::ObservationData;
 
 /// `state` with `building` at `hp`.
 fn damaged(state: &State, building: BuildingId, hp: u32) -> State {

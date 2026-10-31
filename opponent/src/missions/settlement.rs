@@ -15,10 +15,10 @@ use crate::memory::Memory;
 use crate::placement::Danger;
 use crate::profile::ResolvedProfile;
 use crate::workers;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, Command, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
 /// The building a settlement delivers a builder for.

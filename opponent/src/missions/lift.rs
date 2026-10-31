@@ -19,11 +19,11 @@ use crate::gunship::gunship;
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
+use aftermine_sim::observation::{CarriedUnitObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::BotDifficulty;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{CarriedUnitObs, ObservationData, UnitObs};
-use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 
 /// Ticks a lift or a settlement may spend boarding: a computation bound on an
 /// attempt that cannot load.

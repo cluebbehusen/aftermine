@@ -86,8 +86,8 @@ pub fn configure(host: &str) {
         }
     }
     let (revision, dirty) = identity(root, &paths);
-    println!("cargo:rustc-env=OXIDE_BUILD_REVISION={revision}");
-    println!("cargo:rustc-env=OXIDE_BUILD_DIRTY={dirty}");
+    println!("cargo:rustc-env=AFTERMINE_BUILD_REVISION={revision}");
+    println!("cargo:rustc-env=AFTERMINE_BUILD_DIRTY={dirty}");
 }
 
 #[cfg(test)]

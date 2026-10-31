@@ -1,10 +1,10 @@
 use super::*;
 use crate::numeric::Fit;
+use aftermine_sim::scenario::ScenarioMode;
+use aftermine_sim::{AttackTarget, BuildingId, Command, UnitId};
 use chassis::grid::TilePos;
 use chassis::rng::Pcg32;
 use macroquad::prelude::vec2;
-use oxide_sim::scenario::ScenarioMode;
-use oxide_sim::{AttackTarget, BuildingId, Command, UnitId};
 
 fn begin(lesson: Lesson) -> Game {
     Tutorial::begin_at(lesson, vec2(1280.0, 800.0)).expect("embedded lesson scenes build")
@@ -55,7 +55,7 @@ fn the_course_numbers_and_chains_its_lessons_in_order_then_the_first_match() {
 fn the_first_match_is_smelter_yard_against_one_scrapheap_turtle() {
     let map = Scenario::from_json(include_str!("../../../scenarios/smelter-yard.json")).unwrap();
     let base = 0x40;
-    let name = oxide_net::PlayerName::new("Rook").unwrap();
+    let name = aftermine_net::PlayerName::new("Rook").unwrap();
     let scenario = first_match(Some(name), base).unwrap();
     assert_eq!(scenario.name, FIRST_MATCH_NAME);
     assert!(
@@ -81,7 +81,7 @@ fn the_first_match_is_smelter_yard_against_one_scrapheap_turtle() {
     assert!(bot.bot);
     assert_eq!(
         bot.bot_config,
-        Some(oxide_sim::scenario::BotConfig::new(
+        Some(aftermine_sim::scenario::BotConfig::new(
             BotDifficulty::Scrapheap,
             BotStance::Turtle,
             base + 1
@@ -525,7 +525,7 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     let mut scene = Lesson::Sustain.scenario();
     scene.players[0].scrap = 0;
     hand_over(&mut scene, |_| true);
-    scene.units.push(oxide_sim::scenario::UnitSpec {
+    scene.units.push(aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: UnitKind::Lancer,
         x: 10,
@@ -548,7 +548,7 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     spend_recovery(&mut game);
     tutorial_mut(&mut game).step = 3;
     assert_eq!(tutorial(&game).coach(&game), Some(CoachLine::Stuck));
-    scene.buildings.push(oxide_sim::scenario::BuildingSpec {
+    scene.buildings.push(aftermine_sim::scenario::BuildingSpec {
         player: 0,
         kind: BuildingKind::FlakTurret,
         x: 9,
@@ -706,7 +706,7 @@ const MEDDLE_TICKS: u32 = 20 * 60;
 
 /// Whether a worker is doing none of the economy's work, so the plain
 /// play may give it some.
-fn spare(worker: &oxide_sim::Unit) -> bool {
+fn spare(worker: &aftermine_sim::Unit) -> bool {
     !matches!(
         worker.order,
         Order::Harvest { .. }
@@ -717,7 +717,7 @@ fn spare(worker: &oxide_sim::Unit) -> bool {
 }
 
 /// Whether every tile of `building` is in the human's sight.
-fn seen(game: &Game, building: &oxide_sim::Building) -> bool {
+fn seen(game: &Game, building: &aftermine_sim::Building) -> bool {
     building
         .tiles()
         .all(|tile| game.state.can_see(game.presentation.human, tile))
@@ -779,7 +779,7 @@ fn train(game: &mut Game, kind: UnitKind) {
 fn build(game: &mut Game, kind: BuildingKind, count: usize) {
     let seat = Seat::of(game);
     let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
-    let placed: Vec<&oxide_sim::Building> = seat.own_buildings(kind).collect();
+    let placed: Vec<&aftermine_sim::Building> = seat.own_buildings(kind).collect();
     let idle_worker = seat.workers().find(|u| spare(u)).map(|u| u.id);
     let site = placed.iter().find(|b| !b.built()).map(|b| b.anchor);
     let order = if let Some(anchor) = site {
@@ -886,7 +886,7 @@ fn play(game: &mut Game) {
             // A squad that can still grow gathers first.
             reinforce(game);
             let seat = Seat::of(game);
-            let fighters: Vec<&oxide_sim::Unit> = seat
+            let fighters: Vec<&aftermine_sim::Unit> = seat
                 .units()
                 .filter(|u| u.kind.stats().can_fight())
                 .collect();
@@ -955,7 +955,7 @@ fn play(game: &mut Game) {
             if let Some((building, tile)) = factory {
                 game.issue(Command::SetRally {
                     building,
-                    rally: Some(oxide_sim::Rally::Tile(tile)),
+                    rally: Some(aftermine_sim::Rally::Tile(tile)),
                 });
             }
         }
@@ -1002,7 +1002,7 @@ fn weld(game: &mut Game) {
         .find(|u| {
             u.id != worker.id
                 && u.hp < u.kind.stats().max_hp
-                && u.domain() == oxide_sim::stats::Domain::Ground
+                && u.domain() == aftermine_sim::stats::Domain::Ground
         })
         .map(|u| u.id);
     let units = vec![worker.id];
@@ -1064,7 +1064,7 @@ fn defeat(game: &mut Game, index: usize) {
         return;
     };
     let near = |a: TilePos, x: i32, y: i32| (x - a.x).pow(2) + (y - a.y).pow(2) <= 36;
-    let fighters: Vec<&oxide_sim::Unit> = seat
+    let fighters: Vec<&aftermine_sim::Unit> = seat
         .units()
         .filter(|u| u.kind.stats().can_fight())
         .collect();

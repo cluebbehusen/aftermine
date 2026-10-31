@@ -8,7 +8,7 @@ use std::sync::{
 };
 
 use crate::controller::SeatController;
-use oxide_sim::{PlayerCommand, State};
+use aftermine_sim::{PlayerCommand, State};
 use rayon::prelude::*;
 
 thread_local! {

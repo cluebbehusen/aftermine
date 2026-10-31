@@ -4,9 +4,9 @@
 use crate::game::Game;
 use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
+use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
-use oxide_sim::SIM_VERSION;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -14,7 +14,7 @@ use std::path::Path;
 const VERSION: u32 = 1;
 const MAGIC: &[u8; 8] = b"OXIDESAV";
 const MAX_HEADER: usize = 64 * 1024;
-const MAX_BYTES: usize = oxide_kit::checkpoint::MAX_BYTES;
+const MAX_BYTES: usize = aftermine_kit::checkpoint::MAX_BYTES;
 /// Saves compress on the save worker. Against the fastest level this takes
 /// about a tenth of a second on a 20-minute eight-seat match and saves about
 /// a quarter, most of what the match history adds.
@@ -276,18 +276,18 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
         anyhow::bail!("invalid player save header");
     } else {
         // Replay inspection remains separate from player checkpoint restoration.
-        let replay = oxide_kit::load_replay(path)?;
+        let replay = aftermine_kit::load_replay(path)?;
         let problem = if replay.meta.sim_version == SIM_VERSION {
             replay
                 .validate(Some(SIM_VERSION))
                 .map_err(anyhow::Error::from)
-                .and_then(|()| oxide_kit::bounded_replay_duration(&replay).map(|_| ()))
+                .and_then(|()| aftermine_kit::bounded_replay_duration(&replay).map(|_| ()))
                 .err()
                 .map(|_| Unavailable::Unreadable)
         } else {
             Some(Unavailable::OtherVersion)
         };
-        let ticks = oxide_kit::replay_duration(&replay);
+        let ticks = aftermine_kit::replay_duration(&replay);
         let teams = crate::menu::team_count(replay.setup.players.iter().map(|p| p.team));
         let mut meta = replay.meta;
         meta.ticks = Some(ticks);

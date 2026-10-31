@@ -13,11 +13,11 @@ pub(crate) fn projectile_elapsed_ticks(now: f32, arrival: u64, total: f32) -> f3
 
 #[derive(Default)]
 pub(crate) struct AudioTimeline {
-    arrivals: Vec<oxide_sim::state::Shell>,
+    arrivals: Vec<aftermine_sim::state::Shell>,
 }
 
 impl AudioTimeline {
-    pub(crate) fn remember_arrivals(&mut self, state: &oxide_sim::State) {
+    pub(crate) fn remember_arrivals(&mut self, state: &aftermine_sim::State) {
         self.arrivals = state
             .shells()
             .iter()
@@ -28,7 +28,7 @@ impl AudioTimeline {
 
     pub(crate) fn landed(
         &mut self,
-        player: oxide_sim::PlayerId,
+        player: aftermine_sim::PlayerId,
         at: chassis::fx::Vec2Fx,
     ) -> SoundKind {
         let Some(index) = self
@@ -38,7 +38,7 @@ impl AudioTimeline {
         else {
             return SoundKind::Artillery;
         };
-        if self.arrivals.remove(index).kind == oxide_sim::ProjectileKind::Missile {
+        if self.arrivals.remove(index).kind == aftermine_sim::ProjectileKind::Missile {
             SoundKind::RocketImpact
         } else {
             SoundKind::Artillery

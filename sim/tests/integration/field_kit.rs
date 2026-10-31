@@ -5,14 +5,14 @@ use crate::common;
 use common::wide_open_map as open_map;
 use common::{building, cmd, players, run_until, unit};
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{
     BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS,
     CHARGE_SCOUT_DETECT_RADIUS,
 };
-use oxide_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitKind};
+use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitKind};
+use chassis::grid::TilePos;
 
 fn arena(map: Vec<String>, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
@@ -82,7 +82,7 @@ fn hidden_charge_reports_damage_to_its_victim_for_lethal_and_nonlethal_blasts() 
             state.unit(victim).map_or(0, |u| u.hp),
             kind.stats()
                 .max_hp
-                .saturating_sub(oxide_sim::stats::CHARGE_DAMAGE)
+                .saturating_sub(aftermine_sim::stats::CHARGE_DAMAGE)
         );
         if let Some(survivor) = state.unit(victim) {
             assert_eq!(survivor.damaged_at, Some(0), "the blast stamps its tick");
@@ -391,7 +391,7 @@ fn the_deep_array_upgrade_buys_the_wide_ring() {
         state.tick(&[]);
         if state
             .building(mast_id)
-            .is_some_and(oxide_sim::Building::built)
+            .is_some_and(aftermine_sim::Building::built)
         {
             break;
         }
@@ -442,7 +442,7 @@ fn a_charge_detonates_under_hostile_treads() {
     let hp = state.unit(warden).unwrap().hp;
     assert_eq!(
         hp,
-        UnitKind::Warden.stats().max_hp - oxide_sim::stats::CHARGE_DAMAGE,
+        UnitKind::Warden.stats().max_hp - aftermine_sim::stats::CHARGE_DAMAGE,
         "the blast takes exactly its damage"
     );
     assert!(
@@ -572,7 +572,7 @@ fn the_sapper_cracks_the_wall_and_is_consumed() {
     assert_eq!(
         wall_hp,
         BuildingKind::Barricade.base_stats().max_hp
-            - oxide_sim::UnitKind::Sapper
+            - aftermine_sim::UnitKind::Sapper
                 .stats()
                 .demolition
                 .expect("the sapper demolishes")
@@ -582,7 +582,7 @@ fn the_sapper_cracks_the_wall_and_is_consumed() {
     let bystander_hp = state.unit(bystander).map_or(0, |u| u.hp);
     assert!(
         splash_distance.expect("the sapper detonated")
-            <= oxide_sim::UnitKind::Sapper
+            <= aftermine_sim::UnitKind::Sapper
                 .stats()
                 .demolition
                 .expect("the sapper demolishes")

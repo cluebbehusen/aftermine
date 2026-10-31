@@ -3,7 +3,7 @@
 //! One request object per line, one response object per line, correlated
 //! by `id`. This module knows only bytes and framing: it takes a handler
 //! factory and never mentions a shell or a session, so the windowed shell
-//! and the windowless `oxide-driver session` run the same loop with their
+//! and the windowless `aftermine-driver session` run the same loop with their
 //! own answering sides.
 //!
 //! Every bound a network server needs lives in [`Limits`]. The idle read

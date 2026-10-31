@@ -206,7 +206,7 @@ fn every_shipped_map_gets_symmetric_safe_theme_dressing() {
     let mut total_safe = 0;
     let mut total_props = 0;
     for path in paths {
-        let scenario = oxide_sim::Scenario::load(&path)
+        let scenario = aftermine_sim::Scenario::load(&path)
             .unwrap_or_else(|err| panic!("loading {}: {err}", path.display()));
         let theme = scenario
             .meta
@@ -355,7 +355,7 @@ fn shipped_maps_exercise_every_industrial_blocker() {
     paths.sort();
     let mut industrial = BTreeSet::new();
     for path in paths {
-        let scenario = oxide_sim::Scenario::load(&path)
+        let scenario = aftermine_sim::Scenario::load(&path)
             .unwrap_or_else(|error| panic!("loading {}: {error}", path.display()));
         let (map, _) = scenario
             .parse_map_and_anchors()

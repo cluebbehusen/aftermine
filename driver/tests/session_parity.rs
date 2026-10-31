@@ -8,16 +8,16 @@
 //! window and runs with the #[ignore]d battery:
 //!
 //! ```text
-//! cargo test -p oxide-driver --test session_parity -- --ignored
+//! cargo test -p aftermine-driver --test session_parity -- --ignored
 //! ```
 
+use aftermine_driver::client::Client;
+use aftermine_driver::session::{Session, serve_listener};
+use aftermine_kit::runner;
+use aftermine_protocol::framing::Limits;
+use aftermine_protocol::{Reply, Request, StateFilter, hash_hex};
+use aftermine_sim::{Command, PlayerId, Scenario};
 use anyhow::{Context, Result, bail};
-use oxide_driver::client::Client;
-use oxide_driver::session::{Session, serve_listener};
-use oxide_kit::runner;
-use oxide_protocol::framing::Limits;
-use oxide_protocol::{Reply, Request, StateFilter, hash_hex};
-use oxide_sim::{Command, PlayerId, Scenario};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,8 +30,10 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("oxide-session-parity-{}-{id}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "aftermine-session-parity-{}-{id}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&path).expect("create scratch dir");
         Self(path)
     }
@@ -61,12 +63,12 @@ fn session_client() -> Result<Client> {
 /// survives roster edits.
 fn march_command(client: &mut Client, player: u8) -> Result<Command> {
     let view = client.state(StateFilter::default())?;
-    let units: Vec<oxide_sim::UnitId> = view
+    let units: Vec<aftermine_sim::UnitId> = view
         .units
         .iter()
         .filter(|u| u.player == player)
         .take(2)
-        .map(|u| oxide_sim::UnitId(u.id))
+        .map(|u| aftermine_sim::UnitId(u.id))
         .collect();
     assert!(!units.is_empty(), "the seat has units to command");
     Ok(Command::Hunt {
@@ -169,7 +171,7 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
     };
     assert!(saved.commands > 0, "the march and the bot were recorded");
     let live = client.state_hash()?;
-    let replay = oxide_kit::load_replay(&replay_path)?;
+    let replay = aftermine_kit::load_replay(&replay_path)?;
     let replayed = runner::run_replay(&replay, None)?;
     assert_eq!(
         hash_hex(replayed.hash()),
@@ -200,8 +202,8 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
         },
         Request::ToggleOverlay,
         Request::InjectEvent {
-            event: oxide_protocol::RawEvent::KeyDown {
-                key: oxide_protocol::Key::Space,
+            event: aftermine_protocol::RawEvent::KeyDown {
+                key: aftermine_protocol::Key::Space,
             },
         },
     ] {
@@ -230,11 +232,12 @@ fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
         .to_string_lossy()
         .into_owned();
 
-    let (_guard, mut shell) = oxide_driver::auto::spawn_shell(&oxide_driver::auto::SpawnOptions {
-        port: 4177,
-        paused: true,
-        home: Some(scratch.0.clone()),
-    })?;
+    let (_guard, mut shell) =
+        aftermine_driver::auto::spawn_shell(&aftermine_driver::auto::SpawnOptions {
+            port: 4177,
+            paused: true,
+            home: Some(scratch.0.clone()),
+        })?;
     let mut headless = session_client()?;
 
     // The same scenario file through the same verb on both servers.

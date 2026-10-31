@@ -13,7 +13,7 @@ pub(crate) fn seconds(total: u64) -> String {
 
 /// Match time at `tick`, whole seconds only, as the match clock shows it.
 pub(crate) fn ticks(tick: u64) -> String {
-    seconds(tick / u64::from(oxide_sim::TICKS_PER_SECOND))
+    seconds(tick / u64::from(aftermine_sim::TICKS_PER_SECOND))
 }
 
 #[cfg(test)]

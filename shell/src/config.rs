@@ -308,11 +308,11 @@ impl Config {
                 // not allowed to reset everything else.
                 config.player_name = config
                     .player_name
-                    .and_then(|name| oxide_net::PlayerName::new(&name).ok())
+                    .and_then(|name| aftermine_net::PlayerName::new(&name).ok())
                     .map(String::from);
                 config.install_id = config
                     .install_id
-                    .filter(|id| oxide_net::InstallId::from_hex(id).is_some());
+                    .filter(|id| aftermine_net::InstallId::from_hex(id).is_some());
                 config.lessons_done = in_course_order(&config.lessons_done);
                 config
             }
@@ -322,15 +322,15 @@ impl Config {
 
     /// This installation's identifier, made up on first use; the caller
     /// saves the config to keep a new one.
-    pub fn install_id(&mut self) -> oxide_net::InstallId {
+    pub fn install_id(&mut self) -> aftermine_net::InstallId {
         if let Some(id) = self
             .install_id
             .as_deref()
-            .and_then(oxide_net::InstallId::from_hex)
+            .and_then(aftermine_net::InstallId::from_hex)
         {
             return id;
         }
-        let id = oxide_net::InstallId::new(crate::entropy::bits());
+        let id = aftermine_net::InstallId::new(crate::entropy::bits());
         self.install_id = Some(id.to_hex());
         id
     }

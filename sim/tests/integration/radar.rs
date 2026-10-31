@@ -4,10 +4,10 @@
 use crate::common;
 use common::{air_blip, building, cmd, ground_blip, open_arena, unit};
 
+use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+use aftermine_sim::stats::{BuildingKind, Domain, HARVEST_RADAR_DANGER_RADIUS, UnitKind};
+use aftermine_sim::{Command, Order, PlayerId, RadarContact, State, UnitId};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::stats::{BuildingKind, Domain, HARVEST_RADAR_DANGER_RADIUS, UnitKind};
-use oxide_sim::{Command, Order, PlayerId, RadarContact, State, UnitId};
 
 fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
     let mut scenario = open_arena(48, 24, units);

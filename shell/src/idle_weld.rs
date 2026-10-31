@@ -4,7 +4,7 @@
 use crate::action::Action;
 use crate::game::Scene;
 use crate::panel::{Autocast, AutocastState};
-use oxide_sim::{Command, UnitId};
+use aftermine_sim::{Command, UnitId};
 
 /// The selected own workers, in id order, each with whether it welds while
 /// idle once the commands staged for the next tick land.

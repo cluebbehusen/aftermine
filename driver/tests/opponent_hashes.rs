@@ -1,16 +1,16 @@
-//! Focused `oxide-opponent` contracts with cross-platform state and command
+//! Focused `aftermine-opponent` contracts with cross-platform state and command
 //! hashes.
 //! Behavioral assertions must pass before a checkpoint can be blessed.
 
 mod support;
 
-use chassis::grid::TilePos;
-use oxide_kit::GameReplay;
-use oxide_kit::controller::{SeatController, record_events, seat_controllers};
-use oxide_sim::scenario::{BotConfig, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_kit::GameReplay;
+use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
+use aftermine_sim::scenario::{BotConfig, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     Command, Event, Order, PlayerCommand, PlayerId, Scenario, State, TickReport, UnitKind,
 };
+use chassis::grid::TilePos;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -79,7 +79,7 @@ impl Probe {
             state,
             bots,
             twin_bots: seat_controllers(&scenario).unwrap(),
-            replay: GameReplay::new(oxide_sim::SIM_VERSION, "test", scenario),
+            replay: GameReplay::new(aftermine_sim::SIM_VERSION, "test", scenario),
             history: Vec::new(),
             command_fold: 0,
         }
@@ -141,7 +141,7 @@ impl Probe {
         self.replay.meta.ticks = Some(self.state.current_tick());
         let replay: GameReplay =
             serde_json::from_slice(&serde_json::to_vec(&self.replay).unwrap()).unwrap();
-        replay.validate(Some(oxide_sim::SIM_VERSION)).unwrap();
+        replay.validate(Some(aftermine_sim::SIM_VERSION)).unwrap();
         let mut state = replay.setup.build().unwrap();
         let mut cursor = replay.cursor();
         for (hash, report) in self.history {
@@ -157,11 +157,11 @@ impl Probe {
         BTreeMap::from([
             (
                 replay.setup.name.clone(),
-                oxide_protocol::hash_hex(state.hash()),
+                aftermine_protocol::hash_hex(state.hash()),
             ),
             (
                 format!("{}#commands", replay.setup.name),
-                oxide_protocol::hash_hex(self.command_fold),
+                aftermine_protocol::hash_hex(self.command_fold),
             ),
         ])
     }

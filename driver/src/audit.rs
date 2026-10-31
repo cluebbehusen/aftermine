@@ -4,12 +4,12 @@
 //! enemy route instead of raw dimensions, since a large map with close
 //! bases still plays short.
 
+use aftermine_sim::scenario::{MapSize, MapWealth};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Scenario, State};
 use anyhow::{Context, Result};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_sim::scenario::{MapSize, MapWealth};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Scenario, State};
 use serde::Serialize;
 use std::collections::BinaryHeap;
 
@@ -144,8 +144,8 @@ fn wealth_for(per_player: u64, players: usize) -> MapWealth {
 /// Longest artillery reach, read from the Bombard, Avalanche and Bastion
 /// stats; a new artillery kind joins this list.
 fn longest_reach() -> f64 {
-    let bombard = oxide_sim::UnitKind::Bombard.stats().weapons.iter();
-    let avalanche = oxide_sim::UnitKind::Avalanche.stats().weapons.iter();
+    let bombard = aftermine_sim::UnitKind::Bombard.stats().weapons.iter();
+    let avalanche = aftermine_sim::UnitKind::Avalanche.stats().weapons.iter();
     let bastion = BuildingKind::Bastion.base_stats().weapons.iter();
     bombard
         .chain(avalanche)
@@ -272,11 +272,15 @@ fn ground_route(state: &State, from: &[TilePos], to: &[TilePos]) -> Option<usize
 /// serves unless a peak crosses it; then an 8-connected search over
 /// air-passable tiles, footprint to footprint, measures the detour the
 /// sim's air router would take.
-fn air_route(state: &State, a: &oxide_sim::Building, b: &oxide_sim::Building) -> Option<f64> {
+fn air_route(
+    state: &State,
+    a: &aftermine_sim::Building,
+    b: &aftermine_sim::Building,
+) -> Option<f64> {
     // Uniform-cost search with diagonals at sqrt(2), so the detour
     // reports the same tile unit as the straight line.
     const SQRT2: f64 = std::f64::consts::SQRT_2;
-    let center = |f: &oxide_sim::Building| {
+    let center = |f: &aftermine_sim::Building| {
         let (w, h) = f.kind.size();
         (
             f64::from(f.anchor.x) + f64::from(w) / 2.0,
@@ -387,7 +391,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
     }
 
     // Every seat's Foundry (and its doorstep set), in seat order.
-    let mut steps: Vec<(u8, &oxide_sim::Building, Vec<TilePos>)> = Vec::new();
+    let mut steps: Vec<(u8, &aftermine_sim::Building, Vec<TilePos>)> = Vec::new();
     for (i, player) in state.players().iter().enumerate() {
         let _ = player;
         let Some(foundry) = state
@@ -410,7 +414,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
     for i in 0..steps.len() {
         for j in (i + 1)..steps.len() {
             let (sa, sb) = (steps[i].0, steps[j].0);
-            if !state.hostile(oxide_sim::PlayerId(sa), oxide_sim::PlayerId(sb)) {
+            if !state.hostile(aftermine_sim::PlayerId(sa), aftermine_sim::PlayerId(sb)) {
                 continue;
             }
             let ground_steps = ground_route(&state, &steps[i].2, &steps[j].2);

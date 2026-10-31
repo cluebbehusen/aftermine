@@ -11,14 +11,14 @@ use crate::press::{Fed, Press};
 use crate::screens::wizard::{self, CardController, CardView};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use crate::theme::Type;
+use aftermine_net::Scanner;
+use aftermine_net::discovery::{Heard, Sighting};
+use aftermine_net::{NameError, PlayerName};
+use aftermine_net::{RoomSeat, SeatHolder};
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::{PlayerId, Scenario};
 use macroquad::prelude::Vec2;
 use macroquad::prelude::{Rect, draw_rectangle, draw_rectangle_lines, draw_text, measure_text};
-use oxide_net::Scanner;
-use oxide_net::discovery::{Heard, Sighting};
-use oxide_net::{NameError, PlayerName};
-use oxide_net::{RoomSeat, SeatHolder};
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::{PlayerId, Scenario};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -599,7 +599,7 @@ fn draw_room(
         );
         let card_view = CardView {
             seat,
-            accent: styles.get(oxide_sim::PlayerId::from_index(seat)),
+            accent: styles.get(aftermine_sim::PlayerId::from_index(seat)),
             name: map.players[seat].name.as_str(),
             controller,
             team,

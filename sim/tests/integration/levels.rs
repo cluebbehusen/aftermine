@@ -5,14 +5,14 @@
 use crate::common;
 use common::{building, cmd, players, run, run_until, unit};
 
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
-use oxide_sim::map::{Elevation, Terrain};
-use oxide_sim::scenario::{ScenarioMode, UnitSpec};
-use oxide_sim::stats::Domain;
-use oxide_sim::{
+use aftermine_sim::map::{Elevation, Terrain};
+use aftermine_sim::scenario::{ScenarioMode, UnitSpec};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{
     BuildingKind, Command, Event, PlaceRefusal, PlayerId, Scenario, State, Target, UnitKind,
 };
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::TilePos;
 
 const WIDTH: i32 = 24;
 
@@ -82,7 +82,7 @@ pub(crate) fn stair(count: i32, units: Vec<UnitSpec>) -> Scenario {
     }
 }
 
-fn run_to(state: &mut State, walker: oxide_sim::UnitId, goal: TilePos) {
+fn run_to(state: &mut State, walker: aftermine_sim::UnitId, goal: TilePos) {
     state.tick(&[cmd(
         0,
         Command::Run {
@@ -311,7 +311,7 @@ fn a_tiered_map_reproduces_bit_identically() {
 fn attack(
     state: &mut State,
     player: u8,
-    units: Vec<oxide_sim::UnitId>,
+    units: Vec<aftermine_sim::UnitId>,
     target: Target,
 ) -> Vec<Event> {
     state
@@ -334,7 +334,7 @@ fn level_mates(state: &State, a: Vec2Fx, b: Vec2Fx) -> bool {
 }
 
 /// Every shell `gun` launched lands no higher than the gun stands.
-fn launches_fall(state: &State, events: &[Event], gun: oxide_sim::UnitId) -> usize {
+fn launches_fall(state: &State, events: &[Event], gun: aftermine_sim::UnitId) -> usize {
     let mut launched = 0;
     for event in events {
         if let Event::ShellLaunched {
@@ -755,7 +755,7 @@ fn an_escort_drops_a_victim_past_its_break_radius_on_another_level() {
     state.tick(&[]);
     let escort = state.unit(escort).unwrap();
     assert!(
-        matches!(escort.order, oxide_sim::Order::Accompany { unit, .. } if unit == lead),
+        matches!(escort.order, aftermine_sim::Order::Accompany { unit, .. } if unit == lead),
         "the escort returned to its duty: {:?}",
         escort.order
     );
@@ -766,9 +766,9 @@ fn an_escort_drops_a_victim_past_its_break_radius_on_another_level() {
 }
 
 /// What `unit` is attacking, as its owner sees it.
-fn attacking(state: &State, unit: oxide_sim::UnitId) -> Option<Target> {
+fn attacking(state: &State, unit: aftermine_sim::UnitId) -> Option<Target> {
     let u = state.unit(unit)?;
-    let oxide_sim::Order::Attack { target, .. } = u.order else {
+    let aftermine_sim::Order::Attack { target, .. } = u.order else {
         return None;
     };
     state

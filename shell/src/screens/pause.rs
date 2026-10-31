@@ -5,8 +5,8 @@
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
 use crate::text_field::{Edit, Field, Form, Keyboard};
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::Vec2;
-use oxide_protocol::{Key, RawEvent};
 
 /// The name field's coaching line; a touch-only build has no keys to
 /// name.

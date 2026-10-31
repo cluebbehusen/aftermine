@@ -1,8 +1,8 @@
 //! A rejoining client's world on the wire: CBOR in one zstd frame, behind
 //! its decoded length so a forged snapshot cannot inflate without bound.
 
+use aftermine_kit::world_snapshot::WorldSnapshot;
 use anyhow::{Context, Result, ensure};
-use oxide_kit::world_snapshot::WorldSnapshot;
 use std::io::{Read, Write};
 
 /// The most a snapshot may decode to.
@@ -20,7 +20,7 @@ pub(crate) fn encode(snapshot: &WorldSnapshot) -> Result<Vec<u8>> {
     let mut bytes = decoded.to_le_bytes().to_vec();
     bytes.extend(encoder.finish()?);
     ensure!(
-        bytes.len() as u64 <= oxide_net::snapshot::MAX_SNAPSHOT_BYTES,
+        bytes.len() as u64 <= aftermine_net::snapshot::MAX_SNAPSHOT_BYTES,
         "snapshot exceeds what a client accepts"
     );
     Ok(bytes)

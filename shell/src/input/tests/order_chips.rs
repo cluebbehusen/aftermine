@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::panel::{CardAction, CardIcon, OrderSubject};
+use aftermine_sim::{OrderKey, PlayerId, State, UnitId};
 use macroquad::math::Rect;
-use oxide_sim::{OrderKey, PlayerId, State, UnitId};
 
 /// Publishes the selection's orders dock inside the panel band, as drawing
 /// does, and returns each chip's rect.
@@ -123,7 +123,7 @@ fn turret_ground(game: &Game, worker: UnitId) -> TilePos {
         .flat_map(|dy| (-6..=6).map(move |dx| here.offset(dx, dy)))
         .find(|&anchor| {
             game.state
-                .can_place(player, oxide_sim::BuildingKind::Turret, anchor)
+                .can_place(player, aftermine_sim::BuildingKind::Turret, anchor)
         })
         .expect("open ground near the harvester")
 }
@@ -131,7 +131,7 @@ fn turret_ground(game: &Game, worker: UnitId) -> TilePos {
 #[test]
 fn a_staged_sites_chip_cancels_it_by_kind_and_anchor_whoever_takes_its_id() {
     use crate::game::network::NetRole;
-    use oxide_sim::BuildingKind::Turret;
+    use aftermine_sim::BuildingKind::Turret;
     let (host_seat, client_seat) = (PlayerId(0), PlayerId(1));
     let mut duel = super::armed_skirmish();
     for player in &mut duel.players {
@@ -299,7 +299,7 @@ fn a_held_site_chip_scraps_nothing_but_a_tap_cancels_the_site() {
         player: human,
         command: Command::Build {
             units: vec![worker],
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             anchor,
             queue: false,
             defer: false,

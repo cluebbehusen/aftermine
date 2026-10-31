@@ -30,7 +30,7 @@ fn an_interceptor_motor_sounds_only_during_its_climb() {
 
 /// West's loaded Spire on an open field with nobody else's eyes, the camera
 /// over it.
-fn spire_game() -> (Game, oxide_sim::BuildingId) {
+fn spire_game() -> (Game, aftermine_sim::BuildingId) {
     let scenario = serde_json::from_value(serde_json::json!({
         "name": "Strike audio", "mode": "sandbox", "map": vec![".".repeat(70); 20],
         "players": [
@@ -50,8 +50,8 @@ fn spire_game() -> (Game, oxide_sim::BuildingId) {
         .find(|b| b["kind"] == serde_json::json!("spire"))
         .unwrap();
     spire["magazine"]["loaded"] = serde_json::json!(1);
-    let id = oxide_sim::BuildingId(u32::try_from(spire["id"].as_u64().unwrap()).unwrap());
-    let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
+    let id = aftermine_sim::BuildingId(u32::try_from(spire["id"].as_u64().unwrap()).unwrap());
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
     game.replace_state_after_jump(&state);
     game.presentation.camera.center = Vec2::new(5.0, 9.0);
     (game, id)
@@ -60,13 +60,17 @@ fn spire_game() -> (Game, oxide_sim::BuildingId) {
 #[test]
 fn an_own_warhead_motor_follows_it_anywhere_and_a_hostile_one_only_in_sight() {
     let (mut game, spire) = spire_game();
-    game.issue(oxide_sim::Command::Launch {
+    game.issue(aftermine_sim::Command::Launch {
         building: spire,
         // Straight east, so the deck is already lined up.
         target: chassis::grid::TilePos::new(64, 9),
     });
     // It stands ready while its locks release, then fires.
-    for _ in 0..oxide_sim::BuildingKind::Spire.silo().unwrap().ready_ticks {
+    for _ in 0..aftermine_sim::BuildingKind::Spire
+        .silo()
+        .unwrap()
+        .ready_ticks
+    {
         game.do_tick();
     }
     assert_eq!(game.state.warheads().len(), 1);
@@ -89,7 +93,7 @@ fn an_own_warhead_motor_follows_it_anywhere_and_a_hostile_one_only_in_sight() {
         1,
         "an own warhead is heard out of sight, as it is drawn"
     );
-    game.presentation.human = oxide_sim::PlayerId(1);
+    game.presentation.human = aftermine_sim::PlayerId(1);
     assert!(
         warhead_motors(&game.view()).is_empty(),
         "a hostile one is heard only over ground in sight"
@@ -108,7 +112,7 @@ const MEET: f32 = 6.0;
 /// A stop reported with no forecast: the interceptor leaves `pod` as it is
 /// reported and meets the warhead `MEET` ticks later at `at`.
 fn interception(
-    line: Option<oxide_sim::strike::WarheadLine>,
+    line: Option<aftermine_sim::strike::WarheadLine>,
     pod: Option<Vec2>,
     at: Vec2,
     completed_tick: u64,
@@ -117,12 +121,12 @@ fn interception(
     Effect {
         kind: EffectKind::Interception {
             line,
-            warhead_player: Some(oxide_sim::PlayerId(1)),
+            warhead_player: Some(aftermine_sim::PlayerId(1)),
             warhead_hostile: true,
             path: pod.map(|from| {
                 crate::render::sky::InterceptorPath::to(from, at, stopped, stopped + MEET, 2.0)
             }),
-            battery_player: oxide_sim::PlayerId(0),
+            battery_player: aftermine_sim::PlayerId(0),
             contact: at,
             contact_tick: stopped + MEET,
             seed: 7,
@@ -141,7 +145,7 @@ fn a_stopped_warhead_keeps_its_motor_until_the_interceptor_reaches_it() {
     }
     let now = game.state.current_tick();
     // A line over the silo's own sight, a short way into its flight.
-    let line = oxide_sim::strike::WarheadLine {
+    let line = aftermine_sim::strike::WarheadLine {
         launch: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("5"), chassis::fx::Fx::lit("9")),
         impact: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("40"), chassis::fx::Fx::lit("9")),
         arrival: now + 150,
@@ -186,7 +190,7 @@ fn an_unseen_hostile_interceptor_climbs_in_silence_and_an_own_one_is_heard() {
     game.presentation.camera.center = far;
     let mut hostile = interception(None, Some(far), far, now - 2);
     if let EffectKind::Interception { battery_player, .. } = &mut hostile.kind {
-        *battery_player = oxide_sim::PlayerId(1);
+        *battery_player = aftermine_sim::PlayerId(1);
     }
     game.presentation.fx.push(hostile);
     assert!(interceptor_motors(&game.view()).is_empty());

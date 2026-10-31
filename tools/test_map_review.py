@@ -79,7 +79,7 @@ class ReviewBuild(unittest.TestCase):
                 )
             raise AssertionError(f"unexpected driver command: {cmd}")
 
-        with tempfile.TemporaryDirectory(prefix="oxide-map-review-") as temp:
+        with tempfile.TemporaryDirectory(prefix="aftermine-map-review-") as temp:
             root = Path(temp)
             drafts = root / "drafts"
             drafts.mkdir()
@@ -122,7 +122,7 @@ class ReviewBuild(unittest.TestCase):
                 self.assertIn(["fake-driver", "map-audit", str(draft), "--json"], calls)
 
     def test_main_refuses_an_empty_draft_directory_before_running_driver(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="oxide-map-review-empty-") as temp:
+        with tempfile.TemporaryDirectory(prefix="aftermine-map-review-empty-") as temp:
             argv = ["map_review.py", "--drafts", temp]
             with (
                 patch.object(sys, "argv", argv),

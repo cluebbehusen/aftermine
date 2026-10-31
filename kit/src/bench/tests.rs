@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn all_bots_leaves_no_idle_chair() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     assert!(
         scenario.players.iter().any(|p| !p.bot),
         "premise: the shipped map authors a human seat"

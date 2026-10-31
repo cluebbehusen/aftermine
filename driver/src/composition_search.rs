@@ -8,12 +8,12 @@
 //! gains anything. A blend of one mix is a dominant composition; a blend of
 //! several means the strong mixes counter each other.
 //!
-//! An offline evaluation tool: it must never feed `oxide-opponent`, whose
+//! An offline evaluation tool: it must never feed `aftermine-opponent`, whose
 //! specification forbids plan search inside the bot.
 
 use crate::duel_lab::{self, Force, Formation, Layout};
+use aftermine_sim::UnitKind;
 use anyhow::Result;
-use oxide_sim::UnitKind;
 use serde::Serialize;
 use std::fmt::Write as _;
 use std::num::NonZeroUsize;

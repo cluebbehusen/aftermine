@@ -1,5 +1,5 @@
 [package]
-name = "oxide-net"
+name = "aftermine-net"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport"
 
 [dependencies]
-oxide-sim = { workspace = true }
+aftermine-sim = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

@@ -4,18 +4,18 @@
 //! public API only, like `behavior.rs`.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::{arena, cmd, run_until, unit};
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::stats::{BuildingKind, Domain};
+use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::stats::{BuildingKind, Domain};
-use oxide_sim::{Command, Event, Order, PlayerId, Scenario, Target, UnitKind};
 
 #[test]
 fn stat_tables_satisfy_the_runtime_math_preconditions() {
-    use oxide_sim::stats::{BuildingKind, MAX_WEAPONS};
+    use aftermine_sim::stats::{BuildingKind, MAX_WEAPONS};
 
-    let check_weapons = |owner: &str, weapons: &[oxide_sim::stats::WeaponStats]| {
+    let check_weapons = |owner: &str, weapons: &[aftermine_sim::stats::WeaponStats]| {
         assert!(
             weapons.len() <= MAX_WEAPONS,
             "{owner} has more weapon slots than serialized cooldown state"
@@ -68,7 +68,7 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
             );
         }
         check_weapons(&owner, stats.weapons);
-        let ground = stats.domain == oxide_sim::stats::Domain::Ground;
+        let ground = stats.domain == aftermine_sim::stats::Domain::Ground;
         if let Some(brace) = stats.brace {
             assert!(
                 ground && !stats.weapons.is_empty() && brace.deploy_ticks > 0,
@@ -708,7 +708,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
 
     // The fog-honest observation carries the blip and nothing more about
     // the contact — the unit itself is absent.
-    let obs = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let obs = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert!(obs.blips.contains(&common::ground_blip(intruder_tile)));
     assert!(
         obs.enemy_units.is_empty(),

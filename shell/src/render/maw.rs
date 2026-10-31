@@ -117,7 +117,7 @@ pub(super) fn draw(
 /// a tile of travel moves the cleats a tile of canvas, and travel forward
 /// runs the upper run toward the nose.
 pub(super) fn tread_phase(travel: f32, frames: usize) -> usize {
-    let pixels_per_tile = CANVAS / super::unit_draw_scale(oxide_sim::UnitKind::Maw);
+    let pixels_per_tile = CANVAS / super::unit_draw_scale(aftermine_sim::UnitKind::Maw);
     cycle(-travel * pixels_per_tile, frames)
 }
 
@@ -212,8 +212,8 @@ pub(super) fn draw_crew_places(
     sprites: &Sprites,
     rig: &CradleRig,
     (origin, dest, size): (Vec2, Vec2, (i32, i32)),
-    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
-    lit: [bool; oxide_sim::stats::ASSEMBLY_CREW_CAP],
+    pads: [(i32, i32); aftermine_sim::stats::ASSEMBLY_CREW_CAP],
+    lit: [bool; aftermine_sim::stats::ASSEMBLY_CREW_CAP],
     zoom: f32,
 ) {
     let tile = dest.x / size.0 as f32;

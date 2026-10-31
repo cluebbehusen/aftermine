@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::Game;
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Scenario, UnitId};
 use chassis::grid::TilePos;
-use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, UnitId};
 
 #[test]
 fn edge_release_uses_the_firing_pose_before_egress_and_survives_shooter_loss() {
@@ -26,7 +26,7 @@ fn edge_release_uses_the_firing_pose_before_egress_and_survives_shooter_loss() {
         player: PlayerId(0),
         command: Command::Attack {
             units: vec![UnitId(0)],
-            target: Target::Building(oxide_sim::BuildingId(2)).into(),
+            target: Target::Building(aftermine_sim::BuildingId(2)).into(),
             queue: false,
         },
     }]);
@@ -169,7 +169,7 @@ fn a_shell_shot_down_takes_its_own_release_record_with_it() {
             arrival,
         }],
     );
-    let survivor = oxide_sim::state::Shell {
+    let survivor = aftermine_sim::state::Shell {
         kind: ProjectileKind::Shell,
         shooter,
         player: PlayerId(0),
@@ -178,7 +178,7 @@ fn a_shell_shot_down_takes_its_own_release_record_with_it() {
         launched_at: arrival - 12,
         arrival,
         damage: 1,
-        targets: oxide_sim::stats::DomainMask::GROUND,
+        targets: aftermine_sim::stats::DomainMask::GROUND,
         splash: None,
     };
     let flight = releases.flight(&[survivor], 0).unwrap();

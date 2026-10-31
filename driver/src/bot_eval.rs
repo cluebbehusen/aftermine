@@ -3,12 +3,12 @@
 //! Runs the bot configuration serialized in an ordinary scenario, stops when
 //! the match is decided, and emits one compact row for JSONL comparison.
 
+use aftermine_kit::GameReplay;
+use aftermine_kit::controller::{OpponentMap, SeatController, SeatTrace};
+use aftermine_opponent::ResolvedProfile;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{Event, GameResult, PlayerId, SIM_VERSION, Scenario};
 use anyhow::{Context, Result, ensure};
-use oxide_kit::GameReplay;
-use oxide_kit::controller::{OpponentMap, SeatController, SeatTrace};
-use oxide_opponent::ResolvedProfile;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{Event, GameResult, PlayerId, SIM_VERSION, Scenario};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
@@ -356,7 +356,7 @@ pub struct SeatEvidence {
     /// What the seat's units and buildings did, valued in scrap; absent for
     /// seats without a controller.
     pub ledger: Option<crate::ledger::SeatLedger>,
-    /// What `oxide-opponent` believed when it launched each attack, against
+    /// What `aftermine-opponent` believed when it launched each attack, against
     /// how the attack went; absent for other seats.
     pub attacks: Option<AttackCalibration>,
 }
@@ -413,7 +413,7 @@ pub struct EvaluationRow {
     /// Simulation version that produced the record.
     pub sim_version: u32,
     /// The driver build that produced the record.
-    pub build: oxide_kit::build::BuildIdentity,
+    pub build: aftermine_kit::build::BuildIdentity,
     /// User-supplied candidate or build identifier.
     pub candidate: String,
     /// Scenario display name.
@@ -621,7 +621,8 @@ fn evaluate_plan_artifact_impl(
     let mut stall_loop = None;
     'run: while state.current_tick() < tick_limit && state.result().is_none() {
         let report = if let Some(on_trace) = trace_sink.as_mut() {
-            let traced = oxide_kit::runner::step_traced(&mut state, &mut bots, Some(&mut replay));
+            let traced =
+                aftermine_kit::runner::step_traced(&mut state, &mut bots, Some(&mut replay));
             for trace in traced.traces {
                 let row = EvaluationTraceRow {
                     version: EVALUATION_TRACE_ROW_VERSION,
@@ -637,7 +638,7 @@ fn evaluate_plan_artifact_impl(
             }
             traced.report
         } else {
-            oxide_kit::runner::step(&mut state, &mut bots, Some(&mut replay))
+            aftermine_kit::runner::step(&mut state, &mut bots, Some(&mut replay))
         };
         let tick = state.current_tick();
         for bot in &bots {
@@ -743,7 +744,7 @@ fn evaluate_plan_artifact_impl(
         result: state.result(),
         winner_seats: state.winners().into_iter().map(|seat| seat.0).collect(),
         duration_ticks: state.current_tick(),
-        final_hash: oxide_protocol::hash_hex(state.hash()),
+        final_hash: aftermine_protocol::hash_hex(state.hash()),
         command_hash,
         evidence,
         replay: None,

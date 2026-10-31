@@ -2,10 +2,10 @@
 
 use crate::common;
 
+use aftermine_sim::{Command, Event, Order, State, Target, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use common::{cmd, open_arena, open_arena_with, unit};
-use oxide_sim::{Command, Event, Order, State, Target, UnitKind};
 
 const CRUISERS: [UnitKind; 2] = [UnitKind::Talon, UnitKind::Kestrel];
 

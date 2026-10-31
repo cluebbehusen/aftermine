@@ -1,9 +1,9 @@
 //! Continuous exposed belt runs inside the existing track casings.
 
 use crate::numeric::Fit;
+use aftermine_sim::UnitKind;
 use macroquad::models::Vertex;
 use macroquad::prelude::*;
-use oxide_sim::UnitKind;
 
 pub(crate) fn supported(kind: UnitKind) -> bool {
     !runs(kind).is_empty()

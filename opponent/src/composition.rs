@@ -4,12 +4,12 @@
 
 use crate::memory::{Memory, SeenUnit};
 use crate::profile::PersonalityTraits;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::BotStance;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, UnitKind};
 use std::cmp::Reverse;
 
 /// The part of the army a unit fills.
@@ -311,7 +311,7 @@ pub(crate) fn clustered<'a>(units: impl IntoIterator<Item = &'a SeenUnit>) -> bo
 
 /// The point defender the seat would train for the screen role, with its
 /// price and point defense.
-fn defender() -> Option<(u64, oxide_sim::stats::PointDefenseStats)> {
+fn defender() -> Option<(u64, aftermine_sim::stats::PointDefenseStats)> {
     UnitKind::ALL.into_iter().find_map(|kind| {
         let stats = kind.stats();
         (role(kind) == Some(Role::Screen))
@@ -327,8 +327,8 @@ fn defender() -> Option<(u64, oxide_sim::stats::PointDefenseStats)> {
 /// shell whatever it carries, so a few heavy shells are what a defender is
 /// for, and a stream of light ones spends charges for little.
 fn shells_per_recharge(
-    weapons: &[oxide_sim::stats::WeaponStats],
-    defender: oxide_sim::stats::PointDefenseStats,
+    weapons: &[aftermine_sim::stats::WeaponStats],
+    defender: aftermine_sim::stats::PointDefenseStats,
     heaviest: u64,
 ) -> u64 {
     weapons
@@ -544,7 +544,7 @@ fn firepower(kind: UnitKind) -> u64 {
         .iter()
         .filter(|weapon| weapon.targets.ground)
         .map(|weapon| {
-            u64::from(weapon.damage) * u64::from(oxide_sim::TICKS_PER_SECOND) * 1_000
+            u64::from(weapon.damage) * u64::from(aftermine_sim::TICKS_PER_SECOND) * 1_000
                 / u64::from(weapon.cooldown_ticks.max(1))
         })
         .sum();

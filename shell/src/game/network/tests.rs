@@ -1,6 +1,6 @@
 use super::*;
+use aftermine_sim::{BuildingId, Command, UnitKind};
 use macroquad::prelude::vec2;
-use oxide_sim::{BuildingId, Command, UnitKind};
 
 fn viewport() -> Vec2 {
     vec2(1280.0, 800.0)
@@ -254,7 +254,7 @@ fn the_host_frame_paces_ticks_and_rests_at_the_lead_cap() {
     }
     assert_eq!(
         host.state.current_tick(),
-        oxide_net::LEAD_CAP,
+        aftermine_net::LEAD_CAP,
         "the silent client holds the host at the lead cap"
     );
     assert!(resting(&host), "no debt builds while blocked");
@@ -288,7 +288,7 @@ fn the_client_frame_paces_waits_and_catches_up() {
     let mut client = Game::networked(duel(), PlayerId(1), NetRole::Client, viewport()).unwrap();
     let mut session = ClientSession::new(Duration::ZERO);
     let batch = |tick| {
-        oxide_net::HostMessage::Batch {
+        aftermine_net::HostMessage::Batch {
             tick,
             commands: Vec::new(),
         }
@@ -327,7 +327,7 @@ fn the_client_frame_paces_waits_and_catches_up() {
 
 #[test]
 fn a_bot_takes_over_a_seat_with_a_seed_from_the_world() {
-    use oxide_sim::scenario::{BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotDifficulty, BotStance};
     let host_seat = PlayerId(0);
     let mut host = Game::networked(duel(), host_seat, NetRole::Host, viewport()).unwrap();
     let mut twin = Game::networked(duel(), host_seat, NetRole::Host, viewport()).unwrap();
@@ -345,7 +345,7 @@ fn a_bot_takes_over_a_seat_with_a_seed_from_the_world() {
     assert_eq!(
         host.bots
             .iter()
-            .map(oxide_kit::controller::SeatController::player)
+            .map(aftermine_kit::controller::SeatController::player)
             .collect::<Vec<_>>(),
         [PlayerId(1)]
     );
@@ -365,7 +365,7 @@ fn a_bot_takes_over_a_seat_with_a_seed_from_the_world() {
 
 #[test]
 fn a_client_mirrors_a_bot_taking_a_seat() {
-    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
     let mut client = Game::networked(duel(), PlayerId(1), NetRole::Client, viewport()).unwrap();
     let config = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 4);
     client.mirror_bot(PlayerId(0), config);

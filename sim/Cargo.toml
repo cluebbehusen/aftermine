@@ -1,5 +1,5 @@
 [package]
-name = "oxide-sim"
+name = "aftermine-sim"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

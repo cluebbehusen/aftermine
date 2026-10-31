@@ -3,7 +3,7 @@ use crate::defenses;
 use crate::investments::{ADOPT, Investment};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::observation::ObservationData;
 
 /// West's Foundry anchor in the arena.
 const FOUNDRY: TilePos = TilePos::new(3, 5);

@@ -1,8 +1,8 @@
 use super::*;
 use crate::game::Game;
+use aftermine_sim::{Command, PlayerCommand, Scenario};
 use chassis::grid::as_index;
 use macroquad::prelude::vec2;
-use oxide_sim::{Command, PlayerCommand, Scenario};
 
 #[test]
 fn boundary_sight_matches_simulation_discs_on_an_expanded_map() {

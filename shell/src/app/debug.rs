@@ -4,11 +4,11 @@ use super::screenshot::PendingScreenshot;
 use super::{App, Install, Screen, ScreenKind};
 use crate::debug_server::IncomingRequest;
 use crate::game::Game;
-use macroquad::prelude::{screen_height, screen_width};
-use oxide_protocol::{
+use aftermine_protocol::{
     CameraView, OverlayView, Reply, Request, ResponseEnvelope, SavedView, UiView,
 };
-use oxide_sim::{PlayerCommand, Scenario};
+use aftermine_sim::{PlayerCommand, Scenario};
+use macroquad::prelude::{screen_height, screen_width};
 
 /// The mutating verbs a read-only viewer refuses: commands and session
 /// swaps would act through the replay onto the hidden match behind it.
@@ -55,7 +55,7 @@ pub(super) enum Route {
 pub(super) fn route(
     playback: bool,
     final_map: bool,
-    net: Option<(crate::game::network::NetRole, oxide_sim::PlayerId)>,
+    net: Option<(crate::game::network::NetRole, aftermine_sim::PlayerId)>,
     request: &Request,
 ) -> Route {
     if final_map && frozen_map_refuses(request) {
@@ -75,7 +75,7 @@ pub(super) fn route(
 /// and the overlay that sees through fog stays off.
 pub(super) fn lockstep_refuses(
     role: crate::game::network::NetRole,
-    seat: oxide_sim::PlayerId,
+    seat: aftermine_sim::PlayerId,
     request: &Request,
 ) -> bool {
     matches!(
@@ -96,7 +96,7 @@ pub(super) fn lockstep_refuses(
 /// responds immediately, between frames, against a settled world.
 ///
 /// Shared requests (state reads, the driven clock) go through
-/// [`oxide_protocol::dispatch_shared`] against whichever session owns
+/// [`aftermine_protocol::dispatch_shared`] against whichever session owns
 /// the screen: the replay viewer when it is up, the live game otherwise.
 /// The rest are window-shaped (camera, UI, input, screenshots, the
 /// overlay) and answered for the screen the window shows, or
@@ -147,7 +147,8 @@ pub(super) fn handle_request(
     }
     // A viewer-bound `AdvanceTicks` sent to the hidden live match would
     // advance it silently.
-    let shared = oxide_protocol::dispatch_shared(screen.visible_session(&mut app.game), &request);
+    let shared =
+        aftermine_protocol::dispatch_shared(screen.visible_session(&mut app.game), &request);
     if let Some(outcome) = shared {
         // Resuming implies gameplay: leave the pause menu too (including
         // Settings or the Codex opened over it), or the sim runs behind a
@@ -236,7 +237,7 @@ pub(super) fn handle_request(
                 // the same contract, so a control byte or non-ASCII char is
                 // refused rather than persisted into a save name the font
                 // cannot draw.
-                if let oxide_protocol::RawEvent::Text { ch } = event
+                if let aftermine_protocol::RawEvent::Text { ch } = event
                     && !('\u{20}'..='\u{7e}').contains(&ch)
                 {
                     Err(format!(
@@ -267,7 +268,7 @@ pub(super) fn handle_request(
                     *screen = Screen::Playing;
                     Reply::Ok
                 }),
-            Request::LoadReplay { path } => oxide_kit::load_replay(&path)
+            Request::LoadReplay { path } => aftermine_kit::load_replay(&path)
                 .map_err(|err| format!("loading replay {path}: {err}"))
                 .and_then(|replay| {
                     Game::from_replay(replay).map_err(|err| format!("resuming replay: {err:#}"))

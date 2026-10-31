@@ -1,7 +1,7 @@
 //! Viewer-relative presentation identity, prepared once for a live or replay view.
+use aftermine_sim::scenario::MAX_PLAYERS;
+use aftermine_sim::{PlayerId, State};
 use macroquad::prelude::{Color, WHITE, color_u8};
-use oxide_sim::scenario::MAX_PLAYERS;
-use oxide_sim::{PlayerId, State};
 
 /// Relationship to the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

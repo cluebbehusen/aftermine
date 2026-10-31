@@ -7,9 +7,9 @@ use crate::render::hud::{self, HudEnv};
 use macroquad::math::Rect;
 
 /// Selected Spires, the first `loaded` of them holding a warhead.
-fn spires(count: usize, loaded: usize, scrap: u32) -> (Game, Vec<oxide_sim::BuildingId>) {
+fn spires(count: usize, loaded: usize, scrap: u32) -> (Game, Vec<aftermine_sim::BuildingId>) {
     let mut game = crate::building_actions::tests::fixture(
-        oxide_sim::BuildingKind::Spire,
+        aftermine_sim::BuildingKind::Spire,
         &vec![0; count],
         scrap,
     );
@@ -54,7 +54,7 @@ fn click_world(game: &mut Game, input: &mut InputState, world: Vec2) {
     apply_events(game, input, &click(p.x, p.y));
 }
 
-fn orders(game: &Game) -> Vec<oxide_sim::BuildingId> {
+fn orders(game: &Game) -> Vec<aftermine_sim::BuildingId> {
     game.pending
         .iter()
         .filter_map(|pc| match pc.command {
@@ -213,7 +213,7 @@ fn publish_order(game: &mut Game, input: &InputState) -> Rect {
 
 #[test]
 fn shift_turns_order_into_fill_and_a_shift_click_fills_every_empty_spire() {
-    let cost = oxide_sim::BuildingKind::Spire
+    let cost = aftermine_sim::BuildingKind::Spire
         .magazine()
         .unwrap()
         .round_cost;
@@ -239,7 +239,7 @@ fn shift_turns_order_into_fill_and_a_shift_click_fills_every_empty_spire() {
 
 #[test]
 fn a_right_click_or_a_long_press_on_order_fills_and_a_press_orders_one() {
-    let cost = oxide_sim::BuildingKind::Spire
+    let cost = aftermine_sim::BuildingKind::Spire
         .magazine()
         .unwrap()
         .round_cost;

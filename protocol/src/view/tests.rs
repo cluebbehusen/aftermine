@@ -1,9 +1,9 @@
 use super::*;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
 #[test]
 fn capture_respects_filters_and_overlays_entities() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let full = StateView::capture(
         &state,
         StateFilter {
@@ -49,7 +49,7 @@ fn capture_respects_filters_and_overlays_entities() {
 
 #[test]
 fn the_fog_view_reports_only_what_the_seat_has_seen() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let fog = FogView::capture(&state, PlayerId(0));
     let omniscient = StateView::capture(&state, StateFilter::default());
 
@@ -88,13 +88,13 @@ fn the_fog_view_reports_only_what_the_seat_has_seen() {
 
 #[test]
 fn the_fog_view_carries_only_the_viewing_seats_economy() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 73;
     scenario.players[1].scrap = 987_654;
     let mut state = scenario.build().unwrap();
-    state.tick(&[oxide_sim::PlayerCommand {
+    state.tick(&[aftermine_sim::PlayerCommand {
         player: PlayerId(0),
-        command: oxide_sim::Command::Surrender,
+        command: aftermine_sim::Command::Surrender,
     }]);
 
     let fog = FogView::capture(&state, PlayerId(0));
@@ -134,7 +134,7 @@ fn the_fog_view_carries_only_the_viewing_seats_economy() {
 
 #[test]
 fn the_fog_view_shows_hostile_bodies_but_never_their_minds() {
-    let mut state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let mut state = aftermine_sim::Scenario::skirmish().build().unwrap();
     // March a seat-1 machine into seat 0's sight so a hostile row
     // exists, with a live order program behind it.
     let intruder = state
@@ -144,16 +144,16 @@ fn the_fog_view_shows_hostile_bodies_but_never_their_minds() {
         .expect("seat 1 has starting units")
         .id;
     let own_tile = state.units()[0].tile();
-    state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Run {
+    state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Run {
             units: vec![intruder],
             goal: own_tile,
             queue: false,
         },
     }]);
     for _ in 0..2_000 {
-        let fog = FogView::capture(&state, oxide_sim::PlayerId(0));
+        let fog = FogView::capture(&state, aftermine_sim::PlayerId(0));
         if let Some(row) = fog.units.iter().find(|u| u.player == 1) {
             assert_eq!(row.order, None, "a hostile program is fog's to hide");
             assert!(row.queue.is_empty());
@@ -180,7 +180,7 @@ fn the_fog_view_shows_hostile_bodies_but_never_their_minds() {
 
 #[test]
 fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
-    use oxide_sim::scenario::{PlayerSpec, UnitSpec};
+    use aftermine_sim::scenario::{PlayerSpec, UnitSpec};
     // An open field: seat 0's unarmed Harvester holds sight on the
     // ground a seat-1 Condor is ordered onto, so nothing shoots the
     // airframe down or draws it back into the air.
@@ -191,7 +191,7 @@ fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
         bot: false,
         bot_config: None,
     };
-    let scenario = oxide_sim::Scenario {
+    let scenario = aftermine_sim::Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "landing-fog".into(),
@@ -241,9 +241,9 @@ fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
         .find(|u| u.kind == UnitKind::Condor)
         .expect("the Condor spawned")
         .id;
-    state.tick(&[oxide_sim::PlayerCommand {
+    state.tick(&[aftermine_sim::PlayerCommand {
         player: PlayerId(1),
-        command: oxide_sim::Command::Run {
+        command: aftermine_sim::Command::Run {
             units: vec![condor],
             goal: TilePos::new(13, 8),
             queue: false,
@@ -251,7 +251,7 @@ fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
     }]);
     for _ in 0..1_500 {
         state.tick(&[]);
-        if !state.unit(condor).is_some_and(oxide_sim::Unit::landed) {
+        if !state.unit(condor).is_some_and(aftermine_sim::Unit::landed) {
             continue;
         }
         let fog = FogView::capture(&state, PlayerId(0));
@@ -287,11 +287,11 @@ fn the_fog_view_keeps_a_hostile_landing_while_hiding_its_program() {
 
 #[test]
 fn unit_view_exposes_queued_orders() {
-    let mut state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let mut state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let mover = state.units()[0].id;
-    state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(0),
-        command: oxide_sim::Command::Patrol {
+    state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(0),
+        command: aftermine_sim::Command::Patrol {
             units: vec![mover],
             waypoints: vec![
                 chassis::grid::TilePos::new(10, 10),
@@ -308,11 +308,11 @@ fn unit_view_exposes_queued_orders() {
 
 #[test]
 fn building_view_reports_remaining_train_time() {
-    let mut state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let mut state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let foundry = state.buildings()[0].id;
-    state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(0),
-        command: oxide_sim::Command::Train {
+    state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(0),
+        command: aftermine_sim::Command::Train {
             building: foundry,
             kind: UnitKind::Harvester,
         },
@@ -326,15 +326,15 @@ fn building_view_reports_remaining_train_time() {
 
 #[test]
 fn building_view_exposes_allied_focus_and_redacts_hostile_focus() {
-    let target = oxide_sim::Target::Unit(oxide_sim::UnitId(7));
-    let building = oxide_sim::Building {
-        id: oxide_sim::BuildingId(3),
-        player: oxide_sim::PlayerId(0),
-        kind: oxide_sim::BuildingKind::Turret,
+    let target = aftermine_sim::Target::Unit(aftermine_sim::UnitId(7));
+    let building = aftermine_sim::Building {
+        id: aftermine_sim::BuildingId(3),
+        player: aftermine_sim::PlayerId(0),
+        kind: aftermine_sim::BuildingKind::Turret,
         anchor: chassis::grid::TilePos::new(4, 5),
-        hp: oxide_sim::BuildingKind::Turret.base_stats().max_hp,
+        hp: aftermine_sim::BuildingKind::Turret.base_stats().max_hp,
         queue: std::collections::VecDeque::new(),
-        phase: oxide_sim::BuildingPhase::Built { training: 0 },
+        phase: aftermine_sim::BuildingPhase::Built { training: 0 },
         rally: None,
         focus: Some(target.into()),
         tier: 0,
@@ -352,7 +352,7 @@ fn building_view_exposes_allied_focus_and_redacts_hostile_focus() {
 
 #[test]
 fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let view = StateView::capture(
         &state,
         StateFilter {
@@ -369,8 +369,8 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
     // Those entity letters are not in the terrain legend, so the debug
     // map never round-trips back through the scenario parser — the same
     // reason the render-only wreck glyph stays out of authorable maps.
-    match oxide_sim::map::Map::parse(&rows) {
-        Err(oxide_sim::map::MapError::UnknownChar { c, .. }) => {
+    match aftermine_sim::map::Map::parse(&rows) {
+        Err(aftermine_sim::map::MapError::UnknownChar { c, .. }) => {
             assert!(
                 c.is_ascii_alphabetic(),
                 "rejected on an entity glyph, got {c:?}"
@@ -385,28 +385,30 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
 /// same world to the same seat.
 #[test]
 fn the_fog_view_and_the_bot_observation_agree() {
-    use oxide_sim::observation::ObservationData;
+    use aftermine_sim::observation::ObservationData;
     use std::collections::BTreeSet;
 
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     for player in &mut scenario.players {
         player.scrap = 1_000;
     }
-    scenario.players[0].scrap += oxide_sim::UnitKind::Maw.stats().cost;
+    scenario.players[0].scrap += aftermine_sim::UnitKind::Maw.stats().cost;
     for (seat, kind, x, y) in [
-        (0, oxide_sim::BuildingKind::Extractor, 8, 4),
-        (1, oxide_sim::BuildingKind::Extractor, 30, 18),
-        (0, oxide_sim::BuildingKind::Crucible, 1, 1),
-        (1, oxide_sim::BuildingKind::Crucible, 37, 21),
+        (0, aftermine_sim::BuildingKind::Extractor, 8, 4),
+        (1, aftermine_sim::BuildingKind::Extractor, 30, 18),
+        (0, aftermine_sim::BuildingKind::Crucible, 1, 1),
+        (1, aftermine_sim::BuildingKind::Crucible, 37, 21),
     ] {
-        scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-            player: seat,
-            kind,
-            x,
-            y,
-        });
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: seat,
+                kind,
+                x,
+                y,
+            });
     }
     let state = scenario.build().unwrap();
     // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
@@ -417,25 +419,25 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "kind": "extractor",
         "owner": 1,
         "anchor": {"x": 30, "y": 18},
-        "hp": oxide_sim::BuildingKind::Extractor.tier_stats(1).max_hp,
+        "hp": aftermine_sim::BuildingKind::Extractor.tier_stats(1).max_hp,
         "tier": 1,
     }]);
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
-    let foundry = |state: &oxide_sim::State, seat: u8| {
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
+    let foundry = |state: &aftermine_sim::State, seat: u8| {
         state
             .buildings()
             .iter()
-            .find(|b| b.player.0 == seat && b.kind == oxide_sim::BuildingKind::Foundry)
+            .find(|b| b.player.0 == seat && b.kind == aftermine_sim::BuildingKind::Foundry)
             .unwrap()
             .anchor
     };
     // Only West raids, so East meets hostiles at home while West's cradle
     // stays out of its sight.
-    let raids: Vec<oxide_sim::PlayerCommand> = [0u8]
+    let raids: Vec<aftermine_sim::PlayerCommand> = [0u8]
         .into_iter()
-        .map(|seat| oxide_sim::PlayerCommand {
+        .map(|seat| aftermine_sim::PlayerCommand {
             player: PlayerId(seat),
-            command: oxide_sim::Command::Hunt {
+            command: aftermine_sim::Command::Hunt {
                 units: state
                     .units()
                     .iter()
@@ -450,10 +452,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
             state
                 .buildings()
                 .iter()
-                .filter(|b| b.kind == oxide_sim::BuildingKind::Extractor)
-                .map(|b| oxide_sim::PlayerCommand {
+                .filter(|b| b.kind == aftermine_sim::BuildingKind::Extractor)
+                .map(|b| aftermine_sim::PlayerCommand {
                     player: b.player,
-                    command: oxide_sim::Command::UpgradeBuilding { building: b.id },
+                    command: aftermine_sim::Command::UpgradeBuilding { building: b.id },
                 }),
         )
         .collect();
@@ -577,7 +579,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
         if !cradle_ordered
             && state.requirements_met(
                 PlayerId(0),
-                oxide_sim::BuildingKind::MawCradle
+                aftermine_sim::BuildingKind::MawCradle
                     .base_stats()
                     .construction
                     .unwrap()
@@ -589,7 +591,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
                 .find(|&anchor| {
                     state
-                        .place_refusal(PlayerId(0), oxide_sim::BuildingKind::MawCradle, anchor)
+                        .place_refusal(PlayerId(0), aftermine_sim::BuildingKind::MawCradle, anchor)
                         .is_none()
                 })
                 .expect("room for a cradle near West's Foundry");
@@ -599,11 +601,11 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
                 .unwrap()
                 .id;
-            orders.push(oxide_sim::PlayerCommand {
+            orders.push(aftermine_sim::PlayerCommand {
                 player: PlayerId(0),
-                command: oxide_sim::Command::Build {
+                command: aftermine_sim::Command::Build {
                     units: vec![worker],
-                    kind: oxide_sim::BuildingKind::MawCradle,
+                    kind: aftermine_sim::BuildingKind::MawCradle,
                     anchor,
                     queue: false,
                     defer: false,
@@ -634,7 +636,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
 
 #[test]
 fn a_fog_view_without_public_buildings_omits_the_field() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let json = serde_json::to_value(FogView::capture(&state, PlayerId(0))).unwrap();
     assert!(json.get("public_buildings").is_none());
 }
@@ -642,18 +644,18 @@ fn a_fog_view_without_public_buildings_omits_the_field() {
 /// Seat 0's Kestrel at `watcher` and seat 1's Mantle mid-basin holding one
 /// charge, a tick into the match.
 fn watched_mantle(watcher: (i32, i32)) -> State {
-    use oxide_sim::scenario::UnitSpec;
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    use aftermine_sim::scenario::UnitSpec;
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units = vec![
         UnitSpec {
             player: 0,
-            kind: oxide_sim::UnitKind::Kestrel,
+            kind: aftermine_sim::UnitKind::Kestrel,
             x: watcher.0,
             y: watcher.1,
         },
         UnitSpec {
             player: 1,
-            kind: oxide_sim::UnitKind::Mantle,
+            kind: aftermine_sim::UnitKind::Mantle,
             x: 24,
             y: 12,
         },
@@ -683,21 +685,21 @@ fn the_fog_view_shows_a_seen_point_defenders_charges_and_nothing_unseen() {
 
 #[test]
 fn both_views_count_docked_drones_and_name_hosts_but_only_the_owner_sees_orders() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.map = vec![".".repeat(30); 22];
     scenario.map[2].replace_range(2..3, "1");
     scenario.map[17].replace_range(25..26, "2");
     scenario.buildings.clear();
-    let unit = |player, kind, x, y| oxide_sim::scenario::UnitSpec { player, kind, x, y };
+    let unit = |player, kind, x, y| aftermine_sim::scenario::UnitSpec { player, kind, x, y };
     scenario.units = vec![
-        unit(0, oxide_sim::UnitKind::Roc, 12, 10),
-        unit(1, oxide_sim::UnitKind::Skyhook, 16, 10),
+        unit(0, aftermine_sim::UnitKind::Roc, 12, 10),
+        unit(1, aftermine_sim::UnitKind::Skyhook, 16, 10),
     ];
     let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
     value["units"][0]["bay"]["docked"] = 4.into();
     value["units"][0]["bay"]["ordered"] = 1.into();
     value["players"][0]["scrap"] = 0.into();
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     // The Skyhook brings the drones out.
     for _ in 0..3 {
         state.tick(&[]);
@@ -707,10 +709,10 @@ fn both_views_count_docked_drones_and_name_hosts_but_only_the_owner_sees_orders(
         state.units().iter().any(|u| u.host == Some(roc)),
         "premise: drones are out"
     );
-    for seat in [oxide_sim::PlayerId(0), oxide_sim::PlayerId(1)] {
+    for seat in [aftermine_sim::PlayerId(0), aftermine_sim::PlayerId(1)] {
         let own = seat.0 == 0;
         let fog = FogView::capture(&state, seat);
-        let obs = oxide_sim::observation::ObservationData::fog_honest(&state, seat);
+        let obs = aftermine_sim::observation::ObservationData::fog_honest(&state, seat);
         let observed: Vec<_> = obs
             .my_units
             .iter()
@@ -750,7 +752,7 @@ fn both_views_count_docked_drones_and_name_hosts_but_only_the_owner_sees_orders(
 
 #[test]
 fn the_fog_view_shows_a_workers_idle_weld_switch_to_its_side_only() {
-    use oxide_sim::scenario::{PlayerSpec, UnitSpec};
+    use aftermine_sim::scenario::{PlayerSpec, UnitSpec};
     let player = |name: &str, team| PlayerSpec {
         name: name.into(),
         team: Some(team),
@@ -759,7 +761,7 @@ fn the_fog_view_shows_a_workers_idle_weld_switch_to_its_side_only() {
         bot_config: None,
     };
     let unit = |player, kind, x, y| UnitSpec { player, kind, x, y };
-    let scenario = oxide_sim::Scenario {
+    let scenario = aftermine_sim::Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "idle-weld-fog".into(),
@@ -777,19 +779,19 @@ fn the_fog_view_shows_a_workers_idle_weld_switch_to_its_side_only() {
         ],
         players: vec![player("West", 0), player("East", 1), player("North", 0)],
         units: vec![
-            unit(0, oxide_sim::UnitKind::Harvester, 10, 4),
-            unit(0, oxide_sim::UnitKind::Sentinel, 9, 5),
-            unit(1, oxide_sim::UnitKind::Harvester, 13, 4),
-            unit(2, oxide_sim::UnitKind::Harvester, 11, 3),
+            unit(0, aftermine_sim::UnitKind::Harvester, 10, 4),
+            unit(0, aftermine_sim::UnitKind::Sentinel, 9, 5),
+            unit(1, aftermine_sim::UnitKind::Harvester, 13, 4),
+            unit(2, aftermine_sim::UnitKind::Harvester, 11, 3),
         ],
         buildings: Vec::new(),
         meta: None,
     };
     let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
     value["units"][3]["worker"]["idle_weld_off"] = true.into();
-    let state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     let ids: Vec<u32> = state.units().iter().map(|u| u.id.0).collect();
-    let fog = FogView::capture(&state, oxide_sim::PlayerId(0));
+    let fog = FogView::capture(&state, aftermine_sim::PlayerId(0));
     let switch = |id: u32| {
         fog.units
             .iter()

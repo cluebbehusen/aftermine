@@ -1,7 +1,7 @@
 use super::*;
 use crate::support_tests::replay_fixture as fixture;
 
-use oxide_sim::Scenario;
+use aftermine_sim::Scenario;
 
 fn opts(until: Option<u64>, every: Option<u64>) -> SummaryOptions {
     SummaryOptions {

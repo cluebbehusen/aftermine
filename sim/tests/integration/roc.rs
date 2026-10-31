@@ -3,15 +3,15 @@
 //! transport and crash, and its cradle.
 
 use crate::common::{building, cmd, face_toward, open_arena, players, run, unit};
-use chassis::compass::{dir, heading_of};
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::state::IdleFacing;
-use oxide_sim::{
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::state::IdleFacing;
+use aftermine_sim::{
     AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Scenario, State, Target, UnitId,
     UnitKind,
 };
+use chassis::compass::{dir, heading_of};
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::TilePos;
 
 const WIDTH: usize = 30;
 const HEIGHT: usize = 22;
@@ -486,7 +486,7 @@ fn a_roc_carries_twelve_slots_and_turns_the_thirteenth_away() {
             matches!(
                 event,
                 Event::OrderStalled {
-                    reason: oxide_sim::event::StallReason::TransportFull,
+                    reason: aftermine_sim::event::StallReason::TransportFull,
                     ..
                 }
             )
@@ -639,7 +639,7 @@ fn a_roc_cradle_needs_an_airworks_beside_the_maws_prerequisites() {
         events.iter().any(|event| matches!(
             event,
             Event::CommandRejected {
-                reason: oxide_sim::command::RejectReason::MissingPrerequisite,
+                reason: aftermine_sim::command::RejectReason::MissingPrerequisite,
                 ..
             }
         )),
@@ -717,7 +717,7 @@ fn a_finished_roc_cradle_lifts_its_roc_off_from_its_centre() {
     let body = state.unit(id).unwrap();
     assert_eq!(
         body.domain(),
-        oxide_sim::stats::Domain::Air,
+        aftermine_sim::stats::Domain::Air,
         "it lifts off airborne"
     );
     assert!(body.mounts.is_some(), "with its guns");
@@ -753,7 +753,7 @@ fn no_gun_fires_through_a_peak_at_a_building_flush_against_it() {
     map.push("############^###########".to_string());
     let mut state = Scenario {
         levels: Vec::new(),
-        mode: oxide_sim::scenario::ScenarioMode::Sandbox,
+        mode: aftermine_sim::scenario::ScenarioMode::Sandbox,
         name: "flush".into(),
         map,
         players: players(0),

@@ -3,11 +3,11 @@
 //! on what any seat has seen, and every seat of a match shares one model.
 
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, tiles_of};
+use aftermine_sim::map::{Elevation, Map};
+use aftermine_sim::scenario::ScenarioError;
+use aftermine_sim::{BuildingKind, PlayerId, Scenario};
 use chassis::fx::Vec2Fx;
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::map::{Elevation, Map};
-use oxide_sim::scenario::ScenarioError;
-use oxide_sim::{BuildingKind, PlayerId, Scenario};
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -67,7 +67,7 @@ const CUT_GATES: usize = 3;
 /// still count as one an attack would take.
 const CUT_SLACK: u16 = 20;
 
-/// Public map facts one match's `oxide-opponent` seats share.
+/// Public map facts one match's `aftermine-opponent` seats share.
 #[derive(Debug)]
 pub struct MapModel {
     /// Ground component per tile, numbered from one; zero where terrain blocks
@@ -119,11 +119,11 @@ impl Shot {
     /// The shot of a `weapon` fired from a body in `shooter` at one in
     /// `target`.
     pub(crate) fn of(
-        weapon: &oxide_sim::stats::WeaponStats,
-        shooter: oxide_sim::stats::Domain,
-        target: oxide_sim::stats::Domain,
+        weapon: &aftermine_sim::stats::WeaponStats,
+        shooter: aftermine_sim::stats::Domain,
+        target: aftermine_sim::stats::Domain,
     ) -> Self {
-        use oxide_sim::stats::Domain;
+        use aftermine_sim::stats::Domain;
         match (shooter, target) {
             (Domain::Ground, Domain::Ground) if weapon.indirect => Self::Arc,
             (Domain::Ground, Domain::Ground) => Self::Ground,
@@ -1284,7 +1284,7 @@ fn frame_sites(
                     .any(|anchor| components.get(*anchor) == component)
         }) || starts.iter().any(|(_, start)| {
             components.get(*start) == component
-                && oxide_sim::geometry::foundry_supports(*start, *frame)
+                && aftermine_sim::geometry::foundry_supports(*start, *frame)
         }) {
             continue;
         }
@@ -1292,7 +1292,7 @@ fn frame_sites(
         let anchors = site_anchors(map, components, &nodes)
             .into_iter()
             .filter(|anchor| components.get(*anchor) == component)
-            .filter(|anchor| oxide_sim::geometry::foundry_supports(*anchor, *frame))
+            .filter(|anchor| aftermine_sim::geometry::foundry_supports(*anchor, *frame))
             .collect::<Vec<_>>();
         if anchors.is_empty() {
             continue;
@@ -1305,7 +1305,7 @@ fn frame_sites(
                 components.get(*other) == component
                     && anchors
                         .iter()
-                        .any(|anchor| oxide_sim::geometry::foundry_supports(*anchor, *other))
+                        .any(|anchor| aftermine_sim::geometry::foundry_supports(*anchor, *other))
             })
             .collect();
         sites.push(Site {

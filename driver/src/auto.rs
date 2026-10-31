@@ -5,8 +5,8 @@
 //! resumable state on the host machine.
 
 use crate::client::Client;
+use aftermine_protocol::{Key, RawEvent, Request, UiView};
 use anyhow::{Context, Result, bail};
-use oxide_protocol::{Key, RawEvent, Request, UiView};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -55,7 +55,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
     command.args([
         "build",
         "-p",
-        "oxide-shell",
+        "aftermine-shell",
         "--locked",
         "--message-format=json-render-diagnostics",
     ]);
@@ -65,7 +65,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
     let output = command
         .current_dir(&root)
         .output()
-        .context("building oxide-shell via cargo")?;
+        .context("building aftermine-shell via cargo")?;
     if !output.status.success() {
         let rendered = String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -73,7 +73,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
             .filter_map(|message| message["message"]["rendered"].as_str().map(str::to_owned))
             .collect::<String>();
         bail!(
-            "building oxide-shell failed:\n{rendered}{}",
+            "building aftermine-shell failed:\n{rendered}{}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -121,7 +121,7 @@ pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
             "--port",
             &opts.port.to_string(),
         ])
-        .env("OXIDE_RESOURCE_ROOT", &root);
+        .env("AFTERMINE_RESOURCE_ROOT", &root);
     if opts.paused {
         command.arg("--paused");
     }

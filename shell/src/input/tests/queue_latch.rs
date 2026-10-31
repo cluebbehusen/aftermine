@@ -100,7 +100,7 @@ fn a_latched_queue_covers_one_selection_tap() {
 
 #[test]
 fn a_latched_queue_lasts_a_whole_placement_chain() {
-    let kind = oxide_sim::BuildingKind::Barricade;
+    let kind = aftermine_sim::BuildingKind::Barricade;
     let (mut game, mut input, _) = armed_placement(kind);
     let chip = macroquad::math::Rect::new(160.0, 620.0, 96.0, 44.0);
     let ribbon = macroquad::math::Rect::new(500.0, 620.0, 240.0, 44.0);

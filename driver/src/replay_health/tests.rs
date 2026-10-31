@@ -1,8 +1,8 @@
 use super::*;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{RECLAIMER_PERIOD, REFINERY_PERIOD, UnitKind};
+use aftermine_sim::{AttackTarget, Command, PlayerCommand, PlayerId, Scenario, UnitId};
 use chassis::replay::Replay;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{RECLAIMER_PERIOD, REFINERY_PERIOD, UnitKind};
-use oxide_sim::{AttackTarget, Command, PlayerCommand, PlayerId, Scenario, UnitId};
 
 /// A 32-wide, 12-deep field: West's start at (2, 2) and East's at
 /// (28, 2), each seat with `scrap`, plus the given units and buildings.
@@ -430,7 +430,7 @@ fn only_the_winning_force_converts_and_leaving_gives_up_the_ground() {
 
 #[test]
 fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
-    let dir = std::env::temp_dir().join(format!("oxide-replay-health-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-replay-health-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // Wardens beside East's only Foundry raze it well before the recording
     // runs out.
@@ -446,10 +446,10 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
     );
     let mut decisive: GameReplay = Replay::new(SIM_VERSION, "test", scenario);
     decisive.meta.ticks = Some(10 * MINUTE);
-    oxide_kit::save_recording(
+    aftermine_kit::save_recording(
         dir.join("b-decisive.oxreplay"),
         &decisive,
-        &oxide_kit::keyframes::Keyframes::default(),
+        &aftermine_kit::keyframes::Keyframes::default(),
     )
     .unwrap();
     crate::support_tests::replay_fixture()
@@ -498,8 +498,10 @@ fn a_replay_directory_is_measured_to_each_decision_in_name_order() {
     assert_eq!((summary.pacing.matches, summary.pacing.won), (2, 1));
     std::fs::remove_dir_all(&dir).unwrap();
 
-    let empty =
-        std::env::temp_dir().join(format!("oxide-replay-health-empty-{}", std::process::id()));
+    let empty = std::env::temp_dir().join(format!(
+        "aftermine-replay-health-empty-{}",
+        std::process::id()
+    ));
     std::fs::create_dir_all(&empty).unwrap();
     let error = expand(std::slice::from_ref(&empty)).unwrap_err();
     assert!(

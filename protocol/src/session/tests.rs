@@ -59,7 +59,7 @@ impl DebugSession for Bare {
 
 fn bare() -> Bare {
     Bare {
-        state: oxide_sim::Scenario::skirmish().build().expect("builds"),
+        state: aftermine_sim::Scenario::skirmish().build().expect("builds"),
         paused: false,
         speed: 1.0,
     }
@@ -74,7 +74,7 @@ fn the_capability_split_is_exactly_nine_shared_requests() {
             filter: crate::StateFilter::default(),
         },
         Request::QueryFogView {
-            player: oxide_sim::PlayerId(0),
+            player: aftermine_sim::PlayerId(0),
         },
         Request::StateHash,
         Request::AdvanceTicks { ticks: 1 },
@@ -107,8 +107,8 @@ fn the_capability_split_is_exactly_nine_shared_requests() {
         Request::Screenshot { path: None },
         Request::ToggleOverlay,
         Request::SendCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Stop { units: vec![] },
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Stop { units: vec![] },
         },
         Request::LoadScenario {
             path: "x.json".to_string(),
@@ -143,7 +143,7 @@ fn the_dispatcher_caps_ticks_and_validates_seats() {
     let missing = dispatch_shared(
         &mut session,
         &Request::QueryFogView {
-            player: oxide_sim::PlayerId(9),
+            player: aftermine_sim::PlayerId(9),
         },
     )
     .expect("fog is shared")

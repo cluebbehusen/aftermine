@@ -1,5 +1,5 @@
 [package]
-name = "oxide-shell"
+name = "aftermine-shell"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,10 +14,10 @@ path = "src/main.rs"
 
 [dependencies]
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
-oxide-protocol = { workspace = true }
-oxide-kit = { workspace = true }
-oxide-net = { workspace = true }
+aftermine-sim = { workspace = true }
+aftermine-protocol = { workspace = true }
+aftermine-kit = { workspace = true }
+aftermine-net = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

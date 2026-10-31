@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION};
+use aftermine_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION};
 
 fn segment() -> (GameReplay, State, State) {
     let scenario = Scenario::skirmish();
@@ -18,8 +18,8 @@ fn segment() -> (GameReplay, State, State) {
     let command = PlayerCommand {
         player: PlayerId(0),
         command: Command::Train {
-            building: oxide_sim::BuildingId(0),
-            kind: oxide_sim::UnitKind::Harvester,
+            building: aftermine_sim::BuildingId(0),
+            kind: aftermine_sim::UnitKind::Harvester,
         },
     };
     replay.record(37, command.clone());

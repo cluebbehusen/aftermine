@@ -1,16 +1,16 @@
 use super::*;
-use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::scenario::BotStance;
-use oxide_sim::{Command, PlayerId};
+use aftermine_sim::scenario::BotDifficulty;
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::{Command, PlayerId};
 
 #[test]
 fn replay_resume_keeps_pending_controller_events_and_recording() {
     let mut scenario = Scenario::skirmish();
     for seat in &mut scenario.players {
         seat.bot = true;
-        seat.bot_config = Some(oxide_sim::scenario::BotConfig::default());
+        seat.bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     }
-    scenario.players[0].bot_config = Some(oxide_sim::scenario::BotConfig::new(
+    scenario.players[0].bot_config = Some(aftermine_sim::scenario::BotConfig::new(
         BotDifficulty::default(),
         BotStance::default(),
         0,
@@ -27,7 +27,7 @@ fn replay_resume_keeps_pending_controller_events_and_recording() {
         .unwrap();
     original.step();
     let controllers = |session: &Session| {
-        let checkpoint = oxide_kit::checkpoint::SessionCheckpoint::capture(
+        let checkpoint = aftermine_kit::checkpoint::SessionCheckpoint::capture(
             &session.scenario,
             &session.state,
             &session.bots,
@@ -77,7 +77,7 @@ fn human_scenario(name: &str) -> Scenario {
 
 fn scratch(name: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "oxide-driver-session-{name}-{}",
+        "aftermine-driver-session-{name}-{}",
         std::process::id()
     ));
     std::fs::remove_dir_all(&path).ok();

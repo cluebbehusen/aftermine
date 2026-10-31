@@ -11,11 +11,11 @@ use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring, tiles_of};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::{Memory, SeenUnit};
 use crate::workers;
+use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::stats::{CHARGE_DAMAGE, Domain};
+use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData};
-use oxide_sim::stats::{CHARGE_DAMAGE, Domain};
-use oxide_sim::{BuildingKind, UnitKind};
 use std::cell::OnceCell;
 use std::cmp::Reverse;
 

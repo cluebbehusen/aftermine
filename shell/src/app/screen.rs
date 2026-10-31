@@ -155,7 +155,7 @@ pub(super) enum Visible<'a> {
 }
 
 impl<'a> Visible<'a> {
-    pub(super) fn state(self) -> &'a oxide_sim::State {
+    pub(super) fn state(self) -> &'a aftermine_sim::State {
         match self {
             Self::Live(game) => &game.state,
             Self::Replay(session) => &session.engine.state,
@@ -237,7 +237,7 @@ impl Screen {
     pub(super) fn visible_session<'a>(
         &'a mut self,
         live: &'a mut Game,
-    ) -> &'a mut dyn oxide_protocol::DebugSession {
+    ) -> &'a mut dyn aftermine_protocol::DebugSession {
         match self {
             Self::Playback { session, .. } => &mut **session,
             _ => live,

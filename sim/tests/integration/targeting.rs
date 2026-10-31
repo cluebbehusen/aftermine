@@ -3,13 +3,13 @@
 //! API only.
 
 use crate::common::*;
+use aftermine_sim::{BuildingKind, Command, Event, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{BuildingKind, Command, Event, State, Target, UnitId, UnitKind};
 
 /// What `unit` is attacking, as its owner sees it.
 fn attacking(state: &State, unit: UnitId) -> Option<Target> {
     let u = state.unit(unit)?;
-    let oxide_sim::Order::Attack { target, .. } = u.order else {
+    let aftermine_sim::Order::Attack { target, .. } = u.order else {
         return None;
     };
     state
@@ -174,7 +174,7 @@ fn a_unit_drops_a_harmless_victim_it_chose_for_a_machine_hitting_it() {
         );
         hit
     });
-    let switch = oxide_sim::stats::TARGET_RECHECK_TICKS;
+    let switch = aftermine_sim::stats::TARGET_RECHECK_TICKS;
     run_until(&mut state, switch, |state, _| {
         attacking(state, sentinel) == Some(Target::Unit(attacker))
     });
@@ -189,7 +189,7 @@ fn an_ordered_attack_keeps_its_victim() {
             .any(|event| matches!(event, Event::AttackHit { attacker: a, .. } if *a == attacker));
         hit || state.unit(harvester).is_none()
     });
-    for _ in 0..2 * oxide_sim::stats::TARGET_RECHECK_TICKS {
+    for _ in 0..2 * aftermine_sim::stats::TARGET_RECHECK_TICKS {
         if state.unit(harvester).is_none() {
             break;
         }

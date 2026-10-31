@@ -14,7 +14,7 @@ pub(crate) fn ticket(address: &str, token: Token) -> Ticket {
 
 fn scratch(name: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "oxide-ticket-{name}-{}-{}",
+        "aftermine-ticket-{name}-{}-{}",
         std::process::id(),
         crate::entropy::bits()
     ));

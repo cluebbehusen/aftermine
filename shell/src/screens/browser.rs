@@ -12,8 +12,8 @@ use crate::nav::{Nav, step_grid};
 use crate::numeric;
 use crate::press::{ScrollPress, Swipe};
 use crate::render::prim::{fill_rect, stroke_rect};
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text, vec2};
-use oxide_protocol::{Key, RawEvent};
 
 use crate::theme::{BORDER_FAINT, SURFACE_MENU, Stroke, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE};
 

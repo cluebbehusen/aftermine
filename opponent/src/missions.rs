@@ -14,11 +14,11 @@ use crate::frame::{HomeFrame, doubled, ring};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::scenario::{BotDifficulty, BotStance};
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
 mod air;

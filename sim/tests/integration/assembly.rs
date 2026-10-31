@@ -4,16 +4,16 @@
 //! no pursuit, structure damage, healing only by its kiln).
 
 use crate::common::{building, cmd, face_toward, open_arena_with, players, run, run_until, unit};
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::{TilePos, as_index};
-use oxide_sim::command::RejectReason;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingKind, KILN_BITE_PERIOD, Mend};
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{BuildingKind, KILN_BITE_PERIOD, Mend};
+use aftermine_sim::{
     AttackTarget, Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target,
     TickReport, UnitId, UnitKind, UnitRepairSource,
 };
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::{TilePos, as_index};
 
 const WIDTH: usize = 36;
 const HEIGHT: usize = 20;
@@ -71,7 +71,7 @@ fn raise(units: &[UnitId], anchor: TilePos, queue: bool) -> PlayerCommand {
 }
 
 /// East's fog-honest knowledge of West's cradle, with no sight of it.
-fn known_cradles(state: &State) -> Vec<oxide_sim::PublicBuilding> {
+fn known_cradles(state: &State) -> Vec<aftermine_sim::PublicBuilding> {
     ObservationData::fog_honest(state, PlayerId(1))
         .public_buildings
         .into_iter()
@@ -86,7 +86,7 @@ fn rejected(report: &TickReport) -> Option<RejectReason> {
     })
 }
 
-fn cradle(state: &State) -> Option<&oxide_sim::Building> {
+fn cradle(state: &State) -> Option<&aftermine_sim::Building> {
     state
         .buildings()
         .iter()
@@ -461,8 +461,8 @@ fn a_destroyed_cradle_leaves_a_wreck_for_the_work_its_crew_raised() {
     let start = u64::from(stats.max_hp / 5);
     let raised = start + (u64::from(stats.max_hp) - start) * u64::from(progress) / u64::from(build);
     let full = u64::from(
-        UnitKind::Maw.stats().cost * oxide_sim::stats::WRECK_VALUE_NUM
-            / oxide_sim::stats::WRECK_VALUE_DEN,
+        UnitKind::Maw.stats().cost * aftermine_sim::stats::WRECK_VALUE_NUM
+            / aftermine_sim::stats::WRECK_VALUE_DEN,
     );
     let (w, h) = BuildingKind::MawCradle.size();
     // Each footprint tile takes a whole share.
@@ -878,7 +878,7 @@ struct Cut {
     aim: Vec2Fx,
     /// The surface as the cut's tick began. An upgrade's clock can redraw
     /// the outline later in the cut's own tick.
-    met: oxide_sim::building_contact::Surface,
+    met: aftermine_sim::building_contact::Surface,
 }
 
 /// The outward normal of a side from `a` to `b` of an outline, which winds
@@ -889,7 +889,7 @@ fn outward((a, b): (Vec2Fx, Vec2Fx)) -> Vec2Fx {
 }
 
 /// Whether a hull facing `heading` stands square to a side of `surface`.
-fn square_to(surface: oxide_sim::building_contact::Surface, heading: u8) -> bool {
+fn square_to(surface: aftermine_sim::building_contact::Surface, heading: u8) -> bool {
     let forward = chassis::compass::dir(heading);
     surface.sides().into_iter().any(|side| {
         let inward = -outward(side);
@@ -942,7 +942,7 @@ fn first_cut(
 }
 
 /// The first cut of `maw` ordered onto `target`.
-fn cut_by(state: &mut State, maw: UnitId, target: oxide_sim::BuildingId) -> Cut {
+fn cut_by(state: &mut State, maw: UnitId, target: aftermine_sim::BuildingId) -> Cut {
     state.tick(&[cmd(
         0,
         Command::Attack {
@@ -1039,7 +1039,7 @@ fn maw_beside(
     pos: Vec2Fx,
     heading: u8,
     buildings: &[(u8, BuildingKind, TilePos)],
-) -> (State, UnitId, oxide_sim::BuildingId) {
+) -> (State, UnitId, aftermine_sim::BuildingId) {
     let tile = TilePos::containing(pos);
     let mut scenario =
         open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, tile.x, tile.y)], |_| {});
@@ -1088,10 +1088,10 @@ fn east_side(kind: BuildingKind, anchor: TilePos) -> (Vec2Fx, Vec2Fx) {
 fn first_stroke(
     state: &mut State,
     maw: UnitId,
-    target: oxide_sim::BuildingId,
+    target: aftermine_sim::BuildingId,
     within: u64,
-) -> Vec<oxide_sim::BuildingId> {
-    let struck = |events: &[Event]| -> Vec<oxide_sim::BuildingId> {
+) -> Vec<aftermine_sim::BuildingId> {
+    let struck = |events: &[Event]| -> Vec<aftermine_sim::BuildingId> {
         events
             .iter()
             .filter_map(|event| match event {
@@ -1461,7 +1461,7 @@ fn upgrading_bastion(
     anchor: TilePos,
     from: TilePos,
     progress: u32,
-) -> (State, UnitId, oxide_sim::BuildingId) {
+) -> (State, UnitId, aftermine_sim::BuildingId) {
     let mut scenario =
         open_arena_with(32, 32, vec![unit(0, UnitKind::Maw, from.x, from.y)], |_| {});
     scenario.mode = ScenarioMode::Sandbox;
@@ -1629,7 +1629,7 @@ fn a_scenario_cannot_author_a_cradle() {
     scenario.buildings = vec![building(0, BuildingKind::MawCradle, CRADLE.x, CRADLE.y)];
     assert!(matches!(
         scenario.build(),
-        Err(oxide_sim::scenario::ScenarioError::BadBuilding(0))
+        Err(aftermine_sim::scenario::ScenarioError::BadBuilding(0))
     ));
 }
 

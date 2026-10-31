@@ -5,11 +5,11 @@
 use crate::parse::{
     parse_building_kind, parse_key, parse_mouse_button, parse_point, parse_tile, parse_unit_kind,
 };
+use aftermine_driver::client::Client;
+use aftermine_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
+use aftermine_sim::{BuildingId, Command, PlayerId, Target, UnitId};
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
-use oxide_driver::client::Client;
-use oxide_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
-use oxide_sim::{BuildingId, Command, PlayerId, Target, UnitId};
 
 /// The one finger injected touch gestures use; each gesture lifts it
 /// before the next begins.
@@ -63,7 +63,7 @@ pub(crate) enum LiveCmd {
         /// e.g. 4.0 for fast-forward, 0.25 for slow motion.
         multiplier: f64,
     },
-    /// Send a raw sim command as JSON (see oxide-sim's Command).
+    /// Send a raw sim command as JSON (see aftermine-sim's Command).
     Send {
         /// Acting player index.
         player: u8,
@@ -180,7 +180,7 @@ pub(crate) enum LiveCmd {
         building: u32,
         /// What to train.
         #[arg(long, value_parser = parse_unit_kind)]
-        kind: oxide_sim::UnitKind,
+        kind: aftermine_sim::UnitKind,
     },
     /// Start a construction site with a harvester.
     Build {
@@ -191,7 +191,7 @@ pub(crate) enum LiveCmd {
         units: Vec<u32>,
         /// What to construct.
         #[arg(long, value_parser = parse_building_kind)]
-        kind: oxide_sim::BuildingKind,
+        kind: aftermine_sim::BuildingKind,
         /// Anchor tile as "x,y" (top-left of the footprint).
         #[arg(long)]
         at: String,
@@ -667,8 +667,8 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             clear,
         } => {
             let rally = match (tile, unit, clear) {
-                (Some(t), _, _) => Some(oxide_sim::Rally::Tile(parse_tile(&t)?)),
-                (None, Some(u), _) => Some(oxide_sim::Rally::Unit(UnitId(u))),
+                (Some(t), _, _) => Some(aftermine_sim::Rally::Tile(parse_tile(&t)?)),
+                (None, Some(u), _) => Some(aftermine_sim::Rally::Unit(UnitId(u))),
                 (None, None, true) => None,
                 (None, None, false) => bail!("pass --tile x,y, --unit N, or --clear"),
             };
@@ -892,10 +892,10 @@ pub(crate) fn capture_sequence(
     if !(2..=64).contains(&frames) {
         bail!("frames must be within 2..=64");
     }
-    if present && ticks_between > oxide_protocol::MAX_PRESENT_TICKS {
+    if present && ticks_between > aftermine_protocol::MAX_PRESENT_TICKS {
         bail!(
             "--present supports at most {} ticks between frames",
-            oxide_protocol::MAX_PRESENT_TICKS
+            aftermine_protocol::MAX_PRESENT_TICKS
         );
     }
     std::fs::create_dir_all(out)?;

@@ -3,9 +3,9 @@
 
 use crate::common;
 
+use aftermine_sim::{BuildingId, BuildingKind, Event, State, Target, UnitKind};
 use chassis::compass::heading_of;
 use chassis::fx::Vec2Fx;
-use oxide_sim::{BuildingId, BuildingKind, Event, State, Target, UnitKind};
 
 use common::{aim_defense, building, open_arena, unit};
 

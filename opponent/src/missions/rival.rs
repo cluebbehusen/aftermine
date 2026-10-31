@@ -5,8 +5,8 @@ use super::{Missions, Objective, Task};
 use crate::frame::{HomeFrame, centre_distance, footprint_centre, gap};
 use crate::map::MapModel;
 use crate::profile::PersonalityTraits;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::{BuildingKind, PlayerId};
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::{BuildingKind, PlayerId};
 use std::cmp::Reverse;
 
 /// Empty tiles from the seat's buildings inside which an enemy army presses
@@ -68,7 +68,7 @@ impl Missions {
                 .enemy_units
                 .iter()
                 .filter(|unit| unit.player == owner && unit.kind.stats().can_fight());
-            let cost = |kind: oxide_sim::UnitKind| i64::from(kind.stats().cost);
+            let cost = |kind: aftermine_sim::UnitKind| i64::from(kind.stats().cost);
             let presence: i64 = armed.clone().map(|unit| cost(unit.kind)).sum();
             let pressure: i64 = armed
                 .filter(|unit| {

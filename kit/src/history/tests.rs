@@ -1,8 +1,8 @@
 use super::*;
 use crate::recording::WorldOrigin;
 use crate::runner;
-use oxide_sim::Command;
-use oxide_sim::scenario::BotConfig;
+use aftermine_sim::Command;
+use aftermine_sim::scenario::BotConfig;
 
 const SAVED: u64 = 2_100;
 
@@ -52,7 +52,7 @@ fn a_resumed_match_keeps_its_whole_record_and_rebuilds_its_keyframes() {
     resumed.record(
         SAVED,
         PlayerCommand {
-            player: oxide_sim::PlayerId(0),
+            player: aftermine_sim::PlayerId(0),
             command: Command::Surrender,
         },
     );
@@ -86,7 +86,7 @@ fn a_history_that_does_not_reproduce_the_save_gives_way_to_the_resume() {
         .expect("its shape is sound");
     let pending = PendingHistory::start(&resumed, &saved, from_resume(&scenario, &saved));
     let surrender = PlayerCommand {
-        player: oxide_sim::PlayerId(0),
+        player: aftermine_sim::PlayerId(0),
         command: Command::Surrender,
     };
     resumed.record(SAVED + 5, surrender);
@@ -141,7 +141,7 @@ fn a_saved_history_must_fit_its_session() {
     assert!(accepts(&|recorder, _| recorder.commands.last_mut().unwrap().tick = SAVED).is_err());
     assert!(accepts(&|recorder, _| recorder.commands[0].tick = 1_000_000).is_err());
     assert!(
-        accepts(&|recorder, _| recorder.commands[0].command.player = oxide_sim::PlayerId(9))
+        accepts(&|recorder, _| recorder.commands[0].command.player = aftermine_sim::PlayerId(9))
             .is_err()
     );
     assert!(

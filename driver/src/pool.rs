@@ -67,7 +67,7 @@ where
                     }
                 };
                 if workers > 1 {
-                    oxide_kit::bot_execution::serially(run_jobs);
+                    aftermine_kit::bot_execution::serially(run_jobs);
                 } else {
                     run_jobs();
                 }

@@ -3,16 +3,16 @@
 
 use crate::numeric;
 use crate::numeric::Fit;
-use anyhow::Result;
-use chassis::replay::Replay;
-use macroquad::prelude::{Vec2, vec2};
-use oxide_kit::controller::{SeatController, seat_controllers};
-use oxide_kit::diagnostics::{Stage, StageGuard};
-use oxide_protocol::hash_hex;
-use oxide_sim::{
+use aftermine_kit::controller::{SeatController, seat_controllers};
+use aftermine_kit::diagnostics::{Stage, StageGuard};
+use aftermine_protocol::hash_hex;
+use aftermine_sim::{
     Building, BuildingId, Command, Event, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State,
     TICKS_PER_SECOND, UnitId, UnitKind,
 };
+use anyhow::Result;
+use chassis::replay::Replay;
+use macroquad::prelude::{Vec2, vec2};
 use std::{ops::Deref, sync::Arc};
 
 /// Seconds per sim tick.
@@ -21,7 +21,7 @@ pub const TICK_DT: f32 = 1.0 / TICKS_PER_SECOND as f32;
 /// at 60 fps; expensive ticks can still exceed the frame budget.
 const MAX_TICKS_PER_FRAME: u32 = 24;
 
-pub use oxide_kit::GameReplay;
+pub use aftermine_kit::GameReplay;
 
 /// Immutable access to the authoritative simulation outside this module.
 pub(crate) struct ReadOnlyState(Arc<State>);
@@ -119,14 +119,14 @@ pub struct Game {
     pub(crate) state: ReadOnlyState,
     /// Command sources for bot-flagged players.
     bots: Vec<SeatController>,
-    bot_decision: Option<oxide_kit::bot_execution::PendingDecision>,
+    bot_decision: Option<aftermine_kit::bot_execution::PendingDecision>,
     /// Every command of the session, tick-stamped.
     pub recorder: GameReplay,
     /// Worlds kept beside the recording so its replay seeks quickly.
-    pub(crate) keyframes: oxide_kit::keyframes::KeyframeRecorder,
+    pub(crate) keyframes: aftermine_kit::keyframes::KeyframeRecorder,
     /// A resumed match's saved history, until it is checked against the
     /// saved world.
-    pub(crate) history: Option<oxide_kit::history::PendingHistory>,
+    pub(crate) history: Option<aftermine_kit::history::PendingHistory>,
     /// Commands staged for the next tick (human + debug socket).
     pub(crate) pending: PendingCommands,
     /// Where this match's autosave and finished record go.
@@ -140,14 +140,14 @@ pub struct Game {
     tick_phase: TickPhase,
     /// End-of-match statistics, computed once from the recorder when
     /// the result lands from the bounded live tracker.
-    pub end_stats: Option<oxide_kit::stats::MatchStats>,
+    pub end_stats: Option<aftermine_kit::stats::MatchStats>,
     /// Tick-event totals and adaptively thinned graph samples. This is
     /// presentation bookkeeping and never feeds back into the sim.
-    live_stats: oxide_kit::stats::LiveMatchStats,
+    live_stats: aftermine_kit::stats::LiveMatchStats,
     /// Match statistics at the moment the human conceded an undecided team
     /// match, shown with the exit offer. Decided matches (a 1v1 surrender
     /// included) use `end_stats` instead.
-    pub concede_stats: Option<oxide_kit::stats::MatchStats>,
+    pub concede_stats: Option<aftermine_kit::stats::MatchStats>,
     /// The Basic Training lesson this session stages, if any. A session
     /// carrying one is never saved.
     pub(crate) tutorial: Option<crate::tutorial::Tutorial>,
@@ -202,7 +202,7 @@ impl Game {
     pub fn home_foundry(&self) -> Option<&Building> {
         self.view().home_foundry()
     }
-    pub fn my_vision(&self) -> &oxide_sim::Vision {
+    pub fn my_vision(&self) -> &aftermine_sim::Vision {
         self.state.vision(self.presentation.human)
     }
     pub(crate) fn update_fx(&mut self, dt: f32) {
@@ -283,7 +283,7 @@ impl Game {
         run_bots: bool,
     ) -> Result<Self> {
         let state = scenario.build()?;
-        let live_stats = oxide_kit::stats::LiveMatchStats::new(&state);
+        let live_stats = aftermine_kit::stats::LiveMatchStats::new(&state);
         let recorder = Replay::new(
             SIM_VERSION,
             crate::build_identity().label(),
@@ -298,7 +298,7 @@ impl Game {
     fn assemble_at(
         scenario: Scenario,
         state: State,
-        live_stats: oxide_kit::stats::LiveMatchStats,
+        live_stats: aftermine_kit::stats::LiveMatchStats,
         recorder: GameReplay,
         viewport: Vec2,
         human: PlayerId,
@@ -316,7 +316,7 @@ impl Game {
             bots,
             bot_decision: None,
             recorder,
-            keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
+            keyframes: aftermine_kit::keyframes::KeyframeRecorder::default(),
             history: None,
             pending: PendingCommands(Vec::new()),
             slot: crate::autosave::SaveSlot::fresh(),
@@ -345,8 +345,8 @@ impl Game {
         // Replays load synchronously on the frame loop, and a structurally
         // valid file can still claim a duration long enough to freeze the
         // UI for minutes.
-        const MAX_LOAD_TICKS: u64 = oxide_kit::MAX_REPLAY_TICKS;
-        let _load = oxide_kit::diagnostics::stage(Stage::ReplayLoad, 0);
+        const MAX_LOAD_TICKS: u64 = aftermine_kit::MAX_REPLAY_TICKS;
+        let _load = aftermine_kit::diagnostics::stage(Stage::ReplayLoad, 0);
         // Untrusted file: enforce the invariants recording guarantees, and
         // refuse cross-version saves outright, since resuming one would
         // keep recording onto a log that can no longer reproduce.
@@ -375,20 +375,20 @@ impl Game {
         // remains authoritative.
         let mut bots = seat_controllers(&scenario)?;
         let mut cursor = replay.cursor();
-        let mut live_stats = oxide_kit::stats::LiveMatchStats::new(&state);
+        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&state);
         let mut projectile_releases = projectiles::ProjectileReleases::default();
         let mut game = Self::new(scenario)?;
         let mut boundary_fog = game.presentation.boundary_fog.clone();
         for _ in 0..total {
-            oxide_kit::diagnostics::progress(state.current_tick());
-            let _ = oxide_kit::bot_execution::commands(&state, &mut bots);
+            aftermine_kit::diagnostics::progress(state.current_tick());
+            let _ = aftermine_kit::bot_execution::commands(&state, &mut bots);
             let commands: Vec<PlayerCommand> = cursor
                 .take_tick(state.current_tick())
                 .iter()
                 .map(|t| t.command.clone())
                 .collect();
             let report = state.tick(&commands);
-            oxide_kit::controller::record_events(&mut bots, &report);
+            aftermine_kit::controller::record_events(&mut bots, &report);
             game.keyframes.observe(&state);
             boundary_fog.observe(&state, game.presentation.human);
             projectile_releases.observe(&state, &report.events);
@@ -424,14 +424,14 @@ impl Game {
 
     /// Enter a main-thread diagnostic stage at this session's tick.
     pub(crate) fn diagnostic_stage(&self, stage: Stage) -> Option<StageGuard<'static>> {
-        oxide_kit::diagnostics::stage(stage, self.state.current_tick())
+        aftermine_kit::diagnostics::stage(stage, self.state.current_tick())
     }
 
     /// Runs exactly one tick: bots think, staged commands drain, everything
     /// is recorded, and presentation caches update. Outside networked
     /// sessions, which execute supplied batches, this owns the live world's
     /// only authoritative state transition.
-    pub fn do_tick(&mut self) -> oxide_sim::TickReport {
+    pub fn do_tick(&mut self) -> aftermine_sim::TickReport {
         assert!(
             self.net.is_none(),
             "networked sessions execute supplied batches"
@@ -491,9 +491,9 @@ impl Game {
         let build = crate::build_identity();
         // Failing to write the dump must not replace the original panic.
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            oxide_kit::diagnostics::write_crash_dump(
+            aftermine_kit::diagnostics::write_crash_dump(
                 root,
-                &oxide_kit::diagnostics::CrashDump {
+                &aftermine_kit::diagnostics::CrashDump {
                     replay: &replay,
                     phase,
                     unfinished: &unfinished,
@@ -527,13 +527,13 @@ impl Game {
         if let Some(decision) = self.bot_decision.take() {
             decision.finish(&self.state.0, &mut self.bots)
         } else {
-            oxide_kit::bot_execution::commands(&self.state, &mut self.bots)
+            aftermine_kit::bot_execution::commands(&self.state, &mut self.bots)
         }
     }
 
     /// Records and executes one complete batch, then updates statistics,
     /// lesson evidence, and presentation.
-    fn execute(&mut self, commands: &[PlayerCommand]) -> oxide_sim::TickReport {
+    fn execute(&mut self, commands: &[PlayerCommand]) -> aftermine_sim::TickReport {
         // Interpolation cache; pointless during suppressed bulk advances
         // (advance_ticks rebuilds it once at the end).
         for command in commands {
@@ -554,7 +554,7 @@ impl Game {
         if let Some(history) = self.history.take() {
             self.history = history.settle(&mut self.recorder, &mut self.keyframes);
         }
-        oxide_kit::controller::record_events(&mut self.bots, &report);
+        aftermine_kit::controller::record_events(&mut self.bots, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.refresh_fog_lift();
         self.presentation
@@ -679,7 +679,7 @@ impl Game {
 
     fn prepare_bot_decision(&mut self) {
         if self.bot_decision.is_none() {
-            self.bot_decision = oxide_kit::bot_execution::prepare(&self.state.0, &self.bots);
+            self.bot_decision = aftermine_kit::bot_execution::prepare(&self.state.0, &self.bots);
         }
     }
 
@@ -746,8 +746,8 @@ impl Game {
 
     /// The transport's view of this session, which is also the live half
     /// of the debug protocol's shared surface.
-    pub fn status_view(&self) -> oxide_protocol::StatusView {
-        oxide_protocol::StatusView {
+    pub fn status_view(&self) -> aftermine_protocol::StatusView {
+        aftermine_protocol::StatusView {
             tick: self.state.current_tick(),
             paused: self.clock.paused,
             speed: self.clock.speed,
@@ -783,8 +783,8 @@ pub(crate) fn angle_delta(from: f32, to: f32) -> f32 {
 /// The live session's half of the debug protocol's shared surface: real
 /// clock, real recorder, sim time driven through the same `do_tick`
 /// funnel every other command source uses.
-impl oxide_protocol::DebugSession for Game {
-    fn status(&self) -> oxide_protocol::StatusView {
+impl aftermine_protocol::DebugSession for Game {
+    fn status(&self) -> aftermine_protocol::StatusView {
         self.status_view()
     }
 
@@ -792,18 +792,18 @@ impl oxide_protocol::DebugSession for Game {
         &self.state
     }
 
-    fn advance(&mut self, ticks: u64) -> oxide_protocol::AdvancedView {
+    fn advance(&mut self, ticks: u64) -> aftermine_protocol::AdvancedView {
         self.advance_ticks(ticks);
-        oxide_protocol::AdvancedView {
+        aftermine_protocol::AdvancedView {
             ticks,
             tick: self.state.current_tick(),
             hash: self.hash_hex(),
         }
     }
 
-    fn present(&mut self, ticks: u64) -> oxide_protocol::PresentedView {
+    fn present(&mut self, ticks: u64) -> aftermine_protocol::PresentedView {
         let events = self.present_ticks(ticks);
-        oxide_protocol::PresentedView {
+        aftermine_protocol::PresentedView {
             ticks,
             tick: self.state.current_tick(),
             hash: self.hash_hex(),
@@ -817,7 +817,7 @@ impl oxide_protocol::DebugSession for Game {
     }
 
     fn set_speed(&mut self, multiplier: f64) -> Result<(), String> {
-        oxide_protocol::check_speed(multiplier)?;
+        aftermine_protocol::check_speed(multiplier)?;
         self.clock.speed = multiplier;
         Ok(())
     }

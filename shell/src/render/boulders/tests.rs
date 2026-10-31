@@ -125,7 +125,7 @@ fn no_rock_tile_on_a_shipped_map_reads_as_open_floor() {
         .collect();
     paths.sort();
     for path in paths {
-        let scenario = oxide_sim::Scenario::load(&path).expect("shipped map loads");
+        let scenario = aftermine_sim::Scenario::load(&path).expect("shipped map loads");
         let rows = &scenario.map;
         let (map, _) = scenario
             .parse_map_and_anchors()

@@ -68,7 +68,7 @@ fn an_upgrade_adds_its_whole_strength_where_the_gun_did_not_reach() {
     let near = (centre.0 + 4, centre.1);
     let edge = (centre.0 + 11, centre.1);
     let far = (centre.0 + 16, centre.1);
-    let map = MapModel::from_scenario(&oxide_sim::Scenario::skirmish()).unwrap();
+    let map = MapModel::from_scenario(&aftermine_sim::Scenario::skirmish()).unwrap();
     let covers = |cover: Cover, point| cover.covers(&map, Domain::Ground, point);
     assert!(covers(turret, near) && !covers(turret, edge));
     assert!(covers(heavy, edge) && !covers(heavy, far));
@@ -142,8 +142,8 @@ fn a_rim_gun_covers_the_ramp_but_not_the_floor_below() {
         "111111111111",
         "111111111111",
     ];
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     scenario.map = rows.iter().map(|row| (*row).to_string()).collect();
     scenario.levels = levels.iter().map(|row| (*row).to_string()).collect();
     scenario.units.clear();

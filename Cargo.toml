@@ -17,11 +17,11 @@ anyhow = "1"
 thiserror = "2"
 
 chassis = { path = "chassis" }
-oxide-sim = { path = "sim" }
-oxide-opponent = { path = "opponent" }
-oxide-protocol = { path = "protocol" }
-oxide-kit = { path = "kit" }
-oxide-net = { path = "net" }
+aftermine-sim = { path = "sim" }
+aftermine-opponent = { path = "opponent" }
+aftermine-protocol = { path = "protocol" }
+aftermine-kit = { path = "kit" }
+aftermine-net = { path = "net" }
 
 # Members inherit this table whole, since Cargo refuses per-crate additions to
 # it. Crate roots carry their own extra levels: the deterministic crates deny
@@ -81,11 +81,11 @@ opt-level = 3
 # Workspace simulation and bot code dominates headless matches. Keep it fully
 # optimized while retaining faster incremental builds for the thin host crates.
 # Integer-only outcome calculations must not depend on optimization level.
-[profile.dev.package.oxide-sim]
+[profile.dev.package.aftermine-sim]
 opt-level = 3
 
 [profile.dev.package.chassis]
 opt-level = 3
 
-[profile.dev.package.oxide-opponent]
+[profile.dev.package.aftermine-opponent]
 opt-level = 3

@@ -6,12 +6,12 @@
 use crate::common;
 use common::{cmd, run_until};
 
+use aftermine_sim::event::StallReason;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Command, Event, Order, Scenario, State, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::event::StallReason;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, Order, Scenario, State, UnitId, UnitKind};
 
 /// A home shore whose eastern edge recedes at 45 degrees from a convex tip
 /// at (14, 5), and an island (columns 21-28) across the rock. The tip is the
@@ -62,7 +62,7 @@ fn unit(kind: UnitKind, x: i32, y: i32) -> UnitSpec {
     }
 }
 
-fn move_to(units: Vec<UnitId>, goal: TilePos, queue: bool) -> oxide_sim::PlayerCommand {
+fn move_to(units: Vec<UnitId>, goal: TilePos, queue: bool) -> aftermine_sim::PlayerCommand {
     cmd(0, Command::Run { units, goal, queue })
 }
 
@@ -169,7 +169,7 @@ fn crowd(count: i32, top: i32) -> Vec<UnitSpec> {
 }
 
 /// Orders every unit to the island, as one group or one Run each.
-fn to_the_island(ids: &[UnitId], group: bool) -> Vec<oxide_sim::PlayerCommand> {
+fn to_the_island(ids: &[UnitId], group: bool) -> Vec<aftermine_sim::PlayerCommand> {
     if group {
         vec![move_to(ids.to_vec(), ISLAND, false)]
     } else {
@@ -185,7 +185,11 @@ fn a_crowd_sent_to_an_island_settles_at_the_tip_and_carries_on() {
         for follow_up in [false, true] {
             let mut state = sandbox(&SHORE, crowd(24, 2), vec![]).build().unwrap();
             let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-            let homes: Vec<TilePos> = state.units().iter().map(oxide_sim::Unit::tile).collect();
+            let homes: Vec<TilePos> = state
+                .units()
+                .iter()
+                .map(aftermine_sim::Unit::tile)
+                .collect();
             let mut commands = to_the_island(&ids, group);
             if follow_up {
                 // Distinct reachable tiles, so the follow-up's ordinary
@@ -436,7 +440,7 @@ fn newborns_rallied_onto_unreachable_ground_all_settle() {
                 0,
                 Command::SetRally {
                     building,
-                    rally: Some(oxide_sim::Rally::Tile(ISLAND)),
+                    rally: Some(aftermine_sim::Rally::Tile(ISLAND)),
                 },
             )
         })

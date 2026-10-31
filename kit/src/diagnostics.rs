@@ -32,7 +32,7 @@ const MAX_LOG_BYTES: usize = 1024 * 1024;
 const MAX_BACKTRACE_BYTES: usize = 32 * 1024;
 /// Long enough to outlast a slow `fsync` in another incident write.
 const WRITE_WAIT: Duration = Duration::from_secs(5);
-const SEATS: usize = oxide_sim::scenario::MAX_PLAYERS;
+const SEATS: usize = aftermine_sim::scenario::MAX_PLAYERS;
 const STAGES: usize = Stage::ALL.len();
 
 /// What the main thread is doing. Time outside a named stage counts as `Frame`.
@@ -590,7 +590,7 @@ pub struct CrashDump<'a> {
     /// Where the tick got: `collection`, `simulation` or `after_simulation`.
     pub phase: &'static str,
     /// The panicking tick's batch when the simulation never finished it.
-    pub unfinished: &'a [oxide_sim::PlayerCommand],
+    pub unfinished: &'a [aftermine_sim::PlayerCommand],
     /// The panic message.
     pub message: &'a str,
     /// The executable that crashed.
@@ -690,7 +690,7 @@ impl Monitor {
         });
         let watchdog = inner.clone();
         std::thread::Builder::new()
-            .name("oxide-watchdog".into())
+            .name("aftermine-watchdog".into())
             .spawn(move || watch(&watchdog))?;
         Ok(Self { inner })
     }

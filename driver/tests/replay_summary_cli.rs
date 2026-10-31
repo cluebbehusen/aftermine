@@ -1,9 +1,11 @@
-//! End-to-end contract coverage for `oxide-driver replay-summary`.
+//! End-to-end contract coverage for `aftermine-driver replay-summary`.
 
+use aftermine_kit::GameReplay;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{
+    Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId,
+};
 use chassis::replay::Replay;
-use oxide_kit::GameReplay;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Command;
@@ -50,7 +52,7 @@ fn save_fixture() -> TempReplay {
 
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "oxide-replay-summary-{}-{id}.json",
+        "aftermine-replay-summary-{}-{id}.json",
         std::process::id()
     ));
     replay.save(&path).expect("save generated replay fixture");
@@ -58,7 +60,7 @@ fn save_fixture() -> TempReplay {
 }
 
 fn run_summary(fixture: &TempReplay, extra: &[&str]) -> std::process::Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("replay-summary")
         .arg(&fixture.0)
         .args(extra)
@@ -139,7 +141,7 @@ fn save_surrender_fixture() -> TempReplay {
 
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "oxide-replay-summary-surrender-{}-{id}.json",
+        "aftermine-replay-summary-surrender-{}-{id}.json",
         std::process::id()
     ));
     replay.save(&path).expect("save surrender fixture");

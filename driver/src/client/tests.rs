@@ -104,11 +104,13 @@ fn long_advance_scales_the_deadline_and_the_next_call_restores_it() {
             let request: RequestEnvelope =
                 serde_json::from_str(line.trim()).expect("parse request");
             let reply = match request.request {
-                Request::AdvanceTicks { ticks } => Reply::Advanced(oxide_protocol::AdvancedView {
-                    ticks,
-                    tick: ticks,
-                    hash: "0x0000000000000000".to_string(),
-                }),
+                Request::AdvanceTicks { ticks } => {
+                    Reply::Advanced(aftermine_protocol::AdvancedView {
+                        ticks,
+                        tick: ticks,
+                        hash: "0x0000000000000000".to_string(),
+                    })
+                }
                 _ => Reply::Ok,
             };
             let mut response = serde_json::to_string(&ResponseEnvelope::ok(request.id, reply))

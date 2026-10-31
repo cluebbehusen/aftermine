@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::game::Scene;
-use oxide_sim::stats::{
+use aftermine_sim::stats::{
     BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
     CHARGE_DAMAGE, CHARGE_SCOUT_DETECT_RADIUS, CHARGE_TRIGGER_RADIUS, CRUCIBLE_SMELT_RADIUS,
     Domain, FOUNDRY_DRIP_START_TICK, REPAIR_BAY_PERIOD, REPAIR_BAY_RADIUS, REPAIR_BAY_STEP,
@@ -32,7 +32,7 @@ pub(crate) struct Health {
 }
 
 impl Health {
-    fn of(game: &Scene<'_>, owner: oxide_sim::PlayerId, hp: u32, max_hp: u32) -> Self {
+    fn of(game: &Scene<'_>, owner: aftermine_sim::PlayerId, hp: u32, max_hp: u32) -> Self {
         Self {
             hp,
             max_hp,
@@ -52,7 +52,7 @@ pub(crate) struct SelectionInfo {
 impl SelectionInfo {
     /// A cradle's assembly progress, its crew for its owner, and the machine
     /// it becomes.
-    fn cradle_rows(&mut self, game: &Scene<'_>, b: &oxide_sim::Building) {
+    fn cradle_rows(&mut self, game: &Scene<'_>, b: &aftermine_sim::Building) {
         if let (Some(progress), Some(construction)) =
             (b.construction_progress(), b.stats().construction)
         {
@@ -71,7 +71,7 @@ impl SelectionInfo {
                 format!(
                     "{}/{}",
                     game.state.cradle_crew(b.id).len(),
-                    oxide_sim::stats::ASSEMBLY_CREW_CAP
+                    aftermine_sim::stats::ASSEMBLY_CREW_CAP
                 ),
                 Some(StatIcon::Verb(VerbIcon::Build)),
             );
@@ -82,9 +82,9 @@ impl SelectionInfo {
     }
 
     /// What a kiln machine's kiln is doing.
-    fn kiln_row(&mut self, game: &Scene<'_>, u: &oxide_sim::Unit) {
+    fn kiln_row(&mut self, game: &Scene<'_>, u: &aftermine_sim::Unit) {
         let stats = u.kind.stats();
-        if let oxide_sim::stats::Mend::Kiln(_) = stats.mend {
+        if let aftermine_sim::stats::Mend::Kiln(_) = stats.mend {
             self.row(
                 "Kiln",
                 if game.state.kiln_fuel(u.id).is_some() {
@@ -108,14 +108,14 @@ impl SelectionInfo {
         );
         self.row(
             "Patients",
-            oxide_sim::stats::REPAIR_BAY_PATIENTS.to_string(),
+            aftermine_sim::stats::REPAIR_BAY_PATIENTS.to_string(),
             None,
         );
         self.row(
             "Repair rate",
             format!(
                 "{:.0}% hp/s",
-                oxide_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0
+                aftermine_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0
             ),
             None,
         );
@@ -123,7 +123,7 @@ impl SelectionInfo {
             "Under fire",
             format!(
                 "{:.1} hp/s",
-                REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
+                REPAIR_BAY_STEP as f32 * aftermine_sim::TICKS_PER_SECOND as f32
                     / REPAIR_BAY_PERIOD as f32
             ),
             None,
@@ -133,7 +133,7 @@ impl SelectionInfo {
     /// Rounds as the viewer may know them, then what they do: a Spire's
     /// warhead, a Lattice's ring and the hostile warheads falling into it.
     /// Ordered rounds and their assembly live in the queue dock.
-    fn magazine_rows(&mut self, game: &Scene<'_>, b: &oxide_sim::Building) {
+    fn magazine_rows(&mut self, game: &Scene<'_>, b: &aftermine_sim::Building) {
         let Some(stats) = b.kind.magazine() else {
             return;
         };
@@ -167,7 +167,7 @@ impl SelectionInfo {
             self.status
                 .extend(incoming_warheads(&warheads, b.center(), battery.ring));
         } else {
-            let warhead = oxide_sim::stats::WARHEAD;
+            let warhead = aftermine_sim::stats::WARHEAD;
             self.row(
                 "Warhead",
                 format!("{} damage", warhead.peak_damage),
@@ -196,7 +196,7 @@ impl SelectionInfo {
 
     /// Charges, reach and recharge for a point defender. Lit emitters show
     /// the count to anyone in sight, like wounds.
-    fn point_defense(&mut self, unit: &oxide_sim::Unit) {
+    fn point_defense(&mut self, unit: &aftermine_sim::Unit) {
         let Some(defense) = unit.kind.stats().point_defense else {
             return;
         };
@@ -259,7 +259,7 @@ impl SelectionInfo {
         }
     }
 
-    fn ownership(&mut self, game: &Scene<'_>, owner: oxide_sim::PlayerId) {
+    fn ownership(&mut self, game: &Scene<'_>, owner: aftermine_sim::PlayerId) {
         if owner != game.presentation.human {
             let relation = if game.state.hostile(game.presentation.human, owner) {
                 "Hostile"
@@ -277,7 +277,7 @@ impl SelectionInfo {
 
 /// A machine's radar ring and, for one that unfolds it only at rest, how far
 /// it has.
-fn radar_facts(info: &mut SelectionInfo, unit: &oxide_sim::Unit) {
+fn radar_facts(info: &mut SelectionInfo, unit: &aftermine_sim::Unit) {
     let Some(radar) = unit.kind.stats().radar else {
         return;
     };
@@ -300,7 +300,7 @@ fn radar_facts(info: &mut SelectionInfo, unit: &oxide_sim::Unit) {
 
 /// A carrier's sling and a host's drone bay: what each holds to its owner
 /// and team, and only how much it holds to anyone else.
-fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &oxide_sim::Unit) {
+fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit) {
     let stats = u.kind.stats();
     let hostile = game.state.hostile(game.presentation.human, u.player);
     if stats.transport_capacity > 0 {
@@ -340,7 +340,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 .iter()
                 .filter(|u| {
                     u.player == game.presentation.human
-                        && matches!(u.order, oxide_sim::Order::Harvest { node, .. } if node == tile)
+                        && matches!(u.order, aftermine_sim::Order::Harvest { node, .. } if node == tile)
                 })
                 .count();
             info.row("Harvesters", harvesters.to_string(), None);
@@ -396,7 +396,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 if b.built() && b.kind == BuildingKind::Foundry && income == 0 {
                     let remaining = FOUNDRY_DRIP_START_TICK
                         .saturating_sub(game.state.current_tick())
-                        .div_ceil(u64::from(oxide_sim::TICKS_PER_SECOND));
+                        .div_ceil(u64::from(aftermine_sim::TICKS_PER_SECOND));
                     info.row(
                         "Income starts",
                         format!("{remaining}s"),
@@ -513,7 +513,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 "Gather",
                 format!(
                     "{:.1} scrap/s",
-                    oxide_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
+                    aftermine_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
                 ),
                 None,
             );
@@ -539,13 +539,13 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         }
         info.weapons(stats.weapons, stats.contact_reach.is_some());
         match stats.target_priority {
-            oxide_sim::stats::TargetPriority::Heaviest => {
+            aftermine_sim::stats::TargetPriority::Heaviest => {
                 info.row("Targets", "Heaviest first".into(), None);
             }
-            oxide_sim::stats::TargetPriority::Buildings => {
+            aftermine_sim::stats::TargetPriority::Buildings => {
                 info.row("Targets", "Buildings first".into(), None);
             }
-            oxide_sim::stats::TargetPriority::Danger => {}
+            aftermine_sim::stats::TargetPriority::Danger => {}
         }
     } else {
         if !panel.summary.is_empty() {
@@ -574,7 +574,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
 /// those landing inside it, how many no battery is forecast to stop, and
 /// contacts still being tracked, whose line and interceptor are unknown.
 fn incoming_warheads(
-    warheads: &[oxide_sim::strike::KnownWarhead],
+    warheads: &[aftermine_sim::strike::KnownWarhead],
     centre: chassis::fx::Vec2Fx,
     ring: chassis::fx::Fx,
 ) -> Option<String> {

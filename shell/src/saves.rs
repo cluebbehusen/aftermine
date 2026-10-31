@@ -4,7 +4,7 @@
 use crate::numeric::Fit;
 pub use crate::saved_game::Unavailable;
 #[cfg(test)]
-use oxide_sim::SIM_VERSION;
+use aftermine_sim::SIM_VERSION;
 use std::path::PathBuf;
 
 /// What a record on disk is, read from its metadata `kind` tag; an

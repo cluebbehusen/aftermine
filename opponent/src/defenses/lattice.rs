@@ -5,9 +5,9 @@ use super::guns::{first_placeable, sites_around};
 use super::{Guard, distance2};
 use crate::frame::{centre_of, footprint_centre, tiles_of};
 use crate::investments::buildable;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::ObservationData;
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::ObservationData;
 use std::cmp::Reverse;
 
 /// A Spire's two kinds of tech: a Deep Bore and a Crucible.
@@ -175,7 +175,7 @@ fn spire_threat(observation: &ObservationData) -> SpireThreat {
     }
     // Each enemy's known Deep Bore and Crucible, by player index.
     let mut held: Vec<(bool, bool)> = Vec::new();
-    let mut note = |owner: oxide_sim::PlayerId, deep_bore: bool, crucible: bool| {
+    let mut note = |owner: aftermine_sim::PlayerId, deep_bore: bool, crucible: bool| {
         let index = usize::from(owner.0);
         if held.len() <= index {
             held.resize(index + 1, (false, false));

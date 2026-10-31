@@ -1,7 +1,7 @@
 //! One dispatcher over every debug-session kind.
 //!
 //! Three servers answer this protocol — the live shell, the shell's
-//! read-only replay viewer, and the windowless `oxide-driver session` —
+//! read-only replay viewer, and the windowless `aftermine-driver session` —
 //! and the request space splits by capability, not by server:
 //!
 //! * **Shared** — the state reads ([`Request::Status`],
@@ -24,7 +24,7 @@
 use crate::{
     AdvancedView, FogView, HashView, PresentedView, Reply, Request, StateView, StatusView,
 };
-use oxide_sim::State;
+use aftermine_sim::State;
 
 /// A world the debug protocol can be served against: the live shell's
 /// `Game`, the replay viewer, or the headless session. Implementations

@@ -1,12 +1,12 @@
-//! End-to-end contract coverage for `oxide-driver bot-cost`.
+//! End-to-end contract coverage for `aftermine-driver bot-cost`.
 
-use oxide_driver::bot_cost::Workload;
-use oxide_protocol::hash_hex;
+use aftermine_driver::bot_cost::Workload;
+use aftermine_protocol::hash_hex;
 use serde_json::Value;
 use std::process::Command;
 
 fn bot_cost(args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("bot-cost")
         .args(args)
         .output()
@@ -24,13 +24,13 @@ fn bot_cost(args: &[&str]) -> String {
 fn untimed(workload: Workload, ticks: u64) -> (String, String) {
     let scenario = workload.scenario();
     let mut state = scenario.build().unwrap();
-    let mut seats = oxide_kit::controller::seat_controllers(&scenario).unwrap();
+    let mut seats = aftermine_kit::controller::seat_controllers(&scenario).unwrap();
     let mut fold = 0_u64;
     while state.current_tick() < ticks && state.result().is_none() {
-        let commands = oxide_kit::bot_execution::commands(&state, &mut seats);
+        let commands = aftermine_kit::bot_execution::commands(&state, &mut seats);
         fold = chassis::hash::state_hash(&(fold, state.current_tick(), &commands));
         let report = state.tick(&commands);
-        oxide_kit::controller::record_events(&mut seats, &report);
+        aftermine_kit::controller::record_events(&mut seats, &report);
     }
     (hash_hex(fold), hash_hex(state.hash()))
 }

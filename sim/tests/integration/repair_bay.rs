@@ -8,13 +8,13 @@
 use crate::common;
 use common::{cmd, run_until, unit};
 
-use chassis::grid::TilePos;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::FOUNDRY_RECOVERY_RESERVE;
-use oxide_sim::{
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::FOUNDRY_RECOVERY_RESERVE;
+use aftermine_sim::{
     BuildingId, BuildingKind, Command, Event, PlayerCommand, PlayerId, Scenario, State, Target,
     UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 
 /// Bay footprint anchored at (4,4): its rect spans world [4,6]x[4,6], so
 /// a tile-centered patient sits at distance k + 0.5 from the east face —
@@ -117,7 +117,7 @@ fn wound(state: &mut State, patient: UnitId, raider: UnitId, floor: u32) -> u32 
 fn aura_bill(kind: UnitKind, from: u32, to: u32) -> u32 {
     let stats = kind.stats();
     let millis = |hp: u32| -> u64 {
-        u64::from(hp) * u64::from(stats.cost) * oxide_sim::stats::REPAIR_COST_PERMILLE
+        u64::from(hp) * u64::from(stats.cost) * aftermine_sim::stats::REPAIR_COST_PERMILLE
             / u64::from(stats.max_hp)
     };
     u32::try_from(millis(to).div_ceil(1000) - millis(from).div_ceil(1000)).unwrap()
@@ -126,14 +126,14 @@ fn aura_bill(kind: UnitKind, from: u32, to: u32) -> u32 {
 fn building_aura_bill(kind: BuildingKind, tier: u8, from: u32, to: u32) -> u32 {
     let stats = kind.tier_stats(tier);
     let basis = if kind == BuildingKind::Foundry {
-        oxide_sim::stats::FOUNDRY_REPAIR_PRICE
+        aftermine_sim::stats::FOUNDRY_REPAIR_PRICE
     } else {
         stats
             .construction
-            .map_or(oxide_sim::stats::FOUNDRY_REPAIR_PRICE, |row| row.cost)
+            .map_or(aftermine_sim::stats::FOUNDRY_REPAIR_PRICE, |row| row.cost)
     };
     let millis = |hp: u32| -> u64 {
-        u64::from(hp) * u64::from(basis) * oxide_sim::stats::REPAIR_COST_PERMILLE
+        u64::from(hp) * u64::from(basis) * aftermine_sim::stats::REPAIR_COST_PERMILLE
             / u64::from(stats.max_hp)
     };
     u32::try_from(millis(to).div_ceil(1000) - millis(from).div_ceil(1000)).unwrap()
@@ -273,7 +273,7 @@ fn the_aura_heals_the_ring_to_whole_and_bills_the_welders_exact_price() {
     let salvage_value = u32::try_from(
         u64::from(healed)
             * u64::from(UnitKind::Harvester.stats().cost)
-            * oxide_sim::stats::SALVAGE_REFUND_PERMILLE
+            * aftermine_sim::stats::SALVAGE_REFUND_PERMILLE
             / (1000 * u64::from(max)),
     )
     .unwrap();
@@ -333,22 +333,22 @@ fn overlapping_bays_heal_a_shared_patient_once_and_bill_it_exactly() {
     // boundary.
     run_until(&mut state, 2_000, |s, _| {
         s.unit(patient).unwrap().tile() == overlap
-            && s.unit(patient).unwrap().order == oxide_sim::Order::Idle
+            && s.unit(patient).unwrap().order == aftermine_sim::Order::Idle
     });
     run_until(&mut state, 32, |s, _| {
         s.current_tick()
-            .is_multiple_of(oxide_sim::stats::REPAIR_BAY_PERIOD)
+            .is_multiple_of(aftermine_sim::stats::REPAIR_BAY_PERIOD)
     });
     // One full pulse window inside both auras heals one Bay's step.
     let h0 = state.unit(patient).unwrap().hp;
     let max = UnitKind::Harvester.stats().max_hp;
-    if h0 + 2 * oxide_sim::stats::REPAIR_BAY_STEP <= max {
-        for _ in 0..oxide_sim::stats::REPAIR_BAY_PERIOD {
+    if h0 + 2 * aftermine_sim::stats::REPAIR_BAY_STEP <= max {
+        for _ in 0..aftermine_sim::stats::REPAIR_BAY_PERIOD {
             state.tick(&[]);
         }
         assert_eq!(
             state.unit(patient).unwrap().hp,
-            h0 + oxide_sim::stats::REPAIR_BAY_STEP,
+            h0 + aftermine_sim::stats::REPAIR_BAY_STEP,
             "the second aura must not stack on a taken patient"
         );
     }
@@ -734,7 +734,7 @@ fn a_single_paid_pulse_repairs_a_unit_before_a_structure() {
             event,
             Event::UnitRepaired {
                 unit,
-                source: oxide_sim::UnitRepairSource::RepairBay { .. },
+                source: aftermine_sim::UnitRepairSource::RepairBay { .. },
                 amount: 1,
                 ..
             } if *unit == unit_patient
@@ -859,7 +859,7 @@ fn the_aura_does_not_fight_an_active_salvage_job() {
 
     assert!(matches!(
         state.unit(worker).unwrap().order,
-        oxide_sim::Order::Salvage { building } if building == patient
+        aftermine_sim::Order::Salvage { building } if building == patient
     ));
     assert!(state.building(patient).unwrap().hp <= hurt);
     assert!(
@@ -900,10 +900,10 @@ fn the_aura_respects_a_queued_salvage_commitment() {
 
     assert!(matches!(
         state.unit(worker).unwrap().order,
-        oxide_sim::Order::Run { .. }
+        aftermine_sim::Order::Run { .. }
     ));
     assert!(state.unit(worker).unwrap().queue.iter().any(
-        |order| matches!(order, oxide_sim::Order::Salvage { building } if *building == patient)
+        |order| matches!(order, aftermine_sim::Order::Salvage { building } if *building == patient)
     ));
     assert_eq!(state.building(patient).unwrap().hp, hurt);
     assert_eq!(state.player(PlayerId(0)).scrap, bank);
@@ -1123,7 +1123,7 @@ fn forge_units(state: State, edits: &[(UnitId, u32, Option<u64>)]) -> State {
 }
 
 /// The machines `bay` services this pulse.
-fn patients(state: &State, bay: BuildingId) -> Vec<(UnitId, oxide_sim::state::RepairPace)> {
+fn patients(state: &State, bay: BuildingId) -> Vec<(UnitId, aftermine_sim::state::RepairPace)> {
     state
         .repair_bay_patients()
         .into_iter()
@@ -1146,7 +1146,7 @@ fn to_next_pulse(state: &mut State) {
     state.tick(&[]);
     while !state
         .current_tick()
-        .is_multiple_of(oxide_sim::stats::REPAIR_BAY_PERIOD)
+        .is_multiple_of(aftermine_sim::stats::REPAIR_BAY_PERIOD)
     {
         state.tick(&[]);
     }
@@ -1210,12 +1210,12 @@ fn a_calm_breaker_heals_fast_and_one_just_hit_waits_out_the_slow_rate() {
     to_next_pulse(&mut state);
     assert_eq!(
         patients(&state, bay_id(&state)),
-        vec![(breaker, oxide_sim::state::RepairPace::Slow)]
+        vec![(breaker, aftermine_sim::state::RepairPace::Slow)]
     );
     let slow = state.unit(breaker).unwrap().hp - half;
-    assert_eq!(slow, oxide_sim::stats::REPAIR_BAY_STEP);
+    assert_eq!(slow, aftermine_sim::stats::REPAIR_BAY_STEP);
     // Half a Breaker back in about 20 s, the calm wait included.
-    let deadline = hit_at + 20 * u64::from(oxide_sim::TICKS_PER_SECOND);
+    let deadline = hit_at + 20 * u64::from(aftermine_sim::TICKS_PER_SECOND);
     run_until(&mut state, 600, |s, _| s.unit(breaker).unwrap().hp == max);
     assert!(
         state.current_tick() <= deadline,
@@ -1223,7 +1223,7 @@ fn a_calm_breaker_heals_fast_and_one_just_hit_waits_out_the_slow_rate() {
         state.current_tick()
     );
     assert!(
-        state.current_tick() >= hit_at + oxide_sim::stats::REPAIR_BAY_CALM_TICKS,
+        state.current_tick() >= hit_at + aftermine_sim::stats::REPAIR_BAY_CALM_TICKS,
         "the calm wait came first"
     );
 }

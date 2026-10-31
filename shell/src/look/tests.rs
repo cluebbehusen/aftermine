@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::stats::Domain;
+use aftermine_sim::stats::Domain;
 
 /// A flyer held up on lift rotors: no forward-flight turn rate at all, as
 /// the simulation's stats state.

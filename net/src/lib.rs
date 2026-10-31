@@ -16,7 +16,7 @@ pub mod token;
 pub mod udp;
 pub mod visit;
 
-use oxide_sim::{TICKS_PER_SECOND, Tick};
+use aftermine_sim::{TICKS_PER_SECOND, Tick};
 use std::time::Duration;
 
 pub use client::{ClientEnd, ClientSession};

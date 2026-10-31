@@ -4,8 +4,8 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{Vec2, draw_text};
-use oxide_protocol::RawEvent;
 
 /// What a Home frame decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,7 +167,7 @@ fn version_label() -> &'static str {
 
 /// The package version and the short commit it was built from, marked
 /// when the build had local changes. A source archive has no commit.
-fn describe_build(build: &oxide_kit::build::BuildIdentity) -> String {
+fn describe_build(build: &aftermine_kit::build::BuildIdentity) -> String {
     if build.revision == "unknown" {
         return format!("v{}", build.version);
     }

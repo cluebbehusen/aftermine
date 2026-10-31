@@ -2,12 +2,12 @@
 //! there is room, a parked one pulls aside where there is none, and no body
 //! is ever pushed inside its hull.
 use crate::common;
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::COLLISION_MAX_STEP;
+use aftermine_sim::{Command, Order, PlayerId, Scenario, State, Unit, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use common::{cmd, players, unit};
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::COLLISION_MAX_STEP;
-use oxide_sim::{Command, Order, PlayerId, Scenario, State, Unit, UnitId, UnitKind};
 
 const WIDTH: usize = 48;
 const HEIGHT: usize = 21;

@@ -5,8 +5,8 @@
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
 use crate::tutorial::{Course, Lesson};
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::Vec2;
-use oxide_protocol::{Key, RawEvent};
 
 /// What a lesson-list frame decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

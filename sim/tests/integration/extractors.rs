@@ -7,13 +7,13 @@
 use crate::common;
 use common::{cmd, players};
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{
     Command, Event, ExtractorSupport, PlayerCommand, PlayerId, Scenario, State, UnitKind,
 };
+use chassis::grid::TilePos;
 
 /// A 20x10 arena with one frame mid-field ('E' anchor at (9, 4)).
 fn arena(scrap: u32, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
@@ -42,7 +42,7 @@ fn arena(scrap: u32, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scen
 
 fn build(
     player: u8,
-    builder: oxide_sim::UnitId,
+    builder: aftermine_sim::UnitId,
     kind: BuildingKind,
     anchor: TilePos,
 ) -> PlayerCommand {
@@ -111,7 +111,7 @@ fn building(player: u8, kind: BuildingKind, anchor: TilePos) -> BuildingSpec {
     common::building(player, kind, anchor.x, anchor.y)
 }
 
-fn extractor_id(state: &State) -> oxide_sim::BuildingId {
+fn extractor_id(state: &State) -> aftermine_sim::BuildingId {
     state
         .buildings()
         .iter()
@@ -212,7 +212,7 @@ fn a_known_frame_snaps_every_visible_tile_without_revealing_an_unknown_one() {
 fn placement_reasons_do_not_disclose_frames_in_unexplored_ground() {
     let state = fog_arena(vec![]).build().unwrap();
     assert!(
-        oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
+        aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
             .known_frames
             .is_empty()
     );
@@ -221,23 +221,23 @@ fn placement_reasons_do_not_disclose_frames_in_unexplored_ground() {
     for anchor in [FOG_FRAME, FOG_FRAME.offset(1, 1), unknown_elsewhere] {
         assert_eq!(
             state.place_refusal(PlayerId(0), BuildingKind::Extractor, anchor),
-            Some(oxide_sim::PlaceRefusal::Fog),
+            Some(aftermine_sim::PlaceRefusal::Fog),
             "strict placement says only that the ground is unseen at {anchor:?}"
         );
         assert_eq!(
             state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, anchor),
-            Some(oxide_sim::PlaceRefusal::Fog),
+            Some(aftermine_sim::PlaceRefusal::Fog),
             "deferred placement says only that the ground is unexplored at {anchor:?}"
         );
     }
     assert_eq!(
         state.place_refusal(PlayerId(0), BuildingKind::Turret, FOG_FRAME),
-        Some(oxide_sim::PlaceRefusal::Fog),
+        Some(aftermine_sim::PlaceRefusal::Fog),
         "strict placement cannot reveal that a normal footprint overlaps the hidden frame"
     );
     assert_eq!(
         state.place_intent_refusal(PlayerId(0), BuildingKind::Turret, FOG_FRAME),
-        Some(oxide_sim::PlaceRefusal::Fog),
+        Some(aftermine_sim::PlaceRefusal::Fog),
         "deferred placement cannot reveal that a normal footprint overlaps the hidden frame"
     );
 }
@@ -271,7 +271,7 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
                 .collect();
             assert_eq!(explored.len(), 1, "only one corner was discovered");
             assert_eq!(
-                oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
+                aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
                     .known_frames,
                 vec![FOG_FRAME]
             );
@@ -286,11 +286,11 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
             );
             assert_eq!(
                 state.place_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
-                Some(oxide_sim::PlaceRefusal::Fog)
+                Some(aftermine_sim::PlaceRefusal::Fog)
             );
             assert_eq!(
                 state.place_intent_refusal(PlayerId(0), BuildingKind::Fabricator, FOG_FRAME),
-                Some(oxide_sim::PlaceRefusal::Fog)
+                Some(aftermine_sim::PlaceRefusal::Fog)
             );
             let bank = state.player(PlayerId(0)).scrap;
             state.tick(&[cmd(
@@ -349,7 +349,7 @@ fn one_visible_corner_discloses_an_enemy_extractor_site() {
     assert!(state.extractor_frame_claim_known(PlayerId(0), FOG_FRAME));
     assert_eq!(
         state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
-        Some(oxide_sim::PlaceRefusal::Building)
+        Some(aftermine_sim::PlaceRefusal::Building)
     );
     let observer = state.units()[0].id;
     state.tick(&[cmd(
@@ -367,7 +367,7 @@ fn one_visible_corner_discloses_an_enemy_extractor_site() {
     assert!(state.extractor_frame_claim_known(PlayerId(0), FOG_FRAME));
     assert_eq!(
         state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
-        Some(oxide_sim::PlaceRefusal::Building)
+        Some(aftermine_sim::PlaceRefusal::Building)
     );
 }
 
@@ -686,7 +686,7 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
     assert!(!wrong_owner.extractor_supported_by(extractor, enemy_foundry));
 }
 
-fn state_income(state: &State, extractor: oxide_sim::BuildingId) -> ExtractorSupport {
+fn state_income(state: &State, extractor: aftermine_sim::BuildingId) -> ExtractorSupport {
     state
         .extractor_income(extractor)
         .expect("the authored Extractor is completed and living")
@@ -774,7 +774,7 @@ fn an_unfinished_foundry_does_not_support_until_construction_completes() {
     for _ in 0..1_000 {
         if state
             .building(expansion)
-            .is_some_and(oxide_sim::Building::built)
+            .is_some_and(aftermine_sim::Building::built)
         {
             break;
         }
@@ -783,7 +783,7 @@ fn an_unfinished_foundry_does_not_support_until_construction_completes() {
     assert!(
         state
             .building(expansion)
-            .is_some_and(oxide_sim::Building::built),
+            .is_some_and(aftermine_sim::Building::built),
         "the adjacent Harvester completes the expansion"
     );
     assert_eq!(state_income(&state, extractor), ExtractorSupport::Supported);
@@ -831,7 +831,7 @@ fn destroying_the_supporting_foundry_returns_the_extractor_to_remote_yield() {
         1,
         Command::Attack {
             units: artillery,
-            target: oxide_sim::Target::Building(expansion).into(),
+            target: aftermine_sim::Target::Building(expansion).into(),
             queue: false,
         },
     )]);
@@ -887,7 +887,7 @@ fn the_contest_cycle_re_derelicts_and_rebuilds() {
         1,
         Command::Attack {
             units: vec![raider],
-            target: oxide_sim::Target::Building(machine).into(),
+            target: aftermine_sim::Target::Building(machine).into(),
             queue: false,
         },
     )]);
@@ -1111,15 +1111,15 @@ fn public_arena() -> Scenario {
     )
 }
 
-fn bore_target() -> oxide_sim::RememberedBuilding {
-    oxide_sim::RememberedBuilding {
+fn bore_target() -> aftermine_sim::RememberedBuilding {
+    aftermine_sim::RememberedBuilding {
         owner: PlayerId(0),
         building_kind: BuildingKind::Extractor,
         anchor: SUPPORT_FRAME,
     }
 }
 
-fn focus_on_the_bore(state: &mut State) -> oxide_sim::TickReport {
+fn focus_on_the_bore(state: &mut State) -> aftermine_sim::TickReport {
     let bastion = state
         .buildings()
         .iter()
@@ -1130,7 +1130,7 @@ fn focus_on_the_bore(state: &mut State) -> oxide_sim::TickReport {
         1,
         Command::FocusFire {
             buildings: vec![bastion],
-            target: oxide_sim::AttackTarget::RememberedBuilding(bore_target()),
+            target: aftermine_sim::AttackTarget::RememberedBuilding(bore_target()),
         },
     )])
 }
@@ -1150,7 +1150,7 @@ fn every_seat_knows_a_deep_bore_from_the_moment_its_refit_starts() {
     };
     assert!(unseen(&state), "premise: seat one cannot see the frame");
     assert!(
-        oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(1))
+        aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(1))
             .public_buildings
             .is_empty()
     );
@@ -1170,10 +1170,10 @@ fn every_seat_knows_a_deep_bore_from_the_moment_its_refit_starts() {
         },
     )]);
     assert!(unseen(&state));
-    let known = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(1));
+    let known = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(1));
     assert_eq!(
         known.public_buildings,
-        vec![oxide_sim::PublicBuilding {
+        vec![aftermine_sim::PublicBuilding {
             owner: PlayerId(0),
             kind: BuildingKind::Extractor,
             tier: 1,
@@ -1183,7 +1183,7 @@ fn every_seat_knows_a_deep_bore_from_the_moment_its_refit_starts() {
         "known mid-refit, with no sight"
     );
     assert!(
-        oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
+        aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0))
             .public_buildings
             .is_empty(),
         "a seat's own Deep Bore is already a full row"
@@ -1210,7 +1210,7 @@ fn a_fallen_deep_bore_is_forgotten_everywhere_but_an_extractor_ghost_stays() {
                 building["tier"] = serde_json::json!(tier);
             }
         }
-        let ghost = oxide_sim::GhostBuilding {
+        let ghost = aftermine_sim::GhostBuilding {
             kind: BuildingKind::Extractor,
             owner: PlayerId(0),
             anchor: SUPPORT_FRAME,
@@ -1262,7 +1262,7 @@ fn a_fallen_deep_bore_is_forgotten_everywhere_but_an_extractor_ghost_stays() {
             state
                 .attack_objective(
                     PlayerId(1),
-                    oxide_sim::AttackTarget::RememberedBuilding(bore_target())
+                    aftermine_sim::AttackTarget::RememberedBuilding(bore_target())
                 )
                 .is_some(),
             tier == 0,

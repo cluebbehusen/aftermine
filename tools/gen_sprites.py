@@ -3357,7 +3357,7 @@ def _sprite_asset_differences(
 def check_reproducible() -> None:
     """Regenerates out of tree and compares committed pixels and metadata."""
     committed = Path(__file__).resolve().parent.parent / "assets" / "sprites"
-    with tempfile.TemporaryDirectory(prefix="oxide-sprite-check-") as temp:
+    with tempfile.TemporaryDirectory(prefix="aftermine-sprite-check-") as temp:
         generated = Path(temp) / "sprites"
         generate(generated)
         missing, extra, changed = _sprite_asset_differences(committed, generated)

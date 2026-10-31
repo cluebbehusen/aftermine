@@ -36,14 +36,14 @@ fn open_chairs_launch_as_humans_without_a_bot() {
 fn launch_materializes_each_opponents_exact_visible_config_and_seed() {
     let mut draft = team_draft();
     draft.seat_choice = 2;
-    draft.seats[0].difficulty = oxide_sim::scenario::BotDifficulty::Prime;
-    draft.seats[0].stance = oxide_sim::scenario::BotStance::Aggressive;
-    draft.seats[5].difficulty = oxide_sim::scenario::BotDifficulty::Scrapheap;
-    draft.seats[5].stance = oxide_sim::scenario::BotStance::Turtle;
+    draft.seats[0].difficulty = aftermine_sim::scenario::BotDifficulty::Prime;
+    draft.seats[0].stance = aftermine_sim::scenario::BotStance::Aggressive;
+    draft.seats[5].difficulty = aftermine_sim::scenario::BotDifficulty::Scrapheap;
+    draft.seats[5].stance = aftermine_sim::scenario::BotStance::Turtle;
     let game = launch(&draft, 0x1000).expect("launches");
     let players = &game.scenario.players;
     assert!(!players[2].bot, "the chosen chair is the human's");
-    assert_eq!(game.presentation.human, oxide_sim::PlayerId(2));
+    assert_eq!(game.presentation.human, aftermine_sim::PlayerId(2));
     for (i, p) in players.iter().enumerate() {
         if i == 2 {
             assert!(p.bot_config.is_none());
@@ -52,7 +52,7 @@ fn launch_materializes_each_opponents_exact_visible_config_and_seed() {
         assert!(p.bot, "every other seat is a bot");
         assert_eq!(
             p.bot_config,
-            Some(oxide_sim::scenario::BotConfig::new(
+            Some(aftermine_sim::scenario::BotConfig::new(
                 draft.seats[i].difficulty,
                 draft.seats[i].stance,
                 0x1000 + i as u64,
@@ -119,10 +119,10 @@ fn automation_uses_one_repeatable_seed_stream_but_ordinary_sessions_use_entropy(
 fn launch_seed_scope_is_exact_and_reproducible() {
     let mut draft = team_draft();
     draft.seat_choice = 1;
-    draft.seats[0].difficulty = oxide_sim::scenario::BotDifficulty::Veteran;
-    draft.seats[0].stance = oxide_sim::scenario::BotStance::Turtle;
-    draft.seats[4].difficulty = oxide_sim::scenario::BotDifficulty::Prime;
-    draft.seats[4].stance = oxide_sim::scenario::BotStance::Aggressive;
+    draft.seats[0].difficulty = aftermine_sim::scenario::BotDifficulty::Veteran;
+    draft.seats[0].stance = aftermine_sim::scenario::BotStance::Turtle;
+    draft.seats[4].difficulty = aftermine_sim::scenario::BotDifficulty::Prime;
+    draft.seats[4].stance = aftermine_sim::scenario::BotStance::Aggressive;
 
     let first = launch(&draft, 0xABC0).expect("first launch");
     let repeated = launch(&draft, 0xABC0).expect("repeated launch");
@@ -154,8 +154,8 @@ fn launch_seed_scope_is_exact_and_reproducible() {
 #[test]
 fn restart_rematch_and_replay_keep_exact_opponent_identities() {
     let mut draft = team_draft();
-    draft.seats[1].difficulty = oxide_sim::scenario::BotDifficulty::Prime;
-    draft.seats[1].stance = oxide_sim::scenario::BotStance::Aggressive;
+    draft.seats[1].difficulty = aftermine_sim::scenario::BotDifficulty::Prime;
+    draft.seats[1].stance = aftermine_sim::scenario::BotStance::Aggressive;
     let game = launch(&draft, 0xCAFE_F000).expect("launch");
     let expected = game.scenario.clone();
 
@@ -228,10 +228,13 @@ fn launch_writes_the_chosen_teams_into_the_scenario() {
     assert_eq!(players[1].team, Some(0));
     // The sim's dense normalization sees the regrouping: the FFA
     // seat stands alone against everyone.
-    let alone = game.state.player(oxide_sim::PlayerId(0)).team;
+    let alone = game.state.player(aftermine_sim::PlayerId(0)).team;
     assert!(
-        (1..players.len())
-            .all(|i| game.state.player(oxide_sim::PlayerId(i.fit::<u8>())).team != alone),
+        (1..players.len()).all(|i| game
+            .state
+            .player(aftermine_sim::PlayerId(i.fit::<u8>()))
+            .team
+            != alone),
         "an FFA seat shares a team with no one"
     );
 }

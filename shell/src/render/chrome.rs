@@ -556,7 +556,7 @@ pub(crate) struct RibbonLayout {
     pub(super) rect: Rect,
     pub(super) label: String,
     pub(super) cost: Option<String>,
-    building: Option<oxide_sim::BuildingKind>,
+    building: Option<aftermine_sim::BuildingKind>,
     label_w: f32,
     icon_w: f32,
     pub(super) status: Option<RibbonStatus>,
@@ -751,11 +751,14 @@ fn lands_detail(lands: crate::input::Lands) -> String {
 }
 
 /// The widest status row placing `kind` can show.
-fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str) -> f32) -> f32 {
-    use oxide_sim::PlaceRefusal;
+fn widest_placement_status(
+    kind: aftermine_sim::BuildingKind,
+    measure: &dyn Fn(&str) -> f32,
+) -> f32 {
+    use aftermine_sim::PlaceRefusal;
     let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
     // A builder holds at most the cap's worth of queue behind its order.
-    let most = oxide_sim::stats::ORDER_QUEUE_CAP + 1;
+    let most = aftermine_sim::stats::ORDER_QUEUE_CAP + 1;
     let detail = [
         crate::input::Lands::Queues(most),
         crate::input::Lands::Replaces(most),
@@ -779,7 +782,7 @@ fn widest_placement_status(kind: oxide_sim::BuildingKind, measure: &dyn Fn(&str)
     ]
     .into_iter()
     .filter(|refusal| {
-        *refusal != PlaceRefusal::FrameRequired || kind == oxide_sim::BuildingKind::Extractor
+        *refusal != PlaceRefusal::FrameRequired || kind == aftermine_sim::BuildingKind::Extractor
     })
     .map(|refusal| crate::typography::sentence_case(crate::input::refusal_reason(refusal)))
     .chain([

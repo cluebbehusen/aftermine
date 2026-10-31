@@ -27,13 +27,13 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
 
 #[test]
 fn a_seat_wants_siege_behind_its_line_by_stance_unless_it_lifts_its_army() {
-    use oxide_sim::{PlayerId, Scenario};
+    use aftermine_sim::{PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let template = observation.my_units[0].clone();
     observation
         .my_units
-        .extend((0..8).map(|_| oxide_sim::observation::UnitObs {
+        .extend((0..8).map(|_| aftermine_sim::observation::UnitObs {
             kind: UnitKind::Sentinel,
             ..template.clone()
         }));
@@ -84,8 +84,8 @@ fn clustered_enemies_favour_splash() {
 
 #[test]
 fn clustering_reads_the_most_recently_seen_enemies() {
-    use oxide_sim::observation::UnitObs;
-    use oxide_sim::{PlayerId, Scenario, UnitId};
+    use aftermine_sim::observation::UnitObs;
+    use aftermine_sim::{PlayerId, Scenario, UnitId};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let template = observation.my_units[0].clone();
@@ -130,8 +130,8 @@ fn clustering_reads_the_most_recently_seen_enemies() {
 
 #[test]
 fn a_dear_unit_the_role_prefers_is_worth_saving_for_while_a_cheaper_one_fits() {
-    use oxide_sim::observation::BuildingObs;
-    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    use aftermine_sim::observation::BuildingObs;
+    use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let template = observation.my_buildings[0].clone();
@@ -169,8 +169,8 @@ fn a_dear_unit_the_role_prefers_is_worth_saving_for_while_a_cheaper_one_fits() {
 
 #[test]
 fn a_short_role_whose_best_unit_needs_a_crucible_pulls_toward_one() {
-    use oxide_sim::observation::BuildingObs;
-    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    use aftermine_sim::observation::BuildingObs;
+    use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let template = observation.my_buildings[0].clone();
@@ -242,8 +242,8 @@ fn a_seat_that_can_only_lift_scores_bombers_by_the_clump_one_blast_takes() {
 
 /// Skirmish's west seat with its Foundry and `producers`.
 fn producing(producers: &[BuildingKind]) -> ObservationData {
-    use oxide_sim::observation::BuildingObs;
-    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    use aftermine_sim::observation::BuildingObs;
+    use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let template = observation.my_buildings[0].clone();
@@ -297,8 +297,8 @@ fn a_seat_that_can_only_lift_pulls_toward_the_tech_its_bombers_need() {
 
 #[test]
 fn every_army_unit_gets_its_turn() {
-    use oxide_sim::observation::BuildingObs;
-    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    use aftermine_sim::observation::BuildingObs;
+    use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let producers = [
         BuildingKind::Foundry,
@@ -360,7 +360,7 @@ fn heavies_are_the_armed_ground_machines_a_slug_does_not_overkill() {
 
 #[test]
 fn an_anti_heavy_need_pulls_toward_a_crucible() {
-    use oxide_sim::{PlayerId, Scenario};
+    use aftermine_sim::{PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let mut needs = needs(None, false);
@@ -380,8 +380,8 @@ fn an_anti_heavy_need_pulls_toward_a_crucible() {
 
 #[test]
 fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
-    use oxide_sim::observation::BuildingObs;
-    use oxide_sim::{BuildingId, PlayerId, Scenario};
+    use aftermine_sim::observation::BuildingObs;
+    use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     let memory: Memory = serde_json::from_value(serde_json::json!({
@@ -434,7 +434,7 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
 
 #[test]
 fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
-    use oxide_sim::{PlayerId, Scenario};
+    use aftermine_sim::{PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let memory = Memory::default();
@@ -463,9 +463,9 @@ fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
         let mut known = observation.clone();
         known
             .enemy_buildings
-            .push(oxide_sim::observation::BuildingObs {
+            .push(aftermine_sim::observation::BuildingObs {
                 provisional: false,
-                id: oxide_sim::BuildingId(u32::MAX),
+                id: aftermine_sim::BuildingId(u32::MAX),
                 player: PlayerId(1),
                 kind: cradle,
                 anchor: chassis::grid::TilePos::new(30, 12),

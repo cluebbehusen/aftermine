@@ -7,8 +7,8 @@ use crate::game::SoundKind;
 use crate::menu::{Heading, Label, Line, Menu};
 use crate::saves::ReplayEntry;
 use crate::tabs::TabStrip;
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
-use oxide_protocol::{Key, RawEvent};
 
 /// What a shelf frame decided.
 #[derive(Debug, PartialEq)]

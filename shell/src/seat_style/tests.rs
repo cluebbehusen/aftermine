@@ -1,9 +1,9 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::PlayerSpec;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::PlayerSpec;
+use aftermine_sim::scenario::ScenarioMode;
 
 fn scenario(count: usize, team: impl Fn(usize) -> Option<u8>) -> Scenario {
     let mut map = vec![vec!['.'; 70]; 70];
@@ -108,7 +108,7 @@ fn live_and_replay_views_share_prepared_styles_after_viewer_changes() {
     let viewport = macroquad::prelude::vec2(1100.0, 720.0);
     let mut game = crate::game::Game::with_viewport(scenario.clone(), viewport).unwrap();
     let mut playback = crate::screens::playback::PlaybackSession::from_replay(
-        oxide_kit::GameReplay::new(oxide_sim::SIM_VERSION, "test", scenario),
+        aftermine_kit::GameReplay::new(aftermine_sim::SIM_VERSION, "test", scenario),
     )
     .unwrap();
     for viewer in [0, 8, 15] {

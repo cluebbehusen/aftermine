@@ -1,9 +1,9 @@
 //! Fixtures shared by the library's unit tests. The `_tests` name keeps them
 //! out of coverage along with the tests themselves.
 
+use aftermine_kit::GameReplay;
+use aftermine_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId};
 use chassis::replay::Replay;
-use oxide_kit::GameReplay;
-use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId};
 
 pub(crate) fn replay_fixture() -> GameReplay {
     let scenario = Scenario::skirmish();

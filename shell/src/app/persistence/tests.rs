@@ -57,7 +57,8 @@ fn a_failed_job_does_not_poison_the_worker() {
 
 #[test]
 fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() {
-    let dir = std::env::temp_dir().join(format!("oxide-continue-worker-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("aftermine-continue-worker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut game = Game::new(Scenario::skirmish()).unwrap();
     game.advance_ticks(120);
@@ -95,7 +96,7 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
 #[test]
 fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
     let mut worker = Worker::new().expect("worker");
-    worker.retire(Game::new(oxide_sim::Scenario::skirmish()).expect("game"));
+    worker.retire(Game::new(aftermine_sim::Scenario::skirmish()).expect("game"));
     assert!(
         worker.busy(),
         "the old match winds down off the frame thread"

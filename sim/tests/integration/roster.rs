@@ -3,14 +3,14 @@
 //! interceptor wings.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::{cmd, players, unit};
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Command, Event, Scenario, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, Scenario, UnitKind};
 
 fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
     let mut buildings = Vec::new();
@@ -132,7 +132,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
         0,
         Command::Attack {
             units: vec![talon],
-            target: oxide_sim::Target::Unit(crawler).into(),
+            target: aftermine_sim::Target::Unit(crawler).into(),
             queue: false,
         },
     )]);
@@ -151,7 +151,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
         0,
         Command::Attack {
             units: vec![talon],
-            target: oxide_sim::Target::Unit(scout).into(),
+            target: aftermine_sim::Target::Unit(scout).into(),
             queue: false,
         },
     )]);

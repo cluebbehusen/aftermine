@@ -171,7 +171,7 @@ fn malformed_secondary_rows_and_unknown_slots_are_rejected() {
 
 #[test]
 fn rebound_menu_keys_emit_only_their_contextual_navigation() {
-    use oxide_protocol::RawEvent;
+    use aftermine_protocol::RawEvent;
     let mut map = BindingMap::classic();
     assert!(map.rebind(Action::Confirm, Chord::bare(Key::Z)));
     let events = map.menu_events(
@@ -194,7 +194,7 @@ fn rebound_menu_keys_emit_only_their_contextual_navigation() {
 
 #[test]
 fn tab_keys_reach_menus_and_stay_left_then_right_on_either_hand() {
-    use oxide_protocol::RawEvent;
+    use aftermine_protocol::RawEvent;
     let tabs = |map: &BindingMap, keys: [Key; 2]| {
         map.menu_events(&keys.map(|key| RawEvent::KeyDown { key }), false, false)
     };
@@ -212,7 +212,7 @@ fn tab_keys_reach_menus_and_stay_left_then_right_on_either_hand() {
 
 #[test]
 fn unbound_tab_actions_keep_their_classic_keys_while_menus_leave_them_free() {
-    use oxide_protocol::RawEvent;
+    use aftermine_protocol::RawEvent;
     let mut map = BindingMap::classic();
     map.unbind_slot(Action::PrevTab, 0);
     map.unbind_slot(Action::NextTab, 0);

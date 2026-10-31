@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::Game;
+use aftermine_sim::{Event, PlayerId};
 use macroquad::prelude::Vec2;
-use oxide_sim::{Event, PlayerId};
 
 /// An open field of three seats with nobody's bot running, the camera over
 /// its middle and the picture showing each tick whole.
@@ -57,7 +57,7 @@ fn raises_score(game: &Game, running: bool) -> bool {
     )
 }
 
-fn cut(report: &oxide_sim::TickReport, maw: UnitId) -> bool {
+fn cut(report: &aftermine_sim::TickReport, maw: UnitId) -> bool {
     report
         .events
         .iter()
@@ -166,10 +166,10 @@ fn a_maw_s_kiln_hums_while_its_belt_runs_and_stops_with_the_belt() {
         }
     }
     wire["map"]["grid"]["cells"][10 * 40 + 18]["wreck"] = serde_json::json!(20);
-    let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
     let mut game = game;
     game.replace_state_after_jump(&state);
-    game.issue(oxide_sim::Command::Run {
+    game.issue(aftermine_sim::Command::Run {
         units: vec![maw],
         goal: chassis::grid::TilePos::new(18, 10),
         queue: false,

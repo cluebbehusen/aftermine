@@ -21,7 +21,7 @@ fn menu(items: &[&str], selected: Option<usize>) -> UiView {
 fn cargo_artifact_selection_ignores_noise_and_other_targets() {
     let output = br#"
 not json
-{"reason":"compiler-artifact","target":{"name":"oxide-sim"},"executable":"/tmp/wrong"}
+{"reason":"compiler-artifact","target":{"name":"aftermine-sim"},"executable":"/tmp/wrong"}
 {"reason":"compiler-artifact","target":{"name":"Oxide"},"executable":null}
 {"reason":"build-finished","success":true}
 {"reason":"compiler-artifact","target":{"name":"Oxide"},"executable":"/tmp/Oxide"}
@@ -35,7 +35,7 @@ not json
 
 #[test]
 fn isolated_shells_override_every_platform_writable_root() {
-    let home = PathBuf::from("/tmp/oxide-isolated-home");
+    let home = PathBuf::from("/tmp/aftermine-isolated-home");
     let mut command = std::process::Command::new("Oxide");
     command.env("HOME", "/host/home");
     command.env("XDG_CONFIG_HOME", "/host/config");

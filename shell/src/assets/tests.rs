@@ -456,7 +456,7 @@ pub(super) fn sprite_image(name: &str) -> macroquad::prelude::Image {
 #[test]
 fn the_lowered_maw_drum_meets_the_hull_collision_edge() {
     let atlas = manifest();
-    let radius = oxide_sim::UnitKind::Maw.stats().radius.to_num::<f32>();
+    let radius = aftermine_sim::UnitKind::Maw.stats().radius.to_num::<f32>();
     let frames: Vec<_> = atlas
         .keys()
         .filter(|name| {

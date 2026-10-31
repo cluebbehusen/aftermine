@@ -15,12 +15,12 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::BotDifficulty;
+use aftermine_sim::stats::{Domain, WeaponStats};
+use aftermine_sim::{AttackTarget, BuildingKind, Command, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::{Domain, WeaponStats};
-use oxide_sim::{AttackTarget, BuildingKind, Command, UnitId, UnitKind};
 
 /// Empty tiles between an enemy and an own building inside which the enemy
 /// threatens it, unless its weapon reaches further.

@@ -1,10 +1,10 @@
 //! Motor loops driven by the currently presented missile state.
 
 use crate::numeric;
+use aftermine_sim::{ProjectileKind, Target};
 use chassis::fx::Vec2Fx;
 use macroquad::audio::{PlaySoundParams, Sound, play_sound, set_sound_volume, stop_sound};
 use macroquad::prelude::Vec2;
-use oxide_sim::{ProjectileKind, Target};
 
 use crate::audio_timeline::{missile_ejection_ticks, projectile_elapsed_ticks};
 use crate::game::{Scene, SoundKind, world_vec};

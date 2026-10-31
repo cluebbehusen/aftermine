@@ -11,10 +11,10 @@
 //! loop around it are harness overhead, reported apart.
 
 use crate::bot_cost::Summary;
+use aftermine_kit::GameReplay;
+use aftermine_kit::playback::Playback;
+use aftermine_sim::{PlayerCommand, State};
 use anyhow::{Context, Result, ensure};
-use oxide_kit::GameReplay;
-use oxide_kit::playback::Playback;
-use oxide_sim::{PlayerCommand, State};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 /// The demangled name every sample inside the simulation passes through.
-const TICK: &str = "<oxide_sim::state::State>::tick";
+const TICK: &str = "<aftermine_sim::state::State>::tick";
 
 /// The world before a window's first tick and the commands each of its ticks
 /// applies.
@@ -95,7 +95,7 @@ impl Window {
     pub fn sample(&self, seconds: u64) -> Result<String> {
         ensure_sampler()?;
         let path =
-            std::env::temp_dir().join(format!("oxide-tick-profile-{}.txt", std::process::id()));
+            std::env::temp_dir().join(format!("aftermine-tick-profile-{}.txt", std::process::id()));
         let mut sampler = std::process::Command::new("/usr/bin/sample")
             .arg(std::process::id().to_string())
             .arg(seconds.to_string())
@@ -179,7 +179,7 @@ pub fn profile(
     focus: Option<&str>,
 ) -> Result<Report> {
     ensure_sampler()?;
-    let replay = oxide_kit::load_replay(path).with_context(|| format!("loading {path}"))?;
+    let replay = aftermine_kit::load_replay(path).with_context(|| format!("loading {path}"))?;
     let window = Window::from_replay(replay, from, ticks)?;
     let began = Instant::now();
     std::hint::black_box(window.run());
@@ -255,13 +255,13 @@ pub struct Scan {
 /// windows, keeping the `top` costliest.
 pub fn scan(path: &str, window: u64, top: usize) -> Result<Scan> {
     ensure!(window > 0, "a window spans at least one tick");
-    let replay = oxide_kit::load_replay(path).with_context(|| format!("loading {path}"))?;
+    let replay = aftermine_kit::load_replay(path).with_context(|| format!("loading {path}"))?;
     replay
-        .validate(Some(oxide_sim::SIM_VERSION))
+        .validate(Some(aftermine_sim::SIM_VERSION))
         .map_err(|err| anyhow::anyhow!("{err}"))?;
-    let mut state = oxide_kit::recording::initial_state(&replay)?;
+    let mut state = aftermine_kit::recording::initial_state(&replay)?;
     let start = state.current_tick();
-    let end = oxide_kit::bounded_replay_duration(&replay)?;
+    let end = aftermine_kit::bounded_replay_duration(&replay)?;
     ensure!(end > start, "the recording spans no ticks to scan");
     let mut next = replay
         .commands

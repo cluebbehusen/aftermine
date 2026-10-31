@@ -4,8 +4,8 @@
 use crate::action::{Action, BindingMap};
 use crate::game::Scene;
 use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
-use oxide_sim::stats::BayStats;
-use oxide_sim::{Command, Unit, UnitId};
+use aftermine_sim::stats::BayStats;
+use aftermine_sim::{Command, Unit, UnitId};
 
 /// One selected machine's bay as the viewer sees it.
 #[derive(Debug, Clone, Copy)]

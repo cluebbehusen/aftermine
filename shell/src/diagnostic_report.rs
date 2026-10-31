@@ -38,10 +38,10 @@ impl ReportJob {
             replay.meta.ticks = Some(game.state.current_tick());
             replay
         });
-        self.begin("oxide-report-export", move || {
-            let incidents = root.join(oxide_kit::diagnostics::INCIDENTS);
+        self.begin("aftermine-report-export", move || {
+            let incidents = root.join(aftermine_kit::diagnostics::INCIDENTS);
             let incidents = incidents.is_file().then_some(incidents);
-            let crash = oxide_kit::diagnostics::newest_crash_dump(&root);
+            let crash = aftermine_kit::diagnostics::newest_crash_dump(&root);
             ensure!(
                 replay.is_some() || incidents.is_some() || crash.is_some(),
                 "no match or incident is available to export"
@@ -60,7 +60,7 @@ impl ReportJob {
                 ]
             });
             let copies: Vec<_> = incidents
-                .map(|incidents| (incidents, oxide_kit::diagnostics::INCIDENTS))
+                .map(|incidents| (incidents, aftermine_kit::diagnostics::INCIDENTS))
                 .into_iter()
                 .chain(crash)
                 .collect();
@@ -79,7 +79,7 @@ impl ReportJob {
                 let manifest = serde_json::json!({
                     "format": 1,
                     "running_build": crate::build_identity(),
-                    "sim_version": oxide_sim::SIM_VERSION,
+                    "sim_version": aftermine_sim::SIM_VERSION,
                     "ticks": replay.as_ref().and_then(|replay| replay.meta.ticks),
                     "contents": contents,
                 });
@@ -116,7 +116,7 @@ impl ReportJob {
     }
     pub(crate) fn open_folder(&mut self) -> Result<()> {
         let root = crate::paths::diagnostics_dir().context("diagnostics folder unavailable")?;
-        self.begin("oxide-open-diagnostics", move || {
+        self.begin("aftermine-open-diagnostics", move || {
             std::fs::create_dir_all(&root)?;
             #[cfg(target_os = "macos")]
             let mut command = std::process::Command::new("open");

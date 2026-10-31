@@ -5,7 +5,7 @@ fn planning(scrap: u32) -> (Game, InputState) {
     let mut game = drag_arena(scrap);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input)
 }
@@ -17,7 +17,7 @@ fn at(game: &Game, x: i32) -> Vec2 {
 }
 
 fn turret_cost() -> u32 {
-    oxide_sim::BuildingKind::Turret
+    aftermine_sim::BuildingKind::Turret
         .base_stats()
         .construction
         .expect("turrets are built")
@@ -103,7 +103,7 @@ fn a_release_skips_stamps_the_ground_no_longer_allows() {
     // Another command claims the last stamp's ground mid-drag.
     game.issue(Command::Build {
         units: vec![builder],
-        kind: oxide_sim::BuildingKind::Barricade,
+        kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(6, 2),
         queue: true,
         defer: false,
@@ -116,7 +116,7 @@ fn a_release_skips_stamps_the_ground_no_longer_allows() {
             matches!(
                 pc.command,
                 Command::Build {
-                    kind: oxide_sim::BuildingKind::Turret,
+                    kind: aftermine_sim::BuildingKind::Turret,
                     ..
                 }
             )
@@ -149,7 +149,7 @@ fn one_long_move_or_a_bare_release_fills_every_cell_between() {
 
 #[test]
 fn the_first_stamp_that_stages_opens_the_row() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Two Crews",
             "players": [
@@ -177,14 +177,14 @@ fn the_first_stamp_that_stages_opens_the_row() {
     let mut input = InputState::new();
     let (builder, other) = (game.state.units()[0].id, game.state.units()[1].id);
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let (a, b) = (at(&game, 4), at(&game, 5));
     apply_events(&mut game, &mut input, &[left_down(a), mouse_move(b)]);
     assert_eq!(input.planned_stamps().len(), 2);
     // Another crew claims the opener's ground mid-drag.
     game.issue(Command::Build {
         units: vec![other],
-        kind: oxide_sim::BuildingKind::Barricade,
+        kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(4, 2),
         queue: false,
         defer: false,
@@ -195,7 +195,7 @@ fn the_first_stamp_that_stages_opens_the_row() {
         .iter()
         .filter_map(|pc| match pc.command {
             Command::Build {
-                kind: oxide_sim::BuildingKind::Turret,
+                kind: aftermine_sim::BuildingKind::Turret,
                 anchor,
                 queue,
                 ..
@@ -227,7 +227,7 @@ fn a_stamp_whose_ground_falls_into_fog_is_judged_as_fog() {
         map.push(line);
     }
     map.push("#".repeat(width));
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Long Bank",
             "players": [
@@ -243,7 +243,7 @@ fn a_stamp_whose_ground_falls_into_fog_is_judged_as_fog() {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let stamp = TilePos::new(30, 3);
     assert!(
         !build_defer_needed(&game.view(), kind, stamp),

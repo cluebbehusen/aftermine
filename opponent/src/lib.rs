@@ -32,12 +32,12 @@ pub use missions::{Launch, MissionKind, MissionStatus, Phase};
 pub use profile::{PersonalityTraits, ResolvedProfile, Specialty};
 pub use trace::{NextPurchase, Purchase, SavingTarget, Trace};
 
-use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BotConfig, BotDifficulty};
-use oxide_sim::{BuildingKind, PlayerCommand, PlayerId, State};
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty};
+use aftermine_sim::{BuildingKind, PlayerCommand, PlayerId, State};
 use std::sync::Arc;
 
-/// One seat driven by `oxide-opponent`.
+/// One seat driven by `aftermine-opponent`.
 #[derive(Debug, Clone)]
 pub struct Opponent {
     player: PlayerId,
@@ -72,7 +72,7 @@ impl Opponent {
     }
 
     /// Actual units retained for ordinary local defense during quiet periods.
-    pub fn guarded_units(&self) -> Vec<oxide_sim::UnitId> {
+    pub fn guarded_units(&self) -> Vec<aftermine_sim::UnitId> {
         self.persistent.missions.guarded_units()
     }
 

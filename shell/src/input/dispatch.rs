@@ -8,8 +8,8 @@ use super::{ClickVerb, InputState, Pointer};
 use crate::action::Action;
 use crate::game::Game;
 use crate::numeric;
+use aftermine_sim::Command;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::Command;
 
 #[expect(clippy::too_many_lines, reason = "one arm per action")]
 pub(super) fn dispatch_action(
@@ -464,7 +464,7 @@ pub(super) fn dispatch_action(
             }
         }
         Action::HomeCamera => {
-            if let Some(center) = game.home_foundry().map(oxide_sim::Building::center) {
+            if let Some(center) = game.home_foundry().map(aftermine_sim::Building::center) {
                 let target = vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>());
                 game.presentation.camera.center = target;
                 game.presentation.camera.pan(vec2(0.0, 0.0)); // re-clamp

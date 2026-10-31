@@ -1,5 +1,5 @@
 [package]
-name = "oxide-protocol"
+name = "aftermine-protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ description = "Debug protocol types shared by the shell and the driver"
 
 [dependencies]
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
+aftermine-sim = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

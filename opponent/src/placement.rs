@@ -6,11 +6,11 @@
 use crate::frame::{ring, tiles_of};
 use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::stats::{Domain, HARVEST_INCIDENT_DANGER_RADIUS};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::{BuildingObs, ObservationData};
-use oxide_sim::stats::{Domain, HARVEST_INCIDENT_DANGER_RADIUS};
 
 /// Why the seat's knowledge rules a footprint out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

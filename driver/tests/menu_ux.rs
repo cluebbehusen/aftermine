@@ -4,20 +4,20 @@
 //! Run them explicitly:
 //!
 //! ```sh
-//! cargo test -p oxide-driver --test menu_ux -- --ignored --test-threads 1
+//! cargo test -p aftermine-driver --test menu_ux -- --ignored --test-threads 1
 //! ```
 //!
 //! Every spawned shell gets its own scratch HOME and platform-specific
 //! config/data roots. The guard removes that tree only after the child
 //! has exited, so even autosave-producing walks cannot touch real data.
 
-use anyhow::{Result, bail};
-use oxide_driver::auto::{
+use aftermine_driver::auto::{
     ShellGuard, SpawnOptions, activate_labeled, assert_mode, inject, press_key, select_labeled,
     select_tab, spawn_shell, ui, wait_for_mode,
 };
-use oxide_driver::client::Client;
-use oxide_protocol::{Key, MouseButton, RawEvent, Request};
+use aftermine_driver::client::Client;
+use aftermine_protocol::{Key, MouseButton, RawEvent, Request};
+use anyhow::{Result, bail};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -48,8 +48,10 @@ impl Drop for MenuShellGuard {
 fn scratch_home(port: u16) -> Result<PathBuf> {
     loop {
         let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-        let home =
-            std::env::temp_dir().join(format!("oxide-menu-ux-{}-{port}-{id}", std::process::id()));
+        let home = std::env::temp_dir().join(format!(
+            "aftermine-menu-ux-{}-{port}-{id}",
+            std::process::id()
+        ));
         match std::fs::create_dir(&home) {
             Ok(()) => return Ok(home),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -361,7 +363,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         "{rows:?}"
     );
     let capture = |client: &mut Client, name: &str| -> Result<()> {
-        if let Ok(dir) = std::env::var("OXIDE_CONTROL_QA_DIR") {
+        if let Ok(dir) = std::env::var("AFTERMINE_CONTROL_QA_DIR") {
             std::fs::create_dir_all(&dir)?;
             client.call(Request::Screenshot {
                 path: Some(PathBuf::from(dir).join(name).to_string_lossy().into_owned()),
@@ -387,14 +389,16 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
             .iter()
             .any(|row| row.contains("Pan up: [W] | I"))
     );
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 10000;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     let path = guard.home.join("controls-scenario.json");
     std::fs::write(&path, serde_json::to_vec(&scenario)?)?;
     client.call(Request::LoadScenario {

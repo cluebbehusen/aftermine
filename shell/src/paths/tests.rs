@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn bundle_probe_finds_mac_and_flat_ios_layouts() {
-    let root = std::env::temp_dir().join(format!("oxide-bundle-probe-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("aftermine-bundle-probe-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let atlas = |dir: &Path| {
         let sprites = dir.join("assets/sprites");

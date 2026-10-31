@@ -1,11 +1,11 @@
 //! Construction: sites, builders, refunds, placement — behavior suite, public API only.
 
 use crate::common;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::{Command, Event, Order, PlayerId, Scenario, State, Target, UnitId, UnitKind};
 
 use common::*;
 
@@ -33,7 +33,7 @@ fn pocketed_founder_state() -> State {
 
 #[test]
 fn enclosed_founder_relocation_respects_a_map_half_turn() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let scenario = pocketed_founder_scenario();
     let mut rotated = scenario.clone();
     let mut rows = vec![vec!['.'; 16]; 12];
@@ -84,7 +84,7 @@ fn enclosed_founder_relocation_respects_a_map_half_turn() {
 
 #[test]
 fn a_pocketed_canonical_founder_uses_the_existing_make_way_fallback() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = pocketed_founder_state();
     let founder = state.units()[0].id;
     let other = state.units()[1].id;
@@ -129,7 +129,7 @@ fn a_pocketed_canonical_founder_uses_the_existing_make_way_fallback() {
 
 #[test]
 fn a_pocketed_founder_with_a_full_queue_is_not_moved_or_charged() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = pocketed_founder_state();
     let founder = state.units()[0].id;
     let mut commands = vec![cmd(
@@ -175,7 +175,7 @@ fn a_pocketed_founder_with_a_full_queue_is_not_moved_or_charged() {
 
 #[test]
 fn construction_ramps_and_completes() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 4, 6)])
         .build()
         .unwrap();
@@ -231,7 +231,7 @@ fn construction_ramps_and_completes() {
 
 #[test]
 fn a_second_builder_resumes_a_dead_builders_site() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 6),
         unit(0, UnitKind::Harvester, 3, 2),
@@ -317,13 +317,13 @@ fn a_second_builder_resumes_a_dead_builders_site() {
     )]);
     assert_eq!(state.player(PlayerId(0)).scrap, scrap_before);
     run_until(&mut state, 900, |s, _| {
-        s.building(site).is_some_and(oxide_sim::Building::built)
+        s.building(site).is_some_and(aftermine_sim::Building::built)
     });
 }
 
 #[test]
 fn cancel_refunds_by_health_and_damage_burns_it() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 6),
         unit(1, UnitKind::Scuttler, 9, 7),
@@ -389,7 +389,7 @@ fn cancel_refunds_by_health_and_damage_burns_it() {
 
 #[test]
 fn sealed_apart_scenarios_refuse_to_build() {
-    use oxide_sim::scenario::ScenarioError;
+    use aftermine_sim::scenario::ScenarioError;
     // A mesa wall: rock alone would leave the sky open, and an
     // air-connected map is legal.
     let scenario = Scenario {
@@ -417,7 +417,7 @@ fn sealed_apart_scenarios_refuse_to_build() {
 
 #[test]
 fn can_place_refuses_foundries() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let state = arena(vec![]).build().unwrap();
     assert!(!state.can_place(PlayerId(0), BuildingKind::Foundry, TilePos::new(5, 6)));
     assert!(state.can_place(PlayerId(0), BuildingKind::Turret, TilePos::new(5, 6)));
@@ -438,7 +438,7 @@ fn validator_rejects_foreign_owners() {
 
 #[test]
 fn scouted_sites_are_remembered_as_sites() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // P0's scout watches P1 start a turret, then leaves. The ghost must
     // remember scaffolding, not a finished building.
     let mut state = arena(vec![
@@ -492,7 +492,7 @@ fn scouted_sites_are_remembered_as_sites() {
 
 #[test]
 fn a_fresh_site_blocks_units_already_walking_through_it() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // The mover's cached path runs straight along row 6; a turret site
     // lands on that row mid-walk. The mover must route around, never
     // standing inside the footprint, and still arrive.
@@ -539,7 +539,7 @@ fn a_fresh_site_blocks_units_already_walking_through_it() {
 
 #[test]
 fn a_zeroed_site_cannot_be_revived_by_its_builder() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Three lancers volley more than the fresh site's 70 hp while the
     // builder feeds it progress. Without the hp check, the builder would
     // revive the corpse every volley and the site would eventually
@@ -598,7 +598,7 @@ fn a_zeroed_site_cannot_be_revived_by_its_builder() {
 
 #[test]
 fn queue_overflow_is_rejected_not_swallowed() {
-    use oxide_sim::stats::ORDER_QUEUE_CAP;
+    use aftermine_sim::stats::ORDER_QUEUE_CAP;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 2, 6)])
         .build()
         .unwrap();
@@ -637,7 +637,7 @@ fn queue_overflow_is_rejected_not_swallowed() {
 
 #[test]
 fn unreachable_sites_are_rejected_before_charging() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // The pocket interior is visible (vision is radius-based, rock does
     // not block sight) but no builder can path to any doorstep.
     let scenario = Scenario {
@@ -694,7 +694,7 @@ fn unreachable_sites_are_rejected_before_charging() {
 
 #[test]
 fn placement_requires_current_vision_not_mere_exploration() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 12, 2)])
         .build()
         .unwrap();
@@ -720,7 +720,7 @@ fn placement_requires_current_vision_not_mere_exploration() {
 
 #[test]
 fn extra_builders_accelerate_construction() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Deliberate mechanic: every adjacent builder contributes a progress
     // tick, so two roughly halve the build.
     let build_time = |extra_builder: bool| {
@@ -788,7 +788,7 @@ fn validator_rejects_malformed_grids() {
 
 #[test]
 fn a_fresh_site_cannot_be_corner_cut_diagonally() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // The mover walks a diagonal staircase; a turret lands on one of the
     // flanking cardinals of an upcoming diagonal step. The waypoint
     // itself stays open — only the no-corner-cut invariant is at stake.
@@ -877,7 +877,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
 
 #[test]
 fn a_rejected_build_leaves_no_trace_on_the_hash() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let scenario = Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
@@ -951,7 +951,7 @@ fn a_rejected_build_leaves_no_trace_on_the_hash() {
 
 #[test]
 fn same_tick_construction_cannot_absorb_a_lethal_hit() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Chew a turret site to exactly the lancer's damage, then land the
     // builder's resume and the lancer's shot on the same tick. The
     // shooter aimed at a 30 hp site; one point of same-tick construction
@@ -1056,7 +1056,7 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
 
 #[test]
 fn a_doomed_site_never_comes_online() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Two scuttlers chew the site throughout construction so its hp at
     // the final progress tick sits well under the parked lancers' volley;
     // the volley lands on exactly that tick. The site must die without
@@ -1193,7 +1193,7 @@ fn queued_builds_chain_one_builder_through_two_sites() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::stats::BuildingKind::Turret,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
             anchor: TilePos::new(3, 4),
             queue: false,
             defer: false,
@@ -1203,7 +1203,7 @@ fn queued_builds_chain_one_builder_through_two_sites() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::stats::BuildingKind::FlakTurret,
+            kind: aftermine_sim::stats::BuildingKind::FlakTurret,
             anchor: TilePos::new(9, 2),
             queue: true,
             defer: false,
@@ -1228,7 +1228,7 @@ fn queued_builds_chain_one_builder_through_two_sites() {
 
 #[test]
 fn a_queued_build_claim_protects_the_site_until_its_worker_arrives() {
-    use oxide_sim::stats::{BuildingKind, SITE_DECAY_PERIOD};
+    use aftermine_sim::stats::{BuildingKind, SITE_DECAY_PERIOD};
 
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 3, 2)])
         .build()
@@ -1285,7 +1285,7 @@ fn a_queued_build_claim_protects_the_site_until_its_worker_arrives() {
 
 #[test]
 fn replacing_the_only_builders_program_refunds_a_queued_site() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 3, 2)])
         .build()
@@ -1360,7 +1360,7 @@ fn a_queued_build_whose_site_died_pops_silently_and_the_program_survives() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::stats::BuildingKind::Turret,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
             anchor: TilePos::new(3, 4),
             queue: false,
             defer: false,
@@ -1370,7 +1370,7 @@ fn a_queued_build_whose_site_died_pops_silently_and_the_program_survives() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::stats::BuildingKind::FlakTurret,
+            kind: aftermine_sim::stats::BuildingKind::FlakTurret,
             anchor: TilePos::new(9, 2),
             queue: true,
             defer: false,
@@ -1389,7 +1389,7 @@ fn a_queued_build_whose_site_died_pops_silently_and_the_program_survives() {
     let flak = state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::stats::BuildingKind::FlakTurret)
+        .find(|b| b.kind == aftermine_sim::stats::BuildingKind::FlakTurret)
         .unwrap()
         .id;
     state.tick(&[cmd(0, Command::Cancel { building: flak })]);
@@ -1407,7 +1407,7 @@ fn a_queued_build_whose_site_died_pops_silently_and_the_program_survives() {
         state
             .buildings()
             .iter()
-            .any(|b| b.kind == oxide_sim::stats::BuildingKind::Turret && b.built()),
+            .any(|b| b.kind == aftermine_sim::stats::BuildingKind::Turret && b.built()),
         "the first leg still finished"
     );
 }
@@ -1431,7 +1431,7 @@ fn a_full_order_queue_refuses_placement_with_nothing_spent() {
             queue: false,
         },
     )];
-    for i in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
+    for i in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
         fill.push(cmd(
             0,
             Command::Run {
@@ -1448,7 +1448,7 @@ fn a_full_order_queue_refuses_placement_with_nothing_spent() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::stats::BuildingKind::Turret,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
             anchor: TilePos::new(3, 4),
             queue: true,
             defer: false,
@@ -1484,7 +1484,7 @@ fn resuming_a_site_sends_every_hand() {
         0,
         Command::Build {
             units: vec![crew[0]],
-            kind: oxide_sim::stats::BuildingKind::Turret,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
             anchor: TilePos::new(3, 4),
             queue: false,
             defer: false,
@@ -1495,7 +1495,7 @@ fn resuming_a_site_sends_every_hand() {
         0,
         Command::Build {
             units: crew.clone(),
-            kind: oxide_sim::stats::BuildingKind::Turret,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
             anchor: TilePos::new(3, 4),
             queue: false,
             defer: false,
@@ -1510,14 +1510,14 @@ fn resuming_a_site_sends_every_hand() {
     run_until(&mut state, 600, |s, _| {
         s.buildings()
             .iter()
-            .any(|b| b.kind == oxide_sim::stats::BuildingKind::Turret && b.built())
+            .any(|b| b.kind == aftermine_sim::stats::BuildingKind::Turret && b.built())
     });
 }
 
 #[test]
 fn place_refusal_names_the_actual_blocker() {
-    use oxide_sim::PlaceRefusal;
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::PlaceRefusal;
+    use aftermine_sim::stats::BuildingKind;
     let state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 6),
         unit(1, UnitKind::Scuttler, 5, 5),
@@ -1552,7 +1552,7 @@ fn place_refusal_names_the_actual_blocker() {
 
 #[test]
 fn a_builder_founds_a_building_under_its_own_feet() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 5, 6)])
         .build()
         .unwrap();
@@ -1606,7 +1606,7 @@ fn a_builder_founds_a_building_under_its_own_feet() {
 
 #[test]
 fn friendly_machines_make_way_for_foundations() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // A 2x2 Fabricator with the builder on one footprint tile and a
     // second OWN machine on another: both make way — by WALKING off
     // the claimed ground (the eviction pre-pass routes the pathless
@@ -1662,7 +1662,7 @@ fn friendly_machines_make_way_for_foundations() {
 
 #[test]
 fn an_enemy_machine_still_denies_the_ground() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 5, 6),
         unit(1, UnitKind::Scuttler, 6, 7),
@@ -1691,10 +1691,10 @@ fn an_enemy_machine_still_denies_the_ground() {
 
 #[test]
 fn an_allied_machine_makes_way_like_your_own() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Two seats on one team: seat 0 builds where seat 1's sentinel
     // stands. The ally steps aside like an own machine.
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Team Yard",
             "players": [
@@ -1763,7 +1763,7 @@ fn an_allied_machine_makes_way_like_your_own() {
 
 #[test]
 fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // QueueFull is the one rejection that fires after place_site: fill
     // the builder's program to the cap, then order a queued build
     // under its feet. The whole tick must leave the state exactly
@@ -1814,7 +1814,7 @@ fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
 
 #[test]
 fn a_walled_in_machine_takes_the_instant_deal() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // A rock pocket seals one footprint tile: the machine standing
     // there has NO escape route once the site claims the ground, so
     // it takes the last-resort perimeter deal on the command tick —
@@ -1883,7 +1883,7 @@ fn a_walled_in_machine_takes_the_instant_deal() {
 
 #[test]
 fn a_fresh_placement_commits_the_whole_crew() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // A fresh Build drafts every accepted harvester, not just the
     // founder, and non-harvesters in the selection are left to their own
     // work. Three builders raise the site markedly faster than one.
@@ -1939,7 +1939,7 @@ fn a_fresh_placement_commits_the_whole_crew() {
 
 #[test]
 fn a_deferred_build_founds_on_arrival() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 12, 2)])
         .build()
         .unwrap();
@@ -2044,7 +2044,7 @@ fn deferred_founder_fixture() -> (State, UnitId, TilePos) {
 
 #[test]
 fn cancelling_a_queued_deferred_site_preserves_the_surrounding_program() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let (mut state, builder, spot) = deferred_founder_fixture();
     let later = Order::Run {
@@ -2148,7 +2148,7 @@ fn cancelling_a_queued_deferred_site_preserves_the_surrounding_program() {
 
 #[test]
 fn cancelling_an_active_deferred_site_promotes_the_next_leg() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let (mut state, builder, spot) = deferred_founder_fixture();
     let later = Order::Run {
@@ -2195,7 +2195,7 @@ fn cancelling_an_active_deferred_site_promotes_the_next_leg() {
 
 #[test]
 fn cancelling_a_deferred_site_drops_the_whole_builder_crew() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 5),
@@ -2267,7 +2267,7 @@ fn cancelling_a_deferred_site_drops_the_whole_builder_crew() {
 
 #[test]
 fn cancelling_a_started_site_by_kind_and_anchor_matches_cancelling_it_by_id() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 8, 5)])
         .build()
@@ -2333,7 +2333,7 @@ fn cancelling_a_started_site_by_kind_and_anchor_matches_cancelling_it_by_id() {
 
 #[test]
 fn repeated_pending_cancellation_cannot_retarget_the_next_site() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 4, 6)])
         .build()
@@ -2442,7 +2442,7 @@ fn repeated_pending_cancellation_cannot_retarget_the_next_site() {
 
 #[test]
 fn cancelling_a_paid_queued_site_removes_only_its_build_leg() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 4, 6)]);
     scenario.players[0].scrap = 1000;
@@ -2525,7 +2525,7 @@ fn cancelling_a_paid_queued_site_removes_only_its_build_leg() {
 /// competing reservation.
 #[test]
 fn reissuing_a_deferred_build_ignores_the_selected_founders_claim() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 12, 2)])
         .build()
         .unwrap();
@@ -2591,7 +2591,7 @@ fn reissuing_a_deferred_build_ignores_the_selected_founders_claim() {
 /// footprint because that old claim disappears when the new program lands.
 #[test]
 fn retargeting_a_deferred_build_ignores_the_replaced_footprint() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 12, 2)])
         .build()
         .unwrap();
@@ -2658,7 +2658,7 @@ fn retargeting_a_deferred_build_ignores_the_replaced_footprint() {
 /// reservations and must continue to protect their footprints.
 #[test]
 fn a_deferred_build_respects_an_unselected_founders_claim() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 12, 2),
         unit(0, UnitKind::Harvester, 13, 2),
@@ -2731,7 +2731,7 @@ fn a_deferred_build_respects_an_unselected_founders_claim() {
 /// cancelled and refunded without disturbing the enemy building.
 #[test]
 fn a_deferred_claim_on_taken_ground_is_refunded_when_revealed() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 12, 2),
         unit(1, UnitKind::Harvester, 13, 3),
@@ -2825,7 +2825,7 @@ fn a_deferred_claim_on_taken_ground_is_refunded_when_revealed() {
 /// abandoning a pending found needs no refund machinery at all.
 #[test]
 fn a_stopped_pending_found_spends_nothing() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 12, 2)])
         .build()
         .unwrap();
@@ -2876,7 +2876,7 @@ fn a_stopped_pending_found_spends_nothing() {
 /// trace on the hash, like every other rejected command.
 #[test]
 fn a_rejected_deferred_build_leaves_no_trace_on_the_hash() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let scenario = arena(vec![unit(0, UnitKind::Harvester, 4, 6)]);
     let mut with_reject = scenario.build().unwrap();
     let mut pristine = scenario.build().unwrap();
@@ -2914,7 +2914,7 @@ fn a_rejected_deferred_build_leaves_no_trace_on_the_hash() {
 /// hidden-enemy detector.
 #[test]
 fn intent_verdicts_ignore_what_fog_hides() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let build = |ambush: bool| {
         let mut units = vec![unit(0, UnitKind::Harvester, 30, 4)];
         if ambush {
@@ -2995,7 +2995,7 @@ fn intent_verdicts_ignore_what_fog_hides() {
 /// one site and every other hand joins the same build.
 #[test]
 fn a_deferred_crew_founds_once_and_stacks() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 12, 2),
         unit(0, UnitKind::Harvester, 11, 2),
@@ -3049,7 +3049,7 @@ fn a_deferred_crew_founds_once_and_stacks() {
 
 #[test]
 fn cancelling_a_paid_deferred_site_clears_every_crewmates_promise() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
 
     let mut scenario = open_arena(
         24,
@@ -3143,7 +3143,7 @@ fn cancelling_a_paid_deferred_site_clears_every_crewmates_promise() {
 /// success as failure.
 #[test]
 fn a_late_crewmate_finds_its_building_finished_and_calls_it_done() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 12, 2),
         // The straggler starts far enough back that the founder finishes
@@ -3195,7 +3195,7 @@ fn a_late_crewmate_finds_its_building_finished_and_calls_it_done() {
 /// Once a scaffold is paid, another purchase cannot consume its funding.
 #[test]
 fn a_paid_founder_cannot_lose_its_funding_to_training() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 12, 2)]);
     let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
     scenario.players[0].scrap = cost;

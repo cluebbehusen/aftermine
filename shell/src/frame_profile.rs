@@ -1,6 +1,6 @@
 //! Opt-in native-frame timing for the live GPU shell.
 
-use oxide_protocol::{FrameProfileView, FrameProfileWindowView, SlowFrameView, TimingSummary};
+use aftermine_protocol::{FrameProfileView, FrameProfileWindowView, SlowFrameView, TimingSummary};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 

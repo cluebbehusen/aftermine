@@ -13,7 +13,7 @@ use crate::start::{StartBarrier, StartContent, StartFailed};
 use crate::token::InstallId;
 use crate::token::Token;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, SILENCE_TIMEOUT};
-use oxide_sim::{PlayerId, Scenario, Tick};
+use aftermine_sim::{PlayerId, Scenario, Tick};
 use std::time::Duration;
 
 /// A connection the host's lobby knows, numbered in arrival order.

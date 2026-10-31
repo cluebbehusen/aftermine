@@ -2,9 +2,9 @@ use super::*;
 use crate::action::BindingMap;
 use crate::game::Game;
 use crate::input::InputState;
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::{PlayerCommand, Scenario, UnitKind};
 use macroquad::prelude::vec2;
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::{PlayerCommand, Scenario, UnitKind};
 
 /// A loaded Roc, a loaded Skyhook, an empty Skyhook, a Lancer and a
 /// Harvester of the viewer's on open ground.

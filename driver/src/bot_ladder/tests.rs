@@ -287,7 +287,7 @@ fn incomplete_repeated_and_mismatched_rows_are_refused() {
     let error = build_report(&[forward.clone(), wrong])
         .unwrap_err()
         .to_string();
-    assert!(error.contains("needs oxide-opponent"), "{error}");
+    assert!(error.contains("needs aftermine-opponent"), "{error}");
     let mut absent = swapped.clone();
     absent.winner_seats = vec![5];
     let error = build_report(&[forward.clone(), absent])

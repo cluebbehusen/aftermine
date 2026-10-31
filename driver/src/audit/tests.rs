@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
 #[test]
 fn an_obstruction_never_shrinks_the_reported_air_route() {

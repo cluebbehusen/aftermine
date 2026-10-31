@@ -4,8 +4,8 @@
 use super::*;
 use crate::game::checkpoint::LanManifest;
 use crate::netplay::{ClientLobby, Lobby};
+use aftermine_sim::scenario::BotConfig;
 use macroquad::prelude::vec2;
-use oxide_sim::scenario::BotConfig;
 use std::time::Instant;
 
 const SAM: InstallId = InstallId::new(11);
@@ -47,9 +47,9 @@ fn saved_with(surrendered: &[PlayerId]) -> LanSave {
     scenario.players[2].name = "Alex".to_owned();
     let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
     for &seat in surrendered {
-        game.stage(oxide_sim::PlayerCommand {
+        game.stage(aftermine_sim::PlayerCommand {
             player: seat,
-            command: oxide_sim::Command::Surrender,
+            command: aftermine_sim::Command::Surrender,
         });
     }
     game.advance_ticks(40);

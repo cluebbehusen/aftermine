@@ -2,13 +2,15 @@ use macroquad::prelude::vec2;
 
 #[test]
 fn articulated_mount_tracks_interpolated_positions_without_reading_hidden_targets() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 1,
-        kind: oxide_sim::BuildingKind::Reclaimer,
-        x: 9,
-        y: 3,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 1,
+            kind: aftermine_sim::BuildingKind::Reclaimer,
+            x: 9,
+            y: 3,
+        });
     let mut game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let unit = game
         .state
@@ -28,7 +30,7 @@ fn articulated_mount_tracks_interpolated_positions_without_reading_hidden_target
     let hidden = enemy.id;
     game.presentation
         .aim_unit_targets
-        .insert(unit.id.0, oxide_sim::Target::Building(own));
+        .insert(unit.id.0, aftermine_sim::Target::Building(own));
     game.presentation.prev_pos.insert(
         unit.id.0,
         vec2(
@@ -52,21 +54,21 @@ fn articulated_mount_tracks_interpolated_positions_without_reading_hidden_target
     );
     game.presentation
         .aim_unit_targets
-        .insert(unit.id.0, oxide_sim::Target::Building(hidden));
+        .insert(unit.id.0, aftermine_sim::Target::Building(hidden));
     assert_eq!(super::tracked_mount_angle(&game.view(), &unit, 1.0), None);
     game.presentation.aim_unit_targets.insert(
         unit.id.0,
-        oxide_sim::Target::Unit(oxide_sim::UnitId(u32::MAX)),
+        aftermine_sim::Target::Unit(aftermine_sim::UnitId(u32::MAX)),
     );
     assert_eq!(super::tracked_mount_angle(&game.view(), &unit, 1.0), None);
     game.presentation.aim_unit_targets.clear();
     let mut sapper = unit;
-    sapper.kind = oxide_sim::UnitKind::Sapper;
+    sapper.kind = aftermine_sim::UnitKind::Sapper;
     let known = game
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Reclaimer)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Reclaimer)
         .unwrap();
     let direction = known.closest_point_to(sapper.pos) - sapper.pos;
     let expected = direction
@@ -74,17 +76,17 @@ fn articulated_mount_tracks_interpolated_positions_without_reading_hidden_target
         .to_num::<f32>()
         .atan2(direction.x.to_num::<f32>())
         + std::f32::consts::FRAC_PI_2;
-    sapper.order = oxide_sim::Order::Attack {
+    sapper.order = aftermine_sim::Order::Attack {
         pursue: false,
-        target: oxide_sim::Target::Building(known.id).into(),
+        target: aftermine_sim::Target::Building(known.id).into(),
         resume: None,
     };
     assert!(
         (super::tracked_mount_angle(&game.view(), &sapper, 1.0).unwrap() - expected).abs() < 1e-5
     );
-    sapper.order = oxide_sim::Order::Attack {
+    sapper.order = aftermine_sim::Order::Attack {
         pursue: false,
-        target: oxide_sim::Target::Building(hidden).into(),
+        target: aftermine_sim::Target::Building(hidden).into(),
         resume: None,
     };
     assert_eq!(super::tracked_mount_angle(&game.view(), &sapper, 1.0), None);
@@ -133,9 +135,9 @@ fn active_work_faces_its_physical_target() {
 fn harvester_selection_ring_clears_the_rendered_sprite() {
     let zoom = 32.0;
     let padding = 4.0;
-    let radius = super::unit_selection_radius(oxide_sim::UnitKind::Harvester, zoom, padding);
-    let visual_radius = super::unit_draw_scale(oxide_sim::UnitKind::Harvester) * zoom * 0.5;
-    let collision_radius = oxide_sim::UnitKind::Harvester
+    let radius = super::unit_selection_radius(aftermine_sim::UnitKind::Harvester, zoom, padding);
+    let visual_radius = super::unit_draw_scale(aftermine_sim::UnitKind::Harvester) * zoom * 0.5;
+    let collision_radius = aftermine_sim::UnitKind::Harvester
         .stats()
         .radius
         .to_num::<f32>()
@@ -148,25 +150,28 @@ fn harvester_selection_ring_clears_the_rendered_sprite() {
 #[test]
 fn condor_uses_its_reviewed_two_tile_canvas_and_large_shadow() {
     let zoom = 64.0;
-    assert_eq!(super::unit_draw_scale(oxide_sim::UnitKind::Condor), 2.0);
-    let (shadow, offset, lift) = super::air_presentation(oxide_sim::UnitKind::Condor, zoom);
+    assert_eq!(super::unit_draw_scale(aftermine_sim::UnitKind::Condor), 2.0);
+    let (shadow, offset, lift) = super::air_presentation(aftermine_sim::UnitKind::Condor, zoom);
     assert_eq!(shadow, vec2(112.0, 76.0));
     assert_eq!(offset, vec2(8.0, 12.0));
     assert_eq!(lift, 4.0);
     assert!(
-        super::unit_selection_radius(oxide_sim::UnitKind::Condor, zoom, 4.0)
-            > super::unit_selection_radius(oxide_sim::UnitKind::Harvester, zoom, 4.0)
+        super::unit_selection_radius(aftermine_sim::UnitKind::Condor, zoom, 4.0)
+            > super::unit_selection_radius(aftermine_sim::UnitKind::Harvester, zoom, 4.0)
     );
 }
 
 #[test]
 fn advanced_ground_units_use_two_tile_canvases() {
     let zoom = 64.0;
-    for kind in [oxide_sim::UnitKind::Breaker, oxide_sim::UnitKind::Avalanche] {
+    for kind in [
+        aftermine_sim::UnitKind::Breaker,
+        aftermine_sim::UnitKind::Avalanche,
+    ] {
         assert_eq!(super::unit_draw_scale(kind), 2.0);
         assert!(
             super::unit_selection_radius(kind, zoom, 4.0)
-                > super::unit_selection_radius(oxide_sim::UnitKind::Sentinel, zoom, 4.0,)
+                > super::unit_selection_radius(aftermine_sim::UnitKind::Sentinel, zoom, 4.0,)
         );
     }
 }
@@ -174,28 +179,31 @@ fn advanced_ground_units_use_two_tile_canvases() {
 #[test]
 fn skyhook_uses_its_two_tile_transport_canvas_and_large_shadow() {
     let zoom = 64.0;
-    assert_eq!(super::unit_draw_scale(oxide_sim::UnitKind::Skyhook), 2.0);
-    let (shadow, offset, lift) = super::air_presentation(oxide_sim::UnitKind::Skyhook, zoom);
+    assert_eq!(
+        super::unit_draw_scale(aftermine_sim::UnitKind::Skyhook),
+        2.0
+    );
+    let (shadow, offset, lift) = super::air_presentation(aftermine_sim::UnitKind::Skyhook, zoom);
     assert_eq!(shadow, vec2(113.92, 97.28));
     assert_eq!(offset, vec2(8.32, 12.8));
     assert_eq!(lift, 4.48);
     assert!(
-        super::unit_selection_radius(oxide_sim::UnitKind::Skyhook, zoom, 4.0)
-            > super::unit_selection_radius(oxide_sim::UnitKind::Harvester, zoom, 4.0)
+        super::unit_selection_radius(aftermine_sim::UnitKind::Skyhook, zoom, 4.0)
+            > super::unit_selection_radius(aftermine_sim::UnitKind::Harvester, zoom, 4.0)
     );
 }
 
 #[test]
 fn warden_is_larger_than_standard_armor_but_smaller_than_crucible_heavies() {
     let zoom = 64.0;
-    assert_eq!(super::unit_draw_scale(oxide_sim::UnitKind::Warden), 1.4);
+    assert_eq!(super::unit_draw_scale(aftermine_sim::UnitKind::Warden), 1.4);
     assert!(
-        super::unit_selection_radius(oxide_sim::UnitKind::Warden, zoom, 4.0)
-            > super::unit_selection_radius(oxide_sim::UnitKind::Sentinel, zoom, 4.0)
+        super::unit_selection_radius(aftermine_sim::UnitKind::Warden, zoom, 4.0)
+            > super::unit_selection_radius(aftermine_sim::UnitKind::Sentinel, zoom, 4.0)
     );
     assert!(
-        super::unit_selection_radius(oxide_sim::UnitKind::Warden, zoom, 4.0)
-            < super::unit_selection_radius(oxide_sim::UnitKind::Breaker, zoom, 4.0)
+        super::unit_selection_radius(aftermine_sim::UnitKind::Warden, zoom, 4.0)
+            < super::unit_selection_radius(aftermine_sim::UnitKind::Breaker, zoom, 4.0)
     );
 }
 

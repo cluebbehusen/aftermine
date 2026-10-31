@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{AttackTarget, Command, PlayerCommand, PlayerId, Scenario};
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{AttackTarget, Command, PlayerCommand, PlayerId, Scenario};
 
 /// A 32-wide, 12-deep field: West's start at (2, 2) and East's at
 /// (28, 2), each seat with `scrap`, plus the given units and buildings.
@@ -738,7 +738,7 @@ fn a_retirement_is_recycling_not_damage_or_income() {
         )],
     );
     assert!(state.unit(harvester).is_none(), "premise: it was retired");
-    let refund = u64::from(oxide_sim::stats::retire_refund(
+    let refund = u64::from(aftermine_sim::stats::retire_refund(
         UnitKind::Harvester,
         UnitKind::Harvester.stats().max_hp,
     ));
@@ -786,7 +786,7 @@ fn damage_on_the_tick_a_machine_retires_is_still_its_shooters() {
             ),
         ]
     };
-    let hit = |report: &oxide_sim::TickReport| {
+    let hit = |report: &aftermine_sim::TickReport| {
         report.events.iter().any(|event| {
             matches!(event, Event::AttackHit { target: Some(Target::Unit(id)), .. } if *id == harvester)
         })
@@ -800,7 +800,10 @@ fn damage_on_the_tick_a_machine_retires_is_still_its_shooters() {
         first = dry.tick(&[]);
         ticks += 1;
     }
-    assert!(ticks < oxide_sim::stats::RETIRE_TICKS, "premise: hit early");
+    assert!(
+        ticks < aftermine_sim::stats::RETIRE_TICKS,
+        "premise: hit early"
+    );
     let mut ledger = ImpactLedger::new(&state);
     let mut pending = Some(orders());
     for tick in 1..=ticks {
@@ -808,7 +811,7 @@ fn damage_on_the_tick_a_machine_retires_is_still_its_shooters() {
             let mut value = serde_json::to_value(&state).unwrap();
             for unit in value["units"].as_array_mut().unwrap() {
                 if unit["id"] == serde_json::json!(harvester) {
-                    unit["progress"] = serde_json::json!(oxide_sim::stats::RETIRE_TICKS - 1);
+                    unit["progress"] = serde_json::json!(aftermine_sim::stats::RETIRE_TICKS - 1);
                 }
             }
             state = serde_json::from_value(value).unwrap();
@@ -1028,7 +1031,7 @@ fn an_extractor_destroyed_on_its_payout_tick_is_still_credited_that_payout() {
             ledger.observe(&state, &report);
         }
         let fell = fell.expect("premise: the Extractor falls");
-        on_payout |= (fell + 1).is_multiple_of(oxide_sim::stats::EXTRACTOR_REMOTE_YIELD.1);
+        on_payout |= (fell + 1).is_multiple_of(aftermine_sim::stats::EXTRACTOR_REMOTE_YIELD.1);
         let ledgers = ledger.finish(&state);
         let passive: u64 = ledgers[0]
             .buildings

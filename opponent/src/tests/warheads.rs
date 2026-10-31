@@ -1,7 +1,7 @@
 use super::*;
 use crate::investments::{self, Investment, Step};
 use crate::memory::Memory;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::observation::ObservationData;
 use serde_json::json;
 
 /// Two East Crucibles side by side: a warhead between them takes more than

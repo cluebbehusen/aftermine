@@ -1,5 +1,5 @@
 [package]
-name = "oxide-driver"
+name = "aftermine-driver"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,11 +7,11 @@ publish.workspace = true
 description = "Headless harness and live-game client for Oxide"
 
 [dependencies]
-oxide-opponent = { workspace = true }
+aftermine-opponent = { workspace = true }
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
-oxide-protocol = { workspace = true }
-oxide-kit = { workspace = true }
+aftermine-sim = { workspace = true }
+aftermine-protocol = { workspace = true }
+aftermine-kit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -20,7 +20,7 @@ rustc-demangle = "0.1"
 tiny-skia = "0.11"
 
 [dev-dependencies]
-oxide-net = { workspace = true }
+aftermine-net = { workspace = true }
 
 [lints]
 workspace = true

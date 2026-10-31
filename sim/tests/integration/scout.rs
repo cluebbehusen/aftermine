@@ -5,14 +5,14 @@
 use crate::common;
 use common::{building, cmd, open_arena, run_until, unit};
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::stats::SCOUT_HOLD_TICKS;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+use aftermine_sim::stats::SCOUT_HOLD_TICKS;
+use aftermine_sim::{
     BuildingKind, Command, Event, Order, OrderKey, PlayerId, Scenario, StallReason, State, UnitId,
     UnitKind,
 };
+use chassis::grid::TilePos;
 
 const WIDTH: usize = 40;
 const HEIGHT: usize = 24;
@@ -483,7 +483,7 @@ fn a_scout_that_arrives_in_danger_backs_off_instead_of_finishing() {
     let events = scout_until_idle(&mut state, scout, goal, 400);
     let unit = state.unit(scout).unwrap();
     assert!(
-        unit.tile().chebyshev(charge) > oxide_sim::stats::SCOUT_CHARGE_AVOID_RADIUS,
+        unit.tile().chebyshev(charge) > aftermine_sim::stats::SCOUT_CHARGE_AVOID_RADIUS,
         "it left the dangerous goal: {:?}",
         unit.tile()
     );

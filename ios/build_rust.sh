@@ -22,10 +22,10 @@ else
 fi
 
 if [ "$CONFIGURATION" = "Release" ]; then
-    cargo build -p oxide-shell --target "$TARGET" --locked --release
+    cargo build -p aftermine-shell --target "$TARGET" --locked --release
     BUILT="target/$TARGET/release/Oxide"
 else
-    cargo build -p oxide-shell --target "$TARGET" --locked
+    cargo build -p aftermine-shell --target "$TARGET" --locked
     BUILT="target/$TARGET/debug/Oxide"
 fi
 
@@ -35,7 +35,7 @@ cp "$BUILT" "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
 # The app wears the workspace version, derived like the macOS bundle's. App
 # Store Connect requires every upload to carry a higher build number than the
 # last, so the build number is the commit count.
-VERSION="$(cargo pkgid -p oxide-shell)"
+VERSION="$(cargo pkgid -p aftermine-shell)"
 VERSION="${VERSION##*[@#]}"
 BUILD="$(git rev-list --count HEAD)"
 /usr/libexec/PlistBuddy \

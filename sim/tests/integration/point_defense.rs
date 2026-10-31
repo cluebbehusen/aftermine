@@ -4,11 +4,11 @@
 use crate::common;
 use common::{cmd, open_arena, players, run, run_until, unit};
 
-use chassis::grid::TilePos;
-use oxide_sim::scenario::{PlayerSpec, UnitSpec};
-use oxide_sim::{
+use aftermine_sim::scenario::{PlayerSpec, UnitSpec};
+use aftermine_sim::{
     AttackTarget, Command, Event, PlayerId, ProjectileKind, Scenario, State, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 
 fn range(units: Vec<UnitSpec>) -> Scenario {
     Scenario {

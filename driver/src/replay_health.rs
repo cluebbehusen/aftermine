@@ -17,13 +17,13 @@ use crate::replay_ledger::SeatPlayer;
 use crate::replay_summary::{
     BATTLE_QUIET_TICKS, BATTLE_RADIUS_TILES, BATTLE_VALUE_FLOOR, BattleClusterer, SeatLoss, Verdict,
 };
-use anyhow::{Context, Result, bail};
-use chassis::grid::TilePos;
-use oxide_kit::GameReplay;
-use oxide_sim::{
+use aftermine_kit::GameReplay;
+use aftermine_sim::{
     BuildingId, BuildingKind, Event, GameResult, SIM_VERSION, State, TICKS_PER_SECOND, Target,
     TickReport,
 };
+use anyhow::{Context, Result, bail};
+use chassis::grid::TilePos;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -828,11 +828,11 @@ fn entropy(values: impl Iterator<Item = u64> + Clone) -> f64 {
 /// Re-executes `replay`, read from `path`, to its decision or its end.
 pub fn health(path: &Path, replay: &GameReplay) -> Result<MatchHealth> {
     replay.validate(Some(SIM_VERSION))?;
-    let total = oxide_kit::bounded_replay_duration(replay)?;
-    let mut state = oxide_kit::recording::initial_state(replay)?;
+    let total = aftermine_kit::bounded_replay_duration(replay)?;
+    let mut state = aftermine_kit::recording::initial_state(replay)?;
     let mut ledger = ImpactLedger::new(&state);
     let mut pass = Pass::new(&state);
-    let mut playback = oxide_kit::ReplayPlayback::new(replay);
+    let mut playback = aftermine_kit::ReplayPlayback::new(replay);
     while state.current_tick() < total && state.result().is_none() {
         let report = playback.step(&mut state);
         ledger.observe(&state, &report);

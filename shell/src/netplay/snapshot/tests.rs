@@ -1,8 +1,8 @@
 use super::*;
 use crate::game::Game;
 use crate::game::network::NetRole;
+use aftermine_sim::{PlayerId, Scenario};
 use macroquad::prelude::vec2;
-use oxide_sim::{PlayerId, Scenario};
 
 fn hosted() -> Game {
     let mut scenario = Scenario::skirmish();

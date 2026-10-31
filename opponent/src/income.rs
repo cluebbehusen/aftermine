@@ -1,7 +1,7 @@
 //! Income is not observed. The seat estimates it from the change in its bank
 //! since the previous decision plus what that decision spent.
 
-use oxide_sim::TICKS_PER_SECOND;
+use aftermine_sim::TICKS_PER_SECOND;
 use serde::{Deserialize, Serialize};
 
 const TICKS_PER_MINUTE: u64 = 60 * TICKS_PER_SECOND as u64;

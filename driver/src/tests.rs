@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn run_all_bots_is_an_explicit_complete_match_mode() {
-    let cli = Cli::try_parse_from(["oxide-driver", "run", "skirmish", "--all-bots"])
+    let cli = Cli::try_parse_from(["aftermine-driver", "run", "skirmish", "--all-bots"])
         .expect("all-bots run parses");
     let Cmd::Run { bots, all_bots, .. } = cli.cmd else {
         panic!("run parsed as another command")
@@ -10,7 +10,14 @@ fn run_all_bots_is_an_explicit_complete_match_mode() {
     assert!(!bots);
     assert!(all_bots);
     assert!(
-        Cli::try_parse_from(["oxide-driver", "run", "skirmish", "--bots", "--all-bots",]).is_err(),
+        Cli::try_parse_from([
+            "aftermine-driver",
+            "run",
+            "skirmish",
+            "--bots",
+            "--all-bots",
+        ])
+        .is_err(),
         "scenario-configured and all-seat modes are mutually exclusive"
     );
 }
@@ -18,7 +25,7 @@ fn run_all_bots_is_an_explicit_complete_match_mode() {
 #[test]
 fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
     let cli = Cli::try_parse_from([
-        "oxide-driver",
+        "aftermine-driver",
         "bot-eval",
         "skirmish",
         "scenarios/terrace-ledger.json",
@@ -55,8 +62,8 @@ fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
     assert_eq!(scenarios, ["skirmish", "scenarios/terrace-ledger.json"]);
     assert_eq!((ticks, runs), (50_000, 1));
     assert_eq!(personality_seed_base, Some(900));
-    assert_eq!(difficulty, oxide_sim::scenario::BotDifficulty::Prime);
-    assert_eq!(stance, oxide_sim::scenario::BotStance::Aggressive);
+    assert_eq!(difficulty, aftermine_sim::scenario::BotDifficulty::Prime);
+    assert_eq!(stance, aftermine_sim::scenario::BotStance::Aggressive);
     assert_eq!(opponent_difficulty, None);
     assert_eq!(opponent_stance, None);
     assert!(!same_personality_seed);
@@ -67,7 +74,7 @@ fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
 #[test]
 fn bot_eval_parses_cross_difficulty_shared_personality_comparison() {
     let cli = Cli::try_parse_from([
-        "oxide-driver",
+        "aftermine-driver",
         "bot-eval",
         "skirmish",
         "--difficulty",
@@ -92,15 +99,15 @@ fn bot_eval_parses_cross_difficulty_shared_personality_comparison() {
     else {
         panic!("bot-eval parsed as another command")
     };
-    assert_eq!(difficulty, oxide_sim::scenario::BotDifficulty::Prime);
-    assert_eq!(stance, oxide_sim::scenario::BotStance::Balanced);
+    assert_eq!(difficulty, aftermine_sim::scenario::BotDifficulty::Prime);
+    assert_eq!(stance, aftermine_sim::scenario::BotStance::Balanced);
     assert_eq!(
         opponent_difficulty,
-        Some(oxide_sim::scenario::BotDifficulty::Standard)
+        Some(aftermine_sim::scenario::BotDifficulty::Standard)
     );
     assert_eq!(
         opponent_stance,
-        Some(oxide_sim::scenario::BotStance::Turtle)
+        Some(aftermine_sim::scenario::BotStance::Turtle)
     );
     assert!(same_personality_seed);
     assert!(paired);
@@ -108,7 +115,7 @@ fn bot_eval_parses_cross_difficulty_shared_personality_comparison() {
 
 #[test]
 fn bot_pressure_defaults_to_the_shipped_scenarios() {
-    let cli = Cli::try_parse_from(["oxide-driver", "bot-pressure"]).expect("parses");
+    let cli = Cli::try_parse_from(["aftermine-driver", "bot-pressure"]).expect("parses");
     let Cmd::BotPressure {
         dir,
         json,
@@ -123,8 +130,8 @@ fn bot_pressure_defaults_to_the_shipped_scenarios() {
 
 #[test]
 fn bot_summary_requires_rows() {
-    assert!(Cli::try_parse_from(["oxide-driver", "bot-summary"]).is_err());
-    let cli = Cli::try_parse_from(["oxide-driver", "bot-summary", "a.jsonl", "--json"])
+    assert!(Cli::try_parse_from(["aftermine-driver", "bot-summary"]).is_err());
+    let cli = Cli::try_parse_from(["aftermine-driver", "bot-summary", "a.jsonl", "--json"])
         .expect("bot-summary parses");
     let Cmd::BotSummary { rows, json } = cli.cmd else {
         panic!("bot-summary parsed as another command")
@@ -135,7 +142,7 @@ fn bot_summary_requires_rows() {
 
 #[test]
 fn tick_scan_ranks_hundred_tick_windows_by_default() {
-    let cli = Cli::try_parse_from(["oxide-driver", "tick-scan", "match.json"])
+    let cli = Cli::try_parse_from(["aftermine-driver", "tick-scan", "match.json"])
         .expect("a replay alone parses");
     let Cmd::TickScan {
         replay,
@@ -151,14 +158,27 @@ fn tick_scan_ranks_hundred_tick_windows_by_default() {
         ("match.json", 100, 10, false)
     );
     assert!(
-        Cli::try_parse_from(["oxide-driver", "tick-scan", "match.json", "--window", "0"]).is_err()
+        Cli::try_parse_from([
+            "aftermine-driver",
+            "tick-scan",
+            "match.json",
+            "--window",
+            "0"
+        ])
+        .is_err()
     );
 }
 
 #[test]
 fn tick_profile_defaults_to_one_tick_and_requires_its_start() {
-    let cli = Cli::try_parse_from(["oxide-driver", "tick-profile", "match.json", "--from", "40"])
-        .expect("a replay and start parse");
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "tick-profile",
+        "match.json",
+        "--from",
+        "40",
+    ])
+    .expect("a replay and start parse");
     let Cmd::TickProfile {
         replay,
         from,
@@ -176,10 +196,10 @@ fn tick_profile_defaults_to_one_tick_and_requires_its_start() {
         ("match.json", 40, 1, 5)
     );
     assert_eq!((focus, json), (None, false));
-    assert!(Cli::try_parse_from(["oxide-driver", "tick-profile", "match.json"]).is_err());
+    assert!(Cli::try_parse_from(["aftermine-driver", "tick-profile", "match.json"]).is_err());
     assert!(
         Cli::try_parse_from([
-            "oxide-driver",
+            "aftermine-driver",
             "tick-profile",
             "match.json",
             "--from",
@@ -193,7 +213,7 @@ fn tick_profile_defaults_to_one_tick_and_requires_its_start() {
 
 #[test]
 fn bot_cost_takes_a_named_workload_or_a_scenario_with_a_window() {
-    let cli = Cli::try_parse_from(["oxide-driver", "bot-cost", "mature-armies", "--json"])
+    let cli = Cli::try_parse_from(["aftermine-driver", "bot-cost", "mature-armies", "--json"])
         .expect("named workload parses");
     let Cmd::BotCost {
         workload,
@@ -207,14 +227,14 @@ fn bot_cost_takes_a_named_workload_or_a_scenario_with_a_window() {
     };
     assert_eq!(
         workload,
-        Some(oxide_driver::bot_cost::Workload::MatureArmies)
+        Some(aftermine_driver::bot_cost::Workload::MatureArmies)
     );
     assert_eq!((scenario, ticks), (None, None));
     assert!(json);
 
     assert!(
         Cli::try_parse_from([
-            "oxide-driver",
+            "aftermine-driver",
             "bot-cost",
             "--scenario",
             "a.json",
@@ -224,10 +244,10 @@ fn bot_cost_takes_a_named_workload_or_a_scenario_with_a_window() {
         .is_ok()
     );
     for invalid in [
-        &["oxide-driver", "bot-cost"][..],
-        &["oxide-driver", "bot-cost", "--scenario", "a.json"],
+        &["aftermine-driver", "bot-cost"][..],
+        &["aftermine-driver", "bot-cost", "--scenario", "a.json"],
         &[
-            "oxide-driver",
+            "aftermine-driver",
             "bot-cost",
             "duel",
             "--scenario",
@@ -235,7 +255,7 @@ fn bot_cost_takes_a_named_workload_or_a_scenario_with_a_window() {
             "--ticks",
             "9",
         ],
-        &["oxide-driver", "bot-cost", "marathon"],
+        &["aftermine-driver", "bot-cost", "marathon"],
     ] {
         assert!(Cli::try_parse_from(invalid).is_err(), "{invalid:?}");
     }
@@ -244,7 +264,7 @@ fn bot_cost_takes_a_named_workload_or_a_scenario_with_a_window() {
 #[test]
 fn profile_shell_parses_an_exact_replay_window() {
     let cli = Cli::try_parse_from([
-        "oxide-driver",
+        "aftermine-driver",
         "profile-shell",
         "match.json",
         "--from",
@@ -275,15 +295,15 @@ fn profile_shell_parses_an_exact_replay_window() {
 #[test]
 fn the_balance_tools_refuse_a_zero_tick_cap() {
     for tool in ["duel-lab", "composition-search"] {
-        assert!(Cli::try_parse_from(["oxide-driver", tool, "--ticks", "0"]).is_err());
-        assert!(Cli::try_parse_from(["oxide-driver", tool, "--ticks", "1"]).is_ok());
+        assert!(Cli::try_parse_from(["aftermine-driver", tool, "--ticks", "0"]).is_err());
+        assert!(Cli::try_parse_from(["aftermine-driver", tool, "--ticks", "1"]).is_ok());
     }
 }
 
 #[test]
 fn the_balance_tools_name_kinds_they_cannot_field() {
-    use oxide_sim::UnitKind::{Kestrel, Sapper, Sentinel};
-    let armed = oxide_driver::duel_lab::armed_units();
+    use aftermine_sim::UnitKind::{Kestrel, Sapper, Sentinel};
+    let armed = aftermine_driver::duel_lab::armed_units();
     assert!(refuse_unusable(&[Sentinel], &armed, "the search").is_ok());
     let refused = refuse_unusable(&[Sentinel, Kestrel, Sapper], &armed, "the search")
         .expect_err("unarmed kinds are refused");

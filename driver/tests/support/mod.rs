@@ -34,7 +34,7 @@ pub fn check_or_bless(
             panic!("{refusal}");
         }
         let blessed = Fixture {
-            sim_version: oxide_sim::SIM_VERSION,
+            sim_version: aftermine_sim::SIM_VERSION,
             hashes: actual,
         };
         let mut body = serde_json::to_string_pretty(&blessed).unwrap();
@@ -46,24 +46,24 @@ pub fn check_or_bless(
 
     let raw = std::fs::read_to_string(fixture).unwrap_or_else(|_| {
         panic!(
-            "missing fixture {} — run `BLESS=1 cargo test -p oxide-driver` and commit it",
+            "missing fixture {} — run `BLESS=1 cargo test -p aftermine-driver` and commit it",
             fixture.display()
         )
     });
     let expected: Fixture = serde_json::from_str(&raw).unwrap_or_else(|err| {
         panic!(
             "fixture {} does not parse: {err}; \
-             re-bless with `BLESS=1 cargo test -p oxide-driver`",
+             re-bless with `BLESS=1 cargo test -p aftermine-driver`",
             fixture.display()
         )
     });
     assert_eq!(
         expected.sim_version,
-        oxide_sim::SIM_VERSION,
+        aftermine_sim::SIM_VERSION,
         "fixture was blessed under sim {} but the workspace is {} — re-verify the \
          hashes and re-bless so the stamp tells the truth",
         expected.sim_version,
-        oxide_sim::SIM_VERSION,
+        aftermine_sim::SIM_VERSION,
     );
     assert_eq!(
         expected.hashes,

@@ -42,11 +42,11 @@ use crate::screens::shelf::Shelf;
 use crate::screens::wizard::launch::{PersonalitySeedSource, hosted_scenario, launch};
 use crate::screens::wizard::{NewMatchDraft, Out as WizardOut, Step as WizardStep, Wizard};
 use crate::{Args, assets, autosave, config, input, render, screens, theme};
+use aftermine_kit::diagnostics::{Stage, StageGuard};
+use aftermine_protocol::{Key, MouseButton, RawEvent, Request};
+use aftermine_sim::Scenario;
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
-use oxide_kit::diagnostics::{Stage, StageGuard};
-use oxide_protocol::{Key, MouseButton, RawEvent, Request};
-use oxide_sim::Scenario;
 use screen::{Screen, ScreenKind};
 use std::sync::mpsc::Receiver;
 
@@ -158,7 +158,7 @@ struct App {
 fn live_playback(game: &Game) -> Result<PlaybackSession> {
     let mut replay = game.recorder.clone();
     replay.meta.ticks = Some(game.state.current_tick());
-    PlaybackSession::watch(oxide_kit::Recording {
+    PlaybackSession::watch(aftermine_kit::Recording {
         replay,
         keyframes: game.keyframes.encoded(),
     })
@@ -169,10 +169,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     // miniquad paces iOS at 60 fps unless asked for the display's full
     // rate, 120 Hz on ProMotion iPads. Other platforms ignore the request.
     macroquad::miniquad::window::set_preferred_frame_rate(None);
-    let review_font = std::env::var_os("OXIDE_REVIEW_FONT")
+    let review_font = std::env::var_os("AFTERMINE_REVIEW_FONT")
         .map(std::fs::read)
         .transpose()
-        .context("reading OXIDE_REVIEW_FONT")?;
+        .context("reading AFTERMINE_REVIEW_FONT")?;
     let mut font = load_ttf_font_from_bytes(
         review_font
             .as_deref()
@@ -188,7 +188,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
     };
     mark("run enter (first frame)");
-    match oxide_kit::diagnostics::Monitor::start(
+    match aftermine_kit::diagnostics::Monitor::start(
         crate::paths::diagnostics_dir(),
         crate::build_identity(),
     ) {
@@ -223,7 +223,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 
     let mut game = if let Some(path) = &args.replay {
         let replay =
-            oxide_kit::load_replay(path).with_context(|| format!("loading replay {path}"))?;
+            aftermine_kit::load_replay(path).with_context(|| format!("loading replay {path}"))?;
         Game::from_replay(replay)?
     } else {
         let scenario = match &args.scenario {
@@ -252,7 +252,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             config
                 .player_name
                 .as_deref()
-                .and_then(|name| oxide_net::PlayerName::new(name).ok()),
+                .and_then(|name| aftermine_net::PlayerName::new(name).ok()),
         )?;
         Screen::Lobby {
             screen: Box::new(LobbyScreen::waiting(crate::netplay::Lobby::Host(Box::new(
@@ -264,7 +264,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         let name = config
             .player_name
             .as_deref()
-            .and_then(|name| oxide_net::PlayerName::new(name).ok());
+            .and_then(|name| aftermine_net::PlayerName::new(name).ok());
         // Without a saved name the Join form asks for one first.
         let screen = match (crate::netplay::parse_join_address(typed), name) {
             (Ok(address), Some(name)) => {
@@ -281,7 +281,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             }
             (Ok(_), None) => LobbyScreen::join(None, typed),
             (Err(reason), name) => LobbyScreen::failed(
-                name.as_ref().map_or("", oxide_net::PlayerName::as_str),
+                name.as_ref().map_or("", aftermine_net::PlayerName::as_str),
                 typed,
                 reason.to_owned(),
             ),
@@ -314,7 +314,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     prevent_quit();
 
     let debug_rx: Option<Receiver<IncomingRequest>> = if args.debug_server {
-        let limits = oxide_protocol::framing::Limits {
+        let limits = aftermine_protocol::framing::Limits {
             idle_timeout: std::time::Duration::from_secs(args.debug_idle_timeout),
             ..Default::default()
         };
@@ -391,7 +391,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             app.notify(text, danger);
         }
         let visible = screen.visible(&app.game);
-        oxide_kit::diagnostics::frame(oxide_kit::diagnostics::FrameContext {
+        aftermine_kit::diagnostics::frame(aftermine_kit::diagnostics::FrameContext {
             screen: screen.profile_mode(),
             tick: visible.state().current_tick(),
             units: visible.state().units().len(),
@@ -721,7 +721,7 @@ fn pause_menu(game: &Game) -> PauseScreen {
 }
 
 fn visible_stage(screen: &Screen, app: &App, stage: Stage) -> Option<StageGuard<'static>> {
-    oxide_kit::diagnostics::stage(stage, screen.visible(&app.game).tick())
+    aftermine_kit::diagnostics::stage(stage, screen.visible(&app.game).tick())
 }
 
 fn record_profile_frame(

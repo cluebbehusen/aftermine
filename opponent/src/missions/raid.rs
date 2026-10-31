@@ -21,9 +21,9 @@ use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
 use chassis::grid::TilePos;
 
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::scenario::BotStance;
-use oxide_sim::{AttackTarget, BuildingKind, Command, RememberedBuilding, UnitId, UnitKind};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::{AttackTarget, BuildingKind, Command, RememberedBuilding, UnitId, UnitKind};
 use std::cmp::Reverse;
 
 /// Health, per mille, under which a Scuttler or bomber raid turns back.

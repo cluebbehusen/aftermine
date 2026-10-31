@@ -5,17 +5,17 @@
 //! system.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::{building, cmd, players, run, run_until, unit};
-use oxide_sim::scenario::ScenarioMode;
 
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
-use oxide_sim::map::Terrain;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::stats::Domain;
-use oxide_sim::{
+use aftermine_sim::map::Terrain;
+use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{
     BuildingKind, Command, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind,
 };
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::TilePos;
 
 /// A ridge wall at x=12. `gap` opens one corridor at y=2; without it the
 /// two halves share a map and nothing else. Both foundries sit west —
@@ -113,7 +113,7 @@ fn no_route_crosses_a_full_ridge() {
     // Each idles beside the ridge, nearest its goal, having said so once.
     for (unit, beside) in [(walker, TilePos::new(11, 5)), (flyer, TilePos::new(11, 7))] {
         let u = state.unit(unit).unwrap();
-        assert_eq!(u.order, oxide_sim::Order::Idle);
+        assert_eq!(u.order, aftermine_sim::Order::Idle);
         assert_eq!(u.tile(), beside);
         assert_eq!(
             events

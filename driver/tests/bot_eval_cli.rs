@@ -1,4 +1,4 @@
-//! End-to-end contract coverage for `oxide-driver bot-eval`.
+//! End-to-end contract coverage for `aftermine-driver bot-eval`.
 
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -6,7 +6,7 @@ use std::process::Command;
 
 #[test]
 fn controlled_matrix_keeps_controller_and_geometry_provenance_separate() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -78,7 +78,7 @@ fn controlled_matrix_keeps_controller_and_geometry_provenance_separate() {
 
 #[test]
 fn controlled_personality_seed_lists_run_one_cell_each() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -167,7 +167,7 @@ fn controlled_matrix_refuses_nominal_cells_that_execute_identically() {
 #[test]
 fn replay_evidence_requires_its_jsonl_sidecar() {
     let dir = scratch("replay-sidecar-required");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -192,7 +192,7 @@ fn replay_evidence_requires_its_jsonl_sidecar() {
 
 #[test]
 fn controlled_mode_supports_a_severed_ground_map() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/severance.json"),
@@ -210,7 +210,7 @@ fn controlled_mode_supports_a_severed_ground_map() {
 
 #[test]
 fn a_zero_stall_loop_limit_disables_the_early_stop() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -236,7 +236,7 @@ fn a_zero_stall_loop_limit_disables_the_early_stop() {
 fn controlled_mode_refuses_a_non_two_seat_scenario() {
     let scenario =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/compass-grand.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("bot-eval")
         .arg(scenario)
         .args(["--ticks", "1", "--personality-seeds", "40"])
@@ -252,7 +252,7 @@ fn controlled_mode_refuses_a_non_two_seat_scenario() {
 }
 
 fn assert_skirmish_bot_eval_refuses(args: &[&str], expected: &[&str]) {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args(["bot-eval", "skirmish", "--ticks", "1"])
         .args(args)
         .output()
@@ -269,7 +269,7 @@ fn assert_skirmish_bot_eval_refuses(args: &[&str], expected: &[&str]) {
 
 #[test]
 fn paired_cell_emits_two_compact_rows_with_profiles_exchanged() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -335,7 +335,7 @@ fn paired_cell_emits_two_compact_rows_with_profiles_exchanged() {
 
 #[test]
 fn cross_difficulty_cells_share_personality_and_swap_complete_configs() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -403,7 +403,7 @@ fn every_persisted_row_replays_to_its_reported_terminal_state() {
     let dir = scratch("replay-integrity");
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -450,11 +450,11 @@ fn every_persisted_row_replays_to_its_reported_terminal_state() {
             .map(std::path::PathBuf::from)
             .expect("every persisted row points to its replay");
         assert!(replay_path.is_file(), "missing replay: {replay_path:?}");
-        let replay = oxide_kit::load_replay(&replay_path).expect("published replay loads");
+        let replay = aftermine_kit::load_replay(&replay_path).expect("published replay loads");
 
         assert_eq!(replay.setup.name, row["scenario"]);
         assert_eq!(
-            oxide_driver::bot_eval::scenario_fingerprint(&replay.setup).unwrap(),
+            aftermine_driver::bot_eval::scenario_fingerprint(&replay.setup).unwrap(),
             row["scenario_fingerprint"]
         );
         assert_eq!(replay.meta.ticks, row["duration_ticks"].as_u64());
@@ -471,10 +471,10 @@ fn every_persisted_row_replays_to_its_reported_terminal_state() {
         }
 
         let state =
-            oxide_kit::runner::run_replay(&replay, None).expect("published replay reproduces");
+            aftermine_kit::runner::run_replay(&replay, None).expect("published replay reproduces");
         assert_eq!(state.current_tick(), row["duration_ticks"]);
         assert_eq!(
-            oxide_protocol::hash_hex(state.hash()),
+            aftermine_protocol::hash_hex(state.hash()),
             row["final_hash"],
             "row hash must come from its associated replay"
         );
@@ -498,7 +498,7 @@ fn controlled_replay_and_sidecar_preserve_exact_controller_identity() {
     let dir = scratch("configured-provenance");
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -547,11 +547,11 @@ fn controlled_replay_and_sidecar_preserve_exact_controller_identity() {
     );
 
     let replay_path = std::path::PathBuf::from(row["replay"].as_str().unwrap());
-    let replay = oxide_kit::load_replay(&replay_path).unwrap();
+    let replay = aftermine_kit::load_replay(&replay_path).unwrap();
     let description = replay.meta.description.as_deref().unwrap();
     assert!(description.contains("\"difficulty\":\"veteran\""));
     assert_eq!(
-        oxide_driver::bot_eval::command_hash(&replay).unwrap(),
+        aftermine_driver::bot_eval::command_hash(&replay).unwrap(),
         row["command_hash"]
     );
 
@@ -562,7 +562,7 @@ fn controlled_replay_and_sidecar_preserve_exact_controller_identity() {
 fn opponent_override_refuses_an_ambiguous_multiseat_scenario() {
     let scenario =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/compass-grand.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("bot-eval")
         .arg(scenario)
         .args(["--ticks", "1", "--opponent-difficulty", "prime"])
@@ -577,8 +577,10 @@ fn opponent_override_refuses_an_ambiguous_multiseat_scenario() {
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("oxide-bot-eval-cli-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "aftermine-bot-eval-cli-{name}-{}",
+        std::process::id()
+    ));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -587,7 +589,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 #[test]
 fn persisted_evidence_requires_an_explicit_candidate() {
     let dir = scratch("candidate-required");
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
         .arg(dir.join("rows.jsonl"))
         .output()
@@ -611,7 +613,7 @@ fn a_later_invalid_scenario_publishes_no_partial_evidence() {
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args(["bot-eval", "skirmish"])
         .arg(&invalid)
         .args(["--ticks", "1", "--candidate", "candidate-a", "--out"])
@@ -647,7 +649,7 @@ fn overflowing_seed_ranges_publish_no_partial_evidence() {
         let dir = scratch(&format!("{name}-seed-overflow"));
         let replay_dir = dir.join("replays");
         let out = dir.join("rows.jsonl");
-        let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .args([
                 "bot-eval",
                 "skirmish",
@@ -688,7 +690,7 @@ fn rerunning_one_exact_candidate_refuses_to_replace_its_evidence() {
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
     let run = || {
-        Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .args([
                 "bot-eval",
                 "skirmish",
@@ -738,7 +740,7 @@ fn decision_trace_requires_a_persisted_index_and_candidate() {
     let trace = dir.join("trace.jsonl");
     let out = dir.join("rows.jsonl");
 
-    let without_index = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let without_index = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -760,7 +762,7 @@ fn decision_trace_requires_a_persisted_index_and_candidate() {
         "trace-only refusal was unclear: {stderr}"
     );
 
-    let without_candidate = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let without_candidate = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
         .arg(&out)
         .arg("--decision-trace-out")
@@ -782,7 +784,7 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
     let run = |dir: &std::path::Path| {
         let out = dir.join("rows.jsonl");
         let trace = dir.join("trace.jsonl");
-        let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .args([
                 "bot-eval",
                 "skirmish",
@@ -819,7 +821,7 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
         "decision trace JSONL must stay deterministic"
     );
 
-    let without_trace = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let without_trace = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -877,7 +879,7 @@ fn decision_trace_refuses_overwrite_before_publishing_other_evidence() {
     let trace = dir.join("trace.jsonl");
     std::fs::write(&trace, b"earlier trace").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -912,7 +914,7 @@ fn staged_trace_is_cleaned_up_when_replay_staging_fails() {
     let replay_blocker = dir.join("not-a-directory");
     std::fs::write(&replay_blocker, b"keep me").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
             "skirmish",
@@ -943,7 +945,7 @@ fn staged_trace_is_cleaned_up_when_replay_staging_fails() {
 
 #[test]
 fn scenario_bench_reports_profile_and_separate_bot_and_simulation_phases() {
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bench",
             "--scenario",
@@ -971,7 +973,7 @@ fn scenario_bench_reports_profile_and_separate_bot_and_simulation_phases() {
         "personality_seed: 31",
         "bot phase",
         "simulation phase",
-        &format!("sim version {}", oxide_sim::SIM_VERSION),
+        &format!("sim version {}", aftermine_sim::SIM_VERSION),
     ] {
         assert!(text.contains(expected), "missing {expected}: {text}");
     }
@@ -980,7 +982,7 @@ fn scenario_bench_reports_profile_and_separate_bot_and_simulation_phases() {
         ("--stance", "turtle"),
         ("--personality-seed", "31"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .args(["bench", flag, value, "--ticks", "1"])
             .output()
             .unwrap();

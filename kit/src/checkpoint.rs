@@ -5,8 +5,8 @@
 
 use crate::controller::{ControllerCheckpoint, SeatController};
 use crate::{GameReplay, stats::LiveMatchStats};
+use aftermine_sim::{PlayerCommand, PlayerId, SIM_VERSION, Scenario, State};
 use anyhow::{Context, Result, ensure};
-use oxide_sim::{PlayerCommand, PlayerId, SIM_VERSION, Scenario, State};
 use serde::{Deserialize, Serialize};
 
 /// Session envelope revision, separate from simulation and controller revisions.

@@ -1,5 +1,5 @@
 use super::*;
-use oxide_net::Gathering;
+use aftermine_net::Gathering;
 use std::time::Duration;
 
 const HOST: PlayerId = PlayerId(0);

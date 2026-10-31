@@ -13,10 +13,10 @@ use super::cell_field::{CELLS, cell_edges};
 use super::environment::{LAYERS, WAVE_LIFTS, draw_fracture, draw_missing_slab, hash, rgba};
 use super::ground::GroundView;
 use crate::numeric::{self, Fit};
+use aftermine_kit::render::Shading;
+use aftermine_sim::map::{Elevation, Map, Terrain};
 use chassis::grid::{TilePos, as_index};
 use macroquad::prelude::*;
-use oxide_kit::render::Shading;
-use oxide_sim::map::{Elevation, Map, Terrain};
 
 /// Mean brightness of each ground sprite variant, and their median. A tinted
 /// tile is calmed toward the median so the variants' waves stay subtle on

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn marker_preferences_round_trip_and_clamp_without_resetting_other_settings() {
-    let dir = std::env::temp_dir().join(format!("oxide-config-markers-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-markers-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config {
         ui_scale: 1.25,
@@ -51,13 +51,13 @@ fn marker_preferences_round_trip_and_clamp_without_resetting_other_settings() {
 fn a_customized_map_survives_the_round_trip() {
     // A rebind must survive a restart, so the rest of the classic map
     // (including its one-based Slot(9)) must pass load validation.
-    let dir = std::env::temp_dir().join(format!("oxide-config-custom-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-custom-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config::default();
     assert!(
         config.bindings.rebind(
             crate::action::Action::Patrol,
-            crate::action::Chord::bare(oxide_protocol::Key::J)
+            crate::action::Chord::bare(aftermine_protocol::Key::J)
         ),
         "J is free in the classic map"
     );
@@ -65,7 +65,7 @@ fn a_customized_map_survives_the_round_trip() {
     let loaded = Config::load_from(Some(path));
     assert_eq!(
         loaded.bindings.chord_for(crate::action::Action::Patrol),
-        Some(crate::action::Chord::bare(oxide_protocol::Key::J)),
+        Some(crate::action::Chord::bare(aftermine_protocol::Key::J)),
         "the customization survived validation"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -73,7 +73,7 @@ fn a_customized_map_survives_the_round_trip() {
 
 #[test]
 fn an_explicit_unbinding_survives_the_restart() {
-    let dir = std::env::temp_dir().join(format!("oxide-config-unbind-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-unbind-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config::default();
     config
@@ -93,7 +93,7 @@ fn an_explicit_unbinding_survives_the_restart() {
 fn saving_twice_replaces_instead_of_failing() {
     // std's rename replaces existing destinations on every
     // platform; the second save must land and its content win.
-    let dir = std::env::temp_dir().join(format!("oxide-config-twice-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-twice-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config::default();
     config.save_to(&path).expect("first save");
@@ -110,7 +110,7 @@ fn a_failed_save_leaves_the_old_config_standing() {
     // A read-only directory refuses the temp file; the previous
     // config must survive untouched and no temp may linger.
     use std::os::unix::fs::PermissionsExt as _;
-    let dir = std::env::temp_dir().join(format!("oxide-config-fail-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-fail-{}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     let path = dir.join("config.json");
     let config = Config::default();
@@ -135,7 +135,7 @@ fn a_failed_save_leaves_the_old_config_standing() {
 
 #[test]
 fn a_config_round_trips_through_disk() {
-    let dir = std::env::temp_dir().join(format!("oxide-config-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-test-{}", std::process::id()));
     let path = dir.join("config.json");
     let config = Config {
         ui_scale: 1.25,
@@ -153,7 +153,10 @@ fn a_config_round_trips_through_disk() {
 
 #[test]
 fn performance_modes_the_last_join_address_and_the_name_persist() {
-    let dir = std::env::temp_dir().join(format!("oxide-config-performance-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "aftermine-config-performance-{}",
+        std::process::id()
+    ));
     let path = dir.join("config.json");
     let mut config = Config {
         ui_scale: 1.25,
@@ -185,7 +188,7 @@ fn performance_modes_the_last_join_address_and_the_name_persist() {
 
 #[test]
 fn a_hand_edited_ui_scale_loads_within_the_settings_range() {
-    let dir = std::env::temp_dir().join(format!("oxide-config-scale-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-scale-{}", std::process::id()));
     let path = dir.join("config.json");
     for (stored, loaded) in [(0.5, 0.75), (1.25, 1.25), (3.0, 1.5)] {
         let config = Config {
@@ -205,7 +208,7 @@ fn any_trouble_at_all_falls_back_to_defaults() {
     let missing = Config::load_from(Some(PathBuf::from("/definitely/not/here.json")));
     assert_eq!(missing, Config::default());
     // Garbage content.
-    let dir = std::env::temp_dir().join(format!("oxide-config-garbage-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-config-garbage-{}", std::process::id()));
     let path = dir.join("config.json");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(&path, "not json at all").unwrap();
@@ -222,14 +225,15 @@ fn any_trouble_at_all_falls_back_to_defaults() {
 #[test]
 fn an_empty_secondary_slot_and_rebound_primary_survive_reload() {
     use crate::action::{Action, Chord};
-    let dir = std::env::temp_dir().join(format!("oxide-config-secondary-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("aftermine-config-secondary-{}", std::process::id()));
     let path = dir.join("config.json");
     let mut config = Config::default();
     config.bindings.unbind_slot(Action::PanUp, 1);
     assert!(
         config
             .bindings
-            .rebind(Action::PanUp, Chord::bare(oxide_protocol::Key::I))
+            .rebind(Action::PanUp, Chord::bare(aftermine_protocol::Key::I))
     );
     config.save_to(&path).unwrap();
     let loaded = Config::load_from(Some(path));
@@ -261,7 +265,7 @@ fn an_install_id_is_made_once_kept_and_a_bad_one_forgotten() {
     assert_eq!(config.install_id(), id, "the first id sticks");
 
     let dir = std::env::temp_dir().join(format!(
-        "oxide-config-install-{}-{}",
+        "aftermine-config-install-{}-{}",
         std::process::id(),
         crate::entropy::bits()
     ));
@@ -297,7 +301,7 @@ fn finished_lessons_and_the_first_match_persist_once_each() {
     assert!(!config.finish_first_match(), "already finished");
 
     let dir = std::env::temp_dir().join(format!(
-        "oxide-config-lessons-{}-{}",
+        "aftermine-config-lessons-{}-{}",
         std::process::id(),
         crate::entropy::bits()
     ));

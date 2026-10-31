@@ -1,9 +1,9 @@
 //! Seat-swapping geometry for controlled bot comparisons.
 
+use aftermine_sim::BuildingKind;
+use aftermine_sim::scenario::Scenario;
 use anyhow::Result;
 use chassis::grid::as_index;
-use oxide_sim::BuildingKind;
-use oxide_sim::scenario::Scenario;
 
 /// Rotates a scenario 180 degrees: terrain, Foundry anchors, starting
 /// units and pre-built structures all turn together, so each seat keeps

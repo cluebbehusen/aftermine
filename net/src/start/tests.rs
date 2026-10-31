@@ -223,7 +223,7 @@ fn a_resume_start_ships_the_snapshot_and_seals_from_the_saved_tick() {
     let snapshot = [7_u8; 10];
     let pending = [PlayerCommand {
         player: CLIENTS[0],
-        command: oxide_sim::Command::Surrender,
+        command: aftermine_sim::Command::Surrender,
     }];
     let content = StartContent::Resume {
         seats: &[HOST, CLIENTS[0], CLIENTS[1]],

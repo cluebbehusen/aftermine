@@ -1,4 +1,4 @@
-use oxide_sim::stats::MAX_WEAPONS;
+use aftermine_sim::stats::MAX_WEAPONS;
 
 use super::*;
 use crate::presentation_animation::{ConstructionState, PropulsionState};
@@ -334,7 +334,7 @@ fn harvester_work_and_motion_retain_the_cargo_bucket() {
         }
     ));
     state.work = UnitWorkState::Constructing {
-        site: oxide_sim::BuildingId(7),
+        site: aftermine_sim::BuildingId(7),
         target: chassis::grid::TilePos::new(7, 5).center(),
         cycle: 0.5,
     };
@@ -382,7 +382,7 @@ fn excavator_work_and_motion_retain_the_authoritative_cargo_bucket() {
             progress: 0.5,
         },
         UnitWorkState::Constructing {
-            site: oxide_sim::BuildingId(7),
+            site: aftermine_sim::BuildingId(7),
             target: chassis::fx::Vec2Fx::ZERO,
             cycle: 0.7,
         },

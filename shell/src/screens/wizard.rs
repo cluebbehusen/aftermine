@@ -21,15 +21,15 @@ use crate::press::{Fed, Press};
 use crate::screens::browser::{Browser, Out as BrowserOut};
 use crate::seating::{Occupant, Seating};
 use crate::text_field::{Edit, Field, Form, Keyboard};
+use aftermine_net::{InstallId, LobbyEvent, MemberId, PlayerName, RoomSeat, SeatHolder};
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::{PlayerId, Scenario};
 use anyhow::{Context, Result};
 use macroquad::prelude::{
     Rect, Vec2, draw_circle, draw_circle_lines, draw_rectangle, draw_rectangle_lines, draw_text,
     measure_text, vec2,
 };
-use oxide_net::{InstallId, LobbyEvent, MemberId, PlayerName, RoomSeat, SeatHolder};
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::scenario::{BotDifficulty, BotStance};
-use oxide_sim::{PlayerId, Scenario};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -182,7 +182,7 @@ pub struct NewMatchDraft {
     /// own row is inert at launch.
     pub seats: Vec<SeatPlan>,
     /// The player's saved name, which a hosted lobby shows for the host.
-    pub player_name: Option<oxide_net::PlayerName>,
+    pub player_name: Option<aftermine_net::PlayerName>,
 }
 
 impl NewMatchDraft {
@@ -856,7 +856,7 @@ fn swap_seats(draft: &mut NewMatchDraft, members: &mut [Option<MemberId>], a: us
 /// The address a hosting lobby shows, without the port every join
 /// assumes.
 fn shown_address(address: &str) -> String {
-    address.replace(&format!(":{}", oxide_net::DEFAULT_PORT), "")
+    address.replace(&format!(":{}", aftermine_net::DEFAULT_PORT), "")
 }
 
 /// A setup screen's LAN lobby: the sockets and who sits in each open
@@ -1011,7 +1011,7 @@ pub fn draw_seat_markers(
         // Foundry anchors are the 2x2's top-left; mark its center.
         let px = rect.x + (ax as f32 + 1.0) / map_w * rect.w;
         let py = rect.y + (ay as f32 + 1.0) / map_h * rect.h;
-        let accent = styles.get(oxide_sim::PlayerId::from_index(seat));
+        let accent = styles.get(aftermine_sim::PlayerId::from_index(seat));
         if seat == seat_choice {
             draw_circle_lines(px, py, 10.0 * ui, 2.5, macroquad::prelude::WHITE);
         } else if focus_seat == Some(seat) {
@@ -1300,7 +1300,7 @@ impl Wizard {
             overlay: None,
             notice: None,
             saved_name: None,
-            lan_bind: format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT),
+            lan_bind: format!("0.0.0.0:{}", aftermine_net::DEFAULT_PORT),
             resume: None,
             leaving: false,
         }
@@ -1310,7 +1310,7 @@ impl Wizard {
     /// player's seat reserved. The draft stands in for New Match's until
     /// the resume ends.
     pub(crate) fn resume(save: LanSave, draft: &mut NewMatchDraft) -> Self {
-        let bind = format!("0.0.0.0:{}", oxide_net::DEFAULT_PORT);
+        let bind = format!("0.0.0.0:{}", aftermine_net::DEFAULT_PORT);
         Self::resume_on(save, draft, &bind)
     }
 
@@ -1830,7 +1830,7 @@ impl Wizard {
             };
             let view = CardView {
                 seat,
-                accent: styles.get(oxide_sim::PlayerId::from_index(seat)),
+                accent: styles.get(aftermine_sim::PlayerId::from_index(seat)),
                 name: scenario.players[seat].name.as_str(),
                 controller,
                 team: team_chip_label(plan.team_choice),
@@ -2200,7 +2200,7 @@ impl Wizard {
 fn name_check(name: &str) -> Result<(), &'static str> {
     PlayerName::new(name)
         .map(drop)
-        .map_err(oxide_net::NameError::reason)
+        .map_err(aftermine_net::NameError::reason)
 }
 
 /// The first chair, in display order, a joining member takes: an open one
@@ -2452,7 +2452,7 @@ impl Wizard {
         )?;
         let seated = lan.seated();
         lan.lobby.start(
-            oxide_net::StartContent::Fresh(scenario),
+            aftermine_net::StartContent::Fresh(scenario),
             host,
             &seated,
             game.state.hash(),
@@ -2484,7 +2484,7 @@ impl Wizard {
             .chain([game.presentation.human])
             .collect();
         lan.lobby.start(
-            oxide_net::StartContent::Resume {
+            aftermine_net::StartContent::Resume {
                 seats: &seats,
                 tick: game.state.current_tick(),
                 snapshot: &snapshot,

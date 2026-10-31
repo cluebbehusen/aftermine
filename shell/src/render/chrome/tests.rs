@@ -14,12 +14,16 @@ fn hud_copy_names_keys_only_on_desktop() {
         "under attack"
     );
     assert_eq!(
-        alert_badge_text(AlertKind::Assembly(oxide_sim::UnitKind::Maw), "Tab", false),
+        alert_badge_text(
+            AlertKind::Assembly(aftermine_sim::UnitKind::Maw),
+            "Tab",
+            false
+        ),
         "enemy maw assembling [Tab]"
     );
     crate::platform::assert_touch_copy(&alert_badge_text(AlertKind::Attack, "Tab", true));
     crate::platform::assert_touch_copy(&alert_badge_text(
-        AlertKind::Assembly(oxide_sim::UnitKind::Maw),
+        AlertKind::Assembly(aftermine_sim::UnitKind::Maw),
         "Tab",
         true,
     ));
@@ -87,7 +91,7 @@ fn the_queue_toggle_sits_over_the_panel_corner_under_the_dock() {
 #[test]
 fn queue_is_offered_only_to_units_or_while_on() {
     let mut game =
-        crate::game::Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
             .expect("skirmish builds");
     let mut input = InputState::new();
     let shown = |game: &crate::game::Game, input: &InputState| {

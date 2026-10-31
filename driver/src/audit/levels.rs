@@ -9,11 +9,11 @@
 //! keeps a tile clear of peaks, pits, and the map's edge ring, so the art
 //! has room to cut it.
 
+use aftermine_sim::Scenario;
+use aftermine_sim::map::{Elevation, Map, Terrain};
+use aftermine_sim::stats::BuildingKind;
 use anyhow::{Context, Result};
 use chassis::grid::TilePos;
-use oxide_sim::Scenario;
-use oxide_sim::map::{Elevation, Map, Terrain};
-use oxide_sim::stats::BuildingKind;
 
 /// Every way `scenario`'s levels break the authoring rules, as readable
 /// lines; empty when they hold, and always on a flat map.

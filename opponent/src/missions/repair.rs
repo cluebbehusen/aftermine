@@ -10,10 +10,10 @@ use crate::defenses::Span;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
 use crate::map::MapModel;
 use crate::workers::{Routes, UNIT_WELD_DAMAGE, calm, worker};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::stats::{Domain, Mend, REPAIR_BAY_PATIENTS};
+use aftermine_sim::{BuildingKind, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::stats::{Domain, Mend, REPAIR_BAY_PATIENTS};
-use oxide_sim::{BuildingKind, UnitId, UnitKind};
 use std::cmp::Reverse;
 
 impl Missions {
@@ -289,7 +289,7 @@ fn meal(
     // Each tile a machine could feed from, with the wreck its intake would
     // reach there: no farther from a wreck than its hull's excess past one
     // tile plus the intake's reach.
-    let span = oxide_sim::stats::hull_excess(stats.radius)
+    let span = aftermine_sim::stats::hull_excess(stats.radius)
         .ceil()
         .to_num::<i32>()
         + kiln.reach;
@@ -340,7 +340,7 @@ fn intake_reaches(kind: UnitKind, stand: TilePos, tile: TilePos) -> bool {
     let Mend::Kiln(kiln) = stats.mend else {
         return false;
     };
-    oxide_sim::geometry::body_tiles(stand.center(), stats.radius)
+    aftermine_sim::geometry::body_tiles(stand.center(), stats.radius)
         .any(|body| body.chebyshev(tile) <= kiln.reach)
 }
 

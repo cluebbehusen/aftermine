@@ -12,10 +12,10 @@ use crate::build::BuildIdentity;
 use crate::keyframes::{
     ChainEncoder, KEYFRAME_EVERY, KeyframeRecorder, Keyframes, MAX_KEYFRAMES, PendingKeyframes,
 };
+use aftermine_sim::scenario::PlayerSpec;
+use aftermine_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use anyhow::{Result, ensure};
 use chassis::replay::TimedCommand;
-use oxide_sim::scenario::PlayerSpec;
-use oxide_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use serde::{Deserialize, Serialize};
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -135,7 +135,7 @@ impl PendingHistory {
             shared: Arc::clone(&shared),
         };
         if std::thread::Builder::new()
-            .name("oxide-history".into())
+            .name("aftermine-history".into())
             .spawn(move || rebuild.run())
             .is_err()
         {

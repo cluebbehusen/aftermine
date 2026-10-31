@@ -4,10 +4,10 @@
 use crate::common;
 use common::{arena, cmd, run_until, unit};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::stats::{BuildingKind, RECLAIMER_PERIOD};
+use aftermine_sim::{Command, Event, Order, PlayerId, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::stats::{BuildingKind, RECLAIMER_PERIOD};
-use oxide_sim::{Command, Event, Order, PlayerId, State, UnitKind};
 
 /// Builds a turret at (3,3), lets an enemy ranged raid wound it (the
 /// builder is an accepted casualty; the turret wins), then trains a
@@ -16,9 +16,9 @@ use oxide_sim::{Command, Event, Order, PlayerId, State, UnitKind};
 /// test bills only the welders it commands.
 fn wounded_turret(
     state: &mut State,
-    builder: oxide_sim::UnitId,
-    raiders: &[oxide_sim::UnitId],
-) -> (oxide_sim::BuildingId, oxide_sim::UnitId, u32) {
+    builder: aftermine_sim::UnitId,
+    raiders: &[aftermine_sim::UnitId],
+) -> (aftermine_sim::BuildingId, aftermine_sim::UnitId, u32) {
     *state = common::idle_welds_off(state, &[builder]);
     state.tick(&[cmd(
         0,
@@ -295,7 +295,7 @@ fn a_free_stepping_welder_still_consumes_the_room() {
         };
         record["pos"] = serde_json::json!(surface.stance(
             goal.center(),
-            UnitKind::Harvester.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP
+            UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP
         ));
         record["progress"] = serde_json::json!(progress);
         record["order"] = serde_json::to_value(Order::Repair { building: turret }).unwrap();
@@ -344,7 +344,7 @@ fn an_empty_bank_stalls_the_torch() {
                 e,
                 Event::OrderStalled {
                     unit,
-                    reason: oxide_sim::StallReason::InsufficientScrap,
+                    reason: aftermine_sim::StallReason::InsufficientScrap,
                     ..
                 } if *unit == welder
             )
@@ -605,7 +605,7 @@ fn the_last_coin_prepays_its_full_scrap_of_welding() {
     // ramp, milli-scrap owed is proportional cost at 850 per mille, and
     // the torch stalls the tick a second whole coin would come due.
     let millis = |ticks: u64| {
-        (ramp * ticks / ramp_ticks) * basis * oxide_sim::stats::REPAIR_COST_PERMILLE
+        (ramp * ticks / ramp_ticks) * basis * aftermine_sim::stats::REPAIR_COST_PERMILLE
             / u64::from(stats.max_hp)
     };
     let stall_tick = (0..ramp_ticks)

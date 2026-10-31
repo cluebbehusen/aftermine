@@ -7,10 +7,10 @@
 
 use crate::numeric;
 use crate::numeric::Fit;
+use aftermine_protocol::{MouseButton, RawEvent};
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
 use macroquad::prelude::*;
-use oxide_protocol::{MouseButton, RawEvent};
-use oxide_sim::Scenario;
-use oxide_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -1339,7 +1339,7 @@ fn render_preview(scenario: &Scenario, (width, height): PixelBox) -> Option<Prev
     let state = scenario.build().ok()?;
     // Seats draw in one neutral tone: the setup screen's seat markers carry
     // ownership, and a preview has no viewer to be relative to.
-    let pixmap = oxide_kit::render::render_thumbnail(&state, width, height, |_| 0x96_94_8C);
+    let pixmap = aftermine_kit::render::render_thumbnail(&state, width, height, |_| 0x96_94_8C);
     Some(PreviewPixels {
         width: pixmap.width().fit::<u16>(),
         height: pixmap.height().fit::<u16>(),

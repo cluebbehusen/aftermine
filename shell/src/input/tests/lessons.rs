@@ -7,7 +7,7 @@ use super::*;
 use crate::panel::CardAction;
 use crate::render::hud::{self, HudEnv};
 use crate::tutorial::{Lesson, Tutorial};
-use oxide_sim::BuildingKind;
+use aftermine_sim::BuildingKind;
 
 /// Lays the HUD out headlessly in the 1280x800 test window.
 fn relayout(game: &Game, input: &InputState) {
@@ -82,7 +82,7 @@ fn run_to(game: &mut Game, input: &InputState, title: Option<&str>) {
 }
 
 /// The human's machines of `kind`, with where each stands.
-fn own(game: &Game, kind: UnitKind) -> Vec<(oxide_sim::UnitId, Vec2)> {
+fn own(game: &Game, kind: UnitKind) -> Vec<(aftermine_sim::UnitId, Vec2)> {
     game.state
         .units()
         .iter()
@@ -166,7 +166,7 @@ fn hauling(game: &Game) -> usize {
         .iter()
         .filter(|u| {
             u.player == game.presentation.human
-                && matches!(u.order, oxide_sim::Order::Harvest { .. })
+                && matches!(u.order, aftermine_sim::Order::Harvest { .. })
         })
         .count()
 }
@@ -869,7 +869,7 @@ fn damaged(game: &Game) -> Vec2 {
         .buildings()
         .iter()
         .find(|b| b.player == human && b.built() && b.hp < b.stats().max_hp)
-        .map(oxide_sim::Building::center);
+        .map(aftermine_sim::Building::center);
     let machine = game
         .state
         .units()
@@ -877,7 +877,7 @@ fn damaged(game: &Game) -> Vec2 {
         .find(|u| {
             u.player == human
                 && u.hp < u.kind.stats().max_hp
-                && u.domain() == oxide_sim::stats::Domain::Ground
+                && u.domain() == aftermine_sim::stats::Domain::Ground
         })
         .map(|u| u.pos);
     let at = building.or(machine).expect("the raid left damage");

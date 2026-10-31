@@ -2,10 +2,10 @@
 
 use crate::common;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::stats::FOUNDRY_RECOVERY_RESERVE;
+use aftermine_sim::{BuildingKind, Command, Event, Order, PlayerId, Recovery, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::stats::FOUNDRY_RECOVERY_RESERVE;
-use oxide_sim::{BuildingKind, Command, Event, Order, PlayerId, Recovery, State, UnitKind};
 use serde_json::json;
 
 use common::*;
@@ -222,7 +222,7 @@ fn spending_the_recovery_package_does_not_refill_the_entitlement() {
     // by exactly the drip credits that land in the window (zero inside
     // the warm-up).
     let credits_at_settle = drip_credits(&state);
-    for _ in 0..3 * oxide_sim::stats::FOUNDRY_DRIP_PERIOD {
+    for _ in 0..3 * aftermine_sim::stats::FOUNDRY_DRIP_PERIOD {
         state.tick(&[]);
     }
     assert_eq!(
@@ -383,7 +383,7 @@ fn a_prepaid_worker_death_preserves_only_the_unspent_recovery_remainder() {
         .as_array_mut()
         .unwrap()
         .retain(|unit| unit["player"] != json!(0));
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     while state.player(PlayerId(0)).scrap < remainder {
         state.tick(&[]);
     }
@@ -400,7 +400,7 @@ fn a_prepaid_worker_death_preserves_only_the_unspent_recovery_remainder() {
     // bank grows by exactly the drip credits that land in the window
     // (zero inside the warm-up).
     let credits_at_settle = drip_credits(&state);
-    for _ in 0..3 * oxide_sim::stats::FOUNDRY_DRIP_PERIOD {
+    for _ in 0..3 * aftermine_sim::stats::FOUNDRY_DRIP_PERIOD {
         state.tick(&[]);
     }
     assert_eq!(
@@ -443,7 +443,7 @@ fn a_real_harvester_deposit_rearms_one_future_recovery_cycle() {
         .as_array_mut()
         .unwrap()
         .retain(|unit| unit["player"] != json!(0));
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     state.tick(&[]);
     assert_eq!(
         package(&state),
@@ -459,7 +459,7 @@ fn a_real_harvester_deposit_rearms_one_future_recovery_cycle() {
 
 #[test]
 fn every_standing_foundry_smelts_the_drip_after_the_warmup() {
-    use oxide_sim::stats::{FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK};
+    use aftermine_sim::stats::{FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK};
     // The floor waits out its authored warm-up (openings stay exactly as
     // tuned without free income), then credits one scrap per period per
     // standing Foundry.
@@ -533,7 +533,7 @@ fn every_standing_foundry_smelts_the_drip_after_the_warmup() {
     let mut value = serde_json::to_value(resigned).unwrap();
     value["tick"] = (FOUNDRY_DRIP_START_TICK - 1).into();
     value["result"] = serde_json::Value::Null;
-    let mut resigned: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut resigned: aftermine_sim::State = serde_json::from_value(value).unwrap();
     resigned.tick(&[]);
     assert_eq!(
         resigned.player(PlayerId(0)).scrap,
@@ -556,7 +556,7 @@ fn rally_routes_fresh_units_by_role() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(TilePos::new(11, 4))),
+                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
             },
         ),
         cmd(
@@ -578,7 +578,7 @@ fn rally_routes_fresh_units_by_role() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(TilePos::new(10, 6))),
+                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(10, 6))),
             },
         ),
         cmd(
@@ -605,7 +605,7 @@ fn rally_on_foreign_building_is_rejected() {
         0,
         Command::SetRally {
             building: theirs,
-            rally: Some(oxide_sim::Rally::Tile(TilePos::new(5, 5))),
+            rally: Some(aftermine_sim::Rally::Tile(TilePos::new(5, 5))),
         },
     )]);
     assert!(report.events.contains(&Event::CommandRejected {
@@ -652,7 +652,7 @@ fn rally_rejects_non_producers_and_unfinished_producers() {
             0,
             Command::SetRally {
                 building,
-                rally: Some(oxide_sim::Rally::Tile(TilePos::new(10, 5))),
+                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(10, 5))),
             },
         )]);
         assert!(report.events.contains(&Event::CommandRejected {
@@ -753,7 +753,7 @@ fn foundry_refuses_kinds_it_cannot_produce() {
 
 #[test]
 fn fabricator_gates_the_advanced_roster() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // The Scuttler trains at the Foundry, so the Lancer is the cheapest
     // kind that proves the Fabricator's gate.
     let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 4, 6)]);
@@ -793,7 +793,7 @@ fn fabricator_gates_the_advanced_roster() {
         }
     )));
     run_until(&mut state, 900, |s, _| {
-        s.building(fab).is_some_and(oxide_sim::Building::built)
+        s.building(fab).is_some_and(aftermine_sim::Building::built)
     });
     // Finished: lancers roll out; sentinels are still Foundry-only.
     let report = state.tick(&[
@@ -835,7 +835,7 @@ fn fabricator_gates_the_advanced_roster() {
 
 #[test]
 fn harvesters_deposit_only_at_built_foundries() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // A turret sits right beside the node; the Foundry is far away. The
     // hauler must walk the distance — turrets are not drop-offs.
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 10, 4)])
@@ -869,7 +869,7 @@ fn harvesters_deposit_only_at_built_foundries() {
     let foundry = state
         .buildings()
         .iter()
-        .find(|b| b.player == PlayerId(0) && b.kind == oxide_sim::BuildingKind::Foundry)
+        .find(|b| b.player == PlayerId(0) && b.kind == aftermine_sim::BuildingKind::Foundry)
         .unwrap();
     let (f_anchor, f_size) = (foundry.anchor, foundry.kind.size());
     let mut deposit_tile = None;

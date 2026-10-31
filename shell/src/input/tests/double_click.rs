@@ -1,11 +1,11 @@
 use super::*;
-use oxide_sim::{BuildingId, PlayerId};
+use aftermine_sim::{BuildingId, PlayerId};
 
 fn building_game() -> Game {
     let mut map = vec![".".repeat(64); 24];
     map[2].replace_range(2..3, "1");
     map[20].replace_range(58..59, "2");
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Double-click selection", "players": [
                 {"name": "You", "scrap": 1000, "bot": false},
@@ -153,7 +153,7 @@ fn buildings_double_click_keeps_units_ahead_of_buildings() {
     let game = building_game();
     let mut scenario = game.scenario.clone();
     for x in [7, 11] {
-        scenario.units.push(oxide_sim::scenario::UnitSpec {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
             player: 0,
             kind: UnitKind::Harvester,
             x,

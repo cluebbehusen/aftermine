@@ -4,10 +4,10 @@
 use crate::common;
 use common::{cmd, run_until, unit};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{PlayerSpec, ScenarioError, ScenarioMode, UnitSpec};
+use aftermine_sim::{Command, Event, GameResult, Order, PlayerId, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{PlayerSpec, ScenarioError, ScenarioMode, UnitSpec};
-use oxide_sim::{Command, Event, GameResult, Order, PlayerId, Scenario, Target, UnitKind};
 
 /// A 2v2 arena: west team (seats 0, 1) against east team (seats 2, 3).
 fn arena4(units: Vec<UnitSpec>) -> Scenario {
@@ -166,7 +166,7 @@ fn team_sight_is_shared() {
         state.can_see(PlayerId(0), spot),
         "an ally's eyes are the team's eyes"
     );
-    let obs = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let obs = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
         obs.enemy_units
             .iter()

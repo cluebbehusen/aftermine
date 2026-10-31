@@ -22,7 +22,7 @@ fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
 #[test]
 fn the_shelf_tells_another_version_from_damage() {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-shelf-test-{}-{}",
+        "aftermine-shelf-test-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -30,19 +30,19 @@ fn the_shelf_tells_another_version_from_damage() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     let ours: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario.clone());
     ours.save(dir.join("ours.json")).unwrap();
     let mut foreign: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
     foreign.meta.sim_version = SIM_VERSION + 1;
     foreign.save(dir.join("foreign.json")).unwrap();
     let mut damaged: GameReplay =
-        chassis::replay::Replay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+        chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
     damaged.record(
         42,
-        oxide_sim::PlayerCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Surrender,
+        aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Surrender,
         },
     );
     damaged.meta.ticks = Some(10);
@@ -69,7 +69,7 @@ fn the_shelf_tells_another_version_from_damage() {
 #[test]
 fn kinds_read_the_metadata_tag() {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-kinds-test-{}-{}",
+        "aftermine-kinds-test-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -77,7 +77,7 @@ fn kinds_read_the_metadata_tag() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     // A tagged save under a neutral filename: the tag wins.
     let mut named: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario.clone());
     named.meta.kind = Some("save".to_string());
@@ -122,7 +122,7 @@ fn kinds_read_the_metadata_tag() {
 #[test]
 fn shelf_skips_oversized_records_without_hiding_valid_neighbors() {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-shelf-bounds-{}-{}",
+        "aftermine-shelf-bounds-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -131,7 +131,7 @@ fn shelf_skips_oversized_records_without_hiding_valid_neighbors() {
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let valid: GameReplay =
-        chassis::replay::Replay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+        chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
     valid.save(dir.join("valid.json")).unwrap();
     std::fs::File::create(dir.join("oversized.json"))
         .unwrap()
@@ -147,9 +147,9 @@ fn shelf_skips_oversized_records_without_hiding_valid_neighbors() {
 
 #[test]
 fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
-    let dir = std::env::temp_dir().join(format!("oxide-save-order-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-save-order-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     for (name, saved_at, modified) in [
         ("copied", 99, 900),
         ("older", 100, 100),
@@ -196,7 +196,7 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
 #[test]
 fn continue_offers_only_sessions_left_since_the_last_finished_match() {
     let root = std::env::temp_dir().join(format!(
-        "oxide-continue-last-match-{}-{}",
+        "aftermine-continue-last-match-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -205,7 +205,7 @@ fn continue_offers_only_sessions_left_since_the_last_finished_match() {
     ));
     let [autosaves, matches, saves, replays] =
         ["autosaves", "matches", "saves", "replays"].map(|name| root.join(name));
-    let game = crate::game::Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let write = |dir: &std::path::Path, name: &str, kind: &str, saved_at: u64| {
         std::fs::create_dir_all(dir).unwrap();
         let mut meta = game.recorder.meta.clone();
@@ -311,7 +311,7 @@ fn saved_times_read_as_ages_then_dates() {
 #[test]
 fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-shelf-metadata-{}-{}",
+        "aftermine-shelf-metadata-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -319,7 +319,7 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&dir).expect("temp directory");
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     let mut save: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
     save.meta.kind = Some("save".to_string());
     save.meta.description = Some("before the push".to_string());
@@ -327,9 +327,9 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     save.meta.saved_at = Some(u64::MAX);
     save.record(
         42,
-        oxide_sim::PlayerCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Surrender,
+        aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Surrender,
         },
     );
     save.save(dir.join("neutral.json")).expect("save record");
@@ -356,7 +356,7 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
 #[test]
 fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
     let replay: GameReplay =
-        chassis::replay::Replay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+        chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
     let mut meta = replay.meta;
     for (tag, kind) in [
         ("lan", RecordKind::LanSave),

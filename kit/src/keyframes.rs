@@ -9,8 +9,8 @@
 //! for a clone of the world.
 
 use crate::compression;
+use aftermine_sim::State;
 use anyhow::{Context, Result, ensure};
-use oxide_sim::State;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 
@@ -262,7 +262,7 @@ impl KeyframeRecorder {
         let (sender, worlds) = mpsc::channel();
         let shared = Arc::clone(&self.shared);
         std::thread::Builder::new()
-            .name("oxide-keyframes".into())
+            .name("aftermine-keyframes".into())
             .spawn(move || encode_all(&worlds, &shared))
             .ok()
             .map(|_| sender)

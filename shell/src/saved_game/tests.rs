@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{BuildingId, Command, PlayerId, Scenario, UnitKind};
+use aftermine_sim::{BuildingId, Command, PlayerId, Scenario, UnitKind};
 use std::path::PathBuf;
 
 struct Fixture(PathBuf);
@@ -7,7 +7,7 @@ impl Fixture {
     fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "oxide-player-save-{}-{}.oxsave",
+            "aftermine-player-save-{}-{}.oxsave",
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
@@ -92,7 +92,7 @@ fn save_restores_pending_input_history_and_exact_future() {
     );
     let mut recording = restored.recorder.clone();
     recording.meta.ticks = Some(restored.state.current_tick());
-    let mut playback = oxide_kit::playback::Playback::load(recording).unwrap();
+    let mut playback = aftermine_kit::playback::Playback::load(recording).unwrap();
     playback.seek(restored.state.current_tick());
     assert_eq!(playback.state.hash(), restored.state.hash());
     // A second save carries the whole history on, needing no other file.
@@ -174,8 +174,8 @@ fn metadata_reads_stop_before_the_payload_and_corruption_is_checked_on_load() {
 
 #[test]
 fn representative_checkpoints_stay_compact_and_continue_exactly() {
-    let mut dense = oxide_kit::bench::mass_battle(250);
-    oxide_kit::bench::all_bots(&mut dense);
+    let mut dense = aftermine_kit::bench::mass_battle(250);
+    aftermine_kit::bench::all_bots(&mut dense);
     let skyhook: Scenario = serde_json::from_str(include_str!(
         "../../../fixtures/scenarios/skyhook-anchorage.json"
     ))

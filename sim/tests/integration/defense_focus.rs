@@ -2,11 +2,11 @@
 
 use crate::common;
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::{
     BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 
 use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
 

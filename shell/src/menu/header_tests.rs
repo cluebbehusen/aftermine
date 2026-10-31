@@ -1,6 +1,6 @@
 use super::*;
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
-use oxide_protocol::{Key, RawEvent};
 
 /// Rows `[H] a b [H] c d`, each row standing for its own index.
 fn sectioned() -> Menu<usize> {
@@ -106,12 +106,12 @@ fn mouse_activation_requires_a_release_on_the_armed_row() {
         menu.handle(
             &[
                 RawEvent::MouseDown {
-                    button: oxide_protocol::MouseButton::Left,
+                    button: aftermine_protocol::MouseButton::Left,
                     x: first.x,
                     y: first.y,
                 },
                 RawEvent::MouseUp {
-                    button: oxide_protocol::MouseButton::Left,
+                    button: aftermine_protocol::MouseButton::Left,
                     x: second.x,
                     y: second.y,
                 },
@@ -125,12 +125,12 @@ fn mouse_activation_requires_a_release_on_the_armed_row() {
         menu.handle(
             &[
                 RawEvent::MouseDown {
-                    button: oxide_protocol::MouseButton::Left,
+                    button: aftermine_protocol::MouseButton::Left,
                     x: second.x,
                     y: second.y,
                 },
                 RawEvent::MouseUp {
-                    button: oxide_protocol::MouseButton::Left,
+                    button: aftermine_protocol::MouseButton::Left,
                     x: second.x,
                     y: second.y,
                 },
@@ -207,7 +207,7 @@ fn binding_rows_widen_the_list_and_report_the_clicked_chord() {
     assert!(row.w > plain.item_rect(1).expect("a plain row").w);
     let columns = BindingColumns::of(row, crate::render::ui_scale());
     let click = |x: f32| {
-        let button = oxide_protocol::MouseButton::Left;
+        let button = aftermine_protocol::MouseButton::Left;
         let y = row.center().y;
         [
             RawEvent::MouseDown { button, x, y },

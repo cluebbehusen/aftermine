@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::UnitId;
+use aftermine_sim::UnitId;
 
 fn roundtrip(req: &Request) -> Request {
     let envelope = RequestEnvelope {
@@ -261,8 +261,8 @@ fn every_request_variant_survives_an_envelope_roundtrip() {
 
 #[test]
 fn every_command_variant_survives_the_send_command_wire() {
+    use aftermine_sim::{BuildingId, BuildingKind, Target, UnitKind};
     use chassis::grid::TilePos;
-    use oxide_sim::{BuildingId, BuildingKind, Target, UnitKind};
     let commands = vec![
         Command::ReturnCargo {
             units: vec![UnitId(4)],
@@ -326,7 +326,7 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::SetRally {
             building: BuildingId(6),
-            rally: Some(oxide_sim::Rally::Unit(UnitId(3))),
+            rally: Some(aftermine_sim::Rally::Unit(UnitId(3))),
         },
         Command::Surrender,
         Command::RepairUnit {
@@ -365,7 +365,7 @@ fn every_command_variant_survives_the_send_command_wire() {
         },
         Command::CancelOrder {
             unit: UnitId(3),
-            key: oxide_sim::OrderKey::Walk {
+            key: aftermine_sim::OrderKey::Walk {
                 tile: TilePos::new(6, 2),
             },
             from_end: 1,
@@ -438,7 +438,7 @@ fn every_command_variant_survives_the_send_command_wire() {
 
 #[test]
 fn every_reply_variant_survives_an_envelope_roundtrip() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let full = StateView::capture(
         &state,
         StateFilter {
@@ -454,7 +454,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
             speed: 1.0,
             scenario: "skirmish".into(),
             sim_version: 9,
-            result: Some(oxide_sim::GameResult::Victory { team: 1 }),
+            result: Some(aftermine_sim::GameResult::Victory { team: 1 }),
             recorded_commands: 3,
         }),
         Reply::State(full),
@@ -533,7 +533,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
             hash: hash_hex(0xbcde),
             events: vec![Event::CommandRejected {
                 player: PlayerId(0),
-                reason: oxide_sim::command::RejectReason::BadSite,
+                reason: aftermine_sim::command::RejectReason::BadSite,
             }],
         }),
         Reply::Screenshot(ScreenshotView {

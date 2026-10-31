@@ -17,7 +17,7 @@ pub mod runner;
 pub mod stats;
 pub mod world_snapshot;
 
-use oxide_sim::{PlayerCommand, Scenario};
+use aftermine_sim::{PlayerCommand, Scenario};
 
 /// Upper bound on the ticks a replay may span before loading or running it
 /// is refused (about 28 game-hours). A syntactically valid file can claim an

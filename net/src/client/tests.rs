@@ -1,6 +1,6 @@
 use super::*;
 use crate::{HASH_INTERVAL, SeatState};
-use oxide_sim::{PlayerId, UnitId};
+use aftermine_sim::{PlayerId, UnitId};
 
 fn stop(unit: u32) -> Command {
     Command::Stop {
@@ -249,7 +249,7 @@ fn taking_a_batch_before_acknowledging_the_last_is_a_caller_bug() {
 
 #[test]
 fn the_client_hears_which_bot_took_a_seat() {
-    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
     let config = BotConfig::new(BotDifficulty::Veteran, BotStance::Aggressive, 3);
     let mut client = ClientSession::new(secs(0));
     let line = HostMessage::Replaced {

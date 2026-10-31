@@ -1,15 +1,15 @@
-//! End-to-end contract coverage for `oxide-driver replay-ledger`.
+//! End-to-end contract coverage for `aftermine-driver replay-ledger`.
 
+use aftermine_kit::GameReplay;
+use aftermine_sim::{SIM_VERSION, Scenario};
 use chassis::replay::Replay;
-use oxide_kit::GameReplay;
-use oxide_sim::{SIM_VERSION, Scenario};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-replay-ledger-cli-{name}-{}",
+        "aftermine-replay-ledger-cli-{name}-{}",
         std::process::id()
     ));
     std::fs::remove_dir_all(&dir).ok();
@@ -18,7 +18,7 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn ledger(args: &[&std::ffi::OsStr]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("replay-ledger")
         .args(args)
         .output()

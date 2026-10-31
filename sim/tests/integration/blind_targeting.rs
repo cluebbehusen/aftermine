@@ -1,17 +1,19 @@
 //! Player-knowledge targeting contracts, through ordinary commands and ticks.
 
 use crate::common;
+use aftermine_sim::scenario::BuildingSpec;
+use aftermine_sim::{
+    AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Target, UnitKind,
+};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use common::*;
-use oxide_sim::scenario::BuildingSpec;
-use oxide_sim::{AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Target, UnitKind};
 
 fn radar_scene(
     gun: Option<UnitKind>,
     defense: Option<BuildingKind>,
     enemy: UnitKind,
-) -> oxide_sim::State {
+) -> aftermine_sim::State {
     let mut units = vec![unit(1, enemy, 14, 8)];
     if let Some(kind) = gun {
         units.push(unit(0, kind, 5, 7));
@@ -32,7 +34,7 @@ fn radar_scene(
         state
             .vision(PlayerId(0))
             .contacts()
-            .contains(&oxide_sim::RadarContact {
+            .contains(&aftermine_sim::RadarContact {
                 tile: TilePos::new(14, 8),
                 domain: enemy.stats().domain,
             })
@@ -40,7 +42,7 @@ fn radar_scene(
     state
 }
 
-fn blip(state: &oxide_sim::State) -> AttackTarget {
+fn blip(state: &aftermine_sim::State) -> AttackTarget {
     AttackTarget::Contact(
         state
             .vision(PlayerId(0))
@@ -336,7 +338,7 @@ fn unknown_contact_command_is_hash_inert_at_dispatch() {
         0,
         Command::Attack {
             units: vec![gun],
-            target: AttackTarget::Contact(oxide_sim::ContactId(u32::MAX)),
+            target: AttackTarget::Contact(aftermine_sim::ContactId(u32::MAX)),
             queue: false,
         },
     )];
@@ -363,7 +365,7 @@ fn contact_histories_round_trip_and_replay_deterministically() {
     for _ in 0..20 {
         state.tick(&[]);
     }
-    let mut replay: oxide_sim::State =
+    let mut replay: aftermine_sim::State =
         serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
     for _ in 0..100 {
         assert_eq!(state.tick(&[]), replay.tick(&[]));
@@ -477,7 +479,7 @@ fn fabricated_and_corrupted_contact_histories_are_rejected() {
             _ => unreachable!(),
         }
         assert!(
-            serde_json::from_value::<oxide_sim::State>(data).is_err(),
+            serde_json::from_value::<aftermine_sim::State>(data).is_err(),
             "{field}"
         );
     }
@@ -486,7 +488,9 @@ fn fabricated_and_corrupted_contact_histories_are_rejected() {
 #[test]
 fn every_ground_combat_chassis_can_act_on_a_building_memory() {
     for kind in UnitKind::ALL {
-        if !kind.stats().can_target(oxide_sim::stats::Domain::Ground)
+        if !kind
+            .stats()
+            .can_target(aftermine_sim::stats::Domain::Ground)
             && kind.stats().demolition.is_none()
         {
             continue;
@@ -576,7 +580,7 @@ fn concealed_identity_domain_health_and_position_do_not_change_firing_decisions(
         },
     );
     let a = air.tick(std::slice::from_ref(&command));
-    let launches = |report: oxide_sim::TickReport| {
+    let launches = |report: aftermine_sim::TickReport| {
         report
             .events
             .into_iter()
@@ -613,7 +617,7 @@ fn concealed_identity_domain_health_and_position_do_not_change_firing_decisions(
                 .unwrap();
             }
         }
-        let mut concealed: oxide_sim::State = serde_json::from_value(document).unwrap();
+        let mut concealed: aftermine_sim::State = serde_json::from_value(document).unwrap();
         concealed.validate_invariants().unwrap();
         assert_eq!(
             concealed.vision(PlayerId(0)).tracks(),
@@ -905,7 +909,7 @@ fn unreachable_blind_attacks_stall_once_and_clear_the_program() {
                     },
                 ),
             ]);
-            assert!(report.events.iter().any(|event| matches!(event, Event::OrderStalled { unit, reason: oxide_sim::event::StallReason::NoRoute, .. } if *unit == gun)), "{kind:?} remembered={remembered}: {:?}", report.events);
+            assert!(report.events.iter().any(|event| matches!(event, Event::OrderStalled { unit, reason: aftermine_sim::event::StallReason::NoRoute, .. } if *unit == gun)), "{kind:?} remembered={remembered}: {:?}", report.events);
             for _ in 0..20 {
                 assert!(!state.tick(&[]).events.iter().any(
                     |event| matches!(event, Event::OrderStalled { unit, .. } if *unit == gun)
@@ -959,7 +963,7 @@ fn a_focus_on_a_friendly_hidden_or_incompatible_unit_is_rejected() {
             .iter_mut()
             .find(|b| b["id"] == serde_json::json!(defense))
             .unwrap()["focus"] = serde_json::to_value(Target::Unit(state.units()[0].id)).unwrap();
-        let error = serde_json::from_value::<oxide_sim::State>(data).unwrap_err();
+        let error = serde_json::from_value::<aftermine_sim::State>(data).unwrap_err();
         assert!(
             error.to_string().contains("invalid defense focus"),
             "{case}: {error}"
@@ -974,7 +978,7 @@ fn building_radar_scene(
     rotated: bool,
     masts: [(i32, i32); 2],
     fabricator: (i32, i32),
-) -> oxide_sim::State {
+) -> aftermine_sim::State {
     let (width, height) = (40, 30);
     let (me, them) = if rotated { (1, 0) } else { (0, 1) };
     let place = |player, kind: BuildingKind, x: i32, y: i32| {
@@ -1040,15 +1044,15 @@ fn radar_reports_one_mirrored_blip_per_apparent_hostile_building() {
     );
 }
 
-fn mirror(contacts: &[oxide_sim::RadarContact]) -> Vec<oxide_sim::RadarContact> {
+fn mirror(contacts: &[aftermine_sim::RadarContact]) -> Vec<aftermine_sim::RadarContact> {
     let mut mirrored: Vec<_> = contacts
         .iter()
-        .map(|c| oxide_sim::RadarContact {
+        .map(|c| aftermine_sim::RadarContact {
             tile: TilePos::new(39 - c.tile.x, 29 - c.tile.y),
             domain: c.domain,
         })
         .collect();
-    mirrored.sort_unstable_by_key(oxide_sim::RadarContact::sort_key);
+    mirrored.sort_unstable_by_key(aftermine_sim::RadarContact::sort_key);
     mirrored
 }
 
@@ -1094,7 +1098,7 @@ fn defenses_fire_on_a_building_known_only_by_radar() {
             .iter_mut()
             .find(|row| row["kind"] == serde_json::to_value(kind).unwrap())
             .unwrap()["tier"] = serde_json::json!(tier);
-        let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+        let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
         state.tick(&[]);
         let victim = state
             .buildings()

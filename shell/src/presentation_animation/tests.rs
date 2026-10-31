@@ -1,10 +1,10 @@
-use oxide_sim::TickReport;
+use aftermine_sim::TickReport;
 use std::collections::VecDeque;
 
+use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Scenario, Target};
 use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, Target};
 
 use super::*;
 
@@ -521,7 +521,7 @@ fn harvesting_requires_real_work_and_cargo_is_a_continuous_fill() {
         anchor: node,
         withdrawing: false,
     };
-    unit.pos = oxide_sim::geometry::work_approach_point(
+    unit.pos = aftermine_sim::geometry::work_approach_point(
         node.offset(-1, 0),
         node,
         (1, 1),
@@ -696,7 +696,7 @@ fn a_worker_tending_a_building_shows_the_repair() {
             && unit.work_stopped()
             && unit.order
                 == Order::Tend {
-                    goal: oxide_sim::Goal::at(TilePos::new(4, 6)),
+                    goal: aftermine_sim::Goal::at(TilePos::new(4, 6)),
                     weld: Some(Target::Building(turret)),
                 }
     };
@@ -806,14 +806,14 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         gun_heading: None,
     };
     let mut builder = Unit {
-        motor: oxide_sim::Motor::Ground {
+        motor: aftermine_sim::Motor::Ground {
             speed: chassis::fx::Fx::ZERO,
             stall_ticks: 0,
         },
         id: UnitId(2),
         player: PlayerId(0),
         kind: UnitKind::Harvester,
-        pos: oxide_sim::geometry::work_approach_point(
+        pos: aftermine_sim::geometry::work_approach_point(
             site.anchor.offset(-1, 0),
             site.anchor,
             site.kind.size(),
@@ -821,7 +821,7 @@ fn construction_requires_the_assigned_harvester_at_the_site() {
         ),
         hp: UnitKind::Harvester.stats().max_hp,
         damaged_at: None,
-        worker: Some(oxide_sim::Worker::default()),
+        worker: Some(aftermine_sim::Worker::default()),
         cooldowns: [0; MAX_WEAPONS],
         turret_heading: None,
         point_defense: None,
@@ -1207,18 +1207,18 @@ fn construction_progress_freezes_machinery_when_inactive_or_reduced() {
 }
 
 /// A Turret one tick into an automatic upgrade.
-fn upgrading_turret() -> (oxide_sim::State, oxide_sim::BuildingId) {
+fn upgrading_turret() -> (aftermine_sim::State, aftermine_sim::BuildingId) {
     let mut scenario = Scenario::skirmish();
     scenario.players[0].scrap = 500;
     scenario.units.clear();
     scenario.buildings.extend([
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 0,
             kind: BuildingKind::Fabricator,
             x: 9,
             y: 3,
         },
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 0,
             kind: BuildingKind::Turret,
             x: 12,
@@ -1232,9 +1232,9 @@ fn upgrading_turret() -> (oxide_sim::State, oxide_sim::BuildingId) {
         .find(|building| building.kind == BuildingKind::Turret)
         .expect("fixture has a turret")
         .id;
-    state.tick(&[oxide_sim::PlayerCommand {
+    state.tick(&[aftermine_sim::PlayerCommand {
         player: PlayerId(0),
-        command: oxide_sim::Command::UpgradeBuilding { building: turret },
+        command: aftermine_sim::Command::UpgradeBuilding { building: turret },
     }]);
     (state, turret)
 }
@@ -1310,7 +1310,7 @@ fn capture_and_retention_entrypoints_follow_the_current_world() {
 fn only_rotorcraft_and_the_roc_spin_lift_rotors() {
     for kind in UnitKind::ALL {
         let stats = kind.stats();
-        let rotorcraft = stats.domain == oxide_sim::stats::Domain::Air
+        let rotorcraft = stats.domain == aftermine_sim::stats::Domain::Air
             && stats.turn_rate == 0
             && stats.cruise_turn_rate == 0;
         // The Roc flies heading-first but hovers on ducted lift fans that
@@ -1516,7 +1516,7 @@ fn mantle_charge_progress_follows_the_serial_counter_while_moving() {
     let stats = UnitKind::Mantle.stats().point_defense.unwrap();
     facts.moved = true;
     for charges in 0..=stats.charges {
-        facts.point_defense = Some(oxide_sim::state::PointDefense {
+        facts.point_defense = Some(aftermine_sim::state::PointDefense {
             charges,
             recharge: if charges == stats.charges {
                 0

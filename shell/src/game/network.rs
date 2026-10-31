@@ -3,12 +3,12 @@
 //! staged commands.
 
 use super::{Game, MAX_TICKS_PER_FRAME, TICK_DT};
+use aftermine_kit::world_snapshot::WorldSnapshot;
+use aftermine_net::{ClientSession, HostSession};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Scenario, TickReport};
 use anyhow::{Result, ensure};
 use macroquad::prelude::Vec2;
-use oxide_kit::world_snapshot::WorldSnapshot;
-use oxide_net::{ClientSession, HostSession};
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, TickReport};
 use std::time::Duration;
 
 /// Batches a client keeps queued to absorb jitter while connected.
@@ -62,7 +62,7 @@ impl Game {
         );
         let state = origin.state().clone();
         let recorder = super::Replay::with_origin(
-            oxide_sim::SIM_VERSION,
+            aftermine_sim::SIM_VERSION,
             crate::build_identity().label(),
             scenario.clone(),
             origin,
@@ -95,10 +95,10 @@ impl Game {
         let seed = chassis::rng::Pcg32::new(self.state.hash() ^ u64::from(seat.0), TAKEOVER_STREAM)
             .next_u64();
         let config = BotConfig::new(difficulty, stance, seed);
-        let controller = oxide_kit::controller::SeatController::configured(
+        let controller = aftermine_kit::controller::SeatController::configured(
             seat,
             config,
-            &oxide_kit::controller::OpponentMap::new(&self.scenario),
+            &aftermine_kit::controller::OpponentMap::new(&self.scenario),
         )?;
         // A decision prepared for the old roster cannot finish.
         self.bot_decision = None;

@@ -1,7 +1,7 @@
 use super::*;
+use aftermine_opponent::MissionKind;
+use aftermine_sim::{BuildingKind, PlayerId, Scenario};
 use chassis::grid::TilePos;
-use oxide_opponent::MissionKind;
-use oxide_sim::{BuildingKind, PlayerId, Scenario};
 
 fn launch(mission: u64, defense: u64, sent: u64) -> Launch {
     Launch {
@@ -92,7 +92,7 @@ fn an_ended_attack_closes_when_its_units_launch_again() {
     let state = Scenario::skirmish().build().unwrap();
     let ledger = ImpactLedger::new(&state);
     let mut follower = AttackFollower::new([true]);
-    let unit = |id| oxide_sim::UnitId(id);
+    let unit = |id| aftermine_sim::UnitId(id);
     let first = Launch {
         units: vec![unit(7), unit(8)],
         ..launch(1, 0, 600)

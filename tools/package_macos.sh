@@ -11,11 +11,11 @@
 # Then smoke it:  dist/Oxide.app/Contents/MacOS/Oxide --debug-server
 set -eu
 
-cargo build --release -p oxide-shell
+cargo build --release -p aftermine-shell
 
 # The bundle wears the workspace version, and its build number is the commit
 # count, which only rises.
-VERSION="$(cargo pkgid -p oxide-shell)"
+VERSION="$(cargo pkgid -p aftermine-shell)"
 VERSION="${VERSION##*[@#]}"
 BUILD="$(git rev-list --count HEAD)"
 

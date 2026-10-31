@@ -17,10 +17,10 @@ use crate::frame::{HomeFrame, doubled};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
+use aftermine_sim::UnitId;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::stats::Domain;
 use chassis::grid::TilePos;
-use oxide_sim::UnitId;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::stats::Domain;
 
 /// Tiles around another clearance's aim left to it.
 const HELD_TILES: i32 = 4;
@@ -396,7 +396,7 @@ fn bomber(unit: &UnitObs) -> bool {
 }
 
 /// Whether `kind`'s ground weapon hits around where it lands.
-pub(super) fn splash(kind: oxide_sim::UnitKind) -> bool {
+pub(super) fn splash(kind: aftermine_sim::UnitKind) -> bool {
     kind.stats()
         .weapons
         .iter()

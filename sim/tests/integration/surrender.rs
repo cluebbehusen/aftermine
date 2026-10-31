@@ -3,13 +3,13 @@
 //! scenarios through the public API only.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::cmd;
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::PlayerSpec;
+use aftermine_sim::{Command, Event, GameResult, PlayerCommand, PlayerId, SIM_VERSION, Scenario};
 use chassis::replay::Replay;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::PlayerSpec;
-use oxide_sim::{Command, Event, GameResult, PlayerCommand, PlayerId, SIM_VERSION, Scenario};
 
 /// A 2v2 of bare Foundries: west team (seats 0, 1) against east
 /// (seats 2, 3). No armies — concession is the only way anyone here

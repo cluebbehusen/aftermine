@@ -8,9 +8,9 @@ use super::clear::{self, Sweep};
 use super::strike::{self, Raid};
 use super::{Mission, Missions, Objective, StrikePhase, Task, mine, run, standing};
 use crate::decision::Ledger;
+use aftermine_sim::UnitId;
+use aftermine_sim::observation::{ObservationData, UnitObs};
 use chassis::grid::TilePos;
-use oxide_sim::UnitId;
-use oxide_sim::observation::{ObservationData, UnitObs};
 
 /// Tiles between a member and the aim at which the fight begins.
 const CONTACT_TILES: i32 = 6;

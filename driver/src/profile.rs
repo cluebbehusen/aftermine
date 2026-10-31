@@ -2,10 +2,10 @@
 
 use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home};
 use crate::client::Client;
+use aftermine_kit::runner::GameReplay;
+use aftermine_protocol::{FrameProfileView, Reply, Request};
+use aftermine_sim::TICKS_PER_SECOND;
 use anyhow::{Context, Result, bail, ensure};
-use oxide_kit::runner::GameReplay;
-use oxide_protocol::{FrameProfileView, Reply, Request};
-use oxide_sim::TICKS_PER_SECOND;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -67,7 +67,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
         options.to > options.from,
         "--to must be greater than --from"
     );
-    oxide_protocol::check_speed(options.speed).map_err(anyhow::Error::msg)?;
+    aftermine_protocol::check_speed(options.speed).map_err(anyhow::Error::msg)?;
 
     let replay = options
         .replay
@@ -76,7 +76,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
     // Validate before paying for a shell build or opening a window. The shell
     // remains the reproducer; this merely turns malformed input into a prompt
     // CLI error.
-    let record = oxide_kit::load_replay(&replay)
+    let record = aftermine_kit::load_replay(&replay)
         .with_context(|| format!("loading replay {}", replay.display()))?;
     let total = record.meta.ticks.unwrap_or_else(|| {
         record
@@ -107,7 +107,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
             "--port",
             &options.port.to_string(),
         ])
-        .env("OXIDE_RESOURCE_ROOT", &root)
+        .env("AFTERMINE_RESOURCE_ROOT", &root)
         .current_dir(&workspace.directory);
     isolate_home(&mut command, &workspace.directory);
     let child = command.spawn().context("spawning profiled Oxide shell")?;
@@ -268,7 +268,7 @@ struct ProfileWorkspace {
 
 impl ProfileWorkspace {
     fn create(root: &Path, port: u16, replay: &GameReplay) -> Result<Self> {
-        let parent = root.join("target/oxide-profile");
+        let parent = root.join("target/aftermine-profile");
         std::fs::create_dir_all(&parent).context("creating profile scratch directory")?;
         let directory = parent.join(format!(
             "{}-{port}-{}",

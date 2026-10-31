@@ -6,10 +6,10 @@ use super::guns::{first_placeable, sites_at};
 use super::{ATTACKER_MARGIN, Guard, distance2};
 use crate::frame::{doubled, footprint_centre, gap};
 use crate::map::Gate;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::BuildingObs;
+use aftermine_sim::stats::{CHARGE_DAMAGE, Domain};
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::BuildingObs;
-use oxide_sim::stats::{CHARGE_DAMAGE, Domain};
 use std::cmp::Reverse;
 
 /// Tiles beyond a base's edge along its approach where its Scuttle Charges

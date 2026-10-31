@@ -20,7 +20,7 @@ const KEEP_MATCHES: usize = 20;
 const TEMP_ORPHAN_AGE: Duration = Duration::from_secs(3600);
 /// Invalid-JSON ownership marker held at a destination until its record
 /// atomically replaces it.
-const RESERVATION_MARKER_PREFIX: &str = "oxide-save-reservation:";
+const RESERVATION_MARKER_PREFIX: &str = "aftermine-save-reservation:";
 
 /// What a successful [`SaveJob::run`] call actually did.
 #[derive(Debug)]
@@ -329,9 +329,9 @@ pub(crate) enum SaveData {
     /// encoding the worker waits out, as it does a resumed match's history
     /// check.
     Recording(
-        oxide_kit::GameReplay,
-        oxide_kit::keyframes::PendingKeyframes,
-        Option<Box<oxide_kit::history::PendingHistory>>,
+        aftermine_kit::GameReplay,
+        aftermine_kit::keyframes::PendingKeyframes,
+        Option<Box<aftermine_kit::history::PendingHistory>>,
     ),
 }
 
@@ -467,7 +467,8 @@ impl SaveJob {
                     if let Some(history) = history {
                         history.wait(&mut replay, &mut keyframes);
                     }
-                    oxide_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
+                    aftermine_kit::save_recording(path, &replay, &keyframes.wait())
+                        .map_err(Into::into)
                 }
             };
             let path = if let Some(mark) = &self.mark {

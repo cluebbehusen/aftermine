@@ -3,8 +3,8 @@
 use crate::game::Scene;
 use crate::numeric;
 use crate::render::prim::{fill_circle, stroke_circle};
+use aftermine_sim::Unit;
 use macroquad::prelude::*;
-use oxide_sim::Unit;
 
 thread_local! {
     static PREFS: std::cell::Cell<crate::config::MarkerPrefs> =
@@ -85,7 +85,7 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
             let fill = Color::new(0.065, 0.065, 0.075, opacity);
             let ink = Color::new(0.91, 0.89, 0.83, opacity);
             let selected = game.presentation.selection.units.contains(&unit.id);
-            let air = unit.domain() == oxide_sim::stats::Domain::Air;
+            let air = unit.domain() == aftermine_sim::stats::Domain::Air;
             if backplates {
                 if air {
                     draw_poly(center.x, center.y, 4, 10.0, 0.0, fill);
@@ -181,7 +181,7 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
     pop_camera_state();
 }
 
-pub(crate) fn building_visible(game: &Scene<'_>, b: &oxide_sim::Building) -> bool {
+pub(crate) fn building_visible(game: &Scene<'_>, b: &aftermine_sim::Building) -> bool {
     b.player == game.presentation.human
         || game.presentation.all_seeing()
         || (b.tiles().any(|t| game.my_vision().visible(t))
@@ -311,8 +311,8 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
     pop_camera_state();
 }
 
-fn building_glyph(kind: oxide_sim::BuildingKind, p: Vec2, ink: Color) {
-    use oxide_sim::BuildingKind::{
+fn building_glyph(kind: aftermine_sim::BuildingKind, p: Vec2, ink: Color) {
+    use aftermine_sim::BuildingKind::{
         Airworks, Array, Barricade, Bastion, Crucible, Extractor, Fabricator, FlakTurret, Foundry,
         Lattice, MawCradle, Reclaimer, RepairBay, RocCradle, ScuttleCharge, Spire, Turret,
     };
@@ -478,7 +478,7 @@ pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
                 ink,
             );
         }
-        building_glyph(oxide_sim::BuildingKind::Extractor, p, ink);
+        building_glyph(aftermine_sim::BuildingKind::Extractor, p, ink);
     }
     pop_camera_state();
 }

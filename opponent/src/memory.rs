@@ -10,9 +10,9 @@
 //! ghosts.
 
 use crate::events::OwnEvent;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::{BuildingKind, PlayerId, StallReason, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::{BuildingKind, PlayerId, StallReason, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 
 /// Ticks a failed footprint stays skipped.

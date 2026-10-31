@@ -1,6 +1,6 @@
 use super::*;
 use crate::HASH_INTERVAL;
-use oxide_sim::UnitId;
+use aftermine_sim::UnitId;
 
 const HOST: PlayerId = PlayerId(0);
 const A: PlayerId = PlayerId(1);
@@ -798,7 +798,7 @@ fn time_the_host_spent_suspended_is_nobodys_silence() {
 
 #[test]
 fn a_replaced_seat_drops_its_orders_and_every_client_hears_who_took_it() {
-    use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
     let config = BotConfig::new(BotDifficulty::Prime, BotStance::Turtle, 7);
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     host.receive(A, &command_line(10), secs(0));

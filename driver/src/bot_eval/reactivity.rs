@@ -9,11 +9,11 @@
 
 use super::failures::{FailureIncident, MAX_FAILURE_EXAMPLES, gap};
 use crate::bot_pressure::owns_anti_air;
+use aftermine_opponent::{MissionKind, MissionStatus, Phase};
+use aftermine_sim::ids::Target;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{Building, BuildingKind, Event, PlayerId, State, Unit, UnitKind};
 use chassis::grid::TilePos;
-use oxide_opponent::{MissionKind, MissionStatus, Phase};
-use oxide_sim::ids::Target;
-use oxide_sim::stats::Domain;
-use oxide_sim::{Building, BuildingKind, Event, PlayerId, State, Unit, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -166,12 +166,12 @@ pub struct SeatReactivity {
     /// missed when the machine stands up first, moot when the cradle falls or
     /// is cancelled.
     pub cradle: Reactions,
-    /// `oxide-opponent` only: an attack, strike or raid entered its fight;
+    /// `aftermine-opponent` only: an attack, strike or raid entered its fight;
     /// answered when it withdrew, missed when it vanished mid-fight having
     /// lost at least half its units, moot otherwise.
     #[serde(default)]
     pub withdrawal: Option<Reactions>,
-    /// `oxide-opponent` only, diagnostic: how often a newly formed attack,
+    /// `aftermine-opponent` only, diagnostic: how often a newly formed attack,
     /// strike or lift went after a different player than the one before it.
     /// Raids, which go after whichever harvest line is least guarded, are
     /// left out.
@@ -490,7 +490,7 @@ impl ReactivityDetectors {
         }
     }
 
-    /// Follows an `oxide-opponent` seat's offensive missions at `now`.
+    /// Follows an `aftermine-opponent` seat's offensive missions at `now`.
     pub(super) fn check_missions(&mut self, seat: u8, now: u64, missions: &[MissionStatus]) {
         let Some(Some(watch)) = self.seats.get_mut(usize::from(seat)) else {
             return;
@@ -831,7 +831,7 @@ fn answers(state: &State, player: PlayerId, machine: UnitKind) -> usize {
             .filter(|unit| unit.player == player && unit.hp > 0 && kinds.contains(&unit.kind))
             .count()
     };
-    if machine.stats().domain == oxide_sim::stats::Domain::Air {
+    if machine.stats().domain == aftermine_sim::stats::Domain::Air {
         units(&[UnitKind::Flakhound, UnitKind::Talon])
             + state
                 .buildings()
@@ -850,7 +850,7 @@ fn answers(state: &State, player: PlayerId, machine: UnitKind) -> usize {
 /// Opens a case for each enemy cradle the seat newly knows of, and answers
 /// those it now has more answers to the machine for.
 fn check_cradles(watch: &mut SeatWatch, state: &State, player: PlayerId, now: u64) {
-    for public in oxide_sim::observation::hostile_public_buildings(state, player) {
+    for public in aftermine_sim::observation::hostile_public_buildings(state, player) {
         let Some(machine) = public.kind.assembles() else {
             continue;
         };

@@ -22,13 +22,13 @@ gate() {
                 .filename
                 | ltrimstr($root)
                 | split("/")[0]
-                | if . == "sim" then {rank: 1, name: "oxide-sim"}
-                  elif . == "opponent" then {rank: 3, name: "oxide-opponent"}
-                  elif . == "protocol" then {rank: 4, name: "oxide-protocol"}
-                  elif . == "kit" then {rank: 5, name: "oxide-kit"}
-                  elif . == "net" then {rank: 6, name: "oxide-net"}
-                  elif . == "shell" then {rank: 7, name: "oxide-shell"}
-                  elif . == "driver" then {rank: 8, name: "oxide-driver"}
+                | if . == "sim" then {rank: 1, name: "aftermine-sim"}
+                  elif . == "opponent" then {rank: 3, name: "aftermine-opponent"}
+                  elif . == "protocol" then {rank: 4, name: "aftermine-protocol"}
+                  elif . == "kit" then {rank: 5, name: "aftermine-kit"}
+                  elif . == "net" then {rank: 6, name: "aftermine-net"}
+                  elif . == "shell" then {rank: 7, name: "aftermine-shell"}
+                  elif . == "driver" then {rank: 8, name: "aftermine-driver"}
                   else {rank: 0, name: .}
                   end;
             def row($name; $covered; $count):

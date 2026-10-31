@@ -7,8 +7,8 @@ use crate::{
     BATCH_COMMAND_BYTES, CLIENT_PENDING_BYTES, HEARTBEAT_INTERVAL, LEAD_CAP, MAX_CLIENT_LINE_BYTES,
     PROGRESS_TIMEOUT, QUIET_AFTER, QUIET_LEAD_CAP, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash,
 };
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{Command, PlayerCommand, PlayerId, Tick};
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
 

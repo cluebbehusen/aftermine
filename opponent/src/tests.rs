@@ -1,10 +1,10 @@
 use super::*;
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BotStance, BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BotStance, BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     AttackTarget, BuildingId, Command, Event, Scenario, StallReason, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 use std::sync::Arc;
 
 mod attack;

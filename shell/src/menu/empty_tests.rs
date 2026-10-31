@@ -1,6 +1,6 @@
 use super::*;
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
-use oxide_protocol::{Key, RawEvent};
 
 #[test]
 fn an_empty_menu_survives_every_key() {

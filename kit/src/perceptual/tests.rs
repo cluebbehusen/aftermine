@@ -43,7 +43,7 @@ fn dimension_mismatch_is_named_not_scored() {
 
 #[test]
 fn png_round_trip_compares_equal() {
-    let dir = std::env::temp_dir().join(format!("oxide-perceptual-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-perceptual-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let a = solid(6, 6, [90, 60, 30, 255]);
     let path_a = dir.join("a.png");

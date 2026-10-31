@@ -257,7 +257,8 @@ pub fn combine(
 }
 
 fn list_physical() -> std::result::Result<Vec<Device>, String> {
-    let json = std::env::temp_dir().join(format!("oxide-ios-devices-{}.json", std::process::id()));
+    let json =
+        std::env::temp_dir().join(format!("aftermine-ios-devices-{}.json", std::process::id()));
     let output = Command::new("xcrun")
         .args(["devicectl", "list", "devices", "--quiet", "--json-output"])
         .arg(&json)

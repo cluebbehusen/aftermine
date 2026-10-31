@@ -7,7 +7,7 @@ use crate::defenses;
 use crate::investments::{ADOPT, Investment, Situation, candidates};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::observation::ObservationData;
 
 /// What West would save for on `scenario` at `tick` once it scored best,
 /// with its economy up, no army to speak of, every trait high and the
@@ -59,9 +59,11 @@ fn offered_lifting(
         ],
         units: Vec::new(),
         waiting: None,
-        margin: crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
-        economy: crate::economy(oxide_sim::scenario::BotDifficulty::Scrapheap),
-        extractors_first: crate::extractors_first(oxide_sim::scenario::BotDifficulty::Scrapheap),
+        margin: crate::missions::margin(aftermine_sim::scenario::BotDifficulty::Standard),
+        economy: crate::economy(aftermine_sim::scenario::BotDifficulty::Scrapheap),
+        extractors_first: crate::extractors_first(
+            aftermine_sim::scenario::BotDifficulty::Scrapheap,
+        ),
         lift_flak: lift.unwrap_or(0),
     };
     candidates(&situation)
@@ -143,9 +145,9 @@ fn a_seat_in_an_emergency_trains_defenders_before_scouts() {
     }
     let trained = trains(&seat_with(&pressed, 0, thrifty()).act(&state, &mut OwnEvents::default()));
     assert!(
-        trained
-            .iter()
-            .any(|(_, kind)| kind.stats().can_target(oxide_sim::stats::Domain::Ground)),
+        trained.iter().any(|(_, kind)| kind
+            .stats()
+            .can_target(aftermine_sim::stats::Domain::Ground)),
         "premise: the seat arms against the raider: {trained:?}"
     );
     assert!(

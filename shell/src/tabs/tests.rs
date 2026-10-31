@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::MouseButton;
+use aftermine_protocol::MouseButton;
 
 fn click(at: Vec2) -> [RawEvent; 2] {
     let button = MouseButton::Left;

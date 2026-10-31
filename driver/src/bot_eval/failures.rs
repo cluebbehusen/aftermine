@@ -4,10 +4,12 @@
 //! are QA evidence for evaluation rows and reports; nothing here reaches a
 //! controller.
 
+use aftermine_opponent::MissionStatus;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{
+    Building, BuildingKind, BuildingPhase, Event, PlayerId, State, UnitId, UnitKind,
+};
 use chassis::grid::TilePos;
-use oxide_opponent::MissionStatus;
-use oxide_sim::stats::Domain;
-use oxide_sim::{Building, BuildingKind, BuildingPhase, Event, PlayerId, State, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -287,7 +289,7 @@ impl FailureDetectors {
                     // post-tick state; its producer still marks its home.
                     let Some(home) = state
                         .unit(unit)
-                        .map(oxide_sim::Unit::tile)
+                        .map(aftermine_sim::Unit::tile)
                         .or_else(|| state.building(building).map(|producer| producer.anchor))
                     else {
                         continue;

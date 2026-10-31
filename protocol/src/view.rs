@@ -5,9 +5,9 @@
 //! floats, the map as ASCII with entities overlaid. Anything that needs
 //! exactness should use the state hash, not a view.
 
+use aftermine_sim::{Building, GameResult, Order, PlayerId, State, Unit, UnitKind};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_sim::{Building, GameResult, Order, PlayerId, State, Unit, UnitKind};
 use serde::{Deserialize, Serialize};
 
 /// Which sections [`StateView`] should include. Map defaults off — it is by
@@ -165,7 +165,7 @@ pub struct BuildingView {
     /// Owner index.
     pub player: u8,
     /// Kind.
-    pub kind: oxide_sim::BuildingKind,
+    pub kind: aftermine_sim::BuildingKind,
     /// Top-left footprint tile `[x, y]`.
     pub anchor: [i32; 2],
     /// Hit points.
@@ -181,12 +181,12 @@ pub struct BuildingView {
     /// Where finished units report, if set: a tile, or an own unit they
     /// escort.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rally: Option<oxide_sim::Rally>,
+    pub rally: Option<aftermine_sim::Rally>,
     /// Player-designated defense target. The fog view exposes this only for
     /// allied buildings; hostile targeting intent is redacted with rally
     /// and production state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub focus: Option<oxide_sim::AttackTarget>,
+    pub focus: Option<aftermine_sim::AttackTarget>,
     /// Whether construction has finished.
     #[serde(
         default = "default_true",
@@ -207,7 +207,7 @@ pub struct BuildingView {
 
 /// The world as one seat knows it: the fog-honest debug and agent
 /// counterpart to the omniscient [`StateView`]. It reads the sim's own
-/// [`oxide_sim::Vision`], the same source as the bots' fog-honest
+/// [`aftermine_sim::Vision`], the same source as the bots' fog-honest
 /// `ObservationData`, so it cannot leak what fog hides: live entities
 /// appear only under current sight, memories carry no more than the seat
 /// last saw, radar contacts are bare tiles, and public buildings carry only
@@ -244,9 +244,9 @@ pub struct FogView {
     pub wrecks: Vec<RememberedTileView>,
     /// Radar blips: a tile and an air or ground domain, with no kind or
     /// owner.
-    pub contacts: Vec<oxide_sim::RadarContact>,
+    pub contacts: Vec<aftermine_sim::RadarContact>,
     /// Continuously observed contacts; entity identity appears only in true sight.
-    pub contact_tracks: Vec<oxide_sim::vision::ContactTrack>,
+    pub contact_tracks: Vec<aftermine_sim::vision::ContactTrack>,
     /// Hostile buildings every seat knows of regardless of fog, such as Deep
     /// Bores and started assembly cradles, sorted by (y, x, owner). They
     /// carry no condition beyond a cradle's progress.
@@ -255,19 +255,19 @@ pub struct FogView {
     /// Magazines the seat may know of, in building-id order: its team's in
     /// full, hostile loaded rounds and silo decks only while in sight.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub magazines: Vec<oxide_sim::strike::KnownMagazine>,
+    pub magazines: Vec<aftermine_sim::strike::KnownMagazine>,
     /// Warheads in flight the seat may know of, in id order: its team's in
     /// full, hostile ones while held in sight or radar, their line once
     /// tracked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub warheads: Vec<oxide_sim::strike::KnownWarhead>,
+    pub warheads: Vec<aftermine_sim::strike::KnownWarhead>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicBuildingView {
     /// Its kind.
-    pub kind: oxide_sim::BuildingKind,
+    pub kind: aftermine_sim::BuildingKind,
     /// Its tier.
     pub tier: u8,
     /// Its owner index.
@@ -284,7 +284,7 @@ pub struct PublicBuildingView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GhostView {
     /// Remembered kind.
-    pub kind: oxide_sim::BuildingKind,
+    pub kind: aftermine_sim::BuildingKind,
     /// Remembered owner index.
     pub owner: u8,
     /// Top-left footprint tile `[x, y]`.
@@ -397,7 +397,7 @@ impl FogView {
             wrecks,
             contacts: vision.contacts().to_vec(),
             contact_tracks: vision.tracks().to_vec(),
-            public_buildings: oxide_sim::observation::hostile_public_buildings(state, player)
+            public_buildings: aftermine_sim::observation::hostile_public_buildings(state, player)
                 .into_iter()
                 .map(|public| PublicBuildingView {
                     kind: public.kind,
@@ -433,7 +433,7 @@ pub struct StatusView {
     pub speed: f64,
     /// Scenario display name.
     pub scenario: String,
-    /// [`oxide_sim::SIM_VERSION`] of the running sim.
+    /// [`aftermine_sim::SIM_VERSION`] of the running sim.
     pub sim_version: u32,
     /// Match outcome, if decided.
     pub result: Option<GameResult>,

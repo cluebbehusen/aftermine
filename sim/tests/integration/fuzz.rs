@@ -2,7 +2,7 @@
 //! it must survive hostile input (garbage ids, repeated ids, out-of-range
 //! players, coordinates at the integer extremes, queues driven past their
 //! caps) without panicking, while every state it reaches along the way
-//! still satisfies [`oxide_sim::State::validate_invariants`], and the same
+//! still satisfies [`aftermine_sim::State::validate_invariants`], and the same
 //! seeded garbage must produce the same bits on every run.
 //!
 //! Two properties of how the garbage is made are load-bearing. The
@@ -19,14 +19,14 @@
 
 use crate::common;
 
-use chassis::grid::TilePos;
-use chassis::rng::Pcg32;
-use oxide_sim::command::RejectReason;
-use oxide_sim::stats::{BuildingKind, ORDER_QUEUE_CAP};
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::stats::{BuildingKind, ORDER_QUEUE_CAP};
+use aftermine_sim::{
     BuildingId, Command, Event, GameResult, OrderKey, PlayerCommand, PlayerId, Scenario, State,
     Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
+use chassis::rng::Pcg32;
 use serde_json::json;
 
 /// Ticks per run.
@@ -469,35 +469,35 @@ fn buildings(rng: &mut Pcg32, state: &State) -> Vec<BuildingId> {
     ids
 }
 
-fn target(rng: &mut Pcg32, state: &State) -> oxide_sim::AttackTarget {
+fn target(rng: &mut Pcg32, state: &State) -> aftermine_sim::AttackTarget {
     match rng.next_below(4) {
         0 => Target::Unit(unit_id(rng, state)).into(),
         1 => Target::Building(building_id(rng, state)).into(),
         2 => {
             let tracks = state.vision(PlayerId(0)).tracks();
             let id = if tracks.is_empty() {
-                oxide_sim::ContactId(rng.next_u32())
+                aftermine_sim::ContactId(rng.next_u32())
             } else {
                 tracks[rng.next_index(tracks.len())].id
             };
-            oxide_sim::AttackTarget::Contact(id)
+            aftermine_sim::AttackTarget::Contact(id)
         }
         _ => {
             let ghosts = state.vision(PlayerId(0)).ghosts();
             let memory = if let Some(ghost) = ghosts.first() {
-                oxide_sim::RememberedBuilding {
+                aftermine_sim::RememberedBuilding {
                     owner: ghost.owner,
                     building_kind: ghost.kind,
                     anchor: ghost.anchor,
                 }
             } else {
-                oxide_sim::RememberedBuilding {
+                aftermine_sim::RememberedBuilding {
                     owner: PlayerId(1),
                     building_kind: BuildingKind::Foundry,
                     anchor: TilePos::new(i32::MAX, i32::MIN),
                 }
             };
-            oxide_sim::AttackTarget::RememberedBuilding(memory)
+            aftermine_sim::AttackTarget::RememberedBuilding(memory)
         }
     }
 }
@@ -622,8 +622,8 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             building: building_id(rng, state),
             rally: match rng.next_below(3) {
                 0 => None,
-                1 => Some(oxide_sim::Rally::Tile(tile(rng, state))),
-                _ => Some(oxide_sim::Rally::Unit(unit_id(rng, state))),
+                1 => Some(aftermine_sim::Rally::Tile(tile(rng, state))),
+                _ => Some(aftermine_sim::Rally::Unit(unit_id(rng, state))),
             },
         },
         CommandTag::Surrender => Command::Surrender,
@@ -909,10 +909,10 @@ fn arena() -> State {
 }
 
 fn found_claims(state: &State, player: PlayerId, kind: BuildingKind, anchor: TilePos) -> usize {
-    let matches = |order: &oxide_sim::Order| {
-        matches!(order, oxide_sim::Order::Found { kind: found_kind, anchor: found_anchor }
+    let matches = |order: &aftermine_sim::Order| {
+        matches!(order, aftermine_sim::Order::Found { kind: found_kind, anchor: found_anchor }
             if *found_kind == kind && *found_anchor == anchor)
-            || matches!(order, oxide_sim::Order::Build { site } if state.building(*site).is_some_and(|b| b.kind == kind && b.anchor == anchor))
+            || matches!(order, aftermine_sim::Order::Build { site } if state.building(*site).is_some_and(|b| b.kind == kind && b.anchor == anchor))
     };
     state
         .units()
@@ -1061,7 +1061,7 @@ fn exercise_return_cargo_reach(state: &mut State) {
     assert!(
         matches!(
             state.unit(worker).unwrap().order,
-            oxide_sim::Order::ReturnCargo { .. }
+            aftermine_sim::Order::ReturnCargo { .. }
         ) || report
             .events
             .iter()
@@ -1175,7 +1175,7 @@ fn exercise_scout_reach(state: &mut State) {
     );
     assert_eq!(
         state.unit(scout).unwrap().order,
-        oxide_sim::Order::Scout { tile: goal }
+        aftermine_sim::Order::Scout { tile: goal }
     );
     state.validate_invariants().unwrap();
 }
@@ -1274,8 +1274,8 @@ fn exercise_assembly_reach(state: &mut State) {
         .collect();
     workers.sort_unstable();
     let workers: Vec<_> = workers.into_iter().map(|(_, id)| id).collect();
-    assert!(workers.len() > oxide_sim::stats::ASSEMBLY_CREW_CAP);
-    let raise = |units: &[oxide_sim::UnitId]| PlayerCommand {
+    assert!(workers.len() > aftermine_sim::stats::ASSEMBLY_CREW_CAP);
+    let raise = |units: &[aftermine_sim::UnitId]| PlayerCommand {
         player: PlayerId(0),
         command: Command::Build {
             units: units.to_vec(),
@@ -1285,7 +1285,7 @@ fn exercise_assembly_reach(state: &mut State) {
             defer: false,
         },
     };
-    let (crew, spare) = workers.split_at(oxide_sim::stats::ASSEMBLY_CREW_CAP);
+    let (crew, spare) = workers.split_at(aftermine_sim::stats::ASSEMBLY_CREW_CAP);
     let report = state.tick(&[raise(crew)]);
     assert!(
         !report
@@ -1361,7 +1361,7 @@ fn exercise_drone_reach(state: &mut State) {
         .find(|u| u["id"] == json!(roc))
         .unwrap();
     row["bay"]["docked"] = json!(2);
-    row["bay"]["alert"] = json!(oxide_sim::stats::RECALL_TICKS);
+    row["bay"]["alert"] = json!(aftermine_sim::stats::RECALL_TICKS);
     *state = serde_json::from_value(value).unwrap();
     let (mut launched, mut docked) = (false, false);
     for _ in 0..600 {
@@ -1441,10 +1441,10 @@ fn fuzz_run(seed: u64) -> Run {
                 command.command
             {
                 let tag = match target {
-                    oxide_sim::AttackTarget::Unit(_) => 0,
-                    oxide_sim::AttackTarget::Building(_) => 1,
-                    oxide_sim::AttackTarget::RememberedBuilding(_) => 2,
-                    oxide_sim::AttackTarget::Contact(_) => 3,
+                    aftermine_sim::AttackTarget::Unit(_) => 0,
+                    aftermine_sim::AttackTarget::Building(_) => 1,
+                    aftermine_sim::AttackTarget::RememberedBuilding(_) => 2,
+                    aftermine_sim::AttackTarget::Contact(_) => 3,
                 };
                 reach.attack_targets[tag] += 1;
             }
@@ -1492,7 +1492,7 @@ fn fuzz_run(seed: u64) -> Run {
             state
                 .units()
                 .iter()
-                .any(|u| matches!(u.order, oxide_sim::Order::Scout { .. })),
+                .any(|u| matches!(u.order, aftermine_sim::Order::Scout { .. })),
         );
         reach.idle_welds_off += u64::from(
             state
@@ -1504,18 +1504,18 @@ fn fuzz_run(seed: u64) -> Run {
             state
                 .units()
                 .iter()
-                .any(|u| matches!(u.order, oxide_sim::Order::Tend { .. })),
+                .any(|u| matches!(u.order, aftermine_sim::Order::Tend { .. })),
         );
         reach.tending_buildings += u64::from(state.units().iter().any(|u| {
             matches!(
                 u.order,
-                oxide_sim::Order::Tend {
-                    weld: Some(oxide_sim::Target::Building(_)),
+                aftermine_sim::Order::Tend {
+                    weld: Some(aftermine_sim::Target::Building(_)),
                     ..
                 }
             )
         }));
-        let parking = |u: &&oxide_sim::Unit| {
+        let parking = |u: &&aftermine_sim::Unit| {
             u.kind
                 .stats()
                 .radar
@@ -1547,14 +1547,14 @@ fn fuzz_run(seed: u64) -> Run {
             state
                 .units()
                 .iter()
-                .filter(|u| matches!(u.order, oxide_sim::Order::Accompany { .. }))
+                .filter(|u| matches!(u.order, aftermine_sim::Order::Accompany { .. }))
                 .count(),
         );
         reach.unit_rallies = reach.unit_rallies.max(
             state
                 .buildings()
                 .iter()
-                .filter(|b| matches!(b.rally, Some(oxide_sim::Rally::Unit(_))))
+                .filter(|b| matches!(b.rally, Some(aftermine_sim::Rally::Unit(_))))
                 .count(),
         );
         reach.train_queue = reach.train_queue.max(

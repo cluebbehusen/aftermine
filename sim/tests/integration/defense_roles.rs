@@ -3,8 +3,8 @@
 
 use crate::common;
 
+use aftermine_sim::{BuildingKind, Command, Event, PlayerId, Scenario, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{BuildingKind, Command, Event, PlayerId, Scenario, Target, UnitId, UnitKind};
 
 use common::{aim_defense_at, cmd, open_arena, unit};
 
@@ -63,10 +63,10 @@ fn role_scenario(
 }
 
 fn attack_building(
-    state: &mut oxide_sim::State,
+    state: &mut aftermine_sim::State,
     attacker: u8,
     units: &[UnitId],
-    building: oxide_sim::BuildingId,
+    building: aftermine_sim::BuildingId,
 ) -> Vec<Event> {
     let mut events = state
         .tick(&[cmd(
@@ -127,7 +127,7 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!(bastion.construction.unwrap().build_ticks, 500);
     assert_eq!(
         bastion.construction.unwrap().requires,
-        &[oxide_sim::stats::Prerequisite::built(
+        &[aftermine_sim::stats::Prerequisite::built(
             BuildingKind::Fabricator
         )]
     );
@@ -159,7 +159,7 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!((upgrade.cost, upgrade.build_ticks), (250, 400));
     assert_eq!(
         upgrade.requires,
-        &[oxide_sim::stats::Prerequisite::built(
+        &[aftermine_sim::stats::Prerequisite::built(
             BuildingKind::Crucible
         )]
     );
@@ -243,7 +243,7 @@ fn a_bombard_outranges_a_bastion_and_a_citadel_answers_it_from_full_range() {
                 .find(|row| row["id"] == serde_json::json!(bastion))
                 .unwrap();
             row["tier"] = serde_json::json!(tier);
-            let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+            let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
             let bombard = state
                 .units()
                 .iter()

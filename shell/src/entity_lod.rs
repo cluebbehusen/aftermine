@@ -46,7 +46,7 @@ fn has_stem(name: &str, stem: &str) -> bool {
 }
 /// Units and the accessories drawn with them in the units' pass.
 fn unit_stems() -> impl Iterator<Item = &'static str> {
-    oxide_sim::UnitKind::ALL
+    aftermine_sim::UnitKind::ALL
         .iter()
         .map(|&k| crate::assets::unit_stem(k))
         .chain(["scout_radar"])
@@ -54,11 +54,11 @@ fn unit_stems() -> impl Iterator<Item = &'static str> {
 /// Everything drawn on the map but units: works, their defense mounts and
 /// the field.
 fn field_stems() -> impl Iterator<Item = &'static str> {
-    oxide_sim::BuildingKind::ALL
+    aftermine_sim::BuildingKind::ALL
         .iter()
         .map(|&k| crate::assets::building_stem(k))
         .chain(
-            oxide_sim::BuildingKind::ALL
+            aftermine_sim::BuildingKind::ALL
                 .iter()
                 .filter_map(|&k| crate::look::defense(k))
                 .map(|defense| defense.mount),
@@ -169,7 +169,7 @@ fn contact_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
     manifest
         .iter()
         .filter(|(name, _)| {
-            (oxide_sim::UnitKind::ALL.iter().any(|&kind| {
+            (aftermine_sim::UnitKind::ALL.iter().any(|&kind| {
                 let stem = crate::assets::unit_stem(kind);
                 // Only tinted rows: a stem's untinted extras, such as cargo
                 // meters, carry no accent twin and take no contacts.
@@ -187,7 +187,7 @@ fn contact_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
                 })
             }) || name.starts_with("scrap_")
                 || *name == "wreck_pile"
-                || oxide_sim::BuildingKind::ALL.iter().any(|&kind| {
+                || aftermine_sim::BuildingKind::ALL.iter().any(|&kind| {
                     name.strip_prefix("rig_")
                         .unwrap_or(name)
                         .strip_prefix(crate::assets::building_stem(kind))

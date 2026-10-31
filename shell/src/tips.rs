@@ -8,11 +8,13 @@
 
 use crate::game::{AlertKind, Game};
 use crate::platform::Hands;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{
+    Building, BuildingKind, Order, PlayerId, State, Target, Tick, UnitId, UnitKind,
+};
 use chassis::grid::TilePos;
-use oxide_sim::stats::Domain;
-use oxide_sim::{Building, BuildingKind, Order, PlayerId, State, Target, Tick, UnitId, UnitKind};
 
-const SECOND: Tick = oxide_sim::TICKS_PER_SECOND as Tick;
+const SECOND: Tick = aftermine_sim::TICKS_PER_SECOND as Tick;
 /// No tip shows this early: the opening belongs to the player.
 const OPENING: Tick = 60 * SECOND;
 /// The least time from one tip appearing to the next.
@@ -360,11 +362,11 @@ impl<'a> Seat<'a> {
         self.state.player(self.human).scrap
     }
 
-    fn vision(&self) -> &'a oxide_sim::Vision {
+    fn vision(&self) -> &'a aftermine_sim::Vision {
         self.state.vision(self.human)
     }
 
-    fn own_units(&self) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+    fn own_units(&self) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         let human = self.human;
         self.state
             .units()
@@ -372,7 +374,7 @@ impl<'a> Seat<'a> {
             .filter(move |u| u.player == human && u.hp > 0)
     }
 
-    fn workers(&self) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+    fn workers(&self) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         self.own_units()
             .filter(|u| u.kind.stats().harvest.is_some())
     }
@@ -398,7 +400,7 @@ impl<'a> Seat<'a> {
     }
 
     /// Enemy machines the player sees now.
-    fn enemy_machines(&self) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+    fn enemy_machines(&self) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         let (state, human) = (self.state, self.human);
         state.units().iter().filter(move |u| {
             u.hp > 0 && state.hostile(human, u.player) && state.sees_unit(human, u)

@@ -10,12 +10,12 @@ use crate::numeric::Fit;
 use crate::press::{Fed, Press};
 use crate::render::prim::{fill_rect, stroke_rect};
 use crate::{clock_label, render, theme};
+#[cfg(test)]
+use aftermine_protocol::Key;
+use aftermine_protocol::{MouseButton, RawEvent};
+use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
-#[cfg(test)]
-use oxide_protocol::Key;
-use oxide_protocol::{MouseButton, RawEvent};
-use oxide_sim::SIM_VERSION;
 
 /// Ticks a seek simulates between checks of its frame's time.
 const SEEK_SLICE: u64 = 16;
@@ -26,7 +26,7 @@ const SEEK_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
 
 /// Replay engine, presentation, and viewer transport controls.
 pub struct PlaybackSession {
-    pub engine: oxide_kit::playback::Playback,
+    pub engine: aftermine_kit::playback::Playback,
     pub presentation: Presentation,
     /// Whether replay time runs, how fast, and its tick debt.
     pub clock: game::Clock,
@@ -48,7 +48,7 @@ pub struct PlaybackSession {
     pub show_stats: bool,
     /// Match statistics, computed from the record on first toggle —
     /// one deterministic re-execution, paid only when asked for.
-    pub stats: Option<oxide_kit::stats::MatchStats>,
+    pub stats: Option<aftermine_kit::stats::MatchStats>,
     /// The pristine record, kept for that deferred computation.
     replay: GameReplay,
 }
@@ -65,14 +65,14 @@ impl PlaybackSession {
     }
 
     pub fn open(path: &str) -> Result<Self> {
-        let recording =
-            oxide_kit::load_recording(path).with_context(|| format!("loading replay {path}"))?;
+        let recording = aftermine_kit::load_recording(path)
+            .with_context(|| format!("loading replay {path}"))?;
         Self::watch(recording)
     }
 
     /// A viewer over `recording` that fills in restorable worlds in the
     /// background while it is watched.
-    pub fn watch(recording: oxide_kit::Recording) -> Result<Self> {
+    pub fn watch(recording: aftermine_kit::Recording) -> Result<Self> {
         let mut session = Self::from_recording(recording)?;
         session.engine.start_fill();
         Ok(session)
@@ -82,17 +82,17 @@ impl PlaybackSession {
     /// so tests never depend on the wall-clock budget.
     #[cfg(test)]
     pub fn from_replay(replay: GameReplay) -> Result<Self> {
-        let mut session = Self::from_recording(oxide_kit::Recording {
+        let mut session = Self::from_recording(aftermine_kit::Recording {
             replay,
-            keyframes: oxide_kit::keyframes::Keyframes::default(),
+            keyframes: aftermine_kit::keyframes::Keyframes::default(),
         })?;
         session.seek_budget = std::time::Duration::MAX;
         Ok(session)
     }
 
-    fn from_recording(recording: oxide_kit::Recording) -> Result<Self> {
+    fn from_recording(recording: aftermine_kit::Recording) -> Result<Self> {
         let record = recording.replay.clone();
-        let engine = oxide_kit::playback::Playback::open(recording)?;
+        let engine = aftermine_kit::playback::Playback::open(recording)?;
         // The spectator door: an all-bot record (driver benchmark,
         // bot-vs-bot spectacle) is a perfectly watchable replay.
         let vantage = record
@@ -103,7 +103,7 @@ impl PlaybackSession {
             .unwrap_or(0);
         let mut presentation = Presentation::new(
             &engine.state,
-            oxide_sim::PlayerId(vantage.fit::<u8>()),
+            aftermine_sim::PlayerId(vantage.fit::<u8>()),
             render::viewport(),
         );
         // Spectator view: fog-free, but without the developer overlay, so
@@ -133,7 +133,7 @@ impl PlaybackSession {
         self.show_stats = !self.show_stats;
         if self.show_stats && self.stats.is_none() {
             let every = ((self.engine.total() - self.engine.start()) / 240).max(50);
-            self.stats = oxide_kit::stats::compute(&self.replay, every).ok();
+            self.stats = aftermine_kit::stats::compute(&self.replay, every).ok();
         }
     }
 
@@ -430,7 +430,7 @@ fn composition_interval(ticks: &[u64], column: usize) -> (f32, f32) {
 /// transport position.
 fn composition_band(
     pb: &PlaybackSession,
-    stats: &oxide_kit::stats::MatchStats,
+    stats: &aftermine_kit::stats::MatchStats,
     bar: macroquad::prelude::Rect,
     s: f32,
 ) {
@@ -739,9 +739,9 @@ impl PlaybackSession {
 /// The viewer's half of the debug protocol's shared surface. The engine
 /// owns truth, so every state-shaped answer reads `engine.state`
 /// directly. The driven clock advances or seeks through recorded commands.
-impl oxide_protocol::DebugSession for PlaybackSession {
-    fn status(&self) -> oxide_protocol::StatusView {
-        oxide_protocol::StatusView {
+impl aftermine_protocol::DebugSession for PlaybackSession {
+    fn status(&self) -> aftermine_protocol::StatusView {
+        aftermine_protocol::StatusView {
             tick: self.engine.state.current_tick(),
             paused: self.clock.paused,
             speed: self.clock.speed,
@@ -752,11 +752,11 @@ impl oxide_protocol::DebugSession for PlaybackSession {
         }
     }
 
-    fn state(&self) -> &oxide_sim::State {
+    fn state(&self) -> &aftermine_sim::State {
         &self.engine.state
     }
 
-    fn advance(&mut self, ticks: u64) -> oxide_protocol::AdvancedView {
+    fn advance(&mut self, ticks: u64) -> aftermine_protocol::AdvancedView {
         // Seek, don't advance: advance collects the interval's events for
         // presentation, which over a long interval is wasted memory. The
         // reply reports what actually ran; a replay near its end advances
@@ -770,14 +770,14 @@ impl oxide_protocol::DebugSession for PlaybackSession {
         let before = self.engine.position();
         self.engine.seek(before.saturating_add(ticks));
         self.presentation.reset_after_jump(&self.engine.state);
-        oxide_protocol::AdvancedView {
+        aftermine_protocol::AdvancedView {
             ticks: self.engine.position() - before,
             tick: self.engine.state.current_tick(),
-            hash: oxide_protocol::hash_hex(self.engine.state.hash()),
+            hash: aftermine_protocol::hash_hex(self.engine.state.hash()),
         }
     }
 
-    fn present(&mut self, ticks: u64) -> oxide_protocol::PresentedView {
+    fn present(&mut self, ticks: u64) -> aftermine_protocol::PresentedView {
         self.seeking = None;
         self.reset_clock_debt();
         let before = self.engine.position();
@@ -800,10 +800,10 @@ impl oxide_protocol::DebugSession for PlaybackSession {
             );
             events.extend(tick_events);
         }
-        oxide_protocol::PresentedView {
+        aftermine_protocol::PresentedView {
             ticks: self.engine.position() - before,
             tick: self.engine.state.current_tick(),
-            hash: oxide_protocol::hash_hex(self.engine.state.hash()),
+            hash: aftermine_protocol::hash_hex(self.engine.state.hash()),
             events,
         }
     }
@@ -814,7 +814,7 @@ impl oxide_protocol::DebugSession for PlaybackSession {
     }
 
     fn set_speed(&mut self, multiplier: f64) -> Result<(), String> {
-        oxide_protocol::check_speed(multiplier)?;
+        aftermine_protocol::check_speed(multiplier)?;
         self.clock.speed = multiplier;
         Ok(())
     }

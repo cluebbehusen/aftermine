@@ -8,10 +8,10 @@
 
 use crate::GameReplay;
 use crate::keyframes::{Encoding, Keyframe, Keyframes};
+use aftermine_sim::{PlayerCommand, Scenario};
 use chassis::replay::{
     MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS, Replay, ReplayError, ReplayMeta, TimedCommand,
 };
-use oxide_sim::{PlayerCommand, Scenario};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
@@ -97,7 +97,7 @@ impl<'a> ReplayPlayback<'a> {
     }
 
     /// Runs the state's current tick with the commands recorded for it.
-    pub fn step(&mut self, state: &mut oxide_sim::State) -> oxide_sim::TickReport {
+    pub fn step(&mut self, state: &mut aftermine_sim::State) -> aftermine_sim::TickReport {
         let commands: Vec<PlayerCommand> = self
             .cursor
             .take_tick(state.current_tick())

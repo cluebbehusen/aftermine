@@ -1,14 +1,14 @@
 //! Fog, memory, command validation, and match rules — behavior suite, public API only.
 
 use crate::common;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::PlayerSpec;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::PlayerSpec;
+use aftermine_sim::{
     BuildingId, Command, Event, GameResult, Order, PlayerId, Scenario, Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 
 use common::*;
 
@@ -191,7 +191,7 @@ fn remembered_scrap_freezes_when_sight_is_lost() {
     let (scout, miner) = (state.units()[0].id, state.units()[1].id);
     let node = TilePos::new(11, 4);
     let me = PlayerId(0);
-    let full = oxide_sim::stats::SCRAP_NODE_AMOUNT;
+    let full = aftermine_sim::stats::SCRAP_NODE_AMOUNT;
 
     state.tick(&[cmd(
         0,
@@ -282,7 +282,7 @@ fn hostile_coordinates_are_rejected_not_panicked() {
             },
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(goal)),
+                rally: Some(aftermine_sim::Rally::Tile(goal)),
             },
         ] {
             let report = state.tick(&[cmd(0, command)]);
@@ -435,7 +435,7 @@ fn rally_on_unexplored_scrap_does_not_probe_the_map() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(TilePos::new(11, 4))),
+                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
             },
         ),
         cmd(
@@ -509,7 +509,7 @@ fn rally_trusts_remembered_scrap_even_when_it_is_stale() {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(node)),
+                rally: Some(aftermine_sim::Rally::Tile(node)),
             },
         ),
         cmd(
@@ -554,7 +554,7 @@ fn rally_trusts_remembered_scrap_even_when_it_is_stale() {
 
 #[test]
 fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Player 1 stands up a turret, then loses its Foundry. The turret
     // must not keep it in the game — survival means a Foundry.
     // Five guns: the hunt meets the turret and its builder on the
@@ -597,7 +597,7 @@ fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
         .buildings()
         .iter()
         .find(|b| b.player == PlayerId(1))
-        .filter(|b| b.kind == oxide_sim::BuildingKind::Foundry)
+        .filter(|b| b.kind == aftermine_sim::BuildingKind::Foundry)
         .unwrap()
         .id;
     state.tick(&[cmd(
@@ -618,7 +618,7 @@ fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
 
 /// `state` with `player`'s building at `anchor` refitted to `tier`, at that
 /// tier's full health.
-fn refitted(state: &oxide_sim::State, anchor: TilePos, tier: u8) -> oxide_sim::State {
+fn refitted(state: &aftermine_sim::State, anchor: TilePos, tier: u8) -> aftermine_sim::State {
     let mut value = serde_json::to_value(state).unwrap();
     let kind = state
         .buildings()
@@ -644,21 +644,21 @@ fn a_remembered_building_keeps_the_tier_it_was_last_seen_at() {
     let mut scenario = open_arena(48, 12, vec![unit(0, UnitKind::Kestrel, 30, 5)]);
     scenario.buildings.push(building(
         1,
-        oxide_sim::BuildingKind::Turret,
+        aftermine_sim::BuildingKind::Turret,
         anchor.x,
         anchor.y,
     ));
     let mut state = refitted(&scenario.build().unwrap(), anchor, 1);
     let scout = state.units()[0].id;
     let me = PlayerId(0);
-    let remembered = |state: &oxide_sim::State| {
+    let remembered = |state: &aftermine_sim::State| {
         let ghost = state
             .vision(me)
             .ghosts()
             .iter()
             .find(|ghost| ghost.anchor == anchor)
             .map(|ghost| ghost.tier);
-        let observed = oxide_sim::observation::ObservationData::fog_honest(state, me)
+        let observed = aftermine_sim::observation::ObservationData::fog_honest(state, me)
             .enemy_buildings
             .iter()
             .find(|building| building.anchor == anchor)

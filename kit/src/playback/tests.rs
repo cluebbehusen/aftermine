@@ -1,7 +1,7 @@
 use super::*;
 use crate::keyframes::{KEYFRAME_EVERY, KeyframeRecorder};
 use crate::runner;
-use oxide_sim::Scenario;
+use aftermine_sim::Scenario;
 
 fn recorded_match() -> GameReplay {
     let mut scenario = Scenario::skirmish();

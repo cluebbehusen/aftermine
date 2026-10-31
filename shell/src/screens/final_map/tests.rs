@@ -1,6 +1,6 @@
 use super::*;
-use oxide_protocol::MouseButton;
-use oxide_sim::Scenario;
+use aftermine_protocol::MouseButton;
+use aftermine_sim::Scenario;
 
 #[test]
 fn final_map_accepts_only_camera_navigation_and_escape() {
@@ -224,7 +224,7 @@ fn minimap_drag_and_key_release_have_explicit_camera_lifetimes() {
 fn final_map_keeps_the_secondary_camera_hold_after_releasing_a_rebound_primary() {
     use crate::action::Chord;
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(640.0, 400.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(640.0, 400.0)).unwrap();
     game.presentation.camera.center = vec2(18.0, 10.0);
     let mut screen = FinalMapScreen::open();
     let mut bindings = crate::action::BindingMap::classic();

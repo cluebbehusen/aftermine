@@ -1,15 +1,15 @@
-//! One bot seat's `oxide-opponent` controller and the own order failures its
+//! One bot seat's `aftermine-opponent` controller and the own order failures its
 //! host has recorded for it.
 
-use oxide_opponent::{MapModel, Opponent, OwnEvents};
-use oxide_sim::scenario::{BotConfig, ScenarioError};
-use oxide_sim::{PlayerCommand, PlayerId, Scenario, State, TickReport};
+use aftermine_opponent::{MapModel, Opponent, OwnEvents};
+use aftermine_sim::scenario::{BotConfig, ScenarioError};
+use aftermine_sim::{PlayerCommand, PlayerId, Scenario, State, TickReport};
 use serde::{Deserialize, Serialize};
 use std::cell::OnceCell;
 use std::sync::Arc;
 
 /// One decision's diagnostic.
-pub type SeatTrace = oxide_opponent::Trace;
+pub type SeatTrace = aftermine_opponent::Trace;
 
 /// The map model a roster's seats share. It is built from the scenario for
 /// the first seat, so a roster without one never builds it.
@@ -49,7 +49,7 @@ pub struct SeatController {
 #[serde(deny_unknown_fields)]
 pub struct ControllerCheckpoint {
     /// The seat's policy state.
-    pub controller: oxide_opponent::Checkpoint,
+    pub controller: aftermine_opponent::Checkpoint,
     /// Events recorded since the seat's last decision.
     pub events: OwnEvents,
 }
@@ -151,7 +151,7 @@ pub fn seat_controllers(scenario: &Scenario) -> Result<Vec<SeatController>, Scen
 /// Skirmish with a bot in both seats at different difficulties.
 #[cfg(test)]
 pub(crate) fn mixed_skirmish() -> Scenario {
-    use oxide_sim::scenario::{BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotDifficulty, BotStance};
     let mut scenario = Scenario::skirmish();
     scenario.players[0].bot = true;
     scenario.players[0].bot_config = Some(BotConfig::new(

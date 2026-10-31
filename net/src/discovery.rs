@@ -85,7 +85,7 @@ impl Beacon {
         Self {
             oxide: TAG.to_owned(),
             protocol: crate::PROTOCOL_VERSION,
-            sim: oxide_sim::SIM_VERSION,
+            sim: aftermine_sim::SIM_VERSION,
             commit: commit.to_owned(),
             host,
             port,

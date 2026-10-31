@@ -1,9 +1,9 @@
-# oxide-net
+# aftermine-net
 
-`oxide-net` carries host-scheduled lockstep multiplayer. Every machine runs the
-full simulation; only commands and session messages cross the network. The host
-decides which commands execute on which tick, and every machine executes the
-same ordered batches.
+`aftermine-net` carries host-scheduled lockstep multiplayer. Every machine runs
+the full simulation; only commands and session messages cross the network. The
+host decides which commands execute on which tick, and every machine executes
+the same ordered batches.
 
 The session core and start barrier perform no I/O and read no clock. Callers
 pass received lines and a monotonic `now`, and collect lines to send. The `tcp`
@@ -181,7 +181,7 @@ commands, then bot commands, then record, then `State::tick`.
 Run commands from the workspace root:
 
 ```sh
-cargo test -p oxide-net --locked
-cargo test -p oxide-driver --test lockstep --locked
-cargo clippy -p oxide-net --all-targets --locked -- -D warnings
+cargo test -p aftermine-net --locked
+cargo test -p aftermine-driver --test lockstep --locked
+cargo clippy -p aftermine-net --all-targets --locked -- -D warnings
 ```

@@ -6,7 +6,7 @@ use crate::name::PlayerName;
 use crate::snapshot::Assembler;
 use crate::token::Token;
 use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP};
-use oxide_sim::{PlayerId, Tick};
+use aftermine_sim::{PlayerId, Tick};
 use std::time::Duration;
 
 /// What a line from the host brought.

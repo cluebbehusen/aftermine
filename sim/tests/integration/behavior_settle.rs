@@ -2,15 +2,15 @@
 
 use crate::common;
 
+use aftermine_sim::{Command, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{Command, UnitKind};
 
 use common::*;
 
 /// Sum of per-unit displacement magnitudes over one tick, in
 /// thousandths of a tile (integer — the probe must not do float math
 /// on sim values).
-fn tick_displacement(state: &mut oxide_sim::State) -> u64 {
+fn tick_displacement(state: &mut aftermine_sim::State) -> u64 {
     let before: Vec<_> = state.units().iter().map(|u| (u.id, u.pos)).collect();
     state.tick(&[]);
     let mut total = 0u64;
@@ -95,7 +95,7 @@ fn a_parked_crowd_goes_fully_stationary() {
         state
             .units()
             .iter()
-            .all(|u| matches!(u.order, oxide_sim::Order::Idle)),
+            .all(|u| matches!(u.order, aftermine_sim::Order::Idle)),
         "precondition: everyone arrived and idles"
     );
     assert_eq!(

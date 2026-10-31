@@ -26,7 +26,7 @@ class IconGenerationTests(unittest.TestCase):
             "oxide_64.rgba",
         }
 
-        with tempfile.TemporaryDirectory(prefix="oxide-icon-test-") as temp:
+        with tempfile.TemporaryDirectory(prefix="aftermine-icon-test-") as temp:
             output = Path(temp)
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),
@@ -112,7 +112,7 @@ class IconGenerationTests(unittest.TestCase):
             self.assertEqual(removed_colors, {(28, 28, 34)})
 
     def test_raw_window_icons_have_exact_rgba_dimensions(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="oxide-icon-format-") as temp:
+        with tempfile.TemporaryDirectory(prefix="aftermine-icon-format-") as temp:
             output = Path(temp)
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),

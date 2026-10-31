@@ -15,7 +15,7 @@ fn env(w: f32, h: f32) -> HudEnv {
 }
 
 fn skirmish() -> Game {
-    Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap()
+    Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap()
 }
 
 #[test]
@@ -117,16 +117,16 @@ fn a_busy_builder_keeps_its_orders_dock_over_the_construction_palette() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap();
     let (id, home) = (
         harvester.id,
         chassis::grid::TilePos::containing(harvester.pos),
     );
     for (dx, queue) in [(4, false), (6, true)] {
-        game.state.tick(&[oxide_sim::PlayerCommand {
+        game.state.tick(&[aftermine_sim::PlayerCommand {
             player: human,
-            command: oxide_sim::Command::Run {
+            command: aftermine_sim::Command::Run {
                 units: vec![id],
                 goal: chassis::grid::TilePos {
                     x: home.x + dx,
@@ -173,16 +173,16 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap();
     let (id, home) = (
         harvester.id,
         chassis::grid::TilePos::containing(harvester.pos),
     );
     for (dx, queue) in [(4, false), (6, true)] {
-        game.state.tick(&[oxide_sim::PlayerCommand {
+        game.state.tick(&[aftermine_sim::PlayerCommand {
             player: human,
-            command: oxide_sim::Command::Run {
+            command: aftermine_sim::Command::Run {
                 units: vec![id],
                 goal: chassis::grid::TilePos {
                     x: home.x + dx,
@@ -202,7 +202,7 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
         .anchor;
     let mut input = InputState::new();
     input.build_menu = true;
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let ribbon = |game: &Game, input: &mut InputState, tile: chassis::grid::TilePos| {
         input.mouse = game
             .presentation
@@ -252,13 +252,13 @@ fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
     game.presentation.selection.units.push(harvester);
     let mut input = InputState::new();
     input.build_menu = true;
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.last_pointer = crate::input::Pointer::Touch;
     let ribbon = layout(
         &game.view(),
@@ -283,7 +283,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
     game.presentation.selection.units.push(harvester);
@@ -296,7 +296,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
         .anchor;
     let mut input = InputState::new();
     input.build_menu = true;
-    input.arm_placement(oxide_sim::BuildingKind::Barricade);
+    input.arm_placement(aftermine_sim::BuildingKind::Barricade);
     let at = |dx: i32| {
         game.presentation.camera.to_screen(vec2(
             (foundry.x + dx) as f32 + 0.5,
@@ -305,13 +305,13 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
     };
     let (a, b, c) = (at(3), at(4), at(5));
     let events = [
-        oxide_protocol::RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+        aftermine_protocol::RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
             x: a.x,
             y: a.y,
         },
-        oxide_protocol::RawEvent::MouseMove { x: b.x, y: b.y },
-        oxide_protocol::RawEvent::MouseMove { x: c.x, y: c.y },
+        aftermine_protocol::RawEvent::MouseMove { x: b.x, y: b.y },
+        aftermine_protocol::RawEvent::MouseMove { x: c.x, y: c.y },
     ];
     crate::input::apply_events(
         &mut game,
@@ -332,7 +332,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
     .geometry
     .ribbon
     .expect("placement shows its ribbon");
-    let cost = oxide_sim::BuildingKind::Barricade
+    let cost = aftermine_sim::BuildingKind::Barricade
         .base_stats()
         .construction
         .unwrap()
@@ -351,7 +351,7 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
         .state
         .units()
         .iter()
-        .find(|unit| unit.player == human && unit.kind == oxide_sim::UnitKind::Harvester)
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
     game.presentation.selection.units.push(harvester);
@@ -364,7 +364,7 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
         .anchor;
     let mut input = InputState::new();
     input.build_menu = true;
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.mouse = game.presentation.camera.to_screen(vec2(
         (foundry.x + 3) as f32 + 0.5,
         (foundry.y + 3) as f32 + 0.5,
@@ -398,7 +398,7 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
 #[test]
 fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
     let mut game =
-        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Turret, &[0, 0, 0], 0);
+        crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Turret, &[0, 0, 0], 0);
     game.presentation.selection.buildings.truncate(1);
     for (w, h) in [(1133.0, 744.0), (1280.0, 800.0)] {
         let hud = layout(
@@ -412,7 +412,7 @@ fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
         let (rect, action) = hud.layout.select_all;
         assert_eq!(
             action,
-            crate::panel::CardAction::SelectAllBuildings(oxide_sim::BuildingKind::Turret)
+            crate::panel::CardAction::SelectAllBuildings(aftermine_sim::BuildingKind::Turret)
         );
         let info = hud.layout.panel_regions[0];
         assert_eq!(
@@ -429,7 +429,7 @@ fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
         .state
         .buildings()
         .iter()
-        .filter(|b| b.kind == oxide_sim::BuildingKind::Turret)
+        .filter(|b| b.kind == aftermine_sim::BuildingKind::Turret)
         .map(|b| b.id)
         .collect();
     let hud = layout(

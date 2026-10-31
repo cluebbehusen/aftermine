@@ -10,11 +10,11 @@
 
 use crate::common;
 
+use aftermine_sim::stats::LEASH_RADIUS;
+use aftermine_sim::{Command, Order, State, Target, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use common::*;
-use oxide_sim::stats::LEASH_RADIUS;
-use oxide_sim::{Command, Order, State, Target, UnitId, UnitKind};
 
 fn milli(v: Fx) -> i64 {
     (v * Fx::lit("1000")).to_num::<i64>()
@@ -89,18 +89,16 @@ fn a_victorious_guard_immediately_reacquires_and_remains_stationed() {
     ]);
     for _ in 0..600 {
         let report = state.tick(&[]);
-        if !report
-            .events
-            .iter()
-            .any(|event| matches!(event, oxide_sim::Event::UnitDied { unit, .. } if *unit == first))
-        {
+        if !report.events.iter().any(
+            |event| matches!(event, aftermine_sim::Event::UnitDied { unit, .. } if *unit == first),
+        ) {
             continue;
         }
         let victor = state.unit(guard).unwrap();
         let post = victor.tile();
         assert_eq!(victor.order, Order::Idle);
         assert!(victor.leash.is_none());
-        assert_eq!(victor.settled, oxide_sim::stats::LEASH_STATION_TICKS);
+        assert_eq!(victor.settled, aftermine_sim::stats::LEASH_STATION_TICKS);
         state.tick(&[]);
         let victor = state.unit(guard).unwrap();
         assert!(matches!(victor.order, Order::Attack { target, .. }

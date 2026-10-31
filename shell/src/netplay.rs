@@ -1,23 +1,23 @@
 //! LAN play: the lobby that gathers machines and starts a match, and the
 //! link that carries a running match between them. The frame loop polls
-//! both; sockets run on `oxide_net::tcp` threads.
+//! both; sockets run on `aftermine_net::tcp` threads.
 
 use crate::bot_label::{BotLabelStyle, bot_label};
 use crate::game::Game;
 use crate::game::checkpoint::{LanManifest, SaveCapture};
 use crate::game::network::{CLIENT_BUFFER, NetRole};
 use crate::seating::{Occupant, Seating};
-use anyhow::{Context, Result, ensure};
-use macroquad::prelude::Vec2;
-use oxide_net::discovery::Beacon;
-use oxide_net::{
+use aftermine_net::discovery::Beacon;
+use aftermine_net::{
     Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Desk, DeskEvent, Exit,
     Gathering, GoneReason, Guest, GuestEnd, GuestEvent, HostEvent, HostSession, InstallId,
     Listener, LobbyEvent, MemberId, PlayerName, Release, RoomSeat, SeatHolder, SeatNotice,
     SeatState, StartContent, StartFailed, Token, Visit, VisitEnd, VisitEvent, VisitorId,
 };
-use oxide_sim::scenario::{BotDifficulty, BotStance};
-use oxide_sim::{PlayerId, Scenario, Tick};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::{PlayerId, Scenario, Tick};
+use anyhow::{Context, Result, ensure};
+use macroquad::prelude::Vec2;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::thread::{self, JoinHandle};
@@ -34,7 +34,7 @@ const CLOSE_GRACE: Duration = Duration::from_secs(2);
 /// it: a client that lagged before it went away can have seconds of
 /// batches ahead of its release, and a blocked write gives up on its own.
 const FLUSH_GRACE: Duration =
-    Duration::from_secs(oxide_net::WRITE_TIMEOUT.as_secs() + CLOSE_GRACE.as_secs());
+    Duration::from_secs(aftermine_net::WRITE_TIMEOUT.as_secs() + CLOSE_GRACE.as_secs());
 
 /// Connections awaiting Hello at once. Each holds two transport threads, so
 /// later ones wait unaccepted until a slot frees.
@@ -196,7 +196,7 @@ pub(crate) struct HostLink {
 
 /// How often a host saves its running LAN match on its own: every minute
 /// of play.
-const LAN_AUTOSAVE_TICKS: Tick = 60 * oxide_sim::TICKS_PER_SECOND as Tick;
+const LAN_AUTOSAVE_TICKS: Tick = 60 * aftermine_sim::TICKS_PER_SECOND as Tick;
 
 /// When a host next saves its running LAN match on its own.
 #[derive(Debug, Clone, Copy)]
@@ -301,7 +301,7 @@ impl Rejoin {
     fn poll(&mut self, now: Duration) -> RejoinPoll {
         let gap = now.saturating_sub(self.polled);
         self.polled = now;
-        if gap > oxide_net::SUSPEND_GAP {
+        if gap > aftermine_net::SUSPEND_GAP {
             self.since += gap;
         }
         let expired = now.saturating_sub(self.since) >= REJOIN_WINDOW;
@@ -1224,7 +1224,7 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
         .filter(|ip| !ip.is_unspecified())
 }
 
-/// A host's lobby sockets: accepting connections, running the `oxide-net`
+/// A host's lobby sockets: accepting connections, running the `aftermine-net`
 /// lobby over them, and handing the seated ones to the match. Seating is
 /// the caller's policy: it answers [`HostLobby::poll`]'s events and
 /// publishes the room.

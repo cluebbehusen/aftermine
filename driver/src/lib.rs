@@ -27,11 +27,11 @@ pub mod smoke;
 pub mod tick_profile;
 
 /// Provenance of this driver build.
-pub fn build_identity() -> oxide_kit::build::BuildIdentity {
-    oxide_kit::build::BuildIdentity::new(
+pub fn build_identity() -> aftermine_kit::build::BuildIdentity {
+    aftermine_kit::build::BuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
-        env!("OXIDE_BUILD_REVISION"),
-        env!("OXIDE_BUILD_DIRTY"),
+        env!("AFTERMINE_BUILD_REVISION"),
+        env!("AFTERMINE_BUILD_DIRTY"),
     )
 }
 

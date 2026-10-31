@@ -2,7 +2,7 @@ use super::*;
 
 /// One harvester with scrap for a row of turrets on open, visible ground.
 fn funded_builder() -> (Game, InputState) {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Chain Range",
             "players": [
@@ -28,7 +28,7 @@ fn funded_builder() -> (Game, InputState) {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input)
 }
@@ -202,7 +202,7 @@ fn a_fully_refused_release_after_letting_go_of_shift_ends_the_chain() {
     let builder = game.presentation.selection.units[0];
     game.issue(Command::Build {
         units: vec![builder],
-        kind: oxide_sim::BuildingKind::Barricade,
+        kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(9, 3),
         queue: true,
         defer: false,

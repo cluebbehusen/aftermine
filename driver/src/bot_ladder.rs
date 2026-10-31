@@ -1,4 +1,4 @@
-//! The difficulty ladder: `oxide-opponent` against itself at two rungs.
+//! The difficulty ladder: `aftermine-opponent` against itself at two rungs.
 //!
 //! A manifest names duel maps, stances, runs, seed bases, a tick limit and
 //! comparisons, each a higher rung, a lower rung and the share of decided
@@ -18,9 +18,9 @@ use crate::evaluation::{
 };
 use crate::ledger::{PairShares, SeatLedger, WorthShare, render_shares, team_shares, worth_shares};
 use crate::seat_summary::{SeatEvidence, SeatSummary, SeatSummaryBuilder, rank};
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use anyhow::{Context, Result, bail, ensure};
-use oxide_sim::Scenario;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -483,7 +483,7 @@ fn winner(row: &ScoredLadderRow) -> Result<Won> {
                 .enumerate()
                 .all(|(index, seat)| usize::from(seat.seat) == index)
             && rungs == expected.map(Some),
-        "a {} leg of {} against {} needs oxide-opponent at {:?} by seat, found {:?}",
+        "a {} leg of {} against {} needs aftermine-opponent at {:?} by seat, found {:?}",
         row.leg.name(),
         label.higher,
         label.lower,

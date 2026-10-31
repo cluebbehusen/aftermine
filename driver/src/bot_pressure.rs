@@ -5,12 +5,12 @@
 //!
 //! The checks read omniscient QA state and never reach a controller.
 
+use aftermine_kit::GameReplay;
+use aftermine_kit::controller::{record_events, seat_controllers};
 use anyhow::{Context, Result, bail, ensure};
-use oxide_kit::GameReplay;
-use oxide_kit::controller::{record_events, seat_controllers};
 
-use oxide_sim::stats::Domain;
-use oxide_sim::{
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{
     BuildingKind, Command, PlayerCommand, PlayerId, Scenario, State, UnitId, UnitKind,
 };
 use serde::{Deserialize, Serialize};
@@ -136,7 +136,7 @@ pub fn run(
     let mut bots = seat_controllers(&scenario).context("building pressure controllers")?;
     let mut replay = record.then(|| {
         GameReplay::new(
-            oxide_sim::SIM_VERSION,
+            aftermine_sim::SIM_VERSION,
             crate::build_identity().label(),
             scenario.clone(),
         )
@@ -154,8 +154,8 @@ pub fn run(
                 command: scripted.command,
             });
         }
-        commands.extend(oxide_kit::bot_execution::commands(&state, &mut bots));
-        let report = oxide_kit::runner::record_and_tick(&mut state, &commands, replay.as_mut());
+        commands.extend(aftermine_kit::bot_execution::commands(&state, &mut bots));
+        let report = aftermine_kit::runner::record_and_tick(&mut state, &commands, replay.as_mut());
         record_events(&mut bots, &report);
         watch.observe(&state, defender, attacker);
     }

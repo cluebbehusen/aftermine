@@ -23,7 +23,7 @@ fn live_body_frames_have_cached_production_contact_sources() {
     ]
     .into_iter()
     .chain(
-        oxide_sim::BuildingKind::ALL
+        aftermine_sim::BuildingKind::ALL
             .iter()
             .map(|&kind| crate::assets::building_stem(kind)),
     ) {

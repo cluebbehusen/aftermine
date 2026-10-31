@@ -5,38 +5,38 @@
 
 use super::{Presentation, world_vec};
 use crate::seat_style::AllegianceCue;
-use oxide_sim::State;
+use aftermine_sim::State;
 
+use aftermine_sim::Event;
 use macroquad::prelude::Vec2;
-use oxide_sim::Event;
 
 #[derive(Clone, Copy)]
 pub(crate) struct CollapseBody {
-    pub kind: oxide_sim::BuildingKind,
+    pub kind: aftermine_sim::BuildingKind,
     pub tier: u8,
-    pub player: oxide_sim::PlayerId,
+    pub player: aftermine_sim::PlayerId,
     pub rotation: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UnitBody {
-    pub kind: oxide_sim::UnitKind,
-    pub player: oxide_sim::PlayerId,
+    pub kind: aftermine_sim::UnitKind,
+    pub player: aftermine_sim::PlayerId,
     pub rotation: f32,
     pub velocity: Vec2,
     /// Each mounted gun's last drawn world bearing.
-    pub mounts: [Option<f32>; oxide_sim::stats::MAX_WEAPONS],
+    pub mounts: [Option<f32>; aftermine_sim::stats::MAX_WEAPONS],
 }
 
 impl UnitBody {
     /// A body seen only at its death or its crash: each mounted gun rests at
     /// its arc's centre on a hull turned to `rotation`.
     pub(crate) fn resting(
-        kind: oxide_sim::UnitKind,
-        player: oxide_sim::PlayerId,
+        kind: aftermine_sim::UnitKind,
+        player: aftermine_sim::PlayerId,
         rotation: f32,
     ) -> Self {
-        let mut mounts = [None; oxide_sim::stats::MAX_WEAPONS];
+        let mut mounts = [None; aftermine_sim::stats::MAX_WEAPONS];
         if let Some(guns) = kind.stats().mounts {
             for (bearing, mount) in mounts.iter_mut().zip(guns.mounts) {
                 *bearing =
@@ -55,7 +55,7 @@ impl UnitBody {
     fn capture(
         game: &Presentation,
         state: &State,
-        unit: &oxide_sim::state::Unit,
+        unit: &aftermine_sim::state::Unit,
         reduced_motion: bool,
     ) -> Self {
         let kind = unit.kind;
@@ -99,15 +99,15 @@ impl UnitBody {
 
 #[derive(Clone, Copy)]
 pub(crate) struct BuildingHit {
-    pub id: oxide_sim::BuildingId,
-    pub kind: oxide_sim::BuildingKind,
+    pub id: aftermine_sim::BuildingId,
+    pub kind: aftermine_sim::BuildingKind,
     pub tier: u8,
     pub anchor: Vec2,
     pub facts: crate::presentation_animation::BuildingAnimationFacts,
 }
 
 impl BuildingHit {
-    pub(crate) fn capture(state: &State, building: &oxide_sim::Building) -> Self {
+    pub(crate) fn capture(state: &State, building: &aftermine_sim::Building) -> Self {
         Self {
             id: building.id,
             kind: building.kind,
@@ -120,7 +120,7 @@ impl BuildingHit {
 
 #[derive(Clone, Copy)]
 pub(crate) struct UnitHit {
-    pub id: oxide_sim::UnitId,
+    pub id: aftermine_sim::UnitId,
     pub body: UnitBody,
     pub frame: crate::render::UnitSpriteFrame,
     pub center: Vec2,
@@ -152,19 +152,19 @@ impl HitSurface {
 
 #[derive(Default)]
 pub(super) struct PreviousEffects {
-    buildings: Vec<(oxide_sim::BuildingId, Option<CollapseBody>, BuildingHit)>,
-    shells: Vec<oxide_sim::state::Shell>,
+    buildings: Vec<(aftermine_sim::BuildingId, Option<CollapseBody>, BuildingHit)>,
+    shells: Vec<aftermine_sim::state::Shell>,
     units: Vec<(
-        oxide_sim::UnitId,
+        aftermine_sim::UnitId,
         UnitBody,
         Vec2,
         bool,
         crate::render::UnitSpriteFrame,
     )>,
-    visible_crash_contacts: Vec<oxide_sim::UnitId>,
+    visible_crash_contacts: Vec<aftermine_sim::UnitId>,
     /// The warheads this seat knew of, so a stopped one can fly on as a
     /// ghost after the simulation removes it.
-    warheads: Vec<oxide_sim::strike::KnownWarhead>,
+    warheads: Vec<aftermine_sim::strike::KnownWarhead>,
 }
 
 impl PreviousEffects {
@@ -225,7 +225,7 @@ impl PreviousEffects {
                         unit.id,
                         UnitBody::capture(game, state, unit, crate::render::reduced_motion()),
                         game.draw_pos(unit.id, unit.pos, 1.0),
-                        unit.domain() == oxide_sim::stats::Domain::Air,
+                        unit.domain() == aftermine_sim::stats::Domain::Air,
                         crate::render::UnitSpriteFrame::capture(
                             unit.kind,
                             crate::render::unit_animation(game, state, unit),
@@ -456,7 +456,7 @@ impl ShotStyle {
 /// Which report family a unit's weapon slot fires: every slot speaks
 /// through the kind's one physical barrel. None for a kind that never draws
 /// a direct report.
-fn unit_shot_style(kind: oxide_sim::UnitKind, _weapon: usize) -> Option<ShotStyle> {
+fn unit_shot_style(kind: aftermine_sim::UnitKind, _weapon: usize) -> Option<ShotStyle> {
     crate::look::unit(kind)
         .weapon
         .and_then(|weapon| weapon.shot)
@@ -472,14 +472,14 @@ fn visual_shot_origin(from: Vec2, to: Vec2, reach: f32) -> Vec2 {
     }
 }
 
-fn unit_muzzle_reach(kind: oxide_sim::UnitKind) -> Option<f32> {
+fn unit_muzzle_reach(kind: aftermine_sim::UnitKind) -> Option<f32> {
     crate::look::unit(kind)
         .weapon
         .and_then(|weapon| weapon.shot)
         .map(|(_, reach)| reach)
 }
 
-fn unit_shot_origin(kind: oxide_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
+fn unit_shot_origin(kind: aftermine_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
     if kind.stats().contact_reach.is_some() {
         return from;
     }
@@ -487,7 +487,7 @@ fn unit_shot_origin(kind: oxide_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
         return from;
     };
     let mut origin = visual_shot_origin(from, to, reach);
-    if kind.stats().domain == oxide_sim::stats::Domain::Air {
+    if kind.stats().domain == aftermine_sim::stats::Domain::Air {
         origin.y -= crate::render::air_presentation(kind, 1.0).2;
     }
     origin
@@ -495,16 +495,16 @@ fn unit_shot_origin(kind: oxide_sim::UnitKind, from: Vec2, to: Vec2) -> Vec2 {
 
 /// The report a unit's weapon makes; an unarmed kind, or one whose work is
 /// heard as a loop, makes none.
-fn unit_fire_sound(kind: oxide_sim::UnitKind) -> Option<SoundKind> {
+fn unit_fire_sound(kind: aftermine_sim::UnitKind) -> Option<SoundKind> {
     crate::look::unit(kind)
         .weapon
         .and_then(|weapon| weapon.sound)
 }
 
-fn shell_fire_sound(shooter: oxide_sim::Target) -> SoundKind {
+fn shell_fire_sound(shooter: aftermine_sim::Target) -> SoundKind {
     match shooter {
-        oxide_sim::Target::Unit(_) => SoundKind::BombardFire,
-        oxide_sim::Target::Building(_) => SoundKind::BastionFire,
+        aftermine_sim::Target::Unit(_) => SoundKind::BombardFire,
+        aftermine_sim::Target::Building(_) => SoundKind::BastionFire,
     }
 }
 
@@ -517,8 +517,8 @@ enum ShellSoundAnchor {
 /// A launch heard at the muzzle is the shooting unit's own report; only a
 /// shooter without a unit pose falls back to its family's.
 fn shell_launch_audio(
-    shooter: oxide_sim::Target,
-    shooter_kind: Option<oxide_sim::UnitKind>,
+    shooter: aftermine_sim::Target,
+    shooter_kind: Option<aftermine_sim::UnitKind>,
     allegiance: AllegianceCue,
     muzzle_seen: bool,
     impact_seen: bool,
@@ -539,8 +539,8 @@ fn shell_launch_audio(
 pub(crate) struct InterceptFlight {
     pub launch: Vec2,
     pub impact: Vec2,
-    pub shooter: oxide_sim::Target,
-    pub kind: oxide_sim::ProjectileKind,
+    pub shooter: aftermine_sim::Target,
+    pub kind: aftermine_sim::ProjectileKind,
     pub pose: Option<super::LaunchPose>,
     pub surface: Option<HitSurface>,
     pub progress: f32,
@@ -549,7 +549,7 @@ pub(crate) struct InterceptFlight {
 
 pub(crate) fn mantle_emitter(center: Vec2, rotation: f32, slot: u8) -> Vec2 {
     let local = Vec2::new(58.0 + f32::from(slot.min(2)) * 6.0 - 64.0, 25.0 - 64.0) / 128.0
-        * crate::look::unit(oxide_sim::UnitKind::Mantle).scale;
+        * crate::look::unit(aftermine_sim::UnitKind::Mantle).scale;
     center + Vec2::from_angle(rotation).rotate(local)
 }
 
@@ -581,14 +581,14 @@ const INTERCEPT_AFTERMATH: f32 = 1.8;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Prelaunch {
     /// The warhead it will stop.
-    pub warhead: oxide_sim::WarheadId,
+    pub warhead: aftermine_sim::WarheadId,
     /// The battery and the pod that fires.
-    pub battery: oxide_sim::BuildingId,
+    pub battery: aftermine_sim::BuildingId,
     pub pod: u8,
     /// The battery's owner, for the interceptor's identity tint.
-    pub battery_player: oxide_sim::PlayerId,
+    pub battery_player: aftermine_sim::PlayerId,
     /// The warhead's whole flight.
-    pub line: oxide_sim::strike::WarheadLine,
+    pub line: aftermine_sim::strike::WarheadLine,
     /// Presentation tick the pod started to swing.
     pub created: f32,
     /// The tick the simulation stops the warhead on.
@@ -651,7 +651,7 @@ pub enum EffectKind {
         /// Splash radius, if this logical hit has one.
         splash: Option<f32>,
         /// Unit that issued this report, when applicable.
-        attacker: Option<oxide_sim::UnitId>,
+        attacker: Option<aftermine_sim::UnitId>,
         /// Visible target geometry survives a lethal hit for this report.
         surface: Option<HitSurface>,
         /// Consumed when the cosmetic kinetic round reaches its target.
@@ -668,7 +668,7 @@ pub enum EffectKind {
         /// Direction toward the contacted target.
         rotation: f32,
         /// Owning seat, for the same identity tint the live unit used.
-        player: oxide_sim::PlayerId,
+        player: aftermine_sim::PlayerId,
         /// The source position was legitimately known when the report arrived.
         source_witnessed: bool,
         /// The impact position was legitimately known when the report arrived.
@@ -681,7 +681,7 @@ pub enum EffectKind {
         at: Vec2,
         body: UnitBody,
         seed: u32,
-        crash: Option<oxide_sim::state::AircraftCrash>,
+        crash: Option<aftermine_sim::state::AircraftCrash>,
         impact_witnessed: bool,
     },
     /// A retained structural silhouette collapsing into low wreckage.
@@ -694,7 +694,7 @@ pub enum EffectKind {
     Impact {
         at: Vec2,
         radius: f32,
-        payload: oxide_sim::ProjectileKind,
+        payload: aftermine_sim::ProjectileKind,
         from: Vec2,
         surface: Option<HitSurface>,
         completed_tick: u64,
@@ -727,14 +727,14 @@ pub enum EffectKind {
     /// everything here is presentation.
     Interception {
         /// The warhead's whole flight, when this seat knew it.
-        line: Option<oxide_sim::strike::WarheadLine>,
+        line: Option<aftermine_sim::strike::WarheadLine>,
         /// The warhead's owner when this seat knew it, and whether hostile.
-        warhead_player: Option<oxide_sim::PlayerId>,
+        warhead_player: Option<aftermine_sim::PlayerId>,
         warhead_hostile: bool,
         /// The interceptor's climb, when its battery still stood.
         path: Option<crate::render::sky::InterceptorPath>,
         /// The battery's owner, for the interceptor's identity tint.
-        battery_player: oxide_sim::PlayerId,
+        battery_player: aftermine_sim::PlayerId,
         /// Where the noses meet and the burst centres, world coords.
         contact: Vec2,
         /// Presentation tick the noses meet: the stop itself when the
@@ -795,18 +795,18 @@ fn push_direct_report(
 }
 
 fn event_target_owner(
-    state: &oxide_sim::State,
+    state: &aftermine_sim::State,
     events: &[Event],
-    target: oxide_sim::Target,
-) -> Option<oxide_sim::PlayerId> {
+    target: aftermine_sim::Target,
+) -> Option<aftermine_sim::PlayerId> {
     match target {
-        oxide_sim::Target::Unit(id) => state.unit(id).map(|unit| unit.player).or_else(|| {
+        aftermine_sim::Target::Unit(id) => state.unit(id).map(|unit| unit.player).or_else(|| {
             events.iter().find_map(|event| match event {
                 Event::UnitDied { unit, player, .. } if *unit == id => Some(*player),
                 _ => None,
             })
         }),
-        oxide_sim::Target::Building(id) => state
+        aftermine_sim::Target::Building(id) => state
             .building(id)
             .map(|building| building.player)
             .or_else(|| {
@@ -830,7 +830,7 @@ impl Presentation {
     fn restore_crash_effect(
         &mut self,
         state: &State,
-        crash: oxide_sim::state::AircraftCrash,
+        crash: aftermine_sim::state::AircraftCrash,
         witnessed: bool,
     ) {
         for effect in &mut self.fx {
@@ -979,9 +979,9 @@ impl Presentation {
     fn building_hit(
         &self,
         state: &State,
-        target: Option<oxide_sim::Target>,
+        target: Option<aftermine_sim::Target>,
     ) -> Option<BuildingHit> {
-        let oxide_sim::Target::Building(id) = target? else {
+        let aftermine_sim::Target::Building(id) = target? else {
             return None;
         };
         state
@@ -1006,15 +1006,15 @@ impl Presentation {
     pub(crate) fn hit_surface(
         &self,
         state: &State,
-        target: Option<oxide_sim::Target>,
+        target: Option<aftermine_sim::Target>,
     ) -> Option<HitSurface> {
         let target = target?;
-        if let oxide_sim::Target::Building(_) = target {
+        if let aftermine_sim::Target::Building(_) = target {
             return self
                 .building_hit(state, Some(target))
                 .map(HitSurface::Building);
         }
-        let oxide_sim::Target::Unit(id) = target else {
+        let aftermine_sim::Target::Unit(id) = target else {
             return None;
         };
         let (body, mut center, airborne, frame) = if let Some(unit) = state.unit(id) {
@@ -1027,7 +1027,7 @@ impl Presentation {
             (
                 UnitBody::capture(self, state, unit, crate::render::reduced_motion()),
                 self.draw_pos(id, unit.pos, 1.0),
-                unit.domain() == oxide_sim::stats::Domain::Air,
+                unit.domain() == aftermine_sim::stats::Domain::Air,
                 crate::render::UnitSpriteFrame::capture(
                     unit.kind,
                     crate::render::unit_animation(self, state, unit),
@@ -1053,10 +1053,10 @@ impl Presentation {
     pub(crate) fn payload_surface(
         &self,
         state: &State,
-        target: Option<oxide_sim::Target>,
-        player: oxide_sim::PlayerId,
+        target: Option<aftermine_sim::Target>,
+        player: aftermine_sim::PlayerId,
         at: Vec2,
-        targets: oxide_sim::stats::DomainMask,
+        targets: aftermine_sim::stats::DomainMask,
     ) -> Option<HitSurface> {
         let covers = |surface: HitSurface| surface.covers(at);
         let known = self
@@ -1075,7 +1075,7 @@ impl Presentation {
                             return false;
                         }
                         let mut center = self.draw_pos(unit.id, unit.pos, 1.0);
-                        if unit.domain() == oxide_sim::stats::Domain::Air {
+                        if unit.domain() == aftermine_sim::stats::Domain::Air {
                             center.y -= crate::render::air_presentation(unit.kind, 1.0).2;
                         }
                         center.distance(at) <= unit.kind.stats().radius.to_num::<f32>()
@@ -1097,7 +1097,7 @@ impl Presentation {
                             .map(|(id, ..)| *id),
                     );
                 units.find_map(|id| {
-                    self.hit_surface(state, Some(oxide_sim::Target::Unit(id)))
+                    self.hit_surface(state, Some(aftermine_sim::Target::Unit(id)))
                         .filter(|surface| covers(*surface))
                 })
             })
@@ -1121,7 +1121,7 @@ impl Presentation {
                             .map(|(id, ..)| *id),
                     )
                     .find_map(|id| {
-                        self.hit_surface(state, Some(oxide_sim::Target::Building(id)))
+                        self.hit_surface(state, Some(aftermine_sim::Target::Building(id)))
                             .filter(|surface| covers(*surface))
                     })
             })
@@ -1129,7 +1129,8 @@ impl Presentation {
 
     pub(super) fn queue_brace_sounds(&mut self, state: &State) {
         for unit in state.units().iter().filter(|unit| {
-            unit.kind == oxide_sim::UnitKind::Piledriver && state.vision(self.human).sees_unit(unit)
+            unit.kind == aftermine_sim::UnitKind::Piledriver
+                && state.vision(self.human).sees_unit(unit)
         }) {
             let sound = match self.animations.brace_change(unit) {
                 Some(crate::presentation_animation::BraceChange::Deploying) => {
@@ -1154,7 +1155,7 @@ impl Presentation {
                 .vision(game.human)
                 .visible(chassis::grid::TilePos::containing(pos))
         };
-        let mut remaining = std::collections::HashMap::<oxide_sim::UnitId, u8>::new();
+        let mut remaining = std::collections::HashMap::<aftermine_sim::UnitId, u8>::new();
         for event in events {
             if let Event::ShellIntercepted { defender, .. } = event {
                 *remaining.entry(*defender).or_default() += 1;
@@ -1264,7 +1265,7 @@ impl Presentation {
                         );
                         let airborne = state
                             .unit(*attacker)
-                            .map(|unit| unit.domain() == oxide_sim::stats::Domain::Air)
+                            .map(|unit| unit.domain() == aftermine_sim::stats::Domain::Air)
                             .or_else(|| {
                                 self.fx_previous
                                     .units
@@ -1273,9 +1274,9 @@ impl Presentation {
                                     .map(|(_, _, _, airborne, _)| *airborne)
                             })
                             .unwrap_or(
-                                attacker_kind.stats().domain == oxide_sim::stats::Domain::Air,
+                                attacker_kind.stats().domain == aftermine_sim::stats::Domain::Air,
                             );
-                        if attacker_kind.stats().domain == oxide_sim::stats::Domain::Air
+                        if attacker_kind.stats().domain == aftermine_sim::stats::Domain::Air
                             && !airborne
                         {
                             origin.y += crate::render::air_presentation(*attacker_kind, 1.0).2;
@@ -1299,7 +1300,8 @@ impl Presentation {
                         } = &mut report.kind
                         {
                             *source = Some(*attacker);
-                            if *attacker_kind == oxide_sim::UnitKind::Piledriver && impact_witnessed
+                            if *attacker_kind == aftermine_sim::UnitKind::Piledriver
+                                && impact_witnessed
                             {
                                 *impact_sound = Some(SoundKind::PiledriverImpact);
                             }
@@ -1412,7 +1414,7 @@ impl Presentation {
                         |(body, _)| body,
                     );
                     let airborne =
-                        kind.stats().domain == oxide_sim::stats::Domain::Air && !grounded;
+                        kind.stats().domain == aftermine_sim::stats::Domain::Air && !grounded;
                     self.fx.push(Effect {
                         kind: if airborne {
                             EffectKind::Falling {
@@ -1448,7 +1450,7 @@ impl Presentation {
                     if state
                         .map()
                         .tile(chassis::grid::TilePos::containing(crash.impact))
-                        .is_some_and(|tile| tile.terrain != oxide_sim::map::Terrain::Pit)
+                        .is_some_and(|tile| tile.terrain != aftermine_sim::map::Terrain::Pit)
                     {
                         self.sounds_pending
                             .push((SoundKind::BuildingBoom, Some(world_vec(crash.impact))));
@@ -1544,41 +1546,47 @@ impl Presentation {
                 }
                 Event::CommandRejected { player, reason } if *player == self.human => {
                     let why: std::borrow::Cow<'static, str> = match reason {
-                        oxide_sim::command::RejectReason::MissingFoundrySupport => {
+                        aftermine_sim::command::RejectReason::MissingFoundrySupport => {
                             crate::building_actions::foundry_reach_reason().into()
                         }
-                        oxide_sim::command::RejectReason::NotEnoughScrap => {
+                        aftermine_sim::command::RejectReason::NotEnoughScrap => {
                             "Not enough scrap".into()
                         }
-                        oxide_sim::command::RejectReason::QueueFull => "Queue is full".into(),
-                        oxide_sim::command::RejectReason::UnreachableGoal => {
+                        aftermine_sim::command::RejectReason::QueueFull => "Queue is full".into(),
+                        aftermine_sim::command::RejectReason::UnreachableGoal => {
                             "Can't reach that".into()
                         }
-                        oxide_sim::command::RejectReason::InvalidTarget => {
+                        aftermine_sim::command::RejectReason::InvalidTarget => {
                             "Can't target that".into()
                         }
-                        oxide_sim::command::RejectReason::NotANode => {
+                        aftermine_sim::command::RejectReason::NotANode => {
                             "Nothing to mine there".into()
                         }
-                        oxide_sim::command::RejectReason::NotYourBuilding => {
+                        aftermine_sim::command::RejectReason::NotYourBuilding => {
                             "Not your building".into()
                         }
-                        oxide_sim::command::RejectReason::CannotProduce => {
+                        aftermine_sim::command::RejectReason::CannotProduce => {
                             "That factory can't make those".into()
                         }
-                        oxide_sim::command::RejectReason::BadSite => "Can't build there".into(),
-                        oxide_sim::command::RejectReason::NoValidUnits => {
+                        aftermine_sim::command::RejectReason::BadSite => "Can't build there".into(),
+                        aftermine_sim::command::RejectReason::NoValidUnits => {
                             "Nothing selected can do that".into()
                         }
-                        oxide_sim::command::RejectReason::OutOfBounds => "Outside the map".into(),
-                        oxide_sim::command::RejectReason::Eliminated => "You are eliminated".into(),
-                        oxide_sim::command::RejectReason::MissingPrerequisite => {
+                        aftermine_sim::command::RejectReason::OutOfBounds => {
+                            "Outside the map".into()
+                        }
+                        aftermine_sim::command::RejectReason::Eliminated => {
+                            "You are eliminated".into()
+                        }
+                        aftermine_sim::command::RejectReason::MissingPrerequisite => {
                             "Needs its tech building first".into()
                         }
-                        oxide_sim::command::RejectReason::NothingLoaded => {
+                        aftermine_sim::command::RejectReason::NothingLoaded => {
                             "No warhead loaded".into()
                         }
-                        oxide_sim::command::RejectReason::CrewFull => "Cradle crew is full".into(),
+                        aftermine_sim::command::RejectReason::CrewFull => {
+                            "Cradle crew is full".into()
+                        }
                     };
                     self.toast(why);
                     self.sounds_pending.push((SoundKind::Denied, None));
@@ -1594,7 +1602,7 @@ impl Presentation {
                     // A firing machine faces its target. A defense's gun
                     // already bears on it in the simulation.
                     let d = world_vec(*to) - world_vec(*from);
-                    if let oxide_sim::Target::Unit(uid) = shooter
+                    if let aftermine_sim::Target::Unit(uid) = shooter
                         && d.length_squared() > 1e-6
                     {
                         let angle = d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
@@ -1645,7 +1653,7 @@ impl Presentation {
                         || sees(self, *defender_pos))
                     .then(|| {
                         let rotation = match self
-                            .hit_surface(state, Some(oxide_sim::Target::Unit(*defender)))
+                            .hit_surface(state, Some(aftermine_sim::Target::Unit(*defender)))
                         {
                             Some(HitSurface::Unit(hit)) => hit.body.rotation,
                             _ => 0.0,
@@ -1729,7 +1737,7 @@ impl Presentation {
                     self.fx.push(Effect {
                         kind: EffectKind::Burst {
                             at: world_vec(*at),
-                            radius: oxide_sim::stats::CHARGE_BLAST_RADIUS.to_num::<f32>(),
+                            radius: aftermine_sim::stats::CHARGE_BLAST_RADIUS.to_num::<f32>(),
                         },
                         age: 0.0,
                     });
@@ -1759,7 +1767,7 @@ impl Presentation {
                             .iter()
                             .filter(|u| u.player == self.human && targets.covers(u.domain()))
                             .any(|u| world_vec(u.pos).distance(world) <= reach)
-                            || (targets.covers(oxide_sim::stats::Domain::Ground)
+                            || (targets.covers(aftermine_sim::stats::Domain::Ground)
                                 && state
                                     .buildings()
                                     .iter()
@@ -1794,7 +1802,9 @@ impl Presentation {
                         });
                     let payload = arrived
                         .as_ref()
-                        .map_or(oxide_sim::ProjectileKind::Shell, |(shell, _)| shell.kind);
+                        .map_or(aftermine_sim::ProjectileKind::Shell, |(shell, _)| {
+                            shell.kind
+                        });
                     let from = arrived
                         .as_ref()
                         .map_or(world, |(shell, _)| world_vec(shell.launch));
@@ -1832,25 +1842,29 @@ impl Presentation {
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
                     let text = match reason {
-                        oxide_sim::StallReason::NoRoute => "Can't reach that",
-                        oxide_sim::StallReason::NoFiringPosition => "No ground to fire from there",
-                        oxide_sim::StallReason::InsufficientScrap => "Out of scrap",
-                        oxide_sim::StallReason::GroundTaken => {
+                        aftermine_sim::StallReason::NoRoute => "Can't reach that",
+                        aftermine_sim::StallReason::NoFiringPosition => {
+                            "No ground to fire from there"
+                        }
+                        aftermine_sim::StallReason::InsufficientScrap => "Out of scrap",
+                        aftermine_sim::StallReason::GroundTaken => {
                             "That ground was taken before the founder arrived"
                         }
-                        oxide_sim::StallReason::CrewFull => "Cradle crew is full",
-                        oxide_sim::StallReason::TransportFull => "The transport is full",
-                        oxide_sim::StallReason::NoOpenGround => "No open ground to unload there",
-                        oxide_sim::StallReason::DangerHold if scout => {
+                        aftermine_sim::StallReason::CrewFull => "Cradle crew is full",
+                        aftermine_sim::StallReason::TransportFull => "The transport is full",
+                        aftermine_sim::StallReason::NoOpenGround => {
+                            "No open ground to unload there"
+                        }
+                        aftermine_sim::StallReason::DangerHold if scout => {
                             "Scout waiting for a safe way to see"
                         }
-                        oxide_sim::StallReason::DangerHold => {
+                        aftermine_sim::StallReason::DangerHold => {
                             "Worker waiting for a safe route home"
                         }
                         // The scout still has its tile in sight, so the
                         // order did its job; the stop needs no feedback.
-                        oxide_sim::StallReason::SafeVantage => continue,
-                        oxide_sim::StallReason::NoSafeVantage => {
+                        aftermine_sim::StallReason::SafeVantage => continue,
+                        aftermine_sim::StallReason::NoSafeVantage => {
                             "Scout found no safe way to see there"
                         }
                     };
@@ -1977,7 +1991,7 @@ impl Presentation {
                     self.scorches.push((
                         at,
                         0.0,
-                        2.0 * oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
+                        2.0 * aftermine_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
                     ));
                     if self.scorches.len() > 16 {
                         self.scorches.remove(0);
@@ -1992,7 +2006,7 @@ impl Presentation {
                 Event::GameOver { result } => {
                     let won = matches!(
                         result,
-                        oxide_sim::GameResult::Victory { team }
+                        aftermine_sim::GameResult::Victory { team }
                             if *team == state.player(self.human).team
                     );
                     self.sounds_pending.push((
@@ -2042,7 +2056,7 @@ impl Presentation {
             ) else {
                 continue;
             };
-            let line = oxide_sim::strike::WarheadLine {
+            let line = aftermine_sim::strike::WarheadLine {
                 launch: warhead.launch,
                 impact: warhead.impact,
                 arrival: warhead.arrival,
@@ -2117,10 +2131,11 @@ impl Presentation {
         if self.all_seeing() {
             return;
         }
-        let cradles: Vec<_> = oxide_sim::observation::hostile_public_buildings(state, self.human)
-            .into_iter()
-            .filter(|public| public.kind.assembles().is_some())
-            .collect();
+        let cradles: Vec<_> =
+            aftermine_sim::observation::hostile_public_buildings(state, self.human)
+                .into_iter()
+                .filter(|public| public.kind.assembles().is_some())
+                .collect();
         for cradle in &cradles {
             if self
                 .warned_cradles

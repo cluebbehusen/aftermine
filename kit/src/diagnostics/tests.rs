@@ -3,7 +3,7 @@ use super::*;
 fn temp() -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     std::env::temp_dir().join(format!(
-        "oxide-diagnostics-test-{}-{}",
+        "aftermine-diagnostics-test-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ))
@@ -241,7 +241,7 @@ fn a_fatal_error_lands_in_the_incident_log_with_its_message() {
 #[test]
 #[ignore = "subprocess fixture; invoked by an_installed_monitor_records_a_panic_before_its_process_dies"]
 fn panicking_child() {
-    let root = PathBuf::from(std::env::var_os("OXIDE_DIAGNOSTICS_TEST_ROOT").unwrap());
+    let root = PathBuf::from(std::env::var_os("AFTERMINE_DIAGNOSTICS_TEST_ROOT").unwrap());
     let monitor = Monitor::start(Some(root), build()).unwrap();
     assert!(monitor.install().is_ok());
     let _simulation = stage(Stage::Simulation, 77);
@@ -257,7 +257,7 @@ fn an_installed_monitor_records_a_panic_before_its_process_dies() {
             "diagnostics::tests::panicking_child",
             "--ignored",
         ])
-        .env("OXIDE_DIAGNOSTICS_TEST_ROOT", &root)
+        .env("AFTERMINE_DIAGNOSTICS_TEST_ROOT", &root)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -300,15 +300,15 @@ fn incident_logs_keep_the_newest_entries_within_their_bound() {
 
 fn crash_replay() -> crate::GameReplay {
     let mut replay = crate::GameReplay::new(
-        oxide_sim::SIM_VERSION,
+        aftermine_sim::SIM_VERSION,
         "test",
-        oxide_sim::Scenario::skirmish(),
+        aftermine_sim::Scenario::skirmish(),
     );
     replay.record(
         0,
-        oxide_sim::PlayerCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Surrender,
+        aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Surrender,
         },
     );
     replay.meta.ticks = Some(1);
@@ -319,9 +319,9 @@ fn crash_replay() -> crate::GameReplay {
 fn a_crash_dump_holds_a_loadable_replay_and_the_unfinished_batch() {
     let root = temp();
     let replay = crash_replay();
-    let unfinished = [oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Surrender,
+    let unfinished = [aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Surrender,
     }];
     let directory = write_crash_dump(
         &root,

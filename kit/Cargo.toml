@@ -1,5 +1,5 @@
 [package]
-name = "oxide-kit"
+name = "aftermine-kit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,10 +7,10 @@ publish.workspace = true
 description = "Shared engine-side toolkit: playback, replay stats, software renderer"
 
 [dependencies]
-oxide-opponent = { workspace = true }
+aftermine-opponent = { workspace = true }
 rayon = "1.11"
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
+aftermine-sim = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

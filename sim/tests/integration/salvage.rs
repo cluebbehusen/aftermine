@@ -5,9 +5,9 @@
 use crate::common;
 use common::{arena, cmd, run_until, unit};
 
+use aftermine_sim::stats::{BuildingKind, WRECK_DECAY_TICKS, WRECK_VALUE_DEN, WRECK_VALUE_NUM};
+use aftermine_sim::{Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::stats::{BuildingKind, WRECK_DECAY_TICKS, WRECK_VALUE_DEN, WRECK_VALUE_NUM};
-use oxide_sim::{Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 
 /// Kills the scuttler's victim and returns the wreck tile.
 fn kill_harvester(state: &mut State, killer: UnitId, victim: UnitId) -> TilePos {
@@ -491,9 +491,9 @@ fn a_flyer_downed_over_rock_leaves_no_wreck_bait() {
 // ---------------------------------------------------------------------
 // Building salvage: stripping standing structures as labor.
 
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::BuildingSpec;
-use oxide_sim::stats::SALVAGE_REFUND_PERMILLE;
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::BuildingSpec;
+use aftermine_sim::stats::SALVAGE_REFUND_PERMILLE;
 
 fn standing(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
     common::building(player, kind, x, y)
@@ -503,9 +503,9 @@ fn standing(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
 /// tick by a single-Foundry seat — exact-bank assertions add this so
 /// salvage/repair accounting and the always-on floor stay separately
 /// verifiable.
-fn drips_between(from_tick: u64, state: &oxide_sim::State) -> u32 {
-    let period = oxide_sim::stats::FOUNDRY_DRIP_PERIOD;
-    let start = oxide_sim::stats::FOUNDRY_DRIP_START_TICK;
+fn drips_between(from_tick: u64, state: &aftermine_sim::State) -> u32 {
+    let period = aftermine_sim::stats::FOUNDRY_DRIP_PERIOD;
+    let start = aftermine_sim::stats::FOUNDRY_DRIP_START_TICK;
     let credits_by = |tick: u64| {
         if tick < start {
             0
@@ -936,13 +936,13 @@ fn repair_and_salvage_evict_each_other_from_a_target() {
     assert!(
         !matches!(
             state.unit(stripper).unwrap().order,
-            oxide_sim::Order::Salvage { .. }
+            aftermine_sim::Order::Salvage { .. }
         ),
         "issuing repair calls the wrecking crew off"
     );
     assert!(matches!(
         state.unit(welder).unwrap().order,
-        oxide_sim::Order::Repair { .. }
+        aftermine_sim::Order::Repair { .. }
     ));
     state.tick(&[cmd(
         0,
@@ -955,7 +955,7 @@ fn repair_and_salvage_evict_each_other_from_a_target() {
     assert!(
         !matches!(
             state.unit(welder).unwrap().order,
-            oxide_sim::Order::Repair { .. }
+            aftermine_sim::Order::Repair { .. }
         ),
         "and issuing salvage sends the welder home"
     );
@@ -1086,7 +1086,7 @@ fn eviction_strips_queued_legs_but_spares_the_rest_of_the_program() {
     )]);
     let unit = state.unit(walker).unwrap();
     assert!(
-        matches!(unit.order, oxide_sim::Order::Run { .. }),
+        matches!(unit.order, aftermine_sim::Order::Run { .. }),
         "the march survives eviction"
     );
     assert!(
@@ -1115,7 +1115,7 @@ fn foundry_repair_bills_against_its_authored_price() {
             building["hp"] = serde_json::json!(max_hp - 64);
         }
     }
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     let hp_before = state.building(foundry).unwrap().hp;
     let welder = state.units()[0].id;
     state.tick(&[cmd(
@@ -1132,16 +1132,16 @@ fn foundry_repair_bills_against_its_authored_price() {
             .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == welder))
     });
     assert!(
-        state.current_tick() < oxide_sim::stats::FOUNDRY_DRIP_START_TICK,
+        state.current_tick() < aftermine_sim::stats::FOUNDRY_DRIP_START_TICK,
         "test premise: the weld and its stall fit before the first drip credit"
     );
     assert_eq!(state.player(PlayerId(0)).scrap, 0, "the coin was spent");
     let healed = state.building(foundry).unwrap().hp - hp_before;
     let ramp = u64::from(max_hp - max_hp / 5);
-    let ticks = u64::from(oxide_sim::stats::FOUNDRY_REPAIR_TICKS);
-    let basis = u64::from(oxide_sim::stats::FOUNDRY_REPAIR_PRICE);
+    let ticks = u64::from(aftermine_sim::stats::FOUNDRY_REPAIR_TICKS);
+    let basis = u64::from(aftermine_sim::stats::FOUNDRY_REPAIR_PRICE);
     let millis = |t: u64| {
-        (ramp * t / ticks) * basis * oxide_sim::stats::REPAIR_COST_PERMILLE / u64::from(max_hp)
+        (ramp * t / ticks) * basis * aftermine_sim::stats::REPAIR_COST_PERMILLE / u64::from(max_hp)
     };
     let stall = (0..ticks)
         .find(|&p| millis(p + 1).div_ceil(1000) > 1)
@@ -1196,7 +1196,7 @@ fn a_rejected_command_never_evicts_the_working_crew() {
     )]);
     assert!(matches!(
         state.unit(welder).unwrap().order,
-        oxide_sim::Order::Repair { .. }
+        aftermine_sim::Order::Repair { .. }
     ));
     // A sentinel can't salvage: the command rejects — and the welder
     // must still be welding.
@@ -1221,7 +1221,7 @@ fn a_rejected_command_never_evicts_the_working_crew() {
     assert!(
         matches!(
             state.unit(welder).unwrap().order,
-            oxide_sim::Order::Repair { .. }
+            aftermine_sim::Order::Repair { .. }
         ),
         "a dropped command left the welder alone"
     );
@@ -1282,7 +1282,7 @@ fn eviction_reaches_a_looping_programs_rotation() {
     run_until(&mut state, 2000, |s, _| {
         matches!(
             s.unit(patroller).unwrap().order,
-            oxide_sim::Order::Repair { .. }
+            aftermine_sim::Order::Repair { .. }
         )
     });
     // Salvage claims the target: the active Repair leg must go AND
@@ -1297,14 +1297,14 @@ fn eviction_reaches_a_looping_programs_rotation() {
     )]);
     let unit = state.unit(patroller).unwrap();
     assert!(
-        !matches!(unit.order, oxide_sim::Order::Repair { .. }),
+        !matches!(unit.order, aftermine_sim::Order::Repair { .. }),
         "the active leg was evicted"
     );
     assert!(
         !unit
             .queue
             .iter()
-            .any(|o| matches!(o, oxide_sim::Order::Repair { .. })),
+            .any(|o| matches!(o, aftermine_sim::Order::Repair { .. })),
         "and the loop's rotation did not smuggle it back: {:?}",
         unit.queue
     );
@@ -1313,7 +1313,7 @@ fn eviction_reaches_a_looping_programs_rotation() {
 
 // --- The anchored work-zone contract ---
 
-use oxide_sim::stats::HARVEST_ZONE_RADIUS;
+use aftermine_sim::stats::HARVEST_ZONE_RADIUS;
 
 #[test]
 fn a_dry_source_hops_only_inside_its_own_deposit() {

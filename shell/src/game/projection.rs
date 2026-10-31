@@ -5,7 +5,7 @@
 //! networked order is still on its way, names an order in the program that
 //! command will actually edit.
 
-use oxide_sim::{Building, BuildingId, Order, PlayerCommand, State, Tick, Unit, UnitId};
+use aftermine_sim::{Building, BuildingId, Order, PlayerCommand, State, Tick, Unit, UnitId};
 
 /// One unit's order program, active order first.
 #[derive(Debug, Clone, PartialEq, Eq)]

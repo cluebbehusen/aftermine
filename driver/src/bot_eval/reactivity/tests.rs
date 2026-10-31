@@ -1,7 +1,7 @@
 use super::*;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{BuildingId, Scenario, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{BuildingId, Scenario, UnitId};
 
 /// A 24-wide field: West's start at (2, 2) and East's at (20, 2), 12 rows
 /// deep, or 16 with a third start at (2, 13), allied to West, when `trio`

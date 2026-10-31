@@ -5,8 +5,8 @@ use crate::game::{Game, Scene};
 use crate::numeric::Fit;
 use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
 use crate::typography::entity_name;
+use aftermine_sim::{Building, BuildingId, BuildingKind, Command};
 use chassis::grid::TilePos;
-use oxide_sim::{Building, BuildingId, BuildingKind, Command};
 use std::fmt::Write as _;
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ pub(crate) fn foundry_reach_reason() -> String {
     format!(
         "needs a {} within {} tiles",
         entity_name(BuildingKind::Foundry.name()),
-        oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+        aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
     )
 }
 
@@ -71,7 +71,7 @@ impl SelectedBuildings {
     }
 
     /// Whether the viewer has a completed building that answers `need`.
-    pub fn meets(&self, need: oxide_sim::stats::Prerequisite) -> bool {
+    pub fn meets(&self, need: aftermine_sim::stats::Prerequisite) -> bool {
         self.tech
             .iter()
             .any(|(kind, tier)| *kind == need.kind && *tier >= need.tier)
@@ -134,7 +134,7 @@ impl SelectedBuildings {
             .collect()
     }
 
-    pub fn defenses(&self, domain: Option<oxide_sim::stats::Domain>) -> Vec<BuildingId> {
+    pub fn defenses(&self, domain: Option<aftermine_sim::stats::Domain>) -> Vec<BuildingId> {
         self.buildings
             .iter()
             .filter(|b| {
@@ -513,10 +513,9 @@ impl SelectedBuildings {
                 if let Some(req) = upgrade.requires.iter().find(|req| !self.meets(**req)) {
                     Some(format!("needs a standing {}", entity_name(req.name())))
                 } else if b.kind.upgrade_needs_foundry_support(b.tier)
-                    && !self
-                        .foundries
-                        .iter()
-                        .any(|&foundry| oxide_sim::geometry::foundry_supports(foundry, b.anchor))
+                    && !self.foundries.iter().any(|&foundry| {
+                        aftermine_sim::geometry::foundry_supports(foundry, b.anchor)
+                    })
                 {
                     Some(foundry_reach_reason())
                 } else if bank < upgrade.cost {

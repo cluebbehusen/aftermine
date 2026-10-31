@@ -321,12 +321,12 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
     let (mut p, layout) = naming_at_1280("");
     let click = [
         RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: layout.confirm.center().x,
             y: layout.confirm.center().y,
         },
         RawEvent::MouseUp {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: layout.confirm.center().x,
             y: layout.confirm.center().y,
         },

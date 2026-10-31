@@ -57,7 +57,7 @@ fn a_map_held_in_memory_draws_like_one_on_disk() {
 #[test]
 fn an_unreadable_scenario_answers_with_no_preview() {
     let worker = PreviewWorker::spawn();
-    let missing = PathBuf::from("/nonexistent/oxide-preview.json");
+    let missing = PathBuf::from("/nonexistent/aftermine-preview.json");
     let key = PreviewKey::Path(Some(missing.clone()));
     worker
         .requests
