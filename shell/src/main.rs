@@ -79,7 +79,7 @@ use macroquad::prelude::*;
     reason = "independent command-line switches"
 )]
 #[derive(Parser)]
-#[command(name = "aftermine-shell", version, about = "Oxide, playable")]
+#[command(name = "aftermine-shell", version, about = "Aftermine, playable")]
 struct Args {
     /// Scenario JSON path (skips the menu).
     #[arg(long, conflicts_with = "replay")]
@@ -238,7 +238,7 @@ fn window_conf() -> Conf {
     }
     let (width, height) = args.window.unwrap_or(config::Config::load().window);
     Conf {
-        window_title: "Oxide".to_string(),
+        window_title: "Aftermine".to_string(),
         window_width: width.fit::<i32>(),
         window_height: height.fit::<i32>(),
         high_dpi: !args.no_high_dpi,
@@ -246,7 +246,7 @@ fn window_conf() -> Conf {
         // the packaged app's full-resolution icns in place when available;
         // sharpening the dev-run icon would take an unsafe AppKit call.
         icon: if cfg!(target_os = "macos")
-            && paths::bundle_resources().is_some_and(|root| root.join("oxide.icns").is_file())
+            && paths::bundle_resources().is_some_and(|root| root.join("aftermine.icns").is_file())
         {
             None
         } else {
@@ -264,7 +264,7 @@ fn window_conf() -> Conf {
 /// launcher's own arguments must not trip the parser into exiting.
 fn cli_args() -> Args {
     if platform::TOUCH_ONLY {
-        Args::parse_from(["Oxide"])
+        Args::parse_from(["Aftermine"])
     } else {
         Args::parse()
     }

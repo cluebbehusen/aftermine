@@ -1,7 +1,7 @@
-//! Oxide's replay file boundary.
+//! Aftermine's replay file boundary.
 //!
 //! A replay is plain JSON, as the driver writes for people and agents to
-//! read, or an `.oxreplay` recording: eight-byte `OXIDEREP` magic, a
+//! read, or an `.amreplay` recording: eight-byte `AFTERREP` magic, a
 //! little-endian 32-bit header length, a JSON header, one checksummed
 //! Zstandard frame holding the same JSON replay, then the keyframe frames
 //! the header indexes, in order. Both load through the same strict wire.
@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
 
-/// `.oxreplay` format revision.
+/// `.amreplay` format revision.
 const FORMAT: u32 = 1;
-const MAGIC: &[u8; 8] = b"OXIDEREP";
+const MAGIC: &[u8; 8] = b"AFTERREP";
 const MAX_HEADER: u64 = 1 << 20;
-/// Largest `.oxreplay` file accepted. Keyframes that would push a recording
+/// Largest `.amreplay` file accepted. Keyframes that would push a recording
 /// past it are left out when it is written.
 const MAX_RECORDING_BYTES: u64 = 256 << 20;
 /// The record compresses once, on a save worker. This level takes about a
@@ -115,7 +115,7 @@ impl<'a> ReplayPlayback<'a> {
     }
 }
 
-/// Loads an Oxide replay from disk, JSON or `.oxreplay`, without its
+/// Loads an Aftermine replay from disk, JSON or `.amreplay`, without its
 /// keyframes.
 pub fn load_replay(path: impl AsRef<Path>) -> Result<GameReplay, ReplayError> {
     load_recording(path).map(|recording| recording.replay)
@@ -160,7 +160,7 @@ fn invalid(error: impl std::fmt::Display) -> ReplayError {
 }
 
 /// Writes `replay` and as many of `keyframes` as fit the file's size bound
-/// as an `.oxreplay` recording, atomically.
+/// as an `.amreplay` recording, atomically.
 pub fn save_recording(
     path: impl AsRef<Path>,
     replay: &GameReplay,

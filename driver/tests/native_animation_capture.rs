@@ -892,9 +892,9 @@ fn scratch_home() -> Result<PathBuf> {
 fn write_config(home: &Path) -> Result<()> {
     let config = include_bytes!("../src/quiet_config.json");
     for dir in [
-        home.join("Library/Application Support/Oxide"),
-        home.join(".config/oxide"),
-        home.join("AppData/Oxide"),
+        home.join("Library/Application Support/Aftermine"),
+        home.join(".config/aftermine"),
+        home.join("AppData/Aftermine"),
     ] {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(dir.join("config.json"), config)?;

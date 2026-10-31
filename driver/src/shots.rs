@@ -42,7 +42,7 @@ impl Drop for ScratchHome {
     }
 }
 
-/// A throwaway HOME whose Oxide config pins the presentation knobs the
+/// A throwaway HOME whose Aftermine config pins the presentation knobs the
 /// suite depends on: reduced motion (stills the Home backdrop drift),
 /// default scale, classic bindings (empty list resets to classic on
 /// load), 1280x800. Both the macOS and XDG locations are written so the
@@ -63,9 +63,9 @@ fn scratch_home() -> Result<ScratchHome> {
     config["reduced_motion"] = true.into();
     let text = serde_json::to_string_pretty(&config).expect("static json");
     for dir in [
-        home.0.join("Library/Application Support/Oxide"),
-        home.0.join(".config/oxide"),
-        home.0.join("AppData/Oxide"),
+        home.0.join("Library/Application Support/Aftermine"),
+        home.0.join(".config/aftermine"),
+        home.0.join("AppData/Aftermine"),
     ] {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(dir.join("config.json"), &text)?;

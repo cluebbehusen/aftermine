@@ -563,9 +563,9 @@ impl Browser {
             crate::render::OUTSIDE,
         );
         let title_size = crate::theme::Type::Title.at(ui);
-        let dims = measure_text("OXIDE", None, numeric::font_size(title_size), 1.0);
+        let dims = measure_text("AFTERMINE", None, numeric::font_size(title_size), 1.0);
         draw_text(
-            "OXIDE",
+            "AFTERMINE",
             (view.x - dims.width) * 0.5,
             72.0 * ui,
             title_size,

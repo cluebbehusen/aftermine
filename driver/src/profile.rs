@@ -110,7 +110,9 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
         .env("AFTERMINE_RESOURCE_ROOT", &root)
         .current_dir(&workspace.directory);
     isolate_home(&mut command, &workspace.directory);
-    let child = command.spawn().context("spawning profiled Oxide shell")?;
+    let child = command
+        .spawn()
+        .context("spawning profiled Aftermine shell")?;
     let _guard = ShellGuard::new(child);
     let mut client = connect(options.port)?;
 

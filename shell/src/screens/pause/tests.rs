@@ -417,7 +417,7 @@ fn the_name_field_edits_with_text_and_backspace_and_escape_cancels() {
 #[test]
 fn repeated_backspace_edges_clear_the_name_field_in_one_frame() {
     let mut p = PauseScreen::open(false, true);
-    p.begin_naming("oxide");
+    p.begin_naming("scrap");
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
     let repeats = [

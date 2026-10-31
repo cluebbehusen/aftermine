@@ -161,7 +161,7 @@ fn catalog_orders_autosaves_by_saved_time_then_mtime_then_path() {
         meta.kind = Some("autosave".into());
         meta.ticks = Some(game.state.current_tick());
         meta.saved_at = Some(saved_at);
-        let path = dir.join(format!("{name}.oxsave"));
+        let path = dir.join(format!("{name}.amsave"));
         crate::saved_game::write_capture(game.capture_save(), meta, &path).unwrap();
         std::fs::File::options()
             .write(true)
@@ -250,21 +250,21 @@ fn continue_offers_only_sessions_left_since_the_last_finished_match() {
             .collect::<Vec<_>>()
     };
 
-    write(&autosaves, "autosave-1.oxsave", "autosave", 100);
+    write(&autosaves, "autosave-1.amsave", "autosave", 100);
     assert_eq!(continuable(), ["autosave-1"]);
     write(&matches, "match-2.json", "match", 200);
     assert!(
         continuable().is_empty(),
         "a finished match withdraws the sessions left before it"
     );
-    write(&saves, "save-0000000001.oxsave", "save", 300);
+    write(&saves, "save-0000000001.amsave", "save", 300);
     write(&replays, "shared.json", "match", 300);
     assert!(
         continuable().is_empty(),
         "neither a named save nor an added recording is a session left"
     );
-    write(&autosaves, "lan-autosave-3.oxsave", "lan-autosave", 400);
-    write(&autosaves, "autosave-4.oxsave", "autosave", 500);
+    write(&autosaves, "lan-autosave-3.amsave", "lan-autosave", 400);
+    write(&autosaves, "autosave-4.amsave", "autosave", 500);
     write(&replays, "newer.json", "match", 600);
     assert_eq!(
         continuable(),

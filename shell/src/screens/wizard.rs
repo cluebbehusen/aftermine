@@ -2082,7 +2082,7 @@ impl Wizard {
                 (view.title, view.items, view.selected)
             }
             (None, Step::Map) => (
-                "OXIDE".to_string(),
+                "AFTERMINE".to_string(),
                 self.entries.iter().map(|e| e.label.clone()).collect(),
                 self.browser.selected,
             ),

@@ -1,4 +1,4 @@
-"""Canonical native frames for Oxide's finalized machine art.
+"""Canonical native frames for Aftermine's finalized machine art.
 
 The public installer writes only gameplay-sized RGBA images into the sprite
 generator's registry.  Review cards and their presentation framing are not

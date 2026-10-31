@@ -84,7 +84,7 @@ pub fn run(addr: &str, spawn: bool) -> Result<()> {
         );
         command.current_dir(&scratch_home.as_ref().expect("created when spawning").0);
         Some(crate::auto::ShellGuard::new(
-            command.spawn().context("spawning built Oxide shell")?,
+            command.spawn().context("spawning built Aftermine shell")?,
         ))
     } else {
         None

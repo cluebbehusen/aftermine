@@ -78,7 +78,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
         );
     }
     shell_executable_from_cargo_output(&output.stdout)
-        .context("cargo did not report the Oxide executable")
+        .context("cargo did not report the Aftermine executable")
 }
 
 fn shell_executable_from_cargo_output(stdout: &[u8]) -> Option<PathBuf> {
@@ -87,7 +87,7 @@ fn shell_executable_from_cargo_output(stdout: &[u8]) -> Option<PathBuf> {
             continue;
         };
         if message["reason"] == "compiler-artifact"
-            && message["target"]["name"] == "Oxide"
+            && message["target"]["name"] == "Aftermine"
             && let Some(executable) = message["executable"].as_str()
         {
             return Some(PathBuf::from(executable));
@@ -136,7 +136,7 @@ pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
     } else {
         command.current_dir(root);
     }
-    let child = command.spawn().context("spawning built Oxide shell")?;
+    let child = command.spawn().context("spawning built Aftermine shell")?;
     let guard = ShellGuard::new(child);
     let addr = format!("127.0.0.1:{}", opts.port);
     for _ in 0..240 {

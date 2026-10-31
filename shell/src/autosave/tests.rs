@@ -213,7 +213,7 @@ fn collisions_beyond_one_thousand_remain_exclusively_reserved() {
     game.advance_ticks(1);
     let tick = game.state.current_tick();
     for n in 0..1000 {
-        let extension = "oxsave";
+        let extension = "amsave";
         let path = if n == 0 {
             dir.join(format!("save-{tick:010}.{extension}"))
         } else {
@@ -255,21 +255,21 @@ fn rotation_touches_only_its_own_kind() {
     // save, one fresh temp. Names sort in age order so the mtime
     // tie-break stays deterministic.
     for n in 0..6 {
-        std::fs::write(dir.join(format!("autosave-000000000{n}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-000000000{n}.amsave")), b"{}").unwrap();
     }
-    std::fs::write(dir.join("match-0000000100.oxreplay"), b"{}").unwrap();
+    std::fs::write(dir.join("match-0000000100.amreplay"), b"{}").unwrap();
     std::fs::write(dir.join("save-outpost.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-legacy.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-0000000001.tmp.42.0"), b"live").unwrap();
     rotate(&dir);
     assert!(
-        !dir.join("autosave-0000000000.oxsave").exists(),
+        !dir.join("autosave-0000000000.amsave").exists(),
         "only the oldest autosave died"
     );
     for n in 1..6 {
-        assert!(dir.join(format!("autosave-000000000{n}.oxsave")).exists());
+        assert!(dir.join(format!("autosave-000000000{n}.amsave")).exists());
     }
-    assert!(dir.join("match-0000000100.oxreplay").exists());
+    assert!(dir.join("match-0000000100.amreplay").exists());
     assert!(dir.join("autosave-legacy.json").exists());
     assert!(
         dir.join("save-outpost.json").exists(),
@@ -287,12 +287,12 @@ fn matches_rotate_against_their_own_budget() {
     let dir = scratch("matches");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..=KEEP_MATCHES {
-        std::fs::write(dir.join(format!("match-{n:010}.oxreplay")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("match-{n:010}.amreplay")), b"{}").unwrap();
     }
     rotate(&dir);
-    assert!(!dir.join(format!("match-{:010}.oxreplay", 0)).exists());
+    assert!(!dir.join(format!("match-{:010}.amreplay", 0)).exists());
     for n in 1..=KEEP_MATCHES {
-        assert!(dir.join(format!("match-{n:010}.oxreplay")).exists());
+        assert!(dir.join(format!("match-{n:010}.amreplay")).exists());
     }
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -302,11 +302,11 @@ fn a_directory_at_budget_loses_nothing() {
     let dir = scratch("at-budget");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..KEEP_AUTOSAVES {
-        std::fs::write(dir.join(format!("autosave-{n:010}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-{n:010}.amsave")), b"{}").unwrap();
     }
     rotate(&dir);
     for n in 0..KEEP_AUTOSAVES {
-        assert!(dir.join(format!("autosave-{n:010}.oxsave")).exists());
+        assert!(dir.join(format!("autosave-{n:010}.amsave")).exists());
     }
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -316,19 +316,19 @@ fn lan_autosaves_rotate_against_their_own_budget() {
     let dir = scratch("lan-autosaves");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..=KEEP_AUTOSAVES {
-        std::fs::write(dir.join(format!("lan-autosave-{n:010}.oxsave")), b"{}").unwrap();
-        std::fs::write(dir.join(format!("autosave-{n:010}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("lan-autosave-{n:010}.amsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-{n:010}.amsave")), b"{}").unwrap();
     }
-    std::fs::write(dir.join("lan-0000000007.oxsave"), b"{}").unwrap();
+    std::fs::write(dir.join("lan-0000000007.amsave"), b"{}").unwrap();
     rotate(&dir);
     for prefix in ["lan-autosave", "autosave"] {
-        assert!(!dir.join(format!("{prefix}-{:010}.oxsave", 0)).exists());
+        assert!(!dir.join(format!("{prefix}-{:010}.amsave", 0)).exists());
         for n in 1..=KEEP_AUTOSAVES {
-            assert!(dir.join(format!("{prefix}-{n:010}.oxsave")).exists());
+            assert!(dir.join(format!("{prefix}-{n:010}.amsave")).exists());
         }
     }
     assert!(
-        dir.join("lan-0000000007.oxsave").exists(),
+        dir.join("lan-0000000007.amsave").exists(),
         "a named LAN save stays"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -416,19 +416,19 @@ fn only_an_autosave_in_the_autosave_folder_lends_its_slot() {
     let dir = Path::new("/data/autosaves");
     let adopt = |path: &str| SaveSlot::adopt(Path::new(path), dir);
     assert_eq!(
-        adopt("/data/autosaves/autosave-12.oxsave"),
+        adopt("/data/autosaves/autosave-12.amsave"),
         Some(SaveSlot("12".into()))
     );
     assert_eq!(
-        adopt("/data/autosaves/lan-autosave-12.oxsave"),
+        adopt("/data/autosaves/lan-autosave-12.amsave"),
         Some(SaveSlot("12".into()))
     );
     for other in [
-        "/data/saves/autosave-12.oxsave",
-        "/data/autosaves/save-12.oxsave",
-        "/data/autosaves/match-12.oxreplay",
-        "/data/autosaves/autosave-.oxsave",
-        "/data/autosaves/autosave12.oxsave",
+        "/data/saves/autosave-12.amsave",
+        "/data/autosaves/save-12.amsave",
+        "/data/autosaves/match-12.amreplay",
+        "/data/autosaves/autosave-.amsave",
+        "/data/autosaves/autosave12.amsave",
     ] {
         assert_eq!(adopt(other), None, "{other}");
     }

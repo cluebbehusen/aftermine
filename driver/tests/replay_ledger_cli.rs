@@ -77,8 +77,8 @@ fn a_replay_ledger_reports_every_seat_as_json_and_text() {
 #[test]
 fn a_player_save_is_refused_for_its_missing_history() {
     let dir = scratch("save");
-    let save = dir.join("game.oxsave");
-    std::fs::write(&save, b"OXIDESAV\0header").unwrap();
+    let save = dir.join("game.amsave");
+    std::fs::write(&save, b"AFTERSAV\0header").unwrap();
     let output = ledger(&[save.as_os_str()]);
     assert!(!output.status.success());
     let error = String::from_utf8_lossy(&output.stderr);

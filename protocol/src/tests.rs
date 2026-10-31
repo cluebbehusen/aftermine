@@ -173,7 +173,7 @@ fn an_empty_visible_window_is_zero_zero_not_absent() {
     // windows report a real sub-range, not `[0, items.len()]`.
     let ui = UiView {
         mode: "main_menu".into(),
-        title: Some("OXIDE".into()),
+        title: Some("AFTERMINE".into()),
         selected: Some(0),
         items: vec!["Skirmish".into()],
         visible_range: Some([0, 0]),
@@ -471,7 +471,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
             pause_status: Some([1180.0, 3.0, 46.0, 34.0]),
             group_column: Some([1196.0, 380.0, 60.0, 236.0]),
             mode: "main_menu".into(),
-            title: Some("Oxide".into()),
+            title: Some("Aftermine".into()),
             selected: Some(2),
             items: vec!["Skirmish".into(), "Quit".into()],
             visible_range: Some([0, 2]),

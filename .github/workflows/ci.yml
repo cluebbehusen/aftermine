@@ -1,4 +1,4 @@
-# Oxide CI: lint, test, and prove cross-platform determinism.
+# Aftermine CI: lint, test, and prove cross-platform determinism.
 #
 # The workspace test matrix includes the state-hash fixtures, so every OS must
 # reproduce hashes blessed on one machine bit-for-bit or the "same seed, same

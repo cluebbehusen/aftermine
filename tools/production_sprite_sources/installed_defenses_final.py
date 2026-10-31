@@ -1,4 +1,4 @@
-"""Compact installed defenses in Oxide's accepted machine materials."""
+"""Compact installed defenses in Aftermine's accepted machine materials."""
 
 import math
 import struct

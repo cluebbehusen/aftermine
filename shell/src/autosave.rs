@@ -122,9 +122,9 @@ fn free_path(dir: &Path, prefix: &str, tick: u64) -> Result<PathReservation, Sav
     let mut n = 0u64;
     loop {
         let path = if n == 0 {
-            dir.join(format!("{prefix}-{tick:010}.oxsave"))
+            dir.join(format!("{prefix}-{tick:010}.amsave"))
         } else {
-            dir.join(format!("{prefix}-{tick:010}-{n}.oxsave"))
+            dir.join(format!("{prefix}-{tick:010}-{n}.amsave"))
         };
         match std::fs::File::create_new(&path) {
             Ok(mut file) => {
@@ -207,16 +207,16 @@ impl SaveSlot {
         AUTOSAVE_KINDS
             .iter()
             .find_map(|kind| name.strip_prefix(kind)?.strip_prefix('-'))
-            .and_then(|rest| rest.strip_suffix(".oxsave"))
+            .and_then(|rest| rest.strip_suffix(".amsave"))
             .filter(|id| !id.is_empty())
             .map(|id| Self(id.to_owned()))
     }
 
     fn file(&self, kind: &str) -> String {
         let extension = if kind == "match" {
-            "oxreplay"
+            "amreplay"
         } else {
-            "oxsave"
+            "amsave"
         };
         format!("{kind}-{}.{extension}", self.0)
     }
@@ -290,9 +290,9 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
         .filter(|p| {
             p.extension().and_then(|e| e.to_str())
                 == Some(if prefix == "match-" {
-                    "oxreplay"
+                    "amreplay"
                 } else {
-                    "oxsave"
+                    "amsave"
                 })
         })
         .filter(|p| {

@@ -5,7 +5,7 @@ use aftermine_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use anyhow::{Context, Result};
 use chassis::replay::Replay;
 
-/// The concrete replay type for Oxide sessions.
+/// The concrete replay type for Aftermine sessions.
 pub use crate::GameReplay;
 
 /// A finished headless run.

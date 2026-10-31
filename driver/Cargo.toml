@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "Headless harness and live-game client for Oxide"
+description = "Headless harness and live-game client for Aftermine"
 
 [dependencies]
 aftermine-opponent = { workspace = true }

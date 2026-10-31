@@ -3,7 +3,7 @@
 # per-crate table for each to the job summary. The unit gate counts library
 # and binary unit tests; the combined gate adds the integration suites to the
 # same profiles. Kladde can annotate every miss because it enforces 100%;
-# Oxide deliberately starts lower, where thousands of line annotations would
+# Aftermine deliberately starts lower, where thousands of line annotations would
 # bury useful output.
 #
 # The combined run skips the representative-map integrity soak:

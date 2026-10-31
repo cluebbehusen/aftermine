@@ -14,7 +14,7 @@ use std::path::PathBuf;
 #[command(
     name = "aftermine-driver",
     version,
-    about = "Headless harness and live-game client for Oxide"
+    about = "Headless harness and live-game client for Aftermine"
 )]
 struct Cli {
     #[command(subcommand)]

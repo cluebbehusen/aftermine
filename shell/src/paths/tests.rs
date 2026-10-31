@@ -9,13 +9,13 @@ fn bundle_probe_finds_mac_and_flat_ios_layouts() {
         std::fs::create_dir_all(&sprites).unwrap();
         std::fs::write(sprites.join("atlas.png"), b"").unwrap();
     };
-    let mac = root.join("Oxide.app/Contents");
+    let mac = root.join("Aftermine.app/Contents");
     std::fs::create_dir_all(mac.join("MacOS")).unwrap();
     atlas(&mac.join("Resources"));
     let found = bundle_resources_beside(&mac.join("MacOS")).expect("mac bundle");
     assert!(found.ends_with("MacOS/../Resources"));
 
-    let ios = root.join("Oxide-ios.app");
+    let ios = root.join("Aftermine-ios.app");
     atlas(&ios);
     assert_eq!(bundle_resources_beside(&ios), Some(ios.clone()));
 

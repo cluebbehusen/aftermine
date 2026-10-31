@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn the_touch_build_argv_parses_to_ordinary_defaults() {
-    let args = Args::parse_from(["Oxide"]);
+    let args = Args::parse_from(["Aftermine"]);
     assert!(!args.debug_server && !args.automation && !args.paused);
     assert!(args.scenario.is_none() && args.replay.is_none() && args.watch.is_none());
     assert_eq!(args.speed, 1.0);

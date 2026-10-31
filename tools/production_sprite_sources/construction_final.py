@@ -1,4 +1,4 @@
-"""Canonical full-hull construction frames for every Oxide building."""
+"""Canonical full-hull construction frames for every Aftermine building."""
 
 from __future__ import annotations
 

@@ -12,7 +12,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 const VERSION: u32 = 1;
-const MAGIC: &[u8; 8] = b"OXIDESAV";
+const MAGIC: &[u8; 8] = b"AFTERSAV";
 const MAX_HEADER: usize = 64 * 1024;
 const MAX_BYTES: usize = aftermine_kit::checkpoint::MAX_BYTES;
 /// Saves compress on the save worker. Against the fastest level this takes
@@ -55,7 +55,7 @@ impl Unavailable {
     /// The reason as a player reads it.
     pub fn reason(self) -> &'static str {
         match self {
-            Unavailable::OtherVersion => "made by a different version of Oxide",
+            Unavailable::OtherVersion => "made by a different version of Aftermine",
             Unavailable::Unreadable => "this record is damaged and can't be opened",
         }
     }
@@ -272,7 +272,7 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
             teams: header.teams,
             problem,
         })
-    } else if path.extension().and_then(|extension| extension.to_str()) == Some("oxsave") {
+    } else if path.extension().and_then(|extension| extension.to_str()) == Some("amsave") {
         anyhow::bail!("invalid player save header");
     } else {
         // Replay inspection remains separate from player checkpoint restoration.

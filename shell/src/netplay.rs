@@ -1722,7 +1722,7 @@ fn unreachable(address: &str, error: &io::Error, apple: bool) -> String {
     if apple && unreachable {
         format!(
             "Cannot reach {address}: check that you share the host's network and that \
-             Oxide is allowed under Privacy & Security > Local Network"
+             Aftermine is allowed under Privacy & Security > Local Network"
         )
     } else {
         format!("Cannot reach {address}: {error}")

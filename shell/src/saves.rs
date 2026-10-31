@@ -191,7 +191,7 @@ fn scan_cancellable(
         }
         if !matches!(
             path.extension().and_then(|e| e.to_str()),
-            Some("json" | "oxreplay" | "oxsave")
+            Some("json" | "amreplay" | "amsave")
         ) {
             continue;
         }

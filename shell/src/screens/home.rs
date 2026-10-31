@@ -85,7 +85,7 @@ impl HomeScreen {
                 Out::Rejoin,
             )];
             lines.extend_from_slice(self.menu.lines());
-            self.menu = Menu::new("OXIDE", lines);
+            self.menu = Menu::new("AFTERMINE", lines);
             // A host's name and a map's together outgrow the usual row.
             self.menu.wide = true;
         }
@@ -114,7 +114,7 @@ impl HomeScreen {
             .chain(quit.then_some(("Quit", Out::Quit)))
             .map(|(label, out)| (Label::from(label), out));
         Self {
-            menu: Menu::rows("OXIDE", rows),
+            menu: Menu::rows("AFTERMINE", rows),
             catalog_ready: false,
             rejoin: None,
         }

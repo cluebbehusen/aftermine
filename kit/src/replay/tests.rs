@@ -129,7 +129,7 @@ fn recording(ticks: u64) -> Recording {
 fn saved(recording: &Recording) -> Vec<u8> {
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "aftermine-kit-replay-{}-{id}.oxreplay",
+        "aftermine-kit-replay-{}-{id}.amreplay",
         std::process::id()
     ));
     save_recording(&path, &recording.replay, &recording.keyframes).unwrap();

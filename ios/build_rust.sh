@@ -23,10 +23,10 @@ fi
 
 if [ "$CONFIGURATION" = "Release" ]; then
     cargo build -p aftermine-shell --target "$TARGET" --locked --release
-    BUILT="target/$TARGET/release/Oxide"
+    BUILT="target/$TARGET/release/Aftermine"
 else
     cargo build -p aftermine-shell --target "$TARGET" --locked
-    BUILT="target/$TARGET/debug/Oxide"
+    BUILT="target/$TARGET/debug/Aftermine"
 fi
 
 mkdir -p "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH"

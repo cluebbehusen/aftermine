@@ -94,7 +94,7 @@ impl ReportJob {
                 return Err(error);
             }
             Ok(if cfg!(target_os = "ios") {
-                "Diagnostic report exported to Files: On My iPad > Oxide > diagnostics."
+                "Diagnostic report exported to Files: On My iPad > Aftermine > diagnostics."
             } else {
                 "Diagnostic report exported. Open diagnostics folder to find it."
             }

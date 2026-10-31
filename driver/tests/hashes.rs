@@ -36,7 +36,7 @@ fn bless_gate(
     }
     Err(format!(
         "refusing to bless: {} fixture hash(es) moved ({}) at SIM_VERSION {}. \
-         Oxide is pre-launch: re-bless at the same version with BLESS_SAME_VERSION=1 \
+         Aftermine is pre-launch: re-bless at the same version with BLESS_SAME_VERSION=1 \
          and name the moved rows and the reason in the PR (docs/versioning.md).",
         drifted.len(),
         drifted.join(", "),

@@ -65,9 +65,9 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
     let mut meta = game.recorder.meta.clone();
     meta.kind = Some("autosave".into());
     meta.ticks = Some(game.state.current_tick());
-    let older = dir.join("older.oxsave");
+    let older = dir.join("older.amsave");
     crate::saved_game::write_capture(game.capture_save(), meta, &older).unwrap();
-    let newer = dir.join("newer.oxsave");
+    let newer = dir.join("newer.amsave");
     let mut corrupt = std::fs::read(&older).unwrap();
     *corrupt.last_mut().unwrap() ^= 1;
     std::fs::write(&newer, corrupt).unwrap();

@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// Magic bytes that open a player save.
-const SAVE_MAGIC: &[u8] = b"OXIDESAV";
+const SAVE_MAGIC: &[u8] = b"AFTERSAV";
 
 /// Ticks per minute.
 const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
@@ -158,7 +158,7 @@ pub fn load(path: &Path) -> Result<GameReplay> {
     if save {
         bail!(
             "{} is a player save, not a recording; \
-             use the match recording (match-*.oxreplay) instead",
+             use the match recording (match-*.amreplay) instead",
             path.display()
         );
     }

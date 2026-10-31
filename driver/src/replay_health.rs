@@ -842,7 +842,7 @@ pub fn health(path: &Path, replay: &GameReplay) -> Result<MatchHealth> {
     Ok(pass.finish(&state, path, replay, &ledgers))
 }
 
-/// `paths` with each directory replaced by the `.json` and `.oxreplay` files
+/// `paths` with each directory replaced by the `.json` and `.amreplay` files
 /// directly inside it, in name order: a `bot-eval --replay-dir` reads as its
 /// replays.
 pub fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
@@ -861,10 +861,10 @@ pub fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
             file.is_file()
                 && file
                     .extension()
-                    .is_some_and(|ext| ext == "json" || ext == "oxreplay")
+                    .is_some_and(|ext| ext == "json" || ext == "amreplay")
         });
         if found.is_empty() {
-            bail!("{} holds no .json or .oxreplay recordings", path.display());
+            bail!("{} holds no .json or .amreplay recordings", path.display());
         }
         found.sort();
         out.extend(found);
