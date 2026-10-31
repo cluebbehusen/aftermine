@@ -1,17 +1,17 @@
 ---
 name: visual-assets
 description:
-  Generate, modify, review, animate, and productionize Oxide visual assets. Use
-  for sprites, action animations, projectiles, construction states, environment
-  props, scenery, decals, rocks, debris, terrain, quarry boundaries, UI icons,
-  or changes to tools/gen_sprites.py, tools/production_sprite_sources, and
-  assets/sprites. This skill keeps role readability and explicit approvals ahead
-  of visual novelty.
+  Generate, modify, review, animate, and productionize Aftermine visual assets.
+  Use for sprites, action animations, projectiles, construction states,
+  environment props, scenery, decals, rocks, debris, terrain, quarry boundaries,
+  UI icons, or changes to tools/gen_sprites.py, tools/production_sprite_sources,
+  and assets/sprites. This skill keeps role readability and explicit approvals
+  ahead of visual novelty.
 ---
 
-# Oxide visual assets
+# Aftermine visual assets
 
-Use this workflow whenever creating or changing Oxide's code-generated lo-fi
+Use this workflow whenever creating or changing Aftermine's code-generated lo-fi
 pixel art. The goal is a coherent family whose individual machines and terrain
 semantics remain recognizable at actual battlefield scale.
 
@@ -45,7 +45,7 @@ semantics remain recognizable at actual battlefield scale.
 
 ## World and visual language
 
-Oxide battles take place on the floors of exhausted open-pit quarries on an
+Aftermine battles take place on the floors of exhausted open-pit quarries on an
 abandoned mining world. The former rush was industrial and once prosperous; what
 remains is lonely, faintly eerie, and still mechanically busy. Terraces rise
 away from the battlefield into darkness, while rocks, obsolete equipment, and
@@ -107,9 +107,9 @@ already approved design or making a tightly bounded edit whose direction is
 fixed.
 
 Use generated imagery as reference, not as the shipping raster. Before reducing
-it to Oxide geometry, list the dominant mechanism and the purposeful secondary
-details worth preserving. After authoring, verify that those details survived;
-do not translate a rich machine into topology alone.
+it to Aftermine geometry, list the dominant mechanism and the purposeful
+secondary details worth preserving. After authoring, verify that those details
+survived; do not translate a rich machine into topology alone.
 
 When direction is open, generate several materially distinct options in a
 gitignored batch script or temporary review workspace. Do not accumulate one-off
@@ -140,11 +140,12 @@ exploration; present it as the deliverable only when the user explicitly
 requests concepts.
 
 For refinements to world assets, each moving candidate's primary card must show
-its animation on actual Oxide ground, using the existing runtime timing. Include
-a separate static view in evidence. Static candidates, including abandoned
-frames, must also appear on actual Oxide ground. Include the exact current or
-user-selected control with the same ground, scale, and presentation. An
-animation buried in `evidence/` does not satisfy the primary-card requirement.
+its animation on actual Aftermine ground, using the existing runtime timing.
+Include a separate static view in evidence. Static candidates, including
+abandoned frames, must also appear on actual Aftermine ground. Include the exact
+current or user-selected control with the same ground, scale, and presentation.
+An animation buried in `evidence/` does not satisfy the primary-card
+requirement.
 
 Build the review package around decisions rather than around generation output:
 

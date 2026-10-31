@@ -3,7 +3,7 @@ created: 2026-08-23T08:49:35
 updated: 2026-08-24T18:18:26
 ---
 
-# Oxide Repository Reset
+# Aftermine Repository Reset
 
 ## Goal
 

@@ -1,6 +1,6 @@
-# Oxide
+# Aftermine
 
-Oxide is a 2D real-time strategy game about autonomous machines salvaging an
+Aftermine is a 2D real-time strategy game about autonomous machines salvaging an
 exhausted mining world. Rival machine crews compete for the last useful scrap at
 the bottom of abandoned open-pit quarries.
 
@@ -11,10 +11,10 @@ architecture makes bugs reproducible and lets every live match become a replay.
 
 ## Run the game
 
-Oxide requires a current Rust toolchain. From the repository root:
+Aftermine requires a current Rust toolchain. From the repository root:
 
 ```sh
-cargo run -p oxide-shell --release
+cargo run -p aftermine-shell --release
 ```
 
 To play on an iPad, see [the iPad build](shell/README.md#ipad-build).
@@ -25,7 +25,7 @@ deterministic rules-based opponents with four difficulty levels and Turtle,
 Balanced, or Aggressive stances. A hidden seeded identity varies each opponent's
 strategic preferences. They receive no extra resources, information, build
 access, or combat advantages. The
-[opponent specification](docs/oxide-opponent.md) describes how they play.
+[opponent specification](docs/aftermine-opponent.md) describes how they play.
 
 ## The game
 
@@ -159,22 +159,23 @@ its own README with its purpose, main modules, and focused development commands.
 
 - [`chassis/`](chassis/README.md) is the reusable deterministic-simulation
   foundation: fixed-point geometry, stable randomness and hashing, pathfinding,
-  replay records, and durable writes. It contains no Oxide rules or rendering.
-- [`sim/`](sim/README.md) is `oxide-sim`, the pure headless game. It owns every
-  rule; `State::tick(&[PlayerCommand])` is its only state transition.
-- [`opponent/`](opponent/README.md) is `oxide-opponent`, the reactive,
+  replay records, and durable writes. It contains no Aftermine rules or
+  rendering.
+- [`sim/`](sim/README.md) is `aftermine-sim`, the pure headless game. It owns
+  every rule; `State::tick(&[PlayerCommand])` is its only state transition.
+- [`opponent/`](opponent/README.md) is `aftermine-opponent`, the reactive,
   best-effort opponent every bot seat runs. It reads simulation-owned,
   fog-honest observations and keeps policy outside the rules.
 - [`protocol/`](protocol/README.md) defines the JSON-lines debug contract,
   hardware-neutral input events, state views, fog-honest views, and transport
   shared by live and windowless sessions.
-- [`net/`](net/README.md) is `oxide-net`, lockstep multiplayer. Its I/O-free
+- [`net/`](net/README.md) is `aftermine-net`, lockstep multiplayer. Its I/O-free
   session core decides which commands every machine executes on which tick and
   watches peer liveness and desync; its start barrier and TCP transport take
   connected machines to a shared tick zero.
-- [`kit/`](kit/README.md) contains Oxide-specific services shared by the shell
-  and driver, including headless running, replay playback, statistics, combat
-  fixtures, and the deterministic CPU renderer.
+- [`kit/`](kit/README.md) contains Aftermine-specific services shared by the
+  shell and driver, including headless running, replay playback, statistics,
+  combat fixtures, and the deterministic CPU renderer.
 - [`shell/`](shell/README.md) is the playable Macroquad application. It owns
   input, UI, rendering, audio, persistence, and the live debug server, but may
   affect a match only by staging recorded commands.
@@ -218,11 +219,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 The driver is the main inspection surface:
 
 ```sh
-cargo run -p oxide-driver -- --help
-cargo run -p oxide-driver -- run scenarios/basalt-spine.json --ticks 12000 --all-bots --map
-cargo run -p oxide-driver -- bot-eval skirmish --difficulty prime --stance balanced --paired
-cargo run -p oxide-driver -- replay-summary replays/match.json --minimaps sparse
-cargo run -p oxide-driver -- smoke --spawn
+cargo run -p aftermine-driver -- --help
+cargo run -p aftermine-driver -- run scenarios/basalt-spine.json --ticks 12000 --all-bots --map
+cargo run -p aftermine-driver -- bot-eval skirmish --difficulty prime --stance balanced --paired
+cargo run -p aftermine-driver -- replay-summary replays/match.json --minimaps sparse
+cargo run -p aftermine-driver -- smoke --spawn
 ```
 
 Use the headless runner for exact simulation questions and the native shell for
@@ -239,14 +240,14 @@ under [`.agents/skills/`](.agents/skills/).
 
 Continue and named saves restore session checkpoints directly and open paused.
 They preserve the world, opponent memory, pending input, and statistics without
-replaying the opening. Player saves use the compact `.oxsave` format; legacy
+replaying the opening. Player saves use the compact `.amsave` format; legacy
 player-save import is not supported. Recorded-match playback remains separate.
 
 Recordings contain a starting scenario or world checkpoint and tick-stamped
 commands. A player save also keeps the match's commands, so a match resumed from
 a save still records its whole history. A segment that starts at a world, as a
 rejoined LAN client's does, contains only the history recorded since its origin.
-Finished matches are saved as compressed `.oxreplay` files that also store the
+Finished matches are saved as compressed `.amreplay` files that also store the
 world every 1,024 ticks, so scrubbing restores a nearby world instead of
 replaying from the start. Saves require matching simulation and checkpoint
 revisions; there is no cross-version migration.
@@ -261,8 +262,8 @@ different world.
 
 ## Project status
 
-Oxide is playable and under active development. It has a broad RTS ruleset, many
-maps, a native desktop shell, deterministic saves and replays, and a deep
+Aftermine is playable and under active development. It has a broad RTS ruleset,
+many maps, a native desktop shell, deterministic saves and replays, and a deep
 automation harness.
 
 Built with [Macroquad](https://macroquad.rs/),

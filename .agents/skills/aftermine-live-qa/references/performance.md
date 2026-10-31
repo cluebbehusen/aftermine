@@ -11,8 +11,8 @@ These run in the existing workspace test jobs; no wall-clock CI threshold is
 needed. Run the focused checks while developing:
 
 ```sh
-cargo test -p oxide-kit --lib --locked bot_execution::background_tests::
-cargo test -p oxide-shell --locked saved_game::tests::
+cargo test -p aftermine-kit --lib --locked bot_execution::background_tests::
+cargo test -p aftermine-shell --locked saved_game::tests::
 ```
 
 The size guards cover distinct failure modes:
@@ -43,11 +43,11 @@ procedure covers native frames and persistence.
 Build once before timing, from the workspace root:
 
 ```sh
-cargo build --release --locked -p oxide-driver -p oxide-shell
+cargo build --release --locked -p aftermine-driver -p aftermine-shell
 mkdir -p replays/performance
-cargo run --release --locked -p oxide-driver -- run fixtures/scenarios/skirmish.json --bots --ticks 720 --save-replay replays/performance/duel.json
-cargo run --release --locked -p oxide-driver -- run scenarios/compass-grand.json --bots --ticks 6480 --save-replay replays/performance/grand.json
-cargo run --release --locked -p oxide-driver -- run fixtures/scenarios/skyhook-anchorage.json --bots --ticks 6480 --save-replay replays/performance/skyhook.json
+cargo run --release --locked -p aftermine-driver -- run fixtures/scenarios/skirmish.json --bots --ticks 720 --save-replay replays/performance/duel.json
+cargo run --release --locked -p aftermine-driver -- run scenarios/compass-grand.json --bots --ticks 6480 --save-replay replays/performance/grand.json
+cargo run --release --locked -p aftermine-driver -- run fixtures/scenarios/skyhook-anchorage.json --bots --ticks 6480 --save-replay replays/performance/skyhook.json
 ```
 
 Use the authored scenarios and configured bot profiles. `--bots` retains one
@@ -57,15 +57,15 @@ Do not independently regenerate both sides and assume their worlds are equal.
 Record the source commit and any setup/profile changes beside the results.
 
 ```sh
-cargo run --release --locked -p oxide-driver -- profile-shell replays/performance/duel.json --from 240 --to 720 --speed 1
-cargo run --release --locked -p oxide-driver -- profile-shell replays/performance/grand.json --from 6000 --to 6480 --speed 1
-cargo run --release --locked -p oxide-driver -- profile-shell replays/performance/skyhook.json --from 6000 --to 6480 --speed 1
+cargo run --release --locked -p aftermine-driver -- profile-shell replays/performance/duel.json --from 240 --to 720 --speed 1
+cargo run --release --locked -p aftermine-driver -- profile-shell replays/performance/grand.json --from 6000 --to 6480 --speed 1
+cargo run --release --locked -p aftermine-driver -- profile-shell replays/performance/skyhook.json --from 6000 --to 6480 --speed 1
 ```
 
 The profiler opens a 1280×800 window with disposable settings and data under
-`target/oxide-profile`, removed when the shell exits. It requires a
+`target/aftermine-profile`, removed when the shell exits. It requires a
 scenario-origin replay, reconstructs its prefix, then runs current controllers
-live. It does not accept `.oxsave` files or world-only replay origins. If the
+live. It does not accept `.amsave` files or world-only replay origins. If the
 match is already decided or leaves Playing during the window, choose and record
 a comparable nonterminal interval; do not silently shorten the run. For
 retention or late-game changes, additionally generate a longer record and
@@ -95,10 +95,10 @@ only the child process environment and prints the disposable profile location:
 uv run - <<'PYTHON'
 import os, pathlib, subprocess, tempfile
 root = pathlib.Path.cwd()
-qa = pathlib.Path(tempfile.mkdtemp(prefix="oxide-performance-"))
+qa = pathlib.Path(tempfile.mkdtemp(prefix="aftermine-performance-"))
 env = dict(os.environ, HOME=str(qa / "home"), APPDATA=str(qa / "data"),
            XDG_DATA_HOME=str(qa / "data"), XDG_CONFIG_HOME=str(qa / "config"))
-executable = root / "target" / "release" / ("Oxide.exe" if os.name == "nt" else "Oxide")
+executable = root / "target" / "release" / ("Aftermine.exe" if os.name == "nt" else "Aftermine")
 print(f"QA profile: {qa}", flush=True)
 subprocess.run([str(executable), "--debug-server", "--profile-frames", "--paused",
                 "--automation", "--window", "1280x800"], env=env, cwd=root, check=True)
@@ -108,7 +108,7 @@ PYTHON
 In another terminal, use the same release driver:
 
 ```sh
-driver() { cargo run --release --locked -q -p oxide-driver -- "$@"; }
+driver() { cargo run --release --locked -q -p aftermine-driver -- "$@"; }
 driver live load-replay replays/performance/skyhook.json
 driver live ui
 ```

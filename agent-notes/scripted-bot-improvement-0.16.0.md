@@ -3,7 +3,7 @@ created: 2026-08-29T08:00:10
 updated: 2026-09-02T05:58:37
 ---
 
-# Oxide 0.16.0 Scripted Bot Improvement
+# Aftermine 0.16.0 Scripted Bot Improvement
 
 ## Goal
 

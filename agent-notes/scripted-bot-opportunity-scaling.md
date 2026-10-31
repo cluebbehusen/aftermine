@@ -60,15 +60,16 @@ economic opportunity instead of arbitrary strategic ceilings.
 ## Actions
 
 - [x] Land the unfinished-defense anti-air correction with focused regressions.
-  - Opened ready PR [#27](https://github.com/cluebbehusen/oxide/pull/27);
+  - Opened ready PR [#27](https://github.com/cluebbehusen/aftermine/pull/27);
     unfinished static AA remains known but contributes no coverage until
     complete, with frozen and player-facing hashes unchanged.
   - Merged into `main`.
 - [x] Land public Extractor clusters as fog-honest scouting objectives with
       focused regressions.
-  - Opened ready PR [#28](https://github.com/cluebbehusen/oxide/pull/28); rich
-    authored clusters now drive fog-honest scouting, completed objectives retire
-    cleanly, and temporary route failures preserve bounded air escalation.
+  - Opened ready PR [#28](https://github.com/cluebbehusen/aftermine/pull/28);
+    rich authored clusters now drive fog-honest scouting, completed objectives
+    retire cleanly, and temporary route failures preserve bounded air
+    escalation.
   - Review follow-up preserved exact assignment provenance across completed
     probes, retargeting, recalls, and loss; ground probes now route to
     deterministic reachable viewpoints that reveal the full frame.

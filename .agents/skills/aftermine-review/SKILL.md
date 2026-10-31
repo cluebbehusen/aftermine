@@ -1,12 +1,12 @@
 ---
-name: oxide-review
+name: aftermine-review
 description:
-  Review Oxide code, pull requests, architecture proposals, or external review
-  findings against current implementation and observable contracts. Use for
-  requested reviews and review follow-ups, not routine implementation alone.
+  Review Aftermine code, pull requests, architecture proposals, or external
+  review findings against current implementation and observable contracts. Use
+  for requested reviews and review follow-ups, not routine implementation alone.
 ---
 
-# Oxide review
+# Aftermine review
 
 Review the actual implementation and the user's requested scope. An external
 review is a set of claims to evaluate, not permission to implement its advice.
@@ -18,9 +18,9 @@ review read-only.
 Identify the checkout, commit, comparison base and relevant uncommitted work.
 Distinguish what is on the PR from what exists only locally. Read the affected
 crate README and relevant architecture sections. Intended bot behavior is in
-`docs/oxide-opponent.md`; it is not proof of current behavior. Follow changed
-data through its producer, owner, consumers and retirement rather than reviewing
-isolated functions.
+`docs/aftermine-opponent.md`; it is not proof of current behavior. Follow
+changed data through its producer, owner, consumers and retirement rather than
+reviewing isolated functions.
 
 For a reported bug, recover the exact trigger and expected result. Inspect the
 current path before accepting a reviewer's severity or assuming that a nearby
@@ -57,9 +57,9 @@ progress; justified behavior corrections need an explicit before/after
 regression. Historical autonomous-match outcomes are not the specification.
 Follow hash/version authorization and local-versus-CI rules in `AGENTS.md`.
 
-Use the owning domain skill for focused tests and `oxide-live-qa` for native
+Use the owning domain skill for focused tests and `aftermine-live-qa` for native
 presentation or timing claims. Its
-[performance procedure](../oxide-live-qa/references/performance.md) provides
+[performance procedure](../aftermine-live-qa/references/performance.md) provides
 scoped workloads; compare fixed inputs on the same machine and report absolute
 cost, variance and limits. For simulation cost per tick, the
 [simulation-performance skill](../simulation-performance/SKILL.md) covers

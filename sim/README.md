@@ -1,6 +1,6 @@
 # aftermine-sim
 
-`aftermine-sim` contains all Oxide game rules. It is a pure, headless
+`aftermine-sim` contains all Aftermine game rules. It is a pure, headless
 simulation: given the same scenario and command log, it must produce the same
 state on every platform. Rendering, hardware input, wall-clock time, and
 presentation state belong elsewhere.

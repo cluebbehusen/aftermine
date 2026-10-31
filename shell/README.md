@@ -130,7 +130,7 @@ cargo ios
 iPad or an iPad simulator. With several devices it lists them and asks, offering
 the last choice as the default; `--device <name or id>` skips the question and
 `--list` only prints the devices. A locked iPad still receives the install; open
-Oxide yourself once it is unlocked.
+Aftermine yourself once it is unlocked.
 
 iPadOS 27 requires the `UIScene` lifecycle, so the workspace pins a miniquad
 fork that carries unreleased upstream work; see the workspace `Cargo.toml` for
@@ -164,7 +164,7 @@ the Replays shelf. A match autosaves every minute of play, as the window goes
 inactive, and when the player leaves or quits. Each match keeps one autosave,
 replaced in place, until its finished recording replaces it as soon as the match
 is decided. On iPad, named saves, finished matches, replays and diagnostics
-appear in the Files app under On My iPad > Oxide.
+appear in the Files app under On My iPad > Aftermine.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only

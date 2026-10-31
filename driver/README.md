@@ -1,9 +1,9 @@
 # aftermine-driver
 
-`aftermine-driver` is Oxide's headless harness and remote control. Its library
-combines reusable inspection and automation tools; its CLI runs scenarios and
-replays, renders maps, audits maps and match behavior, drives a live shell, or
-serves the same debug protocol without a window.
+`aftermine-driver` is Aftermine's headless harness and remote control. Its
+library combines reusable inspection and automation tools; its CLI runs
+scenarios and replays, renders maps, audits maps and match behavior, drives a
+live shell, or serves the same debug protocol without a window.
 
 The driver observes and orchestrates the game through public simulation and
 protocol boundaries. It does not contain alternate gameplay rules, and its
@@ -164,7 +164,7 @@ dirty status. Source archives report unknown provenance.
   a paired iPad or an iPad simulator.
 
 Run `aftermine-driver --help` for the current command tree. Procedures for live
-shell QA belong in the repository's `oxide-live-qa` skill rather than here.
+shell QA belong in the repository's `aftermine-live-qa` skill rather than here.
 
 ## Development
 
@@ -191,7 +191,7 @@ improves batch throughput, not individual tick latency.
 ## Performance regression checks
 
 The
-[performance and persistence procedure](../.agents/skills/oxide-live-qa/references/performance.md)
+[performance and persistence procedure](../.agents/skills/aftermine-live-qa/references/performance.md)
 provides fresh-checkout workload commands, portable save-size and planning-work
 guards, and scoped native timing requirements. Use its fixed inputs for
 candidate/control comparisons; wall-clock thresholds are machine-qualified.

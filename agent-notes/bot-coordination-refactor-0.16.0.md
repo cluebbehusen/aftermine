@@ -3,7 +3,7 @@ created: 2026-08-31T06:45:14
 updated: 2026-08-31T18:56:52
 ---
 
-# Oxide 0.16.0 Bot Coordination Refactor
+# Aftermine 0.16.0 Bot Coordination Refactor
 
 ## Goal
 

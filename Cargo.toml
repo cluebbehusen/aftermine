@@ -53,7 +53,7 @@ similar_names = "allow"
 
 # iPadOS 27 refuses to launch apps linked against its SDK unless they adopt
 # the UIScene lifecycle, and only unreleased miniquad master does. The fork's
-# `oxide` branch is that master plus iOS fixes the shell needs and upstream
+# `aftermine` branch is that master plus iOS fixes the shell needs and upstream
 # has not taken yet, starting with OpenGL drawing: master's switch to
 # CADisplayLink-driven draws (39fdef68) redraws only Metal views and leaves
 # the OpenGL view the shell renders with blank on iOS. Drop the patch once

@@ -1,14 +1,14 @@
 ---
 name: simulation-performance
 description:
-  Measure, locate, and reduce Oxide's simulation cost per tick. Use for sim hot
-  spots, tick profiling, benchmark workloads, before-and-after or cross-commit
-  comparisons, proving that an optimization changes no outcome, and judging a
-  performance change that alters behavior. Not for native frame timing or
-  save/load transitions; use oxide-live-qa for those.
+  Measure, locate, and reduce Aftermine's simulation cost per tick. Use for sim
+  hot spots, tick profiling, benchmark workloads, before-and-after or
+  cross-commit comparisons, proving that an optimization changes no outcome, and
+  judging a performance change that alters behavior. Not for native frame timing
+  or save/load transitions; use aftermine-live-qa for those.
 ---
 
-# Oxide simulation performance
+# Aftermine simulation performance
 
 Measure before changing anything, explain the cost before optimizing it, and
 prove that an optimization changes nothing but cost. Most large wins come from
@@ -22,8 +22,8 @@ built binary directly so no timing includes Cargo. Record the set once per
 behavior change, then reuse it; it is gitignored.
 
 ```sh
-cargo build --release --locked -p oxide-driver
-driver=target/release/oxide-driver
+cargo build --release --locked -p aftermine-driver
+driver=target/release/aftermine-driver
 mkdir -p replays/benchmark
 for workload in duel skyhook mature-armies; do
   "$driver" bot-cost $workload --json \
@@ -103,7 +103,7 @@ every PR with evidence that does not rest on the final state alone:
   lines prove nothing: a short-lived state difference can fall between samples.
   A matching final hash (`--expect-hash`) is a quicker screen still.
 - Compare `bench` hashes against the control binary, and run
-  `cargo test -p oxide-driver --locked` for the fixtures and goldens.
+  `cargo test -p aftermine-driver --locked` for the fixtures and goldens.
 - For a nontrivial shortcut, such as a pruned search, a cache or a changed loop
   structure, add a differential test that keeps the replaced logic in the test
   module as the reference and compares it with the fast path across a staged
@@ -151,8 +151,8 @@ directory):
 ```sh
 git worktree add --detach "$SCRATCH/wt-base" <commit>
 (cd "$SCRATCH/wt-base" && CARGO_TARGET_DIR="$SCRATCH/base-target" \
-  cargo build --release --locked -p oxide-driver)
-cp "$SCRATCH/base-target/release/oxide-driver" "$SCRATCH/driver-base"
+  cargo build --release --locked -p aftermine-driver)
+cp "$SCRATCH/base-target/release/aftermine-driver" "$SCRATCH/driver-base"
 git worktree remove --force "$SCRATCH/wt-base"
 ```
 

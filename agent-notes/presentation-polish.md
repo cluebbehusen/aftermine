@@ -3,18 +3,18 @@ created: 2026-09-06T07:27:17
 updated: 2026-09-08T06:10:08
 ---
 
-# Oxide presentation polish
+# Aftermine presentation polish
 
 ## Goal
 
-Make Oxide feel like a cohesive, readable, physically convincing RTS through an
-integrated pass over its interface, art, motion, effects, and sound, evaluated
-in ordinary native play.
+Make Aftermine feel like a cohesive, readable, physically convincing RTS through
+an integrated pass over its interface, art, motion, effects, and sound,
+evaluated in ordinary native play.
 
 ## Decisions
 
-- Preserve Oxide’s crisp pixel character, wave-pattern quarry floor and muted
-  industrial palette. The smooth enclosed-machine redesign lost too much
+- Preserve Aftermine’s crisp pixel character, wave-pattern quarry floor and
+  muted industrial palette. The smooth enclosed-machine redesign lost too much
   identity; retain the improved motion and readability without that visual
   language.
 - Use one recognizable working mechanism per machine, supported by purposeful

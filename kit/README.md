@@ -1,10 +1,10 @@
 # aftermine-kit
 
-`aftermine-kit` holds Oxide-specific engine services shared by the shell and the
-driver, so the graphical game and the headless harness use the same controller
-hosting, checkpoint, replay, statistics, diagnostics, and rendering code without
-either depending on the other. A few services, such as the headless `runner` and
-`bench`, serve only the driver.
+`aftermine-kit` holds Aftermine-specific engine services shared by the shell and
+the driver, so the graphical game and the headless harness use the same
+controller hosting, checkpoint, replay, statistics, diagnostics, and rendering
+code without either depending on the other. A few services, such as the headless
+`runner` and `bench`, serve only the driver.
 
 This is not the home for game rules or UI state. Rules stay in `aftermine-sim`,
 while reusable game-independent primitives stay in `chassis`.
@@ -46,8 +46,8 @@ while reusable game-independent primitives stay in `chassis`.
 - `build` describes the executable that recorded or wrote a file. The host
   supplies it; the kit never probes Git or embeds a sibling executable's
   revision.
-- `load_replay` and `load_recording` own bounded, strict Oxide replay loading;
-  `save_recording` writes the compressed `.oxreplay` container.
+- `load_replay` and `load_recording` own bounded, strict Aftermine replay
+  loading; `save_recording` writes the compressed `.amreplay` container.
 - `keyframes` holds the worlds a recording stores every 1,024 ticks as a cache
   over its command log, and encodes a live match's keyframes off the frame
   thread.

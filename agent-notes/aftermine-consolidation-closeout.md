@@ -3,7 +3,7 @@ created: 2026-09-25T12:00:12
 updated: 2026-09-25T12:00:12
 ---
 
-# Oxide consolidation closeout
+# Aftermine consolidation closeout
 
 September 25, 2026. Implementation reviewed through `a9bcc697`.
 
@@ -15,8 +15,8 @@ performance improvements. This does not certify the entire codebase as clean.
 Several refactors added explicit state and regression coverage; the overall
 outcome must not be described as a wholesale reduction in code.
 
-Bot policy now lives in `oxide-bot`, outside the deterministic simulation. The
-host owns bounded parallel seat execution and collects commands canonically.
+Bot policy now lives in `aftermine-bot`, outside the deterministic simulation.
+The host owns bounded parallel seat execution and collects commands canonically.
 Background decisions between live ticks improve frame headroom; a late batch
 joins at its required tick. Saves read the retained pre-decision controllers,
 without waiting for or persisting speculative work.
@@ -90,13 +90,13 @@ remains a measured investigation, not a promised speedup.
 
 Use [AGENTS.md](../AGENTS.md) for invariants and design principles,
 [bot architecture](../docs/bot-architecture.md) for ownership,
-[review guidance](../.agents/skills/oxide-review/SKILL.md) for evidence
+[review guidance](../.agents/skills/aftermine-review/SKILL.md) for evidence
 standards, and the
-[performance procedure](../.agents/skills/oxide-live-qa/references/performance.md)
+[performance procedure](../.agents/skills/aftermine-live-qa/references/performance.md)
 for fresh-checkout workloads and portable safeguards.
 
 The retained
-[late Skyhook checkpoint](../driver/tests/fixtures/performance/skyhook-late.oxsave)
+[late Skyhook checkpoint](../driver/tests/fixtures/performance/skyhook-late.amsave)
 is a profiling input, not a compatibility golden: tick 21839, seven bots, 471
 units and 300 buildings. Copy it into an isolated QA profile's saves folder and
 load through the native shelf following that procedure. It loads paused at hash

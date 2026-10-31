@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aftermine Live QA"
+  short_description: "Drive and verify the live Aftermine game"
+  default_prompt: "Use $aftermine-live-qa to inspect and verify Aftermine through the appropriate live, replay, headless, or profiling harness."

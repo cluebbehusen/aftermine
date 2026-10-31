@@ -1,28 +1,29 @@
 # Agent instructions
 
-Oxide is a 2D RTS and an experiment in agent-assisted game development. Keep the
-architecture legible: a pure deterministic simulation, a thin native shell, and
-a harness that can inspect the same game headlessly or through the real window.
+Aftermine is a 2D RTS and an experiment in agent-assisted game development. Keep
+the architecture legible: a pure deterministic simulation, a thin native shell,
+and a harness that can inspect the same game headlessly or through the real
+window.
 
 ## Start here
 
 Read the README for the crate you are changing:
 
-| Crate                                  | Responsibility                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`chassis`](chassis/README.md)         | Reusable deterministic primitives. No game rules or engine dependencies.             |
-| [`oxide-sim`](sim/README.md)           | Game rules and player-knowledge projection.                                          |
-| [`oxide-opponent`](opponent/README.md) | Reactive, best-effort opponent controller.                                           |
-| [`oxide-protocol`](protocol/README.md) | Debug wire types, framing, input events, and state views.                            |
-| [`oxide-kit`](kit/README.md)           | Shared replay, statistics, fixture, and CPU-rendering services.                      |
-| [`oxide-net`](net/README.md)           | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport. |
-| [`oxide-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                |
-| [`oxide-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.        |
+| Crate                                      | Responsibility                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [`chassis`](chassis/README.md)             | Reusable deterministic primitives. No game rules or engine dependencies.             |
+| [`aftermine-sim`](sim/README.md)           | Game rules and player-knowledge projection.                                          |
+| [`aftermine-opponent`](opponent/README.md) | Reactive, best-effort opponent controller.                                           |
+| [`aftermine-protocol`](protocol/README.md) | Debug wire types, framing, input events, and state views.                            |
+| [`aftermine-kit`](kit/README.md)           | Shared replay, statistics, fixture, and CPU-rendering services.                      |
+| [`aftermine-net`](net/README.md)           | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport. |
+| [`aftermine-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                |
+| [`aftermine-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.        |
 
 Implementation contracts live in `docs/simulation-architecture.md` and
-`docs/shell-architecture.md`. Keep those descriptive. `oxide-opponent` is
-specified in `docs/oxide-opponent.md`. Put repeatable procedures in a skill and
-historical results in notes or version control.
+`docs/shell-architecture.md`. Keep those descriptive. `aftermine-opponent` is
+specified in `docs/aftermine-opponent.md`. Put repeatable procedures in a skill
+and historical results in notes or version control.
 
 ## Keep instructions in their proper place
 
@@ -57,16 +58,16 @@ review; they do not establish architectural quality.
 Consider deterministic parallelism for expensive independent work after removing
 duplication: frozen inputs, private mutable scratch, fixed work allowances and
 canonical result ordering. Admission and shared mutation remain ordered; measure
-overhead and contention before adding workers. `oxide-opponent` keeps its work
-cheap instead: beyond the existing per-seat execution, it adds parallelism only
-where a profile shows a real win.
+overhead and contention before adding workers. `aftermine-opponent` keeps its
+work cheap instead: beyond the existing per-seat execution, it adds parallelism
+only where a profile shows a real win.
 
 ## Determinism contract
 
 The target is strict: **the same scenario plus the same command log produces
 bit-identical state on every run and platform.**
 
-- `chassis`, `oxide-sim`, and `oxide-opponent` contain no floating-point
+- `chassis`, `aftermine-sim`, and `aftermine-opponent` contain no floating-point
   arithmetic. Use `chassis::fx::Fx`; floats are presentation-only.
 - Never depend on `HashMap` or `HashSet` iteration for an outcome. Use complete,
   stable ordering. Geometric ties must also preserve the documented symmetry:
@@ -97,17 +98,18 @@ bit-identical state on every run and platform.**
   Replays retain world origins and commands. Tick `N` is the state before
   commands stamped `N` execute; restoration never adds a hidden mutation.
 - Controller checkpoints hold exactly the non-derivable state the
-  `oxide-opponent` specification lists; scenario-derived data rebuilds from the
-  bound scenario. Controller validation rejects state that could panic or cause
-  unbounded work; a forged value that only changes play is accepted. A new
+  `aftermine-opponent` specification lists; scenario-derived data rebuilds from
+  the bound scenario. Controller validation rejects state that could panic or
+  cause unbounded work; a forged value that only changes play is accepted. A new
   checkpoint field needs a design review.
-- Player knowledge has two fog-honest projections: `oxide_protocol::FogView` for
-  players and agents, and `oxide_sim::observation::ObservationData::fog_honest`
-  for bots. A parity test in `protocol/src/view/tests.rs` keeps them in
-  agreement; change both together. Omniscient QA views must never feed a bot or
-  player decision.
-- Live, playback, and headless sessions share `oxide_protocol::DebugSession`.
-  Explicitly refuse unsupported capabilities instead of faking them.
+- Player knowledge has two fog-honest projections: `aftermine_protocol::FogView`
+  for players and agents, and
+  `aftermine_sim::observation::ObservationData::fog_honest` for bots. A parity
+  test in `protocol/src/view/tests.rs` keeps them in agreement; change both
+  together. Omniscient QA views must never feed a bot or player decision.
+- Live, playback, and headless sessions share
+  `aftermine_protocol::DebugSession`. Explicitly refuse unsupported capabilities
+  instead of faking them.
 - Hardware and injected input enter through the same semantic event funnel and
   use logical coordinates. Apply DPI conversion only at the hardware adapter.
 
@@ -118,17 +120,17 @@ information and shares human costs, prerequisites, queues, caps, build times,
 movement, combat, and economy. Never hide bot-only income, vision, stats, legal
 actions, or construction privileges behind controller code.
 
-[`docs/oxide-opponent.md`](docs/oxide-opponent.md) is normative for
-`oxide-opponent`, the reactive best-effort opponent. Work on that crate follows
-its specification and the oxide-opponent skill. It must not introduce exact
-cross-domain allocation, production forecasts, plan search or planning state
-that spans decisions. Personality influences both cross-domain investment and
-execution within a funded domain, but never access to information, strategies,
-units, commands, or rules. Its counts come from need: a constant may bound
-computation or model a difficulty, stance or personality limit, never what the
-bot owns or sends.
+[`docs/aftermine-opponent.md`](docs/aftermine-opponent.md) is normative for
+`aftermine-opponent`, the reactive best-effort opponent. Work on that crate
+follows its specification and the aftermine-opponent skill. It must not
+introduce exact cross-domain allocation, production forecasts, plan search or
+planning state that spans decisions. Personality influences both cross-domain
+investment and execution within a funded domain, but never access to
+information, strategies, units, commands, or rules. Its counts come from need: a
+constant may bound computation or model a difficulty, stance or personality
+limit, never what the bot owns or sends.
 
-Every bot seat of a normal match runs `oxide-opponent`. Scrapheap, Standard,
+Every bot seat of a normal match runs `aftermine-opponent`. Scrapheap, Standard,
 Veteran, and Prime alter fair macro competence plus cognitive and execution
 limits: reaction time, attention, the margin an attack must bring, estimate
 accuracy, and how well a seat attacks, focuses fire, and lifts. Turtle,
@@ -174,7 +176,7 @@ Both floors measure production code. A module's unit tests live in a child
 cargo-llvm-cov's default filter skips those files and everything under `tests/`.
 A driver test fails on an inline or counted test module.
 
-The `oxide-sim` integration suite compiles into one test binary: modules of
+The `aftermine-sim` integration suite compiles into one test binary: modules of
 `tests/integration/main.rs`, whose guard test fails on an undeclared file. Add
 new suites there rather than as separate files under `tests/`; each extra binary
 recompiles and relinks against the workspace.
@@ -224,18 +226,18 @@ CPU screenshots prove schematic state, not presentation quality.
 
 ## Hashes, goldens, and versions
 
-Oxide is pre-launch: saves, replays, settings and fixtures from other builds are
-not supported. Never add code that reads an older format, and never change a
+Aftermine is pre-launch: saves, replays, settings and fixtures from other builds
+are not supported. Never add code that reads an older format, and never change a
 version number. [`docs/versioning.md`](docs/versioning.md) lists each version,
 what it gates, and what changes at launch.
 
 - Keep `driver/tests/goldens/state-hashes.json` as the cheap sim-drift tripwire.
   When a change moves its rows, inspect the drift, re-bless at the same version
-  with `BLESS=1 BLESS_SAME_VERSION=1 cargo test -p oxide-driver --locked`, and
-  name the moved rows and the reason in the PR.
-- Fixtures driven only by `oxide-opponent` live in their own file and re-bless
-  with `BLESS=1` alone; report a ladder-smoke comparison against the base at
-  handoff.
+  with `BLESS=1 BLESS_SAME_VERSION=1 cargo test -p aftermine-driver --locked`,
+  and name the moved rows and the reason in the PR.
+- Fixtures driven only by `aftermine-opponent` live in their own file and
+  re-bless with `BLESS=1` alone; report a ladder-smoke comparison against the
+  base at handoff.
 - Inspect changed PNGs. A green golden test cannot prove that art or layout is
   good.
 - A new `Command` variant must enter the fuzz generator's compiler-held tag

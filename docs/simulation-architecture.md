@@ -1,13 +1,13 @@
 # Simulation architecture
 
-This document describes the current architectural contracts of `oxide-sim`. It
-maps responsibilities and invariants, not tuning or history. Balance lives in
+This document describes the current architectural contracts of `aftermine-sim`.
+It maps responsibilities and invariants, not tuning or history. Balance lives in
 `sim/src/stats.rs`.
 
-`oxide-sim` does not depend on `oxide-opponent`. It owns serializable player
-knowledge and its fog filtering in `observation`; bot policy lives in
-`oxide-opponent`. Pure command and production geometry shared with predictors
-lives in `geometry`, outside the private tick implementation.
+`aftermine-sim` does not depend on `aftermine-opponent`. It owns serializable
+player knowledge and its fog filtering in `observation`; bot policy lives in
+`aftermine-opponent`. Pure command and production geometry shared with
+predictors lives in `geometry`, outside the private tick implementation.
 
 ## Authority and reproducibility
 
@@ -1110,7 +1110,7 @@ condition. Both projections derive them from current state, so they add no
 memory. A public building is a valid attack target without sight or a ghost, and
 when one leaves the world every seat forgets its ghost.
 
-`oxide-opponent` also builds one immutable `MapModel` per match from the
+`aftermine-opponent` also builds one immutable `MapModel` per match from the
 authored `Scenario`, through the same `Scenario::parse_map_and_anchors` that
 state construction uses. It reads static terrain, Extractor frames, initial
 scrap, teams, and each seat's starting Foundry anchor: the facts available
@@ -1154,9 +1154,9 @@ cannot target one another, and win or lose as a team. Resignation makes a seat
 command-ineligible and removes its Foundries from victory accounting; its
 remaining machines continue as autonomous remnants.
 
-The [opponent specification](oxide-opponent.md) describes how bots decide. The
-simulation enforces the same command, cost and visibility rules for human and
-bot command sources.
+The [opponent specification](aftermine-opponent.md) describes how bots decide.
+The simulation enforces the same command, cost and visibility rules for human
+and bot command sources.
 
 ## Maintained entry points
 
