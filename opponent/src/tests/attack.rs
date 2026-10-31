@@ -144,7 +144,7 @@ fn known_defenses_hold_an_attack_until_waiting_lowers_the_margin() {
 }
 
 #[test]
-fn a_gathering_attack_keeps_the_margin_its_wait_earned_until_it_sets_out() {
+fn a_launched_attack_keeps_the_margin_its_wait_earned_as_it_sets_out() {
     let scenario = armed(8, &[]);
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 9_600, &[]);
@@ -188,7 +188,11 @@ fn a_gathering_attack_keeps_the_margin_its_wait_earned_until_it_sets_out() {
     assert_ne!(phase, Phase::Gather, "the wait that launched it lets it go");
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(sent[0].0, members);
-    assert_ne!(waiting, Some(0), "setting out spends the wait");
+    assert_eq!(
+        waiting,
+        Some(0),
+        "the wait holds while the army is on its way"
+    );
 }
 
 #[test]
@@ -957,6 +961,56 @@ fn the_lowest_rung_marches_on_a_foundry() {
         target_of(&scenario, config()),
         TilePos::new(34, 10),
         "Standard takes the richer, nearer Crucible"
+    );
+}
+
+#[test]
+fn a_target_out_of_reach_gives_way_to_one_the_army_can_beat() {
+    // Six Turrets behind East's Crucible ask more than West's army at any
+    // margin; the Fabricator in the open asks only the stance minimum.
+    let (crucible, open) = (TilePos::new(34, 10), TilePos::new(26, 17));
+    let mut scenario = targets(
+        &[
+            (BuildingKind::Crucible, crucible.x, crucible.y),
+            (BuildingKind::Fabricator, open.x, open.y),
+        ],
+        &[],
+    );
+    for y in 8..14 {
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Turret,
+            x: 37,
+            y,
+        });
+    }
+    let state = scenario.build().unwrap();
+    let mut opponent = seat(&scenario, 0);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let anchor = |trace: Option<Trace>| match attack(&trace.unwrap().missions).map(|m| m.kind) {
+        Some(MissionKind::Attack { anchor, .. }) => Some(anchor),
+        _ => None,
+    };
+    assert_eq!(
+        anchor(trace),
+        Some(open),
+        "Standard goes after the Fabricator while the Crucible is out of reach"
+    );
+    // Regrouping, the attack holds that target while the Crucible, still the
+    // most valuable, stays out of reach.
+    let mut state = state;
+    advance_to(&mut state, 12, &commands);
+    let trace = opponent.act_traced(&state, &mut OwnEvents::default()).1;
+    assert_eq!(anchor(trace), Some(open));
+
+    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let state = scenario.build().unwrap();
+    let (_, trace) =
+        seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(
+        anchor(trace),
+        None,
+        "the lowest rung waits for the target it wants"
     );
 }
 

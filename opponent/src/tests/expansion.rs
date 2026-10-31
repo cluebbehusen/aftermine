@@ -502,6 +502,49 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_run
 }
 
 #[test]
+fn a_deep_bore_wanted_before_a_crucible_stands_builds_the_crucible_first() {
+    let mut scenario = bore_arena(12);
+    scenario
+        .buildings
+        .retain(|building| building.kind != BuildingKind::Crucible);
+    for difficulty in BotDifficulty::ALL {
+        let mut state = scenario.build().unwrap();
+        let extractor = own_extractor(&state);
+        let deep_bore = Investment::Upgrade {
+            building: extractor,
+            tier: 1,
+        };
+        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let mut opponent = seat_with(&scenario, 0, config);
+        let mut events = OwnEvents::default();
+        let mut pulled = None;
+        while state.current_tick() < 12_000 && pulled.is_none() {
+            let (commands, trace) = opponent.act_traced(&state, &mut events);
+            if let Some(trace) = trace
+                && trace.purchases.iter().any(|purchase| {
+                    matches!(
+                        purchase,
+                        crate::Purchase::Build {
+                            building: BuildingKind::Crucible,
+                            ..
+                        }
+                    )
+                })
+            {
+                pulled = Some(trace.target.map(|target| target.investment));
+            }
+            let report = state.tick(&commands);
+            events.record(PlayerId(0), &report.events);
+        }
+        assert_eq!(
+            pulled,
+            Some(Some(deep_bore)),
+            "{difficulty:?} builds its Crucible toward the Deep Bore"
+        );
+    }
+}
+
+#[test]
 fn a_crucible_makes_a_site_worth_more_for_the_remote_extractor_it_would_deepen() {
     let frame = TilePos::new(16, 9);
     let mut scenario = frontier(0);

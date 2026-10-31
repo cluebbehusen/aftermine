@@ -179,7 +179,7 @@ impl Missions {
         let mut plan = Plan::new(observation, map, profile, memory, scratch);
         // Attacks under way are judged at the margin the wait has earned too,
         // so an army launched at a lowered margin is not held at home again
-        // by the full one while it gathers.
+        // or turned back by the full one before it reaches the fight.
         let full = plan.margin;
         plan.margin = relieved(full, self.waiting, now);
         let mut given_up: Vec<Objective> = Vec::new();
@@ -211,16 +211,19 @@ impl Missions {
             })
             .peekable();
         let idle = producers.peek().is_some() && producers.all(|(_, queue)| queue.is_empty());
-        let gathering = self.list.iter().any(|mission| {
+        let underway = self.list.iter().any(|mission| {
             matches!(
                 mission.task,
                 Task::Attack {
-                    phase: AttackPhase::Gather,
+                    phase: AttackPhase::Gather
+                        | AttackPhase::Advance
+                        | AttackPhase::Stage
+                        | AttackPhase::Travel,
                     ..
                 }
             )
         });
-        if free >= plan.minimum || idle || gathering {
+        if free >= plan.minimum || idle || underway {
             self.waiting.get_or_insert(now);
         } else {
             self.waiting = None;
@@ -321,7 +324,9 @@ impl Missions {
     }
 
     /// Launches an attack on the best target when the free army can beat the
-    /// known army it would meet. A seat that concentrates sends the whole
+    /// known army it would meet. While the best is out of its reach, a seat
+    /// that falls back goes after the best target its army can beat at the
+    /// full margin instead. A seat that concentrates sends the whole
     /// free army and launches none while another is under way, so one army
     /// hits together rather than several that each meet the enemy alone;
     /// units freed later join it when it regroups. Returns whether one
@@ -335,15 +340,24 @@ impl Missions {
         if (attacking && concentrated) || self.list.len() >= MISSION_CAP {
             return false;
         }
-        let Some(target) = plan.best(None) else {
+        let Some(mut target) = plan.best(None) else {
             return false;
         };
+        let mut fallback = None;
+        if falls_back(plan.difficulty) && !plan.affords(target, fit, &[]) {
+            let Some((beatable, need)) = plan.affordable(target, fit) else {
+                return false;
+            };
+            target = beatable;
+            fallback = Some(need);
+        }
         let Some(rally) = plan.rally(target.owner) else {
             return false;
         };
         let component = plan.map.component(target.approach);
         let breachers = plan.breachers(component, UNIT_CAP);
-        let need = plan.need(target, breaching(plan.observation, &breachers));
+        let need =
+            fallback.unwrap_or_else(|| plan.need(target, breaching(plan.observation, &breachers)));
         let fit: Vec<&UnitObs> = fit
             .iter()
             .copied()
@@ -450,6 +464,14 @@ impl Missions {
                 current.filter(|_| !plan.memory.abandoned(building, anchor, observation.tick));
             match (current, plan.best(None)) {
                 (Some(current), Some(best)) if best.score * 4 < current.score * 5 => Some(current),
+                // A seat that fell back holds its target while the best
+                // stays out of the army's reach.
+                (Some(current), Some(best))
+                    if falls_back(plan.difficulty)
+                        && !plan.affords(best, fit, &self.list[index].units) =>
+                {
+                    Some(current)
+                }
                 (_, best) => best,
             }
         } else {
@@ -494,7 +516,6 @@ impl Missions {
             .map(|unit| value(unit))
             .sum();
         let age = now - mission.since;
-        let mut set_out = false;
 
         let given_up = match phase {
             AttackPhase::Gather | AttackPhase::Recover => {
@@ -539,7 +560,6 @@ impl Missions {
                     };
                     if ledger.order(hunt(mission.units.clone(), goal)) {
                         mission.attack_phase(target, next, now, Some(goal));
-                        set_out = true;
                     }
                 } else if age >= timeout(phase) {
                     self.list.remove(index);
@@ -578,9 +598,6 @@ impl Missions {
                 None
             }
         };
-        if set_out {
-            self.waiting = None;
-        }
         // Units freed since the attack left join it where it is rather than
         // waiting at home for it to regroup, unless this decision pulled it
         // back or sent it on: they would only be turned around. A staging
@@ -1324,6 +1341,11 @@ impl<'a> Plan<'a> {
     /// defenses whose fire reaches the way there count with those around the
     /// target.
     fn need(&self, target: Target, breach: u64) -> u64 {
+        self.need_at(target, breach, self.margin)
+    }
+
+    /// `need` at `margin` rather than the decision's own.
+    fn need_at(&self, target: Target, breach: u64, margin: u64) -> u64 {
         let (units, mut buildings) =
             opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
         if surveys(self.difficulty) {
@@ -1333,8 +1355,65 @@ impl<'a> Plan<'a> {
                 .map(building_value)
                 .sum();
         }
-        ((units + buildings.saturating_sub(breach)) * self.misjudge / 1_000 * self.margin / 1_000)
+        ((units + buildings.saturating_sub(breach)) * self.misjudge / 1_000 * margin / 1_000)
             .max(self.minimum)
+    }
+
+    /// Whether the units of `fit` that reach `target`, with the `members`
+    /// already gathered for it, meet its need, counting the free breachers
+    /// that would join.
+    fn affords(&self, target: Target, fit: &[&UnitObs], members: &[UnitId]) -> bool {
+        let component = self.map.component(target.approach);
+        let joining = self.breachers(component, UNIT_CAP);
+        let breach = breaching(self.observation, members) + breaching(self.observation, &joining);
+        let gathered: u64 = members
+            .iter()
+            .filter_map(|id| mine(self.observation, *id))
+            .map(striking)
+            .sum();
+        gathered + self.reaching(target, fit) >= self.need(target, breach)
+    }
+
+    /// The best open known target other than `skip` whose need at the full
+    /// margin the units of `fit` that reach it meet, with that need. With
+    /// several enemies, only the rival's targets count.
+    fn affordable(&self, skip: Target, fit: &[&UnitObs]) -> Option<(Target, u64)> {
+        let now = self.observation.tick;
+        if fit.iter().map(|unit| striking(unit)).sum::<u64>() < self.minimum {
+            return None;
+        }
+        let mut known: Vec<Target> = self
+            .observation
+            .enemy_buildings
+            .iter()
+            .filter_map(|building| self.target(building.player, building.kind, building.anchor))
+            .filter(|target| target.objective() != skip.objective())
+            .filter(|target| !self.held.contains(&target.objective()))
+            .filter(|target| !self.memory.abandoned(target.building, target.anchor, now))
+            .filter(|target| self.rival.is_none_or(|rival| target.owner == rival))
+            .collect();
+        known.sort_by_key(|target| {
+            (
+                Reverse(target.score),
+                self.frame.rank(self.frame.home, doubled(target.approach)),
+            )
+        });
+        let full = margin(self.difficulty);
+        known.into_iter().find_map(|target| {
+            let component = self.map.component(target.approach);
+            let breachers = self.breachers(component, UNIT_CAP);
+            let need = self.need_at(target, breaching(self.observation, &breachers), full);
+            (self.reaching(target, fit) >= need).then_some((target, need))
+        })
+    }
+
+    /// The striking strength of those of `fit` that can reach `target`.
+    fn reaching(&self, target: Target, fit: &[&UnitObs]) -> u64 {
+        let component = self.map.component(target.approach);
+        fit.iter()
+            .filter(|unit| reaches(self.map, unit, component))
+            .map(|unit| striking(unit))
+            .sum()
     }
 
     /// Known enemy buildings that fire on ground and guard `target`, or whose
@@ -1807,6 +1886,14 @@ fn staging(difficulty: BotDifficulty) -> Option<u64> {
         BotDifficulty::Standard => Some(700),
         BotDifficulty::Veteran | BotDifficulty::Prime => Some(850),
     }
+}
+
+/// Whether a seat whose best target is out of its army's reach goes after
+/// the best one the army can beat instead of holding it at home: a
+/// difficulty limit on target choice. The lowest rung waits until it can
+/// beat the best.
+fn falls_back(difficulty: BotDifficulty) -> bool {
+    difficulty != BotDifficulty::Scrapheap
 }
 
 /// Whether a seat counts the known defenses whose fire reaches its way to a
