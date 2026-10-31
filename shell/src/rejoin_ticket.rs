@@ -2,7 +2,7 @@
 //! app is closed or killed, Home can offer to take the seat back. Home only
 //! offers it once the host confirms the seat still waits.
 
-use oxide_net::{Connection, Token, Visit, VisitEnd, VisitEvent};
+use aftermine_net::{Connection, Token, Visit, VisitEnd, VisitEvent};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};

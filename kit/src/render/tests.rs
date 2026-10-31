@@ -1,7 +1,10 @@
 use super::*;
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("oxide-kit-render-{name}-{}", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "aftermine-kit-render-{name}-{}",
+        std::process::id()
+    ));
     std::fs::remove_dir_all(&path).ok();
     std::fs::create_dir_all(&path).unwrap();
     path
@@ -11,7 +14,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn save_png_creates_parents_and_writes_the_canonical_render() {
     let dir = scratch("save");
     let path = dir.join("nested/state.png");
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
 
     save_png(&state, &path).unwrap();
 
@@ -31,7 +34,7 @@ fn save_png_creates_parents_and_writes_the_canonical_render() {
 
 #[test]
 fn an_extractor_frame_draws_as_a_gold_rimmed_block_unlike_rock() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let frame = *state
         .map()
         .extractor_frames()
@@ -60,7 +63,7 @@ fn save_png_reports_a_parent_that_cannot_be_created() {
     let dir = scratch("bad-parent");
     let blocked = dir.join("not-a-directory");
     std::fs::write(&blocked, b"existing file").unwrap();
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
 
     assert!(save_png(&state, &blocked.join("state.png")).is_err());
     assert_eq!(std::fs::read(&blocked).unwrap(), b"existing file");
@@ -121,8 +124,8 @@ fn a_map_deeper_than_the_band_shares_it_so_every_level_keeps_its_tone() {
 
 #[test]
 fn a_tiered_map_draws_its_levels_cliffs_and_ramps() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     scenario.map = vec!["....".into(), "=/==".into(), "....".into()];
     scenario.levels = vec!["1111".into(), "0000".into(), "0000".into()];
     scenario.players.truncate(1);

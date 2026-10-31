@@ -3,16 +3,16 @@
 //! Both figures are omniscient QA diagnostics computed by the evaluation loop.
 //! They never reach a controller.
 
-use chassis::fx::Fx;
-use chassis::grid::TilePos;
-use oxide_kit::stats::LiveMatchStats;
-use oxide_sim::stats::{
+use aftermine_kit::stats::LiveMatchStats;
+use aftermine_sim::stats::{
     FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, RECLAIMER_PERIOD, REFINERY_PERIOD,
 };
-use oxide_sim::{Building, BuildingKind, Event, ExtractorIncome, PlayerId, State, UnitKind};
+use aftermine_sim::{Building, BuildingKind, Event, ExtractorIncome, PlayerId, State, UnitKind};
+use chassis::fx::Fx;
+use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 
-const TICKS_PER_MINUTE: u32 = oxide_sim::TICKS_PER_SECOND * 60;
+const TICKS_PER_MINUTE: u32 = aftermine_sim::TICKS_PER_SECOND * 60;
 
 /// Ticks at which each seat's income is compared with its saturation estimate.
 pub const INCOME_CHECKPOINTS: [u64; 3] = [6_000, 12_000, 24_000];

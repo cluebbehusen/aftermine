@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aftermine Opponent"
+  short_description: "Build and evaluate aftermine-opponent, the reactive best-effort bot"
+  default_prompt: "Use $aftermine-opponent to build or evaluate Aftermine's reactive best-effort opponent under its specification and working rules."

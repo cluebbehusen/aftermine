@@ -7,10 +7,10 @@
 use crate::common;
 use common::{building, cmd, open_arena, open_arena_with, run, run_until, unit};
 
+use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{BuildingId, Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{BuildingId, Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 use serde_json::json;
 
 fn build(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>, scrap: u32) -> State {
@@ -483,12 +483,12 @@ fn the_bot_view_reports_a_building_tender() {
     let turret = site(&state, BuildingKind::Turret, 10, 8);
     wound(&mut state, turret, 30);
     run(&mut state, 3);
-    let view = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let view = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     let worker = view.my_units.iter().find(|u| u.id == welder).unwrap();
     assert!(!worker.idle);
     assert_eq!(
         worker.repair,
-        Some(oxide_sim::observation::RepairWork::Tending)
+        Some(aftermine_sim::observation::RepairWork::Tending)
     );
     assert_eq!(view.repair_target(welder), Some(Target::Building(turret)));
 }

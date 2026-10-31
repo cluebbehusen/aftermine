@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Oxide target's Run Script phase: builds the Rust shell for the
+# The Aftermine target's Run Script phase: builds the Rust shell for the
 # device and puts the executable where Xcode signs and packages it.
 # Xcode runs this with its build settings in the environment; see
 # README's iPad section for the commands that drive it.
@@ -22,11 +22,11 @@ else
 fi
 
 if [ "$CONFIGURATION" = "Release" ]; then
-    cargo build -p oxide-shell --target "$TARGET" --locked --release
-    BUILT="target/$TARGET/release/Oxide"
+    cargo build -p aftermine-shell --target "$TARGET" --locked --release
+    BUILT="target/$TARGET/release/Aftermine"
 else
-    cargo build -p oxide-shell --target "$TARGET" --locked
-    BUILT="target/$TARGET/debug/Oxide"
+    cargo build -p aftermine-shell --target "$TARGET" --locked
+    BUILT="target/$TARGET/debug/Aftermine"
 fi
 
 mkdir -p "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH"
@@ -35,7 +35,7 @@ cp "$BUILT" "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
 # The app wears the workspace version, derived like the macOS bundle's. App
 # Store Connect requires every upload to carry a higher build number than the
 # last, so the build number is the commit count.
-VERSION="$(cargo pkgid -p oxide-shell)"
+VERSION="$(cargo pkgid -p aftermine-shell)"
 VERSION="${VERSION##*[@#]}"
 BUILD="$(git rev-list --count HEAD)"
 /usr/libexec/PlistBuddy \

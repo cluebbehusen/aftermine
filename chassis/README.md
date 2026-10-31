@@ -2,8 +2,8 @@
 
 `chassis` is the reusable foundation for deterministic simulations. It owns
 fixed-point math, stable randomness and hashing, grids and pathfinding, replay
-records, and durable file writes. It contains no Oxide game rules, rendering,
-input, or engine dependencies.
+records, and durable file writes. It contains no Aftermine game rules,
+rendering, input, or engine dependencies.
 
 Simulation-facing code in this crate must produce the same result on every
 platform. That means integer or fixed-point math, explicit ordering, and

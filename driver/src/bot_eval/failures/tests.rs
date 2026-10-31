@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 
 /// The Surveyor, the cheapest unit a Foundry trains.
 const CHEAPEST_FOUNDRY_UNIT: u32 = 30;
@@ -120,7 +120,7 @@ fn repeated_stalls_fire_on_the_fifth_inside_the_window_only() {
 #[test]
 fn danger_holds_are_not_repeated_orders() {
     assert_eq!(
-        super::super::wire_name(&oxide_sim::StallReason::DangerHold),
+        super::super::wire_name(&aftermine_sim::StallReason::DangerHold),
         EXEMPT_STALL_REASON
     );
     let mut detectors = FailureDetectors::new([true]);
@@ -199,7 +199,7 @@ fn provisional_and_upgrading_works_are_not_abandoned_sites() {
         provisional
             .buildings()
             .iter()
-            .any(oxide_sim::Building::provisional)
+            .any(aftermine_sim::Building::provisional)
     );
     let upgrading = staged(
         &scenario(
@@ -336,11 +336,11 @@ fn legal_units_follow_the_roster_and_prerequisites() {
 
 #[test]
 fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
-    use oxide_opponent::{MissionKind, Phase};
+    use aftermine_opponent::{MissionKind, Phase};
     let status = |since: u64| MissionStatus {
         id: 3,
         kind: MissionKind::Defend {
-            asset: oxide_sim::BuildingId(1),
+            asset: aftermine_sim::BuildingId(1),
         },
         phase: Phase::Engage,
         since,
@@ -379,10 +379,10 @@ fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
 fn a_quiet_guard_has_no_stuck_deadline() {
     let status = MissionStatus {
         id: 1,
-        kind: oxide_opponent::MissionKind::Defend {
-            asset: oxide_sim::BuildingId(1),
+        kind: aftermine_opponent::MissionKind::Defend {
+            asset: aftermine_sim::BuildingId(1),
         },
-        phase: oxide_opponent::Phase::Guard,
+        phase: aftermine_opponent::Phase::Guard,
         since: 0,
         timeout: None,
         units: 10,
@@ -581,7 +581,7 @@ fn trained(state: &State) -> Event {
         .find(|unit| unit.kind == UnitKind::Sentinel)
         .unwrap();
     Event::UnitTrained {
-        building: oxide_sim::BuildingId(0),
+        building: aftermine_sim::BuildingId(0),
         unit: unit.id,
         kind: unit.kind,
         player: unit.player,

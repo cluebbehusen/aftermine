@@ -3,8 +3,8 @@
 //! a while, then fade in and stay until the screen changes. Information
 //! (record details, prompts, warnings) never waits.
 
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::Color;
-use oxide_protocol::RawEvent;
 use std::cell::Cell;
 
 /// How long a screen sits without a press before its coaching appears.

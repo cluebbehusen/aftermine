@@ -8,25 +8,25 @@
 //! same action frames without wall-clock races.
 //!
 //! ```text
-//! cargo test -p oxide-driver --test native_animation_capture \
+//! cargo test -p aftermine-driver --test native_animation_capture \
 //!     -- --ignored --test-threads 1 --nocapture
 //! ```
 //!
-//! Set `OXIDE_ANIMATION_CAPTURE_DIR` to choose the output directory. Without
+//! Set `AFTERMINE_ANIMATION_CAPTURE_DIR` to choose the output directory. Without
 //! it, each invocation writes a fresh `screenshots/native-animation/run-PID`
 //! tree. Every stage contains full-size frames, a quarter-size contact sheet,
 //! and a manifest recording the represented tick and sim events for each
 //! frame.
 
+use aftermine_driver::auto::{ShellGuard, SpawnOptions, spawn_shell, ui};
+use aftermine_driver::client::Client;
+use aftermine_protocol::{Reply, Request, StateFilter, StateView};
+use aftermine_sim::{
+    BuildingId, BuildingKind, Command, PlayerCommand, PlayerId, Target, UnitId, UnitKind,
+};
 use anyhow::{Context, Result, bail};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_driver::auto::{ShellGuard, SpawnOptions, spawn_shell, ui};
-use oxide_driver::client::Client;
-use oxide_protocol::{Reply, Request, StateFilter, StateView};
-use oxide_sim::{
-    BuildingId, BuildingKind, Command, PlayerCommand, PlayerId, Target, UnitId, UnitKind,
-};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -61,7 +61,7 @@ impl NativeCapture {
             }
         };
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let output = std::env::var_os("OXIDE_ANIMATION_CAPTURE_DIR").map_or_else(
+        let output = std::env::var_os("AFTERMINE_ANIMATION_CAPTURE_DIR").map_or_else(
             || {
                 root.join("screenshots/native-animation")
                     .join(format!("run-{}", std::process::id()))
@@ -104,7 +104,7 @@ impl NativeCapture {
         })?)
     }
 
-    fn present(&mut self, ticks: u64) -> Result<Vec<oxide_sim::Event>> {
+    fn present(&mut self, ticks: u64) -> Result<Vec<aftermine_sim::Event>> {
         match self.client.call(Request::PresentTicks { ticks })? {
             Reply::Presented(view) if view.ticks == ticks => Ok(view.events),
             other => bail!("present_ticks({ticks}) returned {other:?}"),
@@ -123,7 +123,7 @@ impl NativeCapture {
         label: &str,
         attacker: UnitId,
         cooldown: u32,
-    ) -> Result<Vec<oxide_sim::Event>> {
+    ) -> Result<Vec<aftermine_sim::Event>> {
         let mut approach = Vec::new();
         for _ in 0..120 {
             let events = self.present(1)?;
@@ -148,7 +148,7 @@ impl NativeCapture {
         label: &str,
         frames: u32,
         ticks_between: u64,
-    ) -> Result<Vec<oxide_sim::Event>> {
+    ) -> Result<Vec<aftermine_sim::Event>> {
         let mut tick_steps = vec![0; frames as usize];
         tick_steps.iter_mut().skip(1).for_each(|step| {
             *step = ticks_between;
@@ -160,7 +160,7 @@ impl NativeCapture {
         &mut self,
         label: &str,
         tick_steps: &[u64],
-    ) -> Result<Vec<oxide_sim::Event>> {
+    ) -> Result<Vec<aftermine_sim::Event>> {
         let dir = self.output.join(label);
         std::fs::create_dir_all(&dir)?;
         let mut paths = Vec::with_capacity(tick_steps.len());
@@ -220,10 +220,10 @@ impl Drop for NativeCapture {
     }
 }
 
-fn unit_fired(event: &oxide_sim::Event, unit: UnitId) -> bool {
+fn unit_fired(event: &aftermine_sim::Event, unit: UnitId) -> bool {
     match event {
-        oxide_sim::Event::AttackHit { attacker, .. } => *attacker == unit,
-        oxide_sim::Event::ShellLaunched {
+        aftermine_sim::Event::AttackHit { attacker, .. } => *attacker == unit,
+        aftermine_sim::Event::ShellLaunched {
             shooter: Target::Unit(shooter),
             ..
         } => *shooter == unit,
@@ -336,7 +336,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let events = harness.capture_stage("03-active-construction", 18, 20)?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::BuildingCompleted {
+        aftermine_sim::Event::BuildingCompleted {
             kind: BuildingKind::Turret,
             ..
         }
@@ -354,7 +354,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let events = harness.capture_stage("04-foundry-production", 12, 10)?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::UnitTrained {
+        aftermine_sim::Event::UnitTrained {
             kind: UnitKind::Harvester,
             ..
         }
@@ -372,7 +372,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let events = harness.capture_stage("05-fabricator-production", 12, 20)?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::UnitTrained {
+        aftermine_sim::Event::UnitTrained {
             kind: UnitKind::Lancer,
             ..
         }
@@ -406,10 +406,10 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
         )?;
         assert!(
             events.iter().any(|event| match event {
-                oxide_sim::Event::AttackHit {
+                aftermine_sim::Event::AttackHit {
                     attacker: source, ..
                 } => *source == attacker,
-                oxide_sim::Event::ShellLaunched {
+                aftermine_sim::Event::ShellLaunched {
                     shooter: Target::Unit(source),
                     ..
                 } => *source == attacker,
@@ -437,7 +437,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     )?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::AttackHit {
+        aftermine_sim::Event::AttackHit {
             attacker,
             weapon: 1,
             ..
@@ -471,8 +471,8 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
         )?;
         assert!(
             events.iter().any(|event| match event {
-                oxide_sim::Event::TurretFired { turret, .. } => *turret == gun,
-                oxide_sim::Event::ShellLaunched {
+                aftermine_sim::Event::TurretFired { turret, .. } => *turret == gun,
+                aftermine_sim::Event::ShellLaunched {
                     shooter: Target::Building(source),
                     ..
                 } => *source == gun,
@@ -497,7 +497,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let events = harness.present(1)?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::AttackHit {
+        aftermine_sim::Event::AttackHit {
             attacker: source,
             target: Some(Target::Building(target)),
             ..
@@ -556,7 +556,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let hit = first.iter().any(|event| {
         matches!(
             event,
-            oxide_sim::Event::AttackHit { attacker: source, target: Some(Target::Unit(target)), .. }
+            aftermine_sim::Event::AttackHit { attacker: source, target: Some(Target::Unit(target)), .. }
                 if *source == attacker && *target == patient
         )
     });
@@ -572,7 +572,7 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
         let second = harness.present(1)?;
         assert!(second.iter().any(|event| matches!(
             event,
-            oxide_sim::Event::AttackHit { attacker: source, target: Some(Target::Unit(target)), .. }
+            aftermine_sim::Event::AttackHit { attacker: source, target: Some(Target::Unit(target)), .. }
                 if *source == attacker && *target == patient
         )));
     }
@@ -595,9 +595,9 @@ fn captures_action_driven_animation_states_in_the_real_shell() -> Result<()> {
     let events = harness.capture_stage("10-repair-bay-pulses", 24, 1)?;
     assert!(events.iter().any(|event| matches!(
         event,
-        oxide_sim::Event::UnitRepaired {
+        aftermine_sim::Event::UnitRepaired {
             unit,
-            source: oxide_sim::UnitRepairSource::RepairBay { .. },
+            source: aftermine_sim::UnitRepairSource::RepairBay { .. },
             ..
         } if *unit == patient
     )));
@@ -680,8 +680,8 @@ fn captures_promoted_condor_in_the_real_shell() -> Result<()> {
         &combat_capture_schedule(UnitKind::Condor.stats().weapons[0].cooldown_ticks),
     )?;
     assert!(events.iter().any(|event| match event {
-        oxide_sim::Event::AttackHit { attacker, .. } => *attacker == condor,
-        oxide_sim::Event::ShellLaunched {
+        aftermine_sim::Event::AttackHit { attacker, .. } => *attacker == condor,
+        aftermine_sim::Event::ShellLaunched {
             shooter: Target::Unit(shooter),
             ..
         } => *shooter == condor,
@@ -737,7 +737,7 @@ fn captures_promoted_airworks_and_scouts_in_the_real_shell() -> Result<()> {
     let aircraft = events
         .iter()
         .find_map(|event| match event {
-            oxide_sim::Event::UnitTrained {
+            aftermine_sim::Event::UnitTrained {
                 building,
                 unit,
                 kind: UnitKind::Kestrel,
@@ -790,7 +790,7 @@ fn generated_animation_capture_scenarios_are_valid() -> Result<()> {
         .map(defense_duel_scenario),
     );
     for value in scenarios {
-        let parsed = oxide_sim::Scenario::from_json(&serde_json::to_string(&value)?)?;
+        let parsed = aftermine_sim::Scenario::from_json(&serde_json::to_string(&value)?)?;
         parsed.build()?;
     }
     Ok(())
@@ -800,7 +800,7 @@ fn generated_animation_capture_scenarios_are_valid() -> Result<()> {
 fn staged_combat_roster_fires_within_the_capture_approach() -> Result<()> {
     for kind in combat_kinds() {
         let scenario =
-            oxide_sim::Scenario::from_json(&serde_json::to_string(&unit_duel_scenario(kind))?)?;
+            aftermine_sim::Scenario::from_json(&serde_json::to_string(&unit_duel_scenario(kind))?)?;
         let mut state = scenario.build()?;
         let commands = [
             PlayerCommand {
@@ -878,7 +878,7 @@ fn scratch_home() -> Result<PathBuf> {
     loop {
         let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "oxide-native-animation-{}-{id}",
+            "aftermine-native-animation-{}-{id}",
             std::process::id()
         ));
         match std::fs::create_dir(&path) {
@@ -892,9 +892,9 @@ fn scratch_home() -> Result<PathBuf> {
 fn write_config(home: &Path) -> Result<()> {
     let config = include_bytes!("../src/quiet_config.json");
     for dir in [
-        home.join("Library/Application Support/Oxide"),
-        home.join(".config/oxide"),
-        home.join("AppData/Oxide"),
+        home.join("Library/Application Support/Aftermine"),
+        home.join(".config/aftermine"),
+        home.join("AppData/Aftermine"),
     ] {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(dir.join("config.json"), config)?;

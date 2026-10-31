@@ -1,22 +1,22 @@
 //! Golden-image regression tests.
 //!
-//! The CPU renderer in `oxide-kit` is bit-deterministic, so these compare
+//! The CPU renderer in `aftermine-kit` is bit-deterministic, so these compare
 //! PNG bytes exactly, with no tolerance. When an intentional
 //! sim or renderer change moves the pixels:
 //!
-//! 1. `BLESS=1 cargo test -p oxide-driver` to regenerate,
+//! 1. `BLESS=1 cargo test -p aftermine-driver` to regenerate,
 //! 2. *look at* the regenerated PNGs in `driver/tests/goldens/`,
 //! 3. commit them together with the change and say why.
 
-use chassis::grid::TilePos;
-use oxide_kit::render;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_kit::render;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     BuildingKind, Command, PlayerCommand, PlayerId, Scenario, State, Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 use std::path::PathBuf;
 
-fn golden_check(name: &str, state: &oxide_sim::State) {
+fn golden_check(name: &str, state: &aftermine_sim::State) {
     let actual = render::png_bytes(state).unwrap();
     let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens")
@@ -30,7 +30,7 @@ fn golden_check(name: &str, state: &oxide_sim::State) {
     }
     let expected = std::fs::read(&golden).unwrap_or_else(|_| {
         panic!(
-            "missing golden {} — run `BLESS=1 cargo test -p oxide-driver` and commit it",
+            "missing golden {} — run `BLESS=1 cargo test -p aftermine-driver` and commit it",
             golden.display()
         )
     });
@@ -611,7 +611,7 @@ fn showcase_state() -> State {
         if let Command::Attack { units, target, .. } = command.command {
             for id in units {
                 let unit = state.unit(id).unwrap();
-                if unit.kind.stats().domain != oxide_sim::stats::Domain::Ground {
+                if unit.kind.stats().domain != aftermine_sim::stats::Domain::Ground {
                     continue;
                 }
                 let aim = state
@@ -711,7 +711,7 @@ fn showcase_state() -> State {
             _ => Vec::new(),
         };
         if !crew_withdrew
-            && (state.map().scrap_at(WORKED_NODE) <= oxide_sim::stats::SCRAP_NODE_AMOUNT / 3
+            && (state.map().scrap_at(WORKED_NODE) <= aftermine_sim::stats::SCRAP_NODE_AMOUNT / 3
                 || tick == CREW_STEPS_OFF)
         {
             let workers = cast
@@ -719,9 +719,9 @@ fn showcase_state() -> State {
                 .iter()
                 .copied()
                 .filter(|id| {
-                    state
-                        .unit(*id)
-                        .is_some_and(|unit| matches!(unit.order, oxide_sim::Order::Harvest { .. }))
+                    state.unit(*id).is_some_and(|unit| {
+                        matches!(unit.order, aftermine_sim::Order::Harvest { .. })
+                    })
                 })
                 .collect();
             commands.push(walk(0, workers, 2, 6));
@@ -767,7 +767,7 @@ fn launch_drones(state: &State, roc: UnitId) -> State {
     for row in staged["units"].as_array_mut().unwrap() {
         if row["id"] == serde_json::json!(roc) {
             row["bay"]["docked"] = serde_json::json!(2);
-            row["bay"]["alert"] = serde_json::json!(oxide_sim::stats::RECALL_TICKS);
+            row["bay"]["alert"] = serde_json::json!(aftermine_sim::stats::RECALL_TICKS);
         }
     }
     let mut state: State = serde_json::from_value(staged).unwrap();
@@ -792,7 +792,7 @@ fn launch_drones(state: &State, roc: UnitId) -> State {
 /// with a sentence instead of a silent pixel match.
 #[test]
 fn showcase_covers_every_rendered_feature() {
-    use oxide_sim::map::Terrain;
+    use aftermine_sim::map::Terrain;
     let state = showcase_state();
     let tiles = || state.map().iter().map(|(_, t)| t);
 
@@ -821,16 +821,16 @@ fn showcase_covers_every_rendered_feature() {
         "no rubble: the cosmetic-ground branch goes unrendered"
     );
     assert!(
-        tiles().any(|t| t.scrap > oxide_sim::stats::SCRAP_NODE_AMOUNT),
+        tiles().any(|t| t.scrap > aftermine_sim::stats::SCRAP_NODE_AMOUNT),
         "no rich node"
     );
     assert!(
-        tiles().any(|t| t.scrap == oxide_sim::stats::SCRAP_NODE_AMOUNT),
+        tiles().any(|t| t.scrap == aftermine_sim::stats::SCRAP_NODE_AMOUNT),
         "no untouched node"
     );
     let worked = state.map().scrap_at(WORKED_NODE);
     assert!(
-        worked > 0 && worked * 2 <= oxide_sim::stats::SCRAP_NODE_AMOUNT,
+        worked > 0 && worked * 2 <= aftermine_sim::stats::SCRAP_NODE_AMOUNT,
         "the worked node holds {worked}, outside the renderer's depleted tint"
     );
     assert!(

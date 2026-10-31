@@ -1,16 +1,16 @@
 ---
-name: oxide-opponent
+name: aftermine-opponent
 description:
-  Build and evaluate oxide-opponent, Oxide's reactive best-effort opponent
-  controller. Use for any work in the oxide-opponent crate or its host
-  integration, its tests and staged scenarios, its CPU and line reports, its
-  evaluation, and its difficulty, stance and personality mapping.
+  Build and evaluate aftermine-opponent, Aftermine's reactive best-effort
+  opponent controller. Use for any work in the aftermine-opponent crate or its
+  host integration, its tests and staged scenarios, its CPU and line reports,
+  its evaluation, and its difficulty, stance and personality mapping.
 ---
 
-# oxide-opponent
+# aftermine-opponent
 
-Read [the specification](../../../docs/oxide-opponent.md) first. It is normative
-for this crate.
+Read [the specification](../../../docs/aftermine-opponent.md) first. It is
+normative for this crate.
 
 ## Rules
 
@@ -66,8 +66,8 @@ for this crate.
 - **Shell:** every bot seat of a New Match runs this bot. Rematches, saves and
   replays keep the configuration recorded in their scenario.
 - **Evaluation:**
-  `cargo run --release -p oxide-driver -- bot-eval skirmish --ticks 6000` plays
-  this bot in every seat; `--difficulty` and `--stance` set every seat and
+  `cargo run --release -p aftermine-driver -- bot-eval skirmish --ticks 6000`
+  plays this bot in every seat; `--difficulty` and `--stance` set every seat and
   `--opponent-difficulty` and `--opponent-stance` override seat one. Add
   `--paired` for a second leg with the two configurations exchanged.
 - **Traces:** `--decision-trace-out <file>`, with `--out` and `--candidate`,
@@ -86,19 +86,20 @@ Keep them out of the PR description.
 - **Lines:** `uv run tools/line_report.py <base>` prints the net production and
   test line change per top-level directory from the merge base; `--help` defines
   what counts. `--working-tree` includes uncommitted files.
-- **CPU:** `cargo run --release --locked -p oxide-driver -- bot-cost <workload>`
-  for each of `duel`, `skyhook`, `mature-armies` and `maw` reports average and
-  p99 time per decision and total CPU per seat, with the observation build
-  beside them. Run it on the branch and on its base, on one machine with no
-  competing builds or benchmarks; `--json` gives the same report as data. The
-  budget: `skyhook` at most 250 µs average and 1 ms p99 per decision; `duel` and
+- **CPU:**
+  `cargo run --release --locked -p aftermine-driver -- bot-cost <workload>` for
+  each of `duel`, `skyhook`, `mature-armies` and `maw` reports average and p99
+  time per decision and total CPU per seat, with the observation build beside
+  them. Run it on the branch and on its base, on one machine with no competing
+  builds or benchmarks; `--json` gives the same report as data. The budget:
+  `skyhook` at most 250 µs average and 1 ms p99 per decision; `duel` and
   `mature-armies` no worse than the base beyond noise.
 
 Run the ladder smoke locally on the branch and on its base before handoff; CI
 does not run it:
 
 ```sh
-cargo run --release -p oxide-driver -- bot-ladder driver/evaluation/ladder/ladder-smoke.json --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder-smoke.json --out <new directory>
 ```
 
 It plays every comparison of the ladder on Skirmish, The Deep Cut, Subsidence
@@ -107,8 +108,8 @@ free-for-all play also plays every seat of those maps at one rung and reads the
 seats:
 
 ```sh
-cargo run --release -p oxide-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
-cargo run --release -p oxide-driver -- bot-summary <rows.jsonl>
+cargo run --release -p aftermine-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
+cargo run --release -p aftermine-driver -- bot-summary <rows.jsonl>
 ```
 
 `bot-summary` pools the seats of any evaluation rows by team layout (`duel`,
@@ -160,7 +161,7 @@ recording, including human games.
 The ladder measures the rungs against each other:
 
 ```sh
-cargo run --release -p oxide-driver -- bot-ladder driver/evaluation/ladder/ladder.json --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder.json --out <new directory>
 ```
 
 Each comparison pits a higher rung against a lower one on duel maps, in pairs
@@ -257,8 +258,8 @@ on adds no empty samples.
 
 ## Pressure scenarios
 
-`cargo run --release -p oxide-driver -- bot-pressure` runs the staged scenarios
-in `driver/evaluation/pressure/`; `--replay-dir` saves each run for
+`cargo run --release -p aftermine-driver -- bot-pressure` runs the staged
+scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run for
 `replay-summary`. A scripted attacker seat issues tick-stamped commands for its
 preset units while the bot defends. Its Foundry stands in a walled corner: for
 early rush, air switch and siege the corner opens at its far end, so the
@@ -288,6 +289,7 @@ deadline, the script (unit ids follow scenario order) and the check.
 
 ## Review play
 
-Use `replay-summary` and the native shell through the oxide-live-qa skill. Give
-tick ranges for notable moments. Automated metrics find candidates and failures;
-human play and replay review decide whether the bot is credible and fun.
+Use `replay-summary` and the native shell through the aftermine-live-qa skill.
+Give tick ranges for notable moments. Automated metrics find candidates and
+failures; human play and replay review decide whether the bot is credible and
+fun.

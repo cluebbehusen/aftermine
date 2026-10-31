@@ -7,11 +7,11 @@
 use crate::common;
 use common::{cmd, players, run, unit};
 
+use aftermine_sim::map::Terrain;
+use aftermine_sim::scenario::{ScenarioError, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{Command, Event, PlayerId, Scenario, State, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::map::Terrain;
-use oxide_sim::scenario::{ScenarioError, ScenarioMode, UnitSpec};
-use oxide_sim::stats::Domain;
-use oxide_sim::{Command, Event, PlayerId, Scenario, State, Target, UnitKind};
 
 /// A chasm at x=`wall_x` (default 12) severing east from west on the
 /// ground. Both Foundries sit west — the build gate requires the seats
@@ -246,7 +246,7 @@ fn foundations_refuse_the_void() {
         0,
         Command::Build {
             units: vec![builder],
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             anchor: TilePos::new(12, 5),
             queue: false,
             defer: false,

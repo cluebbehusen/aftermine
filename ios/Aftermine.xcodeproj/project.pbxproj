@@ -14,21 +14,21 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0A1B00000000000000000020 /* Oxide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Oxide.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A1B00000000000000000020 /* Aftermine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aftermine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A1B00000000000000000021 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = ../assets; sourceTree = "<group>"; };
 		0A1B00000000000000000022 /* scenarios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = scenarios; path = ../scenarios; sourceTree = "<group>"; };
-		0A1B00000000000000000023 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Oxide/Info.plist; sourceTree = "<group>"; };
-		0A1B00000000000000000024 /* Oxide.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Oxide.xcconfig; sourceTree = "<group>"; };
+		0A1B00000000000000000023 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Aftermine/Info.plist; sourceTree = "<group>"; };
+		0A1B00000000000000000024 /* Aftermine.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Aftermine.xcconfig; sourceTree = "<group>"; };
 		0A1B00000000000000000025 /* build_rust.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build_rust.sh; sourceTree = "<group>"; };
-		0A1B00000000000000000026 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Oxide/Assets.xcassets; sourceTree = "<group>"; };
-		0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Oxide/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0A1B00000000000000000026 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Aftermine/Assets.xcassets; sourceTree = "<group>"; };
+		0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Aftermine/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		0A1B00000000000000000030 = {
 			isa = PBXGroup;
 			children = (
-				0A1B00000000000000000024 /* Oxide.xcconfig */,
+				0A1B00000000000000000024 /* Aftermine.xcconfig */,
 				0A1B00000000000000000025 /* build_rust.sh */,
 				0A1B00000000000000000023 /* Info.plist */,
 				0A1B00000000000000000026 /* Assets.xcassets */,
@@ -42,7 +42,7 @@
 		0A1B00000000000000000031 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0A1B00000000000000000020 /* Oxide.app */,
+				0A1B00000000000000000020 /* Aftermine.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -50,9 +50,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0A1B00000000000000000040 /* Oxide */ = {
+		0A1B00000000000000000040 /* Aftermine */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 0A1B00000000000000000061 /* Build configuration list for PBXNativeTarget "Oxide" */;
+			buildConfigurationList = 0A1B00000000000000000061 /* Build configuration list for PBXNativeTarget "Aftermine" */;
 			buildPhases = (
 				0A1B00000000000000000051 /* Resources */,
 				0A1B00000000000000000050 /* Build Rust */,
@@ -61,9 +61,9 @@
 			);
 			dependencies = (
 			);
-			name = Oxide;
-			productName = Oxide;
-			productReference = 0A1B00000000000000000020 /* Oxide.app */;
+			name = Aftermine;
+			productName = Aftermine;
+			productReference = 0A1B00000000000000000020 /* Aftermine.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -80,7 +80,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 0A1B00000000000000000060 /* Build configuration list for PBXProject "Oxide" */;
+			buildConfigurationList = 0A1B00000000000000000060 /* Build configuration list for PBXProject "Aftermine" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -92,7 +92,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				0A1B00000000000000000040 /* Oxide */,
+				0A1B00000000000000000040 /* Aftermine */,
 			);
 		};
 /* End PBXProject section */
@@ -152,14 +152,14 @@
 		};
 		0A1B00000000000000000072 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 0A1B00000000000000000024 /* Oxide.xcconfig */;
+			baseConfigurationReference = 0A1B00000000000000000024 /* Aftermine.xcconfig */;
 			buildSettings = {
 			};
 			name = Debug;
 		};
 		0A1B00000000000000000073 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 0A1B00000000000000000024 /* Oxide.xcconfig */;
+			baseConfigurationReference = 0A1B00000000000000000024 /* Aftermine.xcconfig */;
 			buildSettings = {
 			};
 			name = Release;
@@ -167,7 +167,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0A1B00000000000000000060 /* Build configuration list for PBXProject "Oxide" */ = {
+		0A1B00000000000000000060 /* Build configuration list for PBXProject "Aftermine" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0A1B00000000000000000070 /* Debug */,
@@ -176,7 +176,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		0A1B00000000000000000061 /* Build configuration list for PBXNativeTarget "Oxide" */ = {
+		0A1B00000000000000000061 /* Build configuration list for PBXNativeTarget "Aftermine" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0A1B00000000000000000072 /* Debug */,

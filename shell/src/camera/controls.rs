@@ -8,8 +8,8 @@ use super::Camera;
 use crate::action::{Action, ActionResolver};
 use crate::config::CameraPrefs;
 use crate::viewer_touch::ViewerTouch;
+use aftermine_protocol::{MouseButton, RawEvent};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_protocol::{MouseButton, RawEvent};
 
 /// The direction the held pan keys point, before normalizing.
 pub(crate) fn held_pan(resolver: &ActionResolver) -> Vec2 {

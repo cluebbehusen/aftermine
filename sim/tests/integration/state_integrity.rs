@@ -15,9 +15,9 @@
 use crate::common;
 use common::cmd;
 
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingKind, QUEUE_CAP};
-use oxide_sim::{
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{BuildingKind, QUEUE_CAP};
+use aftermine_sim::{
     BuildingId, Command, PlayerCommand, PlayerId, Scenario, State, StateIntegrityError, UnitId,
     UnitKind,
 };
@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 #[test]
 fn sandbox_cannot_restore_a_match_result_or_elimination_stamp() {
     let mut scenario = Scenario::skirmish();
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     let original = serde_json::to_value(scenario.build().unwrap()).unwrap();
     for (pointer, value) in [
         ("/result", json!({"outcome": "draw"})),
@@ -203,7 +203,7 @@ fn strike() -> Value {
             .vision(PlayerId(1))
             .warheads()
             .first()
-            .is_some_and(oxide_sim::vision::WarheadTrack::tracked)
+            .is_some_and(aftermine_sim::vision::WarheadTrack::tracked)
         {
             return doc(&state);
         }
@@ -217,7 +217,7 @@ fn strike() -> Value {
 /// its crew are live holders.
 fn cradle() -> Value {
     let mut scenario = arena();
-    scenario.players[0].scrap = oxide_sim::stats::UnitKind::Maw.stats().cost;
+    scenario.players[0].scrap = aftermine_sim::stats::UnitKind::Maw.stats().cost;
     scenario.buildings.extend([
         BuildingSpec {
             player: 0,
@@ -263,7 +263,7 @@ fn cradle() -> Value {
         !report
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. })),
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. })),
         "{:?}",
         report.events
     );
@@ -978,8 +978,8 @@ fn make_landed(d: &mut Value) {
 #[test]
 fn leash_clocks_are_bounded_at_deserialization() {
     for (field, bound) in [
-        ("patience", oxide_sim::stats::LEASH_PATIENCE),
-        ("cooldown", oxide_sim::stats::LEASH_REACQUIRE_COOLDOWN),
+        ("patience", aftermine_sim::stats::LEASH_PATIENCE),
+        ("cooldown", aftermine_sim::stats::LEASH_REACQUIRE_COOLDOWN),
     ] {
         let mut document = snapshot();
         document["units"][0]["leash"] = json!({"anchor": {"x": 4, "y": 4}});
@@ -1272,7 +1272,8 @@ fn every_checklist_row_refuses_its_forgery() {
         (
             "a stall counter at its replan bound",
             |d| {
-                d["units"][0]["motor"]["stall_ticks"] = json!(oxide_sim::stats::STALL_REPLAN_TICKS);
+                d["units"][0]["motor"]["stall_ticks"] =
+                    json!(aftermine_sim::stats::STALL_REPLAN_TICKS);
             },
             "unit u0 carries an invalid stall counter",
         ),
@@ -1518,7 +1519,7 @@ fn every_checklist_row_refuses_its_forgery() {
             "a retirement resting on a full meter",
             |d| {
                 d["units"][0]["order"] = json!({"order": "retire", "crucible": 0});
-                d["units"][0]["progress"] = json!(oxide_sim::stats::RETIRE_TICKS);
+                d["units"][0]["progress"] = json!(aftermine_sim::stats::RETIRE_TICKS);
             },
             "has an invalid retirement",
         ),
@@ -2086,7 +2087,7 @@ fn every_checklist_row_refuses_its_forgery() {
             "more recent impact sites than the bounded memory permits",
             |d| {
                 d["vision"][0]["salvage_incidents"] = json!(
-                    (0..=oxide_sim::stats::HARVEST_INCIDENT_CAP)
+                    (0..=aftermine_sim::stats::HARVEST_INCIDENT_CAP)
                         .map(|x| incident(i32::try_from(x).unwrap(), 3, 100))
                         .collect::<Vec<_>>()
                 );
@@ -2115,7 +2116,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["vision"][0]["salvage_incidents"] = json!([incident(
                     3,
                     3,
-                    101 + oxide_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS
+                    101 + aftermine_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS
                 )]);
             },
             "player p0 carries a salvage incident expiry beyond its memory horizon",
@@ -2567,7 +2568,7 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 0,
                 Command::SetRally {
                     building: fabricator,
-                    rally: Some(oxide_sim::Rally::Tile(tile(5, 3))),
+                    rally: Some(aftermine_sim::Rally::Tile(tile(5, 3))),
                 },
             )],
         ),
@@ -2636,27 +2637,27 @@ fn a_full_verb_run_stays_valid_every_tick() {
         saw_short |= report.events.iter().any(|event| {
             matches!(
                 event,
-                oxide_sim::Event::OrderStalled {
+                aftermine_sim::Event::OrderStalled {
                     unit,
-                    reason: oxide_sim::StallReason::NoRoute,
+                    reason: aftermine_sim::StallReason::NoRoute,
                     ..
                 } if *unit == walker
             )
         });
         saw_pending |= state.unit(stray).is_some_and(
-            |u| matches!(u.order, oxide_sim::Order::Run { goal } if goal.is_pending()),
+            |u| matches!(u.order, aftermine_sim::Order::Run { goal } if goal.is_pending()),
         );
         saw_handoff |= state.unit(condor).is_some_and(
-            |u| matches!(u.order, oxide_sim::Order::Land { from, .. } if from == Some(tile(6, 6))),
+            |u| matches!(u.order, aftermine_sim::Order::Land { from, .. } if from == Some(tile(6, 6))),
         );
         saw_escort |= state.unit(walker).is_some_and(|u| {
-            oxide_sim::Order::Accompany {
+            aftermine_sim::Order::Accompany {
                 unit: harvester,
                 weld: None,
             } == u.order
         });
         saw_retired |= report.events.iter().any(
-            |event| matches!(event, oxide_sim::Event::UnitRetired { unit, .. } if *unit == condor),
+            |event| matches!(event, aftermine_sim::Event::UnitRetired { unit, .. } if *unit == condor),
         );
         saw_shell |= !state.shells().is_empty();
         saw_haul |= state.units().iter().any(|u| u.carrying() > 0);
@@ -2716,9 +2717,9 @@ fn an_off_map_ground_unit_with_an_unreachable_move_ticks_without_panicking() {
             .filter(|event| {
                 matches!(
                     event,
-                    oxide_sim::Event::OrderStalled {
+                    aftermine_sim::Event::OrderStalled {
                         unit,
-                        reason: oxide_sim::StallReason::NoRoute,
+                        reason: aftermine_sim::StallReason::NoRoute,
                         ..
                     } if *unit == stray
                 )
@@ -2726,7 +2727,7 @@ fn an_off_map_ground_unit_with_an_unreachable_move_ticks_without_panicking() {
             .count();
     }
     let unit = state.unit(stray).expect("the stray survives");
-    assert_eq!(unit.order, oxide_sim::Order::Idle);
+    assert_eq!(unit.order, aftermine_sim::Order::Idle);
     assert_eq!(reports, 2, "each sealed leg ends short once");
 }
 
@@ -2750,7 +2751,7 @@ fn a_pending_rank_past_every_slot_is_accepted_and_walks_to_the_last_one() {
             let walker = state.units()[0].id;
             state.tick(&[]);
             state.validate_invariants().unwrap();
-            let oxide_sim::Order::Run { goal } = state.unit(walker).unwrap().order else {
+            let aftermine_sim::Order::Run { goal } = state.unit(walker).unwrap().order else {
                 panic!("the walk stands");
             };
             assert!(
@@ -2765,13 +2766,16 @@ fn a_pending_rank_past_every_slot_is_accepted_and_walks_to_the_last_one() {
         assert_eq!(goal, last, "rank 255 shares the last of the 169 slots");
         assert_ne!(goal.target(), first.target());
         for _ in 0..400 {
-            if state.unit(walker).unwrap().order == oxide_sim::Order::Idle {
+            if state.unit(walker).unwrap().order == aftermine_sim::Order::Idle {
                 break;
             }
             state.tick(&[]);
             state.validate_invariants().unwrap();
         }
-        assert_eq!(state.unit(walker).unwrap().order, oxide_sim::Order::Idle);
+        assert_eq!(
+            state.unit(walker).unwrap().order,
+            aftermine_sim::Order::Idle
+        );
         assert_eq!(state.unit(walker).unwrap().tile(), goal.destination());
     }
 }
@@ -2798,7 +2802,7 @@ fn a_dangling_order_target_is_not_a_forgery() {
 
 #[test]
 fn parse_refuses_a_map_beyond_the_edge_bound() {
-    use oxide_sim::map::{MAX_MAP_EDGE, Map, MapError};
+    use aftermine_sim::map::{MAX_MAP_EDGE, Map, MapError};
     let edge = usize::from(MAX_MAP_EDGE);
 
     let wide = vec!["#".repeat(edge + 1)];
@@ -2825,7 +2829,7 @@ fn pending_crash(d: &Value) -> Value {
     json!({
         "unit": 0, "player": 0, "kind": "condor", "heading": 0,
         "launch": d["units"][0]["pos"], "impact": d["units"][0]["pos"],
-        "started": started, "arrival": started + oxide_sim::stats::AIRCRAFT_CRASH_TICKS,
+        "started": started, "arrival": started + aftermine_sim::stats::AIRCRAFT_CRASH_TICKS,
     })
 }
 

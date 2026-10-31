@@ -24,7 +24,7 @@ fn publish_weld(game: &mut Game, input: &InputState) -> Rect {
     weld.expect("a worker's panel offers Weld")
 }
 
-fn selected_worker(game: &mut Game) -> oxide_sim::UnitId {
+fn selected_worker(game: &mut Game) -> aftermine_sim::UnitId {
     let worker = game
         .state
         .units()
@@ -36,7 +36,7 @@ fn selected_worker(game: &mut Game) -> oxide_sim::UnitId {
     worker
 }
 
-fn switched_off(game: &Game, worker: oxide_sim::UnitId) -> bool {
+fn switched_off(game: &Game, worker: aftermine_sim::UnitId) -> bool {
     game.pending.iter().any(|pending| {
         matches!(
             &pending.command,

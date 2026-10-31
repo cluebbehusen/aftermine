@@ -10,9 +10,9 @@ use crate::bot_eval::{
 use crate::evaluation::MatchMode;
 use crate::ledger::{LedgerPool, SeatLedger};
 use crate::pacing::{Pacing, PacingSummary};
+use aftermine_sim::GameResult;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use anyhow::{Context, Result, ensure};
-use oxide_sim::GameResult;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -22,7 +22,7 @@ use std::path::PathBuf;
 pub const LEDGER_KINDS: usize = 8;
 
 /// Ticks per minute.
-const MINUTE: u64 = oxide_sim::TICKS_PER_SECOND as u64 * 60;
+const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
 
 /// The fields of a seat's evidence a summary reads.
 #[derive(Debug, Clone, Default, Deserialize)]

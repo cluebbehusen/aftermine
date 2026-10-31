@@ -27,7 +27,7 @@ fn toned(color: Color, tone: f32) -> Color {
 
 /// Minimap identity color: the same seat accents the world renderer uses
 /// (own faction, cool allies, warm hostiles).
-fn mini_entity_color(game: &crate::game::Scene<'_>, owner: oxide_sim::PlayerId) -> Color {
+fn mini_entity_color(game: &crate::game::Scene<'_>, owner: aftermine_sim::PlayerId) -> Color {
     super::seat_identity_color(game, owner)
 }
 
@@ -170,7 +170,7 @@ const FADE_STEPS_PER_SECOND: f32 = 4.0;
 #[derive(Clone, Copy, PartialEq)]
 struct Painted {
     tick: u64,
-    viewer: oxide_sim::PlayerId,
+    viewer: aftermine_sim::PlayerId,
     omniscient: bool,
     fade: u32,
 }
@@ -197,11 +197,11 @@ impl MinimapPaint {
                 let tone = levels.and_then(|levels| levels.minimap_tone(map, pos));
                 let ground = tone.map_or(MINI_GROUND, |tone| toned(MINI_GROUND, tone));
                 match tile.terrain {
-                    oxide_sim::map::Terrain::Rock => MINI_ROCK,
-                    oxide_sim::map::Terrain::Cliff => toned(ground, MINI_CLIFF),
-                    oxide_sim::map::Terrain::Peak => MINI_PEAK,
-                    oxide_sim::map::Terrain::Pit => MINI_PIT,
-                    oxide_sim::map::Terrain::Ground => ground,
+                    aftermine_sim::map::Terrain::Rock => MINI_ROCK,
+                    aftermine_sim::map::Terrain::Cliff => toned(ground, MINI_CLIFF),
+                    aftermine_sim::map::Terrain::Peak => MINI_PEAK,
+                    aftermine_sim::map::Terrain::Pit => MINI_PIT,
+                    aftermine_sim::map::Terrain::Ground => ground,
                 }
             })
             .collect();
@@ -245,7 +245,7 @@ impl MinimapPaint {
                 } else {
                     vision.remembered_scrap(pos)
                 };
-                let base = if tile.terrain == oxide_sim::map::Terrain::Ground && scrap > 0 {
+                let base = if tile.terrain == aftermine_sim::map::Terrain::Ground && scrap > 0 {
                     SCRAP_COLOR
                 } else {
                     bare
@@ -360,9 +360,10 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         }
         // Public buildings are known facts, not fading memories: a full
         // seat-colored outline, set apart from the filled ghosts.
-        for public in
-            oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
-        {
+        for public in aftermine_sim::observation::hostile_public_buildings(
+            game.state,
+            game.presentation.human,
+        ) {
             let (w, h) = public.kind.size();
             let color = mini_entity_color(game, public.owner);
             draw_rectangle_lines(
@@ -416,7 +417,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             continue;
         }
         // A hull wider than a tile shows at its size; small bodies share one dot.
-        let excess = oxide_sim::stats::hull_excess(unit.kind.stats().radius).to_num::<f32>();
+        let excess = aftermine_sim::stats::hull_excess(unit.kind.stats().radius).to_num::<f32>();
         let dot = (scale * (0.7 + 2.0 * excess)).max(2.0);
         draw_rectangle(
             rect.x + unit.pos.x.to_num::<f32>() * scale - dot * 0.5,

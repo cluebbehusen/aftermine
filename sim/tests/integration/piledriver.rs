@@ -3,8 +3,8 @@
 
 use crate::common;
 
+use aftermine_sim::{Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 
 use common::*;
 

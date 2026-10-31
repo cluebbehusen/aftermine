@@ -2,9 +2,9 @@
 //! LAN member, a bot, or nobody yet. Pure; the screens decide when it
 //! changes, and launch writes it into the scenario.
 
-use oxide_net::{MemberId, PlayerName, RoomSeat, SeatHolder};
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{PlayerId, Scenario};
+use aftermine_net::{MemberId, PlayerName, RoomSeat, SeatHolder};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{PlayerId, Scenario};
 
 use crate::numeric::Fit;
 

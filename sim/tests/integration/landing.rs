@@ -5,11 +5,11 @@
 use crate::common;
 use common::{building, cmd, players, unit};
 
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::state::Order;
-use oxide_sim::stats::{AUTO_LAND_IDLE_TICKS, BuildingKind};
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::state::Order;
+use aftermine_sim::stats::{AUTO_LAND_IDLE_TICKS, BuildingKind};
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
 
 use chassis::fx::{Fx, HALF};
 use chassis::grid::TilePos;
@@ -60,7 +60,7 @@ fn arena(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     scenario
 }
 
-fn land(player: u8, unit: oxide_sim::ids::UnitId, x: i32, y: i32) -> PlayerCommand {
+fn land(player: u8, unit: aftermine_sim::ids::UnitId, x: i32, y: i32) -> PlayerCommand {
     cmd(
         player,
         Command::Run {
@@ -90,7 +90,7 @@ struct Flight {
 /// landed when `until_landed` is set.
 fn fly_and_watch(
     state: &mut State,
-    condor: oxide_sim::ids::UnitId,
+    condor: aftermine_sim::ids::UnitId,
     ticks: u32,
     until_landed: bool,
 ) -> Flight {
@@ -162,7 +162,7 @@ fn fly_and_watch(
     flight
 }
 
-fn land_at(state: &mut State, condor: oxide_sim::ids::UnitId, x: i32, y: i32) -> Flight {
+fn land_at(state: &mut State, condor: aftermine_sim::ids::UnitId, x: i32, y: i32) -> Flight {
     state.tick(&[land(0, condor, x, y)]);
     let flight = fly_and_watch(state, condor, 1_500, true);
     assert!(flight.landed_at.is_some(), "the Condor never touched down");
@@ -189,7 +189,7 @@ fn a_condor_lands_on_the_ordered_tile_via_a_run_in() {
     let parked = state.unit(condor).unwrap();
     assert_eq!(parked.tile(), TilePos::new(16, 8));
     assert!(
-        parked.pos.dist(TilePos::new(16, 8).center()) <= oxide_sim::stats::LANDING_TOUCHDOWN,
+        parked.pos.dist(TilePos::new(16, 8).center()) <= aftermine_sim::stats::LANDING_TOUCHDOWN,
         "rests where it met the tile, {:?}",
         parked.pos
     );
@@ -417,7 +417,7 @@ fn an_idle_condor_lands_itself_after_orbiting() {
     assert_eq!(flight.pinned, 0);
     let parked = state.unit(condor).unwrap();
     assert!(
-        parked.tile().chebyshev(start) <= oxide_sim::stats::AUTO_LAND_SCAN_RADIUS + 4,
+        parked.tile().chebyshev(start) <= aftermine_sim::stats::AUTO_LAND_SCAN_RADIUS + 4,
         "auto-land wandered to {:?} from {:?}",
         parked.tile(),
         start
@@ -456,7 +456,7 @@ fn a_tile_filled_during_the_approach_sends_the_landing_around() {
     let blocker = state.unit(sentinel).unwrap().tile();
     assert_ne!(parked.tile(), blocker, "landed on top of the Sentinel");
     assert!(
-        parked.tile().chebyshev(TilePos::new(16, 8)) <= oxide_sim::stats::LANDING_REPLAN_RADIUS,
+        parked.tile().chebyshev(TilePos::new(16, 8)) <= aftermine_sim::stats::LANDING_REPLAN_RADIUS,
         "went around to {:?}",
         parked.tile()
     );
@@ -1063,7 +1063,7 @@ fn two_condors_landing_inward_on_adjacent_tiles_keep_their_distance() {
         state.tick(&[]);
         if [east, west]
             .iter()
-            .all(|id| state.unit(*id).is_some_and(oxide_sim::Unit::landed))
+            .all(|id| state.unit(*id).is_some_and(aftermine_sim::Unit::landed))
         {
             break;
         }

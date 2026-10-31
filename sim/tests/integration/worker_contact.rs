@@ -2,13 +2,13 @@
 use crate::common;
 use chassis::grid::as_index;
 
+use aftermine_sim::{BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use common::{building, cmd, open_arena, unit};
-use oxide_sim::{BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind};
 use serde_json::json;
 
-fn release_scene(kind: UnitKind) -> (State, UnitId, oxide_sim::BuildingId) {
+fn release_scene(kind: UnitKind) -> (State, UnitId, aftermine_sim::BuildingId) {
     let mut scenario = open_arena(24, 16, vec![unit(0, kind, 9, 7)]);
     scenario.players[0].scrap = 100;
     scenario
@@ -26,7 +26,7 @@ fn release_scene(kind: UnitKind) -> (State, UnitId, oxide_sim::BuildingId) {
         .contact_surface(state.building(foundry).unwrap())
         .stance(
             TilePos::new(9, 7).center(),
-            kind.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP,
+            kind.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP,
         );
     let mut data = serde_json::to_value(state).unwrap();
     data["tick"] = json!(1);
@@ -46,7 +46,7 @@ fn cargo_stays_aboard_until_the_tenth_stationary_tick_even_when_reissued_and_res
         let mut control_data = serde_json::to_value(&state).unwrap();
         control_data["units"][0]["order"] = json!(Order::Idle);
         let mut control: State = serde_json::from_value(control_data).unwrap();
-        for elapsed in 1..=oxide_sim::stats::UNLOAD_TICKS {
+        for elapsed in 1..=aftermine_sim::stats::UNLOAD_TICKS {
             control.tick(&[]);
             let bank = control.player(PlayerId(0)).scrap;
             let report = state.tick(&[cmd(
@@ -63,7 +63,7 @@ fn cargo_stays_aboard_until_the_tenth_stationary_tick_even_when_reissued_and_res
                 .iter()
                 .filter(|e| matches!(e, Event::ScrapDeposited { .. }))
                 .collect();
-            if elapsed < oxide_sim::stats::UNLOAD_TICKS {
+            if elapsed < aftermine_sim::stats::UNLOAD_TICKS {
                 assert_eq!(worker.carrying(), 7);
                 assert_eq!(worker.unloading().unwrap().elapsed, elapsed);
                 assert_eq!(state.player(PlayerId(0)).scrap, bank);
@@ -105,10 +105,10 @@ fn final_delivery_clears_the_dock_after_unloading_at_the_surface() {
         .unwrap();
     data["units"][0]["pos"] = json!(state.contact_surface(b).stance(
         TilePos::new(12, 7).center(),
-        UnitKind::Harvester.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP
+        UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP
     ));
     let mut state: State = serde_json::from_value(data).unwrap();
-    for _ in 0..oxide_sim::stats::UNLOAD_TICKS {
+    for _ in 0..aftermine_sim::stats::UNLOAD_TICKS {
         state.tick(&[]);
     }
     let worker = state.unit(id).unwrap();
@@ -201,7 +201,7 @@ fn adjacent_build_repair_and_salvage_approach_before_advancing_work() {
             for _ in 0..150 {
                 let before = state.unit(id).unwrap();
                 let b = state.building(target).unwrap();
-                let reach = before.kind.stats().radius + oxide_sim::stats::WORK_REACH;
+                let reach = before.kind.stats().radius + aftermine_sim::stats::WORK_REACH;
                 let eligible = before.work_stopped()
                     && before
                         .pos
@@ -409,7 +409,7 @@ fn harvester_closes_to_the_footprint_on_every_approach_side_before_gathering() {
         }
         let worker = state.unit(id).unwrap();
         assert!(worker.carrying() > 0, "approach {dx},{dy} never gathered");
-        let edge = oxide_sim::geometry::footprint_contact(worker.pos, node, (1, 1));
+        let edge = aftermine_sim::geometry::footprint_contact(worker.pos, node, (1, 1));
         assert!(
             worker.in_work_reach(node, (1, 1)) && worker.pos.dist(edge) <= Fx::lit("0.12"),
             "approach {dx},{dy} left the chassis too far away: {:?}",
@@ -453,7 +453,7 @@ fn incoming_workers_share_contact_space_without_reserving_it_from_far_away() {
     for _ in 0..2000 {
         state.tick(&[]);
     }
-    assert!(state.map().scrap_at(node) < oxide_sim::stats::RICH_SCRAP_NODE_AMOUNT);
+    assert!(state.map().scrap_at(node) < aftermine_sim::stats::RICH_SCRAP_NODE_AMOUNT);
     assert!(
         state
             .units()
@@ -475,7 +475,7 @@ fn a_crowded_crew_delivers_every_last_load_and_clears_the_dropoff() {
                         row[as_index(node.x) + 1] = '#';
                     }
                 }
-                let scenario: oxide_sim::Scenario = serde_json::from_value(json!({
+                let scenario: aftermine_sim::Scenario = serde_json::from_value(json!({
                     "mode":"sandbox", "name":"crowded-delivery", "map":rows.into_iter().map(|r|r.into_iter().collect::<String>()).collect::<Vec<_>>(),
                     "players":[{"name":"Local","scrap":0,"bot":false}],
                     "buildings":[{"player":0,"kind":"foundry","x":5,"y":11}],
@@ -510,13 +510,13 @@ fn a_crowded_crew_delivers_every_last_load_and_clears_the_dropoff() {
                             _ => {}
                         }
                     }
-                    if deposited == oxide_sim::stats::SCRAP_NODE_AMOUNT {
+                    if deposited == aftermine_sim::stats::SCRAP_NODE_AMOUNT {
                         break;
                     }
                 }
                 assert_eq!(
                     deposited,
-                    oxide_sim::stats::SCRAP_NODE_AMOUNT,
+                    aftermine_sim::stats::SCRAP_NODE_AMOUNT,
                     "gap {gap}, blocked {blocked}, approach {approach}"
                 );
                 assert!(state.units().iter().all(|u| u.carrying() == 0));

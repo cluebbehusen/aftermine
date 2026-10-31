@@ -7,10 +7,10 @@
 use crate::common;
 use common::{cmd, open_arena, open_arena_with, run, run_until, unit};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::{Command, Event, Order, State, Target, UnitId, UnitKind, UnitRepairSource};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::{Command, Event, Order, State, Target, UnitId, UnitKind, UnitRepairSource};
 use serde_json::json;
 
 fn build(units: Vec<UnitSpec>, scrap: u32) -> State {
@@ -90,14 +90,14 @@ fn an_idle_worker_welds_a_wounded_machine_near_its_post_and_walks_home() {
     let post = state.unit(welder).unwrap().tile();
     let full = max_hp(&state, patient);
     set_hp(&mut state, patient, full - 30);
-    let bank = state.player(oxide_sim::PlayerId(0)).scrap;
+    let bank = state.player(aftermine_sim::PlayerId(0)).scrap;
 
     let mut events = run_until(&mut state, 2_000, |s, _| {
         s.unit(patient).unwrap().hp == full
     });
     assert_eq!(welded_by(&events, welder), 30, "the welder did the work");
     assert!(
-        state.player(oxide_sim::PlayerId(0)).scrap < bank,
+        state.player(aftermine_sim::PlayerId(0)).scrap < bank,
         "the weld bills"
     );
     events.extend(run_until(&mut state, 600, |s, _| {
@@ -430,7 +430,7 @@ fn no_other_job_is_interrupted() {
             0,
             Command::Build {
                 units: vec![builder],
-                kind: oxide_sim::BuildingKind::Turret,
+                kind: aftermine_sim::BuildingKind::Turret,
                 anchor: TilePos::new(10, 13),
                 queue: false,
                 defer: false,
@@ -670,15 +670,16 @@ fn the_bot_view_reports_a_trip_as_busy_tending() {
     let wounded = max_hp(&state, patient) - 20;
     set_hp(&mut state, patient, wounded);
     run(&mut state, 3);
-    let view = oxide_sim::observation::ObservationData::fog_honest(&state, oxide_sim::PlayerId(0));
+    let view =
+        aftermine_sim::observation::ObservationData::fog_honest(&state, aftermine_sim::PlayerId(0));
     let worker = view.my_units.iter().find(|u| u.id == welder).unwrap();
     assert!(!worker.idle);
     assert_eq!(
         worker.repair,
-        Some(oxide_sim::observation::RepairWork::Tending)
+        Some(aftermine_sim::observation::RepairWork::Tending)
     );
     assert_eq!(
         view.repair_target(welder),
-        Some(oxide_sim::Target::Unit(patient))
+        Some(aftermine_sim::Target::Unit(patient))
     );
 }

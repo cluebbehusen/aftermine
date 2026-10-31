@@ -111,19 +111,19 @@ fn mute_and_volume_edits_fade_and_scale_the_music_bus() {
 
 #[test]
 fn soundtrack_context_tracks_pause_victory_and_surrender() {
-    let mut won = crate::game::Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut won = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     assert_eq!(match_scene(&won.view(), false), Scene::Match);
     assert_eq!(match_scene(&won.view(), true), Scene::Pause);
-    won.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Surrender,
+    won.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Surrender,
     }]);
     assert_eq!(match_scene(&won.view(), false), Scene::Victory);
 
-    let mut lost = crate::game::Game::new(oxide_sim::Scenario::skirmish()).expect("game");
-    lost.state.tick(&[oxide_sim::PlayerCommand {
+    let mut lost = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    lost.state.tick(&[aftermine_sim::PlayerCommand {
         player: lost.presentation.human,
-        command: oxide_sim::Command::Surrender,
+        command: aftermine_sim::Command::Surrender,
     }]);
     assert_eq!(
         match_scene(&lost.view(), false),

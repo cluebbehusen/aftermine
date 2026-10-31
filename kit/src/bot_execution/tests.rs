@@ -1,6 +1,6 @@
 use super::*;
 use crate::controller::{record_events, seat_controllers};
-use oxide_sim::{
+use aftermine_sim::{
     Command, PlayerId, Scenario,
     scenario::{BotConfig, BotDifficulty, BotStance},
 };

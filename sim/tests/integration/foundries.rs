@@ -4,14 +4,14 @@
 //! income floor.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::{cmd, players};
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::stats::{BuildingKind, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK};
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::stats::{BuildingKind, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK};
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, UnitKind};
 
 fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
     let mut buildings = Vec::new();
@@ -41,7 +41,7 @@ fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
     }
 }
 
-fn build_foundry(builder: oxide_sim::UnitId, anchor: TilePos) -> PlayerCommand {
+fn build_foundry(builder: aftermine_sim::UnitId, anchor: TilePos) -> PlayerCommand {
     cmd(
         0,
         Command::Build {
@@ -120,7 +120,7 @@ fn a_completed_expansion_produces_and_smelts_its_own_drip() {
         state.tick(&[]);
         if state
             .building(expansion)
-            .is_some_and(oxide_sim::Building::built)
+            .is_some_and(aftermine_sim::Building::built)
         {
             break;
         }
@@ -223,7 +223,7 @@ fn a_foundry_site_keeps_its_team_alive() {
     assert!(
         matches!(
             state.result(),
-            Some(oxide_sim::state::GameResult::Victory { team }) if team == state.player(PlayerId(1)).team
+            Some(aftermine_sim::state::GameResult::Victory { team }) if team == state.player(PlayerId(1)).team
         ),
         "no Foundry and no site ends it"
     );

@@ -1,9 +1,9 @@
-# oxide-sim
+# aftermine-sim
 
-`oxide-sim` contains all Oxide game rules. It is a pure, headless simulation:
-given the same scenario and command log, it must produce the same state on every
-platform. Rendering, hardware input, wall-clock time, and presentation state
-belong elsewhere.
+`aftermine-sim` contains all Aftermine game rules. It is a pure, headless
+simulation: given the same scenario and command log, it must produce the same
+state on every platform. Rendering, hardware input, wall-clock time, and
+presentation state belong elsewhere.
 
 `State::tick(&[PlayerCommand])` is the only game-state transition. Humans, bots,
 replays, and debug clients all enter through the same command types, so a bot is
@@ -100,7 +100,7 @@ world state and replay setup.
 Run commands from the workspace root:
 
 ```sh
-cargo test -p oxide-sim --locked
-cargo test -p oxide-sim --locked --test integration state_integrity::
-cargo clippy -p oxide-sim --all-targets --locked -- -D warnings
+cargo test -p aftermine-sim --locked
+cargo test -p aftermine-sim --locked --test integration state_integrity::
+cargo clippy -p aftermine-sim --all-targets --locked -- -D warnings
 ```

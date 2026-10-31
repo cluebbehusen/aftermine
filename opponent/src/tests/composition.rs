@@ -607,7 +607,7 @@ fn an_enemy_heavy_out_of_sight_and_memory_brings_no_piledriver() {
     let mut scenario = foundry_of_heavies();
     scenario.units.push(unit(1, UnitKind::Breaker, 20, 2));
     let state = scenario.build().unwrap();
-    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
         observation
             .enemy_units
@@ -628,7 +628,7 @@ fn an_enemy_machine_rolled_out_of_sight_brings_piledrivers() {
         .iter()
         .find(|unit| unit.kind == UnitKind::Maw)
         .unwrap();
-    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
         observation.enemy_units.iter().all(|unit| unit.id != maw.id),
         "premise: the Maw is out of sight"
@@ -645,8 +645,8 @@ fn an_enemy_machine_rolled_out_of_sight_brings_piledrivers() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
-        &[oxide_sim::Event::UnitAssembled {
-            cradle: oxide_sim::BuildingId(99),
+        &[aftermine_sim::Event::UnitAssembled {
+            cradle: aftermine_sim::BuildingId(99),
             unit: maw.id,
             kind: UnitKind::Maw,
             player: PlayerId(1),

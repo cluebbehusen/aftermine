@@ -3,9 +3,9 @@
 //! between mirrored seats.
 
 use crate::map::MapModel;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::ObservationData;
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::ObservationData;
 use std::cmp::Reverse;
 
 /// Ranks targets in the seat's home-relative frame, in doubled coordinates so

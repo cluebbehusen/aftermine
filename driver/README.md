@@ -1,9 +1,9 @@
-# oxide-driver
+# aftermine-driver
 
-`oxide-driver` is Oxide's headless harness and remote control. Its library
-combines reusable inspection and automation tools; its CLI runs scenarios and
-replays, renders maps, audits maps and match behavior, drives a live shell, or
-serves the same debug protocol without a window.
+`aftermine-driver` is Aftermine's headless harness and remote control. Its
+library combines reusable inspection and automation tools; its CLI runs
+scenarios and replays, renders maps, audits maps and match behavior, drives a
+live shell, or serves the same debug protocol without a window.
 
 The driver observes and orchestrates the game through public simulation and
 protocol boundaries. It does not contain alternate gameplay rules, and its
@@ -17,7 +17,7 @@ dirty status. Source archives report unknown provenance.
 ## Main pieces
 
 - Headless execution (`runner`, `render`, `playback`, and `stats`) lives in
-  `oxide-kit`, shared with the shell.
+  `aftermine-kit`, shared with the shell.
 - `client` speaks the debug protocol; `session` serves it windowlessly, and its
   save and load commands use replay files.
 - `replay_inspect` and `replay_summary` provide exact snapshots and compact
@@ -77,11 +77,11 @@ dirty status. Source archives report unknown provenance.
   incomplete batch, then rerun it under a fresh candidate.
 - Evaluation rows also record each seat's team and elimination tick, the
   producing build, omniscient failure detectors (repeated impossible orders,
-  abandoned paid construction, starved production, `oxide-opponent` missions
+  abandoned paid construction, starved production, `aftermine-opponent` missions
   stuck in one phase, and an army idle at home) with per-producer idle
   diagnostics, the fate of armed ground units trained on severed ground, income
   against a saturated-economy estimate while the seat is still in the match, and
-  the seat's impact ledger. `oxide-opponent` seats also record attack
+  the seat's impact ledger. `aftermine-opponent` seats also record attack
   calibration: each attack its decisions launched, with the known defense,
   margin, need and strength sent that `Opponent::launches` reports, followed
   through its mission to how it ended and what its units dealt and lost. These
@@ -97,9 +97,9 @@ dirty status. Source archives report unknown provenance.
   Evaluation inputs live in `evaluation/`, not `scenarios/`, whose every file
   the shell menu, map gates and integrity tests read.
 - `bot_ladder` expands a manifest from `evaluation/ladder/` into pairs of
-  `oxide-opponent` against itself at two difficulty rungs, the higher rung in
-  seat zero and then in seat one, both seats sharing one personality seed so the
-  seats differ only in difficulty. `bot-ladder` publishes labelled rows and
+  `aftermine-opponent` against itself at two difficulty rungs, the higher rung
+  in seat zero and then in seat one, both seats sharing one personality seed so
+  the seats differ only in difficulty. `bot-ladder` publishes labelled rows and
   prints, for each comparison, the higher rung's share of decided legs with a
   Wilson interval, pairs by result, and whether it reaches the comparison's gate
   over enough decided pairs, overall and by stance and map family, with the
@@ -163,24 +163,24 @@ dirty status. Source archives report unknown provenance.
 - `ios` (aliased as `cargo ios`) builds, installs, and launches the iPad app on
   a paired iPad or an iPad simulator.
 
-Run `oxide-driver --help` for the current command tree. Procedures for live
-shell QA belong in the repository's `oxide-live-qa` skill rather than here.
+Run `aftermine-driver --help` for the current command tree. Procedures for live
+shell QA belong in the repository's `aftermine-live-qa` skill rather than here.
 
 ## Development
 
 Run commands from the workspace root:
 
 ```sh
-cargo run -p oxide-driver -- --help
-cargo run -p oxide-driver -- run skirmish --ticks 2000 --all-bots
-cargo run -p oxide-driver -- bot-eval skirmish --difficulty prime --paired
-cargo test -p oxide-driver --locked
+cargo run -p aftermine-driver -- --help
+cargo run -p aftermine-driver -- run skirmish --ticks 2000 --all-bots
+cargo run -p aftermine-driver -- bot-eval skirmish --difficulty prime --paired
+cargo test -p aftermine-driver --locked
 ```
 
-The [oxide-opponent skill](../.agents/skills/oxide-opponent/SKILL.md) owns the
-ladder, trace capture, seed and profile provenance and anomaly interpretation.
-The live-QA skill owns native inspection. Aggregate results do not establish
-opponent quality or isolate simulation fairness.
+The [aftermine-opponent skill](../.agents/skills/aftermine-opponent/SKILL.md)
+owns the ladder, trace capture, seed and profile provenance and anomaly
+interpretation. The live-QA skill owns native inspection. Aggregate results do
+not establish opponent quality or isolate simulation fairness.
 
 `bot-eval --jobs N` bounds concurrent matches (default four, capped by available
 CPUs and leg count). Multiple match workers disable nested bot-seat parallelism;
@@ -191,7 +191,7 @@ improves batch throughput, not individual tick latency.
 ## Performance regression checks
 
 The
-[performance and persistence procedure](../.agents/skills/oxide-live-qa/references/performance.md)
+[performance and persistence procedure](../.agents/skills/aftermine-live-qa/references/performance.md)
 provides fresh-checkout workload commands, portable save-size and planning-work
 guards, and scoped native timing requirements. Use its fixed inputs for
 candidate/control comparisons; wall-clock thresholds are machine-qualified.
@@ -206,8 +206,8 @@ and reconstruction of the recorded command stream are checked throughout. The
 hashes live in `tests/goldens/state-hashes.json`, which the cross-platform CI
 matrix checks.
 
-`tests/lockstep.rs` runs an `oxide-net` host and two clients in one process over
-delayed links on a virtual clock. Each human seat's orders come from a bot
+`tests/lockstep.rs` runs an `aftermine-net` host and two clients in one process
+over delayed links on a virtual clock. Each human seat's orders come from a bot
 controller on that seat's own machine and cross the wire. It checks that every
 machine executes identical batches under latency and jitter, and covers a
 stalled client, a stuck client, a closed connection, a silent host, and a
@@ -215,24 +215,24 @@ diverged client. One test instead joins, starts, and plays a short match over
 real localhost TCP with a real clock.
 
 `tests/opponent_hashes.rs` checks exact recovery funding and repeated nearby
-harvest deliveries through `oxide-opponent`. Behavioral assertions precede short
-state and tick-stamped command hashes. Independent controllers, state round
-trips, and replay reconstruction must agree at every step.
+harvest deliveries through `aftermine-opponent`. Behavioral assertions precede
+short state and tick-stamped command hashes. Independent controllers, state
+round trips, and replay reconstruction must agree at every step.
 
 The regular integrity harness runs Skirmish, Twin Forges, and Basalt Spine for a
 fixed tick horizon each, covering an open duel, team play, and constrained
 terrain. It seats Standard/Balanced bots with personality seed zero and checks
 state validity and serialization, including the initial and final states. It
 stops after validating a terminal result without requiring a winner, activity
-quotas, or a particular command stream. With `OXIDE_SOAK_TRACE_DIR` set, each
-run also writes periodic state hashes and its replay into that directory; CI
-compares those hash files across operating systems without a checked-in golden.
-The exhaustive all-map soak is ignored by default and uses the same checks, with
-a longer horizon for maps that are not small. The opening image and renderer
-showcase cover drawing without depending on an autonomous midgame.
+quotas, or a particular command stream. With `AFTERMINE_SOAK_TRACE_DIR` set,
+each run also writes periodic state hashes and its replay into that directory;
+CI compares those hash files across operating systems without a checked-in
+golden. The exhaustive all-map soak is ignored by default and uses the same
+checks, with a longer horizon for maps that are not small. The opening image and
+renderer showcase cover drawing without depending on an autonomous midgame.
 
 Run the exhaustive soak explicitly:
 
 ```sh
-cargo test -p oxide-driver --test headless --locked every_shipped_scenario_preserves_state_integrity -- --ignored --exact --nocapture
+cargo test -p aftermine-driver --test headless --locked every_shipped_scenario_preserves_state_integrity -- --ignored --exact --nocapture
 ```

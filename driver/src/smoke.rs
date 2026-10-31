@@ -6,15 +6,15 @@
 //! re-run it, compare hashes. Run it whenever shell code changes:
 //!
 //! ```text
-//! cargo run -p oxide-driver -- smoke --spawn
+//! cargo run -p aftermine-driver -- smoke --spawn
 //! ```
 
 use crate::client::Client;
+use aftermine_kit::runner;
+use aftermine_protocol::{RawEvent, Reply, Request, StateFilter};
+use aftermine_sim::{Command, PlayerId, UnitId, UnitKind};
 use anyhow::{Context, Result, bail};
 use chassis::grid::as_index;
-use oxide_kit::runner;
-use oxide_protocol::{RawEvent, Reply, Request, StateFilter};
-use oxide_sim::{Command, PlayerId, UnitId, UnitKind};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -28,7 +28,7 @@ impl ScratchHome {
         loop {
             let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
             let path =
-                std::env::temp_dir().join(format!("oxide-smoke-{}-{id}", std::process::id()));
+                std::env::temp_dir().join(format!("aftermine-smoke-{}-{id}", std::process::id()));
             match std::fs::create_dir(&path) {
                 Ok(()) => return Ok(Self(path)),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -77,14 +77,14 @@ pub fn run(addr: &str, spawn: bool) -> Result<()> {
                 "--port",
                 port,
             ])
-            .env("OXIDE_RESOURCE_ROOT", &root);
+            .env("AFTERMINE_RESOURCE_ROOT", &root);
         crate::auto::isolate_home(
             &mut command,
             &scratch_home.as_ref().expect("created when spawning").0,
         );
         command.current_dir(&scratch_home.as_ref().expect("created when spawning").0);
         Some(crate::auto::ShellGuard::new(
-            command.spawn().context("spawning built Oxide shell")?,
+            command.spawn().context("spawning built Aftermine shell")?,
         ))
     } else {
         None
@@ -195,7 +195,7 @@ fn execute(addr: &str, patient: bool) -> Result<()> {
     clippy::cast_possible_truncation,
     reason = "logical screen points need only f32 precision"
 )]
-fn screen_point(cam: &oxide_protocol::CameraView, wx: f64, wy: f64) -> (f32, f32) {
+fn screen_point(cam: &aftermine_protocol::CameraView, wx: f64, wy: f64) -> (f32, f32) {
     let [lo_x, lo_y, hi_x, hi_y] = cam.world_rect;
     (
         ((wx - lo_x) / (hi_x - lo_x) * cam.viewport[0]) as f32,
@@ -232,7 +232,7 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     let rejected = presented.events.iter().any(|event| {
         matches!(
             event,
-            oxide_sim::Event::CommandRejected { player, .. } if *player == PlayerId(0)
+            aftermine_sim::Event::CommandRejected { player, .. } if *player == PlayerId(0)
         )
     });
     checks.note(
@@ -352,15 +352,15 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     client.call(Request::SaveReplay {
         path: replay_path.clone(),
     })?;
-    let replay = oxide_kit::load_replay(&replay_path).context("reading saved replay")?;
+    let replay = aftermine_kit::load_replay(&replay_path).context("reading saved replay")?;
     let replayed = runner::run_replay(&replay, Some(live.tick))?;
     checks.note(
         "saved replay reproduces the live session",
-        oxide_protocol::hash_hex(replayed.hash()) == live.hash,
+        aftermine_protocol::hash_hex(replayed.hash()) == live.hash,
         format!(
             "live {} vs replay {}",
             live.hash,
-            oxide_protocol::hash_hex(replayed.hash())
+            aftermine_protocol::hash_hex(replayed.hash())
         ),
     );
 
@@ -421,35 +421,35 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     let (hx, hy) = screen_point(&cam, harvester.pos[0], harvester.pos[1]);
     for event in [
         RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: hx,
             y: hy,
         },
         RawEvent::MouseUp {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: hx,
             y: hy,
         },
         RawEvent::KeyDown {
-            key: oxide_protocol::Key::B,
+            key: aftermine_protocol::Key::B,
         },
         RawEvent::KeyUp {
-            key: oxide_protocol::Key::B,
+            key: aftermine_protocol::Key::B,
         },
         // B opens construction; R selects Defense, Q arms a Turret.
         // Without it the whole check would pass vacuously against an
         // unarmed cursor.
         RawEvent::KeyDown {
-            key: oxide_protocol::Key::R,
+            key: aftermine_protocol::Key::R,
         },
         RawEvent::KeyUp {
-            key: oxide_protocol::Key::R,
+            key: aftermine_protocol::Key::R,
         },
         RawEvent::KeyDown {
-            key: oxide_protocol::Key::Q,
+            key: aftermine_protocol::Key::Q,
         },
         RawEvent::KeyUp {
-            key: oxide_protocol::Key::Q,
+            key: aftermine_protocol::Key::Q,
         },
     ] {
         client.call(Request::InjectEvent { event })?;
@@ -474,12 +474,12 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     let (cx, cy) = ((mm_x + mm_w * 0.8) as f32, (mm_y + mm_h * 0.8) as f32);
     for event in [
         RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: cx,
             y: cy,
         },
         RawEvent::MouseUp {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: cx,
             y: cy,
         },
@@ -504,10 +504,10 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     // Foundry, inside its vision, where the charge is immediate.
     for event in [
         RawEvent::KeyDown {
-            key: oxide_protocol::Key::Space,
+            key: aftermine_protocol::Key::Space,
         },
         RawEvent::KeyUp {
-            key: oxide_protocol::Key::Space,
+            key: aftermine_protocol::Key::Space,
         },
     ] {
         client.call(Request::InjectEvent { event })?;
@@ -554,12 +554,12 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     let (bx, by) = screen_point(&cam2, f64::from(tx) + 0.5, f64::from(ty) + 0.5);
     for event in [
         RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: bx,
             y: by,
         },
         RawEvent::MouseUp {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: bx,
             y: by,
         },
@@ -576,7 +576,7 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     let site_up = view_committed
         .buildings
         .iter()
-        .any(|b| b.kind == oxide_sim::BuildingKind::Turret && b.player == 0);
+        .any(|b| b.kind == aftermine_sim::BuildingKind::Turret && b.player == 0);
     checks.note(
         "armed palette placement commits a turret site on click",
         spent == turret_cost && site_up,
@@ -588,10 +588,10 @@ fn run_checks(client: &mut Client, checks: &mut Checks) -> Result<()> {
     // Disarm anything lingering.
     for event in [
         RawEvent::KeyDown {
-            key: oxide_protocol::Key::Escape,
+            key: aftermine_protocol::Key::Escape,
         },
         RawEvent::KeyUp {
-            key: oxide_protocol::Key::Escape,
+            key: aftermine_protocol::Key::Escape,
         },
     ] {
         client.call(Request::InjectEvent { event })?;

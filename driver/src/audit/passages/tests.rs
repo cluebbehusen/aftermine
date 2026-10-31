@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::ScenarioMode;
 
 /// A walled two-seat field whose rows are given; `1` and `2` anchor the
 /// Foundries.

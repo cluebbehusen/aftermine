@@ -276,7 +276,7 @@ const THERE: [(i32, i32); 7] = [
 ];
 
 /// West's Maw on `state`.
-fn maw_of(state: &State) -> &oxide_sim::state::Unit {
+fn maw_of(state: &State) -> &aftermine_sim::state::Unit {
     let maw = state
         .units()
         .iter()
@@ -393,11 +393,11 @@ fn a_breacher_that_cannot_move_on_holds_no_one_up() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
-        &[oxide_sim::Event::OrderStalled {
+        &[aftermine_sim::Event::OrderStalled {
             unit: maw.id,
             player: PlayerId(0),
             pos: maw.pos,
-            reason: oxide_sim::StallReason::NoRoute,
+            reason: aftermine_sim::StallReason::NoRoute,
         }],
     );
     let (commands, _) = opponent.act_traced(&state, &mut events);

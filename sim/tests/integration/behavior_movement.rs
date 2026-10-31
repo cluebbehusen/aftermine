@@ -1,11 +1,13 @@
 //! Movement, routing, collision, and order programs — behavior suite, public API only.
 
 use crate::common;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
+use aftermine_sim::scenario::PlayerSpec;
+use aftermine_sim::{
+    Command, Event, Order, PlayerId, Scenario, StallReason, State, UnitId, UnitKind,
+};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::PlayerSpec;
-use oxide_sim::{Command, Event, Order, PlayerId, Scenario, StallReason, State, UnitId, UnitKind};
 
 use common::*;
 
@@ -225,7 +227,11 @@ fn group_moves_fan_out_over_distinct_tiles() {
         state.units().iter().map(|u| u.order).collect::<Vec<_>>()
     );
     // …near the click, on distinct goals (spread), without stacking.
-    let mut tiles: Vec<TilePos> = state.units().iter().map(oxide_sim::Unit::tile).collect();
+    let mut tiles: Vec<TilePos> = state
+        .units()
+        .iter()
+        .map(aftermine_sim::Unit::tile)
+        .collect();
     for t in &tiles {
         assert!(
             t.chebyshev(TilePos::new(10, 4)) <= 3,
@@ -350,7 +356,7 @@ fn dense_stacks_respect_the_per_tick_displacement_cap() {
     let mut state = arena(units).build().unwrap();
     let before: Vec<_> = state.units().iter().map(|u| (u.id, u.pos)).collect();
     state.tick(&[]);
-    let cap = oxide_sim::stats::COLLISION_MAX_STEP;
+    let cap = aftermine_sim::stats::COLLISION_MAX_STEP;
     let tolerance = chassis::fx::Fx::lit("0.0001");
     for (id, start) in before {
         let now = state.unit(id).unwrap().pos;

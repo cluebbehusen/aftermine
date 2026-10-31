@@ -4,10 +4,10 @@
 use crate::bot_label::{difficulty_name, stance_name};
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu, MenuView};
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::PlayerId;
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use macroquad::prelude::Vec2;
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::PlayerId;
-use oxide_sim::scenario::{BotDifficulty, BotStance};
 use std::time::Duration;
 
 /// A seat the match waits for: its player's name and how long it waited.

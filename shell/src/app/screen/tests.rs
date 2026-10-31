@@ -83,14 +83,14 @@ fn the_keyboard_follows_the_text_field_on_screen() {
 
 #[test]
 fn frame_context_follows_playback_speed_instead_of_the_hidden_live_clock() {
-    use oxide_protocol::DebugSession;
+    use aftermine_protocol::DebugSession;
 
-    let mut live = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut live = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     live.clock.speed = 4.0;
-    let replay = oxide_kit::GameReplay::new(
-        oxide_sim::SIM_VERSION,
+    let replay = aftermine_kit::GameReplay::new(
+        aftermine_sim::SIM_VERSION,
         "test",
-        oxide_sim::Scenario::skirmish(),
+        aftermine_sim::Scenario::skirmish(),
     );
     let mut playback = PlaybackSession::from_replay(replay).unwrap();
     for speed in [0.5, 1.0, 8.0, 64.0] {
@@ -134,7 +134,7 @@ fn failed_quit_dialogs_return_to_every_hidden_live_match() {
     assert!(!settings_from_home.holds_live_match());
     assert!(settings_from_pause.holds_live_match());
 
-    let game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     let session = || super::super::live_playback(&game).expect("viewer");
     assert!(!viewer(session(), home()).holds_live_match());
     assert!(viewer(session(), pause()).holds_live_match());
@@ -167,7 +167,7 @@ fn the_waiting_screen_holds_the_lan_match_over_a_frozen_backdrop() {
     use crate::screens::waiting::{Absent, WaitingScreen};
     let waiting = Screen::Waiting(WaitingScreen::open(
         vec![Absent {
-            seat: oxide_sim::PlayerId(1),
+            seat: aftermine_sim::PlayerId(1),
             name: "Alex".to_owned(),
             waited: std::time::Duration::ZERO,
         }],

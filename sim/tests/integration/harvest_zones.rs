@@ -4,13 +4,13 @@
 use crate::common;
 use chassis::grid::as_index;
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::BuildingSpec;
-use oxide_sim::stats::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::BuildingSpec;
+use aftermine_sim::stats::{
     BuildingKind, HARVEST_MOBILE_DANGER_MARGIN, HARVEST_RADAR_DANGER_RADIUS, HARVEST_ZONE_RADIUS,
 };
-use oxide_sim::{Command, Event, Order, PlayerId, State, Target, UnitKind};
+use aftermine_sim::{Command, Event, Order, PlayerId, State, Target, UnitKind};
+use chassis::grid::TilePos;
 use serde_json::json;
 
 use common::{cmd, ground_blip, open_arena_with, run_until, unit};
@@ -128,8 +128,8 @@ fn harvesting_waits_for_physical_reach_from_each_approach() {
                 + (worker.pos.y - chassis::fx::Fx::from_num(7)).max(chassis::fx::Fx::ZERO);
             assert!(
                 dx * dx + dy * dy
-                    <= (kind.stats().radius + oxide_sim::stats::WORK_REACH)
-                        * (kind.stats().radius + oxide_sim::stats::WORK_REACH),
+                    <= (kind.stats().radius + aftermine_sim::stats::WORK_REACH)
+                        * (kind.stats().radius + aftermine_sim::stats::WORK_REACH),
                 "{kind:?} gathered from the far side of a neighboring tile: {:?}",
                 worker.pos
             );
@@ -203,7 +203,7 @@ fn state_with_salvage(
     width: usize,
     sources: &[(TilePos, u32)],
     wrecks: &[(TilePos, u32)],
-    units: Vec<oxide_sim::scenario::UnitSpec>,
+    units: Vec<aftermine_sim::scenario::UnitSpec>,
     buildings: Vec<BuildingSpec>,
 ) -> State {
     let mut scenario = open_arena_with(width, 12, units, |rows| {
@@ -232,7 +232,7 @@ fn state_with_salvage(
     state
 }
 
-fn set_cargo(mut state: State, worker: oxide_sim::UnitId, carrying: u32) -> State {
+fn set_cargo(mut state: State, worker: aftermine_sim::UnitId, carrying: u32) -> State {
     let slot = state
         .units()
         .iter()
@@ -244,7 +244,7 @@ fn set_cargo(mut state: State, worker: oxide_sim::UnitId, carrying: u32) -> Stat
     state
 }
 
-fn set_building_hp(mut state: State, building: oxide_sim::BuildingId, hp: u32) -> State {
+fn set_building_hp(mut state: State, building: aftermine_sim::BuildingId, hp: u32) -> State {
     let slot = state
         .buildings()
         .iter()
@@ -760,7 +760,7 @@ fn a_seen_raider_leaves_no_caution_behind_once_it_is_gone() {
         !events.iter().any(|event| matches!(
             event,
             Event::OrderStalled {
-                reason: oxide_sim::StallReason::DangerHold,
+                reason: aftermine_sim::StallReason::DangerHold,
                 ..
             }
         )),

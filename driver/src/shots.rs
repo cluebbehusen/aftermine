@@ -12,15 +12,15 @@
 //! the Home screen's backdrop are reproducible run to run.
 //!
 //! ```text
-//! cargo run -p oxide-driver -- shots            # compare
-//! cargo run -p oxide-driver -- shots --bless    # adopt current
+//! cargo run -p aftermine-driver -- shots            # compare
+//! cargo run -p aftermine-driver -- shots --bless    # adopt current
 //! ```
 
 use crate::auto::{self, SpawnOptions};
 use crate::client::Client;
+use aftermine_kit::perceptual::{self, Verdict};
+use aftermine_protocol::{Key, MouseButton, RawEvent, Reply, Request};
 use anyhow::{Context, Result, bail};
-use oxide_kit::perceptual::{self, Verdict};
-use oxide_protocol::{Key, MouseButton, RawEvent, Reply, Request};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -42,7 +42,7 @@ impl Drop for ScratchHome {
     }
 }
 
-/// A throwaway HOME whose Oxide config pins the presentation knobs the
+/// A throwaway HOME whose Aftermine config pins the presentation knobs the
 /// suite depends on: reduced motion (stills the Home backdrop drift),
 /// default scale, classic bindings (empty list resets to classic on
 /// load), 1280x800. Both the macOS and XDG locations are written so the
@@ -51,7 +51,7 @@ fn scratch_home() -> Result<ScratchHome> {
     let home = loop {
         let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
         let path =
-            std::env::temp_dir().join(format!("oxide-shots-home-{}-{id}", std::process::id()));
+            std::env::temp_dir().join(format!("aftermine-shots-home-{}-{id}", std::process::id()));
         match std::fs::create_dir(&path) {
             Ok(()) => break ScratchHome(path),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -63,9 +63,9 @@ fn scratch_home() -> Result<ScratchHome> {
     config["reduced_motion"] = true.into();
     let text = serde_json::to_string_pretty(&config).expect("static json");
     for dir in [
-        home.0.join("Library/Application Support/Oxide"),
-        home.0.join(".config/oxide"),
-        home.0.join("AppData/Oxide"),
+        home.0.join("Library/Application Support/Aftermine"),
+        home.0.join(".config/aftermine"),
+        home.0.join("AppData/Aftermine"),
     ] {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(dir.join("config.json"), &text)?;

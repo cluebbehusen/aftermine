@@ -1,6 +1,6 @@
 use super::*;
 use crate::numeric::Fit;
-use oxide_sim::scenario::BotConfig;
+use aftermine_sim::scenario::BotConfig;
 
 #[test]
 fn a_save_capture_leaves_the_live_world_free_to_tick() {
@@ -15,7 +15,7 @@ fn a_save_capture_leaves_the_live_world_free_to_tick() {
 
 #[test]
 fn a_resumed_match_rebuilds_the_keyframes_before_its_save() {
-    use oxide_kit::keyframes::KEYFRAME_EVERY;
+    use aftermine_kit::keyframes::KEYFRAME_EVERY;
     let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
     game.advance_ticks(KEYFRAME_EVERY + 10);
     let mut restored = game
@@ -46,7 +46,7 @@ fn a_resumed_match_rebuilds_the_keyframes_before_its_save() {
 fn checkpoint_preserves_pending_input_memory_and_statistics() {
     let mut scenario = Scenario::skirmish();
     scenario.players[1].bot = true;
-    scenario.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::default());
+    scenario.players[1].bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     let mut original = Game::with_viewport(scenario, vec2(1280.0, 720.0)).unwrap();
     original.advance_ticks(121);
     original.issue(Command::Stop {
@@ -93,15 +93,15 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
 fn an_opponent_seat_continues_through_save_and_replay_resume() {
     let mut scenario = Scenario::skirmish();
     scenario.players[1].bot = true;
-    scenario.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::new(
-        oxide_sim::scenario::BotDifficulty::Standard,
-        oxide_sim::scenario::BotStance::Balanced,
+    scenario.players[1].bot_config = Some(aftermine_sim::scenario::BotConfig::new(
+        aftermine_sim::scenario::BotDifficulty::Standard,
+        aftermine_sim::scenario::BotStance::Balanced,
         17,
     ));
     let mut original = Game::with_viewport(scenario, vec2(1280.0, 720.0)).unwrap();
     assert_eq!(original.bots.len(), 1);
     original.advance_ticks(121);
-    original.stage(oxide_sim::PlayerCommand {
+    original.stage(aftermine_sim::PlayerCommand {
         player: PlayerId(1),
         command: Command::Stop { units: Vec::new() },
     });
@@ -184,7 +184,7 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
             player.bot_config = None;
         }
         let state = scenario.build().unwrap();
-        let stats = oxide_kit::stats::LiveMatchStats::new(&state);
+        let stats = aftermine_kit::stats::LiveMatchStats::new(&state);
         let session =
             SessionCheckpoint::capture(&scenario, &state, &[], &[], Some(&stats)).unwrap();
         let checkpoint = GameCheckpoint {
@@ -213,12 +213,12 @@ fn a_lan_checkpoint_binds_the_host_seat_and_lists_every_other_player() {
     let game = Game::with_viewport(scenario.clone(), vec2(1280.0, 720.0)).unwrap();
     let host = PlayerId(1);
     let installs = [
-        (PlayerId(2), oxide_net::InstallId::new(12)),
-        (PlayerId(0), oxide_net::InstallId::new(10)),
+        (PlayerId(2), aftermine_net::InstallId::new(12)),
+        (PlayerId(0), aftermine_net::InstallId::new(10)),
     ];
     let lan = LanManifest::new(&scenario, host, &installs);
     assert_eq!(lan.seats, vec![installs[1], installs[0]], "in seat order");
-    let pending = vec![oxide_sim::PlayerCommand {
+    let pending = vec![aftermine_sim::PlayerCommand {
         player: PlayerId(2),
         command: Command::Surrender,
     }];
@@ -264,18 +264,19 @@ fn a_lan_save_waits_only_for_players_still_in_the_match() {
         player.bot_config = player.bot.then_some(BotConfig::default());
     }
     let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 720.0)).unwrap();
-    game.stage(oxide_sim::PlayerCommand {
+    game.stage(aftermine_sim::PlayerCommand {
         player: PlayerId(2),
         command: Command::Surrender,
     });
     game.advance_ticks(2);
-    let orders = [PlayerId(0), PlayerId(1), PlayerId(2)].map(|player| oxide_sim::PlayerCommand {
-        player,
-        command: Command::Stop { units: Vec::new() },
-    });
+    let orders =
+        [PlayerId(0), PlayerId(1), PlayerId(2)].map(|player| aftermine_sim::PlayerCommand {
+            player,
+            command: Command::Stop { units: Vec::new() },
+        });
     let installs = [
-        (PlayerId(1), oxide_net::InstallId::new(1)),
-        (PlayerId(2), oxide_net::InstallId::new(2)),
+        (PlayerId(1), aftermine_net::InstallId::new(1)),
+        (PlayerId(2), aftermine_net::InstallId::new(2)),
     ];
     let lan = LanManifest::new(&scenario, PlayerId(0), &installs);
     let save = game

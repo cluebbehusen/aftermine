@@ -1,9 +1,9 @@
-# oxide-protocol
+# aftermine-protocol
 
-`oxide-protocol` is the shared contract between a running Oxide session and the
-tools that inspect or drive it. It defines JSON-lines requests and replies,
-fog-honest and omniscient views, raw input events, and the bounded TCP framing
-used by both the live shell and the windowless driver session.
+`aftermine-protocol` is the shared contract between a running Aftermine session
+and the tools that inspect or drive it. It defines JSON-lines requests and
+replies, fog-honest and omniscient views, raw input events, and the bounded TCP
+framing used by both the live shell and the windowless driver session.
 
 This crate describes and dispatches the wire vocabulary. It does not own game
 rules, rendering, or shell-specific behavior; capability-specific requests are
@@ -40,7 +40,7 @@ condition but an assembly cradle's progress.
 Run commands from the workspace root:
 
 ```sh
-cargo test -p oxide-protocol --locked
-cargo test -p oxide-driver --test session_parity --locked
-cargo clippy -p oxide-protocol --all-targets --locked -- -D warnings
+cargo test -p aftermine-protocol --locked
+cargo test -p aftermine-driver --test session_parity --locked
+cargo clippy -p aftermine-protocol --all-targets --locked -- -D warnings
 ```

@@ -1,9 +1,10 @@
-# oxide-opponent
+# aftermine-opponent
 
-`oxide-opponent` is the reactive, best-effort opponent every bot seat runs. The
-[specification](../docs/oxide-opponent.md) is normative for this crate, and the
-[oxide-opponent skill](../.agents/skills/oxide-opponent/SKILL.md) holds its
-working rules.
+`aftermine-opponent` is the reactive, best-effort opponent every bot seat runs.
+The [specification](../docs/aftermine-opponent.md) is normative for this crate,
+and the
+[aftermine-opponent skill](../.agents/skills/aftermine-opponent/SKILL.md) holds
+its working rules.
 
 Each decision spends through one running total in a fixed precedence: defense
 and other emergencies, then an affordable saving target, then the wounded to
@@ -772,7 +773,7 @@ never change the verdict; the simulation re-checks on arrival.
 
 ## Boundary
 
-The crate depends on `oxide-sim` and `chassis`. It reads only its seat's
+The crate depends on `aftermine-sim` and `chassis`. It reads only its seat's
 fog-honest `ObservationData` and its own order events, and emits ordinary
 `PlayerCommand`s. Its seats also share one immutable `MapModel`, built once per
 match from the scenario's public map: ground components, the authored starts and
@@ -800,8 +801,9 @@ trace reports the events.
 
 ## Selection
 
-Every configured bot seat runs this controller. `oxide-kit` hosts it, so live,
-headless, saved and recovered sessions build it from the same scenario data.
+Every configured bot seat runs this controller. `aftermine-kit` hosts it, so
+live, headless, saved and recovered sessions build it from the same scenario
+data.
 
 ## Checkpoint and trace
 
@@ -813,10 +815,11 @@ protected amount and any purchase awaiting confirmation (a round counts once its
 Spire shows it ordered or loaded), its missions with their phases, members,
 goals and focus, since when a free army that could attack has not, and when it
 last saw each scouting point. The host saves the seat's `OwnEvents` beside it.
-Restoring it checks that the seat is a configured `oxide-opponent` bot in the
-bound scenario and world and that nothing it remembers is from a later tick or
-off the map, rebuilds the profile and decision interval from the scenario, and
-takes the map model built from it. A saved buffer over the cap does not load.
+Restoring it checks that the seat is a configured `aftermine-opponent` bot in
+the bound scenario and world and that nothing it remembers is from a later tick
+or off the map, rebuilds the profile and decision interval from the scenario,
+and takes the map model built from it. A saved buffer over the cap does not
+load.
 
 `Opponent::act_traced` returns a `Trace` of the decision's tick, seat, bank,
 received own events, committed spending, purchases, unit-order count, allowance,

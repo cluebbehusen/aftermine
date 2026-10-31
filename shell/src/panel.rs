@@ -18,8 +18,8 @@ use crate::numeric;
 use crate::numeric::Fit;
 use crate::platform::Hands;
 use crate::typography::{entity_name, plural_name};
-use oxide_sim::stats::{BuildingKind, UnitKind, WeaponStats};
-use oxide_sim::{BuildingId, Order};
+use aftermine_sim::stats::{BuildingKind, UnitKind, WeaponStats};
+use aftermine_sim::{BuildingId, Order};
 use std::fmt::Write as _;
 
 /// What a card wears.
@@ -121,9 +121,9 @@ pub enum CardAction {
     /// Remove one order from every selected own unit that still has it.
     CancelOrder {
         /// The unit whose chip was pressed.
-        unit: oxide_sim::UnitId,
+        unit: aftermine_sim::UnitId,
         /// Which order.
-        key: oxide_sim::OrderKey,
+        key: aftermine_sim::OrderKey,
         /// How many later orders of that unit's program share the key.
         from_end: u8,
     },
@@ -271,7 +271,7 @@ pub enum CapabilityIcon {
 
 /// The most command cards a panel shows: the construction palette's every
 /// building and its Back card.
-pub const MAX_CARDS: usize = oxide_sim::BuildingKind::ALL.len() + 1;
+pub const MAX_CARDS: usize = aftermine_sim::BuildingKind::ALL.len() + 1;
 
 /// The panel for the current selection.
 pub struct Panel {
@@ -371,7 +371,7 @@ impl SelectAll {
 /// surfaces agree. Majority kind first (a mixed army reads as its bulk,
 /// not its lowest id), lowest id inside it as the deterministic
 /// tie-break.
-pub fn subject_unit(game: &Scene<'_>) -> Option<oxide_sim::UnitId> {
+pub fn subject_unit(game: &Scene<'_>) -> Option<aftermine_sim::UnitId> {
     let units: Vec<_> = game
         .presentation
         .selection
@@ -412,8 +412,8 @@ pub fn building_flavor(kind: BuildingKind) -> &'static str {
 /// toughness, pace, build time, sight. Weapons get their own lines.
 pub fn unit_stat_line(kind: UnitKind) -> String {
     let stats = kind.stats();
-    let speed = stats.speed.to_num::<f32>() * oxide_sim::TICKS_PER_SECOND as f32;
-    let build = stats.train_ticks as f32 / oxide_sim::TICKS_PER_SECOND as f32;
+    let speed = stats.speed.to_num::<f32>() * aftermine_sim::TICKS_PER_SECOND as f32;
+    let build = stats.train_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
     format!(
         "{} hp | {speed:.1} tiles/s | {build:.1} s build | sight {}",
         stats.max_hp, stats.vision
@@ -425,7 +425,7 @@ pub fn unit_stat_line(kind: UnitKind) -> String {
 pub fn building_stat_line(kind: BuildingKind) -> String {
     let stats = kind.base_stats();
     let build = stats.construction.map_or(0.0, |c| {
-        c.build_ticks as f32 / oxide_sim::TICKS_PER_SECOND as f32
+        c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32
     });
     let (width, height) = kind.size();
     format!(
@@ -436,16 +436,17 @@ pub fn building_stat_line(kind: BuildingKind) -> String {
 
 /// Economy details shared by build cards and the codex.
 pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
-    use oxide_sim::{ExtractorIncome, ExtractorSupport};
-    let radius = oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
+    use aftermine_sim::{ExtractorIncome, ExtractorSupport};
+    let radius = aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
     let rate = |tier, support| ExtractorIncome::new(tier, support).scrap_per_minute();
     let remote = rate(0, ExtractorSupport::Remote);
     let supported = rate(0, ExtractorSupport::Supported);
     match kind {
         BuildingKind::Reclaimer => vec![format!(
             "Generates {} scrap/min. Upgrading to a Refinery raises output to {} scrap/min.",
-            60 * u64::from(oxide_sim::TICKS_PER_SECOND) / oxide_sim::stats::RECLAIMER_PERIOD,
-            60 * u64::from(oxide_sim::TICKS_PER_SECOND) / oxide_sim::stats::REFINERY_PERIOD,
+            60 * u64::from(aftermine_sim::TICKS_PER_SECOND)
+                / aftermine_sim::stats::RECLAIMER_PERIOD,
+            60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / aftermine_sim::stats::REFINERY_PERIOD,
         )],
         BuildingKind::Extractor => vec![
             format!(
@@ -488,7 +489,7 @@ pub(crate) fn passive_income(game: &Scene<'_>) -> u32 {
 }
 
 /// Current recurring output; harvesting and temporary recovery grants are separate.
-pub(crate) fn building_income(game: &Scene<'_>, building: &oxide_sim::state::Building) -> u32 {
+pub(crate) fn building_income(game: &Scene<'_>, building: &aftermine_sim::state::Building) -> u32 {
     if building.player != game.presentation.human || !building.built() || building.hp == 0 {
         return 0;
     }
@@ -496,22 +497,22 @@ pub(crate) fn building_income(game: &Scene<'_>, building: &oxide_sim::state::Bui
         return income.scrap_per_minute();
     }
     let period = match building.kind {
-        BuildingKind::Reclaimer if building.tier == 0 => oxide_sim::stats::RECLAIMER_PERIOD,
-        BuildingKind::Reclaimer => oxide_sim::stats::REFINERY_PERIOD,
+        BuildingKind::Reclaimer if building.tier == 0 => aftermine_sim::stats::RECLAIMER_PERIOD,
+        BuildingKind::Reclaimer => aftermine_sim::stats::REFINERY_PERIOD,
         BuildingKind::Foundry
-            if game.state.current_tick() >= oxide_sim::stats::FOUNDRY_DRIP_START_TICK =>
+            if game.state.current_tick() >= aftermine_sim::stats::FOUNDRY_DRIP_START_TICK =>
         {
-            oxide_sim::stats::FOUNDRY_DRIP_PERIOD
+            aftermine_sim::stats::FOUNDRY_DRIP_PERIOD
         }
         _ => return 0,
     };
-    (60 * u64::from(oxide_sim::TICKS_PER_SECOND) / period).fit::<u32>()
+    (60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period).fit::<u32>()
 }
 
 fn weapon_line(weapon: &WeaponStats) -> String {
     let targets = match (
-        weapon.targets.covers(oxide_sim::stats::Domain::Ground),
-        weapon.targets.covers(oxide_sim::stats::Domain::Air),
+        weapon.targets.covers(aftermine_sim::stats::Domain::Ground),
+        weapon.targets.covers(aftermine_sim::stats::Domain::Air),
     ) {
         (true, true) => "ground and air",
         (true, false) => "ground",
@@ -550,8 +551,8 @@ fn weapon_line(weapon: &WeaponStats) -> String {
 /// Air-only weapons need a different silhouette, not just a quieter copy
 /// of the ground ring, because the Sentinel exposes both at once.
 pub(crate) fn weapon_capability_icon(weapon: &WeaponStats) -> CapabilityIcon {
-    if weapon.targets.covers(oxide_sim::stats::Domain::Air)
-        && !weapon.targets.covers(oxide_sim::stats::Domain::Ground)
+    if weapon.targets.covers(aftermine_sim::stats::Domain::Air)
+        && !weapon.targets.covers(aftermine_sim::stats::Domain::Ground)
     {
         CapabilityIcon::AirWeapon
     } else {
@@ -585,7 +586,7 @@ pub fn building_weapon_lines(kind: BuildingKind, tier: u8) -> Vec<String> {
 }
 
 pub(crate) fn tick_time_label(ticks: u32) -> String {
-    let per_second = oxide_sim::TICKS_PER_SECOND;
+    let per_second = aftermine_sim::TICKS_PER_SECOND;
     let tenths = ticks.saturating_mul(10).div_ceil(per_second);
     let whole = tenths / 10;
     if tenths.is_multiple_of(10) {
@@ -603,7 +604,7 @@ pub fn unit_train_time_label(kind: UnitKind) -> String {
 fn unit_speed_label(kind: UnitKind) -> String {
     format!(
         "{:.1} tiles/sec",
-        kind.stats().speed.to_num::<f32>() * oxide_sim::TICKS_PER_SECOND as f32
+        kind.stats().speed.to_num::<f32>() * aftermine_sim::TICKS_PER_SECOND as f32
     )
 }
 
@@ -631,7 +632,7 @@ fn production_queue_label(
 /// The team shares its magazines' orders; only the owner's chips cancel.
 fn magazine_queue(
     game: &Scene<'_>,
-    building: &oxide_sim::Building,
+    building: &aftermine_sim::Building,
     queue: &mut Vec<Card>,
 ) -> Option<String> {
     let stats = building.kind.magazine()?;
@@ -681,7 +682,7 @@ fn magazine_queue(
     ))
 }
 
-fn bot_controller_label(game: &Scene<'_>, player: oxide_sim::PlayerId) -> Option<String> {
+fn bot_controller_label(game: &Scene<'_>, player: aftermine_sim::PlayerId) -> Option<String> {
     let spec = game.scenario.players.get(usize::from(player.0))?;
     if !spec.bot {
         return None;
@@ -720,7 +721,7 @@ fn order_subject(
         Order::Repair { building }
         | Order::Salvage { building }
         | Order::Tend {
-            weld: Some(oxide_sim::Target::Building(building)),
+            weld: Some(aftermine_sim::Target::Building(building)),
             ..
         } => {
             let b = game.state.building(*building)?;
@@ -736,7 +737,7 @@ fn order_subject(
             .state
             .attack_objective(game.presentation.human, *target)?
         {
-            oxide_sim::AttackTarget::RememberedBuilding(memory) => {
+            aftermine_sim::AttackTarget::RememberedBuilding(memory) => {
                 // The tier this player knows, as the map draws it: a public
                 // building's own, else the tier last seen, never the live one.
                 let human = game.presentation.human;
@@ -766,7 +767,7 @@ fn order_subject(
                     None,
                 ))
             }
-            oxide_sim::AttackTarget::Contact(id) => {
+            aftermine_sim::AttackTarget::Contact(id) => {
                 let track = game.my_vision().track(id)?;
                 if let Some(uid) = track.visible_unit {
                     let unit = game.state.unit(uid)?;
@@ -795,7 +796,7 @@ fn order_subject(
         }
         Order::RepairUnit { unit }
         | Order::Tend {
-            weld: Some(oxide_sim::Target::Unit(unit)),
+            weld: Some(aftermine_sim::Target::Unit(unit)),
             ..
         } => {
             let u = game.state.unit(*unit)?;
@@ -954,7 +955,7 @@ fn order_card(
             "Scouting around known enemy reach: stops short where it can still see, or waits.",
         ),
         Order::Tend {
-            weld: Some(oxide_sim::Target::Unit(_)),
+            weld: Some(aftermine_sim::Target::Unit(_)),
             ..
         } => (
             VerbIcon::Repair,
@@ -962,7 +963,7 @@ fn order_card(
             "Welding a wounded machine it came across; consumes scrap.",
         ),
         Order::Tend {
-            weld: Some(oxide_sim::Target::Building(_)),
+            weld: Some(aftermine_sim::Target::Building(_)),
             ..
         } => (
             VerbIcon::Repair,
@@ -1000,11 +1001,11 @@ fn order_card(
             CardIcon::Verb(icon),
             match order {
                 Order::Attack {
-                    target: oxide_sim::AttackTarget::Contact(id),
+                    target: aftermine_sim::AttackTarget::Contact(id),
                     ..
                 } => match game.my_vision().track(*id).map(|track| track.domain) {
-                    Some(oxide_sim::stats::Domain::Air) => "Attack - Air contact".into(),
-                    Some(oxide_sim::stats::Domain::Ground) => "Attack - Ground contact".into(),
+                    Some(aftermine_sim::stats::Domain::Air) => "Attack - Air contact".into(),
+                    Some(aftermine_sim::stats::Domain::Ground) => "Attack - Ground contact".into(),
                     None => "Attack - Radar contact".into(),
                 },
                 _ => title.to_string(),
@@ -1036,7 +1037,7 @@ fn order_card(
 /// one are cancelled outright instead, for every crew member.
 fn own_order_card(
     game: &Scene<'_>,
-    subject: oxide_sim::UnitId,
+    subject: aftermine_sim::UnitId,
     program: &Program,
     index: usize,
     projection: &Projection,
@@ -1097,7 +1098,7 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
         Order::Build { .. } => Some(format!("{}% raised", pct(progress?))),
         Order::Repair { building }
         | Order::Tend {
-            weld: Some(oxide_sim::Target::Building(building)),
+            weld: Some(aftermine_sim::Target::Building(building)),
             ..
         } => {
             let b = game.state.building(*building)?;
@@ -1106,7 +1107,7 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
         Order::Salvage { building } => {
             let b = game.state.building(*building)?;
             let cost = b.stats().construction.map_or(0, |c| c.cost);
-            let left = u64::from(cost) * oxide_sim::stats::SALVAGE_REFUND_PERMILLE / 1000
+            let left = u64::from(cost) * aftermine_sim::stats::SALVAGE_REFUND_PERMILLE / 1000
                 * u64::from(b.hp)
                 / u64::from(b.stats().max_hp.max(1));
             Some(format!(
@@ -1117,7 +1118,7 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
         }
         Order::RepairUnit { unit }
         | Order::Tend {
-            weld: Some(oxide_sim::Target::Unit(unit)),
+            weld: Some(aftermine_sim::Target::Unit(unit)),
             ..
         } => {
             let u = game.state.unit(*unit)?;
@@ -1301,7 +1302,7 @@ fn unload_queue_desc(hands: Hands) -> &'static str {
 
 /// The strip row over a mixed own building selection: one counted chip
 /// per kind, like a mixed army, with its tiers in the tooltip.
-fn building_roster(buildings: &[oxide_sim::Building]) -> Vec<Card> {
+fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
     let hands = crate::platform::hands();
     let mut kinds: Vec<(BuildingKind, Vec<u8>)> = Vec::new();
     for b in buildings {
@@ -1351,7 +1352,10 @@ fn building_roster(buildings: &[oxide_sim::Building]) -> Vec<Card> {
 
 /// A one-kind own building selection offers every building of its kind
 /// the seat owns, built or not.
-fn building_select_all(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> Option<SelectAll> {
+fn building_select_all(
+    game: &Scene<'_>,
+    buildings: &[aftermine_sim::Building],
+) -> Option<SelectAll> {
     let first = buildings.first()?;
     if buildings.iter().any(|b| b.kind != first.kind) {
         return None;
@@ -1373,7 +1377,7 @@ fn building_select_all(game: &Scene<'_>, buildings: &[oxide_sim::Building]) -> O
 
 /// A building group's state: how many stand built, how many are still
 /// going up or upgrading, and how many hold a target preference.
-fn building_summary(buildings: &[oxide_sim::Building]) -> String {
+fn building_summary(buildings: &[aftermine_sim::Building]) -> String {
     let built = buildings.iter().filter(|b| b.built()).count();
     let upgrading = buildings
         .iter()
@@ -1831,7 +1835,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             b.player == game.presentation.human
                 && b.built()
                 && b.hp > 0
-                && b.kind == oxide_sim::BuildingKind::Crucible
+                && b.kind == aftermine_sim::BuildingKind::Crucible
         });
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Retire),

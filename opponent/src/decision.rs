@@ -15,11 +15,11 @@ use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
 use crate::trace::{NextPurchase, Purchase, SavingTarget};
 use crate::workers;
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerCommand, PlayerId, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::scenario::{BotDifficulty, BotStance};
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingId, BuildingKind, Command, PlayerCommand, PlayerId, UnitId, UnitKind};
 use std::cmp::Reverse;
 
 /// What one decision emits.

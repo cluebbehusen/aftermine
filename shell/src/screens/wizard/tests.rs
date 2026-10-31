@@ -1,6 +1,6 @@
 use super::*;
+use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
-use oxide_protocol::MouseButton;
 
 /// The card at display position `row`, which must be on this page.
 fn card(layout: &SetupLayout, row: usize) -> CardRects {
@@ -124,7 +124,7 @@ fn a_stale_seat_never_carries_across_maps() {
 #[test]
 fn opponent_choices_start_from_the_map_and_follow_backtracking_rules() {
     let mut authored = Scenario::skirmish();
-    authored.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::new(
+    authored.players[1].bot_config = Some(aftermine_sim::scenario::BotConfig::new(
         BotDifficulty::Prime,
         BotStance::Aggressive,
         0xDEAD_BEEF,

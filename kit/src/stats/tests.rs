@@ -1,12 +1,12 @@
 use super::*;
 use crate::runner;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::ScenarioMode;
 
 fn record_activity(ticks: u64) -> GameReplay {
+    use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, UnitSpec};
+    use aftermine_sim::{BuildingKind, Command, Event, PlayerCommand, Target, UnitKind};
     use chassis::grid::TilePos;
-    use oxide_sim::scenario::{BuildingSpec, PlayerSpec, UnitSpec};
-    use oxide_sim::{BuildingKind, Command, Event, PlayerCommand, Target, UnitKind};
     let mut map = vec![vec!['.'; 30]; 20];
     map[1][1] = '1';
     map[17][27] = '2';
@@ -95,7 +95,7 @@ fn record_activity(ticks: u64) -> GameReplay {
         command,
     })
     .collect();
-    let mut replay = GameReplay::new(oxide_sim::SIM_VERSION, "test", scenario);
+    let mut replay = GameReplay::new(aftermine_sim::SIM_VERSION, "test", scenario);
     let mut events = Vec::new();
     for tick in 0..ticks {
         let commands = if tick == 0 { opening.as_slice() } else { &[] };
@@ -273,8 +273,8 @@ fn thinned_live_totals_match_recomputed_event_totals() {
 
 #[test]
 fn deliberate_salvage_is_not_counted_as_a_building_loss() {
+    use aftermine_sim::BuildingId;
     use chassis::fx::Vec2Fx;
-    use oxide_sim::BuildingId;
 
     let mut players = blank_players(2);
     accumulate_events(
@@ -303,8 +303,8 @@ fn deliberate_salvage_is_not_counted_as_a_building_loss() {
 
 #[test]
 fn a_retirement_is_not_counted_as_a_unit_loss() {
+    use aftermine_sim::{BuildingId, UnitId, UnitKind};
     use chassis::fx::Vec2Fx;
-    use oxide_sim::{BuildingId, UnitId, UnitKind};
 
     let mut players = blank_players(2);
     accumulate_events(
@@ -332,24 +332,24 @@ fn a_retirement_is_not_counted_as_a_unit_loss() {
 
 #[test]
 fn event_counters_saturate_where_a_restored_record_left_them() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let mut live = LiveMatchStats::new(&state);
     live.stats.players[0].units_trained = u32::MAX;
     live.stats.players[0].buildings_completed = u32::MAX;
-    let player = oxide_sim::PlayerId(0);
+    let player = aftermine_sim::PlayerId(0);
     accumulate_events(
         &mut live.stats.players,
         &[
             Event::UnitTrained {
-                building: oxide_sim::BuildingId(0),
-                unit: oxide_sim::UnitId(0),
-                kind: oxide_sim::UnitKind::Harvester,
+                building: aftermine_sim::BuildingId(0),
+                unit: aftermine_sim::UnitId(0),
+                kind: aftermine_sim::UnitKind::Harvester,
                 player,
             },
             Event::BuildingCompleted {
-                building: oxide_sim::BuildingId(0),
+                building: aftermine_sim::BuildingId(0),
                 player,
-                kind: oxide_sim::BuildingKind::Foundry,
+                kind: aftermine_sim::BuildingKind::Foundry,
             },
         ],
     );
@@ -360,25 +360,25 @@ fn event_counters_saturate_where_a_restored_record_left_them() {
 #[test]
 fn drones_count_as_their_hosts_equipment_not_units() {
     let mut stats = blank_players(1);
-    let player = oxide_sim::PlayerId(0);
+    let player = aftermine_sim::PlayerId(0);
     accumulate_events(
         &mut stats,
         &[
-            oxide_sim::Event::DroneAssembled {
-                unit: oxide_sim::UnitId(1),
+            aftermine_sim::Event::DroneAssembled {
+                unit: aftermine_sim::UnitId(1),
                 player,
                 docked: 1,
             },
-            oxide_sim::Event::UnitDied {
-                unit: oxide_sim::UnitId(2),
-                kind: oxide_sim::UnitKind::Drone,
+            aftermine_sim::Event::UnitDied {
+                unit: aftermine_sim::UnitId(2),
+                kind: aftermine_sim::UnitKind::Drone,
                 player,
                 pos: chassis::grid::TilePos::new(3, 3).center(),
                 grounded: false,
             },
-            oxide_sim::Event::UnitDied {
-                unit: oxide_sim::UnitId(3),
-                kind: oxide_sim::UnitKind::Talon,
+            aftermine_sim::Event::UnitDied {
+                unit: aftermine_sim::UnitId(3),
+                kind: aftermine_sim::UnitKind::Talon,
                 player,
                 pos: chassis::grid::TilePos::new(3, 3).center(),
                 grounded: false,

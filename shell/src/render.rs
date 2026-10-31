@@ -15,11 +15,11 @@ pub(crate) mod tracks;
 
 /// The gauge a tracked hull's belts roll on, in world tiles: drawn belt
 /// runs for most, the Maw's own bogies for the Maw.
-pub(crate) fn tread_gauge(kind: oxide_sim::UnitKind) -> Option<f32> {
+pub(crate) fn tread_gauge(kind: aftermine_sim::UnitKind) -> Option<f32> {
     if tracks::supported(kind) {
         Some(tracks::gauge(kind, unit_draw_scale(kind)))
     } else {
-        (kind == oxide_sim::UnitKind::Maw).then_some(maw::GAUGE)
+        (kind == aftermine_sim::UnitKind::Maw).then_some(maw::GAUGE)
     }
 }
 static COLORBLIND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -54,7 +54,7 @@ pub fn self_color() -> Color {
 /// The seat's ownership color as the viewer sees it: the self color, or its
 /// stable ally- or enemy-family tint. Sprite accents, rings, health bars,
 /// and minimap marks all wear it.
-pub(crate) fn seat_identity_color(game: &Scene<'_>, owner: oxide_sim::PlayerId) -> Color {
+pub(crate) fn seat_identity_color(game: &Scene<'_>, owner: aftermine_sim::PlayerId) -> Color {
     game.seat_styles.get(owner)
 }
 
@@ -123,9 +123,9 @@ use world::{draw_fog, draw_scorches};
 
 use crate::game::{EffectKind, Scene};
 use crate::input::InputState;
+use aftermine_sim::stats::SCRAP_NODE_AMOUNT;
 use chassis::grid::TilePos;
 use macroquad::prelude::*;
-use oxide_sim::stats::SCRAP_NODE_AMOUNT;
 
 pub(crate) use crate::theme::{
     SURFACE_CARD, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY,
@@ -631,7 +631,7 @@ pub(crate) struct GroundLayout {
 }
 
 impl GroundLayout {
-    pub(crate) fn build(map: &oxide_sim::map::Map, scenario: &oxide_sim::Scenario) -> Self {
+    pub(crate) fn build(map: &aftermine_sim::map::Map, scenario: &aftermine_sim::Scenario) -> Self {
         let rows = &scenario.map;
         let blockers = world::Blockers::build(map, rows);
         // A tiered map draws the level its Foundries start on at flat
@@ -645,7 +645,7 @@ impl GroundLayout {
             blockers,
             pits: pits::PitField::build(map),
             terraces: terraces::Terraces::build(map, rows),
-            levels: levels::Levels::build(map, oxide_kit::render::floor_level(map, starts)),
+            levels: levels::Levels::build(map, aftermine_kit::render::floor_level(map, starts)),
         }
     }
 }
@@ -691,7 +691,7 @@ fn unit_work_facing(
         .then(|| direction.y.atan2(direction.x) + std::f32::consts::FRAC_PI_2)
 }
 
-fn unit_selection_radius(kind: oxide_sim::UnitKind, zoom: f32, padding: f32) -> f32 {
+fn unit_selection_radius(kind: aftermine_sim::UnitKind, zoom: f32, padding: f32) -> f32 {
     let collision_radius = kind.stats().radius.to_num::<f32>();
     let visual_radius = unit_visual_radius(kind);
     collision_radius.max(visual_radius) * zoom + padding
@@ -699,27 +699,27 @@ fn unit_selection_radius(kind: oxide_sim::UnitKind, zoom: f32, padding: f32) -> 
 
 /// How far past the view a unit may stand and still reach into it: a
 /// sprite wider than the usual margin reaches in from further out.
-fn unit_cull_margin(kind: oxide_sim::UnitKind, margin: f32) -> f32 {
+fn unit_cull_margin(kind: aftermine_sim::UnitKind, margin: f32) -> f32 {
     margin.max(unit_visual_radius(kind) + 1.0)
 }
 
 /// A health bar's width in tiles: about the body, up to its whole width on
 /// a hull wider than a tile.
-fn hp_bar_tiles(kind: oxide_sim::UnitKind, draw_scale: f32) -> f32 {
+fn hp_bar_tiles(kind: aftermine_sim::UnitKind, draw_scale: f32) -> f32 {
     let widest = 1.4f32.max(2.0 * kind.stats().radius.to_num::<f32>());
     (draw_scale - 0.25).clamp(0.8, widest)
 }
 
-pub(crate) fn unit_visual_radius(kind: oxide_sim::UnitKind) -> f32 {
+pub(crate) fn unit_visual_radius(kind: aftermine_sim::UnitKind) -> f32 {
     unit_draw_scale(kind) * crate::look::unit(kind).extent * 0.5
 }
 
-pub(crate) fn unit_draw_scale(kind: oxide_sim::UnitKind) -> f32 {
+pub(crate) fn unit_draw_scale(kind: aftermine_sim::UnitKind) -> f32 {
     crate::look::unit(kind).scale
 }
 
 /// A flyer's shadow size, shadow offset and body lift at `zoom`.
-pub(crate) fn air_presentation(kind: oxide_sim::UnitKind, zoom: f32) -> (Vec2, Vec2, f32) {
+pub(crate) fn air_presentation(kind: aftermine_sim::UnitKind, zoom: f32) -> (Vec2, Vec2, f32) {
     let airframe = crate::look::unit(kind)
         .airframe
         .unwrap_or(crate::look::SMALL_AIRFRAME);
@@ -732,7 +732,7 @@ pub(crate) fn air_presentation(kind: oxide_sim::UnitKind, zoom: f32) -> (Vec2, V
 
 fn tracked_mount_angle(
     game: &crate::game::Scene<'_>,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     alpha: f32,
 ) -> Option<f32> {
     let target = game
@@ -742,7 +742,7 @@ fn tracked_mount_angle(
         .copied()
         .or_else(|| {
             if unit.kind.stats().demolition.is_some()
-                && let oxide_sim::Order::Attack { target, .. } = unit.order
+                && let aftermine_sim::Order::Attack { target, .. } = unit.order
             {
                 game.state
                     .attack_view(unit.player, target)
@@ -752,7 +752,7 @@ fn tracked_mount_angle(
             }
         })?;
     let position = match target {
-        oxide_sim::Target::Unit(id) => {
+        aftermine_sim::Target::Unit(id) => {
             let target = game.state.unit(id)?;
             if target.player != game.presentation.human
                 && !game.presentation.all_seeing()
@@ -762,7 +762,7 @@ fn tracked_mount_angle(
             }
             game.presentation.draw_pos(target.id, target.pos, alpha)
         }
-        oxide_sim::Target::Building(id) => {
+        aftermine_sim::Target::Building(id) => {
             let target = game.state.building(id)?;
             if !game.presentation.all_seeing()
                 && (!target.tiles().any(|tile| game.my_vision().visible(tile))
@@ -802,8 +802,8 @@ pub(crate) struct UnitBodyPose {
 
 pub(crate) fn unit_animation(
     presentation: &crate::game::Presentation,
-    state: &oxide_sim::State,
-    unit: &oxide_sim::Unit,
+    state: &aftermine_sim::State,
+    unit: &aftermine_sim::Unit,
 ) -> crate::presentation_animation::UnitAnimationState {
     let current = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
     let moving = presentation
@@ -837,7 +837,7 @@ pub(crate) struct UnitSpriteFrame {
 
 impl UnitSpriteFrame {
     pub(crate) fn capture(
-        kind: oxide_sim::UnitKind,
+        kind: aftermine_sim::UnitKind,
         animation: crate::presentation_animation::UnitAnimationState,
     ) -> Self {
         let mut frame = motion::unit_frame(kind, animation);
@@ -894,7 +894,7 @@ impl UnitSpriteFrame {
 
 pub(crate) fn unit_body_sources(
     sprites: &Sprites,
-    kind: oxide_sim::UnitKind,
+    kind: aftermine_sim::UnitKind,
     frame: UnitSpriteFrame,
 ) -> (Rect, Rect, Option<Rect>, bool) {
     let (source, accent, mechanism_layer) = match frame.frame {
@@ -953,7 +953,7 @@ pub(crate) fn unit_body_sources(
         usize::from(frame.worker_phase),
     );
     let (source, accent) = worker_body.unwrap_or((source, accent));
-    let mechanism_layer = if kind == oxide_sim::UnitKind::Mantle {
+    let mechanism_layer = if kind == aftermine_sim::UnitKind::Mantle {
         frame
             .point_defense
             .map(|frame| sprites.mantle_charge(usize::from(frame)))
@@ -966,7 +966,7 @@ pub(crate) fn unit_body_sources(
 pub(crate) fn unit_body_pose(
     game: &Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     alpha: f32,
 ) -> UnitBodyPose {
     let animation = unit_animation(game.presentation, game.state, unit);
@@ -1053,7 +1053,7 @@ pub(crate) fn unit_body_pose(
     let (source, accent, mechanism_layer, worker) = unit_body_sources(sprites, unit.kind, frame);
     let mut center = roc::drone_draw_pos(game, unit, alpha)
         .unwrap_or_else(|| game.presentation.draw_pos(unit.id, unit.pos, alpha));
-    if unit.domain() == oxide_sim::stats::Domain::Air {
+    if unit.domain() == aftermine_sim::stats::Domain::Air {
         center.y -= air_presentation(unit.kind, 1.0).2;
     }
     UnitBodyPose {
@@ -1072,7 +1072,7 @@ pub(crate) fn unit_body_pose(
 fn draw_piledriver_anchors(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     pose: (Vec2, f32, f32),
     zoom: f32,
 ) {
@@ -1113,7 +1113,7 @@ fn draw_piledriver_anchors(
 fn mount_pivot(
     body: Vec2,
     body_rotation: f32,
-    mount: &oxide_sim::stats::MountStats,
+    mount: &aftermine_sim::stats::MountStats,
     zoom: f32,
 ) -> Vec2 {
     let forward = vec2(body_rotation.sin(), -body_rotation.cos());
@@ -1128,7 +1128,7 @@ fn mount_pivot(
 fn draw_mounted_guns(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     rig: &crate::assets::UnitRig,
     (body, body_rotation, body_size): (Vec2, f32, Vec2),
     hull: Rect,
@@ -1179,13 +1179,13 @@ fn draw_mounted_guns(
 fn draw_unit_body(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     (body, body_rotation, body_size): (Vec2, f32, Vec2),
     (source, accent): (Rect, Rect),
     (draw_scale, alpha): (f32, f32),
 ) {
     let zoom = game.presentation.camera.zoom;
-    let maw_rig = (unit.kind == oxide_sim::UnitKind::Maw)
+    let maw_rig = (unit.kind == aftermine_sim::UnitKind::Maw)
         .then(|| sprites.maw_rigs())
         .flatten();
     if let Some(rigs) = maw_rig {
@@ -1253,7 +1253,7 @@ fn draw_unit_body(
 fn draw_air_shadow(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     rig: Option<&crate::assets::UnitRig>,
     (screen, body_rotation, dest): (Vec2, f32, f32),
     alpha: f32,
@@ -1293,7 +1293,7 @@ fn draw_air_shadow(
 fn draw_rig_mount(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     rig: &crate::assets::UnitRig,
     (body, body_size, rotation, body_rotation): (Vec2, Vec2, f32, f32),
     animation: crate::presentation_animation::UnitAnimationState,
@@ -1312,7 +1312,7 @@ fn draw_rig_mount(
     ] {
         let mount_rotation = if unit.kind.stats().weapons.is_empty() {
             body_rotation
-        } else if unit.kind == oxide_sim::UnitKind::Piledriver {
+        } else if unit.kind == aftermine_sim::UnitKind::Piledriver {
             // The gun rides the hull's drawn lean, swung off it by its
             // planted traverse.
             body_rotation
@@ -1320,7 +1320,7 @@ fn draw_rig_mount(
         } else {
             rotation
         };
-        let (center, size) = if unit.kind == oxide_sim::UnitKind::Piledriver {
+        let (center, size) = if unit.kind == aftermine_sim::UnitKind::Piledriver {
             // The cropped mechanism retains its position on the 128-pixel
             // chassis and swings about its breech.
             let scale = dest / 128.0;
@@ -1356,11 +1356,11 @@ fn draw_unit_pass(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
     alpha: f32,
-    domain: oxide_sim::stats::Domain,
+    domain: aftermine_sim::stats::Domain,
 ) {
     const CULL_MARGIN: f32 = 2.5;
     let zoom = game.presentation.camera.zoom;
-    let airborne = domain == oxide_sim::stats::Domain::Air;
+    let airborne = domain == aftermine_sim::stats::Domain::Air;
     // Frustum cull with a margin covering the sprite, its shadow, rings,
     // and bars.
     let (view_lo, view_hi) = game.presentation.camera.world_rect();
@@ -1400,7 +1400,7 @@ fn draw_unit_pass(
             ..
         } = unit_body_pose(game, sprites, unit, alpha);
         let rig = sprites.unit_rig(unit.kind);
-        let roc_rig = (unit.kind == oxide_sim::UnitKind::Roc)
+        let roc_rig = (unit.kind == aftermine_sim::UnitKind::Roc)
             .then(|| sprites.roc_rig())
             .flatten();
         if airborne {
@@ -1441,7 +1441,7 @@ fn draw_unit_pass(
             }
         }
         let body_size = vec2(dest, dest);
-        if unit.kind == oxide_sim::UnitKind::Bombard
+        if unit.kind == aftermine_sim::UnitKind::Bombard
             && let Some(source) = sprites.bombard_spades(unit.braces())
         {
             sprites.draw_unit(
@@ -1496,7 +1496,7 @@ fn draw_unit_pass(
                 alpha,
             );
         }
-        if unit.kind == oxide_sim::UnitKind::Kestrel
+        if unit.kind == aftermine_sim::UnitKind::Kestrel
             && let Some(cycle) = animation.scanner
             && let Some(source) = sprites.scout_radar()
         {
@@ -1516,7 +1516,7 @@ fn draw_unit_pass(
                 zoom,
             );
         }
-        if unit.kind == oxide_sim::UnitKind::Piledriver {
+        if unit.kind == aftermine_sim::UnitKind::Piledriver {
             draw_piledriver_anchors(game, sprites, unit, (body, body_rotation, dest), zoom);
         }
         if let Some(rig) = rig
@@ -1585,7 +1585,7 @@ fn draw_unit_pass(
         // The gold dismantling meter, like a building's teardown bar, and
         // like it shown only for the viewer's own machines.
         if unit.player == game.presentation.human && unit.retiring() && unit.progress > 0 {
-            let fraction = unit.progress as f32 / oxide_sim::stats::RETIRE_TICKS as f32;
+            let fraction = unit.progress as f32 / aftermine_sim::stats::RETIRE_TICKS as f32;
             let (x, y) = (
                 screen.x - w * 0.5,
                 screen.y + zoom * (draw_scale * 0.5 + 0.05),

@@ -154,7 +154,7 @@ pub(crate) fn draw_pending_founds(game: &crate::game::Scene<'_>, sprites: &Sprit
 pub(crate) fn breadcrumb_points(
     game: &crate::game::Scene<'_>,
     projection: &crate::game::projection::Projection,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
 ) -> Vec<(usize, Vec2, Color)> {
     use crate::game::world_vec;
     use crate::input::tile_center;
@@ -164,81 +164,81 @@ pub(crate) fn breadcrumb_points(
     let Some(program) = projection.program(unit.id) else {
         return Vec::new();
     };
-    let verb_color = |order: &oxide_sim::Order| match order {
-        oxide_sim::Order::Run { .. } => BONE_FAINT,
-        oxide_sim::Order::Scout { .. } => Color::new(0.55, 0.78, 0.86, 0.55),
-        oxide_sim::Order::Advance { .. } => Color::new(0.95, 0.76, 0.28, 0.62),
+    let verb_color = |order: &aftermine_sim::Order| match order {
+        aftermine_sim::Order::Run { .. } => BONE_FAINT,
+        aftermine_sim::Order::Scout { .. } => Color::new(0.55, 0.78, 0.86, 0.55),
+        aftermine_sim::Order::Advance { .. } => Color::new(0.95, 0.76, 0.28, 0.62),
         // A chase (at a victim) and a fighting march (toward ground)
         // draw in different colors.
-        oxide_sim::Order::Attack { .. } => Color::new(0.85, 0.32, 0.29, 0.55),
-        oxide_sim::Order::Hunt { .. } => Color::new(0.88, 0.55, 0.26, 0.55),
-        oxide_sim::Order::ReturnCargo { .. } | oxide_sim::Order::Harvest { .. } => {
+        aftermine_sim::Order::Attack { .. } => Color::new(0.85, 0.32, 0.29, 0.55),
+        aftermine_sim::Order::Hunt { .. } => Color::new(0.88, 0.55, 0.26, 0.55),
+        aftermine_sim::Order::ReturnCargo { .. } | aftermine_sim::Order::Harvest { .. } => {
             Color::new(0.85, 0.64, 0.25, 0.55)
         }
-        oxide_sim::Order::Build { .. }
-        | oxide_sim::Order::Repair { .. }
-        | oxide_sim::Order::Salvage { .. }
-        | oxide_sim::Order::RepairUnit { .. }
-        | oxide_sim::Order::Tend { .. }
-        | oxide_sim::Order::Found { .. } => Color::new(0.25, 0.58, 0.51, 0.55),
-        oxide_sim::Order::Board { .. }
-        | oxide_sim::Order::Unload { .. }
-        | oxide_sim::Order::Land { .. } => BONE_FAINT,
-        oxide_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
-        oxide_sim::Order::Retire { .. } => Color::new(0.85, 0.64, 0.25, 0.55),
-        oxide_sim::Order::Idle => BONE_FAINT,
+        aftermine_sim::Order::Build { .. }
+        | aftermine_sim::Order::Repair { .. }
+        | aftermine_sim::Order::Salvage { .. }
+        | aftermine_sim::Order::RepairUnit { .. }
+        | aftermine_sim::Order::Tend { .. }
+        | aftermine_sim::Order::Found { .. } => Color::new(0.25, 0.58, 0.51, 0.55),
+        aftermine_sim::Order::Board { .. }
+        | aftermine_sim::Order::Unload { .. }
+        | aftermine_sim::Order::Land { .. } => BONE_FAINT,
+        aftermine_sim::Order::Accompany { .. } => Color::new(0.42, 0.66, 0.92, 0.55),
+        aftermine_sim::Order::Retire { .. } => Color::new(0.85, 0.64, 0.25, 0.55),
+        aftermine_sim::Order::Idle => BONE_FAINT,
     };
     // Building targets draw at their footprint's center, which lies on a
     // tile seam when the footprint is even, so they are never tile-snapped.
-    let goal_of = |order: &oxide_sim::Order| {
+    let goal_of = |order: &aftermine_sim::Order| {
         let goal = match order {
-            oxide_sim::Order::Run { goal }
-            | oxide_sim::Order::Advance { goal }
-            | oxide_sim::Order::Hunt { goal } => tile_center(goal.tile()),
-            oxide_sim::Order::Harvest { node, .. } => tile_center(*node),
-            oxide_sim::Order::Scout { tile } => tile_center(*tile),
-            oxide_sim::Order::ReturnCargo { foundry, .. } => {
+            aftermine_sim::Order::Run { goal }
+            | aftermine_sim::Order::Advance { goal }
+            | aftermine_sim::Order::Hunt { goal } => tile_center(goal.tile()),
+            aftermine_sim::Order::Harvest { node, .. } => tile_center(*node),
+            aftermine_sim::Order::Scout { tile } => tile_center(*tile),
+            aftermine_sim::Order::ReturnCargo { foundry, .. } => {
                 world_vec(game.state.building(*foundry)?.center())
             }
-            oxide_sim::Order::Build { site } => {
+            aftermine_sim::Order::Build { site } => {
                 world_vec(projection.building(game.state, *site)?.center())
             }
-            oxide_sim::Order::Found { kind, anchor } => {
-                world_vec(oxide_sim::geometry::footprint_center(*anchor, kind.size()))
-            }
-            oxide_sim::Order::Repair { building }
-            | oxide_sim::Order::Salvage { building }
-            | oxide_sim::Order::Retire {
+            aftermine_sim::Order::Found { kind, anchor } => world_vec(
+                aftermine_sim::geometry::footprint_center(*anchor, kind.size()),
+            ),
+            aftermine_sim::Order::Repair { building }
+            | aftermine_sim::Order::Salvage { building }
+            | aftermine_sim::Order::Retire {
                 crucible: building, ..
             }
-            | oxide_sim::Order::Tend {
-                weld: Some(oxide_sim::Target::Building(building)),
+            | aftermine_sim::Order::Tend {
+                weld: Some(aftermine_sim::Target::Building(building)),
                 ..
             } => world_vec(game.state.building(*building)?.center()),
             // A repair patient is the viewer's own machine, so it is always seen.
-            oxide_sim::Order::RepairUnit { unit }
-            | oxide_sim::Order::Tend {
-                weld: Some(oxide_sim::Target::Unit(unit)),
+            aftermine_sim::Order::RepairUnit { unit }
+            | aftermine_sim::Order::Tend {
+                weld: Some(aftermine_sim::Target::Unit(unit)),
                 ..
             } => tile_center(game.state.unit(*unit)?.tile()),
-            oxide_sim::Order::Tend { goal, weld: None } => tile_center(goal.tile()),
-            oxide_sim::Order::Board { transport } => {
+            aftermine_sim::Order::Tend { goal, weld: None } => tile_center(goal.tile()),
+            aftermine_sim::Order::Board { transport } => {
                 tile_center(game.state.unit(*transport)?.tile())
             }
             // An escorted unit is own, so it is always seen, aboard a
             // transport included.
-            oxide_sim::Order::Accompany { unit, .. } => {
+            aftermine_sim::Order::Accompany { unit, .. } => {
                 tile_center(game.state.escorted(*unit)?.tile())
             }
-            oxide_sim::Order::Unload { at, .. } => tile_center(at.tile()),
+            aftermine_sim::Order::Unload { at, .. } => tile_center(at.tile()),
             // A landing that took over a walk marks the walk's click.
-            oxide_sim::Order::Land { goal, from } => tile_center(from.unwrap_or(*goal)),
-            oxide_sim::Order::Attack { target, .. } => world_vec(
+            aftermine_sim::Order::Land { goal, from } => tile_center(from.unwrap_or(*goal)),
+            aftermine_sim::Order::Attack { target, .. } => world_vec(
                 game.state
                     .attack_view(game.presentation.human, *target)?
                     .position,
             ),
-            oxide_sim::Order::Idle => return None,
+            aftermine_sim::Order::Idle => return None,
         };
         Some((goal, verb_color(order)))
     };
@@ -260,9 +260,9 @@ pub(crate) fn breadcrumb_points(
 /// and full-strength trail all describe the subject, so it must never be
 /// the entry the cap drops: a selection arrives in id order, and older
 /// units ahead of it could push it past `DECOR_CAP`.
-pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<oxide_sim::UnitId> {
+pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::UnitId> {
     let subject = crate::panel::subject_unit(game);
-    let mut ids: Vec<oxide_sim::UnitId> = subject.into_iter().collect();
+    let mut ids: Vec<aftermine_sim::UnitId> = subject.into_iter().collect();
     ids.extend(
         game.presentation
             .selection
@@ -348,12 +348,12 @@ pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState
 
 fn production_progress_visible(
     game: &crate::game::Scene<'_>,
-    building: &oxide_sim::Building,
+    building: &aftermine_sim::Building,
 ) -> bool {
     building.player == game.presentation.human || game.presentation.all_seeing()
 }
 
-fn production_fraction(building: &oxide_sim::Building) -> Option<f32> {
+fn production_fraction(building: &aftermine_sim::Building) -> Option<f32> {
     if let Some(kind) = building.queue.front() {
         return Some(building.training_progress() as f32 / kind.stats().train_ticks.max(1) as f32);
     }
@@ -367,7 +367,7 @@ fn production_fraction(building: &oxide_sim::Building) -> Option<f32> {
 /// body the field draws.
 fn contact_body_source(
     sprites: &Sprites,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     tier: u8,
     body: super::motion::BuildingBodyFrame,
 ) -> Rect {
@@ -375,8 +375,8 @@ fn contact_body_source(
         && let Some(rigs) = sprites.strategic_rigs()
     {
         match kind {
-            oxide_sim::BuildingKind::Spire => return rigs.spire.foundation[0],
-            oxide_sim::BuildingKind::Lattice => return rigs.lattice.base,
+            aftermine_sim::BuildingKind::Spire => return rigs.spire.foundation[0],
+            aftermine_sim::BuildingKind::Lattice => return rigs.lattice.base,
             _ => {}
         }
     }
@@ -385,13 +385,13 @@ fn contact_body_source(
 
 fn building_body_sources(
     sprites: &Sprites,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     tier: u8,
     body: super::motion::BuildingBodyFrame,
 ) -> (Rect, Rect) {
     use super::motion::BuildingBodyFrame;
     if !matches!(body, BuildingBodyFrame::Construction { .. })
-        && kind == oxide_sim::BuildingKind::Array
+        && kind == aftermine_sim::BuildingKind::Array
         && let Some(rig) = sprites.array_rig()
     {
         return rig.layers(tier)[0];
@@ -530,7 +530,7 @@ fn payload_surface_contact(
     surface: Option<crate::game::HitSurface>,
     from: Vec2,
     at: Vec2,
-    kind: oxide_sim::ProjectileKind,
+    kind: aftermine_sim::ProjectileKind,
 ) -> Vec2 {
     let point = match surface {
         Some(crate::game::HitSurface::Unit(hit)) => {
@@ -544,7 +544,7 @@ fn payload_surface_contact(
                 posed_unit_contact(
                     sprites,
                     &pose,
-                    if kind == oxide_sim::ProjectileKind::Bomb {
+                    if kind == aftermine_sim::ProjectileKind::Bomb {
                         at
                     } else {
                         from
@@ -558,7 +558,7 @@ fn payload_surface_contact(
             game,
             sprites,
             surface,
-            if kind == oxide_sim::ProjectileKind::Bomb {
+            if kind == aftermine_sim::ProjectileKind::Bomb {
                 at
             } else {
                 from
@@ -579,9 +579,9 @@ pub(super) fn impact_contact(
     surface: Option<crate::game::HitSurface>,
     from: Vec2,
     at: Vec2,
-    payload: oxide_sim::ProjectileKind,
+    payload: aftermine_sim::ProjectileKind,
 ) -> Vec2 {
-    let ray_from = if payload == oxide_sim::ProjectileKind::Bomb {
+    let ray_from = if payload == aftermine_sim::ProjectileKind::Bomb {
         at
     } else {
         from
@@ -667,7 +667,7 @@ pub(super) fn building_contact(
 fn draw_defense_mount(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    building: &oxide_sim::Building,
+    building: &aftermine_sim::Building,
     action: Option<usize>,
 ) {
     let draw = |x, y, tint, params| {
@@ -727,10 +727,10 @@ fn draw_defense_mount(
 /// are judged only by what the viewer sees or remembers of them, so dropping
 /// them never reveals what stands in fog.
 fn crew_pads_in_use(
-    state: &oxide_sim::State,
-    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
-    cradle: &oxide_sim::Building,
-    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
+    state: &aftermine_sim::State,
+    (viewer, all_seeing): (aftermine_sim::PlayerId, bool),
+    cradle: &aftermine_sim::Building,
+    pads: [(i32, i32); aftermine_sim::stats::ASSEMBLY_CREW_CAP],
 ) -> bool {
     let vision = state.vision(viewer);
     pads.iter().all(|&(dx, dy)| {
@@ -755,11 +755,11 @@ fn crew_pads_in_use(
 /// stands on the pad, stopped and at work. A rival's place lights only while
 /// the viewer sees its pad.
 fn crew_lamps(
-    state: &oxide_sim::State,
-    (viewer, all_seeing): (oxide_sim::PlayerId, bool),
-    cradle: &oxide_sim::Building,
-    pads: [(i32, i32); oxide_sim::stats::ASSEMBLY_CREW_CAP],
-) -> [bool; oxide_sim::stats::ASSEMBLY_CREW_CAP] {
+    state: &aftermine_sim::State,
+    (viewer, all_seeing): (aftermine_sim::PlayerId, bool),
+    cradle: &aftermine_sim::Building,
+    pads: [(i32, i32); aftermine_sim::stats::ASSEMBLY_CREW_CAP],
+) -> [bool; aftermine_sim::stats::ASSEMBLY_CREW_CAP] {
     let crew = state.cradle_crew(cradle.id);
     pads.map(|(dx, dy)| {
         let pad = cradle.anchor.offset(dx, dy);
@@ -784,21 +784,23 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     let draw = |x, y, tint, params| sprites.draw_building(x, y, tint, params, zoom);
     // Buildings an own crew is actively stripping (the salvage
     // read-back's fog-safe evidence).
-    let salvaging: Vec<oxide_sim::BuildingId> = game
+    let salvaging: Vec<aftermine_sim::BuildingId> = game
         .state
         .units()
         .iter()
         .filter(|u| u.player == game.presentation.human)
         .filter_map(|u| match u.order {
-            oxide_sim::Order::Salvage { building } => Some(building),
+            aftermine_sim::Order::Salvage { building } => Some(building),
             _ => None,
         })
         .collect();
     // Live enemy buildings only where we have sight; remembered ghosts
     // cover explored-but-unseen ground (skipped in the omniscient overlay).
     if !game.presentation.all_seeing() {
-        let public =
-            oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human);
+        let public = aftermine_sim::observation::hostile_public_buildings(
+            game.state,
+            game.presentation.human,
+        );
         for ghost in game.my_vision().ghosts() {
             let (w, h) = ghost.kind.size();
             // A building every seat knows of shows as it stands, built at its
@@ -940,17 +942,18 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             },
         );
         let frame = super::motion::building_frame(building.kind, animation);
-        let array_layers = (building.built() && building.kind == oxide_sim::BuildingKind::Array)
+        let array_layers = (building.built()
+            && building.kind == aftermine_sim::BuildingKind::Array)
             .then(|| sprites.array_rig())
             .flatten()
             .map(|rig| rig.layers(building.tier));
         let accent_tint = seat_identity_color(game, building.player);
         let rigged = building.built()
             && match building.kind {
-                oxide_sim::BuildingKind::Spire => {
+                aftermine_sim::BuildingKind::Spire => {
                     super::strategic::draw_spire(game, sprites, building, screen, dest, accent_tint)
                 }
-                oxide_sim::BuildingKind::Lattice => super::strategic::draw_lattice(
+                aftermine_sim::BuildingKind::Lattice => super::strategic::draw_lattice(
                     game,
                     sprites,
                     building,
@@ -985,7 +988,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             );
         }
         if let super::motion::BuildingBodyFrame::Construction { stage, .. } = frame.body
-            && building.kind.assembles() == Some(oxide_sim::UnitKind::Roc)
+            && building.kind.assembles() == Some(aftermine_sim::UnitKind::Roc)
         {
             super::roc::draw_assembling(game, sprites, building.player, screen + dest * 0.5, stage);
         }
@@ -1131,9 +1134,9 @@ pub(crate) fn draw_units(game: &crate::game::Scene<'_>, sprites: &Sprites, alpha
     // Two passes: ground bodies first, then everything airborne above
     // them. Each flyer casts an offset shadow so altitude reads even when
     // nothing overlaps.
-    draw_unit_pass(game, sprites, alpha, oxide_sim::stats::Domain::Ground);
+    draw_unit_pass(game, sprites, alpha, aftermine_sim::stats::Domain::Ground);
     draw_bomber_bombs(game, sprites);
-    draw_unit_pass(game, sprites, alpha, oxide_sim::stats::Domain::Air);
+    draw_unit_pass(game, sprites, alpha, aftermine_sim::stats::Domain::Air);
 }
 
 fn bomber_release(game: &crate::game::Scene<'_>, index: usize) -> Option<crate::game::LaunchPose> {
@@ -1230,10 +1233,10 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
 pub(crate) fn shell_visual_origin(
     launch: Vec2,
     impact: Vec2,
-    shooter: oxide_sim::Target,
-    kind: oxide_sim::ProjectileKind,
+    shooter: aftermine_sim::Target,
+    kind: aftermine_sim::ProjectileKind,
 ) -> Vec2 {
-    if kind == oxide_sim::ProjectileKind::Bomb {
+    if kind == aftermine_sim::ProjectileKind::Bomb {
         return launch;
     }
     let direction = impact - launch;
@@ -1241,14 +1244,16 @@ pub(crate) fn shell_visual_origin(
         return launch;
     }
     let reach = match shooter {
-        oxide_sim::Target::Unit(_) => {
-            if kind == oxide_sim::ProjectileKind::Missile {
+        aftermine_sim::Target::Unit(_) => {
+            if kind == aftermine_sim::ProjectileKind::Missile {
                 0.53
             } else {
-                31.0 / 128.0 * super::unit_draw_scale(oxide_sim::UnitKind::Bombard)
+                31.0 / 128.0 * super::unit_draw_scale(aftermine_sim::UnitKind::Bombard)
             }
         }
-        oxide_sim::Target::Building(_) => oxide_sim::BuildingKind::Bastion.size().0 as f32 * 0.49,
+        aftermine_sim::Target::Building(_) => {
+            aftermine_sim::BuildingKind::Bastion.size().0 as f32 * 0.49
+        }
     };
     launch + direction.normalize() * reach
 }
@@ -1256,32 +1261,34 @@ pub(crate) fn shell_visual_origin(
 fn payload_world_position(
     launch: Vec2,
     impact: Vec2,
-    shooter: oxide_sim::Target,
-    kind: oxide_sim::ProjectileKind,
+    shooter: aftermine_sim::Target,
+    kind: aftermine_sim::ProjectileKind,
     pose: Option<crate::game::LaunchPose>,
     progress: f32,
 ) -> Vec2 {
     let t = progress.clamp(0.0, 1.0);
     if let Some(pose) = pose {
-        if kind == oxide_sim::ProjectileKind::Bomb {
+        if kind == aftermine_sim::ProjectileKind::Bomb {
             let (at, _) = condor_bomb_pose(launch, impact, pose.heading, t);
             let lift = crate::look::unit(pose.kind)
                 .airframe
                 .map_or(0.0, |air| air.lift);
             return at - vec2(0.0, lift * (1.0 - t * t));
         }
-        if kind == oxide_sim::ProjectileKind::Shell {
+        if kind == aftermine_sim::ProjectileKind::Shell {
             return bombard_shell_position(launch, impact, pose.heading, t);
         }
     }
     let from = shell_visual_origin(launch, impact, shooter, kind);
     let flat = from.lerp(impact, t);
-    if kind == oxide_sim::ProjectileKind::Shell && matches!(shooter, oxide_sim::Target::Unit(_)) {
+    if kind == aftermine_sim::ProjectileKind::Shell
+        && matches!(shooter, aftermine_sim::Target::Unit(_))
+    {
         flat - vec2(
             0.0,
             shell_arc_lift(from.distance(impact), 1.0, shooter) * 4.0 * t * (1.0 - t),
         )
-    } else if kind == oxide_sim::ProjectileKind::Bomb {
+    } else if kind == aftermine_sim::ProjectileKind::Bomb {
         flat - vec2(0.0, 0.18 * (1.0 - t))
     } else {
         flat
@@ -1302,7 +1309,7 @@ fn intercepted_position(
         flight.kind,
     );
     let from = shell_visual_origin(flight.launch, to, flight.shooter, flight.kind);
-    let t = if flight.kind == oxide_sim::ProjectileKind::Missile {
+    let t = if flight.kind == aftermine_sim::ProjectileKind::Missile {
         missile_travel_progress(flight.progress, flight.ticks, from.distance(to))
     } else {
         flight.progress
@@ -1328,19 +1335,19 @@ fn bombard_shell_position(launch: Vec2, impact: Vec2, heading: Vec2, progress: f
     let distance = launch.distance(impact);
     let muzzle = launch
         + heading
-            * (31.0 / 128.0 * super::unit_draw_scale(oxide_sim::UnitKind::Bombard))
+            * (31.0 / 128.0 * super::unit_draw_scale(aftermine_sim::UnitKind::Bombard))
                 .min(distance * 0.4);
     muzzle.lerp(impact, t)
 }
 
-fn shell_arc_lift(screen_distance: f32, zoom: f32, shooter: oxide_sim::Target) -> f32 {
+fn shell_arc_lift(screen_distance: f32, zoom: f32, shooter: aftermine_sim::Target) -> f32 {
     match shooter {
         // Bombard arcs visibly as indirect artillery, but its lift above
         // the flat path stays capped.
-        oxide_sim::Target::Unit(_) => (screen_distance * 0.06).min(zoom * 0.60),
+        aftermine_sim::Target::Unit(_) => (screen_distance * 0.06).min(zoom * 0.60),
         // Bastion is a low-carriage siege gun; a high arc would detach its
         // compact shell from the barrel and impact.
-        oxide_sim::Target::Building(_) => (screen_distance * 0.04).min(zoom * 0.40),
+        aftermine_sim::Target::Building(_) => (screen_distance * 0.04).min(zoom * 0.40),
     }
 }
 
@@ -1426,7 +1433,7 @@ fn flak_barrel_rounds(
             0.0,
         ],
         (2, _) => {
-            let scale = super::unit_draw_scale(oxide_sim::UnitKind::Flakhound) / 128.0;
+            let scale = super::unit_draw_scale(aftermine_sim::UnitKind::Flakhound) / 128.0;
             [
                 -23.0 * scale,
                 -9.0 * scale,
@@ -1554,7 +1561,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let total = payload_flight_ticks(game, index);
         let elapsed = crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total);
         let flight_progress = (elapsed / total).clamp(0.0, 1.0);
-        let t = if shell.kind == oxide_sim::ProjectileKind::Missile {
+        let t = if shell.kind == aftermine_sim::ProjectileKind::Missile {
             missile_travel_progress(flight_progress, total, from.distance(to))
         } else {
             flight_progress
@@ -1564,15 +1571,15 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         }
         let a = game.presentation.camera.to_screen(from);
         let b = game.presentation.camera.to_screen(to);
-        let bastion_shell = shell.kind == oxide_sim::ProjectileKind::Shell
-            && matches!(shell.shooter, oxide_sim::Target::Building(_));
+        let bastion_shell = shell.kind == aftermine_sim::ProjectileKind::Shell
+            && matches!(shell.shooter, aftermine_sim::Target::Building(_));
         let artillery_heading = game
             .presentation
             .projectile_releases
             .artillery_heading(shell);
         let pose = artillery_heading.map(|heading| crate::game::LaunchPose {
             heading,
-            kind: oxide_sim::UnitKind::Bombard,
+            kind: aftermine_sim::UnitKind::Bombard,
         });
         let at = |t: f32| {
             game.presentation.camera.to_screen(payload_world_position(
@@ -1584,7 +1591,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 t,
             ))
         };
-        let tail_t = if shell.kind == oxide_sim::ProjectileKind::Missile {
+        let tail_t = if shell.kind == aftermine_sim::ProjectileKind::Missile {
             (t - 0.65 / from.distance(to).max(f32::EPSILON)).max(0.0)
         } else {
             shell_tail_start(t, from.distance(to))
@@ -1592,10 +1599,10 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let tail = at(tail_t);
         let shell_at = at(t);
         let flat = a.lerp(b, t);
-        if shell.kind != oxide_sim::ProjectileKind::Shell {
+        if shell.kind != aftermine_sim::ProjectileKind::Shell {
             let direction = (at((t + 0.01).min(1.0)) - at((t - 0.01).max(0.0))).normalize_or_zero();
             let normal = vec2(-direction.y, direction.x);
-            let missile = shell.kind == oxide_sim::ProjectileKind::Missile;
+            let missile = shell.kind == aftermine_sim::ProjectileKind::Missile;
             let length = game.presentation.camera.zoom * if missile { 0.375 } else { 0.28 };
             let width = game.presentation.camera.zoom * if missile { 0.078_125 } else { 0.13 };
             let center = shell_at;
@@ -2116,7 +2123,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 let fade = 1.0 - progress;
                 let body = game.presentation.camera.to_screen(at);
                 let size = game.presentation.camera.zoom
-                    * super::unit_draw_scale(oxide_sim::UnitKind::Sapper);
+                    * super::unit_draw_scale(aftermine_sim::UnitKind::Sapper);
                 let body_size = vec2(size, size);
                 let visibility = sapper_effect_visibility(
                     game.presentation.all_seeing() || player == game.presentation.human,
@@ -2130,7 +2137,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         Color::new(1.0, 1.0, 1.0, fade),
                         DrawTextureParams {
                             dest_size: Some(body_size),
-                            source: Some(sprites.unit_action(oxide_sim::UnitKind::Sapper, 2)),
+                            source: Some(sprites.unit_action(aftermine_sim::UnitKind::Sapper, 2)),
                             rotation,
                             ..Default::default()
                         },
@@ -2144,7 +2151,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         DrawTextureParams {
                             dest_size: Some(body_size),
                             source: Some(
-                                sprites.unit_action_accent(oxide_sim::UnitKind::Sapper, 2),
+                                sprites.unit_action_accent(aftermine_sim::UnitKind::Sapper, 2),
                             ),
                             rotation,
                             ..Default::default()
@@ -2156,7 +2163,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         sprites,
                         game.presentation.camera.to_screen(blast_at),
                         game.presentation.camera.zoom,
-                        oxide_sim::UnitKind::Sapper
+                        aftermine_sim::UnitKind::Sapper
                             .stats()
                             .demolition
                             .map_or(0.0, |demolition| demolition.blast_radius.to_num::<f32>()),
@@ -2215,7 +2222,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     game.presentation.camera.zoom,
                     0.45,
                     fx.age,
-                    oxide_sim::ProjectileKind::Shell,
+                    aftermine_sim::ProjectileKind::Shell,
                 );
             }
             EffectKind::Interception { .. } => {}
@@ -2271,17 +2278,17 @@ pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
 pub(crate) fn blip_strokes(
     center: Vec2,
     r: f32,
-    domain: oxide_sim::stats::Domain,
+    domain: aftermine_sim::stats::Domain,
 ) -> Vec<(Vec2, Vec2)> {
     let top = vec2(center.x, center.y - r);
     let right = vec2(center.x + r, center.y);
     let bottom = vec2(center.x, center.y + r);
     let left = vec2(center.x - r, center.y);
     match domain {
-        oxide_sim::stats::Domain::Ground => {
+        aftermine_sim::stats::Domain::Ground => {
             vec![(top, right), (right, bottom), (bottom, left), (left, top)]
         }
-        oxide_sim::stats::Domain::Air => vec![(left, top), (top, right)],
+        aftermine_sim::stats::Domain::Air => vec![(left, top), (top, right)],
     }
 }
 
@@ -2299,7 +2306,7 @@ pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
     let zoom = camera.zoom;
     let vision = game.my_vision();
     for public in
-        oxide_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
+        aftermine_sim::observation::hostile_public_buildings(game.state, game.presentation.human)
     {
         let (w, h) = public.kind.size();
         if (0..h).any(|dy| (0..w).any(|dx| vision.visible(public.anchor.offset(dx, dy)))) {
@@ -2466,7 +2473,7 @@ fn range_icon(kind: BuildingRangeKind) -> crate::panel::CapabilityIcon {
     }
 }
 
-fn weapon_range_kind(weapon: &oxide_sim::stats::WeaponStats) -> BuildingRangeKind {
+fn weapon_range_kind(weapon: &aftermine_sim::stats::WeaponStats) -> BuildingRangeKind {
     match crate::panel::weapon_capability_icon(weapon) {
         crate::panel::CapabilityIcon::AirWeapon => BuildingRangeKind::AirWeapon,
         _ => BuildingRangeKind::Weapon,
@@ -2478,12 +2485,12 @@ fn dead_zone_fill(color: Color) -> Color {
 }
 
 fn range_subject(
-    units: &[oxide_sim::UnitId],
-    buildings: &[oxide_sim::BuildingId],
-) -> Option<oxide_sim::Target> {
+    units: &[aftermine_sim::UnitId],
+    buildings: &[aftermine_sim::BuildingId],
+) -> Option<aftermine_sim::Target> {
     match (units, buildings) {
-        ([unit], []) => Some(oxide_sim::Target::Unit(*unit)),
-        ([], [building]) => Some(oxide_sim::Target::Building(*building)),
+        ([unit], []) => Some(aftermine_sim::Target::Unit(*unit)),
+        ([], [building]) => Some(aftermine_sim::Target::Building(*building)),
         _ => None,
     }
 }
@@ -2607,7 +2614,7 @@ fn footprint_distance_aura(distance: i32) -> f32 {
 /// context and avoids allocating in the frame loop.
 fn visit_building_ranges(
     anchor: Vec2,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     tier: u8,
     mut visit: impl FnMut(BuildingRange),
 ) {
@@ -2667,26 +2674,26 @@ fn visit_building_ranges(
             },
         });
     }
-    if kind == oxide_sim::BuildingKind::RepairBay {
+    if kind == aftermine_sim::BuildingKind::RepairBay {
         visit(BuildingRange {
             kind: BuildingRangeKind::Repair,
             shape: BuildingRangeShape::FootprintOffset {
                 min: anchor,
                 max: anchor + size,
-                radius: oxide_sim::stats::REPAIR_BAY_RADIUS.to_num::<f32>(),
+                radius: aftermine_sim::stats::REPAIR_BAY_RADIUS.to_num::<f32>(),
             },
         });
     }
     if matches!(
         kind,
-        oxide_sim::BuildingKind::Foundry | oxide_sim::BuildingKind::Extractor
+        aftermine_sim::BuildingKind::Foundry | aftermine_sim::BuildingKind::Extractor
     ) {
         visit(BuildingRange {
             kind: BuildingRangeKind::EconomySupport,
             shape: BuildingRangeShape::FootprintSquare {
                 min: anchor,
                 max: anchor + size,
-                radius: footprint_distance_aura(oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS),
+                radius: footprint_distance_aura(aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS),
             },
         });
     }
@@ -2694,12 +2701,12 @@ fn visit_building_ranges(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EconomySupportLink {
-    extractor: oxide_sim::BuildingId,
-    foundry: oxide_sim::BuildingId,
+    extractor: aftermine_sim::BuildingId,
+    foundry: aftermine_sim::BuildingId,
 }
 
 fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomySupportLink> {
-    let Some(oxide_sim::Target::Building(selected)) = range_subject(
+    let Some(aftermine_sim::Target::Building(selected)) = range_subject(
         &game.presentation.selection.units,
         &game.presentation.selection.buildings,
     ) else {
@@ -2713,22 +2720,22 @@ fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomyS
     }
 
     match building.kind {
-        oxide_sim::BuildingKind::Extractor => game
+        aftermine_sim::BuildingKind::Extractor => game
             .state
             .buildings()
             .iter()
-            .filter(|candidate| candidate.kind == oxide_sim::BuildingKind::Foundry)
+            .filter(|candidate| candidate.kind == aftermine_sim::BuildingKind::Foundry)
             .filter(|candidate| game.state.extractor_supported_by(building.id, candidate.id))
             .map(|candidate| EconomySupportLink {
                 extractor: building.id,
                 foundry: candidate.id,
             })
             .collect(),
-        oxide_sim::BuildingKind::Foundry => game
+        aftermine_sim::BuildingKind::Foundry => game
             .state
             .buildings()
             .iter()
-            .filter(|candidate| candidate.kind == oxide_sim::BuildingKind::Extractor)
+            .filter(|candidate| candidate.kind == aftermine_sim::BuildingKind::Extractor)
             .filter(|candidate| game.state.extractor_supported_by(candidate.id, building.id))
             .map(|candidate| EconomySupportLink {
                 extractor: candidate.id,
@@ -2742,9 +2749,9 @@ fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomyS
 /// One machine an own Repair Bay is servicing, and how fast.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RepairTether {
-    bay: oxide_sim::BuildingId,
-    unit: oxide_sim::UnitId,
-    pace: oxide_sim::state::RepairPace,
+    bay: aftermine_sim::BuildingId,
+    unit: aftermine_sim::UnitId,
+    pace: aftermine_sim::state::RepairPace,
 }
 
 /// Every own Repair Bay's current patients, read from the same choice the
@@ -2793,7 +2800,7 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
             .presentation
             .camera
             .to_screen(game.presentation.draw_pos(unit.id, unit.pos, alpha));
-        if unit.domain() == oxide_sim::stats::Domain::Air {
+        if unit.domain() == aftermine_sim::stats::Domain::Air {
             at.y -= super::air_presentation(unit.kind, zoom).2;
         }
         let body = Vec2::splat(unit.kind.stats().radius.to_num::<f32>() * zoom);
@@ -2805,8 +2812,8 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
             continue;
         };
         let stroke = match tether.pace {
-            oxide_sim::state::RepairPace::Fast => RangeStroke::Solid,
-            oxide_sim::state::RepairPace::Slow => RangeStroke::Dotted,
+            aftermine_sim::state::RepairPace::Fast => RangeStroke::Solid,
+            aftermine_sim::state::RepairPace::Slow => RangeStroke::Dotted,
         };
         stroke_patterned_path(&[from, to], stroke, 1.8 * scale, color, scale, &[]);
     }
@@ -2815,7 +2822,7 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
             .state
             .building(id)
             .filter(|bay| bay.player == game.presentation.human)
-            .filter(|bay| bay.kind == oxide_sim::BuildingKind::RepairBay)
+            .filter(|bay| bay.kind == aftermine_sim::BuildingKind::RepairBay)
         else {
             continue;
         };
@@ -2823,7 +2830,7 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
         let (min, max) = building_screen_bounds(game, bay);
         let radius = 3.0 * scale;
         let gap = 4.0 * radius;
-        let slots = oxide_sim::stats::REPAIR_BAY_PATIENTS;
+        let slots = aftermine_sim::stats::REPAIR_BAY_PATIENTS;
         let left = f32::midpoint(min.x, max.x) - gap * (slots as f32 - 1.0) * 0.5;
         for slot in 0..slots {
             let centre = vec2(left + gap * slot as f32, min.y - 3.0 * radius);
@@ -2840,7 +2847,7 @@ const ECONOMY_SUPPORT_COLOR: Color = Color::new(0.72, 0.63, 0.46, 0.58);
 
 fn building_screen_bounds(
     game: &crate::game::Scene<'_>,
-    building: &oxide_sim::Building,
+    building: &aftermine_sim::Building,
 ) -> (Vec2, Vec2) {
     let (width, height) = building.kind.size();
     let min = game
@@ -2964,7 +2971,7 @@ fn visit_active_building_ranges(
     input: &InputState,
     mut visit: impl FnMut(BuildingRange),
 ) {
-    if let Some(oxide_sim::Target::Building(id)) = range_subject(
+    if let Some(aftermine_sim::Target::Building(id)) = range_subject(
         &game.presentation.selection.units,
         &game.presentation.selection.buildings,
     ) && let Some(building) = game.state.building(id)
@@ -3102,7 +3109,7 @@ fn visit_active_ranges(
             color: range_color(range.kind),
         });
     });
-    if let Some(oxide_sim::Target::Unit(id)) = range_subject(
+    if let Some(aftermine_sim::Target::Unit(id)) = range_subject(
         &game.presentation.selection.units,
         &game.presentation.selection.buildings,
     ) && let Some(unit) = game.state.unit(id)
@@ -3378,11 +3385,11 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
         ));
         // A unit rally rides with its unit, or with the transport carrying it.
         let b = match rally {
-            oxide_sim::Rally::Tile(tile) => game
+            aftermine_sim::Rally::Tile(tile) => game
                 .presentation
                 .camera
                 .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5)),
-            oxide_sim::Rally::Unit(unit) => {
+            aftermine_sim::Rally::Unit(unit) => {
                 let Some(body) = game.state.escorted(unit) else {
                     continue;
                 };
@@ -3393,10 +3400,10 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
         };
         line_between(a, b, 1.5, Color::new(0.91, 0.89, 0.85, 0.35));
         match rally {
-            oxide_sim::Rally::Tile(tile) => {
+            aftermine_sim::Rally::Tile(tile) => {
                 draw_rally_flag(game, tile, game.presentation.camera.zoom);
             }
-            oxide_sim::Rally::Unit(_) => {
+            aftermine_sim::Rally::Unit(_) => {
                 stroke_circle(b, game.presentation.camera.zoom * 0.6, 2.0, SCRAP_COLOR);
             }
         }

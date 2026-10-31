@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::Scenario;
+use aftermine_sim::Scenario;
 
 /// A skirmish's worlds at each keyframe tick through `last`.
 fn worlds(last: u64) -> Vec<State> {
@@ -103,7 +103,7 @@ fn a_decoded_world_must_match_its_index_and_its_match() {
     frames[1].tick += KEYFRAME_EVERY;
     assert!(Keyframes::new(frames.clone()).decode(1, &origin).is_err());
     let mut other = Scenario::skirmish();
-    other.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    other.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     for row in &mut other.map {
         *row = row.replace(['1', '2'], ".");
     }

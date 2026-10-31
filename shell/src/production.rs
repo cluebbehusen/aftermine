@@ -8,7 +8,7 @@ use crate::panel::{
     Card, CardAction, CardIcon, point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
 };
 use crate::typography::entity_name;
-use oxide_sim::{Building, BuildingId, Command, UnitKind};
+use aftermine_sim::{Building, BuildingId, Command, UnitKind};
 
 pub(crate) struct Production {
     selected: SelectedBuildings,
@@ -82,7 +82,7 @@ impl Production {
         }
         if candidates
             .iter()
-            .all(|b| b.queue.len() >= oxide_sim::stats::QUEUE_CAP)
+            .all(|b| b.queue.len() >= aftermine_sim::stats::QUEUE_CAP)
         {
             batch.reason = Some(if batch.total == 1 {
                 "queue is full".into()
@@ -107,7 +107,7 @@ impl Production {
         for building in candidates {
             if !building.built() || !building.stats().produces.contains(&kind) {
                 offline += 1;
-            } else if building.queue.len() >= oxide_sim::stats::QUEUE_CAP {
+            } else if building.queue.len() >= aftermine_sim::stats::QUEUE_CAP {
                 full += 1;
             } else if bank < kind.stats().cost {
                 unfunded += 1;

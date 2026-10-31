@@ -1,13 +1,13 @@
 # Shell architecture
 
-`oxide-shell` presents a deterministic match through a native macroquad window.
-It owns wall-clock pacing, input, screen flow, rendering, audio, and persistence
-UX. Shared replay and diagnostic services live in `oxide-kit`; the live and
-headless debug surfaces share `oxide-protocol`.
+`aftermine-shell` presents a deterministic match through a native macroquad
+window. It owns wall-clock pacing, input, screen flow, rendering, audio, and
+persistence UX. Shared replay and diagnostic services live in `aftermine-kit`;
+the live and headless debug surfaces share `aftermine-protocol`.
 
 Crate entry points are in the [shell README](../shell/README.md). Live-driving
 commands and review procedures belong in the
-[oxide-live-qa skill](../.agents/skills/oxide-live-qa/SKILL.md).
+[aftermine-live-qa skill](../.agents/skills/aftermine-live-qa/SKILL.md).
 
 ## Session ownership
 
@@ -62,26 +62,26 @@ host's setup from the room the lobby protocol carries. `--host` hosts a fixed
 scenario through `netplay::ScenarioHost`, which seats joiners with
 `seating::Seating` and starts once every seat has someone to play it. Players'
 names replace their seats' names in the started scenario. In-game hosts listen
-on `oxide_net::DEFAULT_PORT`, and a join address without a port uses it. `App`
-then owns the match's `netplay::Link` and pumps it once per loop pass on every
-screen that holds the match, so menus sit over a running match, and a match
-decided under the pause menu opens its report. Leaving the match says goodbye
-and lets the link's connections flush: a client's seat surrenders, a host
-leaving an undecided match tells its clients, and a host leaving a decided match
-lets lagging clients still receive the deciding batches. When the session waits
-for a lost player, every machine shows the waiting screen over the match, naming
-who it waits for and for how long, and only the host can drop the seat or hand
-it to a bot. A bot taking over starts with no memory and plays from its seat's
-own view; its personality seed comes from the world's hash and the seat, and the
-scenario records it, so clients mirror it and saves capture it. The host's link
-keeps the lobby's listener for the match, and its `oxide_net::Desk` answers
-probes and rejoins. A client that loses its connection to an undecided match
-keeps the token Go gave it and tries for 30 seconds to take its seat back: the
-host snapshots the waiting match as a
-`oxide_kit::world_snapshot::WorldSnapshot`, and the client restores it as a new
-game that records from that tick, keeping its camera. While it plays, a client
-keeps a rejoin ticket in the data directory, written off the frame loop and
-dropped once the seat can no longer be taken back: a result, a surrender, a
+on `aftermine_net::DEFAULT_PORT`, and a join address without a port uses it.
+`App` then owns the match's `netplay::Link` and pumps it once per loop pass on
+every screen that holds the match, so menus sit over a running match, and a
+match decided under the pause menu opens its report. Leaving the match says
+goodbye and lets the link's connections flush: a client's seat surrenders, a
+host leaving an undecided match tells its clients, and a host leaving a decided
+match lets lagging clients still receive the deciding batches. When the session
+waits for a lost player, every machine shows the waiting screen over the match,
+naming who it waits for and for how long, and only the host can drop the seat or
+hand it to a bot. A bot taking over starts with no memory and plays from its
+seat's own view; its personality seed comes from the world's hash and the seat,
+and the scenario records it, so clients mirror it and saves capture it. The
+host's link keeps the lobby's listener for the match, and its
+`aftermine_net::Desk` answers probes and rejoins. A client that loses its
+connection to an undecided match keeps the token Go gave it and tries for 30
+seconds to take its seat back: the host snapshots the waiting match as a
+`aftermine_kit::world_snapshot::WorldSnapshot`, and the client restores it as a
+new game that records from that tick, keeping its camera. While it plays, a
+client keeps a rejoin ticket in the data directory, written off the frame loop
+and dropped once the seat can no longer be taken back: a result, a surrender, a
 leave, or the host saying so. A client whose rejoin found no host keeps it, and
 Home asks that host every few seconds whether the seat still waits, offering
 Rejoin only when it does; a ticket an hour stale, from another build, or naming
@@ -112,12 +112,12 @@ token; once every player's seat went to a bot, the host resumes alone. Everyone
 leaves through the ordinary leave save when the host is lost or a desync halts
 the match.
 
-Live ticks and replay reconstruction use `oxide_kit::bot_execution`. Due bots
-may think concurrently against the same immutable state; their work joins in
-input seat order before commands are recorded. `State::tick` remains serial.
+Live ticks and replay reconstruction use `aftermine_kit::bot_execution`. Due
+bots may think concurrently against the same immutable state; their work joins
+in input seat order before commands are recorded. `State::tick` remains serial.
 After every tick, replay reconstruction included, `Game` hands the report to
-`oxide_kit::controller::record_events`, which buffers each `oxide-opponent`
-seat's own order failures for its next decision.
+`aftermine_kit::controller::record_events`, which buffers each
+`aftermine-opponent` seat's own order failures for its next decision.
 
 Between ordinary live ticks, `Game` may submit one background decision. It keeps
 the pre-decision controllers and gives the worker a cloned working set plus an
@@ -225,11 +225,11 @@ pause menu with a notice instead of resuming. Frame time arrives one frame late,
 so the rule requires two consecutive live frames, which keeps startup, launches,
 and loads from reading as suspensions. Debug-server sessions are exempt.
 
-`oxide_protocol::RawEvent` is the common hardware and injected-input vocabulary.
-`input::apply_events` maps gameplay events into camera/selection changes and
-staged commands. Cross-frame gestures, held keys, touch state, and control
-groups belong to the input layer. Bindings belong to the configuration alone:
-the input layer, the menus, Settings, and both read-only viewers borrow
+`aftermine_protocol::RawEvent` is the common hardware and injected-input
+vocabulary. `input::apply_events` maps gameplay events into camera/selection
+changes and staged commands. Cross-frame gestures, held keys, touch state, and
+control groups belong to the input layer. Bindings belong to the configuration
+alone: the input layer, the menus, Settings, and both read-only viewers borrow
 `Config::bindings`, and the input layer never reads the configuration from disk.
 `camera::controls` holds the camera hands every view shares: held-key panning
 and wheel zoom everywhere, and for the two read-only viewers, middle-drag,
@@ -619,7 +619,7 @@ terminates in the background.
 
 ## Persistence and replay
 
-`oxide_kit::checkpoint::SessionCheckpoint` is the internal continuation
+`aftermine_kit::checkpoint::SessionCheckpoint` is the internal continuation
 boundary: scenario, world, controller memory, pending commands, and live
 statistics at a completed tick. Capture borrows the host without draining inputs
 or running bots. Restore validates the pieces before installation and executes
@@ -639,7 +639,7 @@ the human seat, concession statistics, and decorative boundary exploration.
 Camera, selection, effects, and interpolation rebuild, and the wall clock starts
 paused.
 
-Player saves use `.oxsave`: eight-byte `OXIDESAV` magic, a little-endian 32-bit
+Player saves use `.amsave`: eight-byte `AFTERSAV` magic, a little-endian 32-bit
 header length, a JSON metadata header, and one checksummed Zstandard frame
 containing a CBOR shell checkpoint. Headers are bounded to 64 KiB; both file
 size and decoded payload are bounded to 256 MiB. The loader requires exact
@@ -665,10 +665,10 @@ autosaves, and finished-match recordings rotate separately, so rotation keeps
 whole matches. On iOS, named saves, finished recordings, replays, and
 diagnostics live in the app's Documents folder, which the Files app shows;
 autosaves, settings, and the LAN rejoin ticket stay in its Library. Finished
-matches are `.oxreplay` recordings, containing the available history since the
+matches are `.amreplay` recordings, containing the available history since the
 current segment began and the keyframes the match kept.
 
-An `.oxreplay` file has eight-byte `OXIDEREP` magic, a little-endian 32-bit
+An `.amreplay` file has eight-byte `AFTERREP` magic, a little-endian 32-bit
 header length, a JSON header indexing its frames, one checksummed Zstandard
 frame containing the compact JSON replay, and the keyframes' frames in index
 order. A live match keeps the world at every 1,024th absolute tick: the frame
@@ -743,7 +743,7 @@ continues recording onto it.
 
 ### Read-only playback
 
-`oxide_kit::playback::Playback` owns replay-viewer state. It has no bots,
+`aftermine_kit::playback::Playback` owns replay-viewer state. It has no bots,
 recorder, or new commands. Forward playback feeds the log into `State::tick`. A
 seek restores the latest world at or before its target, from the recording's
 keyframes, the background fill, or the recording origin, and replays the suffix.
@@ -823,10 +823,10 @@ the debug server.
 
 ## Debug protocol
 
-`oxide-protocol` owns JSON-lines envelopes, bounded TCP framing, input events,
-and state views. The live server binds loopback. Socket threads parse requests
-and pass them to the main thread; they never access the game. Requests execute
-between frames, with screenshot replies deferred until GPU readback.
+`aftermine-protocol` owns JSON-lines envelopes, bounded TCP framing, input
+events, and state views. The live server binds loopback. Socket threads parse
+requests and pass them to the main thread; they never access the game. Requests
+execute between frames, with screenshot replies deferred until GPU readback.
 
 `DebugSession` and `dispatch_shared` define the common state and clock surface
 for live play, read-only playback, and the driven headless session. Each
@@ -1097,10 +1097,10 @@ follows the belt's speed, running on until the last load reaches the kiln. Both
 follow the machine's presented motion (`maw_motion`) and sound only while the
 viewer sees it. A heard cut raises combat music as a weapon report does.
 
-The tiny-skia renderer in `oxide-kit` produces whole-map CPU schematics. It does
-not share the native atlas, camera, HUD, animation, or visual polish. Screenshot
-responses identify their producer. CPU goldens prove deterministic schematic
-composition; presentation and input claims require the real shell.
+The tiny-skia renderer in `aftermine-kit` produces whole-map CPU schematics. It
+does not share the native atlas, camera, HUD, animation, or visual polish.
+Screenshot responses identify their producer. CPU goldens prove deterministic
+schematic composition; presentation and input claims require the real shell.
 
 ## Source and test map
 

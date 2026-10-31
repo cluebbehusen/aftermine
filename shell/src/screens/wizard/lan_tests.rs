@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::netplay::{ClientLobby, Lobby};
+use aftermine_net::JoinMessage;
 use macroquad::prelude::vec2;
-use oxide_net::JoinMessage;
 use std::io::Write;
 use std::time::Instant;
 
@@ -53,7 +53,7 @@ fn join(wizard: &Wizard, player: &str) -> Lobby {
         address,
         &crate::build_identity().revision,
         name(player),
-        oxide_net::InstallId::new(1),
+        aftermine_net::InstallId::new(1),
     ))
 }
 
@@ -305,7 +305,7 @@ fn a_failed_start_frees_its_culprits_chairs_before_anything_can_start_again() {
     let revision = crate::build_identity().revision;
     let introduce = JoinMessage::Introduce {
         name: name("Rogue"),
-        install: oxide_net::InstallId::new(2),
+        install: aftermine_net::InstallId::new(2),
     };
     for message in [JoinMessage::hello(&revision), introduce] {
         writeln!(rogue, "{}", message.encode()).unwrap();

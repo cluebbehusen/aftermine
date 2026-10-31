@@ -9,14 +9,14 @@
 //! instead of hiding in an average. The numbers are a report, never a pinned
 //! test: balance is meant to move.
 
-use anyhow::{Context, Result};
-use chassis::grid::{TilePos, as_index};
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingStats, Domain};
-use oxide_sim::{
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{BuildingStats, Domain};
+use aftermine_sim::{
     AttackTarget, BuildingKind, BuildingPhase, Command, Order, PlayerCommand, PlayerId, Scenario,
     State, UnitKind,
 };
+use anyhow::{Context, Result};
+use chassis::grid::{TilePos, as_index};
 use serde::Serialize;
 use std::fmt::Write as _;
 use std::num::NonZeroUsize;
@@ -776,7 +776,7 @@ fn nearest(
     player: PlayerId,
     force: &Force,
     from: chassis::fx::Vec2Fx,
-) -> Option<(TilePos, Option<(oxide_sim::BuildingId, TilePos)>)> {
+) -> Option<(TilePos, Option<(aftermine_sim::BuildingId, TilePos)>)> {
     match force {
         Force::Army(_) => state
             .units()
@@ -1239,7 +1239,7 @@ pub fn tier(kind: UnitKind) -> u8 {
         .iter()
         .copied()
         .find(|b| b.base_stats().produces.contains(&kind));
-    let needs_crucible = |needs: &[oxide_sim::stats::Prerequisite]| {
+    let needs_crucible = |needs: &[aftermine_sim::stats::Prerequisite]| {
         needs.iter().any(|need| need.kind == BuildingKind::Crucible)
     };
     let cradle_needs_crucible = BuildingKind::ALL.iter().any(|b| {

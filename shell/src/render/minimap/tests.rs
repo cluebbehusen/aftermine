@@ -70,7 +70,7 @@ fn repainting_a_pixel_its_own_color_changes_nothing() {
 #[test]
 fn the_minimap_repaints_only_when_its_picture_can_change() {
     const STRAY: Color = color_u8!(255, 0, 255, 255);
-    let mut game = crate::game::Game::with_viewport(oxide_sim::Scenario::skirmish(), VIEWPORT)
+    let mut game = crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), VIEWPORT)
         .expect("embedded skirmish builds");
     let mut paint = MinimapPaint::new(&game.view());
     assert!(paint.refresh(&game.view()), "the first refresh paints");

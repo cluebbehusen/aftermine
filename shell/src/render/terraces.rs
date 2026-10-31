@@ -31,10 +31,10 @@ use super::ground::GroundView;
 use super::stretches::Shapes;
 use crate::numeric;
 use crate::numeric::Fit;
+use aftermine_sim::map::{Map, Terrain};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
-use oxide_sim::map::{Map, Terrain};
 
 /// Tiles of field beyond the map edge: past the vignette's darkest step.
 pub(super) const MARGIN: i32 = 8;

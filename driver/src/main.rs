@@ -1,20 +1,20 @@
 #![doc = include_str!("../README.md")]
 
+use aftermine_driver::build_identity;
+use aftermine_driver::client::Client;
+use aftermine_driver::smoke;
+use aftermine_kit::render;
+use aftermine_kit::runner;
+use aftermine_protocol::{Reply, StateFilter, hash_hex};
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
-use oxide_driver::build_identity;
-use oxide_driver::client::Client;
-use oxide_driver::smoke;
-use oxide_kit::render;
-use oxide_kit::runner;
-use oxide_protocol::{Reply, StateFilter, hash_hex};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
-    name = "oxide-driver",
+    name = "aftermine-driver",
     version,
-    about = "Headless harness and live-game client for Oxide"
+    about = "Headless harness and live-game client for Aftermine"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -58,7 +58,7 @@ enum Cmd {
         ticks: u64,
         /// Stalls of one reason on one unit that stop a leg as a `stall_loop`
         /// anomaly instead of running it to the ceiling; 0 disables the stop.
-        #[arg(long, default_value_t = oxide_driver::bot_eval::DEFAULT_STALL_LOOP_LIMIT)]
+        #[arg(long, default_value_t = aftermine_driver::bot_eval::DEFAULT_STALL_LOOP_LIMIT)]
         stall_loop_limit: u64,
         /// Consecutive seed cells per scenario for player-facing profile
         /// comparisons.
@@ -78,26 +78,26 @@ enum Cmd {
         #[arg(long, value_delimiter = ',', conflicts_with = "personality_seed_base")]
         personality_seeds: Vec<u64>,
         /// Player-facing skill rung.
-        #[arg(long, default_value_t = oxide_sim::scenario::BotDifficulty::Standard)]
-        difficulty: oxide_sim::scenario::BotDifficulty,
+        #[arg(long, default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
+        difficulty: aftermine_sim::scenario::BotDifficulty,
         /// Player-facing strategic posture.
-        #[arg(long, default_value_t = oxide_sim::scenario::BotStance::Balanced)]
-        stance: oxide_sim::scenario::BotStance,
+        #[arg(long, default_value_t = aftermine_sim::scenario::BotStance::Balanced)]
+        stance: aftermine_sim::scenario::BotStance,
         /// Difficulty for seat one. Supplying this requires a two-seat
         /// scenario; omit it to use `--difficulty` for both seats.
         #[arg(long)]
-        opponent_difficulty: Option<oxide_sim::scenario::BotDifficulty>,
+        opponent_difficulty: Option<aftermine_sim::scenario::BotDifficulty>,
         /// Strategic posture for seat one. Supplying this requires a two-seat
         /// scenario; omit it to use `--stance` for both seats.
         #[arg(long)]
-        opponent_stance: Option<oxide_sim::scenario::BotStance>,
+        opponent_stance: Option<aftermine_sim::scenario::BotStance>,
         /// Give both seats the same personality seed. This isolates difficulty
         /// when both stances match and requires a two-seat scenario.
         #[arg(long)]
         same_personality_seed: bool,
         /// Map-end geometry cells for a controlled comparison.
         #[arg(long, value_delimiter = ',')]
-        geometries: Vec<oxide_driver::bot_eval::EvaluationGeometry>,
+        geometries: Vec<aftermine_driver::bot_eval::EvaluationGeometry>,
         /// On a two-seat scenario, run a second leg with the two complete
         /// controller configurations exchanged between seats.
         #[arg(long)]
@@ -135,7 +135,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Run a ladder manifest: oxide-opponent against itself at pairs of
+    /// Run a ladder manifest: aftermine-opponent against itself at pairs of
     /// difficulty rungs, both seats sharing a personality seed and each pair
     /// with the rungs swapped, then publish its rows and print each
     /// comparison against its gate.
@@ -228,7 +228,7 @@ enum Cmd {
         /// ticks) or `maw` (those armies with a mirrored Maw each). Every bot
         /// seat plays Standard, Balanced, personality seed 0.
         #[arg(required_unless_present = "scenario", conflicts_with = "scenario")]
-        workload: Option<oxide_driver::bot_cost::Workload>,
+        workload: Option<aftermine_driver::bot_cost::Workload>,
         /// Custom scenario path, or "skirmish", in place of a named workload.
         /// Its authored bot seats and profiles play.
         #[arg(long, requires = "ticks")]
@@ -389,10 +389,10 @@ enum Cmd {
         scenario: Option<String>,
         /// Controller difficulty for a scenario benchmark.
         #[arg(long, requires = "scenario")]
-        difficulty: Option<oxide_sim::scenario::BotDifficulty>,
+        difficulty: Option<aftermine_sim::scenario::BotDifficulty>,
         /// Controller stance for a scenario benchmark.
         #[arg(long, requires = "scenario")]
-        stance: Option<oxide_sim::scenario::BotStance>,
+        stance: Option<aftermine_sim::scenario::BotStance>,
         /// Fixed personality seed for every scenario seat.
         #[arg(long, requires = "scenario")]
         personality_seed: Option<u64>,
@@ -407,7 +407,7 @@ enum Cmd {
         budget: u32,
         /// Unit kinds to include, comma-separated (default: every armed kind).
         #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
-        kinds: Vec<oxide_sim::UnitKind>,
+        kinds: Vec<aftermine_sim::UnitKind>,
         /// Also send each kind against a line of each defense.
         #[arg(long)]
         defenses: bool,
@@ -437,7 +437,7 @@ enum Cmd {
         budgets: Vec<u32>,
         /// Unit kinds to mix, comma-separated (default: every armed kind).
         #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
-        kinds: Vec<oxide_sim::UnitKind>,
+        kinds: Vec<aftermine_sim::UnitKind>,
         /// Most kinds in one mix.
         #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
         max_kinds: u8,
@@ -473,7 +473,7 @@ enum Cmd {
         #[arg(long, default_value_t = 200)]
         every: u64,
     },
-    /// Talk to a running shell (`oxide-shell --debug-server`).
+    /// Talk to a running shell (`aftermine-shell --debug-server`).
     Live {
         /// Shell debug-server address.
         #[arg(long, default_value = "127.0.0.1:4123")]
@@ -509,7 +509,7 @@ enum Cmd {
     Session {
         /// TCP port to listen on (the shell's default, so `driver live`
         /// needs no --addr when only one server runs).
-        #[arg(long, default_value_t = oxide_protocol::DEFAULT_PORT)]
+        #[arg(long, default_value_t = aftermine_protocol::DEFAULT_PORT)]
         port: u16,
         /// Starting scenario path, or "skirmish" for the built-in map.
         #[arg(long, default_value = "skirmish")]
@@ -613,8 +613,9 @@ fn default_candidate() -> String {
 }
 
 fn print_ladder_report(rows: &[PathBuf], json: bool) -> Result<()> {
-    let report =
-        oxide_driver::bot_ladder::build_report(&oxide_driver::bot_ladder::load_rows(rows)?)?;
+    let report = aftermine_driver::bot_ladder::build_report(
+        &aftermine_driver::bot_ladder::load_rows(rows)?,
+    )?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -624,7 +625,7 @@ fn print_ladder_report(rows: &[PathBuf], json: bool) -> Result<()> {
 }
 
 fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
-    let report = oxide_driver::seat_summary::summarize(rows)?;
+    let report = aftermine_driver::seat_summary::summarize(rows)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -633,15 +634,15 @@ fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
     Ok(())
 }
 
-fn duel_lab_support(kind: oxide_sim::UnitKind) -> bool {
-    oxide_driver::duel_lab::support_units().contains(&kind)
+fn duel_lab_support(kind: aftermine_sim::UnitKind) -> bool {
+    aftermine_driver::duel_lab::support_units().contains(&kind)
 }
 
 /// Refuse requested unit kinds a tool cannot field, naming them, rather than
 /// quietly running on a smaller roster than was asked for.
 fn refuse_unusable(
-    requested: &[oxide_sim::UnitKind],
-    usable: &[oxide_sim::UnitKind],
+    requested: &[aftermine_sim::UnitKind],
+    usable: &[aftermine_sim::UnitKind],
     tool: &str,
 ) -> Result<()> {
     let refused: Vec<&str> = requested
@@ -681,7 +682,7 @@ fn main() -> Result<()> {
         } => {
             let mut scenario = runner::load_scenario(&scenario)?;
             if all_bots {
-                oxide_kit::bench::all_bots(&mut scenario);
+                aftermine_kit::bench::all_bots(&mut scenario);
             }
             let build = build_identity();
             let outcome = runner::run_scenario(
@@ -702,7 +703,7 @@ fn main() -> Result<()> {
                 map,
                 ..StateFilter::default()
             };
-            let view = oxide_protocol::StateView::capture(&outcome.state, filter);
+            let view = aftermine_protocol::StateView::capture(&outcome.state, filter);
             println!("{}", serde_json::to_string_pretty(&view)?);
         }
         Cmd::BotEval {
@@ -735,7 +736,7 @@ fn main() -> Result<()> {
                 }
                 None => "ad-hoc".to_string(),
             };
-            let matchup = oxide_driver::bot_eval::ProfileMatchup {
+            let matchup = aftermine_driver::bot_eval::ProfileMatchup {
                 difficulty,
                 stance,
                 opponent_difficulty,
@@ -754,7 +755,7 @@ fn main() -> Result<()> {
                         personality_seeds.clone()
                     };
                     let geometries = if geometries.is_empty() {
-                        vec![oxide_driver::bot_eval::EvaluationGeometry::Authored]
+                        vec![aftermine_driver::bot_eval::EvaluationGeometry::Authored]
                     } else {
                         geometries.clone()
                     };
@@ -762,7 +763,7 @@ fn main() -> Result<()> {
                     let mut seed_cell = 0_u64;
                     for &personality_seed in &personality_seed_values {
                         for &geometry in &geometries {
-                            for plan in oxide_driver::bot_eval::configured_matchup_plans(
+                            for plan in aftermine_driver::bot_eval::configured_matchup_plans(
                                 &source,
                                 matchup,
                                 personality_seed,
@@ -772,7 +773,7 @@ fn main() -> Result<()> {
                                 let replay_path = replay_dir
                                     .as_ref()
                                     .map(|dir| {
-                                        oxide_driver::bot_eval::evaluation_replay_filename(
+                                        aftermine_driver::bot_eval::evaluation_replay_filename(
                                             scenario_index,
                                             seed_cell,
                                             ticks,
@@ -803,19 +804,19 @@ fn main() -> Result<()> {
                             run,
                             source.players.len(),
                         )?;
-                        for (leg, scenario) in oxide_driver::bot_eval::configured_matchup_legs(
+                        for (leg, scenario) in aftermine_driver::bot_eval::configured_matchup_legs(
                             &source,
                             matchup,
                             profile_base,
                             paired,
                         )? {
-                            let plan = oxide_driver::bot_eval::EvaluationPlan::from_scenario(
+                            let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
                                 scenario, leg,
                             );
                             let replay_path = replay_dir
                                 .as_ref()
                                 .map(|dir| {
-                                    oxide_driver::bot_eval::evaluation_replay_filename(
+                                    aftermine_driver::bot_eval::evaluation_replay_filename(
                                         scenario_index,
                                         run,
                                         ticks,
@@ -837,9 +838,9 @@ fn main() -> Result<()> {
                 }
             }
 
-            let result = oxide_driver::bot_eval::evaluate_batch(
+            let result = aftermine_driver::bot_eval::evaluate_batch(
                 &plans,
-                &oxide_driver::bot_eval::EvaluationBatchOptions {
+                &aftermine_driver::bot_eval::EvaluationBatchOptions {
                     ticks,
                     stall_loop_limit,
                     candidate: &candidate,
@@ -879,7 +880,7 @@ fn main() -> Result<()> {
             replay_dir,
             json,
         } => {
-            use oxide_driver::{bot_ladder, evaluation};
+            use aftermine_driver::{bot_ladder, evaluation};
             let manifest = bot_ladder::LadderManifest::load(&manifest_path)?;
             let base = manifest_path
                 .parent()
@@ -906,18 +907,18 @@ fn main() -> Result<()> {
             let games = replays
                 .iter()
                 .map(|path| {
-                    let replay = oxide_driver::replay_ledger::load(path)?;
-                    oxide_driver::replay_ledger::ledger(path, &replay)
+                    let replay = aftermine_driver::replay_ledger::load(path)?;
+                    aftermine_driver::replay_ledger::ledger(path, &replay)
                 })
                 .collect::<Result<Vec<_>>>()?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&games)?);
             } else {
-                print!("{}", oxide_driver::replay_ledger::render(&games));
+                print!("{}", aftermine_driver::replay_ledger::render(&games));
             }
         }
         Cmd::ReplayHealth { paths, jobs, json } => {
-            use oxide_driver::replay_health;
+            use aftermine_driver::replay_health;
             let matches = replay_health::measure(&paths, jobs)?;
             let summary = replay_health::summarize(&matches);
             if json {
@@ -935,7 +936,7 @@ fn main() -> Result<()> {
             json,
             replay_dir,
         } => {
-            use oxide_driver::bot_pressure;
+            use aftermine_driver::bot_pressure;
             let mut outcomes = Vec::new();
             for pressure in bot_pressure::load_all(&dir)? {
                 let (outcome, replay) = bot_pressure::run(&pressure, replay_dir.is_some())?;
@@ -958,7 +959,7 @@ fn main() -> Result<()> {
             top,
             json,
         } => {
-            let scan = oxide_driver::tick_profile::scan(&replay, window, top)?;
+            let scan = aftermine_driver::tick_profile::scan(&replay, window, top)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&scan)?);
             } else {
@@ -974,7 +975,7 @@ fn main() -> Result<()> {
             focus,
             json,
         } => {
-            let report = oxide_driver::tick_profile::profile(
+            let report = aftermine_driver::tick_profile::profile(
                 &replay,
                 from,
                 ticks,
@@ -1008,14 +1009,14 @@ fn main() -> Result<()> {
                 (None, None) => bail!("name a workload or pass --scenario"),
             };
             let mut replay = save_replay.as_ref().map(|_| {
-                oxide_kit::GameReplay::new(
-                    oxide_sim::SIM_VERSION,
+                aftermine_kit::GameReplay::new(
+                    aftermine_sim::SIM_VERSION,
                     build_identity().label(),
                     scenario.clone(),
                 )
             });
             let report =
-                oxide_driver::bot_cost::measure(&label, &scenario, window, replay.as_mut())?;
+                aftermine_driver::bot_cost::measure(&label, &scenario, window, replay.as_mut())?;
             if let (Some(path), Some(replay)) = (&save_replay, &replay) {
                 replay.save(path)?;
                 eprintln!("replay: {}", path.display());
@@ -1034,7 +1035,7 @@ fn main() -> Result<()> {
             hash_every,
             allow_long,
         } => {
-            let replay = oxide_kit::load_replay(&path)?;
+            let replay = aftermine_kit::load_replay(&path)?;
             let mut events = 0u64;
             let state =
                 runner::run_replay_observed(&replay, ticks, until, allow_long, |state, report| {
@@ -1076,12 +1077,12 @@ fn main() -> Result<()> {
             fog_seat,
             map,
         } => {
-            let replay = oxide_kit::load_replay(&path)
+            let replay = aftermine_kit::load_replay(&path)
                 .with_context(|| format!("loading {}", path.display()))?;
-            let inspection = oxide_driver::replay_inspect::inspect(
+            let inspection = aftermine_driver::replay_inspect::inspect(
                 &replay,
                 &ticks,
-                fog_seat.map(oxide_sim::PlayerId),
+                fog_seat.map(aftermine_sim::PlayerId),
                 map,
             )?;
             println!("{}", serde_json::to_string_pretty(&inspection)?);
@@ -1093,18 +1094,18 @@ fn main() -> Result<()> {
             json,
             minimaps,
         } => {
-            let replay = oxide_kit::load_replay(&path)
+            let replay = aftermine_kit::load_replay(&path)
                 .with_context(|| format!("loading {}", path.display()))?;
-            let opts = oxide_driver::replay_summary::SummaryOptions {
+            let opts = aftermine_driver::replay_summary::SummaryOptions {
                 until,
                 every,
                 minimaps: match minimaps.as_str() {
-                    "all" => oxide_driver::replay_summary::MinimapMode::All,
-                    "none" => oxide_driver::replay_summary::MinimapMode::None,
-                    _ => oxide_driver::replay_summary::MinimapMode::Sparse,
+                    "all" => aftermine_driver::replay_summary::MinimapMode::All,
+                    "none" => aftermine_driver::replay_summary::MinimapMode::None,
+                    _ => aftermine_driver::replay_summary::MinimapMode::Sparse,
                 },
             };
-            let report = oxide_driver::replay_summary::summarize(&replay, &opts)?;
+            let report = aftermine_driver::replay_summary::summarize(&replay, &opts)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
@@ -1120,7 +1121,7 @@ fn main() -> Result<()> {
         } => {
             let mut scenario = runner::load_scenario(&scenario)?;
             if all_bots {
-                oxide_kit::bench::all_bots(&mut scenario);
+                aftermine_kit::bench::all_bots(&mut scenario);
             }
             let outcome = runner::run_scenario(&scenario, ticks, bots || all_bots, None)?;
             render::save_png(&outcome.state, &out)?;
@@ -1135,18 +1136,18 @@ fn main() -> Result<()> {
             personality_seed,
         } => {
             if let Some(path) = scenario {
-                let config = oxide_sim::scenario::BotConfig::new(
-                    difficulty.unwrap_or(oxide_sim::scenario::BotDifficulty::Standard),
-                    stance.unwrap_or(oxide_sim::scenario::BotStance::Balanced),
+                let config = aftermine_sim::scenario::BotConfig::new(
+                    difficulty.unwrap_or(aftermine_sim::scenario::BotDifficulty::Standard),
+                    stance.unwrap_or(aftermine_sim::scenario::BotStance::Balanced),
                     personality_seed.unwrap_or(0),
                 );
                 let mut sc = runner::load_scenario(&path)?;
-                oxide_kit::bench::all_bots_with_config(&mut sc, config);
+                aftermine_kit::bench::all_bots_with_config(&mut sc, config);
                 let mut state = sc.build()?;
-                let mut bots = oxide_kit::controller::seat_controllers(&sc)?;
+                let mut bots = aftermine_kit::controller::seat_controllers(&sc)?;
                 println!(
                     "controller: {config:?}; sim version {}",
-                    oxide_sim::SIM_VERSION
+                    aftermine_sim::SIM_VERSION
                 );
                 // The timed loop stops at the match result: post-victory
                 // ticks have nothing left to decide and would inflate
@@ -1167,7 +1168,7 @@ fn main() -> Result<()> {
                     }
                     let bots_done = std::time::Instant::now();
                     let report = state.tick(&commands);
-                    oxide_kit::controller::record_events(&mut bots, &report);
+                    aftermine_kit::controller::record_events(&mut bots, &report);
                     sim_ns.push(
                         u64::try_from(bots_done.elapsed().as_nanos())
                             .expect("durations fit in u64 nanoseconds"),
@@ -1204,9 +1205,9 @@ fn main() -> Result<()> {
                 );
                 return Ok(());
             }
-            let scenario = oxide_kit::bench::mass_battle(units);
+            let scenario = aftermine_kit::bench::mass_battle(units);
             let mut state = scenario.build()?;
-            oxide_kit::bench::engage(&mut state);
+            aftermine_kit::bench::engage(&mut state);
             let start = std::time::Instant::now();
             let mut ran: u64 = 0;
             let mut tick_ns: Vec<u64> = Vec::with_capacity(ticks as usize);
@@ -1246,14 +1247,14 @@ fn main() -> Result<()> {
             json,
             surveyor_spotter,
         } => {
-            use oxide_driver::duel_lab;
+            use aftermine_driver::duel_lab;
             let usable: Vec<_> = if defenses {
                 duel_lab::defense_attackers()
             } else {
                 duel_lab::armed_units()
             };
             refuse_unusable(&kinds, &usable, "the duel lab")?;
-            let chosen = |all: Vec<oxide_sim::UnitKind>| {
+            let chosen = |all: Vec<aftermine_sim::UnitKind>| {
                 if kinds.is_empty() {
                     all
                 } else {
@@ -1298,7 +1299,7 @@ fn main() -> Result<()> {
             jobs,
             json,
         } => {
-            use oxide_driver::{composition_search, duel_lab};
+            use aftermine_driver::{composition_search, duel_lab};
             let roster: Vec<_> = duel_lab::armed_units()
                 .into_iter()
                 .chain(duel_lab::support_units())
@@ -1341,7 +1342,7 @@ fn main() -> Result<()> {
         }
         Cmd::MapAudit { scenario, json } => {
             let scenario = runner::load_scenario(&scenario)?;
-            let audit = oxide_driver::audit::audit(&scenario)?;
+            let audit = aftermine_driver::audit::audit(&scenario)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&audit)?);
             } else {
@@ -1349,9 +1350,9 @@ fn main() -> Result<()> {
             }
         }
         Cmd::ReplayStats { path, every } => {
-            let replay = oxide_kit::load_replay(&path)
+            let replay = aftermine_kit::load_replay(&path)
                 .with_context(|| format!("loading {}", path.display()))?;
-            let stats = oxide_kit::stats::compute(&replay, every)?;
+            let stats = aftermine_kit::stats::compute(&replay, every)?;
             println!("{}", serde_json::to_string_pretty(&stats)?);
         }
         Cmd::Live { addr, cmd } => {
@@ -1384,21 +1385,22 @@ fn main() -> Result<()> {
             port,
             dev,
         } => {
-            let report = oxide_driver::profile::run(&oxide_driver::profile::ProfileOptions {
-                replay: &replay,
-                from,
-                to,
-                speed,
-                port,
-                dev,
-            })?;
+            let report =
+                aftermine_driver::profile::run(&aftermine_driver::profile::ProfileOptions {
+                    replay: &replay,
+                    from,
+                    to,
+                    speed,
+                    port,
+                    dev,
+                })?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Cmd::Session {
             port,
             scenario,
             idle_timeout,
-        } => oxide_driver::session::serve(
+        } => aftermine_driver::session::serve(
             port,
             &scenario,
             std::time::Duration::from_secs(idle_timeout),
@@ -1409,8 +1411,8 @@ fn main() -> Result<()> {
             bless,
             dir,
             threshold,
-        } => oxide_driver::shots::run(port, bless, &dir, threshold)?,
-        Cmd::Ios { device, list } => oxide_driver::ios::run(device.as_deref(), list)?,
+        } => aftermine_driver::shots::run(port, bless, &dir, threshold)?,
+        Cmd::Ios { device, list } => aftermine_driver::ios::run(device.as_deref(), list)?,
     }
     Ok(())
 }

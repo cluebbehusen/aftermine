@@ -1,8 +1,10 @@
-//! End-to-end contract coverage for `oxide-driver replay-inspect`.
+//! End-to-end contract coverage for `aftermine-driver replay-inspect`.
 
+use aftermine_kit::GameReplay;
+use aftermine_sim::{
+    Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId,
+};
 use chassis::replay::Replay;
-use oxide_kit::GameReplay;
-use oxide_sim::{Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Command;
@@ -44,7 +46,7 @@ fn save_fixture() -> TempReplay {
 
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "oxide-replay-inspect-{}-{id}.json",
+        "aftermine-replay-inspect-{}-{id}.json",
         std::process::id()
     ));
     replay.save(&path).expect("save generated replay fixture");
@@ -54,7 +56,7 @@ fn save_fixture() -> TempReplay {
 #[test]
 fn replay_inspect_emits_stable_json_snapshots_and_command_silence() {
     let fixture = save_fixture();
-    let output = Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("replay-inspect")
         .arg(&fixture.0)
         .args([

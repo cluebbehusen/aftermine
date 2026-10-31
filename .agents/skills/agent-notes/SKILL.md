@@ -1,12 +1,12 @@
 ---
 name: agent-notes
 description:
-  Maintain a concise Oxide workstream decision brief under agent-notes with
+  Maintain a concise Aftermine workstream decision brief under agent-notes with
   Kladde. Create one only at the user's direction; maintain an existing note
   when planning, handing off, or closing its authorized workstream.
 ---
 
-# Oxide agent notes
+# Aftermine agent notes
 
 Keep one living decision brief for a bounded workstream. It should let another
 agent continue correctly without reading the conversation. It is not an activity

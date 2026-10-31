@@ -1,9 +1,9 @@
 //! Ground chassis and independent mounts share deterministic turn limits.
 use crate::common;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{Command, Event, Target, UnitKind};
 use chassis::grid::TilePos;
 use common::*;
-use oxide_sim::stats::Domain;
-use oxide_sim::{Command, Event, Target, UnitKind};
 
 #[test]
 fn every_ground_chassis_pivots_before_moving_and_completes_its_route() {
@@ -71,7 +71,7 @@ fn independent_ground_guns_traverse_without_spinning_the_hull() {
         let mut scenario = open_arena(26, 18, vec![unit(0, kind, 6, 8)]);
         scenario.buildings.push(common::building(
             1,
-            oxide_sim::BuildingKind::Fabricator,
+            aftermine_sim::BuildingKind::Fabricator,
             9,
             8,
         ));
@@ -83,11 +83,11 @@ fn independent_ground_guns_traverse_without_spinning_the_hull() {
         let target = state
             .buildings()
             .iter()
-            .find(|b| b.kind == oxide_sim::BuildingKind::Fabricator)
+            .find(|b| b.kind == aftermine_sim::BuildingKind::Fabricator)
             .unwrap()
             .id;
         let mut previous = 128u8;
-        let mut resumed: Option<oxide_sim::State> = None;
+        let mut resumed: Option<aftermine_sim::State> = None;
         let mut fired = false;
         for tick in 0..60 {
             let commands = if tick == 0 {
@@ -95,7 +95,7 @@ fn independent_ground_guns_traverse_without_spinning_the_hull() {
                     0,
                     Command::Attack {
                         units: vec![id],
-                        target: oxide_sim::AttackTarget::Building(target),
+                        target: aftermine_sim::AttackTarget::Building(target),
                         queue: false,
                     },
                 )]

@@ -453,7 +453,7 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
         .map(|digit| measure(&digit.to_string()))
         .fold(0.0_f32, f32::max);
     let time_width = |ticks: u32| {
-        let seconds = ticks.div_ceil(oxide_sim::TICKS_PER_SECOND).max(1);
+        let seconds = ticks.div_ceil(aftermine_sim::TICKS_PER_SECOND).max(1);
         let digits = seconds.ilog10() + 1;
         (digits + 1) as f32 * digit_width + measure(".s")
     };
@@ -1182,7 +1182,7 @@ fn portrait_shade(owner: Color, tint: Color) -> Color {
 /// silhouette without inventing aim.
 pub(super) fn building_portrait(
     sprites: &Sprites,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     tier: u8,
     mount: bool,
     tint: Color,
@@ -1207,7 +1207,7 @@ pub(super) fn building_portrait(
 /// A unit's card art.
 pub(super) fn unit_portrait(
     sprites: &Sprites,
-    kind: oxide_sim::UnitKind,
+    kind: aftermine_sim::UnitKind,
     tint: Color,
     owner: Color,
 ) -> Vec<(Rect, Color)> {
@@ -1233,10 +1233,10 @@ pub(crate) fn draw_panel(
     };
     let shade = portrait_shade;
     let building_layers =
-        |kind: oxide_sim::BuildingKind, tier: u8, mount: bool, tint: Color, owner: Color| {
+        |kind: aftermine_sim::BuildingKind, tier: u8, mount: bool, tint: Color, owner: Color| {
             building_portrait(sprites, kind, tier, mount, tint, owner)
         };
-    let unit_layers = |kind: oxide_sim::UnitKind, tint: Color, owner: Color| {
+    let unit_layers = |kind: aftermine_sim::UnitKind, tint: Color, owner: Color| {
         unit_portrait(sprites, kind, tint, owner)
     };
     // An order chip is two composed draws: the subject's own silhouette
@@ -1274,8 +1274,8 @@ pub(crate) fn draw_panel(
                         sprites.wreck_pile()
                     } else {
                         sprites.scrap(
-                            oxide_sim::stats::SCRAP_NODE_AMOUNT,
-                            oxide_sim::stats::SCRAP_NODE_AMOUNT,
+                            aftermine_sim::stats::SCRAP_NODE_AMOUNT,
+                            aftermine_sim::stats::SCRAP_NODE_AMOUNT,
                         )
                     },
                     tint,

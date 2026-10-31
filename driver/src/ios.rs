@@ -257,7 +257,8 @@ pub fn combine(
 }
 
 fn list_physical() -> std::result::Result<Vec<Device>, String> {
-    let json = std::env::temp_dir().join(format!("oxide-ios-devices-{}.json", std::process::id()));
+    let json =
+        std::env::temp_dir().join(format!("aftermine-ios-devices-{}.json", std::process::id()));
     let output = Command::new("xcrun")
         .args(["devicectl", "list", "devices", "--quiet", "--json-output"])
         .arg(&json)
@@ -319,9 +320,9 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
         .current_dir(root)
         .args([
             "-project",
-            "ios/Oxide.xcodeproj",
+            "ios/Aftermine.xcodeproj",
             "-scheme",
-            "Oxide",
+            "Aftermine",
             "-configuration",
             "Release",
             "-derivedDataPath",
@@ -344,7 +345,7 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
     Ok(root
         .join("target/ios-xcode/Build/Products")
         .join(products)
-        .join("Oxide.app"))
+        .join("Aftermine.app"))
 }
 
 /// The bundle ID the build signed, which honors a contributor's own ID
@@ -398,7 +399,7 @@ fn install_physical(target: &Device, app: &Path, bundle: &str) -> Result<()> {
     let report = tool_output(&launch);
     if report.contains("Locked") || report.contains("unlocked") {
         println!(
-            "installed; {} is locked, so unlock it and open Oxide yourself",
+            "installed; {} is locked, so unlock it and open Aftermine yourself",
             target.name
         );
         return Ok(());

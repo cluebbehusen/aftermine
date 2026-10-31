@@ -1,11 +1,11 @@
 //! Headless execution of scenarios and replays.
 
 use crate::controller::{SeatController, SeatTrace, record_events, seat_controllers};
+use aftermine_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use anyhow::{Context, Result};
 use chassis::replay::Replay;
-use oxide_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 
-/// The concrete replay type for Oxide sessions.
+/// The concrete replay type for Aftermine sessions.
 pub use crate::GameReplay;
 
 /// A finished headless run.
@@ -23,7 +23,7 @@ pub struct RunOutcome {
 /// input to the simulation and replay recorder.
 pub struct TracedStep {
     /// The simulation report produced by the tick.
-    pub report: oxide_sim::TickReport,
+    pub report: aftermine_sim::TickReport,
     /// Fresh player-facing traces in bot-seat order; empty chairs contribute no rows.
     pub traces: Vec<SeatTrace>,
 }
@@ -34,7 +34,7 @@ pub fn step(
     state: &mut State,
     bots: &mut [SeatController],
     replay: Option<&mut GameReplay>,
-) -> oxide_sim::TickReport {
+) -> aftermine_sim::TickReport {
     let commands = crate::bot_execution::commands(state, bots);
     let report = record_and_tick(state, &commands, replay);
     record_events(bots, &report);
@@ -71,7 +71,7 @@ pub fn record_and_tick(
     state: &mut State,
     commands: &[PlayerCommand],
     replay: Option<&mut GameReplay>,
-) -> oxide_sim::TickReport {
+) -> aftermine_sim::TickReport {
     if let Some(replay) = replay {
         for command in commands {
             replay.record(state.current_tick(), command.clone());
@@ -130,7 +130,7 @@ pub fn run_replay_observed(
     ticks_override: Option<u64>,
     until: Option<u64>,
     allow_long: bool,
-    mut observe: impl FnMut(&State, &oxide_sim::TickReport),
+    mut observe: impl FnMut(&State, &aftermine_sim::TickReport),
 ) -> Result<State> {
     replay.validate(Some(SIM_VERSION))?;
     let length = ticks_override.unwrap_or_else(|| crate::replay_duration(replay));

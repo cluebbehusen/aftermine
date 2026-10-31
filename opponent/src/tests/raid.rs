@@ -763,7 +763,7 @@ fn sappers_raid_a_deep_bore_nobody_on_the_team_has_seen() {
         attacks(&commands),
         [(
             sappers,
-            AttackTarget::RememberedBuilding(oxide_sim::RememberedBuilding {
+            AttackTarget::RememberedBuilding(aftermine_sim::RememberedBuilding {
                 owner: PlayerId(1),
                 building_kind: BuildingKind::Extractor,
                 anchor: bore,

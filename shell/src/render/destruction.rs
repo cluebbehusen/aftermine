@@ -5,8 +5,8 @@ use crate::assets::Sprites;
 use crate::game::{EffectKind, Scene, UnitBody};
 use crate::numeric;
 use crate::numeric::Fit;
+use aftermine_sim::{BuildingKind, ProjectileKind};
 use macroquad::prelude::*;
-use oxide_sim::{BuildingKind, ProjectileKind};
 
 fn pixel_rect(center: Vec2, size: Vec2, pixel: f32, color: Color) {
     let origin = (center - size * 0.5) / pixel;
@@ -49,7 +49,7 @@ fn floor_contact(game: &Scene<'_>, at: Vec2) -> bool {
             numeric::to_i32(at.x.floor()),
             numeric::to_i32(at.y.floor()),
         ))
-        .is_some_and(|tile| tile.terrain != oxide_sim::map::Terrain::Pit)
+        .is_some_and(|tile| tile.terrain != aftermine_sim::map::Terrain::Pit)
 }
 
 fn ground_mark(center: Vec2, zoom: f32, radius: f32, alpha: f32) {
@@ -424,7 +424,7 @@ fn draw_body_piece(
         accent: Some(sprites.unit_accent(body.kind)),
         tint,
     };
-    let roc = (body.kind == oxide_sim::UnitKind::Roc)
+    let roc = (body.kind == aftermine_sim::UnitKind::Roc)
         .then(|| sprites.roc_rig())
         .flatten();
     let (Some(roc), Some(rig), Some(guns)) =
@@ -488,11 +488,11 @@ fn draw_body_piece(
     .piece(sprites, part, pose, zoom);
 }
 
-fn large_airframe(kind: oxide_sim::UnitKind) -> bool {
+fn large_airframe(kind: aftermine_sim::UnitKind) -> bool {
     kind.stats().crash.is_some()
 }
 
-const CRASH_TIME: f32 = oxide_sim::stats::AIRCRAFT_CRASH_TICKS as f32 * crate::game::TICK_DT;
+const CRASH_TIME: f32 = aftermine_sim::stats::AIRCRAFT_CRASH_TICKS as f32 * crate::game::TICK_DT;
 
 #[derive(Clone, Copy, Debug)]
 struct CrashPose {
@@ -533,7 +533,7 @@ fn fall_pose(
     at: Vec2,
     body: UnitBody,
     age: f32,
-    crash: Option<oxide_sim::state::AircraftCrash>,
+    crash: Option<aftermine_sim::state::AircraftCrash>,
 ) -> CrashPose {
     let Some(crash) = crash else {
         return crash_pose(at, body, age, reduced_motion());
@@ -678,7 +678,7 @@ pub(super) fn draw_falling(
     body: UnitBody,
     seed: u32,
     age: f32,
-    crash: Option<oxide_sim::state::AircraftCrash>,
+    crash: Option<aftermine_sim::state::AircraftCrash>,
 ) {
     if !large_airframe(body.kind) {
         if !reduced_motion() {

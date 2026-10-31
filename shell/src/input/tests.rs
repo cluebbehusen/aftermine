@@ -4,8 +4,8 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use oxide_sim::scenario::ScenarioMode;
-use oxide_sim::{PlayerCommand, UnitKind};
+use aftermine_sim::scenario::ScenarioMode;
+use aftermine_sim::{PlayerCommand, UnitKind};
 
 /// The shipped default map: input tests never read a developer's saved
 /// bindings.
@@ -43,7 +43,7 @@ mod double_click;
 mod lessons;
 
 /// The waypoints `unit` draws in `game`'s current frame.
-fn crumbs(game: &Game, unit: &oxide_sim::Unit) -> Vec<(usize, Vec2, macroquad::color::Color)> {
+fn crumbs(game: &Game, unit: &aftermine_sim::Unit) -> Vec<(usize, Vec2, macroquad::color::Color)> {
     let view = game.view();
     crate::render::entities::breadcrumb_points(&view, &view.projection(), unit)
 }
@@ -54,10 +54,10 @@ fn headless_game() -> Game {
 
 /// Skirmish with a Sentinel beside each start. The opening itself fields no
 /// fighter, and most of these tests need one at hand.
-pub(super) fn armed_skirmish() -> oxide_sim::Scenario {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+pub(super) fn armed_skirmish() -> aftermine_sim::Scenario {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     for (player, x, y) in [(0, 10, 7), (1, 29, 16)] {
-        scenario.units.push(oxide_sim::scenario::UnitSpec {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
             player,
             kind: UnitKind::Sentinel,
             x,
@@ -69,12 +69,18 @@ pub(super) fn armed_skirmish() -> oxide_sim::Scenario {
 
 /// One seat of a two-human LAN duel on the embedded skirmish.
 fn lan_seat(seat: u8, role: crate::game::network::NetRole) -> Game {
-    let mut duel = oxide_sim::Scenario::skirmish();
+    let mut duel = aftermine_sim::Scenario::skirmish();
     for player in &mut duel.players {
         player.bot = false;
         player.bot_config = None;
     }
-    Game::networked(duel, oxide_sim::PlayerId(seat), role, vec2(1280.0, 800.0)).unwrap()
+    Game::networked(
+        duel,
+        aftermine_sim::PlayerId(seat),
+        role,
+        vec2(1280.0, 800.0),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -119,43 +125,49 @@ fn a_lan_match_refuses_the_debug_overlay() {
 }
 
 fn multi_producer_game() -> Game {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("multi-producer fixture builds")
 }
 
 fn empty_multi_producer_game() -> Game {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.clear();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("empty building fixture builds")
 }
 
 fn contested_producer_game() -> Game {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.clear();
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Scuttler,
         x: 11,
         y: 3,
     });
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("contested fixture builds")
 }
 
@@ -261,7 +273,7 @@ fn performance_panel_swallows_orders_and_selection_without_revealing_fog() {
 }
 
 fn skyhook_interaction_game() -> Game {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"skyhook interaction\",
         \"players\": [
@@ -372,7 +384,7 @@ fn hostile_skyhook_visible_edge_accepts_an_attack_order() {
     assert!(game.pending.iter().any(|command| matches!(
         command.command,
         Command::Attack {
-            target: oxide_sim::AttackTarget::Unit(unit),
+            target: aftermine_sim::AttackTarget::Unit(unit),
             ..
         } if unit == target
     )));
@@ -503,7 +515,7 @@ fn box_select_keeps_own_buildings_ahead_of_foreign_units() {
         .iter()
         .find(|building| {
             building.player == game.presentation.human
-                && building.kind == oxide_sim::BuildingKind::Fabricator
+                && building.kind == aftermine_sim::BuildingKind::Fabricator
         })
         .expect("own Fabricator")
         .id;
@@ -564,19 +576,19 @@ fn selected_producers_receive_the_same_context_rally_in_id_order() {
         staged,
         producers
             .into_iter()
-            .map(|building| (building, oxide_sim::Rally::Tile(rally)))
+            .map(|building| (building, aftermine_sim::Rally::Tile(rally)))
             .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn training_skips_a_selected_nonproducer_before_the_factory() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.buildings.insert(
         0,
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 0,
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             x: 9,
             y: 3,
         },
@@ -587,7 +599,7 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
         .state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::Turret)
+        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
     let foundry = game.home_foundry().unwrap().id;
@@ -606,13 +618,15 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
 
 #[test]
 fn training_uses_the_first_selected_factory_that_supports_the_slot() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Crucible,
-        x: 9,
-        y: 3,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Crucible,
+            x: 9,
+            y: 3,
+        });
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("crucible fixture builds");
     let foundry = game.home_foundry().unwrap().id;
@@ -620,7 +634,7 @@ fn training_uses_the_first_selected_factory_that_supports_the_slot() {
         .state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::Crucible)
+        .find(|building| building.kind == aftermine_sim::BuildingKind::Crucible)
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![crucible, foundry];
@@ -641,14 +655,16 @@ fn training_uses_the_first_selected_factory_that_supports_the_slot() {
 
 #[test]
 fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Turret,
-        x: 9,
-        y: 3,
-    });
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Turret,
+            x: 9,
+            y: 3,
+        });
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Sentinel,
         x: 12,
@@ -660,7 +676,7 @@ fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
         .state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::Turret)
+        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
     let enemy = game
@@ -684,7 +700,7 @@ fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
         [PlayerCommand {
             command: Command::FocusFire { buildings, target },
             ..
-        }] if buildings == &vec![turret] && *target == oxide_sim::Target::Unit(enemy_id).into()
+        }] if buildings == &vec![turret] && *target == aftermine_sim::Target::Unit(enemy_id).into()
     ));
     assert!(
         game.pending
@@ -697,7 +713,7 @@ fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
 fn build_click(
     game: &mut Game,
     input: &mut InputState,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
 ) {
     input.arm_placement(kind);
@@ -709,7 +725,7 @@ fn build_click(
 }
 
 fn extractor_input_game() -> Game {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"frame input\",
         \"players\": [
@@ -752,7 +768,7 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
                 .expect("fixture worker")
                 .id;
             game.presentation.selection.units = vec![worker];
-            input.arm_placement(oxide_sim::BuildingKind::Extractor);
+            input.arm_placement(aftermine_sim::BuildingKind::Extractor);
             let clicked = frame.offset(dx, dy);
             let world = vec2(clicked.x as f32 + 0.5, clicked.y as f32 + 0.5);
             let point = game.presentation.camera.to_screen(world);
@@ -770,7 +786,7 @@ fn every_tile_of_a_known_extractor_frame_places_the_same_site() {
                 game.pending.as_slice(),
                 [PlayerCommand {
                     command: Command::Build {
-                        kind: oxide_sim::BuildingKind::Extractor,
+                        kind: aftermine_sim::BuildingKind::Extractor,
                         anchor,
                         ..
                     },
@@ -860,7 +876,7 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
         .unwrap()
         .id;
     game.presentation.selection.units = vec![harvester];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
 
     // Skirmish's own foundry footprint is illegal ground: the
     // misclick toasts and stays armed, staging nothing.
@@ -901,7 +917,7 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
             .unwrap()
             .id,
     ];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(
         &mut game,
         &mut input,
@@ -1083,7 +1099,7 @@ fn a_rally_click_on_an_own_unit_rallies_onto_it() {
         !game.pending.is_empty()
             && game.pending.iter().all(|c| {
                 matches!(c.command, Command::SetRally {
-                    rally: Some(oxide_sim::Rally::Unit(picked)),
+                    rally: Some(aftermine_sim::Rally::Unit(picked)),
                     ..
                 } if picked == unit)
             })
@@ -1132,7 +1148,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
     assert!(
         !game.pending.is_empty()
             && game.pending.iter().all(
-                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == oxide_sim::Rally::Tile(rally))
+                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == aftermine_sim::Rally::Tile(rally))
             ),
         "{:?}",
         game.pending
@@ -1147,7 +1163,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
     assert!(
         !game.pending.is_empty()
             && game.pending.iter().all(
-                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == oxide_sim::Rally::Tile(rally))
+                |c| matches!(c.command, Command::SetRally { rally: Some(tile), .. } if tile == aftermine_sim::Rally::Tile(rally))
             ),
         "{:?}",
         game.pending
@@ -1158,7 +1174,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
 /// A scenario with a harvester beside a scrap node on the map's west
 /// edge, so a click in the camera's edge slack lands just past it.
 fn edge_scrap_game() -> Game {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"edge scrap\",
         \"players\": [
@@ -1238,7 +1254,7 @@ fn an_edge_slack_click_orders_the_edge_tile_and_never_binds_edge_scrap() {
 
 #[test]
 fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 300;
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
@@ -1250,7 +1266,7 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
         .expect("a starting Harvester")
         .id;
     let start = game.state.unit(builder).unwrap().tile();
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let claims = [
         PlayerCommand {
             player: game.presentation.human,
@@ -1278,7 +1294,7 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
         !setup
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. })),
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. })),
         "premise: both deferred claims are accepted: {:?}",
         setup.events
     );
@@ -1310,10 +1326,10 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
         !report
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. }))
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. }))
     );
     let builder = game.state.unit(builder).unwrap();
-    assert!(matches!(builder.order, oxide_sim::Order::Run { .. }));
+    assert!(matches!(builder.order, aftermine_sim::Order::Run { .. }));
     assert!(
         builder.queue.is_empty(),
         "replacement clears queued claims too"
@@ -1321,7 +1337,7 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
     assert!(
         std::iter::once(&builder.order)
             .chain(builder.queue.iter())
-            .all(|order| !matches!(order, oxide_sim::Order::Found { .. })),
+            .all(|order| !matches!(order, aftermine_sim::Order::Found { .. })),
         "no deferred footprint remains for the renderer to ghost"
     );
 }
@@ -1376,7 +1392,7 @@ fn the_rally_card_arms_a_touchable_world_target() {
                 rally: Some(staged),
             },
             ..
-        }] if *building == foundry && *staged == oxide_sim::Rally::Tile(rally)
+        }] if *building == foundry && *staged == aftermine_sim::Rally::Tile(rally)
     ));
     assert!(
         input.rallying.is_empty(),
@@ -1458,10 +1474,10 @@ fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
 #[test]
 fn every_targeting_mode_has_persistent_human_copy() {
     let mut input = InputState::new();
-    input.arm_placement(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(aftermine_sim::BuildingKind::Bastion);
     assert_eq!(input.armed_mode().unwrap().label(), "Bastion");
     input.disarm_click_verbs();
-    input.rallying = vec![oxide_sim::BuildingId(0)];
+    input.rallying = vec![aftermine_sim::BuildingId(0)];
     assert_eq!(input.armed_mode().unwrap().label(), "Set rally");
     input.disarm_click_verbs();
     input.click_verb = Some(ClickVerb::Salvage);
@@ -1692,7 +1708,7 @@ fn the_build_palette_has_no_duplicate_structures() {
 #[test]
 fn the_build_palette_offers_every_building_kind() {
     // A kind missing here could be built by a bot but never by a human.
-    for kind in oxide_sim::BuildingKind::ALL {
+    for kind in aftermine_sim::BuildingKind::ALL {
         assert!(
             crate::action::BUILD_CATEGORIES
                 .iter()
@@ -1704,7 +1720,7 @@ fn the_build_palette_offers_every_building_kind() {
 
 #[test]
 fn every_producer_roster_fits_the_production_hotkeys() {
-    for producer in oxide_sim::BuildingKind::ALL {
+    for producer in aftermine_sim::BuildingKind::ALL {
         let roster = producer.base_stats().produces.len();
         assert!(
             roster <= usize::from(crate::action::TRAIN_SLOTS),
@@ -1752,11 +1768,11 @@ fn a_right_click_anywhere_on_an_own_site_resumes_it() {
     // Stand a Fabricator site on open visible ground near the base.
     let foundry = game.state.buildings()[0].anchor;
     let anchor = chassis::grid::TilePos::new(foundry.x + 3, foundry.y + 4);
-    game.state.tick(&[oxide_sim::PlayerCommand {
+    game.state.tick(&[aftermine_sim::PlayerCommand {
         player: game.presentation.human,
-        command: oxide_sim::Command::Build {
+        command: aftermine_sim::Command::Build {
             units: vec![harvester],
-            kind: oxide_sim::stats::BuildingKind::Fabricator,
+            kind: aftermine_sim::stats::BuildingKind::Fabricator,
             anchor,
             queue: false,
             defer: false,
@@ -1779,8 +1795,8 @@ fn a_right_click_anywhere_on_an_own_site_resumes_it() {
     assert!(
         game.pending.iter().any(|c| matches!(
             &c.command,
-            oxide_sim::Command::Build { anchor: a, kind, .. }
-                if *a == anchor && *kind == oxide_sim::stats::BuildingKind::Fabricator
+            aftermine_sim::Command::Build { anchor: a, kind, .. }
+                if *a == anchor && *kind == aftermine_sim::stats::BuildingKind::Fabricator
         )),
         "the click resumed the site at its anchor: {:?}",
         game.pending
@@ -1794,7 +1810,7 @@ fn a_shift_click_on_the_wounded_wall_queues_the_weld_not_the_rat() {
     // inside PICK_RADIUS of the same click.
     // A raw string can't hold this JSON (map rows open with `"#`,
     // which closes r#"..."# early), so the quotes are escaped.
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"gnawed wall\",
         \"players\": [
@@ -1842,11 +1858,11 @@ fn a_shift_click_on_the_wounded_wall_queues_the_weld_not_the_rat() {
         .find(|u| u.player != game.presentation.human)
         .unwrap()
         .id;
-    game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+    game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
         command: Command::Attack {
             units: vec![rat],
-            target: oxide_sim::Target::Building(foundry).into(),
+            target: aftermine_sim::Target::Building(foundry).into(),
             queue: false,
         },
     }]);
@@ -1910,13 +1926,15 @@ fn a_shift_click_on_the_wounded_wall_queues_the_weld_not_the_rat() {
 
 #[test]
 fn the_armed_salvage_verb_strips_by_click_and_refuses_the_foundry() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Turret,
-        x: 9,
-        y: 5,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Turret,
+            x: 9,
+            y: 5,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     let harvester = game
@@ -1930,7 +1948,7 @@ fn the_armed_salvage_verb_strips_by_click_and_refuses_the_foundry() {
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Turret)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
     game.presentation.selection.units = vec![harvester];
@@ -2029,7 +2047,7 @@ fn arming_run_stands_the_other_verbs_down() {
     // Placement armed, then G: exactly one verb may hold the cursor —
     // armed_click resolves placement before run, so both live at once
     // would stamp a building under a "run" toast.
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::G), key_up(Key::G)]);
     assert!(input.armed(ClickVerb::Run), "G arms Run");
     assert!(input.placing.is_none(), "and placement stood down");
@@ -2179,7 +2197,7 @@ fn a_paused_stroke_bills_each_kind_at_its_own_price() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(
         &mut game,
@@ -2189,7 +2207,7 @@ fn a_paused_stroke_bills_each_kind_at_its_own_price() {
     assert_eq!(staged_builds(&game), 1, "the turret staged");
     // The clock never ran (paused shell): the turret is still pending
     // when the palette switches kinds.
-    input.arm_placement(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(aftermine_sim::BuildingKind::Bastion);
     let p2 = game.presentation.camera.to_screen(vec2(9.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(p2), left_up(p2)]);
     assert_eq!(
@@ -2205,7 +2223,7 @@ fn a_paused_stroke_refuses_ground_an_earlier_stroke_spoke_for() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     // Stroke A stamps a turret; the clock never runs, so the site
     // exists only in pending — live state still shows open ground.
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
@@ -2246,7 +2264,7 @@ fn queued_orders_count_against_the_stroke_prediction() {
             queue: true,
         });
     }
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let mut tiles = Vec::new();
     for y in [2, 4, 6, 8] {
         for x in 4..=13 {
@@ -2259,7 +2277,7 @@ fn queued_orders_count_against_the_stroke_prediction() {
     drag_over(&mut game, &mut input, &tiles);
     assert_eq!(
         staged_builds(&game),
-        oxide_sim::stats::ORDER_QUEUE_CAP - 2,
+        aftermine_sim::stats::ORDER_QUEUE_CAP - 2,
         "three staged walks occupy three slots of the builder's program"
     );
 }
@@ -2270,7 +2288,7 @@ fn paused_strokes_share_one_queue_prediction() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     // Two Shift strokes with NO tick between them (paused shell): the
     // second must inherit the first's staged depth instead of
     // re-reading the untouched live queue and blowing past the cap.
@@ -2294,13 +2312,13 @@ fn paused_strokes_share_one_queue_prediction() {
     apply_events(&mut game, &mut input, &shift);
     drag_over(&mut game, &mut input, &tiles_b);
     assert!(
-        staged_builds(&game) <= oxide_sim::stats::ORDER_QUEUE_CAP + 1,
+        staged_builds(&game) <= aftermine_sim::stats::ORDER_QUEUE_CAP + 1,
         "two paused strokes staged {} builds — more than the builder's program can hold",
         staged_builds(&game)
     );
     assert_eq!(
         staged_builds(&game),
-        oxide_sim::stats::ORDER_QUEUE_CAP + 1,
+        aftermine_sim::stats::ORDER_QUEUE_CAP + 1,
         "and the cap itself is still reachable"
     );
 }
@@ -2321,7 +2339,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
             queue: false,
         },
     }];
-    for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP - 1 {
+    for _ in 0..aftermine_sim::stats::ORDER_QUEUE_CAP - 1 {
         fill.push(PlayerCommand {
             player: game.presentation.human,
             command: Command::Run {
@@ -2333,7 +2351,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     }
     game.state.tick(&fill);
 
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     let second = game.presentation.camera.to_screen(vec2(5.5, 2.5));
@@ -2367,12 +2385,12 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     let first = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(&mut game, &mut input, &[left_down(first)]);
     // One run goes active; the rest fill the queue to its cap.
-    for _ in 0..=oxide_sim::stats::ORDER_QUEUE_CAP {
+    for _ in 0..=aftermine_sim::stats::ORDER_QUEUE_CAP {
         game.issue(Command::Run {
             units: vec![builder],
             goal: TilePos::new(15, 7),
@@ -2397,7 +2415,7 @@ fn a_drag_rechecks_programs_staged_while_the_button_is_held() {
 /// A 2v1 team scenario: the human and a configured bot ally on one
 /// team, a lone enemy on the other — the readability tests' stage.
 fn team_game() -> Game {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"team stage\",
         \"players\": [
@@ -2663,7 +2681,7 @@ fn touch_taps_select_and_a_still_hold_orders() {
 }
 
 /// A game with one own harvester selected and `kind` armed for placement.
-fn armed_placement(kind: oxide_sim::BuildingKind) -> (Game, InputState, oxide_sim::UnitId) {
+fn armed_placement(kind: aftermine_sim::BuildingKind) -> (Game, InputState, aftermine_sim::UnitId) {
     let mut game = headless_game();
     let mut input = InputState::new();
     let harvester = game
@@ -2682,7 +2700,7 @@ fn armed_placement(kind: oxide_sim::BuildingKind) -> (Game, InputState, oxide_si
 /// The projection after the staged batch alone.
 fn pending_build_projection(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
 ) -> PendingBuildProjection {
@@ -2701,10 +2719,10 @@ fn pending_build_projection(
 /// Shift clicks and drag stamps preserve them.
 fn placement_refusal(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
-) -> Option<oxide_sim::PlaceRefusal> {
+) -> Option<aftermine_sim::PlaceRefusal> {
     pending_build_projection(game, kind, anchor, queue).refusal
 }
 
@@ -2720,7 +2738,7 @@ fn staged_anchors(game: &Game) -> Vec<TilePos> {
 
 #[test]
 fn a_touch_placement_drops_a_ghost_then_builds_where_it_is_drawn() {
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let (mut game, mut input, harvester) = armed_placement(kind);
     let foundry = game.state.buildings()[0].anchor;
     let open = vec2(foundry.x as f32 + 3.5, foundry.y as f32 + 3.5);
@@ -2762,7 +2780,7 @@ fn a_touch_placement_drops_a_ghost_then_builds_where_it_is_drawn() {
 #[test]
 fn dragging_the_ghost_moves_it_by_whole_tiles_without_panning() {
     // Two tiles wide, so the ghost outsizes a fingertip and keeps its grip.
-    let kind = oxide_sim::BuildingKind::Fabricator;
+    let kind = aftermine_sim::BuildingKind::Fabricator;
     let (mut game, mut input, _) = armed_placement(kind);
     let foundry = game.state.buildings()[0].anchor;
     tap_world(
@@ -2797,7 +2815,7 @@ fn dragging_the_ghost_moves_it_by_whole_tiles_without_panning() {
 
 #[test]
 fn a_refused_confirm_keeps_the_ghost_and_the_mode() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     let foundry = game.state.buildings()[0].center();
     let on_foundry = vec2(foundry.x.to_num::<f32>(), foundry.y.to_num::<f32>());
     tap_world(&mut game, &mut input, on_foundry);
@@ -2816,7 +2834,7 @@ fn a_refused_confirm_keeps_the_ghost_and_the_mode() {
 
 #[test]
 fn queue_keeps_placement_armed_after_a_confirm() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     input.queue_toggle = QueueToggle::Locked;
     let foundry = game.state.buildings()[0].anchor;
     let open = vec2(foundry.x as f32 + 3.5, foundry.y as f32 + 3.5);
@@ -2831,7 +2849,7 @@ fn queue_keeps_placement_armed_after_a_confirm() {
     );
     assert_eq!(
         input.placing_kind(),
-        Some(oxide_sim::BuildingKind::Turret),
+        Some(aftermine_sim::BuildingKind::Turret),
         "still armed"
     );
     assert_eq!(
@@ -2843,7 +2861,7 @@ fn queue_keeps_placement_armed_after_a_confirm() {
 
 #[test]
 fn leaving_placement_leaves_no_ghost() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     let foundry = game.state.buildings()[0].anchor;
     let open = vec2(foundry.x as f32 + 3.5, foundry.y as f32 + 3.5);
     tap_world(&mut game, &mut input, open);
@@ -2852,20 +2870,20 @@ fn leaving_placement_leaves_no_ghost() {
         input.placing.is_none() && input.ghost_anchor().is_none(),
         "Back"
     );
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     tap_world(&mut game, &mut input, open);
     assert!(input.cancel_armed_mode());
     assert!(input.ghost_anchor().is_none(), "CANCEL");
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     tap_world(&mut game, &mut input, open);
-    input.arm_placement(oxide_sim::BuildingKind::Bastion);
+    input.arm_placement(aftermine_sim::BuildingKind::Bastion);
     input.disarm_click_verbs();
     assert!(input.ghost_anchor().is_none(), "switching kinds");
 }
 
 #[test]
 fn a_long_press_while_placing_charges_nothing_and_orders_nothing() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     let foundry = game.state.buildings()[0].anchor;
     let ground = game
         .presentation
@@ -2898,7 +2916,7 @@ fn an_extractor_ghost_snaps_to_its_frame() {
         .expect("fixture worker")
         .id;
     game.presentation.selection.units = vec![worker];
-    input.arm_placement(oxide_sim::BuildingKind::Extractor);
+    input.arm_placement(aftermine_sim::BuildingKind::Extractor);
     tap_world(&mut game, &mut input, vec2(8.5, 5.5));
     assert_eq!(input.ghost_anchor(), Some(frame));
     tap_check(&mut game, &mut input);
@@ -2907,7 +2925,7 @@ fn an_extractor_ghost_snaps_to_its_frame() {
 
 #[test]
 fn a_touch_device_never_previews_placement_at_a_stale_mouse_point() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     input.mouse = vec2(400.0, 300.0);
     assert!(
         placement_preview_anchor(&game.view(), &input).is_some(),
@@ -3356,7 +3374,7 @@ fn a_cancelled_finger_neither_taps_nor_long_presses() {
 
 #[test]
 fn a_cancelled_finger_on_the_ghost_builds_nothing() {
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let (mut game, mut input, _) = armed_placement(kind);
     let foundry = game.state.buildings()[0].anchor;
     tap_world(
@@ -3569,7 +3587,7 @@ fn a_pair_formed_mid_pan_or_while_armed_never_boxes() {
         .expect("a harvester")
         .id;
     game.presentation.selection.units = vec![harvester];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     input.now = 5.0;
     apply_events(&mut game, &mut input, &[touch_down(3, a), touch_down(4, b)]);
@@ -3580,7 +3598,7 @@ fn a_pair_formed_mid_pan_or_while_armed_never_boxes() {
     assert_eq!(game.presentation.selection.units, vec![harvester]);
     assert_eq!(
         input.placing_kind(),
-        Some(oxide_sim::BuildingKind::Turret),
+        Some(aftermine_sim::BuildingKind::Turret),
         "still armed"
     );
 }
@@ -3591,7 +3609,7 @@ fn a_pair_formed_mid_pan_or_while_armed_still_pinches() {
     let squeezed = a + vec2(120.0, 0.0);
 
     // While placing: the pair zooms, never boxes, and builds nothing.
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let (mut game, mut input, harvester) = armed_placement(kind);
     let zoom = game.presentation.camera.zoom;
     input.now = 1.0;
@@ -3712,7 +3730,7 @@ fn the_queue_chip_flips_by_tap_and_click() {
     assert!(!input.queue_held(), "leaving the screen drops it");
 }
 
-fn armed_patrol() -> (Game, InputState, oxide_sim::UnitId) {
+fn armed_patrol() -> (Game, InputState, aftermine_sim::UnitId) {
     let mut game = headless_game();
     let mut input = InputState::new();
     let fighter = game
@@ -3771,11 +3789,14 @@ fn a_left_click_adds_a_patrol_waypoint_and_a_full_route_says_so() {
     let p = game.presentation.camera.to_screen(vec2(9.5, 5.5));
     apply_events(&mut game, &mut input, &click(p.x, p.y));
     assert_eq!(input.patrol_route.as_ref().map(Vec::len), Some(1));
-    input.patrol_route = Some(vec![TilePos::new(9, 5); oxide_sim::stats::ORDER_QUEUE_CAP]);
+    input.patrol_route = Some(vec![
+        TilePos::new(9, 5);
+        aftermine_sim::stats::ORDER_QUEUE_CAP
+    ]);
     apply_events(&mut game, &mut input, &click(p.x, p.y));
     assert_eq!(
         input.patrol_route.as_ref().map(Vec::len),
-        Some(oxide_sim::stats::ORDER_QUEUE_CAP)
+        Some(aftermine_sim::stats::ORDER_QUEUE_CAP)
     );
     assert!(
         game.presentation
@@ -3841,7 +3862,7 @@ fn patrol_toasts_name_only_what_the_hands_in_use_have() {
     }
 }
 
-fn own_fighter(game: &Game) -> (oxide_sim::UnitId, Vec2) {
+fn own_fighter(game: &Game) -> (aftermine_sim::UnitId, Vec2) {
     game.state
         .units()
         .iter()
@@ -4091,7 +4112,7 @@ fn an_allied_site_under_fog_refuses_selection() {
     // panel leaks its live kind and hp through the fog. The ally's
     // BUILT foundry stays selectable: it sees its own ground, and
     // team sight is shared.
-    use oxide_sim::scenario::{BotConfig, PlayerSpec, UnitSpec};
+    use aftermine_sim::scenario::{BotConfig, PlayerSpec, UnitSpec};
     let seat = |name: &str, team| PlayerSpec {
         name: name.into(),
         team: Some(team),
@@ -4099,7 +4120,7 @@ fn an_allied_site_under_fog_refuses_selection() {
         bot: false,
         bot_config: None,
     };
-    let mut scenario = oxide_sim::Scenario {
+    let mut scenario = aftermine_sim::Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "ally-site-arena".into(),
@@ -4134,15 +4155,15 @@ fn an_allied_site_under_fog_refuses_selection() {
         .state
         .units()
         .iter()
-        .find(|u| u.player == oxide_sim::PlayerId(1))
+        .find(|u| u.player == aftermine_sim::PlayerId(1))
         .unwrap()
         .id;
     // Placement wants the footprint visible to the PLACER, so the
     // worker walks into sight of the ground first, claims, and then
     // goes home: a site is blind, and once every friendly eye leaves,
     // its ground goes dark.
-    game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+    game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
         command: Command::Run {
             units: vec![ally_worker],
             goal: TilePos::new(16, 2),
@@ -4155,11 +4176,11 @@ fn an_allied_site_under_fog_refuses_selection() {
             break;
         }
     }
-    game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+    game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
         command: Command::Build {
             units: vec![ally_worker],
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             anchor: TilePos::new(15, 1),
             queue: false,
             defer: false,
@@ -4169,19 +4190,20 @@ fn an_allied_site_under_fog_refuses_selection() {
         game.state
             .buildings()
             .iter()
-            .any(|b| b.kind == oxide_sim::BuildingKind::Turret),
+            .any(|b| b.kind == aftermine_sim::BuildingKind::Turret),
         "test premise: the claim landed instantly"
     );
     for _ in 0..100 {
         if game.state.buildings().iter().any(|b| {
-            b.kind == oxide_sim::BuildingKind::Turret && b.construction_progress().unwrap_or(0) > 0
+            b.kind == aftermine_sim::BuildingKind::Turret
+                && b.construction_progress().unwrap_or(0) > 0
         }) {
             break;
         }
         game.state.tick(&[]);
     }
-    game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+    game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
         command: Command::Run {
             units: vec![ally_worker],
             goal: TilePos::new(25, 4),
@@ -4199,7 +4221,7 @@ fn an_allied_site_under_fog_refuses_selection() {
             .state
             .buildings()
             .iter()
-            .find(|b| b.kind == oxide_sim::BuildingKind::Turret)
+            .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
             .expect("the ally claimed the site");
         assert!(!site.built(), "test premise: unfinished");
         assert!(
@@ -4222,7 +4244,7 @@ fn an_allied_site_under_fog_refuses_selection() {
             .state
             .buildings()
             .iter()
-            .find(|b| b.player == oxide_sim::PlayerId(1) && b.built())
+            .find(|b| b.player == aftermine_sim::PlayerId(1) && b.built())
             .unwrap();
         (
             foundry.id,
@@ -4244,7 +4266,7 @@ fn an_allied_site_under_fog_refuses_selection() {
 fn a_foreign_box_never_reaches_through_fog() {
     // One visible enemy scout at the fog's edge must not drag its
     // owner's HIDDEN units into an inspectable selection.
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"fog box\",
         \"players\": [
@@ -4304,7 +4326,7 @@ fn a_selected_hostile_drops_when_fog_recovers_it() {
     // never become a tracking beacon into ground the player no longer
     // sees. Once nothing of the player's stands near the foe, its
     // ground goes dark and the selection lets go.
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         "{
         \"name\": \"beacon\",
         \"players\": [
@@ -4792,7 +4814,7 @@ fn an_armed_mode_never_eats_the_menu_button() {
     let mut game = headless_game();
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
-    input.arm_placement(oxide_sim::BuildingKind::Fabricator);
+    input.arm_placement(aftermine_sim::BuildingKind::Fabricator);
     let menu = game.presentation.layout.get().menu_button.center();
     apply_events(&mut game, &mut input, &click(menu.x, menu.y));
     assert!(input.take_menu_request());
@@ -4935,7 +4957,7 @@ fn a_minimap_right_click_sets_every_selected_producer_rally() {
         staged,
         producers
             .into_iter()
-            .map(|building| (building, oxide_sim::Rally::Tile(rally)))
+            .map(|building| (building, aftermine_sim::Rally::Tile(rally)))
             .collect::<Vec<_>>()
     );
 }
@@ -5031,7 +5053,7 @@ fn a_slow_pinch_zooms_and_never_commits_a_box() {
 #[test]
 fn a_placement_drag_stamps_a_row_of_queued_builds() {
     // A funded arena: one harvester, 1000 scrap — room for a wall.
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Drag Range",
             "players": [
@@ -5058,7 +5080,7 @@ fn a_placement_drag_stamps_a_row_of_queued_builds() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
 
     // Screen points at the centers of three adjacent open tiles.
     let at = |x: i32, y: i32| {
@@ -5101,7 +5123,7 @@ fn a_placement_drag_stamps_a_row_of_queued_builds() {
         game.state
             .buildings()
             .iter()
-            .filter(|b| b.kind == oxide_sim::BuildingKind::Turret)
+            .filter(|b| b.kind == aftermine_sim::BuildingKind::Turret)
             .count(),
         3,
         "all three sites claimed ground"
@@ -5216,13 +5238,13 @@ fn construction_order_cards_stage_their_targeted_cancel_commands() {
     activate_card(
         &mut game,
         &mut input,
-        crate::panel::CardAction::CancelSite(oxide_sim::BuildingId(91)),
+        crate::panel::CardAction::CancelSite(aftermine_sim::BuildingId(91)),
     );
     activate_card(
         &mut game,
         &mut input,
         crate::panel::CardAction::CancelFound(
-            oxide_sim::BuildingKind::Bastion,
+            aftermine_sim::BuildingKind::Bastion,
             TilePos::new(11, 7),
         ),
     );
@@ -5231,13 +5253,13 @@ fn construction_order_cards_stage_their_targeted_cancel_commands() {
     assert!(matches!(
         game.pending[0].command,
         Command::Cancel {
-            building: oxide_sim::BuildingId(91)
+            building: aftermine_sim::BuildingId(91)
         }
     ));
     assert!(matches!(
         game.pending[1].command,
         Command::CancelFound {
-            kind: oxide_sim::BuildingKind::Bastion,
+            kind: aftermine_sim::BuildingKind::Bastion,
             anchor,
         } if anchor == TilePos::new(11, 7)
     ));
@@ -5453,7 +5475,7 @@ fn drag_arena(scrap: u32) -> Game {
 
 /// The drag bank with `buildings` (scenario JSON) already standing.
 fn drag_arena_with(scrap: u32, buildings: &serde_json::Value) -> Game {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Drag Bank",
             "players": [
@@ -5532,7 +5554,7 @@ fn drag_over_ticking(game: &mut Game, input: &mut InputState, tiles: &[(i32, i32
         rejections += report
             .events
             .iter()
-            .filter(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .filter(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
             .count();
     });
     rejections
@@ -5546,7 +5568,7 @@ fn a_ticking_drag_spends_the_whole_bank() {
     let mut game = drag_arena(1000);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     // Two short rows bracketing the builder: every anchor stays inside
     // someone's sight even as the builder walks to its first site. A wall
     // drawn off into fog is a different test.
@@ -5560,7 +5582,7 @@ fn a_ticking_drag_spends_the_whole_bank() {
         game.state
             .buildings()
             .iter()
-            .filter(|b| b.kind == oxide_sim::BuildingKind::Turret)
+            .filter(|b| b.kind == aftermine_sim::BuildingKind::Turret)
             .count(),
         10,
         "a funded wall goes up whole"
@@ -5577,7 +5599,7 @@ fn a_broke_opening_click_toasts_instead_of_pinging() {
     let mut game = drag_arena(50);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4)]);
     assert_eq!(staged_builds(&game), 0, "a broke seat stages nothing");
     assert!(
@@ -5591,7 +5613,7 @@ fn a_placement_drag_stops_at_the_bank() {
     let mut game = drag_arena(250);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4), (10, 4), (11, 4)]);
     assert_eq!(
         staged_builds(&game),
@@ -5605,7 +5627,7 @@ fn a_placement_drag_stops_at_the_bank() {
         !report
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. })),
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. })),
         "the shell staged nothing the sim had to refuse"
     );
 
@@ -5614,7 +5636,7 @@ fn a_placement_drag_stops_at_the_bank() {
     let mut game = drag_arena(150);
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     drag_over(&mut game, &mut input, &[(9, 4), (10, 4), (11, 4)]);
     assert_eq!(staged_builds(&game), 1, "150 scrap affords one turret");
 }
@@ -5648,7 +5670,7 @@ fn a_shift_stroke_spends_only_the_builders_headroom() {
     game.state.tick(&fill);
     assert_eq!(game.state.unit(builder).unwrap().queue.len(), 30);
 
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(&mut game, &mut input, &[key_down(Key::Shift)]);
     drag_over(
         &mut game,
@@ -5676,8 +5698,8 @@ fn a_shift_stroke_spends_only_the_builders_headroom() {
     assert!(
         !report.events.iter().any(|e| matches!(
             e,
-            oxide_sim::Event::CommandRejected {
-                reason: oxide_sim::command::RejectReason::QueueFull,
+            aftermine_sim::Event::CommandRejected {
+                reason: aftermine_sim::command::RejectReason::QueueFull,
                 ..
             }
         )),
@@ -5685,7 +5707,7 @@ fn a_shift_stroke_spends_only_the_builders_headroom() {
     );
     assert_eq!(
         game.state.unit(builder).unwrap().queue.len(),
-        oxide_sim::stats::ORDER_QUEUE_CAP,
+        aftermine_sim::stats::ORDER_QUEUE_CAP,
         "the queue lands exactly full"
     );
 }
@@ -5696,7 +5718,7 @@ fn a_fresh_stroke_owns_the_cap_plus_the_active_slot() {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     // Rows 2, 4, 6, 8 with free rows between: every site keeps a
     // doorstep, all inside the harvester's vision and clear of both
     // foundry footprints.
@@ -5711,7 +5733,7 @@ fn a_fresh_stroke_owns_the_cap_plus_the_active_slot() {
     drag_over(&mut game, &mut input, &tiles);
     assert_eq!(
         staged_builds(&game),
-        oxide_sim::stats::ORDER_QUEUE_CAP + 1,
+        aftermine_sim::stats::ORDER_QUEUE_CAP + 1,
         "one active order plus a full queue is legal"
     );
 }
@@ -5732,7 +5754,7 @@ fn a_full_queue_refuses_the_opening_shift_stamp() {
             queue: false,
         },
     }]);
-    for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
+    for _ in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
         game.state.tick(&[PlayerCommand {
             player: game.presentation.human,
             command: Command::Run {
@@ -5744,10 +5766,10 @@ fn a_full_queue_refuses_the_opening_shift_stamp() {
     }
     assert_eq!(
         game.state.unit(builder).unwrap().queue.len(),
-        oxide_sim::stats::ORDER_QUEUE_CAP,
+        aftermine_sim::stats::ORDER_QUEUE_CAP,
         "the fixture actually filled the queue"
     );
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let p = game.presentation.camera.to_screen(vec2(4.5, 2.5));
     apply_events(
         &mut game,
@@ -5844,7 +5866,7 @@ fn fog_corridor_game(kind: &str, units: impl IntoIterator<Item = (i32, i32)>) ->
         .into_iter()
         .map(|(x, y)| serde_json::json!({"player": 0, "kind": kind, "x": x, "y": y}))
         .collect();
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Corridor",
             "players": [
@@ -5895,11 +5917,11 @@ fn a_group_sent_into_fog_draws_its_click_for_every_member() {
             queue: false,
         },
     }]);
-    let goals = |game: &Game| -> Vec<oxide_sim::Goal> {
+    let goals = |game: &Game| -> Vec<aftermine_sim::Goal> {
         group
             .iter()
             .map(|id| match game.state.unit(*id).unwrap().order {
-                oxide_sim::Order::Run { goal } => goal,
+                aftermine_sim::Order::Run { goal } => goal,
                 other => panic!("unit {id} left its walk: {other:?}"),
             })
             .collect()
@@ -5919,7 +5941,7 @@ fn a_group_sent_into_fog_draws_its_click_for_every_member() {
         }
     };
 
-    assert!(goals(&game).iter().all(oxide_sim::Goal::is_pending));
+    assert!(goals(&game).iter().all(aftermine_sim::Goal::is_pending));
     draws_the_click(&game);
 
     let mut exposed = false;
@@ -5931,7 +5953,10 @@ fn a_group_sent_into_fog_draws_its_click_for_every_member() {
         }
     }
     assert!(exposed, "the walk explores its click on the way");
-    let mut targets: Vec<_> = goals(&game).iter().map(oxide_sim::Goal::target).collect();
+    let mut targets: Vec<_> = goals(&game)
+        .iter()
+        .map(aftermine_sim::Goal::target)
+        .collect();
     targets.sort_unstable_by_key(|tile| (tile.y, tile.x));
     targets.dedup();
     assert_eq!(targets.len(), group.len(), "each member took its own slot");
@@ -5958,7 +5983,7 @@ fn a_landing_that_took_over_a_walk_draws_at_its_click() {
     let mut pad = None;
     for _ in 0..1_500 {
         game.state.tick(&[]);
-        if let oxide_sim::Order::Land { goal, from } = game.state.unit(condor).unwrap().order {
+        if let aftermine_sim::Order::Land { goal, from } = game.state.unit(condor).unwrap().order {
             assert_eq!(from, Some(clicked), "the landing keeps the walk's click");
             pad = Some(goal);
             break;
@@ -5979,7 +6004,7 @@ fn a_landing_that_took_over_a_walk_draws_at_its_click() {
 
 #[test]
 fn an_attack_on_an_even_footprint_draws_at_its_center() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Even footprint",
             "players": [
@@ -6024,12 +6049,12 @@ fn an_attack_on_an_even_footprint_draws_at_its_center() {
         player: human,
         command: Command::Attack {
             units: vec![raider],
-            target: oxide_sim::Target::Building(fabricator).into(),
+            target: aftermine_sim::Target::Building(fabricator).into(),
             queue: false,
         },
     }]);
     let unit = game.state.unit(raider).unwrap();
-    assert!(matches!(unit.order, oxide_sim::Order::Attack { .. }));
+    assert!(matches!(unit.order, aftermine_sim::Order::Attack { .. }));
     let points: Vec<_> = crumbs(&game, unit)
         .into_iter()
         .map(|(index, point, _)| (index, point))
@@ -6044,7 +6069,7 @@ fn an_attack_on_an_even_footprint_draws_at_its_center() {
 
 #[test]
 fn work_on_an_even_footprint_draws_at_its_center() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Even footprint work",
             "players": [
@@ -6087,7 +6112,7 @@ fn work_on_an_even_footprint_draws_at_its_center() {
         .next()
         .unwrap()
         .id;
-    let kind = oxide_sim::BuildingKind::Fabricator;
+    let kind = aftermine_sim::BuildingKind::Fabricator;
     let build = |anchor, queue, defer| PlayerCommand {
         player: human,
         command: Command::Build {
@@ -6120,9 +6145,9 @@ fn work_on_an_even_footprint_draws_at_its_center() {
         matches!(
             orders[..],
             [
-                oxide_sim::Order::Found { .. },
-                oxide_sim::Order::Build { .. },
-                oxide_sim::Order::Salvage { building },
+                aftermine_sim::Order::Found { .. },
+                aftermine_sim::Order::Build { .. },
+                aftermine_sim::Order::Salvage { building },
             ] if building == salvaged
         ),
         "premise: {orders:?}"
@@ -6155,7 +6180,7 @@ fn the_docks_subject_always_draws_its_trail() {
     for i in 0..13 {
         units.push(serde_json::json!({"player": 0, "kind": "sentinel", "x": 2 + i, "y": 4}));
     }
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Crowd",
             "players": [
@@ -6332,7 +6357,12 @@ fn a_click_on_remembered_ground_defers_and_unscouted_refuses() {
     assert!(game.state.vision(game.presentation.human).explored(spot));
 
     game.presentation.selection.units = vec![harvester];
-    build_click(&mut game, &mut input, oxide_sim::BuildingKind::Turret, spot);
+    build_click(
+        &mut game,
+        &mut input,
+        aftermine_sim::BuildingKind::Turret,
+        spot,
+    );
     assert_eq!(game.pending.len(), 1, "remembered ground stages the claim");
     match &game.pending[0].command {
         Command::Build { anchor, defer, .. } => {
@@ -6346,7 +6376,12 @@ fn a_click_on_remembered_ground_defers_and_unscouted_refuses() {
     // stays armed for the next try.
     let dark = TilePos::new(30, 5);
     assert!(!game.state.vision(game.presentation.human).explored(dark));
-    build_click(&mut game, &mut input, oxide_sim::BuildingKind::Turret, dark);
+    build_click(
+        &mut game,
+        &mut input,
+        aftermine_sim::BuildingKind::Turret,
+        dark,
+    );
     assert_eq!(game.pending.len(), 1, "unscouted ground stages nothing");
     assert!(input.placing.is_some(), "the refusal keeps the mode armed");
 }
@@ -6362,7 +6397,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .expect("skirmish authors a harvester")
         .id;
-    let kind = oxide_sim::BuildingKind::Fabricator;
+    let kind = aftermine_sim::BuildingKind::Fabricator;
     let first = TilePos::new(18, 4);
     let replacement = TilePos::new(19, 4);
     let cost = kind
@@ -6448,7 +6483,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
     );
     assert_eq!(
         placement_refusal(&game.view(), kind, replacement, true),
-        Some(oxide_sim::PlaceRefusal::Building),
+        Some(aftermine_sim::PlaceRefusal::Building),
         "Shift preserves the overlapping pending footprint"
     );
     let replacing = pending_build_projection(&game.view(), kind, replacement, false).funds;
@@ -6477,7 +6512,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
         !report
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. })),
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. })),
         "the sim accepts the same command sequence the shell preflight accepted"
     );
     assert_eq!(
@@ -6487,7 +6522,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
     );
     assert!(matches!(
         game.state.unit(builder).expect("builder survives").order,
-        oxide_sim::Order::Found {
+        aftermine_sim::Order::Found {
             kind: ordered,
             anchor,
         } if ordered == kind && anchor == replacement
@@ -6529,14 +6564,14 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
         !report
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. }))
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. }))
     );
     assert!(matches!(
         game.state
             .unit(other_builder)
             .expect("other builder survives")
             .order,
-        oxide_sim::Order::Found {
+        aftermine_sim::Order::Found {
             kind: ordered,
             anchor,
         } if ordered == kind && anchor == first
@@ -6547,7 +6582,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
 fn pending_projection_refunds_unstarted_sites_on_replacement_or_stop() {
     let mut game = drag_arena(500);
     let builder = game.state.units()[0].id;
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let anchor = TilePos::new(4, 2);
     let cost = kind
         .base_stats()
@@ -6598,7 +6633,7 @@ fn pending_projection_refunds_unstarted_sites_on_replacement_or_stop() {
     );
     assert_eq!(
         placement_refusal(&game.view(), kind, anchor, true),
-        Some(oxide_sim::PlaceRefusal::Building)
+        Some(aftermine_sim::PlaceRefusal::Building)
     );
     game.pending.push(PlayerCommand {
         player: game.presentation.human,
@@ -6617,7 +6652,7 @@ fn pending_projection_refunds_unstarted_sites_on_replacement_or_stop() {
     );
     assert_eq!(
         placement_refusal(&game.view(), kind, anchor, true),
-        Some(oxide_sim::PlaceRefusal::Building)
+        Some(aftermine_sim::PlaceRefusal::Building)
     );
     game.pending.pop();
 
@@ -6654,7 +6689,7 @@ fn a_paid_site_does_not_reserve_its_surviving_deferred_claim_again() {
         .take(2)
         .collect();
     assert_eq!(workers.len(), 2, "skirmish authors two human workers");
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let anchor = TilePos::new(10, 4);
     let cost = kind
         .base_stats()
@@ -6688,7 +6723,7 @@ fn a_paid_site_does_not_reserve_its_surviving_deferred_claim_again() {
         .inspect_command_phase(&game.pending, |projected| {
             assert!(matches!(
                 projected.unit(workers[0]).expect("worker survives").order,
-                oxide_sim::Order::Found {
+                aftermine_sim::Order::Found {
                     kind: ordered,
                     anchor: claimed,
                 } if ordered == kind && claimed == anchor
@@ -6741,7 +6776,7 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
             queue: false,
         },
     }];
-    for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
+    for _ in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
         fill.push(PlayerCommand {
             player: game.presentation.human,
             command: Command::Run {
@@ -6758,15 +6793,15 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
             .expect("worker survives")
             .queue
             .len(),
-        oxide_sim::stats::ORDER_QUEUE_CAP,
+        aftermine_sim::stats::ORDER_QUEUE_CAP,
         "the lowest-id founder starts full"
     );
     assert!(matches!(
         game.state.unit(workers[1]).expect("worker survives").order,
-        oxide_sim::Order::Idle
+        aftermine_sim::Order::Idle
     ));
 
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let low = game.state.unit(workers[0]).expect("worker survives").tile();
     let anchor = (0..game.state.map().height())
         .flat_map(|y| (0..game.state.map().width()).map(move |x| TilePos::new(x, y)))
@@ -6800,8 +6835,8 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
     assert!(
         !report.events.iter().any(|event| matches!(
             event,
-            oxide_sim::Event::CommandRejected {
-                reason: oxide_sim::command::RejectReason::QueueFull,
+            aftermine_sim::Event::CommandRejected {
+                reason: aftermine_sim::command::RejectReason::QueueFull,
                 ..
             }
         )),
@@ -6812,8 +6847,8 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
     assert!(
         report.events.iter().any(|event| matches!(
             event,
-            oxide_sim::Event::CommandRejected {
-                reason: oxide_sim::command::RejectReason::QueueFull,
+            aftermine_sim::Event::CommandRejected {
+                reason: aftermine_sim::command::RejectReason::QueueFull,
                 ..
             }
         )),
@@ -6832,7 +6867,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .expect("skirmish authors a harvester")
         .id;
-    let kind = oxide_sim::BuildingKind::Fabricator;
+    let kind = aftermine_sim::BuildingKind::Fabricator;
     let old_spot = TilePos::new(10, 4);
     let new_spot = TilePos::new(11, 4);
     for spot in [old_spot, new_spot] {
@@ -6857,7 +6892,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
         !report
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. }))
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. }))
     );
     let site = game
         .state
@@ -6869,7 +6904,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
     assert_eq!(site.construction_progress(), Some(0));
     assert_eq!(
         game.state.unit(builder).unwrap().order,
-        oxide_sim::Order::Build { site: site.id }
+        aftermine_sim::Order::Build { site: site.id }
     );
 
     game.presentation.selection.units = vec![builder];
@@ -6903,7 +6938,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
 
     assert_eq!(
         placement_refusal(&game.view(), kind, new_spot, true),
-        Some(oxide_sim::PlaceRefusal::Building),
+        Some(aftermine_sim::PlaceRefusal::Building),
         "Shift appends, so the live claim remains a blocker"
     );
     apply_events(
@@ -6945,23 +6980,27 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
 
 #[test]
 fn the_upgrade_card_stages_only_the_building() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario
         .units
         .retain(|unit| unit.player != 0 || unit.kind != UnitKind::Harvester);
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Turret,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Turret,
+            x: 9,
+            y: 3,
+        });
     scenario.players[0].scrap = 1000;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 12,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 12,
+            y: 3,
+        });
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("upgrade fixture builds");
     let mut input = InputState::new();
@@ -6969,7 +7008,7 @@ fn the_upgrade_card_stages_only_the_building() {
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Turret)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![turret];
@@ -6977,24 +7016,24 @@ fn the_upgrade_card_stages_only_the_building() {
     assert_eq!(game.pending.len(), 1, "one upgrade command staged");
     assert!(matches!(
         game.pending[0].command,
-        oxide_sim::Command::UpgradeBuilding { building } if building == turret
+        aftermine_sim::Command::UpgradeBuilding { building } if building == turret
     ));
 }
 
 #[test]
 fn an_automatic_upgrade_is_not_a_worker_target_or_a_scrappable_site() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 500;
     scenario.buildings.extend([
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 0,
-            kind: oxide_sim::BuildingKind::Fabricator,
+            kind: aftermine_sim::BuildingKind::Fabricator,
             x: 9,
             y: 3,
         },
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 0,
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             x: 12,
             y: 3,
         },
@@ -7013,12 +7052,12 @@ fn an_automatic_upgrade_is_not_a_worker_target_or_a_scrappable_site() {
         .state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::Turret)
+        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
         .expect("fixture has a turret")
         .id;
-    game.state.tick(&[oxide_sim::PlayerCommand {
+    game.state.tick(&[aftermine_sim::PlayerCommand {
         player: game.presentation.human,
-        command: oxide_sim::Command::UpgradeBuilding { building: turret },
+        command: aftermine_sim::Command::UpgradeBuilding { building: turret },
     }]);
     let center = game.state.building(turret).expect("upgrade lives").center();
     assert_eq!(
@@ -7153,7 +7192,7 @@ fn the_back_card_closes_the_palette_and_keeps_the_builder() {
     activate_card(
         &mut game,
         &mut input,
-        crate::panel::CardAction::ArmBuild(oxide_sim::BuildingKind::Turret),
+        crate::panel::CardAction::ArmBuild(aftermine_sim::BuildingKind::Turret),
     );
     assert!(input.placing.is_some(), "a building is armed");
     activate_card(
@@ -7177,7 +7216,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
         activate_card(
             &mut game,
             &mut input,
-            CardAction::ArmBuild(oxide_sim::BuildingKind::Turret),
+            CardAction::ArmBuild(aftermine_sim::BuildingKind::Turret),
         );
         let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
         let mut layout = game.presentation.layout.get();
@@ -7186,7 +7225,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
         layout.panel_regions[0] = Rect::new(0.0, 680.0, 600.0, 120.0);
         layout.cards[0] = (
             Rect::new(300.0, 700.0, 100.0, 90.0),
-            CardAction::ArmBuild(oxide_sim::BuildingKind::Reclaimer),
+            CardAction::ArmBuild(aftermine_sim::BuildingKind::Reclaimer),
         );
         layout.cards[1] = (Rect::new(410.0, 700.0, 100.0, 90.0), CardAction::None);
         layout.card_count = 2;
@@ -7202,7 +7241,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
             apply_events(&mut game, &mut input, &events);
             assert_eq!(
                 input.placing_kind(),
-                Some(oxide_sim::BuildingKind::Reclaimer)
+                Some(aftermine_sim::BuildingKind::Reclaimer)
             );
             assert!(input.construction_open());
             assert!(input.planned_stamps().is_empty());
@@ -7213,8 +7252,8 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
 }
 
 fn knowledge_attack_game() -> Game {
-    use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     let mut rows = vec![vec!['.'; 40]; 30];
     rows[1][1] = '1';
     rows[27][37] = '2';
@@ -7244,13 +7283,13 @@ fn knowledge_attack_game() -> Game {
     scenario.buildings = vec![
         BuildingSpec {
             player: 0,
-            kind: oxide_sim::BuildingKind::Array,
+            kind: aftermine_sim::BuildingKind::Array,
             x: 5,
             y: 16,
         },
         BuildingSpec {
             player: 0,
-            kind: oxide_sim::BuildingKind::Bastion,
+            kind: aftermine_sim::BuildingKind::Bastion,
             x: 5,
             y: 6,
         },
@@ -7258,7 +7297,7 @@ fn knowledge_attack_game() -> Game {
         // the rest of the remembered footprint has no contact above it.
         BuildingSpec {
             player: 1,
-            kind: oxide_sim::BuildingKind::Fabricator,
+            kind: aftermine_sim::BuildingKind::Fabricator,
             x: 16,
             y: 16,
         },
@@ -7293,7 +7332,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
     assert!(matches!(
         game.pending.last().unwrap().command,
         Command::Attack {
-            target: oxide_sim::AttackTarget::RememberedBuilding(_),
+            target: aftermine_sim::AttackTarget::RememberedBuilding(_),
             ..
         }
     ));
@@ -7312,7 +7351,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
     context_order(&mut game, screen, false);
     assert!(
         matches!(game.pending.last().unwrap().command, Command::Attack {
-        target: oxide_sim::AttackTarget::Contact(id), ..
+        target: aftermine_sim::AttackTarget::Contact(id), ..
     } if id == contact)
     );
     game.pending.clear();
@@ -7321,14 +7360,14 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Bastion)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Bastion)
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![defense];
     context_order(&mut game, screen, false);
     assert!(
         matches!(game.pending.last().unwrap().command, Command::FocusFire {
-        target: oxide_sim::AttackTarget::Contact(id), ..
+        target: aftermine_sim::AttackTarget::Contact(id), ..
     } if id == contact)
     );
     let commands = std::mem::take(&mut game.pending);
@@ -7356,7 +7395,7 @@ fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
     scenario.units[2].kind = UnitKind::Kestrel;
     scenario.units[2].x = 16;
     scenario.units[2].y = 16;
-    scenario.buildings[1].kind = oxide_sim::BuildingKind::FlakTurret;
+    scenario.buildings[1].kind = aftermine_sim::BuildingKind::FlakTurret;
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let gun = game.state.units()[0].id;
     let scout = game.state.units()[1].id;
@@ -7394,28 +7433,28 @@ fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
     game.presentation.selection.units = vec![gun];
     context_order(&mut game, screen, false);
     assert!(matches!(game.pending.last().unwrap().command,
-        Command::Attack { target: oxide_sim::AttackTarget::Contact(id), .. } if id == contact));
+        Command::Attack { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
     game.pending.clear();
     game.presentation.selection.units.clear();
     game.presentation.selection.buildings = vec![
         game.state
             .buildings()
             .iter()
-            .find(|building| building.kind == oxide_sim::BuildingKind::FlakTurret)
+            .find(|building| building.kind == aftermine_sim::BuildingKind::FlakTurret)
             .unwrap()
             .id,
     ];
     context_order(&mut game, screen, false);
     assert!(matches!(game.pending.last().unwrap().command,
-        Command::FocusFire { target: oxide_sim::AttackTarget::Contact(id), .. } if id == contact));
+        Command::FocusFire { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
 }
 
 #[test]
 fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
-    use oxide_sim::BuildingKind;
+    use aftermine_sim::BuildingKind;
     let anchor = TilePos::new(12, 4);
     for mined in [false, true] {
-        let scenario=oxide_sim::Scenario::from_json(&serde_json::json!({
+        let scenario=aftermine_sim::Scenario::from_json(&serde_json::json!({
             "name":"Mine placement","players":[{"name":"Builder","scrap":800,"bot":false},{"name":"Mines","scrap":0,"bot":true}],
             "map":["########################","#1.....................#","#......................#","#......................#","#......................#","#......................#","#......................#","#...................2..#","#......................#","########################"],
             "units":[{"player":0,"kind":"harvester","x":4,"y":4},{"player":0,"kind":"harvester","x":10,"y":2}],
@@ -7440,7 +7479,7 @@ fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
             !report
                 .events
                 .iter()
-                .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+                .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
         );
         let site = game
             .state
@@ -7468,8 +7507,8 @@ fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
 
 #[test]
 fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment() {
-    use oxide_sim::BuildingKind;
-    let scenario=oxide_sim::Scenario::from_json(&serde_json::json!({
+    use aftermine_sim::BuildingKind;
+    let scenario=aftermine_sim::Scenario::from_json(&serde_json::json!({
         "name":"Mine visibility","players":[{"name":"Observer","scrap":800,"bot":false},{"name":"Mines","scrap":800,"bot":true}],
         "map":["########################","#1.....................#","#......................#","#......................#","#......................#","#......................#","#......................#","#...................2..#","#......................#","########################"],
         "units":[{"player":0,"kind":"harvester","x":10,"y":2},{"player":1,"kind":"harvester","x":13,"y":4}],
@@ -7478,7 +7517,7 @@ fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment(
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
     game.pending.push(PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         command: Command::Build {
             units: vec![game.state.units()[1].id],
             kind: BuildingKind::ScuttleCharge,
@@ -7564,14 +7603,16 @@ fn group_recall_from_production_or_construction_never_purchases_anything() {
 #[test]
 fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing_it() {
     use crate::action::{Action, BUILD_CATEGORIES, BindingMap, Chord};
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 10000;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
     let mut bindings = BindingMap::classic();
@@ -7608,9 +7649,9 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
             // this arena lacks.
             let enabled = !matches!(
                 kind,
-                oxide_sim::BuildingKind::Spire
-                    | oxide_sim::BuildingKind::MawCradle
-                    | oxide_sim::BuildingKind::RocCradle
+                aftermine_sim::BuildingKind::Spire
+                    | aftermine_sim::BuildingKind::MawCradle
+                    | aftermine_sim::BuildingKind::RocCradle
             );
             assert_eq!(card.enabled, enabled, "{}: {:?}", card.title, card.why);
             assert!(card.hotkey.contains("Ctrl+"));
@@ -7629,20 +7670,24 @@ fn remapped_construction_sequence_arms_every_enabled_card_without_shift_changing
 #[test]
 fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
     use crate::action::{BindingMap, Chord};
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 10000;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Turret,
-        x: 9,
-        y: 3,
-    });
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 12,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Turret,
+            x: 9,
+            y: 3,
+        });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 12,
+            y: 3,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
     let mut bindings = BindingMap::classic();
@@ -7651,7 +7696,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Turret)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![turret];
@@ -7679,13 +7724,15 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
 #[test]
 fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
     use crate::action::Chord;
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     game.presentation.selection.buildings = game
         .state
@@ -7705,7 +7752,7 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
         player: game.presentation.human,
         command: Command::SetRally {
             building: producers[0],
-            rally: Some(oxide_sim::Rally::Tile(TilePos::new(14, 9))),
+            rally: Some(aftermine_sim::Rally::Tile(TilePos::new(14, 9))),
         },
     }]);
     controls_key_with(&mut game, &mut input, &bindings, Key::I);
@@ -7733,14 +7780,16 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
 
 #[test]
 fn grouped_production_clicks_and_shortcuts_stage_the_same_batch() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 125;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Foundry,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Foundry,
+            x: 9,
+            y: 3,
+        });
     let make_game = || {
         let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
         game.presentation.selection.buildings = game
@@ -7792,7 +7841,7 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
     use crate::panel::CardAction;
     let mut outcomes = Vec::new();
     for mode in 0..4 {
-        let mut game = fixture(oxide_sim::BuildingKind::Turret, &[0, 1, 2], 450);
+        let mut game = fixture(aftermine_sim::BuildingKind::Turret, &[0, 1, 2], 450);
         let ids = game.presentation.selection.buildings.clone();
         let mut input = InputState::new();
         let mut bindings = BindingMap::classic();
@@ -7849,7 +7898,7 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
             !report
                 .events
                 .iter()
-                .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+                .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
         );
         outcomes.push(game.state.hash());
     }
@@ -7859,7 +7908,7 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
 #[test]
 fn grouped_focus_and_stop_skip_an_upgrade_staged_before_the_target_click() {
     use crate::building_actions::tests::fixture;
-    let mut game = fixture(oxide_sim::BuildingKind::Turret, &[0, 1, 2], 1000);
+    let mut game = fixture(aftermine_sim::BuildingKind::Turret, &[0, 1, 2], 1000);
     let ids = game.presentation.selection.buildings.clone();
     let target = game
         .state
@@ -7904,7 +7953,7 @@ fn grouped_focus_and_stop_skip_an_upgrade_staged_before_the_target_click() {
             .do_tick()
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
     assert!(
         ids.iter()
@@ -7959,7 +8008,7 @@ fn return_cargo_card_and_shortcut_replace_work_for_both_workers() {
                 !report
                     .events
                     .iter()
-                    .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. }))
+                    .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. }))
             );
         }
     }
@@ -7975,7 +8024,7 @@ fn the_dock_stop_square_halts_the_selection_by_click_and_tap() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .unwrap()
         .id;
-    game.state.tick(&[oxide_sim::PlayerCommand {
+    game.state.tick(&[aftermine_sim::PlayerCommand {
         player: game.presentation.human,
         command: Command::Hunt {
             units: vec![harvester],
@@ -8180,8 +8229,8 @@ fn mixed_workers_use_the_cargo_shortcut_and_keep_other_unit_bindings() {
 
 #[test]
 fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
-    use oxide_sim::scenario::{BuildingSpec, UnitSpec};
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     let mut rows = vec![vec!['.'; 40]; 30];
     rows[1][1] = '1';
     rows[27][37] = '2';
@@ -8197,13 +8246,13 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
     scenario.buildings = vec![
         BuildingSpec {
             player: 1,
-            kind: oxide_sim::BuildingKind::Extractor,
+            kind: aftermine_sim::BuildingKind::Extractor,
             x: 30,
             y: 24,
         },
         BuildingSpec {
             player: 1,
-            kind: oxide_sim::BuildingKind::Crucible,
+            kind: aftermine_sim::BuildingKind::Crucible,
             x: 34,
             y: 22,
         },
@@ -8213,11 +8262,11 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Extractor)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Extractor)
         .unwrap()
         .id;
     game.state.tick(&[PlayerCommand {
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         command: Command::UpgradeBuilding { building: bore },
     }]);
     assert_eq!(game.state.building(bore).unwrap().tier, 1, "premise");
@@ -8229,7 +8278,7 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
     assert!(matches!(
         game.pending.last().unwrap().command,
         Command::Attack {
-            target: oxide_sim::AttackTarget::RememberedBuilding(memory),
+            target: aftermine_sim::AttackTarget::RememberedBuilding(memory),
             ..
         } if memory.anchor == TilePos::new(30, 24)
     ));
@@ -8238,7 +8287,7 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
 #[test]
 fn a_round_chip_cancels_its_own_position() {
     let mut game =
-        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Lattice, &[0], 2000);
+        crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Lattice, &[0], 2000);
     let lattice = game.presentation.selection.buildings[0];
     let mut input = InputState::new();
     activate_card(
@@ -8257,8 +8306,9 @@ fn a_round_chip_cancels_its_own_position() {
 }
 
 /// A selected own Spire, loaded with one warhead.
-fn loaded_spire() -> (Game, oxide_sim::BuildingId) {
-    let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
+fn loaded_spire() -> (Game, aftermine_sim::BuildingId) {
+    let mut game =
+        crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Spire, &[0], 0);
     let spire = game.presentation.selection.buildings[0];
     let mut json = serde_json::to_value(&*game.state).unwrap();
     for b in json["buildings"].as_array_mut().unwrap() {
@@ -8270,7 +8320,7 @@ fn loaded_spire() -> (Game, oxide_sim::BuildingId) {
     (game, spire)
 }
 
-fn launches(game: &Game) -> Vec<(oxide_sim::BuildingId, TilePos)> {
+fn launches(game: &Game) -> Vec<(aftermine_sim::BuildingId, TilePos)> {
     game.pending
         .iter()
         .filter_map(|pc| match pc.command {
@@ -8282,7 +8332,8 @@ fn launches(game: &Game) -> Vec<(oxide_sim::BuildingId, TilePos)> {
 
 #[test]
 fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
-    let mut game = crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Spire, &[0], 0);
+    let mut game =
+        crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Spire, &[0], 0);
     let mut input = InputState::new();
     dispatch_action(&mut game, &mut input, Action::Launch);
     assert!(input.striking.is_none(), "an empty Spire arms nothing");
@@ -8364,7 +8415,7 @@ fn a_click_with_a_touch_aim_down_moves_the_aim_instead_of_launching() {
 }
 
 /// Skirmish's starting Surveyor and a staged Sentinel beside it.
-fn scout_game() -> (Game, oxide_sim::UnitId, oxide_sim::UnitId) {
+fn scout_game() -> (Game, aftermine_sim::UnitId, aftermine_sim::UnitId) {
     let game = headless_game();
     let own = |kind: UnitKind| {
         game.state
@@ -8461,16 +8512,16 @@ fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
 /// A skirmish with a West Roc on alert beside an enemy Skyhook, its two
 /// docked drones launched by the first tick.
 fn roc_with_drones() -> (Game, UnitId) {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 0,
-        kind: oxide_sim::UnitKind::Roc,
+        kind: aftermine_sim::UnitKind::Roc,
         x: 12,
         y: 10,
     });
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
-        kind: oxide_sim::UnitKind::Skyhook,
+        kind: aftermine_sim::UnitKind::Skyhook,
         x: 15,
         y: 10,
     });
@@ -8479,7 +8530,7 @@ fn roc_with_drones() -> (Game, UnitId) {
         .state
         .units()
         .iter()
-        .find(|unit| unit.kind == oxide_sim::UnitKind::Roc)
+        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
         .unwrap()
         .id;
     let mut value = serde_json::to_value(&*game.state).unwrap();
@@ -8523,7 +8574,7 @@ fn a_selected_roc_offers_its_drone_bay() {
     assert!(titles.contains(&"Autofill: on"), "{titles:?}");
     let ordered = |game: &Game| match crate::unit_bays::SelectedBays::inspect(&game.view()).cancel()
     {
-        Some(oxide_sim::Command::CancelDrone { index, .. }) => index + 1,
+        Some(aftermine_sim::Command::CancelDrone { index, .. }) => index + 1,
         _ => 0,
     };
     let before = ordered(&game);
@@ -8532,7 +8583,7 @@ fn a_selected_roc_offers_its_drone_bay() {
     assert!(
         game.pending
             .iter()
-            .any(|pending| matches!(pending.command, oxide_sim::Command::OrderDrone { unit } if unit == roc)),
+            .any(|pending| matches!(pending.command, aftermine_sim::Command::OrderDrone { unit } if unit == roc)),
         "the order hotkey pays for a drone: {:?}",
         game.pending
     );
@@ -8544,7 +8595,7 @@ fn a_selected_roc_offers_its_drone_bay() {
     assert!(
         matches!(
             bays.autofill_toggle(),
-            Some(oxide_sim::Command::SetDroneAutofill { enabled: true, .. })
+            Some(aftermine_sim::Command::SetDroneAutofill { enabled: true, .. })
         ),
         "the second toggle undoes the first: {:?}",
         bays.autofill_toggle()
@@ -8576,7 +8627,7 @@ fn the_auto_weld_key_switches_the_selected_workers() {
     assert!(
         game.pending.iter().any(|pending| matches!(
             &pending.command,
-            oxide_sim::Command::SetIdleWeld { units, enabled: false } if *units == [worker]
+            aftermine_sim::Command::SetIdleWeld { units, enabled: false } if *units == [worker]
         )),
         "{:?}",
         game.pending

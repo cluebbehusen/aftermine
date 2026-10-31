@@ -1,7 +1,7 @@
 //! Presentation-only sight and exploration for the decorative off-map quarry.
 
+use aftermine_sim::{PlayerId, State};
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::{PlayerId, State};
 
 // The terraces and their vignette extend at most six tiles from the floor.
 const PAD: i32 = 8;

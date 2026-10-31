@@ -7,14 +7,14 @@ use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::missions::{Hazard, Meal, Scratch};
 use crate::profile::ResolvedProfile;
+use aftermine_sim::TICKS_PER_SECOND;
+use aftermine_sim::ids::Target;
+use aftermine_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
+use aftermine_sim::{BuildingKind, Command, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::TICKS_PER_SECOND;
-use oxide_sim::ids::Target;
-use oxide_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
-use oxide_sim::scenario::BotStance;
-use oxide_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
-use oxide_sim::{BuildingKind, Command, UnitId, UnitKind};
 use std::borrow::Cow;
 use std::cmp::Reverse;
 
@@ -61,7 +61,7 @@ pub(crate) fn per_welder(support: u8) -> u64 {
 /// An armed ground machine a weld can mend.
 fn armed_ground(kind: UnitKind) -> bool {
     let stats = kind.stats();
-    stats.domain == oxide_sim::stats::Domain::Ground
+    stats.domain == aftermine_sim::stats::Domain::Ground
         && !stats.weapons.is_empty()
         && stats.repairable()
 }
@@ -437,7 +437,7 @@ fn weld(
     ledger: &mut Ledger,
 ) {
     // Buildings a worker already welds, on order or on its own.
-    let tended: Vec<oxide_sim::BuildingId> = observation
+    let tended: Vec<aftermine_sim::BuildingId> = observation
         .my_units
         .iter()
         .filter(|unit| worker(unit.kind) && unit.repair.is_some())
@@ -699,7 +699,7 @@ fn crew_cradles(
                 unit.site == Some(site.id) || unit.founding == Some((site.kind, site.anchor))
             })
             .count();
-        let room = oxide_sim::stats::ASSEMBLY_CREW_CAP.saturating_sub(crew);
+        let room = aftermine_sim::stats::ASSEMBLY_CREW_CAP.saturating_sub(crew);
         let Some(ground) = map.component(site.anchor) else {
             continue;
         };

@@ -3,7 +3,7 @@
 # per-crate table for each to the job summary. The unit gate counts library
 # and binary unit tests; the combined gate adds the integration suites to the
 # same profiles. Kladde can annotate every miss because it enforces 100%;
-# Oxide deliberately starts lower, where thousands of line annotations would
+# Aftermine deliberately starts lower, where thousands of line annotations would
 # bury useful output.
 #
 # The combined run skips the representative-map integrity soak:
@@ -22,13 +22,13 @@ gate() {
                 .filename
                 | ltrimstr($root)
                 | split("/")[0]
-                | if . == "sim" then {rank: 1, name: "oxide-sim"}
-                  elif . == "opponent" then {rank: 3, name: "oxide-opponent"}
-                  elif . == "protocol" then {rank: 4, name: "oxide-protocol"}
-                  elif . == "kit" then {rank: 5, name: "oxide-kit"}
-                  elif . == "net" then {rank: 6, name: "oxide-net"}
-                  elif . == "shell" then {rank: 7, name: "oxide-shell"}
-                  elif . == "driver" then {rank: 8, name: "oxide-driver"}
+                | if . == "sim" then {rank: 1, name: "aftermine-sim"}
+                  elif . == "opponent" then {rank: 3, name: "aftermine-opponent"}
+                  elif . == "protocol" then {rank: 4, name: "aftermine-protocol"}
+                  elif . == "kit" then {rank: 5, name: "aftermine-kit"}
+                  elif . == "net" then {rank: 6, name: "aftermine-net"}
+                  elif . == "shell" then {rank: 7, name: "aftermine-shell"}
+                  elif . == "driver" then {rank: 8, name: "aftermine-driver"}
                   else {rank: 0, name: .}
                   end;
             def row($name; $covered; $count):

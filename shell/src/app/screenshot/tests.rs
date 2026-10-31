@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn screenshot_encoding_flips_gpu_rows_and_reports_path_errors() {
     let root = std::env::temp_dir().join(format!(
-        "oxide-png-{}-{}",
+        "aftermine-png-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

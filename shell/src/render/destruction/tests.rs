@@ -3,10 +3,13 @@ use crate::game::Game;
 
 #[test]
 fn scheduled_airframe_contacts_the_damage_point_with_its_full_level_pose() {
-    for kind in [oxide_sim::UnitKind::Condor, oxide_sim::UnitKind::Skyhook] {
-        let crash = oxide_sim::state::AircraftCrash {
-            unit: oxide_sim::UnitId(0),
-            player: oxide_sim::PlayerId(0),
+    for kind in [
+        aftermine_sim::UnitKind::Condor,
+        aftermine_sim::UnitKind::Skyhook,
+    ] {
+        let crash = aftermine_sim::state::AircraftCrash {
+            unit: aftermine_sim::UnitId(0),
+            player: aftermine_sim::PlayerId(0),
             kind,
             heading: 0,
             launch: chassis::grid::TilePos::new(8, 8).center(),
@@ -27,23 +30,23 @@ fn scheduled_airframe_contacts_the_damage_point_with_its_full_level_pose() {
 
 #[test]
 fn own_crash_remains_visible_when_the_casualty_was_the_last_vision_source() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.map = vec![".".repeat(40); 26];
     scenario.map[3].replace_range(2..3, "1");
     scenario.map[3].replace_range(35..36, "2");
     for player in &mut scenario.players {
         player.bot_config = None;
     }
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
-        kind: oxide_sim::UnitKind::Condor,
+        kind: aftermine_sim::UnitKind::Condor,
         x: 25,
         y: 20,
     }];
     for y in [17, 20, 23] {
-        scenario.units.push(oxide_sim::scenario::UnitSpec {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
             player: 1,
-            kind: oxide_sim::UnitKind::Flakhound,
+            kind: aftermine_sim::UnitKind::Flakhound,
             x: 28,
             y,
         });
@@ -66,7 +69,7 @@ fn own_crash_remains_visible_when_the_casualty_was_the_last_vision_source() {
                 &game.view(),
                 at,
                 UnitBody {
-                    player: oxide_sim::PlayerId(1),
+                    player: aftermine_sim::PlayerId(1),
                     ..body
                 },
             ));
@@ -90,7 +93,11 @@ fn fragments_land_once_and_stop_without_bouncing() {
 fn aircraft_contact_preserves_heading_and_stops_the_coast() {
     let body = UnitBody {
         velocity: vec2(-2.0, 1.0),
-        ..UnitBody::resting(oxide_sim::UnitKind::Condor, oxide_sim::PlayerId(0), 2.1)
+        ..UnitBody::resting(
+            aftermine_sim::UnitKind::Condor,
+            aftermine_sim::PlayerId(0),
+            2.1,
+        )
     };
     let start = crash_pose(vec2(8.0, 8.0), body, 0.0, false);
     let contact = crash_pose(vec2(8.0, 8.0), body, CRASH_TIME, false);
@@ -108,7 +115,11 @@ fn aircraft_contact_preserves_heading_and_stops_the_coast() {
 fn a_hovering_airframe_drops_level_to_its_existing_shadow() {
     let body = UnitBody {
         velocity: Vec2::ZERO,
-        ..UnitBody::resting(oxide_sim::UnitKind::Skyhook, oxide_sim::PlayerId(0), 0.0)
+        ..UnitBody::resting(
+            aftermine_sim::UnitKind::Skyhook,
+            aftermine_sim::PlayerId(0),
+            0.0,
+        )
     };
     let start = crash_pose(Vec2::ZERO, body, 0.0, false);
     let middle = crash_pose(Vec2::ZERO, body, CRASH_TIME * 0.5, false);
@@ -120,13 +131,16 @@ fn a_hovering_airframe_drops_level_to_its_existing_shadow() {
     assert_eq!(contact.body_at, contact.at);
     assert!(middle.body_at.y > start.body_at.y && middle.body_at.y < contact.body_at.y);
     assert_eq!(middle.rotation, start.rotation);
-    for kind in [oxide_sim::UnitKind::Condor, oxide_sim::UnitKind::Skyhook] {
+    for kind in [
+        aftermine_sim::UnitKind::Condor,
+        aftermine_sim::UnitKind::Skyhook,
+    ] {
         assert!(large_airframe(kind));
     }
     for kind in [
-        oxide_sim::UnitKind::Kestrel,
-        oxide_sim::UnitKind::Buzzard,
-        oxide_sim::UnitKind::Talon,
+        aftermine_sim::UnitKind::Kestrel,
+        aftermine_sim::UnitKind::Buzzard,
+        aftermine_sim::UnitKind::Talon,
     ] {
         assert!(!large_airframe(kind));
     }
@@ -136,7 +150,11 @@ fn a_hovering_airframe_drops_level_to_its_existing_shadow() {
 fn small_airframe_breaks_above_ground_then_its_fragments_settle() {
     let body = UnitBody {
         velocity: vec2(1.0, 0.0),
-        ..UnitBody::resting(oxide_sim::UnitKind::Kestrel, oxide_sim::PlayerId(0), 0.0)
+        ..UnitBody::resting(
+            aftermine_sim::UnitKind::Kestrel,
+            aftermine_sim::PlayerId(0),
+            0.0,
+        )
     };
     let left = air_fragment(body, 7, 0, 0.0);
     let right = air_fragment(body, 7, 1, 0.0);

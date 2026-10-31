@@ -5,8 +5,8 @@
 //! resumable state on the host machine.
 
 use crate::client::Client;
+use aftermine_protocol::{Key, RawEvent, Request, UiView};
 use anyhow::{Context, Result, bail};
-use oxide_protocol::{Key, RawEvent, Request, UiView};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -55,7 +55,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
     command.args([
         "build",
         "-p",
-        "oxide-shell",
+        "aftermine-shell",
         "--locked",
         "--message-format=json-render-diagnostics",
     ]);
@@ -65,7 +65,7 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
     let output = command
         .current_dir(&root)
         .output()
-        .context("building oxide-shell via cargo")?;
+        .context("building aftermine-shell via cargo")?;
     if !output.status.success() {
         let rendered = String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -73,12 +73,12 @@ pub(crate) fn build_shell_executable_for(release: bool) -> Result<PathBuf> {
             .filter_map(|message| message["message"]["rendered"].as_str().map(str::to_owned))
             .collect::<String>();
         bail!(
-            "building oxide-shell failed:\n{rendered}{}",
+            "building aftermine-shell failed:\n{rendered}{}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
     shell_executable_from_cargo_output(&output.stdout)
-        .context("cargo did not report the Oxide executable")
+        .context("cargo did not report the Aftermine executable")
 }
 
 fn shell_executable_from_cargo_output(stdout: &[u8]) -> Option<PathBuf> {
@@ -87,7 +87,7 @@ fn shell_executable_from_cargo_output(stdout: &[u8]) -> Option<PathBuf> {
             continue;
         };
         if message["reason"] == "compiler-artifact"
-            && message["target"]["name"] == "Oxide"
+            && message["target"]["name"] == "Aftermine"
             && let Some(executable) = message["executable"].as_str()
         {
             return Some(PathBuf::from(executable));
@@ -121,7 +121,7 @@ pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
             "--port",
             &opts.port.to_string(),
         ])
-        .env("OXIDE_RESOURCE_ROOT", &root);
+        .env("AFTERMINE_RESOURCE_ROOT", &root);
     if opts.paused {
         command.arg("--paused");
     }
@@ -136,7 +136,7 @@ pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
     } else {
         command.current_dir(root);
     }
-    let child = command.spawn().context("spawning built Oxide shell")?;
+    let child = command.spawn().context("spawning built Aftermine shell")?;
     let guard = ShellGuard::new(child);
     let addr = format!("127.0.0.1:{}", opts.port);
     for _ in 0..240 {

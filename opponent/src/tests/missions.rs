@@ -853,7 +853,7 @@ fn a_site_in_sight_is_no_danger_but_a_remembered_one_may_be() {
             observation,
             &model,
             &memory,
-            oxide_sim::stats::Domain::Ground,
+            aftermine_sim::stats::Domain::Ground,
         )
         .iter()
         .any(|hazard| hazard.covers(crate::frame::doubled(near)))
@@ -939,7 +939,7 @@ fn a_bulwark_out_of_sight_is_valued_and_feared_as_a_bulwark() {
             &observation,
             &model,
             &memory,
-            oxide_sim::stats::Domain::Ground,
+            aftermine_sim::stats::Domain::Ground,
         )
         .iter()
         .any(|hazard| hazard.covers(beyond)),
@@ -1034,11 +1034,11 @@ fn a_defense_re_sends_only_members_that_found_a_route() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
-        &[oxide_sim::Event::OrderStalled {
+        &[aftermine_sim::Event::OrderStalled {
             unit: stuck,
             player: PlayerId(0),
             pos: moved.unit(stuck).unwrap().pos,
-            reason: oxide_sim::StallReason::NoRoute,
+            reason: aftermine_sim::StallReason::NoRoute,
         }],
     );
     assert_eq!(

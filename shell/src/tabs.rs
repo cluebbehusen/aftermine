@@ -9,10 +9,10 @@ use crate::theme::{
     BORDER_STRONG, CARD_IDLE, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY,
     TEXT_PRIMARY, TEXT_SECONDARY, Type,
 };
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{
     Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
 };
-use oxide_protocol::RawEvent;
 
 /// The keys that step tabs in menus now, while both have one.
 pub(crate) fn keys() -> Option<(String, String)> {

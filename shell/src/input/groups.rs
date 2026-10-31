@@ -2,8 +2,8 @@
 
 use crate::game::{Game, Scene};
 use crate::panel::CardIcon;
+use aftermine_sim::{BuildingId, UnitId};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{BuildingId, UnitId};
 
 /// A saved control group. Like a selection, it holds units or buildings,
 /// never both, so every command path that reads a selection reads a

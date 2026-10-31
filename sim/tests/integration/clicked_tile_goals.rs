@@ -7,15 +7,15 @@
 use crate::common;
 use common::{cmd, run_until};
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::event::StallReason;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::event::StallReason;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{
     AttackTarget, Command, Event, Goal, Order, PlayerCommand, PlayerId, Scenario, State, UnitId,
     UnitKind,
 };
+use chassis::grid::TilePos;
 
 /// An open sandbox of `width` by `height`, with `carve` editing the grid.
 fn field(width: usize, height: usize, carve: impl Fn(&mut Vec<Vec<char>>)) -> Vec<String> {
@@ -147,7 +147,7 @@ fn a_group_spreads_at_issue_on_explored_ground_and_on_exposure_otherwise() {
     let mut state = base;
     state.tick(&[cmd(0, move_to(group.clone(), unseen))]);
     let pending: Vec<Goal> = group.iter().map(|&id| goal(&state, id).unwrap()).collect();
-    let oxide_sim::Aim::Pending { reverse, .. } = pending[0].aim else {
+    let aftermine_sim::Aim::Pending { reverse, .. } = pending[0].aim else {
         panic!("an unseen click waits for exposure: {pending:?}");
     };
     for (rank, goal) in pending.iter().enumerate() {
@@ -155,7 +155,7 @@ fn a_group_spreads_at_issue_on_explored_ground_and_on_exposure_otherwise() {
         assert_eq!(goal.destination(), unseen, "one shared tile until seen");
         assert_eq!(
             goal.aim,
-            oxide_sim::Aim::Pending {
+            aftermine_sim::Aim::Pending {
                 rank: u8::try_from(rank).unwrap(),
                 reverse
             },
@@ -250,7 +250,7 @@ fn rally_newborn(state: &mut State, rally: TilePos) -> UnitId {
             0,
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(rally)),
+                rally: Some(aftermine_sim::Rally::Tile(rally)),
             },
         ),
         cmd(
@@ -283,7 +283,7 @@ fn a_rally_on_explored_rock_resolves_at_birth_and_an_unexplored_one_on_exposure(
     let newborn = rally_newborn(&mut state, seen);
     let goal_at_birth = goal(&state, newborn).expect("the newborn walks to the rally");
     assert_eq!(goal_at_birth.tile(), seen);
-    assert!(matches!(goal_at_birth.aim, oxide_sim::Aim::Slot(slot) if state.passable(slot)));
+    assert!(matches!(goal_at_birth.aim, aftermine_sim::Aim::Slot(slot) if state.passable(slot)));
 
     let mut state = rally_field();
     let unseen = TilePos::new(40, 6);
@@ -293,14 +293,14 @@ fn a_rally_on_explored_rock_resolves_at_birth_and_an_unexplored_one_on_exposure(
     assert_eq!(pending.tile(), unseen);
     assert!(matches!(
         pending.aim,
-        oxide_sim::Aim::Pending { rank: 0, .. }
+        aftermine_sim::Aim::Pending { rank: 0, .. }
     ));
     run_until(&mut state, 600, |state, _| {
         goal(state, newborn).is_some_and(|goal| !goal.is_pending())
     });
     assert!(matches!(
         goal(&state, newborn).unwrap().aim,
-        oxide_sim::Aim::Slot(slot) if state.passable(slot)
+        aftermine_sim::Aim::Slot(slot) if state.passable(slot)
     ));
     let events = run_until(&mut state, 600, |state, _| {
         state.unit(newborn).unwrap().order == Order::Idle
@@ -386,7 +386,7 @@ fn pacifists_sent_at_an_unexplored_radar_contact_share_its_tile() {
     assert_eq!(goals[0].tile(), contact_tile);
     assert!(matches!(
         goals[0].aim,
-        oxide_sim::Aim::Pending { rank: 0, .. }
+        aftermine_sim::Aim::Pending { rank: 0, .. }
     ));
     run_until(&mut state, 400, |state, _| {
         walkers
@@ -506,7 +506,7 @@ fn a_reissue_onto_a_new_slot_adopts_it_without_touching_the_path() {
     state.tick(&[]);
     let second = state.unit(group[1]).unwrap().clone();
     let slotted = goal(&state, group[1]).unwrap();
-    assert!(matches!(slotted.aim, oxide_sim::Aim::Slot(_)));
+    assert!(matches!(slotted.aim, aftermine_sim::Aim::Slot(_)));
     state.inspect_command_phase(&[cmd(0, move_to(vec![group[1]], click))], |view| {
         let after = view.unit(group[1]).unwrap();
         let Order::Run { goal } = after.order else {
@@ -546,7 +546,7 @@ fn an_engagement_resumes_toward_the_same_slot() {
             other => panic!("marching: {other:?}"),
         }
     });
-    assert!(matches!(march.aim, oxide_sim::Aim::Slot(_)));
+    assert!(matches!(march.aim, aftermine_sim::Aim::Slot(_)));
     state.tick(&[command]);
     run_until(&mut state, 300, |state, _| {
         matches!(state.unit(group[1]).unwrap().order, Order::Attack { .. })
@@ -627,7 +627,7 @@ fn fliers_ordered_onto_a_peak_settle_off_it_seen_or_unseen() {
             });
             assert!(no_routes(&events).is_empty(), "{kind:?} from {start}");
             let rest = state.unit(flier).unwrap().tile();
-            assert!(state.passable_for(oxide_sim::stats::Domain::Air, rest));
+            assert!(state.passable_for(aftermine_sim::stats::Domain::Air, rest));
             assert!(rest.chebyshev(peak) <= 2, "{kind:?} rests at {rest:?}");
         }
     }
@@ -641,7 +641,7 @@ fn a_condor_hands_off_only_once_its_click_is_explored() {
     let click = TilePos::new(36, 6);
     assert!(!explored(&state, 0, click));
     state.tick(&[cmd(0, move_to(vec![condor], click))]);
-    let reach = oxide_sim::stats::LANDING_HANDOFF_REACH;
+    let reach = aftermine_sim::stats::LANDING_HANDOFF_REACH;
     let mut pending_in_reach = 0;
     let mut was_pending = true;
     run_until(&mut state, 800, |state, _| {
@@ -716,7 +716,7 @@ fn off_map_tile_goals_are_refused_without_a_trace() {
             },
             Command::SetRally {
                 building: foundry,
-                rally: Some(oxide_sim::Rally::Tile(tile)),
+                rally: Some(aftermine_sim::Rally::Tile(tile)),
             },
         ];
         for command in commands {

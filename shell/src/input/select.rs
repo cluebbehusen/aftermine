@@ -8,8 +8,8 @@
 use super::Pointer;
 use crate::game::Game;
 use crate::numeric;
+use aftermine_sim::UnitId;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::UnitId;
 
 /// Own harvesters with nothing to do, in id order — the cycle key and
 /// the HUD badge both read this.
@@ -20,7 +20,7 @@ pub fn idle_harvesters(game: &crate::game::Scene<'_>) -> Vec<UnitId> {
         .filter(|u| {
             u.player == game.presentation.human
                 && u.kind.stats().harvest.is_some()
-                && u.order == oxide_sim::Order::Idle
+                && u.order == aftermine_sim::Order::Idle
         })
         .map(|u| u.id)
         .collect()
@@ -53,7 +53,7 @@ pub(super) fn cycle_idle_worker(game: &mut Game) {
 /// World-space pick radius around a unit: never below the unit's own
 /// radius, and wider when zoomed out so it keeps a screen-space floor that
 /// is larger for a fingertip.
-fn pick_radius(game: &Game, ui: f32, kind: oxide_sim::UnitKind, pointer: Pointer) -> f32 {
+fn pick_radius(game: &Game, ui: f32, kind: aftermine_sim::UnitKind, pointer: Pointer) -> f32 {
     let reach = match pointer {
         Pointer::Mouse => 10.0,
         Pointer::Touch => 22.0,
@@ -64,8 +64,8 @@ fn pick_radius(game: &Game, ui: f32, kind: oxide_sim::UnitKind, pointer: Pointer
 /// What a press would select.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Picked {
-    Unit(UnitId, oxide_sim::PlayerId),
-    Building(oxide_sim::BuildingId, oxide_sim::PlayerId),
+    Unit(UnitId, aftermine_sim::PlayerId),
+    Building(aftermine_sim::BuildingId, aftermine_sim::PlayerId),
 }
 
 /// The entity a press at `screen` picks: the nearest selectable unit in
@@ -123,7 +123,7 @@ pub(super) fn click_on_hud(game: &Game, screen: Vec2) -> bool {
 /// (team sight), enemies only on currently visible ground. Selection
 /// must never reach through fog. A drone flies for its host alone and is
 /// never selected.
-fn selectable(game: &Game, unit: &oxide_sim::Unit) -> bool {
+fn selectable(game: &Game, unit: &aftermine_sim::Unit) -> bool {
     unit.host.is_none()
         && (!game.state.hostile(game.presentation.human, unit.player)
             || game.presentation.all_seeing()
@@ -133,7 +133,7 @@ fn selectable(game: &Game, unit: &oxide_sim::Unit) -> bool {
 /// Whether the human may select this building without learning through
 /// fog — or through stealth: an undetected buried charge must not be
 /// clickable on ground the player merely sees.
-fn selectable_building(game: &Game, building: &oxide_sim::Building) -> bool {
+fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
     building.player == game.presentation.human
         || game.presentation.all_seeing()
         || (building.tiles().any(|tile| game.my_vision().visible(tile))
@@ -228,7 +228,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
     let a = game.presentation.camera.to_world(a_screen);
     let b = game.presentation.camera.to_world(b_screen);
     let (lo, hi) = (a.min(b), a.max(b));
-    let unit_inside = |u: &&oxide_sim::Unit| {
+    let unit_inside = |u: &&aftermine_sim::Unit| {
         let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
         p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
     };
@@ -267,7 +267,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
 
     // Building centers are the pick points, matching units and avoiding
     // edge-only grabs of a large footprint.
-    let building_inside = |building: &&oxide_sim::Building| {
+    let building_inside = |building: &&aftermine_sim::Building| {
         let center = building.center();
         let p = vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>());
         p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y

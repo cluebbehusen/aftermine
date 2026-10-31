@@ -10,7 +10,7 @@ use crate::message::{GoneReason, JoinMessage, LobbyMessage, same_build};
 use crate::name::PlayerName;
 use crate::snapshot;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, START_TIMEOUT};
-use oxide_sim::{PlayerId, Tick};
+use aftermine_sim::{PlayerId, Tick};
 use std::time::Duration;
 
 /// Identifies one visitor's connection to the desk.

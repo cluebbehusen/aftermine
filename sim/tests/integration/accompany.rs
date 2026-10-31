@@ -7,12 +7,12 @@
 use crate::common;
 use common::{cmd, open_arena, run, run_until, unit};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{ScenarioMode, UnitSpec};
+use aftermine_sim::stats::ESCORT_BREAK_RADIUS;
+use aftermine_sim::{Command, Event, Order, Resume, Scenario, State, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{ScenarioMode, UnitSpec};
-use oxide_sim::stats::ESCORT_BREAK_RADIUS;
-use oxide_sim::{Command, Event, Order, Resume, Scenario, State, UnitId, UnitKind};
 use serde_json::json;
 
 fn build(units: Vec<UnitSpec>, scrap: u32) -> State {
@@ -299,7 +299,7 @@ fn a_long_gun_escort_left_behind_rejoins_before_firing_from_its_slot_again() {
         unreachable!()
     };
     state.tick(&[cmd(0, accompany(vec![gun], lead, false))]);
-    let engage = oxide_sim::stats::ESCORT_ENGAGE_RADIUS;
+    let engage = aftermine_sim::stats::ESCORT_ENGAGE_RADIUS;
     run_until(&mut state, 400, |s, _| {
         let behind = s.unit(gun).unwrap().pos.dist_sq(s.unit(lead).unwrap().pos);
         assert!(
@@ -323,12 +323,14 @@ fn an_escort_catching_up_does_not_answer_fire_from_beside_its_path() {
             unit(0, UnitKind::Lancer, 21, 10),
         ],
     );
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 1,
-        kind: oxide_sim::stats::BuildingKind::Turret,
-        x: 21,
-        y: 6,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 1,
+            kind: aftermine_sim::stats::BuildingKind::Turret,
+            x: 21,
+            y: 6,
+        });
     let mut state = scenario.build().unwrap();
     let [lead, lancer] = ids(&state)[..] else {
         unreachable!()
@@ -336,7 +338,7 @@ fn an_escort_catching_up_does_not_answer_fire_from_beside_its_path() {
     state.tick(&[cmd(0, accompany(vec![lancer], lead, false))]);
     let (full, engage) = (
         state.unit(lancer).unwrap().hp,
-        oxide_sim::stats::ESCORT_ENGAGE_RADIUS,
+        aftermine_sim::stats::ESCORT_ENGAGE_RADIUS,
     );
     let mut hit = false;
     run_until(&mut state, 400, |s, _| {
@@ -469,11 +471,11 @@ fn a_welder_escort_mends_the_party_only_while_the_escorted_unit_stands() {
         );
         stands_at(s, lead, TilePos::new(30, 10))
     });
-    let bank = state.player(oxide_sim::PlayerId(0)).scrap;
+    let bank = state.player(aftermine_sim::PlayerId(0)).scrap;
     let max_hp = UnitKind::Sentinel.stats().max_hp;
     run_until(&mut state, 3_000, |s, _| s.unit(lead).unwrap().hp == max_hp);
     assert!(
-        state.player(oxide_sim::PlayerId(0)).scrap < bank,
+        state.player(aftermine_sim::PlayerId(0)).scrap < bank,
         "welding bills"
     );
     run(&mut state, 5);

@@ -1,9 +1,9 @@
 //! Command replay and serialized state determinism.
 use crate::common;
+use aftermine_sim::{Command, Order, PlayerCommand, SIM_VERSION, Scenario, State, UnitKind};
 use chassis::grid::TilePos;
 use chassis::replay::Replay;
 use common::{cmd, commanded, open_arena, unit};
-use oxide_sim::{Command, Order, PlayerCommand, SIM_VERSION, Scenario, State, UnitKind};
 
 #[test]
 fn replay_roundtrip_executes_and_reproduces_advance() {
@@ -70,8 +70,8 @@ fn serde_roundtrip_preserves_queued_programs() {
     // Non-empty queues serialize through skip-if-default fields. A
     // mid-patrol snapshot must survive losslessly and keep ticking
     // identically.
+    use aftermine_sim::{Command, PlayerCommand, PlayerId};
     use chassis::grid::TilePos;
-    use oxide_sim::{Command, PlayerCommand, PlayerId};
     let mut state = Scenario::skirmish().build().unwrap();
     let movers: Vec<_> = state.units().iter().map(|u| u.id).collect();
     state.tick(&[PlayerCommand {

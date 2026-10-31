@@ -4,10 +4,10 @@
 use crate::numeric;
 use crate::press::{Fed, Press};
 use crate::theme;
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{
     Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
 };
-use oxide_protocol::RawEvent;
 
 /// The `index`th button slot along the top-left corner: a fingertip
 /// tall, wide enough for a short verb, and clear of the window edge.
@@ -125,7 +125,7 @@ pub(crate) fn press_back(touch: bool) -> Vec<RawEvent> {
             },
         ]
     } else {
-        let button = oxide_protocol::MouseButton::Left;
+        let button = aftermine_protocol::MouseButton::Left;
         vec![
             RawEvent::MouseDown {
                 button,

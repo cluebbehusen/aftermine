@@ -159,7 +159,7 @@ class SfxPcmTests(unittest.TestCase):
 class MusicPcmTests(unittest.TestCase):
     def test_generate_can_write_two_isolated_banks_in_one_process(self) -> None:
         committed = Path(__file__).resolve().parent.parent / "assets" / "sounds"
-        with tempfile.TemporaryDirectory(prefix="oxide sound review ") as temp:
+        with tempfile.TemporaryDirectory(prefix="aftermine sound review ") as temp:
             first = Path(temp) / "first bank"
             second = Path(temp) / "second bank"
             with redirect_stdout(io.StringIO()):

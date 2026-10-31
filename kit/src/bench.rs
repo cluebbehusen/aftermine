@@ -2,10 +2,10 @@
 //! determinism measurements. Tests assert hashes at scale; wall-clock
 //! numbers stay a local report so machine noise cannot flake a suite.
 
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Scenario, UnitKind};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{Command, PlayerCommand, PlayerId, Scenario, UnitKind};
 
 /// A symmetric mass battle: `per_side` mixed-role units per seat on a
 /// 96x56 open field, foundries far corners, armies deployed in facing
@@ -95,7 +95,7 @@ pub fn mass_battle(per_side: u32) -> Scenario {
 /// Sends both armies through each other with crossing hunt orders. Without
 /// it a bench times parked idle armies: deployment sits outside aggro range,
 /// so no movement, fire, splash, or collision runs.
-pub fn engage(state: &mut oxide_sim::State) {
+pub fn engage(state: &mut aftermine_sim::State) {
     // The crossing goals are exact 180-degree images on the arena;
     // anything else gives the two armies different path and collision
     // geometry, and the workload is no longer symmetric.
@@ -139,11 +139,11 @@ pub fn engage(state: &mut oxide_sim::State) {
 
 /// Flags every chair as a bot with the default configuration.
 pub fn all_bots(scenario: &mut Scenario) {
-    all_bots_with_config(scenario, oxide_sim::scenario::BotConfig::default());
+    all_bots_with_config(scenario, aftermine_sim::scenario::BotConfig::default());
 }
 
 /// Seats one exact player-facing profile in every chair of a measurement.
-pub fn all_bots_with_config(scenario: &mut Scenario, config: oxide_sim::scenario::BotConfig) {
+pub fn all_bots_with_config(scenario: &mut Scenario, config: aftermine_sim::scenario::BotConfig) {
     for player in &mut scenario.players {
         player.bot = true;
         player.bot_config = Some(config);

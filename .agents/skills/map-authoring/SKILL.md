@@ -1,14 +1,14 @@
 ---
 name: map-authoring
 description:
-  Create, edit, audit, and validate Oxide scenario maps and their player setups.
-  Use for scenario JSON, terrain layout, quarry boundaries, pits, Extractor
-  frames, scrap placement, Foundry anchors, teams, spawn rosters, map metadata,
-  symmetry, route fairness, artillery pressure, contested frame clusters, or
-  shipped-map gate failures.
+  Create, edit, audit, and validate Aftermine scenario maps and their player
+  setups. Use for scenario JSON, terrain layout, quarry boundaries, pits,
+  Extractor frames, scrap placement, Foundry anchors, teams, spawn rosters, map
+  metadata, symmetry, route fairness, artillery pressure, contested frame
+  clusters, or shipped-map gate failures.
 ---
 
-# Oxide map authoring
+# Aftermine map authoring
 
 Author a map as a gameplay space first. Use mechanical checks for terrain,
 symmetry, and seat fairness, then play it to judge routes, pressure, and pacing.
@@ -193,8 +193,8 @@ art.
 Run the exact map audit from the repository root:
 
 ```sh
-cargo run -q -p oxide-driver -- map-audit scenarios/<map>.json
-cargo run -q -p oxide-driver -- map-audit scenarios/<map>.json --json
+cargo run -q -p aftermine-driver -- map-audit scenarios/<map>.json
+cargo run -q -p aftermine-driver -- map-audit scenarios/<map>.json --json
 ```
 
 Inspect reachable room, nearest scrap, hostile ground and air routes, artillery
@@ -204,7 +204,7 @@ and the maintained bands and tolerances in `driver/tests/map_gates.rs` are
 authoritative; do not duplicate their current numbers in this skill.
 
 Hold drafts to the same gates before promotion with
-`OXIDE_MAP_GATES_DIR=map-drafts cargo test -p oxide-driver --test map_gates --locked`.
+`AFTERMINE_MAP_GATES_DIR=map-drafts cargo test -p aftermine-driver --test map_gates --locked`.
 
 For a shipped-map layout or seat change, run the map gates and choose the
 headless/native checks that exercise its changed routes, resources or opening.
@@ -212,9 +212,9 @@ An orchestration or metadata-only edit does not require a full match matrix.
 Relevant commands are:
 
 ```sh
-cargo test -p oxide-driver --test map_gates --locked
-cargo test -p oxide-driver --test headless --locked
-cargo run -q -p oxide-driver -- run scenarios/<map>.json --ticks 12000 --all-bots --map
+cargo test -p aftermine-driver --test map_gates --locked
+cargo test -p aftermine-driver --test headless --locked
+cargo run -q -p aftermine-driver -- run scenarios/<map>.json --ticks 12000 --all-bots --map
 ```
 
 Use the longer window the integrity tests use for maps that are not small.

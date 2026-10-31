@@ -1,8 +1,8 @@
 //! World-only recording origins. Controller memory belongs to session checkpoints.
 
 use crate::GameReplay;
+use aftermine_sim::{Scenario, State};
 use chassis::replay::{RecordingOrigin, ReplayError};
-use oxide_sim::{Scenario, State};
 use serde::{Deserialize, Serialize};
 
 /// A world at the first available absolute recording tick.

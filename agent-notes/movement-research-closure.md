@@ -91,7 +91,7 @@ research question as resolved. That was written before the unsuccessful Rust
 integration. Its measured sandbox results remain evidence; its recommendation is
 superseded by the stopping decision above.
 
-### 1. Original session: presentation and successive Oxide controllers
+### 1. Original session: presentation and successive Aftermine controllers
 
 #### Presentation and permissive movement
 
@@ -284,13 +284,14 @@ rejected native appearance.
 
 ### 2. Independent Python research
 
-The independent study deliberately left Oxide behind. Its initial physical
+The independent study deliberately left Aftermine behind. Its initial physical
 requirement was solid bodies, finite acceleration/braking and turning, pivots
 and reverse, with no sideways displacement. It used floating-point Python, not
-Oxide’s fixed-point state, so same-environment reproduction did not establish
-cross-platform bit identity. Bodies were discs of different sizes rather than
-oriented rectangular hulls. The models below were successive experiments, not
-one finished controller that accumulated every demonstrated capability.
+Aftermine’s fixed-point state, so same-environment reproduction did not
+establish cross-platform bit identity. Bodies were discs of different sizes
+rather than oriented rectangular hulls. The models below were successive
+experiments, not one finished controller that accumulated every demonstrated
+capability.
 
 #### Fixed routes, small graphs and early service models
 
@@ -535,7 +536,7 @@ useful terminal-space allocation; and bounded replacement of affected motion.
 Some declared failure matrices were fully resolved. It would be inaccurate to
 say every Python experiment failed.
 
-It did not establish acceptable Oxide movement. Many successes inherited one
+It did not establish acceptable Aftermine movement. Many successes inherited one
 another’s fixtures or route sets, had only a few seeds, used finite task lists
 and circular bodies, or paused simulated demand while planning. Some “wins”
 disappeared when the control comparison was strengthened. No sandbox result
@@ -560,7 +561,7 @@ construction, reconstruction, control and changing occupancy. Cache by reusable
 geometry/movement class when reuse exists; do not assume a complete per-unit
 route cache is automatically efficient.
 
-### 3. Bringing the Python contracts into Oxide
+### 3. Bringing the Python contracts into Aftermine
 
 The integration used a new worktree, `cjl/spike/movement-order`, from `105db6c`
 plus an exact copy of the original dirty changes. It preserved the first
@@ -571,12 +572,12 @@ The opt-in `movement-order-spike` coordinator constructed complete physical
 trips against a serial forecast of terminal body positions. It split them at
 genuine stopped/service boundaries, reserved nominal travel plus
 straight-braking branches, and released conflicts from actual progress.
-Compilation used existing Oxide guidance and physical controls, with one pending
-compiler and a fixed logical-work allowance. Initial activation required
+Compilation used existing Aftermine guidance and physical controls, with one
+pending compiler and a fixed logical-work allowance. Initial activation required
 repeating work and stopped visible bodies.
 
 This was a partial transfer of the Python design, not a complete port. It reused
-Oxide’s eager compiler and departure allocator, treated idle helpers as
+Aftermine’s eager compiler and departure allocator, treated idle helpers as
 stationary obstacles, and used coarse drain-and-reset behavior on changed
 objectives or world state. It did not bring over bounded local repair, boundary
 routing, a background producer, general body removal or
@@ -638,11 +639,11 @@ implementation.
 
 ### 4. Final isolation of service, parking and precedence
 
-A test-only Rust harness used the same Oxide physical compiler and propulsion,
-homogeneous radius-0.3 Harvesters, fixed pickup/delivery footprints, 100/1-tick
-dwell and a constant planning allowance. Routes were generated in free 2D.
-Service completion was a harness event, not full-economy scrap, so its counts
-must not be mixed with the integration table.
+A test-only Rust harness used the same Aftermine physical compiler and
+propulsion, homogeneous radius-0.3 Harvesters, fixed pickup/delivery footprints,
+100/1-tick dwell and a constant planning allowance. Routes were generated in
+free 2D. Service completion was a harness event, not full-economy scrap, so its
+counts must not be mixed with the integration table.
 
 Assigned terminal bays outside the work area did not automatically improve
 circulation. At twelve workers over 150 seconds, automatic departure completed
@@ -717,9 +718,9 @@ The strongest caution is that gains did not add together automatically. Better
 parking, earlier release, less conservative ordering and more distributed
 service each helped selected cases. Combinations still failed at higher density
 or during continued work. The Python library of successful mechanisms was not a
-validated single Oxide controller, and the Rust probe omitted meaningful parts
-of it. Calling the remaining work “bounded” understated its engineering and
-product cost.
+validated single Aftermine controller, and the Rust probe omitted meaningful
+parts of it. Calling the remaining work “bounded” understated its engineering
+and product cost.
 
 This does not justify replacing the old system with the least bad experiment, or
 explaining main’s entire advantage as cheating. It justifies keeping the
@@ -780,7 +781,7 @@ Current worktrees are also not interchangeable. `collision-research` is at
 `105db6c` with its original dirty patch. `contact-steering` is at `fcdbe44` with
 the final local candidate uncommitted. `review-movement-order/worktree` is at
 `11616c0` with the later spike and harness uncommitted. The primary
-`/Users/cluebbehusen/oxide` checkout is a separate active workstream; its
+`/Users/cluebbehusen/aftermine` checkout is a separate active workstream; its
 unrelated dirty work must not be used as a rollback target. This documentation
 task did not change any of their simulation or presentation code.
 
@@ -1184,10 +1185,10 @@ and version 0.16.0 are retained.
 
 Forecasting implementation is deferred to
 [Account for turning and motor state in bot travel forecasts](https://linear.app/cluebbehusen/issue/CL-18/account-for-turning-and-motor-state-in-bot-travel-forecasts),
-created with the Oxide Bug template at Low priority in Backlog. It includes the
-actual move, detour, construction and haul measurements, the limits of scalar
-route costs, and the bounded shared-motor approach. No production bot forecast
-changed in this follow-up.
+created with the Aftermine Bug template at Low priority in Backlog. It includes
+the actual move, detour, construction and haul measurements, the limits of
+scalar route costs, and the bounded shared-motor approach. No production bot
+forecast changed in this follow-up.
 
 - Final validation passed with fixture blessing disabled: the complete workspace
   suite, including the formerly failing balanced mirror, formatting, Clippy with
@@ -1200,8 +1201,8 @@ changed in this follow-up.
 
 ## Actions
 
-- [x] Reconstruct the original Oxide work, independent Python experiments, and
-      Rust integration from their evidence.
+- [x] Reconstruct the original Aftermine work, independent Python experiments,
+      and Rust integration from their evidence.
 - [x] Verify baseline identities, retained-work boundaries, and evidence links.
 - [x] Assemble and measure the retained main-based motor and tread presentation
       with collision sliding preserved.

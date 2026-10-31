@@ -1,4 +1,4 @@
-//! End-to-end contract coverage for `oxide-driver bot-ladder` and
+//! End-to-end contract coverage for `aftermine-driver bot-ladder` and
 //! `bot-ladder-report`.
 
 use serde_json::Value;
@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-ladder-cli-{name}-{}",
+        "aftermine-bot-ladder-cli-{name}-{}",
         std::process::id()
     ));
     std::fs::remove_dir_all(&dir).ok();
@@ -17,10 +17,10 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn driver(args: &[&OsStr]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args(args)
         .output()
-        .expect("run oxide-driver")
+        .expect("run aftermine-driver")
 }
 
 fn succeeded(output: &Output) -> String {

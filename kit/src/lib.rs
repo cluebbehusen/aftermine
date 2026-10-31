@@ -17,7 +17,7 @@ pub mod runner;
 pub mod stats;
 pub mod world_snapshot;
 
-use oxide_sim::{PlayerCommand, Scenario};
+use aftermine_sim::{PlayerCommand, Scenario};
 
 /// Upper bound on the ticks a replay may span before loading or running it
 /// is refused (about 28 game-hours). A syntactically valid file can claim an
@@ -25,7 +25,7 @@ use oxide_sim::{PlayerCommand, Scenario};
 /// out.
 pub const MAX_REPLAY_TICKS: u64 = 2_000_000;
 
-/// The concrete session replay type every Oxide surface records,
+/// The concrete session replay type every Aftermine surface records,
 /// saves, and replays.
 pub type GameReplay = chassis::replay::Replay<Scenario, PlayerCommand, recording::WorldOrigin>;
 

@@ -78,7 +78,7 @@ fn first_match_game(
     let name = config
         .player_name
         .as_deref()
-        .and_then(|name| oxide_net::PlayerName::new(name).ok());
+        .and_then(|name| aftermine_net::PlayerName::new(name).ok());
     let game = Game::new(crate::tutorial::first_match(
         name,
         personality_seeds.match_base(),
@@ -507,7 +507,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
     }
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = home.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     // Session verbs first: Continue swaps the game this frame
@@ -595,7 +595,7 @@ fn settings_frame(
 ) -> Screen {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let up = sc.update(
         events,
         &mut app.input.mouse,
@@ -652,7 +652,7 @@ fn codex_frame(
 ) -> Screen {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = codex.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     render::draw(
@@ -683,7 +683,7 @@ fn lessons_frame(
 ) -> Result<Screen> {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = list.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     if let screens::lessons::Out::Start(row) = out {
@@ -710,7 +710,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         .config
         .player_name
         .as_deref()
-        .and_then(|name| oxide_net::PlayerName::new(name).ok());
+        .and_then(|name| aftermine_net::PlayerName::new(name).ok());
     // A hosting setup screen runs its lobby before input, like every lobby.
     let resuming = w.resuming();
     if let Some((game, link)) = w.poll_lan(&mut app.draft, app.clock.elapsed()) {
@@ -733,7 +733,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     // process abort: report and stay on the menu.
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = match w.update(
         events,
         &mut app.input.mouse,
@@ -904,7 +904,7 @@ fn playing_frame(
 ) -> Screen {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let mut card_press = None;
     if let Some(card) = current_card(app) {
         let filtered = filter_card_pointer(events, &card, render::ui_scale());
@@ -1100,8 +1100,10 @@ fn playback_frame(
     time: FrameTime,
     rerun: &mut bool,
 ) -> Screen {
-    let input_scope =
-        oxide_kit::diagnostics::stage(oxide_kit::diagnostics::Stage::Input, pb.engine.position());
+    let input_scope = aftermine_kit::diagnostics::stage(
+        aftermine_kit::diagnostics::Stage::Input,
+        pb.engine.position(),
+    );
     relayout_hud(
         &pb.view(),
         &app.input,
@@ -1148,7 +1150,7 @@ fn final_map_frame(
 ) -> Screen {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     relayout_hud(
         &app.game.view(),
         &app.input,
@@ -1188,7 +1190,7 @@ fn results_frame(
 ) -> Screen {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = results.update(
         events,
         &mut app.input.mouse,
@@ -1241,7 +1243,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     let mut leave: Option<Screen> = None;
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = shelf.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     match out {
@@ -1373,7 +1375,7 @@ fn waiting_frame(
 fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Result<Screen> {
     let input_scope = app
         .game
-        .diagnostic_stage(oxide_kit::diagnostics::Stage::Input);
+        .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = ps.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     render::draw(
@@ -1421,7 +1423,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             // normal result flow takes over; in a team game
             // the concede overlay meets the player back in
             // the match while the ally plays on.
-            app.game.issue(oxide_sim::Command::Surrender);
+            app.game.issue(aftermine_sim::Command::Surrender);
             app.game.clock.paused = false;
             Screen::Playing
         }

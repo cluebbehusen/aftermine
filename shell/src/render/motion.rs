@@ -6,7 +6,7 @@
 
 use crate::look::Gait;
 use crate::numeric;
-use oxide_sim::{BuildingKind, UnitKind};
+use aftermine_sim::{BuildingKind, UnitKind};
 
 use crate::presentation_animation::{
     AttackPhase, BuildingActivity, BuildingAnimationState, CargoState, ExcavatorTool,

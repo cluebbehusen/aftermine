@@ -1,16 +1,16 @@
 ---
 name: sound-design
 description:
-  Generate, modify, audition, and productionize explicitly approved Oxide sound
-  effects. Use for weapon reports, alerts, UI cues, destruction, mixer tuning,
-  camera-aware sound, or changes to tools/gen_sounds.py and assets/sounds. This
-  skill preserves approved audio byte-for-byte and keeps experiments out of
-  production commits.
+  Generate, modify, audition, and productionize explicitly approved Aftermine
+  sound effects. Use for weapon reports, alerts, UI cues, destruction, mixer
+  tuning, camera-aware sound, or changes to tools/gen_sounds.py and
+  assets/sounds. This skill preserves approved audio byte-for-byte and keeps
+  experiments out of production commits.
 ---
 
-# Oxide sound design
+# Aftermine sound design
 
-Use this workflow for any Oxide audio work. Sound direction is a product
+Use this workflow for any Aftermine audio work. Sound direction is a product
 decision made by ear; synthesis metrics and visual waveforms are gates, not
 substitutes for listening.
 

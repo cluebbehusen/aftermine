@@ -10,7 +10,7 @@
 //! controller.
 
 use crate::ledger::{SeatLedger, WORTH_PERIOD, worth_at};
-use oxide_sim::{GameResult, TICKS_PER_SECOND};
+use aftermine_sim::{GameResult, TICKS_PER_SECOND};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;

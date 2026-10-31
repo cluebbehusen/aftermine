@@ -8,10 +8,10 @@ use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::missions::worth;
 use crate::profile::PersonalityTraits;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
-use oxide_sim::observation::ObservationData;
-use oxide_sim::{BuildingKind, UnitKind};
 use std::collections::VecDeque;
 
 /// How far past the seat's furthest building a machine must get to have left
@@ -160,7 +160,7 @@ pub(crate) fn exits(
         return true;
     };
     // A machine that flies leaves however the base is built.
-    if machine.stats().domain == oxide_sim::stats::Domain::Air {
+    if machine.stats().domain == aftermine_sim::stats::Domain::Air {
         return true;
     }
     let me = observation.me;
@@ -292,7 +292,7 @@ impl<'a> HullFlood<'a> {
     }
 
     fn open(&self, tile: TilePos) -> bool {
-        oxide_sim::geometry::hull_open(tile, self.radius, |cell| {
+        aftermine_sim::geometry::hull_open(tile, self.radius, |cell| {
             self.map.component(cell).is_some()
                 && (!self.blocked.get(cell).copied().unwrap_or(true)
                     || self.exempt.is_some_and(|(anchor, (w, h))| {

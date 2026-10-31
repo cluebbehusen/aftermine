@@ -100,7 +100,7 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
         unreachable,
         "abc",
         PlayerName::new("Alex").unwrap(),
-        oxide_net::InstallId::new(1),
+        aftermine_net::InstallId::new(1),
     )));
     assert_eq!(screen.keyboard(), None);
     assert_eq!(screen.mode_name(), "lobby");
@@ -139,15 +139,18 @@ fn a_typed_address_that_cannot_parse_opens_the_form_with_why() {
 }
 
 /// A Join form listening on loopback, and an advertiser aimed at it.
-fn listening(name: Option<&str>) -> (LobbyScreen, oxide_net::Advertiser) {
-    let scanner = oxide_net::Scanner::bind_to("127.0.0.1:0", "abc").unwrap();
+fn listening(name: Option<&str>) -> (LobbyScreen, aftermine_net::Advertiser) {
+    let scanner = aftermine_net::Scanner::bind_to("127.0.0.1:0", "abc").unwrap();
     let target = scanner.local_addr().unwrap();
     let screen = LobbyScreen::join(name, "").with_scanner(scanner);
-    (screen, oxide_net::Advertiser::with_target(target).unwrap())
+    (
+        screen,
+        aftermine_net::Advertiser::with_target(target).unwrap(),
+    )
 }
 
-fn beacon(commit: &str) -> oxide_net::discovery::Beacon {
-    oxide_net::discovery::Beacon::new(
+fn beacon(commit: &str) -> aftermine_net::discovery::Beacon {
+    aftermine_net::discovery::Beacon::new(
         commit,
         PlayerName::new("Connor").unwrap(),
         4321,
@@ -231,7 +234,7 @@ fn a_tap_joins_the_lobby_it_pressed_even_if_the_list_reorders() {
     assert_eq!(feed(&mut screen, &[down]), Out::Stay);
 
     // A host that sorts first arrives under the finger.
-    let earlier = oxide_net::discovery::Beacon::new(
+    let earlier = aftermine_net::discovery::Beacon::new(
         "abc",
         PlayerName::new("Avery").unwrap(),
         4322,

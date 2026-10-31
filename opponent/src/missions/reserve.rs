@@ -8,12 +8,12 @@ use super::{Missions, Task, carrier, hits, mine, value};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::{Memory, SeenUnit};
+use aftermine_sim::geometry::footprint_distance;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, PlayerId};
 use chassis::grid::TilePos;
-use oxide_sim::geometry::footprint_distance;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::scenario::BotStance;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, PlayerId};
 use std::cmp::Reverse;
 
 /// The body domains a reserve covers, in the order its values keep.

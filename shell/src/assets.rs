@@ -3,12 +3,12 @@
 
 use crate::game::SoundKind;
 use crate::numeric;
+use aftermine_sim::{BuildingKind, UnitKind};
 use anyhow::{Context, Result};
 use macroquad::audio::{Sound, load_sound_from_bytes};
 use macroquad::prelude::{
     Color, DrawTextureParams, FilterMode, Image, Rect, Texture2D, Vec2, draw_texture_ex,
 };
-use oxide_sim::{BuildingKind, UnitKind};
 
 /// Sprite regions share bounded texture pages instead of per-sprite textures.
 pub struct Sprites {
@@ -672,7 +672,7 @@ const TREAD_SUFFIXES: [&str; 2] = ["_tread1", "_tread2"];
 const MOVE_SUFFIXES: [&str; 2] = ["_move1", "_move2"];
 const HARVESTER_CARGO_LEVELS: usize = 5;
 const EXCAVATOR_CARGO_LEVELS: usize = 5;
-const SITE_STAGES: usize = oxide_sim::stats::CONSTRUCTION_STAGES as usize;
+const SITE_STAGES: usize = aftermine_sim::stats::CONSTRUCTION_STAGES as usize;
 const SITE_PHASES: usize = 2;
 const SITE_FRAME_COUNT: usize = SITE_STAGES * SITE_PHASES;
 
@@ -1301,7 +1301,7 @@ pub fn resource_root() -> std::path::PathBuf {
     // Native automation runs from an isolated writable directory so
     // local replays and screenshots cannot perturb a golden walk. It
     // points back at the read-only workspace resources explicitly.
-    if let Some(root) = std::env::var_os("OXIDE_RESOURCE_ROOT") {
+    if let Some(root) = std::env::var_os("AFTERMINE_RESOURCE_ROOT") {
         return root.into();
     }
     crate::paths::bundle_resources().unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -1682,21 +1682,21 @@ impl Sprites {
     }
 
     /// The building sprite region for a kind.
-    fn building_row(&self, kind: oxide_sim::BuildingKind) -> &[Rect; 2] {
+    fn building_row(&self, kind: aftermine_sim::BuildingKind) -> &[Rect; 2] {
         &self.rung(kind, 0).hull
     }
 
-    pub fn building(&self, kind: oxide_sim::BuildingKind) -> Rect {
+    pub fn building(&self, kind: aftermine_sim::BuildingKind) -> Rect {
         self.building_row(kind)[BASE]
     }
 
     /// The hull for a building at its upgrade-ladder rung.
-    pub fn building_tiered(&self, kind: oxide_sim::BuildingKind, tier: u8) -> Rect {
+    pub fn building_tiered(&self, kind: aftermine_sim::BuildingKind, tier: u8) -> Rect {
         self.rung(kind, tier).hull[BASE]
     }
 
     /// The allegiance mask matched to [`Self::building_tiered`].
-    pub fn building_tiered_accent(&self, kind: oxide_sim::BuildingKind, tier: u8) -> Rect {
+    pub fn building_tiered_accent(&self, kind: aftermine_sim::BuildingKind, tier: u8) -> Rect {
         self.rung(kind, tier).hull[ACCENT]
     }
 
@@ -1906,11 +1906,11 @@ impl Sprites {
 
     /// A magazine's finished round, body then accent: the warhead seated on
     /// a Spire's deck or a Lattice's interceptor.
-    pub(crate) fn round(&self, kind: oxide_sim::BuildingKind) -> Option<[Rect; 2]> {
+    pub(crate) fn round(&self, kind: aftermine_sim::BuildingKind) -> Option<[Rect; 2]> {
         let rigs = self.strategic_rigs.as_ref()?;
         match kind {
-            oxide_sim::BuildingKind::Spire => Some(rigs.spire.round),
-            oxide_sim::BuildingKind::Lattice => Some(rigs.lattice.interceptor),
+            aftermine_sim::BuildingKind::Spire => Some(rigs.spire.round),
+            aftermine_sim::BuildingKind::Lattice => Some(rigs.lattice.interceptor),
             _ => None,
         }
     }
@@ -1973,7 +1973,7 @@ pub struct Sounds {
 }
 
 async fn clip(name: &str) -> Result<Sound> {
-    let candidate = std::env::var("OXIDE_SOUND_BANK")
+    let candidate = std::env::var("AFTERMINE_SOUND_BANK")
         .ok()
         .map(|root| std::path::PathBuf::from(root).join(format!("{name}.wav")))
         .filter(|path| path.is_file());

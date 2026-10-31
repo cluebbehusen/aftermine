@@ -4,14 +4,14 @@
 
 use crate::common;
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{
     BuildingId, Command, Event, Order, OrderKey, PlayerId, Scenario, State, Target, UnitId,
     UnitKind,
 };
+use chassis::grid::TilePos;
 
 use common::{cmd, run_until, unit};
 

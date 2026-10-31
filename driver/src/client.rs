@@ -1,11 +1,11 @@
 //! A blocking debug-protocol client: one TCP connection, JSON lines,
 //! sequential request/response.
 
-use anyhow::{Context, Result, bail};
-use oxide_protocol::{
+use aftermine_protocol::{
     ADVANCE_TICKS_PER_BUDGET_SECOND, MAX_ADVANCE_TICKS, Reply, Request, RequestEnvelope,
     ResponseEnvelope,
 };
+use anyhow::{Context, Result, bail};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
@@ -58,7 +58,7 @@ pub struct Client {
 
 impl Client {
     /// Connects to a debug-protocol server, e.g. `127.0.0.1:4123` —
-    /// a shell's `--debug-server` or a windowless `oxide-driver session`.
+    /// a shell's `--debug-server` or a windowless `aftermine-driver session`.
     pub fn connect(addr: &str) -> Result<Self> {
         let stream =
             TcpStream::connect(addr).with_context(|| format!("connecting to shell at {addr}"))?;
@@ -78,7 +78,7 @@ impl Client {
     }
 
     /// The session's status line.
-    pub fn status(&mut self) -> Result<oxide_protocol::StatusView> {
+    pub fn status(&mut self) -> Result<aftermine_protocol::StatusView> {
         match self.call(Request::Status)? {
             Reply::Status(view) => Ok(view),
             other => wrong_reply("status", &other),
@@ -88,8 +88,8 @@ impl Client {
     /// The state view `filter` selects.
     pub fn state(
         &mut self,
-        filter: oxide_protocol::StateFilter,
-    ) -> Result<oxide_protocol::StateView> {
+        filter: aftermine_protocol::StateFilter,
+    ) -> Result<aftermine_protocol::StateView> {
         match self.call(Request::QueryState { filter })? {
             Reply::State(view) => Ok(view),
             other => wrong_reply("state", &other),
@@ -97,7 +97,7 @@ impl Client {
     }
 
     /// The authoritative state hash.
-    pub fn state_hash(&mut self) -> Result<oxide_protocol::HashView> {
+    pub fn state_hash(&mut self) -> Result<aftermine_protocol::HashView> {
         match self.call(Request::StateHash)? {
             Reply::Hash(view) => Ok(view),
             other => wrong_reply("hash", &other),
@@ -105,7 +105,7 @@ impl Client {
     }
 
     /// Where the camera is looking.
-    pub fn camera(&mut self) -> Result<oxide_protocol::CameraView> {
+    pub fn camera(&mut self) -> Result<aftermine_protocol::CameraView> {
         match self.call(Request::QueryCamera)? {
             Reply::Camera(view) => Ok(view),
             other => wrong_reply("camera", &other),
@@ -113,7 +113,7 @@ impl Client {
     }
 
     /// The interface as the shell currently presents it.
-    pub fn ui(&mut self) -> Result<oxide_protocol::UiView> {
+    pub fn ui(&mut self) -> Result<aftermine_protocol::UiView> {
         match self.call(Request::QueryUi)? {
             Reply::Ui(view) => Ok(view),
             other => wrong_reply("ui", &other),
@@ -121,7 +121,7 @@ impl Client {
     }
 
     /// Steps the simulation `ticks` ticks without presenting them.
-    pub fn advance(&mut self, ticks: u64) -> Result<oxide_protocol::AdvancedView> {
+    pub fn advance(&mut self, ticks: u64) -> Result<aftermine_protocol::AdvancedView> {
         match self.call(Request::AdvanceTicks { ticks })? {
             Reply::Advanced(view) => Ok(view),
             other => wrong_reply("advanced", &other),
@@ -129,7 +129,7 @@ impl Client {
     }
 
     /// Steps `ticks` ticks through the presentation path, keeping their events.
-    pub fn present(&mut self, ticks: u64) -> Result<oxide_protocol::PresentedView> {
+    pub fn present(&mut self, ticks: u64) -> Result<aftermine_protocol::PresentedView> {
         match self.call(Request::PresentTicks { ticks })? {
             Reply::Presented(view) => Ok(view),
             other => wrong_reply("presented", &other),
@@ -152,7 +152,7 @@ impl Client {
         // Bounded at the response ceiling: replies can far exceed the
         // request-line cap, but a wedged or hostile peer must not grow this
         // allocation without limit.
-        let envelope = read_response(&mut self.reader, oxide_protocol::MAX_RESPONSE_BYTES)?;
+        let envelope = read_response(&mut self.reader, aftermine_protocol::MAX_RESPONSE_BYTES)?;
         // id 0 is the transport speaking, not a reply: the server sends
         // unsolicited refusals (connection cap, oversized frame) under
         // it, and correlating first would bury the actionable message.

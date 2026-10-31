@@ -1,6 +1,6 @@
 use super::*;
 use crate::START_TIMEOUT;
-use oxide_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 
 const COMMIT: &str = "abc";
 const HOST: PlayerId = PlayerId(0);

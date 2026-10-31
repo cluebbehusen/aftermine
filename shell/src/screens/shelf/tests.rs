@@ -64,7 +64,7 @@ fn tap(at: Vec2) -> Vec<RawEvent> {
 }
 
 fn click(at: Vec2) -> Vec<RawEvent> {
-    use oxide_protocol::MouseButton;
+    use aftermine_protocol::MouseButton;
     vec![
         RawEvent::MouseDown {
             button: MouseButton::Left,
@@ -325,7 +325,7 @@ fn enter_loads_a_save_and_watches_a_match() {
 
 #[test]
 fn deletion_requires_two_presses_and_is_dispatched_to_the_owner() {
-    let dir = std::env::temp_dir().join(format!("oxide-shelf-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("aftermine-shelf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("doomed.json");
     std::fs::write(&path, "{}").unwrap();

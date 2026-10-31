@@ -6,10 +6,10 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, Command, UnitId};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, UnitId};
 
 /// Tiles a detour swings the route out from its middle.
 const DETOUR: i32 = 8;
@@ -218,7 +218,7 @@ pub(crate) fn hazards(
     let home = map
         .start(observation.me)
         .and_then(|start| map.component(start));
-    let reach = |weapons: &[oxide_sim::stats::WeaponStats]| {
+    let reach = |weapons: &[aftermine_sim::stats::WeaponStats]| {
         weapons
             .iter()
             .filter(|weapon| weapon.targets.covers(domain))

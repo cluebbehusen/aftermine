@@ -1,4 +1,4 @@
-//! The simulation's contact outlines (`oxide_sim::building_contact`) are
+//! The simulation's contact outlines (`aftermine_sim::building_contact`) are
 //! authored data. For every kind, tier, and construction stage, these tests
 //! measure each body frame the field can draw in that state against its
 //! outline. A gap is how far the outline stands off the art; a Maw's drum or
@@ -9,8 +9,8 @@
 
 use super::*;
 use crate::sprite_contact::SOLID_ALPHA;
-use oxide_sim::building_contact::{Outline, outline};
-use oxide_sim::stats::CONSTRUCTION_STAGES;
+use aftermine_sim::building_contact::{Outline, outline};
+use aftermine_sim::stats::CONSTRUCTION_STAGES;
 use std::collections::HashMap;
 
 /// How far an outline may stand off its art, in tiles: the gap a Maw's drum
@@ -402,7 +402,7 @@ fn every_building_body_sits_on_its_contact_outline() {
     assert!(
         failures.is_empty(),
         "contact outlines off their art (gap limit {GAP_LIMIT}, spill limit {SPILL_LIMIT} \
-         tiles); rerun `suggest_contact_outlines` and update oxide_sim::building_contact:\n{}",
+         tiles); rerun `suggest_contact_outlines` and update aftermine_sim::building_contact:\n{}",
         failures.join("\n")
     );
 }
@@ -588,11 +588,11 @@ fn const_name(kind: BuildingKind) -> String {
 }
 
 /// Traces each slot's art into a proposed outline and prints the table for
-/// `oxide_sim::building_contact`: the simplest outline within both limits,
+/// `aftermine_sim::building_contact`: the simplest outline within both limits,
 /// mirror-symmetric where the art allows, and reusing the shared scaffold or
 /// an outline already chosen for the same kind wherever it fits.
 #[test]
-#[ignore = "prints traced outlines to paste into oxide_sim::building_contact after art changes"]
+#[ignore = "prints traced outlines to paste into aftermine_sim::building_contact after art changes"]
 fn suggest_contact_outlines() {
     let atlas = super::tests::manifest();
     // Each new outline's const name, kind, and vertices.

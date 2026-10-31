@@ -3,8 +3,8 @@
 
 use crate::investments::{self, ADOPT, Candidate, Investment, Step};
 use crate::memory::Memory;
+use aftermine_sim::observation::ObservationData;
 use chassis::grid::TilePos;
-use oxide_sim::observation::ObservationData;
 use serde::{Deserialize, Serialize};
 
 /// The seat's saving state.

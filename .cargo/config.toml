@@ -1,2 +1,2 @@
 [alias]
-ios = "run -q -p oxide-driver -- ios"
+ios = "run -q -p aftermine-driver -- ios"

@@ -1,19 +1,21 @@
-//! In-process lockstep: a host and two clients exchange `oxide-net` lines
+//! In-process lockstep: a host and two clients exchange `aftermine-net` lines
 //! through delayed links on a virtual clock. Every seat's "player" is a
 //! bot controller running on that seat's own machine, so real orders cross
 //! the wire. Every machine must execute identical batches.
 
-use chassis::rng::Pcg32;
-use oxide_kit::controller::{SeatController, record_events, seat_controllers};
-use oxide_kit::{GameReplay, bot_execution, runner};
-use oxide_net::{
+use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
+use aftermine_kit::{GameReplay, bot_execution, runner};
+use aftermine_net::{
     ClientEnd, ClientSession, Connection, Desk, DeskEvent, Guest, GuestEvent, HostEvent,
     HostSession, InstallId, JoinMessage, Listener, LobbyMessage, PROGRESS_TIMEOUT, PlayerName,
     RoomSeat, SILENCE_TIMEOUT, SeatHolder, SeatNotice, SeatState, StartBarrier, StartContent,
     Token, Visit, VisitEvent, reports_hash, same_build,
 };
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State, Tick, TickReport};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{
+    Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State, Tick, TickReport,
+};
+use chassis::rng::Pcg32;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::thread;
@@ -439,7 +441,7 @@ fn a_stuck_client_with_a_live_network_makes_the_match_wait_until_the_host_drops_
     let stuck_tick = net.clients[1].machine.state.current_tick();
     assert_eq!(
         net.host.machine.state.current_tick(),
-        stuck_tick + oxide_net::LEAD_CAP,
+        stuck_tick + aftermine_net::LEAD_CAP,
         "the match stopped at the lead cap"
     );
 
@@ -447,7 +449,7 @@ fn a_stuck_client_with_a_live_network_makes_the_match_wait_until_the_host_drops_
     net.run_until(net.now + Duration::from_secs(2));
     assert_eq!(
         net.surrender_tick(stuck),
-        Some(stuck_tick + oxide_net::LEAD_CAP),
+        Some(stuck_tick + aftermine_net::LEAD_CAP),
         "the first tick after the wait carries the Surrender"
     );
     assert!(!net.host.machine.state.accepts_commands(stuck));
@@ -466,7 +468,7 @@ fn a_briefly_silent_client_lets_play_run_on_and_catches_up() {
     let before = net.host.machine.state.current_tick();
     net.run_until(Duration::from_secs(7));
     assert!(
-        net.host.machine.state.current_tick() > before + oxide_net::LEAD_CAP,
+        net.host.machine.state.current_tick() > before + aftermine_net::LEAD_CAP,
         "play ran past the usual lead"
     );
     assert!(!net.host.session.waiting());
@@ -538,7 +540,7 @@ fn a_seat_handed_to_a_bot_plays_on_in_sync() {
     let config = BotConfig::new(BotDifficulty::Standard, BotStance::Balanced, 11);
     net.host.session.replace_seat(gone, config);
     let setup = scenario();
-    let opponent_map = oxide_kit::controller::OpponentMap::new(&setup);
+    let opponent_map = aftermine_kit::controller::OpponentMap::new(&setup);
     let controller = SeatController::configured(gone, config, &opponent_map).unwrap();
     let at = net.host.bots.partition_point(|bot| bot.player() < gone);
     net.host.bots.insert(at, controller);
@@ -759,7 +761,7 @@ fn a_resumed_match_starts_from_its_snapshot_and_stays_in_sync() {
 #[test]
 fn a_diverged_client_halts_every_machine_at_the_next_report() {
     let mut net = Net::new([(40, 20), (40, 20)]);
-    let report = 2 * oxide_net::HASH_INTERVAL;
+    let report = 2 * aftermine_net::HASH_INTERVAL;
     net.client(CLIENTS[0]).doctor_at = Some(report - 5);
     net.run_until(Duration::from_secs(6));
     assert_eq!(
@@ -859,9 +861,9 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
 
     let mut host = Machine::new(&scenario, HOST);
     let mut bots = seat_controllers(&scenario).unwrap();
-    let tokens: Vec<(PlayerId, oxide_net::Token)> = CLIENTS
+    let tokens: Vec<(PlayerId, aftermine_net::Token)> = CLIENTS
         .iter()
-        .map(|&seat| (seat, oxide_net::Token::new(u128::from(seat.0))))
+        .map(|&seat| (seat, aftermine_net::Token::new(u128::from(seat.0))))
         .collect();
     let mut barrier = StartBarrier::new(
         StartContent::Fresh(&scenario),

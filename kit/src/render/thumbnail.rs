@@ -97,7 +97,7 @@ pub fn render_thumbnail(
 /// keeps a pixel wherever the building is at least four pixels wide.
 fn draw_thumbnail_building(
     pixmap: &mut Pixmap,
-    building: &oxide_sim::Building,
+    building: &aftermine_sim::Building,
     scale: f32,
     seat_fill: impl Fn(PlayerId) -> u32,
 ) {

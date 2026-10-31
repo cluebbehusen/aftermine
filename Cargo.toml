@@ -17,11 +17,11 @@ anyhow = "1"
 thiserror = "2"
 
 chassis = { path = "chassis" }
-oxide-sim = { path = "sim" }
-oxide-opponent = { path = "opponent" }
-oxide-protocol = { path = "protocol" }
-oxide-kit = { path = "kit" }
-oxide-net = { path = "net" }
+aftermine-sim = { path = "sim" }
+aftermine-opponent = { path = "opponent" }
+aftermine-protocol = { path = "protocol" }
+aftermine-kit = { path = "kit" }
+aftermine-net = { path = "net" }
 
 # Members inherit this table whole, since Cargo refuses per-crate additions to
 # it. Crate roots carry their own extra levels: the deterministic crates deny
@@ -53,7 +53,7 @@ similar_names = "allow"
 
 # iPadOS 27 refuses to launch apps linked against its SDK unless they adopt
 # the UIScene lifecycle, and only unreleased miniquad master does. The fork's
-# `oxide` branch is that master plus iOS fixes the shell needs and upstream
+# `aftermine` branch is that master plus iOS fixes the shell needs and upstream
 # has not taken yet, starting with OpenGL drawing: master's switch to
 # CADisplayLink-driven draws (39fdef68) redraws only Metal views and leaves
 # the OpenGL view the shell renders with blank on iOS. Drop the patch once
@@ -81,11 +81,11 @@ opt-level = 3
 # Workspace simulation and bot code dominates headless matches. Keep it fully
 # optimized while retaining faster incremental builds for the thin host crates.
 # Integer-only outcome calculations must not depend on optimization level.
-[profile.dev.package.oxide-sim]
+[profile.dev.package.aftermine-sim]
 opt-level = 3
 
 [profile.dev.package.chassis]
 opt-level = 3
 
-[profile.dev.package.oxide-opponent]
+[profile.dev.package.aftermine-opponent]
 opt-level = 3

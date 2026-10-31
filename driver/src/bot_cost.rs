@@ -9,13 +9,13 @@
 //! it on the same pre-tick world after every seat has decided, so the probe
 //! never warms or slows a measured decision.
 
+use aftermine_kit::GameReplay;
+use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
+use aftermine_protocol::hash_hex;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{GameResult, PlayerId, Scenario, State};
 use anyhow::{Context, Result};
-use oxide_kit::GameReplay;
-use oxide_kit::controller::{SeatController, record_events, seat_controllers};
-use oxide_protocol::hash_hex;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{GameResult, PlayerId, Scenario, State};
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
@@ -86,9 +86,9 @@ impl Workload {
                 ));
                 // Mirrored open ground beside each base.
                 for (player, x, y) in [(0, 20, 6), (1, 39, 33)] {
-                    scenario.units.push(oxide_sim::scenario::UnitSpec {
+                    scenario.units.push(aftermine_sim::scenario::UnitSpec {
                         player,
-                        kind: oxide_sim::UnitKind::Maw,
+                        kind: aftermine_sim::UnitKind::Maw,
                         x,
                         y,
                     });

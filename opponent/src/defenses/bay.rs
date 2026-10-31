@@ -4,10 +4,10 @@ use super::guns::{first_placeable, sites_around};
 use super::{Guard, STANDOFF};
 use crate::frame::{centre_of, doubled, footprint_centre};
 use crate::workers;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::UnitObs;
+use aftermine_sim::stats::{FOUNDRY_REPAIR_PRICE, REPAIR_BAY_RADIUS};
 use chassis::grid::TilePos;
-use oxide_sim::BuildingKind;
-use oxide_sim::observation::UnitObs;
-use oxide_sim::stats::{FOUNDRY_REPAIR_PRICE, REPAIR_BAY_RADIUS};
 
 /// Scrap of missing health a Repair Bay's aura must reach to be worth
 /// building.

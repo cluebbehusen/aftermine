@@ -10,11 +10,11 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
-use oxide_sim::geometry::foundry_supports;
-use oxide_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use oxide_sim::scenario::BotStance;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, UnitId};
+use aftermine_sim::geometry::foundry_supports;
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::scenario::BotStance;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, UnitId};
 
 /// Empty tiles between two Foundries on one ground that make them one base
 /// with one guard: a stance-free model of a base's extent.

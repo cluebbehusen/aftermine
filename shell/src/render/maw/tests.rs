@@ -44,8 +44,8 @@ fn the_crane_moves_only_as_assembly_advances() {
 
 #[test]
 fn each_lamp_sits_on_the_runway_beside_its_pad() {
-    let size = oxide_sim::BuildingKind::MawCradle.size();
-    let pads = oxide_sim::BuildingKind::MawCradle.crew_pads().unwrap();
+    let size = aftermine_sim::BuildingKind::MawCradle.size();
+    let pads = aftermine_sim::BuildingKind::MawCradle.crew_pads().unwrap();
     for pad in pads {
         let lamp = lamp_centre(pad, size);
         let tile = CRADLE_CANVAS / size.0 as f32;
@@ -62,7 +62,7 @@ fn the_treads_roll_with_the_shared_belts_mechanics() {
     // The cleats' frames step one canvas pixel toward the tail; a tile of
     // forward travel runs the upper run a tile of canvas toward the nose.
     let frames = 7;
-    let pixels_per_tile = CANVAS / super::super::unit_draw_scale(oxide_sim::UnitKind::Maw);
+    let pixels_per_tile = CANVAS / super::super::unit_draw_scale(aftermine_sim::UnitKind::Maw);
     assert_eq!(
         pixels_per_tile, 64.0,
         "a tile of canvas at the roster's scale"
@@ -84,7 +84,7 @@ fn the_treads_roll_with_the_shared_belts_mechanics() {
     // Each side rolls its own travel at the bogies' gauge, as the shared
     // odometer turns a pivot into counter-rolling belts.
     assert_eq!(
-        crate::render::tread_gauge(oxide_sim::UnitKind::Maw),
+        crate::render::tread_gauge(aftermine_sim::UnitKind::Maw),
         Some(GAUGE)
     );
 }

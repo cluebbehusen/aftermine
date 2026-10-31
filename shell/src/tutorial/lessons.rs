@@ -2,8 +2,8 @@
 //! wrap to the card; `{token}`s name the player's current bindings.
 
 use super::{Copy, Goal, Sortie, Squad, Stance, Step};
+use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{BuildingKind, UnitKind};
 
 const ZOOM_WHEEL: &str = "Scroll the mouse wheel to zoom in and out.";
 const ZOOM_PINCH: &str = "Pinch with two fingers to zoom in and out.";

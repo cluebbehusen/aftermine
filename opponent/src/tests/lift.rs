@@ -178,7 +178,7 @@ fn standing(state: &State, kind: BuildingKind, anchor: TilePos) -> bool {
         .any(|building| building.kind == kind && building.anchor == anchor)
 }
 
-fn skyhooks(state: &State, player: u8) -> Vec<&oxide_sim::state::Unit> {
+fn skyhooks(state: &State, player: u8) -> Vec<&aftermine_sim::state::Unit> {
     state
         .units()
         .iter()
@@ -1598,7 +1598,7 @@ fn a_lift_lands_out_of_reach_of_the_guns_it_knows() {
         &observation,
         &map(&scenario),
         &crate::memory::Memory::default(),
-        oxide_sim::stats::Domain::Ground,
+        aftermine_sim::stats::Domain::Ground,
     );
     let mut opponent = seat(&scenario, 0);
     let mut drops = Vec::new();

@@ -3,7 +3,7 @@ use crate::frame::HomeFrame;
 use crate::memory::Memory;
 use crate::missions::{Missions, Scratch};
 use crate::profile::PersonalityTraits;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::observation::ObservationData;
 
 /// Three starts: West at (3, 3), a second seat at (3, 11) below it, and a
 /// third far to the east.

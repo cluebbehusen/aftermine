@@ -559,7 +559,7 @@ fn a_crucible_makes_a_site_worth_more_for_the_remote_extractor_it_would_deepen()
     let (_, site) = site_with(&model, TilePos::new(12, 10));
     let anchor = expansion::anchors(&model, PlayerId(0), site)[0];
     assert!(
-        oxide_sim::geometry::foundry_supports(anchor, frame),
+        aftermine_sim::geometry::foundry_supports(anchor, frame),
         "premise: a Foundry at the site would support the frame"
     );
     let memory = Memory::default();

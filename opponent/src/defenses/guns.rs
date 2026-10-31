@@ -10,11 +10,11 @@ use crate::frame::{footprint_centre, gap, tiles_of};
 use crate::investments::Investment;
 use crate::investments::buildable;
 use crate::map::{Gate, MapModel};
+use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::stats::{BuildingStats, Domain, WeaponStats};
+use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData};
-use oxide_sim::stats::{BuildingStats, Domain, WeaponStats};
-use oxide_sim::{BuildingKind, PlayerId, UnitKind};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -391,7 +391,10 @@ pub(super) fn raises(
 }
 
 /// Whether the seat meets every one of `required`.
-fn built_all(observation: &ObservationData, required: &[oxide_sim::stats::Prerequisite]) -> bool {
+fn built_all(
+    observation: &ObservationData,
+    required: &[aftermine_sim::stats::Prerequisite],
+) -> bool {
     required
         .iter()
         .all(|need| crate::investments::met(observation, *need))

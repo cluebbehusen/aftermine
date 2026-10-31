@@ -39,7 +39,7 @@ fn write_named(game: &Game, name: &str, dir: &Path, saved_at: u64) -> Result<Pat
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-autosave-{name}-{}-{}",
+        "aftermine-autosave-{name}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -53,10 +53,10 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     let dir = scratch("pending-and-finished");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.issue(oxide_sim::Command::Train {
-        building: oxide_sim::BuildingId(0),
-        kind: oxide_sim::UnitKind::Harvester,
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.issue(aftermine_sim::Command::Train {
+        building: aftermine_sim::BuildingId(0),
+        kind: aftermine_sim::UnitKind::Harvester,
     });
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
         panic!("pending input must not be discarded")
@@ -65,14 +65,14 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     assert_eq!(*restored.pending, *game.pending);
     assert_eq!(restored.state.current_tick(), 0);
     assert_eq!(restored.do_tick().events, game.do_tick().events);
-    restored.issue(oxide_sim::Command::Surrender);
+    restored.issue(aftermine_sim::Command::Surrender);
     restored.do_tick();
     let Ok(SaveOutcome::Wrote(finished)) = write_record(&mut restored, &dir) else {
         panic!("finished record writes")
     };
-    let record = oxide_kit::load_replay(&finished).unwrap();
+    let record = aftermine_kit::load_replay(&finished).unwrap();
     assert_eq!(record.meta.kind.as_deref(), Some("match"));
-    let mut playback = oxide_kit::playback::Playback::load(record).unwrap();
+    let mut playback = aftermine_kit::playback::Playback::load(record).unwrap();
     playback.seek(restored.state.current_tick());
     assert_eq!(playback.state.hash(), restored.state.hash());
     std::fs::remove_dir_all(dir).unwrap();
@@ -81,26 +81,26 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
 #[test]
 fn a_lan_match_leaves_only_a_watch_only_recording() {
     let dir = scratch("lan-match");
-    let mut duel = oxide_sim::Scenario::skirmish();
+    let mut duel = aftermine_sim::Scenario::skirmish();
     for player in &mut duel.players {
         player.bot = false;
         player.bot_config = None;
     }
     let mut game = Game::networked(
         duel,
-        oxide_sim::PlayerId(0),
+        aftermine_sim::PlayerId(0),
         crate::game::network::NetRole::Host,
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .unwrap();
-    game.issue(oxide_sim::Command::Train {
-        building: oxide_sim::BuildingId(0),
-        kind: oxide_sim::UnitKind::Harvester,
+    game.issue(aftermine_sim::Command::Train {
+        building: aftermine_sim::BuildingId(0),
+        kind: aftermine_sim::UnitKind::Harvester,
     });
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
         panic!("an undecided LAN match still records its history")
     };
-    let record = oxide_kit::load_replay(&path).unwrap();
+    let record = aftermine_kit::load_replay(&path).unwrap();
     assert_eq!(record.meta.kind.as_deref(), Some("match"));
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -108,7 +108,7 @@ fn a_lan_match_leaves_only_a_watch_only_recording() {
 #[test]
 fn outcomes_distinguish_nothing_already_and_wrote() {
     let dir = scratch("outcomes");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     assert!(
         matches!(
             write_record(&mut game, &dir),
@@ -131,7 +131,7 @@ fn outcomes_distinguish_nothing_already_and_wrote() {
 #[test]
 fn records_carry_their_kind_and_a_named_save_leaves_the_session_recorder_alone() {
     let dir = scratch("kind-stamp");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     game.advance_ticks(1);
     let saved =
         write_named(&game, "before the big push", &dir, 1_784_721_600).expect("a named save lands");
@@ -171,7 +171,7 @@ fn an_unwritable_dir_reports_instead_of_lying() {
     let dir = scratch("unwritable");
     std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
     std::fs::write(&dir, b"in the way").unwrap();
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     game.advance_ticks(1);
     let err = write_record(&mut game, &dir).expect_err("the failure surfaces");
     assert!(matches!(err, SaveError::CreateDir { .. }));
@@ -209,11 +209,11 @@ fn a_failed_publication_removes_only_its_uncommitted_reservation() {
 fn collisions_beyond_one_thousand_remain_exclusively_reserved() {
     let dir = scratch("many-collisions");
     std::fs::create_dir_all(&dir).unwrap();
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     game.advance_ticks(1);
     let tick = game.state.current_tick();
     for n in 0..1000 {
-        let extension = "oxsave";
+        let extension = "amsave";
         let path = if n == 0 {
             dir.join(format!("save-{tick:010}.{extension}"))
         } else {
@@ -255,21 +255,21 @@ fn rotation_touches_only_its_own_kind() {
     // save, one fresh temp. Names sort in age order so the mtime
     // tie-break stays deterministic.
     for n in 0..6 {
-        std::fs::write(dir.join(format!("autosave-000000000{n}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-000000000{n}.amsave")), b"{}").unwrap();
     }
-    std::fs::write(dir.join("match-0000000100.oxreplay"), b"{}").unwrap();
+    std::fs::write(dir.join("match-0000000100.amreplay"), b"{}").unwrap();
     std::fs::write(dir.join("save-outpost.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-legacy.json"), b"{}").unwrap();
     std::fs::write(dir.join("autosave-0000000001.tmp.42.0"), b"live").unwrap();
     rotate(&dir);
     assert!(
-        !dir.join("autosave-0000000000.oxsave").exists(),
+        !dir.join("autosave-0000000000.amsave").exists(),
         "only the oldest autosave died"
     );
     for n in 1..6 {
-        assert!(dir.join(format!("autosave-000000000{n}.oxsave")).exists());
+        assert!(dir.join(format!("autosave-000000000{n}.amsave")).exists());
     }
-    assert!(dir.join("match-0000000100.oxreplay").exists());
+    assert!(dir.join("match-0000000100.amreplay").exists());
     assert!(dir.join("autosave-legacy.json").exists());
     assert!(
         dir.join("save-outpost.json").exists(),
@@ -287,12 +287,12 @@ fn matches_rotate_against_their_own_budget() {
     let dir = scratch("matches");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..=KEEP_MATCHES {
-        std::fs::write(dir.join(format!("match-{n:010}.oxreplay")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("match-{n:010}.amreplay")), b"{}").unwrap();
     }
     rotate(&dir);
-    assert!(!dir.join(format!("match-{:010}.oxreplay", 0)).exists());
+    assert!(!dir.join(format!("match-{:010}.amreplay", 0)).exists());
     for n in 1..=KEEP_MATCHES {
-        assert!(dir.join(format!("match-{n:010}.oxreplay")).exists());
+        assert!(dir.join(format!("match-{n:010}.amreplay")).exists());
     }
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -302,11 +302,11 @@ fn a_directory_at_budget_loses_nothing() {
     let dir = scratch("at-budget");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..KEEP_AUTOSAVES {
-        std::fs::write(dir.join(format!("autosave-{n:010}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-{n:010}.amsave")), b"{}").unwrap();
     }
     rotate(&dir);
     for n in 0..KEEP_AUTOSAVES {
-        assert!(dir.join(format!("autosave-{n:010}.oxsave")).exists());
+        assert!(dir.join(format!("autosave-{n:010}.amsave")).exists());
     }
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -316,19 +316,19 @@ fn lan_autosaves_rotate_against_their_own_budget() {
     let dir = scratch("lan-autosaves");
     std::fs::create_dir_all(&dir).unwrap();
     for n in 0..=KEEP_AUTOSAVES {
-        std::fs::write(dir.join(format!("lan-autosave-{n:010}.oxsave")), b"{}").unwrap();
-        std::fs::write(dir.join(format!("autosave-{n:010}.oxsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("lan-autosave-{n:010}.amsave")), b"{}").unwrap();
+        std::fs::write(dir.join(format!("autosave-{n:010}.amsave")), b"{}").unwrap();
     }
-    std::fs::write(dir.join("lan-0000000007.oxsave"), b"{}").unwrap();
+    std::fs::write(dir.join("lan-0000000007.amsave"), b"{}").unwrap();
     rotate(&dir);
     for prefix in ["lan-autosave", "autosave"] {
-        assert!(!dir.join(format!("{prefix}-{:010}.oxsave", 0)).exists());
+        assert!(!dir.join(format!("{prefix}-{:010}.amsave", 0)).exists());
         for n in 1..=KEEP_AUTOSAVES {
-            assert!(dir.join(format!("{prefix}-{n:010}.oxsave")).exists());
+            assert!(dir.join(format!("{prefix}-{n:010}.amsave")).exists());
         }
     }
     assert!(
-        dir.join("lan-0000000007.oxsave").exists(),
+        dir.join("lan-0000000007.amsave").exists(),
         "a named LAN save stays"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -337,7 +337,7 @@ fn lan_autosaves_rotate_against_their_own_budget() {
 #[test]
 fn a_lan_host_save_is_a_resumable_checkpoint() {
     let dir = scratch("lan-host");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     game.advance_ticks(12);
     let capture = || {
         let manifest =
@@ -365,7 +365,7 @@ fn a_lan_host_save_is_a_resumable_checkpoint() {
 #[test]
 fn a_match_overwrites_its_one_slot() {
     let dir = scratch("one-slot");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
     let Ok(SaveOutcome::Wrote(first)) = write_record(&mut game, &dir) else {
         panic!("the first autosave lands");
@@ -384,7 +384,7 @@ fn a_match_overwrites_its_one_slot() {
 #[test]
 fn continuing_a_slot_overwrites_it() {
     let dir = scratch("continue-slot");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(4);
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
         panic!("the autosave lands");
@@ -416,19 +416,19 @@ fn only_an_autosave_in_the_autosave_folder_lends_its_slot() {
     let dir = Path::new("/data/autosaves");
     let adopt = |path: &str| SaveSlot::adopt(Path::new(path), dir);
     assert_eq!(
-        adopt("/data/autosaves/autosave-12.oxsave"),
+        adopt("/data/autosaves/autosave-12.amsave"),
         Some(SaveSlot("12".into()))
     );
     assert_eq!(
-        adopt("/data/autosaves/lan-autosave-12.oxsave"),
+        adopt("/data/autosaves/lan-autosave-12.amsave"),
         Some(SaveSlot("12".into()))
     );
     for other in [
-        "/data/saves/autosave-12.oxsave",
-        "/data/autosaves/save-12.oxsave",
-        "/data/autosaves/match-12.oxreplay",
-        "/data/autosaves/autosave-.oxsave",
-        "/data/autosaves/autosave12.oxsave",
+        "/data/saves/autosave-12.amsave",
+        "/data/autosaves/save-12.amsave",
+        "/data/autosaves/match-12.amreplay",
+        "/data/autosaves/autosave-.amsave",
+        "/data/autosaves/autosave12.amsave",
     ] {
         assert_eq!(adopt(other), None, "{other}");
     }
@@ -447,7 +447,7 @@ fn rotation_keeps_the_last_five_matches() {
     let dir = scratch("five-matches");
     let mut slots = Vec::new();
     for _ in 0..=KEEP_AUTOSAVES {
-        let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+        let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
         for ticks in [1, 2] {
             game.advance_ticks(ticks);
             assert!(matches!(
@@ -473,13 +473,13 @@ fn rotation_keeps_the_last_five_matches() {
 fn a_decided_match_writes_its_record_and_drops_its_slot() {
     let root = scratch("decided-slot");
     let (autosaves, matches) = (root.join("autosaves"), root.join("matches"));
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.advance_ticks(oxide_kit::keyframes::KEYFRAME_EVERY + 5);
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(aftermine_kit::keyframes::KEYFRAME_EVERY + 5);
     assert!(matches!(
         write_record(&mut game, &autosaves),
         Ok(SaveOutcome::Wrote(_))
     ));
-    game.issue(oxide_sim::Command::Surrender);
+    game.issue(aftermine_sim::Command::Surrender);
     game.do_tick();
     assert!(game.state.result().is_some());
     let mut job = SaveJob::capture(&game, None);
@@ -496,11 +496,11 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
         "the record replaces the autosave"
     );
     assert_eq!(files(&matches), vec![game.slot.file("match")]);
-    let recording = oxide_kit::load_recording(&record).unwrap();
+    let recording = aftermine_kit::load_recording(&record).unwrap();
     assert_eq!(recording.replay.meta.kind.as_deref(), Some("match"));
     assert_eq!(
         recording.keyframes.ticks().collect::<Vec<_>>(),
-        [oxide_kit::keyframes::KEYFRAME_EVERY],
+        [aftermine_kit::keyframes::KEYFRAME_EVERY],
         "the record carries the keyframes the match kept"
     );
     assert!(matches!(
@@ -512,9 +512,9 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
 
 #[test]
 fn a_match_decided_right_after_its_resume_records_its_whole_history() {
-    use oxide_kit::keyframes::KEYFRAME_EVERY;
+    use aftermine_kit::keyframes::KEYFRAME_EVERY;
     let root = scratch("decided-resume");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(KEYFRAME_EVERY + 5);
     let mut resumed = game
         .capture_save()
@@ -523,13 +523,13 @@ fn a_match_decided_right_after_its_resume_records_its_whole_history() {
         .restore()
         .unwrap()
         .install();
-    resumed.issue(oxide_sim::Command::Surrender);
+    resumed.issue(aftermine_sim::Command::Surrender);
     resumed.do_tick();
     assert!(resumed.state.result().is_some());
     let Ok(SaveOutcome::Wrote(record)) = write_record(&mut resumed, &root) else {
         panic!("the finished record lands");
     };
-    let recording = oxide_kit::load_recording(&record).unwrap();
+    let recording = aftermine_kit::load_recording(&record).unwrap();
     assert_eq!(
         recording.replay.start_tick(),
         0,
@@ -546,7 +546,7 @@ fn a_match_decided_right_after_its_resume_records_its_whole_history() {
 #[test]
 fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
     let dir = scratch("late-mark");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
     let mut job = SaveJob::capture(&game, None);
     redirect(&mut job, &dir);
@@ -567,7 +567,7 @@ fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
 
 #[test]
 fn a_mark_for_another_match_changes_nothing() {
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
     game.mark_saved(&SaveMark {
         slot: SaveSlot::fresh(),
@@ -579,8 +579,8 @@ fn a_mark_for_another_match_changes_nothing() {
 #[test]
 fn a_match_decided_before_install_writes_no_record() {
     let dir = scratch("decided-replay");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
-    game.issue(oxide_sim::Command::Surrender);
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.issue(aftermine_sim::Command::Surrender);
     game.advance_ticks(2);
     let mut replay = game.recorder.clone();
     replay.meta.ticks = Some(game.state.current_tick());
@@ -596,7 +596,7 @@ fn a_match_decided_before_install_writes_no_record() {
 #[test]
 fn a_slot_holds_one_autosave_kind() {
     let dir = scratch("one-kind");
-    let mut game = Game::new(oxide_sim::Scenario::skirmish()).unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(3);
     let manifest =
         crate::game::checkpoint::LanManifest::new(&game.scenario, game.presentation.human, &[]);

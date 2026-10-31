@@ -1,6 +1,6 @@
-# oxide-shell
+# aftermine-shell
 
-`oxide-shell` is the playable macroquad application. It turns input into
+`aftermine-shell` is the playable macroquad application. It turns input into
 recorded simulation commands, advances the deterministic state, and presents the
 result through rendering, sound, menus, saves, and replay playback.
 
@@ -21,8 +21,8 @@ crate-level rustdoc.
 - `screens/wizard` owns New Match seat, team, and opponent choices, and
   `screens/wizard/launch` turns a finished draft into a match; `bot_label` keeps
   configured opponent names consistent across the wizard, HUD, and result
-  report. Every bot seat of a new match runs `oxide-opponent`; rematches, saves
-  and replays keep their recorded configuration.
+  report. Every bot seat of a new match runs `aftermine-opponent`; rematches,
+  saves and replays keep their recorded configuration.
 - `game` owns one live session, its recorder, bots, and `game::Clock` (pause,
   speed, and tick debt). `game::Presentation` holds camera, interpolation,
   effects, and UI state; rendering borrows the active live or replay world and
@@ -58,10 +58,10 @@ crate-level rustdoc.
   resources. `mixer` plays clips and holds the one table of what the shell
   decides per sound kind: its clip, bus, mix weight, and whether it is a blast
   or raises combat music.
-- `debug_server` connects the frame loop to `oxide-protocol`.
+- `debug_server` connects the frame loop to `aftermine-protocol`.
 - `netplay` gathers LAN machines in a lobby and carries a running match between
-  them over `oxide-net`; `screens/lobby` asks for the player's name and a host
-  address and shows the lobby's status. `text_field` is the form of labeled
+  them over `aftermine-net`; `screens/lobby` asks for the player's name and a
+  host address and shows the lobby's status. `text_field` is the form of labeled
   fields it shares with the save name and the Settings name.
 - `saved_game` owns compact checkpoint files with independently readable
   metadata. `autosave` owns atomic publication and retention; `saves` classifies
@@ -80,9 +80,9 @@ provenance. This metadata is observational and never enters simulation hashes.
 Run commands from the workspace root:
 
 ```sh
-cargo run -p oxide-shell --release
-cargo test -p oxide-shell --locked
-cargo run -p oxide-driver -- smoke --spawn
+cargo run -p aftermine-shell --release
+cargo test -p aftermine-shell --locked
+cargo run -p aftermine-driver -- smoke --spawn
 ```
 
 A workspace build binds F1 to the debug overlay, which shows the whole world
@@ -103,8 +103,8 @@ players are the seats with `"bot": false`; the host takes the first, and joining
 machines fill the rest in order:
 
 ```sh
-cargo run -p oxide-shell --release -- --host 0.0.0.0:4200 --scenario duel.json
-cargo run -p oxide-shell --release -- --join 192.168.1.20:4200
+cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.json
+cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
 ```
 
 ## iPad build
@@ -130,7 +130,7 @@ cargo ios
 iPad or an iPad simulator. With several devices it lists them and asks, offering
 the last choice as the default; `--device <name or id>` skips the question and
 `--list` only prints the devices. A locked iPad still receives the install; open
-Oxide yourself once it is unlocked.
+Aftermine yourself once it is unlocked.
 
 iPadOS 27 requires the `UIScene` lifecycle, so the workspace pins a miniquad
 fork that carries unreleased upstream work; see the workspace `Cargo.toml` for
@@ -164,7 +164,7 @@ the Replays shelf. A match autosaves every minute of play, as the window goes
 inactive, and when the player leaves or quits. Each match keeps one autosave,
 replaced in place, until its finished recording replaces it as soon as the match
 is decided. On iPad, named saves, finished matches, replays and diagnostics
-appear in the Files app under On My iPad > Oxide.
+appear in the Files app under On My iPad > Aftermine.
 
 Settings provides **Open diagnostics folder** (not on iPad) and **Export
 diagnostic report**. Crash and freeze diagnostics are always on and write only

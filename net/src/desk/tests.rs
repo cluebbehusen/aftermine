@@ -1,7 +1,7 @@
 use super::*;
 use crate::visit::{Visit, VisitEnd, VisitEvent};
 use crate::{ClientMessage, HostEvent, Token, reports_hash};
-use oxide_sim::Tick;
+use aftermine_sim::Tick;
 
 const HOST: PlayerId = PlayerId(0);
 const A: PlayerId = PlayerId(1);

@@ -2,10 +2,10 @@
 //! same one the shell uses, so these cover the whole recording pipeline
 //! without a window.
 
-use oxide_driver::pool;
-use oxide_kit::runner;
-use oxide_sim::scenario::{MapSize, ScenarioMode};
-use oxide_sim::{PlayerCommand, Scenario, State};
+use aftermine_driver::pool;
+use aftermine_kit::runner;
+use aftermine_sim::scenario::{MapSize, ScenarioMode};
+use aftermine_sim::{PlayerCommand, Scenario, State};
 use std::path::{Path, PathBuf};
 
 fn assert_state_round_trip(state: &State) -> anyhow::Result<()> {
@@ -25,7 +25,7 @@ fn assert_state_round_trip(state: &State) -> anyhow::Result<()> {
 struct SoakTrace {
     stem: PathBuf,
     hashes: String,
-    replay: oxide_kit::GameReplay,
+    replay: aftermine_kit::GameReplay,
 }
 
 impl SoakTrace {
@@ -33,7 +33,11 @@ impl SoakTrace {
         Self {
             stem: stem.to_owned(),
             hashes: String::new(),
-            replay: chassis::replay::Replay::new(oxide_sim::SIM_VERSION, "test", scenario.clone()),
+            replay: chassis::replay::Replay::new(
+                aftermine_sim::SIM_VERSION,
+                "test",
+                scenario.clone(),
+            ),
         }
     }
 
@@ -71,7 +75,7 @@ fn play_and_check_integrity(
     trace: Option<&Path>,
 ) -> anyhow::Result<()> {
     let mut state = scenario.build()?;
-    let mut bots = oxide_kit::controller::seat_controllers(scenario)?;
+    let mut bots = aftermine_kit::controller::seat_controllers(scenario)?;
     let mut trace = trace.map(|stem| SoakTrace::new(stem, scenario));
     assert_state_round_trip(&state)?;
     for _ in 0..ticks {
@@ -80,7 +84,7 @@ fn play_and_check_integrity(
             trace.record(&state, &commands);
         }
         let report = state.tick(&commands);
-        oxide_kit::controller::record_events(&mut bots, &report);
+        aftermine_kit::controller::record_events(&mut bots, &report);
         let tick = state.current_tick();
         if let Some(trace) = &mut trace
             && tick.is_multiple_of(TRACE_HASH_INTERVAL)
@@ -129,7 +133,7 @@ fn all_bots(path: &std::path::Path) -> Scenario {
         Scenario::load(path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
     for player in &mut scenario.players {
         player.bot = true;
-        player.bot_config = Some(oxide_sim::scenario::BotConfig::default());
+        player.bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     }
     scenario
 }
@@ -138,7 +142,7 @@ fn bot_skirmish() -> Scenario {
     let mut scenario = Scenario::skirmish();
     for player in &mut scenario.players {
         player.bot = true;
-        player.bot_config = Some(oxide_sim::scenario::BotConfig::default());
+        player.bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     }
     scenario
 }
@@ -146,13 +150,13 @@ fn bot_skirmish() -> Scenario {
 #[test]
 fn recorded_scenario_run_reproduces_from_its_replay() {
     // Exercise the runner recording path with a non-empty bot command log.
+    use aftermine_sim::SIM_VERSION;
     use chassis::replay::Replay;
-    use oxide_sim::SIM_VERSION;
 
     let scenario = bot_skirmish();
     let mut state = scenario.build().unwrap();
-    let mut bots = oxide_kit::controller::seat_controllers(&scenario).unwrap();
-    let mut replay: oxide_kit::GameReplay = Replay::new(SIM_VERSION, "test", scenario);
+    let mut bots = aftermine_kit::controller::seat_controllers(&scenario).unwrap();
+    let mut replay: aftermine_kit::GameReplay = Replay::new(SIM_VERSION, "test", scenario);
     for _ in 0..900 {
         let mut commands = Vec::new();
         for bot in &mut bots {
@@ -162,7 +166,7 @@ fn recorded_scenario_run_reproduces_from_its_replay() {
             replay.record(state.current_tick(), command.clone());
         }
         let report = state.tick(&commands);
-        oxide_kit::controller::record_events(&mut bots, &report);
+        aftermine_kit::controller::record_events(&mut bots, &report);
     }
     replay.meta.ticks = Some(state.current_tick());
     assert_eq!(replay.meta.ticks, Some(900));
@@ -181,7 +185,7 @@ const TRACE_HASH_INTERVAL: u64 = 20;
 /// When set, each integrity run writes `<map>.hashes` and
 /// `<map>.replay.json` into this directory. CI compares the hash files
 /// across operating systems.
-const TRACE_DIR_VAR: &str = "OXIDE_SOAK_TRACE_DIR";
+const TRACE_DIR_VAR: &str = "AFTERMINE_SOAK_TRACE_DIR";
 
 fn integrity_horizon(scenario: &Scenario) -> u64 {
     match scenario.meta.as_ref().and_then(|m| m.size) {
@@ -231,7 +235,7 @@ fn run_without_bots_is_quiet_but_valid() {
         &Scenario::skirmish(),
         100,
         false,
-        Some(&oxide_kit::build::BuildIdentity::default()),
+        Some(&aftermine_kit::build::BuildIdentity::default()),
     )
     .unwrap();
     let replay = outcome.replay.unwrap();
@@ -241,9 +245,10 @@ fn run_without_bots_is_quiet_but_valid() {
 
 #[test]
 fn forged_marathon_replays_are_refused() {
+    use aftermine_sim::{SIM_VERSION, Scenario};
     use chassis::replay::Replay;
-    use oxide_sim::{SIM_VERSION, Scenario};
-    let mut replay: oxide_kit::GameReplay = Replay::new(SIM_VERSION, "test", Scenario::skirmish());
+    let mut replay: aftermine_kit::GameReplay =
+        Replay::new(SIM_VERSION, "test", Scenario::skirmish());
     replay.meta.ticks = Some(u64::MAX - 1);
     let err = runner::run_replay(&replay, None).unwrap_err();
     assert!(err.to_string().contains("--allow-long"), "{err}");
@@ -270,7 +275,7 @@ fn load_scenario_names_the_path_when_it_cannot_be_read() {
 
 #[test]
 fn run_scenario_surfaces_a_build_failure_with_context() {
-    use oxide_sim::scenario::PlayerSpec;
+    use aftermine_sim::scenario::PlayerSpec;
     // Parses fine, but the extra seat has no Foundry anchor on the map, so
     // the build fails; the runner must wrap that, not swallow it.
     let mut scenario = Scenario::skirmish();
@@ -298,8 +303,8 @@ fn an_unfought_match_reports_no_result() {
 
 #[test]
 fn a_decided_match_latches_its_result_and_keeps_ticking() {
-    use oxide_sim::scenario::{PlayerSpec, UnitSpec};
-    use oxide_sim::{GameResult, UnitKind};
+    use aftermine_sim::scenario::{PlayerSpec, UnitSpec};
+    use aftermine_sim::{GameResult, UnitKind};
 
     // A firing squad: seat 0's Sentinels sit inside aggro range of seat 1's
     // lone Foundry and grind it down with no orders at all; seat 1 has no
@@ -372,17 +377,18 @@ fn a_decided_match_latches_its_result_and_keeps_ticking() {
 #[test]
 fn a_version_mismatched_replay_is_refused() {
     use chassis::replay::Replay;
-    let replay: oxide_kit::GameReplay =
-        Replay::new(oxide_sim::SIM_VERSION + 1, "test", Scenario::skirmish());
+    let replay: aftermine_kit::GameReplay =
+        Replay::new(aftermine_sim::SIM_VERSION + 1, "test", Scenario::skirmish());
     let err = runner::run_replay(&replay, None).unwrap_err();
     assert!(err.to_string().contains("recorded on sim"), "{err}");
 }
 
 #[test]
 fn overriding_the_tick_count_below_the_commands_is_rejected() {
+    use aftermine_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, UnitId};
     use chassis::replay::Replay;
-    use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, UnitId};
-    let mut replay: oxide_kit::GameReplay = Replay::new(SIM_VERSION, "test", Scenario::skirmish());
+    let mut replay: aftermine_kit::GameReplay =
+        Replay::new(SIM_VERSION, "test", Scenario::skirmish());
     replay.record(
         100,
         PlayerCommand {

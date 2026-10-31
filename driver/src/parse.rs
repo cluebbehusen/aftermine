@@ -1,9 +1,9 @@
 //! Argument value-parsers for the live-client CLI: tiles, points,
 //! buttons, keys, and the kind-name enums clap surfaces as choices.
 
+use aftermine_protocol::{Key, MouseButton};
+use aftermine_sim::{BuildingKind, UnitKind};
 use anyhow::{Context, Result, bail};
-use oxide_protocol::{Key, MouseButton};
-use oxide_sim::{BuildingKind, UnitKind};
 
 pub(crate) fn parse_tile(s: &str) -> Result<chassis::grid::TilePos> {
     let (x, y) = s

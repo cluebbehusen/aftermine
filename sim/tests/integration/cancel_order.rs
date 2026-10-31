@@ -5,14 +5,14 @@
 use crate::common;
 use common::{arena, cmd, run_until, unit};
 
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{
     AttackTarget, Command, Event, Order, OrderKey, PlayerCommand, PlayerId, Scenario, State,
     Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
 
 /// An open sandbox, `width` by `height`.
 fn sandbox(width: usize, height: usize, units: &[(u8, UnitKind, i32, i32)]) -> State {

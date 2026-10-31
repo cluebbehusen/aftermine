@@ -4,8 +4,8 @@ use crate::investments::Investment;
 use crate::memory::Memory;
 use crate::missions::{Missions, Scratch};
 use crate::profile::ResolvedProfile;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::scenario::{BotConfig, BotDifficulty};
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty};
 
 const ROC: [Investment; 1] = [Investment::Tech(BuildingKind::RocCradle)];
 

@@ -4,12 +4,12 @@
 
 use crate::common::*;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{PlayerSpec, Scenario, UnitSpec};
+use aftermine_sim::state::Warhead;
+use aftermine_sim::stats::{BuildingKind, WARHEAD, WARHEAD_LOCK_TICKS, WARHEAD_TRACK_TICKS};
+use aftermine_sim::{BuildingId, Command, Event, PlayerId, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{PlayerSpec, Scenario, UnitSpec};
-use oxide_sim::state::Warhead;
-use oxide_sim::stats::{BuildingKind, WARHEAD, WARHEAD_LOCK_TICKS, WARHEAD_TRACK_TICKS};
-use oxide_sim::{BuildingId, Command, Event, PlayerId, State, UnitKind};
 use serde_json::json;
 
 const WIDTH: usize = 72;
@@ -1076,7 +1076,7 @@ fn a_hostile_magazine_shows_its_rounds_in_sight_and_never_its_orders() {
     assert!(known[0].heading.is_some(), "the deck is in plain sight");
     assert_eq!(known[0].detail, None, "orders and autofill stay hidden");
     assert_eq!(
-        oxide_sim::observation::ObservationData::fog_honest(&seen, east).magazines,
+        aftermine_sim::observation::ObservationData::fog_honest(&seen, east).magazines,
         known
     );
 }
@@ -1126,7 +1126,7 @@ fn a_hostile_warhead_shows_on_radar_its_line_once_tracked_and_its_own_team_forec
         "the launching side is never told which battery waits"
     );
     assert_eq!(
-        oxide_sim::observation::ObservationData::fog_honest(&state, east).warheads,
+        aftermine_sim::observation::ObservationData::fog_honest(&state, east).warheads,
         tracked
     );
 }
@@ -1187,7 +1187,7 @@ fn an_unseen_seat_ordering_turning_and_launching_changes_nothing_its_enemy_knows
     let mut launched = false;
     for _ in 0..200 {
         let view = |state: &State| {
-            serde_json::to_string(&oxide_sim::observation::ObservationData::fog_honest(
+            serde_json::to_string(&aftermine_sim::observation::ObservationData::fog_honest(
                 state, east,
             ))
             .unwrap()
@@ -1263,7 +1263,7 @@ fn a_completed_track_reveals_the_silo_it_came_from() {
         !state.can_see(east, TilePos::new(SPIRE.0, SPIRE.1)),
         "revealed without sight"
     );
-    let known = oxide_sim::observation::ObservationData::fog_honest(&state, east);
+    let known = aftermine_sim::observation::ObservationData::fog_honest(&state, east);
     assert!(
         known
             .enemy_buildings
@@ -1297,7 +1297,7 @@ fn a_revealed_silo_replaces_the_memories_its_footprint_overlaps() {
         building(2, BuildingKind::Array, 36, 24),
     ];
     let mut state = loaded(&scenario.build().unwrap());
-    let memory = |kind: BuildingKind, owner: u8, x: i32, y: i32| oxide_sim::GhostBuilding {
+    let memory = |kind: BuildingKind, owner: u8, x: i32, y: i32| aftermine_sim::GhostBuilding {
         kind,
         owner: PlayerId(owner),
         anchor: TilePos::new(x, y),
@@ -1320,7 +1320,7 @@ fn a_revealed_silo_replaces_the_memories_its_footprint_overlaps() {
         s.vision(PlayerId(1))
             .warheads()
             .first()
-            .is_some_and(oxide_sim::vision::WarheadTrack::tracked)
+            .is_some_and(aftermine_sim::vision::WarheadTrack::tracked)
     });
     let kinds: Vec<_> = state
         .vision(PlayerId(1))

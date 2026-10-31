@@ -55,7 +55,7 @@ fn tap(at: Vec2) -> Vec<RawEvent> {
 }
 
 fn click(at: Vec2) -> Vec<RawEvent> {
-    use oxide_protocol::MouseButton;
+    use aftermine_protocol::MouseButton;
     vec![
         RawEvent::MouseDown {
             button: MouseButton::Left,
@@ -991,7 +991,7 @@ fn left_and_right_on_the_controls_tab_step_a_setting_or_the_chord_column() {
 
 #[test]
 fn clicking_the_secondary_column_selects_it_even_when_release_is_a_later_frame() {
-    use oxide_protocol::MouseButton;
+    use aftermine_protocol::MouseButton;
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::PanUp));

@@ -1,13 +1,14 @@
 ---
 name: simulation-development
 description:
-  Change, debug, refactor, and validate Oxide's deterministic Rust simulation.
-  Use for State, ticks, commands, entities, economy, construction, movement,
-  combat, fog, teams, stats, serialization invariants, replay compatibility,
-  state hashes, simulation performance, or splitting large sim modules.
+  Change, debug, refactor, and validate Aftermine's deterministic Rust
+  simulation. Use for State, ticks, commands, entities, economy, construction,
+  movement, combat, fog, teams, stats, serialization invariants, replay
+  compatibility, state hashes, simulation performance, or splitting large sim
+  modules.
 ---
 
-# Oxide simulation development
+# Aftermine simulation development
 
 Protect behavior at the command boundary. A clean abstraction is useful only if
 the same scenario and command log still produce the intended exact state.
@@ -47,12 +48,12 @@ art changes, follow the visual-assets skill to retrace it.
 ## Keep state deterministic
 
 - Use integers or `chassis::fx::Fx`; floats do not enter `chassis` or
-  `oxide-sim`.
+  `aftermine-sim`.
 - Draw any randomness from `chassis::rng::Pcg32` with a seed the scenario
   records.
 - Preserve canonical entity iteration and complete stable choice keys. For
   geometric ties, reuse the query-, footprint-, or owner-relative ranks in
-  `chassis::path` and `oxide_sim::geometry`; deterministic absolute ordering
+  `chassis::path` and `aftermine_sim::geometry`; deterministic absolute ordering
   alone does not preserve map symmetry.
 - Do not make outcomes depend on a hash collection's iteration order.
 - Route every mutation through `State::tick`; add a narrow read accessor when a
@@ -89,17 +90,17 @@ During development:
 
 ```sh
 cargo fmt --all --check
-cargo test -p oxide-sim --locked <focused filter>
-cargo clippy -p oxide-sim --all-targets --locked -- -D warnings
+cargo test -p aftermine-sim --locked <focused filter>
+cargo clippy -p aftermine-sim --all-targets --locked -- -D warnings
 ```
 
 When commands or serialized state change, include these focused surfaces:
 
 ```sh
-cargo test -p oxide-sim --locked --test integration state_integrity::
-cargo test -p oxide-sim --locked --test integration command_canonicalization::
-cargo test -p oxide-sim --locked --test integration fuzz::
-cargo test -p oxide-sim --locked --test integration determinism::
+cargo test -p aftermine-sim --locked --test integration state_integrity::
+cargo test -p aftermine-sim --locked --test integration command_canonicalization::
+cargo test -p aftermine-sim --locked --test integration fuzz::
+cargo test -p aftermine-sim --locked --test integration determinism::
 ```
 
 Required gates may run locally or through CI under `AGENTS.md`; do not duplicate
@@ -114,6 +115,6 @@ behavior.
 ## Verify the real report
 
 Headless tests prove rule behavior, not that the shell exposes it clearly. If a
-bug was reported through the playable game, finish by using the `oxide-live-qa`
-skill to repeat the actual interaction through the native input funnel and
-inspect the result at normal play scale.
+bug was reported through the playable game, finish by using the
+`aftermine-live-qa` skill to repeat the actual interaction through the native
+input funnel and inspect the result at normal play scale.

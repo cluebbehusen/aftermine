@@ -106,10 +106,10 @@ impl Connection {
         let (outgoing, to_write) = mpsc::channel();
         let (read, incoming) = mpsc::sync_channel(INCOMING_LINES);
         thread::Builder::new()
-            .name("oxide-net-read".into())
+            .name("aftermine-net-read".into())
             .spawn(move || read_lines(reader, &read))?;
         let writer = thread::Builder::new()
-            .name("oxide-net-write".into())
+            .name("aftermine-net-write".into())
             .spawn(move || write_lines(writer, to_write))
             .inspect_err(|_| {
                 // Wake the reader so it exits instead of outliving the error.

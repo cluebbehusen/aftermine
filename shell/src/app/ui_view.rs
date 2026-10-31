@@ -5,8 +5,8 @@ use super::{App, Screen, ScreenKind};
 use crate::menu::MenuView;
 use crate::render;
 use crate::screens::results::ResultsScreen;
+use aftermine_protocol::UiView;
 use macroquad::prelude::{Rect, screen_height};
-use oxide_protocol::UiView;
 
 /// A top-bar control's rect for the automation surface: reported only
 /// during live play, and only while the bar draws it.

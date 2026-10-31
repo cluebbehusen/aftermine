@@ -10,10 +10,10 @@ use crate::events::OwnEvent;
 use crate::frame::{HomeFrame, doubled, tiles_of};
 use crate::map::MapModel;
 use crate::memory::Memory;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, Command, PlayerId, StallReason, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, Command, PlayerId, StallReason, UnitKind};
 use std::cell::OnceCell;
 
 /// Ticks a point may go unseen before it is worth a look.

@@ -46,20 +46,22 @@ fn collective_queue_keeps_every_kind_visible_in_narrow_windows() {
 #[test]
 fn production_dock_width_survives_countdowns_and_blocked_completion() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     let foundry = game
         .state
         .buildings()
         .iter()
-        .find(|b| b.player == game.presentation.human && b.kind == oxide_sim::BuildingKind::Foundry)
+        .find(|b| {
+            b.player == game.presentation.human && b.kind == aftermine_sim::BuildingKind::Foundry
+        })
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![foundry];
-    let train = oxide_sim::PlayerCommand {
+    let train = aftermine_sim::PlayerCommand {
         player: game.presentation.human,
-        command: oxide_sim::Command::Train {
+        command: aftermine_sim::Command::Train {
             building: foundry,
-            kind: oxide_sim::UnitKind::Harvester,
+            kind: aftermine_sim::UnitKind::Harvester,
         },
     };
     game.state.tick(&[train.clone(), train]);
@@ -74,7 +76,7 @@ fn production_dock_width_survives_countdowns_and_blocked_completion() {
     };
     let mut widths = Vec::new();
     let mut labels = Vec::new();
-    for _ in 0..oxide_sim::UnitKind::Harvester.stats().train_ticks {
+    for _ in 0..aftermine_sim::UnitKind::Harvester.stats().train_ticks {
         let mut panel = crate::panel::build_for_palette(
             &game.view(),
             &crate::action::BindingMap::classic(),
@@ -102,20 +104,23 @@ fn production_dock_width_survives_countdowns_and_blocked_completion() {
 
 #[test]
 fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: oxide_sim::BuildingKind::Fabricator,
-        x: 9,
-        y: 3,
-    });
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     game.presentation.selection.buildings = vec![
         game.state
             .buildings()
             .iter()
             .find(|b| {
-                b.player == game.presentation.human && b.kind == oxide_sim::BuildingKind::Fabricator
+                b.player == game.presentation.human
+                    && b.kind == aftermine_sim::BuildingKind::Fabricator
             })
             .unwrap()
             .id,
@@ -177,7 +182,7 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
 #[test]
 fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
     use crate::action::BindingMap;
-    use oxide_sim::{BuildingKind, Command, PlayerCommand, Scenario};
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand, Scenario};
 
     for kind in BuildingKind::ALL
         .into_iter()
@@ -187,12 +192,14 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
             let mut scenario = Scenario::skirmish();
             scenario.players[0].scrap = if full_queue { 10_000 } else { 0 };
             if kind != BuildingKind::Foundry {
-                scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-                    player: 0,
-                    kind,
-                    x: 9,
-                    y: 3,
-                });
+                scenario
+                    .buildings
+                    .push(aftermine_sim::scenario::BuildingSpec {
+                        player: 0,
+                        kind,
+                        x: 9,
+                        y: 3,
+                    });
             }
             let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
             let building = game
@@ -207,7 +214,7 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
             game.presentation.selection.buildings = vec![building];
             if full_queue {
                 let unit = *kind.base_stats().produces.first().unwrap();
-                for _ in 0..oxide_sim::stats::QUEUE_CAP {
+                for _ in 0..aftermine_sim::stats::QUEUE_CAP {
                     game.state.tick(&[PlayerCommand {
                         player: game.presentation.human,
                         command: Command::Train {
@@ -218,7 +225,7 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
                 }
                 assert_eq!(
                     game.state.building(building).unwrap().queue.len(),
-                    oxide_sim::stats::QUEUE_CAP
+                    aftermine_sim::stats::QUEUE_CAP
                 );
             }
             for rally in [false, true] {
@@ -227,7 +234,9 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
                         player: game.presentation.human,
                         command: Command::SetRally {
                             building,
-                            rally: Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(12, 8))),
+                            rally: Some(aftermine_sim::Rally::Tile(chassis::grid::TilePos::new(
+                                12, 8,
+                            ))),
                         },
                     }]);
                 }
@@ -478,7 +487,7 @@ fn an_info_column_a_sliver_taller_than_the_band_shares_its_top() {
 #[test]
 fn rally_changes_preserve_single_and_grouped_production_geometry() {
     use crate::action::BindingMap;
-    use oxide_sim::{BuildingKind, Command, PlayerCommand, Scenario};
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand, Scenario};
 
     for kind in BuildingKind::ALL
         .into_iter()
@@ -486,12 +495,14 @@ fn rally_changes_preserve_single_and_grouped_production_geometry() {
     {
         let mut scenario = Scenario::skirmish();
         for x in [9, 14] {
-            scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-                player: 0,
-                kind,
-                x,
-                y: 3,
-            });
+            scenario
+                .buildings
+                .push(aftermine_sim::scenario::BuildingSpec {
+                    player: 0,
+                    kind,
+                    x,
+                    y: 3,
+                });
         }
         let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
         let producers: Vec<_> = game
@@ -544,7 +555,9 @@ fn rally_changes_preserve_single_and_grouped_production_geometry() {
             // Partial and shared rallies exercise both grouped panel states.
             for ids in [vec![selection[0]], selection.clone()] {
                 for rally in [
-                    Some(oxide_sim::Rally::Tile(chassis::grid::TilePos::new(20, 10))),
+                    Some(aftermine_sim::Rally::Tile(chassis::grid::TilePos::new(
+                        20, 10,
+                    ))),
                     None,
                 ] {
                     let commands: Vec<_> = ids
@@ -665,22 +678,22 @@ fn a_dense_small_window_panel_yields_the_minimap_before_overflowing() {
 
 #[test]
 fn a_mixed_small_window_selection_keeps_roster_and_queue_in_the_corner() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.clear();
     for (index, kind) in [
-        oxide_sim::UnitKind::Sentinel,
-        oxide_sim::UnitKind::Harvester,
-        oxide_sim::UnitKind::Excavator,
-        oxide_sim::UnitKind::Skyhook,
-        oxide_sim::UnitKind::Scuttler,
-        oxide_sim::UnitKind::Lancer,
-        oxide_sim::UnitKind::Bombard,
-        oxide_sim::UnitKind::Kestrel,
+        aftermine_sim::UnitKind::Sentinel,
+        aftermine_sim::UnitKind::Harvester,
+        aftermine_sim::UnitKind::Excavator,
+        aftermine_sim::UnitKind::Skyhook,
+        aftermine_sim::UnitKind::Scuttler,
+        aftermine_sim::UnitKind::Lancer,
+        aftermine_sim::UnitKind::Bombard,
+        aftermine_sim::UnitKind::Kestrel,
     ]
     .into_iter()
     .enumerate()
     {
-        scenario.units.push(oxide_sim::scenario::UnitSpec {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
             player: 0,
             kind,
             x: 6 + index.fit::<i32>(),
@@ -763,7 +776,7 @@ fn a_tile_icon_drops_below_a_hotkey_that_reaches_its_column() {
 #[test]
 fn the_select_all_button_widens_the_title_row_and_grows_for_fingertips() {
     let mut game =
-        crate::building_actions::tests::fixture(oxide_sim::BuildingKind::Turret, &[0, 0, 0], 0);
+        crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Turret, &[0, 0, 0], 0);
     game.presentation.selection.buildings.truncate(1);
     let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)

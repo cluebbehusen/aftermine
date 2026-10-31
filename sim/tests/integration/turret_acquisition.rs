@@ -2,8 +2,8 @@
 
 use crate::common;
 
+use aftermine_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitKind};
 
 use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
 
@@ -28,7 +28,7 @@ fn shot(events: &[Event], defense: BuildingId) -> Option<Target> {
     })
 }
 
-fn scene(kind: BuildingKind, target: BuildingKind) -> oxide_sim::Scenario {
+fn scene(kind: BuildingKind, target: BuildingKind) -> aftermine_sim::Scenario {
     let mut scenario = open_arena(32, 22, Vec::new());
     scenario.buildings = vec![building(0, kind, 5, 6), building(1, target, 9, 7)];
     scenario

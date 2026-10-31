@@ -27,12 +27,12 @@ fn eliding_keeps_the_longest_prefix_that_fits() {
 #[test]
 fn every_building_name_has_a_plural() {
     let plurals: Vec<String> = [
-        oxide_sim::BuildingKind::Foundry,
-        oxide_sim::BuildingKind::Array,
-        oxide_sim::BuildingKind::RepairBay,
-        oxide_sim::BuildingKind::Airworks,
-        oxide_sim::BuildingKind::ScuttleCharge,
-        oxide_sim::BuildingKind::Spire,
+        aftermine_sim::BuildingKind::Foundry,
+        aftermine_sim::BuildingKind::Array,
+        aftermine_sim::BuildingKind::RepairBay,
+        aftermine_sim::BuildingKind::Airworks,
+        aftermine_sim::BuildingKind::ScuttleCharge,
+        aftermine_sim::BuildingKind::Spire,
     ]
     .into_iter()
     .map(|kind| plural_name(&entity_name(kind.name())))

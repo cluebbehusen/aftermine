@@ -2,9 +2,9 @@
 
 use crate::recording::WorldOrigin;
 use crate::stats::LiveMatchStats;
+use aftermine_sim::{Scenario, State};
 use anyhow::Result;
 use chassis::replay::RecordingOrigin;
-use oxide_sim::{Scenario, State};
 use serde::{Deserialize, Serialize};
 
 /// What a rejoining client restores: the scenario every machine plays, the

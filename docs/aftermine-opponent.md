@@ -1,10 +1,10 @@
-# oxide-opponent
+# aftermine-opponent
 
-`oxide-opponent` is the reactive, best-effort opponent every bot seat runs. This
-page is its normative specification: what it must do, what it must keep exact,
-and what it may not do. The
-[oxide-opponent skill](../.agents/skills/oxide-opponent/SKILL.md) holds the
-working rules.
+`aftermine-opponent` is the reactive, best-effort opponent every bot seat runs.
+This page is its normative specification: what it must do, what it must keep
+exact, and what it may not do. The
+[aftermine-opponent skill](../.agents/skills/aftermine-opponent/SKILL.md) holds
+the working rules.
 
 It plays under the same fair-opponent and determinism contracts as every
 controller (see `AGENTS.md`): fog-honest information, ordinary costs and rules,

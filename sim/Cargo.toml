@@ -1,10 +1,10 @@
 [package]
-name = "oxide-sim"
+name = "aftermine-sim"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "Oxide game rules: pure, deterministic, headless"
+description = "Aftermine game rules: pure, deterministic, headless"
 
 [dependencies]
 chassis = { workspace = true }

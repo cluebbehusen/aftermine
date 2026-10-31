@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::ScenarioMode;
 
 /// A two-seat field drawn tile by tile: open floor at level 1 unless
 /// painted otherwise.

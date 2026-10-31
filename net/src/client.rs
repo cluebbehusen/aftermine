@@ -2,8 +2,8 @@
 
 use crate::message::{ClientMessage, HostMessage, Release, SeatNotice};
 use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP, reports_hash};
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{Command, PlayerCommand, PlayerId, Tick};
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{Command, PlayerCommand, PlayerId, Tick};
 use std::collections::VecDeque;
 use std::time::Duration;
 

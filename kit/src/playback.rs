@@ -8,8 +8,8 @@
 
 use crate::keyframes::{ChainEncoder, Keyframe, Keyframes};
 use crate::{GameReplay, Recording};
+use aftermine_sim::{SIM_VERSION, State};
 use anyhow::Result;
-use oxide_sim::{SIM_VERSION, State};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -27,7 +27,7 @@ pub struct Playback {
     /// The world at the current position.
     pub state: State,
     /// Motion emitted by the most recently simulated tick.
-    pub last_motion: Vec<oxide_sim::GroundMotion>,
+    pub last_motion: Vec<aftermine_sim::GroundMotion>,
     /// Index into `replay.commands` of the first command not yet fed.
     next_cmd: usize,
     total: u64,
@@ -109,7 +109,7 @@ impl Playback {
             shared: Arc::clone(&shared),
         };
         let worker = std::thread::Builder::new()
-            .name("oxide-replay-fill".into())
+            .name("aftermine-replay-fill".into())
             .spawn(move || work.run())
             .ok();
         self.fill = Some(Fill { shared, worker });
@@ -137,7 +137,7 @@ impl Playback {
 
     /// Advances up to `ticks`, stopping at the end of the record, and
     /// returns every event the replayed world emitted on the way.
-    pub fn advance(&mut self, ticks: u64) -> Vec<oxide_sim::Event> {
+    pub fn advance(&mut self, ticks: u64) -> Vec<aftermine_sim::Event> {
         let mut events = Vec::new();
         for _ in 0..ticks {
             if self.at_end() {
@@ -241,7 +241,7 @@ impl Playback {
         }
     }
 
-    fn step(&mut self) -> Vec<oxide_sim::Event> {
+    fn step(&mut self) -> Vec<aftermine_sim::Event> {
         let tick = self.state.current_tick();
         let mut commands = Vec::new();
         while let Some(c) = self.replay.commands.get(self.next_cmd) {

@@ -15,7 +15,7 @@ fn publish_strip(game: &mut Game, slots: [Option<GroupSlot>; 5]) -> [Rect; 5] {
     rects
 }
 
-fn own_units(game: &Game) -> Vec<oxide_sim::UnitId> {
+fn own_units(game: &Game) -> Vec<aftermine_sim::UnitId> {
     game.state
         .units()
         .iter()

@@ -38,7 +38,7 @@ fn raids_are_remembered_apart_from_given_up_targets() {
 
 #[test]
 fn units_that_cannot_leave_their_ground_are_remembered_longer() {
-    use oxide_sim::{PlayerId, Scenario, UnitId};
+    use aftermine_sim::{PlayerId, Scenario, UnitId};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     observation
@@ -48,7 +48,7 @@ fn units_that_cannot_leave_their_ground_are_remembered_longer() {
     let template = observation.my_units[0].clone();
     observation.enemy_units = [(1, 10), (2, 20)]
         .into_iter()
-        .map(|(id, x)| oxide_sim::observation::UnitObs {
+        .map(|(id, x)| aftermine_sim::observation::UnitObs {
             id: UnitId(id),
             kind: UnitKind::Sentinel,
             tile: TilePos::new(x, 10),

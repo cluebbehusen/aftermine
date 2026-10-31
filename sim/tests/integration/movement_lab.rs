@@ -3,21 +3,21 @@
 //! bulldozing, pursuit kiting, and surround utilization. The lab reports;
 //! focused behavior suites own the assertions. Run explicitly:
 //!
-//! `cargo test -p oxide-sim --test integration movement_lab:: -- --ignored --nocapture`
+//! `cargo test -p aftermine-sim --test integration movement_lab:: -- --ignored --nocapture`
 
 use crate::common;
 
+use aftermine_sim::{Command, Event, Order, State, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use common::{cmd, open_arena as lane_arena, open_arena_with as lane_arena_with};
-use oxide_sim::{Command, Event, Order, State, UnitKind};
 
 /// Fx to integer millitiles, for printing without float math.
 fn milli(v: Fx) -> i64 {
     (v * Fx::lit("1000")).to_num::<i64>()
 }
 
-fn dist_from(state: &State, id: oxide_sim::UnitId, tile: TilePos) -> Fx {
+fn dist_from(state: &State, id: aftermine_sim::UnitId, tile: TilePos) -> Fx {
     state
         .units()
         .iter()

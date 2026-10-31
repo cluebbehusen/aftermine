@@ -9,7 +9,7 @@ use crate::memory::Memory;
 use crate::missions::Missions;
 use crate::saving::Saving;
 use crate::{MapModel, Opponent};
-use oxide_sim::{PlayerId, Scenario, State};
+use aftermine_sim::{PlayerId, Scenario, State};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ impl Opponent {
     }
 
     /// Restores a seat at a completed simulation boundary. The seat must be a
-    /// configured `oxide-opponent` bot in both the scenario and the world, and
+    /// configured `aftermine-opponent` bot in both the scenario and the world, and
     /// `map` the model built from that scenario.
     pub fn restore(
         checkpoint: &Checkpoint,

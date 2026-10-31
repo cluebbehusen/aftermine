@@ -2,12 +2,12 @@ use super::*;
 
 #[test]
 fn a_warhead_track_runs_from_launch_to_impact_over_its_flight() {
-    let line = oxide_sim::strike::WarheadLine {
+    let line = aftermine_sim::strike::WarheadLine {
         launch: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("2"), chassis::fx::Fx::lit("2")),
         impact: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("22"), chassis::fx::Fx::lit("2")),
         arrival: 1_000,
     };
-    let ticks = oxide_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact) as f32;
+    let ticks = aftermine_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact) as f32;
     let start = 1_000.0 - ticks;
     assert_eq!(warhead_track(line, start - 5.0), (Vec2::new(2.0, 2.0), 0.0));
     let (middle, half) = warhead_track(line, start + ticks / 2.0);
@@ -18,7 +18,7 @@ fn a_warhead_track_runs_from_launch_to_impact_over_its_flight() {
 
 #[test]
 fn a_warhead_eases_off_its_rail_then_holds_the_simulations_pace() {
-    let line = oxide_sim::strike::WarheadLine {
+    let line = aftermine_sim::strike::WarheadLine {
         launch: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("2"), chassis::fx::Fx::lit("2")),
         impact: chassis::fx::Vec2Fx::new(chassis::fx::Fx::lit("42"), chassis::fx::Fx::lit("2")),
         arrival: 1_000,

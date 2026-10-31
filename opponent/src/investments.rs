@@ -10,10 +10,10 @@ use crate::memory::Memory;
 use crate::placement::Layout;
 use crate::profile::PersonalityTraits;
 use crate::workers;
+use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::stats::Prerequisite;
+use aftermine_sim::{BuildingId, BuildingKind, PlayerId, TICKS_PER_SECOND, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{BuildingObs, ObservationData};
-use oxide_sim::stats::Prerequisite;
-use oxide_sim::{BuildingId, BuildingKind, PlayerId, TICKS_PER_SECOND, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 

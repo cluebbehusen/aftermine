@@ -1,7 +1,7 @@
 use super::*;
 use crate::numeric::Fit;
+use aftermine_sim::Scenario;
 use macroquad::prelude::vec2;
-use oxide_sim::Scenario;
 
 pub(crate) fn fixture(kind: BuildingKind, tiers: &[u8], scrap: u32) -> Game {
     let mut scenario = Scenario::from_json(r#"{
@@ -17,23 +17,27 @@ pub(crate) fn fixture(kind: BuildingKind, tiers: &[u8], scrap: u32) -> Game {
     }"#).unwrap();
     scenario.players[0].scrap = scrap;
     for (i, _) in tiers.iter().enumerate() {
-        scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-            player: 0,
-            kind,
-            x: 8 + 3 * i.fit::<i32>(),
-            y: 5,
-        });
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind,
+                x: 8 + 3 * i.fit::<i32>(),
+                y: 5,
+            });
     }
     for (i, kind) in [BuildingKind::Fabricator, BuildingKind::Crucible]
         .into_iter()
         .enumerate()
     {
-        scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-            player: 0,
-            kind,
-            x: 3 + 4 * i.fit::<i32>(),
-            y: 8,
-        });
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind,
+                x: 3 + 4 * i.fit::<i32>(),
+                y: 8,
+            });
     }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     game.presentation.selection.buildings = game
@@ -64,7 +68,7 @@ fn assert_accepted(game: &mut Game) {
     assert!(
         !events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. })),
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. })),
         "{events:?}"
     );
     game.state.validate_invariants().unwrap();
@@ -173,7 +177,7 @@ fn pending_purchases_refunds_invalid_commands_and_surrender_share_one_preview() 
     let home = game.home_foundry().unwrap().id;
     game.issue(Command::Train {
         building: home,
-        kind: oxide_sim::UnitKind::Harvester,
+        kind: aftermine_sim::UnitKind::Harvester,
     });
     assert_eq!(
         SelectedBuildings::inspect(&game.view())
@@ -292,7 +296,7 @@ fn every_building_inherits_single_and_group_actions_from_capabilities() {
                 assert_eq!(batch.recipients.len(), count);
             }
             for b in &mut selected.buildings {
-                b.phase = oxide_sim::BuildingPhase::Site { progress: 0 };
+                b.phase = aftermine_sim::BuildingPhase::Site { progress: 0 };
             }
             assert!(
                 selected

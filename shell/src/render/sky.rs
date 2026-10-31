@@ -14,7 +14,7 @@ pub(crate) fn missile_seen(game: &crate::game::Scene<'_>, hostile: bool, ground:
 /// [`missile_seen`] for a presentation and the state it shows.
 pub(crate) fn missile_seen_by(
     presentation: &crate::game::Presentation,
-    state: &oxide_sim::State,
+    state: &aftermine_sim::State,
     hostile: bool,
     ground: Vec2,
 ) -> bool {
@@ -25,7 +25,7 @@ pub(crate) fn missile_seen_by(
 /// over it.
 pub(crate) fn ground_seen_by(
     presentation: &crate::game::Presentation,
-    state: &oxide_sim::State,
+    state: &aftermine_sim::State,
     ground: Vec2,
 ) -> bool {
     presentation.all_seeing()
@@ -76,8 +76,8 @@ pub(crate) struct Flight {
 }
 
 impl Flight {
-    pub(crate) fn of(line: oxide_sim::strike::WarheadLine) -> Self {
-        let ticks = oxide_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact);
+    pub(crate) fn of(line: aftermine_sim::strike::WarheadLine) -> Self {
+        let ticks = aftermine_sim::stats::WARHEAD.flight_ticks(line.launch, line.impact);
         Self {
             launch: crate::game::world_vec(line.launch),
             impact: crate::game::world_vec(line.impact),
@@ -190,7 +190,7 @@ impl InterceptorPath {
 
 /// Where a warhead on `line` stands over the ground at presentation `tick`,
 /// and how far along its flight it is.
-pub(crate) fn warhead_track(line: oxide_sim::strike::WarheadLine, tick: f32) -> (Vec2, f32) {
+pub(crate) fn warhead_track(line: aftermine_sim::strike::WarheadLine, tick: f32) -> (Vec2, f32) {
     let flight = Flight::of(line);
     (flight.ground(tick), flight.progress(tick))
 }

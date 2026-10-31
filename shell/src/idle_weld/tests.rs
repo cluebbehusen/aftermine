@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::Game;
+use aftermine_sim::{PlayerCommand, PlayerId, Scenario};
 use macroquad::prelude::vec2;
-use oxide_sim::{PlayerCommand, PlayerId, Scenario};
 
 fn game() -> Game {
     Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 800.0)).expect("skirmish builds")

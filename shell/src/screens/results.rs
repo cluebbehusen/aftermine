@@ -11,9 +11,9 @@ use crate::press::{Fed, Press};
 use crate::theme::Type;
 use crate::typography::{clip_chars, elide_to_width};
 use crate::{render, theme};
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::{GameResult, PlayerId};
 use macroquad::prelude::*;
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::{GameResult, PlayerId};
 
 const WIDE_STAT_HEADERS: [[&str; 2]; 6] = [
     ["PEAK ARMY", "VALUE"],
@@ -847,7 +847,7 @@ fn draw_marker(x: f32, y: f32, r: f32, seat: usize, color: Color) {
 
 fn draw_army_graph(
     game: &Game,
-    report: &oxide_kit::stats::MatchStats,
+    report: &aftermine_kit::stats::MatchStats,
     rect: Rect,
     scale: f32,
     title_size: f32,

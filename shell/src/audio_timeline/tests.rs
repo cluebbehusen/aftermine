@@ -2,10 +2,10 @@ use super::*;
 
 #[test]
 fn coincident_impacts_keep_projectile_order_and_player_identity() {
+    use aftermine_sim::{PlayerId, ProjectileKind, Target, UnitId};
     use chassis::fx::Vec2Fx;
-    use oxide_sim::{PlayerId, ProjectileKind, Target, UnitId};
 
-    let shell = |kind, player| oxide_sim::state::Shell {
+    let shell = |kind, player| aftermine_sim::state::Shell {
         kind,
         shooter: Target::Unit(UnitId(42)),
         player,
@@ -14,7 +14,7 @@ fn coincident_impacts_keep_projectile_order_and_player_identity() {
         launched_at: 0,
         arrival: 10,
         damage: 1,
-        targets: oxide_sim::stats::DomainMask::GROUND,
+        targets: aftermine_sim::stats::DomainMask::GROUND,
         splash: None,
     };
     let mut timeline = AudioTimeline {

@@ -5,12 +5,12 @@ use macroquad::prelude::vec2;
 fn replay() -> GameReplay {
     // A short real replay: run the embedded skirmish headless and
     // record it, exactly what a save file contains.
-    let scenario = oxide_sim::Scenario::skirmish();
-    let outcome = oxide_kit::runner::run_scenario(
+    let scenario = aftermine_sim::Scenario::skirmish();
+    let outcome = aftermine_kit::runner::run_scenario(
         &scenario,
         60,
         true,
-        Some(&oxide_kit::build::BuildIdentity::default()),
+        Some(&aftermine_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");
@@ -36,12 +36,12 @@ fn composition_intervals_align_with_ticks_and_preserve_a_short_final_interval() 
 
 #[test]
 fn checkpoint_origin_transport_starts_and_scrubs_at_the_available_boundary() {
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     let mut state = scenario.build().unwrap();
     for _ in 0..37 {
         state.tick(&[]);
     }
-    let origin = oxide_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap();
+    let origin = aftermine_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap();
     let mut replay = GameReplay::with_origin(SIM_VERSION, "test", scenario, origin).unwrap();
     replay.meta.ticks = Some(97);
     assert!(game::Game::from_replay(replay.clone()).is_err());
@@ -59,7 +59,7 @@ fn checkpoint_origin_transport_starts_and_scrubs_at_the_available_boundary() {
 }
 
 fn long_session(ticks: u64) -> PlaybackSession {
-    let mut replay = GameReplay::new(SIM_VERSION, "test", oxide_sim::Scenario::skirmish());
+    let mut replay = GameReplay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
     replay.meta.ticks = Some(ticks);
     PlaybackSession::from_replay(replay).expect("long session opens")
 }
@@ -100,16 +100,16 @@ fn key_with(session: &mut PlaybackSession, bindings: &crate::action::BindingMap,
 fn an_all_bot_record_opens_for_watching() {
     // Driver benchmarks and bot-vs-bot spectacles record replays
     // with no human seat; the viewer must not demand one.
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     for p in &mut scenario.players {
         p.bot = true;
-        p.bot_config = Some(oxide_sim::scenario::BotConfig::default());
+        p.bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     }
-    let outcome = oxide_kit::runner::run_scenario(
+    let outcome = aftermine_kit::runner::run_scenario(
         &scenario,
         60,
         true,
-        Some(&oxide_kit::build::BuildIdentity::default()),
+        Some(&aftermine_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");
@@ -604,13 +604,13 @@ fn the_viewer_answers_the_shared_surface_exactly_like_a_resumed_live_session() {
     // A replayed world and a live world resumed from the same record
     // answer the protocol identically. Both go through the one shared
     // dispatcher, so agreement here is agreement on the wire.
-    use oxide_protocol::{DebugSession, Reply, Request, StateFilter, dispatch_shared};
-    let scenario = oxide_sim::Scenario::skirmish();
-    let outcome = oxide_kit::runner::run_scenario(
+    use aftermine_protocol::{DebugSession, Reply, Request, StateFilter, dispatch_shared};
+    let scenario = aftermine_sim::Scenario::skirmish();
+    let outcome = aftermine_kit::runner::run_scenario(
         &scenario,
         120,
         true,
-        Some(&oxide_kit::build::BuildIdentity::default()),
+        Some(&aftermine_kit::build::BuildIdentity::default()),
     )
     .expect("run");
     let mut replay = outcome.replay.expect("recorded");
@@ -638,7 +638,7 @@ fn the_viewer_answers_the_shared_surface_exactly_like_a_resumed_live_session() {
             },
         },
         Request::QueryFogView {
-            player: oxide_sim::PlayerId(0),
+            player: aftermine_sim::PlayerId(0),
         },
     ] {
         let a = dispatch_shared(&mut live, &request).expect("shared");
@@ -724,7 +724,7 @@ fn replay_fraction_drives_interpolation_and_authored_cycles() {
 
 #[test]
 fn driven_steps_discard_partial_wall_clock_debt() {
-    use oxide_protocol::DebugSession;
+    use aftermine_protocol::DebugSession;
 
     for present in [false, true] {
         let mut pb = session();
@@ -769,7 +769,7 @@ fn driven_steps_discard_partial_wall_clock_debt() {
 
 #[test]
 fn seek_replacement_resets_interpolation_and_old_timeline_facing() {
-    use oxide_protocol::DebugSession;
+    use aftermine_protocol::DebugSession;
 
     let mut pb = session();
     pb.presentation
@@ -781,7 +781,7 @@ fn seek_replacement_resets_interpolation_and_old_timeline_facing() {
     DebugSession::advance(&mut pb, 40);
 
     for (&id, &angle) in &pb.presentation.facing {
-        let unit = pb.engine.state.unit(oxide_sim::UnitId(id)).unwrap();
+        let unit = pb.engine.state.unit(aftermine_sim::UnitId(id)).unwrap();
         let expected =
             f32::from(unit.heading) * std::f32::consts::TAU / 256.0 + std::f32::consts::FRAC_PI_2;
         assert_eq!(angle, expected);
@@ -794,7 +794,7 @@ fn seek_replacement_resets_interpolation_and_old_timeline_facing() {
 
 #[test]
 fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
-    use oxide_protocol::DebugSession;
+    use aftermine_protocol::DebugSession;
     let mut pb = long_session(5_000);
     // A spent budget leaves each frame its first slice, whatever the clock.
     pb.seek_budget = std::time::Duration::ZERO;

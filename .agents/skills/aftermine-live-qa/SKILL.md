@@ -1,14 +1,14 @@
 ---
-name: oxide-live-qa
+name: aftermine-live-qa
 description:
-  Drive, inspect, reproduce, profile, and verify Oxide through its live debug
-  server, windowless session, replay tools, native GPU shell, screenshots, and
-  smoke harness. Use for gameplay QA, UI or input checks, replay forensics,
+  Drive, inspect, reproduce, profile, and verify Aftermine through its live
+  debug server, windowless session, replay tools, native GPU shell, screenshots,
+  and smoke harness. Use for gameplay QA, UI or input checks, replay forensics,
   performance profiling, live-shell automation, visual verification, or changes
   to driver/debug protocol behavior.
 ---
 
-# Oxide live QA
+# Aftermine live QA
 
 Choose the narrowest harness that can answer the question, then preserve the
 boundary between simulation evidence and presentation evidence.
@@ -20,8 +20,8 @@ boundary between simulation evidence and presentation evidence.
 - Use `driver session` for a persistent windowless match driven through the same
   shared protocol as the shell. Treat its screenshots as CPU schematics, never
   as visual-polish evidence.
-- Use `oxide-shell --debug-server --paused` for real input, menus, camera, HUD,
-  fog, audio, and GPU rendering under a driven clock.
+- Use `aftermine-shell --debug-server --paused` for real input, menus, camera,
+  HUD, fog, audio, and GPU rendering under a driven clock.
 - Use `driver profile-shell` for native frame timings. Do not substitute
   headless tick throughput or session screenshots for GPU-shell profiling.
 - Use `driver tick-scan` to find costly stretches of a replay and
@@ -41,14 +41,14 @@ parser.
 Start either a real paused shell or a windowless server:
 
 ```sh
-cargo run -p oxide-shell -- --debug-server --paused
-cargo run -p oxide-driver -- session --scenario skirmish
+cargo run -p aftermine-shell -- --debug-server --paused
+cargo run -p aftermine-driver -- session --scenario skirmish
 ```
 
 Use the same client against either:
 
 ```sh
-driver() { cargo run -q -p oxide-driver -- "$@"; }
+driver() { cargo run -q -p aftermine-driver -- "$@"; }
 driver live status
 driver live state --map
 driver live fog 0
@@ -90,8 +90,9 @@ Interpret snapshot tick `N` as state before commands stamped `N` execute.
 Compare the reproduced final hash with the live hash. A replay plays only on the
 sim version that recorded it.
 
-For a visual replay, launch `oxide-shell --watch <replay>`. For a saved match,
-load it as a live continuation rather than exposing a fog-free mid-match viewer.
+For a visual replay, launch `aftermine-shell --watch <replay>`. For a saved
+match, load it as a live continuation rather than exposing a fog-free mid-match
+viewer.
 
 ## Inspect native presentation
 
@@ -102,11 +103,11 @@ play scale; do not judge the game from generated review cards or the CPU
 renderer.
 
 For typography trials, launch with
-`OXIDE_REVIEW_FONT=/absolute/path/to/font.ttf` to replace both body and display
-faces. Leave it unset for the embedded-font control. Compare the same scenario,
-window size, selection, and text sizes; inspect long labels, tooltips, menus,
-and the smallest supported window before promoting a font. Keep candidate fonts
-and captures in an ignored review folder.
+`AFTERMINE_REVIEW_FONT=/absolute/path/to/font.ttf` to replace both body and
+display faces. Leave it unset for the embedded-font control. Compare the same
+scenario, window size, selection, and text sizes; inspect long labels, tooltips,
+menus, and the smallest supported window before promoting a font. Keep candidate
+fonts and captures in an ignored review folder.
 
 Use injected events only through the shell input funnel:
 

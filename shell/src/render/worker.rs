@@ -53,7 +53,7 @@ fn contact(
             } else {
                 sprites.scrap(
                     game.state.map().scrap_at(tile),
-                    oxide_sim::stats::SCRAP_NODE_AMOUNT,
+                    aftermine_sim::stats::SCRAP_NODE_AMOUNT,
                 )
             };
             let origin = vec2(tile.x as f32, tile.y as f32);
@@ -167,12 +167,12 @@ fn arm_joints(target: Vec2, deployment: f32) -> [Vec2; 3] {
 pub(super) fn draw_welder(
     game: &Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     animation: UnitAnimationState,
     pose: (Vec2, f32, f32),
     alpha: f32,
 ) {
-    if unit.kind != oxide_sim::UnitKind::Excavator {
+    if unit.kind != aftermine_sim::UnitKind::Excavator {
         return;
     }
     let (center, rotation, size) = pose;
@@ -253,12 +253,12 @@ pub(super) fn draw_welder(
 pub(super) fn draw(
     game: &Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     animation: UnitAnimationState,
     pose: (Vec2, f32, f32),
     alpha: f32,
 ) {
-    if unit.kind == oxide_sim::UnitKind::Scuttler {
+    if unit.kind == aftermine_sim::UnitKind::Scuttler {
         draw_scuttler(game, sprites, unit, animation, pose, alpha);
         return;
     }
@@ -274,7 +274,7 @@ pub(super) fn draw(
         if stripping_wreck {
             let root = local(
                 64.,
-                if unit.kind == oxide_sim::UnitKind::Harvester {
+                if unit.kind == aftermine_sim::UnitKind::Harvester {
                     48.
                 } else {
                     53.
@@ -322,7 +322,7 @@ pub(super) fn draw(
     let edge = Color::from_rgba(189, 195, 174, 255);
     let forward = rotate(vec2(0., -1.), rotation);
     let lateral = rotate(Vec2::X, rotation);
-    if unit.kind == oxide_sim::UnitKind::Harvester {
+    if unit.kind == aftermine_sim::UnitKind::Harvester {
         for side in [-1., 1.] {
             let root = local(64. + side * 12., 48.);
             let grip = if holding {
@@ -470,7 +470,7 @@ pub(super) fn draw(
 fn draw_scuttler(
     game: &Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     animation: UnitAnimationState,
     pose: (Vec2, f32, f32),
     alpha: f32,
@@ -480,7 +480,7 @@ fn draw_scuttler(
     let width = size / 128.;
     let local = |point: Vec2| center + rotate((point - Vec2::splat(64.)) * width, rotation);
     let from = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-    let target = if let oxide_sim::Order::Attack { target, .. } = unit.order {
+    let target = if let aftermine_sim::Order::Attack { target, .. } = unit.order {
         game.state
             .attack_view(unit.player, target)
             .and_then(|view| view.entity)
@@ -489,8 +489,8 @@ fn draw_scuttler(
                     game,
                     sprites,
                     match target {
-                        oxide_sim::Target::Unit(id) => WorkTarget::Unit(id),
-                        oxide_sim::Target::Building(id) => WorkTarget::Building(id),
+                        aftermine_sim::Target::Unit(id) => WorkTarget::Unit(id),
+                        aftermine_sim::Target::Building(id) => WorkTarget::Building(id),
                     },
                     from,
                     alpha,

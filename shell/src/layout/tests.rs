@@ -25,7 +25,10 @@ fn card_hits_pad_for_fingertips_and_search_roster_first() {
     let mut model = LayoutModel::default();
     let chip = Rect::new(100.0, 500.0, 24.0, 24.0);
     let card = Rect::new(200.0, 500.0, 60.0, 60.0);
-    model.roster_slots[0] = (chip, CardAction::FilterKind(oxide_sim::UnitKind::Harvester));
+    model.roster_slots[0] = (
+        chip,
+        CardAction::FilterKind(aftermine_sim::UnitKind::Harvester),
+    );
     model.roster_count = 1;
     model.cards[0] = (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::Upgrade);
     model.cards[1] = (card, CardAction::ArmRally);
@@ -61,7 +64,7 @@ fn card_hits_pad_for_fingertips_and_search_roster_first() {
 #[test]
 fn the_select_all_button_hits_like_a_card_and_only_while_offered() {
     let mut model = LayoutModel::default();
-    let all = CardAction::SelectAllUnits(oxide_sim::UnitKind::Sentinel);
+    let all = CardAction::SelectAllUnits(aftermine_sim::UnitKind::Sentinel);
     assert_eq!(
         card_under(&model, vec2(0.0, 0.0), Some(1.0)),
         None,

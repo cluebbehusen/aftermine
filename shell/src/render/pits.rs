@@ -18,10 +18,10 @@ use super::environment::{
 use super::ground::GroundView;
 use super::stretches::{Place, Shapes};
 use crate::numeric::Fit;
+use aftermine_sim::map::{Map, Terrain};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
-use oxide_sim::map::{Map, Terrain};
 
 const SALT: u32 = 911;
 const VIGNETTE_CELLS: i32 = 4;

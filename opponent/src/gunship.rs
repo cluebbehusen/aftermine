@@ -8,9 +8,9 @@ use crate::investments::{Investment, weighed};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
-use oxide_sim::observation::ObservationData;
-use oxide_sim::stats::Domain;
-use oxide_sim::{BuildingKind, UnitKind};
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, UnitKind};
 
 /// Whether `kind` is a gunship: an assembled flyer that carries riders.
 pub(crate) fn gunship(kind: UnitKind) -> bool {

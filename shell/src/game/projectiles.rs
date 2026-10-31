@@ -1,8 +1,8 @@
 //! Launch facts retained only through their authoritative payload arrival.
 
+use aftermine_sim::state::Shell;
+use aftermine_sim::{Event, ProjectileKind, State, Target, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::state::Shell;
-use oxide_sim::{Event, ProjectileKind, State, Target, UnitKind};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -104,14 +104,14 @@ impl ProjectileReleases {
     ) -> Option<LaunchPose> {
         self.release(shells, index).or_else(|| {
             let shell = shells.get(index)?;
-            if shell.kind != oxide_sim::ProjectileKind::Bomb {
+            if shell.kind != aftermine_sim::ProjectileKind::Bomb {
                 return None;
             }
-            let oxide_sim::Target::Unit(id) = shell.shooter else {
+            let aftermine_sim::Target::Unit(id) = shell.shooter else {
                 return None;
             };
             let kind = state.unit(id)?.kind;
-            if !crate::look::fires(kind, oxide_sim::ProjectileKind::Bomb) {
+            if !crate::look::fires(kind, aftermine_sim::ProjectileKind::Bomb) {
                 return None;
             }
             // Seeks without launch history use a stable impact line, never the

@@ -2,9 +2,9 @@
 //! readback serves them all.
 
 use super::App;
+use aftermine_protocol::{Reply, ResponseEnvelope, ScreenshotView};
 use anyhow::{Context, Result};
 use macroquad::prelude::{Image, get_screen_data};
-use oxide_protocol::{Reply, ResponseEnvelope, ScreenshotView};
 use std::sync::mpsc::Sender;
 
 /// A screenshot request parked until after this frame renders.

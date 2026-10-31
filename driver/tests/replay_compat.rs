@@ -1,8 +1,8 @@
 //! Checks at the replay file-loading boundary and the `replay` command.
 
+use aftermine_kit::GameReplay;
+use aftermine_sim::{SIM_VERSION, Scenario};
 use chassis::replay::ReplayError;
-use oxide_kit::GameReplay;
-use oxide_sim::{SIM_VERSION, Scenario};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -15,16 +15,17 @@ fn checkpoint_origins_reach_every_read_only_replay_surface() {
     for _ in 0..37 {
         state.tick(&[]);
     }
-    let origin = oxide_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap();
+    let origin = aftermine_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap();
     let mut replay = GameReplay::with_origin(SIM_VERSION, "test", scenario, origin).unwrap();
     replay.meta.ticks = Some(43);
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let file = TempReplay(
-        std::env::temp_dir().join(format!("oxide-origin-{}-{id}.json", std::process::id())),
+        std::env::temp_dir().join(format!("aftermine-origin-{}-{id}.json", std::process::id())),
     );
     replay.save(&file.0).unwrap();
-    let replay = oxide_kit::load_replay(&file.0).unwrap();
-    let report = oxide_driver::replay_inspect::inspect(&replay, &[37, 43], None, false).unwrap();
+    let replay = aftermine_kit::load_replay(&file.0).unwrap();
+    let report =
+        aftermine_driver::replay_inspect::inspect(&replay, &[37, 43], None, false).unwrap();
     assert_eq!(report.start_tick, 37);
     assert_eq!(
         report
@@ -36,13 +37,13 @@ fn checkpoint_origins_reach_every_read_only_replay_surface() {
     );
     assert_eq!(report.command_activity[0].longest_silence.from_tick, 37);
     assert_eq!(report.command_activity[0].longest_silence.duration_ticks, 6);
-    assert!(oxide_driver::replay_inspect::inspect(&replay, &[36], None, false).is_err());
-    let options = oxide_driver::replay_summary::SummaryOptions {
+    assert!(aftermine_driver::replay_inspect::inspect(&replay, &[36], None, false).is_err());
+    let options = aftermine_driver::replay_summary::SummaryOptions {
         until: None,
         every: None,
-        minimaps: oxide_driver::replay_summary::MinimapMode::None,
+        minimaps: aftermine_driver::replay_summary::MinimapMode::None,
     };
-    let report = oxide_driver::replay_summary::summarize(&replay, &options).unwrap();
+    let report = aftermine_driver::replay_summary::summarize(&replay, &options).unwrap();
     assert_eq!(report.scenario.start_tick, 37);
     assert_eq!(report.scenario.effective_ticks, 43);
     assert!(
@@ -52,9 +53,9 @@ fn checkpoint_origins_reach_every_read_only_replay_surface() {
             .flat_map(|digest| &digest.rows)
             .all(|row| row.explored_tiles > 0 && row.explored_delta == 0)
     );
-    let at_origin = oxide_driver::replay_summary::summarize(
+    let at_origin = aftermine_driver::replay_summary::summarize(
         &replay,
-        &oxide_driver::replay_summary::SummaryOptions {
+        &aftermine_driver::replay_summary::SummaryOptions {
             until: Some(37),
             ..options
         },
@@ -74,21 +75,21 @@ fn checkpoint_origins_reach_every_read_only_replay_surface() {
             .flat_map(|seat| &seat.firsts)
             .all(|first| first.tick >= 37)
     );
-    let end = oxide_kit::runner::run_replay(&replay, None).unwrap();
+    let end = aftermine_kit::runner::run_replay(&replay, None).unwrap();
     assert_eq!(end.current_tick(), 43);
-    assert!(oxide_driver::session::Session::resume(replay).is_err());
+    assert!(aftermine_driver::session::Session::resume(replay).is_err());
 }
 
 #[test]
 fn checkpoint_exploration_deltas_count_only_new_scouting() {
+    use aftermine_sim::{Command, PlayerCommand, PlayerId};
     use chassis::grid::TilePos;
-    use oxide_sim::{Command, PlayerCommand, PlayerId};
     let scenario = Scenario::skirmish();
     let mut state = scenario.build().unwrap();
     for _ in 0..37 {
         state.tick(&[]);
     }
-    let explored = |state: &oxide_sim::State| -> u64 {
+    let explored = |state: &aftermine_sim::State| -> u64 {
         (0..state.map().height())
             .flat_map(|y| (0..state.map().width()).map(move |x| TilePos::new(x, y)))
             .filter(|&tile| state.vision(PlayerId(0)).explored(tile))
@@ -99,7 +100,7 @@ fn checkpoint_exploration_deltas_count_only_new_scouting() {
         SIM_VERSION,
         "test",
         scenario.clone(),
-        oxide_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap(),
+        aftermine_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap(),
     )
     .unwrap();
     let unit = state
@@ -122,7 +123,7 @@ fn checkpoint_exploration_deltas_count_only_new_scouting() {
         !first
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. }))
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. }))
     );
     for _ in 38..237 {
         state.tick(&[]);
@@ -130,12 +131,12 @@ fn checkpoint_exploration_deltas_count_only_new_scouting() {
     replay.meta.ticks = Some(237);
     let final_explored = explored(&state);
     assert!(final_explored > initial, "scouting must reveal new ground");
-    let options = oxide_driver::replay_summary::SummaryOptions {
+    let options = aftermine_driver::replay_summary::SummaryOptions {
         until: None,
         every: Some(50),
-        minimaps: oxide_driver::replay_summary::MinimapMode::None,
+        minimaps: aftermine_driver::replay_summary::MinimapMode::None,
     };
-    let report = oxide_driver::replay_summary::summarize(&replay, &options).unwrap();
+    let report = aftermine_driver::replay_summary::summarize(&replay, &options).unwrap();
     assert_eq!(
         report
             .digests
@@ -150,7 +151,7 @@ fn checkpoint_exploration_deltas_count_only_new_scouting() {
     );
     let mut from_start = GameReplay::new(SIM_VERSION, "test", scenario);
     from_start.meta.ticks = Some(1);
-    let report = oxide_driver::replay_summary::summarize(&from_start, &options).unwrap();
+    let report = aftermine_driver::replay_summary::summarize(&from_start, &options).unwrap();
     assert_eq!(
         report.digests[0].rows[0].explored_delta, initial,
         "scenario-start summaries retain their initial visibility"
@@ -169,7 +170,7 @@ fn foreign_version_replay() -> TempReplay {
     let replay: GameReplay = GameReplay::new(SIM_VERSION + 1, "test", Scenario::skirmish());
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "oxide-foreign-version-replay-{}-{id}.json",
+        "aftermine-foreign-version-replay-{}-{id}.json",
         std::process::id()
     ));
     std::fs::write(
@@ -183,13 +184,13 @@ fn foreign_version_replay() -> TempReplay {
 #[test]
 fn a_foreign_version_replay_is_refused_at_version_validation() {
     let fixture = foreign_version_replay();
-    let replay = oxide_kit::load_replay(&fixture.0).expect("the current setup shape loads");
+    let replay = aftermine_kit::load_replay(&fixture.0).expect("the current setup shape loads");
     assert!(matches!(
         replay.validate(Some(SIM_VERSION)),
         Err(ReplayError::VersionMismatch { .. })
     ));
 
-    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .arg("replay")
         .arg(&fixture.0)
         .output()
@@ -207,12 +208,13 @@ fn hash_every_lines_repeat_exactly_and_end_at_the_final_hash() {
     let mut replay = GameReplay::new(SIM_VERSION, "test", Scenario::skirmish());
     replay.meta.ticks = Some(25);
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let file = TempReplay(
-        std::env::temp_dir().join(format!("oxide-hash-every-{}-{id}.json", std::process::id())),
-    );
+    let file = TempReplay(std::env::temp_dir().join(format!(
+        "aftermine-hash-every-{}-{id}.json",
+        std::process::id()
+    )));
     replay.save(&file.0).unwrap();
     let run = |extra: &[&str]| {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .arg("replay")
             .arg(&file.0)
             .args(extra)
@@ -242,8 +244,8 @@ fn hash_every_lines_repeat_exactly_and_end_at_the_final_hash() {
 
 #[test]
 fn until_runs_a_prefix_while_a_short_ticks_override_still_refuses() {
+    use aftermine_sim::{Command, PlayerCommand, PlayerId, UnitId};
     use chassis::replay::Replay;
-    use oxide_sim::{Command, PlayerCommand, PlayerId, UnitId};
     let mut replay: GameReplay = Replay::new(SIM_VERSION, "test", Scenario::skirmish());
     replay.record(
         100,
@@ -257,11 +259,11 @@ fn until_runs_a_prefix_while_a_short_ticks_override_still_refuses() {
     replay.meta.ticks = Some(200);
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let file = TempReplay(
-        std::env::temp_dir().join(format!("oxide-until-{}-{id}.json", std::process::id())),
+        std::env::temp_dir().join(format!("aftermine-until-{}-{id}.json", std::process::id())),
     );
     replay.save(&file.0).unwrap();
     let run = |extra: &[&str]| {
-        std::process::Command::new(env!("CARGO_BIN_EXE_oxide-driver"))
+        std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
             .arg("replay")
             .arg(&file.0)
             .args(extra)

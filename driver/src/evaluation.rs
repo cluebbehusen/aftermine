@@ -5,9 +5,9 @@ use crate::bot_eval::{
     EvaluationController, EvaluationGeometry, EvaluationLeg, EvaluationPlan, EvidenceBatch,
     preflight_destinations,
 };
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::BotConfig;
 use anyhow::{Context, Result, bail};
-use oxide_sim::Scenario;
-use oxide_sim::scenario::BotConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

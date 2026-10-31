@@ -2,9 +2,9 @@
 //! history its recording holds, so a resumed match keeps its whole record.
 
 use super::*;
-use oxide_kit::checkpoint::SessionCheckpoint;
-use oxide_kit::history::{PendingHistory, SessionHistory};
-use oxide_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_kit::checkpoint::SessionCheckpoint;
+use aftermine_kit::history::{PendingHistory, SessionHistory};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ pub(crate) struct GameCheckpoint {
     session: SessionCheckpoint,
     /// The local seat; for a LAN match, the host's.
     human: PlayerId,
-    concede_stats: Option<oxide_kit::stats::MatchStats>,
+    concede_stats: Option<aftermine_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     /// Who played the other seats of a saved LAN match.
     lan: Option<LanManifest>,
@@ -29,7 +29,7 @@ pub(crate) struct GameCheckpoint {
 #[serde(deny_unknown_fields)]
 pub(crate) struct LanManifest {
     /// In seat order.
-    pub(crate) seats: Vec<(PlayerId, oxide_net::InstallId)>,
+    pub(crate) seats: Vec<(PlayerId, aftermine_net::InstallId)>,
 }
 
 impl LanManifest {
@@ -38,7 +38,7 @@ impl LanManifest {
     pub(crate) fn new(
         scenario: &Scenario,
         host: PlayerId,
-        installs: &[(PlayerId, oxide_net::InstallId)],
+        installs: &[(PlayerId, aftermine_net::InstallId)],
     ) -> Self {
         let seats = joined_seats(scenario, host)
             .filter_map(|seat| {
@@ -69,10 +69,10 @@ pub(crate) struct SaveCapture {
     scenario: Scenario,
     state: State,
     bots: Vec<SeatController>,
-    pending: Vec<oxide_sim::PlayerCommand>,
-    stats: oxide_kit::stats::LiveMatchStats,
+    pending: Vec<aftermine_sim::PlayerCommand>,
+    stats: aftermine_kit::stats::LiveMatchStats,
     human: PlayerId,
-    concede_stats: Option<oxide_kit::stats::MatchStats>,
+    concede_stats: Option<aftermine_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     lan: Option<LanManifest>,
     history: Option<SessionHistory>,
@@ -101,7 +101,7 @@ impl SaveCapture {
     /// seat.
     pub(crate) fn for_lan(
         mut self,
-        pending: Vec<oxide_sim::PlayerCommand>,
+        pending: Vec<aftermine_sim::PlayerCommand>,
         lan: LanManifest,
     ) -> Self {
         self.pending = pending;
@@ -159,7 +159,7 @@ pub(crate) struct LanSave {
     scenario: Scenario,
     tick: u64,
     /// The joined seats still in the match, with their installations.
-    players: Vec<(PlayerId, oxide_net::InstallId)>,
+    players: Vec<(PlayerId, aftermine_net::InstallId)>,
 }
 
 impl LanSave {
@@ -187,13 +187,13 @@ impl LanSave {
     /// Each joined seat whose player was still in the match, in seat
     /// order, with the installation that played it. A seat whose player
     /// was out waits for nobody.
-    pub(crate) fn players(&self) -> &[(PlayerId, oxide_net::InstallId)] {
+    pub(crate) fn players(&self) -> &[(PlayerId, aftermine_net::InstallId)] {
         &self.players
     }
 
     /// Every joined seat, the players out of the match included, with the
     /// installation that played it: what the next save must list again.
-    pub(crate) fn joined(&self) -> &[(PlayerId, oxide_net::InstallId)] {
+    pub(crate) fn joined(&self) -> &[(PlayerId, aftermine_net::InstallId)] {
         self.checkpoint
             .lan
             .as_ref()
@@ -207,7 +207,7 @@ impl LanSave {
     pub(crate) fn host_game(
         &self,
         replaced: &[(PlayerId, BotDifficulty, BotStance)],
-    ) -> Result<(Game, Vec<oxide_sim::PlayerCommand>)> {
+    ) -> Result<(Game, Vec<aftermine_sim::PlayerCommand>)> {
         let mut game = self.with_bots(replaced)?;
         game.net = Some(network::NetRole::Host);
         game.clock.paused = false;
@@ -218,7 +218,7 @@ impl LanSave {
                 || (self.players.iter().any(|&(player, _)| player == seat)
                     && !replaced.iter().any(|&(bot, ..)| bot == seat))
         };
-        let pending: Vec<oxide_sim::PlayerCommand> = std::mem::take(&mut game.pending.0)
+        let pending: Vec<aftermine_sim::PlayerCommand> = std::mem::take(&mut game.pending.0)
             .into_iter()
             .filter(|order| taking_part(order.player))
             .collect();
@@ -272,12 +272,12 @@ impl LanSave {
 }
 
 pub(crate) struct RestoredGame {
-    core: oxide_kit::checkpoint::RestoredSession,
+    core: aftermine_kit::checkpoint::RestoredSession,
     recorder: GameReplay,
     /// The saved history's check, while it runs.
     history: Option<PendingHistory>,
     human: PlayerId,
-    concede_stats: Option<oxide_kit::stats::MatchStats>,
+    concede_stats: Option<aftermine_kit::stats::MatchStats>,
     boundary_fog: crate::boundary_fog::BoundaryFog,
     /// The autosave slot the save came from, which the match keeps.
     slot: Option<crate::autosave::SaveSlot>,
@@ -417,7 +417,7 @@ impl RestoredGame {
             bots: core.bots,
             bot_decision: None,
             recorder,
-            keyframes: oxide_kit::keyframes::KeyframeRecorder::default(),
+            keyframes: aftermine_kit::keyframes::KeyframeRecorder::default(),
             history,
             pending: PendingCommands(core.pending),
             live_stats,

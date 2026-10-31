@@ -3,7 +3,7 @@ created: 2026-08-24T19:37:13
 updated: 2026-08-28T17:52:29
 ---
 
-# Oxide 0.16 Rules-Based Opponent
+# Aftermine 0.16 Rules-Based Opponent
 
 ## Goal
 

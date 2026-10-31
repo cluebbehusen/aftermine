@@ -56,7 +56,7 @@ def _alpha_centroid_y(image: Image.Image, box: tuple[int, int, int, int]) -> flo
 class ProductionSpriteSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.temp = tempfile.TemporaryDirectory(prefix="oxide-production-sprites-")
+        cls.temp = tempfile.TemporaryDirectory(prefix="aftermine-production-sprites-")
         cls.out = Path(cls.temp.name)
         cls.registry: dict[str, Image.Image] = {}
         old_out = gen.OUT

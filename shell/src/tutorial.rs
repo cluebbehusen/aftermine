@@ -5,12 +5,12 @@
 //! lessons never save: one is quick to start over.
 
 use crate::game::Game;
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::stats::{Domain, WeaponStats};
+use aftermine_sim::{BuildingKind, Event, Order, PlayerId, Recovery, Scenario, UnitId, UnitKind};
 use anyhow::Result;
 use chassis::grid::TilePos;
 use macroquad::prelude::Vec2;
-use oxide_sim::scenario::{BotDifficulty, BotStance};
-use oxide_sim::stats::{Domain, WeaponStats};
-use oxide_sim::{BuildingKind, Event, Order, PlayerId, Recovery, Scenario, UnitId, UnitKind};
 
 mod lessons;
 
@@ -71,7 +71,7 @@ pub const FIRST_MATCH_NAME: &str = "First match";
 /// drafts a local match. The scenario records the bot's personality seed
 /// from `personality_seed_base`.
 pub fn first_match(
-    player_name: Option<oxide_net::PlayerName>,
+    player_name: Option<aftermine_net::PlayerName>,
     personality_seed_base: u64,
 ) -> Result<Scenario> {
     let map = Scenario::from_json(include_str!("../../scenarios/smelter-yard.json"))?;
@@ -257,8 +257,8 @@ impl Squad {
     /// The squad's machines still standing.
     fn standing<'a>(
         &self,
-        state: &'a oxide_sim::State,
-    ) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+        state: &'a aftermine_sim::State,
+    ) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         let units = self.units;
         units
             .iter()
@@ -423,7 +423,7 @@ impl Goal {
             Goal::Find => seat.units().next().is_some(),
             Goal::Destroy => seat.can_field_fighter(),
             Goal::Defeat(squad) => {
-                let air = |u: &oxide_sim::Unit| u.domain() == Domain::Air;
+                let air = |u: &aftermine_sim::Unit| u.domain() == Domain::Air;
                 let mut standing = tutorial.lesson.squads()[squad].standing(seat.state);
                 standing.all(|u| {
                     if air(u) {
@@ -560,7 +560,7 @@ impl Tutorial {
         }
         if lesson.opens_collecting() {
             let map = game.state.map();
-            let orders: Vec<oxide_sim::Command> = game
+            let orders: Vec<aftermine_sim::Command> = game
                 .state
                 .units()
                 .iter()
@@ -570,7 +570,7 @@ impl Tutorial {
                     let node = tiles(map)
                         .filter(|tile| map.scrap_at(*tile) > 0)
                         .min_by_key(|tile| (tile.x - from.x).pow(2) + (tile.y - from.y).pow(2))?;
-                    Some(oxide_sim::Command::Harvest {
+                    Some(aftermine_sim::Command::Harvest {
                         units: vec![u.id],
                         node,
                         queue: false,
@@ -691,7 +691,7 @@ impl Tutorial {
                     continue;
                 };
                 let units: Vec<UnitId> = standing.map(|unit| unit.id).collect();
-                let hunt = |queue| oxide_sim::Command::Hunt {
+                let hunt = |queue| aftermine_sim::Command::Hunt {
                     units: units.clone(),
                     goal: sortie.toward,
                     queue,
@@ -699,7 +699,7 @@ impl Tutorial {
                 let commands = match sortie.stance {
                     Stance::Hunt => vec![hunt(false)],
                     Stance::RunTo(goal) => vec![
-                        oxide_sim::Command::Run {
+                        aftermine_sim::Command::Run {
                             units: units.clone(),
                             goal,
                             queue: false,
@@ -708,7 +708,7 @@ impl Tutorial {
                     ],
                 };
                 for command in commands {
-                    game.stage(oxide_sim::PlayerCommand { player, command });
+                    game.stage(aftermine_sim::PlayerCommand { player, command });
                 }
             }
         }
@@ -776,7 +776,7 @@ fn recovery_line(touch: bool) -> &'static str {
 /// The human seat's view of the authoritative world. A lesson has no
 /// opponent to hide anything from, so its coach reads the world as it is.
 struct Seat<'a> {
-    state: &'a oxide_sim::State,
+    state: &'a aftermine_sim::State,
     human: PlayerId,
 }
 
@@ -792,12 +792,12 @@ impl<'a> Seat<'a> {
         self.state.player(self.human).scrap
     }
 
-    fn units(&self) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+    fn units(&self) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         let human = self.human;
         self.state.units().iter().filter(move |u| u.player == human)
     }
 
-    fn workers(&self) -> impl Iterator<Item = &'a oxide_sim::Unit> + use<'a> {
+    fn workers(&self) -> impl Iterator<Item = &'a aftermine_sim::Unit> + use<'a> {
         self.units().filter(|u| u.kind.stats().harvest.is_some())
     }
 
@@ -810,7 +810,7 @@ impl<'a> Seat<'a> {
     fn own_buildings(
         &self,
         kind: BuildingKind,
-    ) -> impl Iterator<Item = &'a oxide_sim::Building> + use<'a> {
+    ) -> impl Iterator<Item = &'a aftermine_sim::Building> + use<'a> {
         let human = self.human;
         self.state
             .buildings()
@@ -818,7 +818,7 @@ impl<'a> Seat<'a> {
             .filter(move |b| b.player == human && b.kind == kind)
     }
 
-    fn hostile_buildings(&self) -> impl Iterator<Item = &'a oxide_sim::Building> + use<'a> {
+    fn hostile_buildings(&self) -> impl Iterator<Item = &'a aftermine_sim::Building> + use<'a> {
         let (state, human) = (self.state, self.human);
         state
             .buildings()
@@ -827,7 +827,7 @@ impl<'a> Seat<'a> {
     }
 
     /// Built own buildings that train machines.
-    fn factories(&self) -> impl Iterator<Item = &'a oxide_sim::Building> + use<'a> {
+    fn factories(&self) -> impl Iterator<Item = &'a aftermine_sim::Building> + use<'a> {
         let human = self.human;
         self.state
             .buildings()
@@ -953,13 +953,13 @@ impl<'a> Seat<'a> {
     /// Whether a built own Foundry is there to receive loads.
     fn has_foundry(&self) -> bool {
         self.own_buildings(BuildingKind::Foundry)
-            .any(oxide_sim::Building::built)
+            .any(aftermine_sim::Building::built)
     }
 
     /// Whether a built own Extractor pays.
     fn extracting(&self) -> bool {
         self.own_buildings(BuildingKind::Extractor)
-            .any(oxide_sim::Building::built)
+            .any(aftermine_sim::Building::built)
     }
 
     /// Whether the Foundry's emergency recovery will still pay: the sim
@@ -1011,7 +1011,7 @@ impl<'a> Seat<'a> {
 }
 
 /// Every tile of `map`, row by row.
-fn tiles(map: &oxide_sim::map::Map) -> impl Iterator<Item = TilePos> + use<> {
+fn tiles(map: &aftermine_sim::map::Map) -> impl Iterator<Item = TilePos> + use<> {
     let (width, height) = (map.width(), map.height());
     (0..height).flat_map(move |y| (0..width).map(move |x| TilePos::new(x, y)))
 }

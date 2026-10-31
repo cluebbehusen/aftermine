@@ -25,7 +25,7 @@ fn a_lan_match_decided_under_its_menu_opens_the_report() {
     }
     let mut game = Game::networked(
         scenario,
-        oxide_sim::PlayerId(0),
+        aftermine_sim::PlayerId(0),
         crate::game::network::NetRole::Host,
         vec2(1280.0, 800.0),
     )
@@ -33,9 +33,9 @@ fn a_lan_match_decided_under_its_menu_opens_the_report() {
     let running = || Screen::Pause(pause_menu(&Game::new(Scenario::skirmish()).unwrap()));
     let is_results = |screen: &Screen| matches!(screen, Screen::Results(_));
     assert!(!is_results(&report_under_menu(&game, running())));
-    game.run_batch(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Surrender,
+    game.run_batch(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Surrender,
     }]);
     assert!(game.state.result().is_some());
     assert!(is_results(&report_under_menu(&game, running())));
@@ -88,7 +88,7 @@ fn wizard_seat_swap_opens_on_the_new_humans_foundry() {
         &backdrop,
     );
 
-    assert_eq!(game.presentation.human, oxide_sim::PlayerId(1));
+    assert_eq!(game.presentation.human, aftermine_sim::PlayerId(1));
     let home = game.home_foundry().expect("human Foundry").center();
     let home = vec2(home.x.to_num::<f32>(), home.y.to_num::<f32>());
     let (lo, hi) = game.presentation.camera.world_rect();

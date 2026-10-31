@@ -1,6 +1,6 @@
 use super::*;
 use crate::investments::Investment;
-use oxide_sim::observation::ObservationData;
+use aftermine_sim::observation::ObservationData;
 
 /// Ten East Bastions around East's start.
 const RING: [(i32, i32); 10] = [
@@ -68,7 +68,7 @@ fn wanted_with(
         memory,
         traits,
         360,
-        crate::missions::margin(oxide_sim::scenario::BotDifficulty::Standard),
+        crate::missions::margin(aftermine_sim::scenario::BotDifficulty::Standard),
     )
     .into_iter()
     .map(|(investment, _)| investment)
@@ -195,7 +195,7 @@ fn a_cradle_crew_tops_up_with_the_fastest_free_workers() {
             _ => None,
         })
         .expect("the crew is topped up");
-    assert_eq!(crew.len(), oxide_sim::stats::ASSEMBLY_CREW_CAP - 1);
+    assert_eq!(crew.len(), aftermine_sim::stats::ASSEMBLY_CREW_CAP - 1);
     assert!(
         crew.iter()
             .all(|id| state.unit(*id).unwrap().kind == UnitKind::Excavator),
@@ -448,7 +448,7 @@ fn a_wounded_maw_drives_to_safe_wreck_and_feeds_there_out_of_every_mission() {
 /// Whether a Maw's hull fits on `tile` in `state`: every tile under it is
 /// open ground.
 fn hull_fits(state: &State, tile: TilePos) -> bool {
-    oxide_sim::geometry::hull_open(tile, UnitKind::Maw.stats().radius, |cell| {
+    aftermine_sim::geometry::hull_open(tile, UnitKind::Maw.stats().radius, |cell| {
         state.passable(cell)
     })
 }

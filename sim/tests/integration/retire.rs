@@ -6,16 +6,16 @@
 use crate::common;
 use common::{cmd, run_until, unit};
 
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{
     BuildingKind, REPAIR_COST_PERMILLE, RETIRE_REFUND_PERMILLE, RETIRE_TICKS, retire_refund,
 };
-use oxide_sim::{
+use aftermine_sim::{
     BuildingId, Command, Event, Order, PlayerId, Recovery, Scenario, State, UnitId, UnitKind,
 };
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::TilePos;
 use serde_json::{Value, json};
 
 const ROSTER: [UnitKind; 16] = [
@@ -519,8 +519,8 @@ fn a_condor_lands_beside_the_crucible_and_hover_craft_hold_over_it() {
     let mut done = std::collections::BTreeSet::new();
     for _ in 0..1_500 {
         let report = state.tick(&[]);
-        landed |= state.unit(bomber).is_some_and(oxide_sim::Unit::landed);
-        fighter_landed |= state.unit(fighter).is_some_and(oxide_sim::Unit::landed);
+        landed |= state.unit(bomber).is_some_and(aftermine_sim::Unit::landed);
+        fighter_landed |= state.unit(fighter).is_some_and(aftermine_sim::Unit::landed);
         for id in [bomber, fighter] {
             if retired(&report.events, id).is_some() {
                 done.insert(id);

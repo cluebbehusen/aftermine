@@ -4,7 +4,7 @@ fn crucible(x: i32, y: i32) -> BuildingObs {
     BuildingObs {
         provisional: false,
         id: BuildingId(1),
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         kind: BuildingKind::Crucible,
         anchor: TilePos::new(x, y),
         hp: BuildingKind::Crucible.base_stats().max_hp,
@@ -199,7 +199,7 @@ fn the_volley_that_ends_a_seat_counts_nothing_else_of_it_from_the_fall_on() {
     );
     let body = Body {
         kind: UnitKind::Excavator,
-        owner: oxide_sim::PlayerId(1),
+        owner: aftermine_sim::PlayerId(1),
         tile: TilePos::new(12, 13),
         hp: UnitKind::Excavator.stats().max_hp,
     };

@@ -8,8 +8,8 @@
 //! list feeds [`ScrollPress`] instead, which also lets the first finger
 //! drag the list once it travels past [`DRAG_SLOP`].
 
+use aftermine_protocol::{MouseButton, RawEvent};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_protocol::{MouseButton, RawEvent};
 
 /// Travel, in logical px at 1x, past which a finger scrolls a list instead
 /// of tapping what it landed on.

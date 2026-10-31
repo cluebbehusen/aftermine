@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Oxide audio review</title>
+  <title>Aftermine audio review</title>
   <style>
     :root {
       color-scheme: dark;
@@ -90,7 +90,7 @@
   </style>
 </head>
 <body>
-  <h1>Oxide audio review</h1>
+  <h1>Aftermine audio review</h1>
   <p class="intro">
     Choose a directory containing a generated <code>manifest.json</code> and
     its WAV files. Animation pairing is best-effort: choose a common parent
@@ -272,8 +272,8 @@
         }
         if (candidates.length !== 1) {
           status.textContent = candidates.length
-            ? 'choose a tree with one Oxide audio manifest'
-            : 'Oxide audio manifest not found';
+            ? 'choose a tree with one Aftermine audio manifest'
+            : 'Aftermine audio manifest not found';
           content.replaceChildren();
           return;
         }
@@ -295,7 +295,7 @@
           if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
           const manifest = await response.json();
           if (manifest.format !== 1 || !Array.isArray(manifest.sounds)) {
-            throw new Error('not an Oxide audio manifest');
+            throw new Error('not an Aftermine audio manifest');
           }
           const names = [...new Set(manifest.sounds.flatMap(entry =>
             [entry.filename, entry.paired_animation].filter(Boolean)))];

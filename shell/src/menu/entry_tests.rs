@@ -1,5 +1,5 @@
 use super::{browser_blurb, team_count};
-use oxide_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
+use aftermine_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
 
 #[test]
 fn a_seat_without_a_team_is_its_own_team() {

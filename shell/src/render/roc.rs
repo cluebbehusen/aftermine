@@ -9,8 +9,8 @@ use super::{
 use crate::assets::{RocRig, Sprites, UnitRig};
 use crate::dock_motion::{DockMotion, LAUNCH_TICKS, launch_progress};
 use crate::presentation_animation::{PropulsionState, TransportActionState, UnitAnimationState};
+use aftermine_sim::UnitKind;
 use macroquad::prelude::*;
-use oxide_sim::UnitKind;
 
 const CANVAS_TILE: f32 = 64.0;
 /// Each fan's centre.
@@ -80,7 +80,7 @@ fn now(game: &crate::game::Scene<'_>) -> f32 {
 pub(super) fn draw_shadows(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     rig: &UnitRig,
     (body, body_rotation, body_size): (Vec2, f32, Vec2),
     alpha: f32,
@@ -125,7 +125,7 @@ pub(super) fn draw_shadows(
 pub(super) fn draw_under(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     (rig, roc): (&UnitRig, &RocRig),
     (body, body_rotation, body_size): (Vec2, f32, Vec2),
     hull: Rect,
@@ -170,7 +170,7 @@ fn hatch_opening(transport: Option<TransportActionState>) -> f32 {
 pub(super) fn draw_over(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     roc: &RocRig,
     (body, body_rotation, body_size): (Vec2, f32, Vec2),
     animation: UnitAnimationState,
@@ -251,7 +251,7 @@ pub(super) fn draw_over(
 pub(super) fn draw_assembling(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    player: oxide_sim::PlayerId,
+    player: aftermine_sim::PlayerId,
     centre: Vec2,
     stage: usize,
 ) {
@@ -281,7 +281,7 @@ pub(super) fn draw_assembling(
 fn draw_drone(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
-    player: oxide_sim::PlayerId,
+    player: aftermine_sim::PlayerId,
     (center, rotation, scale): (Vec2, f32, f32),
     rotor: usize,
 ) {
@@ -303,7 +303,7 @@ fn draw_drone(
 /// leaves from its dock and never crosses the hull.
 pub(crate) fn drone_draw_pos(
     game: &crate::game::Scene<'_>,
-    unit: &oxide_sim::Unit,
+    unit: &aftermine_sim::Unit,
     alpha: f32,
 ) -> Option<Vec2> {
     let &(host_id, dock, at) = game.presentation.drone_launches.get(&unit.id.0)?;

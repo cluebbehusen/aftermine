@@ -36,7 +36,7 @@ fn resource_markers_age_with_world_memories_and_refresh_on_sight() {
 #[test]
 fn extractor_frame_markers_share_exploration_and_claim_visibility() {
     use chassis::grid::TilePos;
-    let scenario: oxide_sim::scenario::Scenario =
+    let scenario: aftermine_sim::scenario::Scenario =
         serde_json::from_str(include_str!("../../../fixtures/scenarios/skirmish.json")).unwrap();
     let mut game = crate::game::Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
     let near = TilePos::new(8, 4);
@@ -50,12 +50,14 @@ fn extractor_frame_markers_share_exploration_and_claim_visibility() {
 
     let mut claimed = scenario;
     for (player, anchor) in [(0, near), (1, far)] {
-        claimed.buildings.push(oxide_sim::scenario::BuildingSpec {
-            player,
-            kind: oxide_sim::BuildingKind::Extractor,
-            x: anchor.x,
-            y: anchor.y,
-        });
+        claimed
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player,
+                kind: aftermine_sim::BuildingKind::Extractor,
+                x: anchor.x,
+                y: anchor.y,
+            });
     }
     let mut game = crate::game::Game::with_viewport(claimed, vec2(1280.0, 800.0)).unwrap();
     assert!(!extractor_frame_visible(&game.view(), near));
@@ -82,21 +84,23 @@ fn marker_scaling_preserves_the_screen_position_and_top_left_origin() {
 }
 #[test]
 fn enemy_mine_marker_stays_hidden_on_visible_ground() {
-    let mut scenario: oxide_sim::scenario::Scenario =
+    let mut scenario: aftermine_sim::scenario::Scenario =
         serde_json::from_str(include_str!("../../../fixtures/scenarios/skirmish.json")).unwrap();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 1,
-        kind: oxide_sim::BuildingKind::ScuttleCharge,
-        // In a Harvester's sight, beyond the Surveyor's detection.
-        x: 2,
-        y: 9,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 1,
+            kind: aftermine_sim::BuildingKind::ScuttleCharge,
+            // In a Harvester's sight, beyond the Surveyor's detection.
+            x: 2,
+            y: 9,
+        });
     let game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mine = game
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::ScuttleCharge)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::ScuttleCharge)
         .unwrap();
     assert!(game.my_vision().visible(mine.anchor));
     assert!(!building_visible(&game.view(), mine));
@@ -110,7 +114,7 @@ fn earlier_transition_reaches_full_opacity_before_the_old_transition_starts() {
 }
 #[test]
 fn markers_do_not_reveal_unseen_buildings_or_resources() {
-    let scenario: oxide_sim::scenario::Scenario =
+    let scenario: aftermine_sim::scenario::Scenario =
         serde_json::from_str(include_str!("../../../fixtures/scenarios/skirmish.json")).unwrap();
     let game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     for b in game.state.buildings() {
@@ -141,7 +145,7 @@ fn marker_transition_has_a_continuous_bounded_fade() {
 #[test]
 fn strategic_markers_obey_player_sight_and_explicit_debug_visibility() {
     let source = include_str!("../../../fixtures/scenarios/skirmish.json");
-    let scenario: oxide_sim::scenario::Scenario = serde_json::from_str(source).unwrap();
+    let scenario: aftermine_sim::scenario::Scenario = serde_json::from_str(source).unwrap();
     let mut game = crate::game::Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
     assert!(visible(&game.view(), &game.state.units()[0]));
     assert!(!visible(&game.view(), &game.state.units()[4]));

@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::MouseButton;
+use aftermine_protocol::MouseButton;
 
 fn key(key: Key) -> RawEvent {
     RawEvent::KeyDown { key }
@@ -62,7 +62,7 @@ fn maximum_roster_stays_readable_above_the_actions() {
     for viewport in [vec2(640.0, 400.0), vec2(1100.0, 481.0), vec2(1100.0, 720.0)] {
         for scale in [1.0, 2.0] {
             let viewport = viewport * scale;
-            let count = oxide_sim::scenario::MAX_PLAYERS;
+            let count = aftermine_sim::scenario::MAX_PLAYERS;
             let layout = results_layout(viewport, scale, count);
             let last_baseline = layout.header_y
                 + layout.rule_offset
@@ -161,10 +161,10 @@ fn final_map_action_is_touchable_and_named_for_automation() {
 
 #[test]
 fn results_name_shows_the_scripted_controller() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::new(
-        oxide_sim::scenario::BotDifficulty::Prime,
-        oxide_sim::scenario::BotStance::Aggressive,
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.players[1].bot_config = Some(aftermine_sim::scenario::BotConfig::new(
+        aftermine_sim::scenario::BotDifficulty::Prime,
+        aftermine_sim::scenario::BotStance::Aggressive,
         19,
     ));
     let game = Game::new(scenario).expect("skirmish builds");
@@ -184,11 +184,11 @@ fn results_name_shows_the_scripted_controller() {
 
 #[test]
 fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[1].name = "Extremely Long Basalt Commander".to_string();
-    scenario.players[1].bot_config = Some(oxide_sim::scenario::BotConfig::new(
-        oxide_sim::scenario::BotDifficulty::Scrapheap,
-        oxide_sim::scenario::BotStance::Aggressive,
+    scenario.players[1].bot_config = Some(aftermine_sim::scenario::BotConfig::new(
+        aftermine_sim::scenario::BotDifficulty::Scrapheap,
+        aftermine_sim::scenario::BotStance::Aggressive,
         23,
     ));
     let game = Game::new(scenario).expect("skirmish builds");
@@ -424,18 +424,18 @@ fn mouse_hover_is_inert_and_clicks_commit_only_on_the_armed_action() {
 
 #[test]
 fn verdict_copy_distinguishes_winning_from_surrendering() {
-    let mut victory = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
-    victory.stage(oxide_sim::PlayerCommand {
+    let mut victory = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    victory.stage(aftermine_sim::PlayerCommand {
         player: PlayerId(1),
-        command: oxide_sim::Command::Surrender,
+        command: aftermine_sim::Command::Surrender,
     });
     victory.present_ticks(1);
     let (title, _, subtitle) = verdict(&victory);
     assert_eq!(title, "VICTORY");
     assert!(subtitle.contains("NORTH WEST"));
 
-    let mut surrendered = Game::new(oxide_sim::Scenario::skirmish()).expect("game");
-    surrendered.issue(oxide_sim::Command::Surrender);
+    let mut surrendered = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    surrendered.issue(aftermine_sim::Command::Surrender);
     surrendered.present_ticks(1);
     let (title, _, subtitle) = verdict(&surrendered);
     assert_eq!(title, "SURRENDERED");

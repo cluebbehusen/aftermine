@@ -1,13 +1,13 @@
 //! Small rule scenarios whose assertions establish what each hash exercises.
 
-use chassis::grid::TilePos;
-use chassis::grid::as_index;
-use oxide_kit::GameReplay;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_kit::GameReplay;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     AttackTarget, BuildingId, BuildingKind, Command, Event, GameResult, Order, PlayerCommand,
     PlayerId, Scenario, State, Target, UnitId, UnitKind,
 };
+use chassis::grid::TilePos;
+use chassis::grid::as_index;
 use std::collections::BTreeMap;
 
 fn unit(player: u8, kind: UnitKind, x: i32, y: i32) -> UnitSpec {
@@ -64,7 +64,7 @@ impl Probe {
             state: scenario.build().unwrap(),
             twin: scenario.build().unwrap(),
             restored: scenario.build().unwrap(),
-            replay: GameReplay::new(oxide_sim::SIM_VERSION, "test", scenario),
+            replay: GameReplay::new(aftermine_sim::SIM_VERSION, "test", scenario),
             events: Vec::new(),
             ticks: Vec::new(),
             milestones: BTreeMap::new(),
@@ -147,7 +147,7 @@ impl Probe {
         let key = format!("{}#{label}", self.replay.setup.name);
         assert!(
             self.milestones
-                .insert(key, oxide_protocol::hash_hex(self.state.hash()))
+                .insert(key, aftermine_protocol::hash_hex(self.state.hash()))
                 .is_none()
         );
         self.restored = serde_json::from_slice(&serde_json::to_vec(&self.state).unwrap()).unwrap();
@@ -159,7 +159,7 @@ impl Probe {
         self.replay.meta.ticks = Some(self.state.current_tick());
         let replay: GameReplay =
             serde_json::from_slice(&serde_json::to_vec(&self.replay).unwrap()).unwrap();
-        replay.validate(Some(oxide_sim::SIM_VERSION)).unwrap();
+        replay.validate(Some(aftermine_sim::SIM_VERSION)).unwrap();
         let mut state = replay.setup.build().unwrap();
         let mut cursor = replay.cursor();
         for (tick, hash) in self.ticks.iter().enumerate() {
@@ -534,7 +534,7 @@ fn fog() -> BTreeMap<String, String> {
         .iter()
         .find(|g| g.anchor == site)
         .unwrap();
-    let target = AttackTarget::RememberedBuilding(oxide_sim::RememberedBuilding {
+    let target = AttackTarget::RememberedBuilding(aftermine_sim::RememberedBuilding {
         owner: remembered.owner,
         building_kind: remembered.kind,
         anchor: remembered.anchor,
@@ -665,15 +665,15 @@ fn radar() -> BTreeMap<String, String> {
     p.until("radar up", 100, |p| {
         p.state.unit(scout).unwrap().radar().is_some()
     });
-    let blip = |x, y, domain| oxide_sim::RadarContact {
+    let blip = |x, y, domain| aftermine_sim::RadarContact {
         tile: TilePos::new(x, y),
         domain,
     };
     assert_eq!(
         p.state.vision(PlayerId(0)).contacts(),
         [
-            blip(21, 10, oxide_sim::stats::Domain::Ground),
-            blip(21, 13, oxide_sim::stats::Domain::Air)
+            blip(21, 10, aftermine_sim::stats::Domain::Ground),
+            blip(21, 13, aftermine_sim::stats::Domain::Air)
         ],
         "the parked radar tracks the hidden Harvester and Kestrel"
     );

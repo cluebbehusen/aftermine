@@ -1,7 +1,7 @@
 use super::*;
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use macroquad::prelude::vec2;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use std::time::Instant;
 
 const COMMIT: &str = "lan-test";
@@ -55,7 +55,7 @@ fn train(game: &Game, seat: PlayerId) -> Command {
     }
 }
 
-fn recorded(game: &Game) -> Vec<(u64, oxide_sim::PlayerCommand)> {
+fn recorded(game: &Game) -> Vec<(u64, aftermine_sim::PlayerCommand)> {
     game.recorder
         .commands
         .iter()
@@ -259,7 +259,7 @@ fn a_lost_client_makes_the_host_wait_until_it_drops_the_seat() {
 
 #[test]
 fn the_host_hands_a_waited_seat_to_a_bot_and_its_client_hears_why() {
-    use oxide_sim::scenario::{BotDifficulty, BotStance};
+    use aftermine_sim::scenario::{BotDifficulty, BotStance};
     let mut lan = Match::start(with_bots());
     lan.run(3);
     // The client stops polling until the host waits for it.
@@ -383,7 +383,7 @@ fn a_relaunched_client_rejoins_from_its_ticket_once_its_host_confirms() {
 
     // Home asks the host first.
     let path = std::env::temp_dir().join(format!(
-        "oxide-netplay-ticket-{}-{}",
+        "aftermine-netplay-ticket-{}-{}",
         std::process::id(),
         crate::entropy::bits()
     ));
@@ -707,7 +707,7 @@ fn an_injected_desync_halts_both_machines() {
     lan.run(5);
     lan.client.0.state.tick(&[]);
     let desync = End::Desync {
-        tick: oxide_net::HASH_INTERVAL,
+        tick: aftermine_net::HASH_INTERVAL,
     };
     assert_eq!(lan.ends(), (desync, desync));
     assert!(desync.notice().contains("Desync at 0:01"));
@@ -721,7 +721,7 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
     lan.client.0.state.tick(&[]);
     // The host runs ahead and ends the match before the client
     // reports the diverged tick.
-    while lan.host.0.state.current_tick() < oxide_net::HASH_INTERVAL {
+    while lan.host.0.state.current_tick() < aftermine_net::HASH_INTERVAL {
         lan.step_host();
     }
     lan.host.0.issue(Command::Surrender);
@@ -729,7 +729,7 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
         lan.step_host();
     }
     let desync = End::Desync {
-        tick: oxide_net::HASH_INTERVAL,
+        tick: aftermine_net::HASH_INTERVAL,
     };
     assert_eq!(lan.ends(), (desync, desync));
 }
@@ -776,7 +776,7 @@ fn a_build_refused_in_the_poll_that_accepts_it_still_hears_the_hosts() {
             lobby.accept(Duration::ZERO);
             lobby.connections.first().map(|&(member, _)| member)
         });
-        let hello = oxide_net::JoinMessage::hello("other").encode();
+        let hello = aftermine_net::JoinMessage::hello("other").encode();
         lobby.gathering.receive(member, &hello, Duration::ZERO);
     }
     let reason = wait(|| {
@@ -835,7 +835,10 @@ fn a_joiner_that_falls_silent_loses_its_seat() {
         host.status().ends_with("2 of 3 players here").then_some(())
     });
     // The client stops polling, so it stops heartbeating.
-    assert!(host.poll(oxide_net::SILENCE_TIMEOUT, viewport()).is_none());
+    assert!(
+        host.poll(aftermine_net::SILENCE_TIMEOUT, viewport())
+            .is_none()
+    );
     assert!(host.status().ends_with("1 of 3 players here"));
 }
 
@@ -864,7 +867,10 @@ fn a_silent_connection_is_closed_after_the_greeting_timeout() {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         (host.lobby.connection_count() > 0).then_some(())
     });
-    assert!(host.poll(oxide_net::GREETING_TIMEOUT, viewport()).is_none());
+    assert!(
+        host.poll(aftermine_net::GREETING_TIMEOUT, viewport())
+            .is_none()
+    );
     assert_eq!(host.lobby.connection_count(), 0);
     drop(silent);
 }
@@ -890,7 +896,7 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
 
     // The full slots time out, and only then is the waiting peer accepted
     // and greeted.
-    let timeout = oxide_net::GREETING_TIMEOUT;
+    let timeout = aftermine_net::GREETING_TIMEOUT;
     assert!(host.poll(timeout, viewport()).is_none());
     wait(|| {
         assert!(host.poll(timeout, viewport()).is_none());
@@ -905,7 +911,7 @@ fn connections_past_the_greeting_cap_wait_to_be_accepted() {
         .unwrap();
     assert_eq!(
         hello.trim_end(),
-        oxide_net::LobbyMessage::hello(COMMIT).encode()
+        aftermine_net::LobbyMessage::hello(COMMIT).encode()
     );
     drop(silent);
 }
@@ -1023,7 +1029,7 @@ fn a_hosted_lobby_announces_itself_with_its_room() {
     let Lobby::Host(mut host) = host_lobby(three_humans()) else {
         unreachable!("a host lobby");
     };
-    let mut scanner = oxide_net::Scanner::bind_to("127.0.0.1:0", COMMIT).unwrap();
+    let mut scanner = aftermine_net::Scanner::bind_to("127.0.0.1:0", COMMIT).unwrap();
     host.lobby.advertise_to(scanner.local_addr().unwrap());
     let port: u16 = host
         .lobby
@@ -1037,7 +1043,7 @@ fn a_hosted_lobby_announces_itself_with_its_room() {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
         scanner.poll(Duration::ZERO).first().cloned()
     });
-    let oxide_net::discovery::Heard::Joinable(beacon) = beacon.heard else {
+    let aftermine_net::discovery::Heard::Joinable(beacon) = beacon.heard else {
         panic!("this build's beacon");
     };
     assert_eq!(beacon.host, name("Host"));
@@ -1083,14 +1089,14 @@ fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
 
 #[test]
 fn a_host_naming_a_seat_the_match_lacks_breaks_the_protocol() {
-    let seats = oxide_net::HostMessage::Seats {
+    let seats = aftermine_net::HostMessage::Seats {
         seats: vec![SeatNotice {
             seat: PlayerId(9),
             state: SeatState::Quiet,
         }],
         paused: false,
     };
-    let replaced = oxide_net::HostMessage::Replaced {
+    let replaced = aftermine_net::HostMessage::Replaced {
         seat: PlayerId(9),
         config: BotConfig::default(),
     };

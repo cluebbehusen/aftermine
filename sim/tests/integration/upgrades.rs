@@ -8,11 +8,11 @@
 use crate::common;
 use common::{cmd, players};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::stats::{BuildingKind, RECLAIMER_PERIOD, SITE_DECAY_PERIOD};
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
-use oxide_sim::stats::{BuildingKind, RECLAIMER_PERIOD, SITE_DECAY_PERIOD};
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, UnitKind};
 
 /// Seat 0 with a Fabricator, a Turret, and a harvester crew — the
 /// Reclaimer joins only where its income cannot smudge exact-bank math.
@@ -73,11 +73,11 @@ fn arena(scrap: u32, crucible: bool, reclaimer: bool) -> Scenario {
     }
 }
 
-fn upgrade(building: oxide_sim::BuildingId) -> PlayerCommand {
+fn upgrade(building: aftermine_sim::BuildingId) -> PlayerCommand {
     cmd(0, Command::UpgradeBuilding { building })
 }
 
-fn find(state: &State, kind: BuildingKind) -> oxide_sim::BuildingId {
+fn find(state: &State, kind: BuildingKind) -> aftermine_sim::BuildingId {
     state
         .buildings()
         .iter()
@@ -86,12 +86,12 @@ fn find(state: &State, kind: BuildingKind) -> oxide_sim::BuildingId {
         .id
 }
 
-fn run_until_built(state: &mut State, building: oxide_sim::BuildingId, cap: u64) {
+fn run_until_built(state: &mut State, building: aftermine_sim::BuildingId, cap: u64) {
     for _ in 0..cap {
         state.tick(&[]);
         if state
             .building(building)
-            .is_some_and(oxide_sim::Building::built)
+            .is_some_and(aftermine_sim::Building::built)
         {
             return;
         }
@@ -235,7 +235,7 @@ fn a_stale_builder_order_cannot_speed_up_the_next_tier() {
     run_until_built(&mut state, turret, 2_000);
     assert_eq!(
         state.unit(worker).unwrap().order,
-        oxide_sim::Order::Build { site: turret },
+        aftermine_sim::Order::Build { site: turret },
         "the builder observes completion on its next brain tick"
     );
 
@@ -252,7 +252,7 @@ fn a_stale_builder_order_cannot_speed_up_the_next_tier() {
     );
     assert_ne!(
         state.unit(worker).unwrap().order,
-        oxide_sim::Order::Build { site: turret },
+        aftermine_sim::Order::Build { site: turret },
         "the stale ordinary-site job is finished, not an upgrade crew"
     );
 }
@@ -452,7 +452,7 @@ fn an_upgrading_works_is_committed_offline_and_mortal() {
         1,
         Command::Attack {
             units: vec![raider],
-            target: oxide_sim::Target::Building(turret).into(),
+            target: aftermine_sim::Target::Building(turret).into(),
             queue: false,
         },
     )]);
@@ -509,13 +509,17 @@ fn lethal_fire_wins_an_upgrades_completion_tick() {
     );
 
     for &attacker in &sappers {
-        common::face_target(&mut state, attacker, oxide_sim::Target::Building(turret));
+        common::face_target(
+            &mut state,
+            attacker,
+            aftermine_sim::Target::Building(turret),
+        );
     }
     let report = state.tick(&[cmd(
         1,
         Command::Attack {
             units: sappers,
-            target: oxide_sim::Target::Building(turret).into(),
+            target: aftermine_sim::Target::Building(turret).into(),
             queue: false,
         },
     )]);

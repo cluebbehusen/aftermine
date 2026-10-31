@@ -1,9 +1,9 @@
 //! The seat's own order failures, and the machines every seat sees stand up
 //! from public cradles, which the host buffers between decisions.
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::{Event, PlayerId, StallReason, UnitId, UnitKind};
 use chassis::fx::Vec2Fx;
-use oxide_sim::command::RejectReason;
-use oxide_sim::{Event, PlayerId, StallReason, UnitId, UnitKind};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 

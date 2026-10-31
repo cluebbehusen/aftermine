@@ -2,7 +2,7 @@ use super::*;
 use crate::game::Game;
 
 fn economy_support_game() -> Game {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     let frames: Vec<_> = scenario
         .map
         .iter()
@@ -18,9 +18,9 @@ fn economy_support_game() -> Game {
     scenario
         .buildings
         .extend(frames.into_iter().enumerate().map(|(index, (x, y))| {
-            oxide_sim::scenario::BuildingSpec {
+            aftermine_sim::scenario::BuildingSpec {
                 player: u8::from(index == last),
-                kind: oxide_sim::BuildingKind::Extractor,
+                kind: aftermine_sim::BuildingKind::Extractor,
                 x,
                 y,
             }
@@ -30,17 +30,17 @@ fn economy_support_game() -> Game {
 
 #[test]
 fn range_rings_have_one_clear_subject() {
-    let unit = oxide_sim::UnitId(3);
-    let building = oxide_sim::BuildingId(5);
+    let unit = aftermine_sim::UnitId(3);
+    let building = aftermine_sim::BuildingId(5);
     assert_eq!(
         range_subject(&[unit], &[]),
-        Some(oxide_sim::Target::Unit(unit))
+        Some(aftermine_sim::Target::Unit(unit))
     );
     assert_eq!(
         range_subject(&[], &[building]),
-        Some(oxide_sim::Target::Building(building))
+        Some(aftermine_sim::Target::Building(building))
     );
-    assert_eq!(range_subject(&[unit, oxide_sim::UnitId(4)], &[]), None);
+    assert_eq!(range_subject(&[unit, aftermine_sim::UnitId(4)], &[]), None);
     assert_eq!(range_subject(&[unit], &[building]), None);
 }
 
@@ -53,12 +53,12 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .iter()
         .find(|building| {
             building.player == game.presentation.human
-                && building.kind == oxide_sim::BuildingKind::Extractor
+                && building.kind == aftermine_sim::BuildingKind::Extractor
                 && game
                     .state
                     .extractor_income(building.id)
-                    .map(oxide_sim::ExtractorIncome::support)
-                    == Some(oxide_sim::ExtractorSupport::Supported)
+                    .map(aftermine_sim::ExtractorIncome::support)
+                    == Some(aftermine_sim::ExtractorSupport::Supported)
         })
         .expect("supported own Extractor")
         .id;
@@ -68,12 +68,12 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .iter()
         .find(|building| {
             building.player == game.presentation.human
-                && building.kind == oxide_sim::BuildingKind::Extractor
+                && building.kind == aftermine_sim::BuildingKind::Extractor
                 && game
                     .state
                     .extractor_income(building.id)
-                    .map(oxide_sim::ExtractorIncome::support)
-                    == Some(oxide_sim::ExtractorSupport::Remote)
+                    .map(aftermine_sim::ExtractorIncome::support)
+                    == Some(aftermine_sim::ExtractorSupport::Remote)
         })
         .expect("remote own Extractor")
         .id;
@@ -83,12 +83,12 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .iter()
         .find(|building| {
             building.player != game.presentation.human
-                && building.kind == oxide_sim::BuildingKind::Extractor
+                && building.kind == aftermine_sim::BuildingKind::Extractor
                 && game
                     .state
                     .extractor_income(building.id)
-                    .map(oxide_sim::ExtractorIncome::support)
-                    == Some(oxide_sim::ExtractorSupport::Supported)
+                    .map(aftermine_sim::ExtractorIncome::support)
+                    == Some(aftermine_sim::ExtractorSupport::Supported)
         })
         .expect("supported foreign Extractor")
         .id;
@@ -122,7 +122,7 @@ fn support_links_exist_only_for_connected_own_endpoints() {
 
 #[test]
 fn production_progress_is_private_except_in_an_omniscient_view() {
-    let mut game = Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+    let mut game = Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
         .expect("embedded skirmish builds");
     let own = game
         .state
@@ -147,7 +147,7 @@ fn production_progress_is_private_except_in_an_omniscient_view() {
 fn repair_bay_uses_the_exact_footprint_offset_aura() {
     let anchor = vec2(10.0, 20.0);
     let mut ranges = Vec::new();
-    visit_building_ranges(anchor, oxide_sim::BuildingKind::RepairBay, 0, |range| {
+    visit_building_ranges(anchor, aftermine_sim::BuildingKind::RepairBay, 0, |range| {
         ranges.push(range);
     });
 
@@ -155,8 +155,8 @@ fn repair_bay_uses_the_exact_footprint_offset_aura() {
         panic!("Repair Bay should expose exactly one range: {ranges:?}");
     };
     assert_eq!(range.kind, BuildingRangeKind::Repair);
-    let radius = oxide_sim::stats::REPAIR_BAY_RADIUS.to_num::<f32>();
-    let size = oxide_sim::BuildingKind::RepairBay.size();
+    let radius = aftermine_sim::stats::REPAIR_BAY_RADIUS.to_num::<f32>();
+    let size = aftermine_sim::BuildingKind::RepairBay.size();
     let footprint_max = anchor + vec2(size.0 as f32, size.1 as f32);
     assert_eq!(
         range.shape,
@@ -179,8 +179,8 @@ fn repair_bay_uses_the_exact_footprint_offset_aura() {
 fn foundries_and_extractors_use_the_exact_square_support_footprint() {
     let anchor = vec2(10.0, 20.0);
     for kind in [
-        oxide_sim::BuildingKind::Foundry,
-        oxide_sim::BuildingKind::Extractor,
+        aftermine_sim::BuildingKind::Foundry,
+        aftermine_sim::BuildingKind::Extractor,
     ] {
         let mut ranges = Vec::new();
         visit_building_ranges(anchor, kind, 0, |range| ranges.push(range));
@@ -188,7 +188,7 @@ fn foundries_and_extractors_use_the_exact_square_support_footprint() {
             .iter()
             .find(|range| range.kind == BuildingRangeKind::EconomySupport)
             .expect("economic endpoints expose their support footprint");
-        let radius = footprint_distance_aura(oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS);
+        let radius = footprint_distance_aura(aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS);
         let size = kind.size();
         let footprint_max = anchor + vec2(size.0 as f32, size.1 as f32);
         assert_eq!(
@@ -216,7 +216,7 @@ fn foundries_and_extractors_use_the_exact_square_support_footprint() {
 #[test]
 fn weapon_ranges_remain_centered_circles() {
     let anchor = vec2(10.0, 20.0);
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let mut ranges = Vec::new();
     visit_building_ranges(anchor, kind, 0, |range| ranges.push(range));
 
@@ -243,7 +243,7 @@ fn weapon_ranges_remain_centered_circles() {
 #[test]
 fn bastion_dead_zone_is_a_shaded_inner_circle() {
     let anchor = vec2(10.0, 20.0);
-    let kind = oxide_sim::BuildingKind::Bastion;
+    let kind = aftermine_sim::BuildingKind::Bastion;
     let mut ranges = Vec::new();
     visit_building_ranges(anchor, kind, 0, |range| ranges.push(range));
 
@@ -307,7 +307,7 @@ fn curved_ranges_have_distinct_textures_and_all_ranges_have_distinct_icons() {
 
 #[test]
 fn anti_air_buildings_use_the_weapon_domain_at_every_tier_and_in_placement() {
-    let kind = oxide_sim::BuildingKind::FlakTurret;
+    let kind = aftermine_sim::BuildingKind::FlakTurret;
     for (tier, stats) in kind.tiers().iter().enumerate() {
         let mut ranges = Vec::new();
         visit_building_ranges(vec2(10.0, 10.0), kind, tier.fit::<u8>(), |range| {
@@ -349,7 +349,7 @@ fn anti_air_buildings_use_the_weapon_domain_at_every_tier_and_in_placement() {
 
 #[test]
 fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain() {
-    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+    let scenario: aftermine_sim::Scenario = serde_json::from_value(serde_json::json!({
         "name": "Weapon indicator fixture", "map": ["....................", "....................", "..1.................",
             "....................", "....................", "....................",
             "....................", "....................", "....................",
@@ -361,8 +361,8 @@ fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain
     .unwrap();
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     for kind in [
-        oxide_sim::UnitKind::Flakhound,
-        oxide_sim::UnitKind::Sentinel,
+        aftermine_sim::UnitKind::Flakhound,
+        aftermine_sim::UnitKind::Sentinel,
     ] {
         let id = game
             .state
@@ -395,7 +395,7 @@ fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain
                 .iter()
                 .any(|indicator| indicator.icon == crate::panel::CapabilityIcon::AirWeapon)
         );
-        if kind == oxide_sim::UnitKind::Sentinel {
+        if kind == aftermine_sim::UnitKind::Sentinel {
             assert!(
                 weapons
                     .iter()
@@ -557,7 +557,8 @@ fn filtered_range_clipping_preserves_visible_spans_and_pattern_phase() {
 
 #[test]
 fn range_occluders_exclude_offscreen_and_unseen_buildings() {
-    let mut game = Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(64.0, 64.0)).unwrap();
+    let mut game =
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(64.0, 64.0)).unwrap();
     let hostile = game
         .state
         .buildings()
@@ -632,28 +633,33 @@ fn condor_payload_clears_the_nose_and_arrives_without_a_loft() {
 fn artillery_shells_begin_at_the_barrel_and_use_a_low_arc() {
     let launch = vec2(5.0, 7.0);
     let impact = vec2(15.0, 7.0);
-    let shooter = oxide_sim::Target::Unit(oxide_sim::UnitId(4));
+    let shooter = aftermine_sim::Target::Unit(aftermine_sim::UnitId(4));
     assert_eq!(
-        shell_visual_origin(launch, impact, shooter, oxide_sim::ProjectileKind::Bomb),
+        shell_visual_origin(launch, impact, shooter, aftermine_sim::ProjectileKind::Bomb),
         launch
     );
     assert_eq!(
-        shell_visual_origin(launch, impact, shooter, oxide_sim::ProjectileKind::Missile),
+        shell_visual_origin(
+            launch,
+            impact,
+            shooter,
+            aftermine_sim::ProjectileKind::Missile
+        ),
         launch + vec2(0.53, 0.0)
     );
     let from = shell_visual_origin(
         launch,
         impact,
-        oxide_sim::Target::Building(oxide_sim::BuildingId(4)),
-        oxide_sim::ProjectileKind::Shell,
+        aftermine_sim::Target::Building(aftermine_sim::BuildingId(4)),
+        aftermine_sim::ProjectileKind::Shell,
     );
     assert!((from.x - 5.98).abs() < 1.0e-4);
     assert_eq!(from.y, launch.y);
     let bombard_from = shell_visual_origin(
         launch,
         impact,
-        oxide_sim::Target::Unit(oxide_sim::UnitId(4)),
-        oxide_sim::ProjectileKind::Shell,
+        aftermine_sim::Target::Unit(aftermine_sim::UnitId(4)),
+        aftermine_sim::ProjectileKind::Shell,
     );
     assert!((bombard_from.x - 5.254_297).abs() < 1.0e-4);
     assert_eq!(bombard_from.y, launch.y);
@@ -661,15 +667,15 @@ fn artillery_shells_begin_at_the_barrel_and_use_a_low_arc() {
         shell_visual_origin(
             launch,
             launch,
-            oxide_sim::Target::Unit(oxide_sim::UnitId(4)),
-            oxide_sim::ProjectileKind::Shell,
+            aftermine_sim::Target::Unit(aftermine_sim::UnitId(4)),
+            aftermine_sim::ProjectileKind::Shell,
         ),
         launch
     );
 
     let zoom = 32.0;
-    let bombard = oxide_sim::Target::Unit(oxide_sim::UnitId(4));
-    let bastion = oxide_sim::Target::Building(oxide_sim::BuildingId(4));
+    let bombard = aftermine_sim::Target::Unit(aftermine_sim::UnitId(4));
+    let bastion = aftermine_sim::Target::Building(aftermine_sim::BuildingId(4));
     assert!((shell_arc_lift(320.0, zoom, bombard) - 19.2).abs() < 1.0e-4);
     assert!((shell_arc_lift(320.0, zoom, bastion) - 12.8).abs() < 1.0e-4);
     assert_eq!(shell_arc_lift(1_000.0, zoom, bombard), zoom * 0.60);
@@ -903,7 +909,7 @@ fn unguided_unit_contacts_never_turn_toward_a_nearby_body() {
 
 #[test]
 fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
-    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+    let scenario: aftermine_sim::Scenario = serde_json::from_value(serde_json::json!({
         "name": "Scout radar fixture", "map": ["....................", "....................", "..1.................",
             "....................", "....................", "....................",
             "....................", "....................", "....................",
@@ -914,7 +920,7 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
     }))
     .unwrap();
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let id = |game: &Game, kind: oxide_sim::UnitKind| {
+    let id = |game: &Game, kind: aftermine_sim::UnitKind| {
         game.state
             .units()
             .iter()
@@ -934,14 +940,14 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
         radii
     };
     let (kestrel, surveyor) = (
-        id(&game, oxide_sim::UnitKind::Kestrel),
-        id(&game, oxide_sim::UnitKind::Surveyor),
+        id(&game, aftermine_sim::UnitKind::Kestrel),
+        id(&game, aftermine_sim::UnitKind::Surveyor),
     );
     game.presentation.selection.units = vec![kestrel];
     assert_eq!(radar_rings(&game), [14.0]);
     game.presentation.selection.units = vec![surveyor];
     assert!(radar_rings(&game).is_empty(), "folded at the start");
-    let deploy = oxide_sim::UnitKind::Surveyor
+    let deploy = aftermine_sim::UnitKind::Surveyor
         .stats()
         .radar
         .unwrap()
@@ -954,7 +960,7 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
 
 #[test]
 fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
-    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+    let scenario: aftermine_sim::Scenario = serde_json::from_value(serde_json::json!({
         "name": "Mantle reach fixture", "map": ["....................", "....................", "..1.................",
             "....................", "....................", "....................",
             "....................", "....................", "....................",
@@ -974,7 +980,10 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
     visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
         indicators.push(indicator);
     });
-    let defense = oxide_sim::UnitKind::Mantle.stats().point_defense.unwrap();
+    let defense = aftermine_sim::UnitKind::Mantle
+        .stats()
+        .point_defense
+        .unwrap();
     let ranges: Vec<_> = indicators.iter().map(|indicator| indicator.range).collect();
     assert_eq!(
         ranges,
@@ -996,7 +1005,7 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
 
 #[test]
 fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
-    use oxide_sim::stats::Domain;
+    use aftermine_sim::stats::Domain;
     let center = vec2(50.0, 50.0);
     let ground = blip_strokes(center, 10.0, Domain::Ground);
     let air = blip_strokes(center, 10.0, Domain::Air);
@@ -1010,7 +1019,7 @@ fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
 
 #[test]
 fn repair_tethers_follow_each_own_bays_patient_choice() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Tethers",
             "players": [
@@ -1068,7 +1077,7 @@ fn repair_tethers_follow_each_own_bays_patient_choice() {
         .buildings()
         .iter()
         .find(|b| {
-            b.player == game.presentation.human && b.kind == oxide_sim::BuildingKind::RepairBay
+            b.player == game.presentation.human && b.kind == aftermine_sim::BuildingKind::RepairBay
         })
         .unwrap()
         .id;
@@ -1091,19 +1100,19 @@ fn repair_tethers_follow_each_own_bays_patient_choice() {
             .unwrap(),
         "the sim's own choice, four at most"
     );
-    assert_eq!(tethers.len(), oxide_sim::stats::REPAIR_BAY_PATIENTS);
+    assert_eq!(tethers.len(), aftermine_sim::stats::REPAIR_BAY_PATIENTS);
     assert!(
         tethers
             .iter()
-            .any(|tether| tether.pace == oxide_sim::state::RepairPace::Slow),
+            .any(|tether| tether.pace == aftermine_sim::state::RepairPace::Slow),
         "the one just hit heals slowly"
     );
 }
 
 /// West's paid Maw cradle site with four Excavators sent to it, on a quarry
 /// whose `rock` tiles are rock. East's start lies far out of sight.
-fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::BuildingId) {
-    use oxide_sim::scenario::{BuildingSpec, PlayerSpec, Scenario, ScenarioMode, UnitSpec};
+fn cradle_site(rock: &[(usize, usize)]) -> (aftermine_sim::State, aftermine_sim::BuildingId) {
+    use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, Scenario, ScenarioMode, UnitSpec};
     let mut map: Vec<String> = (0..16)
         .map(|y| {
             if y == 0 || y == 15 {
@@ -1135,7 +1144,7 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
         units: (12..16)
             .map(|x| UnitSpec {
                 player: 0,
-                kind: oxide_sim::UnitKind::Excavator,
+                kind: aftermine_sim::UnitKind::Excavator,
                 x,
                 y: 5,
             })
@@ -1143,13 +1152,13 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
         buildings: vec![
             BuildingSpec {
                 player: 0,
-                kind: oxide_sim::BuildingKind::Crucible,
+                kind: aftermine_sim::BuildingKind::Crucible,
                 x: 12,
                 y: 2,
             },
             BuildingSpec {
                 player: 0,
-                kind: oxide_sim::BuildingKind::Extractor,
+                kind: aftermine_sim::BuildingKind::Extractor,
                 x: 2,
                 y: 12,
             },
@@ -1162,13 +1171,13 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
             entry["tier"] = 1.into();
         }
     }
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
-    let crew: Vec<oxide_sim::UnitId> = state.units().iter().map(|unit| unit.id).collect();
-    state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(0),
-        command: oxide_sim::Command::Build {
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
+    let crew: Vec<aftermine_sim::UnitId> = state.units().iter().map(|unit| unit.id).collect();
+    state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(0),
+        command: aftermine_sim::Command::Build {
             units: crew,
-            kind: oxide_sim::BuildingKind::MawCradle,
+            kind: aftermine_sim::BuildingKind::MawCradle,
             anchor: chassis::grid::TilePos::new(8, 7),
             queue: false,
             defer: false,
@@ -1177,7 +1186,7 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
     let cradle = state
         .buildings()
         .iter()
-        .find(|building| building.kind == oxide_sim::BuildingKind::MawCradle)
+        .find(|building| building.kind == aftermine_sim::BuildingKind::MawCradle)
         .expect("the cradle site stands")
         .id;
     (state, cradle)
@@ -1185,8 +1194,8 @@ fn cradle_site(rock: &[(usize, usize)]) -> (oxide_sim::State, oxide_sim::Buildin
 
 #[test]
 fn cradle_pads_show_only_while_the_crew_works_from_them_as_far_as_the_viewer_knows() {
-    let pads = oxide_sim::BuildingKind::MawCradle.crew_pads().unwrap();
-    let (west, east) = (oxide_sim::PlayerId(0), oxide_sim::PlayerId(1));
+    let pads = aftermine_sim::BuildingKind::MawCradle.crew_pads().unwrap();
+    let (west, east) = (aftermine_sim::PlayerId(0), aftermine_sim::PlayerId(1));
     let (state, id) = cradle_site(&[]);
     let cradle = state.building(id).unwrap();
     assert!(crew_pads_in_use(&state, (west, false), cradle, pads));
@@ -1209,11 +1218,11 @@ fn cradle_pads_show_only_while_the_crew_works_from_them_as_far_as_the_viewer_kno
 
 #[test]
 fn a_crew_lamp_lights_only_once_its_worker_is_at_work() {
-    let pads = oxide_sim::BuildingKind::MawCradle.crew_pads().unwrap();
-    let viewer = (oxide_sim::PlayerId(0), false);
+    let pads = aftermine_sim::BuildingKind::MawCradle.crew_pads().unwrap();
+    let viewer = (aftermine_sim::PlayerId(0), false);
     let (mut state, id) = cradle_site(&[]);
-    let progress = |state: &oxide_sim::State| match state.building(id).unwrap().phase {
-        oxide_sim::BuildingPhase::Site { progress } => progress,
+    let progress = |state: &aftermine_sim::State| match state.building(id).unwrap().phase {
+        aftermine_sim::BuildingPhase::Site { progress } => progress,
         _ => panic!("the cradle is still a site"),
     };
     for _ in 0..600 {

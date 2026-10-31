@@ -5,7 +5,7 @@ use crate::host::HostSession;
 use crate::message::{JoinMessage, LobbyMessage};
 use crate::snapshot;
 use crate::token::Token;
-use oxide_sim::{PlayerCommand, PlayerId, Scenario, Tick};
+use aftermine_sim::{PlayerCommand, PlayerId, Scenario, Tick};
 use std::time::Duration;
 
 /// Why a start was abandoned.

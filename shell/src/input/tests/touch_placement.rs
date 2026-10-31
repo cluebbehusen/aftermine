@@ -3,7 +3,7 @@ use super::*;
 /// One harvester with plenty of scrap on open, visible ground, a Barricade
 /// armed and its ghost down at `ghost`.
 fn ghost_range(ghost: TilePos) -> (Game, InputState) {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Ghost Range",
             "players": [
@@ -29,7 +29,7 @@ fn ghost_range(ghost: TilePos) -> (Game, InputState) {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Barricade);
+    input.arm_placement(aftermine_sim::BuildingKind::Barricade);
     input.build_menu = true;
     tap_world(
         &mut game,
@@ -73,10 +73,10 @@ fn builds(game: &Game) -> Vec<(TilePos, bool)> {
 
 #[test]
 fn arming_by_touch_drops_the_ghost_mid_view_and_by_mouse_does_not() {
-    let (mut game, mut input, _) = armed_placement(oxide_sim::BuildingKind::Turret);
+    let (mut game, mut input, _) = armed_placement(aftermine_sim::BuildingKind::Turret);
     input.stop_placing();
     tap_panel_card(&mut game, &mut input, |card| {
-        card.action == crate::panel::CardAction::ArmBuild(oxide_sim::BuildingKind::Turret)
+        card.action == crate::panel::CardAction::ArmBuild(aftermine_sim::BuildingKind::Turret)
     });
     let center = game.presentation.camera.center;
     assert_eq!(
@@ -93,7 +93,7 @@ fn arming_by_touch_drops_the_ghost_mid_view_and_by_mouse_does_not() {
     activate_card(
         &mut game,
         &mut input,
-        crate::panel::CardAction::ArmBuild(oxide_sim::BuildingKind::Turret),
+        crate::panel::CardAction::ArmBuild(aftermine_sim::BuildingKind::Turret),
     );
     assert!(input.placing.is_some());
     assert_eq!(
@@ -282,7 +282,7 @@ fn a_chain_after_a_gapped_row_keeps_the_row_step() {
     let other = game.state.units()[0].id;
     game.issue(Command::Build {
         units: vec![other],
-        kind: oxide_sim::BuildingKind::Barricade,
+        kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(5, 2),
         queue: true,
         defer: false,
@@ -445,7 +445,7 @@ fn a_held_row_drops_cells_the_world_has_since_taken() {
     let other = game.state.units()[0].id;
     game.issue(Command::Build {
         units: vec![other],
-        kind: oxide_sim::BuildingKind::Barricade,
+        kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(5, 2),
         queue: true,
         defer: false,

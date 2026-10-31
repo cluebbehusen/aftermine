@@ -5,8 +5,8 @@
 
 use crate::game::{Scene, SoundKind};
 use crate::rocket_audio::{LoopBank, Motor, camera_gain, densest};
+use aftermine_sim::{UnitId, UnitKind};
 use macroquad::audio::Sound;
-use oxide_sim::{UnitId, UnitKind};
 
 pub(crate) const MAW_VOICES: usize = 4;
 

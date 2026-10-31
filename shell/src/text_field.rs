@@ -9,10 +9,10 @@ use crate::theme::{
     BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_CARD, SURFACE_PANEL, Stroke, TEXT_ACCENT, TEXT_DANGER,
     TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
 };
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{
     Color, Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
 };
-use oxide_protocol::{Key, RawEvent};
 
 /// The on-screen keyboard a field asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

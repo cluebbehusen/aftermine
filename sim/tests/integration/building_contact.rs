@@ -1,6 +1,6 @@
 //! Local building interaction preserves tile routing and permits a bounded final approach.
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
 use chassis::{fx::Fx, grid::TilePos};
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
 use serde_json::json;
 
 fn scene(kind: &str, own_building: bool) -> State {
@@ -212,7 +212,7 @@ fn unusable_building_stances_stall_once_and_obey_order_failure_policy() {
             events.extend(state.tick(&[]).events);
         }
         assert_eq!(events.iter().filter(|event| matches!(event,
-            Event::OrderStalled { unit, reason: oxide_sim::event::StallReason::NoRoute, .. } if *unit == id
+            Event::OrderStalled { unit, reason: aftermine_sim::event::StallReason::NoRoute, .. } if *unit == id
         )).count(), 1, "{kind}: {events:?}");
         assert!(
             !events
@@ -224,19 +224,19 @@ fn unusable_building_stances_stall_once_and_obey_order_failure_policy() {
         assert!(unit.queue.is_empty(), "{kind}: {unit:?}");
         if own_building {
             assert!(
-                matches!(unit.order, oxide_sim::Order::Run { goal } if goal.tile() == TilePos::new(4, 3)),
+                matches!(unit.order, aftermine_sim::Order::Run { goal } if goal.tile() == TilePos::new(4, 3)),
                 "{kind}: {unit:?}"
             );
         } else {
             assert!(
-                matches!(unit.order, oxide_sim::Order::Idle),
+                matches!(unit.order, aftermine_sim::Order::Idle),
                 "{kind}: {unit:?}"
             );
         }
         assert!(
             !matches!(
                 unit.order,
-                oxide_sim::Order::Repair { .. } | oxide_sim::Order::Attack { .. }
+                aftermine_sim::Order::Repair { .. } | aftermine_sim::Order::Attack { .. }
             ),
             "{kind}: {unit:?}"
         );
@@ -257,7 +257,7 @@ fn builders_reach_a_stance_past_a_neighboring_footprint_corner() {
         let id = state.units()[0].id;
         state.tick(&[command(Command::Build {
             units: vec![id],
-            kind: oxide_sim::BuildingKind::Turret,
+            kind: aftermine_sim::BuildingKind::Turret,
             anchor: TilePos::new(20, 16),
             queue: false,
             defer: false,
@@ -291,10 +291,10 @@ fn builders_reach_a_stance_past_a_neighboring_footprint_corner() {
 /// harvester parked a few tiles below it. A distant Fabricator unlocks
 /// every kind.
 fn paid_site(
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     mut buildings: serde_json::Value,
-) -> (State, oxide_sim::UnitId, oxide_sim::BuildingId) {
+) -> (State, aftermine_sim::UnitId, aftermine_sim::BuildingId) {
     buildings
         .as_array_mut()
         .unwrap()
@@ -328,7 +328,7 @@ fn paid_site(
 /// `state` with `id` at rest at `pos`, walking `waypoints` toward `point`.
 fn walking(
     state: &State,
-    id: oxide_sim::UnitId,
+    id: aftermine_sim::UnitId,
     pos: chassis::fx::Vec2Fx,
     waypoints: Vec<TilePos>,
     point: Option<chassis::fx::Vec2Fx>,
@@ -342,7 +342,7 @@ fn walking(
         .unwrap();
     unit["pos"] = json!(pos);
     unit["motor"]["speed"] = json!(Fx::ZERO);
-    unit["path"] = json!(oxide_sim::state::PathFollow {
+    unit["path"] = json!(aftermine_sim::state::PathFollow {
         final_point: point,
         goal: *waypoints.last().unwrap(),
         waypoints,
@@ -379,7 +379,7 @@ fn ring(anchor: TilePos, size: (i32, i32)) -> Vec<TilePos> {
 /// through a Scuttle Charge's own open tile into its outline.
 #[test]
 fn a_builder_in_reach_works_where_it_stands_from_every_side_and_corner() {
-    use oxide_sim::BuildingKind;
+    use aftermine_sim::BuildingKind;
     let around = [
         (0, -1),
         (1, -1),
@@ -398,7 +398,8 @@ fn a_builder_in_reach_works_where_it_stands_from_every_side_and_corner() {
         let anchor = TilePos::new(14, 10);
         let size = kind.size();
         let (state, id, site) = paid_site(kind, anchor, json!([]));
-        let clearance = UnitKind::Harvester.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP;
+        let clearance =
+            UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP;
         let surface = state.contact_surface(state.building(site).unwrap());
         for side in around {
             let from = beside(anchor, size, side);
@@ -447,14 +448,14 @@ fn a_builder_in_reach_works_where_it_stands_from_every_side_and_corner() {
 fn a_builder_chooses_again_when_new_ground_spoils_its_position() {
     let anchor = TilePos::new(12, 10);
     let (state, id, site) = paid_site(
-        oxide_sim::BuildingKind::Reclaimer,
+        aftermine_sim::BuildingKind::Reclaimer,
         anchor,
         json!([{"player":0,"kind":"barricade","x":13,"y":10}]),
     );
     let goal = TilePos::new(12, 11);
     let spoiled = state.contact_surface(state.building(site).unwrap()).stance(
         chassis::fx::Vec2Fx::new(Fx::lit("12.98"), Fx::lit("11.33")),
-        UnitKind::Harvester.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP,
+        UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP,
     );
     let mut state = walking(&state, id, goal.center(), vec![goal], Some(spoiled));
     let mut started = false;
@@ -480,7 +481,7 @@ fn a_builder_chooses_again_when_new_ground_spoils_its_position() {
 #[test]
 fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
     let (state, id, _) = paid_site(
-        oxide_sim::BuildingKind::Turret,
+        aftermine_sim::BuildingKind::Turret,
         TilePos::new(20, 12),
         json!([{"player":0,"kind":"foundry","x":8,"y":7}]),
     );
@@ -493,7 +494,7 @@ fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
         None,
     );
     let mut data = serde_json::to_value(&state).unwrap();
-    data["units"][0]["order"] = json!(oxide_sim::Order::Run { goal: goal.into() });
+    data["units"][0]["order"] = json!(aftermine_sim::Order::Run { goal: goal.into() });
     state = serde_json::from_value(data).unwrap();
     let mut arrived = false;
     for _ in 0..100 {
@@ -512,7 +513,7 @@ fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
 /// to completion.
 #[test]
 fn a_builder_raises_a_site_through_every_outline_it_shows() {
-    use oxide_sim::BuildingKind;
+    use aftermine_sim::BuildingKind;
     for kind in [BuildingKind::Bastion, BuildingKind::Foundry] {
         let (mut state, _, site) = paid_site(kind, TilePos::new(14, 10), json!([]));
         let (mut stages, mut idle, mut longest) = (vec![], 0, 0);
@@ -596,7 +597,7 @@ fn a_welder_whose_building_begins_an_upgrade_stands_down_and_can_leave() {
     assert!(
         !matches!(
             state.unit(id).unwrap().order,
-            oxide_sim::Order::Repair { .. }
+            aftermine_sim::Order::Repair { .. }
         ),
         "{:?}",
         state.unit(id)

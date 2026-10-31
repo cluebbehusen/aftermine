@@ -21,13 +21,13 @@ use crate::memory::Memory;
 use crate::placement::{self, Layout};
 use crate::profile::{PersonalityTraits, ResolvedProfile};
 use crate::workers;
+use aftermine_sim::observation::ObservationData;
+use aftermine_sim::stats::{BuildingStats, Domain};
+use aftermine_sim::{BuildingKind, UnitKind};
 pub(crate) use bay::Span;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use guns::{SPLASH_TARGETS, strength, upgrade};
-use oxide_sim::observation::ObservationData;
-use oxide_sim::stats::{BuildingStats, Domain};
-use oxide_sim::{BuildingKind, UnitKind};
 
 /// Tiles a built mast of `kind` at `tier` reaches by radar; zero without one.
 fn radar(kind: BuildingKind, tier: u8) -> i64 {
@@ -81,7 +81,7 @@ impl Default for Stakes {
     /// A Balanced seat's.
     fn default() -> Self {
         Stakes {
-            minimum: crate::missions::minimum(oxide_sim::scenario::BotStance::Balanced),
+            minimum: crate::missions::minimum(aftermine_sim::scenario::BotStance::Balanced),
         }
     }
 }

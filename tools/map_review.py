@@ -117,7 +117,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--drafts", default="map-drafts")
     ap.add_argument("--out", default="map-review/index.html")
-    ap.add_argument("--driver", default="target/release/oxide-driver")
+    ap.add_argument("--driver", default="target/release/aftermine-driver")
     args = ap.parse_args()
 
     drafts = sorted(pathlib.Path(args.drafts).glob("*.json"))

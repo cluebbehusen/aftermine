@@ -35,8 +35,8 @@ fn every_kind_has_exactly_one_page() {
             Entry::Building(_) => buildings += 1,
         }
     }
-    assert_eq!(units, oxide_sim::stats::UnitKind::ALL.len());
-    assert_eq!(buildings, oxide_sim::stats::BuildingKind::ALL.len());
+    assert_eq!(units, aftermine_sim::stats::UnitKind::ALL.len());
+    assert_eq!(buildings, aftermine_sim::stats::BuildingKind::ALL.len());
     // No machine is listed under two factories.
     let mut seen = std::collections::BTreeSet::new();
     for entry in pages(&screen) {

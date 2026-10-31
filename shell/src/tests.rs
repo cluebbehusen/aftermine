@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn the_touch_build_argv_parses_to_ordinary_defaults() {
-    let args = Args::parse_from(["Oxide"]);
+    let args = Args::parse_from(["Aftermine"]);
     assert!(!args.debug_server && !args.automation && !args.paused);
     assert!(args.scenario.is_none() && args.replay.is_none() && args.watch.is_none());
     assert_eq!(args.speed, 1.0);
@@ -10,8 +10,8 @@ fn the_touch_build_argv_parses_to_ordinary_defaults() {
 
 #[test]
 fn automation_requires_debug_server() {
-    assert!(Args::try_parse_from(["oxide-shell", "--automation"]).is_err());
-    let args = Args::try_parse_from(["oxide-shell", "--debug-server", "--automation"])
+    assert!(Args::try_parse_from(["aftermine-shell", "--automation"]).is_err());
+    let args = Args::try_parse_from(["aftermine-shell", "--debug-server", "--automation"])
         .expect("automation with the debug server should parse");
     assert!(args.debug_server);
     assert!(args.automation);
@@ -46,7 +46,7 @@ fn public_numeric_options_enforce_their_documented_envelopes() {
 #[test]
 fn modes_that_depend_on_the_debug_server_are_rejected_without_it() {
     for option in ["--automation", "--profile-frames", "--debug-idle-timeout"] {
-        let mut args = vec!["oxide-shell", option];
+        let mut args = vec!["aftermine-shell", option];
         if option == "--debug-idle-timeout" {
             args.push("60");
         }
@@ -55,7 +55,7 @@ fn modes_that_depend_on_the_debug_server_are_rejected_without_it() {
 
     assert!(
         Args::try_parse_from([
-            "oxide-shell",
+            "aftermine-shell",
             "--watch",
             "match.json",
             "--scenario",
@@ -65,7 +65,7 @@ fn modes_that_depend_on_the_debug_server_are_rejected_without_it() {
     );
     assert!(
         Args::try_parse_from([
-            "oxide-shell",
+            "aftermine-shell",
             "--watch",
             "match.json",
             "--replay",
@@ -77,7 +77,7 @@ fn modes_that_depend_on_the_debug_server_are_rejected_without_it() {
 
 #[test]
 fn hosting_needs_a_scenario_and_joining_takes_none() {
-    let parse = |args: &[&str]| Args::try_parse_from([&["oxide-shell"], args].concat());
+    let parse = |args: &[&str]| Args::try_parse_from([&["aftermine-shell"], args].concat());
     assert!(parse(&["--host", "0.0.0.0:4200"]).is_err());
     let host = parse(&["--host", "0.0.0.0:4200", "--scenario", "map.json"]).unwrap();
     assert_eq!(host.host.as_deref(), Some("0.0.0.0:4200"));

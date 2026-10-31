@@ -1,7 +1,7 @@
 use super::*;
 use crate::checkpoint::SessionCheckpoint;
 use crate::controller::{record_events, seat_controllers};
-use oxide_sim::{
+use aftermine_sim::{
     Command, PlayerId, Scenario,
     scenario::{BotConfig, BotDifficulty, BotStance},
 };
@@ -54,8 +54,8 @@ fn snapshots_save_while_running_and_ready() {
     let human = vec![PlayerCommand {
         player: PlayerId(0),
         command: Command::Train {
-            building: oxide_sim::BuildingId(0),
-            kind: oxide_sim::UnitKind::Harvester,
+            building: aftermine_sim::BuildingId(0),
+            kind: aftermine_sim::UnitKind::Harvester,
         },
     }];
     let capture = |bots: &[SeatController]| {

@@ -4,8 +4,8 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{Vec2, draw_text};
-use oxide_protocol::RawEvent;
 
 /// What a Home frame decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,7 @@ impl HomeScreen {
                 Out::Rejoin,
             )];
             lines.extend_from_slice(self.menu.lines());
-            self.menu = Menu::new("OXIDE", lines);
+            self.menu = Menu::new("AFTERMINE", lines);
             // A host's name and a map's together outgrow the usual row.
             self.menu.wide = true;
         }
@@ -114,7 +114,7 @@ impl HomeScreen {
             .chain(quit.then_some(("Quit", Out::Quit)))
             .map(|(label, out)| (Label::from(label), out));
         Self {
-            menu: Menu::rows("OXIDE", rows),
+            menu: Menu::rows("AFTERMINE", rows),
             catalog_ready: false,
             rejoin: None,
         }
@@ -167,7 +167,7 @@ fn version_label() -> &'static str {
 
 /// The package version and the short commit it was built from, marked
 /// when the build had local changes. A source archive has no commit.
-fn describe_build(build: &oxide_kit::build::BuildIdentity) -> String {
+fn describe_build(build: &aftermine_kit::build::BuildIdentity) -> String {
     if build.revision == "unknown" {
         return format!("v{}", build.version);
     }

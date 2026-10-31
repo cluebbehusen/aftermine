@@ -97,7 +97,7 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
     let mut seats = seat_controllers(&scenario).unwrap();
     let stop = |player: u8| PlayerCommand {
         player: PlayerId(player),
-        command: oxide_sim::Command::Stop { units: Vec::new() },
+        command: aftermine_sim::Command::Stop { units: Vec::new() },
     };
     let saved = |seats: &[SeatController]| {
         seats

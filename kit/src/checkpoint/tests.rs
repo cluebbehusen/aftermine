@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{Command, PlayerId};
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{Command, PlayerId};
 
 fn checkpoint() -> SessionCheckpoint {
     let mut scenario = Scenario::skirmish();
@@ -52,7 +52,7 @@ fn checkpoint_rejects_a_world_with_different_scenario_rules() {
         player.bot_config = None;
     }
     let state = scenario.build().unwrap();
-    scenario.mode = oxide_sim::scenario::ScenarioMode::Sandbox;
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
     let error = SessionCheckpoint::capture(&scenario, &state, &[], &[], None).unwrap_err();
     assert!(error.to_string().contains("scenario mode mismatch"));
     let state = scenario.build().unwrap();
@@ -62,7 +62,7 @@ fn checkpoint_rejects_a_world_with_different_scenario_rules() {
         .unwrap();
     assert_eq!(
         restored.state.mode(),
-        oxide_sim::scenario::ScenarioMode::Sandbox
+        aftermine_sim::scenario::ScenarioMode::Sandbox
     );
 }
 

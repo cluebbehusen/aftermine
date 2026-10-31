@@ -1,20 +1,20 @@
 ---
 name: sandbox-matches
 description:
-  Stage throwaway Oxide sandbox scenarios with preset armies, prebuilt
+  Stage throwaway Aftermine sandbox scenarios with preset armies, prebuilt
   structures, and a passive or absent enemy. Use when the user wants a drill or
   practice match against a non-playing opponent, or when a task needs an exact
   staged scene for screenshot or animation validation, isolated combat or
   mechanic repros, or quick unit-versus-structure probes.
 ---
 
-# Oxide sandbox matches
+# Aftermine sandbox matches
 
 A sandbox stages chosen units and structures without requiring an opponent,
 Foundries, or a victory condition. It uses ordinary simulation commands and
 rules, so saves and replays reproduce the scene. A sandbox proves mechanics and
-presentation, not opponent credibility; use the oxide-opponent skill for that.
-Keep throwaway scenes outside the shipped scenario pool.
+presentation, not opponent credibility; use the aftermine-opponent skill for
+that. Keep throwaway scenes outside the shipped scenario pool.
 
 ## Build the scenario
 
@@ -88,20 +88,20 @@ final review window to the quiet scene before handing it over.
 The shell takes a scenario path directly and skips the menu:
 
 ```sh
-cargo run -p oxide-shell -- --scenario path/to/sandbox.json
+cargo run -p aftermine-shell -- --scenario path/to/sandbox.json
 ```
 
 Every driver entry point that takes a scenario accepts a sandbox the same way —
 `run <path>` for headless ticks, `render <path> --out <png>` for CPU schematic
 captures, `session --scenario <path>` for the windowless debug session — and the
-oxide-live-qa skill drives the live shell against one for real-window
+aftermine-live-qa skill drives the live shell against one for real-window
 screenshots, input, and animation checks.
 
 `Scenario::load` is a plain file read, so a scenario can be fed inline from zsh
 with process substitution instead of a saved file:
 
 ```sh
-cargo run -p oxide-shell -- --scenario <(cat <<'EOF'
+cargo run -p aftermine-shell -- --scenario <(cat <<'EOF'
 { ...scenario JSON... }
 EOF
 )

@@ -53,7 +53,7 @@ fn island() -> Scenario {
     scenario
 }
 
-fn own_island_foundry(state: &State) -> Option<&oxide_sim::Building> {
+fn own_island_foundry(state: &State) -> Option<&aftermine_sim::Building> {
     state.buildings().iter().find(|b| {
         b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && b.anchor.y >= 18 && b.built()
     })
@@ -176,7 +176,7 @@ fn frame_only_sites_are_valued_and_stop_drawing_redundant_foundries() {
     let site = &model.sites()[index];
     let anchor = site.anchors[0];
     let state = scenario.build().unwrap();
-    let observation = oxide_sim::observation::ObservationData::omniscient(&state, PlayerId(0));
+    let observation = aftermine_sim::observation::ObservationData::omniscient(&state, PlayerId(0));
     assert!(
         crate::expansion::value(
             &observation,
@@ -193,7 +193,7 @@ fn frame_only_sites_are_valued_and_stop_drawing_redundant_foundries() {
         x: anchor.x,
         y: anchor.y,
     });
-    let observation = oxide_sim::observation::ObservationData::omniscient(
+    let observation = aftermine_sim::observation::ObservationData::omniscient(
         &scenario.build().unwrap(),
         PlayerId(0),
     );
@@ -428,10 +428,9 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
     assert!(owned(UnitKind::Talon), "fighters cover enemy aircraft");
     assert!(commands.iter().all(|c| match &c.command {
         Command::Load { units, .. } => units.iter().all(|id| {
-            state
-                .units()
-                .iter()
-                .any(|u| u.id == *id && u.kind.stats().domain == oxide_sim::stats::Domain::Ground)
+            state.units().iter().any(|u| {
+                u.id == *id && u.kind.stats().domain == aftermine_sim::stats::Domain::Ground
+            })
         }),
         _ => true,
     }));
@@ -886,7 +885,7 @@ fn distant_armies_do_not_absorb_every_expansion_guard() {
         .units
         .extend((0..80).map(|i| unit(0, UnitKind::Sentinel, 23 + i % 20, 28 + i / 20)));
     let state = scenario.build().unwrap();
-    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert_eq!(observation.enemy_units.len(), 45);
     let mut bot = seat_with(
         &scenario,

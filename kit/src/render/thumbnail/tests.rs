@@ -12,7 +12,10 @@ fn shipped_states() -> Vec<(String, State)> {
     paths
         .into_iter()
         .map(|path| {
-            let state = oxide_sim::Scenario::load(&path).unwrap().build().unwrap();
+            let state = aftermine_sim::Scenario::load(&path)
+                .unwrap()
+                .build()
+                .unwrap();
             (path.display().to_string(), state)
         })
         .collect()
@@ -97,7 +100,7 @@ fn every_open_frame_keeps_its_gold_rim_on_all_four_sides() {
 
 #[test]
 fn a_thumbnail_fits_its_box_and_spans_one_side() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     for (width, height) in BOXES.into_iter().chain([(400, 50), (1, 1), (0, 0)]) {
         let pixmap = render_thumbnail(&state, width, height, |_| 0x96_94_8C);
         let (w, h) = (pixmap.width(), pixmap.height());
@@ -116,7 +119,7 @@ fn a_thumbnail_fits_its_box_and_spans_one_side() {
 
 #[test]
 fn the_scale_stops_at_the_full_size_preview() {
-    let state = oxide_sim::Scenario::skirmish().build().unwrap();
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
     let full = render_state(&state);
     let pixmap = render_thumbnail(&state, 16_000, 16_000, seat_color);
     assert_eq!(
@@ -141,7 +144,7 @@ fn at_full_scale_ground_frames_and_full_nodes_match_the_full_size_preview() {
                     .iter()
                     .any(|u| near(TilePos::containing(u.pos)))
                 || map.tile(pos).is_some_and(|tile| {
-                    tile.scrap > 0 && tile.scrap < oxide_sim::stats::SCRAP_NODE_AMOUNT
+                    tile.scrap > 0 && tile.scrap < aftermine_sim::stats::SCRAP_NODE_AMOUNT
                 })
         };
         let mut compared = 0;

@@ -4,7 +4,7 @@ use crate::game::Game;
 fn motor(id: u32, arrival: u64) -> Motor<RocketKey> {
     Motor {
         key: RocketKey {
-            shooter: Target::Unit(oxide_sim::UnitId(id)),
+            shooter: Target::Unit(aftermine_sim::UnitId(id)),
             launch: Vec2Fx::ZERO,
             impact: Vec2Fx::ZERO,
             arrival,
@@ -104,7 +104,7 @@ fn real_missile_launch_flight_impact_fog_and_reconstruction_follow_state() {
     let original = audible_motors(&game.view());
     assert_eq!(original.len(), 1);
 
-    game.presentation.human = oxide_sim::PlayerId(1);
+    game.presentation.human = aftermine_sim::PlayerId(1);
     assert!(
         audible_motors(&game.view()).is_empty(),
         "hidden hostile motor must not reveal its muzzle"
@@ -112,7 +112,7 @@ fn real_missile_launch_flight_impact_fog_and_reconstruction_follow_state() {
     game.presentation.overlay = true;
     assert_eq!(audible_motors(&game.view()).len(), 1);
     game.presentation.overlay = false;
-    game.presentation.human = oxide_sim::PlayerId(0);
+    game.presentation.human = aftermine_sim::PlayerId(0);
     game.presentation.camera.center = Vec2::new(75.0, 30.0);
     assert!(
         audible_motors(&game.view()).is_empty(),

@@ -321,12 +321,12 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
     let (mut p, layout) = naming_at_1280("");
     let click = [
         RawEvent::MouseDown {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: layout.confirm.center().x,
             y: layout.confirm.center().y,
         },
         RawEvent::MouseUp {
-            button: oxide_protocol::MouseButton::Left,
+            button: aftermine_protocol::MouseButton::Left,
             x: layout.confirm.center().x,
             y: layout.confirm.center().y,
         },
@@ -417,7 +417,7 @@ fn the_name_field_edits_with_text_and_backspace_and_escape_cancels() {
 #[test]
 fn repeated_backspace_edges_clear_the_name_field_in_one_frame() {
     let mut p = PauseScreen::open(false, true);
-    p.begin_naming("oxide");
+    p.begin_naming("scrap");
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
     let repeats = [

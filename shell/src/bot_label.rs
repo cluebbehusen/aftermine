@@ -1,6 +1,6 @@
 //! Player-facing names for configured rules-based opponents.
 
-use oxide_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 
 /// Where a bot description is being shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

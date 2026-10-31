@@ -79,7 +79,7 @@ use macroquad::prelude::*;
     reason = "independent command-line switches"
 )]
 #[derive(Parser)]
-#[command(name = "oxide-shell", version, about = "Oxide, playable")]
+#[command(name = "aftermine-shell", version, about = "Aftermine, playable")]
 struct Args {
     /// Scenario JSON path (skips the menu).
     #[arg(long, conflicts_with = "replay")]
@@ -125,7 +125,7 @@ struct Args {
     automation: bool,
 
     /// Debug server port.
-    #[arg(long, default_value_t = oxide_protocol::DEFAULT_PORT)]
+    #[arg(long, default_value_t = aftermine_protocol::DEFAULT_PORT)]
     port: u16,
 
     /// Seconds a silent debug connection may sit before it is closed.
@@ -155,7 +155,7 @@ struct Args {
 
     /// Print startup diagnostics to stderr: prologue milestones with
     /// ms-since-entry, then per-frame gap and hardware-event counts for
-    /// the first frames. `OXIDE_TRACE_STARTUP=1` enables it too (handy
+    /// the first frames. `AFTERMINE_TRACE_STARTUP=1` enables it too (handy
     /// for the packaged .app, where flags are awkward).
     #[arg(long)]
     trace_startup: bool,
@@ -177,14 +177,14 @@ const TRACE_FRAMES: u32 = 200;
 
 /// The env var alone must not switch tracing on under `--automation`:
 /// the shots and `menu_ux` harnesses capture stderr from spawned shells,
-/// and an exported `OXIDE_TRACE_STARTUP` would leak into every one. The
+/// and an exported `AFTERMINE_TRACE_STARTUP` would leak into every one. The
 /// explicit flag always wins.
 fn trace_active(flag: bool, automation: bool, env_set: bool) -> bool {
     flag || (env_set && !automation)
 }
 
 fn trace_startup_enabled(args: &Args) -> bool {
-    let env_set = std::env::var("OXIDE_TRACE_STARTUP").is_ok_and(|v| v == "1");
+    let env_set = std::env::var("AFTERMINE_TRACE_STARTUP").is_ok_and(|v| v == "1");
     trace_active(args.trace_startup, args.automation, env_set)
 }
 
@@ -238,7 +238,7 @@ fn window_conf() -> Conf {
     }
     let (width, height) = args.window.unwrap_or(config::Config::load().window);
     Conf {
-        window_title: "Oxide".to_string(),
+        window_title: "Aftermine".to_string(),
         window_width: width.fit::<i32>(),
         window_height: height.fit::<i32>(),
         high_dpi: !args.no_high_dpi,
@@ -246,14 +246,14 @@ fn window_conf() -> Conf {
         // the packaged app's full-resolution icns in place when available;
         // sharpening the dev-run icon would take an unsafe AppKit call.
         icon: if cfg!(target_os = "macos")
-            && paths::bundle_resources().is_some_and(|root| root.join("oxide.icns").is_file())
+            && paths::bundle_resources().is_some_and(|root| root.join("aftermine.icns").is_file())
         {
             None
         } else {
             Some(macroquad::miniquad::conf::Icon {
-                small: *include_bytes!("../../assets/icon/oxide_16.rgba"),
-                medium: *include_bytes!("../../assets/icon/oxide_32.rgba"),
-                big: *include_bytes!("../../assets/icon/oxide_64.rgba"),
+                small: *include_bytes!("../../assets/icon/aftermine_16.rgba"),
+                medium: *include_bytes!("../../assets/icon/aftermine_32.rgba"),
+                big: *include_bytes!("../../assets/icon/aftermine_64.rgba"),
             })
         },
         ..Default::default()
@@ -264,7 +264,7 @@ fn window_conf() -> Conf {
 /// launcher's own arguments must not trip the parser into exiting.
 fn cli_args() -> Args {
     if platform::TOUCH_ONLY {
-        Args::parse_from(["Oxide"])
+        Args::parse_from(["Aftermine"])
     } else {
         Args::parse()
     }
@@ -274,17 +274,17 @@ fn cli_args() -> Args {
 async fn main() {
     if let Err(err) = Box::pin(app::run(cli_args())).await {
         let message = format!("{err:#}");
-        oxide_kit::diagnostics::fatal(&message);
+        aftermine_kit::diagnostics::fatal(&message);
         eprintln!("fatal: {message}");
         std::process::exit(1);
     }
 }
 
-fn build_identity() -> oxide_kit::build::BuildIdentity {
-    oxide_kit::build::BuildIdentity::new(
+fn build_identity() -> aftermine_kit::build::BuildIdentity {
+    aftermine_kit::build::BuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
-        env!("OXIDE_BUILD_REVISION"),
-        env!("OXIDE_BUILD_DIRTY"),
+        env!("AFTERMINE_BUILD_REVISION"),
+        env!("AFTERMINE_BUILD_DIRTY"),
     )
 }
 

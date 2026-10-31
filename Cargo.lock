@@ -9,6 +9,99 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aftermine-driver"
+version = "0.1.0"
+dependencies = [
+ "aftermine-kit",
+ "aftermine-net",
+ "aftermine-opponent",
+ "aftermine-protocol",
+ "aftermine-sim",
+ "anyhow",
+ "chassis",
+ "clap",
+ "rustc-demangle",
+ "serde",
+ "serde_json",
+ "tiny-skia",
+]
+
+[[package]]
+name = "aftermine-kit"
+version = "0.1.0"
+dependencies = [
+ "aftermine-opponent",
+ "aftermine-sim",
+ "anyhow",
+ "chassis",
+ "ciborium",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tiny-skia",
+ "zstd",
+]
+
+[[package]]
+name = "aftermine-net"
+version = "0.1.0"
+dependencies = [
+ "aftermine-sim",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aftermine-opponent"
+version = "0.1.0"
+dependencies = [
+ "aftermine-sim",
+ "chassis",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aftermine-protocol"
+version = "0.1.0"
+dependencies = [
+ "aftermine-sim",
+ "chassis",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aftermine-shell"
+version = "0.1.0"
+dependencies = [
+ "aftermine-kit",
+ "aftermine-net",
+ "aftermine-protocol",
+ "aftermine-sim",
+ "anyhow",
+ "chassis",
+ "ciborium",
+ "clap",
+ "macroquad",
+ "png",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zstd",
+]
+
+[[package]]
+name = "aftermine-sim"
+version = "0.1.0"
+dependencies = [
+ "chassis",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -639,99 +732,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "oxide-driver"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chassis",
- "clap",
- "oxide-kit",
- "oxide-net",
- "oxide-opponent",
- "oxide-protocol",
- "oxide-sim",
- "rustc-demangle",
- "serde",
- "serde_json",
- "tiny-skia",
-]
-
-[[package]]
-name = "oxide-kit"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chassis",
- "ciborium",
- "oxide-opponent",
- "oxide-sim",
- "rayon",
- "serde",
- "serde_json",
- "tiny-skia",
- "zstd",
-]
-
-[[package]]
-name = "oxide-net"
-version = "0.1.0"
-dependencies = [
- "oxide-sim",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "oxide-opponent"
-version = "0.1.0"
-dependencies = [
- "chassis",
- "oxide-sim",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "oxide-protocol"
-version = "0.1.0"
-dependencies = [
- "chassis",
- "oxide-sim",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "oxide-shell"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chassis",
- "ciborium",
- "clap",
- "macroquad",
- "oxide-kit",
- "oxide-net",
- "oxide-protocol",
- "oxide-sim",
- "png",
- "serde",
- "serde_json",
- "thiserror",
- "zstd",
-]
-
-[[package]]
-name = "oxide-sim"
-version = "0.1.0"
-dependencies = [
- "chassis",
- "serde",
- "serde_json",
- "thiserror",
-]
 
 [[package]]
 name = "pkg-config"

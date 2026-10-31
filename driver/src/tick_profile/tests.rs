@@ -1,17 +1,17 @@
 use super::*;
 
 const REPORT: &str = "\
-Analysis of sampling oxide-driver (pid 1) every 1 millisecond
+Analysis of sampling aftermine-driver (pid 1) every 1 millisecond
 Call graph:
     100 Thread_1   DispatchQueue_1: com.apple.main-thread  (serial)
-      100 main  (in oxide-driver) + 52  [0x1]
-      + 20 _RNvMs1_NtCs1_9oxide_sim5stateNtB5_5State5clone  (in oxide-driver) + 4  [0x2]
-      + 80 _RNvMs_NtCss5gFej5ujG_9oxide_sim4tickNtNtB6_5state5State4tick  (in oxide-driver) + 8  [0x3]
-      +   50 _RNvNtNtCss5gFej5ujG_9oxide_sim4tick8movement18resolve_collisions  (in oxide-driver) + 1  [0x4]
-      +   ! 30 core::slice::sort::quicksort::<(usize, usize)>  (in oxide-driver) + 1  [0x5]
+      100 main  (in aftermine-driver) + 52  [0x1]
+      + 20 _RNvMs1_NtCs1_13aftermine_sim5stateNtB5_5State5clone  (in aftermine-driver) + 4  [0x2]
+      + 80 _RNvMs_NtCss5gFej5ujG_13aftermine_sim4tickNtNtB6_5state5State4tick  (in aftermine-driver) + 8  [0x3]
+      +   50 _RNvNtNtCss5gFej5ujG_13aftermine_sim4tick8movement18resolve_collisions  (in aftermine-driver) + 1  [0x4]
+      +   ! 30 core::slice::sort::quicksort::<(usize, usize)>  (in aftermine-driver) + 1  [0x5]
       +   ! 5 _platform_memmove  (in libsystem_platform.dylib) + 1  [0x6]
-      +   20 _RNvNtNtCss5gFej5ujG_9oxide_sim4tick5brain3run  (in oxide-driver) + 1  [0x7]
-      +   : 12 _RNvNtNtCss5gFej5ujG_9oxide_sim4tick5brain3run  (in oxide-driver) + 1  [0x8]
+      +   20 _RNvNtNtCss5gFej5ujG_13aftermine_sim4tick5brain3run  (in aftermine-driver) + 1  [0x7]
+      +   : 12 _RNvNtNtCss5gFej5ujG_13aftermine_sim4tick5brain3run  (in aftermine-driver) + 1  [0x8]
 Total number in stack (recursive counted multiple, when >=5):
         5 _platform_memmove  (in libsystem_platform.dylib) + 0  [0x6]
 ";
@@ -27,10 +27,10 @@ fn find<'a>(shares: &'a [Share], function: &str) -> &'a Share {
 fn shares_count_only_samples_inside_the_tick() {
     let profile = analyze(REPORT, None).unwrap();
     assert_eq!((profile.samples, profile.tick_samples), (100, 80));
-    let collisions = "oxide_sim::tick::movement::resolve_collisions";
+    let collisions = "aftermine_sim::tick::movement::resolve_collisions";
     assert_eq!(find(&profile.phases, collisions).samples, 50);
     assert_eq!(
-        find(&profile.phases, "oxide_sim::tick::brain::run").samples,
+        find(&profile.phases, "aftermine_sim::tick::brain::run").samples,
         20
     );
     assert_eq!(
@@ -53,8 +53,8 @@ fn shares_count_only_samples_inside_the_tick() {
 #[test]
 fn frames_above_the_tick_never_shadow_a_focus_match() {
     let wrapped = REPORT.replace(
-        "      + 80 _RNvMs_NtCss5gFej5ujG_9oxide_sim4tickNtNtB6_5state5State4tick",
-        "      + 80 _RNvMs_NtCs1_12oxide_driver12tick_profileNtB4_6Window3run  (in oxide-driver) + 1  [0x9]\n      +   80 _RNvMs_NtCss5gFej5ujG_9oxide_sim4tickNtNtB6_5state5State4tick",
+        "      + 80 _RNvMs_NtCss5gFej5ujG_13aftermine_sim4tickNtNtB6_5state5State4tick",
+        "      + 80 _RNvMs_NtCs1_16aftermine_driver12tick_profileNtB4_6Window3run  (in aftermine-driver) + 1  [0x9]\n      +   80 _RNvMs_NtCss5gFej5ujG_13aftermine_sim4tickNtNtB6_5state5State4tick",
     );
     let wrapped = wrapped
         .lines()
@@ -94,11 +94,11 @@ fn a_window_must_repeat_enough_to_be_sampled_whole() {
 fn recursion_counts_once_in_inclusive_time() {
     let profile = analyze(REPORT, None).unwrap();
     assert_eq!(
-        find(&profile.inclusive, "oxide_sim::tick::brain::run").samples,
+        find(&profile.inclusive, "aftermine_sim::tick::brain::run").samples,
         20
     );
     assert_eq!(
-        find(&profile.own, "oxide_sim::tick::brain::run").samples,
+        find(&profile.own, "aftermine_sim::tick::brain::run").samples,
         20
     );
 }
@@ -116,7 +116,7 @@ fn focus_breaks_down_the_outermost_match() {
     assert_eq!(
         find(
             &focus.breakdown,
-            "oxide_sim::tick::movement::resolve_collisions (own work)"
+            "aftermine_sim::tick::movement::resolve_collisions (own work)"
         )
         .samples,
         15
@@ -137,7 +137,7 @@ fn generic_arguments_leave_names_but_impl_paths_stay() {
         "core::slice::sort::quicksort"
     );
     assert_eq!(
-        readable("_RNvMs_NtCss5gFej5ujG_9oxide_sim4tickNtNtB6_5state5State4tick"),
+        readable("_RNvMs_NtCss5gFej5ujG_13aftermine_sim4tickNtNtB6_5state5State4tick"),
         TICK
     );
     assert_eq!(
@@ -159,7 +159,7 @@ fn windows_rank_by_average_tick_and_keep_their_starting_units() {
 
 fn scan_of(replay: &GameReplay) -> Result<Scan> {
     let dir = std::env::temp_dir().join(format!(
-        "oxide-tick-scan-{}-{}",
+        "aftermine-tick-scan-{}-{}",
         std::process::id(),
         replay.meta.ticks.unwrap_or_default()
     ));
@@ -189,7 +189,7 @@ fn a_scan_refuses_empty_and_overlong_recordings() {
     empty.meta.ticks = Some(0);
     assert!(scan_of(&empty).is_err());
     let mut overlong = crate::support_tests::replay_fixture();
-    overlong.meta.ticks = Some(oxide_kit::MAX_REPLAY_TICKS + 1);
+    overlong.meta.ticks = Some(aftermine_kit::MAX_REPLAY_TICKS + 1);
     assert!(scan_of(&overlong).is_err());
 }
 

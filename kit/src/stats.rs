@@ -3,8 +3,8 @@
 //! during a live match (`LiveMatchStats`).
 
 use crate::GameReplay;
+use aftermine_sim::{Event, PlayerId, State};
 use anyhow::Result;
-use oxide_sim::{Event, PlayerId, State};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -176,7 +176,7 @@ fn deserialize_kinds<'de, D: serde::Deserializer<'de>>(
             sample
                 .into_iter()
                 .map(|(name, count)| {
-                    oxide_sim::UnitKind::ALL
+                    aftermine_sim::UnitKind::ALL
                         .into_iter()
                         .find(|kind| kind.name() == name)
                         .map(|kind| (kind.name(), count))
@@ -296,7 +296,7 @@ pub fn compute(replay: &GameReplay, every: u64) -> Result<MatchStats> {
     // Untrusted input: an out-of-order or cross-version record would
     // otherwise produce a plausible, wrong report instead of an error.
     replay
-        .validate(Some(oxide_sim::SIM_VERSION))
+        .validate(Some(aftermine_sim::SIM_VERSION))
         .map_err(|err| anyhow::anyhow!("{err}"))?;
     let every = every.max(1);
     let total = crate::bounded_replay_duration(replay)?;

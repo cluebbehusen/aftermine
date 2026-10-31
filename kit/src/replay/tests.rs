@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::SIM_VERSION;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::SIM_VERSION;
+use aftermine_sim::scenario::ScenarioMode;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,8 +17,10 @@ impl Drop for TempReplay {
 
 fn write_fixture(bytes: &[u8]) -> TempReplay {
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let path =
-        std::env::temp_dir().join(format!("oxide-kit-replay-{}-{id}.json", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "aftermine-kit-replay-{}-{id}.json",
+        std::process::id()
+    ));
     std::fs::write(&path, bytes).expect("fixture is written");
     TempReplay(path)
 }
@@ -106,9 +108,9 @@ fn recording(ticks: u64) -> Recording {
     let mut state = replay.setup.build().unwrap();
     let mut recorder = crate::keyframes::KeyframeRecorder::default();
     while state.current_tick() < ticks {
-        let command = oxide_sim::PlayerCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Surrender,
+        let command = aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Surrender,
         };
         if state.current_tick() == ticks - 1 {
             replay.record(state.current_tick(), command.clone());
@@ -127,7 +129,7 @@ fn recording(ticks: u64) -> Recording {
 fn saved(recording: &Recording) -> Vec<u8> {
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "oxide-kit-replay-{}-{id}.oxreplay",
+        "aftermine-kit-replay-{}-{id}.amreplay",
         std::process::id()
     ));
     save_recording(&path, &recording.replay, &recording.keyframes).unwrap();

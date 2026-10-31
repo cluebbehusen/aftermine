@@ -1,11 +1,11 @@
 //! Combat: engagement, retaliation, cover, matchups — behavior suite, public API only.
 
 use crate::common;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::scenario::ScenarioMode;
 
+use aftermine_sim::scenario::BuildingSpec;
+use aftermine_sim::{BuildingKind, Command, Event, Order, Scenario, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::BuildingSpec;
-use oxide_sim::{BuildingKind, Command, Event, Order, Scenario, Target, UnitId, UnitKind};
 
 use common::*;
 
@@ -59,13 +59,13 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
             };
             let report = state.tick(&commands);
             if let Some(copy) = resumed.as_mut() {
-                let copy: &mut oxide_sim::State = copy;
+                let copy: &mut aftermine_sim::State = copy;
                 assert_eq!(copy.tick(&commands).events, report.events);
                 assert_eq!(copy.hash(), state.hash());
             }
             if tick == 12 {
                 resumed = Some(
-                    serde_json::from_slice::<oxide_sim::State>(
+                    serde_json::from_slice::<aftermine_sim::State>(
                         &serde_json::to_vec(&state).unwrap(),
                     )
                     .unwrap(),
@@ -92,9 +92,12 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
             if fired {
                 assert!(unit.heading.cast_signed().unsigned_abs() <= 2);
                 if kind == UnitKind::Avalanche {
-                    assert_eq!(state.shells()[0].kind, oxide_sim::ProjectileKind::Missile);
+                    assert_eq!(
+                        state.shells()[0].kind,
+                        aftermine_sim::ProjectileKind::Missile
+                    );
                     let document = serde_json::to_value(&state).unwrap();
-                    let restored: oxide_sim::State =
+                    let restored: aftermine_sim::State =
                         serde_json::from_value(document.clone()).unwrap();
                     assert_eq!(restored.hash(), state.hash());
                     let mut orphaned = document;
@@ -102,10 +105,10 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
                         .as_array_mut()
                         .unwrap()
                         .retain(|unit| unit["id"] != serde_json::json!(id));
-                    let restored: oxide_sim::State = serde_json::from_value(orphaned).unwrap();
+                    let restored: aftermine_sim::State = serde_json::from_value(orphaned).unwrap();
                     assert_eq!(
                         restored.shells()[0].kind,
-                        oxide_sim::ProjectileKind::Missile
+                        aftermine_sim::ProjectileKind::Missile
                     );
                 }
                 shot_tick = Some(tick);
@@ -115,7 +118,7 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
         }
         let deployment = if kind == UnitKind::Bombard {
             u32::from(
-                oxide_sim::UnitKind::Bombard
+                aftermine_sim::UnitKind::Bombard
                     .stats()
                     .brace
                     .expect("the bombard braces")
@@ -175,11 +178,11 @@ fn bombard_retracts_before_retargeting_or_moving_and_resumes_mid_deployment() {
         assert_eq!(state.unit(id).unwrap().braces(), tick + 1);
     }
     let document = serde_json::to_value(&state).unwrap();
-    let mut resumed: oxide_sim::State = serde_json::from_value(document.clone()).unwrap();
+    let mut resumed: aftermine_sim::State = serde_json::from_value(document.clone()).unwrap();
     let mut forged = document;
     forged["units"][0]["motor"] = serde_json::json!({"motor": "braced", "ticks": 13});
     assert!(
-        serde_json::from_value::<oxide_sim::State>(forged)
+        serde_json::from_value::<aftermine_sim::State>(forged)
             .unwrap_err()
             .to_string()
             .contains("invalid braced stance")
@@ -248,7 +251,7 @@ fn bombard_retracts_before_retargeting_or_moving_and_resumes_mid_deployment() {
         if fired(&report.events) {
             assert_eq!(
                 u.braces(),
-                oxide_sim::UnitKind::Bombard
+                aftermine_sim::UnitKind::Bombard
                     .stats()
                     .brace
                     .expect("the bombard braces")
@@ -909,7 +912,10 @@ fn advance_projectiles_launch_unguided_without_stopping() {
     let before_pos = state.unit(launcher).unwrap().pos;
     let before_hp = state.unit(victim).unwrap().hp;
     assert!(
-        state.can_see(oxide_sim::PlayerId(0), state.unit(victim).unwrap().tile()),
+        state.can_see(
+            aftermine_sim::PlayerId(0),
+            state.unit(victim).unwrap().tile()
+        ),
         "the allied spotter makes the launch legal"
     );
 
@@ -962,7 +968,10 @@ fn advance_never_fires_into_fog() {
     .unwrap();
     let (bombard, unseen) = (state.units()[0].id, state.units()[1].id);
     assert!(
-        !state.can_see(oxide_sim::PlayerId(0), state.unit(unseen).unwrap().tile()),
+        !state.can_see(
+            aftermine_sim::PlayerId(0),
+            state.unit(unseen).unwrap().tile()
+        ),
         "the victim starts inside weapon range but outside all allied sight"
     );
     let before_hp = state.unit(unseen).unwrap().hp;
@@ -1470,7 +1479,7 @@ fn scuttler_wins_the_matchups_it_should_and_loses_the_rest() {
 
 #[test]
 fn turret_holds_ground_and_dies_to_lancer_siege() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // A finished enemy turret vs a scuttler rush: the rush loses. Then a
     // lancer sieges from beyond turret range and wins untouched.
     let scenario = Scenario {
@@ -1504,7 +1513,8 @@ fn turret_holds_ground_and_dies_to_lancer_siege() {
         .unwrap()
         .id;
     run_until(&mut state, 600, |s, _| {
-        s.building(turret).is_some_and(oxide_sim::Building::built)
+        s.building(turret)
+            .is_some_and(aftermine_sim::Building::built)
     });
     // Builder clears the field so the duel is clean.
     state.tick(&[cmd(
@@ -1566,7 +1576,8 @@ fn turret_holds_ground_and_dies_to_lancer_siege() {
         .unwrap()
         .id;
     run_until(&mut state, 600, |s, _| {
-        s.building(turret).is_some_and(oxide_sim::Building::built)
+        s.building(turret)
+            .is_some_and(aftermine_sim::Building::built)
     });
     state.tick(&[
         cmd(
@@ -1596,7 +1607,7 @@ fn turret_holds_ground_and_dies_to_lancer_siege() {
 
 #[test]
 fn turret_fires_at_its_stated_cadence() {
-    use oxide_sim::stats::BuildingKind;
+    use aftermine_sim::stats::BuildingKind;
     // Build in peace (the target waits far outside aggro), then walk the
     // target into range and measure the shot interval.
     let mut state = arena(vec![

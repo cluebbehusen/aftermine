@@ -1,23 +1,23 @@
 [package]
-name = "oxide-shell"
+name = "aftermine-shell"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "macroquad renderer and debug server for Oxide"
+description = "macroquad renderer and debug server for Aftermine"
 
 # The binary is what the OS names the process — the dock and menu bar
-# say "Oxide", not the crate's dev-facing package name.
+# say "Aftermine", not the crate's dev-facing package name.
 [[bin]]
-name = "Oxide"
+name = "Aftermine"
 path = "src/main.rs"
 
 [dependencies]
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
-oxide-protocol = { workspace = true }
-oxide-kit = { workspace = true }
-oxide-net = { workspace = true }
+aftermine-sim = { workspace = true }
+aftermine-protocol = { workspace = true }
+aftermine-kit = { workspace = true }
+aftermine-net = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

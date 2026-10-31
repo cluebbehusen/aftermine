@@ -1,16 +1,16 @@
 //! Deterministic, machine-readable replay inspection.
 //!
-//! A read-only view over `oxide-kit`'s shared replay execution path. A
+//! A read-only view over `aftermine-kit`'s shared replay execution path. A
 //! snapshot at tick `N` is the state whose
-//! [`oxide_sim::State::current_tick`] is exactly `N`: commands stamped `N`
+//! [`aftermine_sim::State::current_tick`] is exactly `N`: commands stamped `N`
 //! have not executed yet.
 
+use aftermine_kit::runner::GameReplay;
+use aftermine_protocol::{FogView, StateFilter, StateView, hash_hex};
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{Command, GameResult, PlayerId, SIM_VERSION};
 use anyhow::Result;
 use chassis::replay::ReplayMeta;
-use oxide_kit::runner::GameReplay;
-use oxide_protocol::{FogView, StateFilter, StateView, hash_hex};
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{Command, GameResult, PlayerId, SIM_VERSION};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -161,9 +161,9 @@ pub fn inspect(
     include_map: bool,
 ) -> Result<ReplayInspection> {
     replay.validate(Some(SIM_VERSION))?;
-    let total = oxide_kit::bounded_replay_duration(replay)?;
+    let total = aftermine_kit::bounded_replay_duration(replay)?;
 
-    let mut state = oxide_kit::recording::initial_state(replay)?;
+    let mut state = aftermine_kit::recording::initial_state(replay)?;
     if let Some(seat) = fog_seat {
         anyhow::ensure!(
             state.try_player(seat).is_some(),
@@ -197,7 +197,7 @@ pub fn inspect(
         next_snapshot = 1;
     }
 
-    let mut playback = oxide_kit::ReplayPlayback::new(replay);
+    let mut playback = aftermine_kit::ReplayPlayback::new(replay);
     for _ in state.current_tick()..total {
         playback.step(&mut state);
         if ticks.get(next_snapshot) == Some(&state.current_tick()) {
@@ -232,7 +232,7 @@ pub fn inspect(
     })
 }
 
-fn scenario_summary(replay: &GameReplay, initial_state: &oxide_sim::State) -> ScenarioSummary {
+fn scenario_summary(replay: &GameReplay, initial_state: &aftermine_sim::State) -> ScenarioSummary {
     let players = replay
         .setup
         .players
@@ -255,7 +255,7 @@ fn scenario_summary(replay: &GameReplay, initial_state: &oxide_sim::State) -> Sc
 }
 
 fn capture_snapshot(
-    state: &oxide_sim::State,
+    state: &aftermine_sim::State,
     fog_seat: Option<PlayerId>,
     include_map: bool,
 ) -> ReplaySnapshot {

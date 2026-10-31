@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::MouseButton;
+use aftermine_protocol::MouseButton;
 
 #[test]
 fn the_map_hint_names_only_what_the_hands_in_use_have() {

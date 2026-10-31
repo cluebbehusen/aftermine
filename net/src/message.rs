@@ -5,8 +5,8 @@
 use crate::PROTOCOL_VERSION;
 use crate::name::PlayerName;
 use crate::token::{InstallId, Token};
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
-use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
+use aftermine_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario, Tick};
 use serde::{Deserialize, Serialize};
 
 /// A line a joining client sends before the match starts.

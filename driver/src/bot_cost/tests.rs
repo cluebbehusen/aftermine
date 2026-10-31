@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::BuildingKind;
-use oxide_sim::scenario::ScenarioMode;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::scenario::ScenarioMode;
 
 #[test]
 fn summary_reports_nearest_rank_p99_and_integer_average() {

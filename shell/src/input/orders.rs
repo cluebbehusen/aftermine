@@ -6,11 +6,11 @@
 use super::{InputState, ground_tile, tile_center, unit_pick_radius};
 use crate::game::{Game, PingKind};
 use crate::numeric;
+use aftermine_sim::{Command, Rally, Target};
 use chassis::grid::TilePos;
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{Command, Rally, Target};
 
-pub(super) fn selected_producers(game: &Game) -> Vec<oxide_sim::BuildingId> {
+pub(super) fn selected_producers(game: &Game) -> Vec<aftermine_sim::BuildingId> {
     crate::building_actions::SelectedBuildings::inspect(&game.view()).producers()
 }
 
@@ -25,7 +25,7 @@ pub(super) fn rally_selected_producers(game: &mut Game, rally: Rally) {
 /// Points `producers` at `rally` and pings where it lands.
 pub(super) fn rally_producers(
     game: &mut Game,
-    producers: Vec<oxide_sim::BuildingId>,
+    producers: Vec<aftermine_sim::BuildingId>,
     rally: Rally,
 ) {
     for building in producers {
@@ -67,7 +67,7 @@ fn visible_hostile_target_at(
     game: &Game,
     world: Vec2,
     tile: TilePos,
-) -> Option<(Target, Vec2, oxide_sim::stats::Domain)> {
+) -> Option<(Target, Vec2, aftermine_sim::stats::Domain)> {
     let unit = game
         .state
         .units()
@@ -111,7 +111,7 @@ fn visible_hostile_target_at(
             (
                 Target::Building(building.id),
                 world,
-                oxide_sim::stats::Domain::Ground,
+                aftermine_sim::stats::Domain::Ground,
             )
         })
 }
@@ -120,7 +120,11 @@ fn known_hostile_target_at(
     game: &Game,
     world: Vec2,
     tile: TilePos,
-) -> Option<(oxide_sim::AttackTarget, Vec2, oxide_sim::stats::Domain)> {
+) -> Option<(
+    aftermine_sim::AttackTarget,
+    Vec2,
+    aftermine_sim::stats::Domain,
+)> {
     if let Some((target, at, domain)) = visible_hostile_target_at(game, world, tile) {
         return Some((target.into(), at, domain));
     }
@@ -131,7 +135,7 @@ fn known_hostile_target_at(
         .find(|track| track.visible_unit.is_none() && track.tile == tile)
     {
         return Some((
-            oxide_sim::AttackTarget::Contact(track.id),
+            aftermine_sim::AttackTarget::Contact(track.id),
             vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5),
             track.domain,
         ));
@@ -144,24 +148,24 @@ fn known_hostile_target_at(
             && tile.y < ghost.anchor.y + h
     }) {
         return Some((
-            oxide_sim::AttackTarget::RememberedBuilding(oxide_sim::RememberedBuilding {
+            aftermine_sim::AttackTarget::RememberedBuilding(aftermine_sim::RememberedBuilding {
                 owner: ghost.owner,
                 building_kind: ghost.kind,
                 anchor: ghost.anchor,
             }),
             world,
-            oxide_sim::stats::Domain::Ground,
+            aftermine_sim::stats::Domain::Ground,
         ));
     }
     if let Some(public) =
-        oxide_sim::observation::hostile_public_buildings(&game.state, game.presentation.human)
+        aftermine_sim::observation::hostile_public_buildings(&game.state, game.presentation.human)
             .into_iter()
             .find(|public| public.covers(tile))
     {
         return Some((
-            oxide_sim::AttackTarget::RememberedBuilding(public.target()),
+            aftermine_sim::AttackTarget::RememberedBuilding(public.target()),
             world,
-            oxide_sim::stats::Domain::Ground,
+            aftermine_sim::stats::Domain::Ground,
         ));
     }
     None
@@ -331,7 +335,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
     // Carriable ground machines right-clicked onto an own transport
     // climb aboard — before the hostile check reads the ground under
     // the hovering airframe.
-    let carriable: Vec<oxide_sim::UnitId> = units
+    let carriable: Vec<aftermine_sim::UnitId> = units
         .iter()
         .copied()
         .filter(|id| {
@@ -405,7 +409,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                     && u.hp > 0
                     && u.hp < u.kind.stats().max_hp
                     && u.kind.stats().repairable()
-                    && u.domain() == oxide_sim::stats::Domain::Ground
+                    && u.domain() == aftermine_sim::stats::Domain::Ground
                     && !game.presentation.selection.units.contains(&u.id)
             })
             .map(|u| {

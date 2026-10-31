@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::{FrameProfileWindowView, SlowFrameView, TimingSummary};
+use aftermine_protocol::{FrameProfileWindowView, SlowFrameView, TimingSummary};
 
 fn valid_profile() -> FrameProfileView {
     let timing = TimingSummary {
@@ -61,7 +61,7 @@ fn options_reject_empty_or_reversed_tick_windows_before_launching() {
 
 #[test]
 fn live_prefix_keeps_only_commands_before_the_resume_tick() {
-    use oxide_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario};
+    use aftermine_sim::{Command, PlayerCommand, PlayerId, SIM_VERSION, Scenario};
 
     let mut replay = GameReplay::new(SIM_VERSION, "test", Scenario::skirmish());
     for tick in [3, 9, 10, 11] {

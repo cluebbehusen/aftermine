@@ -2,9 +2,9 @@
 
 use crate::common;
 
+use aftermine_sim::{BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind};
 use chassis::grid::TilePos;
 use common::*;
-use oxide_sim::{BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind};
 
 fn fixture() -> (State, Vec<UnitId>, TilePos) {
     let mut scenario = arena(vec![
@@ -193,7 +193,7 @@ fn forged_provisional_scaffolds_cannot_hold_a_rung_or_physical_state() {
 
 #[test]
 fn a_provisional_site_cannot_shield_a_physical_building_from_blind_fire() {
-    use oxide_sim::{AttackTarget, GhostBuilding, RememberedBuilding};
+    use aftermine_sim::{AttackTarget, GhostBuilding, RememberedBuilding};
 
     let anchor = TilePos::new(15, 8);
     let mut scenario = open_arena_with(

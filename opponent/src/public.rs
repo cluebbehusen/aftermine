@@ -4,8 +4,8 @@
 //! one it never saw like one it remembers. Read fresh each decision; nothing
 //! persists.
 
-use oxide_sim::BuildingId;
-use oxide_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::BuildingId;
+use aftermine_sim::observation::{BuildingObs, ObservationData};
 
 /// Adds each public building the seat neither sees nor remembers, and brings a
 /// remembered one up to date. Its condition is unknown: it counts as built, at
@@ -47,7 +47,7 @@ pub(crate) fn merge(observation: &mut ObservationData) {
 
 /// Whether a public building stands finished, and the health it counts at:
 /// a site's starting fifth and the share its work has raised since.
-fn condition(public: oxide_sim::PublicBuilding) -> (bool, u32) {
+fn condition(public: aftermine_sim::PublicBuilding) -> (bool, u32) {
     let stats = public.kind.tier_stats(public.tier);
     let (Some(progress), Some(construction)) = (public.progress, stats.construction) else {
         return (true, stats.max_hp);

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 /// The tag every beacon opens with, so other traffic on the port is
 /// ignored.
-const TAG: &str = "oxide-lan";
+const TAG: &str = "aftermine-lan";
 
 /// How often a hosting lobby announces itself.
 pub const BEACON_INTERVAL: Duration = Duration::from_secs(1);
@@ -31,7 +31,7 @@ const MAP_CHARS: usize = 48;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Beacon {
-    oxide: String,
+    aftermine: String,
     protocol: u32,
     sim: u32,
     commit: String,
@@ -51,7 +51,7 @@ pub struct Beacon {
 /// lobby of another build still lists, dimmed, under its host's name.
 #[derive(Deserialize)]
 struct Header {
-    oxide: String,
+    aftermine: String,
     protocol: u32,
     sim: u32,
     commit: String,
@@ -83,9 +83,9 @@ impl Beacon {
         seats: usize,
     ) -> Self {
         Self {
-            oxide: TAG.to_owned(),
+            aftermine: TAG.to_owned(),
             protocol: crate::PROTOCOL_VERSION,
-            sim: oxide_sim::SIM_VERSION,
+            sim: aftermine_sim::SIM_VERSION,
             commit: commit.to_owned(),
             host,
             port,
@@ -108,7 +108,7 @@ pub fn hear(datagram: &[u8], commit: &str) -> Option<Heard> {
         return None;
     }
     let header: Header = serde_json::from_slice(datagram).ok()?;
-    if header.oxide != TAG {
+    if header.aftermine != TAG {
         return None;
     }
     if !same_build(header.protocol, header.sim, &header.commit, commit) {

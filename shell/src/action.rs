@@ -1,8 +1,8 @@
 //! Contextual keyboard actions, shared by input, hints, settings, and persistence.
 
 use crate::numeric::Fit;
-use oxide_protocol::Key;
-use oxide_sim::BuildingKind;
+use aftermine_protocol::Key;
+use aftermine_sim::BuildingKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -540,11 +540,11 @@ impl BindingMap {
     /// non-key events pass through.
     pub fn menu_events(
         &self,
-        events: &[oxide_protocol::RawEvent],
+        events: &[aftermine_protocol::RawEvent],
         mut ctrl: bool,
         mut shift: bool,
-    ) -> Vec<oxide_protocol::RawEvent> {
-        use oxide_protocol::RawEvent;
+    ) -> Vec<aftermine_protocol::RawEvent> {
+        use aftermine_protocol::RawEvent;
         events
             .iter()
             .filter_map(|event| {

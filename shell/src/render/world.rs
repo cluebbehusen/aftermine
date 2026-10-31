@@ -373,7 +373,7 @@ pub(super) struct Blockers {
 }
 
 impl Blockers {
-    pub(super) fn build(map: &oxide_sim::map::Map, rows: &[String]) -> Self {
+    pub(super) fn build(map: &aftermine_sim::map::Map, rows: &[String]) -> Self {
         let ring = super::environment::boundary_ring(rows);
         let (width, height) = (map.width(), map.height());
         let mut placements = Vec::new();
@@ -384,7 +384,7 @@ impl Blockers {
                     !ring(pos)
                         && map
                             .tile(pos)
-                            .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Rock)
+                            .is_some_and(|tile| tile.terrain == aftermine_sim::map::Terrain::Rock)
                 }) else {
                     continue;
                 };
@@ -611,7 +611,7 @@ fn quarry_dressing(pos: TilePos, width: i32, height: i32, seed: u64) -> Option<Q
 /// A tile in view and the square it covers.
 struct TileSpot<'a> {
     pos: TilePos,
-    tile: &'a oxide_sim::map::Tile,
+    tile: &'a aftermine_sim::map::Tile,
     /// The tile's top-left corner, unsnapped.
     screen: Vec2,
     /// The tile's size between snapped corners.
@@ -621,7 +621,7 @@ struct TileSpot<'a> {
 }
 
 fn for_each_tile<'a>(
-    map: &'a oxide_sim::map::Map,
+    map: &'a aftermine_sim::map::Map,
     view: &GroundView,
     mut draw: impl FnMut(TileSpot<'a>),
 ) {
@@ -737,7 +737,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
         // needs no alternate path.
         let pos = spot.pos;
         // A ramp's ruts and walls are its dressing.
-        let dressed = tile.terrain == oxide_sim::map::Terrain::Ground && !map.is_ramp(pos);
+        let dressed = tile.terrain == aftermine_sim::map::Terrain::Ground && !map.is_ramp(pos);
         let prop_candidate = if tile.cosmetic == 1 || !dressed {
             None
         } else {
@@ -794,11 +794,11 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
         // its tile exactly: neighbouring skirts drawn in the same layer would
         // otherwise overlap and leave a brighter seam. A quarter turn spins
         // the quad about its centre, so it is drawn with its sides swapped.
-        if tile.terrain == oxide_sim::map::Terrain::Ground {
+        if tile.terrain == aftermine_sim::map::Terrain::Ground {
             for (dx, dy, quarter_turns) in [(0, -1, 0u8), (1, 0, 1), (0, 1, 2), (-1, 0, 3)] {
                 let rocky = map
                     .tile(pos.offset(dx, dy))
-                    .is_some_and(|t| t.terrain == oxide_sim::map::Terrain::Rock);
+                    .is_some_and(|t| t.terrain == aftermine_sim::map::Terrain::Rock);
                 if !rocky {
                     continue;
                 }
@@ -861,17 +861,17 @@ pub(super) fn draw_salvage(
             // passes after the tiles. A cliff tile shows the ground at its
             // foot, and the levels pass draws its face.
             (
-                oxide_sim::map::Terrain::Rock
-                | oxide_sim::map::Terrain::Peak
-                | oxide_sim::map::Terrain::Pit
-                | oxide_sim::map::Terrain::Cliff,
+                aftermine_sim::map::Terrain::Rock
+                | aftermine_sim::map::Terrain::Peak
+                | aftermine_sim::map::Terrain::Pit
+                | aftermine_sim::map::Terrain::Cliff,
                 _,
             ) => (None, false),
-            (oxide_sim::map::Terrain::Ground, 0) if wreck > 0 => {
+            (aftermine_sim::map::Terrain::Ground, 0) if wreck > 0 => {
                 (Some(sprites.wreck_pile()), spot.wave % 5 < 2)
             }
-            (oxide_sim::map::Terrain::Ground, 0) => (None, false),
-            (oxide_sim::map::Terrain::Ground, s) => {
+            (aftermine_sim::map::Terrain::Ground, 0) => (None, false),
+            (aftermine_sim::map::Terrain::Ground, s) => {
                 (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false)
             }
         };

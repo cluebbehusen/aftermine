@@ -1,8 +1,8 @@
 //! Shared scaffolding used by the focused behavior suites.
 #![allow(dead_code)]
 
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     BuildingKind, Command, Event, Goal, Order, PlayerCommand, PlayerId, Scenario, State, UnitKind,
 };
 
@@ -55,18 +55,18 @@ pub fn unit(player: u8, kind: UnitKind, x: i32, y: i32) -> UnitSpec {
 }
 
 /// A radar blip on the ground at `tile`.
-pub fn ground_blip(tile: chassis::grid::TilePos) -> oxide_sim::RadarContact {
-    oxide_sim::RadarContact {
+pub fn ground_blip(tile: chassis::grid::TilePos) -> aftermine_sim::RadarContact {
+    aftermine_sim::RadarContact {
         tile,
-        domain: oxide_sim::stats::Domain::Ground,
+        domain: aftermine_sim::stats::Domain::Ground,
     }
 }
 
 /// A radar blip in the air over `tile`.
-pub fn air_blip(tile: chassis::grid::TilePos) -> oxide_sim::RadarContact {
-    oxide_sim::RadarContact {
+pub fn air_blip(tile: chassis::grid::TilePos) -> aftermine_sim::RadarContact {
+    aftermine_sim::RadarContact {
         tile,
-        domain: oxide_sim::stats::Domain::Air,
+        domain: aftermine_sim::stats::Domain::Air,
     }
 }
 
@@ -153,8 +153,8 @@ pub fn commanded(order: Order) -> Order {
             target,
             pursue,
             resume: resume.map(|resume| match resume {
-                oxide_sim::Resume::Hunt(goal) => oxide_sim::Resume::Hunt(tile(goal)),
-                escort @ oxide_sim::Resume::Accompany(_) => escort,
+                aftermine_sim::Resume::Hunt(goal) => aftermine_sim::Resume::Hunt(tile(goal)),
+                escort @ aftermine_sim::Resume::Accompany(_) => escort,
             }),
         },
         other => other,
@@ -165,7 +165,7 @@ pub fn commanded(order: Order) -> Order {
 /// test whose premise is a worker standing idle beside a wounded machine or
 /// a damaged building.
 /// The switch rides in the snapshot, so no tick passes.
-pub fn idle_welds_off(state: &State, workers: &[oxide_sim::UnitId]) -> State {
+pub fn idle_welds_off(state: &State, workers: &[aftermine_sim::UnitId]) -> State {
     let mut data = serde_json::to_value(state).unwrap();
     for row in data["units"].as_array_mut().unwrap() {
         if workers.iter().any(|id| row["id"] == serde_json::json!(id)) {
@@ -205,7 +205,7 @@ pub fn run_until(
 }
 
 /// Establish an already-aimed fixture when testing same-tick resolution.
-pub fn face_toward(state: &mut State, id: oxide_sim::UnitId, point: chassis::fx::Vec2Fx) {
+pub fn face_toward(state: &mut State, id: aftermine_sim::UnitId, point: chassis::fx::Vec2Fx) {
     let unit = state.unit(id).unwrap();
     let direction = point - unit.pos;
     let heading = (0..=255u8)
@@ -234,7 +234,7 @@ pub fn face_toward(state: &mut State, id: oxide_sim::UnitId, point: chassis::fx:
 /// Points the gun of the defense `id` at `point`, for a staged scene that
 /// starts with the gun already on its target: a new defense faces the map
 /// centre.
-pub fn aim_defense(state: &mut State, id: oxide_sim::BuildingId, point: chassis::fx::Vec2Fx) {
+pub fn aim_defense(state: &mut State, id: aftermine_sim::BuildingId, point: chassis::fx::Vec2Fx) {
     let heading = chassis::compass::heading_of(point - state.building(id).unwrap().center());
     let mut value = serde_json::to_value(&*state).unwrap();
     let row = value["buildings"]
@@ -248,22 +248,26 @@ pub fn aim_defense(state: &mut State, id: oxide_sim::BuildingId, point: chassis:
 }
 
 /// [`aim_defense`] at a unit's position or a building's closest point.
-pub fn aim_defense_at(state: &mut State, id: oxide_sim::BuildingId, target: oxide_sim::Target) {
+pub fn aim_defense_at(
+    state: &mut State,
+    id: aftermine_sim::BuildingId,
+    target: aftermine_sim::Target,
+) {
     let center = state.building(id).unwrap().center();
     let point = match target {
-        oxide_sim::Target::Unit(target) => state.unit(target).unwrap().pos,
-        oxide_sim::Target::Building(target) => {
+        aftermine_sim::Target::Unit(target) => state.unit(target).unwrap().pos,
+        aftermine_sim::Target::Building(target) => {
             state.building(target).unwrap().closest_point_to(center)
         }
     };
     aim_defense(state, id, point);
 }
 
-pub fn face_target(state: &mut State, id: oxide_sim::UnitId, target: oxide_sim::Target) {
+pub fn face_target(state: &mut State, id: aftermine_sim::UnitId, target: aftermine_sim::Target) {
     let unit = state.unit(id).unwrap();
     let point = match target {
-        oxide_sim::Target::Unit(target) => state.unit(target).unwrap().pos,
-        oxide_sim::Target::Building(target) => {
+        aftermine_sim::Target::Unit(target) => state.unit(target).unwrap().pos,
+        aftermine_sim::Target::Building(target) => {
             state.building(target).unwrap().closest_point_to(unit.pos)
         }
     };
@@ -285,9 +289,9 @@ pub(crate) fn wide_open_map() -> Vec<String> {
     ]
 }
 
-pub(crate) fn drip_credits(state: &oxide_sim::State) -> u32 {
-    let period = oxide_sim::stats::FOUNDRY_DRIP_PERIOD;
-    let start = oxide_sim::stats::FOUNDRY_DRIP_START_TICK;
+pub(crate) fn drip_credits(state: &aftermine_sim::State) -> u32 {
+    let period = aftermine_sim::stats::FOUNDRY_DRIP_PERIOD;
+    let start = aftermine_sim::stats::FOUNDRY_DRIP_START_TICK;
     let credits_by = |tick: u64| {
         if tick < start {
             0

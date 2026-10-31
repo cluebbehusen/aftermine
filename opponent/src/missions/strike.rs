@@ -17,9 +17,9 @@ use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::{BuildingKind, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::{BuildingKind, UnitId, UnitKind};
 
 const GATHER_TICKS: u64 = 600;
 const TRAVEL_TICKS: u64 = 1_800;
@@ -53,7 +53,7 @@ pub(super) struct Raid<'a> {
     /// What offense leaves at home.
     reserve: [u64; 2],
     /// The enemy to go after first, when there are several.
-    rival: Option<oxide_sim::PlayerId>,
+    rival: Option<aftermine_sim::PlayerId>,
     /// Targets another strike holds or this decision gave up on.
     held: Vec<Objective>,
     /// Ground reaches no enemy.

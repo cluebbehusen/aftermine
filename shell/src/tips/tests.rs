@@ -1,7 +1,7 @@
 use super::*;
 use crate::tutorial::{Lesson, Tutorial};
+use aftermine_sim::Command;
 use macroquad::prelude::vec2;
-use oxide_sim::Command;
 
 const W: usize = 60;
 const H: usize = 20;
@@ -22,7 +22,7 @@ fn match_with(marks: &[(usize, usize, char)], scrap: u32, units: &[(u8, &str, i3
     for &(x, y, glyph) in marks {
         rows[y][x] = glyph;
     }
-    let scenario: oxide_sim::Scenario = serde_json::from_value(serde_json::json!({
+    let scenario: aftermine_sim::Scenario = serde_json::from_value(serde_json::json!({
         "name": "Tip fixture",
         "map": rows.into_iter().map(String::from_iter).collect::<Vec<_>>(),
         "players": [

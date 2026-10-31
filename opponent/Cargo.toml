@@ -1,5 +1,5 @@
 [package]
-name = "oxide-opponent"
+name = "aftermine-opponent"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ description = "Reactive, best-effort, fog-honest opponent controller"
 
 [dependencies]
 chassis = { workspace = true }
-oxide-sim = { workspace = true }
+aftermine-sim = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]

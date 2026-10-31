@@ -18,9 +18,9 @@ use crate::theme::{
     BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::typography::entity_name;
+use aftermine_protocol::{Key, RawEvent};
+use aftermine_sim::stats::{BuildingKind, Domain, UnitKind};
 use macroquad::prelude::*;
-use oxide_protocol::{Key, RawEvent};
-use oxide_sim::stats::{BuildingKind, Domain, UnitKind};
 use std::fmt::Write as _;
 
 /// What a codex frame decided.
@@ -315,7 +315,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
         notes.push(format!(
             "Hauls {} scrap a trip; digs {:.0} scrap/s.",
             harvest.capacity,
-            oxide_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
+            aftermine_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
         ));
     }
     if stats.harvest.is_some() {
@@ -357,7 +357,7 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
         notes.push(if radar.deploy_ticks > 0 {
             format!(
                 "Radar: after standing still {:.0} s, unfolds an antenna that tracks unseen enemies within {} tiles; moving folds it.",
-                f32::from(radar.deploy_ticks) / oxide_sim::TICKS_PER_SECOND as f32,
+                f32::from(radar.deploy_ticks) / aftermine_sim::TICKS_PER_SECOND as f32,
                 radar.radius
             )
         } else {
@@ -367,13 +367,13 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
             )
         });
     }
-    if stats.target_priority == oxide_sim::stats::TargetPriority::Heaviest {
+    if stats.target_priority == aftermine_sim::stats::TargetPriority::Heaviest {
         notes.push(
             "Left to itself, picks the machine in reach with the most full health, then the nearest."
                 .to_string(),
         );
     }
-    if stats.target_priority == oxide_sim::stats::TargetPriority::Buildings {
+    if stats.target_priority == aftermine_sim::stats::TargetPriority::Buildings {
         notes.push(
             "Left to itself, cuts the nearest building in reach. Strikes a machine only when one presses against its hull and never chases one, but goes after a building that fires on it."
                 .to_string(),
@@ -385,12 +385,12 @@ fn unit_notes(kind: UnitKind) -> Vec<String> {
                 .to_string(),
         );
     }
-    if let oxide_sim::stats::Mend::Kiln(kiln) = stats.mend {
+    if let aftermine_sim::stats::Mend::Kiln(kiln) = stats.mend {
         notes.push(format!(
             "Takes no welds and no Repair Bay care. Its kiln eats wreck under and beside its hull, {} hp per scrap, one bite every {}.",
             kiln.hp_per_wreck,
             crate::panel::tick_time_label(
-                u32::try_from(oxide_sim::stats::KILN_BITE_PERIOD).unwrap_or(u32::MAX)
+                u32::try_from(aftermine_sim::stats::KILN_BITE_PERIOD).unwrap_or(u32::MAX)
             ),
         ));
     }
@@ -430,15 +430,15 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
     if kind == BuildingKind::RepairBay {
         notes.push(format!(
             "Repairs its {} most damaged machines nearby at {:.0}% of max hp per second once they have been out of combat for {:.0} s, or {:.1} hp/s under fire. Buildings repair at the slower rate.",
-            oxide_sim::stats::REPAIR_BAY_PATIENTS,
-            oxide_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0,
-            oxide_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / oxide_sim::TICKS_PER_SECOND as f32,
-            oxide_sim::stats::REPAIR_BAY_STEP as f32 * oxide_sim::TICKS_PER_SECOND as f32
-                / oxide_sim::stats::REPAIR_BAY_PERIOD as f32
+            aftermine_sim::stats::REPAIR_BAY_PATIENTS,
+            aftermine_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0,
+            aftermine_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / aftermine_sim::TICKS_PER_SECOND as f32,
+            aftermine_sim::stats::REPAIR_BAY_STEP as f32 * aftermine_sim::TICKS_PER_SECOND as f32
+                / aftermine_sim::stats::REPAIR_BAY_PERIOD as f32
         ));
     }
     if let Some(magazine) = kind.magazine() {
-        let seconds = |ticks: u32| ticks as f32 / oxide_sim::TICKS_PER_SECOND as f32;
+        let seconds = |ticks: u32| ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
         let round = if kind == BuildingKind::Spire {
             "warhead"
         } else {
@@ -456,15 +456,15 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
     if let Some(machine) = kind.assembles() {
         notes.push(format!(
             "Paid in full when placed. Up to {} workers raise it; a faster worker takes a slower one's place. Every player sees it and its progress once work starts. Finished, it comes apart and a {} stands where it stood.",
-            oxide_sim::stats::ASSEMBLY_CREW_CAP,
+            aftermine_sim::stats::ASSEMBLY_CREW_CAP,
             entity_name(machine.name())
         ));
     }
     if kind == BuildingKind::Spire {
-        let warhead = oxide_sim::stats::WARHEAD;
+        let warhead = aftermine_sim::stats::WARHEAD;
         notes.push(format!(
             "Launches at any tile, seen or not, once its deck has turned to face it and its locks release. The warhead flies {:.0} tiles/s and deals {} damage within {:.1} tiles, fading to nothing at {:.1}. Foundries take half.",
-            warhead.speed.to_num::<f32>() * oxide_sim::TICKS_PER_SECOND as f32,
+            warhead.speed.to_num::<f32>() * aftermine_sim::TICKS_PER_SECOND as f32,
             warhead.peak_damage,
             warhead.full_radius.to_num::<f32>(),
             warhead.outer_radius.to_num::<f32>(),
@@ -474,8 +474,8 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
         notes.push(format!(
             "Stops enemy warheads that will land within {:.0} tiles, once sight or radar has held them for {:.1} s.",
             battery.ring.to_num::<f32>(),
-            f32::from(oxide_sim::stats::WARHEAD_TRACK_TICKS + oxide_sim::stats::WARHEAD_LOCK_TICKS)
-                / oxide_sim::TICKS_PER_SECOND as f32,
+            f32::from(aftermine_sim::stats::WARHEAD_TRACK_TICKS + aftermine_sim::stats::WARHEAD_LOCK_TICKS)
+                / aftermine_sim::TICKS_PER_SECOND as f32,
         ));
     }
     if let Some(c) = base.construction
@@ -500,7 +500,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             "Upgrade: {} for {} scrap ({:.0} s){} - {} hp",
             entity_name(kind.tier_name(tier.fit::<u8>())),
             c.cost,
-            c.build_ticks as f32 / oxide_sim::TICKS_PER_SECOND as f32,
+            c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32,
             if c.requires.is_empty() {
                 String::new()
             } else {
@@ -510,7 +510,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
                     names.push(format!(
                         "{} within {} tiles",
                         entity_name(BuildingKind::Foundry.name()),
-                        oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+                        aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
                     ));
                 }
                 format!(", needs a {}", names.join(" and a "))

@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{PlayerId, Scenario, UnitKind};
+use aftermine_sim::{PlayerId, Scenario, UnitKind};
 
 /// The strip field, with a chasm when `chasm` holds; West's `members` and one
 /// East `enemy`, each as kind and tile.

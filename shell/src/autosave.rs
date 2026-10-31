@@ -20,7 +20,7 @@ const KEEP_MATCHES: usize = 20;
 const TEMP_ORPHAN_AGE: Duration = Duration::from_secs(3600);
 /// Invalid-JSON ownership marker held at a destination until its record
 /// atomically replaces it.
-const RESERVATION_MARKER_PREFIX: &str = "oxide-save-reservation:";
+const RESERVATION_MARKER_PREFIX: &str = "aftermine-save-reservation:";
 
 /// What a successful [`SaveJob::run`] call actually did.
 #[derive(Debug)]
@@ -122,9 +122,9 @@ fn free_path(dir: &Path, prefix: &str, tick: u64) -> Result<PathReservation, Sav
     let mut n = 0u64;
     loop {
         let path = if n == 0 {
-            dir.join(format!("{prefix}-{tick:010}.oxsave"))
+            dir.join(format!("{prefix}-{tick:010}.amsave"))
         } else {
-            dir.join(format!("{prefix}-{tick:010}-{n}.oxsave"))
+            dir.join(format!("{prefix}-{tick:010}-{n}.amsave"))
         };
         match std::fs::File::create_new(&path) {
             Ok(mut file) => {
@@ -207,16 +207,16 @@ impl SaveSlot {
         AUTOSAVE_KINDS
             .iter()
             .find_map(|kind| name.strip_prefix(kind)?.strip_prefix('-'))
-            .and_then(|rest| rest.strip_suffix(".oxsave"))
+            .and_then(|rest| rest.strip_suffix(".amsave"))
             .filter(|id| !id.is_empty())
             .map(|id| Self(id.to_owned()))
     }
 
     fn file(&self, kind: &str) -> String {
         let extension = if kind == "match" {
-            "oxreplay"
+            "amreplay"
         } else {
-            "oxsave"
+            "amsave"
         };
         format!("{kind}-{}.{extension}", self.0)
     }
@@ -290,9 +290,9 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
         .filter(|p| {
             p.extension().and_then(|e| e.to_str())
                 == Some(if prefix == "match-" {
-                    "oxreplay"
+                    "amreplay"
                 } else {
-                    "oxsave"
+                    "amsave"
                 })
         })
         .filter(|p| {
@@ -329,9 +329,9 @@ pub(crate) enum SaveData {
     /// encoding the worker waits out, as it does a resumed match's history
     /// check.
     Recording(
-        oxide_kit::GameReplay,
-        oxide_kit::keyframes::PendingKeyframes,
-        Option<Box<oxide_kit::history::PendingHistory>>,
+        aftermine_kit::GameReplay,
+        aftermine_kit::keyframes::PendingKeyframes,
+        Option<Box<aftermine_kit::history::PendingHistory>>,
     ),
 }
 
@@ -467,7 +467,8 @@ impl SaveJob {
                     if let Some(history) = history {
                         history.wait(&mut replay, &mut keyframes);
                     }
-                    oxide_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
+                    aftermine_kit::save_recording(path, &replay, &keyframes.wait())
+                        .map_err(Into::into)
                 }
             };
             let path = if let Some(mark) = &self.mark {

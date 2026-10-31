@@ -12,8 +12,8 @@ use crate::nav::{Nav, step_grid};
 use crate::numeric;
 use crate::press::{ScrollPress, Swipe};
 use crate::render::prim::{fill_rect, stroke_rect};
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text, vec2};
-use oxide_protocol::{Key, RawEvent};
 
 use crate::theme::{BORDER_FAINT, SURFACE_MENU, Stroke, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE};
 
@@ -563,9 +563,9 @@ impl Browser {
             crate::render::OUTSIDE,
         );
         let title_size = crate::theme::Type::Title.at(ui);
-        let dims = measure_text("OXIDE", None, numeric::font_size(title_size), 1.0);
+        let dims = measure_text("AFTERMINE", None, numeric::font_size(title_size), 1.0);
         draw_text(
-            "OXIDE",
+            "AFTERMINE",
             (view.x - dims.width) * 0.5,
             72.0 * ui,
             title_size,

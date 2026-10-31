@@ -1,11 +1,11 @@
 //! Building frontage, rerouting, and deterministic Scuttler group contact.
 use crate::common;
-use chassis::fx::Fx;
-use common::{building, cmd, players, unit};
-use oxide_sim::scenario::ScenarioMode;
-use oxide_sim::{
+use aftermine_sim::scenario::ScenarioMode;
+use aftermine_sim::{
     BuildingKind, Command, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind,
 };
+use chassis::fx::Fx;
+use common::{building, cmd, players, unit};
 use std::collections::BTreeSet;
 
 fn swarm(paired: bool) -> Scenario {
@@ -32,7 +32,7 @@ fn swarm(paired: bool) -> Scenario {
     }
 }
 
-fn attack(state: &State, player: u8, target: usize) -> oxide_sim::PlayerCommand {
+fn attack(state: &State, player: u8, target: usize) -> aftermine_sim::PlayerCommand {
     cmd(
         player,
         Command::Attack {

@@ -2,7 +2,7 @@ use super::*;
 
 /// One harvester with `scrap` on open, visible ground.
 fn builder_with(scrap: u32) -> (Game, InputState, UnitId) {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Verdict Range",
             "players": [
@@ -29,13 +29,13 @@ fn builder_with(scrap: u32) -> (Game, InputState, UnitId) {
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
     game.presentation.selection.units = vec![builder];
-    input.arm_placement(oxide_sim::BuildingKind::Turret);
+    input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input, builder)
 }
 
 fn turret_cost() -> u32 {
-    oxide_sim::BuildingKind::Turret
+    aftermine_sim::BuildingKind::Turret
         .base_stats()
         .construction
         .expect("turrets are built")
@@ -45,7 +45,7 @@ fn turret_cost() -> u32 {
 #[test]
 fn a_staged_build_refreshes_the_cached_verdict() {
     let (mut game, _, builder) = builder_with(1000);
-    let kind = oxide_sim::BuildingKind::Turret;
+    let kind = aftermine_sim::BuildingKind::Turret;
     let anchor = TilePos::new(8, 3);
     assert_eq!(
         placement_verdict(&game.view(), kind, anchor, true),
@@ -60,7 +60,7 @@ fn a_staged_build_refreshes_the_cached_verdict() {
     });
     assert_eq!(
         placement_verdict(&game.view(), kind, anchor, true),
-        PlacementVerdict::Refused(oxide_sim::PlaceRefusal::Building),
+        PlacementVerdict::Refused(aftermine_sim::PlaceRefusal::Building),
         "the staged site now holds that ground"
     );
 }
@@ -70,7 +70,12 @@ fn an_unaffordable_spot_is_short_by_the_missing_scrap_and_refuses_the_click() {
     let (mut game, mut input, _) = builder_with(10);
     let anchor = TilePos::new(8, 3);
     assert_eq!(
-        placement_verdict(&game.view(), oxide_sim::BuildingKind::Turret, anchor, false),
+        placement_verdict(
+            &game.view(),
+            aftermine_sim::BuildingKind::Turret,
+            anchor,
+            false
+        ),
         PlacementVerdict::Short(turret_cost() - 10)
     );
     let p = game
@@ -122,7 +127,7 @@ fn a_queued_build_takes_the_number_its_ghost_wore() {
     assert!(
         matches!(
             program.orders[backlog],
-            oxide_sim::Order::Build { .. } | oxide_sim::Order::Found { .. }
+            aftermine_sim::Order::Build { .. } | aftermine_sim::Order::Found { .. }
         ),
         "chip #{} is the build: {:?}",
         backlog + 1,
@@ -132,7 +137,7 @@ fn a_queued_build_takes_the_number_its_ghost_wore() {
 
 #[test]
 fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Pocket",
             "players": [
@@ -158,7 +163,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     game.presentation.selection.units = vec![game.state.units()[0].id];
-    input.arm_placement(oxide_sim::BuildingKind::Barricade);
+    input.arm_placement(aftermine_sim::BuildingKind::Barricade);
     let pocket = TilePos::new(9, 3);
     assert!(
         game.state.vision(game.presentation.human).visible(pocket),
@@ -167,7 +172,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     assert_eq!(
         placement_verdict(
             &game.view(),
-            oxide_sim::BuildingKind::Barricade,
+            aftermine_sim::BuildingKind::Barricade,
             pocket,
             false
         ),
@@ -176,7 +181,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     assert_eq!(
         placement_verdict(
             &game.view(),
-            oxide_sim::BuildingKind::Barricade,
+            aftermine_sim::BuildingKind::Barricade,
             TilePos::new(6, 3),
             false
         ),
@@ -187,7 +192,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
         player: game.presentation.human,
         command: Command::Build {
             units: game.presentation.selection.units.clone(),
-            kind: oxide_sim::BuildingKind::Barricade,
+            kind: aftermine_sim::BuildingKind::Barricade,
             anchor: pocket,
             queue: false,
             defer: false,
@@ -196,8 +201,8 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     assert!(
         report.events.iter().any(|event| matches!(
             event,
-            oxide_sim::Event::CommandRejected {
-                reason: oxide_sim::command::RejectReason::UnreachableGoal,
+            aftermine_sim::Event::CommandRejected {
+                reason: aftermine_sim::command::RejectReason::UnreachableGoal,
                 ..
             }
         )),
@@ -217,7 +222,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
 
 #[test]
 fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
             "name": "Mined Door",
             "players": [
@@ -255,7 +260,7 @@ fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
     assert_eq!(
         placement_verdict(
             &game.view(),
-            oxide_sim::BuildingKind::Barricade,
+            aftermine_sim::BuildingKind::Barricade,
             outside,
             false
         ),
@@ -265,7 +270,7 @@ fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
         player: game.presentation.human,
         command: Command::Build {
             units: game.presentation.selection.units.clone(),
-            kind: oxide_sim::BuildingKind::Barricade,
+            kind: aftermine_sim::BuildingKind::Barricade,
             anchor: outside,
             queue: false,
             defer: false,
@@ -275,7 +280,7 @@ fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
         !report
             .events
             .iter()
-            .any(|event| matches!(event, oxide_sim::Event::CommandRejected { .. })),
+            .any(|event| matches!(event, aftermine_sim::Event::CommandRejected { .. })),
         "the sim agrees"
     );
 }
@@ -292,7 +297,7 @@ fn a_builder_with_a_full_queue_shows_no_queue_number() {
             queue: false,
         },
     }];
-    for _ in 0..oxide_sim::stats::ORDER_QUEUE_CAP {
+    for _ in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
         fill.push(PlayerCommand {
             player: human,
             command: Command::Run {
@@ -305,7 +310,7 @@ fn a_builder_with_a_full_queue_shows_no_queue_number() {
     game.state.tick(&fill);
     assert_eq!(
         placement_backlog(&game.view()),
-        Some(oxide_sim::stats::ORDER_QUEUE_CAP + 1),
+        Some(aftermine_sim::stats::ORDER_QUEUE_CAP + 1),
         "premise: an active order and a full queue"
     );
     assert_eq!(queued_position(&game.view()), None, "it would be skipped");

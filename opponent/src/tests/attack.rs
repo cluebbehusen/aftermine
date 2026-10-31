@@ -874,13 +874,13 @@ fn a_unit_sitting_out_a_stalled_route_or_firing_position_joins_no_new_attack() {
     };
     let stuck = sent[0];
     for reason in [
-        oxide_sim::StallReason::NoRoute,
-        oxide_sim::StallReason::NoFiringPosition,
+        aftermine_sim::StallReason::NoRoute,
+        aftermine_sim::StallReason::NoFiringPosition,
     ] {
         let mut events = OwnEvents::default();
         events.record(
             PlayerId(0),
-            &[oxide_sim::Event::OrderStalled {
+            &[aftermine_sim::Event::OrderStalled {
                 unit: stuck,
                 player: PlayerId(0),
                 pos: state.unit(stuck).unwrap().pos,

@@ -1,17 +1,17 @@
-# oxide-kit
+# aftermine-kit
 
-`oxide-kit` holds Oxide-specific engine services shared by the shell and the
-driver, so the graphical game and the headless harness use the same controller
-hosting, checkpoint, replay, statistics, diagnostics, and rendering code without
-either depending on the other. A few services, such as the headless `runner` and
-`bench`, serve only the driver.
+`aftermine-kit` holds Aftermine-specific engine services shared by the shell and
+the driver, so the graphical game and the headless harness use the same
+controller hosting, checkpoint, replay, statistics, diagnostics, and rendering
+code without either depending on the other. A few services, such as the headless
+`runner` and `bench`, serve only the driver.
 
-This is not the home for game rules or UI state. Rules stay in `oxide-sim`,
+This is not the home for game rules or UI state. Rules stay in `aftermine-sim`,
 while reusable game-independent primitives stay in `chassis`.
 
 ## Main pieces
 
-- `controller` hosts `oxide-opponent` as one `SeatController` per configured
+- `controller` hosts `aftermine-opponent` as one `SeatController` per configured
   seat. `seat_controllers` builds them in seat order, sharing one map model that
   `OpponentMap` builds only for a roster with a seat. Each seat also holds a
   bounded buffer of its own `OrderStalled` and `CommandRejected` events. Hosts
@@ -46,8 +46,8 @@ while reusable game-independent primitives stay in `chassis`.
 - `build` describes the executable that recorded or wrote a file. The host
   supplies it; the kit never probes Git or embeds a sibling executable's
   revision.
-- `load_replay` and `load_recording` own bounded, strict Oxide replay loading;
-  `save_recording` writes the compressed `.oxreplay` container.
+- `load_replay` and `load_recording` own bounded, strict Aftermine replay
+  loading; `save_recording` writes the compressed `.amreplay` container.
 - `keyframes` holds the worlds a recording stores every 1,024 ticks as a cache
   over its command log, and encodes a live match's keyframes off the frame
   thread.
@@ -73,9 +73,9 @@ while reusable game-independent primitives stay in `chassis`.
 Run commands from the workspace root:
 
 ```sh
-cargo test -p oxide-kit --locked
-cargo test -p oxide-driver --test golden --locked
-cargo clippy -p oxide-kit --all-targets --locked -- -D warnings
+cargo test -p aftermine-kit --locked
+cargo test -p aftermine-driver --test golden --locked
+cargo clippy -p aftermine-kit --all-targets --locked -- -D warnings
 ```
 
 `diagnostics` is the process's crash and freeze monitor: main-thread stages and

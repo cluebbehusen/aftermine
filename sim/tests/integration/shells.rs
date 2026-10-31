@@ -7,13 +7,13 @@
 use crate::common;
 use common::{cmd, open_arena, players, run, unit};
 
-use chassis::grid::TilePos;
-use chassis::replay::Replay;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{
     BuildingKind, Command, Event, Order, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State,
     Target, UnitKind,
 };
+use chassis::grid::TilePos;
+use chassis::replay::Replay;
 
 /// A long open range: bombard work needs distance.
 fn range(units: Vec<UnitSpec>) -> Scenario {
@@ -25,7 +25,7 @@ fn range(units: Vec<UnitSpec>) -> Scenario {
 
 fn unit_launch(
     events: &[Event],
-    shooter: oxide_sim::UnitId,
+    shooter: aftermine_sim::UnitId,
 ) -> Option<(Target, chassis::fx::Vec2Fx, u64)> {
     events.iter().find_map(|event| match event {
         Event::ShellLaunched {
@@ -42,7 +42,7 @@ fn unit_launch(
 fn fire_when_ready(
     state: &mut State,
     commands: &[PlayerCommand],
-    shooter: oxide_sim::UnitId,
+    shooter: aftermine_sim::UnitId,
 ) -> (Vec<Event>, State) {
     for tick in 0..200 {
         let before = state.clone();
@@ -74,7 +74,7 @@ fn moving_target_range_with_order(target_first: bool) -> Scenario {
     range(units)
 }
 
-fn moving_ids(state: &State) -> (oxide_sim::UnitId, oxide_sim::UnitId) {
+fn moving_ids(state: &State) -> (aftermine_sim::UnitId, aftermine_sim::UnitId) {
     let target = state
         .units()
         .iter()
@@ -92,8 +92,8 @@ fn moving_ids(state: &State) -> (oxide_sim::UnitId, oxide_sim::UnitId) {
 
 fn establish_straight_motion(
     state: &mut State,
-    target: oxide_sim::UnitId,
-    bombard: oxide_sim::UnitId,
+    target: aftermine_sim::UnitId,
+    bombard: aftermine_sim::UnitId,
     goal: TilePos,
 ) {
     let bombard_tile = state.unit(bombard).unwrap().tile();
@@ -138,7 +138,7 @@ fn open_fire() -> (State, Vec<Event>) {
             0,
             Command::Attack {
                 units: vec![bombard],
-                target: oxide_sim::AttackTarget::Unit(scuttler),
+                target: aftermine_sim::AttackTarget::Unit(scuttler),
                 queue: false,
             },
         )],
@@ -407,9 +407,9 @@ fn neighbor_shot(
 ) -> (
     State,
     Vec<Event>,
-    oxide_sim::UnitId,
-    oxide_sim::UnitId,
-    oxide_sim::UnitId,
+    aftermine_sim::UnitId,
+    aftermine_sim::UnitId,
+    aftermine_sim::UnitId,
 ) {
     let mut state = range(vec![
         unit(0, UnitKind::Bombard, 4, 7),
@@ -446,7 +446,7 @@ fn neighbor_shot(
     let mut value = serde_json::to_value(&state).unwrap();
     value["units"][0]["motor"] = serde_json::json!({
         "motor": "braced",
-        "ticks": oxide_sim::UnitKind::Bombard
+        "ticks": aftermine_sim::UnitKind::Bombard
             .stats()
             .brace
             .expect("the bombard braces")
@@ -616,7 +616,7 @@ fn advance_fire_leads_the_same_moving_path_without_becoming_an_attack() {
     );
     assert!(matches!(
         state.unit(launcher).unwrap().order,
-        oxide_sim::Order::Advance { goal: current } if current.tile() == goal
+        aftermine_sim::Order::Advance { goal: current } if current.tile() == goal
     ));
 }
 
@@ -776,7 +776,7 @@ fn team_building_range(with_spotter: bool) -> Scenario {
     scenario
 }
 
-fn unit_of_kind(state: &State, kind: UnitKind) -> oxide_sim::UnitId {
+fn unit_of_kind(state: &State, kind: UnitKind) -> aftermine_sim::UnitId {
     state
         .units()
         .iter()
@@ -787,7 +787,7 @@ fn unit_of_kind(state: &State, kind: UnitKind) -> oxide_sim::UnitId {
 
 fn assert_artillery_ignores_hidden_target(
     state: &mut State,
-    artillery: oxide_sim::UnitId,
+    artillery: aftermine_sim::UnitId,
     kind: UnitKind,
 ) {
     let initial_pos = state.unit(artillery).unwrap().pos;
@@ -816,7 +816,7 @@ fn assert_artillery_ignores_hidden_target(
 
 fn assert_artillery_fires_through_shared_sight(
     state: &mut State,
-    artillery: oxide_sim::UnitId,
+    artillery: aftermine_sim::UnitId,
     kind: UnitKind,
     target: Target,
 ) {

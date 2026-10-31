@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::Key;
+use aftermine_protocol::Key;
 
 fn camera() -> Camera {
     Camera::new(vec2(100.0, 100.0), 200, 200, vec2(1280.0, 800.0))

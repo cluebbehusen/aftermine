@@ -58,7 +58,7 @@ fn another_builds_beacon_lists_by_its_header_and_noise_is_ignored() {
     );
     let not_ours = String::from_utf8(beacon("Sam", 4200).encode())
         .unwrap()
-        .replace("oxide-lan", "other-game");
+        .replace("aftermine-lan", "other-game");
     for datagram in [
         not_ours.as_bytes(),
         b"not json".as_slice(),

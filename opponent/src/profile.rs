@@ -1,7 +1,7 @@
 //! Deterministic personality resolution for the player-facing bot.
 
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use chassis::rng::Pcg32;
-use oxide_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use serde::Serialize;
 
 const PRIMARY_STREAM: u64 = 0x0B07_1600;

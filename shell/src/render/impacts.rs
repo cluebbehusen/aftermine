@@ -1,8 +1,8 @@
 //! Weapon contact and recipient material at one cosmetic impact origin.
 
 use crate::game::{HitSurface, ShotStyle};
+use aftermine_sim::ProjectileKind;
 use macroquad::prelude::*;
-use oxide_sim::ProjectileKind;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Family {

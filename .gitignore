@@ -26,5 +26,5 @@ todo-0.15.0.md
 
 # Local iPad signing team and Xcode per-user state.
 /ios/Local.xcconfig
-/ios/Oxide.xcodeproj/project.xcworkspace/
+/ios/Aftermine.xcodeproj/project.xcworkspace/
 xcuserdata/

@@ -1,28 +1,29 @@
-//! One owner for every directory Oxide writes: the per-OS config and
+//! One owner for every directory Aftermine writes: the per-OS config and
 //! data roots plus the derived subdirectories the persistence sites
 //! share. Path policy lives here so no feature needs its own `#[cfg]`
 //! block.
 
 use std::path::{Path, PathBuf};
 
-/// Platform config directory for Oxide, created on save, never on load.
+/// Platform config directory for Aftermine, created on save, never on load.
 pub fn config_dir() -> Option<PathBuf> {
     // An iOS app's HOME is its sandbox container, which keeps the same
     // Library layout as a Mac home.
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Oxide"))
+        std::env::var_os("HOME")
+            .map(|h| PathBuf::from(h).join("Library/Application Support/Aftermine"))
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Oxide"))
+        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Aftermine"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
     {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .map(|d| d.join("oxide"))
+            .map(|d| d.join("aftermine"))
     }
 }
 
@@ -30,18 +31,19 @@ pub fn config_dir() -> Option<PathBuf> {
 pub fn data_dir() -> Option<PathBuf> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Oxide"))
+        std::env::var_os("HOME")
+            .map(|h| PathBuf::from(h).join("Library/Application Support/Aftermine"))
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Oxide"))
+        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Aftermine"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
     {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-            .map(|d| d.join("oxide"))
+            .map(|d| d.join("aftermine"))
     }
 }
 

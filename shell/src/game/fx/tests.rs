@@ -1,6 +1,6 @@
 use super::*;
 use crate::game::Game;
-use oxide_sim::{BuildingId, BuildingKind, Target, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Target, UnitId, UnitKind};
 
 fn defense_report(kind: BuildingKind) -> crate::look::DefenseReport {
     crate::look::defense(kind).unwrap().report.unwrap()
@@ -24,7 +24,7 @@ fn lethal_scuttler_bite_retains_the_visible_unit_surface() {
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     wire["units"][1]["hp"] = serde_json::json!(1);
     game.state.0 = std::sync::Arc::new(serde_json::from_value(wire).unwrap());
-    game.issue(oxide_sim::Command::Attack {
+    game.issue(aftermine_sim::Command::Attack {
         units: vec![UnitId(0)],
         target: Target::Unit(UnitId(1)).into(),
         queue: false,
@@ -72,13 +72,13 @@ fn building_reports_keep_surface_facts_through_the_lethal_tick() {
             game.state.0 = std::sync::Arc::new(serde_json::from_value(wire).unwrap());
         }
         let mut reference = (*game.state).clone();
-        let command = oxide_sim::Command::Attack {
+        let command = aftermine_sim::Command::Attack {
             units: vec![UnitId(0)],
             target: Target::Building(BuildingId(0)).into(),
             queue: false,
         };
         game.issue(command.clone());
-        let expected = reference.tick(&[oxide_sim::PlayerCommand {
+        let expected = reference.tick(&[aftermine_sim::PlayerCommand {
             player: game.presentation.human,
             command,
         }]);
@@ -110,7 +110,7 @@ fn building_reports_keep_surface_facts_through_the_lethal_tick() {
 
 #[test]
 fn unseen_buildings_do_not_supply_surface_facts() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.clear();
     for player in &mut scenario.players {
         player.bot_config = None;
@@ -134,14 +134,14 @@ fn unseen_buildings_do_not_supply_surface_facts() {
                 None,
                 game.presentation.human,
                 world_vec(hidden.center()),
-                oxide_sim::stats::DomainMask::GROUND,
+                aftermine_sim::stats::DomainMask::GROUND,
             )
             .is_none()
     );
 }
 
 fn blind_bulwark_scene(victim: UnitKind) -> Game {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     let mut rows = vec![vec!['.'; 40]; 30];
     rows[27][1] = '1';
     rows[27][37] = '2';
@@ -152,20 +152,20 @@ fn blind_bulwark_scene(victim: UnitKind) -> Game {
     for player in &mut scenario.players {
         player.bot_config = None;
     }
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: victim,
         x: 12,
         y: 8,
     }];
     scenario.buildings = vec![
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 1,
             kind: BuildingKind::Turret,
             x: 5,
             y: 6,
         },
-        oxide_sim::scenario::BuildingSpec {
+        aftermine_sim::scenario::BuildingSpec {
             player: 1,
             kind: BuildingKind::Array,
             x: 5,
@@ -190,7 +190,7 @@ fn blind_bulwark_scene(victim: UnitKind) -> Game {
             building["gun_heading"] = serde_json::json!(gun_heading);
         }
     }
-    let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
     state.validate_invariants().unwrap();
     let turret = state
         .buildings()
@@ -214,7 +214,7 @@ fn blind_bulwark_scene(victim: UnitKind) -> Game {
     game.replace_state_after_jump(&state);
     assert!(
         state
-            .vision(oxide_sim::PlayerId(1))
+            .vision(aftermine_sim::PlayerId(1))
             .tracks()
             .iter()
             .any(|track| track.visible_unit.is_none())
@@ -246,7 +246,7 @@ fn blind_hitscan_damage_alerts_only_its_owner_in_live_and_playback() {
     );
     for human in [0, 1] {
         let mut playback = blind_bulwark_scene(UnitKind::Excavator);
-        playback.presentation.human = oxide_sim::PlayerId(human);
+        playback.presentation.human = aftermine_sim::PlayerId(human);
         playback
             .presentation
             .remember_previous_tick(&playback.state);
@@ -317,7 +317,7 @@ fn anonymous_unit_hitscan_uses_owner_damage_evidence_for_alerts() {
         .collect();
     for (human, hit) in [(0, true), (1, true), (0, false)] {
         let mut game = blind_bulwark_scene(UnitKind::Excavator);
-        game.presentation.human = oxide_sim::PlayerId(human);
+        game.presentation.human = aftermine_sim::PlayerId(human);
         let events: Vec<_> = events
             .iter()
             .filter(|event| hit || !matches!(event, Event::DamageTaken { .. }))
@@ -340,18 +340,18 @@ fn casualty_art_survives_unit_removal_in_live_and_playback() {
         (UnitKind::Kestrel, UnitKind::Flakhound),
         (UnitKind::Condor, UnitKind::Flakhound),
     ] {
-        let mut scenario = oxide_sim::Scenario::skirmish();
+        let mut scenario = aftermine_sim::Scenario::skirmish();
         for player in &mut scenario.players {
             player.bot_config = None;
         }
         scenario.units = vec![
-            oxide_sim::scenario::UnitSpec {
+            aftermine_sim::scenario::UnitSpec {
                 player: 0,
                 kind,
                 x: 10,
                 y: 10,
             },
-            oxide_sim::scenario::UnitSpec {
+            aftermine_sim::scenario::UnitSpec {
                 player: 1,
                 kind: attacker,
                 x: 11,
@@ -416,8 +416,8 @@ fn casualty_art_survives_unit_removal_in_live_and_playback() {
 
 #[test]
 fn ground_death_keeps_the_eased_origin_and_respects_reduced_motion_yaw() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: UnitKind::Harvester,
         x: 10,
@@ -481,8 +481,8 @@ fn wreck_capture_keeps_the_hull_bearing_when_the_turret_aims_away() {
         UnitKind::Lancer,
         UnitKind::Buzzard,
     ] {
-        let mut scenario = oxide_sim::Scenario::skirmish();
-        scenario.units = vec![oxide_sim::scenario::UnitSpec {
+        let mut scenario = aftermine_sim::Scenario::skirmish();
+        scenario.units = vec![aftermine_sim::scenario::UnitSpec {
             player: 0,
             kind,
             x: 8,
@@ -509,8 +509,8 @@ fn wreck_capture_keeps_the_hull_bearing_when_the_turret_aims_away() {
 
 #[test]
 fn a_falling_roc_keeps_each_gun_at_its_last_drawn_bearing() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: UnitKind::Roc,
         x: 8,
@@ -545,7 +545,7 @@ fn a_falling_roc_keeps_each_gun_at_its_last_drawn_bearing() {
 #[test]
 fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
     for witnessed in [true, false] {
-        let mut scenario = oxide_sim::Scenario::skirmish();
+        let mut scenario = aftermine_sim::Scenario::skirmish();
         scenario.map = vec![".".repeat(48); 32];
         scenario.map[2].replace_range(2..3, "1");
         scenario.map[2].replace_range(42..43, "2");
@@ -553,13 +553,13 @@ fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
             player.bot_config = None;
         }
         scenario.units = vec![
-            oxide_sim::scenario::UnitSpec {
+            aftermine_sim::scenario::UnitSpec {
                 player: 1,
                 kind: UnitKind::Condor,
                 x: 20,
                 y: 25,
             },
-            oxide_sim::scenario::UnitSpec {
+            aftermine_sim::scenario::UnitSpec {
                 player: 0,
                 kind: UnitKind::Harvester,
                 x: if witnessed { 20 } else { 4 },
@@ -568,9 +568,9 @@ fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
         ];
         let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
         let at = chassis::grid::TilePos::new(20, 25).center();
-        let crash = oxide_sim::state::AircraftCrash {
+        let crash = aftermine_sim::state::AircraftCrash {
             unit: UnitId(0),
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             kind: UnitKind::Condor,
             heading: 0,
             launch: at,
@@ -614,11 +614,14 @@ fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
 
 #[test]
 fn scheduled_crash_uses_sim_time_and_restores_after_a_seek() {
-    let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     let unit = wire["units"].as_array_mut().unwrap().remove(0);
-    let crash = oxide_sim::state::AircraftCrash {
+    let crash = aftermine_sim::state::AircraftCrash {
         unit: serde_json::from_value(unit["id"].clone()).unwrap(),
         player: game.presentation.human,
         kind: UnitKind::Condor,
@@ -674,17 +677,17 @@ fn scheduled_crash_uses_sim_time_and_restores_after_a_seek() {
 
 #[test]
 fn a_roc_s_bay_sounds_only_where_its_host_is_seen() {
-    let roc = |player, x, y| oxide_sim::scenario::UnitSpec {
+    let roc = |player, x, y| aftermine_sim::scenario::UnitSpec {
         player,
         kind: UnitKind::Roc,
         x,
         y,
     };
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units = vec![roc(0, 4, 4), roc(1, 6, 4), roc(1, 30, 18)];
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     let [own, seen, hidden] = [0, 1, 2].map(|index| game.state.units()[index].clone());
-    let vision = game.state.vision(oxide_sim::PlayerId(0));
+    let vision = game.state.vision(aftermine_sim::PlayerId(0));
     assert!(
         vision.sees_unit(&seen),
         "premise: the near rival is in sight"
@@ -721,8 +724,11 @@ fn a_roc_s_bay_sounds_only_where_its_host_is_seen() {
 
 #[test]
 fn hidden_casualty_does_not_reveal_art_or_audio() {
-    let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
     let at = chassis::grid::TilePos::new(30, 20).center();
     assert!(
         !game
@@ -735,7 +741,7 @@ fn hidden_casualty_does_not_reveal_art_or_audio() {
         &[Event::UnitDied {
             unit: UnitId(999),
             kind: UnitKind::Condor,
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             pos: at,
             grounded: false,
         }],
@@ -746,17 +752,17 @@ fn hidden_casualty_does_not_reveal_art_or_audio() {
 
 #[test]
 fn collapse_preserves_the_casualty_and_live_playback_state_parity() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     for player in &mut scenario.players {
         player.bot_config = None;
     }
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Scuttler,
         x: 10,
         y: 10,
     }];
-    scenario.buildings = vec![oxide_sim::scenario::BuildingSpec {
+    scenario.buildings = vec![aftermine_sim::scenario::BuildingSpec {
         player: 0,
         kind: BuildingKind::Bastion,
         x: 11,
@@ -793,7 +799,7 @@ fn collapse_preserves_the_casualty_and_live_playback_state_parity() {
         let report = live.do_tick();
         playback.observe_tick(&reference, &expected.events, &expected.movement);
         assert_eq!(live.state.hash(), reference.hash());
-        if report.events.iter().any(|event| matches!(event, oxide_sim::Event::BuildingDestroyed { building, .. } if *building == id)) {
+        if report.events.iter().any(|event| matches!(event, aftermine_sim::Event::BuildingDestroyed { building, .. } if *building == id)) {
             assert!(live.state.building(id).is_none());
             for presentation in [&live.presentation, &playback] {
                 assert!(presentation.fx.iter().any(|fx| matches!(fx.kind, EffectKind::Collapse { body, seed, .. } if body.kind == BuildingKind::Bastion && seed == id.0)));
@@ -809,7 +815,7 @@ fn collapse_preserves_the_casualty_and_live_playback_state_parity() {
 
 #[test]
 fn projectile_impacts_sound_on_visible_and_hidden_ground_for_either_owner() {
-    use oxide_sim::{PlayerId, ProjectileKind};
+    use aftermine_sim::{PlayerId, ProjectileKind};
     for kind in [
         ProjectileKind::Shell,
         ProjectileKind::Missile,
@@ -817,11 +823,11 @@ fn projectile_impacts_sound_on_visible_and_hidden_ground_for_either_owner() {
     ] {
         for player in [PlayerId(0), PlayerId(1)] {
             for visible in [true, false] {
-                let mut scenario = oxide_sim::Scenario::skirmish();
+                let mut scenario = aftermine_sim::Scenario::skirmish();
                 for seat in &mut scenario.players {
                     seat.bot_config = None;
                 }
-                scenario.units.push(oxide_sim::scenario::UnitSpec {
+                scenario.units.push(aftermine_sim::scenario::UnitSpec {
                     player: player.0,
                     kind: match kind {
                         ProjectileKind::Shell => UnitKind::Bombard,
@@ -846,7 +852,7 @@ fn projectile_impacts_sound_on_visible_and_hidden_ground_for_either_owner() {
                     .rev()
                     .find(|unit| unit.player == player)
                     .unwrap();
-                let shell = oxide_sim::state::Shell {
+                let shell = aftermine_sim::state::Shell {
                     kind,
                     player,
                     shooter: Target::Unit(shooter.id),
@@ -855,7 +861,7 @@ fn projectile_impacts_sound_on_visible_and_hidden_ground_for_either_owner() {
                     launched_at: 0,
                     arrival: 0,
                     damage: 1,
-                    targets: oxide_sim::stats::DomainMask::GROUND,
+                    targets: aftermine_sim::stats::DomainMask::GROUND,
                     splash: None,
                 };
                 let mut wire = serde_json::to_value(&*game.state).unwrap();
@@ -913,7 +919,7 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
             }))
             .unwrap();
             let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
-            game.presentation.human = oxide_sim::PlayerId(viewer);
+            game.presentation.human = aftermine_sim::PlayerId(viewer);
             let tile = chassis::grid::TilePos::new(30, 20);
             if viewer == 0 {
                 assert!(!game.my_vision().visible(tile));
@@ -995,10 +1001,13 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
 
 #[test]
 fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
-    let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
     let at = chassis::grid::TilePos::new(30, 20).center();
-    let player = oxide_sim::PlayerId(1);
+    let player = aftermine_sim::PlayerId(1);
     assert!(
         !game
             .my_vision()
@@ -1062,36 +1071,36 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
 #[test]
 fn impact_metadata_is_consumed_in_landing_order() {
     let mut game = crate::game::Game::with_viewport(
-        oxide_sim::Scenario::skirmish(),
+        aftermine_sim::Scenario::skirmish(),
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .unwrap();
     game.state.tick(&[]);
     let at = game.state.units()[0].pos;
     for kind in [
-        oxide_sim::ProjectileKind::Missile,
-        oxide_sim::ProjectileKind::Shell,
+        aftermine_sim::ProjectileKind::Missile,
+        aftermine_sim::ProjectileKind::Shell,
     ] {
         game.presentation
             .fx_previous
             .shells
-            .push(oxide_sim::state::Shell {
+            .push(aftermine_sim::state::Shell {
                 kind,
                 shooter: Target::Unit(UnitId(0)),
-                player: oxide_sim::PlayerId(0),
+                player: aftermine_sim::PlayerId(0),
                 launch: at,
                 impact: at,
                 launched_at: 0,
                 arrival: 0,
                 damage: 1,
-                targets: oxide_sim::stats::DomainMask::GROUND,
+                targets: aftermine_sim::stats::DomainMask::GROUND,
                 splash: None,
             });
     }
-    let event = oxide_sim::Event::ShellLanded {
-        player: oxide_sim::PlayerId(0),
+    let event = aftermine_sim::Event::ShellLanded {
+        player: aftermine_sim::PlayerId(0),
         at,
-        targets: oxide_sim::stats::DomainMask::GROUND,
+        targets: aftermine_sim::stats::DomainMask::GROUND,
         splash: None,
     };
     game.presentation
@@ -1111,8 +1120,8 @@ fn impact_metadata_is_consumed_in_landing_order() {
     assert_eq!(
         payloads,
         vec![
-            oxide_sim::ProjectileKind::Missile,
-            oxide_sim::ProjectileKind::Shell
+            aftermine_sim::ProjectileKind::Missile,
+            aftermine_sim::ProjectileKind::Shell
         ]
     );
     assert!(game.presentation.fx_previous.shells.is_empty());
@@ -1120,14 +1129,14 @@ fn impact_metadata_is_consumed_in_landing_order() {
 
 #[test]
 fn destroyed_upgraded_flak_keeps_its_final_six_round_volley() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Buzzard,
         x: 13,
         y: 10,
     }];
-    scenario.buildings = vec![oxide_sim::scenario::BuildingSpec {
+    scenario.buildings = vec![aftermine_sim::scenario::BuildingSpec {
         player: 0,
         kind: BuildingKind::FlakTurret,
         x: 11,
@@ -1140,11 +1149,11 @@ fn destroyed_upgraded_flak_keeps_its_final_six_round_volley() {
     value["units"][0]["heading"] = serde_json::json!(128);
     value["buildings"][2]["tier"] = serde_json::json!(1);
     value["buildings"][2]["hp"] = serde_json::json!(1);
-    let mut state: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     game.replace_state_after_jump(&state);
-    let report = state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Attack {
+    let report = state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Attack {
             units: vec![UnitId(0)],
             target: Target::Building(BuildingId(2)).into(),
             queue: false,
@@ -1200,14 +1209,16 @@ fn point_gun(game: &mut crate::game::Game, id: BuildingId, heading: u8) {
 }
 
 fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: BuildingKind::Turret,
-        x: 11,
-        y: 10,
-    });
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Turret,
+            x: 11,
+            y: 10,
+        });
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Harvester,
         x: 14,
@@ -1359,14 +1370,14 @@ fn direct_reports_age_on_sim_time_instead_of_wall_time() {
 
 #[test]
 fn own_sapper_report_survives_its_same_tick_death_and_vision_loss() {
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     let mut game =
         crate::game::Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
             .expect("Sapper presentation scenario builds");
     let attacker = UnitId(999);
     let at = chassis::grid::TilePos::new(30, 20).center();
     let events = [
-        oxide_sim::Event::AttackHit {
+        aftermine_sim::Event::AttackHit {
             attacker,
             attacker_kind: UnitKind::Sapper,
             weapon: 0,
@@ -1374,7 +1385,7 @@ fn own_sapper_report_survives_its_same_tick_death_and_vision_loss() {
             attacker_pos: at,
             target_pos: at,
         },
-        oxide_sim::Event::UnitDied {
+        aftermine_sim::Event::UnitDied {
             unit: attacker,
             kind: UnitKind::Sapper,
             player: game.presentation.human,
@@ -1399,7 +1410,7 @@ fn own_sapper_report_survives_its_same_tick_death_and_vision_loss() {
 
 #[test]
 fn enemy_sapper_report_survives_killing_the_last_local_observer() {
-    let scenario = oxide_sim::Scenario::skirmish();
+    let scenario = aftermine_sim::Scenario::skirmish();
     let mut game =
         crate::game::Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
             .expect("Sapper presentation scenario builds");
@@ -1407,7 +1418,7 @@ fn enemy_sapper_report_survives_killing_the_last_local_observer() {
     let victim = UnitId(999);
     let at = chassis::grid::TilePos::new(30, 20).center();
     let events = [
-        oxide_sim::Event::AttackHit {
+        aftermine_sim::Event::AttackHit {
             attacker,
             attacker_kind: UnitKind::Sapper,
             weapon: 0,
@@ -1415,14 +1426,14 @@ fn enemy_sapper_report_survives_killing_the_last_local_observer() {
             attacker_pos: at,
             target_pos: at,
         },
-        oxide_sim::Event::UnitDied {
+        aftermine_sim::Event::UnitDied {
             unit: attacker,
             kind: UnitKind::Sapper,
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             pos: at,
             grounded: true,
         },
-        oxide_sim::Event::UnitDied {
+        aftermine_sim::Event::UnitDied {
             unit: victim,
             kind: UnitKind::Sentinel,
             player: game.presentation.human,
@@ -1453,11 +1464,11 @@ fn enemy_sapper_report_survives_killing_the_last_local_observer() {
 #[test]
 fn final_volley_drains_after_the_simulation_stops() {
     let mut game = crate::game::Game::with_viewport(
-        oxide_sim::Scenario::skirmish(),
+        aftermine_sim::Scenario::skirmish(),
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .expect("skirmish builds");
-    game.issue(oxide_sim::Command::Surrender);
+    game.issue(aftermine_sim::Command::Surrender);
     game.do_tick();
     assert!(game.state.result().is_some());
 
@@ -1708,14 +1719,16 @@ fn defense_mount_turns_with_the_simulated_gun() {
 
 #[test]
 fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: BuildingKind::Bastion,
-        x: 11,
-        y: 10,
-    });
-    scenario.units.push(oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Bastion,
+            x: 11,
+            y: 10,
+        });
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
         kind: UnitKind::Harvester,
         x: 16,
@@ -1744,9 +1757,9 @@ fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
     );
     point_gun(&mut game, shooter, toward);
     game.presentation.remember_previous_tick(&game.state);
-    let report = game.state.tick(&[oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Run {
+    let report = game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Run {
             units: vec![target],
             goal: chassis::grid::TilePos::new(16, 14),
             queue: false,
@@ -1756,7 +1769,7 @@ fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
         .events
         .iter()
         .find_map(|event| match event {
-            oxide_sim::Event::ShellLaunched {
+            aftermine_sim::Event::ShellLaunched {
                 shooter: Target::Building(id),
                 from,
                 to,
@@ -1792,7 +1805,7 @@ fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
 fn ground_kills_scatter_debris_and_air_kills_fall() {
     crate::render::set_reduced_motion(false);
     let mut game = crate::game::Game::with_viewport(
-        oxide_sim::Scenario::skirmish(),
+        aftermine_sim::Scenario::skirmish(),
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .expect("embedded skirmish builds");
@@ -1802,10 +1815,10 @@ fn ground_kills_scatter_debris_and_air_kills_fall() {
     };
     game.presentation.spawn_fx(
         &game.state,
-        &[oxide_sim::Event::UnitDied {
-            unit: oxide_sim::UnitId(7),
+        &[aftermine_sim::Event::UnitDied {
+            unit: aftermine_sim::UnitId(7),
             kind: UnitKind::Sentinel,
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             pos: at,
             grounded: true,
         }],
@@ -1820,10 +1833,10 @@ fn ground_kills_scatter_debris_and_air_kills_fall() {
     game.presentation.fx.clear();
     game.presentation.spawn_fx(
         &game.state,
-        &[oxide_sim::Event::UnitDied {
-            unit: oxide_sim::UnitId(8),
+        &[aftermine_sim::Event::UnitDied {
+            unit: aftermine_sim::UnitId(8),
             kind: UnitKind::Buzzard,
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             pos: at,
             grounded: false,
         }],
@@ -1846,10 +1859,10 @@ fn ground_kills_scatter_debris_and_air_kills_fall() {
     game.presentation.fx.clear();
     game.presentation.spawn_fx(
         &game.state,
-        &[oxide_sim::Event::UnitDied {
-            unit: oxide_sim::UnitId(9),
+        &[aftermine_sim::Event::UnitDied {
+            unit: aftermine_sim::UnitId(9),
             kind: UnitKind::Condor,
-            player: oxide_sim::PlayerId(1),
+            player: aftermine_sim::PlayerId(1),
             pos: at,
             grounded: true,
         }],
@@ -1892,9 +1905,9 @@ fn ranged_reports_retain_unit_contacts_through_lethal_hits() {
         let mut wire = serde_json::to_value(&*game.state).unwrap();
         wire["units"][1]["hp"] = serde_json::json!(1);
         game.replace_state_after_jump(&serde_json::from_value(wire).unwrap());
-        game.pending.push(oxide_sim::PlayerCommand {
-            player: oxide_sim::PlayerId(0),
-            command: oxide_sim::Command::Attack {
+        game.pending.push(aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Attack {
                 units: vec![UnitId(0)],
                 target: Target::Unit(UnitId(1)).into(),
                 queue: false,
@@ -1940,8 +1953,8 @@ fn bomb_contacts_preserve_ground_spread_and_use_simulation_time() {
     let condor = game.state.units()[0].clone();
     let strays: Vec<_> = [(15, 11, 4), (21, 11, 5)]
         .into_iter()
-        .map(|(x, y, arrival)| oxide_sim::state::Shell {
-            kind: oxide_sim::ProjectileKind::Bomb,
+        .map(|(x, y, arrival)| aftermine_sim::state::Shell {
+            kind: aftermine_sim::ProjectileKind::Bomb,
             player: condor.player,
             shooter: Target::Unit(condor.id),
             launch: condor.pos,
@@ -1949,16 +1962,16 @@ fn bomb_contacts_preserve_ground_spread_and_use_simulation_time() {
             launched_at: 0,
             arrival,
             damage: 1,
-            targets: oxide_sim::stats::DomainMask::GROUND,
+            targets: aftermine_sim::stats::DomainMask::GROUND,
             splash: None,
         })
         .collect();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     wire["shells"] = serde_json::json!(strays);
     game.replace_state_after_jump(&serde_json::from_value(wire).unwrap());
-    game.pending.push(oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(0),
-        command: oxide_sim::Command::Attack {
+    game.pending.push(aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(0),
+        command: aftermine_sim::Command::Attack {
             units: vec![UnitId(0)],
             target: Target::Building(BuildingId(0)).into(),
             queue: false,
@@ -1989,7 +2002,7 @@ fn bomb_contacts_preserve_ground_spread_and_use_simulation_time() {
                     inside,
                     "a ground bomb cannot acquire building contact: {at:?}"
                 );
-                assert_eq!(payload, oxide_sim::ProjectileKind::Bomb);
+                assert_eq!(payload, aftermine_sim::ProjectileKind::Bomb);
                 assert_eq!(effect.age_at(game.state.current_tick(), 0.), 0.);
                 arrivals.push(at);
             }
@@ -2033,9 +2046,9 @@ fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
         }))
         .unwrap();
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
-        game.pending.push(oxide_sim::PlayerCommand {
+        game.pending.push(aftermine_sim::PlayerCommand {
             player: game.presentation.human,
-            command: oxide_sim::Command::Attack {
+            command: aftermine_sim::Command::Attack {
                 units: vec![UnitId(0)],
                 target: Target::Unit(UnitId(2)).into(),
                 queue: false,
@@ -2105,16 +2118,16 @@ fn lethal_hit_retains_the_moving_body_frame() {
     wire["units"][1]["hp"] = serde_json::json!(1);
     wire["units"][0]["cooldowns"][0] = serde_json::json!(10);
     game.replace_state_after_jump(&serde_json::from_value(wire).unwrap());
-    game.pending.push(oxide_sim::PlayerCommand {
-        player: oxide_sim::PlayerId(1),
-        command: oxide_sim::Command::Run {
+    game.pending.push(aftermine_sim::PlayerCommand {
+        player: aftermine_sim::PlayerId(1),
+        command: aftermine_sim::Command::Run {
             units: vec![UnitId(1)],
             goal: chassis::grid::TilePos::new(25, 10),
             queue: false,
         },
     });
     game.present_ticks(6);
-    game.issue(oxide_sim::Command::Attack {
+    game.issue(aftermine_sim::Command::Attack {
         units: vec![UnitId(0)],
         target: Target::Unit(UnitId(1)).into(),
         queue: false,
@@ -2163,21 +2176,21 @@ fn mantle_interception_game() -> Game {
 fn simultaneous_interceptions_use_three_emitters_and_hold_while_paused() {
     let mut game = mantle_interception_game();
     let shells: Vec<_> = [
-        oxide_sim::ProjectileKind::Shell,
-        oxide_sim::ProjectileKind::Missile,
-        oxide_sim::ProjectileKind::Bomb,
+        aftermine_sim::ProjectileKind::Shell,
+        aftermine_sim::ProjectileKind::Missile,
+        aftermine_sim::ProjectileKind::Bomb,
     ]
     .into_iter()
-    .map(|kind| oxide_sim::state::Shell {
+    .map(|kind| aftermine_sim::state::Shell {
         kind,
         shooter: Target::Unit(UnitId(1)),
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         launch: chassis::grid::TilePos::new(14, 10).center(),
         impact: chassis::grid::TilePos::new(10, 10).center(),
         launched_at: 0,
         arrival: 20,
         damage: 20,
-        targets: oxide_sim::stats::DomainMask::GROUND,
+        targets: aftermine_sim::stats::DomainMask::GROUND,
         splash: None,
     })
     .collect();
@@ -2258,11 +2271,11 @@ fn intercepted_own_shell_does_not_reveal_a_fogged_defender() {
     let at = chassis::grid::TilePos::new(30, 20).center();
     let event = Event::ShellIntercepted {
         defender: UnitId(99),
-        defender_player: oxide_sim::PlayerId(1),
+        defender_player: aftermine_sim::PlayerId(1),
         defender_pos: at,
-        player: oxide_sim::PlayerId(0),
+        player: aftermine_sim::PlayerId(0),
         shooter: Target::Unit(UnitId(0)),
-        kind: oxide_sim::ProjectileKind::Shell,
+        kind: aftermine_sim::ProjectileKind::Shell,
         at,
         impact: at,
         arrival: 20,
@@ -2295,11 +2308,11 @@ fn an_interception_seen_at_neither_end_is_silent() {
     let at = chassis::grid::TilePos::new(30, 20).center();
     let event = Event::ShellIntercepted {
         defender: UnitId(99),
-        defender_player: oxide_sim::PlayerId(1),
+        defender_player: aftermine_sim::PlayerId(1),
         defender_pos: at,
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         shooter: Target::Unit(UnitId(1)),
-        kind: oxide_sim::ProjectileKind::Shell,
+        kind: aftermine_sim::ProjectileKind::Shell,
         at,
         impact: at,
         arrival: 20,
@@ -2320,11 +2333,11 @@ fn a_seen_emitter_zaps_once_per_shell_it_stops() {
     let at = chassis::grid::TilePos::new(10, 10).center();
     let event = Event::ShellIntercepted {
         defender: UnitId(0),
-        defender_player: oxide_sim::PlayerId(0),
+        defender_player: aftermine_sim::PlayerId(0),
         defender_pos: at,
-        player: oxide_sim::PlayerId(1),
+        player: aftermine_sim::PlayerId(1),
         shooter: Target::Unit(UnitId(1)),
-        kind: oxide_sim::ProjectileKind::Shell,
+        kind: aftermine_sim::ProjectileKind::Shell,
         at,
         impact: at,
         arrival: 20,
@@ -2367,10 +2380,10 @@ fn an_interception_sounds_when_the_interceptor_reaches_the_warhead() {
     advance(&mut game, 20);
     let at = chassis::grid::TilePos::new(10, 10).center();
     let event = Event::WarheadIntercepted {
-        warhead: oxide_sim::WarheadId(0),
-        player: oxide_sim::PlayerId(1),
+        warhead: aftermine_sim::WarheadId(0),
+        player: aftermine_sim::PlayerId(1),
         battery: BuildingId(99),
-        battery_player: oxide_sim::PlayerId(0),
+        battery_player: aftermine_sim::PlayerId(0),
         pod: 1,
         at,
         impact: at,
@@ -2447,16 +2460,16 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
             _ => {}
         }
     }
-    let state: oxide_sim::State = serde_json::from_value(wire).unwrap();
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
     game.replace_state_after_jump(&state);
     let spire = game
         .state
         .buildings()
         .iter()
-        .find(|b| b.kind == oxide_sim::BuildingKind::Spire)
+        .find(|b| b.kind == aftermine_sim::BuildingKind::Spire)
         .unwrap()
         .id;
-    game.issue(oxide_sim::Command::Launch {
+    game.issue(aftermine_sim::Command::Launch {
         building: spire,
         target: chassis::grid::TilePos::new(56, 9),
     });
@@ -2510,10 +2523,10 @@ fn only_the_warheads_owner_is_told_it_was_intercepted() {
     advance(&mut game, 20);
     let at = chassis::grid::TilePos::new(10, 10).center();
     let stop = |warhead_player: u8, battery_player: u8| Event::WarheadIntercepted {
-        warhead: oxide_sim::WarheadId(0),
-        player: oxide_sim::PlayerId(warhead_player),
+        warhead: aftermine_sim::WarheadId(0),
+        player: aftermine_sim::PlayerId(warhead_player),
         battery: BuildingId(99),
-        battery_player: oxide_sim::PlayerId(battery_player),
+        battery_player: aftermine_sim::PlayerId(battery_player),
         pod: 1,
         at,
         impact: at,
@@ -2551,7 +2564,7 @@ fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
         })).unwrap();
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
         if !visible {
-            game.presentation.human = oxide_sim::PlayerId(2);
+            game.presentation.human = aftermine_sim::PlayerId(2);
         }
         let kinds = [
             SoundKind::PiledriverDeploy,
@@ -2562,9 +2575,9 @@ fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
         let mut counts = [0; 4];
         for tick in 0..160 {
             if tick == 115 {
-                game.stage(oxide_sim::PlayerCommand {
-                    player: oxide_sim::PlayerId(0),
-                    command: oxide_sim::Command::Run {
+                game.stage(aftermine_sim::PlayerCommand {
+                    player: aftermine_sim::PlayerId(0),
+                    command: aftermine_sim::Command::Run {
                         units: vec![UnitId(0)],
                         goal: chassis::grid::TilePos::new(13, 17),
                         queue: false,
@@ -2590,7 +2603,7 @@ fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
 #[test]
 fn piledriver_impact_waits_for_visual_contact_and_clears_on_seek() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280., 800.)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), Vec2::new(1280., 800.)).unwrap();
     let at = game.state.units()[0].pos;
     let event = Event::AttackHit {
         attacker: UnitId(999),
@@ -2646,7 +2659,8 @@ fn piledriver_impact_waits_for_visual_contact_and_clears_on_seek() {
 fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
     for (speed, wall_dt) in [(1.0, 0.3), (16.0, 1.0 / 60.0), (64.0, 1.0 / 60.0)] {
         let mut game =
-            Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280., 800.)).unwrap();
+            Game::with_viewport(aftermine_sim::Scenario::skirmish(), Vec2::new(1280., 800.))
+                .unwrap();
         let at = game.state.units()[0].pos;
         game.presentation.spawn_fx(
             &game.state,
@@ -2688,8 +2702,11 @@ fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
 
 #[test]
 fn a_scout_that_stops_short_with_its_tile_in_sight_gets_no_stall_feedback() {
-    let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), Vec2::new(1280.0, 800.0)).unwrap();
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
     let human = game.presentation.human;
     let stall = |reason| Event::OrderStalled {
         unit: UnitId(999),
@@ -2703,13 +2720,17 @@ fn a_scout_that_stops_short_with_its_tile_in_sight_gets_no_stall_feedback() {
             .iter()
             .any(|fx| matches!(fx.kind, EffectKind::Ping { .. }))
     };
-    game.presentation
-        .spawn_fx(&game.state, &[stall(oxide_sim::StallReason::SafeVantage)]);
+    game.presentation.spawn_fx(
+        &game.state,
+        &[stall(aftermine_sim::StallReason::SafeVantage)],
+    );
     assert!(game.presentation.toasts.is_empty());
     assert!(!pinged(&game));
     // A scout that never got its view is still told so.
-    game.presentation
-        .spawn_fx(&game.state, &[stall(oxide_sim::StallReason::NoSafeVantage)]);
+    game.presentation.spawn_fx(
+        &game.state,
+        &[stall(aftermine_sim::StallReason::NoSafeVantage)],
+    );
     assert!(
         game.presentation
             .toasts

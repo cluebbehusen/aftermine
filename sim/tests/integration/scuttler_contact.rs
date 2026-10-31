@@ -1,10 +1,10 @@
 //! Scuttler melee contact and unchanged bite cadence.
 use crate::common;
+use aftermine_sim::scenario::BuildingSpec;
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Command, Event, Target, UnitKind};
 use chassis::fx::Fx;
 use common::{cmd, open_arena, unit};
-use oxide_sim::scenario::BuildingSpec;
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, Target, UnitKind};
 
 #[test]
 fn scuttler_closes_to_building_contact_from_faces_and_corners() {

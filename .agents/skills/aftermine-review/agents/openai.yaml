@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aftermine Review"
+  short_description: "Review Aftermine contracts, architecture and evidence"
+  default_prompt: "Use $aftermine-review to evaluate this Aftermine change against current code, reproduce material findings, and report evidence and limitations."

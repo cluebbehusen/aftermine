@@ -4,20 +4,20 @@
 //! controller.
 
 use crate::ledger::{ImpactLedger, LedgerPool, SeatLedger, WORTH_PERIOD};
+use aftermine_kit::GameReplay;
+use aftermine_sim::SIM_VERSION;
+use aftermine_sim::scenario::BotConfig;
 use anyhow::{Context, Result, bail};
-use oxide_kit::GameReplay;
-use oxide_sim::SIM_VERSION;
-use oxide_sim::scenario::BotConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// Magic bytes that open a player save.
-const SAVE_MAGIC: &[u8] = b"OXIDESAV";
+const SAVE_MAGIC: &[u8] = b"AFTERSAV";
 
 /// Ticks per minute.
-const MINUTE: u64 = oxide_sim::TICKS_PER_SECOND as u64 * 60;
+const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
 
 /// One seat of a recorded game.
 #[derive(Debug, Clone, Serialize)]
@@ -66,11 +66,11 @@ pub struct GameLedger {
 /// Re-executes `replay` through the ledger.
 pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
     replay.validate(Some(SIM_VERSION))?;
-    let total = oxide_kit::bounded_replay_duration(replay)?;
-    let mut state = oxide_kit::recording::initial_state(replay)?;
+    let total = aftermine_kit::bounded_replay_duration(replay)?;
+    let mut state = aftermine_kit::recording::initial_state(replay)?;
     let start = state.current_tick();
     let mut ledger = ImpactLedger::new(&state);
-    let mut playback = oxide_kit::ReplayPlayback::new(replay);
+    let mut playback = aftermine_kit::ReplayPlayback::new(replay);
     while state.current_tick() < total {
         let report = playback.step(&mut state);
         ledger.observe(&state, &report);
@@ -158,11 +158,11 @@ pub fn load(path: &Path) -> Result<GameReplay> {
     if save {
         bail!(
             "{} is a player save, not a recording; \
-             use the match recording (match-*.oxreplay) instead",
+             use the match recording (match-*.amreplay) instead",
             path.display()
         );
     }
-    oxide_kit::load_replay(path).with_context(|| format!("loading {}", path.display()))
+    aftermine_kit::load_replay(path).with_context(|| format!("loading {}", path.display()))
 }
 
 impl SeatPlayer {

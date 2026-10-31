@@ -10,10 +10,10 @@ use crate::action::{Action, ActionEvent, ActionResolver, BindingMap};
 use crate::game::{Game, PingKind};
 use crate::numeric;
 use crate::numeric::Fit;
+use aftermine_protocol::{Key, MouseButton, RawEvent};
+use aftermine_sim::{Command, UnitId};
 use chassis::grid::TilePos;
 use macroquad::prelude::{self as mq, Vec2, vec2};
-use oxide_protocol::{Key, MouseButton, RawEvent};
-use oxide_sim::{Command, UnitId};
 
 /// Logical pixels of mouse travel under which a press+release counts as a
 /// click (scaled with the user-facing UI at use).
@@ -54,7 +54,7 @@ pub(crate) fn drag_feedback(origin: Vec2, at: Vec2, ui: f32) -> DragFeedback {
 /// World-unit pick radius around a unit's center.
 const PICK_RADIUS: f32 = 0.6;
 
-fn unit_pick_radius(kind: oxide_sim::UnitKind) -> f32 {
+fn unit_pick_radius(kind: aftermine_sim::UnitKind) -> f32 {
     PICK_RADIUS
         .max(crate::render::unit_visual_radius(kind))
         .max(kind.stats().radius.to_num::<f32>())
@@ -67,7 +67,7 @@ pub(crate) const PAN_PX_PER_SEC: f32 = 900.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArmedMode {
     /// Place this structure.
-    Build(oxide_sim::BuildingKind),
+    Build(aftermine_sim::BuildingKind),
     /// Set a producer's rally point.
     Rally,
     /// Pick the selected Spires' strike tile.
@@ -113,7 +113,7 @@ impl ArmedMode {
 pub(crate) fn placement_preview_anchor(
     game: &crate::game::Scene<'_>,
     input: &InputState,
-) -> Option<(oxide_sim::BuildingKind, TilePos)> {
+) -> Option<(aftermine_sim::BuildingKind, TilePos)> {
     let kind = input.placing_kind()?;
     if let Some(anchor) = input.ghost_anchor() {
         return Some((kind, anchor));
@@ -187,7 +187,7 @@ pub(crate) struct GhostRow {
 /// drift waits for [`ROW_RECHECK_TICKS`].
 #[derive(Debug, Clone, PartialEq)]
 struct RowJudged {
-    tick: oxide_sim::Tick,
+    tick: aftermine_sim::Tick,
     pending: usize,
     queue: bool,
     units: Vec<UnitId>,
@@ -218,7 +218,8 @@ impl RowJudged {
 /// again: judging a row replays every stamp before each one, so a held
 /// row is rechecked twice a second rather than every tick. The check mark
 /// rechecks it whole before building.
-const ROW_RECHECK_TICKS: oxide_sim::Tick = (oxide_sim::TICKS_PER_SECOND / 2) as oxide_sim::Tick;
+const ROW_RECHECK_TICKS: aftermine_sim::Tick =
+    (aftermine_sim::TICKS_PER_SECOND / 2) as aftermine_sim::Tick;
 
 impl PlacementGhost {
     fn at(anchor: TilePos) -> Self {
@@ -235,7 +236,7 @@ impl PlacementGhost {
 /// It stays armed between picks until none is ready.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Strike {
-    pub(crate) spires: Vec<oxide_sim::BuildingId>,
+    pub(crate) spires: Vec<aftermine_sim::BuildingId>,
     aim: Option<StrikeAim>,
 }
 
@@ -251,7 +252,7 @@ struct StrikeAim {
 }
 
 impl Strike {
-    pub(crate) fn new(spires: Vec<oxide_sim::BuildingId>) -> Self {
+    pub(crate) fn new(spires: Vec<aftermine_sim::BuildingId>) -> Self {
         Self { spires, aim: None }
     }
 
@@ -358,7 +359,7 @@ pub struct InputState {
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
-    pub(crate) rallying: Vec<oxide_sim::BuildingId>,
+    pub(crate) rallying: Vec<aftermine_sim::BuildingId>,
     /// The armed strike, while Spires wait for their target.
     pub(crate) striking: Option<Strike>,
     /// How many warheads each strike pick fires, kept for the match.
@@ -400,7 +401,7 @@ pub struct InputState {
 /// armed, so no stroke or ghost outlives its mode.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Placement {
-    pub(crate) kind: oxide_sim::BuildingKind,
+    pub(crate) kind: aftermine_sim::BuildingKind,
     /// The live drag-to-place stroke, while the button stays down.
     stroke: Option<PlacingStroke>,
     /// The touch placement's ghost, once a tap has dropped one.
@@ -436,7 +437,7 @@ pub(crate) struct LatchProbe {
     armed: bool,
     staged: usize,
     units: Vec<UnitId>,
-    buildings: Vec<oxide_sim::BuildingId>,
+    buildings: Vec<aftermine_sim::BuildingId>,
 }
 
 /// A live drag-to-place stroke: the row it plans, staged only when the
@@ -460,7 +461,7 @@ impl PlacingStroke {
     }
 
     /// Whether `anchor` would overlap a planned stamp of `kind`.
-    fn overlaps(&self, kind: oxide_sim::BuildingKind, anchor: TilePos) -> bool {
+    fn overlaps(&self, kind: aftermine_sim::BuildingKind, anchor: TilePos) -> bool {
         let (w, h) = kind.size();
         self.stamps
             .iter()
@@ -473,7 +474,7 @@ impl PlacingStroke {
 /// ghost and the `defer` flag the armed click emits.
 pub(crate) fn build_defer_needed(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
 ) -> bool {
     let (w, h) = kind.size();
@@ -532,7 +533,7 @@ impl PendingBuildFunds {
 }
 
 struct PendingBuildProjection {
-    refusal: Option<oxide_sim::PlaceRefusal>,
+    refusal: Option<aftermine_sim::PlaceRefusal>,
     funds: PendingBuildFunds,
     queue_has_room: bool,
     /// The human's own blocking buildings once the batch lands, staged and
@@ -547,8 +548,8 @@ struct PendingBuildProjection {
 /// unstarted sites whose last worker commitment it removes.
 fn pending_build_projection_for(
     game: &crate::game::Scene<'_>,
-    batch: &[oxide_sim::PlayerCommand],
-    kind: oxide_sim::BuildingKind,
+    batch: &[aftermine_sim::PlayerCommand],
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
     defer: bool,
@@ -558,7 +559,7 @@ fn pending_build_projection_for(
         let refusal = if state.accepts_commands(game.presentation.human) {
             state.place_intent_refusal_replacing(game.presentation.human, kind, anchor, replaced)
         } else {
-            Some(oxide_sim::PlaceRefusal::NotConstructible)
+            Some(aftermine_sim::PlaceRefusal::NotConstructible)
         };
         let refund = state.construction_refund(game.presentation.human, replaced);
         let crew: Vec<_> = state
@@ -570,10 +571,10 @@ fn pending_build_projection_for(
                     && game.presentation.selection.units.contains(&unit.id)
             })
             .collect();
-        let can_assign = |unit: &&oxide_sim::Unit| {
+        let can_assign = |unit: &&aftermine_sim::Unit| {
             !queue
-                || matches!(unit.order, oxide_sim::Order::Idle)
-                || unit.queue.len() < oxide_sim::stats::ORDER_QUEUE_CAP
+                || matches!(unit.order, aftermine_sim::Order::Idle)
+                || unit.queue.len() < aftermine_sim::stats::ORDER_QUEUE_CAP
         };
         let queue_has_room = if defer {
             crew.iter().any(can_assign)
@@ -612,7 +613,7 @@ pub(crate) enum PlacementVerdict {
     /// founds on arrival.
     BuildsOnArrival,
     /// The ground or the rules refuse the site.
-    Refused(oxide_sim::PlaceRefusal),
+    Refused(aftermine_sim::PlaceRefusal),
     /// The bank is this much scrap short of the site's cost.
     Short(u32),
     /// No selected builder has room for the order.
@@ -634,10 +635,10 @@ impl PlacementVerdict {
 /// the tick, and the staged batch only grows until a tick drains it.
 #[derive(Debug, PartialEq, Eq)]
 struct VerdictKey {
-    tick: oxide_sim::Tick,
+    tick: aftermine_sim::Tick,
     pending: usize,
     units: Vec<UnitId>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
     /// The stroke judged behind: whether it opens queued, and its stamps.
@@ -659,7 +660,7 @@ impl VerdictCache {
 /// What placing `kind` at `anchor` would do for the selected builders.
 pub(crate) fn placement_verdict(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
 ) -> PlacementVerdict {
@@ -670,7 +671,7 @@ pub(crate) fn placement_verdict(
 /// always queues.
 fn stroke_verdict(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     stroke: &PlacingStroke,
     anchor: TilePos,
 ) -> PlacementVerdict {
@@ -681,16 +682,16 @@ fn stroke_verdict(
 /// them if the button came up now.
 fn planned_batch(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     stroke: &PlacingStroke,
-) -> Vec<oxide_sim::PlayerCommand> {
+) -> Vec<aftermine_sim::PlayerCommand> {
     let units = &game.presentation.selection.units;
     let stamps =
         stroke
             .stamps
             .iter()
             .enumerate()
-            .map(|(index, &anchor)| oxide_sim::PlayerCommand {
+            .map(|(index, &anchor)| aftermine_sim::PlayerCommand {
                 player: game.presentation.human,
                 command: Command::Build {
                     units: units.clone(),
@@ -705,7 +706,7 @@ fn planned_batch(
 
 fn judge(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
     stroke: Option<&PlacingStroke>,
@@ -764,7 +765,7 @@ fn judge(
 /// Moves run eight ways without cutting corners, as the sim's search does.
 fn founder_may_reach(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     own: &[(TilePos, (i32, i32))],
 ) -> bool {
@@ -865,7 +866,7 @@ fn founder_may_reach(
 /// another selected builder may still accept the order.
 pub(crate) fn queued_position(game: &crate::game::Scene<'_>) -> Option<usize> {
     placement_backlog(game)
-        .filter(|backlog| *backlog <= oxide_sim::stats::ORDER_QUEUE_CAP)
+        .filter(|backlog| *backlog <= aftermine_sim::stats::ORDER_QUEUE_CAP)
         .map(|backlog| backlog + 1)
 }
 
@@ -905,10 +906,10 @@ pub(crate) fn placement_backlog(game: &crate::game::Scene<'_>) -> Option<usize> 
             .orders
             .iter()
             .filter(|order| match order {
-                oxide_sim::Order::Idle => false,
+                aftermine_sim::Order::Idle => false,
                 // A queued order replaces a trip from an idle post rather
                 // than waiting behind it.
-                oxide_sim::Order::Tend { .. } => program.looping,
+                aftermine_sim::Order::Tend { .. } => program.looping,
                 _ => true,
             })
             .count(),
@@ -928,7 +929,7 @@ pub(crate) enum Lands {
 /// the stroke reaching it, would do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PreviewSpot {
-    pub(crate) kind: oxide_sim::BuildingKind,
+    pub(crate) kind: aftermine_sim::BuildingKind,
     pub(crate) anchor: TilePos,
     pub(crate) verdict: PlacementVerdict,
     /// Where it lands, when it builds and its builder is known.
@@ -951,7 +952,7 @@ pub(crate) fn preview_spot(
         let base = if stroke.queue { backlog } else { Some(0) };
         let queued = |index: usize| {
             base.map(|base| base + index + 1)
-                .filter(|position| *position <= oxide_sim::stats::ORDER_QUEUE_CAP + 1)
+                .filter(|position| *position <= aftermine_sim::stats::ORDER_QUEUE_CAP + 1)
                 .map(Lands::Queues)
         };
         if let Some(index) = stroke.stamps.iter().position(|a| *a == anchor) {
@@ -967,7 +968,7 @@ pub(crate) fn preview_spot(
             };
             (verdict, lands)
         } else if stroke.overlaps(kind, anchor) {
-            (Refused(oxide_sim::PlaceRefusal::Building), None)
+            (Refused(aftermine_sim::PlaceRefusal::Building), None)
         } else {
             (
                 stroke_verdict(game, kind, stroke, anchor),
@@ -992,8 +993,8 @@ pub(crate) fn preview_spot(
 }
 
 /// Why the ground or the rules refuse a site, as a lowercase fragment.
-pub(crate) fn refusal_reason(refusal: oxide_sim::PlaceRefusal) -> &'static str {
-    use oxide_sim::PlaceRefusal;
+pub(crate) fn refusal_reason(refusal: aftermine_sim::PlaceRefusal) -> &'static str {
+    use aftermine_sim::PlaceRefusal;
     match refusal {
         PlaceRefusal::Fog => "you haven't scouted that ground",
         PlaceRefusal::Terrain => "impassable ground",
@@ -1007,8 +1008,8 @@ pub(crate) fn refusal_reason(refusal: oxide_sim::PlaceRefusal) -> &'static str {
 }
 
 /// The toast a refused placement click raises.
-fn refusal_toast(refusal: oxide_sim::PlaceRefusal) -> String {
-    use oxide_sim::PlaceRefusal;
+fn refusal_toast(refusal: aftermine_sim::PlaceRefusal) -> String {
+    use aftermine_sim::PlaceRefusal;
     let reason = refusal_reason(refusal);
     match refusal {
         PlaceRefusal::Fog
@@ -1025,20 +1026,23 @@ fn refusal_toast(refusal: oxide_sim::PlaceRefusal) -> String {
 /// A discovered Extractor frame is one 2x2 target, not four unrelated tiles.
 pub(crate) fn placement_anchor(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     clicked: TilePos,
 ) -> TilePos {
     game.state
         .canonical_build_anchor(game.presentation.human, kind, clicked)
 }
 
-fn placement_ping(kind: oxide_sim::BuildingKind, anchor: TilePos) -> Vec2 {
-    crate::game::world_vec(oxide_sim::geometry::footprint_center(anchor, kind.size()))
+fn placement_ping(kind: aftermine_sim::BuildingKind, anchor: TilePos) -> Vec2 {
+    crate::game::world_vec(aftermine_sim::geometry::footprint_center(
+        anchor,
+        kind.size(),
+    ))
 }
 
 /// The map tile a ground order names. The camera's edge slack lets the
 /// cursor rest past the map, so the tile clamps back onto it.
-pub(crate) fn ground_tile(state: &oxide_sim::State, world: Vec2) -> TilePos {
+pub(crate) fn ground_tile(state: &aftermine_sim::State, world: Vec2) -> TilePos {
     let map = state.map();
     TilePos::new(
         numeric::to_i32(world.x.floor()).clamp(0, map.width() - 1),
@@ -1153,7 +1157,7 @@ impl InputState {
     }
 
     /// Arms placement of `kind`, with no stroke or ghost yet.
-    pub(crate) fn arm_placement(&mut self, kind: oxide_sim::BuildingKind) {
+    pub(crate) fn arm_placement(&mut self, kind: aftermine_sim::BuildingKind) {
         self.placing = Some(Placement {
             kind,
             stroke: None,
@@ -1168,7 +1172,7 @@ impl InputState {
     }
 
     /// The building kind armed for placement, if any.
-    pub(crate) fn placing_kind(&self) -> Option<oxide_sim::BuildingKind> {
+    pub(crate) fn placing_kind(&self) -> Option<aftermine_sim::BuildingKind> {
         self.placing.as_ref().map(|placement| placement.kind)
     }
 
@@ -1543,11 +1547,11 @@ pub(crate) fn reported_minimized() -> Option<bool> {
 impl macroquad::miniquad::EventHandler for PointerStream {
     fn window_minimized_event(&mut self) {
         WINDOW_ACTIVITY.store(2, std::sync::atomic::Ordering::Relaxed);
-        oxide_kit::diagnostics::minimized(true);
+        aftermine_kit::diagnostics::minimized(true);
     }
     fn window_restored_event(&mut self) {
         WINDOW_ACTIVITY.store(1, std::sync::atomic::Ordering::Relaxed);
-        oxide_kit::diagnostics::minimized(false);
+        aftermine_kit::diagnostics::minimized(false);
     }
     // The collector never runs a frame; it only replays input.
     fn update(&mut self) {}
@@ -2092,7 +2096,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                         game.presentation
                             .ping_order(tile_center(tile), PingKind::Move, queue);
                     } else if units.is_empty() {
-                        rally_selected_producers(game, oxide_sim::Rally::Tile(tile));
+                        rally_selected_producers(game, aftermine_sim::Rally::Tile(tile));
                     }
                 }
             } else if !click_on_hud(game, vec2(x, y)) {
@@ -2252,7 +2256,7 @@ fn armed_click(
         // The minimap names ground only; the world names the own unit under
         // the click, which new units then escort, or else the ground.
         let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            Some(oxide_sim::Rally::Tile(ground_tile(&game.state, world)))
+            Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
         } else {
             (!click_on_hud(game, p)).then(|| rally_at(game, game.presentation.camera.to_world(p)))
         };
@@ -2317,10 +2321,10 @@ fn armed_click(
 /// it. An Extractor snaps to the frame under the finger instead.
 fn ghost_anchor_under(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     world: Vec2,
 ) -> TilePos {
-    if kind == oxide_sim::BuildingKind::Extractor {
+    if kind == aftermine_sim::BuildingKind::Extractor {
         let tile = numeric::tile_at(world);
         return placement_anchor(game, kind, tile);
     }
@@ -2337,7 +2341,7 @@ pub(crate) fn ghost_footprint(
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
     if let Some(strike) = &input.striking {
-        let blast = oxide_sim::stats::WARHEAD.outer_radius.to_num::<f32>();
+        let blast = aftermine_sim::stats::WARHEAD.outer_radius.to_num::<f32>();
         return Some(strike_disc_on_screen(game, strike.aim()?, blast));
     }
     let (kind, anchor) = (input.placing_kind()?, input.ghost_anchor()?);
@@ -2358,7 +2362,7 @@ fn strike_disc_on_screen(
 
 fn footprint_on_screen(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
 ) -> macroquad::math::Rect {
     let (w, h) = kind.size();
@@ -2381,7 +2385,7 @@ pub(crate) fn ghost_touch_rect(
         Some(strike) => strike_disc_on_screen(
             game,
             strike.aim()?,
-            oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
+            aftermine_sim::stats::WARHEAD.full_radius.to_num::<f32>(),
         ),
         None => ghost_footprint(game, input)?,
     };
@@ -2394,7 +2398,7 @@ pub(crate) fn ghost_touch_rect(
 pub(crate) fn row_handle_at(game: &crate::game::Scene<'_>, input: &InputState) -> Option<Vec2> {
     let placement = input.placing.as_ref()?;
     let ghost = placement.ghost.as_ref()?;
-    if placement.kind == oxide_sim::BuildingKind::Extractor {
+    if placement.kind == aftermine_sim::BuildingKind::Extractor {
         return None;
     }
     let row = ghost.row.as_ref();
@@ -2427,7 +2431,7 @@ pub(crate) fn row_runs_down(input: &InputState) -> bool {
 
 /// The longest row a handle pulls out: one order queue's worth bounds
 /// the cells judged per drag.
-const ROW_CAP: usize = oxide_sim::stats::ORDER_QUEUE_CAP;
+const ROW_CAP: usize = aftermine_sim::stats::ORDER_QUEUE_CAP;
 
 /// Cell `k` of a row from `origin`.
 fn row_cell(origin: TilePos, step: (i32, i32), k: usize) -> TilePos {
@@ -2440,7 +2444,7 @@ fn row_cell(origin: TilePos, step: (i32, i32), k: usize) -> TilePos {
 /// stroke skips them.
 fn plan_row_cells(
     game: &crate::game::Scene<'_>,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     origin: TilePos,
     step: (i32, i32),
     cells: std::ops::Range<usize>,
@@ -2698,7 +2702,7 @@ fn drag_aim(game: &crate::game::Scene<'_>, aim: &mut StrikeAim, p: Vec2, lift: f
         return;
     };
     let camera = &game.presentation.camera;
-    let core = oxide_sim::stats::WARHEAD.full_radius.to_num::<f32>() * 2.0;
+    let core = aftermine_sim::stats::WARHEAD.full_radius.to_num::<f32>() * 2.0;
     aim.tile = if core * camera.zoom < lift {
         ground_tile(game.state, camera.to_world(p - vec2(0.0, lift)))
     } else {
@@ -2802,7 +2806,7 @@ fn record_placed(input: &mut InputState, anchor: TilePos, step: Option<(i32, i32
 fn place_at(
     game: &mut Game,
     input: &mut InputState,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
 ) -> bool {
     // A held queue (Shift, or QUEUE on touch) both keeps placing and
@@ -2826,7 +2830,7 @@ fn place_at(
 fn commit_stroke(
     game: &mut Game,
     input: &mut InputState,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     stroke: &PlacingStroke,
     step: Option<(i32, i32)>,
 ) -> bool {
@@ -2906,7 +2910,7 @@ fn extend_stroke(game: &Game, input: &mut InputState, from: Vec2, to: Vec2) {
 /// here means unscouted ground.
 fn stage_build(
     game: &mut Game,
-    kind: oxide_sim::BuildingKind,
+    kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
 ) -> Result<(), String> {
@@ -2931,7 +2935,7 @@ fn stage_build(
 }
 
 /// The toast a placement click raises for `verdict`, if it refuses.
-fn refusal_text(kind: oxide_sim::BuildingKind, verdict: PlacementVerdict) -> Option<String> {
+fn refusal_text(kind: aftermine_sim::BuildingKind, verdict: PlacementVerdict) -> Option<String> {
     match verdict {
         PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival => None,
         PlacementVerdict::Refused(refusal) => Some(refusal_toast(refusal)),
@@ -2975,7 +2979,7 @@ fn armed_verb_click(
             let target = game.state.buildings_at(tile).find(|b| {
                 b.player == game.presentation.human
                     && b.built()
-                    && b.kind != oxide_sim::BuildingKind::Foundry
+                    && b.kind != aftermine_sim::BuildingKind::Foundry
             });
             let Some(building) = target.map(|b| b.id) else {
                 game.presentation
@@ -3016,7 +3020,7 @@ fn armed_verb_click(
                         && u.hp > 0
                         && u.hp < u.kind.stats().max_hp
                         && u.kind.stats().repairable()
-                        && u.domain() == oxide_sim::stats::Domain::Ground
+                        && u.domain() == aftermine_sim::stats::Domain::Ground
                 })
                 .map(|u| {
                     let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
@@ -3212,7 +3216,7 @@ fn add_patrol_waypoint(
     let Some(route) = &mut input.patrol_route else {
         return;
     };
-    if route.len() >= oxide_sim::stats::ORDER_QUEUE_CAP {
+    if route.len() >= aftermine_sim::stats::ORDER_QUEUE_CAP {
         game.presentation
             .toast(patrol_full_toast(&key, crate::platform::hands()));
     } else {

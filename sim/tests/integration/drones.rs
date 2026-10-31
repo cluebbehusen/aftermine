@@ -3,11 +3,11 @@
 //! docking once calm, and falling with their host.
 
 use crate::common::{building, cmd, open_arena, players, run, unit};
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::stats::{BuildingKind, RECALL_TICKS};
+use aftermine_sim::{Command, Event, Rally, State, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::stats::{BuildingKind, RECALL_TICKS};
-use oxide_sim::{Command, Event, Rally, State, UnitId, UnitKind};
 
 const WIDTH: usize = 30;
 const HEIGHT: usize = 22;
@@ -69,7 +69,7 @@ fn docked(events: &[Event]) -> usize {
 fn a_bay_builds_one_drone_at_a_time_to_six_while_it_refills() {
     let mut state = staged(1_000, vec![unit(0, UnitKind::Roc, 8, 10)]);
     let roc = roc(&state);
-    let bank = state.player(oxide_sim::PlayerId(0)).scrap;
+    let bank = state.player(aftermine_sim::PlayerId(0)).scrap;
     let build = UnitKind::Drone.stats().train_ticks;
     run(&mut state, u64::from(build) + 1);
     let bay = state.unit(roc).unwrap().bay.unwrap();
@@ -79,7 +79,10 @@ fn a_bay_builds_one_drone_at_a_time_to_six_while_it_refills() {
     let bay = state.unit(roc).unwrap().bay.unwrap();
     assert_eq!((bay.docked, bay.ordered), (6, 0), "it stops at six");
     let cost = UnitKind::Drone.stats().cost;
-    assert_eq!(state.player(oxide_sim::PlayerId(0)).scrap, bank - 6 * cost);
+    assert_eq!(
+        state.player(aftermine_sim::PlayerId(0)).scrap,
+        bank - 6 * cost
+    );
 
     let mut idle = staged(1_000, vec![unit(0, UnitKind::Roc, 8, 10)]);
     let roc = idle.units()[0].id;
@@ -99,10 +102,10 @@ fn ordering_counts_flying_drones_and_cancelling_refunds() {
     let state = staged(1_000, vec![unit(0, UnitKind::Roc, 8, 10)]);
     let roc = roc(&state);
     let mut state = with_bay(&state, roc, &serde_json::json!({"docked": 5}));
-    let bank = state.player(oxide_sim::PlayerId(0)).scrap;
+    let bank = state.player(aftermine_sim::PlayerId(0)).scrap;
     let cost = UnitKind::Drone.stats().cost;
     state.tick(&[cmd(0, Command::OrderDrone { unit: roc })]);
-    assert_eq!(state.player(oxide_sim::PlayerId(0)).scrap, bank - cost);
+    assert_eq!(state.player(aftermine_sim::PlayerId(0)).scrap, bank - cost);
     let report = state.tick(&[cmd(0, Command::OrderDrone { unit: roc })]);
     assert!(
         report.events.iter().any(|e| matches!(
@@ -124,7 +127,7 @@ fn ordering_counts_flying_drones_and_cancelling_refunds() {
     let bay = state.unit(roc).unwrap().bay.unwrap();
     assert_eq!(bay.ordered, 0);
     assert!(!bay.autofill, "cancelling stops the refill");
-    assert_eq!(state.player(oxide_sim::PlayerId(0)).scrap, bank);
+    assert_eq!(state.player(aftermine_sim::PlayerId(0)).scrap, bank);
 
     // Six in flight fill the bay as surely as six docked.
     let mut flying = with_bay(&state, roc, &serde_json::json!({"docked": 6, "alert": 60}));
@@ -195,7 +198,7 @@ fn drones_fight_only_inside_the_leash_and_hold_their_ring_otherwise() {
     let host = state.unit(roc).unwrap().pos;
     for drone in drones(&state, roc) {
         let distance = state.unit(drone).unwrap().pos.dist_sq(host);
-        let leash = oxide_sim::stats::DRONE_LEASH + UnitKind::Roc.stats().radius;
+        let leash = aftermine_sim::stats::DRONE_LEASH + UnitKind::Roc.stats().radius;
         assert!(
             distance <= leash * leash,
             "a drone with nothing to fight keeps near its host"
@@ -239,7 +242,8 @@ fn drones_fight_a_fighter_that_reaches_their_host_from_its_full_range() {
         .pos
         .dist_sq(state.unit(roc).unwrap().pos);
     assert!(
-        gap <= reach * reach && gap > oxide_sim::stats::DRONE_LEASH * oxide_sim::stats::DRONE_LEASH,
+        gap <= reach * reach
+            && gap > aftermine_sim::stats::DRONE_LEASH * aftermine_sim::stats::DRONE_LEASH,
         "premise: the Talon reaches the Roc from beyond the leash's old centre-measured bound"
     );
     let mut state = with_bay(&state, roc, &serde_json::json!({"docked": 6}));
@@ -247,7 +251,7 @@ fn drones_fight_a_fighter_that_reaches_their_host_from_its_full_range() {
     assert!(
         events.iter().any(|e| matches!(
             e,
-            Event::AttackHit { attacker_kind: UnitKind::Drone, target: Some(oxide_sim::Target::Unit(target)), .. }
+            Event::AttackHit { attacker_kind: UnitKind::Drone, target: Some(aftermine_sim::Target::Unit(target)), .. }
                 if *target == talon
         )),
         "the drones fight the Talon"

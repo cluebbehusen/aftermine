@@ -311,7 +311,7 @@ impl App {
             played: if resumable {
                 crate::numeric::to_f32(
                     f64::from(u32::try_from(ticks).unwrap_or(u32::MAX))
-                        / f64::from(oxide_sim::TICKS_PER_SECOND)
+                        / f64::from(aftermine_sim::TICKS_PER_SECOND)
                         / self.game.clock.speed.max(f64::EPSILON),
                 )
             } else {
@@ -439,7 +439,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 matches!(
                     event,
                     RawEvent::KeyDown {
-                        key: oxide_protocol::Key::Escape
+                        key: aftermine_protocol::Key::Escape
                     }
                 )
             }))
@@ -473,7 +473,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     .config
                     .player_name
                     .as_deref()
-                    .and_then(|name| oxide_net::PlayerName::new(name).ok());
+                    .and_then(|name| aftermine_net::PlayerName::new(name).ok());
                 return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
                     *save,
                     &mut app.draft,

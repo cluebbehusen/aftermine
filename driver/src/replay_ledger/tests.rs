@@ -1,8 +1,8 @@
 use super::*;
 use crate::bot_eval::EvaluationController;
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use chassis::replay::Replay;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::{BotDifficulty, BotStance};
 
 fn seats(description: Option<String>) -> Vec<SeatPlayer> {
     let mut scenario = Scenario::skirmish();

@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::Scenario;
+use aftermine_sim::Scenario;
 
 /// Three islands in a row, West's start on the first, then Mid's and East's.
 fn islands() -> Scenario {

@@ -1,12 +1,12 @@
-//! Attack calibration: what `oxide-opponent` believed when it launched each
+//! Attack calibration: what `aftermine-opponent` believed when it launched each
 //! attack, against how the attack went. Each launch is followed through the
 //! seat's mission statuses until its mission ends, and the units it sent are
 //! charged with the value they dealt and lost meanwhile, from the impact
 //! ledger.
 
 use crate::ledger::ImpactLedger;
-use oxide_opponent::{Launch, MissionStatus, Phase};
-use oxide_sim::UnitId;
+use aftermine_opponent::{Launch, MissionStatus, Phase};
+use aftermine_sim::UnitId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -141,7 +141,7 @@ struct SeatAttacks {
     done: AttackCalibration,
 }
 
-/// Follows every `oxide-opponent` seat's attacks over a leg.
+/// Follows every `aftermine-opponent` seat's attacks over a leg.
 pub(crate) struct AttackFollower {
     seats: Vec<Option<SeatAttacks>>,
 }
@@ -244,7 +244,7 @@ impl AttackFollower {
     }
 
     /// Closes every attack still open and returns each seat's calibration;
-    /// `None` for seats that are not `oxide-opponent`.
+    /// `None` for seats that are not `aftermine-opponent`.
     pub(crate) fn finish(self, ledger: &ImpactLedger) -> Vec<Option<AttackCalibration>> {
         self.seats
             .into_iter()

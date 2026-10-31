@@ -1,5 +1,5 @@
 use super::*;
-use oxide_protocol::MouseButton;
+use aftermine_protocol::MouseButton;
 
 #[test]
 fn step_uses_the_presentation_preserving_protocol_method() {
@@ -63,7 +63,7 @@ fn presented_capture_rejects_an_unbounded_interval_before_connecting() {
     let error = capture_sequence(
         "127.0.0.1:1",
         2,
-        oxide_protocol::MAX_PRESENT_TICKS + 1,
+        aftermine_protocol::MAX_PRESENT_TICKS + 1,
         true,
         std::path::Path::new("not-created"),
     )

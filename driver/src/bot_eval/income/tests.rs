@@ -1,7 +1,7 @@
 use super::*;
-use oxide_sim::Scenario;
-use oxide_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode};
-use oxide_sim::{Command, PlayerCommand, stats::HarvestStats};
+use aftermine_sim::Scenario;
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode};
+use aftermine_sim::{Command, PlayerCommand, stats::HarvestStats};
 use std::path::Path;
 
 fn scenario(map: Vec<String>, buildings: Vec<BuildingSpec>) -> Scenario {

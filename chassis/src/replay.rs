@@ -70,7 +70,7 @@ pub struct ReplayMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticks: Option<Tick>,
     /// What kind of record this is. Chassis assigns no meaning; games write
-    /// and classify their own tags (Oxide uses "autosave", "save", "match").
+    /// and classify their own tags (Aftermine uses "autosave", "save", "match").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     /// Wall-clock save time in unix seconds, supplied by the caller. It is

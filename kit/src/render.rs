@@ -5,10 +5,10 @@
 //! byte-for-byte with no GPU or window. The style is a plain diagram (flat
 //! tiles, circles, hp bars); the shell owns presentation.
 
+use aftermine_sim::map::{Elevation, Map, Terrain, Tile};
+use aftermine_sim::{BuildingKind, PlayerId, State, UnitKind};
 use anyhow::{Context, Result};
 use chassis::grid::TilePos;
-use oxide_sim::map::{Elevation, Map, Terrain, Tile};
-use oxide_sim::{BuildingKind, PlayerId, State, UnitKind};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Shader, Transform};
 
 /// Whole pixels per tile.
@@ -247,7 +247,7 @@ const WRECK_INSET: f32 = 0.35;
 /// share of the tile: nodes shrink and dim as they deplete, and rich nodes
 /// render saturated at full size.
 fn node_look(scrap: u32) -> (u32, f32) {
-    let fraction = (scrap as f32 / oxide_sim::stats::SCRAP_NODE_AMOUNT as f32).min(1.0);
+    let fraction = (scrap as f32 / aftermine_sim::stats::SCRAP_NODE_AMOUNT as f32).min(1.0);
     let color = if fraction > 0.5 {
         SCRAP_FULL
     } else {

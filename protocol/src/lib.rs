@@ -5,7 +5,7 @@ pub mod input;
 pub mod session;
 pub mod view;
 
-use oxide_sim::{Command, Event, PlayerId};
+use aftermine_sim::{Command, Event, PlayerId};
 use serde::{Deserialize, Serialize};
 
 pub use input::{Key, MouseButton, RawEvent};

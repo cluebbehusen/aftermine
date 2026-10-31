@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::panel::CardAction;
+use aftermine_sim::{BuildingKind, Command};
 use macroquad::math::Rect;
-use oxide_sim::{BuildingKind, Command};
 
 /// The fixture's own buildings all selected: `turrets` Turrets, a
 /// Fabricator, a Crucible, and the starting Foundry.
@@ -16,7 +16,7 @@ fn base(turrets: usize) -> Game {
     game
 }
 
-fn own_buildings(game: &Game, kind: Option<BuildingKind>) -> Vec<oxide_sim::BuildingId> {
+fn own_buildings(game: &Game, kind: Option<BuildingKind>) -> Vec<aftermine_sim::BuildingId> {
     game.state
         .buildings()
         .iter()
@@ -26,7 +26,7 @@ fn own_buildings(game: &Game, kind: Option<BuildingKind>) -> Vec<oxide_sim::Buil
 }
 
 /// Every own building but those of `kind`.
-fn others(game: &Game, kind: BuildingKind) -> Vec<oxide_sim::BuildingId> {
+fn others(game: &Game, kind: BuildingKind) -> Vec<aftermine_sim::BuildingId> {
     own_buildings(game, None)
         .into_iter()
         .filter(|id| game.state.building(*id).is_some_and(|b| b.kind != kind))
@@ -147,7 +147,7 @@ fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
 
 #[test]
 fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
-    let scenario = oxide_sim::Scenario::from_json(
+    let scenario = aftermine_sim::Scenario::from_json(
         r#"{
         "name":"Select all riders",
         "players":[{"name":"F","scrap":0,"bot":false},
@@ -165,7 +165,7 @@ fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
     .expect("inline rider scenario parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("rider game builds");
     let human = game.presentation.human;
-    let own = |game: &Game, kind| -> Vec<oxide_sim::UnitId> {
+    let own = |game: &Game, kind| -> Vec<aftermine_sim::UnitId> {
         game.state
             .units()
             .iter()

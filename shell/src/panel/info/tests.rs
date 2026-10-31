@@ -2,10 +2,10 @@ use super::*;
 use crate::game::Game;
 
 fn selected(kind: UnitKind, foreign: bool) -> Panel {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     let player = u8::from(foreign);
     // Clear of the Foundry by the widest hull's overhang.
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player,
         kind,
         x: 7,
@@ -92,8 +92,8 @@ fn scouts_list_their_radar_and_a_surveyor_reports_it_unfolding() {
     );
     assert_eq!(radar(&selected(UnitKind::Sentinel, false)), None);
 
-    let mut scenario = oxide_sim::Scenario::skirmish();
-    scenario.units = vec![oxide_sim::scenario::UnitSpec {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
         player: 0,
         kind: UnitKind::Surveyor,
         x: 6,
@@ -150,12 +150,12 @@ fn point_defense_reach_carries_the_icon_its_range_ring_draws() {
 
 #[test]
 fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked() {
+    use aftermine_sim::strike::{KnownWarhead, WarheadLine};
     use chassis::fx::{Fx, Vec2Fx};
-    use oxide_sim::strike::{KnownWarhead, WarheadLine};
 
     let at = |x: i32| Vec2Fx::new(Fx::from_num(x), Fx::from_num(0));
     let warhead = |landing: Option<i32>, stopped: bool| KnownWarhead {
-        id: oxide_sim::WarheadId(0),
+        id: aftermine_sim::WarheadId(0),
         player: None,
         hostile: true,
         position: at(0),
@@ -165,7 +165,7 @@ fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked(
             arrival: 100,
         }),
         exposure: None,
-        interceptor: stopped.then_some(oxide_sim::BuildingId(7)),
+        interceptor: stopped.then_some(aftermine_sim::BuildingId(7)),
     };
     let summary = |warheads: &[KnownWarhead]| incoming_warheads(warheads, at(0), Fx::from_num(15));
 

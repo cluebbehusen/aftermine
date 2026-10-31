@@ -3,10 +3,10 @@
 
 use super::NewMatchDraft;
 use crate::game::Game;
+use aftermine_net::PlayerName;
+use aftermine_sim::Scenario;
 use anyhow::{Context, Result};
 use chassis::rng::Pcg32;
-use oxide_net::PlayerName;
-use oxide_sim::Scenario;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const BOT_PERSONALITY_STREAM: u64 = 0x0B07_5EED;
@@ -99,7 +99,7 @@ pub(crate) fn hosted_scenario(
         let plan = draft.seats[i];
         player.bot = i != seat_choice && !plan.open;
         player.bot_config = player.bot.then(|| {
-            oxide_sim::scenario::BotConfig::new(
+            aftermine_sim::scenario::BotConfig::new(
                 plan.difficulty,
                 plan.stance,
                 personality_seed_base.wrapping_add(i as u64),

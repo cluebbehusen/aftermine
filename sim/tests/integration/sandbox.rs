@@ -1,7 +1,7 @@
 //! Open-ended unit scenes use the ordinary command and persistence boundaries.
+use aftermine_sim::scenario::{ScenarioError, ScenarioMode};
+use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State};
 use chassis::grid::TilePos;
-use oxide_sim::scenario::{ScenarioError, ScenarioMode};
-use oxide_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State};
 
 fn sandbox() -> Scenario {
     Scenario::from_json(

@@ -9,11 +9,11 @@ use super::{Missions, Task, hunt, mine, walking_gun};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled};
 use crate::map::{MapModel, Shot};
+use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::scenario::BotDifficulty;
+use aftermine_sim::stats::{Domain, TargetPriority};
+use aftermine_sim::{AttackTarget, Command, UnitId};
 use chassis::fx::Fx;
-use oxide_sim::observation::{ObservationData, UnitObs};
-use oxide_sim::scenario::BotDifficulty;
-use oxide_sim::stats::{Domain, TargetPriority};
-use oxide_sim::{AttackTarget, Command, UnitId};
 
 /// Tiles from a member inside which an enemy can be focused.
 const FOCUS_TILES: i32 = 6;

@@ -12,10 +12,10 @@
 use super::{GroundLayout, boulders, pits, terraces, world};
 use crate::assets::Sprites;
 use crate::numeric;
+use aftermine_sim::Scenario;
+use aftermine_sim::map::{Map, Terrain};
 use chassis::grid::TilePos;
 use macroquad::prelude::*;
-use oxide_sim::Scenario;
-use oxide_sim::map::{Map, Terrain};
 use std::collections::BTreeMap;
 
 /// Logical pixels on a side of one chunk. Chunks are a fixed size on screen,

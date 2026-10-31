@@ -8,12 +8,12 @@
 
 use std::collections::HashMap;
 
-use chassis::fx::Vec2Fx;
-use oxide_sim::stats::{Domain, MAX_WEAPONS};
-use oxide_sim::{
+use aftermine_sim::stats::{Domain, MAX_WEAPONS};
+use aftermine_sim::{
     Building, BuildingId, BuildingKind, BuildingPhase, Event, Order, State, Unit, UnitId, UnitKind,
     UnitRepairSource,
 };
+use chassis::fx::Vec2Fx;
 
 const GROUND_MOVE_PERIOD: u64 = 6;
 const HARVEST_PERIOD: u64 = 20;
@@ -275,7 +275,7 @@ pub(crate) struct UnitAnimationFacts {
     /// A parking radar's deployed ticks and deploy time, while unfolding
     /// or up.
     radar_unfold: Option<(u8, u8)>,
-    point_defense: Option<oxide_sim::state::PointDefense>,
+    point_defense: Option<aftermine_sim::state::PointDefense>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -327,7 +327,7 @@ impl UnitAnimationFacts {
                 Order::Repair { building }
                 | Order::Salvage { building }
                 | Order::Tend {
-                    weld: Some(oxide_sim::Target::Building(building)),
+                    weld: Some(aftermine_sim::Target::Building(building)),
                     ..
                 } => Some(WorkTarget::Building(building)),
                 _ => None,
@@ -362,7 +362,7 @@ impl UnitAnimationFacts {
                     0.5
                 } else {
                     (f32::from(elapsed) + clock.tick_fraction)
-                        / f32::from(oxide_sim::stats::UNLOAD_TICKS)
+                        / f32::from(aftermine_sim::stats::UNLOAD_TICKS)
                 },
             },
             UnitWorkFact::Harvesting(target, progress) => UnitWorkState::Harvesting {
@@ -640,10 +640,10 @@ impl AnimationController {
                     attacker, weapon, ..
                 } => self.note_unit_attack(*attacker, *weapon, completed_tick),
                 Event::ShellLaunched { shooter, .. } => match shooter {
-                    oxide_sim::Target::Unit(unit) => {
+                    aftermine_sim::Target::Unit(unit) => {
                         self.note_unit_attack(*unit, 0, completed_tick);
                     }
-                    oxide_sim::Target::Building(building) => {
+                    aftermine_sim::Target::Building(building) => {
                         self.building_attacks.insert(
                             *building,
                             AttackStamp {
@@ -1501,7 +1501,7 @@ fn active_unit_repair(state: &State, unit: &Unit) -> Option<Vec2Fx> {
     match unit.order {
         Order::Repair { building }
         | Order::Tend {
-            weld: Some(oxide_sim::Target::Building(building)),
+            weld: Some(aftermine_sim::Target::Building(building)),
             ..
         } => state.building(building).and_then(|patient| {
             (patient.player == unit.player

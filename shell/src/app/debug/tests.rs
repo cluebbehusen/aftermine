@@ -4,8 +4,8 @@ use super::*;
 fn local_request_guards_follow_screen_ownership() {
     let advance = Request::AdvanceTicks { ticks: 8 };
     let send = Request::SendCommand {
-        player: oxide_sim::PlayerId(0),
-        command: oxide_sim::Command::Surrender,
+        player: aftermine_sim::PlayerId(0),
+        command: aftermine_sim::Command::Surrender,
     };
     let camera = Request::QueryCamera;
 
@@ -29,12 +29,12 @@ fn local_request_guards_follow_screen_ownership() {
 #[test]
 fn a_lan_match_refuses_its_clock_other_seats_and_the_overlay() {
     use crate::game::network::NetRole;
-    let seat = oxide_sim::PlayerId(1);
+    let seat = aftermine_sim::PlayerId(1);
     let host = Some((NetRole::Host, seat));
     let client = Some((NetRole::Client, seat));
     let send = |player| Request::SendCommand {
-        player: oxide_sim::PlayerId(player),
-        command: oxide_sim::Command::Surrender,
+        player: aftermine_sim::PlayerId(player),
+        command: aftermine_sim::Command::Surrender,
     };
     for net in [host, client] {
         for refused in [
@@ -91,7 +91,7 @@ fn final_map_allows_inspection_but_refuses_time_and_session_mutation() {
     for request in [
         Request::Status,
         Request::QueryState {
-            filter: oxide_protocol::StateFilter::default(),
+            filter: aftermine_protocol::StateFilter::default(),
         },
         Request::QueryCamera,
         Request::QueryUi,

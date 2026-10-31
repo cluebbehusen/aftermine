@@ -194,8 +194,8 @@ fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
 fn configured_new_match_draft() -> NewMatchDraft {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(Scenario::skirmish(), None);
-    draft.seats[1].difficulty = oxide_sim::scenario::BotDifficulty::Prime;
-    draft.seats[1].stance = oxide_sim::scenario::BotStance::Aggressive;
+    draft.seats[1].difficulty = aftermine_sim::scenario::BotDifficulty::Prime;
+    draft.seats[1].stance = aftermine_sim::scenario::BotStance::Aggressive;
     draft
 }
 
@@ -211,7 +211,7 @@ fn escape_clears_a_selection_before_pausing_except_for_terminal_overlays() {
 #[test]
 fn opening_pause_freezes_play_and_ends_the_concede_banner() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     game.presentation.conceded_banner = true;
     let screen = open_pause(&game, PauseCause::Player);
     assert!(matches!(screen, Screen::Pause(_)));
@@ -255,7 +255,7 @@ fn a_suspension_gap_pauses_only_a_running_live_match() {
 #[test]
 fn a_suspension_pause_explains_itself() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     let screen = open_pause(&game, PauseCause::Suspension);
     enter(&mut game, &screen);
     let Screen::Pause(pause) = screen else {
@@ -342,7 +342,7 @@ fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
         .restore()
         .unwrap()
         .install();
-    resumed.issue(oxide_sim::Command::Surrender);
+    resumed.issue(aftermine_sim::Command::Surrender);
     resumed.do_tick();
     assert!(resumed.state.result().is_some());
     assert!(
@@ -353,7 +353,7 @@ fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
     assert!(!mark_first_match(&mut config, &resumed), "it counts once");
 
     let mut other = Game::new(Scenario::skirmish()).unwrap();
-    other.issue(oxide_sim::Command::Surrender);
+    other.issue(aftermine_sim::Command::Surrender);
     other.do_tick();
     let mut fresh = config::Config::default();
     assert!(
@@ -420,8 +420,11 @@ fn a_viewer_restores_the_exact_screen_that_opened_it() {
 #[test]
 fn every_way_out_of_the_final_map_ends_inspection() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.units.push(oxide_sim::UnitId(1));
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+    game.presentation
+        .selection
+        .units
+        .push(aftermine_sim::UnitId(1));
     let final_map = Screen::FinalMap(FinalMapScreen::open());
     enter(&mut game, &final_map);
     assert!(game.clock.paused);
@@ -436,7 +439,7 @@ fn every_way_out_of_the_final_map_ends_inspection() {
 #[test]
 fn a_notice_lands_where_the_player_is_looking() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     let notice = || Notice {
         text: "could not save settings: disk full".to_owned(),
         danger: true,
@@ -512,7 +515,7 @@ fn a_menu_notice_ages_only_while_a_screen_shows_it() {
 #[test]
 fn a_frame_that_leaves_live_play_runs_no_ticks() {
     let mut game =
-        Game::with_viewport(oxide_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     let start = game.state.current_tick();
     let gap = SUSPENSION_GAP_SECS * 2.0;
     advance_live_match(&mut game, gap, None, true);

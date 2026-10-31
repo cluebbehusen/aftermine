@@ -6,8 +6,8 @@
 //! ladders) are read from its stats instead, and frame counts from the atlas.
 
 use crate::game::{FlakYokeDelay, ShotStyle, SoundKind};
+use aftermine_sim::{BuildingKind, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{BuildingKind, UnitKind};
 
 /// The usual sprite size against a unit's tile.
 const DEFAULT_SCALE: f32 = 1.05;
@@ -153,7 +153,7 @@ pub(crate) fn scout(kind: UnitKind) -> bool {
 }
 
 /// Whether a unit of `kind` launches `payload` from one of its weapons.
-pub(crate) fn fires(kind: UnitKind, payload: oxide_sim::ProjectileKind) -> bool {
+pub(crate) fn fires(kind: UnitKind, payload: aftermine_sim::ProjectileKind) -> bool {
     kind.stats().weapons.iter().any(|weapon| {
         weapon
             .projectile

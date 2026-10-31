@@ -22,7 +22,7 @@ fn bless_gate(
     let Some(stored) = stored else {
         return Ok(());
     };
-    if stored.sim_version != oxide_sim::SIM_VERSION || override_on {
+    if stored.sim_version != aftermine_sim::SIM_VERSION || override_on {
         return Ok(());
     }
     let drifted: Vec<&str> = stored
@@ -36,18 +36,18 @@ fn bless_gate(
     }
     Err(format!(
         "refusing to bless: {} fixture hash(es) moved ({}) at SIM_VERSION {}. \
-         Oxide is pre-launch: re-bless at the same version with BLESS_SAME_VERSION=1 \
+         Aftermine is pre-launch: re-bless at the same version with BLESS_SAME_VERSION=1 \
          and name the moved rows and the reason in the PR (docs/versioning.md).",
         drifted.len(),
         drifted.join(", "),
-        oxide_sim::SIM_VERSION,
+        aftermine_sim::SIM_VERSION,
     ))
 }
 
 #[test]
 fn same_version_hash_movement_refuses_the_bless() {
     let stored = Fixture {
-        sim_version: oxide_sim::SIM_VERSION,
+        sim_version: aftermine_sim::SIM_VERSION,
         hashes: BTreeMap::from([
             ("skirmish".to_string(), "aaaa".to_string()),
             ("retired-map".to_string(), "cccc".to_string()),
@@ -76,7 +76,7 @@ fn same_version_hash_movement_refuses_the_bless() {
 #[test]
 fn a_different_version_or_fresh_fixture_licenses_the_bless() {
     let stored = Fixture {
-        sim_version: oxide_sim::SIM_VERSION + 1,
+        sim_version: aftermine_sim::SIM_VERSION + 1,
         hashes: BTreeMap::from([("skirmish".to_string(), "aaaa".to_string())]),
     };
     let actual = BTreeMap::from([("skirmish".to_string(), "bbbb".to_string())]);
@@ -84,7 +84,7 @@ fn a_different_version_or_fresh_fixture_licenses_the_bless() {
     assert!(bless_gate(None, &actual, false).is_ok());
 
     let same_version_same_hashes = Fixture {
-        sim_version: oxide_sim::SIM_VERSION,
+        sim_version: aftermine_sim::SIM_VERSION,
         hashes: actual.clone(),
     };
     assert!(

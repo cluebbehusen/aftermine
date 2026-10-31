@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{PlayerId, Scenario};
+use aftermine_sim::{PlayerId, Scenario};
 
 #[test]
 fn defenders_around_several_tiles_count_once() {
@@ -24,7 +24,7 @@ fn defenders_around_several_tiles_count_once() {
 
 #[test]
 fn guile_gives_a_fight_up_sooner_and_the_upper_rungs_hold_on_longer() {
-    use oxide_sim::scenario::{BotConfig, BotStance};
+    use aftermine_sim::scenario::{BotConfig, BotStance};
     let threshold = |difficulty: BotDifficulty, guile: u8| {
         let mut profile =
             ResolvedProfile::resolve(BotConfig::new(difficulty, BotStance::Balanced, 0));

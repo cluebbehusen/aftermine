@@ -6,8 +6,8 @@ use super::{
 use super::{EffectKind, Selection};
 use crate::camera::Camera;
 use crate::numeric;
+use aftermine_sim::{Building, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitId};
 use macroquad::prelude::{Vec2, vec2};
-use oxide_sim::{Building, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitId};
 use std::collections::HashMap;
 
 /// What an alert warns of.
@@ -16,7 +16,7 @@ pub enum AlertKind {
     /// Own forces under fire, or a hostile warhead inbound.
     Attack,
     /// A hostile experimental of this kind is assembling or has stood up.
-    Assembly(oxide_sim::UnitKind),
+    Assembly(aftermine_sim::UnitKind),
 }
 
 pub struct Presentation {
@@ -33,7 +33,7 @@ pub struct Presentation {
     /// Compass headings at the previous tick, for angular interpolation.
     pub prev_heading: HashMap<u32, u8>,
     /// Mounted guns' world bearings at the previous tick, by weapon slot.
-    pub(crate) prev_mounts: HashMap<u32, [Option<u8>; oxide_sim::stats::MAX_WEAPONS]>,
+    pub(crate) prev_mounts: HashMap<u32, [Option<u8>; aftermine_sim::stats::MAX_WEAPONS]>,
     /// Defense guns' bearings at the previous tick.
     pub(crate) prev_guns: HashMap<u32, u8>,
     /// Sprite rotation per unit (radians; 0 = up).
@@ -49,7 +49,7 @@ pub struct Presentation {
     /// north to reload. Presentation only.
     pub(crate) pod_shots: HashMap<(u32, u8), (f32, f32)>,
     /// Hostile warheads already announced, so each warns once.
-    pub(crate) warned_warheads: std::collections::HashSet<oxide_sim::WarheadId>,
+    pub(crate) warned_warheads: std::collections::HashSet<aftermine_sim::WarheadId>,
     /// Hostile assembly cradles already announced, by owner and anchor, so
     /// each warns once.
     pub(crate) warned_cradles: std::collections::BTreeSet<(u8, i32, i32)>,
@@ -251,7 +251,7 @@ impl<'a> Scene<'a> {
         self.state.buildings().iter().find(|b| {
             b.player == self.presentation.human
                 && !b.provisional()
-                && b.kind == oxide_sim::BuildingKind::Foundry
+                && b.kind == aftermine_sim::BuildingKind::Foundry
         })
     }
     /// The map's ground layouts, built by the first call.
@@ -261,11 +261,11 @@ impl<'a> Scene<'a> {
             .get_or_init(|| crate::render::GroundLayout::build(self.state.map(), self.scenario))
     }
     /// The local player's fog view (what rendering and targeting honor).
-    pub fn my_vision(&self) -> &oxide_sim::Vision {
+    pub fn my_vision(&self) -> &aftermine_sim::Vision {
         self.state.vision(self.presentation.human)
     }
     /// Whether the viewer sees `unit` now, as the renderer decides.
-    pub(crate) fn sees_unit(&self, unit: &oxide_sim::Unit) -> bool {
+    pub(crate) fn sees_unit(&self, unit: &aftermine_sim::Unit) -> bool {
         sees(
             self.state,
             self.presentation.human,
@@ -461,7 +461,7 @@ impl Presentation {
 
     /// Marks a hostile assembly cradle the moment its first work makes it
     /// public. It bypasses the under-attack gate: each cradle warns once.
-    pub(super) fn raise_cradle_alert(&mut self, world: Vec2, kind: oxide_sim::UnitKind) {
+    pub(super) fn raise_cradle_alert(&mut self, world: Vec2, kind: aftermine_sim::UnitKind) {
         self.alerts.push((world, 0.0, AlertKind::Assembly(kind)));
         self.last_alert = Some(world);
         self.sounds_pending.push((SoundKind::Alert, None));
@@ -498,7 +498,7 @@ impl Presentation {
 
     /// The drawn bearing of a defense's gun, turning the short way from last
     /// tick's; straight up for a building without a gun.
-    pub(crate) fn draw_gun_heading(&self, building: &oxide_sim::Building, alpha: f32) -> f32 {
+    pub(crate) fn draw_gun_heading(&self, building: &aftermine_sim::Building, alpha: f32) -> f32 {
         let Some(current) = building.gun_heading else {
             return 0.0;
         };
@@ -515,7 +515,7 @@ impl Presentation {
     /// turn a tick, so it never appears to sweep its blind quarter.
     pub(crate) fn draw_mount_heading(
         &self,
-        unit: &oxide_sim::state::Unit,
+        unit: &aftermine_sim::state::Unit,
         slot: usize,
         alpha: f32,
     ) -> Option<f32> {
@@ -528,7 +528,7 @@ impl Presentation {
         Some(bearing_between(previous, current, alpha))
     }
 
-    pub(crate) fn chassis_turning(&self, unit: &oxide_sim::state::Unit) -> bool {
+    pub(crate) fn chassis_turning(&self, unit: &aftermine_sim::state::Unit) -> bool {
         if unit.kind.ground_turn_rate() == 0 {
             return false;
         }
@@ -586,7 +586,7 @@ impl Presentation {
         for unit in state
             .units()
             .iter()
-            .filter(|unit| unit.kind == oxide_sim::UnitKind::Maw)
+            .filter(|unit| unit.kind == aftermine_sim::UnitKind::Maw)
         {
             let cutting = self
                 .animations
@@ -666,13 +666,13 @@ impl Presentation {
         // A Roc out of sight keeps no heat, so its glow never tells how it
         // moved while hidden.
         let (human, all_seeing) = (self.human, self.all_seeing());
-        let sees = |unit: &oxide_sim::Unit| sees(state, human, all_seeing, unit);
+        let sees = |unit: &aftermine_sim::Unit| sees(state, human, all_seeing, unit);
         self.engine_heat
             .retain(|id, _| state.unit(UnitId(*id)).is_some_and(sees));
         for unit in state
             .units()
             .iter()
-            .filter(|unit| unit.kind == oxide_sim::UnitKind::Roc && sees(unit))
+            .filter(|unit| unit.kind == aftermine_sim::UnitKind::Roc && sees(unit))
         {
             let moving = self
                 .prev_pos
@@ -696,7 +696,11 @@ impl Presentation {
     /// the simulation says it does, parked or flying, and everything else
     /// faces the way it last moved. Live ticks, playback, and seeks all
     /// agree through this one rule.
-    pub(super) fn refresh_facing(&mut self, state: &State, movement: &[oxide_sim::GroundMotion]) {
+    pub(super) fn refresh_facing(
+        &mut self,
+        state: &State,
+        movement: &[aftermine_sim::GroundMotion],
+    ) {
         let tick = state.current_tick();
         self.observe_slides(state, movement);
         self.track_motion
@@ -775,19 +779,19 @@ impl Presentation {
     /// Whether a body's drawn hull may lean away from its simulation heading.
     /// A fixed weapon's hull is its aim and a body at work faces its work;
     /// neither may be drawn pointing anywhere else.
-    fn slide_lean_allowed(&self, unit: &oxide_sim::state::Unit, propulsion: Vec2) -> bool {
+    fn slide_lean_allowed(&self, unit: &aftermine_sim::state::Unit, propulsion: Vec2) -> bool {
         let aiming = !unit.kind.has_ground_turret()
             && (unit.braces() > 0
                 || self
                     .aim_units
                     .get(&unit.id.0)
                     .is_some_and(|(_, at)| self.fx_clock - at < 1.2));
-        !aiming && (propulsion != Vec2::ZERO || matches!(unit.order, oxide_sim::Order::Idle))
+        !aiming && (propulsion != Vec2::ZERO || matches!(unit.order, aftermine_sim::Order::Idle))
     }
 
     /// Eases this tick's collision slides. A body keeps an entry only while
     /// it is drawn off its simulation pose.
-    fn observe_slides(&mut self, state: &State, movement: &[oxide_sim::GroundMotion]) {
+    fn observe_slides(&mut self, state: &State, movement: &[aftermine_sim::GroundMotion]) {
         let tick = state.current_tick();
         let mut slides = std::mem::take(&mut self.slide_motion);
         slides.retain(|id, _| state.unit(UnitId(*id)).is_some());
@@ -888,9 +892,9 @@ impl Presentation {
     /// Updates shared presentation after one live or replay tick.
     pub(crate) fn observe_tick(
         &mut self,
-        state: &oxide_sim::State,
+        state: &aftermine_sim::State,
         events: &[Event],
-        movement: &[oxide_sim::GroundMotion],
+        movement: &[aftermine_sim::GroundMotion],
     ) {
         self.animations.observe_events(state.current_tick(), events);
         self.animations.observe_workers(state);
@@ -940,7 +944,7 @@ fn bearing_between(previous: u8, current: u8, alpha: f32) -> f32 {
 }
 
 /// Whether `human` sees `unit` now, as the renderer decides.
-fn sees(state: &State, human: PlayerId, all_seeing: bool, unit: &oxide_sim::Unit) -> bool {
+fn sees(state: &State, human: PlayerId, all_seeing: bool, unit: &aftermine_sim::Unit) -> bool {
     unit.player == human || all_seeing || state.vision(human).sees_unit(unit)
 }
 

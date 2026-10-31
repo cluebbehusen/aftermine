@@ -1,16 +1,18 @@
 use super::*;
+use aftermine_sim::{BuildingKind, PlayerCommand, Scenario};
 use macroquad::prelude::vec2;
-use oxide_sim::{BuildingKind, PlayerCommand, Scenario};
 
 fn factories(scrap: u32) -> Game {
     let mut scenario = Scenario::skirmish();
     scenario.players[0].scrap = scrap;
-    scenario.buildings.push(oxide_sim::scenario::BuildingSpec {
-        player: 0,
-        kind: BuildingKind::Foundry,
-        x: 9,
-        y: 3,
-    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Foundry,
+            x: 9,
+            y: 3,
+        });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     game.presentation.selection.buildings = game
         .state
@@ -52,7 +54,7 @@ fn provisional_foundry_does_not_keep_production_or_the_home_target_alive() {
         .iter_mut()
         .find(|u| u["id"] == serde_json::json!(worker))
         .unwrap();
-    unit["order"] = serde_json::to_value(oxide_sim::Order::Found {
+    unit["order"] = serde_json::to_value(aftermine_sim::Order::Found {
         kind: home.kind,
         anchor: home.anchor,
     })
@@ -101,7 +103,7 @@ fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_c
     assert!(
         !events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
     assert_eq!(game.state.building(ids[0]).unwrap().queue.len(), 2);
     assert_eq!(game.state.building(ids[1]).unwrap().queue.len(), 1);
@@ -111,7 +113,7 @@ fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_c
 fn grouped_production_skips_full_queues_including_staged_purchases() {
     let mut game = factories(5000);
     let ids = game.presentation.selection.buildings.clone();
-    for _ in 0..oxide_sim::stats::QUEUE_CAP {
+    for _ in 0..aftermine_sim::stats::QUEUE_CAP {
         game.issue(Command::Train {
             building: ids[0],
             kind: UnitKind::Harvester,
@@ -120,10 +122,10 @@ fn grouped_production_skips_full_queues_including_staged_purchases() {
     let batch = Production::inspect(&game.view()).batch(0).unwrap();
     assert_eq!(batch.recipients, vec![ids[1]]);
     assert_eq!(batch.reason.as_deref(), Some("1 queue full"));
-    for _ in 0..oxide_sim::stats::QUEUE_CAP + 2 {
+    for _ in 0..aftermine_sim::stats::QUEUE_CAP + 2 {
         train(&mut game, 0);
     }
-    assert_eq!(game.pending.len(), oxide_sim::stats::QUEUE_CAP * 2);
+    assert_eq!(game.pending.len(), aftermine_sim::stats::QUEUE_CAP * 2);
     let panel =
         crate::panel::build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert_eq!(panel.queue.len(), 1, "sixteen paid units occupy one tile");
@@ -140,7 +142,7 @@ fn grouped_production_skips_full_queues_including_staged_purchases() {
             .do_tick()
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
 }
 
@@ -182,7 +184,7 @@ fn collective_cancellation_preserves_heads_and_repeated_clicks_use_updated_slots
             .do_tick()
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
     assert_eq!(
         game.state.building(ids[0]).unwrap().queue.front(),
@@ -223,7 +225,7 @@ fn the_stop_square_empties_every_selected_queue_with_full_refunds() {
             .do_tick()
             .events
             .iter()
-            .any(|e| matches!(e, oxide_sim::Event::CommandRejected { .. }))
+            .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
     assert!(
         ids.iter()

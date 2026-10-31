@@ -2,24 +2,24 @@
 //! digests at intervals, and coarse ASCII minimaps.
 //!
 //! Used to review a bot game without screenshots. It re-executes the replay
-//! once through `oxide-kit`'s shared playback path and never touches
+//! once through `aftermine-kit`'s shared playback path and never touches
 //! simulation behavior. Every computation is integer math over the sim's
 //! deterministic event stream, so the same replay and options yield the same
 //! report, byte for byte.
 //!
-//! Known caveats: boarded cargo leaves [`oxide_sim::State::units`], so army
+//! Known caveats: boarded cargo leaves [`aftermine_sim::State::units`], so army
 //! value dips while transports fly. A replay from any other
-//! [`oxide_sim::SIM_VERSION`] is refused because it would not reproduce.
+//! [`aftermine_sim::SIM_VERSION`] is refused because it would not reproduce.
 
-use anyhow::Result;
-use chassis::grid::TilePos;
-use chassis::grid::as_index;
-use oxide_kit::runner::GameReplay;
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{
+use aftermine_kit::runner::GameReplay;
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{
     BuildingId, BuildingKind, Event, GameResult, Order, PlayerId, SIM_VERSION, State,
     TICKS_PER_SECOND, Target, UnitId, UnitKind,
 };
+use anyhow::Result;
+use chassis::grid::TilePos;
+use chassis::grid::as_index;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -772,7 +772,7 @@ struct SeatWindow {
 )]
 pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryReport> {
     replay.validate(Some(SIM_VERSION))?;
-    let total = oxide_kit::bounded_replay_duration(replay)?;
+    let total = aftermine_kit::bounded_replay_duration(replay)?;
     let effective = opts
         .until
         .map_or(total, |until| until.clamp(replay.start_tick(), total));
@@ -781,7 +781,7 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
         .unwrap_or_else(|| ((effective - replay.start_tick()) / 16).clamp(2_000, 10_000))
         .max(1);
 
-    let mut state = oxide_kit::recording::initial_state(replay)?;
+    let mut state = aftermine_kit::recording::initial_state(replay)?;
     let seats: Vec<SeatLine> = replay
         .setup
         .players
@@ -874,7 +874,7 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
 
     let mut game_over_tick: Option<u64> = None;
 
-    let mut playback = oxide_kit::ReplayPlayback::new(replay);
+    let mut playback = aftermine_kit::ReplayPlayback::new(replay);
     for _ in state.current_tick()..effective {
         let report = playback.step(&mut state);
         let now = state.current_tick();
@@ -1489,11 +1489,11 @@ fn minimap(state: &State) -> Vec<String> {
     for (tile, info) in map.iter() {
         let slot = &mut terrain[index(tile)];
         match info.terrain {
-            oxide_sim::map::Terrain::Ground => slot[0] += 1,
-            oxide_sim::map::Terrain::Rock => slot[1] += 1,
-            oxide_sim::map::Terrain::Peak => slot[2] += 1,
-            oxide_sim::map::Terrain::Pit => slot[3] += 1,
-            oxide_sim::map::Terrain::Cliff => slot[4] += 1,
+            aftermine_sim::map::Terrain::Ground => slot[0] += 1,
+            aftermine_sim::map::Terrain::Rock => slot[1] += 1,
+            aftermine_sim::map::Terrain::Peak => slot[2] += 1,
+            aftermine_sim::map::Terrain::Pit => slot[3] += 1,
+            aftermine_sim::map::Terrain::Cliff => slot[4] += 1,
         }
         if info.scrap > 0 {
             scrap[index(tile)] = true;

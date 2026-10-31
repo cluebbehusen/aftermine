@@ -57,16 +57,17 @@ fn a_failed_job_does_not_poison_the_worker() {
 
 #[test]
 fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() {
-    let dir = std::env::temp_dir().join(format!("oxide-continue-worker-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("aftermine-continue-worker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut game = Game::new(Scenario::skirmish()).unwrap();
     game.advance_ticks(120);
     let mut meta = game.recorder.meta.clone();
     meta.kind = Some("autosave".into());
     meta.ticks = Some(game.state.current_tick());
-    let older = dir.join("older.oxsave");
+    let older = dir.join("older.amsave");
     crate::saved_game::write_capture(game.capture_save(), meta, &older).unwrap();
-    let newer = dir.join("newer.oxsave");
+    let newer = dir.join("newer.amsave");
     let mut corrupt = std::fs::read(&older).unwrap();
     *corrupt.last_mut().unwrap() ^= 1;
     std::fs::write(&newer, corrupt).unwrap();
@@ -95,7 +96,7 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
 #[test]
 fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
     let mut worker = Worker::new().expect("worker");
-    worker.retire(Game::new(oxide_sim::Scenario::skirmish()).expect("game"));
+    worker.retire(Game::new(aftermine_sim::Scenario::skirmish()).expect("game"));
     assert!(
         worker.busy(),
         "the old match winds down off the frame thread"

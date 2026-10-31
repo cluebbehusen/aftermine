@@ -1,8 +1,8 @@
 use super::*;
 use crate::game::Game;
 use crate::slide_motion::SlideMotion;
-use oxide_sim::Command;
-use oxide_sim::UnitKind;
+use aftermine_sim::Command;
+use aftermine_sim::UnitKind;
 
 fn production_game() -> Game {
     let mut scenario = Scenario::skirmish();
@@ -71,7 +71,7 @@ fn newborn_collision_waits_for_an_interpolation_origin() {
 fn a_stationary_fixed_weapon_clears_lean_when_aiming_but_idle_lean_eases() {
     for aiming in [false, true] {
         let mut scenario = Scenario::skirmish();
-        scenario.units = vec![oxide_sim::scenario::UnitSpec {
+        scenario.units = vec![aftermine_sim::scenario::UnitSpec {
             player: 0,
             kind: UnitKind::Bombard,
             x: 10,
@@ -145,16 +145,16 @@ fn engines_heat_quickly_while_moving_and_cool_slowly() {
 }
 
 /// A hostile Roc far outside West's sight, flying, with a drone docked.
-fn hidden_roc() -> (oxide_sim::State, Presentation, oxide_sim::UnitId) {
-    let mut scenario = oxide_sim::Scenario::skirmish();
+fn hidden_roc() -> (aftermine_sim::State, Presentation, aftermine_sim::UnitId) {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units = vec![
-        oxide_sim::scenario::UnitSpec {
+        aftermine_sim::scenario::UnitSpec {
             player: 0,
             kind: UnitKind::Sentinel,
             x: 2,
             y: 2,
         },
-        oxide_sim::scenario::UnitSpec {
+        aftermine_sim::scenario::UnitSpec {
             player: 1,
             kind: UnitKind::Roc,
             x: 30,
@@ -171,9 +171,13 @@ fn hidden_roc() -> (oxide_sim::State, Presentation, oxide_sim::UnitId) {
     (state, game.presentation, roc)
 }
 
-fn fly(state: &mut oxide_sim::State, presentation: &mut Presentation, roc: oxide_sim::UnitId) {
+fn fly(
+    state: &mut aftermine_sim::State,
+    presentation: &mut Presentation,
+    roc: aftermine_sim::UnitId,
+) {
     let at = state.unit(roc).unwrap().tile();
-    let commands = [oxide_sim::PlayerCommand {
+    let commands = [aftermine_sim::PlayerCommand {
         player: PlayerId(1),
         command: Command::Run {
             units: vec![roc],
@@ -218,12 +222,12 @@ fn a_hidden_roc_s_bay_stays_at_rest() {
     presentation.remember_previous_tick(&state);
     let mut value = serde_json::to_value(&state).unwrap();
     value["units"][1]["bay"]["docked"] = 0.into();
-    let launched: oxide_sim::State = serde_json::from_value(value).unwrap();
+    let launched: aftermine_sim::State = serde_json::from_value(value).unwrap();
     presentation.observe_tick(
         &launched,
-        &[oxide_sim::Event::DroneLaunched {
+        &[aftermine_sim::Event::DroneLaunched {
             host: roc,
-            drone: oxide_sim::UnitId(99),
+            drone: aftermine_sim::UnitId(99),
             player: PlayerId(1),
         }],
         &[],

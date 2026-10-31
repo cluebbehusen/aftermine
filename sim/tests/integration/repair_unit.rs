@@ -7,14 +7,14 @@
 use crate::common;
 use common::{arena, cmd, run_until, unit};
 
-use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::{
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::{
     BuildingKind, Command, Event, Order, PlayerCommand, PlayerId, State, Target, UnitId, UnitKind,
     UnitRepairSource,
 };
+use chassis::fx::{Fx, Vec2Fx};
+use chassis::grid::TilePos;
 
 const PATIENT_MAX: u32 = 60; // harvester max_hp, the suite's patient
 
@@ -64,7 +64,7 @@ fn cast() -> Vec<UnitSpec> {
 /// `scenario` built with every worker's idle welding off: each weld this
 /// suite measures is one a command lit, and none may start on its own while
 /// a raider does the wounding.
-fn commanded_only(scenario: &oxide_sim::Scenario) -> State {
+fn commanded_only(scenario: &aftermine_sim::Scenario) -> State {
     let state = scenario.build().unwrap();
     let workers: Vec<UnitId> = state
         .units()
@@ -738,7 +738,7 @@ fn a_stationary_builder_at_a_revealed_scaffold_is_weldable() {
             .unwrap();
         let patient_pos = state.contact_surface(site).stance(
             anchor.offset(-1, 0).center(),
-            UnitKind::Harvester.stats().radius + oxide_sim::stats::WORK_FOOTPRINT_GAP,
+            UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP,
         );
         json["units"][0]["pos"] =
             serde_json::json!(patient_pos - Vec2Fx::new(Fx::lit("0.7"), Fx::ZERO));

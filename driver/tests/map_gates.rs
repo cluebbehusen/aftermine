@@ -2,15 +2,15 @@
 //! badges, spawn fairness, artillery pressure, passage widths, contestable
 //! frame clusters, and mirrored authoring, as measured by `driver map-audit`.
 //!
-//! Set `OXIDE_MAP_GATES_DIR` to a directory of drafts, relative to the
+//! Set `AFTERMINE_MAP_GATES_DIR` to a directory of drafts, relative to the
 //! repository root, to hold them to the same gates before promotion.
 
+use aftermine_driver::audit::{MapAudit, RouteAudit, audit};
+use aftermine_sim::map::Map;
+use aftermine_sim::scenario::BotConfig;
+use aftermine_sim::{BuildingKind, PlayerId, Scenario, State};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
-use oxide_driver::audit::{MapAudit, RouteAudit, audit};
-use oxide_sim::map::Map;
-use oxide_sim::scenario::BotConfig;
-use oxide_sim::{BuildingKind, PlayerId, Scenario, State};
 use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
 
@@ -35,7 +35,7 @@ fn nearest_enemy(report: &MapAudit) -> usize {
 }
 
 fn shipped() -> Vec<(String, Scenario)> {
-    let drafts = std::env::var("OXIDE_MAP_GATES_DIR").ok();
+    let drafts = std::env::var("AFTERMINE_MAP_GATES_DIR").ok();
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join(drafts.as_deref().unwrap_or("scenarios"));
@@ -66,7 +66,7 @@ fn every_map_seats_a_human_and_live_opponents() {
     for (name, scenario) in shipped() {
         assert_eq!(
             scenario.mode,
-            oxide_sim::scenario::ScenarioMode::Match,
+            aftermine_sim::scenario::ScenarioMode::Match,
             "{name}: shipped maps use match rules"
         );
         assert!(
@@ -284,7 +284,7 @@ fn spawns_are_fair_to_every_seat() {
 /// mean — room within 5%, first-contact clock within 15%, scrap within
 /// 2.5 tiles, and (when the map has frames at all) extractor access
 /// within 20%.
-fn metric_fairness(name: &str, seats: &[oxide_driver::audit::SeatAudit]) {
+fn metric_fairness(name: &str, seats: &[aftermine_driver::audit::SeatAudit]) {
     let mean = |xs: &[f64]| xs.iter().sum::<f64>() / xs.len() as f64;
     let rooms: Vec<f64> = seats.iter().map(|s| s.reachable_tiles as f64).collect();
     let room_mean = mean(&rooms);
@@ -341,7 +341,7 @@ fn metric_fairness(name: &str, seats: &[oxide_driver::audit::SeatAudit]) {
 #[test]
 fn tiered_maps_follow_the_level_rules() {
     for (name, scenario) in shipped() {
-        let faults = oxide_driver::audit::level_faults(&scenario)
+        let faults = aftermine_driver::audit::level_faults(&scenario)
             .unwrap_or_else(|error| panic!("{name}: {error:#}"));
         assert!(faults.is_empty(), "{name}: {}", faults.join("; "));
     }
@@ -351,7 +351,7 @@ fn tiered_maps_follow_the_level_rules() {
 fn every_map_offers_a_home_extractor_and_expansion_value() {
     const NATURAL_EXTENSION: i32 = 8;
 
-    let support_radius = oxide_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
+    let support_radius = aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
     for (name, scenario) in shipped() {
         // The nearest enemy route measures contact timing, not total
         // acreage. Large FFA basins can start rivals close while still
@@ -630,7 +630,7 @@ fn reachable_ground_rect_perimeter(
 }
 
 fn extractor_foundry_distance(foundry: TilePos, extractor: TilePos) -> i32 {
-    oxide_sim::geometry::footprint_distance(
+    aftermine_sim::geometry::footprint_distance(
         foundry,
         BuildingKind::Foundry.size(),
         extractor,

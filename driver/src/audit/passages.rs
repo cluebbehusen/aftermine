@@ -13,9 +13,9 @@
 //! Only ground where hostile seats meet counts: an island that joins no
 //! enemy keeps its authored shape.
 
+use aftermine_sim::stats::{BuildingKind, Domain};
+use aftermine_sim::{PlayerId, State};
 use chassis::grid::{TilePos, as_index};
-use oxide_sim::stats::{BuildingKind, Domain};
-use oxide_sim::{PlayerId, State};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
@@ -366,7 +366,7 @@ fn contested_ground(state: &State) -> Vec<bool> {
             && state
                 .map()
                 .tile(t)
-                .is_some_and(|tile| tile.terrain == oxide_sim::map::Terrain::Ground)
+                .is_some_and(|tile| tile.terrain == aftermine_sim::map::Terrain::Ground)
     };
     let mut region = vec![usize::MAX; as_index(width * height)];
     let mut next = 0;

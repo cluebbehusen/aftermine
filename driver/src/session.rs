@@ -4,8 +4,8 @@
 //! One [`Session`] holds a match open the way the shell's `Game` does (sim
 //! state, seat bots, an always-on recorder, and staged socket commands),
 //! but its screenshots come from the CPU renderer. It serves the same
-//! [`oxide_protocol`] vocabulary over the same framed transport
-//! ([`oxide_protocol::framing`]), so every `driver live` verb works against
+//! [`aftermine_protocol`] vocabulary over the same framed transport
+//! ([`aftermine_protocol::framing`]), so every `driver live` verb works against
 //! it unchanged; requests that need a window (camera, UI, input injection,
 //! the overlay) or a wall clock (pause, resume, speed) are refused with a
 //! reason rather than faked.
@@ -14,16 +14,16 @@
 //! server and the live shell and asserts hash, event, and status identity;
 //! its headless half runs in CI.
 
-use anyhow::{Context, Result};
-use chassis::replay::Replay;
-use oxide_kit::controller::{SeatController, record_events, seat_controllers};
-use oxide_kit::runner::{self, GameReplay};
-use oxide_protocol::framing::{IncomingRequest, Limits, incoming};
-use oxide_protocol::{
+use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
+use aftermine_kit::runner::{self, GameReplay};
+use aftermine_protocol::framing::{IncomingRequest, Limits, incoming};
+use aftermine_protocol::{
     AdvancedView, DebugSession, PresentedView, Reply, Request, ResponseEnvelope, SavedView,
     ScreenshotView, StatusView, dispatch_shared, hash_hex,
 };
-use oxide_sim::{Event, PlayerCommand, SIM_VERSION, Scenario, State};
+use aftermine_sim::{Event, PlayerCommand, SIM_VERSION, Scenario, State};
+use anyhow::{Context, Result};
+use chassis::replay::Replay;
 use std::net::TcpListener;
 use std::time::Duration;
 
@@ -170,7 +170,7 @@ impl Session {
                     *self = fresh;
                     Reply::Ok
                 }),
-            Request::LoadReplay { path } => oxide_kit::load_replay(&path)
+            Request::LoadReplay { path } => aftermine_kit::load_replay(&path)
                 .map_err(|err| format!("loading replay {path}: {err}"))
                 .and_then(|replay| {
                     Session::resume(replay).map_err(|err| format!("resuming replay: {err:#}"))
@@ -236,7 +236,7 @@ impl Session {
     }
 
     fn screenshot(&self, path: &str) -> Result<Reply> {
-        let pixmap = oxide_kit::render::render_state(&self.state);
+        let pixmap = aftermine_kit::render::render_state(&self.state);
         if let Some(parent) = std::path::Path::new(path).parent()
             && !parent.as_os_str().is_empty()
         {
@@ -315,7 +315,7 @@ impl DebugSession for Session {
 }
 
 /// Binds, announces, and answers until the process ends: the
-/// `oxide-driver session` subcommand.
+/// `aftermine-driver session` subcommand.
 pub fn serve(port: u16, scenario: &str, idle_timeout: Duration) -> Result<()> {
     let scenario = runner::load_scenario(scenario)?;
     let session = Session::new(scenario)?;

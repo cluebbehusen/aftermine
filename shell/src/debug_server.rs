@@ -1,7 +1,7 @@
 //! The shell's debug-server doorstep: bind the port, announce it, and
 //! hand the connection loop to the shared framed transport
-//! ([`oxide_protocol::framing`] — the same loop the windowless
-//! `oxide-driver session` runs, so the two servers cannot drift at the
+//! ([`aftermine_protocol::framing`] — the same loop the windowless
+//! `aftermine-driver session` runs, so the two servers cannot drift at the
 //! byte level).
 //!
 //! Socket threads never touch game state. Each parsed request crosses to
@@ -9,12 +9,12 @@
 //! until the frame loop answers — requests are handled between frames,
 //! so every response reflects a consistent world.
 
+use aftermine_protocol::framing::incoming;
 use anyhow::{Context, Result};
-use oxide_protocol::framing::incoming;
 use std::net::TcpListener;
 use std::sync::mpsc::Receiver;
 
-pub use oxide_protocol::framing::{IncomingRequest, Limits};
+pub use aftermine_protocol::framing::{IncomingRequest, Limits};
 
 /// Binds the listener and starts accepting under `limits`. Returns the
 /// channel the main loop drains each frame. Binding failure (port taken)

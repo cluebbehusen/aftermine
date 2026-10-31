@@ -3,7 +3,7 @@ use super::*;
 fn directory() -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
-        "oxide-eval-parallel-{}-{}",
+        "aftermine-eval-parallel-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));

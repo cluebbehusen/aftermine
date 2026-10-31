@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::PlayerId;
+use aftermine_sim::PlayerId;
 
 /// West's view of the strip field with `units` as owner, kind and tile, and
 /// their ids in that order.
@@ -65,7 +65,7 @@ fn defenders_refused_an_order_are_not_counted_as_sent() {
 fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
     let gun = |tier: u8| BuildingObs {
         provisional: false,
-        id: oxide_sim::BuildingId(0),
+        id: aftermine_sim::BuildingId(0),
         player: PlayerId(1),
         kind: BuildingKind::Bastion,
         anchor: TilePos::new(2, 4),

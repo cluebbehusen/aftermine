@@ -6,13 +6,13 @@
 //! ring's exact detection boundary. Public API only, like `domains.rs`.
 
 use crate::common;
+use aftermine_sim::scenario::ScenarioMode;
 use common::{arena, cmd, face_target, ground_blip, players, run_until, unit};
-use oxide_sim::scenario::ScenarioMode;
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::stats::BuildingKind;
+use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::stats::BuildingKind;
-use oxide_sim::{Command, Event, Order, PlayerId, Scenario, Target, UnitKind};
 
 #[test]
 fn a_ground_chaser_stalls_when_no_standing_room_reaches_a_flyer_deep_in_rock() {
@@ -93,7 +93,7 @@ fn a_ground_chaser_stalls_when_no_standing_room_reaches_a_flyer_deep_in_rock() {
             e,
             Event::OrderStalled {
                 unit,
-                reason: oxide_sim::StallReason::NoFiringPosition,
+                reason: aftermine_sim::StallReason::NoFiringPosition,
                 ..
             } if *unit == flak
         )),

@@ -1,4 +1,4 @@
-"""Production and support machinery in the accepted Oxide material family."""
+"""Production and support machinery in the accepted Aftermine material family."""
 
 import math
 

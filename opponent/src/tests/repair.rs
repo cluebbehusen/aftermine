@@ -312,7 +312,7 @@ fn each_aircraft_flies_to_a_bay_around_the_anti_air_on_its_own_way() {
     scenario.units.push(unit(0, UnitKind::Sentinel, 28, 9));
     let state = scenario.build().unwrap();
     let (state, ids) = hurt(&state, &[(clear, 20), (crossing, 30)]);
-    let observation = oxide_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
         observation
             .enemy_buildings

@@ -5,10 +5,10 @@ use crate::camera::controls::{MinimapPoint, ViewerHands, event_point, held_pan, 
 use crate::game::Game;
 use crate::numeric;
 use crate::{render, theme};
-use macroquad::prelude::*;
 #[cfg(test)]
-use oxide_protocol::Key;
-use oxide_protocol::RawEvent;
+use aftermine_protocol::Key;
+use aftermine_protocol::RawEvent;
+use macroquad::prelude::*;
 
 /// Camera-only state for the final battlefield view.
 #[derive(Default)]

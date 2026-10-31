@@ -1,7 +1,7 @@
 //! Completed-tier comparisons for upgrade previews.
 
 use super::info::SelectionInfo;
-use oxide_sim::{
+use aftermine_sim::{
     BuildingKind, ExtractorIncome, ExtractorSupport,
     stats::{
         CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, RECLAIMER_PERIOD,
@@ -55,7 +55,7 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
                 "Income".into(),
                 format!(
                     "{} scrap/min",
-                    60 * u64::from(oxide_sim::TICKS_PER_SECOND) / period
+                    60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period
                 ),
             ));
         }

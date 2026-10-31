@@ -1,12 +1,12 @@
 //! Explicit deliveries replace work and finish at the chosen Foundry.
 use crate::common;
 
+use aftermine_sim::{
+    BuildingId, BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind,
+};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use common::{cmd, open_arena, open_arena_with, run_until, unit};
-use oxide_sim::{
-    BuildingId, BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind,
-};
 use serde_json::json;
 
 fn loaded(kind: UnitKind) -> (State, UnitId, BuildingId) {
@@ -86,7 +86,7 @@ fn return_cargo_replaces_work_and_queue_then_deposits_once_and_stays() {
         let u = state.unit(worker).unwrap();
         assert!(
             u.pos.dist(state.contact_surface(b).closest(u.pos))
-                <= u.kind.stats().radius + oxide_sim::stats::WORK_REACH
+                <= u.kind.stats().radius + aftermine_sim::stats::WORK_REACH
         );
         assert!(matches!(u.order, Order::Idle));
         for _ in 0..200 {
@@ -226,7 +226,7 @@ fn return_cargo_skips_a_sealed_near_foundry_and_honors_explicit_destinations() {
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
-            reason: oxide_sim::command::RejectReason::UnreachableGoal,
+            reason: aftermine_sim::command::RejectReason::UnreachableGoal,
             ..
         }
     )));
@@ -379,7 +379,7 @@ fn return_cargo_honors_a_far_explicit_foundry_and_saturates_the_bank() {
     let u = state.unit(worker).unwrap();
     assert!(
         u.pos.dist(state.contact_surface(b).closest(u.pos))
-            <= u.kind.stats().radius + oxide_sim::stats::WORK_REACH
+            <= u.kind.stats().radius + aftermine_sim::stats::WORK_REACH
     );
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["worker"]["carrying"] = json!(5);

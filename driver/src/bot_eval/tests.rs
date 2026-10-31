@@ -1,7 +1,7 @@
 use super::*;
-use oxide_sim::command::{Command, PlayerCommand, RejectReason};
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
-use oxide_sim::{StallReason, UnitKind};
+use aftermine_sim::command::{Command, PlayerCommand, RejectReason};
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{StallReason, UnitKind};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_REPLAY_ID: AtomicU64 = AtomicU64::new(0);
@@ -552,7 +552,7 @@ fn rows_record_teams_eliminations_detectors_income_and_provenance() {
     let (row, _) = evaluate_plan_artifact(&plan, 600, "test-build").unwrap();
     assert!(
         row.evidence.iter().all(|seat| seat.attacks.is_some()),
-        "oxide-opponent seats are calibrated"
+        "aftermine-opponent seats are calibrated"
     );
 }
 
@@ -585,7 +585,7 @@ fn saved_replay_preserves_the_exact_compared_configs() {
         .1;
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let replay_path = std::env::temp_dir().join(format!(
-        "oxide-bot-eval-{}-{replay_id}.json",
+        "aftermine-bot-eval-{}-{replay_id}.json",
         std::process::id()
     ));
 
@@ -597,7 +597,7 @@ fn saved_replay_preserves_the_exact_compared_configs() {
         Some(&replay_path),
     )
     .unwrap();
-    let replay = oxide_kit::load_replay(&replay_path).unwrap();
+    let replay = aftermine_kit::load_replay(&replay_path).unwrap();
     std::fs::remove_file(&replay_path).unwrap();
 
     assert_eq!(row.replay.as_deref(), replay_path.to_str());
@@ -678,7 +678,7 @@ fn replay_filenames_distinguish_candidate_builds() {
 fn replay_evidence_never_overwrites_an_existing_file() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let replay_path = std::env::temp_dir().join(format!(
-        "oxide-bot-eval-existing-{}-{replay_id}.json",
+        "aftermine-bot-eval-existing-{}-{replay_id}.json",
         std::process::id()
     ));
     std::fs::write(&replay_path, b"earlier evidence").unwrap();
@@ -700,7 +700,7 @@ fn replay_evidence_never_overwrites_an_existing_file() {
 fn a_publication_collision_rolls_back_the_whole_staged_set() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-eval-batch-{}-{replay_id}",
+        "aftermine-bot-eval-batch-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -724,7 +724,7 @@ fn a_publication_collision_rolls_back_the_whole_staged_set() {
 fn a_trace_publication_collision_rolls_back_the_compact_index() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-trace-batch-{}-{replay_id}",
+        "aftermine-bot-trace-batch-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -774,7 +774,7 @@ fn a_trace_publication_collision_rolls_back_the_compact_index() {
 fn an_unfinished_trace_stream_cannot_be_published() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-trace-unfinished-{}-{replay_id}",
+        "aftermine-bot-trace-unfinished-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -799,7 +799,7 @@ fn an_unfinished_trace_stream_cannot_be_published() {
 fn an_unfinished_trace_writer_cleans_up_after_its_batch_is_dropped() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-trace-drop-order-{}-{replay_id}",
+        "aftermine-bot-trace-drop-order-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -825,7 +825,7 @@ fn an_unfinished_trace_writer_cleans_up_after_its_batch_is_dropped() {
 fn duplicate_evidence_destinations_are_refused_without_leaving_staging_files() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-eval-duplicate-{}-{replay_id}",
+        "aftermine-bot-eval-duplicate-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -866,7 +866,7 @@ fn duplicate_evidence_destinations_are_refused_without_leaving_staging_files() {
 fn an_invalid_evidence_parent_fails_cleanly_without_replacing_the_blocker() {
     let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "oxide-bot-eval-parent-{}-{replay_id}",
+        "aftermine-bot-eval-parent-{}-{replay_id}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).unwrap();
@@ -910,7 +910,7 @@ fn evidence_uses_stable_wire_names_and_is_attributed_to_the_emitting_seat() {
     record_evidence_event(
         &mut evidence,
         &Event::OrderStalled {
-            unit: oxide_sim::UnitId(4),
+            unit: aftermine_sim::UnitId(4),
             player: PlayerId(0),
             pos: chassis::fx::Vec2Fx::ZERO,
             reason: StallReason::NoRoute,
@@ -1143,7 +1143,7 @@ fn paired_legs_refuse_a_shape_that_cannot_be_exchanged() {
 fn a_unit_stalling_the_same_way_repeatedly_is_a_counted_loop() {
     let mut evidence = vec![SeatEvidence::new(0), SeatEvidence::new(1)];
     let stall = Event::OrderStalled {
-        unit: oxide_sim::UnitId(4),
+        unit: aftermine_sim::UnitId(4),
         player: PlayerId(1),
         pos: chassis::fx::Vec2Fx::new(chassis::fx::Fx::from_num(3), chassis::fx::Fx::from_num(3)),
         reason: StallReason::NoRoute,
@@ -1160,7 +1160,7 @@ fn a_unit_stalling_the_same_way_repeatedly_is_a_counted_loop() {
     assert_eq!(sample.count, DEFAULT_STALL_LOOP_LIMIT);
     assert_eq!(evidence[1].stalls, DEFAULT_STALL_LOOP_LIMIT);
     let other = Event::OrderStalled {
-        unit: oxide_sim::UnitId(9),
+        unit: aftermine_sim::UnitId(9),
         player: PlayerId(1),
         pos: chassis::fx::Vec2Fx::new(chassis::fx::Fx::from_num(3), chassis::fx::Fx::from_num(3)),
         reason: StallReason::NoRoute,
@@ -1172,7 +1172,7 @@ fn a_unit_stalling_the_same_way_repeatedly_is_a_counted_loop() {
             &mut evidence,
             &Event::CommandRejected {
                 player: PlayerId(0),
-                reason: oxide_sim::command::RejectReason::NoValidUnits,
+                reason: aftermine_sim::command::RejectReason::NoValidUnits,
             }
         )
         .is_none(),

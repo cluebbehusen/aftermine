@@ -21,22 +21,22 @@ fn menu(items: &[&str], selected: Option<usize>) -> UiView {
 fn cargo_artifact_selection_ignores_noise_and_other_targets() {
     let output = br#"
 not json
-{"reason":"compiler-artifact","target":{"name":"oxide-sim"},"executable":"/tmp/wrong"}
-{"reason":"compiler-artifact","target":{"name":"Oxide"},"executable":null}
+{"reason":"compiler-artifact","target":{"name":"aftermine-sim"},"executable":"/tmp/wrong"}
+{"reason":"compiler-artifact","target":{"name":"Aftermine"},"executable":null}
 {"reason":"build-finished","success":true}
-{"reason":"compiler-artifact","target":{"name":"Oxide"},"executable":"/tmp/Oxide"}
+{"reason":"compiler-artifact","target":{"name":"Aftermine"},"executable":"/tmp/Aftermine"}
 "#;
     assert_eq!(
         shell_executable_from_cargo_output(output),
-        Some(PathBuf::from("/tmp/Oxide"))
+        Some(PathBuf::from("/tmp/Aftermine"))
     );
     assert_eq!(shell_executable_from_cargo_output(b"not json\n"), None);
 }
 
 #[test]
 fn isolated_shells_override_every_platform_writable_root() {
-    let home = PathBuf::from("/tmp/oxide-isolated-home");
-    let mut command = std::process::Command::new("Oxide");
+    let home = PathBuf::from("/tmp/aftermine-isolated-home");
+    let mut command = std::process::Command::new("Aftermine");
     command.env("HOME", "/host/home");
     command.env("XDG_CONFIG_HOME", "/host/config");
     command.env("XDG_DATA_HOME", "/host/data");

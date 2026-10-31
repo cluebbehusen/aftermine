@@ -1,6 +1,6 @@
 use super::*;
-use oxide_sim::UnitKind;
-use oxide_sim::scenario::UnitSpec;
+use aftermine_sim::UnitKind;
+use aftermine_sim::scenario::UnitSpec;
 
 fn shipped() -> Vec<PressureScenario> {
     load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("evaluation/pressure")).unwrap()

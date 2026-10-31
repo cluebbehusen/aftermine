@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::{PlayerId, UnitId};
+use aftermine_sim::{PlayerId, UnitId};
 
 /// A seat of every kind.
 fn room() -> Vec<RoomSeat> {

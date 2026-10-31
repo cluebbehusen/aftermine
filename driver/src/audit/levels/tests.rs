@@ -1,5 +1,5 @@
 use super::*;
-use oxide_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
 
 /// A plateau at level 2 over a floor at level 1, joined by a 3x3 ramp.
 const ROWS: [&str; 11] = [
@@ -180,7 +180,7 @@ fn starts_stay_off_ramps() {
     let mut scenario = scenario(&owned(&ROWS), &owned(&LEVELS));
     scenario.units = vec![UnitSpec {
         player: 0,
-        kind: oxide_sim::UnitKind::Sentinel,
+        kind: aftermine_sim::UnitKind::Sentinel,
         x: 6,
         y: 5,
     }];

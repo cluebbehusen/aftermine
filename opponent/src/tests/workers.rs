@@ -422,11 +422,11 @@ fn no_route(state: &State, player: u8, unit: UnitId) -> OwnEvents {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(player),
-        &[oxide_sim::Event::OrderStalled {
+        &[aftermine_sim::Event::OrderStalled {
             unit,
             player: PlayerId(player),
             pos: state.unit(unit).unwrap().pos,
-            reason: oxide_sim::StallReason::NoRoute,
+            reason: aftermine_sim::StallReason::NoRoute,
         }],
     );
     events
@@ -730,7 +730,7 @@ fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does()
             middling(),
             &crate::missions::Missions::default(),
         );
-        let homes: Vec<&oxide_sim::observation::BuildingObs> = observation
+        let homes: Vec<&aftermine_sim::observation::BuildingObs> = observation
             .my_buildings
             .iter()
             .filter(|building| building.kind == BuildingKind::Foundry)
@@ -785,7 +785,7 @@ fn workers_beyond_every_open_place_salvage_wreck_before_crowding_a_node() {
 /// `state` with West's team warned of a recent allied loss at `(x, y)`.
 fn warned(state: &State, x: i32, y: i32) -> State {
     let mut value = serde_json::to_value(state).unwrap();
-    let expires = state.current_tick() + oxide_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS;
+    let expires = state.current_tick() + aftermine_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS;
     value["vision"][0]["salvage_incidents"] =
         serde_json::json!([{"tile": {"x": x, "y": y}, "expires_at": expires}]);
     serde_json::from_value(value).unwrap()

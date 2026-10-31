@@ -4,10 +4,10 @@
 use crate::common;
 use common::{cmd, open_arena, run, run_until, unit};
 
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::scenario::UnitSpec;
+use aftermine_sim::{BuildingId, Command, Event, Order, Rally, State, UnitId, UnitKind};
 use chassis::grid::TilePos;
-use oxide_sim::command::RejectReason;
-use oxide_sim::scenario::UnitSpec;
-use oxide_sim::{BuildingId, Command, Event, Order, Rally, State, UnitId, UnitKind};
 use serde_json::json;
 
 fn build(units: Vec<UnitSpec>) -> State {
