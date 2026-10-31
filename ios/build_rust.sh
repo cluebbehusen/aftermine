@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Oxide target's Run Script phase: builds the Rust shell for the
+# The Aftermine target's Run Script phase: builds the Rust shell for the
 # device and puts the executable where Xcode signs and packages it.
 # Xcode runs this with its build settings in the environment; see
 # README's iPad section for the commands that drive it.

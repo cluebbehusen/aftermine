@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "0A1B00000000000000000040"
-               BuildableName = "Oxide.app"
-               BlueprintName = "Oxide"
-               ReferencedContainer = "container:Oxide.xcodeproj">
+               BuildableName = "Aftermine.app"
+               BlueprintName = "Aftermine"
+               ReferencedContainer = "container:Aftermine.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -37,9 +37,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0A1B00000000000000000040"
-            BuildableName = "Oxide.app"
-            BlueprintName = "Oxide"
-            ReferencedContainer = "container:Oxide.xcodeproj">
+            BuildableName = "Aftermine.app"
+            BlueprintName = "Aftermine"
+            ReferencedContainer = "container:Aftermine.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>

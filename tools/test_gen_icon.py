@@ -18,12 +18,12 @@ class IconGenerationTests(unittest.TestCase):
     def test_generation_reproduces_every_checked_in_icon_artifact(self) -> None:
         committed = Path(__file__).resolve().parent.parent / "assets" / "icon"
         expected_names = {
-            "oxide_1024.png",
-            "oxide_desktop_1024.png",
-            "oxide_256.png",
-            "oxide_16.rgba",
-            "oxide_32.rgba",
-            "oxide_64.rgba",
+            "aftermine_1024.png",
+            "aftermine_desktop_1024.png",
+            "aftermine_256.png",
+            "aftermine_16.rgba",
+            "aftermine_32.rgba",
+            "aftermine_64.rgba",
         }
 
         with tempfile.TemporaryDirectory(prefix="aftermine-icon-test-") as temp:
@@ -42,13 +42,13 @@ class IconGenerationTests(unittest.TestCase):
             )
             self.assertEqual(
                 {path.name for path in (output / "ios").iterdir()},
-                {"oxide_1024.png"},
+                {"aftermine_1024.png"},
             )
             expected_files = {
                 Path("desktop") / name: committed / name for name in expected_names
             }
-            expected_files[Path("ios/oxide_1024.png")] = (
-                gen_icon.IOS_OUT / "oxide_1024.png"
+            expected_files[Path("ios/aftermine_1024.png")] = (
+                gen_icon.IOS_OUT / "aftermine_1024.png"
             )
             for name, expected in expected_files.items():
                 with self.subTest(name=str(name)):
@@ -83,7 +83,7 @@ class IconGenerationTests(unittest.TestCase):
         self.assertEqual(entry["size"], "1024x1024")
         ios_icon = gen_icon.IOS_OUT / entry["filename"]
         self.assertEqual(
-            ios_icon.read_bytes(), (gen_icon.OUT / "oxide_1024.png").read_bytes()
+            ios_icon.read_bytes(), (gen_icon.OUT / "aftermine_1024.png").read_bytes()
         )
         with Image.open(ios_icon) as image:
             self.assertEqual(image.mode, "RGB")
@@ -96,8 +96,8 @@ class IconGenerationTests(unittest.TestCase):
 
     def test_desktop_mask_only_removes_background(self) -> None:
         with (
-            Image.open(gen_icon.OUT / "oxide_1024.png") as master,
-            Image.open(gen_icon.OUT / "oxide_desktop_1024.png") as desktop,
+            Image.open(gen_icon.OUT / "aftermine_1024.png") as master,
+            Image.open(gen_icon.OUT / "aftermine_desktop_1024.png") as desktop,
         ):
             self.assertEqual(desktop.mode, "RGBA")
             self.assertEqual(desktop.size, master.size)
@@ -123,7 +123,7 @@ class IconGenerationTests(unittest.TestCase):
 
             for size in (16, 32, 64):
                 with self.subTest(size=size):
-                    raw = (output / "desktop" / f"oxide_{size}.rgba").read_bytes()
+                    raw = (output / "desktop" / f"aftermine_{size}.rgba").read_bytes()
                     self.assertEqual(len(raw), size * size * 4)
                     image = Image.frombytes("RGBA", (size, size), raw)
                     alpha = image.getchannel("A")

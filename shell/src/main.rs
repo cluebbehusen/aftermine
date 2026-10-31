@@ -251,9 +251,9 @@ fn window_conf() -> Conf {
             None
         } else {
             Some(macroquad::miniquad::conf::Icon {
-                small: *include_bytes!("../../assets/icon/oxide_16.rgba"),
-                medium: *include_bytes!("../../assets/icon/oxide_32.rgba"),
-                big: *include_bytes!("../../assets/icon/oxide_64.rgba"),
+                small: *include_bytes!("../../assets/icon/aftermine_16.rgba"),
+                medium: *include_bytes!("../../assets/icon/aftermine_32.rgba"),
+                big: *include_bytes!("../../assets/icon/aftermine_64.rgba"),
             })
         },
         ..Default::default()

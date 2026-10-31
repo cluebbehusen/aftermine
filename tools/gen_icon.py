@@ -15,7 +15,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "icon"
-IOS_OUT = ROOT / "ios" / "Oxide" / "Assets.xcassets" / "AppIcon.appiconset"
+IOS_OUT = ROOT / "ios" / "Aftermine" / "Assets.xcassets" / "AppIcon.appiconset"
 SS = 4
 NATIVE_SIZE = 128
 MASTER_SIZE = 1024
@@ -207,13 +207,13 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     IOS_OUT.mkdir(parents=True, exist_ok=True)
     master = render_master()
-    master.save(OUT / "oxide_1024.png")
-    master.save(IOS_OUT / "oxide_1024.png")
+    master.save(OUT / "aftermine_1024.png")
+    master.save(IOS_OUT / "aftermine_1024.png")
     desktop = desktop_icon(master)
-    desktop.save(OUT / "oxide_desktop_1024.png")
-    desktop.resize((256, 256), Image.Resampling.BOX).save(OUT / "oxide_256.png")
+    desktop.save(OUT / "aftermine_desktop_1024.png")
+    desktop.resize((256, 256), Image.Resampling.BOX).save(OUT / "aftermine_256.png")
     for size in (16, 32, 64):
-        (OUT / f"oxide_{size}.rgba").write_bytes(
+        (OUT / f"aftermine_{size}.rgba").write_bytes(
             desktop.resize((size, size), Image.Resampling.BOX).tobytes()
         )
     print("Generated desktop and iOS icons")
