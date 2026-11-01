@@ -68,18 +68,12 @@ fn extractor_frame_markers_share_exploration_and_claim_visibility() {
 }
 
 #[test]
-fn marker_scaling_preserves_the_screen_position_and_top_left_origin() {
-    use macroquad::camera::Camera;
-    let viewport = vec2(1280.0, 800.0);
+fn marker_scaling_preserves_the_screen_position_and_scales_the_art() {
+    let center = vec2(330.0, 140.0);
     for scale in [0.75, 1.0, 1.5] {
-        let camera = marker_camera(viewport, scale);
-        let top_left = camera.matrix().transform_point3(vec3(0.0, 0.0, 0.0));
-        assert!((top_left.x + 1.0).abs() < 0.0001);
-        assert!((top_left.y - 1.0).abs() < 0.0001);
-        let p = vec2(330.0, 140.0);
-        let projected = camera.matrix().transform_point3((p / scale).extend(0.0));
-        assert!((projected.x - (p.x / 640.0 - 1.0)).abs() < 0.0001);
-        assert!((projected.y - (1.0 - p.y / 400.0)).abs() < 0.0001);
+        let pen = Pen { center, scale };
+        assert_eq!(pen.at((0.0, 0.0)), center);
+        assert_eq!(pen.at((-7.0, 12.0)), center + vec2(-7.0, 12.0) * scale);
     }
 }
 #[test]

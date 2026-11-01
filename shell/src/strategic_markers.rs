@@ -24,11 +24,87 @@ pub(crate) fn marker_alpha(zoom: f32) -> f32 {
     transition(zoom, p.start, p.end)
 }
 
-fn marker_camera(viewport: Vec2, scale: f32) -> Camera2D {
-    Camera2D {
-        target: viewport / (2.0 * scale),
-        zoom: vec2(2.0 * scale / viewport.x, 2.0 * scale / viewport.y),
-        ..Default::default()
+/// Draws one marker's art around its screen position. The art is authored as
+/// offsets at 100% and takes the player's marker size here rather than from a
+/// camera: `set_camera` flushes the frame's draw batch, and that mid-frame
+/// re-upload stalls in the GL driver.
+#[derive(Clone, Copy)]
+struct Pen {
+    center: Vec2,
+    scale: f32,
+}
+
+impl Pen {
+    fn at(self, offset: (f32, f32)) -> Vec2 {
+        self.center + vec2(offset.0, offset.1) * self.scale
+    }
+
+    fn line(self, a: (f32, f32), b: (f32, f32), thickness: f32, color: Color) {
+        let (a, b) = (self.at(a), self.at(b));
+        draw_line(a.x, a.y, b.x, b.y, thickness * self.scale, color);
+    }
+
+    fn rect(self, corner: (f32, f32), size: (f32, f32), color: Color) {
+        let corner = self.at(corner);
+        draw_rectangle(
+            corner.x,
+            corner.y,
+            size.0 * self.scale,
+            size.1 * self.scale,
+            color,
+        );
+    }
+
+    fn rect_lines(self, corner: (f32, f32), size: (f32, f32), thickness: f32, color: Color) {
+        let corner = self.at(corner);
+        draw_rectangle_lines(
+            corner.x,
+            corner.y,
+            size.0 * self.scale,
+            size.1 * self.scale,
+            thickness * self.scale,
+            color,
+        );
+    }
+
+    fn poly(self, sides: u8, radius: f32, rotation: f32, color: Color) {
+        draw_poly(
+            self.center.x,
+            self.center.y,
+            sides,
+            radius * self.scale,
+            rotation,
+            color,
+        );
+    }
+
+    fn poly_lines(self, sides: u8, radius: f32, rotation: f32, thickness: f32, color: Color) {
+        draw_poly_lines(
+            self.center.x,
+            self.center.y,
+            sides,
+            radius * self.scale,
+            rotation,
+            thickness * self.scale,
+            color,
+        );
+    }
+
+    fn circle(self, offset: (f32, f32), radius: f32, color: Color) {
+        fill_circle(self.at(offset), radius * self.scale, color);
+    }
+
+    fn circle_lines(self, offset: (f32, f32), radius: f32, thickness: f32, color: Color) {
+        stroke_circle(
+            self.at(offset),
+            radius * self.scale,
+            thickness * self.scale,
+            color,
+        );
+    }
+
+    fn triangle(self, a: (f32, f32), b: (f32, f32), c: (f32, f32), color: Color) {
+        draw_triangle(self.at(a), self.at(b), self.at(c), color);
     }
 }
 
@@ -53,9 +129,6 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
     }
     let scale = prefs().scale;
     let (lo, hi) = game.presentation.camera.world_rect();
-    let viewport = game.presentation.camera.viewport();
-    push_camera_state();
-    set_camera(&marker_camera(viewport, scale));
     // Draw all backplates before any glyph so adjacent markers cannot erase roles.
     for backplates in [true, false] {
         for unit in game
@@ -78,8 +151,10 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
             {
                 continue;
             }
-            let screen = game.presentation.camera.to_screen(pos);
-            let center = screen / scale;
+            let pen = Pen {
+                center: game.presentation.camera.to_screen(pos),
+                scale,
+            };
             let tint = crate::render::seat_identity_color(game, unit.player);
             let color = Color { a: opacity, ..tint };
             let fill = Color::new(0.065, 0.065, 0.075, opacity);
@@ -88,24 +163,15 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
             let air = unit.domain() == aftermine_sim::stats::Domain::Air;
             if backplates {
                 if air {
-                    draw_poly(center.x, center.y, 4, 10.0, 0.0, fill);
-                    draw_poly_lines(center.x, center.y, 4, 10.0, 0.0, 1.6, color);
+                    pen.poly(4, 10.0, 0.0, fill);
+                    pen.poly_lines(4, 10.0, 0.0, 1.6, color);
                 } else {
-                    draw_rectangle(center.x - 7.0, center.y - 7.0, 14.0, 14.0, fill);
-                    draw_rectangle_lines(center.x - 7.0, center.y - 7.0, 14.0, 14.0, 1.6, color);
+                    pen.rect((-7.0, -7.0), (14.0, 14.0), fill);
+                    pen.rect_lines((-7.0, -7.0), (14.0, 14.0), 1.6, color);
                 }
                 continue;
             }
-            let line = |a: (f32, f32), b: (f32, f32)| {
-                draw_line(
-                    center.x + a.0,
-                    center.y + a.1,
-                    center.x + b.0,
-                    center.y + b.1,
-                    1.4,
-                    ink,
-                );
-            };
+            let line = |a, b| pen.line(a, b, 1.4, ink);
             match crate::look::unit(unit.kind).marker {
                 crate::look::MarkerRole::Worker => {
                     line((-3.0, -3.0), (-3.0, 3.0));
@@ -113,7 +179,7 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
                     line((-3.0, 3.0), (3.0, 3.0));
                 }
                 crate::look::MarkerRole::Gun => {
-                    draw_circle_lines(center.x, center.y + 1.0, 2.4, 1.3, ink);
+                    pen.circle_lines((0.0, 1.0), 2.4, 1.3, ink);
                     line((0.0, 0.0), (0.0, -4.5));
                 }
                 crate::look::MarkerRole::Siege => {
@@ -132,8 +198,8 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
                     }
                 }
                 crate::look::MarkerRole::Scout => {
-                    stroke_circle(center, 3.0, 1.3, ink);
-                    fill_circle(center, 1.0, ink);
+                    pen.circle_lines((0.0, 0.0), 3.0, 1.3, ink);
+                    pen.circle((0.0, 0.0), 1.0, ink);
                 }
                 crate::look::MarkerRole::Transport => {
                     line((-3.0, -2.0), (-3.0, 2.0));
@@ -147,38 +213,23 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
                 }
             }
             if game.state.hostile(game.presentation.human, unit.player) {
-                draw_triangle(
-                    center + vec2(-3.0, 8.0),
-                    center + vec2(3.0, 8.0),
-                    center + vec2(0.0, 11.0),
-                    color,
-                );
+                pen.triangle((-3.0, 8.0), (3.0, 8.0), (0.0, 11.0), color);
             } else if unit.player != game.presentation.human {
-                draw_line(
-                    center.x - 3.0,
-                    center.y + 9.0,
-                    center.x + 3.0,
-                    center.y + 9.0,
-                    1.5,
-                    ink,
-                );
+                pen.line((-3.0, 9.0), (3.0, 9.0), 1.5, ink);
             }
             if selected {
-                stroke_circle(center, 12.0, 1.3, ink);
+                pen.circle_lines((0.0, 0.0), 12.0, 1.3, ink);
             }
             if unit.hp < unit.kind.stats().max_hp {
-                draw_rectangle(center.x - 7.0, center.y - 12.0, 14.0, 2.0, fill);
-                draw_rectangle(
-                    center.x - 7.0,
-                    center.y - 12.0,
-                    14.0 * unit.hp as f32 / unit.kind.stats().max_hp as f32,
-                    2.0,
+                pen.rect((-7.0, -12.0), (14.0, 2.0), fill);
+                pen.rect(
+                    (-7.0, -12.0),
+                    (14.0 * unit.hp as f32 / unit.kind.stats().max_hp as f32, 2.0),
                     color,
                 );
             }
         }
     }
-    pop_camera_state();
 }
 
 pub(crate) fn building_visible(game: &Scene<'_>, b: &aftermine_sim::Building) -> bool {
@@ -253,9 +304,6 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
             ));
         }
     }
-    let viewport = game.presentation.camera.viewport();
-    push_camera_state();
-    set_camera(&marker_camera(viewport, scale));
     for (kind, owner, anchor, built, memory, selected, armed, fade) in markers {
         let (w, h) = kind.size();
         let world = vec2(
@@ -269,7 +317,10 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
         {
             continue;
         }
-        let p = game.presentation.camera.to_screen(world) / scale;
+        let pen = Pen {
+            center: game.presentation.camera.to_screen(world),
+            scale,
+        };
         let opacity = alpha * fade;
         let identity = crate::render::seat_identity_color(game, owner);
         let edge = Color {
@@ -278,47 +329,39 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
         };
         let ink = Color::new(0.91, 0.89, 0.83, opacity);
         let fill = Color::new(0.065, 0.065, 0.075, opacity * 0.94);
-        draw_poly(p.x, p.y, 8, 10.0, 22.5, fill);
-        draw_poly_lines(p.x, p.y, 8, 10.0, 22.5, 1.4, edge);
-        building_glyph(kind, p, ink);
+        pen.poly(8, 10.0, 22.5, fill);
+        pen.poly_lines(8, 10.0, 22.5, 1.4, edge);
+        building_glyph(kind, pen, ink);
         if !built {
-            draw_line(p.x - 6.0, p.y + 6.0, p.x + 6.0, p.y - 6.0, 1.3, ink);
+            pen.line((-6.0, 6.0), (6.0, -6.0), 1.3, ink);
         }
         if memory {
-            draw_circle(p.x + 9.0, p.y - 9.0, 2.0, ink);
+            pen.circle((9.0, -9.0), 2.0, ink);
         }
         if armed {
             let warhead = Color {
                 a: opacity,
                 ..crate::theme::TEXT_ACCENT
             };
-            draw_circle(p.x - 8.5, p.y - 8.5, 2.6, warhead);
+            pen.circle((-8.5, -8.5), 2.6, warhead);
         }
         if selected {
-            draw_poly_lines(p.x, p.y, 8, 13.0, 22.5, 1.4, ink);
+            pen.poly_lines(8, 13.0, 22.5, 1.4, ink);
         }
         if game.state.hostile(game.presentation.human, owner) {
-            draw_triangle(
-                p + vec2(-3.0, 11.0),
-                p + vec2(3.0, 11.0),
-                p + vec2(0.0, 14.0),
-                edge,
-            );
+            pen.triangle((-3.0, 11.0), (3.0, 11.0), (0.0, 14.0), edge);
         } else if owner != game.presentation.human {
-            draw_line(p.x - 3.0, p.y + 12.0, p.x + 3.0, p.y + 12.0, 1.4, ink);
+            pen.line((-3.0, 12.0), (3.0, 12.0), 1.4, ink);
         }
     }
-    pop_camera_state();
 }
 
-fn building_glyph(kind: aftermine_sim::BuildingKind, p: Vec2, ink: Color) {
+fn building_glyph(kind: aftermine_sim::BuildingKind, pen: Pen, ink: Color) {
     use aftermine_sim::BuildingKind::{
         Airworks, Array, Barricade, Bastion, Crucible, Extractor, Fabricator, FlakTurret, Foundry,
         Lattice, MawCradle, Reclaimer, RepairBay, RocCradle, ScuttleCharge, Spire, Turret,
     };
-    let line = |a: (f32, f32), b: (f32, f32)| {
-        draw_line(p.x + a.0, p.y + a.1, p.x + b.0, p.y + b.1, 1.35, ink);
-    };
+    let line = |a, b| pen.line(a, b, 1.35, ink);
     match kind {
         Foundry | Fabricator | Crucible => {
             line((-4.0, 4.0), (4.0, 4.0));
@@ -341,7 +384,7 @@ fn building_glyph(kind: aftermine_sim::BuildingKind, p: Vec2, ink: Color) {
             line((-3.0, 4.0), (3.0, 4.0));
         }
         Turret => {
-            draw_circle_lines(p.x, p.y + 1.0, 2.8, 1.3, ink);
+            pen.circle_lines((0.0, 1.0), 2.8, 1.3, ink);
             line((0.0, 0.0), (0.0, -5.0));
         }
         FlakTurret => {
@@ -355,9 +398,9 @@ fn building_glyph(kind: aftermine_sim::BuildingKind, p: Vec2, ink: Color) {
             line((-4.0, 4.0), (4.0, 4.0));
         }
         Array => {
-            stroke_circle(p, 4.0, 1.1, ink);
+            pen.circle_lines((0.0, 0.0), 4.0, 1.1, ink);
             line((0.0, 0.0), (3.0, -4.0));
-            fill_circle(p, 1.4, ink);
+            pen.circle((0.0, 0.0), 1.4, ink);
         }
         RepairBay => {
             line((-4.0, 0.0), (4.0, 0.0));
@@ -392,8 +435,8 @@ fn building_glyph(kind: aftermine_sim::BuildingKind, p: Vec2, ink: Color) {
             line((-4.0, 4.0), (4.0, 4.0));
         }
         Lattice => {
-            draw_circle_lines(p.x - 2.5, p.y, 2.2, 1.3, ink);
-            draw_circle_lines(p.x + 2.5, p.y, 2.2, 1.3, ink);
+            pen.circle_lines((-2.5, 0.0), 2.2, 1.3, ink);
+            pen.circle_lines((2.5, 0.0), 2.2, 1.3, ink);
             line((-5.0, 4.5), (5.0, 4.5));
         }
         RocCradle => {
@@ -439,8 +482,6 @@ pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
     }
     let scale = prefs.scale;
     let (lo, hi) = game.presentation.camera.world_rect();
-    push_camera_state();
-    set_camera(&marker_camera(game.presentation.camera.viewport(), scale));
     for &frame in game.state.map().extractor_frames() {
         let pos = vec2(frame.x as f32 + 1.0, frame.y as f32 + 1.0);
         if pos.x < lo.x - 2.0
@@ -451,36 +492,22 @@ pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
         {
             continue;
         }
-        let p = game.presentation.camera.to_screen(pos) / scale;
+        let pen = Pen {
+            center: game.presentation.camera.to_screen(pos),
+            scale,
+        };
         let ink = Color::new(0.83, 0.66, 0.36, alpha);
-        draw_rectangle(
-            p.x - 8.0,
-            p.y - 8.0,
-            16.0,
-            16.0,
+        pen.rect(
+            (-8.0, -8.0),
+            (16.0, 16.0),
             Color::new(0.065, 0.065, 0.075, alpha * 0.9),
         );
         for (x, y) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-            draw_line(
-                p.x + x * 8.0,
-                p.y + y * 8.0,
-                p.x + x * 4.0,
-                p.y + y * 8.0,
-                1.4,
-                ink,
-            );
-            draw_line(
-                p.x + x * 8.0,
-                p.y + y * 8.0,
-                p.x + x * 8.0,
-                p.y + y * 4.0,
-                1.4,
-                ink,
-            );
+            pen.line((x * 8.0, y * 8.0), (x * 4.0, y * 8.0), 1.4, ink);
+            pen.line((x * 8.0, y * 8.0), (x * 8.0, y * 4.0), 1.4, ink);
         }
-        building_glyph(aftermine_sim::BuildingKind::Extractor, p, ink);
+        building_glyph(aftermine_sim::BuildingKind::Extractor, pen, ink);
     }
-    pop_camera_state();
 }
 
 pub(crate) fn known_resource(game: &Scene<'_>, pos: chassis::grid::TilePos) -> u32 {
