@@ -891,6 +891,23 @@ fn aim_gun(state: &mut State, id: crate::ids::BuildingId, aim: Vec2Fx) -> bool {
     super::super::movement::steer_bearing(heading, aim - center, traverse)
 }
 
+/// Turns the idle gun of the defense `id` back toward the map centre, where it
+/// started, unless its kind holds its bearing.
+fn rest_gun(state: &mut State, id: crate::ids::BuildingId) {
+    let b = state.building(id).expect("live defense");
+    if !b.kind.gun_rests() {
+        return;
+    }
+    let rest = state.centre_bearing(b.center());
+    let b = state.building_mut(id).expect("live defense");
+    let traverse = b.stats().traverse;
+    let heading = b
+        .gun_heading
+        .as_mut()
+        .expect("a building that fires carries a gun");
+    super::super::movement::turn_bearing(heading, rest, traverse);
+}
+
 /// Built defenses pick their own fights every tick, in building-id order.
 /// A focus the gun can fire on comes first. Otherwise the gun takes the
 /// seen enemy unit in range with a clear line that it can fire on soonest,
@@ -898,7 +915,8 @@ fn aim_gun(state: &mut State, id: crate::ids::BuildingId, aim: Vec2Fx) -> bool {
 /// ground-capable defense with none falls back to apparent hostile buildings
 /// ranked the same way, and then to a radar contact. Out-of-line targets are
 /// ignored until they move. The gun turns toward its pick and fires once it
-/// bears and has reloaded; with no pick it holds its bearing.
+/// bears and has reloaded; with no pick and its reload done it turns back to
+/// rest.
 ///
 /// Right after a shot, every target the gun can reach within its reload
 /// ties, so the nearest wins. The pick it turns toward only gets sooner, so
@@ -1029,6 +1047,8 @@ pub(super) fn turret_fire(
         } else {
             if let Some(view) = blind::radar_in_range(state, me, center, Domain::Ground, atk) {
                 blind::fire_building(state, id, view, events, hits, launches);
+            } else if gun.reload == 0 {
+                rest_gun(state, id);
             }
             continue;
         };

@@ -93,9 +93,32 @@ pub(in crate::tick) fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: 
     turn_bearing(heading, chassis::compass::heading_of(direction), rate)
 }
 
+/// Turns the ground turret of `id` back toward the hull's nose if it had
+/// nothing to aim at while its order ran, starting from the bearing `before`.
+/// There it drops its own bearing and follows the hull.
+///
+/// A turret that aimed either turned or, already bearing, fired or is
+/// reloading, so one that did none of these had nothing to aim at.
+pub(super) fn rest_idle_turret(state: &mut State, id: crate::UnitId, before: Option<u8>) {
+    let Some(unit) = state.unit_mut(id) else {
+        return;
+    };
+    if unit.turret_heading != before || unit.cooldowns.iter().any(|&reload| reload > 0) {
+        return;
+    }
+    let (nose, rate) = (unit.heading, unit.kind.stats().turret_turn_rate);
+    let Some(bearing) = unit.turret_heading.as_mut() else {
+        return;
+    };
+    turn_bearing(bearing, nose, rate);
+    if *bearing == nose {
+        unit.turret_heading = None;
+    }
+}
+
 /// Turns `heading` the short way toward `desired`, at most `rate` compass
 /// steps; returns whether it now bears.
-fn turn_bearing(heading: &mut u8, desired: u8, rate: u8) -> bool {
+pub(in crate::tick) fn turn_bearing(heading: &mut u8, desired: u8, rate: u8) -> bool {
     let delta = i16::from(desired.wrapping_sub(*heading).cast_signed());
     let step = traverse_step(0, delta, rate);
     *heading = heading

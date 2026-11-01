@@ -150,6 +150,7 @@ fn concealed_mines_are_skipped_until_detected() {
                 state.building_apparent(PlayerId(0), state.building(target).unwrap()),
                 detected
             );
+            let rest = state.building(defense).unwrap().gun_heading;
             aim_defense_at(&mut state, defense, Target::Building(target));
             let before = state.building(target).unwrap().hp;
             let report = state.tick(&[]);
@@ -166,13 +167,16 @@ fn concealed_mines_are_skipped_until_detected() {
                 }
             } else {
                 // The gun was staged on the charge; it never follows one it
-                // cannot know of.
+                // cannot know of, but holds or turns back to its rest.
                 let bearing = state.building(defense).unwrap().gun_heading;
                 for _ in 0..120 {
                     assert_eq!(shot(&state.tick(&[]).events, defense), None);
                 }
                 assert_eq!(state.building(target).unwrap().hp, before);
-                assert_eq!(state.building(defense).unwrap().gun_heading, bearing);
+                assert_eq!(
+                    state.building(defense).unwrap().gun_heading,
+                    if kind.gun_rests() { rest } else { bearing }
+                );
             }
         }
     }

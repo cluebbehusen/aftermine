@@ -204,7 +204,8 @@ fn ordered(state: &State, id: UnitId) -> Option<Mark> {
 /// Every gun turns toward and fires on its own pick: the ordered target if
 /// it bears, else a hostile that can hit the hull, else the nearest machine,
 /// then the nearest building, each in its arc, reach and line. A gun with
-/// nothing to shoot holds its bearing. Returns each slot's pick.
+/// nothing to shoot and its reload done turns back to rest. Returns each
+/// slot's pick.
 pub(in crate::tick::brain) fn fire(
     state: &mut State,
     id: UnitId,
@@ -248,6 +249,17 @@ pub(in crate::tick::brain) fn fire(
             })
         });
         let Some((mark, aim)) = pick else {
+            if state.unit(id).expect("caller checked").cooldowns[slot] == 0 {
+                let rest = crate::state::Mounts::resting(guns).bearings[slot];
+                swing(
+                    state,
+                    id,
+                    slot,
+                    mount,
+                    guns.traverse,
+                    mount.arc_offset(rest),
+                );
+            }
             continue;
         };
         picks[slot] = Some(Pick { aim });
@@ -282,11 +294,24 @@ fn traverse(
     pivot: Vec2Fx,
     aim: Vec2Fx,
 ) -> bool {
+    let heading = state.unit(id).expect("caller checked").heading;
+    let wanted = mount.arc_offset(relative(pivot, aim, heading));
+    swing(state, id, slot, mount, rate, wanted)
+}
+
+/// Turns the gun in `slot` toward the arc offset `wanted`; returns whether it
+/// bears.
+fn swing(
+    state: &mut State,
+    id: UnitId,
+    slot: usize,
+    mount: &MountStats,
+    rate: u8,
+    wanted: i16,
+) -> bool {
     let unit = state.unit_mut(id).expect("caller checked");
-    let heading = unit.heading;
     let mounts = unit.mounts.as_mut().expect("a mounted hull");
     let current = mount.arc_offset(mounts.bearings[slot]);
-    let wanted = mount.arc_offset(relative(pivot, aim, heading));
     let next = current + traverse_step(current, wanted, rate);
     let next_byte = i8::try_from(next).expect("an arc offset stays inside the compass");
     mounts.bearings[slot] = mount
