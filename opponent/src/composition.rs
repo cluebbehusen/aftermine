@@ -373,6 +373,9 @@ const SCREEN_SHARE_PER_TRAIT: i64 = 2;
 /// has seen.
 pub(crate) struct Needs {
     need: [i64; ROLES.len()],
+    /// What of its army the seat's personality would have strike from the
+    /// air, at its value.
+    air_share: u64,
     weight: [u64; ROLES.len()],
     /// What the known enemy guns whose fire one point defender answers are
     /// worth.
@@ -409,6 +412,10 @@ fn siege_share(stance: BotStance) -> i64 {
 /// Per mille of the army each point of the siege trait away from 50 moves
 /// the siege share: a personality limit.
 const SIEGE_SHARE_PER_TRAIT: i64 = 3;
+
+/// How much of the army a seat's air trait would have strike from the air: the
+/// trait over this. A personality limit.
+const AIR_SHARE_DIVISOR: i64 = 400;
 
 /// Where the seat's army can go.
 #[derive(Clone, Copy)]
@@ -510,11 +517,17 @@ pub(crate) fn needs(
     need[Role::AntiAir as usize] = 3 * air / 4 - own[Role::AntiAir as usize];
     if outlet.air_strikes {
         let strike = i64::try_from(outlet.strike).unwrap_or(i64::MAX);
-        need[Role::AirStrike as usize] =
-            (army * i64::from(traits.air) / 400).max(strike) - own[Role::AirStrike as usize];
+        // A gunship does the air's work without being one of the army's roles.
+        let gunships = i64::try_from(crate::breach::fielded(observation, crate::gunship::gunship))
+            .unwrap_or(i64::MAX);
+        need[Role::AirStrike as usize] = (army * i64::from(traits.air) / AIR_SHARE_DIVISOR)
+            .max(strike)
+            - own[Role::AirStrike as usize]
+            - gunships;
     }
     Needs {
         need,
+        air_share: u64::try_from(army * i64::from(traits.air) / AIR_SHARE_DIVISOR).unwrap_or(0),
         ground: outlet.ground || outlet.invaders > 0,
         lifted: outlet.lifted,
         weight: [
@@ -570,6 +583,12 @@ impl Needs {
     }
 
     /// Roles with a deficit, most wanted first.
+    /// What of its army the seat's personality would have strike from the
+    /// air, at its value.
+    pub(crate) fn air_share(&self) -> u64 {
+        self.air_share
+    }
+
     pub(crate) fn wanted(&self) -> Vec<Role> {
         let mut wanted: Vec<Role> = ROLES
             .into_iter()

@@ -3,11 +3,12 @@
 //! aim they can take or withdraw when the anti-air around them outweighs them.
 
 use super::air;
-use super::attack::striking;
+use super::attack::{FIT, healthy, striking};
 use super::clear::{self, Sweep};
 use super::strike::{self, Raid};
 use super::{Mission, Missions, Objective, StrikePhase, Task, mine, run, standing};
 use crate::decision::Ledger;
+use crate::gunship::gunship;
 use aftermine_sim::UnitId;
 use aftermine_sim::observation::{ObservationData, UnitObs};
 use chassis::grid::TilePos;
@@ -80,13 +81,16 @@ impl<'a> Sortie<'_, 'a> {
         }
     }
 
-    /// The next aim `strength` can take after `aim`, its fight at `goal`.
-    fn next(self, strength: u64, aim: Aim, goal: TilePos) -> Option<Aim> {
+    /// The next aim `strength` can take after `aim`, its fight at `goal`. A
+    /// `staying` sortie may take the same aim again.
+    fn next(self, strength: u64, aim: Aim, goal: TilePos, staying: bool) -> Option<Aim> {
         match (self, aim) {
             (Self::Strike(raid), Aim::Building(target)) => {
                 raid.best(strength, Some(target)).map(Aim::Building)
             }
-            (Self::Clear(sweep), Aim::Tile(_)) => sweep.best(strength, Some(goal)).map(Aim::Tile),
+            (Self::Clear(sweep), Aim::Tile(_)) => sweep
+                .best(strength, (!staying).then_some(goal))
+                .map(Aim::Tile),
             _ => unreachable!("a sortie's aim"),
         }
     }
@@ -152,6 +156,20 @@ impl Missions {
         };
         let goal = mission.goal;
         let units = mission.units.clone();
+        let id = mission.id;
+        // Gunships out clearing fight on while it takes, and each wounded one
+        // goes home, as from a lift's fight.
+        let staying = members.iter().any(|unit| gunship(unit.kind));
+        let wounded: Vec<UnitId> = members
+            .iter()
+            .filter(|unit| gunship(unit.kind) && !healthy(unit, FIT))
+            .map(|unit| unit.id)
+            .collect();
+        if !wounded.is_empty() && ledger.order(run(wounded.clone(), rally)) {
+            self.release(&wounded);
+            self.index_of(id)?;
+            return None;
+        }
         let lost = match aim {
             Aim::Building(target) => Some(target),
             Aim::Tile(_) => None,
@@ -189,7 +207,8 @@ impl Missions {
                     self.list[index].set_sortie(aim, engage, now, goal);
                     return None;
                 }
-                if all_idle || age >= sortie.ticks(phase) || sortie.outweighed(&members, strength) {
+                let late = age >= sortie.ticks(phase) && !staying;
+                if all_idle || late || sortie.outweighed(&members, strength) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
                 None
@@ -204,7 +223,7 @@ impl Missions {
                 if sortie.stands(aim) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
-                match sortie.next(strength, aim, goal) {
+                match sortie.next(strength, aim, goal, staying) {
                     Some(next) => {
                         if let Some(to) = sortie.send(units.clone(), goal, next, ledger) {
                             self.list[index].set_sortie(next, StrikePhase::Travel, now, to);

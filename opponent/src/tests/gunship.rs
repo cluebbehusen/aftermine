@@ -43,6 +43,18 @@ fn bored(scenario: &Scenario) -> State {
     serde_json::from_value(value).unwrap()
 }
 
+/// West's gunship investments on `state`, with `memory`, at `wants`.
+fn asked(
+    scenario: &Scenario,
+    state: &State,
+    memory: &Memory,
+    traits: crate::profile::PersonalityTraits,
+    wants: crate::gunship::Wants,
+) -> Vec<(Investment, u32)> {
+    let observation = ObservationData::fog_honest(state, PlayerId(0));
+    crate::gunship::investments(&observation, &map(scenario), memory, traits, 360, wants)
+}
+
 /// West's gunship investments on `state` against `flak`, the known anti-air
 /// by the margin, with `memory` and whether its ground reaches no enemy.
 fn wanted(
@@ -52,20 +64,16 @@ fn wanted(
     flak: u64,
     severed: bool,
 ) -> Vec<Investment> {
-    let observation = ObservationData::fog_honest(state, PlayerId(0));
-    let traits = middling();
-    crate::gunship::investments(
-        &observation,
-        &map(scenario),
-        memory,
-        traits,
-        360,
+    let wants = crate::gunship::Wants {
         flak,
+        margin: crate::missions::margin(BotDifficulty::Standard),
+        air_share: 0,
         severed,
-    )
-    .into_iter()
-    .map(|(investment, _)| investment)
-    .collect()
+    };
+    asked(scenario, state, memory, middling(), wants)
+        .into_iter()
+        .map(|(investment, _)| investment)
+        .collect()
 }
 
 /// The known anti-air around West's next lift target on `state`, as a
@@ -154,10 +162,6 @@ fn known_anti_air_over_a_severed_target_wants_a_roc_cradle() {
     assert!(
         wanted(&scenario, &state, &memory, 0, true).is_empty(),
         "no known anti-air: the Skyhooks go as they are"
-    );
-    assert!(
-        wanted(&scenario, &state, &memory, price, false).is_empty(),
-        "ground that reaches the enemy needs no lift"
     );
 
     let mut bare = scenario.clone();
@@ -260,6 +264,225 @@ fn only_anti_air_the_seat_knows_of_counts_against_its_lift() {
         ),
         ROC,
         "that flak, by the margin, wants a Roc"
+    );
+}
+
+/// A field with West's Crucible, Deep Bore frame and a Kestrel over East's
+/// start, where ten East Bastions stand: more guns than West's army can
+/// attack.
+fn guarded() -> Scenario {
+    let mut scenario = field();
+    scenario.map[4].replace_range(8..9, "E");
+    scenario.units.push(unit(0, UnitKind::Kestrel, 41, 11));
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 3, 16),
+        building(0, BuildingKind::Extractor, 8, 4),
+    ]);
+    for (x, y) in [
+        (38, 4),
+        (41, 4),
+        (44, 4),
+        (38, 8),
+        (38, 14),
+        (38, 18),
+        (41, 18),
+        (44, 18),
+        (40, 8),
+        (40, 14),
+    ] {
+        scenario
+            .buildings
+            .push(building(1, BuildingKind::Bastion, x, y));
+    }
+    scenario
+}
+
+fn leaning(air: u8, siege: u8) -> crate::profile::PersonalityTraits {
+    crate::profile::PersonalityTraits {
+        air,
+        siege,
+        ..middling()
+    }
+}
+
+fn connected(air_share: u64) -> crate::gunship::Wants {
+    crate::gunship::Wants {
+        flak: 0,
+        margin: crate::missions::margin(BotDifficulty::Standard),
+        air_share,
+        severed: false,
+    }
+}
+
+fn scored(list: &[(Investment, u32)], investment: Investment) -> u32 {
+    list.iter()
+        .find(|(listed, _)| *listed == investment)
+        .map_or(0, |(_, score)| *score)
+}
+
+#[test]
+fn known_guns_beyond_the_army_on_connected_ground_want_a_roc_by_the_air_trait() {
+    let scenario = guarded();
+    let state = bored(&scenario);
+    let memory = Memory::default();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let margin = crate::missions::margin(BotDifficulty::Standard);
+    let maw = |traits| {
+        scored(
+            &crate::breach::investments(
+                &observation,
+                &map(&scenario),
+                &memory,
+                traits,
+                360,
+                margin,
+            ),
+            Investment::Tech(BuildingKind::MawCradle),
+        )
+    };
+    let roc = |traits| {
+        scored(
+            &asked(&scenario, &state, &memory, traits, connected(0)),
+            ROC[0],
+        )
+    };
+    assert!(
+        roc(leaning(80, 20)) > maw(leaning(80, 20)),
+        "an air seat flies over them"
+    );
+    assert!(
+        maw(leaning(20, 80)) > roc(leaning(20, 80)),
+        "a siege seat cuts through them"
+    );
+    assert!(
+        roc(leaning(0, 100)) > 0,
+        "the trait weighs it and never bars it"
+    );
+}
+
+#[test]
+fn one_machine_answers_the_guns_for_both_cradles() {
+    let memory = Memory::default();
+    let margin = crate::missions::margin(BotDifficulty::Standard);
+    let wants = |scenario: &Scenario| {
+        let state = bored(scenario);
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let maws = crate::breach::investments(
+            &observation,
+            &map(scenario),
+            &memory,
+            middling(),
+            360,
+            margin,
+        );
+        (
+            !maws.is_empty(),
+            !asked(scenario, &state, &memory, middling(), connected(0)).is_empty(),
+        )
+    };
+    // Seven Bastions are within either machine's price by the margin.
+    let mut scenario = guarded();
+    scenario
+        .buildings
+        .retain(|b| !(b.kind == BuildingKind::Bastion && (b.y == 8 || (b.x, b.y) == (44, 18))));
+    assert_eq!(wants(&scenario), (true, true), "premise: both are wanted");
+    for machine in [UnitKind::Roc, UnitKind::Maw] {
+        let mut fielded = scenario.clone();
+        fielded.units.push(unit(0, machine, 20, 11));
+        assert_eq!(wants(&fielded), (false, false), "{machine:?} takes them");
+    }
+}
+
+#[test]
+fn an_attack_given_up_wants_a_machine_only_while_neither_stands() {
+    let scenario = guarded();
+    let state = bored(&scenario);
+    let mut memory = Memory::default();
+    memory.abandon(
+        BuildingKind::Foundry,
+        TilePos::new(41, 11),
+        state.current_tick(),
+    );
+    let quiet = crate::gunship::Wants {
+        margin: 0,
+        ..connected(0)
+    };
+    assert_eq!(
+        asked(&scenario, &state, &memory, middling(), quiet)
+            .into_iter()
+            .map(|(investment, _)| investment)
+            .collect::<Vec<_>>(),
+        ROC,
+        "no need by the numbers, but that attack went without one"
+    );
+    let mut maw = scenario.clone();
+    maw.units.push(unit(0, UnitKind::Maw, 20, 11));
+    assert!(
+        asked(&maw, &bored(&maw), &memory, middling(), quiet).is_empty(),
+        "a Maw stands to break in"
+    );
+}
+
+#[test]
+fn the_air_share_wants_a_roc_at_an_air_leaning_seat() {
+    let scenario = tooled(&[]);
+    let state = bored(&scenario);
+    let memory = Memory::default();
+    let bar = u64::from(UnitKind::Roc.stats().cost) / 4;
+    let score = |air, share| {
+        scored(
+            &asked(
+                &scenario,
+                &state,
+                &memory,
+                leaning(air, 50),
+                connected(share),
+            ),
+            ROC[0],
+        )
+    };
+    assert_eq!(score(80, 0), 0, "no share, no Roc");
+    assert!(
+        score(50, bar) >= crate::investments::ADOPT,
+        "air 50 starts saving"
+    );
+    assert!(
+        score(40, bar) < crate::investments::ADOPT,
+        "lower waits behind what it needs"
+    );
+    assert_eq!(
+        score(80, 10 * bar),
+        score(80, bar),
+        "a personality limit: one bar at most"
+    );
+
+    let mut fielded = scenario.clone();
+    fielded.units.push(unit(0, UnitKind::Roc, 6, 20));
+    let held = bored(&fielded);
+    assert!(
+        asked(
+            &fielded,
+            &held,
+            &memory,
+            leaning(80, 50),
+            connected(2 * bar)
+        )
+        .is_empty(),
+        "the Roc fills the share"
+    );
+}
+
+#[test]
+fn a_seat_with_nothing_to_refit_into_a_deep_bore_wants_no_cradle() {
+    let mut scenario = tooled(&[]);
+    scenario
+        .buildings
+        .retain(|b| b.kind != BuildingKind::Extractor);
+    let state = scenario.build().unwrap();
+    let price = u64::from(UnitKind::Roc.stats().cost);
+    assert!(
+        wanted(&scenario, &state, &Memory::default(), price, true).is_empty(),
+        "its saving would hold scrap for a step it cannot take"
     );
 }
 

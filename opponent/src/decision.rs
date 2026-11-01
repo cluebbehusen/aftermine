@@ -360,7 +360,7 @@ pub(crate) fn decide(
         crate::missions::stranded(unit, map, home)
     });
     crate::missions::look(observation, map, &mut persistent.memory);
-    let scratch = Scratch::new(
+    let mut scratch = Scratch::new(
         observation,
         map,
         frame,
@@ -369,6 +369,11 @@ pub(crate) fn decide(
         profile.traits,
         &persistent.missions,
     );
+    scratch.gunships_clear =
+        persistent
+            .missions
+            .gunships_clear(observation, map, profile, &persistent.memory, &scratch);
+    let scratch = scratch;
     let meals = persistent
         .missions
         .meals(observation, map, &scratch, &ledger);
@@ -477,6 +482,7 @@ pub(crate) fn decide(
             &persistent.memory,
             &scratch,
         ),
+        air_share: needs.air_share(),
     };
     let mut candidates = investments::candidates(&situation);
     let danger = placement::Danger::of(observation, map, &persistent.memory);
@@ -1068,11 +1074,13 @@ fn train_carriers(
     producers: &[Producer<'_>],
     ledger: &mut Ledger,
 ) -> bool {
-    // Every carrier's hold: alive, queued, bought this decision, or being
-    // assembled in a cradle.
+    // Every carrier's hold: alive and not away clearing, queued, bought this
+    // decision, or being assembled in a cradle.
+    let off_lifts = persistent.missions.gunships_off_lifts(observation, scratch);
     let holds: Vec<u8> = observation
         .my_units
         .iter()
+        .filter(|unit| !off_lifts.contains(&unit.id))
         .map(|unit| unit.kind)
         .chain(observation.my_queues.iter().flatten().copied())
         .chain(std::iter::repeat_n(

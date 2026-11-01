@@ -2,6 +2,7 @@ use super::*;
 
 fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
     Needs {
+        air_share: 0,
         need: [0; ROLES.len()],
         weight: [1_000; ROLES.len()],
         answered: 0,

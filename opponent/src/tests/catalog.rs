@@ -65,6 +65,7 @@ fn offered_lifting(
             aftermine_sim::scenario::BotDifficulty::Scrapheap,
         ),
         lift_flak: lift.unwrap_or(0),
+        air_share: 0,
     };
     candidates(&situation)
         .into_iter()

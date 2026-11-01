@@ -509,6 +509,14 @@ impl Mission {
     /// scout, a lift its units once it has left the ground, a settlement
     /// its units while they fly, and a strike, clear or raid its units once
     /// they have set out and until they turn back.
+    /// Whether a gunship flies in this mission.
+    fn flown_by_gunships(&self, observation: &ObservationData) -> bool {
+        self.units
+            .iter()
+            .filter_map(|id| mine(observation, *id))
+            .any(|unit| crate::gunship::gunship(unit.kind))
+    }
+
     fn holds(&self, observation: &ObservationData) -> bool {
         match self.task {
             // An ally's defense lends its units back to the seat's own.
@@ -1047,7 +1055,9 @@ pub(crate) struct Scratch {
     /// and investments prepare for the same enemy the missions go after.
     pub(crate) rival: Option<PlayerId>,
     /// Value against ground and against aircraft that offense leaves home,
-    /// before the units out defending count.
+    /// before the units out defending count. A seat whose ground reaches no
+    /// enemy adds its free clearing gunships, which leave regardless, so they
+    /// let nothing else leave in their place.
     pub(crate) reserve: [u64; 2],
     /// Value against ground of the units a lift could take: those at home
     /// without cutting into the reserve, or those on other own ground no
@@ -1056,6 +1066,10 @@ pub(crate) struct Scratch {
     /// Value of the known armed enemy ground units on ground connected to the
     /// seat's start.
     pub(crate) invaders: u64,
+    /// Whether free gunships go at the anti-air around the next lift's target
+    /// rather than carry the lift. Worked out once per decision, after the
+    /// rest, by [`Missions::gunships_clear`].
+    pub(crate) gunships_clear: bool,
 }
 
 impl Scratch {
@@ -1077,7 +1091,7 @@ impl Scratch {
         traits: PersonalityTraits,
         missions: &Missions,
     ) -> Self {
-        let reserve = reserve::reserve(observation, map, memory, stance);
+        let mut reserve = reserve::reserve(observation, map, memory, stance);
         let objectives = objectives(observation, map);
         let severed = !objectives.is_empty()
             && objectives.iter().all(|objective| {
@@ -1096,6 +1110,14 @@ impl Scratch {
             .collect();
         let mut free = missions.available(observation, None);
         free.sort_unstable();
+        if severed {
+            reserve[0] += free
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .filter(|unit| clear::clearing_gunship(unit))
+                .map(attack::striking)
+                .sum::<u64>();
+        }
         let (home, elsewhere) = payload(observation, map, &targeted, &free);
         let payload = missions
             .liftable(observation, map, reserve, home)
@@ -1116,6 +1138,7 @@ impl Scratch {
                 observation.tick,
                 Domain::Ground,
             ),
+            gunships_clear: false,
         };
         scratch.rival = missions.rival(&scratch, observation, map, traits);
         scratch
