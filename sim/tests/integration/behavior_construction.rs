@@ -1961,6 +1961,66 @@ fn a_unit_with_its_exits_closed_drives_off_the_site() {
 }
 
 #[test]
+fn a_unit_clearing_a_site_turns_aside_from_an_enemy_claim_on_its_route() {
+    use aftermine_sim::stats::BuildingKind;
+    let mut scenario = open_arena(
+        30,
+        24,
+        vec![
+            unit(0, UnitKind::Harvester, 12, 8),
+            unit(0, UnitKind::Bombard, 19, 14),
+            unit(1, UnitKind::Harvester, 23, 18),
+        ],
+    );
+    scenario.players[0].scrap = 5_000;
+    scenario.players[1].scrap = 5_000;
+    let mut state = scenario.build().unwrap();
+    let (builder, sealed, enemy) = (
+        state.units()[0].id,
+        state.units()[1].id,
+        state.units()[2].id,
+    );
+    let site = |player, unit, kind, anchor| {
+        cmd(
+            player,
+            Command::Build {
+                units: vec![unit],
+                kind,
+                anchor,
+                queue: true,
+                defer: false,
+            },
+        )
+    };
+    state.tick(&[
+        site(0, builder, BuildingKind::Fabricator, TilePos::new(18, 13)),
+        site(0, builder, BuildingKind::Barricade, TilePos::new(20, 14)),
+        site(0, builder, BuildingKind::Barricade, TilePos::new(19, 15)),
+    ]);
+    let goal = state.unit(sealed).unwrap().path.as_ref().unwrap().goal;
+    state.tick(&[site(1, enemy, BuildingKind::Barricade, goal)]);
+    assert!(
+        state.buildings_at(goal).any(|b| b.player == PlayerId(1)),
+        "premise: the enemy claimed the destination before the unit arrived"
+    );
+    for tick in 0..300u32 {
+        state.tick(&[]);
+        let unit = state.unit(sealed).unwrap();
+        assert!(
+            !state
+                .buildings_at(unit.tile())
+                .any(|b| b.player == PlayerId(1)),
+            "the unit drove onto the enemy site at tick {tick}"
+        );
+    }
+    let unit = state.unit(sealed).unwrap();
+    assert!(
+        state.passable(unit.tile()),
+        "the unit still cleared the site"
+    );
+}
+
+#[test]
 fn a_unit_keeps_its_order_while_it_clears_a_site() {
     let (mut state, sealed) = sealed_on_a_site(UnitKind::Sentinel);
     let goal = TilePos::new(5, 5);

@@ -439,21 +439,33 @@ pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Op
 /// holds a braced gun in place, so it stows first.
 pub(super) fn clear_occupied_ground(state: &mut State, id: crate::ids::UnitId) -> bool {
     let unit = state.unit(id).expect("caller checked");
-    let route = if unit.path.as_ref().is_some_and(|path| path.clearing) {
-        None
-    } else if left_on_claimed_ground(state, unit) {
-        let Some(route) = escape_route(state, unit).filter(|route| route.clearing) else {
+    let clearing = unit.path.as_ref().filter(|path| path.clearing);
+    // The motor cannot see hostile footprints, so a route one has landed on
+    // since it was planned goes before the motor takes another step along it.
+    let route_holds = clearing.is_some_and(|path| {
+        let radius = unit.kind.stats().radius;
+        path.waypoints.iter().skip(path.next as usize).all(|&tile| {
+            crate::geometry::hull_open(tile, radius, |t| {
+                !state.hostile_footprint_at(unit.player, t)
+            })
+        })
+    });
+    if !route_holds {
+        let stale = clearing.is_some();
+        let route = left_on_claimed_ground(state, unit)
+            .then(|| escape_route(state, unit))
+            .flatten()
+            .filter(|route| route.clearing);
+        let unit = state.unit_mut(id).expect("caller checked");
+        if stale {
+            unit.path = None;
+        }
+        let Some(route) = route else {
             return false;
         };
-        Some(route)
-    } else {
-        return false;
-    };
-    let unit = state.unit_mut(id).expect("caller checked");
-    if route.is_some() {
-        unit.path = route;
+        unit.path = Some(route);
     }
-    unit.retract_braces();
+    state.unit_mut(id).expect("caller checked").retract_braces();
     true
 }
 
