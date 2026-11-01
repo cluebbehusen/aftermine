@@ -58,7 +58,7 @@ pub const fn stance_name(stance: BotStance) -> &'static str {
 
 fn compact_difficulty(name: &'static str) -> &'static str {
     match name {
-        "Scrapheap" => "SCRAP",
+        "Scrapheap" => "HEAP",
         "Standard" => "STD",
         "Veteran" => "VET",
         "Prime" => "PRIME",

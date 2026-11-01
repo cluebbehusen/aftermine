@@ -723,7 +723,7 @@ fn magazine_queue(
                     "Also turns autofill off, so it is not bought again.".into(),
                 ]
             } else {
-                vec!["Read-only: allied rounds cannot be cancelled.".into()]
+                Vec::new()
             },
             progress: (index == 0)
                 .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
@@ -933,41 +933,17 @@ fn order_card(
                 "Delivering scrap, then waiting at the Foundry."
             },
         ),
-        Order::Harvest { .. } => (
-            VerbIcon::Harvest,
-            "Harvest",
-            "Collecting scrap and returning it to a Foundry.",
-        ),
-        Order::Attack { .. } => (
-            VerbIcon::Attack,
-            "Attack",
-            "Attacking the selected target while it remains known.",
-        ),
-        Order::Build { .. } => (
-            VerbIcon::Build,
-            "Build",
-            "Constructing the selected structure.",
-        ),
-        Order::Repair { .. } => (
-            VerbIcon::Repair,
-            "Repair",
-            "Repairing a damaged structure; consumes scrap.",
-        ),
-        Order::Hunt { .. } => (
-            VerbIcon::Hunt,
-            "Hunt",
-            "Moving while engaging enemies along the route.",
-        ),
+        Order::Harvest { .. } => (VerbIcon::Harvest, "Harvest", ""),
+        Order::Attack { .. } => (VerbIcon::Attack, "Attack", ""),
+        Order::Build { .. } => (VerbIcon::Build, "Build", ""),
+        Order::Repair { .. } => (VerbIcon::Repair, "Repair", "Costs scrap."),
+        Order::Hunt { .. } => (VerbIcon::Hunt, "Hunt", ""),
         Order::Advance { .. } => (
             VerbIcon::Advance,
             "Advance",
-            "Moving while the primary weapon fires at targets already in range; never chasing.",
+            "Fires at targets in range; never chases.",
         ),
-        Order::Board { .. } => (
-            VerbIcon::Move,
-            "Board",
-            "Walking to a transport and climbing aboard.",
-        ),
+        Order::Board { .. } => (VerbIcon::Move, "Board", ""),
         Order::Unload { .. } => (
             VerbIcon::Move,
             "Unload",
@@ -983,21 +959,9 @@ fn order_card(
             "Salvage",
             "Stripping a structure down for a partial refund.",
         ),
-        Order::Found { .. } => (
-            VerbIcon::Build,
-            "Found",
-            "Moving to a paid scaffold; its ground will be checked when visible.",
-        ),
-        Order::RepairUnit { .. } => (
-            VerbIcon::Repair,
-            "Repair",
-            "Repairing a damaged unit; consumes scrap.",
-        ),
-        Order::Accompany { .. } => (
-            VerbIcon::Accompany,
-            "Accompany",
-            "Escorting a unit: keeping pace, fighting threats near it, and repairing its group whenever it stops.",
-        ),
+        Order::Found { .. } => (VerbIcon::Build, "Build", "Walking to a paid site."),
+        Order::RepairUnit { .. } => (VerbIcon::Repair, "Repair", "Costs scrap."),
+        Order::Accompany { .. } => (VerbIcon::Accompany, "Accompany", ""),
         Order::Retire { .. } => (
             VerbIcon::Retire,
             "Retire",
@@ -1006,28 +970,20 @@ fn order_card(
         Order::Scout { .. } => (
             VerbIcon::Move,
             "Scout",
-            "Scouting around known enemy reach: stops short where it can still see, or waits.",
+            "Stops short of known enemies, or waits.",
         ),
         Order::Tend {
             weld: Some(aftermine_sim::Target::Unit(_)),
             ..
-        } => (
-            VerbIcon::Repair,
-            "Repair",
-            "Repairing a damaged unit it came across; consumes scrap.",
-        ),
+        } => (VerbIcon::Repair, "Repair", "Costs scrap."),
         Order::Tend {
             weld: Some(aftermine_sim::Target::Building(_)),
             ..
-        } => (
-            VerbIcon::Repair,
-            "Repair",
-            "Repairing a damaged structure it came across; consumes scrap.",
-        ),
+        } => (VerbIcon::Repair, "Repair", "Costs scrap."),
         Order::Tend { weld: None, .. } => (
             VerbIcon::Repair,
-            "Tend",
-            "Walking on, repairing damaged units and structures it passes; consumes scrap.",
+            "Patrol",
+            "Repairs what it passes; costs scrap.",
         ),
     };
     let subject = if own {
@@ -1035,7 +991,10 @@ fn order_card(
     } else {
         None
     };
-    let mut desc = vec![desc.to_string()];
+    let mut desc: Vec<String> = (!desc.is_empty())
+        .then(|| desc.to_string())
+        .into_iter()
+        .collect();
     let (face, head, progress) = match subject {
         Some((subject, name, ghost, progress)) => {
             if let Some(line) = subject_detail(game, order, progress) {
@@ -1294,14 +1253,10 @@ fn roster_filter_desc(hands: Hands) -> Vec<String> {
 /// How the Patrol card collects and starts its route.
 fn patrol_desc(hands: Hands) -> &'static str {
     match (hands.touch(), hands.keys) {
-        (false, true) => "Arm a looping route, click waypoints, then press again to start it.",
-        (false, false) => {
-            "Arm a looping route, click waypoints, then click Patrol again to start it."
-        }
-        (true, true) => {
-            "Arm a looping route, tap waypoints, then press again or tap Patrol to start it."
-        }
-        (true, false) => "Arm a looping route, tap waypoints, then tap Patrol again to start it.",
+        (false, true) => "Click waypoints, then press again to loop them.",
+        (false, false) => "Click waypoints, then click Patrol again to loop them.",
+        (true, true) => "Tap waypoints, then press again or tap Patrol to loop them.",
+        (true, false) => "Tap waypoints, then tap Patrol again to loop them.",
     }
 }
 
@@ -1324,7 +1279,7 @@ fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] 
         String::new()
     };
     [
-        format!("Auto-repair {state}: idle workers repair units and structures near their post."),
+        format!("Auto-repair {state}: idle workers repair nearby damage."),
         format!("{how}{key} to switch it. Patrolling workers always repair."),
     ]
 }
@@ -1536,7 +1491,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     action: CardAction::None,
                     enabled: true,
                     why: None,
-                    desc: vec!["Read-only: allied structures cannot be controlled.".into()],
+                    desc: Vec::new(),
                     progress: None,
                     autocast: None,
                     hold: None,
@@ -1555,7 +1510,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
             if let Some(target) = building.focus {
-                panel.queue_label = "Target preference".into();
+                panel.queue_label = "Target".into();
                 panel.queue.push(order_card(
                     game,
                     &Order::Attack {
@@ -1601,7 +1556,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             Some(stop_card(
                 CardAction::Dispatch(Action::StopOrScrap),
                 chord(bindings, Action::StopOrScrap),
-                "Clear target preference; resume automatic fire.",
+                "Clear target.",
             ))
         } else if selected.accepts && selected.buildings.iter().any(|b| !b.queue.is_empty()) {
             Some(stop_card(
@@ -1754,10 +1709,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             action: CardAction::Dispatch(Action::Scout),
             enabled: true,
             why: None,
-            desc: vec![
-                "See the selected ground from outside known enemy reach.".into(),
-                "Scouts stop short or wait rather than walk into fire.".into(),
-            ],
+            desc: vec!["Moves to see the spot, staying out of known enemy range.".into()],
             progress: None,
             autocast: None,
             hold: None,
@@ -1774,10 +1726,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             action: CardAction::Dispatch(Action::Run),
             enabled: true,
             why: None,
-            desc: vec![
-                "Move to the selected ground without attacking".into(),
-                "or acquiring targets.".into(),
-            ],
+            desc: vec!["Move without stopping to fight.".into()],
             progress: None,
             autocast: None,
             hold: None,
@@ -1792,10 +1741,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             action: CardAction::Dispatch(Action::Hunt),
             enabled: true,
             why: None,
-            desc: vec![
-                "Move to the selected ground while engaging enemies.".into(),
-                "Units stop and chase targets along the route.".into(),
-            ],
+            desc: vec!["Move, stopping to chase and fight enemies.".into()],
             progress: None,
             autocast: None,
             hold: None,
@@ -1830,10 +1776,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         action: CardAction::Dispatch(Action::Accompany),
         enabled: true,
         why: None,
-        desc: vec![
-            "Select a friendly unit for the rest to escort. They keep pace,".into(),
-            "fight threats near it, and repair the group whenever it stops.".into(),
-        ],
+        desc: vec!["Pick a friendly unit for the rest to escort.".into()],
         progress: None,
         autocast: None,
         hold: None,
@@ -1929,7 +1872,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             enabled: loaded,
             why: (!loaded).then(|| "nothing is aboard".to_string()),
             desc: vec![
-                "Sets every carried unit down on open ground around its airframe.".into(),
+                "Sets cargo down on open ground below.".into(),
                 unload_queue_desc(hands).into(),
                 transport_load_desc(hands.touch()).into(),
             ],
@@ -1957,7 +1900,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 action: CardAction::Dispatch(Action::ToggleBuildPalette),
                 enabled: true,
                 why: None,
-                desc: vec!["Open construction.".into()],
+                desc: Vec::new(),
                 progress: None,
                 autocast: None,
                 hold: None,
@@ -2025,7 +1968,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 action: CardAction::ClosePalette,
                 enabled: true,
                 why: None,
-                desc: vec!["Close construction.".into()],
+                desc: Vec::new(),
                 progress: None,
                 autocast: None,
                 hold: None,

@@ -273,7 +273,7 @@ fn the_camera_line_names_only_what_the_hands_in_use_have() {
         let line = FinalMapScreen::coaching(&bindings, hands);
         crate::platform::assert_copy_fits(hands, &line.replace(&back, ""));
         assert_eq!(
-            line.ends_with(&format!("{back} report")),
+            line.ends_with(&format!("{back} back")),
             hands.keys,
             "{line}"
         );

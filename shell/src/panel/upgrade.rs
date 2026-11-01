@@ -79,7 +79,7 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
             } else {
                 CHARGE_ARRAY_DETECT_RADIUS
             };
-            facts.push(("Mine detection".into(), format!("{radius} tiles")));
+            facts.push(("Charge detection".into(), format!("{radius} tiles")));
         }
         _ => {}
     }

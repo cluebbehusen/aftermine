@@ -1371,14 +1371,7 @@ impl Presentation {
                         ));
                     } else {
                         self.sounds_pending.push((SoundKind::TrainDone, None));
-                        self.toast(format!(
-                            "{} online",
-                            crate::typography::entity_name(kind.name())
-                        ));
                     }
-                }
-                Event::BuildCancelled { player, refund, .. } if *player == self.human => {
-                    self.toast(format!("Site salvaged (+{refund} scrap)"));
                 }
                 Event::UnitDied {
                     unit,
@@ -1508,7 +1501,7 @@ impl Presentation {
                         self.toast(format!("{name} assembled"));
                     } else if state.hostile(self.human, *player) {
                         self.raise_cradle_alert(world_vec(*pos), *kind);
-                        self.toast(format!("Enemy {name} has rolled out"));
+                        self.danger_toast(format!("Enemy {name} assembled"));
                     }
                 }
                 // A bay is heard only where its host is seen.
@@ -1559,14 +1552,12 @@ impl Presentation {
                         aftermine_sim::command::RejectReason::InvalidTarget => {
                             "Can't target that".into()
                         }
-                        aftermine_sim::command::RejectReason::NotANode => {
-                            "Nothing to mine there".into()
-                        }
+                        aftermine_sim::command::RejectReason::NotANode => "No scrap there".into(),
                         aftermine_sim::command::RejectReason::NotYourBuilding => {
                             "Not your structure".into()
                         }
                         aftermine_sim::command::RejectReason::CannotProduce => {
-                            "That factory can't make those".into()
+                            "That structure can't make those".into()
                         }
                         aftermine_sim::command::RejectReason::BadSite => "Can't build there".into(),
                         aftermine_sim::command::RejectReason::NoValidUnits => {
@@ -1579,7 +1570,7 @@ impl Presentation {
                             "You are eliminated".into()
                         }
                         aftermine_sim::command::RejectReason::MissingPrerequisite => {
-                            "Needs its tech structure first".into()
+                            "Not unlocked yet".into()
                         }
                         aftermine_sim::command::RejectReason::NothingLoaded => {
                             "No warhead loaded".into()
@@ -1841,34 +1832,45 @@ impl Presentation {
                         .is_some_and(|unit| unit.kind.stats().scouts);
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
-                    let text = match reason {
-                        aftermine_sim::StallReason::NoRoute => "Can't reach that",
+                    let (text, danger) = match reason {
+                        aftermine_sim::StallReason::NoRoute => ("Can't reach that", false),
                         aftermine_sim::StallReason::NoFiringPosition => {
-                            "No ground to fire from there"
+                            ("No ground to fire from there", false)
                         }
-                        aftermine_sim::StallReason::InsufficientScrap => "Out of scrap",
+                        aftermine_sim::StallReason::InsufficientScrap => {
+                            ("Not enough scrap", false)
+                        }
                         aftermine_sim::StallReason::GroundTaken => {
-                            "That ground was taken before the founder arrived"
+                            ("That site was taken first", false)
                         }
-                        aftermine_sim::StallReason::CrewFull => "Cradle crew is full",
-                        aftermine_sim::StallReason::TransportFull => "The transport is full",
+                        aftermine_sim::StallReason::CrewFull => ("Cradle crew is full", false),
+                        aftermine_sim::StallReason::TransportFull => {
+                            ("The transport is full", false)
+                        }
                         aftermine_sim::StallReason::NoOpenGround => {
-                            "No open ground to unload there"
+                            ("No open ground to unload there", false)
                         }
-                        aftermine_sim::StallReason::DangerHold if scout => {
-                            "Scout waiting for a safe way to see"
-                        }
+                        // A scout's wait ends in a verdict within seconds,
+                        // and that verdict is the news.
+                        aftermine_sim::StallReason::DangerHold if scout => continue,
                         aftermine_sim::StallReason::DangerHold => {
-                            "Worker waiting for a safe route home"
+                            ("Worker holding: enemies nearby", true)
                         }
                         // The scout still has its tile in sight, so the
                         // order did its job; the stop needs no feedback.
                         aftermine_sim::StallReason::SafeVantage => continue,
                         aftermine_sim::StallReason::NoSafeVantage => {
-                            "Scout found no safe way to see there"
+                            ("Surveyor can't see there safely", false)
                         }
                     };
-                    self.toast(text);
+                    if !self.stall_is_news(*reason, state.current_tick()) {
+                        continue;
+                    }
+                    if danger {
+                        self.danger_toast(text);
+                    } else {
+                        self.toast(text);
+                    }
                     self.fx.push(Effect {
                         kind: EffectKind::Ping {
                             at: world_vec(*pos),
@@ -2118,7 +2120,7 @@ impl Presentation {
             if warhead.hostile && self.warned_warheads.insert(warhead.id) {
                 let at = warhead.line.map_or(warhead.position, |line| line.impact);
                 self.raise_warhead_alert(world_vec(at));
-                self.toast("Incoming warhead");
+                self.danger_toast("Incoming warhead");
             }
         }
         self.warned_warheads
@@ -2148,10 +2150,6 @@ impl Presentation {
                 );
                 if let Some(machine) = cradle.kind.assembles() {
                     self.raise_cradle_alert(centre, machine);
-                    self.toast(format!(
-                        "Enemy {} assembling",
-                        crate::typography::entity_name(machine.name())
-                    ));
                 }
             }
         }

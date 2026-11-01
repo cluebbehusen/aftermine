@@ -193,9 +193,8 @@ fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
             for w in [640.0, 1280.0] {
                 let card = lay_tip(tip, hands, w);
                 let text = card.text();
-                assert_eq!(text[0], "MATCH TIP");
-                assert_eq!(text[1], tip.title());
-                assert!(text.len() > 2, "{tip:?}: the tip says what to do");
+                assert_eq!(text[0], tip.title());
+                assert!(text.len() > 1, "{tip:?}: the tip says what to do");
                 assert!(card.rect.x >= 0.0 && card.rect.right() <= w);
                 for line in &card.lines {
                     assert!(

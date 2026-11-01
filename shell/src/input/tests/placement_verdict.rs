@@ -87,10 +87,9 @@ fn an_unaffordable_spot_is_short_by_the_missing_scrap_and_refuses_the_click() {
     assert!(input.placing.is_some(), "and keeps placing");
     assert!(
         game.presentation
-            .toasts
-            .iter()
-            .any(|toast| toast.text == "Not enough scrap for a Turret"),
-        "the toast names the shortfall"
+            .sounds_pending
+            .contains(&(crate::game::SoundKind::Denied, None)),
+        "the refusal is heard, while the ribbon names the shortfall"
     );
 }
 
@@ -213,10 +212,9 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     assert!(game.pending.is_empty(), "the click stages nothing");
     assert!(
         game.presentation
-            .toasts
-            .iter()
-            .any(|toast| toast.text == "Can't build there: your builders can't reach it"),
-        "and says why"
+            .sounds_pending
+            .contains(&(crate::game::SoundKind::Denied, None)),
+        "and is heard, while the ribbon says why"
     );
 }
 

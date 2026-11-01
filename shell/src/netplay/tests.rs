@@ -710,7 +710,7 @@ fn an_injected_desync_halts_both_machines() {
         tick: aftermine_net::HASH_INTERVAL,
     };
     assert_eq!(lan.ends(), (desync, desync));
-    assert!(desync.notice().contains("Desync at 0:01"));
+    assert!(desync.notice().contains("Out of sync at 0:01"));
     assert_eq!(End::HostLost.notice(), "Lost connection to the host.");
 }
 
@@ -748,7 +748,7 @@ fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
         assert!(client.poll(Duration::ZERO, viewport()).is_none());
         client.failure().map(|(_, _, reason)| reason.to_owned())
     });
-    assert!(reason.contains("host runs build lan-test"));
+    assert_eq!(reason, "The host is on a different version");
     assert_eq!(client.status(), reason);
     let (joined_as, _, _) = client.failure().unwrap();
     assert_eq!(joined_as, &name("Alex"), "the form gets the name back");
@@ -784,7 +784,7 @@ fn a_build_refused_in_the_poll_that_accepts_it_still_hears_the_hosts() {
         assert!(client.poll(Duration::ZERO, viewport()).is_none());
         client.failure().map(|(_, _, reason)| reason.to_owned())
     });
-    assert!(reason.contains("host runs build lan-test"), "{reason}");
+    assert_eq!(reason, "The host is on a different version");
 }
 
 #[test]
@@ -1000,10 +1000,7 @@ fn an_unreachable_host_on_apple_points_at_local_network_permission() {
     assert!(!unreachable("10.0.0.2:4200", &blocked, false).contains("Local Network"));
     let refused = io::Error::from(io::ErrorKind::ConnectionRefused);
     let reason = unreachable("10.0.0.2:4200", &refused, true);
-    assert!(
-        reason.starts_with("Cannot reach 10.0.0.2:4200: "),
-        "{reason}"
-    );
+    assert!(reason == "Cannot reach 10.0.0.2:4200", "{reason}");
     assert!(!reason.contains("Local Network"), "{reason}");
 }
 

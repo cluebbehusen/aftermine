@@ -116,7 +116,7 @@
   }
  ],
  "meta": {
-  "hook": "A pit cuts the field corner to corner with two crossings far apart, so hold one and make the enemy use the other.",
+  "hook": "A pit cuts the field corner to corner with two crossings far apart.",
   "size": "medium",
   "mode": "1v1",
   "wealth": "lean",

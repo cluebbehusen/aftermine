@@ -138,7 +138,7 @@ impl Lesson {
             Self::Scrap => "Scrap",
             Self::Build => "Build",
             Self::Fight => "Fight",
-            Self::Sustain => "See and sustain",
+            Self::Sustain => "Scout and repair",
         }
     }
 
@@ -512,9 +512,7 @@ impl CoachLine {
         match self {
             CoachLine::Status(text) => text,
             CoachLine::Recovery(text) => text,
-            CoachLine::Stuck => {
-                "This lesson can no longer be finished. Use RETRY to start it over."
-            }
+            CoachLine::Stuck => "This lesson can no longer be finished.",
         }
     }
 }

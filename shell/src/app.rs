@@ -388,7 +388,9 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 Ok(text) => (text, false),
                 Err(error) => (format!("Diagnostic operation failed: {error}"), true),
             };
-            app.notify(text, danger);
+            if !text.is_empty() {
+                app.notify(text, danger);
+            }
         }
         let visible = screen.visible(&app.game);
         aftermine_kit::diagnostics::frame(aftermine_kit::diagnostics::FrameContext {
@@ -630,7 +632,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                     if get_time() - since > 1.0 {
                         app.config.window = live;
                         if let Err(err) = app.config.save() {
-                            app.notify(format!("could not save settings: {err}"), true);
+                            app.notify_failure("Could not save settings", err);
                         }
                         app.pending_size = None;
                     }
@@ -814,6 +816,13 @@ impl App {
     }
 
     /// Tells the player something; see [`screen_flow::deliver_notices`].
+    /// Tells the player what failed and leaves the cause on stderr for a
+    /// report: raw error chains mean nothing to a player.
+    fn notify_failure(&mut self, what: &str, cause: impl std::fmt::Display) {
+        eprintln!("{what}: {cause}");
+        self.notify(what, true);
+    }
+
     fn notify(&mut self, text: impl Into<String>, danger: bool) {
         self.notices.push(Notice {
             text: text.into(),

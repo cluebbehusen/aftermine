@@ -126,7 +126,7 @@ fn joiners_take_open_chairs_then_bots_in_display_order_and_see_who_sits_where() 
     });
     assert!(member_at(&w, 1).is_none(), "North East keeps its bot");
     let hosting = w.hosting_line(&draft).unwrap();
-    assert!(hosting.ends_with("3 of 3 players here"), "{hosting}");
+    assert!(hosting.ends_with("3 of 3 players"), "{hosting}");
 
     // With no chair open, a joiner replaces a bot.
     clients.push(join(&w, "Riley"));
@@ -141,11 +141,7 @@ fn joiners_take_open_chairs_then_bots_in_display_order_and_see_who_sits_where() 
         member_at(w, 1).is_none()
     });
     assert!(draft.seats[1].open);
-    assert!(
-        w.hosting_line(&draft)
-            .unwrap()
-            .ends_with("3 of 4 players here")
-    );
+    assert!(w.hosting_line(&draft).unwrap().ends_with("3 of 4 players"));
 }
 
 #[test]
@@ -328,7 +324,7 @@ fn a_failed_start_frees_its_culprits_chairs_before_anything_can_start_again() {
         assert!(w.poll_lan(&mut draft, Duration::ZERO).is_none());
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    assert_eq!(w.notice.as_deref(), Some("A player's game didn't match"));
+    assert_eq!(w.notice.as_deref(), Some("A player is out of sync"));
     assert_eq!(
         member_at(&w, 2),
         None,

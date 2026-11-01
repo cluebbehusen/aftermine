@@ -63,9 +63,10 @@ Screen and dialog titles, and small labels over a value, column, section or
 card, are all caps. Everything else a player reads or presses is sentence case;
 names such as Foundry and acronyms such as LAN keep their capitals. Titles draw
 through `menu::draw_title` or `menu::draw_page_heading`, so no screen picks a
-title size, and drawn text takes its size from `theme::Type`.
-`shell/src/typography/casing_tests.rs` reads the source and fails on a new
-violation.
+title size. Drawn text takes its size from `theme::Type`, and `typography::fit`
+only shrinks to a `Type`. `shell/src/typography/casing_tests.rs` reads the
+source and fails on a new violation; it does not trace sizes through struct
+fields or parameters.
 
 When a change alters a unit or structure, check that its Roster page still reads
 true. The Roster says what a player needs to choose and use each kind, in plain

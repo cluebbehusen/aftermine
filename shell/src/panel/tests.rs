@@ -1561,7 +1561,7 @@ fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
         );
     }
     assert_eq!(stat(&panel, "Interceptors").value, "0/2");
-    assert_eq!(stat(&panel, "Ring").value, "15 tiles");
+    assert_eq!(stat(&panel, "Intercept reach").value, "15 tiles");
 }
 
 #[test]

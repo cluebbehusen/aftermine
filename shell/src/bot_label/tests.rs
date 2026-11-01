@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn every_profile_has_consistent_human_readable_labels() {
     let difficulties = [
-        (BotDifficulty::Scrapheap, "Scrapheap", "SCRAP"),
+        (BotDifficulty::Scrapheap, "Scrapheap", "HEAP"),
         (BotDifficulty::Standard, "Standard", "STD"),
         (BotDifficulty::Veteran, "Veteran", "VET"),
         (BotDifficulty::Prime, "Prime", "PRIME"),
