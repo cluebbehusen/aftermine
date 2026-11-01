@@ -32,8 +32,8 @@ use std::collections::{BTreeSet, BinaryHeap, VecDeque};
 pub const BIG_PRIZE: usize = 4;
 
 /// Ground tiles that must be able to shell a big contested prize. The worst
-/// shipped prizes before their fixes had at most 124; Sunken Floor's basin,
-/// the model of a prize that pays for its exposure, has 312.
+/// shipped prizes before their fixes had at most 124; a sunken basin that pays
+/// for its exposure has around 312.
 pub const SHELLING_FLOOR: usize = 160;
 
 /// Ground steps a pocket reaches from its seed frames before open ground

@@ -32,7 +32,7 @@
       "family": "constrained"
     },
     {
-      "path": "../../../scenarios/subsidence.json",
+      "path": "../../../scenarios/open-pit.json",
       "family": "constrained"
     },
     {
