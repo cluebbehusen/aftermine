@@ -1,73 +1,90 @@
 # Simulation architecture
 
-This document describes the current architectural contracts of `aftermine-sim`.
-It maps responsibilities and invariants, not tuning or history. Balance lives in
-`sim/src/stats.rs`.
+This document states the contracts `aftermine-sim` keeps: what a change must not
+break. It does not describe every rule. Rules live in the code and its tests,
+and balance lives in `sim/src/stats.rs`. The table at the end points each
+contract to its source and its tests.
 
 `aftermine-sim` does not depend on `aftermine-opponent`. It owns serializable
 player knowledge and its fog filtering in `observation`; bot policy lives in
-`aftermine-opponent`. Pure command and production geometry shared with
-predictors lives in `geometry`, outside the private tick implementation.
+`aftermine-opponent`. Command and production geometry shared with predictors
+lives in `geometry`, outside the private tick implementation.
 
 ## Authority and reproducibility
 
-`State` is the complete authoritative world. The public mutation boundary is
-`State::tick(&[PlayerCommand])`, which advances exactly one fixed simulation
-step. Camera state, input state, interpolation, effects, audio, and UI never
-enter `State` and cannot affect an outcome.
+`State` is the complete authoritative world. Its only public mutation is
+`State::tick(&[PlayerCommand])`, which advances exactly one fixed step. Camera
+state, input, interpolation, effects, audio and UI never enter `State` and
+cannot affect an outcome.
 
-A `Scenario` contains the map, players, starting entities, and bot setup needed
-to begin a match. It may also carry browser metadata that the simulation
-deliberately ignores. The complete scenario is embedded in a replay, so
-reconstruction does not depend on the original scenario file. The simulation has
-no random stream of its own. Each player-facing bot seat carries a personality
-seed in its configuration, and the bot derives its profile from that seed.
+A `Scenario` holds the map, players, starting entities and bot setup needed to
+begin a match. Browser metadata in it is ignored by the simulation. A replay
+embeds the whole scenario, so reconstruction never depends on the original file.
+The simulation has no random stream of its own. Each bot seat records a
+personality seed in its configuration, and the bot derives its profile from it.
 
-All outcome-relevant arithmetic uses fixed point or integers. Fixed-point vector
-scaling computes unsigned magnitudes before restoring the sign, preserving exact
-negation for representable results so opposite movement rays cannot drift by one
-raw unit. Entity tables are kept in stable id order, and selection rules end in
-explicit deterministic tie-breakers. `State::hash` serializes the authoritative
-state canonically; readable protocol views are not substitutes for that
-fingerprint.
+All outcome-relevant arithmetic uses fixed point or integers. Entity tables stay
+in stable id order, and every selection rule ends in an explicit tie-breaker.
+`State::hash` serializes authoritative state canonically; protocol views are not
+a substitute for it.
 
-`TickReport` and its `Event` values are output only. Consumers may use them for
-statistics, effects, animation, sound, and assertions, or drop them entirely.
-The simulation never reads an event back.
+`TickReport` and its `Event`s are output only. Consumers may use them for
+statistics, effects, sound and assertions, or drop them. The simulation never
+reads an event back.
+
+## Map symmetry
+
+Shipped maps are mirrored under a half-turn, and mirrored seats must get
+mirrored outcomes. Every geometric tie therefore breaks in a frame relative to
+the query, the footprint, the owner or the map. It never breaks by global entity
+id, seat number or row-major scan order.
+
+- Route ties use a query-oriented tile rank that reverses with the start-to-goal
+  query under a half-turn.
+- Group goals, escort slots, drop points, doorsteps, production spawns, eviction
+  escapes and make-way relocation scan in the frame of the issuing unit, founder
+  or producer, fixed when the command is issued.
+- Equivalent workers, Repair Bay patients and perfectly stacked bodies separate
+  by owner-local rank, rotated into a map-relative frame where geometry gives no
+  direction.
+- Target and harvest-source ties go by bearing from the unit, then by id.
+- Units spawn facing the map centre, so mirrored placements have mirrored turn
+  costs.
+- Fixed-point vector scaling preserves exact negation, so opposite movement rays
+  cannot drift apart by one raw unit.
+- Passes that alternate direction for fairness, such as collision relaxation and
+  kiln bites, alternate with tick parity.
+
+Building contact outlines follow fixed artwork, so an asymmetric outline can
+offer different frontage after a half-turn. That is the one accepted exception.
 
 ## State construction and trust boundary
 
 `Scenario::build` is the normal constructor. It parses and validates authored
 data, normalizes team ids, places Foundries and starting entities, and builds
-tick-zero vision.
-
-A tiered map adds a levels layer beside the terrain rows, one base-36 glyph per
-tile. The simulation does not limit how many levels a map has. Cliff tiles block
-ground movement like rock while aircraft cross them; ramp tiles are ground that
-joins a level to the one above it, and hold only Barricades and Scuttle Charges.
-Parsing and deserialization share one check: touching ground meets only at
+tick-zero vision. A tiered map adds a layer of levels beside the terrain rows.
+Parsing and deserialization share one level check: touching ground meets only at
 overlapping levels, a cliff stands no higher than the ground beside it, and a
 layer at a single level is stored as a flat map, so every map has one form.
 
-Scenario mode defaults to an ordinary match. Explicit sandbox mode makes Foundry
-anchors optional and permits allied-only or disconnected scenes. It disables
-automatic elimination and victory, but preserves ordinary command, placement,
-ownership and cost checks. A sandbox seat can issue commands without a Foundry
-until it surrenders. Mode is authoritative serialized state; a sandbox cannot
-deserialize with match elimination stamps or a final result, and session
-checkpoints require matching scenario and world modes.
+Scenario mode defaults to an ordinary match. Sandbox mode makes Foundry anchors
+optional, permits allied-only or disconnected scenes, and disables automatic
+elimination and victory. Command, placement, ownership and cost checks still
+apply, and a sandbox seat can command units without a Foundry until it
+surrenders. Mode is serialized state: a sandbox cannot deserialize with
+elimination stamps or a final result, and session checkpoints require matching
+scenario and world modes.
 
-All `State` fields are crate-private. External crates receive narrow immutable
-accessors and can change the world only by supplying commands to `tick`.
-`inspect_command_phase` is a deliberate exception for prediction: it clones the
-state, applies only command validation and command-phase effects, exposes a
-restricted read-only view to a callback, and discards the clone. With no
-commands it shows the state itself, since an empty command phase changes
-nothing. It never advances or installs authoritative state.
+All `State` fields are crate-private. Other crates get narrow immutable
+accessors and change the world only by passing commands to `tick`.
+`inspect_command_phase` is the one exception, for prediction. It clones the
+state, applies only command validation and command-phase effects, shows a
+restricted read-only view to a callback, and discards the clone. It never
+advances or installs authoritative state.
 
-Deserialization uses a private mirror type and then calls
-`State::validate_invariants`; there is no public unchecked deserialization path.
-Validation covers, among other things:
+Deserialization goes through a private mirror type and then
+`State::validate_invariants`; there is no unchecked path. Validation covers,
+among other things:
 
 - player, team, result, map, and vision-table consistency;
 - sorted entity ids and monotonic next-id counters;
@@ -78,10 +95,10 @@ Validation covers, among other things:
 - canonical ordering for every collection whose order is observable.
 
 Each new serialized field needs an invariant decision. The integrity tests
-exercise meaningful malformed relationships and bounds, while round-tripping
-states the real simulation produces so validation cannot become stricter than
-reachable reality. Extend the owning contract's coverage rather than duplicating
-primitive decoding checks for each field.
+exercise meaningful malformed relationships and bounds, and round-trip states
+the real simulation produces, so validation never becomes stricter than
+reachable play. Extend the owning contract's coverage rather than adding a
+primitive decoding check for each field.
 
 ## Tick pipeline
 
@@ -124,1039 +141,335 @@ Phase order is game behavior. `State::tick` performs:
     remaining pending crashes, warheads in flight and warhead holds when the
     match ends.
 
-Shots and hp work are buffered while actors decide against stable positions, hp,
-and live entity tables. Orders, paths, harvesting, and billing may still change
-in their declared deterministic order; the whole brain phase is not an immutable
-snapshot. Damage resolves before construction, salvage, or repair work, so fire
-wins a same-tick tie and nothing can repair a destroyed target back into
-existence. Retaliation is derived afterward from surviving victims.
+Shots and hp work are buffered while actors decide against stable positions, hp
+and entity tables. Orders, paths, harvesting and billing may still change in
+their declared order; the brain phase is not an immutable snapshot. Damage
+resolves before construction, salvage or repair, so fire wins a same-tick tie
+and nothing repairs a destroyed target back into existence. Retaliation is
+derived afterward from surviving victims.
 
-Weapon hits, mine blasts, and aircraft impacts share HP reduction and
-`DamageTaken` notification for the victim's owner. They retain their individual
-tick phases and targeting rules. Zero damage, already-dead entities, and
-provisional scaffolds produce no damage notification. Salvage-risk memory and
-retaliation remain weapon-resolution responsibilities.
+Weapon hits, mine blasts and aircraft impacts share hp reduction and the
+`DamageTaken` notification to the victim's owner, while keeping their own phases
+and targeting rules. Zero damage, already-dead entities and provisional
+scaffolds produce no notification.
 
-Once a result exists, later calls ignore commands and skip world phases, but the
-tick counter still advances so external timelines remain aligned. Per-tick
-acceleration structures, including the unit spatial index, are local scratch.
-They are rebuilt at their use points and never serialized or hashed.
+Once a result exists, later ticks ignore commands and skip world phases, but the
+tick counter still advances so external timelines stay aligned. Per-tick
+acceleration structures, such as the unit spatial index and reachability labels,
+are scratch: rebuilt where they are used, never serialized or hashed.
 
-Destroyed airborne Condors, Skyhooks, and Rocs leave a pending crash. The record
-retains owner, kind, heading, launch and contact positions, and start and
-arrival ticks. Contact is fixed at death using the last actual airborne
-displacement, capped at flight speed and reduced by the crash's deceleration.
-Crash duration and blast profiles live in `sim/src/stats.rs`; trajectory and
-impact resolution live in `sim/src/tick/aircraft_crashes.rs`. A hovering
-transport therefore falls in place. The removed aircraft and its cargo cease
-acting immediately and leave ordinary death salvage.
-
-At contact, the blast damages hostile ground units and nearby building
-footprints. Allies and airborne units are immune; impacts over pits do no
-damage. Targets can move into or out of the blast before arrival. Pending
-crashes resolve in death-tick and unit-id order and survive state serialization.
-Victory is immediate once the Foundry condition is met; any crashes still
-pending are discarded without damage.
+A destroyed airborne Condor, Skyhook or Roc leaves a pending crash whose contact
+point is fixed at death. Pending crashes resolve in death-tick and unit-id order
+and damage hostile ground units and buildings near the impact, never allies or
+aircraft. They survive serialization and are discarded without damage once the
+match is decided.
 
 ## Commands and unit programs
 
-A `PlayerCommand` pairs an issuer with a `Command`; the command layer proves
-ownership, command eligibility, fog legality, costs, queue capacity, target
-validity, and placement. Rejection produces an event and must leave the state
-unchanged. Lists of unit or building ids have set semantics: dispatch sorts and
-deduplicates them even though replay bytes preserve the original payload.
+A `PlayerCommand` pairs an issuer with a `Command`. The command layer proves
+ownership, eligibility, fog legality, cost, queue capacity, target validity and
+placement. A rejected command produces an event and leaves the state unchanged.
+Lists of unit or building ids have set semantics: dispatch sorts and
+deduplicates them, while replay bytes keep the original payload.
 
-Commands generally establish intent rather than moving or damaging anything
-immediately. Each unit has one active `Order`, a bounded FIFO queue, and a
-`looping` flag:
+Commands set intent; they rarely move or damage anything at once. Each unit has
+one active `Order`, a bounded FIFO queue and a `looping` flag:
 
-- an ordinary non-queued order replaces the current program;
-- a queued order appends behind it;
-- completing a plain program pops the next order or becomes idle;
-- a patrol rotates completed legs to the back until interrupted;
+- a plain order replaces the current program, and a queued one appends to it;
+- a finished order hands over to the next or leaves the unit idle, and a patrol
+  rotates finished legs to the back;
 - an overriding command clears the abandoned program as one unit;
-- a walk to an unreachable goal completes where it got as close as it could, and
-  the program continues;
+- a walk whose goal cannot be reached completes on the reachable tile nearest
+  it, reports `OrderStalled { NoRoute }` once unless the program loops, and the
+  program continues;
 - any other order that cannot be routed drops only itself, except that a refused
-  chase, an empty bank, or a full sling still clears the whole program;
-- `CancelOrder` removes one order, named by its `OrderKey`, from the subject
-  unit and every other listed unit that holds it. Walks match by clicked tile
-  whatever their verb, including the march an engagement resumes and the walk a
-  landing took over. Each unit drops its `from_end`-th match counted back from
-  the end of its program, so legs finished while the command is in flight never
-  shift which order goes. A removed active order hands over to the next without
-  rotating into a patrol, a program stops looping only once the unit is idle,
-  cargo stays aboard, and an unstarted site whose last Build order goes is
-  refunded. The subject must be the issuer's, in the world, and still hold the
-  match; otherwise nothing changes. Counting from the end names the same order
-  only while units hold the same sequence, so patrol members at different points
-  of a circuit that repeats a waypoint, or units holding a repeat queued to only
-  some of them, can drop different visits.
+  chase, an empty bank or a full sling clears the whole program;
+- `CancelOrder` removes one order, named by its `OrderKey` and counted from the
+  end of each unit's program, so legs finished while the command is in flight
+  never change which order goes. An unstarted site whose last Build order goes
+  is refunded.
 
-Re-issuing the active order without queueing continues it past the queue wipe:
-its path and progress survive. A walking order matches on its variant and
-clicked tile and takes the re-issue's aim, keeping its resolved endpoint only
-while its target is unchanged; the walk replans a path whose destination was
-superseded.
+Re-issuing the active order without queueing continues it: its path and progress
+survive.
 
-Movement stances are distinct contracts. `Run` walks without engaging, `Advance`
-keeps moving but may take already-visible in-range primary shots, and `Hunt`
-acquires and pursues enemies along the route. Explicit `Attack` commits to its
-target; idle self-acquisition and retaliation may carry a leash back to the
-unit's station. `Harvest`, `Build`, `Found`, `Repair`, `RepairUnit`, and
-`Salvage` are persistent work programs lowered by unit behavior over later
-ticks.
+Movement stances are distinct contracts. `Run` never engages. `Advance` keeps
+moving but may take primary shots that are already aligned and in range. `Hunt`
+acquires and pursues enemies along the route. `Attack` commits to its target.
+Idle acquisition and retaliation may leash a unit back to its station. Work
+orders (`Harvest`, `Build`, `Found`, `Repair`, `RepairUnit` and `Salvage`)
+persist and are carried out by unit behavior over later ticks.
 
-`Accompany` puts units on escort duty around one own unit. Each escort holds a
-slot of the open tiles ring-scanned around the escorted unit's tile, ranked in
-id order within its movement domain and framed per owner by the side of the map
-its earliest Foundry stands on, then seat parity, so slots never reshuffle as
-the party moves and mirrored seats take mirrored slots. Escorts move at their
-own top speed and replan only once their slot drifts more than a tile from their
-route's end; nothing couples the escorted unit's speed to theirs. An armed
-escort chases the threat it ranks first, judged as if it stood at the escorted
-unit, within `ESCORT_ENGAGE_RADIUS` of it and its own aggro range, passing over
-any victim it can neither shoot from where it stands nor reach, including one
-over unstandable ground whose firing stands are all out of reach. Failing that,
-an escort within the engage radius of the escorted unit fires without moving at
-an enemy already in its own weapon reach, so a long gun escorts at full range
-from its slot; further out it is catching up. Either fight is an `Attack` that
-resumes escort duty. A victim within the wider `ESCORT_BREAK_RADIUS` of the
-escorted unit is chased wherever the escort is; one past it is fought only while
-it stays in the escort's reach and the escort stays within that radius. A
-stalled chase returns to duty without a stall report. Escorts answer fire from
-within the engage radius, or, while within it themselves, from anything their
-own guns reach. Weapon masks give each kind its role: a fighter escort rises
-only against aircraft. While the escorted unit stood still at the start of the
-brain phase, a welder escort mends the most urgent wounded ground member of the
-party, the escorted unit first, through the ordinary field weld. Its torch
-target lives in the order and owns the billing meter; an empty bank only pauses
-it. An escorted unit aboard a transport is followed through its carrier. When it
-leaves play, each escort drops the order without rotating a patrol and takes its
-next queued order or idles where it stands. Dispatch refuses any escort the
-target already follows, directly or through other escorts in any program, so
-escort chains are loop-free; the validator refuses a state holding a loop.
+`Accompany` puts units on escort duty around one own unit. Slots stay fixed as
+the party moves, and escorts fight only within set radii of the unit they guard
+before returning to duty. Escort chains are loop-free: dispatch refuses an
+escort the target already follows, and the validator refuses a state holding a
+loop.
 
-`Tend` is a worker's walk that welds on its own initiative. A patrol gives each
-worker tending legs instead of plain runs. An idle worker with nothing queued
-that stands still sets out on a trip, whose goal is its post, when an eligible
-patient stands within `ESCORT_ENGAGE_RADIUS` of it and its idle welding is on: a
-per-worker switch that `SetIdleWeld` sets, on by default, carried through a
-transport ride. A patient is either an own, living, wounded, repairable ground
-machine that is not retiring, or an own, complete, damaged building that is not
-stealthy and carries no active or queued salvage commitment, read from a
-snapshot taken as the brain phase began, after commands. Each is measured at its
-position or at the nearest point of the building's footprint. A new patient must
-stand still, be reachable at one of its approach points or footprint-adjacent
-tiles, and be payable: the phase-start bank covers the first weld tick that
-bills anything. The nearest is taken, an exact tie going to the bearing from the
-welder's facing, then to machines before buildings, and then to id, a key a
-half-turn of the scene preserves. A welder keeps its patient while it stays in
-range and payable and, for a machine, either stands still or is on its way to
-weld the welder back. A patrol leg searches around the welder, a trip around its
-post, so a trip never strays farther; a trip whose switch goes off lets its
-patient go. The torch is the ordinary field weld or crew repair, its patient
-held in the order and owning the billing meter, but an empty bank only skips a
-tick, a patient that leaves the rules is let go without a stall, and a tending
-walk that ends short reports nothing. A finished leg rotates without a patient,
-and a trip ends idle at its post. The idle-worker count and the bot's
-observation treat a trip as busy, yet a queued command replaces it as it would
-an idle program. No other order is interrupted.
+`Tend` is a worker's walk that welds on its own initiative. A patrol gives
+workers tending legs, and an idle worker with idle welding on (`SetIdleWeld`, on
+by default) sets out from its post to weld an own wounded machine or damaged
+building nearby, read from a snapshot taken after the command phase. Tending
+never interrupts another order, an empty bank only pauses it, and a queued
+command replaces a trip as it would an idle program. A building with an active
+or queued salvage commitment is never a patient.
 
-`Run`, `Hunt`, `Advance`, `Tend`, and `Unload`, and the march an `Attack`
-resumes, carry a `Goal`: the clicked tile, the spread slot the unit aims for
-around it, and an optional endpoint. A tile goal must lie on the map, and an
-off-map one is refused as `OutOfBounds`; a goal that cannot be reached is never
-refused. Each movement domain's half of a group snaps the clicked tile to the
-nearest open tile within `GOAL_SNAP_RADIUS` (air clamps onto the map and scans a
-wider radius), then gives its members, in id order, the open tiles ring-scanned
-outward from that center; members past the last open tile share it, and with no
-open tile near the click every member's target stays the clicked tile. That
-resolution happens when the command is issued if the issuer's team has explored
-the clicked tile. Otherwise every member heads for the clicked tile itself,
-keeping its rank and the scan frame fixed at issue, and the end-of-tick exposure
-pass hands each its slot on the first tick its owner's team has explored the
-tile, in active and queued orders and in the marches engagements will resume.
-Resolution reads the real map, like every route; only its trigger is player
-knowledge, so a group never spreads before its owner's team has seen the clicked
-tile. Patrols spread each leg the same way. A rally walk, the walk a unit that
-cannot hit an attack target takes to that target's tile, and an `Unload` drop
-point each resolve as rank 0, so a rally's newborns and a group's pacifists
-share one tile. Every air route snaps a peak goal to open sky with the same
-scan, framed by the flyer's own approach, so mirrored flights snap to mirrored
-sky.
+Walks carry a `Goal`: the clicked tile, the spread slot the unit aims for, and
+an optional endpoint. A tile goal must lie on the map, and an off-map one is
+refused as `OutOfBounds`; an unreachable goal is never refused. A group spreads
+over open tiles around the clicked tile only once the issuer's team has explored
+it. Until then every member heads for the clicked tile and takes its slot at the
+end of the tick its team explores it. Resolution reads the real map; only its
+trigger is player knowledge, so spreading never reveals unexplored ground. A
+slot or endpoint is stored only when it differs from the clicked tile, so a
+plain reachable order serializes as a plain tile.
 
-A producer's rally is a tile or an own unit. Every unit born under a unit rally
-escorts that unit with `Accompany`, harvesters and aircraft included. The rally
-follows its unit aboard a transport and clears in cleanup the tick the unit
-leaves play, so the validator, unlike its rule for order references, refuses a
-unit rally that names a unit out of play or another seat's.
+Reachability comes from 4-connected component labels over the passability routes
+use, which match A* because routes never cut corners. A short walk, one that
+stops somewhere other than its target, completes and reports once. It also
+completes on touching a chain of idle bodies of its own team that reaches close
+to its endpoint. Only own-team bodies count, so an enemy out of sight never
+changes where a walk stops.
 
-When the target lies outside the unit's reachable ground, the unit routes to the
-reachable tile nearest it by squared distance instead, and stores that tile as
-the endpoint. Reachability comes from 4-connected component labels over the same
-passability routes use, which match A* reachability because routes never cut
-corners; a unit standing on a closed tile reaches the components of its open
-cardinal neighbours. Ties on distance follow the spread-slot ring order,
-half-turned by the frame between the target and the unit, so mirrored units
-settle on mirrored tiles, and a recompute keeps a stored endpoint that is still
-reachable and tied. A slot is stored only while it differs from the clicked tile
-and an endpoint only while it differs from the target, so a reachable order
-aimed at its clicked tile serializes exactly as a plain tile did. The labels are
-brain-phase scratch rebuilt lazily; a scrap node running dry is the only
-passability write inside the brain phase and discards the ground labels.
+A producer's rally is a tile or an own unit, and units born under a unit rally
+escort it. The validator refuses a unit rally that names a unit out of play or
+another seat's unit.
 
-A walk is short when it arrives somewhere other than its target, when it is
-sealed in, when it already stands on its endpoint, or when the capped route to
-the endpoint fails. A short walk completes, advances the program, and reports
-`OrderStalled { NoRoute }` once unless the program loops; an ordinary arrival is
-never short. Because an endpoint sits on the edge of reachable ground, a short
-walk also completes when it touches a body that stood idle, pathless, and
-stopped at the start of the brain phase and connects, through a chain of such
-touching bodies within `CROWD_CHAIN_REACH`, to one within `ARRIVAL_NEAR` of the
-endpoint. Only bodies of the walker's own team count toward that chain, so a
-hostile body that may be out of sight never changes where a short walk stops. A
-crowd therefore never makes a goal count as unreachable. An unreachable `Unload`
-sets its riders down where the flight ended. Riders take the open tiles
-ring-scanned outward from where the transport stopped, framed by the transport's
-approach when the order was issued, so mirrored drops set riders on mirrored
-tiles. A rider boards within `stats::load_reach` of its carrier's centre, which
-grows with a wide hull so a Roc hovering over a pit rim still takes riders from
-the rim.
-
-`Scout` is a scout's own verb: only kinds whose stats say they scout take it,
-and a patrol gives them Scout legs. A Scout leg names its clicked tile and plans
-from its team's knowledge alone, through the snapshot Harvesters steer by:
-visible armed enemies' reach plus a margin, remembered defenses at their
-remembered tier, radar contacts, recent incidents, and known Scuttle Charges.
-Friendly screens do not count. The scout walks to the tile while the tile and
-the way are safe; otherwise it heads for the safe tile nearest the target that
-still has it in sight, ranked in the approach frame. A scout standing in danger
-first retreats to the nearest safe ground it can reach without closing on any
-threat, and with no safe view it stands and periodically reports `DangerHold`.
-Each tick spent retreating, detouring around danger flagged on its planned
-route, or waiting counts in `Unit::progress`; a route planned safe from the
-start costs nothing, however long. At `SCOUT_HOLD_TICKS` the leg ends with
-`NoSafeVantage`, and a leg that ends at a view short of its tile reports
-`SafeVantage`. Patrol laps stay silent. A scout on a Scout leg steers only one
-waypoint ahead, so a straight leg never chords a detour back into the reach it
-bends around.
+`Scout` legs plan from team knowledge only: visible armed enemies' reach,
+remembered defenses, radar contacts, recent incidents and known Scuttle Charges.
+A scout with no safe view for `SCOUT_HOLD_TICKS` ends its leg with
+`NoSafeVantage`.
 
 ## Movement and collision
 
 Ground routes use deterministic eight-direction A* with no diagonal corner
-cutting. Equal-cost open-set ties use a query-oriented tile rank: the rank
-reverses with the start-to-goal query under a map half-turn, so a rotated query
-returns the rotated canonical path instead of inheriting an absolute row-major
-preference. Ground passability is open terrain with no undepleted scrap node or
-non-stealthy building footprint. A buried Scuttle Charge deliberately blocks
-nothing. Air movement ignores rocks, scrap, and buildings, but Peaks own their
-air column and remain impassable.
+cutting. Ground passability is open terrain with no undepleted scrap node and no
+non-stealthy building footprint; a buried Scuttle Charge blocks nothing. Air
+movement ignores rock, scrap and buildings, but peaks block aircraft too.
 
-A body up to the Breaker's radius may overhang the ground around its centre
-tile, and that tile stands for the whole of it. A wider hull also claims every
-tile within its excess over that radius, its body tiles. It routes only through
-tiles whose body tiles are all passable, over reachability labels of its own;
-its motor and collision pushes never move it onto more closed ground than it
-already covers. Its body tiles deny hostile foundations, are evicted from new
-sites, count as parked ground for friendly lookahead, take a share of its wreck,
-and let any seat that sees one of them see the unit. For every current kind the
-body tiles are the centre tile alone, so these rules reduce exactly to the
-small-body rules.
+A path is advisory, not a reservation. Every ground step rechecks its next
+waypoint, because construction can claim ground after the path was planned; an
+invalid path is dropped and planned again. A site placed under a pathless ground
+body gives it a real escape path while keeping its order and work progress.
+Make-way relocation happens only after a foundation is accepted and paid.
 
-Workers and units with a contact weapon route to ordinary perimeter tiles, then
-make a short, collision-checked final approach to the building's contact
-outline. Each kind has one outline per tier as built and one per construction
-stage, traced from the static body the field draws; moving parts such as turret
-mounts are not part of it. A shell test keeps every outline within a small gap
-and spill of its art. The simulation owns the construction stage the site art
-shows, so a stage change, a completion, or an upgrade redraws the outline under
-bodies at work: builders re-seat, and a Maw already cutting cuts on where its
-drum now meets. Outlines do not change tile passability or open travel passages
-between buildings. Work and contact weapons share perimeter candidate
-generation. A contact weapon on a wide hull, the Maw's drum, cuts a building
-only with the drum pressed flat against one of its sides: the drum runs square
-across the hull's front, and must lie within a few degrees of a side and within
-its weapon's reach of it, overlapping it. A building's sides are the edges of
-its outline's convex hull; an edge under two fifths of a neighbouring edge, a
-bevel across a corner, is no side. A drum that reaches a building askew first
-pivots in place square to the side it faces, and one squared up off a corner,
-short of every side, drives on to meet one. One stroke cuts every hostile
-building the drum presses flat, and while a drum is within a short reach of a
-hostile building's outline, that building's guns hold fire and bearing as their
-reload runs down. A wide cutter on the attack takes the straight way to its
-target through the hostile buildings it sees, and turns to cut the first one in
-its way, unless its drum already presses on its target. On a hunt it takes the
-straight way to its goal the same way, turning to cut the first building in its
-way that it can meet; come as near its goal as open ground allows, it counts
-ground out of its sight as open rather than settle short. Pressing on a
-building, its hull meets the hostile buildings around it at their outlines, as
-it meets its target, rather than at their whole tiles, so it cuts into a wall
-where its way meets it. Its front crushes small hostile ground machines it
-touches, whatever its order. Work, melee, and ranged building attacks share a
-crowd-aware position chooser: productive occupants win space, nearby arrivals
-carry soft claims, and distant routes do not reserve frontage. When arrivals'
-positions overlap, the unit nearer its own position keeps its claim, whatever
-seat it belongs to, so allied crowds cannot all yield to one another; an exact
-tie goes to the earlier unit of one seat. When productive units fill the legal
-positions, overflow approaches wait outside the interaction area. A worker that
-already reaches the surface works where it stands, and a held position is chosen
-again once new ground makes it unreachable. Ranged candidates respect their
-weapon's minimum and maximum range, line of fire, and movement layer. Fixed-wing
-aircraft attack with run-ins instead. Building artwork and its contact outline
-keep their authored facing, so asymmetric contact can differ under a map
-half-turn. Placement, travel, and ranged reach use the rectangular footprint.
+Routes ignore bodies. A ground follower's lookahead never passes through a
+friendly ground body standing still, and a body whose progress is cancelled by
+contact for `STALL_REPLAN_TICKS` plans again. Only friendly bodies count,
+because steering around an unseen enemy would reveal it; hostile bodies meet
+only the collision resolver.
 
-Talon, Kestrel, and Roc cruise heading-first but can hover at rest. Their travel
-and fixed-gun traverse rates are independent of bomber flight; per-kind rates
-live in `UnitKind::cruise_turn_rate` in `sim/src/stats.rs`. Near waypoints they
-slow to tighten the arc; intermediate waypoints can be rounded only when the
-onward segment is clear. An obstructed step holds position and keeps its route
-while the nose turns, and replans from the actual position only once the nose
-faces the waypoint and is still blocked. Arrivals, Stop, and in-range attacks
-hover rather than orbit or land. Fixed guns traverse with the body before firing
-ordinary hitscan shots; Advance only fires when already aligned and does not
-turn away from its route to aim. These aircraft spawn facing the map center,
-matching mirrored initial turn costs. Buzzard and Skyhook travel independently
-of heading, with no cruise turn radius.
+A hull wider than the Breaker's radius claims body tiles around its centre tile.
+It routes only where all of them are passable, is seen when any of them is, and
+denies hostile foundations on them.
 
-The Condor uses committed heading-first flight: only the heading steers, at most
-`turn_rate` compass steps per tick, so every waypoint is accepted inside the
-kind's turn-acceptance ring rather than at an exact center. Every turn is a
-committed arc of one fixed radius, and the simulation reasons about that arc
-against the map's flight envelope in fixed point. Steering takes the shorter
-rotation only when the arc it sweeps stays inside the world and ends in a state
-the airframe can still be flown out of, otherwise the longer one. A wall reflex
-banks the aircraft away whenever one more straight tick would leave no such arc.
-A committed airframe never stops: without a path it orbits on the bank whose
-fitting arc is longest, tangent to the point where the route ran out, and if it
-is ever pressed into the envelope it slides along the boundary while turning
-back in. A step into a Peak drops the route so the brain replans from the actual
-position, while the airframe slides along the face. Near the target bearing, a
-small angular deadband prevents alternating corrections across the 256-step
-compass boundary. Turns settle on the nearer of the two bearings bracketing the
-goal ray.
+Workers and contact weapons route to perimeter tiles, then make a short,
+collision-checked approach to the building's contact outline. Each kind has an
+outline per tier and per construction stage, traced from its art, and a shell
+test keeps every outline close to its art. Outlines never change tile
+passability. Work, melee and ranged attacks on buildings share one crowd-aware
+position chooser. When two claims overlap, the unit nearer its own position
+keeps its claim whatever its seat, so allied crowds cannot all yield to each
+other; an exact tie goes to the earlier unit of one seat.
 
-A bomber's roll-out after a release, and its departure leg when it is inside
-release range or inside its own acceptance ring of the attack tile, go only to
-goals it can still be flown out of on arrival, bending progressively further
-when a wall or corner closes the line ahead. When the straight approach to an
-attack tile would reach the acceptance ring in an unrecoverable state, the run
-is planned through an initial point so the final leg runs parallel to a wall: a
-corner target is attacked along one of its walls rather than by a dive the turn
-radius cannot recover from. Bombs fall on the targeted building's center rather
-than on the footprint edge point that range is measured to, so a corner shared
-with a neighbouring footprint cannot hand the hit to the neighbour.
+Ground motor speed is serialized and validated. A pathless ground unit can still
+be braking, so group arrival and anchored collision priority require a motor
+speed of zero. Motion reports split propulsion from collision correction for
+observers and never affect state.
 
-Turn-limited aircraft land on any ordinary ground tile, and there is no landing
-command: a flier's ground destination is a landing. A move, hunt, or advance
-with nothing queued behind it and no patrol loop hands over to an internal
-`Land` order once the airframe is within `LANDING_HANDOFF_REACH` of where it is
-headed (the endpoint of an unreachable goal, resolved before the check) and
-nothing is in acquisition range, snapping to the nearest clear landable tile
-within `GOAL_SNAP_RADIUS`; a handoff that replaces a short walk reports the
-shortfall. With an enemy in reach it keeps the ordinary arrival contract and
-fights as an idle unit would. A tile is landable only when some run-in bearing
-exists whose parked heading the airframe could fly out of again, either by a
-half turn or by straight flight into open ground; corner tiles therefore land
-only with the nose toward the field. The `Land` order flies straight in on
-whatever bearing the tile lies whenever the nose can settle onto that line
-before reaching it; otherwise it flies a run-in entered from a fix twice as far
-out as the initial point on the same bearing, so the leg is joined lined up
-rather than from whatever heading reached it, and then chases a carrot on the
-run-in centerline two turn radii ahead of its own projection. Both fixes must
-sit strictly inside the flight envelope on a heading the airframe can fly out
-of, and the whole line must be open sky; a tile with no such line is not
-landable. Acquisition is judged from the landing tile, not from the airframe on
-its way there, so a retreat past a gun still completes; judged from anywhere but
-the unit's own position it is gated on what the player currently sees, since the
-tile can lie beyond the airframe's own eyes. A touchdown also needs clearance:
-no other ground body on the tile or within the two bodies' combined radius of
-the resting point, because parked bodies are immovable and such an overlap would
-never resolve. It touches down when it passes within `LANDING_TOUCHDOWN` of the
-tile center and rests where it met the tile, keeping its heading; its landed
-motor makes it a ground body for targeting, collision, buried charges, and
-footprints while it never moves. A tile that fills during the approach sends the
-landing around to the nearest clear tile; an overflown tile costs a fresh
-run-in. An idle aircraft lands itself after `AUTO_LAND_IDLE_TICKS` of orbit, and
-both it and a go-around prefer a tile they can fly straight in to over the
-nearest one, so a self-chosen pad rarely costs a procedure turn; run-in
-distances are tried nearest first. Any program other than idling or landing
-where it rests lifts a landed airframe off at its next brain tick, and takeoff
-is ordinary heading-first flight from the parked heading; a landed body evicted
-from a claimed footprint lifts off along its escape route. The validator refuses
-a landed non-aircraft, a landed body beyond touchdown reach of its tile center
-or holding a path, a parked heading it could not fly out of, and a rest on
-terrain no ground body can stand on (terrain only: a friendly site may claim the
-tile between ticks and eviction resolves it on the next), and two parked bodies
-inside their combined radius. It deliberately allows a parked airframe over live
-scrap: a flyer downed over the tile deposits wreck salvage there, so that state
-is reachable in play even though a landing never starts on scrap. A parked
-airframe is a legal weld patient; the torch ends when it lifts off.
+Turn-limited aircraft fly committed arcs and never steer into an arc they could
+not fly out of. There is no landing command: a ground destination with nothing
+queued hands over to an internal `Land` order near the goal, and a pad is chosen
+only among tiles the owner's team has explored, since it appears in an order the
+player can see. The validator refuses landed states a real landing could not
+produce, but allows a parked airframe over scrap, since a crash can leave wreck
+under one.
 
-A walk still waiting for its clicked tile to be explored never hands over to a
-landing, and a handoff picks its pad only among tiles the owner's team has
-explored, since the pad is written into an order the player can see. The `Land`
-order keeps the walk's clicked tile as `from`, and a go-around carries it
-forward; an automatic landing picks its pad around the airframe itself and has
-none.
-
-A path is advisory rather than a reservation. Every ground step rechecks its
-next waypoint because construction can claim ground after the path was made; an
-invalid path is dropped and behavior may route again on the next tick. When a
-site appears under a pathless ground body, the eviction pre-pass gives it a real
-escape path while preserving its order and work progress. Its scan frame
-reverses under a map half-turn, with body heading breaking an exact map-center
-tie.
-
-Routes stay body-blind, but a ground follower never admits a lookahead leg
-through a friendly ground body standing still, and a body whose contact cancels
-most of its intended progress toward its waypoint for `STALL_REPLAN_TICKS`
-running ticks drops its route so its brain plans again from where it actually
-is; the counter is serialized and validated. Only friendly bodies count for the
-lookahead: steering around an unseen enemy before contact would leak its
-position, so hostile bodies are still met by the collision resolver alone.
-
-If a newly accepted foundation leaves a body without an escape route, make-way
-relocates it to a passable perimeter tile. That ring is ordered in the founder's
-approach frame, so rotating the map rotates the fallback destinations too.
-Relocation happens only after acceptance and payment.
-
-Approaching a footprint orders passable doorsteps in the body's local approach
-frame, then uses an owner-local unit rank to spread equivalent workers. A Sapper
-pressing a building and a long gun backing out of its dead zone take the nearest
-doorstep or firing stand, with equal distances ranked in that same frame.
-Ground-production orders spawn doorsteps in the producer's radial frame around
-the map. In both cases, dot and cross products replace an absolute scan
-direction, so half-turned producers and workers receive corresponding geometric
-orderings. Airworks aircraft instead spawn at the authoritative center of the
-open roof bay and follow ordinary idle, rally, or player-issued orders from
-there.
-
-Autonomous harvest replacement preserves worker distance, safe route length,
-source amount, anchor distance and source kind as its economic priorities. Exact
-ties use coordinates oriented by the worker's approach to the work-zone anchor.
-A worker standing on that anchor uses its hull bearing instead, so mirrored
-workers choose mirrored sources without depending on seat or unit ids. The work
-position around the chosen source goes through the same crowd-aware chooser as
-building work.
-
-Group `Run`, `Advance`, and `Hunt` commands likewise resolve a blocked center
-and spread per-unit destinations in the approaching body's half-turn frame. The
-same orientation governs both decisions: mirroring a group, its requested
-center, and the map therefore mirrors every lowered unit goal even when the
-requested tile is occupied. Patrol legs, rallies, pacifist walks, and drop
-points take their frames the same way. The frame is fixed when the command is
-issued and kept with a goal still waiting for its tile to be explored, so
-mirrored groups whose clicks are explored on the same tick take mirrored slots
-however far their units have walked since.
-
-Units never make tiles impassable to pathfinding, with one exception for their
-own side: a small ground body's route that runs under a friendly structural hull
-standing still steps round it through open ground within the hull's own width,
-and keeps its stretch under the hull where there is none. A structural hull
-parked with no orders makes way when a friendly body presses on it with no such
-way round: it drives to the nearest ground ahead along that body's route that
-leaves every blocked route clear, then stops with its orders unchanged. Units
-are physical bodies, and deterministic relaxation passes separate overlapping
-units after path movement. Ground collides only with ground and air only with
-air, and turn-limited aircraft take part in no collision at all: a committed arc
-that steering has already checked against the world cannot be shoved off it. A
-drone never collides with its own host, which it launches from and docks into.
-Moving bodies slide around contacts. A productive stationary unit holds its
-position against an approaching unit; other stationary bodies receive ordinary
-separation. Same-owner contacts around productive work allow a compressed
-fraction of summed body radii, while moving and waiting crowds use full body
-spacing. Terrain wins over a proposed push, and a per-tick budget prevents dense
-groups from exploding outward. A worker anchored at its job, or a body built
-like a structure, holds against a mover only when the mover's hull is no wider
-than its own. A body pressed into a structural hull that holds is put clear of
-it in full, outside the budget, so a crowd behind cannot squeeze it through.
-Candidate pairs are gathered and ordered once per tick, and every pass walks
-that list; a hull wider than a tile scans as far as it can reach. An overlap
-within a small slop counts as resting contact and is not corrected, so rounding
-alone never keeps a parked crowd moving, and a tick with no deeper overlap runs
-no pass at all. Iteration direction alternates with tick parity to avoid a
-permanent id-order advantage. When bodies are perfectly stacked and geometry
-provides no separating vector, the deterministic owner-local-rank direction is
-rotated into the stack's map-relative half-turn frame.
+Ground collides only with ground and air only with air, and turn-limited
+aircraft collide with nothing. Relaxation is deterministic: candidate pairs are
+ordered once per tick, iteration direction alternates with tick parity, a
+per-tick budget bounds displacement, terrain beats any push, and overlaps within
+a small slop are left alone so rounding never keeps a parked crowd moving. A
+correction requires every tile the proposed position touches to be passable. A
+productive stationary unit holds its position against an approaching one.
 
 ## Economy, construction, salvage, and repair
 
-Scrap nodes block ground until exhausted. Harvesters work a bounded zone, carry
-a finite load, and deposit at a Foundry. Resource work uses a precise position
-in the selected doorstep tile with a chassis-overhang allowance. Construction,
-building repair, salvage, and unloading instead approach the building's contact
-outline with chassis clearance. Work starts only after the motor has stopped and
-its path has ended; the shell uses the same building-work reach predicate. Field
-welds use the two bodies' combined radii plus `WORK_APPROACH_GAP` for approach
-and `WORK_REACH` for work, and settle both bodies' departures before billing.
-Wreck gathering uses the bounded resource approach and also waits for the motor
-to stop.
+A delivery credits the bank exactly once, on the last tick of an uninterrupted
+unload of `UNLOAD_TICKS`. An interrupted or cancelled unload never loses cargo,
+and the deposit event reports what the bank actually credited. `ReturnCargo`
+prefers safe routes and keeps an explicit Foundry as its destination.
 
-Unloading takes `UNLOAD_TICKS` uninterrupted work ticks. The worker retains its
-cargo and Foundry identity until the final tick clears the load and credits the
-bank once. The deposit event identifies both entities and reports the actual
-saturating credit. Displacement outside reach restarts the release; replacing
-the order, boarding, or losing the destination cancels it without losing cargo.
-Reissuing the same delivery preserves progress. Automatic deliveries can choose
-another Foundry after target loss; explicit deliveries retain their usual
-failure policy. A delivery route ends at any point already within unloading
-reach, then brakes before releasing cargo. Workers without a following order
-leave the contact ring after their final delivery so a finished crew cannot
-block the last loaded workers. Queued work takes precedence over this short
-departure. Reservations and blocked-dock replanning use physical approach points
-and hull clearance instead of tile centers. The following job begins on the next
-tick.
+Recurring income runs in the production phase: Reclaimers and Refineries on
+their cadences, restored Extractors' fixed income, the Foundries' baseline drip,
+and Crucibles consuming wreck. A completed own Foundry within the support radius
+raises an Extractor's yield without stacking, and a Deep Bore triples both
+yields. Support is computed from the two footprints, so it adds no serialized
+state. A seat with no machine that can harvest, in the world, aboard a transport
+or prepaid in a queue, draws a finite recovery entitlement.
 
-`ReturnCargo` replaces loaded workers' active and queued work with a delivery.
-The command selects an owned, living, completed Foundry before replacing each
-worker's program. Automatic selection tries safe, team-known routes in squared
-center-distance order, with building-id ties. Each worker reuses fully exhausted
-reachability scans across destinations within the same safety pass. If only
-dangerous routes exist, it selects the nearest reachable destination and waits
-for safe passage. Delivery uses the ordinary danger-aware routes, physical
-unloading reach, bank credit, and recovery accounting. An explicit Foundry
-remains the destination; its destruction or loss of access stalls the order
-without losing the load. A failed request preserves the prior program. Delivery
-ends idle unless the player has since queued new work. A Foundry-click delivery
-may continue into ordinary paid repair; a patient healed in transit still
-receives its cargo.
+Extractor frames are immutable map features. Only an Extractor may claim one,
+and destroying the Extractor frees the same frame. Discovering any tile of a
+frame makes the whole frame eligible for a deferred build.
 
-Destroyed eligible entities leave decaying wreck salvage; wrecks do not block
-movement. Recurring economy runs in the production phase: Reclaimers and
-Refineries pay on their cadences, restored Extractors provide fixed remote
-income, and a completed same-owner Foundry within the support radius raises an
-Extractor's fixed yield without stacking. A Deep Bore, the Extractor's upgrade,
-triples both yields. Completed Foundries also provide the baseline drip and a
-finite recovery entitlement for a stranded seat: one with no machine that can
-harvest, whether in the world, aboard a transport, or prepaid in a live
-production queue. Crucibles consume nearby wreck salvage for income, nearest
-tile first and then the richer one, with exact ties ordered in the crucible's
-half-turn frame so mirrored crucibles burn mirrored tiles. These are ordinary
-authoritative rules, not shell conveniences.
+An accepted immediate build pays for and places a site that blocks ground from
+that command on, except a buried Scuttle Charge. A deferred build pays for one
+provisional scaffold, which gives no vision, occupancy, damage target or
+progress. Once the owner's team sees the whole footprint, the simulation checks
+placement against that knowledge: a blocker cancels the scaffold with a full
+refund, and clear ground activates it under the same building id without another
+charge. Hidden occupants never change acceptance, payment or the preview.
 
-Extractor frames are immutable authored map features. Only an Extractor may
-claim one, other foundations cannot cover one, and destroying an Extractor
-reveals the same frame for another claim. Support is computed directly from the
-two completed building footprints, so it adds no serialized connection or hidden
-ownership state.
+An unstarted site is cancelled with a full refund when its last worker
+commitment goes, whether by replacement, Stop, failed travel, boarding or death.
+Replacement construction can use those refunds atomically: a rejection keeps the
+old sites and programs. A started site follows the ordinary decay and
+health-based refund rules. Salvaging a built structure refunds through a
+cumulative ledger so rounding cannot drift, leaves no wreck, and refunds prepaid
+production.
 
-An accepted immediate build pays for and places an unfinished site at partial
-hp. A non-stealthy footprint blocks ground from that command onward; the buried
-Scuttle Charge is the deliberate exception. Harvesters raise the site over time.
-Wreck salvage beneath a site remains, with ordinary decay, until the first crew
-work clears its footprint. Cancelling before that work preserves the salvage. A
-deferred build requires explored ground, except that discovering any tile of an
-Extractor frame makes its entire authored footprint eligible. Known occupants
-still block the order, including remembered enemy claims. An accepted deferred
-build pays for one provisional scaffold and installs a `Found` program for its
-workers. Provisional scaffolds provide no vision, physical occupancy, damage
-target, or construction progress. Once the owner's team sees the entire
-footprint, the simulation checks placement against that knowledge: a blocker
-cancels the scaffold with a full refund; clear ground activates its occupancy
-and converts every matching worker commitment to `Build` using the same building
-id, without another charge. Shared crews pay once per site. Hidden occupancy
-cannot change command acceptance, payment, or the preview. Provisional Foundries
-do not count toward survival or the bot's home selection.
+Completed enemy Scuttle Charges stay hidden without detection, and a witnessed
+charge leaves a last-seen marker. Known charges block placement. An undiscovered
+charge allows placement as empty ground would; its discovery cancels the
+overlapping site with a full refund. The first crew work over an undiscovered
+armed charge sets it off before construction resolves, and several workers
+cannot multiply one blast.
 
-Completed enemy Scuttle Charges remain concealed without detector coverage;
-unfinished charges are visible under ordinary sight. A witnessed charge retains
-its last-seen marker after concealment, even on visible ground, without
-revealing its current hp or completion. Detection, observed removal, or a
-visible replacement covering the mine's tile from its own team clears that
-memory. Known live or remembered charges block placement. An undiscovered charge
-allows the same immediate or deferred order as empty ground; an unstarted paid
-site can temporarily overlap it. Discovery cancels that site's active and queued
-construction commitments and refunds its full price. Provisional scaffolds
-receive the same full refund. Unrelated queued orders survive cancellation.
+An upgrade pays up front and takes the building offline as a site on its new
+tier. It refits at one progress tick per tick and cannot be sped up, paused,
+cancelled or left to decay. A Deep Bore upgrade starts only while a completed
+own Foundry stands within the support radius.
 
-The first actual crew work over an undiscovered armed charge triggers its blast
-before construction hp or completion resolves. The new site is destroyed; nearby
-hostile ground units and charges take the ordinary mine damage. Ground movement
-over a charge triggers it after the movement phase. Construction triggers
-resolve in mine-id order after the volley; a charge destroyed by the volley or
-an earlier blast does not fire. Multiple workers cannot multiply one detonation.
-An artillery impact on an overlapping scaffold hits the scaffold directly; the
-buried charge remains vulnerable to the shell's ordinary splash damage.
+An assembly cradle is paid in full when placed and never completes. At most
+`ASSEMBLY_CREW_CAP` workers hold it, and a newcomer is admitted only in place of
+a strictly slower holder; crews settle after the command phase and again at the
+end of the tick. When its last work lands the cradle leaves the world and its
+machine stands up at its centre, reported as `UnitAssembled`.
 
-An unstarted tier-zero site is cancelled with a full refund when its final
-living worker loses its active or queued commitment, including replacement,
-Stop, failed travel, boarding, or death. Replacement construction can use these
-refunds atomically: rejection preserves the old sites and programs. Once work
-has started, an abandoned site follows the ordinary decay and health-based
-refund rules. Provisional scaffolds never decay. An upgrade pays up front and
-takes a completed building offline as a committed site on its new tier, drawn
-and outlined as a site through its construction stages. The building refits
-itself at one progress tick per simulation tick: it cannot be accelerated by
-workers, paused, cancelled, or abandoned to decay. Its hp gain and completion
-use the shared damage-first work resolver, so lethal fire wins a completion-tick
-tie and nonlethal damage remains when it returns to service. Besides its tech
-prerequisites, a Deep Bore upgrade starts only while a completed same-owner
-Foundry stands within the Extractor support radius; losing that Foundry later
-only drops it to the remote yield.
+`Retire` takes own units apart at a Crucible over `RETIRE_TICKS`. Cleanup
+removes them after every damage source of the tick, so a unit killed that tick
+wrecks instead. The refund, scaled by health, stays below the repair rate, so
+welding a machine and then retiring it always loses scrap.
 
-An assembly cradle is a construction site that never stands finished. A
-`MawCradle` assembles a Maw: it is paid in full when placed and needs a built
-Crucible and a Deep Bore; a `RocCradle` assembles a Roc and also needs a built
-Airworks. A player may raise any number of cradles and machines. At most
-`ASSEMBLY_CREW_CAP` workers hold a cradle, counting each own worker whose
-current order builds or founds it. A build order on a full cradle admits a
-newcomer only in place of a strictly slower holder, ranked by build rate, then
-incumbency, then id; the displaced holder moves on to its next order or idles
-once the newcomer lands. With no newcomer admitted the command is refused as
-`CrewFull` and every program stands. A queued joiner is judged when its turn
-comes: crews settle after the command phase and again at the end of the tick,
-and a promoted worker that does not make the crew moves on and reports
-`OrderStalled` with `CrewFull`. A crew works only from the cradle's crew pads
-(`BuildingKind::crew_pads`), two off its north face and two off its south, each
-member taking a free pad; while any pad is rock or under a building, the crew
-works from anywhere along the cradle as at any site. When the last work lands
-the cradle does not complete. After boarding resolves it leaves the world, every
-seat forgets it, its crew moves on, and the machine spawns at its centre with
-the cradle's share of health, reported as `UnitAssembled`; a Roc spawns
-airborne. A destroyed cradle's wreck holds the ordinary share of its price
-scaled by the health its crew had raised, split across its footprint.
+Building repair and field welding bill per accepted hp. Repair Bays feed the
+same unit-heal and building-work resolvers. Each Bay serves at most
+`REPAIR_BAY_PATIENTS` units, Bays choose in building id order, and a later Bay
+skips units an earlier one took. Units have first claim on limited scrap. A
+structure with an active or queued salvage commitment gets no automatic repair,
+which keeps repair and teardown mutually exclusive. Concurrent sources share the
+patient's missing health, fully unusable paid work is refunded, and nothing
+repairs a target destroyed by that tick's volley.
 
-Cancelling before the first build tick returns the full price. Cancelling an
-unfinished site after work starts returns value proportional to its remaining
-hp. Salvaging is active dismantling of a built own structure other than a
-Foundry; its cumulative refund ledger prevents rounding drift, and a salvaged
-building does not count as a combat loss or create a wreck. Prepaid production
-on a successfully salvaged producer is refunded.
-
-`Retire` sends own units to the nearest own completed Crucible each can reach
-and, for a Condor, land beside. An exact distance tie goes by exact products in
-the unit's heading frame, never by mint order. Without a Crucible the command is
-refused as `MissingPrerequisite`. Walkers and hovering aircraft head for a
-doorstep chosen in their approach's frame and stop within `RETIRE_REACH` of the
-footprint; a Condor lands on open ground beside it. A machine standing still
-there runs a `RETIRE_TICKS` dismantling meter. A loaded transport first sets its
-riders down around itself, as an unload does, and riders that find no open
-ground wait aboard for the next try; a retiring transport takes no riders. If
-its Crucible falls, the machine re-picks the nearest standing one with its meter
-reset, a landed Condor lifting off for it, or the order ends. The brain only
-runs the meter. Cleanup takes a unit apart the tick its meter fills, after every
-damage source of the tick, so a machine zeroed that tick dies and wrecks
-instead. A retired unit leaves no wreck and no death: it emits `UnitRetired`,
-refunds `RETIRE_REFUND_PERMILLE` of its cost scaled by its final hp, and banks
-any carried scrap like a delivery; the event reports what the bank actually
-credited. Only credited cargo re-arms a stranded seat's recovery. The refund
-rate stays below the repair rate, so welding a machine up and then retiring it
-always loses scrap, and no repair source mends a retiring machine. Retire skips
-assembled machines.
-
-A machine whose stats give it a kiln instead of repair takes no field weld and
-no Repair Bay care. While wounded it bites one unit of wreck every
-`KILN_BITE_PERIOD` ticks from its intake, the tiles under its hull and its
-kiln's reach past them: the nearest wreck, then the richest, then in its
-half-turn frame. The heal buffers through the shared unit-heal resolver, and the
-bitten wreck is spent even when the machine dies that tick. Machines bite in
-unit order, reversed on alternate pulses, so neither of two sharing a wreck
-holds a standing first bite.
-
-Building repair and field welding, whether commanded, on escort duty or tending,
-are billed per accepted hp. Repair Bays feed the same unit-heal resolver as
-field welders and the same building-work resolver as repair crews. Their aura
-heals own wounded units and completed structures in range, but a Bay does not
-heal itself; overlapping Bays may repair one another. A Bay services at most
-`REPAIR_BAY_PATIENTS` units, the most damaged by missing fraction first and then
-by id. Bays choose in building id order and skip units an earlier Bay took, so
-overlapping Bays serve more units rather than healing the same ones faster. Both
-orders are owner-local because every patient, and every Bay or tending worker
-that could take it, belongs to one owner. A Condor qualifies only while landed;
-aircraft that cannot land qualify in the air. Each unit carries the tick it last
-took damage. A patient that has been undamaged for `REPAIR_BAY_CALM_TICKS` heals
-a fixed share of its maximum hp per second, metered on the global pulse index so
-the share needs no stored remainder; one hit more recently heals
-`REPAIR_BAY_STEP` per pulse, which is also the floor of the fast step. A patient
-hit by the tick's own volley takes the slow step, and a Bay prices its step
-after any other heals already queued for the patient that tick. A step the bank
-cannot fully pay heals as much as it can, and the patient keeps its slot.
-Structures take the slow step outside the unit slots. Units retain first claim
-on limited aura scrap. A structure with an active or queued salvage commitment
-receives no automatic repair from a Bay or a tending worker, preserving the
-command layer's mutual exclusion between repair and teardown. Concurrent sources
-are resolved against shared room, excess fully unusable paid work is refunded,
-and no repair source can resurrect a unit or building destroyed by that tick's
-volley.
+A machine with a kiln, the Maw, takes no weld or Bay care and heals only by
+biting wreck. A bitten wreck is spent even if the machine dies that tick.
 
 ## Combat, weapons, and terrain
 
-Every unit or armed building reads immutable stats describing range, minimum
-range, cooldown, damage, target domains, splash, indirect fire, and whether the
-shot is hitscan or a real projectile with its own payload and flight speed.
-Buildings count as ground targets. Weapons may cover ground, air, or both;
-sidearms are separate weapon slots and cooldowns are stored per slot.
+Weapons read immutable stats: range, minimum range, cooldown, damage, target
+domains, splash, indirect fire, and whether a shot is hitscan or a projectile.
+Buildings count as ground targets, and cooldowns are stored per weapon slot.
 
-Ground chassis keep a motor speed independent of collision displacement. They
-accelerate from rest over `GROUND_ACCEL_TICKS` and brake from full speed over
-`GROUND_BRAKE_TICKS`. The hull turns toward its target every tick and keeps
-rolling through a bend, easing off as the heading error grows; off the exact
-bearing the body travels along its heading, so a bend is driven as an arc. Only
-an error past `GROUND_PIVOT_THRESHOLD` brakes along the existing heading and
-pivots in place. Final approaches reduce speed to stop at the goal, and inside
-the last braking step the body lands on the point whatever its bearing. Stop and
-lost paths brake without keeping the old order. Newly blocked terrain can arrest
-that coast. Hull turn rates come from `UnitKind::ground_turn_rate`. Within
-`GROUND_ALIGNED_STEPS` of the bearing the body tracks the target point directly.
-Ground units spawn facing the map center so mirrored placements have mirrored
-initial turn costs. Independent weapon mounts can aim during travel; fixed
-weapons wait for the motor to stop before turning to aim.
+A weapon fires only once its bearing is within a small tolerance of the target.
+Turret headings, gun bearings and mounted-gun bearings are serialized, and
+validation refuses one on a kind without that mount.
 
-A ground follower does not drive a grid route corner by corner. Each tick it
-looks ahead a bounded number of waypoints and steers for the furthest one its
-hull can reach on a straight leg, tested as a swept line of its body radius
-against terrain, building occupancy and friendly bodies at rest, so a staircase
-is driven as one line and a corner is rounded only once the far side is actually
-clear. The sweep starts from the hull the body already occupies: a hull that
-overlaps blocked ground beside its own tile admits no leg along or past it and
-follows its planned tiles until it is clear, so it never grinds into the corner
-it is rounding. A waypoint reached that way is revalidated each tick with the
-same swept terrain test, so ground claimed beside the leg drops it for a fresh
-route; an adjacent waypoint keeps the tile rules the route was planned under, so
-a wide hull beside a wall never loses a leg it could always walk.
+`AttackTarget` resolves through team knowledge to a visible entity, a remembered
+or public building, or a radar contact. Explicit attacks may approach without
+sight. An automatic engagement never fires on a building out of current sight;
+only an explicit order may shell a memory. A contact attack ends when sight and
+radar are both lost.
 
-A pathless ground unit can still be braking. Group arrival propagation and
-anchored collision priority require its motor speed to be zero.
+Automatic acquisition prefers visible enemies over radar contacts and never
+picks a remembered building. Exact ties go by bearing from the unit's nose, then
+id. A unit fighting a victim it chose itself looks again only on ticks that are
+multiples of `TARGET_RECHECK_TICKS`, the same ticks for every unit, and switches
+only to a clearly better victim, so equal victims never trade places. A defense
+takes the target it could fire on soonest, so it never swings between two
+targets that stand still.
 
-Motor speed is serialized and validated. Observational motion reports split
-propulsion from collision correction without affecting state or hashes.
+Direct ground-to-ground fire traces terrain: rock gives cover, buildings and
+scrap do not. Fire involving aircraft and indirect fire ignore rock. Peaks block
+everything. On tiered maps, direct fire needs both ends on a shared level (a
+ramp shares the levels on either side), higher ground between them blocks it,
+and indirect fire never lands above the shooter's highest level. Shots involving
+aircraft ignore levels. Splash and blasts stop at peaks and stay on their own
+level. Aircraft crashes and warheads ignore peaks and levels. All of these rules
+live in `sim/src/tick/fire.rs`.
 
-Collision corrections require every tile touching the proposed position to be
-passable in the body's domain. An exact grid edge touches two tiles and a corner
-touches four; neither face of a blocking tile admits an exact-edge correction.
-This contact rule is separate from ordinary `TilePos::containing` lookup and
-uses the same displacement budget and deterministic pair order.
+Projectile weapons launch a serialized `Shell` toward an aim point fixed when it
+fires, and the shell is unguided after that. Predictive aim samples only state
+from before the unit brains run. On arrival a building takes only a direct hit.
 
-Ground weapons fire only once their bearing is within a small tolerance of the
-target. Sentinel, Warden, and Lancer have independent serialized
-`turret_heading` bearings that traverse at `UnitKind::turret_turn_rate` while
-the hull follows its route. An absent bearing initially follows the hull; other
-unit kinds cannot deserialize this field. Fixed ground weapons aim with the
-chassis. During Advance they only take already-aligned opportunistic shots;
-independent mounts can traverse while advancing. Ground sidearms share the
-current weapon bearing and cannot fire off-axis. Workers turn toward their
-stationary work target without delaying work progress.
+Point defense stops projectiles, never hitscan fire and never warheads. Charges
+are its only limit, and shells are assigned to defenders greedily in one
+complete order. Its state is validated on exactly the kinds that carry it.
 
-Buzzard uses its compass heading for an independent turret, while its air
-movement is unrestricted by heading. The turret traverses at
-`UnitKind::turret_turn_rate` and shares the ground firing tolerance. It tracks
-visible, shootable targets during reload. An advance keeps its route while
-traversing toward its ordinary opportunistic target; cooldown starts only once
-the turret aligns. Hidden structures cannot attract an advancing weapon or
-reveal themselves through turret tracking.
-
-A kind whose stats carry `MountedGuns`, the Roc, carries each weapon on a fixed
-pivot of its hull. Each gun's serialized bearing is relative to the hull and
-stays inside its arc, and it traverses at the mounts' rate through the arc's
-middle, never across its blind quarter. Arcs and reach are measured from each
-pivot, so a strip under the rear of the hull lies in no arc. Under every order,
-Run included, each gun picks its own target each tick in a fixed slot order: the
-ordered target, including blind fire on a remembered building, else a seen
-hostile that can hit the hull now, else the nearest seen machine, else the
-nearest seen building, each in that gun's arc, reach, and line of fire. A gun
-fires once it bears and its slot has reloaded; its shot leaves from its pivot.
-With nothing to shoot it holds its bearing.
-
-The hull turns for its guns only on some orders. Moves keep the nose on the
-route. An attack closes until some gun reaches the target, then holds station
-nose-on, following a target that moves; a target under the rear of the hull
-sends it forward a short leg first. Attack-move stops and faces the first enemy
-in reach that a turn could bring into an arc, and flies on once none is left. An
-idle hull yaws toward a gun's blind side only when that gun has nothing to shoot
-and an enemy in its reach sits in its blind quarter, never turning away from
-another gun's target, and then holds that facing for `facing_hold` ticks; the
-serialized `IdleFacing` keeps that hold. A mounted hull never retaliates, chases
-from beyond its guns' reach, or picks up targets as an escort.
-
-A kind whose stats carry `BayStats`, the Roc, keeps a serialized `DroneBay`: its
-docked drones, the paid ones building one at a time in the production phase as a
-magazine's rounds do, its refill setting, and an alert. The alert rises to
-`RECALL_TICKS` while a seen enemy aircraft is within `LAUNCH_RADIUS` of the
-host, and whenever the host or one of its drones takes damage, and otherwise
-runs down. While it is above zero, every docked drone launches after the brains,
-as a real unit whose serialized `host` names the machine it flies for, and at
-zero flying drones come home and dock, leaving the world. A drone runs no order:
-it fights the nearest seen enemy aircraft within `DRONE_LEASH` of its host's
-edge, so nothing that reaches the host stands outside the leash, holds a slot on
-a ring `DRONE_ORBIT` out with none, and never retaliates. Commands strip drones
-from their unit lists, and escort and rally refuse one as their target. A drone
-dies in cleanup the tick its host does, and the host's ordered drones are lost
-with it. Validation rejects a drone whose host is not its owner's live machine
-with a bay, and a bay whose docked, ordered and flying drones exceed its
-capacity. Both fog projections name a visible drone's host and count a visible
-host's docked drones; what a bay has on order and whether it refills follow that
-unit's intent, shown to its owner (and, in the fog view, its allies).
-
-A unit whose stats carry a brace, the Bombard and the Piledriver, stands on a
-braced motor while its spades are out, counting deployment ticks up to the
-brace's deployment. It turns with the spades stowed, then deploys over that many
-aligned ticks; its hull stays fixed while planted. A brace with a planted
-traverse, the Piledriver's, lets the gun swing off the hull within that arc at
-its rate once deployment starts; the motor holds that bearing, and the gun
-swings back in step with the spades as they retract. After a shot, a short
-recoil window precedes retraction, which runs faster than deployment. An aim
-beyond the firing tolerance plus any traverse, a lost firing solution, or a
-movement order retracts the spades before further turning or translation.
-Reloading at an unchanged firing stance keeps them planted. A braced gun never
-fires potshots on Advance. Deserialization bounds the deployment counter and the
-gun's bearing, and rejects a braced motor on kinds without a brace; a
-transported rider keeps no motor at all.
-
-`AttackTarget` resolves through team knowledge to a visible entity, remembered
-or public building footprint, or mobile contact. Explicit attacks approach
-weapon range without requiring sight. Building attacks end when observation
-clears the memory. An automatic engagement also ends rather than fire on a
-building out of current sight: one destroyed out of sight leaves its memory
-standing, and only an explicit order may shell that memory. Contact attacks end
-when sight and radar are both lost, or when the contact's domain becomes one the
-attacker cannot hit, as when a flyer lands. Contact loss also clears defense
-focus and advances queued orders.
-
-Automatic acquisition prefers visible eligible enemies over radar contacts and
-does not acquire building ghosts. A unit takes a visible machine in reach before
-a building, unless the levels refuse every weapon at the machine and allow one
-at the building. Within machines, and then within buildings, enemies that can
-hit the unit from where they stand come first. Among those, and then among the
-rest, a victim in weapon reach ranks by how fast the unit's fire removes its
-danger: its damage rate against the unit, or half its raw rate when it cannot
-hit the unit's domain, times the unit's damage rate against it, over its health.
-The nearest of the others follow. A heavy-first unit, as the Piledriver's stats
-rank it, takes the most full health and then the nearest within each group. A
-breacher whose stats rank buildings first, as the Maw's do, takes only the
-nearest visible hostile building in aggro range: it never sets out after a
-machine, answers fire only from a building, and strikes a machine only on an
-explicit order. On a hunt it passes walls by, cutting them only where they stand
-in its way. Exact distance ties go by bearing from the unit's nose, then id, so
-a half turn of the field picks the turned twin. Weapon reach, aggro, splash,
-blast, trigger and crash radii measure to a wide hull's edge. A weapon may carry
-structure damage, which it deals buildings and machines built like structures;
-demolition charges deal those machines their structure damage too. Anonymous
-radar contacts are always taken nearest first. Automatic radar fire may stop
-Idle, Hunt, or Patrol to aim, but cannot pursue, retreat, or start a bomber run.
-It does not change Run or Advance. A fireable explicit target takes priority.
-Defenses retain blocked or out-of-range focus while firing at fallback targets;
-Stop clears focus.
-
-A unit fighting a victim it chose itself, not one an `Attack` order named, looks
-again on every tick that is a multiple of `TARGET_RECHECK_TICKS`, the same ticks
-for every unit so mirrored armies look alike. It takes what its program would
-pick afresh when that is in a better group, or a victim in reach worth more than
-half again as much, so equal victims never trade places. It switches at once
-when the hits already buffered this tick kill its victim, passing over every
-victim those hits kill; shells in flight never count, so a miss cannot leave a
-victim standing. A breacher keeps its structure.
-
-Every kind that fires carries a serialized gun bearing, from placement on, that
-starts toward the map centre like a Spire's deck. Each tick a built defense
-picks a target and turns its gun toward it at its tier's `traverse`; it fires
-once the bearing is within the ground firing tolerance and its reload has ended,
-and with no target it holds its bearing. A fireable focus comes first, whatever
-the turn. Otherwise it takes the visible eligible unit in firing range with a
-clear shot that it could fire on soonest: the later of the end of its reload and
-the tick its gun would bear, then distance, then bearing from the gun, then id.
-Right after a shot every target the gun can reach within the reload ties, so the
-nearest wins; the pick a gun turns toward only gets sooner, so it never swings
-between two targets that stand still. Validation rejects a bearing on a kind
-that fires nothing and a missing one on a kind that fires.
-
-Ground-capable defenses automatically acquire visible hostile buildings when no
-eligible visible unit is in firing range with a clear shot. Building acquisition
-uses the shared apparency gate, so concealed Scuttle Charges require detection.
-Candidates rank by the same soonest-shot rule, measured to the closest footprint
-point, then by distance to that point, bearing from the gun, and building id;
-weapon range, minimum range, and terrain cover still apply. Air-only defenses
-never acquire buildings. A defense with neither turns toward and fires on the
-nearest radar contact it has a solution on.
-
-Direct ground-to-ground fire traces terrain: rocks provide cover, while
-buildings and scrap do not. Fire involving aircraft and indirect weapons ignores
-ordinary rock cover. Radar contacts carry their domain, so blind fire follows
-the same cover rules and never aims a weapon at a domain it cannot hit. Peaks
-block both. Blind hitscan spends a shot and selects one eligible hostile in the
-reported tile by distance to its center, then id. Remembered-building hitscan
-resolves against a footprint at the aim point. Both apply normal splash rules
-and report firing coordinates without a victim id, including on misses.
-
-On a tiered map, levels gate fire between ground parties; shots involving
-aircraft ignore them. Direct fire needs ends that share a level, which a ramp
-shares with the levels above and below it, and ground higher than both ends
-blocks the line. Indirect fire passes over any level but never lands above the
-shooter's highest level, a predicted lead included. A building stands at the
-level of its footprint, not of the edge point a shot aims at. Weapon splash,
-demolition rings, and Scuttle Charge triggers and blasts spread as an arc would:
-a peak between the burst and a body shelters it, rock, cliffs and pits do not,
-and a ground body must share the blast's level. Aircraft crashes and warheads
-ignore peaks and levels. Acquisition ranks a victim the levels allow ahead of
-one they refuse, so a unit shelled from a plateau still picks its attacker and
-climbs a ramp to answer. All of these rules live in `sim/src/tick/fire.rs`.
-
-Hitscan attacks buffer damage for same-tick resolution. Projectile weapons
-launch a serialized `Shell` toward a fixed fire-time aim point. Predictive aim
-samples ground motor speed and heading, including pathless coasting; air units
-use the current steering-line estimate. The snapshot precedes unit brains and
-does not consult later route turns. A shell is unguided after it leaves the
-weapon. Radar aim uses a fixed-point velocity estimated from the rolling
-one-second tile-center history, clamped to a global movement bound; a fresh
-contact has zero estimated velocity. A shell keeps its weapon's payload kind
-(missile, bomb, or shell) and its launch tick for presentation, independently of
-shooter survival; deserialization requires it to launch no later than it lands.
-On arrival, buildings take only a direct hit; eligible enemy units may take
-splash according to the weapon's domain mask.
-
-Point defense stops projectiles, never hitscan fire. A unit kind whose stats
-carry it holds serialized charges and a recharge counter. Each tick, before
-arrivals land, a live, charged defender destroys a hostile shell of any payload
-whose fixed aim point and current straight-line ground-track position both lie
-within its radius, so a shell aimed inside is stoppable at the latest on its
-arrival tick and a shell launched this tick on the next one. Hostility is to the
-firing seat, so a defender covers its teammates. Charges are the only limit: a
-defender may spend all of them in one tick. Pairs are assigned greedily in one
-complete order: earliest launch, then the shell nearest the defender, then the
-aim nearest it, then the shell's offset in the defender's own map frame, heavier
-shells first, and list order only for exact coincidences. Greedy assignment is
-not a maximal matching. A stopped shell vanishes without splash or a landing
-report and emits an interception event. Charges return one at a time on a fixed
-cadence that counts only below full and does not restart when a charge is spent.
-A carried defender freezes both, like weapon cooldowns. Validation requires the
-state exactly on kinds with point defense, charges within the kind's, a counter
-short of a full recharge, and a resting counter while full. Both fog projections
-report a visible unit's charges.
-
-Point defense never sees a warhead; only a Lattice stops one.
+A Roc's drones are real units that take no commands. They die with their host,
+and validation refuses a drone without a live host of its owner or a bay over
+capacity.
 
 ## Warheads
 
-A Spire and a Lattice each keep a magazine of prepaid rounds: loaded rounds,
-paid rounds not yet assembled, the assembly meter, and an autofill flag. Rounds
-are ordered like training, paid at order time and refunded in full when
-cancelled or when the building is salvaged; loaded rounds and destroyed
-buildings refund nothing. They assemble one at a time. With autofill on, a
-magazine with room and nothing ordered buys its next round in the production
-phase, in building-id order, whenever the bank covers it without spending a
-stranded seat's recovery package. `CancelRound` names an ordered position, like
-`CancelTrain`; cancelling the head resets the assembly meter. Cancelling a round
-also turns autofill off, so the round is not bought again the same tick.
-Autofill starts on for the Lattice and off for the Spire.
+A Spire and a Lattice each keep a magazine of prepaid rounds. Rounds are paid
+when ordered and refunded in full when cancelled or when the building is
+salvaged; loaded rounds and destroyed buildings refund nothing. Autofill buys a
+round in the production phase, in building id order, only when the bank covers
+it without spending a stranded seat's recovery package.
 
-A Spire's launch deck has a heading that starts toward the map centre. `Launch`
-holds a strike on any tile, seen or not, while a warhead is loaded; each tick
-the deck turns toward it at the silo's rate, and once it has stood aligned for
-the silo's ready ticks, while its locks release, it launches. A new strike, or
-losing alignment, starts that count again. `ClearFocus` calls a held strike off.
-The warhead flies the straight line from the silo's centre to the tile centre at
-a fixed speed, unguided, and is stored with an id, its owner and silo, both
-ends, and its launch and arrival ticks. Validation requires the flight time to
-match its line.
+`Launch` holds a strike on any tile, seen or not, while a warhead is loaded. The
+deck turns toward it and launches once it has stood aligned for the silo's ready
+ticks. The warhead flies a straight line at a fixed speed, and validation
+requires its stored flight time to match its line. On arrival it bursts with one
+falloff splash against every hostile target, aircraft included, and its hits
+join the tick's buffered volley.
 
-On arrival it bursts with one falloff splash for every hostile target: full
-damage within an inner radius, fading linearly to nothing at an outer radius,
-measured to a building's footprint and a unit's position, airborne units
-included. The only target-specific rule is a building kind's warhead resistance,
-which today only the Foundry has. Hits join the tick's buffered volley, so fire
-wins and retaliation behave as for any other shot.
+Each team counts the ticks it has held each hostile warhead in true sight or
+allied radar. At one threshold the warhead is tracked, which reveals its silo;
+at a second it is locked on. Before arrivals land, a built, loaded Lattice stops
+a locked-on warhead when both its impact point and its current position lie
+inside the Lattice's ring. Pairs are assigned greedily in one complete order,
+and `State::interception_forecast` runs the same assignment ahead.
 
-Each team holds, per hostile warhead it has seen, the ticks it has kept the
-warhead's current tile in true sight or within an allied Array's radar ring; the
-hold need not be continuous and is shared by teammates. A warhead is tracked
-once the hold reaches its threshold, and completing a track gives the silo away:
-the line starts at its centre, so the team remembers a Spire there, intact for
-all it knows, like any remembered building. The hold keeps counting to a second
-threshold, the lock-on, which covers an interceptor's climb. Each tick, before
-arrivals land, a built, loaded Lattice stops a hostile warhead its team has
-locked on to when both the warhead's impact point and its current position lie
-inside its ring. The flight ends inside a convex disc, so this happens on the
-ring crossing or on the tick the lock completes inside, never on the launch
-tick. Pairs are assigned greedily: earliest stop, then ring entry, then arrival,
-then the distances from the battery's centre to the warhead and to its impact,
-then which side of the flight line the battery stands on, and list order only
-for exact coincidences. `State::interception_forecast` runs the same assignment
-ahead, taking each tracked warhead still in view at the tick its lock would
-complete. One interceptor stops one warhead, and a battery may spend both in one
-tick.
-
-`State::known_magazines` and `State::known_warheads` decide what a seat knows:
-its team's magazines and warheads in full; a hostile magazine's loaded rounds
-and deck facing while in sight; a hostile warhead while its team holds it in
-sight or radar, with its line once tracked, its owner only in true sight, and
-the viewer team's predicted interceptor. Both fog projections carry exactly
-these.
+`State::known_magazines` and `State::known_warheads` decide what a seat knows of
+magazines and warheads. Both fog projections carry exactly that.
 
 ## Fog, memory, radar, and teams
 
 Each seat has `visible` and `explored` grids. Visibility is rebuilt every tick
-from completed allied buildings and allied units; explored ground only grows. A
-unit is in sight while any of its body tiles is. Rocks do not occlude vision.
-Teammates receive byte-identical shared sight and memory, computed once per team
-and cloned to later seats.
+from completed allied buildings and allied units, and explored ground only
+grows. Rock does not block vision. Teammates share byte-identical sight and
+memory, computed once per team.
 
-`ObservationData::fog_honest` copies both masks in canonical row-major order, so
-a policy distinguishes current sight from remembered terrain without consulting
-authoritative state. It distinguishes explored pits and cliffs from
-fire-blocking rock and peaks, marks provisional footprints and paid deferred
-sites, and exposes team-shared contact tracks and each own carried unit's
-identity, kind, health, and carrier separately from available units. This is
-presence evidence, not permission to assign or command a passenger. Allied and
-enemy manifests remain opaque. The debug protocol's `FogView` projects the same
-knowledge for players and agents; a parity test in `protocol/src/view/tests.rs`
-keeps the two in agreement.
+`ObservationData::fog_honest` is what bots read. It copies both grids in
+canonical order, so a policy can tell current sight from remembered ground
+without consulting authoritative state. The debug protocol's `FogView` projects
+the same knowledge for players and agents, and a parity test in
+`protocol/src/view/tests.rs` keeps the two in agreement.
 
-Public buildings are the one hostile fact every seat holds regardless of fog: a
-Deep Bore's owner, kind, tier and footprint, from the moment its upgrade starts
-until it falls, and an assembly cradle's, with its progress, from its first work
-until it falls, is cancelled or stands up its machine. Neither shows any other
-condition. Both projections derive them from current state, so they add no
-memory. A public building is a valid attack target without sight or a ghost, and
-when one leaves the world every seat forgets its ghost.
+Public buildings are the only hostile facts every seat holds regardless of fog:
+a Deep Bore's owner, kind, tier and footprint from the moment its upgrade
+starts, and an assembly cradle's with its progress from its first work. Neither
+shows any other condition. Both projections derive them from current state, so
+they add no memory.
 
-`aftermine-opponent` also builds one immutable `MapModel` per match from the
-authored `Scenario`, through the same `Scenario::parse_map_and_anchors` that
-state construction uses. It reads static terrain, Extractor frames, initial
-scrap, teams, and each seat's starting Foundry anchor: the facts available
-through the pre-match map and roster. A starting anchor is a reconnaissance
-prior rather than a current enemy contact, and an initial resource amount says
-nothing about later depletion.
+Enemy buildings remain as last-seen ghosts until their footprint is seen again,
+with everything about them as last seen. Scrap and wreck amounts also freeze at
+their last visible value. Radar adds contacts outside true sight from allied
+masts and from machines whose radar is up. A contact carries a tile and a domain
+but no owner, kind or entity id. Radar matching across ticks uses only reported
+movement, and contact ids are never reused.
 
-Enemy buildings remain as last-seen ghosts until their footprint is observed
-again: kind, owner, anchor, hit points, whether construction had finished, and
-upgrade tier, all as last seen. A refit out of sight stays unknown until the
-footprint is seen again. Scrap and wreck amounts likewise freeze at the last
-visible value. Radar adds sorted, deduplicated contacts outside true sight. Its
-sources are allied built masts (Arrays and Deep Arrays) and allied machines
-whose radar is up, each with the ring radius its stats give: a Kestrel's is
-always up, and a Surveyor's unfolds only after it has stood still for its deploy
-time, folding again the moment it drives itself; a collision push does not fold
-it. A hostile unit reports its tile; an apparent hostile building reports the
-one footprint tile nearest a covering source, with distance ties ranked in its
-radial map frame and, for a footprint centered on the map, toward its owner's
-first Foundry. A contact carries its domain, air for a flying machine and ground
-for a landed one or a building, but no owner, type, or concealed entity id, so
-one tile can hold an air and a ground contact. Radar fire at a building's
-contact tile can hit it. Team-shared tracks retain a contact id and one second
-of reported positions. Spatial buckets bound one-to-one matching, ranked by
-predicted distance, previous distance, contact id, and coordinates. Visible
-identity can link visible observations; radar matching uses only reported
-movement and never pairs contacts of different domains. Unmatched tracks end
-immediately, and ids are never reused.
+A hit on a machine that can harvest or scout, or an allied loss, from an
+attacker the victim's team cannot see leaves an incident. It remembers only the
+victim's tile, for a bounded caution period, and never the attacker.
 
-Salvage-relevant hostile incidents, such as a hit on any machine that can
-harvest or scout or an allied loss, remember only the victim's tile for a
-bounded caution period, never the attacker's identity or location. Only fire
-from an attacker the victim's team cannot see leaves an incident; a visible
-attacker is live danger that ends when it dies or leaves sight. A worker already
-inside a remembered static firing envelope may retreat laterally or outward,
-without approaching any overlapping gun. This escape rule never makes the source
-eligible for work and does not permit crossing mobile or radar pressure.
-
-All allegiance checks route through normalized team ids. Teammates share vision,
-cannot target one another, and win or lose as a team. Resignation makes a seat
-command-ineligible and removes its Foundries from victory accounting; its
-remaining machines continue as autonomous remnants.
+All allegiance checks go through normalized team ids. Teammates share vision,
+cannot target one another, and win or lose together. A resigned seat can no
+longer command, and its Foundries no longer count toward victory; its remaining
+machines carry on by themselves.
 
 The [opponent specification](aftermine-opponent.md) describes how bots decide.
-The simulation enforces the same command, cost and visibility rules for human
-and bot command sources.
+The simulation applies the same command, cost and visibility rules to every
+command source.
 
 ## Maintained entry points
 
