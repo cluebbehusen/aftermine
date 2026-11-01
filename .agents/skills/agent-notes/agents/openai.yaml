@@ -1,4 +1,0 @@
-interface:
-  display_name: "Aftermine Agent Notes"
-  short_description: "Maintain durable Aftermine workstream notes"
-  default_prompt: "Use $agent-notes to create or update an Aftermine workstream note through Kladde."

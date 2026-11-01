@@ -11,62 +11,29 @@ while reusable game-independent primitives stay in `chassis`.
 
 ## Main pieces
 
-- `controller` hosts `aftermine-opponent` as one `SeatController` per configured
-  seat. `seat_controllers` builds them in seat order, sharing one map model that
-  `OpponentMap` builds only for a roster with a seat. Each seat also holds a
-  bounded buffer of its own `OrderStalled` and `CommandRejected` events. Hosts
-  call `record_events` after every tick that runs with controllers,
-  fast-forwards included; the seat's next decision consumes the buffer and its
-  checkpoint saves it.
-- `checkpoint` captures a completed tick boundary: scenario, validated world,
-  canonical controller roster, pending inputs, and optional incremental
-  statistics. Each seat's controller must match the scenario's configuration.
-  Restoration installs those parts without executing historical ticks. The
-  session, simulation, and controller revisions are checked independently. A
-  fingerprint binds the captured scenario and world, rejecting later mismatches
-  even if both scenario copies change. Capture trusts the host's pairing; the
-  fingerprint neither authenticates data nor proves historical origin.
-- `history` carries a session's commands since its scenario's start beside the
-  checkpoint, so a resumed match keeps recording onto its whole record. Loading
-  checks only its shape; a background thread later replays it to the saved tick,
-  rebuilding the keyframes before the save and checking the saved world's hash.
-  A history that fails gives way to a recording from the saved world, and a
-  recording saved while the check runs waits for it.
-
-- `bot_execution` collects commands in input seat order, using a small shared
-  worker pool when several bots are due. A busy or unavailable pool falls back
-  to serial execution, so independent headless matches do not queue behind it;
-  batch workers that already run matches concurrently use `serially`. Live
-  sessions can speculate one decision on controller clones against an immutable
-  shared world. Collection validates the world, tick, and roster and installs
-  the complete clones before returning commands, while the session's own
-  controllers stay available for saves. Speculation drains own-event buffers
-  only in its clones, so events are consumed when its result is installed.
-
-- `build` describes the executable that recorded or wrote a file. The host
-  supplies it; the kit never probes Git or embeds a sibling executable's
-  revision.
-- `load_replay` and `load_recording` own bounded, strict Aftermine replay
-  loading; `save_recording` writes the compressed `.amreplay` container.
-- `keyframes` holds the worlds a recording stores every 1,024 ticks as a cache
-  over its command log, and encodes a live match's keyframes off the frame
-  thread.
-- `runner` executes scenarios and replays headlessly, recording each tick's
-  commands before the tick runs. Its opt-in traced step returns player-facing
-  bot diagnostics without changing replay input or the ordinary step path.
-- `recording` supplies a validated world-only origin for replay segments.
-  Scenario-start records carry no origin. Checkpoint-origin records retain
-  absolute ticks; their first available tick can be nonzero. Playback and replay
-  statistics never execute controllers. A world-only segment cannot resume live
-  play without its separate session checkpoint.
-- `playback` provides exact seeking between the recording origin and its end,
-  restoring stored keyframes or the worlds a background fill keeps.
-- `stats` derives match summaries from simulation truth. Replay statistics cover
-  the available segment; live checkpoint statistics retain earlier session
-  totals.
-- `render` is the deterministic CPU renderer used for previews and goldens.
-- `bench` builds the mass-battle scale fixture.
-- `perceptual` compares rendered images without entering gameplay logic.
+- `controller` hosts one `aftermine-opponent` controller per bot seat and
+  buffers each seat's own events between decisions.
+- `bot_execution` collects bot commands in seat order, running due seats on a
+  small worker pool. Live sessions can compute a decision ahead on controller
+  clones and install it when its tick comes.
+- `checkpoint` captures and restores a session at a tick boundary: scenario,
+  world, controllers, pending inputs and statistics. Restoring never re-runs
+  past ticks.
+- `history` keeps a session's commands beside its checkpoint, so a resumed match
+  keeps recording onto its whole replay.
+- `load_replay`, `load_recording` and `save_recording` read and write
+  `.amreplay` files with strict size bounds. `keyframes` stores a world every
+  1,024 ticks so playback can seek quickly, and `recording` handles replays that
+  start from a saved world rather than tick zero.
+- `playback` seeks exactly anywhere between a recording's start and end.
+- `runner` runs scenarios and replays headlessly; `bench` builds the mass-battle
+  fixture.
+- `stats` derives match summaries from simulation state.
+- `render` is the deterministic CPU renderer used for previews and goldens, and
+  `perceptual` compares rendered images.
+- `build` describes the executable that wrote a file, as provenance only.
+- `diagnostics` watches for panics and stalls and writes crash dumps and an
+  incident log. It never feeds back into a match.
 
 ## Development
 
@@ -77,11 +44,3 @@ cargo test -p aftermine-kit --locked
 cargo test -p aftermine-driver --test golden --locked
 cargo clippy -p aftermine-kit --all-targets --locked -- -D warnings
 ```
-
-`diagnostics` is the process's crash and freeze monitor: main-thread stages and
-bot seat heartbeats published through atomics, a stall watchdog, and a panic
-hook that records a backtrace. Recent frame timing stays in memory and is
-written only with an incident, to the diagnostics folder's bounded log. Crash
-dumps keep the commands of a tick that panicked, as a replay of the completed
-ticks plus the unfinished batch. Diagnostic output is observational and never
-becomes replay input.

@@ -26,24 +26,16 @@ editing. Reduce a bug to one observable contract:
 - whether the change intentionally alters serialized state or simulation
   outcomes.
 
-For repair behavior, cover limited-bank source priority, ordinary billing and
-recovery reserves, active and queued salvage exclusion, and lethal same-tick
-damage. Automatic and commanded work must preserve the same repair-versus-
-salvage contract.
-
 Add the smallest behavioral regression test that fails for the reported case.
 For fog-sensitive behavior, pair the positive case with an unseen or
 remembered-world case so the fix cannot become an information oracle.
 
 ## Building contact
 
-Workers and contact weapons meet a building at its contact outline in
-`sim/src/building_contact.rs`, one per kind, tier, and construction stage.
-`Building::construction_stage` selects it and the shell's site art alike, so
-both switch on the same tick. Each outline follows the art the field draws, and
-a shell fit test keeps them together. Fix a contact behavior in the approach,
-not by moving an outline off its art. Any outline edit moves state hashes; when
-art changes, follow the visual-assets skill to retrace it.
+Workers and contact weapons meet a building at its outline in
+`sim/src/building_contact.rs`, which follows the building's art; a shell fit
+test keeps the two together. Fix a contact bug in the approach, not by moving an
+outline off its art. Any outline edit moves state hashes.
 
 ## Keep state deterministic
 

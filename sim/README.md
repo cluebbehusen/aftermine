@@ -25,77 +25,16 @@ an ordinary command source rather than a separate ruleset.
   stage, that follow the building art for local interaction.
 - `vision` provides visibility and explored-world state.
 
-Queued construction pays for one site immediately. Fogged footprints remain
-provisional, nonblocking scaffolds until full visibility verifies the ground.
-Invalid sites and sites abandoned by their last worker before work starts refund
-in full; activation keeps the same site identity and never charges again.
-Discovering any tile of an Extractor frame permits a deferred build on the whole
-frame, including after sight is lost. Known claims still block the order; unseen
-occupants are checked when the full footprint comes into view.
-
-Tile goals keep the tile the player clicked, which must lie on the map. When the
-issuer's team has explored it, a group spreads over the open ground around it at
-once; otherwise every member heads for the tile itself and takes its spread slot
-at the end of the tick its team explores the tile.
-
-A walk whose goal cannot be reached stops on the reachable tile nearest it,
-completes, and lets its program continue, reporting `OrderStalled { NoRoute }`
-once. Other orders that cannot be routed drop only themselves; a refused chase,
-an empty bank, or a full sling still ends the whole program.
-
-An assembly cradle is paid when placed and admits at most `ASSEMBLY_CREW_CAP`
-workers, a faster one displacing a slower holder. Every seat sees a started
-cradle and its progress. Finished, it stands its machine up at its centre
-instead of completing; a player may raise any number of them. A machine with a
-kiln, the Maw, heals only through it, eating wreck around its hull.
-
-A Roc's bay builds up to six drones, which launch while an enemy aircraft is
-near or anything hits the Roc or its drones, fight aircraft on a short leash
-around it, and dock again once it is calm. Drones take no commands and die with
-their host.
-
-A Roc carries its guns on fixed pivots of its hull. Each gun picks its own
-target inside its own arc under every order, and the hull turns for them only on
-an attack, an attack-move that meets an enemy, or an idle gun with an enemy in
-its blind quarter.
-
-Repair and salvage share one damage-first building-work resolver and remain
-mutually exclusive. Completed Repair Bays automatically heal nearby owned units
-other than kiln machines before completed buildings, use the ordinary player
-bank, and skip structures with active or queued salvage commitments. Each Bay
-services at most `REPAIR_BAY_PATIENTS` machines, chosen by
-`State::repair_bay_patients`, and a machine an earlier-built Bay took is left to
-it. A unit damaged within `REPAIR_BAY_CALM_TICKS` heals at the slow rate, and an
-aircraft that can land is serviced only on the ground.
-
-Workers also weld on their own initiative through `Order::Tend`: a patrol gives
-them tending legs, and an idle worker whose idle welding is on, the default,
-goes out from its post to weld an own wounded ground machine or damaged building
-within `ESCORT_ENGAGE_RADIUS`, the nearest first, then walks back. Buildings
-being salvaged and the stealthy Scuttle Charge are left alone. The torch bills
-like any field weld or crew repair; an empty bank, an unreachable patient or one
-walking away is let go without a stall, and no other order is ever interrupted.
-
-Tile routing and most geometric tie rules are also fair under a map half-turn.
-Building contact follows the fixed artwork, so asymmetric outlines can have
-different frontage after a map half-turn. Fixed-point vector scaling, equal-cost
-paths, group-goal snapping and spreading, footprint doorsteps, ground-production
-spawns, autonomous harvest replacement, Repair Bay and tending patient choice,
-and perfectly stacked collision separation use owner-local ranks and query-,
-footprint-, or map-relative frames instead of global entity ids or an absolute
-screen corner. Airworks aircraft spawn at the authoritative center of the open
-roof bay, then obey their ordinary orders from there.
+Rules live in the code and its tests. The contracts every change must keep, such
+as the tick phase order, the trust boundary and the symmetry rules, are in
+[`docs/simulation-architecture.md`](../docs/simulation-architecture.md).
 
 ## Development
 
-Scenarios default to `mode: "match"`, which requires a Foundry anchor per seat
-and uses Foundry-based elimination and victory. `mode: "sandbox"` permits
-optional anchors, allied-only scenes and disconnected arenas, and runs without
-automatic elimination or victory. It still requires at least one valid seat and
-validates every placed entity. Commands keep their ordinary costs and ownership
-rules; a sandbox seat can command units without a Foundry. Explicit surrender
-still relinquishes that seat's command authority. Mode is part of serialized
-world state and replay setup.
+Scenarios default to `mode: "match"`, which needs a Foundry per seat and
+eliminates a seat that loses its last one. `mode: "sandbox"` makes Foundries
+optional and never declares a winner, while keeping ordinary costs, ownership
+and command rules. The sandbox-matches skill shows how to stage one.
 
 Run commands from the workspace root:
 

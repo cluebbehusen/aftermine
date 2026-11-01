@@ -9,162 +9,43 @@ The driver observes and orchestrates the game through public simulation and
 protocol boundaries. It does not contain alternate gameplay rules, and its
 automated players use the same command path as every other player.
 
-Build provenance belongs to this executable. Its build script watches the driver
-and shared dependency package trees plus shared build inputs, assets, and
-scenarios; shell-only edits and private workspace notes do not contribute to its
-dirty status. Source archives report unknown provenance.
-
 ## Main pieces
 
-- Headless execution (`runner`, `render`, `playback`, and `stats`) lives in
-  `aftermine-kit`, shared with the shell.
-- `client` speaks the debug protocol; `session` serves it windowlessly, and its
-  save and load commands use replay files.
-- `replay_inspect` and `replay_summary` provide exact snapshots and compact
-  match narratives. Checkpoint-origin recordings report their first available
-  absolute tick, and summaries and inactivity windows cover only that segment.
-  Both serialized schemas expose this boundary; inspection rejects requests for
-  unavailable earlier ticks.
-- `ledger` is the impact ledger: what every unit and building did over a match,
-  valued in scrap. Events name a hit's shooter but not its damage or a death's
-  killer, so it diffs every body's health tick to tick, net of reported repairs,
-  and splits each loss among the shooters, shells, charges and Sapper blasts
-  that hit that body. It also credits repair to the welder or Repair Bay,
-  spotting to the nearest friendly body that saw a target its shooter could not
-  (sight approximated by vision radius), hidden charges destroyed inside an
-  Array's detection to that Array, deliveries and passive income by building,
-  spending by category and phase, and each seat's net worth at a fixed period.
-  Crew repair of buildings, radar warning and the harvester recovery trickle
-  emit nothing it can credit. `replay-ledger <replay>...` re-executes replays
-  and match recordings, not player saves, through it and pools seats by
-  controller; `--json` prints each game's ledgers.
-- `pacing` reads a match's pacing from the ledgers' net worth, one side per
-  team: the side ahead at minutes 5, 10 and 15, how often the lead changed hands
-  after the three-minute opening, the winner's lowest share of all worth after
-  it, and how much of the match played on once the winner was ahead for good. A
-  side is ahead with 1.1 times an equal split of all worth, 55% in a duel; a win
-  is a comeback when the winner fell to 0.8 times an equal split, 40% in a duel.
-  A side that falls back to even keeps the lead until another side is ahead.
-- `replay_health` (the `replay-health` command) measures late-game health from
-  replays and match recordings, so bot evaluations and human playtests answer
-  the same questions: each seat's income by source per minute, with worker
-  deliveries split between scrap fields and wreck salvage, the share of matches
-  reaching 30 minutes, wreck left on the map each minute and how much lies at a
-  seat's home, the variety of standing and newly trained armed units from minute
-  15 as entropy over unit kinds by value, and what each won battle turned into
-  over the next minute, and each match's net-worth `pacing`. The winning force
-  is every body that hit something lost in the battle; the follow-up counts the
-  losers' production, income works and workers that force destroyed, and whether
-  the winner's armed units outweigh the losers' near the battle a minute later.
-  A win converts when the force razes production, destroys at least 200 scrap of
-  income, or holds ground nearer the losers' buildings than its own; the report
-  leads with pushes, the wins away from the winner's home. A seat's home is the
-  ground within 12 tiles of its completed production buildings, and a seat earns
-  nothing once it is out of the match. Battles are `replay-summary`'s. It
-  accepts directories such as a `bot-eval --replay-dir`, prints a pooled report,
-  and with `--json` prints each match's row and the pooled summary.
-- `bot_eval` runs the player-facing controllers to a decision, tick ceiling, or
-  stall-loop anomaly, and emits compact JSONL with candidate, scenario,
-  tick-ceiling, exact-profile, and anomaly provenance. It can exchange complete
-  controller configurations between seats for paired controller, personality or
-  difficulty comparisons, including crossed personality seeds and geometry
-  cells. Persisted batches are staged and never replace earlier evidence.
-  Optional decision traces stream fog-honest controller diagnostics to a
-  separate JSONL sidecar without entering compact rows or replays. A returned
-  publication error rolls back files created by that invocation. Abrupt process
-  termination can leave hidden staging files or a partial replay set because
-  arbitrary final paths cannot be published atomically; inspect and remove that
-  incomplete batch, then rerun it under a fresh candidate.
-- Evaluation rows also record each seat's team and elimination tick, the
-  producing build, omniscient failure detectors (repeated impossible orders,
-  abandoned paid construction, starved production, `aftermine-opponent` missions
-  stuck in one phase, and an army idle at home) with per-producer idle
-  diagnostics, the fate of armed ground units trained on severed ground, income
-  against a saturated-economy estimate while the seat is still in the match, and
-  the seat's impact ledger. `aftermine-opponent` seats also record attack
-  calibration: each attack its decisions launched, with the known defense,
-  margin, need and strength sent that `Opponent::launches` reports, followed
-  through its mission to how it ended and what its units dealt and lost. These
-  are QA evidence computed from authoritative state and what a controller
-  reports; they never reach a controller.
-- `seat_summary` pools the seats of evaluation rows: failure incidents,
-  deliveries, reactivity, income, the impact ledger and attack calibration, with
-  their tables. `bot-summary <rows.jsonl>...` pools any `bot-eval` or
-  `bot-ladder` rows by team layout and difficulty. It first reports how the legs
-  ended, by team layout and the difficulties that played them: decided legs and
-  their median length, the share won by seat 0's team, each stance's record
-  where no opposing seat played the same stance, and net-worth `pacing`.
-  Evaluation inputs live in `evaluation/`, not `scenarios/`, whose every file
-  the shell menu, map gates and integrity tests read.
-- `bot_ladder` expands a manifest from `evaluation/ladder/` into pairs of
-  `aftermine-opponent` against itself at two difficulty rungs, the higher rung
-  in seat zero and then in seat one, both seats sharing one personality seed so
-  the seats differ only in difficulty. `bot-ladder` publishes labelled rows and
-  prints, for each comparison, the higher rung's share of decided legs with a
-  Wilson interval, pairs by result, and whether it reaches the comparison's gate
-  over enough decided pairs, overall and by stance and map family, with the
-  higher rung's share of net worth by pair, then each rung's seats through
-  `seat_summary`; `bot-ladder-report` re-reads published rows, keeping each
-  manifest's comparisons apart.
-- `bot_pressure` runs the staged scenarios in `evaluation/pressure/`: a scripted
-  attacker seat presses one situation (an early rush, air harassment, an
-  artillery siege, a transport drop) on a bot seat, and a check over
-  authoritative state reports whether the bot answered by the deadline. The
-  checks are QA evidence and never reach a controller.
-- `bot_cost` times controller decisions on named workloads: a Skirmish duel, the
-  seven-bot Skyhook game, and a staged mature-army match kept under
-  `tests/fixtures/performance/` so it stays out of the shipped pool. It reports
-  average and p99 wall time per decision, total CPU, and the fog-honest
-  observation cost, per seat and pooled. Seats decide serially with tracing off;
-  its command and final hashes equal an untimed run.
-- `duel_lab` (the `duel-lab` command) fights unit kinds against each other at
-  equal scrap on staged sandbox fields: every pairing on open, choke and cover
-  layouts, in line and clump formations, from both seats. No controller runs:
-  armies hunt each other, idle bodies periodically hunt the nearest live enemy,
-  long guns get a Kestrel spotter hovering short of the fight, Sappers get
-  attack orders on defenses they can see, unarmed support such as the Mantle
-  deploys behind the guns and follows the nearest fighter, and upgraded defense
-  tiers are refitted with ordinary upgrade commands before the fight. A side
-  whose last fighter falls loses its support with it. It prints a matrix of
-  value kept, flags kinds that win or lose every matchup, play alike or are
-  outclassed, tier margins, seat-split legs and timeouts, and `--json` writes
-  every leg. The results are reports for balance work, never pinned tests.
-- `composition_search` (the `composition-search` command) looks for a mix of up
-  to three unit kinds that nobody beats at equal scrap, using the duel lab's
-  staged fights. Support kinds join only mixes with a kind that fights. Each
-  candidate is one fixed army: its kinds split the budget evenly (or, with
-  `--skewed`, one kind takes a double share), each kind but the cheapest buys
-  its share, and the cheapest fills the rest to land as close to the budget as
-  whole bodies allow. A round-robin over every candidate would take about a
-  million duels, so it grows a pool instead: it solves the blend of pool
-  candidates that no member beats, tests every candidate against that blend, and
-  adds the strongest challenger until none gains anything. A mix that no
-  candidate beats alone is a dominant composition. It reports each budget's
-  blend with every member's army and best counter, plus the range of spends;
-  `--json` writes them. It is offline evaluation and never feeds a controller.
-- `tick_profile` shows where simulation time goes inside a window of recorded
-  ticks. It rebuilds a replay to the window's first tick, re-simulates the
-  window from a clone of that world under macOS's `sample`, and reports each
-  function's share of the samples inside `State::tick`: the tick's phases, own
-  work, inclusive time and an optional breakdown of one function. Repetitions
-  are identical, so even a single tick gathers thousands of samples. Recorded
-  commands replay; controllers do not run. Other platforms refuse the command.
-  Its `tick-scan` companion times every tick of a replay in one straight pass
-  and ranks the costliest windows, to choose where to profile.
-  `bot-cost --save-replay` records a timed workload for both.
-- `audit` (the `map-audit` command) measures map geometry: room per seat, route
-  lengths, resources, artillery pressure, trafficked passages narrower than
-  three tiles, and clusters of unowned Extractor frames with how soon each seat
-  arrives and how much ground can shell them. It also derives the size and
-  wealth badges the map list shows, which the map gates hold each scenario's
-  metadata to.
-- `auto`, `smoke`, `shots`, and `profile` exercise the real shell where a
-  headless run is not enough.
-- `ios` (aliased as `cargo ios`) builds, installs, and launches the iPad app on
-  a paired iPad or an iPad simulator.
+Headless execution (`runner`, `render`, `playback` and `stats`) lives in
+`aftermine-kit`, shared with the shell. The driver adds:
 
-Run `aftermine-driver --help` for the current command tree. Procedures for live
-shell QA belong in the repository's `aftermine-live-qa` skill rather than here.
+- `client` speaks the debug protocol to a running shell, and `session` serves it
+  without a window.
+- `replay_inspect` and `replay_summary` give exact snapshots and a readable
+  account of a match: battles, expansions, eliminations and per-seat digests.
+- `ledger` (`replay-ledger`) values what every unit and building did over a
+  match in scrap: damage dealt, spotting, repair, income and spending.
+- `pacing` reports who led at minutes 5, 10 and 15, lead changes and comebacks,
+  from each side's net worth.
+- `replay_health` (`replay-health`) measures late-game health over many
+  recordings: income by source, match length, leftover wreck, army variety and
+  whether won battles turned into gains.
+- `bot_eval` (`bot-eval`) plays bots to a result and writes one JSONL row per
+  leg, with QA detectors for failures and reactivity. `seat_summary`
+  (`bot-summary`) pools those rows.
+- `bot_ladder` (`bot-ladder`) plays the difficulty rungs against each other and
+  checks each comparison against its gate.
+- `bot_pressure` (`bot-pressure`) runs staged scenarios where a scripted
+  attacker presses one situation on a bot.
+- `bot_cost` (`bot-cost`) times bot decisions on fixed workloads.
+- `duel_lab` (`duel-lab`) and `composition_search` (`composition-search`) fight
+  unit kinds and mixes against each other at equal scrap for balance work.
+- `tick_profile` (`tick-profile`) and `tick-scan` show where simulation time
+  goes in a replay. `tick-profile` needs macOS.
+- `audit` (`map-audit`) measures map geometry and derives each map's size and
+  wealth badges.
+- `auto`, `smoke`, `shots` and `profile` exercise the real shell where a
+  headless run is not enough.
+- `ios` (`cargo ios`) builds, installs and launches the iPad app.
+
+All evaluation output is omniscient QA evidence and never reaches a controller.
+Evaluation inputs live in `evaluation/`, not `scenarios/`. Run
+`aftermine-driver --help`, or `--help` on a command, for its options.
 
 ## Development
 
@@ -178,60 +59,36 @@ cargo test -p aftermine-driver --locked
 ```
 
 The [aftermine-opponent skill](../.agents/skills/aftermine-opponent/SKILL.md)
-owns the ladder, trace capture, seed and profile provenance and anomaly
-interpretation. The live-QA skill owns native inspection. Aggregate results do
-not establish opponent quality or isolate simulation fairness.
-
-`bot-eval --jobs N` bounds concurrent matches (default four, capped by available
-CPUs and leg count). Multiple match workers disable nested bot-seat parallelism;
-`--jobs 1` uses ordinary seat scheduling. Each worker stages replay and trace
-output privately; results merge in input-plan order before publication. This
-improves batch throughput, not individual tick latency.
+covers bot evaluation, the ladder and how to read their reports. The
+[aftermine-live-qa skill](../.agents/skills/aftermine-live-qa/SKILL.md) covers
+driving the native shell.
 
 ## Performance regression checks
 
 The
 [performance and persistence procedure](../.agents/skills/aftermine-live-qa/references/performance.md)
-provides fresh-checkout workload commands, portable save-size and planning-work
-guards, and scoped native timing requirements. Use its fixed inputs for
-candidate/control comparisons; wall-clock thresholds are machine-qualified.
+has the fixed workloads and size guards to compare a change against its base.
 
-## Coverage boundaries
+## Test suites
 
-`tests/hashes.rs` runs six small controller-free scenarios for economy,
-construction, ground combat, air transport, fog and targeting, and team victory.
-Each scenario asserts accepted commands and the expected events before comparing
-named milestone hashes. Independent execution, intermediate state round trips,
-and reconstruction of the recorded command stream are checked throughout. The
-hashes live in `tests/goldens/state-hashes.json`, which the cross-platform CI
-matrix checks.
+- `tests/hashes.rs` runs six small scenarios without bots: economy,
+  construction, ground combat, air transport, fog and targeting, and team
+  victory. Each asserts the expected commands and events before comparing
+  milestone hashes from `tests/goldens/state-hashes.json`, which CI checks on
+  every platform.
+- `tests/lockstep.rs` runs a netplay host and two clients in one process over
+  delayed links on a virtual clock, and checks that every machine executes the
+  same batches. It covers stalled, stuck, disconnected and diverged peers and a
+  silent host. One test plays a short match over real localhost TCP.
+- `tests/opponent_hashes.rs` checks `aftermine-opponent` behaviour with short
+  state and command hashes, which re-bless separately from the simulation
+  hashes.
+- The integrity harness plays Skirmish, Twin Forges and Basalt Spine with bots
+  for a fixed number of ticks and checks state validity and serialization
+  throughout. With `AFTERMINE_SOAK_TRACE_DIR` set, it also writes periodic
+  hashes that CI compares across operating systems.
 
-`tests/lockstep.rs` runs an `aftermine-net` host and two clients in one process
-over delayed links on a virtual clock. Each human seat's orders come from a bot
-controller on that seat's own machine and cross the wire. It checks that every
-machine executes identical batches under latency and jitter, and covers a
-stalled client, a stuck client, a closed connection, a silent host, and a
-diverged client. One test instead joins, starts, and plays a short match over
-real localhost TCP with a real clock.
-
-`tests/opponent_hashes.rs` checks exact recovery funding and repeated nearby
-harvest deliveries through `aftermine-opponent`. Behavioral assertions precede
-short state and tick-stamped command hashes. Independent controllers, state
-round trips, and replay reconstruction must agree at every step.
-
-The regular integrity harness runs Skirmish, Twin Forges, and Basalt Spine for a
-fixed tick horizon each, covering an open duel, team play, and constrained
-terrain. It seats Standard/Balanced bots with personality seed zero and checks
-state validity and serialization, including the initial and final states. It
-stops after validating a terminal result without requiring a winner, activity
-quotas, or a particular command stream. With `AFTERMINE_SOAK_TRACE_DIR` set,
-each run also writes periodic state hashes and its replay into that directory;
-CI compares those hash files across operating systems without a checked-in
-golden. The exhaustive all-map soak is ignored by default and uses the same
-checks, with a longer horizon for maps that are not small. The opening image and
-renderer showcase cover drawing without depending on an autonomous midgame.
-
-Run the exhaustive soak explicitly:
+The same checks over every shipped map are opt-in:
 
 ```sh
 cargo test -p aftermine-driver --test headless --locked every_shipped_scenario_preserves_state_integrity -- --ignored --exact --nocapture

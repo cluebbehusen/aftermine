@@ -19,143 +19,91 @@ cargo run -p aftermine-shell --release
 
 To play on an iPad, see [the iPad build](shell/README.md#ipad-build).
 
-The main menu includes the tutorial, skirmish setup, saved games and replays,
-the complete unit roster, settings, and controls. Normal skirmishes use
-deterministic rules-based opponents with four difficulty levels and Turtle,
-Balanced, or Aggressive stances. A hidden seeded identity varies each opponent's
-strategic preferences. They receive no extra resources, information, build
-access, or combat advantages. The
-[opponent specification](docs/aftermine-opponent.md) describes how they play.
+The main menu has the tutorial, match setup, LAN play, saved games and replays,
+the unit roster, settings and controls. Bots come in four difficulties and three
+stances (Turtle, Balanced and Aggressive), and each one has a seeded
+personality. They play by the same rules as you, with no extra income, vision or
+units. The [opponent specification](docs/aftermine-opponent.md) describes how
+they play.
 
 ## The game
 
-Harvesters bring scrap back to a Foundry, construct buildings, salvage wrecks,
-and repair damaged machines. Foundries and specialized works turn that scrap
-into an army. Destroy every enemy Foundry to win.
+Harvesters gather scrap, bring it back to a Foundry, construct buildings,
+salvage wrecks and repair damaged machines. Repair Bays heal machines near them.
+Foundries and other production buildings turn scrap into an army. Destroy every
+enemy Foundry to win.
 
-Completed Repair Bays automatically spend scrap to heal nearby owned units and
-completed buildings. Each Bay services its four most damaged machines at a time,
-and overlapping Bays take different machines. Machines heal quickly once they
-have been out of combat for three seconds and slowly while under fire. A Condor
-must land to be repaired; aircraft that cannot land are repaired in the air.
-Units are served first when scrap is limited, and a building with active or
-queued salvage work is left to its wrecking crew.
+- Fog of war with remembered buildings, radar contacts and shared team sight.
+- Ground and air units with direct-fire, artillery, stealth, transport and
+  repair roles.
+- Expansion Foundries, Extractors on fixed map frames, building upgrades, and
+  wreck salvage that makes holding a battlefield pay.
+- Spires, whose warheads can strike any tile, and Lattices that intercept them.
+- Two experimental machines, the Maw and the Roc, which workers assemble in
+  cradles every player can see.
+- Duels, team games and free-for-alls.
 
-The main strategic layers:
+Rock blocks ground movement and direct fire. Peaks block everything, aircraft
+and blasts included. Pits block ground movement, but aircraft and fire cross
+them. On tiered maps, higher ground blocks direct fire, and artillery fires down
+but never up.
 
-- real fog of war, remembered buildings, radar contacts, and shared team sight;
-- ground, air, direct-fire, artillery, stealth, transport, and repair roles;
-- terrain that distinguishes ordinary rock, impassable peaks, open pits, and
-  levels joined by ramps;
-- buildable expansions, renewable Extractor claims strengthened by nearby
-  Foundries, upgrades, and late-game recovery income;
-- persistent wreck salvage, so holding a battlefield has economic value;
-- strategic missiles: a Spire's warhead strikes any tile, and only a
-  radar-backed Lattice that has tracked it can stop it;
-- an experimental breacher, the Maw, that workers assemble in a cradle every
-  player can see, and that heals only by eating wreck;
-- free-for-all and team maps as well as conventional duels.
+The in-game Roster lists every unit and building with its cost, weapons and
+prerequisites.
 
-The in-game Roster is the best reference for exact units, buildings, costs,
-weapons, and prerequisites.
+## Controls
 
-## Essential controls
+Most actions are also cards in the selection panel. The core keys:
 
-Most actions are available as clickable cards in the selection panel. These
-shortcuts cover the core loop:
+| Input                           | Action                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| WASD, arrow keys or middle drag | Pan the camera.                                                         |
+| Mouse wheel                     | Zoom.                                                                   |
+| Left click or drag              | Select a unit, building or group.                                       |
+| Shift + click or drag           | Add to or remove from the selection.                                    |
+| Right click                     | Give the contextual order: harvest, attack, repair or move.             |
+| Shift + right click             | Queue the order.                                                        |
+| `F`, then ground                | Move and fight anything on the way.                                     |
+| `G`, then ground                | Move without stopping to fight.                                         |
+| `B`                             | Open construction: pick a category, then a building, with Q/E/R/T/Z/X.  |
+| Q/E/R/T/Z/X with a producer     | Train the unit in that slot.                                            |
+| `X`                             | Stop the selection.                                                     |
+| `1`–`5` / Ctrl + `1`–`5`        | Recall / assign a control group.                                        |
+| `N`                             | Select the next idle Harvester.                                         |
+| `Space`                         | Center the camera on your Foundry.                                      |
+| `P`                             | Pause.                                                                  |
+| `Esc`                           | Cancel the current action, clear the selection, or open the pause menu. |
 
-| Input                                    | Action                                                                                                                         |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| WASD / arrow keys                        | Pan the camera; both sets work together.                                                                                       |
-| Wheel / middle drag                      | Zoom / pan the camera.                                                                                                         |
-| `U` with a building / transport selected | Upgrade / unload here.                                                                                                         |
-| `Y` / Shift+`Y` with a producer selected | Set / clear rally. Rallying onto an own unit has new units escort it.                                                          |
-| Left click / drag                        | Select a unit, building, or group.                                                                                             |
-| Shift + click / drag                     | Add to or remove from the current selection. Shift-click a kind in the selection panel to drop that kind.                      |
-| Right click                              | Give the contextual order: harvest scrap, attack an enemy, repair an ally, or advance to ground.                               |
-| Shift + right click                      | Queue the contextual order.                                                                                                    |
-| `F`, then ground                         | Hunt and engage along the route.                                                                                               |
-| `G`, then ground                         | Run without engaging.                                                                                                          |
-| `E`, then an own unit                    | The rest of the selection escorts it: keeping pace, fighting nearby threats, and welding the group when it stops.              |
-| `K`, then ground                         | Scout from outside known enemy reach; a right-click with only scouts selected does the same.                                   |
-| `R`                                      | Mark patrol points; press `R` again to start the loop.                                                                         |
-| `B`                                      | Open construction; select an available worker if needed. Press again to return to categories or close.                         |
-| `B`, then Q/E/R/T/Z, then Q/E/R/T        | Choose a construction category, then a building.                                                                               |
-| `M`, then any tile, with Spires          | Fire the salvo size the aim bar shows; − and + change it, and Shift fires every loaded Spire.                                  |
-| `O` / Shift+`O` with Spires              | Order a warhead / toggle autofill. Shift-click Order to fill every empty Spire.                                                |
-| `C`, then a damaged machine              | Order selected Harvesters to repair it.                                                                                        |
-| Right-click Weld, or `H`                 | Toggle auto-weld (the card's AUTO tag): idle workers weld wounded machines and buildings near their post. Patrols always weld. |
-| `V`, then an own building                | Salvage the building for a partial refund. Foundries cannot be salvaged.                                                       |
-| `X`                                      | Stop selected units, or cancel a selected new construction site.                                                               |
-| Q/E/R/T/Z/X with a producer selected     | Train the unit in that card slot.                                                                                              |
-| Ctrl + `1`–`5` / `1`–`5`                 | Assign or recall a group of units or buildings. In the column above the minimap, click recalls, Ctrl-click assigns, + saves.   |
-| `N`                                      | Select and center the next idle Harvester.                                                                                     |
-| `Space`                                  | Center the camera on your Foundry.                                                                                             |
-| `Tab`                                    | Jump to the last under-attack alert; the under-attack badge in the top bar does the same while it shows.                       |
-| `P`                                      | Pause immediately; clicking the clock at the top right does the same.                                                          |
-| `Esc`                                    | Cancel the active action, clear selection, or open the pause menu. The ≡ button at the top right opens the menu directly.      |
+Settings > Controls lists every action, and each one can be rebound.
 
-Settings is split into General, Audio, Display, and Controls tabs; click a tab
-or press Q and E to switch. Left and Right step a value, and Enter cycles it.
-The Controls tab offers primary and secondary bindings for every keyboard
-action, including buildings, production slots, groups, bookmarks, replay
-controls, and menu navigation. Select a row and column, then press Enter to
-remap it; X clears the selected binding. Mouse selection of either binding
-column works too. Escape cancels capture (or restores Escape when editing Back).
-The binding editor and save-name entry retain conventional editing keys so
-custom mappings cannot lock you out. Existing custom bindings are preserved when
-upgrading.
+On iPad:
 
-On a touchscreen, tap to select, drag to pan, pinch to zoom, and long-press for
-the contextual order; a ring fills while it charges. For a selection box, rest
-two fingers until the box locks, drag its corners, and lift a finger to select.
-A double tap selects every unit of that kind on screen, and dragging on the
-minimap steers the camera. The cards, the ≡ menu button, and the clock (tap to
-pause) cover the rest. Rest a finger on a card to read its details, then lift to
-use it or slide off to cancel. Tapping or clicking a disabled card says why it
-is unavailable. The Stop button above the orders or production queue halts the
-selection or cancels the whole queue with full refunds. To build, tap open
-ground to drop a ghost, drag it into place, and tap it to confirm. While Patrol
-is armed, taps (or left-clicks) add waypoints. With units selected, the QUEUE
-toggle above the panel's left corner stands in for Shift: taps add to the
-selection, orders queue, and armed commands stay armed. It stays lit while on,
-and one tap turns it off; with it lit, a tapped kind in the selection panel
-drops out of the selection. Tapping the ribbon cancels its command. The Back
-card, or a tap that misses every unit and building (a scrap pile included),
-closes the build palette and keeps the builder. In the control-group column
-above the minimap, tap a group to recall it (tap again quickly to center the
-camera), long-press any slot to save the selection there (or clear it with
-nothing selected), or tap + to save the selection as a new group; Settings can
-hide the column. Tap the under-attack badge to jump to the fight. Tapping a
-scrap pile selects it, and its panel shows the scrap left and how many of your
-harvesters work it. Key help and gesture hints stay hidden until a screen has
-sat idle for about 15 seconds.
+- Tap to select, drag to pan and pinch to zoom.
+- Long-press for the contextual order.
+- Rest two fingers to draw a selection box. Double-tap a unit to select every
+  unit of its kind on screen.
+- The QUEUE toggle stands in for Shift.
+- Rest a finger on a card to read it, then lift to use it or slide off to
+  cancel.
 
-Construction categories are Economy (Q), Production (E), Defense (R), and
-Utility (T). For example, B, R, Q chooses a Turret. Shift queues placement;
-group recall always selects the group and leaves construction. Click another
-construction card to change buildings while placing. The build ghost explains
-why a site is invalid. A discovered Extractor frame is one 2x2 site. A restored
-Extractor earns fixed remote income; a nearby completed own Foundry raises that
-income without stacking. Upgrading it to a Deep Bore triples both rates; the
-upgrade needs a Crucible and an own Foundry within support reach to start. Amber
-placement on remembered ground creates a deferred order; the builders walk there
-and validate the site only when they can see it. Upgrades rebuild themselves on
-a fixed timer: the building stays offline and vulnerable, but Harvesters keep
-their existing work.
+## Saves and replays
 
-Rock blocks direct ground fire. Peaks block ground movement, aircraft, and all
-fire and blasts across them. Pits block ground movement, but aircraft and fire
-cross the gap. Tiered maps stack levels parted by cliffs and joined by ramps:
-ground units fight only on a shared level or from a ramp, higher ground blocks
-direct fire, and artillery fires down but never up. Aircraft ignore levels. Some
-units can shoot beyond their own vision if another friendly machine provides
-sight.
+Continue resumes the latest autosave, and named saves restore a match exactly
+where it stopped, paused. Finished matches are kept as replays you can watch and
+scrub from the Replays shelf. A save keeps the match's command history, so a
+resumed match still records its whole replay.
+
+Restart, Rematch, loading a save and watching a replay keep each opponent's
+difficulty, stance and personality. New Match picks new personalities.
+
+Aftermine is pre-launch, so saves and replays from other builds are not
+supported. [`docs/versioning.md`](docs/versioning.md) explains what changes at
+launch.
 
 ## Architecture
 
-The workspace is intentionally split at game-state boundaries. Each crate has
-its own README with its purpose, main modules, and focused development commands.
+Each crate owns one layer of the game and has its own README with its purpose,
+main modules and development commands.
 
 - [`chassis/`](chassis/README.md) is the reusable deterministic-simulation
   foundation: fixed-point geometry, stable randomness and hashing, pathfinding,
@@ -169,10 +117,8 @@ its own README with its purpose, main modules, and focused development commands.
 - [`protocol/`](protocol/README.md) defines the JSON-lines debug contract,
   hardware-neutral input events, state views, fog-honest views, and transport
   shared by live and windowless sessions.
-- [`net/`](net/README.md) is `aftermine-net`, lockstep multiplayer. Its I/O-free
-  session core decides which commands every machine executes on which tick and
-  watches peer liveness and desync; its start barrier and TCP transport take
-  connected machines to a shared tick zero.
+- [`net/`](net/README.md) is `aftermine-net`, lockstep multiplayer: the
+  messages, the host and client sessions, and the TCP and UDP transport.
 - [`kit/`](kit/README.md) contains Aftermine-specific services shared by the
   shell and driver, including headless running, replay playback, statistics,
   combat fixtures, and the deterministic CPU renderer.
@@ -188,10 +134,10 @@ Supporting directories:
 - [`scenarios/`](scenarios/) contains shipped match definitions and ASCII maps.
 - [`assets/`](assets/) contains production sprites and sounds.
 - [`tools/`](tools/) contains deterministic asset generators and review tools.
-- [`.agents/skills/`](.agents/skills/) contains maintained procedures for
-  simulation work, the opponent, live QA, maps, visual assets, and sound.
+- [`.agents/skills/`](.agents/skills/) contains procedures for simulation work,
+  the opponent, live QA, maps, visual assets and sound.
 
-The load-bearing rule is:
+The core rule is:
 
 > The same scenario and command log must produce a bit-identical state on every
 > run and every supported platform.
@@ -200,9 +146,10 @@ Simulation code uses fixed-point arithmetic and explicitly ordered choices.
 Humans, bots, replays, and the debug socket all submit the same tick-stamped
 commands. Rendering and audio observe the result; they never feed back into it.
 
-The implementation contracts are documented in
-[`docs/simulation-architecture.md`](docs/simulation-architecture.md) and
-[`docs/shell-architecture.md`](docs/shell-architecture.md).
+The contracts each layer keeps are in
+[`docs/simulation-architecture.md`](docs/simulation-architecture.md),
+[`docs/shell-architecture.md`](docs/shell-architecture.md) and
+[`docs/netplay-architecture.md`](docs/netplay-architecture.md).
 
 ## Development
 
@@ -236,35 +183,9 @@ Repository invariants, workflow rules, and versioning live in
 [`AGENTS.md`](AGENTS.md). Repeatable procedures live in self-describing skills
 under [`.agents/skills/`](.agents/skills/).
 
-## Saves and replays
-
-Continue and named saves restore session checkpoints directly and open paused.
-They preserve the world, opponent memory, pending input, and statistics without
-replaying the opening. Player saves use the compact `.amsave` format; legacy
-player-save import is not supported. Recorded-match playback remains separate.
-
-Recordings contain a starting scenario or world checkpoint and tick-stamped
-commands. A player save also keeps the match's commands, so a match resumed from
-a save still records its whole history. A segment that starts at a world, as a
-rejoined LAN client's does, contains only the history recorded since its origin.
-Finished matches are saved as compressed `.amreplay` files that also store the
-world every 1,024 ticks, so scrubbing restores a nearby world instead of
-replaying from the start. Saves require matching simulation and checkpoint
-revisions; there is no cross-version migration.
-
-The embedded scenario preserves each opponent's exact difficulty, stance, and
-personality seed. New Match creates new hidden identities; Restart, Rematch,
-save loading, and replay playback preserve the recorded setup.
-
-Replays are pinned to the simulation version that wrote them. This makes
-incompatibility explicit when a rules change would otherwise reproduce a
-different world.
-
 ## Project status
 
-Aftermine is playable and under active development. It has a broad RTS ruleset,
-many maps, a native desktop shell, deterministic saves and replays, and a deep
-automation harness.
+Aftermine is playable on desktop and iPad and is in active development.
 
 Built with [Macroquad](https://macroquad.rs/),
 [`fixed`](https://crates.io/crates/fixed), and
