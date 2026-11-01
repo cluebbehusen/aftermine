@@ -20,10 +20,9 @@ Read the README for the crate you are changing:
 | [`aftermine-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                |
 | [`aftermine-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.        |
 
-Implementation contracts live in `docs/simulation-architecture.md` and
-`docs/shell-architecture.md`. Keep those descriptive. `aftermine-opponent` is
-specified in `docs/aftermine-opponent.md`. Put repeatable procedures in a skill
-and historical results in notes or version control.
+Contracts live in `docs/simulation-architecture.md`,
+`docs/shell-architecture.md` and `docs/netplay-architecture.md`.
+`aftermine-opponent` is specified in `docs/aftermine-opponent.md`.
 
 ## Keep instructions in their proper place
 
@@ -35,10 +34,23 @@ relative links to the same directories. Skills describe their own scope and
 trigger conditions. Read and follow the matching skill when a task calls for
 one; do not duplicate a skill catalog here.
 
-Put detailed or repeatable procedures in a focused skill. Put current factual
-descriptions of the implementation in crate READMEs or architecture documents.
-Track a multi-step workstream in a named note under `agent-notes/` only when the
-user directs it. Once created, maintain that note through Kladde.
+Put detailed or repeatable procedures in a focused skill. Keep history in
+version control and pull requests.
+
+## Documentation
+
+The root README is for players and new contributors: what the game is, how to
+run it, the core controls and the workspace layout. A crate README gives its
+purpose, its main modules in a line or two each, its boundaries and its
+development commands. It does not describe individual game rules or bot
+behavior. Architecture documents state the contracts a change must keep, not how
+the code currently meets them. Skills hold general procedures, not notes about
+one feature. Do not commit work logs, dated progress notes or approval
+write-ups.
+
+When a change makes a documented claim wrong, fix or remove the claim. Do not
+add a paragraph describing a new feature's rules; the code, its tests and the
+in-game Roster carry those.
 
 ## Architecture and Rust quality
 
@@ -192,9 +204,9 @@ instrumented artifacts under `target/`; this can consume tens of gigabytes over
 time. Run `cargo clean` at convenient checkpoints when disk space is tight or
 after a heavy validation cycle, accepting that the next build will start cold.
 
-Prettier covers every nonignored Markdown file, including agent notes and hidden
-canonical skill files. Format Markdown with
-`npx --yes prettier@3.9.6 --write "**/*.md"`; do not maintain wrapping by hand.
+Prettier covers every nonignored Markdown file, including the hidden canonical
+skill files. Format Markdown with `npx --yes prettier@3.9.6 --write "**/*.md"`;
+do not maintain wrapping by hand.
 
 When a skill changes, validate every canonical skill directory. The
 `.claude/skills/` entries are aliases and are not validated separately.
@@ -262,10 +274,6 @@ what it gates, and what changes at launch.
 - Pin GitHub Actions to full commit SHAs and leave the release tag as a comment.
 - Keep screenshots, replays, generated review banks, and experiments out of
   production commits unless the user explicitly promotes them.
-- Update documentation when a change makes an existing claim inaccurate. Add
-  architectural documentation only for significant boundaries, contracts, or
-  responsibilities. Keep small implementation and visual details in code and
-  tests.
 
 ## Generated assets
 

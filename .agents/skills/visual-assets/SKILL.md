@@ -172,23 +172,6 @@ Build the review package around decisions rather than around generation output:
    review tool must display that same ID even when a small session is opened by
    itself.
 
-For pits and quarry drops, each numbered option must be a distinct structural
-system: for example, a sheer highwall, terraced cut, collapsed face, retained
-working, or abandoned lower level. Do not spend separate IDs on the same
-topology with changed scratches, speckles, or edge noise. A pit is a visibly
-lower, terrestrial quarry level, not a hole punched through the floor; the
-production renderer in `shell/src/render/pits.rs` steps benches down from a lit
-lip into darkness and is the control.
-
-Place an exact finalized tracked unit beside the lip in review evidence. Review
-at default gameplay zoom and full-map zoom, and reject any drop that looks
-smaller than its treads or plausibly driveable. Establish the desired physical
-scale in unconstrained concept art before forcing it into the renderer. If the
-approved depth needs more than the renderer provides, report that requirement
-instead of flattening the design to fit. Give every pit ID a full-map primary
-view plus native-scale edges, corners, junctions, and traversal context in
-sibling evidence.
-
 At handoff, give verified absolute paths to `tools/asset_review.html` and every
 session directory. Resolve each path where the file or directory actually
 exists; review artifacts may live outside the implementation worktree. Provide a
@@ -236,11 +219,8 @@ rather than baked tread frames. Declare its exposed belt runs as `belts` in
 packing into a smaller extent. Each run must stay inside its visible casing,
 must not extend under hull plates drawn over the track, and must come in
 left/right pairs. A track the hull mostly covers, such as a nose roller, needs
-no run. A tracked unit without belts fails the look tests. The Maw alone draws
-its approved treads from its own rig frames, with the same mechanics: each side
-rolls its own travel from the shared odometer at its bogies' gauge, a tile of
-travel moves the cleats a tile, and travel forward runs the upper run toward the
-nose.
+no run. A tracked unit without belts fails the look tests. The Maw is the
+exception: it draws its treads from its own rig frames.
 
 ## Approve and promote
 
