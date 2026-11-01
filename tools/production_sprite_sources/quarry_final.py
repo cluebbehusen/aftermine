@@ -21,9 +21,15 @@ from tools.production_sprite_sources.specialists_final import (
 )
 
 
+# How much of the floor's diagonal zigzag survives. Blending in tone keeps each
+# tile's soft edge into its neighbors at this lower contrast.
+ZIGZAG_CONTRAST = 0.67
+
+
 def ground(control, phase):
     image = control.copy()
     lifts = [-6, -3, 0, 2, 4, 7]
+    mean = sum(lifts) / len(lifts)
 
     def weights(coordinate):
         distance = min(coordinate + 0.5, 63.5 - coordinate)
@@ -38,7 +44,8 @@ def ground(control, phase):
                 for dx, wx in weights(x)
                 for dy, wy in weights(y)
             )
-            shift = round(blended - lifts[phase])
+            tone = mean + (blended - mean) * ZIGZAG_CONTRAST
+            shift = round(tone - lifts[phase])
             r, g, b, a = control.getpixel((x, y))
             image.putpixel((x, y), (r + shift, g + shift, b + shift, a))
     return image
