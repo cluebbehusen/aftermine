@@ -471,7 +471,7 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
 /// Draws the match behind Home, or the plain page if none will load.
 fn home_backdrop(app: &mut App, dt: f32) {
     if let Some(backdrop) = app.home_backdrop.playing(app.args.automation) {
-        backdrop.advance(dt);
+        backdrop.advance(dt, render::reduced_motion());
         backdrop.draw(&app.sprites, &app.input);
     } else {
         page_backdrop();
@@ -483,18 +483,6 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         app.request_catalog();
     }
     offer_rejoin(app, &mut home);
-    // The title scene: a cold front door drifts its camera
-    // slowly across the backdrop world instead of freezing
-    // a frame — presentation only, and only while nothing
-    // is at stake (a resumable match keeps its exact view).
-    if app.game.state.current_tick() == 0 && !render::reduced_motion() {
-        app.game.presentation.camera.pan(vec2(dt * 0.55, dt * 0.22));
-        let (_, hi) = app.game.presentation.camera.world_rect();
-        if hi.x >= app.game.state.map().width() as f32 + 1.9 {
-            app.game.presentation.camera.center = vec2(0.0, 0.0);
-            app.game.presentation.camera.pan(vec2(0.0, 0.0)); // re-clamp home
-        }
-    }
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);

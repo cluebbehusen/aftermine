@@ -30,8 +30,8 @@ const LEAST_ZOOM: f32 = 25.0;
 /// How far right of center the fight sits, as a share of the window, to clear
 /// the menu.
 const FIGHT_OFFSET: f32 = 0.18;
-/// How fast the view wanders, in logical pixels a second.
-const DRIFT: f32 = 7.0;
+/// How far the view sways from the fight, in tiles along each axis.
+const SWAY: f32 = 3.0;
 /// Seconds over which the match fades in, and out before it starts over.
 const FADE: f32 = 1.2;
 /// Ticks before the end at which it starts to fade out.
@@ -94,7 +94,23 @@ pub(crate) struct HomeBackdrop {
     checkpoint: u64,
     /// Seconds since this run of the scene began.
     age: f32,
+    /// Where the view rests, and the window it was framed for.
+    anchor: Vec2,
+    framed_for: Vec2,
+    /// Holding still for reduced motion.
+    still: bool,
 }
+
+/// The view's offset from its anchor at `age` seconds. It only sways, so the
+/// fight stays in view however long Home is left open.
+fn sway(age: f32) -> Vec2 {
+    vec2((age / 23.0).sin(), (age / 31.0).sin()) * SWAY
+}
+
+const NO_TIME: FrameTime = FrameTime {
+    presentation: 0.0,
+    raw: 0.0,
+};
 
 impl HomeBackdrop {
     /// Opens scene `index` at its checkpoint, framed on its fiercest fight.
@@ -109,17 +125,14 @@ impl HomeBackdrop {
         let (mut session, checkpoint) = PlaybackSession::from_checkpoint(recording)?;
         let viewport = crate::render::viewport();
         // The seek restores the stored world on its first step.
-        session.advance_frame(
-            FrameTime {
-                presentation: 0.0,
-                raw: 0.0,
-            },
-            viewport,
-        );
+        session.advance_frame(NO_TIME, viewport);
         let mut backdrop = Self {
             session,
             checkpoint,
             age: 0.0,
+            anchor: Vec2::ZERO,
+            framed_for: viewport,
+            still: false,
         };
         backdrop.frame(viewport);
         Ok(backdrop)
@@ -133,29 +146,46 @@ impl HomeBackdrop {
         let (x, y) =
             aftermine_kit::fights::fiercest(view.state).map_or(fallback, |fight| fight.center);
         let center = vec2(x as f32 - viewport.x * FIGHT_OFFSET / zoom, y as f32);
-        self.session.presentation.camera.show(center, zoom);
+        self.framed_for = viewport;
+        let camera = &mut self.session.presentation.camera;
+        camera.show(center, zoom);
+        // The camera stops at the map's edge, so a fight beside one rests there.
+        self.anchor = camera.center;
     }
 
-    /// Plays on, wanders the view, and starts over at the end.
-    pub(crate) fn advance(&mut self, dt: f32) {
+    /// Plays on, sways the view, and starts over at the end. When `still`, for
+    /// reduced motion, it holds instead, since none of this motion informs
+    /// anyone.
+    pub(crate) fn advance(&mut self, dt: f32, still: bool) {
         self.age += dt;
+        self.still = still;
+        let viewport = crate::render::viewport();
         if self.session.ticks_left() == 0 {
             self.session.seek_to(self.checkpoint);
+            self.session.advance_frame(NO_TIME, viewport);
             self.age = 0.0;
+            self.frame(viewport);
+        } else if viewport != self.framed_for {
+            self.frame(viewport);
         }
-        let viewport = crate::render::viewport();
-        self.session.advance_frame(
+        let time = if still {
+            NO_TIME
+        } else {
             FrameTime {
                 presentation: dt,
                 raw: dt,
-            },
-            viewport,
-        );
+            }
+        };
+        self.session.advance_frame(time, viewport);
         // Nothing plays these, so they would pile up for as long as Home shows.
         self.session.presentation.sounds_pending.clear();
+        let center = if still {
+            self.anchor
+        } else {
+            self.anchor + sway(self.age)
+        };
         let zoom = self.session.presentation.camera.zoom;
-        let wander = vec2((self.age / 40.0).cos(), (self.age / 55.0).sin()) * DRIFT * dt / zoom;
-        self.session.presentation.camera.pan(wander);
+        self.session.presentation.camera.show(center, zoom);
     }
 
     pub(crate) fn draw(&self, sprites: &Sprites, input: &InputState) {
@@ -164,7 +194,11 @@ impl HomeBackdrop {
         let page = crate::theme::PAGE;
         let veil = |alpha: f32| Color::new(page.r, page.g, page.b, alpha);
         let fade_in = 1.0 - (self.age / FADE).clamp(0.0, 1.0);
-        let fade_out = 1.0 - (self.session.ticks_left() as f32 / FADE_TICKS).clamp(0.0, 1.0);
+        let fade_out = if self.still {
+            0.0
+        } else {
+            1.0 - (self.session.ticks_left() as f32 / FADE_TICKS).clamp(0.0, 1.0)
+        };
         let dim = DIM + (1.0 - DIM) * fade_in.max(fade_out);
         draw_rectangle(0.0, 0.0, w, h, veil(dim));
         let reach = LEFT_REACH * w;
