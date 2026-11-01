@@ -1396,17 +1396,17 @@ def _roc_layers(age: float) -> Image.Image:
 
 class RocSourceTests(unittest.TestCase):
     def test_roc_key_poses_preserve_the_approved_art(self):
-        # Digests of the approved Longbow study's own drawing code with the
-        # ship at rest and every drone docked: guns parked, then the port
-        # gun's first flash.
+        # Digests of the approved Longbow study's own drawing code, with its
+        # guns moved onto the pod plates, the ship at rest and every drone
+        # docked: guns parked, then the port gun's first flash.
         poses = (
             (
                 (roc_final.NO_SHOT,),
-                "5fe4b9a734bbae30b2eea9cd6ff499637cff3f4162577dc4367209e508078a72",
+                "dd09b45f80e87ca75ab30541d39a522004a34f102f756561b558fff6e44deb66",
             ),
             (
                 (0,),
-                "cb1483d901ea4f1561bdda8cde32c9e5a0e601f5300bd24fd5b2268eaa20f38d",
+                "deae53b425bb22f2d553d2378c3978048028ac3be52e4b619c7cfa0200288354",
             ),
         )
         for (age,), expected in poses:

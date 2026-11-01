@@ -518,7 +518,7 @@ fn a_falling_roc_keeps_each_gun_at_its_last_drawn_bearing() {
     }];
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
-    wire["units"][0]["mounts"]["bearings"][0] = serde_json::json!(0);
+    wire["units"][0]["mounts"]["bearings"][0] = serde_json::json!(224);
     game.state.0 = std::sync::Arc::new(serde_json::from_value(wire).unwrap());
     let unit = game.state.unit(UnitId(0)).unwrap();
     let body = UnitBody::capture(&game.presentation, &game.state, unit, false);

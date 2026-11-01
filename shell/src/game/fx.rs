@@ -29,8 +29,8 @@ pub(crate) struct UnitBody {
 }
 
 impl UnitBody {
-    /// A body seen only at its death or its crash: each mounted gun rests at
-    /// its arc's centre on a hull turned to `rotation`.
+    /// A body seen only at its death or its crash: each mounted gun rests
+    /// dead ahead on a hull turned to `rotation`.
     pub(crate) fn resting(
         kind: aftermine_sim::UnitKind,
         player: aftermine_sim::PlayerId,
@@ -38,9 +38,8 @@ impl UnitBody {
     ) -> Self {
         let mut mounts = [None; aftermine_sim::stats::MAX_WEAPONS];
         if let Some(guns) = kind.stats().mounts {
-            for (bearing, mount) in mounts.iter_mut().zip(guns.mounts) {
-                *bearing =
-                    Some(rotation + f32::from(mount.arc_centre) * std::f32::consts::TAU / 256.0);
+            for (bearing, _) in mounts.iter_mut().zip(guns.mounts) {
+                *bearing = Some(rotation);
             }
         }
         Self {

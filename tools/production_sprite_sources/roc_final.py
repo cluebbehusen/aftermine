@@ -2,7 +2,7 @@
 
 The Roc is the approved Longbow: a raised narrow cowling between two forward
 lift shoulders, two covered aft thrusters, six drone docks on two rails and
-two lower-flank guns. Its drawing code is ported from the approved study,
+two guns on plates bolted outside the lift shoulders. Its drawing code is ported from the approved study,
 with the study's clock replaced by the state the shell supplies: fan phase,
 each dock's clamp spread, each gun's bearing and shot age, and where each
 drone sits. The shell draws it from runtime layers on one 256px canvas (four
@@ -13,8 +13,8 @@ tiles), north-facing, pivoting about the canvas centre, in this order:
 - each gun's ground shadow, `GUN_SHADOW` pixels off;
 - the wall, the hull's silhouette dropped toward the tail so the hull reads
   as standing proud of it;
-- the fixed gun yokes, then each gun on its own canvas about its pivot,
-  under the hull as the lower-flank guns hang;
+- the fixed gun plates, then each gun on its own canvas about its pivot,
+  under the hull;
 - the hull, with the fan blades and the docks' clamps cut out;
 - each fan's blades at one of `FAN_FRAMES` phases;
 - each dock's clamps at one of `CLAMP_STEPS` spreads, and a docked drone;
@@ -63,11 +63,11 @@ FLASH = (222, 170, 89)
 DRONE_FLASH = (222, 175, 96)
 PAINT = {"base": (154, 73, 48), "probe": (40, 139, 158)}
 
-MOUNTS = ((94, 92), (162, 92))
+MOUNTS = ((46, 110), (210, 110))
 DOCKS = ((102, 147), (102, 172), (102, 197), (154, 197), (154, 172), (154, 147))
 FANS = ((76, 120), (180, 120))
 EXHAUSTS = ((81, 218), (175, 218))
-PARK = (-13.0, 13.0)
+PARK = (0.0, 0.0)
 
 GUN = 128
 DRONE = 32
@@ -498,14 +498,16 @@ def hull(d: Draw, p, fan_tick: int, spreads, hatch: float | None = None) -> None
 
 
 def yoke(d: Draw, side: int) -> None:
-    """A gun's fixed yoke, braced inboard to the hull."""
-    x, y = MOUNTS[side]
-    inward = 1 if side == 0 else -1
-    root = (x + inward * 18, y + 2)
-    d.beam(root, (x, y + 6), 11, DEEP)
-    d.hydraulic((root[0], y + 9), (x + inward * 2, y + 12), 4)
-    d.hose([(root[0], y + 11), (x + inward * 9, y + 18), (x, y + 12)])
-    d.plate((x - 9, y - 4, x + 9, y + 13), DEEP, 3)
+    """A gun's plate, bolted outside its fan pod, and the seat it turns on,
+    drawn in the port gun's coordinates and mirrored for starboard."""
+    x, y = MOUNTS[0]
+    mirrored = (lambda v: v) if side == 0 else (lambda v: SIZE - v)
+    left, right = sorted((mirrored(40), mirrored(60)))
+    d.plate((left, 100, right, 128), DARK, 5)
+    d.bolt(mirrored(44), 124, 1)
+    d.line([(mirrored(43), 112), (mirrored(43), 120)], IRON, 2)
+    left, right = sorted((mirrored(x - 9), mirrored(x + 9)))
+    d.plate((left, y - 4, right, y + 13), DEEP, 3)
 
 
 def recoil(age: float) -> float:

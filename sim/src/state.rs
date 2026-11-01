@@ -466,14 +466,10 @@ pub struct Mounts {
 }
 
 impl Mounts {
-    /// Every gun at its arc's centre.
-    fn resting(guns: crate::stats::MountedGuns) -> Self {
-        let mut bearings = [0; crate::stats::MAX_WEAPONS];
-        for (bearing, mount) in bearings.iter_mut().zip(guns.mounts) {
-            *bearing = mount.arc_centre.cast_unsigned();
-        }
+    /// Every gun dead ahead.
+    fn resting(_: crate::stats::MountedGuns) -> Self {
         Self {
-            bearings,
+            bearings: [0; crate::stats::MAX_WEAPONS],
             facing: IdleFacing::Free,
         }
     }
