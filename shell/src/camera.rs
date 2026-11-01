@@ -107,6 +107,16 @@ impl Camera {
         ) * self.shake
     }
 
+    /// Frames `center` at `zoom` at once, without a glide.
+    pub fn show(&mut self, center: Vec2, zoom: f32) {
+        let zoom = zoom.clamp(self.zoom_min, self.zoom_max);
+        self.zoom = zoom;
+        self.target_zoom = zoom;
+        self.zoom_anchor = None;
+        self.center = center;
+        self.clamp();
+    }
+
     /// Pans by a world-space delta.
     pub fn pan(&mut self, delta: Vec2) {
         self.center += delta;

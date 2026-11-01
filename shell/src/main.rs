@@ -29,6 +29,7 @@ mod frame_profile;
 mod frame_time;
 mod game;
 mod hints;
+mod home_backdrop;
 mod idle_weld;
 mod input;
 mod layout;

@@ -42,6 +42,11 @@ owner-colored element reads the same per-view table. A viewer with an ally sees
 hostile colors clear of the ally hues; only a viewer with no ally to confuse
 sees hostiles in cool colors.
 
+Home plays a bundled recording behind its menu. That playback is presentation
+only: it shares nothing with the player's match, makes no sound and is unloaded
+while a match runs. A recording that will not load leaves Home on its plain
+page.
+
 `App` owns resources that outlive a screen: the live `Game`, configuration,
 input funnel, New Match draft, assets, audio, debug channels and profiling. Each
 `Screen` variant owns its local interaction state, and a screen opened over

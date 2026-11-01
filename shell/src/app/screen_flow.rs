@@ -468,6 +468,16 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
     }
 }
 
+/// Draws the match behind Home, or the plain page if none will load.
+fn home_backdrop(app: &mut App, dt: f32) {
+    if let Some(backdrop) = app.home_backdrop.playing(app.args.automation) {
+        backdrop.advance(dt);
+        backdrop.draw(&app.sprites, &app.input);
+    } else {
+        page_backdrop();
+    }
+}
+
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {
     if !home.catalog_ready {
         app.request_catalog();
@@ -518,8 +528,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             );
         }
     }
-    page_backdrop();
-    home.draw();
+    home_backdrop(app, dt);
+    home.draw(&app.sprites);
     if out == screens::home::Out::Settings {
         Screen::Settings {
             screen: SettingsScreen::open(&app.config),
@@ -736,9 +746,9 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     match out {
         WizardOut::Home => {
             w.finish_resume(&mut app.draft);
-            let home = HomeScreen::open();
-            page_backdrop();
-            home.draw();
+            let mut home = HomeScreen::open();
+            home_backdrop(app, 0.0);
+            home.draw(&app.sprites);
             *rerun = true;
             next = Some(Screen::Home(home));
         }
@@ -1190,9 +1200,9 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     drop(input_scope);
     match out {
         screens::shelf::Out::Home => {
-            let home = HomeScreen::open();
-            page_backdrop();
-            home.draw();
+            let mut home = HomeScreen::open();
+            home_backdrop(app, 0.0);
+            home.draw(&app.sprites);
             *rerun = true;
             leave = Some(Screen::Home(home));
         }

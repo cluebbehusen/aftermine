@@ -10,6 +10,7 @@ pub mod client;
 pub mod composition_search;
 pub mod duel_lab;
 pub mod evaluation;
+pub mod home_replays;
 pub mod ios;
 pub mod ledger;
 pub mod pacing;

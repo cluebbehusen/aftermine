@@ -246,6 +246,8 @@ uv run tools/gen_sprites.py --check
 uv run --with 'pillow==12.3.0' \
   -m unittest tools.test_gen_sprites tools.test_production_sprite_sources \
   tools.test_gen_icon
+uv run tools/gen_wordmark.py --check
+uv run --with 'pillow==12.3.0' -m unittest tools.test_gen_wordmark
 uv run tools/gen_sounds.py --check
 uv run --with 'numpy==2.5.1' --with 'scipy==1.18.0' \
   -m unittest tools.test_gen_sounds
@@ -298,11 +300,12 @@ what it gates, and what changes at launch.
 
 ## Generated assets
 
-`tools/gen_sprites.py` and `tools/gen_sounds.py` own production assets. Generate
-experiments into a review directory, preserve approved files byte-for-byte, and
-never hand-edit the generated atlas or checked-in sounds. Productionize only
-assets the user explicitly approves. The visual and sound skills define the
-detailed workflow.
+`tools/gen_sprites.py`, `tools/gen_wordmark.py` and `tools/gen_sounds.py` own
+production assets, and `aftermine-driver home-replays` owns the recordings in
+`assets/home`. Generate experiments into a review directory, preserve approved
+files byte-for-byte, and never hand-edit the generated atlas or checked-in
+sounds. Productionize only assets the user explicitly approves. The visual and
+sound skills define the detailed workflow.
 
 ## Cross-cutting pitfalls
 

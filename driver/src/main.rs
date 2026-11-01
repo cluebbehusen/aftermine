@@ -23,6 +23,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Record the bundled matches that play behind Home. Run from the
+    /// repository root after a change that stops their checkpoints loading.
+    HomeReplays {
+        /// Where the recordings go.
+        #[arg(long, default_value = "assets/home")]
+        out: PathBuf,
+    },
     /// Run a scenario headless at full speed.
     Run {
         /// Scenario path, or "skirmish" for the built-in map.
@@ -672,6 +679,7 @@ fn refuse_unusable(
 #[expect(clippy::too_many_lines, reason = "one arm per subcommand")]
 fn main() -> Result<()> {
     match Cli::parse().cmd {
+        Cmd::HomeReplays { out } => aftermine_driver::home_replays::record(&out)?,
         Cmd::Run {
             scenario,
             ticks,

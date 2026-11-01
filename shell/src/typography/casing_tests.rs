@@ -265,7 +265,7 @@ fn only_the_menu_chooses_a_title_size() {
         }
         let source = std::fs::read_to_string(&path).expect("source reads");
         for (index, line) in source.lines().enumerate() {
-            if line.contains("Type::Title") || line.contains("Type::Display") {
+            if line.contains("Type::Title") {
                 strays.push(format!("{}:{}", path.display(), index + 1));
             }
         }

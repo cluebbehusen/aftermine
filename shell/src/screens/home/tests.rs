@@ -86,3 +86,12 @@ fn the_door_names_the_build_by_version_and_short_commit() {
         "v0.1.0"
     );
 }
+
+#[test]
+fn home_grows_only_on_windows_larger_than_its_layout() {
+    assert_eq!(growth(vec2(1133.0, 744.0)), 1.0);
+    assert_eq!(growth(vec2(1440.0, 900.0)), 1.0);
+    let large = growth(vec2(2560.0, 1440.0));
+    assert!((1.3..1.4).contains(&large), "{large}");
+    assert_eq!(growth(vec2(9000.0, 9000.0)), 1.6);
+}

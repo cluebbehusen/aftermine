@@ -6,6 +6,7 @@ pub mod build;
 pub mod checkpoint;
 mod compression;
 pub mod controller;
+pub mod fights;
 pub mod history;
 pub mod keyframes;
 pub mod perceptual;

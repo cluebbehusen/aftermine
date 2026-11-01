@@ -193,6 +193,10 @@ jobs:
         run: uv run tools/gen_sprites.py --check
       - name: Sprite generator tests
         run: uv run --with 'pillow==12.3.0' -m unittest tools.test_gen_sprites tools.test_production_sprite_sources tools.test_gen_icon
+      - name: Wordmark generator check
+        run: uv run tools/gen_wordmark.py --check
+      - name: Wordmark generator tests
+        run: uv run --with 'pillow==12.3.0' -m unittest tools.test_gen_wordmark
       - name: Sound generator check
         run: uv run tools/gen_sounds.py --check
       - name: Sound tests

@@ -5,7 +5,7 @@
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
 use aftermine_protocol::RawEvent;
-use macroquad::prelude::{Vec2, draw_text};
+use macroquad::prelude::{DrawTextureParams, Vec2, WHITE, draw_text, draw_texture_ex, vec2};
 
 /// What a Home frame decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +139,7 @@ impl HomeScreen {
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
+        self.fit();
         let Some(choice) = self.menu.handle(events, mouse) else {
             return Out::Stay;
         };
@@ -146,20 +147,70 @@ impl HomeScreen {
         choice.value
     }
 
+    /// Sizes and places the list for the window: left of center, clear of
+    /// the fighting behind it.
+    fn fit(&mut self) {
+        self.menu.growth = growth(crate::render::viewport());
+        let s = crate::render::ui_scale() * self.menu.growth;
+        self.menu.shift_left(LIST_SHIFT, 32.0 * s);
+    }
+
     /// Draws the door, with the build in the bottom left corner where a
     /// bug report can quote it, clear of the minimap behind the veil and
     /// below the footer's key help.
-    pub fn draw(&self) {
+    pub fn draw(&mut self, sprites: &crate::assets::Sprites) {
+        self.fit();
         self.menu.draw(self.subtitle());
-        let s = crate::render::ui_scale();
+        let ui = crate::render::ui_scale();
+        let s = ui * self.menu.growth;
+        let view = crate::render::viewport();
+        let left = self.menu.rows_left();
+        let baseline = view.y * WORDMARK_BASELINE;
+        let wordmark = sprites.wordmark();
+        let width = (WORDMARK_WIDTH * s).min(view.x * WORDMARK_MAX_SHARE);
+        let height = width * wordmark.height() / wordmark.width();
+        draw_texture_ex(
+            wordmark,
+            left,
+            baseline - height,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(width, height)),
+                ..Default::default()
+            },
+        );
+        draw_text(
+            self.subtitle(),
+            left,
+            baseline + 34.0 * s,
+            crate::theme::Type::Body.at(s),
+            crate::theme::TEXT_SECONDARY,
+        );
         draw_text(
             version_label(),
-            12.0 * s,
-            crate::render::viewport().y - 8.0 * s,
-            crate::theme::Type::Small.at(s),
+            12.0 * ui,
+            view.y - 8.0 * ui,
+            crate::theme::Type::Small.at(ui),
             crate::theme::TEXT_SECONDARY,
         );
     }
+}
+
+/// How far left of center the list sits, as a share of the window.
+const LIST_SHIFT: f32 = 0.28;
+/// Where the wordmark's foot sits, as a share of the window's height.
+const WORDMARK_BASELINE: f32 = 0.28;
+/// The wordmark's width in logical pixels at interface scale one.
+const WORDMARK_WIDTH: f32 = 620.0;
+/// The most of the window's width the wordmark may take.
+const WORDMARK_MAX_SHARE: f32 = 0.62;
+
+/// How much Home grows on a window larger than the 1440 by 900 it is laid out
+/// for. It takes a little over half the extra room, so it stays in proportion
+/// to the match behind it without filling a large monitor.
+fn growth(view: Vec2) -> f32 {
+    let room = (view.x / 1440.0).min(view.y / 900.0).clamp(1.0, 2.0);
+    1.0 + (room - 1.0) * 0.6
 }
 
 /// The running build as Home shows it.

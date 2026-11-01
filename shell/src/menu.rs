@@ -504,6 +504,9 @@ pub struct Menu<R> {
     /// width, zero for a centered list: the codex shifts its list left
     /// to make room for the page beside it.
     pub shift: f32,
+    /// Multiplies the interface scale for this menu alone: Home grows on
+    /// large windows.
+    pub growth: f32,
     /// Draws the list at the Controls width, for rows whose labels outgrow
     /// the usual one.
     pub wide: bool,
@@ -556,6 +559,7 @@ impl<R: Clone> Menu<R> {
             press: ScrollPress::default(),
             carry: 0.0,
             shift: 0.0,
+            growth: 1.0,
             wide: false,
             heading: Heading::Dialog,
         };
@@ -694,13 +698,40 @@ impl<R: Clone> Menu<R> {
         (0..self.lines.len()).find(|i| self.item_rect(*i).is_some_and(|r| r.contains(point)))
     }
 
+    /// The interface scale this menu draws at.
+    fn scale(&self) -> f32 {
+        ui() * self.growth
+    }
+
+    /// Where the rows' left edge sits.
+    pub(crate) fn rows_left(&self) -> f32 {
+        (view_w() - self.row_width()) * 0.5 + view_w() * self.shift
+    }
+
+    fn row_width(&self) -> f32 {
+        let s = self.scale();
+        if self.wide() {
+            (760.0 * s).min(view_w() - 32.0 * s)
+        } else {
+            ITEM_WIDTH * s
+        }
+    }
+
+    /// Moves the rows left by `fraction` of the window, stopping `margin`
+    /// from its edge.
+    pub(crate) fn shift_left(&mut self, fraction: f32, margin: f32) {
+        let centered = (view_w() - self.row_width()) * 0.5;
+        let left = (centered - fraction * view_w()).max(margin);
+        self.shift = (left - centered) / view_w();
+    }
+
     /// Where the list lives this frame: top edge, row height, and the
     /// window of visible rows. The list fits itself between the title
     /// block and the hint line — rows pack as tight as `row_pitch`
     /// allows when the window is short, and past that the list scrolls
     /// around the selection instead of running off the screen.
     fn window(&self) -> ListWindow {
-        let s = ui();
+        let s = self.scale();
         let (top_bound, centring) = match self.heading {
             Heading::Wordmark => ((view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s), 0.5),
             Heading::Page { band } => (page_title_baseline(s) + (64.0 + band) * s, 0.0),
@@ -723,7 +754,7 @@ impl<R: Clone> Menu<R> {
 
     /// Touchable bounds for one visible row.
     pub(crate) fn item_rect(&self, index: usize) -> Option<Rect> {
-        let s = ui();
+        let s = self.scale();
         let ListWindow {
             top,
             pitch,
@@ -733,13 +764,9 @@ impl<R: Clone> Menu<R> {
         if index < first || index >= first + visible {
             return None;
         }
-        let width = if self.wide() {
-            (760.0 * s).min(view_w() - 32.0 * s)
-        } else {
-            ITEM_WIDTH * s
-        };
+        let width = self.row_width();
         Some(Rect::new(
-            (view_w() - width) * 0.5 + view_w() * self.shift,
+            self.rows_left(),
             top + (index - first) as f32 * pitch,
             width,
             pitch - ROW_GAP * s,
@@ -761,9 +788,10 @@ impl<R: Clone> Menu<R> {
         if self.lines.is_empty() {
             return None;
         }
+        let scale = self.scale();
         for event in events {
             let mut press = self.press;
-            let swipe = press.feed(event, ui(), |p, _| {
+            let swipe = press.feed(event, scale, |p, _| {
                 self.row_at(p).filter(|row| !self.is_header(*row))
             });
             self.press = press;
@@ -780,7 +808,7 @@ impl<R: Clone> Menu<R> {
                     self.selected = row;
                     let column = point.zip(self.item_rect(row)).and_then(|(p, rect)| {
                         matches!(self.lines[row], Line::Row(Label::Binding { .. }, _))
-                            .then(|| BindingColumns::of(rect, ui()).slot_at(p.x))
+                            .then(|| BindingColumns::of(rect, self.scale()).slot_at(p.x))
                             .flatten()
                     });
                     return self.activation(row, column);
@@ -879,7 +907,7 @@ impl<R: Clone> Menu<R> {
     /// Draws the plate a dialog's title and rows sit on, which holds them
     /// apart from the match behind.
     fn draw_dialog_plate(&self, title_baseline: f32) {
-        let s = ui();
+        let s = self.scale();
         let pad = 24.0 * s;
         let list = self.window();
         let last = list.first + list.visible.saturating_sub(1);
@@ -907,22 +935,11 @@ impl<R: Clone> Menu<R> {
 
     fn draw_face(&self, subtitle: &str, coaching: Option<&str>, busy: bool) {
         let subtitle = binding_hint(subtitle);
-        let s = ui();
+        let s = self.scale();
         let list = self.window();
         match self.heading {
-            Heading::Wordmark => {
-                let size = crate::theme::Type::Display.at(s);
-                let baseline = view_h() * 0.28;
-                let dims = measure_text(&self.title, None, numeric::font_size(size), 1.0);
-                draw_text(
-                    &self.title,
-                    (view_w() - dims.width) * 0.5,
-                    baseline,
-                    size,
-                    TEXT_TITLE,
-                );
-                draw_subtitle(&subtitle, baseline + SUBTITLE_DROP * s);
-            }
+            // Home draws its own art above the list.
+            Heading::Wordmark => {}
             Heading::Page { .. } => draw_page_heading(&self.title, &subtitle),
             Heading::Dialog => {
                 let baseline = list.top - 64.0 * s;

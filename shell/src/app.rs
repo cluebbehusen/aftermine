@@ -67,6 +67,9 @@ struct App {
     /// consumed only when the wizard launches; the resulting exact seeds live
     /// in the scenario and are thereafter replay data.
     personality_seeds: PersonalitySeedSource,
+    /// The match playing behind Home. A real match unloads it, and the next
+    /// Home picks again.
+    home_backdrop: crate::home_backdrop::HomeMatch,
     /// The one input funnel.
     input: input::InputState,
     /// Map preview textures for the browser and setup screens.
@@ -336,6 +339,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         game,
         draft: NewMatchDraft::default(),
         personality_seeds,
+        home_backdrop: crate::home_backdrop::HomeMatch::Unloaded,
         input: input::InputState::new(),
         previews: PreviewCache::default(),
         menu_notice: None,
@@ -677,6 +681,9 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         );
 
         drop(screen_diagnostic_scope);
+        if screen.kind() == ScreenKind::Playing {
+            app.home_backdrop.unload();
+        }
         app.live_streak = next_live_streak(
             app.live_streak,
             began_playing,

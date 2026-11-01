@@ -152,8 +152,6 @@ pub enum Type {
     Row,
     /// Screen titles.
     Title,
-    /// The home screen's wordmark.
-    Display,
 }
 
 impl Type {
@@ -172,7 +170,6 @@ impl Type {
             Self::Heading => 22.0,
             Self::Row => 26.0,
             Self::Title => 40.0,
-            Self::Display => 96.0,
         }
     }
 }

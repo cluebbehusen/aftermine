@@ -79,6 +79,11 @@ impl Keyframes {
         self.0.iter().map(|frame| frame.tick)
     }
 
+    /// One world on its own, for a record that needs only a place to start.
+    pub fn single(state: &State) -> Result<Self> {
+        Ok(Self(vec![ChainEncoder::encode_full(state)?]))
+    }
+
     /// Checks the index a record carries for keyframes of its own span: on
     /// the [`KEYFRAME_EVERY`] grid after `start` and at most `end`, chains
     /// no longer than a restore may decompress, and bounded sizes. Contents
