@@ -2255,11 +2255,8 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
 /// Radar blips, drawn above the fog like pings: contacts without identity
 /// from allied radar rings.
 pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
-    if game.presentation.overlay {
-        return; // the omniscient overlay already shows the real machines
-    }
     let zoom = game.presentation.camera.zoom;
-    for contact in game.my_vision().contacts() {
+    for contact in blips(game) {
         let tile = contact.tile;
         let center = game
             .presentation
@@ -2270,6 +2267,15 @@ pub(crate) fn draw_blips(game: &crate::game::Scene<'_>) {
         }
         fill_circle(center, 2.0, BONE_FAINT);
     }
+}
+
+/// The seat's radar contacts. Fog-free views draw the real units and
+/// structures instead, so they have none.
+fn blips<'a>(game: &'a crate::game::Scene<'_>) -> &'a [aftermine_sim::RadarContact] {
+    if game.presentation.all_seeing() {
+        return &[];
+    }
+    game.my_vision().contacts()
 }
 
 /// A blip's outline in no faction's shape or color, told apart by shape

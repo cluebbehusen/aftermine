@@ -1004,6 +1004,39 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
 }
 
 #[test]
+fn only_a_seat_under_fog_draws_radar_blips() {
+    let scenario = aftermine_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Radar blips", "mode": "sandbox", "map": vec![".............................."; 22],
+            "players": [
+                {"name": "Seat", "scrap": 0, "bot": false},
+                {"name": "Rival", "scrap": 0, "bot": false},
+            ],
+            "buildings": [{"player": 0, "kind": "array", "x": 3, "y": 8}],
+            "units": [{"player": 1, "kind": "harvester", "x": 20, "y": 8}],
+        })
+        .to_string(),
+    )
+    .expect("radar fixture parses");
+    let mut game =
+        Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("radar fixture builds");
+    assert_eq!(
+        blips(&game.view()).len(),
+        1,
+        "the seat's ring reports the rival"
+    );
+
+    game.presentation.overlay = true;
+    assert!(blips(&game.view()).is_empty(), "debug overlay");
+    game.presentation.overlay = false;
+
+    for stance in [crate::game::Stance::Out, crate::game::Stance::Spectator] {
+        game.presentation.stance = stance;
+        assert!(blips(&game.view()).is_empty(), "{stance:?}");
+    }
+}
+
+#[test]
 fn an_air_blip_is_the_upper_half_of_a_ground_blip() {
     use aftermine_sim::stats::Domain;
     let center = vec2(50.0, 50.0);
