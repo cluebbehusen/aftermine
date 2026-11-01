@@ -101,8 +101,8 @@ impl ArmedMode {
             Self::Run => "Run".to_string(),
             Self::Hunt => "Hunt".to_string(),
             Self::Scout => "Scout".to_string(),
-            Self::Patrol(0) => "Patrol".to_string(),
-            Self::Patrol(count) => format!("Patrol \u{b7} {count}"),
+            Self::Patrol(0) => "Patrol: pick waypoints".to_string(),
+            Self::Patrol(count) => format!("Patrol \u{b7} {count}: press Patrol to start"),
         }
     }
 }
@@ -1001,24 +1001,9 @@ pub(crate) fn refusal_reason(refusal: aftermine_sim::PlaceRefusal) -> &'static s
         PlaceRefusal::Building => "something already stands there",
         PlaceRefusal::Unit => "an enemy unit is holding that ground",
         PlaceRefusal::NotConstructible => "that can't be built",
-        PlaceRefusal::Prerequisite => "needs its tech structure",
-        PlaceRefusal::FrameRequired => "an extractor rebuilds only on a derelict frame",
+        PlaceRefusal::Prerequisite => "not unlocked yet",
+        PlaceRefusal::FrameRequired => "Extractors only go on derelict frames",
         PlaceRefusal::FrameBlocked => "that ground belongs to a derelict frame",
-    }
-}
-
-/// The toast a refused placement click raises.
-fn refusal_toast(refusal: aftermine_sim::PlaceRefusal) -> String {
-    use aftermine_sim::PlaceRefusal;
-    let reason = refusal_reason(refusal);
-    match refusal {
-        PlaceRefusal::Fog
-        | PlaceRefusal::Terrain
-        | PlaceRefusal::Building
-        | PlaceRefusal::Unit
-        | PlaceRefusal::FrameBlocked => format!("Can't build there: {reason}"),
-        PlaceRefusal::Prerequisite => format!("Can't build that yet: {reason}"),
-        PlaceRefusal::NotConstructible | PlaceRefusal::FrameRequired => reason.to_string(),
     }
 }
 
@@ -2268,7 +2253,6 @@ fn armed_click(
             .producers();
             rally_producers(game, producers, rally);
             input.rallying.clear();
-            game.presentation.toast("Rally point set");
         }
         return true;
     }
@@ -2302,8 +2286,11 @@ fn armed_click(
             // Shift's call, decided at MouseUp.
             let queue = input.queue_held();
             let verdict = placement_verdict(&game.view(), kind, anchor, queue);
-            if let Some(refusal) = refusal_text(kind, verdict) {
-                refuse(game, refusal);
+            if !matches!(
+                verdict,
+                PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival
+            ) {
+                deny(game);
             } else if let Some(placement) = &mut input.placing {
                 placement.stroke = Some(PlacingStroke {
                     queue,
@@ -2811,15 +2798,12 @@ fn place_at(
 ) -> bool {
     // A held queue (Shift, or QUEUE on touch) both keeps placing and
     // queues the build behind the builder's current program.
-    match stage_build(game, kind, anchor, input.queue_held()) {
-        Ok(()) => {
-            record_placed(input, anchor, None);
-            true
-        }
-        Err(refusal) => {
-            refuse(game, refusal);
-            false
-        }
+    if stage_build(game, kind, anchor, input.queue_held()) {
+        record_placed(input, anchor, None);
+        true
+    } else {
+        deny(game);
+        false
     }
 }
 
@@ -2834,28 +2818,25 @@ fn commit_stroke(
     stroke: &PlacingStroke,
     step: Option<(i32, i32)>,
 ) -> bool {
-    let mut refusals = Vec::new();
+    let mut skipped = 0;
     let mut staged = Vec::new();
     for &anchor in &stroke.stamps {
         // The first stamp that stages opens the row, replacing the
         // program unless the stroke queued, even when an earlier one
         // fails its recheck; the rest queue behind it.
-        match stage_build(game, kind, anchor, !staged.is_empty() || stroke.queue) {
-            Ok(()) => staged.push(anchor),
-            Err(refusal) => refusals.push(refusal),
+        if stage_build(game, kind, anchor, !staged.is_empty() || stroke.queue) {
+            staged.push(anchor);
+        } else {
+            skipped += 1;
         }
     }
     let total = stroke.stamps.len();
-    let skipped = refusals.len();
-    if let Some(first) = refusals.into_iter().next() {
-        refuse(
-            game,
-            if total == 1 {
-                first
-            } else {
-                format!("{skipped} of {total} sites skipped")
-            },
-        );
+    if skipped > 0 {
+        deny(game);
+        if total > 1 {
+            game.presentation
+                .toast(format!("{skipped} of {total} sites skipped"));
+        }
     }
     // A row hands on its own step; a stroke, the step between its last two
     // sites.
@@ -2903,20 +2884,23 @@ fn extend_stroke(game: &Game, input: &mut InputState, from: Vec2, to: Vec2) {
     }
 }
 
-/// Stages `kind` at `anchor`, judged after the exact pending command phase
-/// with future prices held for surviving deferred claims, or returns the
-/// toast that says why the sim would refuse it. Explored-but-unseen ground
-/// is judged by the remembered-state predicate the ghost tints from, so Fog
-/// here means unscouted ground.
+/// Stages `kind` at `anchor` if the sim would take it, judged after the exact
+/// pending command phase with future prices held for surviving deferred
+/// claims, and returns whether it did. Explored-but-unseen ground is judged by
+/// the remembered-state predicate the ghost tints from, so Fog here means
+/// unscouted ground.
 fn stage_build(
     game: &mut Game,
     kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
     queue: bool,
-) -> Result<(), String> {
+) -> bool {
     let verdict = placement_verdict(&game.view(), kind, anchor, queue);
-    if let Some(refusal) = refusal_text(kind, verdict) {
-        return Err(refusal);
+    if !matches!(
+        verdict,
+        PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival
+    ) {
+        return false;
     }
     let units = game.presentation.selection.units.clone();
     game.issue(Command::Build {
@@ -2931,28 +2915,11 @@ fn stage_build(
     });
     game.presentation
         .ping_order(placement_ping(kind, anchor), PingKind::Rally, queue);
-    Ok(())
+    true
 }
 
-/// The toast a placement click raises for `verdict`, if it refuses.
-fn refusal_text(kind: aftermine_sim::BuildingKind, verdict: PlacementVerdict) -> Option<String> {
-    match verdict {
-        PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival => None,
-        PlacementVerdict::Refused(refusal) => Some(refusal_toast(refusal)),
-        PlacementVerdict::Short(_) => Some(format!(
-            "Not enough scrap for a {}",
-            crate::typography::entity_name(kind.name())
-        )),
-        PlacementVerdict::QueueFull => Some("That builder's order queue is full".to_string()),
-        PlacementVerdict::Unreachable => {
-            Some("Can't build there: your builders can't reach it".to_string())
-        }
-    }
-}
-
-/// Says a placement was refused: the toast and the denied sound.
-fn refuse(game: &mut Game, refusal: String) {
-    game.presentation.toast(refusal);
+/// Plays the refusal sound. The ribbon's status row says why.
+fn deny(game: &mut Game) {
     game.presentation
         .sounds_pending
         .push((crate::game::SoundKind::Denied, None));
@@ -2982,8 +2949,7 @@ fn armed_verb_click(
                     && b.kind != aftermine_sim::BuildingKind::Foundry
             });
             let Some(building) = target.map(|b| b.id) else {
-                game.presentation
-                    .toast("Salvage wants an own built structure (not a Foundry)");
+                game.presentation.toast("Can't salvage that");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3029,8 +2995,7 @@ fn armed_verb_click(
                 .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((_, target, _)) = patient else {
-                game.presentation
-                    .toast("Repair wants a damaged own ground unit");
+                game.presentation.toast("Can't repair that");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3046,8 +3011,7 @@ fn armed_verb_click(
                     })
             });
             if !has_other_welder {
-                game.presentation
-                    .toast("Repair needs another worker selected");
+                game.presentation.toast("A worker can't repair itself");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3088,7 +3052,7 @@ fn armed_verb_click(
                 .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((_, target, _)) = picked else {
-                game.presentation.toast("Accompany wants an own unit");
+                game.presentation.toast("Pick one of your units");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3102,8 +3066,7 @@ fn armed_verb_click(
                         .is_some_and(|u| u.player == game.presentation.human)
             });
             if !has_escort {
-                game.presentation
-                    .toast("Accompany needs another unit in hand");
+                game.presentation.toast("A unit can't escort itself");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3225,16 +3188,6 @@ fn add_patrol_waypoint(
         route.push(waypoint);
         game.presentation
             .ping(tile_center(waypoint), PingKind::Rally);
-    }
-}
-
-/// The toast that arms a patrol.
-pub(crate) fn patrol_arm_toast(key: &str, hands: crate::platform::Hands) -> String {
-    match (hands.touch(), hands.keys) {
-        (false, true) => format!("Patrol: click waypoints, {key} to start"),
-        (false, false) => "Patrol: click waypoints, then click Patrol again to start".to_string(),
-        (true, true) => format!("Patrol: tap waypoints, then {key} or tap Patrol again to start"),
-        (true, false) => "Patrol: tap waypoints, then tap Patrol again to start".to_string(),
     }
 }
 

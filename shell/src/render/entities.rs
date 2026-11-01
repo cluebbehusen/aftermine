@@ -331,7 +331,7 @@ pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState
                     format!("{}", idx + 1),
                     p.x + 6.0 * s,
                     p.y - 4.0 * s,
-                    14.0 * s,
+                    crate::theme::Type::Small.at(s),
                     color,
                 );
             }

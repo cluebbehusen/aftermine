@@ -27,16 +27,6 @@ fn playing_escape_opens_pause(
     escape_pressed && (!had_selection || decided || conceded_banner)
 }
 
-/// Why the pause menu opened over a live match.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PauseCause {
-    /// Escape or the menu button.
-    Player,
-    /// The app stopped presenting frames for a while (a suspended iPad
-    /// app, a sleeping Mac) and would otherwise resume live.
-    Suspension,
-}
-
 /// A frame this long means the app was not running rather than merely
 /// slow: no ordinary hitch comes close.
 const SUSPENSION_GAP_SECS: f32 = 2.0;
@@ -53,12 +43,8 @@ fn gap_opens_pause(raw_dt: f32, live_streak: u8, running: bool, exempt: bool) ->
 
 /// Opens the pause menu over the live match; entering it freezes the
 /// match (see [`enter`]).
-fn open_pause(game: &Game, cause: PauseCause) -> Screen {
-    let pause = pause_menu(game);
-    Screen::Pause(match cause {
-        PauseCause::Player => pause,
-        PauseCause::Suspension => pause.with_notice("paused after an interruption"),
-    })
+fn open_pause(game: &Game) -> Screen {
+    Screen::Pause(pause_menu(game))
 }
 
 /// Installs a fresh run of `lesson` and plays it.
@@ -423,7 +409,7 @@ fn lobby_frame(
             app.config.player_name = Some(name.to_string());
             let install = app.config.install_id();
             if let Err(err) = app.config.save() {
-                app.notify(format!("could not save settings: {err}"), true);
+                app.notify_failure("Could not save settings", err);
             }
             let commit = crate::build_identity().revision;
             *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
@@ -432,13 +418,7 @@ fn lobby_frame(
             .discovering();
         }
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     lobby.draw(app.input.mouse, &mut app.previews);
     Screen::Lobby {
         screen: lobby,
@@ -538,13 +518,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             );
         }
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     home.draw();
     if out == screens::home::Out::Settings {
         Screen::Settings {
@@ -623,15 +597,9 @@ fn settings_frame(
     if up.dirty
         && let Err(err) = app.config.save()
     {
-        app.notify(format!("could not save settings: {err}"), true);
+        app.notify_failure("Could not save settings", err);
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     sc.draw(app.input.mouse);
     crate::button::draw_back(app.input.mouse);
     if up.out == screens::settings::Out::Leave {
@@ -655,13 +623,7 @@ fn codex_frame(
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = codex.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     codex.draw(&app.sprites);
     crate::button::draw_back(app.input.mouse);
     if out == screens::codex::Out::Leave {
@@ -690,13 +652,7 @@ fn lessons_frame(
         *rerun = true;
         return start_course(app, row);
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     list.draw(app.input.mouse);
     Ok(if out == screens::lessons::Out::Leave {
         *back
@@ -742,14 +698,14 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     ) {
         Ok(out) => out,
         Err(err) => {
-            app.notify(format!("can't open that map: {err:#}"), true);
+            app.notify_failure("Could not open that map", format_args!("{err:#}"));
             WizardOut::Stay
         }
     };
     if let Some(name) = w.take_saved_name() {
         app.config.player_name = Some(name.to_string());
         if let Err(err) = app.config.save() {
-            app.notify(format!("could not save settings: {err}"), true);
+            app.notify_failure("Could not save settings", err);
         }
     }
     let mut next: Option<Screen> = None;
@@ -764,7 +720,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
                 .and_then(|scenario| w.start_lan(&app.draft, &scenario, app.clock.elapsed()))
         };
         if let Err(err) = started {
-            app.notify(format!("can't start that match: {err:#}"), true);
+            app.notify_failure("Could not start that match", format_args!("{err:#}"));
         }
     }
     let launch_result = if hosted {
@@ -781,13 +737,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         WizardOut::Home => {
             w.finish_resume(&mut app.draft);
             let home = HomeScreen::open();
-            render::draw(
-                &app.game.view(),
-                &app.sprites,
-                &app.input,
-                &app.config.bindings,
-            );
-            veil();
+            page_backdrop();
             home.draw();
             *rerun = true;
             next = Some(Screen::Home(home));
@@ -806,7 +756,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
                 next = Some(Screen::Playing);
             }
             Some(Err(err)) => {
-                app.notify(format!("can't start that match: {err:#}"), true);
+                app.notify_failure("Could not start that match", format_args!("{err:#}"));
             }
         },
         WizardOut::Stay => {}
@@ -814,13 +764,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     if let Some(next) = next {
         next
     } else {
-        render::draw(
-            &app.game.view(),
-            &app.sprites,
-            &app.input,
-            &app.config.bindings,
-        );
-        veil();
+        page_backdrop();
         match w.step {
             WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
             WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews, app.input.mouse),
@@ -974,22 +918,21 @@ fn playing_frame(
             app.game.state.result().is_some(),
             app.game.presentation.conceded_banner,
         )
+        || gap_opens_pause(
+            time.raw,
+            app.live_streak,
+            !app.game.clock.paused && app.game.state.result().is_none(),
+            app.args.automation || app.args.debug_server || app.game.net_role().is_some(),
+        )
     {
-        next = Some(open_pause(&app.game, PauseCause::Player));
-    } else if gap_opens_pause(
-        time.raw,
-        app.live_streak,
-        !app.game.clock.paused && app.game.state.result().is_none(),
-        app.args.automation || app.args.debug_server || app.game.net_role().is_some(),
-    ) {
-        next = Some(open_pause(&app.game, PauseCause::Suspension));
+        next = Some(open_pause(&app.game));
     }
     if next.is_none()
         && let Some(button) = card_press
     {
         match press_card(app, button) {
             Ok(screen) => next = screen,
-            Err(err) => app.notify(format!("cannot start the lesson: {err:#}"), true),
+            Err(err) => app.notify_failure("Could not start the lesson", format_args!("{err:#}")),
         }
     }
     drop(input_scope);
@@ -1016,12 +959,12 @@ fn playing_frame(
         && app.config.finish_lesson(lesson)
         && let Err(err) = app.config.save()
     {
-        app.notify(format!("could not save settings: {err}"), true);
+        app.notify_failure("Could not save settings", err);
     }
     if mark_first_match(&mut app.config, &app.game)
         && let Err(err) = app.config.save()
     {
-        app.notify(format!("could not save settings: {err}"), true);
+        app.notify_failure("Could not save settings", err);
     }
     let tips = tips_on(&app.config, &app.game);
     crate::tips::Tips::advance_in(&mut app.game, tips, render::reduced_motion());
@@ -1199,12 +1142,7 @@ fn results_frame(
         &mut app.ui_sounds,
     );
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
+    render::draw_world(&app.game.view(), &app.sprites, &app.input);
     results.draw(&app.game);
     match out {
         screens::results::Out::Stay => Screen::Results(results),
@@ -1221,7 +1159,7 @@ fn results_frame(
                 open_playback(session, Screen::Results(results))
             }
             Err(err) => {
-                app.notify(format!("cannot open playback: {err}"), true);
+                app.notify_failure("Could not open the replay", err);
                 Screen::Results(results)
             }
         },
@@ -1249,13 +1187,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     match out {
         screens::shelf::Out::Home => {
             let home = HomeScreen::open();
-            render::draw(
-                &app.game.view(),
-                &app.sprites,
-                &app.input,
-                &app.config.bindings,
-            );
-            veil();
+            page_backdrop();
             home.draw();
             *rerun = true;
             leave = Some(Screen::Home(home));
@@ -1289,13 +1221,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     if let Some(next) = leave {
         next
     } else {
-        render::draw(
-            &app.game.view(),
-            &app.sprites,
-            &app.input,
-            &app.config.bindings,
-        );
-        veil();
+        page_backdrop();
         shelf.draw(app.input.mouse, app.menu_notice.is_some());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
@@ -1344,13 +1270,7 @@ fn waiting_frame(
     }
     waiting.refresh(absent);
     let out = waiting.update(events, &mut app.input.mouse, &mut app.ui_sounds);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    match_backdrop(app);
     waiting.draw();
     match out {
         screens::waiting::Out::Stay => Screen::Waiting(waiting),
@@ -1364,7 +1284,7 @@ fn waiting_frame(
             if let Some(link) = &mut app.net
                 && let Err(error) = link.replace_seat(&mut app.game, seat, difficulty, stance)
             {
-                app.notify(format!("Cannot hand the seat to a bot: {error:#}"), true);
+                app.notify_failure("Could not replace that player", format_args!("{error:#}"));
             }
             Screen::Waiting(waiting)
         }
@@ -1378,13 +1298,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = ps.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    match_backdrop(app);
     ps.draw(&app.game.scenario.name, app.input.mouse);
     Ok(match out {
         screens::pause::Out::Stay => Screen::Pause(ps),
@@ -1432,7 +1346,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             match live_playback(&app.game) {
                 Ok(session) => open_playback(session, Screen::Pause(ps)),
                 Err(err) => {
-                    app.notify(format!("cannot open playback: {err}"), true);
+                    app.notify_failure("Could not open the replay", err);
                     Screen::Pause(ps)
                 }
             }

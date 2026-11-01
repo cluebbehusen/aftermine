@@ -104,7 +104,7 @@ impl BackButton {
 pub(crate) fn draw_back(mouse: Vec2) {
     let s = crate::render::ui_scale();
     let rect = corner_slot(0, s);
-    draw(rect, "BACK", rect.contains(mouse), s);
+    draw(rect, "Back", rect.contains(mouse), s);
 }
 
 /// A click (or, with `touch`, a tap) on the BACK button.

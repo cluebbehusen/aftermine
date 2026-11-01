@@ -213,7 +213,7 @@ fn opening_pause_freezes_play_and_ends_the_concede_banner() {
     let mut game =
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     game.presentation.conceded_banner = true;
-    let screen = open_pause(&game, PauseCause::Player);
+    let screen = open_pause(&game);
     assert!(matches!(screen, Screen::Pause(_)));
     enter(&mut game, &screen);
     assert!(game.clock.paused);
@@ -223,12 +223,12 @@ fn opening_pause_freezes_play_and_ends_the_concede_banner() {
 #[test]
 fn a_lessons_pause_menu_offers_the_lesson_list() {
     let game = Tutorial::begin_at(Lesson::Scrap, vec2(1280.0, 800.0)).unwrap();
-    let Screen::Pause(pause) = open_pause(&game, PauseCause::Player) else {
+    let Screen::Pause(pause) = open_pause(&game) else {
         panic!("the player opens the pause menu");
     };
     let items = pause.menu.view().items;
     assert!(items.iter().any(|item| item == "Lessons"));
-    assert!(!items.iter().any(|item| item == "Save Game"));
+    assert!(!items.iter().any(|item| item == "Save game"));
 }
 
 #[test]
@@ -256,13 +256,17 @@ fn a_suspension_gap_pauses_only_a_running_live_match() {
 fn a_suspension_pause_explains_itself() {
     let mut game =
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
-    let screen = open_pause(&game, PauseCause::Suspension);
+    let screen = open_pause(&game);
     enter(&mut game, &screen);
     let Screen::Pause(pause) = screen else {
         panic!("a suspension opens the pause menu");
     };
     assert!(game.clock.paused);
-    assert_eq!(pause.subtitle("Skirmish"), "paused after an interruption");
+    assert_eq!(
+        pause.subtitle("Skirmish"),
+        "Skirmish",
+        "a pause says nothing about why it happened"
+    );
 }
 
 #[test]

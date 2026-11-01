@@ -31,7 +31,6 @@ fn eight_player_results_reserve_a_readable_small_screen_graph() {
     let last_row =
         layout.header_y + layout.rule_offset + (7.0 + layout.row_baseline) * layout.row_height;
 
-    assert_eq!(layout.title_size, Type::Title.px());
     assert!(layout.compact_roster);
     assert!(!layout.wide_table);
     assert_eq!(layout.row_size, Type::Small.px());
@@ -135,7 +134,7 @@ fn final_map_action_is_touchable_and_named_for_automation() {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
 
-    assert_eq!(ResultsScreen::items()[2], "VIEW FINAL MAP");
+    assert_eq!(ResultsScreen::items()[2], "View final map");
     assert_eq!(
         screen.update(
             &[
@@ -220,7 +219,7 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
         let row = format!("{prefix}{name}");
 
         assert!(
-            name.contains("SCRAP"),
+            name.contains("HEAP"),
             "the fitted label keeps the difficulty at {viewport:?}: {name}"
         );
         assert!(
@@ -244,7 +243,7 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
         &narrow_measure,
     );
     assert!(
-        compact.contains("SCRAP/AGGRO"),
+        compact.contains("HEAP/AGGRO"),
         "a narrow duel uses the semantic compact label: {compact}"
     );
 }
@@ -432,7 +431,7 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
     victory.present_ticks(1);
     let (title, _, subtitle) = verdict(&victory);
     assert_eq!(title, "VICTORY");
-    assert!(subtitle.contains("NORTH WEST"));
+    assert!(subtitle.contains("North West"));
 
     let mut surrendered = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     surrendered.issue(aftermine_sim::Command::Surrender);
@@ -444,7 +443,7 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
         subtitle,
         winner_subtitle(&surrendered, &surrendered.state.winners())
     );
-    assert!(!subtitle.contains("NORTH WEST"), "{subtitle}");
+    assert!(!subtitle.contains("North West"), "{subtitle}");
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Presentation shared by live play and replay playback. World state is borrowed.
 use super::{
-    Effect, PingKind, SoundKind, Toast, angle_delta, fx, gun_turns_off_hull, projectiles,
-    rotor_hull_turn_rate, world_vec,
+    Effect, PingKind, SoundKind, Toast, ToastTone, angle_delta, fx, gun_turns_off_hull,
+    projectiles, rotor_hull_turn_rate, world_vec,
 };
 use super::{EffectKind, Selection};
 use crate::camera::Camera;
@@ -18,6 +18,9 @@ pub enum AlertKind {
     /// A hostile experimental of this kind is assembling or has stood up.
     Assembly(aftermine_sim::UnitKind),
 }
+
+/// How long a stall reason must go unheard, in ticks, before it speaks again.
+const STALL_QUIET_TICKS: u64 = 400;
 
 pub struct Presentation {
     /// The seat local input controls.
@@ -79,6 +82,8 @@ pub struct Presentation {
     pub sounds_pending: Vec<(SoundKind, Option<Vec2>)>,
     /// Transient HUD messages, newest last.
     pub toasts: Vec<Toast>,
+    /// When each stall reason last reported.
+    stall_reports: Vec<(aftermine_sim::StallReason, u64)>,
     /// The network's word on players a LAN match lost track of, or on the
     /// host's pause, pinned while it holds.
     pub net_notice: Option<String>,
@@ -356,6 +361,7 @@ impl Presentation {
             ground_cache: std::cell::RefCell::default(),
             boundary_fog,
             toasts: Vec::new(),
+            stall_reports: Vec::new(),
             net_notice: None,
             scorches: Vec::new(),
             alerts: Vec::new(),
@@ -421,12 +427,47 @@ impl Presentation {
 
     /// Raises a transient HUD message (capped; oldest fall off).
     pub fn toast(&mut self, text: impl Into<String>) {
-        let text = crate::typography::sentence_case(&text.into());
+        self.raise_toast(&text.into(), ToastTone::Notice);
+    }
+
+    /// Raises a toast about something coming for the player.
+    pub(crate) fn danger_toast(&mut self, text: impl Into<String>) {
+        self.raise_toast(&text.into(), ToastTone::Danger);
+    }
+
+    fn raise_toast(&mut self, text: &str, tone: ToastTone) {
+        let text = crate::typography::sentence_case(text);
         self.toasts.retain(|toast| toast.text != text);
-        self.toasts.push(Toast { text, age: 0.0 });
+        self.toasts.push(Toast {
+            text,
+            age: 0.0,
+            tone,
+        });
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
         }
+    }
+
+    /// Whether a stall is worth saying. The simulation reports each unit, so
+    /// one order's crowd reports many times and a long wait repeats: a reason
+    /// speaks once, then stays quiet until it has gone unheard for
+    /// [`STALL_QUIET_TICKS`] or the player gives a new order.
+    pub(crate) fn stall_is_news(&mut self, reason: aftermine_sim::StallReason, tick: u64) -> bool {
+        if let Some((_, last)) = self.stall_reports.iter_mut().find(|(r, _)| *r == reason) {
+            let news = tick.saturating_sub(*last) >= STALL_QUIET_TICKS;
+            *last = tick;
+            news
+        } else {
+            self.stall_reports.push((reason, tick));
+            true
+        }
+    }
+
+    /// Lets the player's next stalled order speak. A worker's hold is not
+    /// tied to any order, so it keeps its own quiet.
+    pub(crate) fn order_given(&mut self) {
+        self.stall_reports
+            .retain(|(reason, _)| *reason == aftermine_sim::StallReason::DangerHold);
     }
 
     /// Raises an under-attack alert, rate-limited per 8-tile region so a
@@ -552,6 +593,7 @@ impl Presentation {
         self.restore_pending_crashes(state);
         self.sounds_pending.clear();
         self.toasts.clear();
+        self.stall_reports.clear();
         // Aim holds and recoil stamps are per-timeline: after a seek,
         // an id that exists at the destination must not face or flash
         // for a shot fired on the timeline we just left.

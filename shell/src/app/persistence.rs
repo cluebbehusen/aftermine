@@ -59,7 +59,7 @@ impl Worker {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         (work.task)(&work.cancel)
                     }))
-                    .unwrap_or_else(|_| Err(anyhow::anyhow!("persistence worker failed")));
+                    .unwrap_or_else(|_| Err(anyhow::anyhow!("Could not finish saving")));
                     if results.send((work.id, result)).is_err() {
                         break;
                     }
@@ -73,7 +73,7 @@ impl Worker {
         })
     }
     fn start(&mut self, task: Task) -> Result<u64> {
-        anyhow::ensure!(self.active.is_none(), "persistence worker is busy");
+        anyhow::ensure!(self.active.is_none(), "Another save is still running");
         self.next += 1;
         let cancel = Cancellation::default();
         self.sender
@@ -82,7 +82,7 @@ impl Worker {
                 cancel: cancel.clone(),
                 task,
             })
-            .map_err(|_| anyhow::anyhow!("persistence worker is unavailable"))?;
+            .map_err(|_| anyhow::anyhow!("Could not start saving"))?;
         self.active = Some((self.next, cancel));
         Ok(self.next)
     }
@@ -189,9 +189,9 @@ impl App {
             leave_after: false,
             menu: crate::menu::Menu::list(
                 if loading {
-                    "LOADING GAME"
+                    "LOADING MATCH"
                 } else {
-                    "SAVING GAME"
+                    "SAVING MATCH"
                 },
                 if loading {
                     vec!["Cancel".into()]
@@ -241,7 +241,7 @@ impl App {
         } else if self.catalog_id == Some(id) {
             self.catalog_id = None;
             if let Err(error) = &result {
-                self.notify(format!("Could not refresh saves: {error:#}"), true);
+                self.notify_failure("Could not read saves", format_args!("{error:#}"));
             }
             if let Ok(Output::Catalog(entries)) = result {
                 match screen {
@@ -407,14 +407,12 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
 }
 
 pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> Result<Screen> {
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
     let loading = busy.intent.loading();
+    if loading {
+        page_backdrop();
+    } else {
+        match_backdrop(app);
+    }
     let dots = match numeric::to_u32(numeric::to_f32(get_time()) * 3.0) % 3 {
         0 => ".",
         1 => "..",
@@ -540,7 +538,8 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 }
                 app.notify(
                     if loading {
-                        format!("Load failed: {error}")
+                        eprintln!("Load failed: {error}");
+                        "Could not load that save".to_string()
                     } else {
                         error.to_string()
                     },

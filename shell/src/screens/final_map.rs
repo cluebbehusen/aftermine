@@ -86,19 +86,15 @@ impl FinalMapScreen {
     fn coaching(bindings: &BindingMap, hands: crate::platform::Hands) -> String {
         match (hands.touch(), hands.keys) {
             (false, true) => format!(
-                "FINAL BATTLEFIELD | {} pan up / minimap / middle drag | wheel zoom | {} report",
-                bindings.labels(Action::PanUp),
+                "Pan with the keys, minimap or middle drag | wheel to zoom | {} back",
                 bindings.label(Action::Back)
             ),
-            (false, false) => {
-                "FINAL BATTLEFIELD | click the minimap to pan | scroll to zoom".to_string()
-            }
+            (false, false) => "Click the minimap to pan | scroll to zoom".to_string(),
             (true, true) => format!(
-                "FINAL BATTLEFIELD | drag or {} to pan | pinch to zoom | {} report",
-                bindings.labels(Action::PanUp),
+                "Drag to pan | pinch to zoom | {} back",
                 bindings.label(Action::Back)
             ),
-            (true, false) => "FINAL BATTLEFIELD | drag to pan | pinch to zoom".to_string(),
+            (true, false) => "Drag to pan | pinch to zoom".to_string(),
         }
     }
 
@@ -108,11 +104,10 @@ impl FinalMapScreen {
         let scale = render::ui_scale();
         crate::button::draw_back(mouse);
         let size = crate::theme::Type::Body.at(scale);
-        let line = if crate::hints::showing() {
-            Self::coaching(bindings, crate::platform::hands())
-        } else {
-            "FINAL BATTLEFIELD".to_string()
-        };
+        if !crate::hints::showing() {
+            return;
+        }
+        let line = Self::coaching(bindings, crate::platform::hands());
         let width = measure_text(&line, None, numeric::font_size(size), 1.0).width;
         let x = (screen_width() - width) * 0.5;
         let y = screen_height() - 14.0 * scale;

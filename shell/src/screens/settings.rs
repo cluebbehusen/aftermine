@@ -33,10 +33,10 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Tab::General => "GENERAL",
-            Tab::Audio => "AUDIO",
-            Tab::Display => "DISPLAY",
-            Tab::Controls => "CONTROLS",
+            Tab::General => "General",
+            Tab::Audio => "Audio",
+            Tab::Display => "Display",
+            Tab::Controls => "Controls",
         }
     }
 
@@ -119,8 +119,8 @@ impl Profile {
     /// The dialog's subtitle: what confirming costs.
     fn consequence(self) -> &'static str {
         match self {
-            Profile::Classic => "your rebinds are replaced by the defaults",
-            Profile::LeftHanded => "your rebinds are replaced by the left-handed layout",
+            Profile::Classic => "Your changes are lost",
+            Profile::LeftHanded => "Your changes are lost",
         }
     }
 
@@ -331,7 +331,7 @@ pub(crate) enum Row {
 }
 
 /// The capture prompt, shown while a binding row listens.
-const CAPTURE_PROMPT: &str = "press the new chord (modifiers held count) - Escape cancels";
+const CAPTURE_PROMPT: &str = "Press a key - Esc cancels";
 
 /// Volume steps, low to high.
 const VOLUMES: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
@@ -424,10 +424,10 @@ impl Row {
                 .to_string(),
             ),
             Row::MarkerTiming => setting(
-                "Strategic marker timing",
+                "Zoomed-out icons",
                 config.markers.timing_label().to_string(),
             ),
-            Row::MarkerSize => setting("Strategic marker size", pct(config.markers.scale)),
+            Row::MarkerSize => setting("Zoomed-out icon size", pct(config.markers.scale)),
             Row::EdgePan => setting("Edge pan", on(config.camera.edge_pan)),
             Row::InvertZoom => setting("Invert zoom", on(config.camera.zoom_inverted)),
             Row::LeftHandedPreset => Label::from("Apply left-handed bindings"),
@@ -679,7 +679,7 @@ impl SettingsScreen {
         let current = config.player_name.as_deref().unwrap_or_default();
         let field =
             Field::new(current, PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
-        let form = Form::new("YOUR NAME", "SAVE", vec![field], 0);
+        let form = Form::new("YOUR NAME", "Save", vec![field], 0);
         self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
         self.naming = Some(form);
     }
@@ -755,11 +755,9 @@ impl SettingsScreen {
     /// The tab's coaching line, in the footer.
     fn coaching(&self) -> Option<&'static str> {
         match self.face {
-            Face::Tab(Tab::Controls) => Some(if self.binding_slot == 0 {
-                "PRIMARY selected | Left/Right chooses column | Enter remaps | X clears | Q/E switch tabs"
-            } else {
-                "SECONDARY selected | Left/Right chooses column | Enter remaps | X clears | Q/E switch tabs"
-            }),
+            Face::Tab(Tab::Controls) => crate::platform::hands()
+                .keys
+                .then_some("Left/Right column | Enter remaps | X clears | Q/E tabs"),
             Face::Tab(_) => Some(settings_hint(
                 crate::platform::hands(),
                 crate::tabs::keys().is_some(),
@@ -1130,7 +1128,7 @@ impl SettingsScreen {
                             BindingMap::chord_label(chord),
                             holder.label()
                         ),
-                        None => "that key already means something".to_string(),
+                        None => "That key is taken".to_string(),
                     };
                     self.notice = Some(Notice { text, danger: true });
                     sounds.push((SoundKind::Denied, None));

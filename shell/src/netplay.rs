@@ -71,13 +71,13 @@ impl End {
             End::HostLost => "Lost connection to the host.".to_owned(),
             End::Dropped => "The host dropped you from the match.".to_owned(),
             End::HostLeft => "The host left the match.".to_owned(),
-            End::Replaced => "The host gave your seat to a bot.".to_owned(),
-            End::SeatGone => "Your seat left the match while you were away.".to_owned(),
+            End::Replaced => "The host gave your place to a bot.".to_owned(),
+            End::SeatGone => "You lost your seat while away.".to_owned(),
             End::Over => "That match is over.".to_owned(),
             End::TooLarge => "The match is too large to rejoin.".to_owned(),
             End::Desync { tick } => {
                 format!(
-                    "Desync at {}: the match halted and its replay was saved.",
+                    "Out of sync at {}. Replay saved.",
                     crate::clock_label::ticks(tick)
                 )
             }
@@ -756,8 +756,8 @@ impl HostLink {
                 connection.finish();
             }
             self.closing = Some((now, end));
-        } else if self.clock.stalled(game, now) {
-            game.presentation.toast("Waiting for players...");
+        } else if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+            game.presentation.net_notice = Some("Waiting for players...".to_owned());
         }
         None
     }
@@ -953,8 +953,8 @@ impl ClientLink {
         }
         game.presentation.net_notice =
             NetStatus::joined(&self.session, self.home.seat, now).notice(game);
-        if self.clock.stalled(game, now) {
-            game.presentation.toast("Waiting for the host...");
+        if self.clock.stalled(game, now) && game.presentation.net_notice.is_none() {
+            game.presentation.net_notice = Some("Waiting for the host...".to_owned());
         }
         None
     }
@@ -1490,7 +1490,7 @@ impl HostLobby {
 pub(crate) fn start_failed_notice(failed: StartFailed) -> &'static str {
     match failed {
         StartFailed::TimedOut => "A player didn't get ready",
-        StartFailed::Mismatch { .. } => "A player's game didn't match",
+        StartFailed::Mismatch { .. } => "A player is out of sync",
         StartFailed::Protocol { .. } => "A player left",
     }
 }
@@ -1651,7 +1651,8 @@ impl ScenarioHost {
             }
             Err(error) => {
                 self.unbuildable = Some(self.seating.clone());
-                self.notice = Some(format!("Cannot start: {error}"));
+                eprintln!("Cannot start: {error}");
+                self.notice = Some("Cannot start this match".to_owned());
             }
         }
     }
@@ -1725,7 +1726,8 @@ fn unreachable(address: &str, error: &io::Error, apple: bool) -> String {
              Aftermine is allowed under Privacy & Security > Local Network"
         )
     } else {
-        format!("Cannot reach {address}: {error}")
+        eprintln!("Cannot reach {address}: {error}");
+        format!("Cannot reach {address}")
     }
 }
 
@@ -1766,10 +1768,7 @@ impl ClientLobby {
     fn status(&self) -> String {
         match &self.state {
             Joining::Connecting(_) => format!("Connecting to {}...", self.address),
-            Joining::Gathering {
-                game: Some((_, seat)),
-                ..
-            } => format!("Starting as seat {}...", seat.0 + 1),
+            Joining::Gathering { game: Some(_), .. } => "Starting...".to_string(),
             Joining::Gathering { guest, .. } => match guest.room() {
                 Some((seats, _)) => {
                     let host = seats.iter().find_map(|seat| match &seat.holder {
@@ -1865,7 +1864,10 @@ impl ClientLobby {
                                     guest.ready(built.state.hash());
                                     game = Some((Box::new(built), seat));
                                 }
-                                Err(error) => return failed(format!("Cannot start: {error}")),
+                                Err(error) => {
+                                    eprintln!("Cannot start: {error}");
+                                    return failed("Cannot start this match".to_owned());
+                                }
                             }
                         }
                         Ok(Some(GuestEvent::Resume { seat, tick, bytes })) => {
@@ -1883,7 +1885,10 @@ impl ClientLobby {
                                     guest.ready(built.state.hash());
                                     game = Some((Box::new(built), seat));
                                 }
-                                Err(error) => return failed(format!("Cannot resume: {error}")),
+                                Err(error) => {
+                                    eprintln!("Cannot resume: {error}");
+                                    return failed("Cannot resume this match".to_owned());
+                                }
                             }
                         }
                         // A room during a start means the start is off.
@@ -1895,7 +1900,7 @@ impl ClientLobby {
                                 connection.send(&line);
                             }
                             let Some((built, seat)) = game else {
-                                return failed("The host sent something unexpected".to_owned());
+                                return failed("Connection error".to_owned());
                             };
                             let host = guest.room().and_then(|(seats, _)| {
                                 seats.iter().find_map(|seat| match &seat.holder {
@@ -1941,16 +1946,17 @@ impl ClientLobby {
     fn ended(&self, end: GuestEnd) -> String {
         match end {
             GuestEnd::OtherBuild { commit } => {
-                format!(
+                eprintln!(
                     "The host runs build {commit}; this is build {}",
                     self.commit
-                )
+                );
+                "The host is on a different version".to_owned()
             }
             GuestEnd::Full => "The match is full".to_owned(),
             GuestEnd::Removed => "The host removed you from the lobby".to_owned(),
             GuestEnd::Underway => "That match already started".to_owned(),
-            GuestEnd::Silent => "Lost contact with the host".to_owned(),
-            GuestEnd::Protocol => "The host sent something unexpected".to_owned(),
+            GuestEnd::Silent => "Lost connection to the host".to_owned(),
+            GuestEnd::Protocol => "Connection error".to_owned(),
         }
     }
 }

@@ -56,7 +56,7 @@ Regenerate it with `sh tools/gen_notices.sh` when `Cargo.lock` changes.
 
 Every machine must run a build of the same commit. The host switches match setup
 to LAN, which opens the other seats and shows the address to join. Other players
-pick Join Match, enter a name, and choose the host from the list or type its
+pick Join match, enter a name, and choose the host from the list or type its
 address (the port defaults to 4200). The host can move or remove players and
 starts once every open seat is filled. Tailscale and other routed networks need
 the typed address.

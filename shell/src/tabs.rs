@@ -99,7 +99,8 @@ pub(crate) fn draw(labels: &[&str], active: usize, mouse: Vec2, keys: Option<(&s
             Stroke::Hairline.at(s),
             if current { TEXT_ACCENT } else { BORDER_STRONG },
         );
-        let fitted = crate::typography::fit(label, size, rect.w - 12.0 * s, 1.0);
+        let fitted =
+            crate::typography::fit(label, size, rect.w - 12.0 * s, crate::theme::Type::Caption);
         let width = measure_text(label, None, numeric::font_size(fitted), 1.0).width;
         draw_text(
             label,

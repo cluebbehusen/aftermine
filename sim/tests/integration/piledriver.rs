@@ -182,6 +182,30 @@ fn a_planted_piledriver_swings_its_gun_after_a_target_drifting_inside_its_arc() 
 }
 
 #[test]
+fn a_planted_gun_given_another_order_folds_and_swings_home() {
+    let (mut state, gun, breaker) = planted();
+    let slug = UnitKind::Piledriver.stats().weapons[0].damage;
+    let max = UnitKind::Breaker.stats().max_hp;
+    run_to(&mut state, breaker, 12, 7);
+    run_until(&mut state, 200, |s, _| {
+        s.unit(breaker).unwrap().hp < max - slug
+    });
+    assert_ne!(state.unit(gun).unwrap().gun_traverse(), 0, "staged swung");
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![gun],
+            goal: TilePos::new(2, 5),
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 200, |s, _| s.unit(gun).unwrap().braces() == 0);
+    let unit = state.unit(gun).unwrap();
+    assert_eq!(unit.gun_traverse(), 0);
+    assert_eq!(unit.weapon_heading(), unit.heading);
+}
+
+#[test]
 fn an_aim_beyond_the_arc_folds_the_spades_and_swings_the_gun_home() {
     let (mut state, gun, breaker) = planted();
     let brace = UnitKind::Piledriver.stats().brace.unwrap();

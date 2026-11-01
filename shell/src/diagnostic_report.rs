@@ -44,7 +44,7 @@ impl ReportJob {
             let crash = aftermine_kit::diagnostics::newest_crash_dump(&root);
             ensure!(
                 replay.is_some() || incidents.is_some() || crash.is_some(),
-                "no match or incident is available to export"
+                "Nothing to export yet"
             );
             let reports = root.join("reports");
             std::fs::create_dir_all(&reports)?;
@@ -128,7 +128,7 @@ impl ReportJob {
                 command.arg(root).status()?.success(),
                 "file manager could not open the diagnostics folder"
             );
-            Ok("Diagnostics folder opened.".into())
+            Ok(String::new())
         })
     }
 }

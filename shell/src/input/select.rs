@@ -32,7 +32,9 @@ pub fn idle_harvesters(game: &crate::game::Scene<'_>) -> Vec<UnitId> {
 pub(super) fn cycle_idle_worker(game: &mut Game) {
     let idle = idle_harvesters(&game.view());
     let Some(&first) = idle.first() else {
-        game.presentation.toast("No idle harvesters");
+        game.presentation
+            .sounds_pending
+            .push((crate::game::SoundKind::Denied, None));
         return;
     };
     let next = match game.presentation.selection.units.as_slice() {

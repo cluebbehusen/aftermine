@@ -1872,3 +1872,71 @@ fn retaliation_interrupts_an_attack_on_a_corpse() {
         state.unit(v).unwrap().order
     );
 }
+
+/// A gun firing on the move takes the same victim on a half-turned field
+/// when two stand at exactly its distance, whichever of them has the lower id.
+#[test]
+fn an_advancing_gun_breaks_a_distance_tie_by_bearing_not_id() {
+    const WIDTH: i32 = 28;
+    const HEIGHT: i32 = 18;
+    let turned = |(x, y): (i32, i32)| (WIDTH - 1 - x, HEIGHT - 1 - y);
+    let first_shot = |start: (i32, i32), goal: (i32, i32), victims: [(i32, i32); 2], kind| {
+        let mut units = vec![unit(0, UnitKind::Sentinel, start.0, start.1)];
+        let mut buildings = Vec::new();
+        for (x, y) in victims {
+            match kind {
+                Some(kind) => buildings.push(common::building(1, kind, x, y)),
+                None => units.push(unit(1, UnitKind::Harvester, x, y)),
+            }
+        }
+        let mut scenario = open_arena(WIDTH as usize, HEIGHT as usize, units);
+        scenario.buildings = buildings;
+        let mut state = scenario.build().unwrap();
+        let id = state.units()[0].id;
+        let goal = TilePos::new(goal.0, goal.1);
+        face_toward(&mut state, id, goal.center());
+        let mut commands = vec![cmd(
+            0,
+            Command::Advance {
+                units: vec![id],
+                goal,
+                queue: false,
+            },
+        )];
+        for _ in 0..40 {
+            let report = state.tick(&commands);
+            commands.clear();
+            let aimed = report.events.iter().find_map(|event| match event {
+                Event::AttackHit {
+                    attacker,
+                    target_pos,
+                    ..
+                } if *attacker == id => Some(*target_pos),
+                _ => None,
+            });
+            if let Some(aimed) = aimed {
+                return aimed;
+            }
+        }
+        panic!("the Sentinel never fired on the move");
+    };
+    let (start, goal) = ((8, 8), (14, 8));
+    let (south, north) = ((9, 10), (9, 6));
+    for kind in [None, Some(BuildingKind::Reclaimer)] {
+        let shot = first_shot(start, goal, [south, north], kind);
+        let mirrored = first_shot(
+            turned(start),
+            turned(goal),
+            [turned(north), turned(south)],
+            kind,
+        );
+        assert_eq!(
+            mirrored,
+            chassis::fx::Vec2Fx::new(
+                chassis::fx::Fx::from_num(WIDTH) - shot.x,
+                chassis::fx::Fx::from_num(HEIGHT) - shot.y,
+            ),
+            "{kind:?}"
+        );
+    }
+}

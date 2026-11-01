@@ -107,7 +107,7 @@ impl SelectionInfo {
             Some(StatIcon::Capability(CapabilityIcon::Repair)),
         );
         self.row(
-            "Patients",
+            "Repairs at once",
             aftermine_sim::stats::REPAIR_BAY_PATIENTS.to_string(),
             None,
         );
@@ -152,14 +152,13 @@ impl SelectionInfo {
                 format!("{}/{}", known.loaded, stats.capacity),
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
-            if let Some(target) = known.detail.and_then(|detail| detail.target) {
-                self.status
-                    .push(format!("Turning to strike {}, {}", target.x, target.y));
+            if known.detail.is_some_and(|detail| detail.target.is_some()) {
+                self.status.push("Turning to fire".to_string());
             }
         }
         if let Some(battery) = b.kind.battery() {
             self.row(
-                "Ring",
+                "Intercept reach",
                 format!("{:.0} tiles", battery.ring.to_num::<f32>()),
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
@@ -426,7 +425,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                     CHARGE_ARRAY_DETECT_RADIUS
                 };
                 info.row(
-                    "Mine detection",
+                    "Charge detection",
                     format!("{radius} tiles"),
                     Some(Cap(CapabilityIcon::Radar)),
                 );

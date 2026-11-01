@@ -14,7 +14,7 @@ fn key(key: Key) -> [RawEvent; 2] {
 #[test]
 fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
     let fresh = LessonsScreen::open(&[], false);
-    assert_eq!(fresh.menu.title, "BASIC TRAINING");
+    assert_eq!(fresh.menu.title, "TUTORIAL");
     assert_eq!(
         fresh.menu.view().items,
         [
@@ -22,7 +22,7 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
             "2. Scrap: ",
             "3. Build: ",
             "4. Fight: ",
-            "5. See and sustain: ",
+            "5. Scout and repair: ",
             "6. First match: "
         ]
     );
@@ -37,7 +37,7 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
             "2. Scrap: ",
             "3. Build: ",
             "4. Fight: ",
-            "5. See and sustain: ",
+            "5. Scout and repair: ",
             "6. First match: "
         ]
     );

@@ -300,9 +300,9 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     let size = crate::theme::Type::Label.at(s);
     for (rect, button) in transport_buttons(viewport, s) {
         let label = match button {
-            Transport::Back => "BACK",
-            Transport::PlayPause if pb.clock.paused => "PLAY",
-            Transport::PlayPause => "PAUSE",
+            Transport::Back => "Back",
+            Transport::PlayPause if pb.clock.paused => "Play",
+            Transport::PlayPause => "Pause",
             Transport::Slower => "-",
             Transport::Faster => "+",
         };
@@ -353,16 +353,16 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
         // Mid-seek the transport numbers would show intermediate state;
         // show seek progress instead.
         let line = format!(
-            "SEEKING  {} / {}",
+            "Seeking  {} / {}",
             clock_label::ticks(pb.engine.position()),
             clock_label::ticks(target)
         );
         draw_caption(&line, bar, size, s);
         return;
     }
-    // The readout carries the speed, so no caption repeats it, and the
-    // PLAY label carries the pause, so the narrowest form drops that too.
-    // The caption takes the longest form the timeline seats: a 640px
+    // The readout carries the speed and the Play label carries the pause,
+    // so no caption repeats either. The caption takes the longest form the
+    // timeline seats: a 640px
     // window holds only the bare clock, and a player without a keyboard
     // has no keys to hint at.
     let clock = format!(
@@ -370,12 +370,10 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
         clock_label::ticks(pb.engine.position()),
         clock_label::ticks(pb.engine.total()),
     );
-    let paused = pb.clock.paused;
-    let mut lines = Vec::with_capacity(3);
+    let mut lines = Vec::with_capacity(2);
     if crate::platform::hands().keys && crate::hints::showing() {
         lines.push(format!(
-            "{clock}{} | {} pause | {}/{} seek | {} stats | {} leave",
-            if paused { " | PAUSED" } else { "" },
+            "{clock} | {} pause | {}/{} seek | {} stats | {} leave",
             bindings.label(Action::ReplayPause),
             bindings.label(Action::ReplayBack),
             bindings.label(Action::ReplayForward),
@@ -383,13 +381,7 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
             bindings.label(Action::Back),
         ));
     }
-    lines.push(format!(
-        "PLAYBACK  {clock}{}",
-        if paused { "  |  PAUSED" } else { "" },
-    ));
-    if paused {
-        lines.push(format!("{clock}  PAUSED"));
-    }
+    lines.push(clock.clone());
     let line = lines
         .into_iter()
         .find(|line| caption_fits(line, bar, size, s))

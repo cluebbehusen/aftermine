@@ -129,6 +129,7 @@ impl CodexScreen {
         }
         // The list shifts left to make room for the page beside it.
         let mut menu = Menu::new("ROSTER", lines);
+        menu.heading = crate::menu::Heading::Page { band: 0.0 };
         menu.shift = -0.24;
         Self {
             menu,
@@ -188,7 +189,7 @@ impl CodexScreen {
         // zone and the hint line, and fits its own content.
         let x = view.x * 0.53;
         let w = (view.x * 0.44).min(560.0 * s);
-        let top = (view.y * 0.36).max(view.y * 0.28 + 64.0 * s);
+        let top = crate::menu::page_title_baseline(s) + 64.0 * s;
         let bottom = view.y - 64.0 * s;
         let pad = 14.0 * s;
         let plate = 84.0 * s;
@@ -286,7 +287,7 @@ impl CodexScreen {
             &name,
             text_x,
             plate_y + 30.0 * s,
-            crate::theme::Type::Title.at(s),
+            crate::theme::Type::Row.at(s),
             TEXT_PRIMARY,
         );
         draw_text(

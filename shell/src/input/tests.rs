@@ -1496,7 +1496,10 @@ fn every_targeting_mode_has_persistent_human_copy() {
     assert_eq!(input.armed_mode().unwrap().label(), "Hunt");
     input.disarm_click_verbs();
     input.patrol_route = Some(vec![TilePos::new(1, 1), TilePos::new(2, 2)]);
-    assert_eq!(input.armed_mode().unwrap().label(), "Patrol \u{b7} 2");
+    assert_eq!(
+        input.armed_mode().unwrap().label(),
+        "Patrol \u{b7} 2: press Patrol to start"
+    );
     assert!(input.cancel_armed_mode());
     assert_eq!(input.armed_mode(), None);
 }
@@ -2825,10 +2828,9 @@ fn a_refused_confirm_keeps_the_ghost_and_the_mode() {
     assert_eq!(input.ghost_anchor(), Some(ghost));
     assert!(
         game.presentation
-            .toasts
-            .iter()
-            .any(|t| t.text.starts_with("Can't build there")),
-        "the refusal says why"
+            .sounds_pending
+            .contains(&(crate::game::SoundKind::Denied, None)),
+        "the refusal is heard, and the ribbon says why"
     );
 }
 
@@ -3846,18 +3848,11 @@ fn patrol_is_exclusive_with_the_other_armed_verbs() {
 }
 
 #[test]
-fn patrol_toasts_name_only_what_the_hands_in_use_have() {
+fn the_patrol_full_toast_names_only_what_the_hands_in_use_have() {
     use crate::platform::{ALL_HANDS, assert_copy_fits};
-    assert_eq!(
-        patrol_arm_toast("R", ALL_HANDS[0]),
-        "Patrol: click waypoints, R to start"
-    );
     for hands in ALL_HANDS {
-        let arm = patrol_arm_toast("R", hands);
         let full = patrol_full_toast("R", hands);
-        assert_copy_fits(hands, &arm);
         assert_copy_fits(hands, &full);
-        assert_eq!(arm.contains('R'), hands.keys, "{arm}");
         assert_eq!(full.contains(" R "), hands.keys, "{full}");
     }
 }

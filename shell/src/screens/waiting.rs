@@ -183,12 +183,12 @@ impl WaitingScreen {
                     .max()
                     .unwrap_or_default();
                 format!(
-                    "Waiting for {} · {}",
+                    "{} · {}",
                     crate::netplay::sentence(&names),
                     crate::clock_label::seconds(waited.as_secs())
                 )
             }
-            Face::Confirm(seat) => format!("{}'s seat surrenders", self.name(seat)),
+            Face::Confirm(seat) => format!("{} surrenders", self.name(seat)),
             Face::Difficulty(_) => "Pick the bot's difficulty".to_owned(),
             Face::Stance(..) => "Pick the bot's stance".to_owned(),
         }

@@ -56,7 +56,7 @@ impl Unavailable {
     pub fn reason(self) -> &'static str {
         match self {
             Unavailable::OtherVersion => "made by a different version of Aftermine",
-            Unavailable::Unreadable => "this record is damaged and can't be opened",
+            Unavailable::Unreadable => "This file is damaged",
         }
     }
 }
