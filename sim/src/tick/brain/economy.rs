@@ -1773,12 +1773,7 @@ fn deliver(
         .unloading()
         .map(|release| release.foundry)
         .filter(|foundry| drop_offs.contains(foundry));
-    let at_drop_off = active.or_else(|| {
-        drop_offs
-            .iter()
-            .copied()
-            .find(|foundry_id| state.in_building_work_reach(unit, *foundry_id))
-    });
+    let at_drop_off = active.or_else(|| drop_off_in_reach(state, unit));
     if let Some(foundry) = at_drop_off
         && state.in_building_work_reach(unit, foundry)
     {
@@ -1850,22 +1845,40 @@ fn withdraw(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events:
 /// network by answering [`crate::stats::BuildingKind::is_drop_off`].
 fn drop_offs_by_distance(state: &State, id: UnitId) -> Vec<BuildingId> {
     let unit = state.unit(id).expect("caller checked");
-    let mut drop_offs: Vec<(chassis::fx::Fx, BuildingId)> = state
-        .buildings
-        .iter()
-        .filter(|building| {
-            building.player == unit.player
-                && building.hp > 0
-                && building.built()
-                && building.kind.is_drop_off()
-        })
-        .map(|building| (unit.pos.dist_sq(building.center()), building.id))
+    let mut drop_offs: Vec<_> = own_drop_offs(state, unit)
+        .map(|building| drop_off_rank(unit, building))
         .collect();
     drop_offs.sort_unstable();
     drop_offs
         .into_iter()
         .map(|(_, drop_off_id)| drop_off_id)
         .collect()
+}
+
+/// The nearest completed drop-off this unit can unload at from where it stands.
+pub(super) fn drop_off_in_reach(state: &State, unit: &crate::Unit) -> Option<BuildingId> {
+    own_drop_offs(state, unit)
+        .filter(|building| state.in_building_work_reach(unit, building.id))
+        .map(|building| drop_off_rank(unit, building))
+        .min()
+        .map(|(_, drop_off_id)| drop_off_id)
+}
+
+fn own_drop_offs<'a>(
+    state: &'a State,
+    unit: &crate::Unit,
+) -> impl Iterator<Item = &'a crate::Building> {
+    let player = unit.player;
+    state.buildings.iter().filter(move |building| {
+        building.player == player
+            && building.hp > 0
+            && building.built()
+            && building.kind.is_drop_off()
+    })
+}
+
+fn drop_off_rank(unit: &crate::Unit, building: &crate::Building) -> (chassis::fx::Fx, BuildingId) {
+    (unit.pos.dist_sq(building.center()), building.id)
 }
 
 #[cfg(test)]

@@ -199,6 +199,90 @@ fn unloading_waits_for_physical_reach_on_each_foundry_side() {
     }
 }
 
+/// Runs loaded Harvesters into `foundry` and returns how many deposits they
+/// made, failing if any unload begins with the hull turned away from it.
+fn unloads_facing_the_foundry(state: &mut State, anchor: TilePos, ticks: u64) -> usize {
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == anchor)
+        .unwrap()
+        .id;
+    let workers: Vec<_> = state.units().iter().map(|unit| unit.id).collect();
+    let mut unloading = vec![false; workers.len()];
+    let mut deposits = 0;
+    for _ in 0..ticks {
+        let report = state.tick(&[]);
+        deposits += report
+            .events
+            .iter()
+            .filter(|event| matches!(event, Event::ScrapDeposited { .. }))
+            .count();
+        for (&worker, was_unloading) in workers.iter().zip(&mut unloading) {
+            let unit = state.unit(worker).unwrap();
+            let now = unit.unloading().is_some();
+            if now && !*was_unloading {
+                let surface = state.contact_surface(state.building(foundry).unwrap());
+                let bearing = chassis::compass::heading_of(surface.closest(unit.pos) - unit.pos);
+                let off = bearing
+                    .wrapping_sub(unit.heading)
+                    .cast_signed()
+                    .unsigned_abs();
+                assert!(
+                    off < 64,
+                    "{worker:?} began unloading {off}/256 of a turn off the Foundry at {:?}",
+                    unit.pos
+                );
+            }
+            *was_unloading = now;
+        }
+    }
+    deposits
+}
+
+#[test]
+fn harvesters_arriving_together_unload_facing_the_foundry() {
+    let anchor = TilePos::new(16, 16);
+    let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
+    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        let at = |distance: i32| anchor.offset(dx * distance, dy * distance);
+        let node = at(12);
+        let mut scenario = open_arena_with(
+            36,
+            36,
+            vec![
+                unit(0, UnitKind::Harvester, at(8).x, at(8).y),
+                unit(0, UnitKind::Harvester, at(10).x, at(10).y),
+            ],
+            |rows| rows[as_index(node.y)][as_index(node.x)] = 's',
+        );
+        scenario.buildings = vec![BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Foundry,
+            x: anchor.x,
+            y: anchor.y,
+        }];
+        let mut state = scenario.build().unwrap();
+        let workers: Vec<_> = state.units().iter().map(|unit| unit.id).collect();
+        for &worker in &workers {
+            state = set_cargo(state, worker, capacity);
+        }
+        state.tick(&[cmd(
+            0,
+            Command::Harvest {
+                units: workers,
+                node,
+                queue: false,
+            },
+        )]);
+        assert_eq!(
+            unloads_facing_the_foundry(&mut state, anchor, 160),
+            2,
+            "approaching along ({dx}, {dy})"
+        );
+    }
+}
+
 fn state_with_salvage(
     width: usize,
     sources: &[(TilePos, u32)],
