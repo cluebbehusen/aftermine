@@ -51,13 +51,14 @@ selects actions in precedence order:
 2. the saving target, when it is affordable and can be placed;
 3. free wounded units to a calm Repair Bay with room, and wounded kiln machines
    to safe known wreck, where they sit out missions and welding while they heal;
-4. workers, to keep harvesting saturated: every known node or wreck whose trip
-   repays a Harvester within a stance and greed horizon, filled as stance, greed
-   and difficulty choose, with workers left without a place salvaging other
-   known wreck; until the army reaches the stance minimum, workers that would
-   cost more than the army wait for army production, and a seat that exposed
-   puts up a Turret before any tech; a worker the simulation sent welding on its
-   own stays free for these orders and leaves known fire like an idle one;
+4. workers, to keep harvesting saturated. A known node or wreck is worked when a
+   Harvester's trips there repay it within a horizon set by stance and greed,
+   and stance, greed and difficulty set how fully it is staffed. Workers left
+   without a place salvage other known wreck. Until the army reaches the stance
+   minimum, workers that would cost more than the army wait for army production,
+   and a seat that exposed puts up a Turret before any tech. A worker the
+   simulation sent welding on its own stays free for these orders and leaves
+   known fire like an idle one;
 5. missions, advancing their phases and recruiting as needed;
 6. production toward composition needs, from scrap not protected for saving.
 
@@ -241,17 +242,17 @@ Each behavior is proven by a staged scenario test.
 | Enemy cradle known                                         | Raise the need its machine raises, anti-heavy for a Maw and anti-air for a Roc, before it stands up, and keep it once it stands up out of sight                                                                      |
 | Wounded Maw and safe known wreck                           | Drive it where its hull fits and its kiln reaches the wreck, keep it there out of missions while its kiln feeds, and keep harvesters off that wreck                                                                  |
 
-It also covers scouting, where a point whose scout was lost on the way or found
-no safe view waits to go stale again rather than drawing scouts one after
-another into the same fire, Scuttler raids, harvest-line harassment by air, team
+It also covers scouting, Scuttler raids, harvest-line harassment by air, team
 relief, escorts, repair, harvester evacuation, emergency and voluntary static
 defense sized to hold off the known threat, Extractor restoration, expansion
 timing, tech prerequisites, memory of failed objectives, a response to stalled
-production, focus fire, and pulling wounded units back between fights. It does
-no other per-unit micro, except keeping point defenders over the army they
-travel with and sending a wounded Roc home from a lift's fight. It builds every
-building kind, reaches every upgrade tier, and trains or assembles every unit
-kind.
+production, focus fire, and pulling wounded units back between fights. A
+scouting point whose scout was lost on the way, or found no safe view, waits to
+go stale again rather than drawing scouts into the same fire one after another.
+It does no other per-unit micro, except keeping point defenders over the army
+they travel with and sending a wounded Roc home from a lift's fight. It builds
+every building kind, reaches every upgrade tier, and trains or assembles every
+unit kind.
 
 ## Difficulty, stance and personality
 
