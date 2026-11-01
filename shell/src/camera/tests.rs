@@ -14,6 +14,14 @@ fn screen_world_roundtrip() {
     }
 }
 
+/// How far a zoom may move the anchor, in logical pixels on either axis: the
+/// view eases the world origin onto a whole pixel as it comes to rest.
+const WHOLE_PIXEL_EASE: f32 = 0.501;
+
+fn anchor_drift(cam: &Camera, anchored: Vec2, cursor: Vec2) -> f32 {
+    (cam.to_screen(anchored) - cursor).abs().max_element()
+}
+
 #[test]
 fn zoom_keeps_the_cursor_anchor_fixed() {
     let mut cam = camera();
@@ -21,10 +29,10 @@ fn zoom_keeps_the_cursor_anchor_fixed() {
     let before = cam.to_world(cursor);
     cam.zoom_at(cursor, 2.0);
     cam.update(1.0); // saturated step: glide finishes instantly
-    let after = cam.to_world(cursor);
     assert!(
-        (after - before).length() < 1e-3,
-        "anchor drifted: {before:?} -> {after:?}"
+        anchor_drift(&cam, before, cursor) <= WHOLE_PIXEL_EASE,
+        "anchor drifted to {:?}",
+        cam.to_screen(before)
     );
     assert!(cam.zoom > 32.0);
 }
@@ -100,9 +108,9 @@ fn the_cursor_anchor_holds_through_a_multi_step_zoom_glide() {
     for _ in 0..30 {
         cam.update(1.0 / 60.0); // small dt: the glide is mid-flight here
         assert!(
-            (cam.to_world(cursor) - anchored).length() < 1e-2,
+            anchor_drift(&cam, anchored, cursor) <= WHOLE_PIXEL_EASE,
             "anchor drifted mid-glide to {:?}",
-            cam.to_world(cursor)
+            cam.to_screen(anchored)
         );
     }
     assert!(
@@ -138,4 +146,43 @@ fn panning_past_the_far_corner_stops_within_slack() {
         max.x <= 40.0 + 3.0 && max.y <= 24.0 + 3.0,
         "far edge ran away: {max:?}"
     );
+}
+
+#[test]
+fn a_zoom_glide_comes_to_rest_with_the_world_origin_on_a_whole_pixel() {
+    // A roomy map, then one so small the view stays pinned to its center.
+    for (width, height) in [(128, 112), (24, 20)] {
+        let mut camera = Camera::new(vec2(61.3, 47.9), width, height, vec2(1210.0, 834.0));
+        for (anchor, notches) in [(vec2(400.0, 300.0), 1.0), (vec2(900.0, 120.0), -0.7)] {
+            camera.zoom_at(anchor, notches);
+            while camera.zooming() {
+                camera.update(1.0 / 120.0);
+            }
+            let origin = camera.to_screen(Vec2::ZERO);
+            assert!(
+                (origin - origin.round()).abs().max_element() < 0.001,
+                "{width} by {height}: origin {origin}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_zoom_glide_lands_without_a_visible_last_step() {
+    let viewport = vec2(1210.0, 834.0);
+    for notches in [0.5, 1.0, 3.0, -2.0] {
+        let mut camera = Camera::new(vec2(61.3, 47.9), 128, 112, viewport);
+        let far_corner = camera.to_world(viewport);
+        camera.zoom_at(Vec2::ZERO, notches);
+        let mut last_step = f32::MAX;
+        while camera.zooming() {
+            let before = camera.to_screen(far_corner);
+            camera.update(1.0 / 120.0);
+            last_step = (camera.to_screen(far_corner) - before).length();
+        }
+        assert!(
+            last_step < 0.25,
+            "{notches} notches ended on a {last_step} px step"
+        );
+    }
 }

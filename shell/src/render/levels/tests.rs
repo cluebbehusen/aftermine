@@ -185,3 +185,29 @@ fn bright_levels_wash_their_sprites_and_dark_ones_dim_them() {
         "level 1 under a floor at 3 is dimmed"
     );
 }
+
+#[test]
+fn a_lip_draws_inside_its_cell_on_every_side_at_every_size() {
+    for size in 2..=24 {
+        let size = size as f32;
+        for (start, span) in [(0.0, LIP), (1.0 - LIP, LIP), (0.0, 1.0)] {
+            let (offset, length) = span_in_cell(size, start, span);
+            assert!(length >= 1.0, "size {size}, start {start}");
+            assert!(
+                offset >= 0.0 && offset + length <= size,
+                "size {size}, start {start}: {offset} + {length}"
+            );
+        }
+        // Opposite lips match, so no side of a cliff reads heavier.
+        let near = span_in_cell(size, 0.0, LIP);
+        let far = span_in_cell(size, 1.0 - LIP, LIP);
+        assert_eq!(near.1, far.1, "size {size}");
+        assert_eq!(
+            far.0 + far.1,
+            size,
+            "size {size}: the far lip meets the edge"
+        );
+        // A fill covers its whole cell.
+        assert_eq!(span_in_cell(size, 0.0, 1.0), (0.0, size));
+    }
+}

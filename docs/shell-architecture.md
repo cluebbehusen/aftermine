@@ -355,10 +355,11 @@ which kinds fly, crash, scout or fight, are read from its stats.
 Terrain art derives from map geometry alone. `GroundLayout` is computed on a
 match's first draw and kept, so revealed terrain never changes as fog lifts;
 peaks and pits that mirror each other under the map's half-turn step as mirror
-images. `GroundCache` bakes terrain into textures once the zoom settles, and the
-direct path draws the same pixels. Within a pass, untextured fills never sit
-between atlas sprites, because each macroquad draw call keeps a vertex buffer
-for the life of the app.
+images. `GroundCache` bakes terrain into textures, and the direct path draws the
+same pixels; a zoom never redraws terrain, stretching the textures on hand over
+a low-resolution image of the whole map until fresh ones are ready. Within a
+pass, untextured fills never sit between atlas sprites, because each macroquad
+draw call keeps a vertex buffer for the life of the app.
 
 Map tiles show authoritative simulation fog. The replay viewer is fog-free, and
 so is a seat out of an undecided match once no LAN teammate plays on whom it
