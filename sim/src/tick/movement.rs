@@ -69,8 +69,7 @@ pub(super) fn steer_weapon_heading(unit: &mut crate::state::Unit, direction: Vec
         if let Some(traverse) = brace.traverse {
             let arc = i16::from(traverse.arc);
             let gun = i16::from(unit.gun_traverse());
-            let step = (i16::from(off).clamp(-arc, arc) - gun)
-                .clamp(-i16::from(traverse.rate), i16::from(traverse.rate));
+            let step = traverse_step(gun, i16::from(off).clamp(-arc, arc), traverse.rate);
             unit.set_gun_traverse(i8::try_from(gun + step).expect("the arc fits a bearing"));
         }
         return unit.braces() == brace.deploy_ticks && ground_weapon_aligned(unit, direction);
@@ -91,17 +90,50 @@ pub(in crate::tick) fn steer_bearing(heading: &mut u8, direction: Vec2Fx, rate: 
     if rate == 0 || direction == Vec2Fx::ZERO {
         return true;
     }
-    let desired = chassis::compass::heading_of(direction);
+    turn_bearing(heading, chassis::compass::heading_of(direction), rate)
+}
+
+/// Turns the ground turret of `id` back toward the hull's nose if it had
+/// nothing to aim at while its order ran, starting from the bearing `before`.
+/// There it drops its own bearing and follows the hull.
+///
+/// A turret that aimed either turned or, already bearing, fired or is
+/// reloading, so one that did none of these had nothing to aim at.
+pub(super) fn rest_idle_turret(state: &mut State, id: crate::UnitId, before: Option<u8>) {
+    let Some(unit) = state.unit_mut(id) else {
+        return;
+    };
+    if unit.turret_heading != before || unit.cooldowns.iter().any(|&reload| reload > 0) {
+        return;
+    }
+    let (nose, rate) = (unit.heading, unit.kind.stats().turret_turn_rate);
+    let Some(bearing) = unit.turret_heading.as_mut() else {
+        return;
+    };
+    turn_bearing(bearing, nose, rate);
+    if *bearing == nose {
+        unit.turret_heading = None;
+    }
+}
+
+/// Turns `heading` the short way toward `desired`, at most `rate` compass
+/// steps; returns whether it now bears.
+pub(in crate::tick) fn turn_bearing(heading: &mut u8, desired: u8, rate: u8) -> bool {
     let delta = i16::from(desired.wrapping_sub(*heading).cast_signed());
-    let step = delta.clamp(-i16::from(rate), i16::from(rate));
+    let step = traverse_step(0, delta, rate);
     *heading = heading
         .wrapping_add_signed(i8::try_from(step).expect("clamping an i8 delta keeps it an i8"));
     heading_aligned(*heading, desired)
 }
 
+/// One tick's move of a gun's offset from `current` toward `wanted`.
+pub(in crate::tick) fn traverse_step(current: i16, wanted: i16, rate: u8) -> i16 {
+    (wanted - current).clamp(-i16::from(rate), i16::from(rate))
+}
+
 /// Compass steps a weapon's bearing may stand off its target and still
 /// fire.
-const FIRING_TOLERANCE: u8 = 2;
+pub(in crate::tick) const FIRING_TOLERANCE: u8 = 2;
 
 fn heading_aligned(current: u8, desired: u8) -> bool {
     desired.wrapping_sub(current).cast_signed().unsigned_abs() <= FIRING_TOLERANCE

@@ -238,6 +238,7 @@ pub(super) fn run(
             }
         }
         let reported = events.len();
+        let turret = state.unit(id).expect("just seen").turret_heading;
         // Mounted guns survey once: positions hold still until resolution,
         // so the order and the guns read the same hostiles.
         let sight = mounted.then(|| combat::MountSight::survey(state, index, id));
@@ -363,6 +364,7 @@ pub(super) fn run(
         {
             reach.forget_ground();
         }
+        super::movement::rest_idle_turret(state, id, turret);
         combat::normalize_order(state, id);
         combat::crush(state, index, id, &mut hits, events);
         if let Some(sight) = &sight

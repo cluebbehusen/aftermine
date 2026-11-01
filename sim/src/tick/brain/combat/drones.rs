@@ -193,24 +193,17 @@ fn engage(state: &mut State, id: UnitId, (victim, aim): (UnitId, Vec2Fx), shots:
     if !aligned || unit.cooldowns[0] > 0 {
         return;
     }
-    unit.cooldowns[0] = weapon.cooldown_ticks;
-    buffer_shot(
+    fire_direct(
         state,
-        Target::Unit(id),
-        Target::Unit(victim),
-        pos,
-        aim,
-        weapon,
+        Shot {
+            gunner: Gunner::Unit { id, slot: 0 },
+            from: pos,
+            aim,
+            mark: Mark::Seen(Target::Unit(victim)),
+        },
+        events,
         hits,
     );
-    events.push(Event::AttackHit {
-        attacker: id,
-        attacker_kind: kind,
-        weapon: 0,
-        target: Some(Target::Unit(victim)),
-        attacker_pos: pos,
-        target_pos: aim,
-    });
 }
 
 /// Routes the drone toward `point`, replanning only once its route ends more

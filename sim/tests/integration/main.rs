@@ -37,6 +37,7 @@ mod field_kit;
 mod foundries;
 mod fuzz;
 mod ground_turning;
+mod gun_rest;
 mod harvest_zones;
 mod landing;
 mod levels;
