@@ -28,13 +28,20 @@ pub(crate) const BAND: f32 = 36.0;
 pub(crate) fn rects(count: usize) -> Vec<Rect> {
     let s = crate::render::ui_scale();
     let view = crate::render::viewport();
-    let width = (150.0 * s).min((view.x - 32.0 * s) / count.max(1) as f32);
-    let left = (view.x - width * count as f32) * 0.5;
     let top = crate::menu::page_title_baseline(s) + 20.0 * s;
     // Never shorter than a fingertip, however small the interface scale.
     let height = (MIN_TOUCH_TARGET * s).max(MIN_TOUCH_TARGET);
+    let area = Rect::new(16.0 * s, top, view.x - 32.0 * s, height);
+    rects_in(count, area, 150.0 * s)
+}
+
+/// The segments of a `count`-tab strip centred in `area`, no wider than
+/// `widest` each.
+pub(crate) fn rects_in(count: usize, area: Rect, widest: f32) -> Vec<Rect> {
+    let width = widest.min(area.w / count.max(1) as f32);
+    let left = area.x + (area.w - width * count as f32) * 0.5;
     (0..count)
-        .map(|tab| Rect::new(left + tab as f32 * width, top, width, height))
+        .map(|tab| Rect::new(left + tab as f32 * width, area.y, width, area.h))
         .collect()
 }
 
@@ -58,7 +65,16 @@ impl TabStrip {
         events: &[RawEvent],
         count: usize,
     ) -> (Option<usize>, Vec<RawEvent>) {
-        let rects = rects(count);
+        self.route_in(events, &rects(count))
+    }
+
+    /// The tab this frame clicked or tapped among `rects`, and the events
+    /// left for the screen.
+    pub(crate) fn route_in(
+        &mut self,
+        events: &[RawEvent],
+        rects: &[Rect],
+    ) -> (Option<usize>, Vec<RawEvent>) {
         let mut rest = Vec::with_capacity(events.len());
         for event in events {
             match self
@@ -78,8 +94,18 @@ impl TabStrip {
 /// `mouse` lit. `keys`, when the player has a keyboard, names the keys
 /// that step left and right, drawn beside the strip's ends.
 pub(crate) fn draw(labels: &[&str], active: usize, mouse: Vec2, keys: Option<(&str, &str)>) {
+    draw_in(&rects(labels.len()), labels, active, mouse, keys);
+}
+
+/// Draws a strip at `rects`, as [`draw`] does under a page title.
+pub(crate) fn draw_in(
+    rects: &[Rect],
+    labels: &[&str],
+    active: usize,
+    mouse: Vec2,
+    keys: Option<(&str, &str)>,
+) {
     let s = crate::render::ui_scale();
-    let rects = rects(labels.len());
     let size = Type::Body.at(s);
     for (tab, (rect, label)) in rects.iter().zip(labels).enumerate() {
         let current = tab == active;

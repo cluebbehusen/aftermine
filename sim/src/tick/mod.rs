@@ -357,6 +357,7 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         }
         events.push(Event::BuildingDestroyed {
             building: building.id,
+            kind: building.kind,
             player: building.player,
             tier: building.tier,
             pos: building.center(),

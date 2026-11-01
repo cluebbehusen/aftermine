@@ -8,7 +8,7 @@
 use crate::command::RejectReason;
 use crate::ids::{BuildingId, PlayerId, Target, UnitId, WarheadId};
 use crate::state::GameResult;
-use crate::stats::UnitKind;
+use crate::stats::{BuildingKind, UnitKind};
 use chassis::Tick;
 use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
@@ -101,6 +101,8 @@ pub enum Event {
     BuildingDestroyed {
         /// The casualty.
         building: BuildingId,
+        /// What it was.
+        kind: BuildingKind,
         /// Its owner.
         player: PlayerId,
         /// Its upgrade tier when it fell, including an upgrade bought that
@@ -169,6 +171,14 @@ pub enum Event {
         player: PlayerId,
         /// The damaged entity's position.
         pos: Vec2Fx,
+    },
+    /// A standing Reclaimer, Extractor or Foundry paid into the bank. Refunds
+    /// and recovery grants are not income and raise no such event.
+    ScrapCredited {
+        /// The receiving player.
+        player: PlayerId,
+        /// Scrap added to the bank, before the bank's saturation.
+        amount: u32,
     },
     /// A harvester delivered its load.
     ScrapDeposited {

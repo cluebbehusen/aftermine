@@ -126,6 +126,12 @@ impl PlaybackSession {
         })
     }
 
+    /// Starts the viewer seeking to `tick`, the same way the transport does.
+    pub(crate) fn seek_to(&mut self, tick: u64) {
+        self.seeking = Some(tick.clamp(self.engine.start(), self.engine.total()));
+        self.clock.accum = 0.0;
+    }
+
     /// Toggles the composition overlay, computing the sampled series
     /// from the record on first use. Sampling stride targets ~240
     /// columns so the band chart stays legible at any match length.
@@ -596,8 +602,7 @@ impl PlaybackSession {
         );
         if let Some(target) = seek_to {
             // A fresh transport command replaces any seek in flight.
-            self.seeking = Some(target.clamp(self.engine.start(), self.engine.total()));
-            self.clock.accum = 0.0;
+            self.seek_to(target);
         }
         false
     }

@@ -133,6 +133,15 @@ fn record_activity(ticks: u64) -> GameReplay {
     replay
 }
 
+/// Feeds `events` to `stats` against an untouched match, and returns the
+/// moments they raised.
+fn accumulate(stats: &mut [PlayerStats], events: &[Event]) -> Vec<Moment> {
+    let state = Scenario::skirmish().build().expect("skirmish builds");
+    let mut moments = Vec::new();
+    accumulate_events(&state, stats, &mut moments, events);
+    moments
+}
+
 fn track_replay(replay: &GameReplay) -> MatchStats {
     let total = replay.meta.ticks.expect("recorded duration");
     let mut state = replay.setup.build().expect("scenario builds");
@@ -262,7 +271,13 @@ fn thinned_live_totals_match_recomputed_event_totals() {
         assert_eq!(actual.units_retired, expected.units_retired);
         assert_eq!(actual.scrap.last(), expected.scrap.last());
         assert_eq!(actual.army_value.last(), expected.army_value.last());
+        assert_eq!(actual.wealth.last(), expected.wealth.last());
+        assert_eq!(actual.scrap_earned.last(), expected.scrap_earned.last());
+        assert_eq!(actual.value_lost.last(), expected.value_lost.last());
+        assert_eq!(actual.units_built, expected.units_built);
+        assert_eq!(actual.structures_built, expected.structures_built);
     }
+    assert_eq!(live.moments, recomputed.moments);
     assert!(
         live.players.iter().any(|player| {
             player.scrap_collected > 0 && player.units_trained > 0 && player.buildings_completed > 0
@@ -277,11 +292,12 @@ fn deliberate_salvage_is_not_counted_as_a_building_loss() {
     use chassis::fx::Vec2Fx;
 
     let mut players = blank_players(2);
-    accumulate_events(
+    accumulate(
         &mut players,
         &[
             Event::BuildingDestroyed {
                 building: BuildingId(7),
+                kind: BuildingKind::Fabricator,
                 player: PlayerId(0),
                 tier: 0,
                 pos: Vec2Fx::ZERO,
@@ -307,7 +323,7 @@ fn a_retirement_is_not_counted_as_a_unit_loss() {
     use chassis::fx::Vec2Fx;
 
     let mut players = blank_players(2);
-    accumulate_events(
+    accumulate(
         &mut players,
         &[Event::UnitRetired {
             unit: UnitId(3),
@@ -337,7 +353,7 @@ fn event_counters_saturate_where_a_restored_record_left_them() {
     live.stats.players[0].units_trained = u32::MAX;
     live.stats.players[0].buildings_completed = u32::MAX;
     let player = aftermine_sim::PlayerId(0);
-    accumulate_events(
+    accumulate(
         &mut live.stats.players,
         &[
             Event::UnitTrained {
@@ -361,7 +377,7 @@ fn event_counters_saturate_where_a_restored_record_left_them() {
 fn drones_count_as_their_hosts_equipment_not_units() {
     let mut stats = blank_players(1);
     let player = aftermine_sim::PlayerId(0);
-    accumulate_events(
+    accumulate(
         &mut stats,
         &[
             aftermine_sim::Event::DroneAssembled {
@@ -386,4 +402,290 @@ fn drones_count_as_their_hosts_equipment_not_units() {
         ],
     );
     assert_eq!((stats[0].units_trained, stats[0].units_lost), (0, 1));
+}
+
+fn died(player: PlayerId, kind: UnitKind) -> Event {
+    Event::UnitDied {
+        unit: aftermine_sim::UnitId(1),
+        kind,
+        player,
+        pos: chassis::grid::TilePos::new(3, 3).center(),
+        grounded: false,
+    }
+}
+
+fn destroyed(player: PlayerId, kind: BuildingKind, tier: u8) -> Event {
+    Event::BuildingDestroyed {
+        building: aftermine_sim::BuildingId(7),
+        kind,
+        player,
+        tier,
+        pos: chassis::grid::TilePos::new(3, 3).center(),
+    }
+}
+
+fn completed(player: PlayerId, kind: BuildingKind) -> Event {
+    Event::BuildingCompleted {
+        building: aftermine_sim::BuildingId(9_999),
+        player,
+        kind,
+    }
+}
+
+fn trained(player: PlayerId, kind: UnitKind) -> Event {
+    Event::UnitTrained {
+        building: aftermine_sim::BuildingId(0),
+        unit: aftermine_sim::UnitId(0),
+        kind,
+        player,
+    }
+}
+
+#[test]
+fn an_army_is_what_fights_and_wealth_is_everything_owned() {
+    let state = Scenario::skirmish().build().expect("skirmish builds");
+    let mut stats = blank_players(state.players().len());
+    let mut ticks = Vec::new();
+    sample(&state, &mut stats, &mut ticks);
+    let own = |player: PlayerId| -> u32 {
+        let units: u32 = state
+            .units()
+            .iter()
+            .filter(|unit| unit.player == player)
+            .map(|unit| unit.kind.stats().cost)
+            .sum();
+        let structures: u32 = state
+            .buildings()
+            .iter()
+            .filter(|building| building.player == player)
+            .map(|building| building.kind.invested_cost(building.tier))
+            .sum();
+        state.player(player).scrap + units + structures
+    };
+    for (seat, entry) in stats.iter().enumerate() {
+        assert_eq!(entry.wealth[0], own(PlayerId::from_index(seat)));
+    }
+
+    let army: u32 = state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == PlayerId(0))
+        .filter(|unit| unit.kind.stats().can_fight() || unit.kind.stats().point_defense.is_some())
+        .map(|unit| unit.kind.stats().cost)
+        .sum();
+    assert_eq!(stats[0].army_value[0], army);
+    assert!(
+        state
+            .units()
+            .iter()
+            .any(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Harvester),
+        "the opening has a worker to leave out"
+    );
+    assert!(
+        stats[0].army_value[0] < stats[0].wealth[0],
+        "workers and structures are wealth, not army"
+    );
+}
+
+#[test]
+fn scrap_earned_counts_every_income_and_no_refund() {
+    let player = PlayerId(0);
+    let mut stats = blank_players(2);
+    accumulate(
+        &mut stats,
+        &[
+            Event::ScrapDeposited {
+                unit: aftermine_sim::UnitId(1),
+                foundry: aftermine_sim::BuildingId(0),
+                player,
+                amount: 10,
+            },
+            Event::ScrapCredited { player, amount: 3 },
+            Event::UnitRetired {
+                unit: aftermine_sim::UnitId(2),
+                kind: UnitKind::Harvester,
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                crucible: aftermine_sim::BuildingId(2),
+                hp: 30,
+                refund: 25,
+                cargo: 5,
+            },
+            Event::BuildingSalvaged {
+                building: aftermine_sim::BuildingId(8),
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                refund: 400,
+            },
+        ],
+    );
+    assert_eq!(stats[0].scrap_earned_total, 18);
+    assert_eq!(stats[0].scrap_collected, 15, "deliveries alone stay apart");
+    assert_eq!(stats[1].scrap_earned_total, 0);
+}
+
+#[test]
+fn a_bank_with_no_spending_equals_what_it_earned() {
+    // The idle Harvester keeps the seat off the recovery grant, which is not
+    // income.
+    let scenario: Scenario = serde_json::from_str(
+        r#"{
+            "name": "Income",
+            "mode": "sandbox",
+            "map": [
+                "........................",
+                "........................",
+                "........................",
+                "........................",
+                "........................",
+                "........................",
+                "........................",
+                "........................"
+            ],
+            "players": [{ "name": "Local", "scrap": 0, "bot": false }],
+            "units": [{ "player": 0, "kind": "harvester", "x": 14, "y": 4 }],
+            "buildings": [
+                { "player": 0, "kind": "foundry", "x": 2, "y": 2 },
+                { "player": 0, "kind": "reclaimer", "x": 8, "y": 2 }
+            ]
+        }"#,
+    )
+    .expect("the scene parses");
+    let mut state = scenario.build().expect("the scene builds");
+    let mut live = LiveMatchStats::new(&state);
+    for _ in 0..u64::from(aftermine_sim::TICKS_PER_SECOND) * 120 {
+        let report = state.tick(&[]);
+        live.observe(&state, &report.events);
+    }
+    let earned = live.snapshot(&state).players[0].scrap_earned_total;
+    assert!(earned > 0, "a Reclaimer and a Foundry pay in");
+    assert_eq!(earned, state.player(PlayerId(0)).scrap);
+}
+
+#[test]
+fn value_lost_prices_tiers_and_skips_deliberate_removals() {
+    let player = PlayerId(0);
+    let mut stats = blank_players(2);
+    accumulate(
+        &mut stats,
+        &[
+            died(player, UnitKind::Talon),
+            died(player, UnitKind::Drone),
+            destroyed(player, BuildingKind::Turret, 1),
+            Event::UnitRetired {
+                unit: aftermine_sim::UnitId(2),
+                kind: UnitKind::Harvester,
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                crucible: aftermine_sim::BuildingId(2),
+                hp: 30,
+                refund: 25,
+                cargo: 0,
+            },
+            Event::BuildingSalvaged {
+                building: aftermine_sim::BuildingId(8),
+                player,
+                pos: chassis::grid::TilePos::new(3, 3).center(),
+                refund: 40,
+            },
+        ],
+    );
+    assert_eq!(
+        stats[0].value_lost_total,
+        UnitKind::Talon.stats().cost + BuildingKind::Turret.invested_cost(1)
+    );
+}
+
+#[test]
+fn turning_points_mark_what_changed_the_match() {
+    let west = PlayerId(0);
+    let east = PlayerId(1);
+    let mut stats = blank_players(2);
+    let moments = accumulate(
+        &mut stats,
+        &[
+            died(east, UnitKind::Harvester),
+            died(west, UnitKind::Harvester),
+            completed(west, BuildingKind::Foundry),
+            completed(west, BuildingKind::Airworks),
+            completed(west, BuildingKind::Airworks),
+            completed(west, BuildingKind::Turret),
+            trained(east, UnitKind::Skyhook),
+            trained(east, UnitKind::Skyhook),
+            trained(east, UnitKind::Sentinel),
+            destroyed(east, BuildingKind::Foundry, 0),
+        ],
+    );
+    let kinds: Vec<(u8, MomentKind)> = moments.iter().map(|m| (m.seat, m.kind)).collect();
+    assert_eq!(
+        kinds,
+        [
+            (1, MomentKind::FirstLoss),
+            (0, MomentKind::Expansion),
+            (0, MomentKind::TechStructure(BuildingKind::Airworks)),
+            (1, MomentKind::TechUnit(UnitKind::Skyhook)),
+            (1, MomentKind::FoundryLost),
+        ]
+    );
+    assert_eq!(stats[0].structures_built[&BuildingKind::Airworks], 2);
+    assert_eq!(stats[1].units_built[&UnitKind::Skyhook], 2);
+}
+
+#[test]
+fn turning_points_stop_at_the_cap() {
+    let player = PlayerId(0);
+    let mut stats = blank_players(2);
+    let events = vec![completed(player, BuildingKind::Foundry); MAX_MOMENTS + 10];
+    assert_eq!(accumulate(&mut stats, &events).len(), MAX_MOMENTS);
+    assert_eq!(
+        stats[0].structures_built[&BuildingKind::Foundry],
+        u32::try_from(MAX_MOMENTS + 10).unwrap(),
+        "the totals keep counting"
+    );
+}
+
+/// Corrupts a report for a validation test.
+type Break = fn(&mut MatchStats, Moment);
+
+#[test]
+fn checkpoints_refuse_malformed_series_and_moments() {
+    let state = Scenario::skirmish().build().expect("skirmish builds");
+    let good = LiveMatchStats::new(&state).snapshot(&state);
+    good.validate_checkpoint(&state)
+        .expect("a fresh report is valid");
+    let moment = Moment {
+        tick: 0,
+        seat: 0,
+        kind: MomentKind::FirstLoss,
+    };
+    let broken: [(&str, Break); 6] = [
+        ("wealth", |stats, _| stats.players[0].wealth.clear()),
+        ("earned", |stats, _| stats.players[0].scrap_earned.clear()),
+        ("lost", |stats, _| stats.players[0].value_lost.clear()),
+        ("seat", |stats, moment| {
+            stats.moments.push(Moment {
+                seat: 200,
+                ..moment
+            });
+        }),
+        ("future", |stats, moment| {
+            stats.moments.push(Moment {
+                tick: stats.final_tick + 1,
+                ..moment
+            });
+        }),
+        ("cap", |stats, moment| {
+            stats.moments = vec![moment; MAX_MOMENTS + 1];
+        }),
+    ];
+    for (name, breaks) in broken {
+        let mut stats = good.clone();
+        breaks(&mut stats, moment);
+        assert!(stats.validate_checkpoint(&state).is_err(), "{name}");
+    }
+    let mut unordered = good.clone();
+    unordered.final_tick = 10;
+    unordered.moments = vec![Moment { tick: 5, ..moment }, Moment { tick: 2, ..moment }];
+    assert!(state.current_tick() < unordered.final_tick);
+    assert!(unordered.validate_checkpoint(&state).is_err());
 }

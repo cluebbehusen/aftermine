@@ -1185,7 +1185,7 @@ fn portrait_shade(owner: Color, tint: Color) -> Color {
 /// A building's card art. Defense art is authored as a base plus a
 /// north-facing live mount; with `mount`, static cards compose the same
 /// silhouette without inventing aim.
-pub(super) fn building_portrait(
+pub(crate) fn building_portrait(
     sprites: &Sprites,
     kind: aftermine_sim::BuildingKind,
     tier: u8,
@@ -1210,7 +1210,7 @@ pub(super) fn building_portrait(
 }
 
 /// A unit's card art.
-pub(super) fn unit_portrait(
+pub(crate) fn unit_portrait(
     sprites: &Sprites,
     kind: aftermine_sim::UnitKind,
     tint: Color,

@@ -8,6 +8,19 @@
 use chassis::grid::TilePos;
 use macroquad::math::Vec2;
 
+/// `value` with its thousands marked, as "39,545".
+pub(crate) fn with_commas(value: u32) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 /// A font size in whole pixels, as macroquad's text API takes it.
 #[expect(
     clippy::cast_possible_truncation,

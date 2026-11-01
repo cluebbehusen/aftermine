@@ -1,12 +1,58 @@
-//! Match statistics: sampled series (scrap, army value, unit counts) plus
-//! totals, computed by re-executing a replay (`compute`) or incrementally
-//! during a live match (`LiveMatchStats`).
+//! Match statistics: sampled series (scrap, wealth, army value, unit counts),
+//! totals and the match's turning points, computed by re-executing a replay
+//! (`compute`) or incrementally during a live match (`LiveMatchStats`).
 
 use crate::GameReplay;
-use aftermine_sim::{Event, PlayerId, State};
+use aftermine_sim::{BuildingKind, Event, PlayerId, State, UnitKind};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// Structures whose first completion marks a seat's tech turning point.
+pub const LOUD_BUILDINGS: &[BuildingKind] = &[BuildingKind::Airworks, BuildingKind::Crucible];
+
+/// Units whose first completion marks a seat's tech turning point: tier-3
+/// breakthroughs and the transport. See [`LOUD_BUILDINGS`].
+pub const LOUD_UNITS: &[UnitKind] = &[
+    UnitKind::Breaker,
+    UnitKind::Piledriver,
+    UnitKind::Avalanche,
+    UnitKind::Condor,
+    UnitKind::Skyhook,
+    UnitKind::Maw,
+    UnitKind::Roc,
+];
+
+/// The most turning points a match keeps, however long it runs.
+pub const MAX_MOMENTS: usize = 64;
+
+/// What a turning point on the match's timeline marks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MomentKind {
+    /// The first unit or structure anyone lost in the match.
+    FirstLoss,
+    /// A seat finished a new Foundry.
+    Expansion,
+    /// A seat's first of a [`LOUD_BUILDINGS`] structure.
+    TechStructure(BuildingKind),
+    /// A seat's first of a [`LOUD_UNITS`] unit.
+    TechUnit(UnitKind),
+    /// A seat's Foundry was destroyed.
+    FoundryLost,
+}
+
+/// A turning point on the match's timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Moment {
+    /// The completed tick it happened on.
+    pub tick: u64,
+    /// The seat it happened to.
+    pub seat: u8,
+    /// What happened.
+    pub kind: MomentKind,
+}
 
 /// One player's sampled series and totals.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,18 +62,37 @@ pub struct PlayerStats {
     pub seat: u8,
     /// Banked scrap at each sample point.
     pub scrap: Vec<u32>,
-    /// Standing army value (sum of living units' costs) per sample.
+    /// Standing army value per sample: the costs of living units that fight.
+    /// Workers, unarmed scouts and transports are not an army.
     pub army_value: Vec<u32>,
+    /// Everything the seat owned at each sample: the bank, living units,
+    /// structures and prepaid training queues, all at cost.
+    pub wealth: Vec<u32>,
+    /// Total scrap earned by each sample point.
+    pub scrap_earned: Vec<u32>,
+    /// Total value lost by each sample point.
+    pub value_lost: Vec<u32>,
     /// Living units by kind name at each sample point. `BTreeMap` keys keep
     /// the serialization deterministic.
     #[serde(deserialize_with = "deserialize_kinds")]
     pub kinds: Vec<BTreeMap<&'static str, u16>>,
     /// Scrap brought home by Harvesters across the whole match.
     pub scrap_collected: u32,
+    /// Scrap earned across the whole match: deliveries plus what standing
+    /// structures paid in. Refunds and recovery grants are not income.
+    pub scrap_earned_total: u32,
+    /// Cost of everything destroyed across the whole match. Salvage and
+    /// retirement are deliberate, and are not losses.
+    pub value_lost_total: u32,
     /// Units completed across the whole match, trained or assembled.
     pub units_trained: u32,
-    /// Buildings completed across the whole match.
+    /// Units completed across the whole match, by kind.
+    pub units_built: BTreeMap<UnitKind, u32>,
+    /// Buildings completed across the whole match, upgrades included.
     pub buildings_completed: u32,
+    /// New structures completed across the whole match, by kind. Upgrades
+    /// are not new structures.
+    pub structures_built: BTreeMap<BuildingKind, u32>,
     /// Units lost across the whole match.
     pub units_lost: u32,
     /// Buildings lost across the whole match.
@@ -50,6 +115,8 @@ pub struct MatchStats {
     pub players: Vec<PlayerStats>,
     /// Final tick executed.
     pub final_tick: u64,
+    /// The match's turning points, oldest first, up to [`MAX_MOMENTS`].
+    pub moments: Vec<Moment>,
 }
 
 /// Maximum retained graph columns while a live match runs. The closing
@@ -96,6 +163,7 @@ impl LiveMatchStats {
             sample_ticks: Vec::new(),
             players: blank_players(state.players().len()),
             final_tick: state.current_tick(),
+            moments: Vec::new(),
         };
         sample(state, &mut stats.players, &mut stats.sample_ticks);
         Self { stats, every: 1 }
@@ -103,7 +171,12 @@ impl LiveMatchStats {
 
     /// Consumes one completed tick's state and events.
     pub fn observe(&mut self, state: &State, events: &[Event]) {
-        accumulate_events(&mut self.stats.players, events);
+        accumulate_events(
+            state,
+            &mut self.stats.players,
+            &mut self.stats.moments,
+            events,
+        );
         self.stats.final_tick = state.current_tick();
         if state.current_tick().is_multiple_of(self.every) {
             sample(state, &mut self.stats.players, &mut self.stats.sample_ticks);
@@ -159,10 +232,26 @@ impl MatchStats {
                 usize::from(player.seat) == seat
                     && player.scrap.len() == samples
                     && player.army_value.len() == samples
+                    && player.wealth.len() == samples
+                    && player.scrap_earned.len() == samples
+                    && player.value_lost.len() == samples
                     && player.kinds.len() == samples,
                 "statistics columns or seat mismatch"
             );
         }
+        anyhow::ensure!(
+            self.moments.len() <= MAX_MOMENTS,
+            "too many statistics moments"
+        );
+        anyhow::ensure!(
+            self.moments
+                .windows(2)
+                .all(|pair| pair[0].tick <= pair[1].tick)
+                && self.moments.iter().all(|moment| {
+                    moment.tick <= self.final_tick && usize::from(moment.seat) < self.players.len()
+                }),
+            "invalid statistics moments"
+        );
         Ok(())
     }
 }
@@ -195,10 +284,17 @@ fn blank_players(seats: usize) -> Vec<PlayerStats> {
             seat: u8::try_from(seat).expect("seat indices fit in u8"),
             scrap: Vec::new(),
             army_value: Vec::new(),
+            wealth: Vec::new(),
+            scrap_earned: Vec::new(),
+            value_lost: Vec::new(),
             kinds: Vec::new(),
             scrap_collected: 0,
+            scrap_earned_total: 0,
+            value_lost_total: 0,
             units_trained: 0,
+            units_built: BTreeMap::new(),
             buildings_completed: 0,
+            structures_built: BTreeMap::new(),
             units_lost: 0,
             buildings_lost: 0,
             buildings_salvaged: 0,
@@ -209,50 +305,139 @@ fn blank_players(seats: usize) -> Vec<PlayerStats> {
 
 fn sample(state: &State, stats: &mut [PlayerStats], ticks: &mut Vec<u64>) {
     ticks.push(state.current_tick());
-    for (seat, entry) in stats.iter_mut().enumerate() {
-        entry.scrap.push(state.players()[seat].scrap);
-        let mut value = 0u32;
-        let mut counts: BTreeMap<&'static str, u16> = BTreeMap::new();
+    let mut army = vec![0u32; stats.len()];
+    let mut wealth: Vec<u32> = state.players().iter().map(|player| player.scrap).collect();
+    let mut counts: Vec<BTreeMap<&'static str, u16>> = vec![BTreeMap::new(); stats.len()];
+    for unit in state.units() {
+        let kind = unit.kind.stats();
         // A drone is its host's equipment, counted neither in an army nor
         // among its losses, launched or docked.
-        for unit in state
-            .units()
-            .iter()
-            .filter(|unit| unit.player == PlayerId::from_index(seat) && !unit.kind.stats().docks())
-        {
-            value = value.saturating_add(unit.kind.stats().cost);
-            *counts.entry(unit.kind.name()).or_default() += 1;
+        if kind.docks() {
+            continue;
         }
-        entry.army_value.push(value);
-        entry.kinds.push(counts);
+        let seat = usize::from(unit.player.0);
+        wealth[seat] = wealth[seat].saturating_add(kind.cost);
+        if kind.can_fight() || kind.point_defense.is_some() {
+            army[seat] = army[seat].saturating_add(kind.cost);
+        }
+        *counts[seat].entry(unit.kind.name()).or_default() += 1;
+    }
+    for building in state.buildings() {
+        let seat = usize::from(building.player.0);
+        let prepaid = building
+            .queue
+            .iter()
+            .map(|kind| kind.stats().cost)
+            .fold(0, u32::saturating_add);
+        wealth[seat] = wealth[seat]
+            .saturating_add(building.kind.invested_cost(building.tier))
+            .saturating_add(prepaid);
+    }
+    for (seat, entry) in stats.iter_mut().enumerate() {
+        entry.scrap.push(state.players()[seat].scrap);
+        entry.army_value.push(army[seat]);
+        entry.wealth.push(wealth[seat]);
+        entry.scrap_earned.push(entry.scrap_earned_total);
+        entry.value_lost.push(entry.value_lost_total);
+        entry.kinds.push(std::mem::take(&mut counts[seat]));
     }
 }
 
-fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
+fn note_moment(moments: &mut Vec<Moment>, tick: u64, player: PlayerId, kind: MomentKind) {
+    if moments.len() < MAX_MOMENTS {
+        moments.push(Moment {
+            tick,
+            seat: player.0,
+            kind,
+        });
+    }
+}
+
+fn note_first_loss(moments: &mut Vec<Moment>, tick: u64, player: PlayerId) {
+    if !moments
+        .iter()
+        .any(|moment| moment.kind == MomentKind::FirstLoss)
+    {
+        note_moment(moments, tick, player, MomentKind::FirstLoss);
+    }
+}
+
+fn note_unit_built(
+    seat: &mut PlayerStats,
+    moments: &mut Vec<Moment>,
+    tick: u64,
+    player: PlayerId,
+    kind: UnitKind,
+) {
+    seat.units_trained = seat.units_trained.saturating_add(1);
+    let built = seat.units_built.entry(kind).or_default();
+    if *built == 0 && LOUD_UNITS.contains(&kind) {
+        note_moment(moments, tick, player, MomentKind::TechUnit(kind));
+    }
+    *built = built.saturating_add(1);
+}
+
+fn accumulate_events(
+    state: &State,
+    stats: &mut [PlayerStats],
+    moments: &mut Vec<Moment>,
+    events: &[Event],
+) {
+    let tick = state.current_tick();
     for event in events {
         match event {
             Event::ScrapDeposited { player, amount, .. } => {
-                stats[player.0 as usize].scrap_collected = stats[player.0 as usize]
-                    .scrap_collected
-                    .saturating_add(*amount);
+                let seat = &mut stats[player.0 as usize];
+                seat.scrap_collected = seat.scrap_collected.saturating_add(*amount);
+                seat.scrap_earned_total = seat.scrap_earned_total.saturating_add(*amount);
+            }
+            Event::ScrapCredited { player, amount } => {
+                let seat = &mut stats[player.0 as usize];
+                seat.scrap_earned_total = seat.scrap_earned_total.saturating_add(*amount);
             }
             // Counters saturate: a checkpoint or snapshot from elsewhere may
             // start them anywhere.
-            Event::UnitTrained { player, .. } | Event::UnitAssembled { player, .. } => {
-                let counter = &mut stats[player.0 as usize].units_trained;
-                *counter = counter.saturating_add(1);
+            Event::UnitTrained { player, kind, .. } | Event::UnitAssembled { player, kind, .. } => {
+                note_unit_built(&mut stats[player.0 as usize], moments, tick, *player, *kind);
             }
-            Event::BuildingCompleted { player, .. } => {
-                let counter = &mut stats[player.0 as usize].buildings_completed;
-                *counter = counter.saturating_add(1);
+            Event::BuildingCompleted {
+                building,
+                player,
+                kind,
+            } => {
+                let seat = &mut stats[player.0 as usize];
+                seat.buildings_completed = seat.buildings_completed.saturating_add(1);
+                // A completion at a nonzero tier is an upgrade finishing.
+                if state.building(*building).is_some_and(|b| b.tier > 0) {
+                    continue;
+                }
+                let built = seat.structures_built.entry(*kind).or_default();
+                let first = *built == 0;
+                *built = built.saturating_add(1);
+                if *kind == BuildingKind::Foundry {
+                    note_moment(moments, tick, *player, MomentKind::Expansion);
+                } else if first && LOUD_BUILDINGS.contains(kind) {
+                    note_moment(moments, tick, *player, MomentKind::TechStructure(*kind));
+                }
             }
             Event::UnitDied { player, kind, .. } if !kind.stats().docks() => {
-                let counter = &mut stats[player.0 as usize].units_lost;
-                *counter = counter.saturating_add(1);
+                let seat = &mut stats[player.0 as usize];
+                seat.units_lost = seat.units_lost.saturating_add(1);
+                seat.value_lost_total = seat.value_lost_total.saturating_add(kind.stats().cost);
+                note_first_loss(moments, tick, *player);
             }
-            Event::BuildingDestroyed { player, .. } => {
-                let counter = &mut stats[player.0 as usize].buildings_lost;
-                *counter = counter.saturating_add(1);
+            Event::BuildingDestroyed {
+                player, kind, tier, ..
+            } => {
+                let seat = &mut stats[player.0 as usize];
+                seat.buildings_lost = seat.buildings_lost.saturating_add(1);
+                seat.value_lost_total = seat
+                    .value_lost_total
+                    .saturating_add(kind.invested_cost(*tier));
+                note_first_loss(moments, tick, *player);
+                if *kind == BuildingKind::Foundry {
+                    note_moment(moments, tick, *player, MomentKind::FoundryLost);
+                }
             }
             Event::BuildingSalvaged { player, .. } => {
                 let counter = &mut stats[player.0 as usize].buildings_salvaged;
@@ -263,6 +448,7 @@ fn accumulate_events(stats: &mut [PlayerStats], events: &[Event]) {
                 let seat = &mut stats[player.0 as usize];
                 seat.units_retired = seat.units_retired.saturating_add(1);
                 seat.scrap_collected = seat.scrap_collected.saturating_add(*cargo);
+                seat.scrap_earned_total = seat.scrap_earned_total.saturating_add(*cargo);
             }
             _ => {}
         }
@@ -283,6 +469,12 @@ fn thin_samples(stats: &mut MatchStats, every: u64) {
     for player in &mut stats.players {
         player.scrap = keep.iter().map(|index| player.scrap[*index]).collect();
         player.army_value = keep.iter().map(|index| player.army_value[*index]).collect();
+        player.wealth = keep.iter().map(|index| player.wealth[*index]).collect();
+        player.scrap_earned = keep
+            .iter()
+            .map(|index| player.scrap_earned[*index])
+            .collect();
+        player.value_lost = keep.iter().map(|index| player.value_lost[*index]).collect();
         player.kinds = keep
             .iter()
             .map(|index| player.kinds[*index].clone())
@@ -305,12 +497,13 @@ pub fn compute(replay: &GameReplay, every: u64) -> Result<MatchStats> {
 
     let mut stats = blank_players(state.players().len());
     let mut sample_ticks = Vec::new();
+    let mut moments = Vec::new();
 
     let start = state.current_tick();
     sample(&state, &mut stats, &mut sample_ticks);
     for _ in start..total {
         let report = playback.step(&mut state);
-        accumulate_events(&mut stats, &report.events);
+        accumulate_events(&state, &mut stats, &mut moments, &report.events);
         if (state.current_tick() - start).is_multiple_of(every) {
             sample(&state, &mut stats, &mut sample_ticks);
         }
@@ -324,6 +517,7 @@ pub fn compute(replay: &GameReplay, every: u64) -> Result<MatchStats> {
         sample_ticks,
         players: stats,
         final_tick: state.current_tick(),
+        moments,
     })
 }
 
