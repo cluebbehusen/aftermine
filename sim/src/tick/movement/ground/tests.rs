@@ -242,6 +242,7 @@ fn no_hull_started_around_a_corner_freezes_on_its_route() {
         UnitKind::Warden,
         UnitKind::Avalanche,
         UnitKind::Breaker,
+        UnitKind::Maw,
     ];
     for kind in kinds {
         let state = scene_with(kind, &block);
@@ -290,6 +291,49 @@ fn no_hull_started_around_a_corner_freezes_on_its_route() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn an_off_center_hull_slides_past_a_corner_its_straight_line_would_clip() {
+    let run = |rock: (usize, usize), pos: Vec2Fx, waypoint: TilePos| {
+        let state = scene_with(UnitKind::Maw, &[rock]);
+        let terrain = state.ground_terrain();
+        let radius = UnitKind::Maw.stats().radius;
+        let mut unit = state.units()[0].clone();
+        unit.pos = pos;
+        unit.heading = heading_of(waypoint.center() - pos);
+        target(&mut unit, waypoint);
+        let toward = (waypoint.center() - pos) / (waypoint.center() - pos).length();
+        assert!(
+            !crate::geometry::hull_step_open(pos, pos + toward * Fx::lit("0.045"), radius, |t| {
+                terrain.open(t)
+            }),
+            "premise: the straight line swings the hull onto the rock"
+        );
+        let mut trail = vec![unit.pos];
+        for _ in 0..100 {
+            assert!(
+                !advance(&mut unit, &terrain, &ParkedBodies::default()),
+                "the motor refused the hull at {:?}",
+                unit.pos
+            );
+            trail.push(unit.pos);
+            if unit.path.is_none() {
+                break;
+            }
+        }
+        assert_eq!(unit.pos, waypoint.center(), "the hull reached its waypoint");
+        trail
+    };
+    let pos = Vec2Fx::new(Fx::lit("9.268"), Fx::lit("8.853"));
+    let trail = run((10, 7), pos, TilePos::new(8, 8));
+    // Half a turn around the 24 by 16 arena's center.
+    let center_twice = Vec2Fx::new(Fx::from_num(24), Fx::from_num(16));
+    let mirrored = run((13, 8), center_twice - pos, TilePos::new(15, 7));
+    assert_eq!(trail.len(), mirrored.len());
+    for (left, right) in trail.iter().zip(&mirrored) {
+        assert_eq!(*right, center_twice - *left);
     }
 }
 

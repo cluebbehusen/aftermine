@@ -178,6 +178,36 @@ fn route_target(
     }
 }
 
+/// Whether a hull wider than a tile may step from `from` to `to`.
+fn hull_step_allowed(from: Vec2Fx, to: Vec2Fx, radius: Fx, terrain: &GroundTerrain) -> bool {
+    let (here, there) = (TilePos::containing(from), TilePos::containing(to));
+    crate::geometry::hull_step_open(from, to, radius, |t| terrain.open(t))
+        && (there == here || super::early_advance_safe(here, there, terrain))
+}
+
+/// Where a hull wider than a tile steps on its way to `proposed`. Routes are
+/// planned between tile centers, so an off-center hull's straight line can
+/// swing a corner onto closed ground, and a route planned again from there
+/// holds the same line. It slides along whichever axis stays open until the
+/// line clears, the longer axis first.
+fn hull_step(from: Vec2Fx, proposed: Vec2Fx, radius: Fx, terrain: &GroundTerrain) -> Vec2Fx {
+    if hull_step_allowed(from, proposed, radius, terrain) {
+        return proposed;
+    }
+    let travel = proposed - from;
+    let along_x = Vec2Fx::new(proposed.x, from.y);
+    let along_y = Vec2Fx::new(from.x, proposed.y);
+    let slides = if travel.x.abs() >= travel.y.abs() {
+        [along_x, along_y]
+    } else {
+        [along_y, along_x]
+    };
+    slides
+        .into_iter()
+        .find(|&slide| slide != from && hull_step_allowed(from, slide, radius, terrain))
+        .unwrap_or(proposed)
+}
+
 /// One tick of the ground motor: steer, throttle, roll, and land. Returns
 /// whether the step its route asked for was refused.
 ///
@@ -258,20 +288,24 @@ pub(super) fn advance(unit: &mut Unit, terrain: &GroundTerrain, parked: &ParkedB
     } else {
         dir(unit.heading) * unit.drive_speed()
     };
-    let proposed = unit.pos + travel;
-    let here = TilePos::containing(unit.pos);
-    let there = TilePos::containing(proposed);
+    let mut proposed = unit.pos + travel;
     // A step along an admitted leg passes this rule: any diagonal hop past
     // a blocked flank runs within a hull radius of it, which the swept leg
     // test already refuses. Only an off-bearing arc step, or ground that
     // closed this tick, stops the motor here.
     let contact_radius = crate::tick::brain::contact::collision_radius(unit);
     let radius = unit.kind.stats().radius;
-    let allowed = if terrain.at_contact(unit.pos, contact_radius) {
+    let at_contact = terrain.at_contact(unit.pos, contact_radius);
+    let wide = crate::stats::hull_excess(radius) > Fx::ZERO;
+    if wide && !at_contact {
+        proposed = hull_step(unit.pos, proposed, radius, terrain);
+    }
+    let here = TilePos::containing(unit.pos);
+    let there = TilePos::containing(proposed);
+    let allowed = if at_contact {
         terrain.contact_clear(unit.pos, proposed, contact_radius)
-    } else if crate::stats::hull_excess(radius) > Fx::ZERO {
-        crate::geometry::hull_step_open(unit.pos, proposed, radius, |t| terrain.open(t))
-            && (there == here || super::early_advance_safe(here, there, terrain))
+    } else if wide {
+        hull_step_allowed(unit.pos, proposed, radius, terrain)
     } else {
         there == here || (terrain.open(there) && super::early_advance_safe(here, there, terrain))
     };
