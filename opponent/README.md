@@ -10,23 +10,6 @@ The bot plays under the same contracts as a human seat. It reads only its seat's
 fog-honest `ObservationData`, pays ordinary costs, and acts only through
 ordinary `PlayerCommand`s. It uses no floating point.
 
-## How a decision works
-
-On each decision tick the bot updates its memory from what it sees and from its
-own failed orders, scores what it wants, then acts in a fixed order:
-
-1. defense and other emergencies;
-2. the saving target, once it is affordable;
-3. wounded units to Repair Bays;
-4. workers;
-5. missions: settlements, local guards, lifts, attacks, clearances, strikes,
-   raids, focus fire and scouting;
-6. production toward what the army needs.
-
-Every action spends from one running total that lives only inside the decision.
-Missions command units that exist; production never promises a mission future
-units. Difficulty caps how many unit orders one decision may give.
-
 ## Main pieces
 
 - `decision` runs one decision: its precedence, running total and order
