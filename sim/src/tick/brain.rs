@@ -167,9 +167,9 @@ pub(super) fn run(
         ids.reverse();
     }
     for id in ids {
-        let Some(unit) = state.unit(id) else { continue };
-        if unit.hp == 0 {
-            continue; // dead since a previous tick but not yet swept
+        // Gone, or dead since a previous tick but not yet swept.
+        if state.unit(id).is_none_or(|unit| unit.hp == 0) {
+            continue;
         }
         if let Some(unit) = state.unit_mut(id) {
             for cd in &mut unit.cooldowns {
@@ -194,6 +194,9 @@ pub(super) fn run(
         }
         if state.unit(id).is_some_and(|unit| unit.bay.is_some()) {
             combat::watch_drones(state, index, id);
+        }
+        if super::movement::clear_occupied_ground(state, id) {
+            continue;
         }
         let mounted = state
             .unit(id)

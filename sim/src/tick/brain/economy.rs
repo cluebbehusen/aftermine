@@ -1007,6 +1007,7 @@ fn work_position_path(goal: TilePos, mut waypoints: Vec<TilePos>) -> PathFollow 
         goal,
         waypoints,
         next: 0,
+        clearing: false,
     }
 }
 

@@ -347,6 +347,7 @@ fn walking(
         goal: *waypoints.last().unwrap(),
         waypoints,
         next: 0,
+        clearing: false,
     });
     serde_json::from_value(data).unwrap()
 }

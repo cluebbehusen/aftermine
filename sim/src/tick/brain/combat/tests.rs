@@ -403,6 +403,7 @@ fn motion_snapshot_tracks_motor_speed_through_retargeting_and_coasting() {
         goal: TilePos::new(3, 1),
         waypoints: vec![TilePos::new(5, 1), TilePos::new(3, 1)],
         next: 0,
+        clearing: false,
     });
     let (id, pos, speed) = (target.id, target.pos, target.drive_speed());
     let expected = pos + Vec2Fx::new(speed, Fx::ZERO);
@@ -422,6 +423,7 @@ fn motion_snapshot_tracks_motor_speed_through_retargeting_and_coasting() {
         goal: TilePos::new(8, 1),
         waypoints: vec![TilePos::new(8, 1)],
         next: 0,
+        clearing: false,
     });
     assert_eq!(
         MotionSnapshot::capture(&state).position_after(id, pos, 1),
@@ -445,6 +447,7 @@ fn motion_snapshot_ignores_later_route_turns() {
             goal: turn,
             waypoints: vec![TilePos::new(8, 1), turn],
             next: 0,
+            clearing: false,
         });
         let motion = MotionSnapshot::capture(&state);
         let shooter = state.units[0].pos;

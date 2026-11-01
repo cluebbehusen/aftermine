@@ -20,6 +20,7 @@ fn allied_arrivals_claim_positions_with_full_cross_owner_spacing() {
         final_point: Some(point),
         waypoints: vec![TilePos::new(15, 8)],
         next: 0,
+        clearing: false,
     });
     assert!(claimed(&state, id, point, false));
     assert!(
@@ -59,6 +60,7 @@ fn exactly_the_nearest_of_mixed_allied_arrivals_keeps_a_position() {
             final_point: Some(point),
             waypoints: vec![TilePos::new(15, 8)],
             next: 0,
+            clearing: false,
         });
     }
     let keeps: Vec<_> = [farthest, nearest, middle]
@@ -84,6 +86,7 @@ fn a_destination_claims_its_point_from_across_the_arrival_window() {
         final_point: Some(point),
         waypoints: vec![TilePos::new(15, 8)],
         next: 0,
+        clearing: false,
     });
     assert!(claimed(&state, id, point, false));
 }
@@ -113,6 +116,7 @@ fn crossed_arrivals_to_overlapping_positions_keep_exactly_one() {
             final_point: Some(point),
             waypoints: vec![TilePos::containing(point)],
             next: 0,
+            clearing: false,
         });
     }
     assert!(claimed(&state, farther, mine, true));
@@ -140,6 +144,7 @@ fn same_owner_precedence_is_unchanged_by_enemy_id_interleaving() {
                 final_point: Some(point),
                 waypoints: vec![TilePos::new(15, 8)],
                 next: 0,
+                clearing: false,
             });
         }
         assert!(!claimed(&state, first, point, true));
@@ -166,6 +171,7 @@ fn only_nearby_arrivals_claim_a_position_across_body_sizes() {
             final_point: Some(point),
             waypoints: vec![TilePos::new(15, 8)],
             next: 0,
+            clearing: false,
         });
         assert!(
             !claimed(&state, id, point, false),

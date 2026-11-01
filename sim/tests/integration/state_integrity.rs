@@ -642,10 +642,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::StrayDrone(_) => 98,
         E::InvalidTend(_) => 99,
         E::GunMismatch(_) => 100,
+        E::InvalidClearingRoute(_) => 101,
     }
 }
 
-const ROWS: usize = 101;
+const ROWS: usize = 102;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -759,6 +760,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::StrayDrone(UnitId(0)),
         E::InvalidTend(UnitId(0)),
         E::GunMismatch(BuildingId(0)),
+        E::InvalidClearingRoute(UnitId(0)),
     ]
 }
 
@@ -1015,6 +1017,14 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["units"][0]["path"] = json!({"goal": {"x": 4, "y": 4}, "waypoints": [{"x": 4, "y": 4}], "next": 0, "final_point": chassis::grid::TilePos::new(8, 4).center()});
             },
             "unit u0 carries an invalid work endpoint",
+        ),
+        (
+            "an airframe on a clearing route",
+            |d| {
+                make_transport(d);
+                d["units"][0]["path"] = json!({"goal": {"x": 4, "y": 4}, "waypoints": [{"x": 4, "y": 4}], "next": 0, "clearing": true});
+            },
+            "unit u0 follows a clearing route without a ground chassis",
         ),
         (
             "sandbox match result",

@@ -102,14 +102,6 @@ pub(super) fn reveal(state: &mut State, events: &mut Vec<Event>) {
             .position(|site| site.id == id)
             .expect("collected site");
         state.stamp_building_occupancy(index, true);
-        if let Some(builder) = state
-            .units
-            .iter()
-            .find(|unit| committed(unit, state.building(id).expect("site")))
-            .map(|unit| unit.id)
-        {
-            super::commands::finish_site_claim(state, id, builder);
-        }
         for unit in state.units.iter_mut().filter(|unit| unit.player == player) {
             if unit.order == (Order::Found { kind, anchor }) {
                 unit.order = Order::Build { site: id };

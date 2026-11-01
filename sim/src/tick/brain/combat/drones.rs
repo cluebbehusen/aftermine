@@ -225,6 +225,7 @@ fn head_for(state: &mut State, id: UnitId, point: Vec2Fx) {
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         });
     state.unit_mut(id).expect("caller checked").path = path;
 }

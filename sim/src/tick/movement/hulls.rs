@@ -236,6 +236,7 @@ fn way_aside(state: &State, slot: usize) -> Option<PathFollow> {
                             goal,
                             waypoints,
                             next: 0,
+                            clearing: false,
                         });
                     }
                 }

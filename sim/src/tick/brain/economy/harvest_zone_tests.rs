@@ -243,6 +243,7 @@ fn a_held_drop_off_route_yields_only_to_a_nearer_worker() {
             final_point: Some(point),
             waypoints: vec![goal],
             next: 0,
+            clearing: false,
         });
     }
     let keeps = |state: &mut State, id: UnitId| {
@@ -310,6 +311,7 @@ fn held_worker(wall: Option<(usize, usize)>) -> (State, UnitId, KnownSource, Pat
         goal: TilePos::new(7, 3),
         waypoints: (7..16).rev().map(|x| TilePos::new(x, 3)).collect(),
         next: 0,
+        clearing: false,
     };
     let worker = state.units[0].id;
     (state, worker, source, ordered)
@@ -673,6 +675,7 @@ fn per_tick_danger_rechecks_are_constant_even_on_a_long_route() {
         goal: TilePos::new(127, 1),
         waypoints: (1..=127).map(|x| TilePos::new(x, 1)).collect(),
         next: 3,
+        clearing: false,
     };
     let checks = Cell::new(0);
     assert!(
