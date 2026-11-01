@@ -511,8 +511,11 @@ fn watch(inner: &Inner) {
     let poll = (inner.stall / 4).min(Duration::from_millis(250));
     let mut main = None;
     let mut seats: [Option<OpenStall>; SEATS] = std::array::from_fn(|_| None);
-    while !inner.stop.load(Ordering::Acquire) {
-        std::thread::sleep(poll);
+    loop {
+        std::thread::park_timeout(poll);
+        if inner.stop.load(Ordering::Acquire) {
+            return;
+        }
         let now = inner.micros();
         inner.check_main(now, &mut main);
         for (seat, open) in seats.iter_mut().enumerate() {
@@ -661,6 +664,7 @@ fn crash_dumps(root: &Path) -> Vec<PathBuf> {
 /// capture for one process. Its watchdog never takes gameplay locks.
 pub struct Monitor {
     inner: Arc<Inner>,
+    watchdog: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Monitor {
@@ -688,11 +692,14 @@ impl Monitor {
             writing: Mutex::default(),
             stop: AtomicBool::new(false),
         });
-        let watchdog = inner.clone();
-        std::thread::Builder::new()
+        let watched = inner.clone();
+        let watchdog = std::thread::Builder::new()
             .name("aftermine-watchdog".into())
-            .spawn(move || watch(&watchdog))?;
-        Ok(Self { inner })
+            .spawn(move || watch(&watched))?;
+        Ok(Self {
+            inner,
+            watchdog: Some(watchdog),
+        })
     }
 
     /// Make this the process's monitor and record panics through it. Only the
@@ -787,8 +794,14 @@ impl Monitor {
 }
 
 impl Drop for Monitor {
+    /// Waits for the watchdog, so nothing writes to the incident directory
+    /// once the monitor is gone.
     fn drop(&mut self) {
         self.inner.stop.store(true, Ordering::Release);
+        if let Some(watchdog) = self.watchdog.take() {
+            watchdog.thread().unpark();
+            let _ = watchdog.join();
+        }
     }
 }
 
