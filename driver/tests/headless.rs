@@ -200,7 +200,7 @@ fn representative_scenarios_preserve_state_integrity() {
     let paths = [
         "fixtures/scenarios/skirmish.json",
         "fixtures/scenarios/twin-forges.json",
-        "scenarios/basalt-spine.json",
+        "fixtures/scenarios/basalt-spine.json",
     ]
     .map(|path| root.join(path));
     assert_scenarios_preserve_state_integrity(&paths);

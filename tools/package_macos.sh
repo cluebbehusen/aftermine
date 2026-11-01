@@ -71,7 +71,7 @@ test -x "$APP/Contents/MacOS/Aftermine"
 test -f "$APP/Contents/Resources/assets/sprites/atlas.png"
 test -f "$APP/Contents/Resources/assets/sprites/atlas.json"
 test -f "$APP/Contents/Resources/assets/sounds/music_menu.wav"
-test -f "$APP/Contents/Resources/scenarios/basalt-spine.json"
+test -f "$APP/Contents/Resources/scenarios/smelter-yard.json"
 grep -q "<string>$VERSION</string>" "$APP/Contents/Info.plist"
 grep -q "<string>$BUILD</string>" "$APP/Contents/Info.plist"
 

@@ -167,7 +167,7 @@ The driver is the main inspection surface:
 
 ```sh
 cargo run -p aftermine-driver -- --help
-cargo run -p aftermine-driver -- run scenarios/basalt-spine.json --ticks 12000 --all-bots --map
+cargo run -p aftermine-driver -- run scenarios/smelter-yard.json --ticks 12000 --all-bots --map
 cargo run -p aftermine-driver -- bot-eval skirmish --difficulty prime --stance balanced --paired
 cargo run -p aftermine-driver -- replay-summary replays/match.json --minimaps sparse
 cargo run -p aftermine-driver -- smoke --spawn

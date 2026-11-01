@@ -28,7 +28,7 @@
       "family": "open"
     },
     {
-      "path": "../../../scenarios/slag-fields.json",
+      "path": "../../../scenarios/spoil-heaps.json",
       "family": "open"
     },
     {
@@ -40,15 +40,15 @@
       "family": "constrained"
     },
     {
-      "path": "../../../scenarios/basalt-spine.json",
+      "path": "../../../scenarios/highwall.json",
       "family": "constrained"
     },
     {
-      "path": "../../../scenarios/subsidence.json",
+      "path": "../../../scenarios/open-pit.json",
       "family": "constrained"
     },
     {
-      "path": "../../../scenarios/smelter-basin.json",
+      "path": "../../../scenarios/deep-sump.json",
       "family": "constrained"
     },
     {
@@ -56,7 +56,7 @@
       "family": "severed"
     },
     {
-      "path": "../../../scenarios/stepping-stones.json",
+      "path": "../../../scenarios/spoil-island.json",
       "family": "severed"
     }
   ]

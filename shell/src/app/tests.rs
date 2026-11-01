@@ -50,7 +50,7 @@ fn a_lan_match_decided_under_its_menu_opens_the_report() {
 #[test]
 fn wizard_seat_swap_opens_on_the_new_humans_foundry() {
     render::set_viewport(1280.0, 800.0);
-    let scenario = Scenario::load("../scenarios/basalt-spine.json").expect("shipped map");
+    let scenario = Scenario::load("../fixtures/scenarios/basalt-spine.json").expect("fixture map");
 
     let mut input = input::InputState::new();
     input.camera_prefs.edge_pan = true;

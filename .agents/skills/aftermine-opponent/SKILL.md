@@ -102,10 +102,9 @@ does not run it:
 cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder-smoke.json --out <new directory>
 ```
 
-It plays every comparison of the ladder on Skirmish, The Deep Cut, Subsidence
-and Severance, Balanced, two seed runs each. A PR that touches team or
-free-for-all play also plays every seat of those maps at one rung and reads the
-seats:
+It plays every comparison of the ladder on Skirmish, The Deep Cut, Open Pit and
+Severance, Balanced, two seed runs each. A PR that touches team or free-for-all
+play also plays every seat of those maps at one rung and reads the seats:
 
 ```sh
 cargo run --release -p aftermine-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
