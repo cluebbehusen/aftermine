@@ -1776,7 +1776,7 @@ pub(super) fn advance(
     let (pos, home, me, kind) = (unit.pos, unit.tile(), unit.player, unit.kind);
     let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
 
-    let mut unit_target: Option<(chassis::fx::Fx, UnitId, Vec2Fx)> = None;
+    let mut unit_target: Option<((chassis::fx::Fx, u8, UnitId), Vec2Fx)> = None;
     for dy in -reach..=reach {
         for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
             let target = &state.units[slot];
@@ -1801,14 +1801,15 @@ pub(super) fn advance(
             {
                 continue;
             }
-            if unit_target.is_none_or(|best| (dist, target.id) < (best.0, best.1)) {
-                unit_target = Some((dist, target.id, target.pos));
+            let rank = (dist, bearing_from(pos, unit.heading, target.pos), target.id);
+            if unit_target.is_none_or(|(best, _)| rank < best) {
+                unit_target = Some((rank, target.pos));
             }
         }
     }
 
     let target = unit_target
-        .map(|(_, uid, aim)| (Target::Unit(uid), aim))
+        .map(|((_, _, uid), aim)| (Target::Unit(uid), aim))
         .or_else(|| {
             if !weapon.targets.covers(Domain::Ground) {
                 return None;
@@ -1834,7 +1835,9 @@ pub(super) fn advance(
                             Landing::Checked,
                         )
                 })
-                .min_by_key(|(dist, bid, ..)| (*dist, *bid))
+                .min_by_key(|(dist, bid, aim, _)| {
+                    (*dist, bearing_from(pos, unit.heading, *aim), *bid)
+                })
                 .map(|(_, bid, aim, _)| (Target::Building(bid), aim))
         });
     let Some((target, aim)) = target else {
