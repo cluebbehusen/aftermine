@@ -1,23 +1,24 @@
-//! The codex: every machine and works in the game, with its sprite, its
-//! description, and its figures. One screen object over the shared menu
+//! The codex (the Roster): every unit and structure in the game, with its
+//! sprite, its description, and its figures. One screen object over the shared menu
 //! widget: the list is the cursor, the selected row is the page.
 //! Windowless update; the coordinator holds the displaced screen and
 //! restores it wholesale on leave, as for Settings.
 
 use crate::assets::Sprites;
+use crate::description::{building_description, tiles, unit_description};
 use crate::game::SoundKind;
 use crate::menu::{Label, Line, Menu};
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::panel::{
-    building_economy_lines, building_flavor, building_stat_line, building_weapon_lines,
-    point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
+    building_economy_lines, building_stat_line, building_weapon_lines, cradle_crew_line,
+    point_defense_line, unit_stat_line, weapon_lines,
 };
 use crate::render;
 use crate::theme::{
     BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY, TEXT_SECONDARY,
 };
-use crate::typography::entity_name;
+use crate::typography::{entity_name, plural_name};
 use aftermine_protocol::{Key, RawEvent};
 use aftermine_sim::stats::{BuildingKind, Domain, UnitKind};
 use macroquad::prelude::*;
@@ -35,14 +36,14 @@ pub enum Out {
 /// One page of the codex.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Entry {
-    /// A machine.
+    /// A unit.
     Unit(UnitKind),
-    /// A works.
+    /// A structure.
     Building(BuildingKind),
 }
 
 /// The codex in reading order: the factories as the player unlocks
-/// them, each followed by what it trains, then every works. The
+/// them, each followed by what it trains, then every structure. The
 /// codex's section order is the tech order, so a new player reads the
 /// game the way a match unfolds.
 fn sections() -> Vec<(&'static str, Vec<Entry>)> {
@@ -76,7 +77,7 @@ fn sections() -> Vec<(&'static str, Vec<Entry>)> {
                 .collect(),
         ),
         (
-            "BUILDINGS",
+            "STRUCTURES",
             [
                 BuildingKind::Foundry,
                 BuildingKind::Fabricator,
@@ -112,7 +113,7 @@ pub struct CodexScreen {
 }
 
 impl CodexScreen {
-    /// Opens on the first machine. Where leaving lands is the
+    /// Opens on the first unit. Where leaving lands is the
     /// coordinator's business.
     pub fn open() -> Self {
         let mut lines = Vec::new();
@@ -177,8 +178,7 @@ impl CodexScreen {
     /// Draws the list and the selected page — the caller draws the
     /// veil first, so both land above it.
     pub fn draw(&self, sprites: &Sprites) {
-        self.menu
-            .draw("every machine and works, in the order the factories unlock them");
+        self.menu.draw("");
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -228,7 +228,7 @@ impl CodexScreen {
         };
         match entry {
             Entry::Unit(kind) => {
-                para(unit_flavor(kind), TEXT_BODY, &mut lines);
+                para(&unit_description(kind), TEXT_BODY, &mut lines);
                 lines.push((String::new(), TEXT_BODY));
                 lines.push((unit_stat_line(kind), TEXT_PRIMARY));
                 for line in weapon_lines(kind)
@@ -242,7 +242,7 @@ impl CodexScreen {
                 }
             }
             Entry::Building(kind) => {
-                para(building_flavor(kind), TEXT_BODY, &mut lines);
+                para(&building_description(kind), TEXT_BODY, &mut lines);
                 lines.push((String::new(), TEXT_BODY));
                 lines.push((building_stat_line(kind), TEXT_PRIMARY));
                 for line in building_weapon_lines(kind, 0) {
@@ -307,182 +307,137 @@ impl CodexScreen {
     }
 }
 
-/// What a machine does besides fight, as page lines.
+/// What a unit does besides fight, as page lines.
 fn unit_notes(kind: UnitKind) -> Vec<String> {
     let stats = kind.stats();
     let mut notes = Vec::new();
     if let Some(harvest) = stats.harvest {
         notes.push(format!(
-            "Hauls {} scrap a trip; digs {:.0} scrap/s.",
+            "Carries {} scrap per trip and collects {:.0} scrap per second.",
             harvest.capacity,
             aftermine_sim::TICKS_PER_SECOND as f32 / harvest.ticks_per_scrap as f32
         ));
-    }
-    if stats.harvest.is_some() {
-        notes.push(if stats.build_rate > 1 {
-            format!(
-                "Welds: repairs machines and raises buildings at {}x pace.",
-                stats.build_rate
-            )
-        } else {
-            "Welds: repairs machines and raises buildings.".to_string()
-        });
-        notes.push(
-            "Auto-weld: idle or patrolling, mends wounded machines and buildings nearby."
-                .to_string(),
-        );
+        notes.push("Repairs your structures and ground units.".to_string());
     }
     if stats.transport_capacity > 0 {
         notes.push(format!(
-            "Lifts {} sling points of ground machines.",
+            "Carries up to {} transport slots of ground units.",
             stats.transport_capacity
         ));
     }
     if stats.transport_size > 1 {
-        notes.push(format!(
-            "Takes {} sling points to lift.",
-            stats.transport_size
-        ));
+        notes.push(format!("Takes {} transport slots.", stats.transport_size));
     }
     if stats.turn_rate > 0 {
-        notes.push(
-            "Sets down on open ground at the end of a move when nothing is in reach; sits as a ground target until its next order lifts it off."
-                .to_string(),
-        );
-    }
-    if stats.demolition.is_some() {
-        notes.push("Detonates on its target; always fatal to itself.".to_string());
+        notes.push("Lands when idle.".to_string());
     }
     if let Some(radar) = stats.radar {
         notes.push(if radar.deploy_ticks > 0 {
             format!(
-                "Radar: after standing still {:.0} s, unfolds an antenna that tracks unseen enemies within {} tiles; moving folds it.",
-                f32::from(radar.deploy_ticks) / aftermine_sim::TICKS_PER_SECOND as f32,
+                "Its radar reaches {} tiles and works only while it stands still.",
                 radar.radius
             )
         } else {
-            format!(
-                "Radar: tracks unseen enemies within {} tiles as air or ground contacts.",
-                radar.radius
-            )
+            format!("Its radar reaches {} tiles.", radar.radius)
         });
     }
-    if stats.target_priority == aftermine_sim::stats::TargetPriority::Heaviest {
-        notes.push(
-            "Left to itself, picks the machine in reach with the most full health, then the nearest."
-                .to_string(),
-        );
-    }
-    if stats.target_priority == aftermine_sim::stats::TargetPriority::Buildings {
-        notes.push(
-            "Left to itself, cuts the nearest building in reach. Strikes a machine only when one presses against its hull and never chases one, but goes after a building that fires on it."
-                .to_string(),
-        );
-    }
     if stats.structural {
+        notes.push("Sappers and other Maws treat it as a structure.".to_string());
+    }
+    if matches!(stats.mend, aftermine_sim::stats::Mend::Kiln(_)) {
         notes.push(
-            "Built like a structure: demolition charges and building cutters deal it their structure damage."
+            "Repairs itself by eating nearby wrecks. Workers and Repair Bays can't repair it."
                 .to_string(),
         );
-    }
-    if let aftermine_sim::stats::Mend::Kiln(kiln) = stats.mend {
-        notes.push(format!(
-            "Takes no welds and no Repair Bay care. Its kiln eats wreck under and beside its hull, {} hp per scrap, one bite every {}.",
-            kiln.hp_per_wreck,
-            crate::panel::tick_time_label(
-                u32::try_from(aftermine_sim::stats::KILN_BITE_PERIOD).unwrap_or(u32::MAX)
-            ),
-        ));
     }
     if !stats.requires.is_empty() {
-        let names: Vec<String> = stats
-            .requires
-            .iter()
-            .map(|b| entity_name(b.name()))
-            .collect();
-        notes.push(format!("Needs a standing {}.", names.join(" and ")));
-    }
-    let factory = [
-        BuildingKind::Foundry,
-        BuildingKind::Fabricator,
-        BuildingKind::Airworks,
-        BuildingKind::Crucible,
-    ]
-    .into_iter()
-    .find(|b| b.base_stats().produces.contains(&kind));
-    if let Some(factory) = factory {
-        notes.push(format!("Trained at the {}.", entity_name(factory.name())));
+        notes.push(format!("Needs {}.", needs(stats.requires)));
     }
     if let Some(cradle) = BuildingKind::ALL
         .into_iter()
         .find(|b| b.assembles() == Some(kind))
     {
-        notes.push(format!("Assembled in a {}.", entity_name(cradle.name())));
+        notes.push(format!("Built in a {}.", entity_name(cradle.name())));
     }
     notes
 }
 
-/// What a works does besides stand, as page lines: its requirements,
-/// what it trains, and its upgrade rungs.
+/// What a structure does besides stand, as page lines: what it adds,
+/// its requirements, what it trains, and its upgrade rungs.
 fn building_notes(kind: BuildingKind) -> Vec<String> {
     let base = kind.base_stats();
+    let seconds = |ticks: u32| ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
     let mut notes = building_economy_lines(kind);
-    if kind == BuildingKind::RepairBay {
-        notes.push(format!(
-            "Repairs its {} most damaged machines nearby at {:.0}% of max hp per second once they have been out of combat for {:.0} s, or {:.1} hp/s under fire. Buildings repair at the slower rate.",
+    match kind {
+        BuildingKind::Crucible => {
+            notes.push(format!(
+                "Melts wrecks within {} tiles into scrap.",
+                tiles(aftermine_sim::stats::CRUCIBLE_SMELT_RADIUS)
+            ));
+            notes.push("Units you Retire are taken apart here for a refund.".to_string());
+        }
+        BuildingKind::ScuttleCharge => {
+            notes.push(format!(
+                "Deals {} damage to enemy ground units within {} tiles.",
+                aftermine_sim::stats::CHARGE_DAMAGE,
+                tiles(aftermine_sim::stats::CHARGE_BLAST_RADIUS)
+            ));
+            notes.push("Enemies can see it while it is being built.".to_string());
+            notes.push(format!("{} reveal it.", series(&charge_finders())));
+        }
+        BuildingKind::Array => notes.push(format!(
+            "Its radar reaches {} tiles. It reveals Scuttle Charges within {} tiles.",
+            base.radar.unwrap_or(0),
+            aftermine_sim::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
+        )),
+        BuildingKind::RepairBay => notes.push(format!(
+            "Repairs up to {} units at a time within {} tiles, faster once they are out of combat.",
             aftermine_sim::stats::REPAIR_BAY_PATIENTS,
-            aftermine_sim::stats::REPAIR_BAY_FAST_PERMILLE_PER_SECOND as f32 / 10.0,
-            aftermine_sim::stats::REPAIR_BAY_CALM_TICKS as f32 / aftermine_sim::TICKS_PER_SECOND as f32,
-            aftermine_sim::stats::REPAIR_BAY_STEP as f32 * aftermine_sim::TICKS_PER_SECOND as f32
-                / aftermine_sim::stats::REPAIR_BAY_PERIOD as f32
-        ));
+            tiles(aftermine_sim::stats::REPAIR_BAY_RADIUS)
+        )),
+        _ => {}
     }
     if let Some(magazine) = kind.magazine() {
-        let seconds = |ticks: u32| ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
         let round = if kind == BuildingKind::Spire {
             "warhead"
         } else {
             "interceptor"
         };
         notes.push(format!(
-            "Holds {} {round}{}. Each is ordered and paid for like a unit, {} scrap and {:.0} s, built one at a time. Autofill, {} by default, orders the next whenever there is room and scrap.",
+            "Holds {} {round}{}. Each costs {} scrap and takes {:.0} s to build.",
             magazine.capacity,
             if magazine.capacity == 1 { "" } else { "s" },
             magazine.round_cost,
             seconds(magazine.round_ticks),
-            if magazine.autofill { "on" } else { "off" },
-        ));
-    }
-    if let Some(machine) = kind.assembles() {
-        notes.push(format!(
-            "Paid in full when placed. Up to {} workers raise it; a faster worker takes a slower one's place. Every player sees it and its progress once work starts. Finished, it comes apart and a {} stands where it stood.",
-            aftermine_sim::stats::ASSEMBLY_CREW_CAP,
-            entity_name(machine.name())
         ));
     }
     if kind == BuildingKind::Spire {
         let warhead = aftermine_sim::stats::WARHEAD;
+        let resisted = BuildingKind::Foundry.warhead_resistance_permille();
         notes.push(format!(
-            "Launches at any tile, seen or not, once its deck has turned to face it and its locks release. The warhead flies {:.0} tiles/s and deals {} damage within {:.1} tiles, fading to nothing at {:.1}. Foundries take half.",
-            warhead.speed.to_num::<f32>() * aftermine_sim::TICKS_PER_SECOND as f32,
+            "A warhead deals up to {} damage within {} tiles. Foundry armor blocks {} of it.",
             warhead.peak_damage,
-            warhead.full_radius.to_num::<f32>(),
-            warhead.outer_radius.to_num::<f32>(),
+            tiles(warhead.outer_radius),
+            if resisted == 500 {
+                "half".to_string()
+            } else {
+                format!("{}%", resisted / 10)
+            },
         ));
     }
-    if let Some(battery) = kind.battery() {
-        notes.push(format!(
-            "Stops enemy warheads that will land within {:.0} tiles, once sight or radar has held them for {:.1} s.",
-            battery.ring.to_num::<f32>(),
-            f32::from(aftermine_sim::stats::WARHEAD_TRACK_TICKS + aftermine_sim::stats::WARHEAD_LOCK_TICKS)
-                / aftermine_sim::TICKS_PER_SECOND as f32,
-        ));
+    if kind.battery().is_some() {
+        notes.push("It only stops warheads that friendly sight or radar has tracked.".to_string());
     }
+    notes.extend(cradle_crew_line(kind));
     if let Some(c) = base.construction
         && !c.requires.is_empty()
     {
-        let names: Vec<String> = c.requires.iter().map(|b| entity_name(b.name())).collect();
-        notes.push(format!("Needs a standing {}.", names.join(" and ")));
+        // You start with a Foundry, so its requirement is for another one.
+        notes.push(if kind == BuildingKind::Foundry {
+            format!("Building another Foundry needs {}.", needs(c.requires))
+        } else {
+            format!("Needs {}.", needs(c.requires))
+        });
     }
     if !base.produces.is_empty() {
         let names: Vec<String> = base
@@ -496,33 +451,106 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
         let Some(c) = stats.construction else {
             continue;
         };
+        let tier = tier.fit::<u8>();
+        let name = entity_name(kind.tier_name(tier));
+        let mut needed: Vec<String> = c.requires.iter().map(|p| article(p.name())).collect();
+        if kind.upgrade_needs_foundry_support(tier - 1) {
+            needed.push(format!(
+                "a Foundry within {} tiles",
+                aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+            ));
+        }
         let mut line = format!(
-            "Upgrade: {} for {} scrap ({:.0} s){} - {} hp",
-            entity_name(kind.tier_name(tier.fit::<u8>())),
+            "Upgrades to {name} for {} scrap in {:.0} s.",
             c.cost,
-            c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32,
-            if c.requires.is_empty() {
-                String::new()
-            } else {
-                let mut names: Vec<String> =
-                    c.requires.iter().map(|b| entity_name(b.name())).collect();
-                if kind.upgrade_needs_foundry_support(tier.fit::<u8>() - 1) {
-                    names.push(format!(
-                        "{} within {} tiles",
-                        entity_name(BuildingKind::Foundry.name()),
-                        aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
-                    ));
-                }
-                format!(", needs a {}", names.join(" and a "))
-            },
-            stats.max_hp
+            seconds(c.build_ticks)
         );
-        for weapon in building_weapon_lines(kind, tier.fit::<u8>()) {
-            let _ = write!(line, "; {weapon}");
+        if !needed.is_empty() {
+            let _ = write!(line, " Needs {}.", series(&needed));
         }
         notes.push(line);
+        notes.push(format!(
+            "{name}: {}",
+            upgrade_figures(kind, tier).join(" | ")
+        ));
     }
     notes
+}
+
+/// What a structure's upgrade rung has, after its hp: its weapons, its
+/// income, and any sight or reach it gains over the rung below.
+fn upgrade_figures(kind: BuildingKind, tier: u8) -> Vec<String> {
+    use aftermine_sim::{ExtractorIncome, ExtractorSupport};
+    let stats = kind.tier_stats(tier);
+    let below = kind.tier_stats(tier - 1);
+    let mut figures = vec![format!("{} hp", stats.max_hp)];
+    if stats.vision != below.vision {
+        figures.push(format!("sight {}", stats.vision));
+    }
+    if stats.radar != below.radar
+        && let Some(radar) = stats.radar
+    {
+        figures.push(format!("radar {radar}"));
+    }
+    figures.extend(building_weapon_lines(kind, tier));
+    match kind {
+        BuildingKind::Extractor => {
+            let rate = |support| ExtractorIncome::new(tier, support).scrap_per_minute();
+            figures.push(format!(
+                "{} scrap/min, or {} with your Foundry nearby",
+                rate(ExtractorSupport::Remote),
+                rate(ExtractorSupport::Supported)
+            ));
+        }
+        BuildingKind::Reclaimer => figures.push(format!(
+            "{} scrap/min",
+            60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / aftermine_sim::stats::REFINERY_PERIOD
+        )),
+        BuildingKind::Array => figures.push(format!(
+            "reveals Scuttle Charges within {} tiles",
+            aftermine_sim::stats::CHARGE_ARRAY_DETECT_RADIUS
+        )),
+        _ => {}
+    }
+    figures
+}
+
+/// The units and structures that reveal hidden Scuttle Charges, plural,
+/// in Roster order.
+fn charge_finders() -> Vec<String> {
+    sections()
+        .into_iter()
+        .flat_map(|(_, entries)| entries)
+        .filter_map(|entry| match entry {
+            Entry::Unit(kind) if kind.stats().charge_detection => Some(kind.name()),
+            Entry::Building(BuildingKind::Array) => Some(BuildingKind::Array.name()),
+            _ => None,
+        })
+        .map(|name| plural_name(&entity_name(name)))
+        .collect()
+}
+
+/// "a Crucible, a Deep Bore, and an Airworks".
+fn needs(requires: &[aftermine_sim::stats::Prerequisite]) -> String {
+    let names: Vec<String> = requires.iter().map(|p| article(p.name())).collect();
+    series(&names)
+}
+
+/// A name with its article: "a Crucible", "an Airworks".
+fn article(name: &str) -> String {
+    let name = entity_name(name);
+    let vowel = name.starts_with(['A', 'E', 'I', 'O', 'U']);
+    format!("{} {name}", if vowel { "an" } else { "a" })
+}
+
+/// "x", "x and y", or "x, y, and z".
+fn series(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
 }
 
 #[cfg(test)]

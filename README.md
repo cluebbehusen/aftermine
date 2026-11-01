@@ -28,19 +28,19 @@ they play.
 
 ## The game
 
-Harvesters gather scrap, bring it back to a Foundry, construct buildings,
-salvage wrecks and repair damaged machines. Repair Bays heal machines near them.
-Foundries and other production buildings turn scrap into an army. Destroy every
-enemy Foundry to win.
+Harvesters gather scrap, bring it back to a Foundry, build structures, salvage
+wrecks and repair damaged units. Repair Bays heal units near them. Foundries and
+other production structures turn scrap into an army. Destroy every enemy Foundry
+to win.
 
-- Fog of war with remembered buildings, radar contacts and shared team sight.
+- Fog of war with remembered structures, radar contacts and shared team sight.
 - Ground and air units with direct-fire, artillery, stealth, transport and
   repair roles.
-- Expansion Foundries, Extractors on fixed map frames, building upgrades, and
+- Expansion Foundries, Extractors on fixed map frames, structure upgrades, and
   wreck salvage that makes holding a battlefield pay.
 - Spires, whose warheads can strike any tile, and Lattices that intercept them.
-- Two experimental machines, the Maw and the Roc, which workers assemble in
-  cradles every player can see.
+- Two experimental units, the Maw and the Roc, which workers assemble in cradles
+  every player can see.
 - Duels, team games and free-for-alls.
 
 Rock blocks ground movement and direct fire. Peaks block everything, aircraft
@@ -48,7 +48,7 @@ and blasts included. Pits block ground movement, but aircraft and fire cross
 them. On tiered maps, higher ground blocks direct fire, and artillery fires down
 but never up.
 
-The in-game Roster lists every unit and building with its cost, weapons and
+The in-game Roster lists every unit and structure with its cost, weapons and
 prerequisites.
 
 ## Controls
@@ -59,13 +59,13 @@ Most actions are also cards in the selection panel. The core keys:
 | ------------------------------- | ----------------------------------------------------------------------- |
 | WASD, arrow keys or middle drag | Pan the camera.                                                         |
 | Mouse wheel                     | Zoom.                                                                   |
-| Left click or drag              | Select a unit, building or group.                                       |
+| Left click or drag              | Select a unit, structure or group.                                      |
 | Shift + click or drag           | Add to or remove from the selection.                                    |
 | Right click                     | Give the contextual order: harvest, attack, repair or move.             |
 | Shift + right click             | Queue the order.                                                        |
 | `F`, then ground                | Move and fight anything on the way.                                     |
 | `G`, then ground                | Move without stopping to fight.                                         |
-| `B`                             | Open construction: pick a category, then a building, with Q/E/R/T/Z/X.  |
+| `B`                             | Open construction: pick a category, then a structure, with Q/E/R/T/Z/X. |
 | Q/E/R/T/Z/X with a producer     | Train the unit in that slot.                                            |
 | `X`                             | Stop the selection.                                                     |
 | `1`–`5` / Ctrl + `1`–`5`        | Recall / assign a control group.                                        |

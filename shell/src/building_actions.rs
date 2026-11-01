@@ -501,7 +501,7 @@ impl SelectedBuildings {
             reason: None,
         };
         if !self.accepts {
-            batch.reason = Some("building orders unavailable".into());
+            batch.reason = Some("structure orders unavailable".into());
             return Some(batch);
         }
         let mut bank = self.scrap;
@@ -614,7 +614,7 @@ impl SelectedBuildings {
                 action: CardAction::None,
                 enabled: false,
                 why: Some("upgrades cannot be cancelled".into()),
-                desc: vec!["The works returns to service when the upgrade finishes.".into()],
+                desc: vec!["The structure returns to service when the upgrade finishes.".into()],
                 progress: b.stats().construction.map(|c| {
                     (b.construction_progress().unwrap_or(0) as f32 / c.build_ticks.max(1) as f32)
                         .clamp(0.0, 1.0)
@@ -651,7 +651,7 @@ impl SelectedBuildings {
             }
             if plural {
                 desc.push(format!(
-                    "Upgrade {} of {} buildings; {} scrap total.",
+                    "Upgrade {} of {} structures; {} scrap total.",
                     batch.recipients.len(),
                     self.buildings.len(),
                     batch.cost

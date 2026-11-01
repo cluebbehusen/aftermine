@@ -96,7 +96,7 @@ impl ArmedMode {
             Self::Rally => "Set rally".to_string(),
             Self::Strike => "Launch".to_string(),
             Self::Salvage => "Salvage".to_string(),
-            Self::Weld => "Weld".to_string(),
+            Self::Weld => "Repair".to_string(),
             Self::Accompany => "Accompany".to_string(),
             Self::Run => "Run".to_string(),
             Self::Hunt => "Hunt".to_string(),
@@ -999,9 +999,9 @@ pub(crate) fn refusal_reason(refusal: aftermine_sim::PlaceRefusal) -> &'static s
         PlaceRefusal::Fog => "you haven't scouted that ground",
         PlaceRefusal::Terrain => "impassable ground",
         PlaceRefusal::Building => "something already stands there",
-        PlaceRefusal::Unit => "an enemy machine is holding that ground",
+        PlaceRefusal::Unit => "an enemy unit is holding that ground",
         PlaceRefusal::NotConstructible => "that can't be built",
-        PlaceRefusal::Prerequisite => "needs its tech building",
+        PlaceRefusal::Prerequisite => "needs its tech structure",
         PlaceRefusal::FrameRequired => "an extractor rebuilds only on a derelict frame",
         PlaceRefusal::FrameBlocked => "that ground belongs to a derelict frame",
     }
@@ -2983,7 +2983,7 @@ fn armed_verb_click(
             });
             let Some(building) = target.map(|b| b.id) else {
                 game.presentation
-                    .toast("Salvage wants an own built building (not a Foundry)");
+                    .toast("Salvage wants an own built structure (not a Foundry)");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3030,7 +3030,7 @@ fn armed_verb_click(
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((_, target, _)) = patient else {
                 game.presentation
-                    .toast("Weld wants a damaged own ground unit");
+                    .toast("Repair wants a damaged own ground unit");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
@@ -3046,7 +3046,8 @@ fn armed_verb_click(
                     })
             });
             if !has_other_welder {
-                game.presentation.toast("Weld needs another welder in hand");
+                game.presentation
+                    .toast("Repair needs another worker selected");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));

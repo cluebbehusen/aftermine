@@ -69,7 +69,7 @@ pub(super) fn dispatch_action(
                     game.presentation.toast(match own {
                         super::Group::Units(_) => "Only your own units join a control group",
                         super::Group::Buildings(_) => {
-                            "Only your own buildings join a control group"
+                            "Only your own structures join a control group"
                         }
                     });
                 }
@@ -380,7 +380,7 @@ pub(super) fn dispatch_action(
                 input.disarm_click_verbs();
                 input.click_verb = Some(ClickVerb::Weld);
             } else {
-                game.presentation.toast("No welder in hand");
+                game.presentation.toast("No worker selected to repair");
             }
         }
         Action::Accompany => {
@@ -417,7 +417,7 @@ pub(super) fn dispatch_action(
                 input.disarm_click_verbs();
                 input.click_verb = Some(ClickVerb::Run);
             } else {
-                game.presentation.toast("No machines selected to run");
+                game.presentation.toast("No units selected to run");
             }
         }
         Action::Scout => {
@@ -451,7 +451,7 @@ pub(super) fn dispatch_action(
                 input.disarm_click_verbs();
                 input.click_verb = Some(ClickVerb::Hunt);
             } else {
-                game.presentation.toast("No machines selected to hunt");
+                game.presentation.toast("No units selected to hunt");
             }
         }
         Action::CycleIdleWorker => cycle_idle_worker(game),

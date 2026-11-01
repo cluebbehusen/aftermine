@@ -439,7 +439,12 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
     surrendered.present_ticks(1);
     let (title, _, subtitle) = verdict(&surrendered);
     assert_eq!(title, "SURRENDERED");
-    assert_eq!(subtitle, "your machines fell silent");
+    // A surrender names the winner, as a defeat does.
+    assert_eq!(
+        subtitle,
+        winner_subtitle(&surrendered, &surrendered.state.winners())
+    );
+    assert!(!subtitle.contains("NORTH WEST"), "{subtitle}");
 }
 
 #[test]

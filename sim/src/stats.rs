@@ -1044,68 +1044,6 @@ impl UnitKind {
             UnitKind::Drone => "drone",
         }
     }
-
-    /// Role and constraints shared by the codex and training tooltip.
-    pub const fn blurb(self) -> &'static str {
-        match self {
-            UnitKind::Harvester => {
-                "Collects scrap and delivers it to a Foundry. Builds structures and repairs ground units."
-            }
-            UnitKind::Sentinel => "Short-range frontline unit. Can also fire on aircraft.",
-            UnitKind::Scuttler => {
-                "Fast, lightly armored raider. Best used against workers and exposed artillery."
-            }
-            UnitKind::Lancer => {
-                "Long-range ground artillery. Vulnerable when enemies close the distance."
-            }
-            UnitKind::Bombard => {
-                "Siege artillery with arcing explosive shells. Needs a spotter to use its full range."
-            }
-            UnitKind::Flakhound => "Armored anti-air platform. Cannot attack ground targets.",
-            UnitKind::Buzzard => "Heavy ground-attack aircraft. Cannot attack other aircraft.",
-            UnitKind::Talon => {
-                "Air-superiority fighter with long sight range. Attacks aircraft only."
-            }
-            UnitKind::Warden => {
-                "Armored frontline unit with a stronger main gun than the Sentinel."
-            }
-            UnitKind::Excavator => {
-                "Heavy harvester with faster mining, more cargo space, and faster construction."
-            }
-            UnitKind::Kestrel => "Unarmed scout aircraft with long sight range and radar.",
-            UnitKind::Condor => {
-                "Heavy bomber. Drops one large bomb per attack run and turns for another pass."
-            }
-            UnitKind::Breaker => "Heavy assault walker. Delivers powerful close-range blasts.",
-            UnitKind::Avalanche => {
-                "Long-range missile artillery. Cannot fire at enemies inside its minimum range."
-            }
-            UnitKind::Skyhook => {
-                "Unarmed air transport. Carried units cannot fight and are lost if the transport is destroyed."
-            }
-            UnitKind::Sapper => {
-                "Disposable demolition unit. Detonates against its target, dealing heavy damage to structures."
-            }
-            UnitKind::Mantle => {
-                "Unarmed tracked carrier with three point-defense charges. Stops shells, rockets and bomb passes aimed near it; gunfire passes through."
-            }
-            UnitKind::Piledriver => {
-                "Slow, enormous shots that break heavy machines; wasted on small ones. Must brace before firing."
-            }
-            UnitKind::Surveyor => {
-                "Fast, unarmed ground scout with long sight range. Reveals buried Scuttle Charges nearby, and unfolds a radar when parked."
-            }
-            UnitKind::Maw => {
-                "Huge, slow breacher that cuts through buildings and is weak against machines. No anti-air. Heals only by eating wreck under and beside it."
-            }
-            UnitKind::Roc => {
-                "Slow, heavy gunship that carries twelve slots of ground units. Two guns each pick their own ground targets; an attack order turns it nose-on so both bear. Its six drones fight aircraft and screen fire."
-            }
-            UnitKind::Drone => {
-                "A Roc's anti-air drone. Launches when enemy aircraft come near or the Roc is hit, fights close around it, and docks again when the sky is clear."
-            }
-        }
-    }
 }
 
 /// The most weapons any kind carries; per-weapon cooldown state is sized
@@ -2721,59 +2659,6 @@ impl BuildingKind {
             BuildingKind::Lattice => "lattice",
             BuildingKind::MawCradle => "maw cradle",
             BuildingKind::RocCradle => "roc cradle",
-        }
-    }
-
-    /// Role and constraints shared by the codex and construction tooltip.
-    pub const fn blurb(self) -> &'static str {
-        match self {
-            BuildingKind::Foundry => {
-                "Headquarters, basic unit production, and scrap drop-off. Losing every Foundry loses the match."
-            }
-            BuildingKind::Turret => {
-                "Automatic defense against ground units. Requires line of sight."
-            }
-            BuildingKind::Fabricator => {
-                "Produces advanced ground units and unlocks further construction."
-            }
-            BuildingKind::FlakTurret => "Fixed anti-air defense. Cannot attack ground targets.",
-            BuildingKind::Bastion => {
-                "Long-range artillery with explosive shells. Needs a spotter beyond its sight range. Upgrade to a Citadel for more range."
-            }
-            BuildingKind::Array => {
-                "Extends vision, detects hidden charges, and tracks distant radar contacts that weapons can fire on."
-            }
-            BuildingKind::Reclaimer => {
-                "Produces scrap continuously without workers. Upgrade to a Refinery for higher output."
-            }
-            BuildingKind::RepairBay => {
-                "Repairs up to four nearby friendly machines at a time, fast once they are out of combat, and completed buildings slowly, using scrap. Condors must land to be repaired. Cannot repair itself."
-            }
-            BuildingKind::Extractor => {
-                "Rebuild on a derelict mining frame to generate scrap. A nearby own Foundry increases output. Upgrade to a Deep Bore for triple output."
-            }
-            BuildingKind::Airworks => "Produces aircraft.",
-            BuildingKind::Crucible => {
-                "Produces heavy ground units and unlocks the highest upgrades."
-            }
-            BuildingKind::Barricade => {
-                "Blocks ground movement. Does not block aircraft or gunfire."
-            }
-            BuildingKind::ScuttleCharge => {
-                "Visible while building, concealed when armed. Triggered by hostile ground units or construction. Revealed by scouts or an Array."
-            }
-            BuildingKind::Spire => {
-                "Missile silo. Order a warhead, then launch it at any tile: it damages everything near the impact, heavily at the center. Foundries resist it. Only a Lattice can stop it."
-            }
-            BuildingKind::Lattice => {
-                "Holds two interceptors that stop enemy warheads landing in its ring, once sight or radar has tracked them. Reloads on its own."
-            }
-            BuildingKind::MawCradle => {
-                "Up to four workers assemble a Maw here. Every player sees it once work starts."
-            }
-            BuildingKind::RocCradle => {
-                "Up to four workers assemble a Roc here. Every player sees it once work starts."
-            }
         }
     }
 

@@ -148,7 +148,7 @@ impl Lesson {
             Self::Command => "move the camera, select units, move them, and attack",
             Self::Scrap => "collect scrap, train Harvesters, and restore Extractors",
             Self::Build => {
-                "build, queue several buildings, set rally points, and use control groups"
+                "build, queue several structures, set rally points, and use control groups"
             }
             Self::Fight => "use Hunt, Advance, and Run, and fight around rock and high ground",
             Self::Sustain => {

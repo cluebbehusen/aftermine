@@ -291,27 +291,19 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
 #[test]
 fn extractor_build_copy_names_both_rates_and_the_foundry_rule() {
     let extractor = building_economy_lines(BuildingKind::Extractor);
-    assert!(
-        extractor
-            .iter()
-            .any(|line| line.contains("120 scrap/min remote"))
+    assert_eq!(
+        extractor,
+        ["Makes 120 scrap/min, or 180 scrap/min with your Foundry within 8 tiles."]
     );
-    assert!(
-        extractor
-            .iter()
-            .any(|line| line.contains("180 scrap/min with non-stacking support"))
-    );
-    assert!(extractor.iter().any(|line| {
-        line.contains("own completed Foundries") && line.contains("8 footprint tiles")
-    }));
 
     let foundry = building_economy_lines(BuildingKind::Foundry);
-    assert!(foundry.iter().any(|line| {
-        line.contains("own completed Extractors")
-            && line.contains("120 to 180 scrap/min")
-            && line.contains("8 footprint tiles")
-            && line.contains("do not stack")
-    }));
+    assert_eq!(
+        foundry,
+        [
+            "Raises the output of your Extractors within 8 tiles from 120 to 180 scrap/min.",
+            "After the first 2 minutes, each Foundry makes 20 scrap/min.",
+        ]
+    );
 
     let mut game = game();
     let harvester = game
@@ -506,7 +498,7 @@ fn a_multi_producer_panel_puts_shared_rally_before_production() {
 
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false)
         .expect("multi-building panel");
-    assert_eq!(panel.title, "2 BUILDINGS");
+    assert_eq!(panel.title, "2 STRUCTURES");
     assert_eq!(panel.cards.len(), 2);
     assert_eq!(panel.cards[0].title, "Set rallies");
     assert_eq!(panel.cards[0].action, CardAction::ArmRally);
@@ -675,7 +667,7 @@ fn poverty_and_capacity_disable_cards_with_reasons() {
 }
 
 #[test]
-fn the_patrol_card_says_what_each_kind_of_machine_does_on_the_way() {
+fn the_patrol_card_says_what_each_kind_of_unit_does_on_the_way() {
     use aftermine_sim::UnitKind;
     let mut scenario = Scenario::skirmish();
     for kind in [UnitKind::Sentinel, UnitKind::Skyhook] {
@@ -703,27 +695,27 @@ fn the_patrol_card_says_what_each_kind_of_machine_does_on_the_way() {
     for (selection, promise) in [
         (
             vec![sentinel],
-            "Machines engage whatever they meet along the way.",
+            "Units engage whatever they meet along the way.",
         ),
         (
             vec![harvester],
-            "Workers weld wounded machines and buildings they pass.",
+            "Workers repair damaged units and structures they pass.",
         ),
         (
             vec![skyhook],
-            "Unarmed machines walk the route without engaging.",
+            "Unarmed units walk the route without engaging.",
         ),
         (
             vec![harvester, skyhook],
-            "Workers weld wounded machines and buildings they pass; others walk on.",
+            "Workers repair damaged units and structures they pass; others walk on.",
         ),
         (
             vec![sentinel, skyhook],
-            "Armed machines engage what they meet; the rest walk on.",
+            "Armed units engage what they meet; the rest walk on.",
         ),
         (
             vec![sentinel, harvester],
-            "Armed machines engage what they meet; workers weld what is damaged.",
+            "Armed units engage what they meet; workers repair what is damaged.",
         ),
     ] {
         game.presentation.selection.units = selection;
@@ -757,33 +749,41 @@ fn the_harvester_panel_is_the_same_grammar() {
     let titles: Vec<&str> = panel.cards.iter().map(|card| card.title.as_str()).collect();
     assert_eq!(
         titles,
-        ["Patrol", "Accompany", "Salvage", "Weld", "Retire", "Build"]
+        [
+            "Patrol",
+            "Accompany",
+            "Salvage",
+            "Repair",
+            "Retire",
+            "Build"
+        ]
     );
-    // Auto-weld rides on the Weld card as its autocast.
-    let weld = panel
+    // Auto-repair rides on the Repair card as its autocast.
+    let repair = panel
         .cards
         .iter()
-        .find(|card| card.title == "Weld")
+        .find(|card| card.title == "Repair")
         .unwrap();
     assert_eq!(
-        weld.autocast,
+        repair.autocast,
         Some(Autocast {
             state: AutocastState::On,
             toggle: Action::ToggleIdleWeld,
         })
     );
     assert!(
-        weld.desc
+        repair
+            .desc
             .iter()
-            .any(|line| line.starts_with("Auto-weld on")),
+            .any(|line| line.starts_with("Auto-repair on")),
         "{:?}",
-        weld.desc
+        repair.desc
     );
     assert!(
         panel
             .cards
             .iter()
-            .filter(|card| card.title != "Weld")
+            .filter(|card| card.title != "Repair")
             .all(|card| card.autocast.is_none())
     );
     assert!(
@@ -1316,8 +1316,11 @@ fn weapon_lines_read_from_the_stats_table() {
     assert!(sentinel[0].contains("ground"));
     assert!(sentinel[1].contains("air"));
     let bombard = weapon_lines(aftermine_sim::UnitKind::Bombard);
-    assert!(bombard[0].contains("projectile"));
+    assert!(bombard[0].contains("| shell"));
     assert!(bombard[0].contains("splash"));
+    let roc = weapon_lines(aftermine_sim::UnitKind::Roc);
+    assert_eq!(roc.len(), 1, "identical guns share a line: {roc:?}");
+    assert!(roc[0].starts_with("2 guns | "));
 }
 
 #[test]
@@ -1380,13 +1383,21 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         }
     };
     for kind in units {
-        assert!(supported(unit_flavor(kind)), "{} flavor", kind.name());
+        assert!(
+            supported(&crate::description::unit_description(kind)),
+            "{} description",
+            kind.name()
+        );
         for line in weapon_lines(kind) {
             assert!(supported(&line), "{} weapon: {line}", kind.name());
         }
     }
     for kind in buildings {
-        assert!(supported(building_flavor(kind)), "{} flavor", kind.name());
+        assert!(
+            supported(&crate::description::building_description(kind)),
+            "{} description",
+            kind.name()
+        );
     }
 
     let mut foundry_game = game();
@@ -1580,7 +1591,7 @@ fn an_allied_magazine_docks_its_rounds_read_only() {
     // The ally's battery autofills its first interceptor.
     game.do_tick();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
-    assert_eq!(panel.cards[0].title, "Ally building");
+    assert_eq!(panel.cards[0].title, "Ally structure");
     let chips: Vec<_> = panel
         .queue
         .iter()
@@ -1714,7 +1725,7 @@ fn a_mixed_building_selection_offers_one_counted_chip_per_kind() {
         .map(|b| b.id)
         .collect();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
-    assert_eq!(panel.title, "7 BUILDINGS");
+    assert_eq!(panel.title, "7 STRUCTURES");
     let chips: Vec<(&str, CardAction)> = panel
         .roster
         .iter()

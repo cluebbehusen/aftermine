@@ -123,7 +123,7 @@ pub(super) const COMMAND_OUTRO: &str =
 const HAUL: &str = "The Harvester collects scrap at the pile and brings it back to your \
     Foundry. The SCRAP counter at the top left shows how much you have.";
 const MORE_WORKERS: &str =
-    "More Harvesters bring in scrap faster. Harvesters also construct buildings.";
+    "More Harvesters bring in scrap faster. Harvesters also build structures.";
 const IDLE: &str = "Your new Harvester is idle. The idle badge in the top bar shows how many \
     Harvesters have nothing to do.";
 const NEAR_PAYS: &str = "An Extractor earns scrap without any hauling. Within 8 tiles of a \
@@ -200,11 +200,11 @@ pub(super) const SCRAP: [Step; 5] = [
                 NEAR_PAYS,
             ],
             touch_keys: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build or press {build}, and choose Extractor in the Economy column. Drag the building's outline onto the frame and tap the check mark.",
+                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build or press {build}, and choose Extractor in the Economy column. Drag the structure's outline onto the frame and tap the check mark.",
                 NEAR_PAYS,
             ],
             touch: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build, and choose Extractor in the Economy column. Drag the building's outline onto the frame and tap the check mark.",
+                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build, and choose Extractor in the Economy column. Drag the structure's outline onto the frame and tap the check mark.",
                 NEAR_PAYS,
             ],
         },
@@ -232,10 +232,10 @@ const MORE_BUILDERS_TOUCH: &str = "More Harvesters on one site build it faster. 
     select it and long-press the site.";
 const PAID_IN_ORDER: &str = "Each site is paid for when you place it, and your Harvester builds \
     them one after another.";
-const RALLY_USE: &str = "Armed machines hunt their way to the rally point. A Harvester rallied \
+const RALLY_USE: &str = "Armed units hunt their way to the rally point. A Harvester rallied \
     to a scrap pile starts collecting there.";
-const FABRICATOR_UNLOCKS: &str = "The Fabricator trains machines the Foundry can't, such as \
-    Lancers and Flakhounds. It also unlocks more buildings, such as the Airworks and the \
+const FABRICATOR_UNLOCKS: &str = "The Fabricator trains units the Foundry can't, such as \
+    Lancers and Flakhounds. It also unlocks more structures, such as the Airworks and the \
     Crucible.";
 
 pub(super) const BUILD: [Step; 5] = [
@@ -243,23 +243,23 @@ pub(super) const BUILD: [Step; 5] = [
         title: "Build a Fabricator",
         copy: Copy {
             mouse_keys: &[
-                "Select a Harvester, then click Build or press {build}. Buildings are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
+                "Select a Harvester, then click Build or press {build}. Structures are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
                 "Choose Fabricator in the Production column and click open ground you have explored. The bar above the bottom panel says whether the spot can be built on.",
                 MORE_BUILDERS,
             ],
             mouse: &[
-                "Select a Harvester, then click Build. Buildings are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
+                "Select a Harvester, then click Build. Structures are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
                 "Choose Fabricator in the Production column and click open ground you have explored. The bar above the bottom panel says whether the spot can be built on.",
                 MORE_BUILDERS,
             ],
             touch_keys: &[
-                "Select a Harvester, then tap Build or press {build}. Buildings are sorted into columns such as Economy, Production, and Defense.",
-                "Choose Fabricator in the Production column. Drag the building's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
+                "Select a Harvester, then tap Build or press {build}. Structures are sorted into columns such as Economy, Production, and Defense.",
+                "Choose Fabricator in the Production column. Drag the structure's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
                 MORE_BUILDERS_TOUCH,
             ],
             touch: &[
-                "Select a Harvester, then tap Build. Buildings are sorted into columns such as Economy, Production, and Defense.",
-                "Choose Fabricator in the Production column. Drag the building's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
+                "Select a Harvester, then tap Build. Structures are sorted into columns such as Economy, Production, and Defense.",
+                "Choose Fabricator in the Production column. Drag the structure's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
                 MORE_BUILDERS_TOUCH,
             ],
         },
@@ -291,19 +291,19 @@ pub(super) const BUILD: [Step; 5] = [
         title: "Set a rally point",
         copy: Copy {
             mouse_keys: &[
-                "A rally point is where new machines go when they are trained. Select your Fabricator and right-click the ground where they should gather, or press {rally} and click the spot.",
+                "A rally point is where new units go when they are trained. Select your Fabricator and right-click the ground where they should gather, or press {rally} and click the spot.",
                 RALLY_USE,
             ],
             mouse: &[
-                "A rally point is where new machines go when they are trained. Select your Fabricator and right-click the ground where they should gather, or click Set next to the flag in the bottom panel and click the spot.",
+                "A rally point is where new units go when they are trained. Select your Fabricator and right-click the ground where they should gather, or click Set next to the flag in the bottom panel and click the spot.",
                 RALLY_USE,
             ],
             touch_keys: &[
-                "A rally point is where new machines go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
+                "A rally point is where new units go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
                 RALLY_USE,
             ],
             touch: &[
-                "A rally point is where new machines go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
+                "A rally point is where new units go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
                 RALLY_USE,
             ],
         },
@@ -355,30 +355,30 @@ pub(super) const BUILD: [Step; 5] = [
     },
 ];
 
-pub(super) const BUILD_OUTRO: &str = "You can now build, place several buildings at once, set \
+pub(super) const BUILD_OUTRO: &str = "You can now build, place several structures at once, set \
     rally points, and use control groups.";
 
 const RAID: &str = "Five enemy Scuttlers are coming for your Harvesters. Scuttlers are fast \
     and cheap and kill Harvesters quickly, but a Sentinel beats a Scuttler one on one.";
-const HUNTING: &str = "Hunting machines stop to chase and fight every enemy they meet.";
+const HUNTING: &str = "Hunting units stop to chase and fight every enemy they meet.";
 const ADVANCE_CLICK: &str = "A right-click on the ground is an Advance instead. Advancing \
-    machines fire at enemies in range but never stop or chase, so a raid can slip past them.";
+    units fire at enemies in range but never stop or chase, so a raid can slip past them.";
 const ADVANCE_PRESS: &str = "A long-press on the ground is an Advance instead. Advancing \
-    machines fire at enemies in range but never stop or chase, so a raid can slip past them.";
+    units fire at enemies in range but never stop or chase, so a raid can slip past them.";
 const ROCK: &str = "Two enemy Lancers stand behind the rock line in the middle. Rock blocks \
-    shots between ground machines but not sight, so up close you can see them but can't hit \
+    shots between ground units but not sight, so up close you can see them but can't hit \
     them through it.";
 const AROUND: &str = "A Lancer can hit targets 5.5 tiles away, more than twice as far as a \
     Sentinel, and kills a Sentinel with one shot. Send your fast Scuttlers around the end of the \
     rock to reach them, with the rest of your army behind.";
 const LEVELS: &str = "Three enemy Sentinels hold the high ground in the northeast. Ground \
-    machines can only shoot machines on their own level, so neither side can shoot across \
+    units can only shoot units on their own level, so neither side can shoot across \
     the cliff.";
-const RAMP: &str = "A ramp at the west end of the cliff joins both levels, and machines on it \
+const RAMP: &str = "A ramp at the west end of the cliff joins both levels, and units on it \
     can shoot up and down. Send your army up the ramp to fight.";
 const WARDEN: &str = "An enemy Warden is heading for your base. It has 340 HP, more than \
     five Sentinels together.";
-const BESIDE_TURRETS: &str = "Running machines move without stopping to fight, so nothing \
+const BESIDE_TURRETS: &str = "Running units move without stopping to fight, so nothing \
     holds them up on the way. Then fight the Warden beside your Turrets.";
 const OUTPOST: &str = "The enemy outpost in the east has a Fabricator and a Turret. Destroy both.";
 
@@ -464,19 +464,19 @@ pub(super) const FIGHT: [Step; 5] = [
         copy: Copy {
             mouse_keys: &[
                 OUTPOST,
-                "Press {hunt} and click near the outpost to clear the way, then right-click each building to attack it.",
+                "Press {hunt} and click near the outpost to clear the way, then right-click each structure to attack it.",
             ],
             mouse: &[
                 OUTPOST,
-                "Click Hunt and click near the outpost to clear the way, then right-click each building to attack it.",
+                "Click Hunt and click near the outpost to clear the way, then right-click each structure to attack it.",
             ],
             touch_keys: &[
                 OUTPOST,
-                "Tap Hunt or press {hunt} and tap near the outpost to clear the way, then long-press each building to attack it.",
+                "Tap Hunt or press {hunt} and tap near the outpost to clear the way, then long-press each structure to attack it.",
             ],
             touch: &[
                 OUTPOST,
-                "Tap Hunt and tap near the outpost to clear the way, then long-press each building to attack it.",
+                "Tap Hunt and tap near the outpost to clear the way, then long-press each structure to attack it.",
             ],
         },
         goal: Goal::Destroy,
@@ -514,37 +514,35 @@ pub(super) const FIGHT_SQUADS: [Squad; 4] = [
 ];
 
 pub(super) const FIGHT_OUTRO: &str = "You can now choose between Hunt, Advance, and Run, use \
-    each machine for what it does best, and fight around rock and high ground.";
+    each unit for what it does best, and fight around rock and high ground.";
 
 const FOG: &str = "Ground you have never seen is dark. Ground you have seen but can't see \
-    right now is dimmed. It shows enemy buildings as you last saw them, but not enemy machines.";
-const SURVEYOR: &str = "The Surveyor is your fastest ground machine and sees 9 tiles, but it \
+    right now is dimmed. It shows enemy structures as you last saw them, but not enemy units.";
+const SURVEYOR: &str = "The Surveyor is your fastest ground unit and sees 9 tiles, but it \
     has no weapons. An enemy base is somewhere to the east.";
 const SCOUT_SAFE: &str = "A scouting Surveyor stays out of reach of enemies it has seen.";
 const SURVEYOR_RADAR: &str = "A Surveyor that stands still for 2 seconds also unfolds a \
     short-range radar. Enemies up to 12 tiles away that it can't see show up as blips.";
-const ARRAY: &str = "An Array is a building with a long-range radar. It sees 9 tiles around \
+const ARRAY: &str = "An Array is a structure with a long-range radar. It sees 9 tiles around \
     itself and shows enemies up to 20 tiles away as blips.";
 const BLIPS: &str = "A blip shows where an enemy is, but not what it is. A full diamond means it \
     is on the ground, and only the top half of a diamond means it is in the air.";
 const AIRCRAFT: &str = "Two Buzzards wait at the enemy base. Buzzards are aircraft. They fly \
     over rock and attack only targets on the ground.";
-const ANTI_AIR: &str = "Most ground machines can't shoot aircraft. Flak Turrets and Flakhounds \
+const ANTI_AIR: &str = "Most ground units can't shoot aircraft. Flak Turrets and Flakhounds \
     shoot only aircraft. Sentinels can shoot both, but are weak against aircraft.";
 const INBOUND: &str = "The Buzzards are flying to your base. Watch for their blips on your \
     Array's radar before they come into sight.";
 const FLAK_FIRST: &str = "Your Flak Turret hits them from 5.5 tiles away. A Buzzard must come \
     within 3 tiles to fire, so the turret shoots first.";
-const IN_HARMS_WAY: &str = "Buzzards attack machines before buildings, so Harvesters left idle \
-    beside your new buildings are in danger.";
-const WELDING: &str = "Harvesters weld damaged buildings and ground machines back to full \
-    health. Welding costs scrap for each point of health it restores.";
-const IDLE_WELD: &str = "Idle Harvesters also weld damage near them on their own.";
-const REPAIR_BAY: &str = "A Repair Bay repairs your machines within 4 tiles of it, up to four \
-    at a time. It works quickly once they are out of combat. It also repairs nearby buildings \
+const IN_HARMS_WAY: &str = "Buzzards attack units before structures, so Harvesters left idle \
+    beside your new structures are in danger.";
+const WELDING: &str = "Harvesters repair damaged structures and ground units back to full health. Repairing costs scrap for each point of health it restores.";
+const IDLE_WELD: &str = "Idle Harvesters also repair damage near them on their own.";
+const REPAIR_BAY: &str = "A Repair Bay repairs your units within 4 tiles of it, up to four \
+    at a time. It works quickly once they are out of combat. It also repairs nearby structures \
     slowly, and pays for all repairs with scrap.";
-const WRECKS: &str =
-    "A destroyed machine leaves a wreck that holds some of the scrap the machine cost.";
+const WRECKS: &str = "A destroyed unit leaves a wreck that holds some of the scrap the unit cost.";
 const WRECKS_FADE: &str = "Wrecks deteriorate over time, so collect them soon.";
 
 pub(super) const SUSTAIN: [Step; 7] = [
@@ -665,26 +663,26 @@ pub(super) const SUSTAIN: [Step; 7] = [
         goal: Goal::Defeat(0),
     },
     Step {
-        title: "Weld the damage",
+        title: "Repair the damage",
         copy: Copy {
             mouse_keys: &[
                 WELDING,
-                "Select a Harvester and right-click a damaged building or machine to weld it.",
+                "Select a Harvester and right-click a damaged structure or unit to repair it.",
                 IDLE_WELD,
             ],
             mouse: &[
                 WELDING,
-                "Select a Harvester and right-click a damaged building or machine to weld it.",
+                "Select a Harvester and right-click a damaged structure or unit to repair it.",
                 IDLE_WELD,
             ],
             touch_keys: &[
                 WELDING,
-                "Select a Harvester and long-press a damaged building or machine to weld it.",
+                "Select a Harvester and long-press a damaged structure or unit to repair it.",
                 IDLE_WELD,
             ],
             touch: &[
                 WELDING,
-                "Select a Harvester and long-press a damaged building or machine to weld it.",
+                "Select a Harvester and long-press a damaged structure or unit to repair it.",
                 IDLE_WELD,
             ],
         },

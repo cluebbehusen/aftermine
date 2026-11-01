@@ -1563,7 +1563,7 @@ impl Presentation {
                             "Nothing to mine there".into()
                         }
                         aftermine_sim::command::RejectReason::NotYourBuilding => {
-                            "Not your building".into()
+                            "Not your structure".into()
                         }
                         aftermine_sim::command::RejectReason::CannotProduce => {
                             "That factory can't make those".into()
@@ -1579,7 +1579,7 @@ impl Presentation {
                             "You are eliminated".into()
                         }
                         aftermine_sim::command::RejectReason::MissingPrerequisite => {
-                            "Needs its tech building first".into()
+                            "Needs its tech structure first".into()
                         }
                         aftermine_sim::command::RejectReason::NothingLoaded => {
                             "No warhead loaded".into()

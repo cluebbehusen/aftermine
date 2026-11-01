@@ -20,6 +20,7 @@ mod camera;
 mod clock_label;
 mod config;
 mod debug_server;
+mod description;
 mod diagnostic_report;
 mod dock_motion;
 mod entity_lod;

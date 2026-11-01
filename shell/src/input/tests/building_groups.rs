@@ -281,7 +281,7 @@ fn a_group_holds_units_or_buildings_and_drops_what_is_not_yours() {
     assert!(input.groups[1].is_empty());
     assert_eq!(
         game.presentation.toasts.last().map(|t| t.text.as_str()),
-        Some("Only your own buildings join a control group")
+        Some("Only your own structures join a control group")
     );
 
     // A building group replaced by units holds only the units.

@@ -14,7 +14,7 @@ fn publish_weld(game: &mut Game, input: &InputState) -> Rect {
     for (slot, card) in panel.cards.iter().enumerate() {
         let rect = Rect::new(240.0 + 90.0 * slot as f32, 700.0, 84.0, 72.0);
         layout.cards[slot] = (rect, card.action);
-        if card.title == "Weld" {
+        if card.title == "Repair" {
             weld = Some(rect);
         }
     }
